@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="005-1" author="ecm-system">
+        <comment>Create indexes for nodes table</comment>
+        <createIndex tableName="nodes" indexName="idx_node_path">
+            <column name="path"/>
+        </createIndex>
+        <createIndex tableName="nodes" indexName="idx_node_parent">
+            <column name="parent_id"/>
+        </createIndex>
+        <createIndex tableName="nodes" indexName="idx_node_type">
+            <column name="node_type"/>
+        </createIndex>
+        <createIndex tableName="nodes" indexName="idx_node_name">
+            <column name="name"/>
+        </createIndex>
+        <createIndex tableName="nodes" indexName="idx_node_status">
+            <column name="status"/>
+        </createIndex>
+        <createIndex tableName="nodes" indexName="idx_node_created_by">
+            <column name="created_by"/>
+        </createIndex>
+        <createIndex tableName="nodes" indexName="idx_node_deleted">
+            <column name="is_deleted"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="005-2" author="ecm-system">
+        <comment>Create indexes for documents table</comment>
+        <createIndex tableName="documents" indexName="idx_document_content_id">
+            <column name="content_id"/>
+        </createIndex>
+        <createIndex tableName="documents" indexName="idx_document_mime_type">
+            <column name="mime_type"/>
+        </createIndex>
+        <createIndex tableName="documents" indexName="idx_document_content_hash">
+            <column name="content_hash"/>
+        </createIndex>
+        <createIndex tableName="documents" indexName="idx_document_checkout_user">
+            <column name="checkout_user"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="005-3" author="ecm-system">
+        <comment>Create indexes for versions table</comment>
+        <createIndex tableName="versions" indexName="idx_version_document">
+            <column name="document_id"/>
+        </createIndex>
+        <createIndex tableName="versions" indexName="idx_version_number">
+            <column name="version_number"/>
+        </createIndex>
+        <createIndex tableName="versions" indexName="idx_version_content_hash">
+            <column name="content_hash"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="005-4" author="ecm-system">
+        <comment>Create indexes for permissions table</comment>
+        <createIndex tableName="permissions" indexName="idx_permission_node">
+            <column name="node_id"/>
+        </createIndex>
+        <createIndex tableName="permissions" indexName="idx_permission_authority">
+            <column name="authority"/>
+        </createIndex>
+        <createIndex tableName="permissions" indexName="idx_permission_type">
+            <column name="authority_type"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="005-5" author="ecm-system">
+        <comment>Create indexes for users table</comment>
+        <createIndex tableName="users" indexName="idx_user_username" unique="true">
+            <column name="username"/>
+        </createIndex>
+        <createIndex tableName="users" indexName="idx_user_email" unique="true">
+            <column name="email"/>
+        </createIndex>
+        <createIndex tableName="users" indexName="idx_user_department">
+            <column name="department"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="005-6" author="ecm-system">
+        <comment>Create indexes for groups table</comment>
+        <createIndex tableName="groups" indexName="idx_group_name" unique="true">
+            <column name="name"/>
+        </createIndex>
+        <createIndex tableName="groups" indexName="idx_group_type">
+            <column name="group_type"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="005-7" author="ecm-system">
+        <comment>Create indexes for roles table</comment>
+        <createIndex tableName="roles" indexName="idx_role_name" unique="true">
+            <column name="name"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="005-8" author="ecm-system">
+        <comment>Create GIN indexes for JSONB columns</comment>
+        <sql>
+            CREATE INDEX idx_node_properties ON nodes USING GIN (properties);
+            CREATE INDEX idx_node_metadata ON nodes USING GIN (metadata);
+            CREATE INDEX idx_user_preferences ON users USING GIN (preferences);
+            CREATE INDEX idx_role_permissions ON roles USING GIN (permissions);
+            CREATE INDEX idx_version_changes ON versions USING GIN (changes);
+        </sql>
+    </changeSet>
+
+    <changeSet id="005-9" author="ecm-system">
+        <comment>Create full text search index</comment>
+        <sql>
+            CREATE INDEX idx_document_text_content ON documents USING GIN (to_tsvector('english', text_content));
+        </sql>
+    </changeSet>
+
+</databaseChangeLog>

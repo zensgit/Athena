@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="007-1" author="ecm-system">
+        <comment>Insert system roles</comment>
+        <insert tableName="roles">
+            <column name="id" valueComputed="${uuid_function}"/>
+            <column name="name" value="ROLE_ADMIN"/>
+            <column name="display_name" value="Administrator"/>
+            <column name="description" value="Full system administration privileges"/>
+            <column name="is_system" valueBoolean="true"/>
+            <column name="created_by" value="system"/>
+        </insert>
+        <insert tableName="roles">
+            <column name="id" valueComputed="${uuid_function}"/>
+            <column name="name" value="ROLE_USER"/>
+            <column name="display_name" value="User"/>
+            <column name="description" value="Standard user privileges"/>
+            <column name="is_system" valueBoolean="true"/>
+            <column name="created_by" value="system"/>
+        </insert>
+        <insert tableName="roles">
+            <column name="id" valueComputed="${uuid_function}"/>
+            <column name="name" value="ROLE_MANAGER"/>
+            <column name="display_name" value="Manager"/>
+            <column name="description" value="Content management privileges"/>
+            <column name="is_system" valueBoolean="true"/>
+            <column name="created_by" value="system"/>
+        </insert>
+        <insert tableName="roles">
+            <column name="id" valueComputed="${uuid_function}"/>
+            <column name="name" value="ROLE_VIEWER"/>
+            <column name="display_name" value="Viewer"/>
+            <column name="description" value="Read-only access"/>
+            <column name="is_system" valueBoolean="true"/>
+            <column name="created_by" value="system"/>
+        </insert>
+    </changeSet>
+
+    <changeSet id="007-2" author="ecm-system">
+        <comment>Insert admin user</comment>
+        <insert tableName="users">
+            <column name="id" valueComputed="${uuid_function}"/>
+            <column name="username" value="admin"/>
+            <column name="email" value="admin@ecm.local"/>
+            <column name="password" value="$2a$10$8.UnVuG9HHgffUDAlk8qfOuVGkqRzgVymGe07xd00DMxs.AQubh4a"/> <!-- bcrypt: admin -->
+            <column name="first_name" value="System"/>
+            <column name="last_name" value="Administrator"/>
+            <column name="display_name" value="System Administrator"/>
+            <column name="created_by" value="system"/>
+        </insert>
+    </changeSet>
+
+    <changeSet id="007-3" author="ecm-system">
+        <comment>Assign admin role to admin user</comment>
+        <sql>
+            INSERT INTO user_roles (user_id, role_id)
+            SELECT u.id, r.id
+            FROM users u, roles r
+            WHERE u.username = 'admin' AND r.name = 'ROLE_ADMIN';
+        </sql>
+    </changeSet>
+
+    <changeSet id="007-4" author="ecm-system">
+        <comment>Insert root folder</comment>
+        <insert tableName="nodes">
+            <column name="id" valueComputed="${uuid_function}"/>
+            <column name="node_type" value="FOLDER"/>
+            <column name="name" value="Root"/>
+            <column name="path" value="/Root"/>
+            <column name="created_by" value="system"/>
+            <column name="inherit_permissions" valueBoolean="false"/>
+        </insert>
+        <sql>
+            INSERT INTO folders (id, folder_type)
+            SELECT id, 'SYSTEM'
+            FROM nodes
+            WHERE name = 'Root' AND parent_id IS NULL;
+        </sql>
+    </changeSet>
+
+    <changeSet id="007-5" author="ecm-system">
+        <comment>Insert default folders under root</comment>
+        <sql>
+            WITH root AS (SELECT id FROM nodes WHERE name = 'Root' AND parent_id IS NULL)
+            INSERT INTO nodes (id, node_type, name, path, parent_id, created_by)
+            VALUES 
+                (${uuid_function}, 'FOLDER', 'Documents', '/Root/Documents', (SELECT id FROM root), 'system'),
+                (${uuid_function}, 'FOLDER', 'Templates', '/Root/Templates', (SELECT id FROM root), 'system'),
+                (${uuid_function}, 'FOLDER', 'Archive', '/Root/Archive', (SELECT id FROM root), 'system'),
+                (${uuid_function}, 'FOLDER', 'Workspace', '/Root/Workspace', (SELECT id FROM root), 'system');
+        </sql>
+        <sql>
+            INSERT INTO folders (id, folder_type)
+            SELECT id, 
+                CASE name 
+                    WHEN 'Documents' THEN 'GENERAL'
+                    WHEN 'Templates' THEN 'SYSTEM'
+                    WHEN 'Archive' THEN 'ARCHIVE'
+                    WHEN 'Workspace' THEN 'WORKSPACE'
+                END
+            FROM nodes
+            WHERE parent_id = (SELECT id FROM nodes WHERE name = 'Root' AND parent_id IS NULL);
+        </sql>
+    </changeSet>
+
+    <changeSet id="007-6" author="ecm-system">
+        <comment>Set permissions for root folder</comment>
+        <sql>
+            INSERT INTO permissions (id, node_id, authority, authority_type, permission, is_allowed, created_by)
+            SELECT 
+                ${uuid_function},
+                (SELECT id FROM nodes WHERE name = 'Root' AND parent_id IS NULL),
+                'ROLE_ADMIN',
+                'ROLE',
+                permission,
+                true,
+                'system'
+            FROM (VALUES 
+                ('READ'), ('WRITE'), ('DELETE'), ('CREATE_CHILDREN'), 
+                ('DELETE_CHILDREN'), ('CHANGE_PERMISSIONS'), ('TAKE_OWNERSHIP')
+            ) AS perms(permission);
+        </sql>
+    </changeSet>
+
+    <changeSet id="007-7" author="ecm-system">
+        <comment>Insert default categories</comment>
+        <insert tableName="categories">
+            <column name="id" valueComputed="${uuid_function}"/>
+            <column name="name" value="General"/>
+            <column name="path" value="/General"/>
+            <column name="created_by" value="system"/>
+        </insert>
+        <insert tableName="categories">
+            <column name="id" valueComputed="${uuid_function}"/>
+            <column name="name" value="Business"/>
+            <column name="path" value="/Business"/>
+            <column name="created_by" value="system"/>
+        </insert>
+        <insert tableName="categories">
+            <column name="id" valueComputed="${uuid_function}"/>
+            <column name="name" value="Technical"/>
+            <column name="path" value="/Technical"/>
+            <column name="created_by" value="system"/>
+        </insert>
+    </changeSet>
+
+    <changeSet id="007-8" author="ecm-system">
+        <comment>Add role privileges</comment>
+        <sql>
+            INSERT INTO role_privileges (role_id, privilege)
+            SELECT r.id, privilege
+            FROM roles r
+            CROSS JOIN (VALUES 
+                ('ADMIN_USERS'), ('ADMIN_GROUPS'), ('ADMIN_ROLES'), ('ADMIN_SYSTEM'),
+                ('CREATE_SITES'), ('DELETE_SITES'), ('MANAGE_WORKFLOWS'), ('MANAGE_TEMPLATES'),
+                ('MANAGE_CATEGORIES'), ('MANAGE_TAGS'), ('BULK_IMPORT'), ('BULK_EXPORT'),
+                ('VIEW_AUDIT'), ('MANAGE_AUDIT'), ('EXECUTE_SCRIPTS')
+            ) AS privs(privilege)
+            WHERE r.name = 'ROLE_ADMIN';
+            
+            INSERT INTO role_privileges (role_id, privilege)
+            SELECT r.id, privilege
+            FROM roles r
+            CROSS JOIN (VALUES 
+                ('MANAGE_WORKFLOWS'), ('MANAGE_TEMPLATES'), ('MANAGE_CATEGORIES'), 
+                ('MANAGE_TAGS'), ('BULK_IMPORT'), ('BULK_EXPORT'), ('VIEW_AUDIT')
+            ) AS privs(privilege)
+            WHERE r.name = 'ROLE_MANAGER';
+        </sql>
+    </changeSet>
+
+</databaseChangeLog>

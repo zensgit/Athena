@@ -1,0 +1,182 @@
+spring:
+  application:
+    name: ecm-core
+  
+  datasource:
+    url: jdbc:postgresql://localhost:5432/ecm_db
+    username: ecm_user
+    password: ecm_password
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+  
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          lob:
+            non_contextual_creation: true
+        types:
+          print:
+            banner: false
+    show-sql: false
+  
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.xml
+    enabled: true
+  
+  elasticsearch:
+    uris: http://localhost:9200
+    username: elastic
+    password: elastic_password
+    connection-timeout: 5s
+    socket-timeout: 30s
+  
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: redis_password
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+  
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: rabbitmq
+    password: rabbitmq_password
+    virtual-host: /
+  
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 500MB
+      max-request-size: 500MB
+  
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8080/auth/realms/ecm
+          jwk-set-uri: http://localhost:8080/auth/realms/ecm/protocol/openid-connect/certs
+
+flowable:
+  database-schema-update: true
+  async-executor-activate: true
+  history-level: full
+  
+jodconverter:
+  local:
+    enabled: true
+    office-home: /usr/lib/libreoffice
+    port-numbers: 2002
+    max-tasks-per-process: 10
+    process-timeout: 120000
+
+ecm:
+  storage:
+    type: filesystem
+    root-path: /var/ecm/content
+    temp-path: /var/ecm/temp
+  
+  security:
+    jwt:
+      secret: ${JWT_SECRET:mySecretKey}
+      expiration: 86400000
+    cors:
+      allowed-origins: "*"
+      allowed-methods: "*"
+      allowed-headers: "*"
+      exposed-headers: "Authorization,Link,X-Total-Count"
+      allow-credentials: true
+      max-age: 3600
+  
+  preview:
+    cache:
+      enabled: true
+      ttl: 3600
+    max-pages: 50
+    thumbnail:
+      width: 200
+      height: 200
+      quality: 0.8
+  
+  conversion:
+    output-formats:
+      - pdf
+      - html
+      - txt
+      - png
+      - jpg
+    max-file-size: 100MB
+    timeout: 300000
+  
+  workflow:
+    definitions-path: classpath:workflows/
+    auto-deploy: true
+  
+  search:
+    index-name: ecm_documents
+    batch-size: 100
+    highlight:
+      enabled: true
+      pre-tag: "<em>"
+      post-tag: "</em>"
+  
+  alfresco:
+    compatibility:
+      enabled: true
+      version: 7.0
+  
+  odoo:
+    url: http://localhost:8069
+    database: odoo_db
+    username: admin
+    password: admin_password
+    api-key: ${ODOO_API_KEY:}
+
+logging:
+  level:
+    root: INFO
+    com.ecm: DEBUG
+    org.springframework.security: DEBUG
+    org.flowable: WARN
+    org.elasticsearch: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/ecm-core.log
+    max-size: 10MB
+    max-history: 30
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+
+server:
+  port: 8080
+  compression:
+    enabled: true
+    mime-types: text/html,text/xml,text/plain,text/css,text/javascript,application/javascript,application/json
+    min-response-size: 1024

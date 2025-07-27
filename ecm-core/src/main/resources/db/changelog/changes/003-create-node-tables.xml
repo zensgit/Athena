@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="003-1" author="ecm-system">
+        <comment>Create nodes table</comment>
+        <createTable tableName="nodes">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="node_type" type="VARCHAR(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="name" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="description" type="TEXT"/>
+            <column name="path" type="VARCHAR(1000)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="parent_id" type="${uuid_type}">
+                <constraints foreignKeyName="fk_node_parent" references="nodes(id)"/>
+            </column>
+            <column name="properties" type="JSONB"/>
+            <column name="metadata" type="JSONB"/>
+            <column name="is_locked" type="BOOLEAN" defaultValue="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="locked_by" type="VARCHAR(255)"/>
+            <column name="locked_date" type="TIMESTAMP"/>
+            <column name="inherit_permissions" type="BOOLEAN" defaultValue="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="status" type="VARCHAR(50)" defaultValue="ACTIVE">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_date" type="TIMESTAMP" defaultValueComputed="${now}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_date" type="TIMESTAMP"/>
+            <column name="created_by" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_by" type="VARCHAR(255)"/>
+            <column name="version" type="BIGINT" defaultValue="0"/>
+            <column name="is_deleted" type="BOOLEAN" defaultValue="false">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="003-2" author="ecm-system">
+        <comment>Create folders table</comment>
+        <createTable tableName="folders">
+            <column name="id" type="${uuid_type}">
+                <constraints primaryKey="true" nullable="false" foreignKeyName="fk_folder_node" references="nodes(id)"/>
+            </column>
+            <column name="folder_type" type="VARCHAR(50)" defaultValue="GENERAL"/>
+            <column name="max_items" type="INTEGER"/>
+            <column name="allowed_types" type="VARCHAR(500)"/>
+            <column name="auto_file_naming" type="BOOLEAN" defaultValue="false"/>
+            <column name="naming_pattern" type="VARCHAR(255)"/>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="003-3" author="ecm-system">
+        <comment>Create documents table</comment>
+        <createTable tableName="documents">
+            <column name="id" type="${uuid_type}">
+                <constraints primaryKey="true" nullable="false" foreignKeyName="fk_document_node" references="nodes(id)"/>
+            </column>
+            <column name="content_id" type="VARCHAR(255)"/>
+            <column name="mime_type" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="file_size" type="BIGINT"/>
+            <column name="file_extension" type="VARCHAR(50)"/>
+            <column name="encoding" type="VARCHAR(50)"/>
+            <column name="current_version_id" type="${uuid_type}"/>
+            <column name="version_label" type="VARCHAR(50)"/>
+            <column name="major_version" type="INTEGER" defaultValue="1"/>
+            <column name="minor_version" type="INTEGER" defaultValue="0"/>
+            <column name="is_versioned" type="BOOLEAN" defaultValue="true"/>
+            <column name="checkout_user" type="VARCHAR(255)"/>
+            <column name="checkout_date" type="TIMESTAMP"/>
+            <column name="content_hash" type="VARCHAR(128)"/>
+            <column name="thumbnail_id" type="VARCHAR(255)"/>
+            <column name="preview_available" type="BOOLEAN" defaultValue="false"/>
+            <column name="text_content" type="TEXT"/>
+            <column name="language" type="VARCHAR(10)"/>
+            <column name="page_count" type="INTEGER"/>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="003-4" author="ecm-system">
+        <comment>Create permissions table</comment>
+        <createTable tableName="permissions">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="node_id" type="${uuid_type}">
+                <constraints nullable="false" foreignKeyName="fk_permission_node" references="nodes(id)"/>
+            </column>
+            <column name="authority" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="authority_type" type="VARCHAR(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="permission" type="VARCHAR(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="is_allowed" type="BOOLEAN" defaultValue="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="is_inherited" type="BOOLEAN" defaultValue="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="expiry_date" type="TIMESTAMP"/>
+            <column name="notes" type="TEXT"/>
+            <column name="created_date" type="TIMESTAMP" defaultValueComputed="${now}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_date" type="TIMESTAMP"/>
+            <column name="created_by" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_by" type="VARCHAR(255)"/>
+            <column name="version" type="BIGINT" defaultValue="0"/>
+            <column name="is_deleted" type="BOOLEAN" defaultValue="false">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="003-5" author="ecm-system">
+        <comment>Create node tags join table</comment>
+        <createTable tableName="node_tags">
+            <column name="node_id" type="${uuid_type}">
+                <constraints nullable="false" foreignKeyName="fk_node_tag_node" references="nodes(id)"/>
+            </column>
+            <column name="tag_id" type="${uuid_type}">
+                <constraints nullable="false" foreignKeyName="fk_node_tag_tag" references="tags(id)"/>
+            </column>
+        </createTable>
+        <addPrimaryKey tableName="node_tags" columnNames="node_id,tag_id"/>
+    </changeSet>
+
+    <changeSet id="003-6" author="ecm-system">
+        <comment>Create node categories join table</comment>
+        <createTable tableName="node_categories">
+            <column name="node_id" type="${uuid_type}">
+                <constraints nullable="false" foreignKeyName="fk_node_category_node" references="nodes(id)"/>
+            </column>
+            <column name="category_id" type="${uuid_type}">
+                <constraints nullable="false" foreignKeyName="fk_node_category_category" references="categories(id)"/>
+            </column>
+        </createTable>
+        <addPrimaryKey tableName="node_categories" columnNames="node_id,category_id"/>
+    </changeSet>
+
+    <changeSet id="003-7" author="ecm-system">
+        <comment>Add foreign key for comments</comment>
+        <addForeignKeyConstraint baseTableName="comments"
+                                 baseColumnNames="node_id"
+                                 constraintName="fk_comment_node"
+                                 referencedTableName="nodes"
+                                 referencedColumnNames="id"/>
+    </changeSet>
+
+</databaseChangeLog>

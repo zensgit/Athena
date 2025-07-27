@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <property name="uuid_type" value="uuid" dbms="postgresql"/>
+    <property name="uuid_function" value="gen_random_uuid()" dbms="postgresql"/>
+    <property name="now" value="now()" dbms="postgresql"/>
+
+    <!-- Include all changelog files -->
+    <include file="db/changelog/changes/001-create-base-tables.xml"/>
+    <include file="db/changelog/changes/002-create-security-tables.xml"/>
+    <include file="db/changelog/changes/003-create-node-tables.xml"/>
+    <include file="db/changelog/changes/004-create-version-tables.xml"/>
+    <include file="db/changelog/changes/005-create-indexes.xml"/>
+    <include file="db/changelog/changes/006-create-functions.xml"/>
+    <include file="db/changelog/changes/007-insert-initial-data.xml"/>
+
+</databaseChangeLog>

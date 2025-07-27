@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="006-1" author="ecm-system">
+        <comment>Create function to update node paths recursively</comment>
+        <sql>
+            CREATE OR REPLACE FUNCTION update_node_paths() RETURNS TRIGGER AS $$
+            DECLARE
+                old_path_prefix VARCHAR(1000);
+                new_path_prefix VARCHAR(1000);
+            BEGIN
+                IF OLD.path != NEW.path THEN
+                    old_path_prefix := OLD.path || '/';
+                    new_path_prefix := NEW.path || '/';
+                    
+                    UPDATE nodes 
+                    SET path = new_path_prefix || substring(path from length(old_path_prefix) + 1)
+                    WHERE path LIKE old_path_prefix || '%';
+                END IF;
+                
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+        </sql>
+    </changeSet>
+
+    <changeSet id="006-2" author="ecm-system">
+        <comment>Create trigger for node path updates</comment>
+        <sql>
+            CREATE TRIGGER trigger_update_node_paths
+            AFTER UPDATE OF path ON nodes
+            FOR EACH ROW
+            WHEN (OLD.path IS DISTINCT FROM NEW.path)
+            EXECUTE FUNCTION update_node_paths();
+        </sql>
+    </changeSet>
+
+    <changeSet id="006-3" author="ecm-system">
+        <comment>Create function to calculate folder size</comment>
+        <sql>
+            CREATE OR REPLACE FUNCTION calculate_folder_size(folder_id UUID) RETURNS BIGINT AS $$
+            DECLARE
+                total_size BIGINT;
+            BEGIN
+                SELECT COALESCE(SUM(d.file_size), 0) INTO total_size
+                FROM documents d
+                JOIN nodes n ON d.id = n.id
+                WHERE n.path LIKE (SELECT path || '%' FROM nodes WHERE id = folder_id)
+                AND n.is_deleted = false;
+                
+                RETURN total_size;
+            END;
+            $$ LANGUAGE plpgsql;
+        </sql>
+    </changeSet>
+
+    <changeSet id="006-4" author="ecm-system">
+        <comment>Create function to check user permissions</comment>
+        <sql>
+            CREATE OR REPLACE FUNCTION has_permission(
+                p_user_id UUID,
+                p_node_id UUID,
+                p_permission VARCHAR(50)
+            ) RETURNS BOOLEAN AS $$
+            DECLARE
+                has_perm BOOLEAN := false;
+                node_record RECORD;
+                user_authorities TEXT[];
+            BEGIN
+                -- Get all authorities for the user (user id, groups, roles, everyone)
+                SELECT ARRAY_AGG(DISTINCT authority) INTO user_authorities
+                FROM (
+                    SELECT u.username AS authority FROM users u WHERE u.id = p_user_id
+                    UNION
+                    SELECT g.name FROM groups g 
+                    JOIN user_groups ug ON g.id = ug.group_id 
+                    WHERE ug.user_id = p_user_id
+                    UNION
+                    SELECT r.name FROM roles r 
+                    JOIN user_roles ur ON r.id = ur.role_id 
+                    WHERE ur.user_id = p_user_id
+                    UNION
+                    SELECT 'EVERYONE'
+                ) AS authorities;
+                
+                -- Check permissions on the node and its parents if inherit_permissions is true
+                WITH RECURSIVE node_hierarchy AS (
+                    SELECT id, parent_id, inherit_permissions, 0 AS level
+                    FROM nodes
+                    WHERE id = p_node_id
+                    
+                    UNION ALL
+                    
+                    SELECT n.id, n.parent_id, n.inherit_permissions, nh.level + 1
+                    FROM nodes n
+                    JOIN node_hierarchy nh ON n.id = nh.parent_id
+                    WHERE nh.inherit_permissions = true
+                )
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM permissions p
+                    JOIN node_hierarchy nh ON p.node_id = nh.id
+                    WHERE p.authority = ANY(user_authorities)
+                    AND p.permission = p_permission
+                    AND p.is_allowed = true
+                    AND (p.expiry_date IS NULL OR p.expiry_date > NOW())
+                    ORDER BY nh.level
+                    LIMIT 1
+                ) INTO has_perm;
+                
+                RETURN has_perm;
+            END;
+            $$ LANGUAGE plpgsql;
+        </sql>
+    </changeSet>
+
+    <changeSet id="006-5" author="ecm-system">
+        <comment>Create function to get node ancestors</comment>
+        <sql>
+            CREATE OR REPLACE FUNCTION get_node_ancestors(node_id UUID) 
+            RETURNS TABLE(ancestor_id UUID, ancestor_name VARCHAR, level INTEGER) AS $$
+            BEGIN
+                RETURN QUERY
+                WITH RECURSIVE ancestors AS (
+                    SELECT n.parent_id, p.name, 1 AS level
+                    FROM nodes n
+                    JOIN nodes p ON n.parent_id = p.id
+                    WHERE n.id = node_id
+                    
+                    UNION ALL
+                    
+                    SELECT n.parent_id, p.name, a.level + 1
+                    FROM nodes n
+                    JOIN ancestors a ON n.id = a.parent_id
+                    JOIN nodes p ON n.parent_id = p.id
+                    WHERE n.parent_id IS NOT NULL
+                )
+                SELECT parent_id, name, level FROM ancestors
+                ORDER BY level DESC;
+            END;
+            $$ LANGUAGE plpgsql;
+        </sql>
+    </changeSet>
+
+</databaseChangeLog>

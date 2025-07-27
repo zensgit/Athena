@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="004-1" author="ecm-system">
+        <comment>Create versions table</comment>
+        <createTable tableName="versions">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="document_id" type="${uuid_type}">
+                <constraints nullable="false" foreignKeyName="fk_version_document" references="documents(id)"/>
+            </column>
+            <column name="version_number" type="INTEGER">
+                <constraints nullable="false"/>
+            </column>
+            <column name="version_label" type="VARCHAR(50)"/>
+            <column name="major_version" type="INTEGER">
+                <constraints nullable="false"/>
+            </column>
+            <column name="minor_version" type="INTEGER">
+                <constraints nullable="false"/>
+            </column>
+            <column name="content_id" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="mime_type" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="file_size" type="BIGINT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="content_hash" type="VARCHAR(128)"/>
+            <column name="comment" type="TEXT"/>
+            <column name="changes" type="JSONB"/>
+            <column name="is_major_version" type="BOOLEAN" defaultValue="false"/>
+            <column name="frozen_date" type="TIMESTAMP"/>
+            <column name="frozen_by" type="VARCHAR(255)"/>
+            <column name="status" type="VARCHAR(50)" defaultValue="RELEASED"/>
+            <column name="created_date" type="TIMESTAMP" defaultValueComputed="${now}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_date" type="TIMESTAMP"/>
+            <column name="created_by" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_by" type="VARCHAR(255)"/>
+            <column name="version" type="BIGINT" defaultValue="0"/>
+            <column name="is_deleted" type="BOOLEAN" defaultValue="false">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="004-2" author="ecm-system">
+        <comment>Add unique constraint for document version number</comment>
+        <addUniqueConstraint tableName="versions" 
+                             columnNames="document_id,version_number" 
+                             constraintName="uk_version_document_number"/>
+    </changeSet>
+
+    <changeSet id="004-3" author="ecm-system">
+        <comment>Add foreign key for document current version</comment>
+        <addForeignKeyConstraint baseTableName="documents"
+                                 baseColumnNames="current_version_id"
+                                 constraintName="fk_document_current_version"
+                                 referencedTableName="versions"
+                                 referencedColumnNames="id"/>
+    </changeSet>
+
+</databaseChangeLog>

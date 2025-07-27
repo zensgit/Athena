@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="002-1" author="ecm-system">
+        <comment>Create users table</comment>
+        <createTable tableName="users">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="username" type="VARCHAR(100)">
+                <constraints nullable="false" unique="true"/>
+            </column>
+            <column name="email" type="VARCHAR(255)">
+                <constraints nullable="false" unique="true"/>
+            </column>
+            <column name="password" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="first_name" type="VARCHAR(100)"/>
+            <column name="last_name" type="VARCHAR(100)"/>
+            <column name="display_name" type="VARCHAR(255)"/>
+            <column name="avatar_url" type="VARCHAR(500)"/>
+            <column name="phone" type="VARCHAR(50)"/>
+            <column name="department" type="VARCHAR(100)"/>
+            <column name="job_title" type="VARCHAR(100)"/>
+            <column name="locale" type="VARCHAR(10)" defaultValue="en_US"/>
+            <column name="timezone" type="VARCHAR(50)" defaultValue="UTC"/>
+            <column name="preferences" type="JSONB"/>
+            <column name="is_enabled" type="BOOLEAN" defaultValue="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="is_locked" type="BOOLEAN" defaultValue="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="is_expired" type="BOOLEAN" defaultValue="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="password_expired" type="BOOLEAN" defaultValue="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_login_date" type="TIMESTAMP"/>
+            <column name="last_password_change_date" type="TIMESTAMP"/>
+            <column name="failed_login_attempts" type="INTEGER" defaultValue="0"/>
+            <column name="locked_date" type="TIMESTAMP"/>
+            <column name="unlock_date" type="TIMESTAMP"/>
+            <column name="quota_size_mb" type="BIGINT"/>
+            <column name="used_size_mb" type="BIGINT" defaultValue="0"/>
+            <column name="created_date" type="TIMESTAMP" defaultValueComputed="${now}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_date" type="TIMESTAMP"/>
+            <column name="created_by" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_by" type="VARCHAR(255)"/>
+            <column name="version" type="BIGINT" defaultValue="0"/>
+            <column name="is_deleted" type="BOOLEAN" defaultValue="false">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="002-2" author="ecm-system">
+        <comment>Create groups table</comment>
+        <createTable tableName="groups">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="name" type="VARCHAR(100)">
+                <constraints nullable="false" unique="true"/>
+            </column>
+            <column name="display_name" type="VARCHAR(255)"/>
+            <column name="description" type="TEXT"/>
+            <column name="email" type="VARCHAR(255)"/>
+            <column name="parent_group_id" type="${uuid_type}">
+                <constraints foreignKeyName="fk_group_parent" references="groups(id)"/>
+            </column>
+            <column name="is_enabled" type="BOOLEAN" defaultValue="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="group_type" type="VARCHAR(50)" defaultValue="CUSTOM"/>
+            <column name="created_date" type="TIMESTAMP" defaultValueComputed="${now}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_date" type="TIMESTAMP"/>
+            <column name="created_by" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_by" type="VARCHAR(255)"/>
+            <column name="version" type="BIGINT" defaultValue="0"/>
+            <column name="is_deleted" type="BOOLEAN" defaultValue="false">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="002-3" author="ecm-system">
+        <comment>Create roles table</comment>
+        <createTable tableName="roles">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="name" type="VARCHAR(100)">
+                <constraints nullable="false" unique="true"/>
+            </column>
+            <column name="display_name" type="VARCHAR(255)"/>
+            <column name="description" type="TEXT"/>
+            <column name="permissions" type="JSONB"/>
+            <column name="is_system" type="BOOLEAN" defaultValue="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="is_enabled" type="BOOLEAN" defaultValue="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_date" type="TIMESTAMP" defaultValueComputed="${now}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_date" type="TIMESTAMP"/>
+            <column name="created_by" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_by" type="VARCHAR(255)"/>
+            <column name="version" type="BIGINT" defaultValue="0"/>
+            <column name="is_deleted" type="BOOLEAN" defaultValue="false">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="002-4" author="ecm-system">
+        <comment>Create role privileges table</comment>
+        <createTable tableName="role_privileges">
+            <column name="role_id" type="${uuid_type}">
+                <constraints nullable="false" foreignKeyName="fk_role_privilege_role" references="roles(id)"/>
+            </column>
+            <column name="privilege" type="VARCHAR(100)">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addPrimaryKey tableName="role_privileges" columnNames="role_id,privilege"/>
+    </changeSet>
+
+    <changeSet id="002-5" author="ecm-system">
+        <comment>Create user groups join table</comment>
+        <createTable tableName="user_groups">
+            <column name="user_id" type="${uuid_type}">
+                <constraints nullable="false" foreignKeyName="fk_user_group_user" references="users(id)"/>
+            </column>
+            <column name="group_id" type="${uuid_type}">
+                <constraints nullable="false" foreignKeyName="fk_user_group_group" references="groups(id)"/>
+            </column>
+        </createTable>
+        <addPrimaryKey tableName="user_groups" columnNames="user_id,group_id"/>
+    </changeSet>
+
+    <changeSet id="002-6" author="ecm-system">
+        <comment>Create user roles join table</comment>
+        <createTable tableName="user_roles">
+            <column name="user_id" type="${uuid_type}">
+                <constraints nullable="false" foreignKeyName="fk_user_role_user" references="users(id)"/>
+            </column>
+            <column name="role_id" type="${uuid_type}">
+                <constraints nullable="false" foreignKeyName="fk_user_role_role" references="roles(id)"/>
+            </column>
+        </createTable>
+        <addPrimaryKey tableName="user_roles" columnNames="user_id,role_id"/>
+    </changeSet>
+
+    <changeSet id="002-7" author="ecm-system">
+        <comment>Create group roles join table</comment>
+        <createTable tableName="group_roles">
+            <column name="group_id" type="${uuid_type}">
+                <constraints nullable="false" foreignKeyName="fk_group_role_group" references="groups(id)"/>
+            </column>
+            <column name="role_id" type="${uuid_type}">
+                <constraints nullable="false" foreignKeyName="fk_group_role_role" references="roles(id)"/>
+            </column>
+        </createTable>
+        <addPrimaryKey tableName="group_roles" columnNames="group_id,role_id"/>
+    </changeSet>
+
+</databaseChangeLog>
