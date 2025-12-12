@@ -1,6 +1,10 @@
 package com.ecm.core.controller;
 
-import com.ecm.core.entity.*;
+import com.ecm.core.entity.Node;
+import com.ecm.core.entity.Permission;
+import com.ecm.core.entity.Permission.AuthorityType;
+import com.ecm.core.entity.Permission.PermissionType;
+import com.ecm.core.entity.User;
 import com.ecm.core.service.SecurityService;
 import com.ecm.core.service.NodeService;
 import io.swagger.v3.oas.annotations.Operation;

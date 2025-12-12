@@ -1,10 +1,11 @@
 package com.ecm.core.alfresco;
 
-import com.ecm.core.entity.AuthorityType;
 import com.ecm.core.entity.Node;
-import com.ecm.core.entity.PermissionType;
+import com.ecm.core.entity.Permission.AuthorityType;
+import com.ecm.core.entity.Permission.PermissionType;
 import com.ecm.core.service.NodeService;
 import com.ecm.core.service.SecurityService;
+import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

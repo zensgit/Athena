@@ -11,6 +11,10 @@ interface UIState {
   propertiesDialogOpen: boolean;
   permissionsDialogOpen: boolean;
   versionHistoryDialogOpen: boolean;
+  tagManagerOpen: boolean;
+  categoryManagerOpen: boolean;
+  shareLinkManagerOpen: boolean;
+  mlSuggestionsOpen: boolean;
   selectedNodeId: string | null;
 }
 
@@ -25,6 +29,10 @@ const initialState: UIState = {
   propertiesDialogOpen: false,
   permissionsDialogOpen: false,
   versionHistoryDialogOpen: false,
+  tagManagerOpen: false,
+  categoryManagerOpen: false,
+  shareLinkManagerOpen: false,
+  mlSuggestionsOpen: false,
   selectedNodeId: null,
 };
 
@@ -65,6 +73,18 @@ const uiSlice = createSlice({
     setVersionHistoryDialogOpen: (state, action: PayloadAction<boolean>) => {
       state.versionHistoryDialogOpen = action.payload;
     },
+    setTagManagerOpen: (state, action: PayloadAction<boolean>) => {
+      state.tagManagerOpen = action.payload;
+    },
+    setCategoryManagerOpen: (state, action: PayloadAction<boolean>) => {
+      state.categoryManagerOpen = action.payload;
+    },
+    setShareLinkManagerOpen: (state, action: PayloadAction<boolean>) => {
+      state.shareLinkManagerOpen = action.payload;
+    },
+    setMlSuggestionsOpen: (state, action: PayloadAction<boolean>) => {
+      state.mlSuggestionsOpen = action.payload;
+    },
     setSelectedNodeId: (state, action: PayloadAction<string | null>) => {
       state.selectedNodeId = action.payload;
     },
@@ -74,6 +94,10 @@ const uiSlice = createSlice({
       state.propertiesDialogOpen = false;
       state.permissionsDialogOpen = false;
       state.versionHistoryDialogOpen = false;
+      state.tagManagerOpen = false;
+      state.categoryManagerOpen = false;
+      state.shareLinkManagerOpen = false;
+      state.mlSuggestionsOpen = false;
     },
   },
 });
@@ -90,6 +114,10 @@ export const {
   setPropertiesDialogOpen,
   setPermissionsDialogOpen,
   setVersionHistoryDialogOpen,
+  setTagManagerOpen,
+  setCategoryManagerOpen,
+  setShareLinkManagerOpen,
+  setMlSuggestionsOpen,
   setSelectedNodeId,
   closeAllDialogs,
 } = uiSlice.actions;

@@ -3,7 +3,7 @@ package com.ecm.core.preview;
 import com.ecm.core.entity.Document;
 import com.ecm.core.service.ContentService;
 import com.ecm.core.service.SecurityService;
-import com.ecm.core.entity.PermissionType;
+import com.ecm.core.entity.Permission.PermissionType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.coobird.thumbnailator.Thumbnails;
@@ -52,7 +52,7 @@ public class PreviewService {
     @Value("${ecm.storage.temp-path}")
     private String tempPath;
     
-    @Cacheable(value = "previews", condition = "#root.target.cacheEnabled")
+    @Cacheable(value = "previews", condition = "#root.target.isCacheEnabled()")
     public PreviewResult generatePreview(Document document) throws IOException {
         // Check permissions
         if (!securityService.hasPermission(document, PermissionType.READ)) {
@@ -88,7 +88,7 @@ public class PreviewService {
         return result;
     }
     
-    @Cacheable(value = "thumbnails", condition = "#root.target.cacheEnabled")
+    @Cacheable(value = "thumbnails", condition = "#root.target.isCacheEnabled()")
     public byte[] generateThumbnail(Document document) throws IOException {
         // Check permissions
         if (!securityService.hasPermission(document, PermissionType.READ)) {
@@ -163,7 +163,8 @@ public class PreviewService {
         
         List<PreviewPage> pages = new ArrayList<>();
         
-        try (PDDocument pdf = PDDocument.load(content)) {
+        byte[] pdfBytes = content.readAllBytes();
+        try (PDDocument pdf = PDDocument.load(pdfBytes)) {
             PDFRenderer renderer = new PDFRenderer(pdf);
             int pageCount = Math.min(pdf.getNumberOfPages(), maxPages);
             
@@ -321,7 +322,8 @@ public class PreviewService {
     }
     
     private byte[] generatePdfThumbnail(InputStream content) throws IOException {
-        try (PDDocument pdf = PDDocument.load(content)) {
+        byte[] pdfBytes = content.readAllBytes();
+        try (PDDocument pdf = PDDocument.load(pdfBytes)) {
             PDFRenderer renderer = new PDFRenderer(pdf);
             BufferedImage image = renderer.renderImageWithDPI(0, 72);
             
@@ -396,5 +398,9 @@ public class PreviewService {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         ImageIO.write(image, format, baos);
         return baos.toByteArray();
+    }
+
+    public boolean isCacheEnabled() {
+        return cacheEnabled;
     }
 }

@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:flowable="http://flowable.org/bpmn"
+             typeLanguage="http://www.w3.org/2001/XMLSchema"
+             expressionLanguage="http://www.w3.org/1999/XPath"
+             targetNamespace="http://www.ecm.com/process">
+
+    <process id="documentApproval" name="Document Approval Workflow" isExecutable="true">
+        <documentation>Simple single-step document approval workflow</documentation>
+
+        <startEvent id="startEvent" name="Start">
+            <extensionElements>
+                <!-- Set status to PENDING_APPROVAL on start -->
+                <flowable:executionListener event="start" expression="${workflowService.updateDocumentStatus(documentId, 'PENDING_APPROVAL')}"/>
+            </extensionElements>
+        </startEvent>
+
+        <sequenceFlow sourceRef="startEvent" targetRef="approvalTask"/>
+
+        <userTask id="approvalTask" name="Approve Document" flowable:assignee="${approver}">
+            <documentation>Please review the document and approve or reject it.</documentation>
+        </userTask>
+
+        <sequenceFlow sourceRef="approvalTask" targetRef="decisionGateway"/>
+
+        <exclusiveGateway id="decisionGateway" name="Approved?"/>
+
+        <sequenceFlow sourceRef="decisionGateway" targetRef="approveTask">
+            <conditionExpression xsi:type="tFormalExpression"><![CDATA[${approved == true}]]></conditionExpression>
+        </sequenceFlow>
+
+        <sequenceFlow sourceRef="decisionGateway" targetRef="rejectTask">
+            <conditionExpression xsi:type="tFormalExpression"><![CDATA[${approved == false}]]></conditionExpression>
+        </sequenceFlow>
+
+        <serviceTask id="approveTask" name="Mark as Approved" flowable:expression="${workflowService.updateDocumentStatus(documentId, 'APPROVED')}"/>
+        
+        <sequenceFlow sourceRef="approveTask" targetRef="endEvent"/>
+
+        <serviceTask id="rejectTask" name="Mark as Rejected" flowable:expression="${workflowService.updateDocumentStatus(documentId, 'REJECTED')}"/>
+
+        <sequenceFlow sourceRef="rejectTask" targetRef="endEvent"/>
+
+        <endEvent id="endEvent" name="End"/>
+
+    </process>
+
+</definitions>

@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Athena ECM - Document Management</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f7fa;
+            color: #333;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            margin-bottom: 30px;
+            border-radius: 10px;
+        }
+        header h1 {
+            font-size: 1.8rem;
+            margin-bottom: 5px;
+        }
+        header p {
+            opacity: 0.9;
+            font-size: 0.9rem;
+        }
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .tab {
+            padding: 12px 24px;
+            background: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: all 0.3s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .tab:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+        .tab.active {
+            background: #667eea;
+            color: white;
+        }
+        .panel {
+            display: none;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .panel.active {
+            display: block;
+        }
+        h2 {
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        /* Upload Panel */
+        .upload-zone {
+            border: 3px dashed #ddd;
+            border-radius: 10px;
+            padding: 60px 20px;
+            text-align: center;
+            transition: all 0.3s;
+            cursor: pointer;
+            margin-bottom: 20px;
+        }
+        .upload-zone:hover, .upload-zone.dragover {
+            border-color: #667eea;
+            background: #f0f4ff;
+        }
+        .upload-zone svg {
+            width: 60px;
+            height: 60px;
+            margin-bottom: 15px;
+            color: #667eea;
+        }
+        .upload-zone p {
+            color: #666;
+            margin-bottom: 10px;
+        }
+        .upload-zone .hint {
+            font-size: 0.85rem;
+            color: #999;
+        }
+        #fileInput {
+            display: none;
+        }
+        .file-list {
+            margin-top: 20px;
+        }
+        .file-item {
+            display: flex;
+            align-items: center;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+        .file-item .name {
+            flex: 1;
+            font-weight: 500;
+        }
+        .file-item .size {
+            color: #666;
+            margin-right: 15px;
+        }
+        .file-item .status {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+        }
+        .status.pending { background: #ffeaa7; color: #d68910; }
+        .status.uploading { background: #81ecec; color: #00796b; }
+        .status.success { background: #a5d6a7; color: #2e7d32; }
+        .status.error { background: #ef9a9a; color: #c62828; }
+        .upload-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 14px 40px;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.3s;
+            margin-top: 20px;
+        }
+        .upload-btn:hover {
+            background: #5a67d8;
+        }
+        .upload-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        /* Search Panel */
+        .search-box {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+        }
+        .search-box input {
+            flex: 1;
+            padding: 14px 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border-color 0.3s;
+        }
+        .search-box input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .search-box button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 14px 30px;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        .search-box button:hover {
+            background: #5a67d8;
+        }
+        .search-results {
+            margin-top: 20px;
+        }
+        .result-item {
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            border-left: 4px solid #667eea;
+        }
+        .result-item h3 {
+            color: #333;
+            margin-bottom: 8px;
+        }
+        .result-item .meta {
+            font-size: 0.85rem;
+            color: #666;
+            margin-bottom: 10px;
+        }
+        .result-item .highlight {
+            background: #fff3cd;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+        .result-item em {
+            background: #fff3cd;
+            font-style: normal;
+            padding: 1px 3px;
+        }
+        .result-item .score {
+            float: right;
+            background: #667eea;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+        }
+        .no-results {
+            text-align: center;
+            color: #666;
+            padding: 40px;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        .loading::after {
+            content: '';
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #667eea;
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 1s linear infinite;
+            margin-left: 10px;
+            vertical-align: middle;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Stats Panel */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        .stat-card .value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .stat-card .label {
+            opacity: 0.9;
+            font-size: 0.9rem;
+        }
+        .rebuild-btn {
+            background: #e74c3c;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        .rebuild-btn:hover {
+            background: #c0392b;
+        }
+        .rebuild-btn:disabled {
+            background: #ccc;
+        }
+        .message {
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+        }
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .message.info {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Athena ECM</h1>
+            <p>Enterprise Content Management System</p>
+        </header>
+
+        <div class="tabs">
+            <button class="tab active" data-panel="upload">Upload Documents</button>
+            <button class="tab" data-panel="search">Search</button>
+            <button class="tab" data-panel="stats">Index Stats</button>
+        </div>
+
+        <!-- Upload Panel -->
+        <div id="upload" class="panel active">
+            <h2>Upload Documents</h2>
+            <div class="upload-zone" id="uploadZone">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                <p>Drag & drop files here or click to browse</p>
+                <p class="hint">Supports PDF, Word, Excel, PowerPoint, and text files (max 500MB)</p>
+            </div>
+            <input type="file" id="fileInput" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md,.html,.xml,.json">
+
+            <div class="file-list" id="fileList"></div>
+
+            <button class="upload-btn" id="uploadBtn" disabled>Upload Files</button>
+
+            <div id="uploadMessage"></div>
+        </div>
+
+        <!-- Search Panel -->
+        <div id="search" class="panel">
+            <h2>Search Documents</h2>
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="Enter keywords to search...">
+                <button id="searchBtn">Search</button>
+            </div>
+            <div class="search-results" id="searchResults"></div>
+        </div>
+
+        <!-- Stats Panel -->
+        <div id="stats" class="panel">
+            <h2>Index Statistics</h2>
+            <div class="stats-grid" id="statsGrid">
+                <div class="stat-card">
+                    <div class="value" id="docCount">-</div>
+                    <div class="label">Documents Indexed</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value" id="indexName">-</div>
+                    <div class="label">Index Name</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value" id="searchEnabled">-</div>
+                    <div class="label">Search Status</div>
+                </div>
+            </div>
+            <button class="rebuild-btn" id="rebuildBtn">Rebuild Index</button>
+            <div id="rebuildMessage"></div>
+        </div>
+    </div>
+
+    <script>
+        // API Base URL
+        const API_BASE = '/api/v1';
+
+        // State
+        let selectedFiles = [];
+
+        // Tab switching
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+                tab.classList.add('active');
+                document.getElementById(tab.dataset.panel).classList.add('active');
+
+                if (tab.dataset.panel === 'stats') {
+                    loadStats();
+                }
+            });
+        });
+
+        // Upload Zone
+        const uploadZone = document.getElementById('uploadZone');
+        const fileInput = document.getElementById('fileInput');
+        const fileList = document.getElementById('fileList');
+        const uploadBtn = document.getElementById('uploadBtn');
+
+        uploadZone.addEventListener('click', () => fileInput.click());
+
+        uploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadZone.classList.add('dragover');
+        });
+
+        uploadZone.addEventListener('dragleave', () => {
+            uploadZone.classList.remove('dragover');
+        });
+
+        uploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('dragover');
+            handleFiles(e.dataTransfer.files);
+        });
+
+        fileInput.addEventListener('change', () => {
+            handleFiles(fileInput.files);
+        });
+
+        function handleFiles(files) {
+            selectedFiles = Array.from(files);
+            renderFileList();
+            uploadBtn.disabled = selectedFiles.length === 0;
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+            return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+        }
+
+        function renderFileList() {
+            fileList.innerHTML = selectedFiles.map((file, index) => `
+                <div class="file-item" id="file-${index}">
+                    <span class="name">${file.name}</span>
+                    <span class="size">${formatFileSize(file.size)}</span>
+                    <span class="status pending">Pending</span>
+                </div>
+            `).join('');
+        }
+
+        uploadBtn.addEventListener('click', async () => {
+            if (selectedFiles.length === 0) return;
+
+            uploadBtn.disabled = true;
+            const messageDiv = document.getElementById('uploadMessage');
+
+            for (let i = 0; i < selectedFiles.length; i++) {
+                const file = selectedFiles[i];
+                const fileItem = document.getElementById(`file-${i}`);
+                const statusSpan = fileItem.querySelector('.status');
+
+                statusSpan.className = 'status uploading';
+                statusSpan.textContent = 'Uploading...';
+
+                try {
+                    const formData = new FormData();
+                    formData.append('file', file);
+
+                    const response = await fetch(`${API_BASE}/documents/upload`, {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (response.ok) {
+                        statusSpan.className = 'status success';
+                        statusSpan.textContent = 'Success';
+                    } else {
+                        const error = await response.json();
+                        statusSpan.className = 'status error';
+                        statusSpan.textContent = 'Failed';
+                    }
+                } catch (error) {
+                    statusSpan.className = 'status error';
+                    statusSpan.textContent = 'Error';
+                }
+            }
+
+            messageDiv.innerHTML = '<div class="message success">Upload completed!</div>';
+            uploadBtn.disabled = false;
+        });
+
+        // Search
+        const searchInput = document.getElementById('searchInput');
+        const searchBtn = document.getElementById('searchBtn');
+        const searchResults = document.getElementById('searchResults');
+
+        searchBtn.addEventListener('click', performSearch);
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') performSearch();
+        });
+
+        async function performSearch() {
+            const query = searchInput.value.trim();
+            if (!query) return;
+
+            searchResults.innerHTML = '<div class="loading">Searching</div>';
+
+            try {
+                const response = await fetch(`${API_BASE}/search?q=${encodeURIComponent(query)}&page=0&size=20`);
+                const data = await response.json();
+
+                if (data.content && data.content.length > 0) {
+                    searchResults.innerHTML = data.content.map(item => `
+                        <div class="result-item">
+                            <span class="score">Score: ${item.score.toFixed(2)}</span>
+                            <h3>${escapeHtml(item.name)}</h3>
+                            <div class="meta">
+                                ${item.mimeType || 'Unknown type'} |
+                                ${item.fileSizeFormatted || 'Unknown size'} |
+                                Created: ${item.createdDate ? new Date(item.createdDate).toLocaleDateString() : 'N/A'}
+                            </div>
+                            ${item.description ? `<p>${escapeHtml(item.description)}</p>` : ''}
+                            ${renderHighlights(item.highlights)}
+                        </div>
+                    `).join('');
+                } else {
+                    searchResults.innerHTML = '<div class="no-results">No documents found matching your query.</div>';
+                }
+            } catch (error) {
+                searchResults.innerHTML = `<div class="message error">Search failed: ${error.message}</div>`;
+            }
+        }
+
+        function renderHighlights(highlights) {
+            if (!highlights) return '';
+            let html = '<div class="highlights">';
+            for (const [field, fragments] of Object.entries(highlights)) {
+                if (fragments && fragments.length > 0) {
+                    html += `<p><strong>${field}:</strong> ...${fragments.join('...')}...</p>`;
+                }
+            }
+            html += '</div>';
+            return html;
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Stats
+        async function loadStats() {
+            try {
+                const response = await fetch(`${API_BASE}/search/index/stats`);
+                const stats = await response.json();
+
+                document.getElementById('docCount').textContent = stats.documentCount || '0';
+                document.getElementById('indexName').textContent = stats.indexName || 'N/A';
+                document.getElementById('searchEnabled').textContent = stats.searchEnabled ? 'Active' : 'Disabled';
+            } catch (error) {
+                document.getElementById('docCount').textContent = 'Error';
+            }
+        }
+
+        // Rebuild Index
+        document.getElementById('rebuildBtn').addEventListener('click', async () => {
+            const rebuildBtn = document.getElementById('rebuildBtn');
+            const messageDiv = document.getElementById('rebuildMessage');
+
+            if (!confirm('Are you sure you want to rebuild the search index? This may take a while.')) {
+                return;
+            }
+
+            rebuildBtn.disabled = true;
+            rebuildBtn.textContent = 'Rebuilding...';
+            messageDiv.innerHTML = '<div class="message info">Rebuilding index from PostgreSQL...</div>';
+
+            try {
+                const response = await fetch(`${API_BASE}/search/index/rebuild`, {
+                    method: 'POST'
+                });
+                const result = await response.json();
+
+                if (result.status === 'completed') {
+                    messageDiv.innerHTML = `<div class="message success">Index rebuilt successfully! ${result.documentsIndexed} documents indexed.</div>`;
+                    loadStats();
+                } else if (result.status === 'in_progress') {
+                    messageDiv.innerHTML = '<div class="message info">Index rebuild is already in progress.</div>';
+                } else {
+                    messageDiv.innerHTML = `<div class="message error">Rebuild failed: ${result.message}</div>`;
+                }
+            } catch (error) {
+                messageDiv.innerHTML = `<div class="message error">Rebuild failed: ${error.message}</div>`;
+            } finally {
+                rebuildBtn.disabled = false;
+                rebuildBtn.textContent = 'Rebuild Index';
+            }
+        });
+
+        // Load initial stats
+        loadStats();
+    </script>
+</body>
+</html>

@@ -29,14 +29,11 @@ import {
   Add,
   Edit,
   Delete,
-  Merge,
-  ColorLens,
   Search,
   Tag as TagIcon,
 } from '@mui/icons-material';
 import { HexColorPicker } from 'react-colorful';
-import { useAppDispatch, useAppSelector } from '@/store';
-import tagService from '@/services/tagService';
+import tagService from 'services/tagService';
 import { toast } from 'react-toastify';
 
 interface Tag {

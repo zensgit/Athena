@@ -1,6 +1,7 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { useAppSelector } from '@/store';
+import { useAppSelector } from 'store';
+import { keycloak } from 'services/authService';
 
 interface PrivateRouteProps {
   children: React.ReactNode;
@@ -11,7 +12,8 @@ const PrivateRoute: React.FC<PrivateRouteProps> = ({ children, requiredRoles }) 
   const location = useLocation();
   const { isAuthenticated, user } = useAppSelector((state) => state.auth);
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated && !keycloak.authenticated) {
+    keycloak.login({ redirectUri: window.location.href });
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 

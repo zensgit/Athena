@@ -1,6 +1,9 @@
 package com.ecm.core.service;
 
 import com.ecm.core.entity.*;
+import com.ecm.core.entity.Permission.PermissionType;
+import com.ecm.core.entity.Version.VersionStatus;
+import com.ecm.core.event.*;
 import com.ecm.core.repository.DocumentRepository;
 import com.ecm.core.repository.VersionRepository;
 import lombok.RequiredArgsConstructor;
@@ -98,7 +101,7 @@ public class VersionService {
         
         documentRepository.save(document);
         
-        eventPublisher.publishEvent(new VersionCreatedEvent(savedVersion));
+        eventPublisher.publishEvent(new VersionCreatedEvent(savedVersion, securityService.getCurrentUser()));
         
         return savedVersion;
     }
@@ -167,7 +170,8 @@ public class VersionService {
             createVersion(documentId, content, document.getName(), comment, false);
         }
         
-        eventPublisher.publishEvent(new VersionRevertedEvent(document, targetVersion));
+        eventPublisher.publishEvent(new VersionRevertedEvent(
+            document, targetVersion, securityService.getCurrentUser()));
     }
     
     public void deleteVersion(UUID versionId) {
@@ -186,10 +190,7 @@ public class VersionService {
             throw new IllegalStateException("Cannot delete current version");
         }
         
-        // Cannot delete if it's the only version
-        long versionCount = versionRepository.count((root, query, cb) -> 
-            cb.equal(root.get("document").get("id"), document.getId()));
-        
+        long versionCount = versionRepository.countByDocumentId(document.getId());
         if (versionCount <= 1) {
             throw new IllegalStateException("Cannot delete the only version");
         }
@@ -203,7 +204,7 @@ public class VersionService {
             log.warn("Failed to delete content for version: {}", versionId, e);
         }
         
-        eventPublisher.publishEvent(new VersionDeletedEvent(version));
+        eventPublisher.publishEvent(new VersionDeletedEvent(version, securityService.getCurrentUser()));
     }
     
     public void freezeVersion(UUID versionId) {
@@ -271,7 +272,7 @@ public class VersionService {
         
         documentRepository.save(document);
         
-        eventPublisher.publishEvent(new VersionPromotedEvent(version));
+        eventPublisher.publishEvent(new VersionPromotedEvent(version, securityService.getCurrentUser()));
     }
     
     private Map<String, Object> compareVersions(Version v1, Version v2) {

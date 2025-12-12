@@ -8,9 +8,9 @@ import {
   TextField,
 } from '@mui/material';
 import { useForm } from 'react-hook-form';
-import { useAppDispatch, useAppSelector } from '@/store';
-import { setCreateFolderDialogOpen } from '@/store/slices/uiSlice';
-import { createFolder } from '@/store/slices/nodeSlice';
+import { useAppDispatch, useAppSelector } from 'store';
+import { setCreateFolderDialogOpen } from 'store/slices/uiSlice';
+import { createFolder } from 'store/slices/nodeSlice';
 import { toast } from 'react-toastify';
 
 interface CreateFolderFormData {

@@ -5,6 +5,8 @@ export interface User {
   roles: string[];
   firstName?: string;
   lastName?: string;
+  enabled?: boolean;
+  locked?: boolean;
 }
 
 export interface Node {
@@ -22,6 +24,12 @@ export interface Node {
   contentType?: string;
   size?: number;
   currentVersionLabel?: string;
+  description?: string;
+  highlights?: Record<string, string[]>;
+  tags?: string[];
+  categories?: string[];
+  score?: number;
+  inheritPermissions?: boolean;
 }
 
 export interface Version {
@@ -36,29 +44,45 @@ export interface Version {
 }
 
 export interface Permission {
-  principal: string;
+  authority: string;
+  authorityType: 'USER' | 'GROUP' | 'ROLE' | 'EVERYONE';
   permission: PermissionType;
   allowed: boolean;
+  inherited?: boolean;
+  expiryDate?: string;
+  notes?: string;
 }
 
 export type PermissionType = 
   | 'READ'
   | 'WRITE'
   | 'DELETE'
-  | 'ADD_CHILDREN'
-  | 'READ_PERMISSIONS'
-  | 'WRITE_PERMISSIONS'
-  | 'EXECUTE';
+  | 'CREATE_CHILDREN'
+  | 'DELETE_CHILDREN'
+  | 'EXECUTE'
+  | 'CHANGE_PERMISSIONS'
+  | 'TAKE_OWNERSHIP'
+  | 'CHECKOUT'
+  | 'CHECKIN'
+  | 'CANCEL_CHECKOUT'
+  | 'APPROVE'
+  | 'REJECT';
 
 export interface SearchCriteria {
   name?: string;
   properties?: Record<string, any>;
   aspects?: string[];
   contentType?: string;
+  createdBy?: string;
   createdFrom?: string;
   createdTo?: string;
   modifiedFrom?: string;
   modifiedTo?: string;
+  tags?: string[];
+  categories?: string[];
+  minSize?: number;
+  maxSize?: number;
+  path?: string;
 }
 
 export interface AuthState {

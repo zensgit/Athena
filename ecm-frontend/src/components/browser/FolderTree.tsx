@@ -1,11 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { TreeView, TreeItem } from '@mui/x-tree-view';
 import { ExpandMore, ChevronRight, Folder, FolderOpen } from '@mui/icons-material';
 import { Box, Typography, CircularProgress } from '@mui/material';
-import { Node } from '@/types';
-import nodeService from '@/services/nodeService';
-import { useAppDispatch } from '@/store';
-import { setCurrentNode, fetchChildren } from '@/store/slices/nodeSlice';
+import { Node } from 'types';
+import nodeService from 'services/nodeService';
+import { useAppDispatch } from 'store';
+import { setCurrentNode, fetchChildren } from 'store/slices/nodeSlice';
 
 interface FolderTreeProps {
   rootNodeId: string;
@@ -24,11 +24,7 @@ const FolderTree: React.FC<FolderTreeProps> = ({ rootNodeId, selectedNodeId, onN
   const [expanded, setExpanded] = useState<string[]>([rootNodeId]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadRootNode();
-  }, [rootNodeId]);
-
-  const loadRootNode = async () => {
+  const loadRootNode = useCallback(async () => {
     try {
       setLoading(true);
       const rootNode = await nodeService.getNode(rootNodeId);
@@ -47,7 +43,11 @@ const FolderTree: React.FC<FolderTreeProps> = ({ rootNodeId, selectedNodeId, onN
     } finally {
       setLoading(false);
     }
-  };
+  }, [rootNodeId]);
+
+  useEffect(() => {
+    loadRootNode();
+  }, [loadRootNode]);
 
   const loadNodeChildren = async (nodeId: string) => {
     try {

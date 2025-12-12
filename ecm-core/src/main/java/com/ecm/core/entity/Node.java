@@ -7,6 +7,11 @@ import lombok.EqualsAndHashCode;
 import lombok.ToString;
 import org.hibernate.annotations.Type;
 
+import com.ecm.core.model.Category;
+import com.ecm.core.model.Comment;
+import com.ecm.core.model.Tag;
+
+import java.time.LocalDateTime;
 import java.util.*;
 
 @Data
@@ -66,8 +71,12 @@ public abstract class Node extends BaseEntity {
     )
     private Set<Category> categories = new HashSet<>();
     
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "correspondent_id")
+    private Correspondent correspondent;
+
     @OneToMany(mappedBy = "node", cascade = CascadeType.ALL, orphanRemoval = true)
-    @OrderBy("createdDate DESC")
+    @OrderBy("created DESC")
     private List<Comment> comments = new ArrayList<>();
     
     @Column(name = "is_locked", nullable = false)
@@ -130,21 +139,39 @@ public abstract class Node extends BaseEntity {
         }
         return "/" + name;
     }
-    
+
+    /**
+     * Check if this node is a folder
+     */
+    public boolean isFolder() {
+        return getNodeType() == NodeType.FOLDER;
+    }
+
+    /**
+     * Get file size (for documents) or null (for folders)
+     */
+    public Long getSize() {
+        return null; // Override in Document subclass
+    }
+
     @PrePersist
     @PreUpdate
     protected void updatePath() {
         this.path = getFullPath();
     }
-}
 
-enum NodeType {
-    FOLDER,
-    DOCUMENT
-}
+    public enum NodeType {
+        FOLDER,
+        DOCUMENT
+    }
 
-enum NodeStatus {
-    ACTIVE,
-    ARCHIVED,
-    DELETED
+    public enum NodeStatus {
+        ACTIVE,
+        ARCHIVED,
+        DELETED,
+        DRAFT,
+        PENDING_APPROVAL,
+        APPROVED,
+        REJECTED
+    }
 }

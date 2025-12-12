@@ -2,6 +2,8 @@ package com.ecm.core.search;
 
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Node;
+import com.ecm.core.repository.DocumentRepository;
+import com.ecm.core.repository.NodeRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
@@ -12,6 +14,7 @@ import org.springframework.data.elasticsearch.core.query.Criteria;
 import org.springframework.data.elasticsearch.core.query.CriteriaQuery;
 import org.springframework.data.elasticsearch.core.query.Query;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.UUID;
@@ -22,24 +25,66 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class SearchIndexService {
     
+    private final DocumentRepository documentRepository;
+    private final NodeRepository nodeRepository;
     private final ElasticsearchOperations elasticsearchOperations;
     private static final String INDEX_NAME = "ecm_documents";
+
+    /**
+     * Re-index a single document by id.
+     */
+    public void indexDocument(String documentId) {
+        try {
+            UUID id = UUID.fromString(documentId);
+            Document document = documentRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Document not found: " + documentId));
+            updateDocument(document);
+        } catch (IllegalArgumentException ex) {
+            log.error("Failed to index document {}: {}", documentId, ex.getMessage());
+            throw ex;
+        }
+    }
+
+    /**
+     * Delete a document from the index by id.
+     */
+    public void deleteDocument(String documentId) {
+        try {
+            UUID id = UUID.fromString(documentId);
+            deleteNode(id);
+        } catch (IllegalArgumentException ex) {
+            log.error("Failed to delete document {} from index: {}", documentId, ex.getMessage());
+            throw ex;
+        }
+    }
     
+    @Transactional(readOnly = true)
     public void indexNode(Node node) {
         try {
-            NodeDocument nodeDoc = NodeDocument.fromNode(node);
+            Node hydrated = fetchNode(node.getId());
+            if (hydrated == null) {
+                log.warn("Skipping index; node not found: {}", node.getId());
+                return;
+            }
+            NodeDocument nodeDoc = NodeDocument.fromNode(hydrated);
             elasticsearchOperations.save(nodeDoc, IndexCoordinates.of(INDEX_NAME));
-            log.debug("Indexed node: {}", node.getId());
+            log.debug("Indexed node: {}", hydrated.getId());
         } catch (Exception e) {
             log.error("Failed to index node: {}", node.getId(), e);
         }
     }
     
+    @Transactional(readOnly = true)
     public void updateNode(Node node) {
         try {
-            NodeDocument nodeDoc = NodeDocument.fromNode(node);
+            Node hydrated = fetchNode(node.getId());
+            if (hydrated == null) {
+                log.warn("Skipping index update; node not found: {}", node.getId());
+                return;
+            }
+            NodeDocument nodeDoc = NodeDocument.fromNode(hydrated);
             elasticsearchOperations.save(nodeDoc, IndexCoordinates.of(INDEX_NAME));
-            log.debug("Updated node in index: {}", node.getId());
+            log.debug("Updated node in index: {}", hydrated.getId());
         } catch (Exception e) {
             log.error("Failed to update node in index: {}", node.getId(), e);
         }
@@ -54,17 +99,22 @@ public class SearchIndexService {
         }
     }
     
+    @Transactional(readOnly = true)
     public void updateDocument(Document document) {
         try {
-            NodeDocument nodeDoc = NodeDocument.fromNode(document);
-            // Add document-specific fields
-            nodeDoc.setMimeType(document.getMimeType());
-            nodeDoc.setFileSize(document.getFileSize());
-            nodeDoc.setTextContent(document.getTextContent());
-            nodeDoc.setVersionLabel(document.getVersionLabel());
+            Document hydrated = fetchDocument(document.getId());
+            if (hydrated == null) {
+                log.warn("Skipping document index update; document not found: {}", document.getId());
+                return;
+            }
+            NodeDocument nodeDoc = NodeDocument.fromNode(hydrated);
+            nodeDoc.setMimeType(hydrated.getMimeType());
+            nodeDoc.setFileSize(hydrated.getFileSize());
+            nodeDoc.setTextContent(hydrated.getTextContent());
+            nodeDoc.setVersionLabel(hydrated.getVersionLabel());
             
             elasticsearchOperations.save(nodeDoc, IndexCoordinates.of(INDEX_NAME));
-            log.debug("Updated document in index: {}", document.getId());
+            log.debug("Updated document in index: {}", hydrated.getId());
         } catch (Exception e) {
             log.error("Failed to update document in index: {}", document.getId(), e);
         }
@@ -114,9 +164,11 @@ public class SearchIndexService {
         // Add text search
         if (queryText != null && !queryText.isEmpty()) {
             query.addCriteria(
-                new Criteria("name").contains(queryText)
-                    .or("description").contains(queryText)
-                    .or("textContent").contains(queryText)
+                new Criteria("name").matches(queryText)
+                    .or("description").matches(queryText)
+                    .or("textContent").matches(queryText)
+                    .or("extractedText").matches(queryText)
+                    .or("metadata.extractedText").matches(queryText)
             );
         }
         
@@ -141,6 +193,14 @@ public class SearchIndexService {
             if (request.getFilters().getDateTo() != null) {
                 query.addCriteria(new Criteria("createdDate").lessThanEqual(request.getFilters().getDateTo()));
             }
+
+            if (request.getFilters().getModifiedFrom() != null) {
+                query.addCriteria(new Criteria("lastModifiedDate").greaterThanEqual(request.getFilters().getModifiedFrom()));
+            }
+
+            if (request.getFilters().getModifiedTo() != null) {
+                query.addCriteria(new Criteria("lastModifiedDate").lessThanEqual(request.getFilters().getModifiedTo()));
+            }
             
             if (request.getFilters().getMinSize() != null) {
                 query.addCriteria(new Criteria("fileSize").greaterThanEqual(request.getFilters().getMinSize()));
@@ -156,9 +216,17 @@ public class SearchIndexService {
         
         // Add pagination
         if (request.getPageable() != null) {
-            query.setPageable(request.getPageable());
+            query.setPageable(request.getPageable().toPageable());
         }
         
         return query;
+    }
+
+    private Node fetchNode(UUID id) {
+        return nodeRepository.findById(id).orElse(null);
+    }
+
+    private Document fetchDocument(UUID id) {
+        return documentRepository.findById(id).orElse(null);
     }
 }

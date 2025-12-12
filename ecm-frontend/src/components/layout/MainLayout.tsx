@@ -22,19 +22,28 @@ import {
   AccountCircle,
   Logout,
   Settings,
+  RestoreFromTrash,
+  Rule as RuleIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
-import { useAppDispatch, useAppSelector } from '@/store';
-import { logout } from '@/store/slices/authSlice';
+import { useAppDispatch, useAppSelector } from 'store';
+import { logout } from 'store/slices/authSlice';
 import {
   setUploadDialogOpen,
   setCreateFolderDialogOpen,
   setSearchOpen,
+  setTagManagerOpen,
+  setCategoryManagerOpen,
+  setShareLinkManagerOpen,
   toggleSidebar,
-} from '@/store/slices/uiSlice';
-import FolderTree from '@/components/browser/FolderTree';
-import UploadDialog from '@/components/dialogs/UploadDialog';
-import CreateFolderDialog from '@/components/dialogs/CreateFolderDialog';
+} from 'store/slices/uiSlice';
+import FolderTree from 'components/browser/FolderTree';
+import UploadDialog from 'components/dialogs/UploadDialog';
+import CreateFolderDialog from 'components/dialogs/CreateFolderDialog';
+import TagManager from 'components/tags/TagManager';
+import CategoryManager from 'components/categories/CategoryManager';
+import ShareLinkManager from 'components/share/ShareLinkManager';
+import MLSuggestionsDialog from 'components/ml/MLSuggestionsDialog';
 
 const DRAWER_WIDTH = 280;
 
@@ -46,7 +55,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
   const { user } = useAppSelector((state) => state.auth);
-  const { sidebarOpen } = useAppSelector((state) => state.ui);
+  const { sidebarOpen, tagManagerOpen, categoryManagerOpen, shareLinkManagerOpen, selectedNodeId } = useAppSelector((state) => state.ui);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
   const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
@@ -156,6 +165,14 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
               />
             </MenuItem>
             <Divider />
+            {(user?.roles?.includes('ROLE_ADMIN') || user?.roles?.includes('ROLE_EDITOR')) && (
+              <MenuItem onClick={() => navigate('/rules')}>
+                <ListItemIcon>
+                  <RuleIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>Rules</ListItemText>
+              </MenuItem>
+            )}
             {user?.roles?.includes('ROLE_ADMIN') && (
               <MenuItem onClick={() => navigate('/admin')}>
                 <ListItemIcon>
@@ -164,6 +181,12 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                 <ListItemText>Admin Dashboard</ListItemText>
               </MenuItem>
             )}
+            <MenuItem onClick={() => navigate('/trash')}>
+              <ListItemIcon>
+                <RestoreFromTrash fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Trash</ListItemText>
+            </MenuItem>
             <MenuItem onClick={() => navigate('/settings')}>
               <ListItemIcon>
                 <Settings fontSize="small" />
@@ -225,6 +248,22 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
 
       <UploadDialog />
       <CreateFolderDialog />
+      <TagManager
+        open={tagManagerOpen}
+        selectedNodeId={selectedNodeId || undefined}
+        onClose={() => dispatch(setTagManagerOpen(false))}
+      />
+      <CategoryManager
+        open={categoryManagerOpen}
+        selectedNodeId={selectedNodeId || undefined}
+        onClose={() => dispatch(setCategoryManagerOpen(false))}
+      />
+      <ShareLinkManager
+        open={shareLinkManagerOpen}
+        selectedNodeId={selectedNodeId || undefined}
+        onClose={() => dispatch(setShareLinkManagerOpen(false))}
+      />
+      <MLSuggestionsDialog />
     </Box>
   );
 };

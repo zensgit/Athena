@@ -1,0 +1,280 @@
+{
+  "realm": "ecm",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "accessTokenLifespan": 300,
+  "accessTokenLifespanForImplicitFlow": 900,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "roles": {
+    "realm": [
+      {
+        "name": "admin",
+        "description": "Administrator role with full access"
+      },
+      {
+        "name": "user",
+        "description": "Regular user role"
+      },
+      {
+        "name": "viewer",
+        "description": "Read-only access"
+      }
+    ],
+    "client": {
+      "ecm-api": [
+        {
+          "name": "ecm-admin",
+          "description": "ECM Administrator"
+        },
+        {
+          "name": "ecm-user",
+          "description": "ECM User"
+        },
+        {
+          "name": "ecm-viewer",
+          "description": "ECM Viewer"
+        }
+      ],
+      "plm-api": [
+        {
+          "name": "plm-admin",
+          "description": "PLM Administrator"
+        },
+        {
+          "name": "plm-user",
+          "description": "PLM User"
+        }
+      ],
+      "dedupcad-api": [
+        {
+          "name": "dedupcad-admin",
+          "description": "DedupCAD Administrator"
+        },
+        {
+          "name": "dedupcad-user",
+          "description": "DedupCAD User"
+        }
+      ]
+    }
+  },
+  "clients": [
+    {
+      "clientId": "ecm-api",
+      "name": "Athena ECM API",
+      "description": "Athena Enterprise Content Management API",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "ecmapi-2025-SECURE-9b3c2f4d8a",
+      "redirectUris": [
+        "http://localhost:8081/*",
+        "http://localhost:8080/*",
+        "http://localhost:3000/*"
+      ],
+      "webOrigins": [
+        "http://localhost:8081",
+        "http://localhost:8080",
+        "http://localhost:3000"
+      ],
+      "bearerOnly": false,
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "authorizationServicesEnabled": false,
+      "fullScopeAllowed": true,
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "email"
+      ],
+      "optionalClientScopes": [
+        "address",
+        "phone",
+        "offline_access",
+        "microprofile-jwt"
+      ]
+    },
+    {
+      "clientId": "plm-api",
+      "name": "PLM API",
+      "description": "Product Lifecycle Management API",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "plm-api-secret-key-2024",
+      "redirectUris": [
+        "http://localhost:8000/*"
+      ],
+      "webOrigins": [
+        "http://localhost:8000",
+        "http://localhost:3000"
+      ],
+      "bearerOnly": false,
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "fullScopeAllowed": true
+    },
+    {
+      "clientId": "dedupcad-api",
+      "name": "DedupCAD API",
+      "description": "CAD Deduplication API",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "dedupcad-api-secret-key-2024",
+      "redirectUris": [
+        "http://localhost:8001/*"
+      ],
+      "webOrigins": [
+        "http://localhost:8001",
+        "http://localhost:3000"
+      ],
+      "bearerOnly": false,
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "fullScopeAllowed": true
+    },
+    {
+      "clientId": "unified-portal",
+      "name": "Unified Portal",
+      "description": "Frontend unified portal for all services",
+      "enabled": true,
+      "publicClient": true,
+      "redirectUris": [
+        "http://localhost:3000/*",
+        "http://localhost:5173/*"
+      ],
+      "webOrigins": [
+        "http://localhost:3000",
+        "http://localhost:5173"
+      ],
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "email",
+        "microprofile-jwt"
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "admin",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "System",
+      "lastName": "Administrator",
+      "email": "admin@example.com",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "admin"
+      ],
+      "clientRoles": {
+        "ecm-api": [
+          "ecm-admin"
+        ],
+        "plm-api": [
+          "plm-admin"
+        ],
+        "dedupcad-api": [
+          "dedupcad-admin"
+        ]
+      }
+    },
+    {
+      "username": "user",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Test",
+      "lastName": "User",
+      "email": "user@example.com",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "user",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "user"
+      ],
+      "clientRoles": {
+        "ecm-api": [
+          "ecm-user"
+        ],
+        "plm-api": [
+          "plm-user"
+        ],
+        "dedupcad-api": [
+          "dedupcad-user"
+        ]
+      }
+    }
+  ],
+  "clientScopes": [
+    {
+      "name": "microprofile-jwt",
+      "description": "Microprofile JWT scope",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      },
+      "protocolMappers": [
+        {
+          "name": "upn",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "username",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "upn",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "userinfo.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "groups",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    }
+  ]
+}

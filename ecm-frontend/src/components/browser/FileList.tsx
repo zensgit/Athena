@@ -26,27 +26,39 @@ import {
   DriveFileMove,
   History,
   Security,
+  Approval,
+  LocalOffer,
+  Category as CategoryIcon,
+  Share as ShareIcon,
+  AutoAwesome,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
-import { Node } from '@/types';
-import { useAppDispatch, useAppSelector } from '@/store';
-import { toggleNodeSelection, setSelectedNodes } from '@/store/slices/nodeSlice';
+import { useNavigate } from 'react-router-dom';
+import { Node } from 'types';
+import { useAppDispatch, useAppSelector } from 'store';
+import { deleteNodes, setSelectedNodes } from 'store/slices/nodeSlice';
 import {
   setPropertiesDialogOpen,
   setPermissionsDialogOpen,
   setVersionHistoryDialogOpen,
   setSelectedNodeId,
-} from '@/store/slices/uiSlice';
-import nodeService from '@/services/nodeService';
+  setTagManagerOpen,
+  setCategoryManagerOpen,
+  setShareLinkManagerOpen,
+  setMlSuggestionsOpen,
+} from 'store/slices/uiSlice';
+import nodeService from 'services/nodeService';
 import { toast } from 'react-toastify';
 
 interface FileListProps {
   nodes: Node[];
   onNodeDoubleClick?: (node: Node) => void;
+  onStartWorkflow?: (node: Node) => void;
 }
 
-const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick }) => {
+const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick, onStartWorkflow }) => {
   const dispatch = useAppDispatch();
+  const navigate = useNavigate();
   const { selectedNodes } = useAppSelector((state) => state.node);
   const [contextMenu, setContextMenu] = React.useState<{
     mouseX: number;
@@ -72,6 +84,11 @@ const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick }) => {
 
   const handleCloseContextMenu = () => {
     setContextMenu(null);
+  };
+
+  const handleEdit = (node: Node) => {
+    navigate(`/editor/${node.id}?provider=wps&permission=write`);
+    handleCloseContextMenu();
   };
 
   const handleDownload = async (node: Node) => {
@@ -105,6 +122,42 @@ const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick }) => {
     handleCloseContextMenu();
   };
 
+  const handleOpenTags = (node: Node) => {
+    dispatch(setSelectedNodeId(node.id));
+    dispatch(setTagManagerOpen(true));
+    handleCloseContextMenu();
+  };
+
+  const handleOpenCategories = (node: Node) => {
+    dispatch(setSelectedNodeId(node.id));
+    dispatch(setCategoryManagerOpen(true));
+    handleCloseContextMenu();
+  };
+
+  const handleOpenShareLinks = (node: Node) => {
+    dispatch(setSelectedNodeId(node.id));
+    dispatch(setShareLinkManagerOpen(true));
+    handleCloseContextMenu();
+  };
+
+  const handleOpenMlSuggestions = (node: Node) => {
+    dispatch(setSelectedNodeId(node.id));
+    dispatch(setMlSuggestionsOpen(true));
+    handleCloseContextMenu();
+  };
+
+  const handleDeleteNode = async (node: Node) => {
+    if (window.confirm(`Delete "${node.name}"?`)) {
+      try {
+        await dispatch(deleteNodes([node.id])).unwrap();
+        toast.success('Item deleted successfully');
+      } catch {
+        toast.error('Failed to delete item');
+      }
+    }
+    handleCloseContextMenu();
+  };
+
   const columns: GridColDef[] = [
     {
       field: 'name',
@@ -132,7 +185,14 @@ const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick }) => {
       field: 'modified',
       headerName: 'Modified',
       width: 180,
-      valueFormatter: (params) => format(new Date(params.value), 'PPp'),
+      valueFormatter: (params) => {
+        if (!params.value) return '-';
+        try {
+          return format(new Date(params.value), 'PPp');
+        } catch {
+          return '-';
+        }
+      },
     },
     {
       field: 'modifier',
@@ -204,6 +264,14 @@ const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick }) => {
         }
       >
         {contextMenu?.node.nodeType === 'DOCUMENT' && (
+          <MenuItem onClick={() => contextMenu && handleEdit(contextMenu.node)}>
+            <ListItemIcon>
+              <Edit fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Edit Online</ListItemText>
+          </MenuItem>
+        )}
+        {contextMenu?.node.nodeType === 'DOCUMENT' && (
           <MenuItem onClick={() => handleDownload(contextMenu.node)}>
             <ListItemIcon>
               <Download fontSize="small" />
@@ -224,6 +292,49 @@ const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick }) => {
           <ListItemText>Permissions</ListItemText>
         </MenuItem>
         {contextMenu?.node.nodeType === 'DOCUMENT' && (
+          <MenuItem onClick={() => contextMenu && handleOpenTags(contextMenu.node)}>
+            <ListItemIcon>
+              <LocalOffer fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Tags</ListItemText>
+          </MenuItem>
+        )}
+        {contextMenu?.node.nodeType === 'DOCUMENT' && (
+          <MenuItem onClick={() => contextMenu && handleOpenCategories(contextMenu.node)}>
+            <ListItemIcon>
+              <CategoryIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Categories</ListItemText>
+          </MenuItem>
+        )}
+        {contextMenu?.node.nodeType === 'DOCUMENT' && (
+          <MenuItem onClick={() => contextMenu && handleOpenShareLinks(contextMenu.node)}>
+            <ListItemIcon>
+              <ShareIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Share</ListItemText>
+          </MenuItem>
+        )}
+        {contextMenu?.node.nodeType === 'DOCUMENT' && (
+          <MenuItem onClick={() => contextMenu && handleOpenMlSuggestions(contextMenu.node)}>
+            <ListItemIcon>
+              <AutoAwesome fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>ML Suggestions</ListItemText>
+          </MenuItem>
+        )}
+        {contextMenu?.node.nodeType === 'DOCUMENT' && onStartWorkflow && (
+          <MenuItem onClick={() => {
+            if (contextMenu) onStartWorkflow(contextMenu.node);
+            handleCloseContextMenu();
+          }}>
+            <ListItemIcon>
+              <Approval fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Start Approval</ListItemText>
+          </MenuItem>
+        )}
+        {contextMenu?.node.nodeType === 'DOCUMENT' && (
           <MenuItem onClick={() => handleVersionHistory(contextMenu.node)}>
             <ListItemIcon>
               <History fontSize="small" />
@@ -232,19 +343,19 @@ const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick }) => {
           </MenuItem>
         )}
         <MenuItem divider />
-        <MenuItem>
+        <MenuItem onClick={handleCloseContextMenu}>
           <ListItemIcon>
             <FileCopy fontSize="small" />
           </ListItemIcon>
           <ListItemText>Copy</ListItemText>
         </MenuItem>
-        <MenuItem>
+        <MenuItem onClick={handleCloseContextMenu}>
           <ListItemIcon>
             <DriveFileMove fontSize="small" />
           </ListItemIcon>
           <ListItemText>Move</ListItemText>
         </MenuItem>
-        <MenuItem>
+        <MenuItem onClick={() => contextMenu && handleDeleteNode(contextMenu.node)}>
           <ListItemIcon>
             <Delete fontSize="small" />
           </ListItemIcon>

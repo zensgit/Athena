@@ -23,9 +23,9 @@ import {
   CheckCircle,
   Error,
 } from '@mui/icons-material';
-import { useAppDispatch, useAppSelector } from '@/store';
-import { setUploadDialogOpen } from '@/store/slices/uiSlice';
-import { uploadDocument } from '@/store/slices/nodeSlice';
+import { useAppDispatch, useAppSelector } from 'store';
+import { setUploadDialogOpen } from 'store/slices/uiSlice';
+import { uploadDocument } from 'store/slices/nodeSlice';
 import { toast } from 'react-toastify';
 
 interface UploadFile {

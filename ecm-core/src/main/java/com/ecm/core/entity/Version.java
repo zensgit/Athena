@@ -72,11 +72,11 @@ public class Version extends BaseEntity {
     public String getVersionString() {
         return majorVersion + "." + minorVersion;
     }
-}
 
-enum VersionStatus {
-    DRAFT,
-    RELEASED,
-    SUPERSEDED,
-    OBSOLETE
+    public enum VersionStatus {
+        DRAFT,
+        RELEASED,
+        SUPERSEDED,
+        OBSOLETE
+    }
 }

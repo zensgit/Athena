@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Paper,
@@ -11,7 +11,6 @@ import {
   MenuItem,
   Chip,
   CircularProgress,
-  Divider,
   Collapse,
   Badge,
 } from '@mui/material';
@@ -25,10 +24,11 @@ import {
   Favorite,
   ExpandMore,
   ExpandLess,
+  Close,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
-import { useAppSelector } from '@/store';
-import commentService from '@/services/commentService';
+import { useAppSelector } from 'store';
+import commentService from 'services/commentService';
 import { toast } from 'react-toastify';
 
 interface Comment {
@@ -60,9 +60,9 @@ const CommentSection: React.FC<CommentSectionProps> = ({ nodeId }) => {
 
   useEffect(() => {
     loadComments();
-  }, [nodeId]);
+  }, [loadComments]);
 
-  const loadComments = async () => {
+  const loadComments = useCallback(async () => {
     setLoading(true);
     try {
       const commentTree = await commentService.getCommentTree(nodeId);
@@ -72,7 +72,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ nodeId }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [nodeId]);
 
   const handleSubmitComment = async () => {
     if (!newComment.trim()) return;

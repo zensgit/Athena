@@ -15,7 +15,13 @@
     <include file="db/changelog/changes/003-create-node-tables.xml"/>
     <include file="db/changelog/changes/004-create-version-tables.xml"/>
     <include file="db/changelog/changes/005-create-indexes.xml"/>
+    <include file="db/changelog/changes/006-comment-collections.xml"/>
     <include file="db/changelog/changes/006-create-functions.xml"/>
+    <include file="db/changelog/changes/008-add-comment-level-column.xml"/>
+    <include file="db/changelog/changes/009-add-tag-category-columns.xml"/>
+    <include file="db/changelog/changes/010-add-smart-folder-columns.xml"/>
+    <include file="db/changelog/changes/010-create-audit-log-table.xml"/>
+    <include file="db/changelog/changes/011-add-uploads-folder-permissions.xml"/>
     <include file="db/changelog/changes/007-insert-initial-data.xml"/>
 
 </databaseChangeLog>

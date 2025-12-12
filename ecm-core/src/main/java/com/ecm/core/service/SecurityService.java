@@ -1,17 +1,26 @@
 package com.ecm.core.service;
 
 import com.ecm.core.entity.*;
+import com.ecm.core.entity.Permission.PermissionType;
+import com.ecm.core.entity.Permission.AuthorityType;
+import com.ecm.core.entity.Role.Privilege;
+import com.ecm.core.entity.Group.GroupType;
 import com.ecm.core.repository.*;
+import com.ecm.core.security.DynamicAuthority;
+import com.ecm.core.security.PermissionContext;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.springframework.security.core.GrantedAuthority;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -21,22 +30,34 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class SecurityService {
-    
+
     private final UserRepository userRepository;
     private final GroupRepository groupRepository;
     private final RoleRepository roleRepository;
     private final PermissionRepository permissionRepository;
     private final NodeRepository nodeRepository;
+    private final List<DynamicAuthority> dynamicAuthorities;
+
+    @PostConstruct
+    public void init() {
+        // Sort dynamic authorities by priority (lower value = higher priority)
+        dynamicAuthorities.sort(Comparator.comparingInt(DynamicAuthority::getPriority));
+        log.info("SecurityService initialized with {} dynamic authorities: {}",
+            dynamicAuthorities.size(),
+            dynamicAuthorities.stream().map(DynamicAuthority::getAuthorityName).toList());
+    }
     
     public String getCurrentUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth != null && auth.isAuthenticated()) {
             Object principal = auth.getPrincipal();
-            if (principal instanceof UserDetails) {
-                return ((UserDetails) principal).getUsername();
-            } else {
-                return principal.toString();
+            if (principal instanceof org.springframework.security.oauth2.jwt.Jwt jwt) {
+                return jwt.getSubject();
             }
+            if (principal instanceof UserDetails userDetails) {
+                return userDetails.getUsername();
+            }
+            return principal.toString();
         }
         return "anonymous";
     }
@@ -51,17 +72,51 @@ public class SecurityService {
     public boolean hasPermission(Node node, PermissionType permissionType) {
         return hasPermission(node, permissionType, getCurrentUser());
     }
+
+    public void checkPermission(Node node, PermissionType permissionType) {
+        if (!hasPermission(node, permissionType)) {
+            throw new SecurityException("No permission: " + permissionType + " on node: " + node.getName());
+        }
+    }
+
+    public boolean isAdmin(String username) {
+        return hasRole("ROLE_ADMIN", username);
+    }
     
     public boolean hasPermission(Node node, PermissionType permissionType, String username) {
         // Admin has all permissions
-        if (hasRole("ROLE_ADMIN", username)) {
+        if (hasAuthority("ROLE_ADMIN") || hasRole("ROLE_ADMIN", username)) {
             return true;
         }
-        
-        // Get user authorities
+
+        // Folder/document owner fallback: if the current user created the node, allow all actions
+        if (node != null && username != null && username.equals(node.getCreatedBy())) {
+            return true;
+        }
+
+        // Build permission context for dynamic authority evaluation
+        PermissionContext context = PermissionContext.builder()
+            .nodeId(node != null ? node.getId() : null)
+            .node(node)
+            .username(username)
+            .requestedPermission(permissionType)
+            .build();
+
+        // Check dynamic authorities first (priority order)
+        for (DynamicAuthority dynamicAuthority : dynamicAuthorities) {
+            Boolean grant = dynamicAuthority.grantPermission(context);
+            if (grant != null) {
+                log.debug("Dynamic authority {} {} permission {} for user {} on node {}",
+                    dynamicAuthority.getAuthorityName(),
+                    grant ? "granted" : "denied",
+                    permissionType, username,
+                    node != null ? node.getId() : "null");
+                return grant;
+            }
+        }
+
+        // Fall back to ACL-based permission check
         Set<String> authorities = getUserAuthorities(username);
-        
-        // Check permissions on node and ancestors
         return checkNodePermissions(node, permissionType, authorities);
     }
     
@@ -70,6 +125,10 @@ public class SecurityService {
     }
     
     public boolean hasRole(String roleName, String username) {
+        if (hasAuthority(roleName)) {
+            return true;
+        }
+
         User user = userRepository.findByUsername(username).orElse(null);
         if (user == null) {
             return false;
@@ -94,6 +153,10 @@ public class SecurityService {
     }
     
     public boolean hasPrivilege(Privilege privilege, String username) {
+        if (hasAuthority("ROLE_ADMIN")) {
+            return true;
+        }
+
         User user = userRepository.findByUsername(username).orElse(null);
         if (user == null) {
             return false;
@@ -107,6 +170,19 @@ public class SecurityService {
         
         return allRoles.stream()
             .anyMatch(role -> role.getPrivileges().contains(privilege));
+    }
+
+    private boolean hasAuthority(String roleName) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || auth.getAuthorities() == null) {
+            return false;
+        }
+        for (GrantedAuthority authority : auth.getAuthorities()) {
+            if (roleName.equalsIgnoreCase(authority.getAuthority())) {
+                return true;
+            }
+        }
+        return false;
     }
     
     @Transactional

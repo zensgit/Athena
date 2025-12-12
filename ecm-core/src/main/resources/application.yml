@@ -69,8 +69,8 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: http://localhost:8080/auth/realms/ecm
-          jwk-set-uri: http://localhost:8080/auth/realms/ecm/protocol/openid-connect/certs
+          issuer-uri: ${SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI:http://keycloak:8080/realms/ecm}
+          jwk-set-uri: ${SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI:http://keycloak:8080/realms/ecm/protocol/openid-connect/certs}
 
 flowable:
   database-schema-update: true
@@ -90,7 +90,10 @@ ecm:
     type: filesystem
     root-path: /var/ecm/content
     temp-path: /var/ecm/temp
-  
+
+  tika:
+    max-text-length: 10485760  # 10MB of text
+
   security:
     jwt:
       secret: ${JWT_SECRET:mySecretKey}
@@ -128,6 +131,7 @@ ecm:
     auto-deploy: true
   
   search:
+    enabled: true
     index-name: ecm_documents
     batch-size: 100
     highlight:
@@ -154,6 +158,8 @@ logging:
     org.springframework.security: DEBUG
     org.flowable: WARN
     org.elasticsearch: WARN
+    org.apache.pdfbox: WARN
+    org.jodconverter: WARN
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
     file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"

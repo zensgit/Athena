@@ -86,6 +86,17 @@ public class NotificationService {
         
         sendNotification(notification);
     }
+
+    public void notifyUser(String username, String title, String message) {
+        Map<String, Object> notification = new HashMap<>();
+        notification.put("type", "USER_NOTIFICATION");
+        notification.put("username", username);
+        notification.put("title", title);
+        notification.put("message", message);
+        notification.put("timestamp", System.currentTimeMillis());
+
+        sendNotification(notification);
+    }
     
     private void sendNotification(Map<String, Object> notification) {
         try {

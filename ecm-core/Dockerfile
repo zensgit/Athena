@@ -1,19 +1,24 @@
 # Multi-stage build for ECM Core
-FROM maven:3.9-openjdk-17 AS build
+FROM maven:3.9-eclipse-temurin-17 AS build
 
 # Set working directory
 WORKDIR /app
 
-# Copy pom.xml and download dependencies
+# Copy pom.xml and lombok.config first
 COPY pom.xml .
+COPY lombok.config .
+
+# Download dependencies first (separate layer for caching)
 RUN mvn dependency:go-offline -B
 
-# Copy source code and build
+# Copy source code
 COPY src ./src
+
+# Build the project (with clean to ensure fresh compilation)
 RUN mvn clean package -DskipTests
 
 # Runtime stage
-FROM openjdk:17-jdk-slim
+FROM eclipse-temurin:17-jdk
 
 # Install LibreOffice and other tools
 RUN apt-get update && apt-get install -y \

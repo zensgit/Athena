@@ -1,13 +1,10 @@
 package com.ecm.core.controller;
 
+import com.ecm.core.service.WorkflowService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
-import org.flowable.engine.HistoryService;
-import org.flowable.engine.RepositoryService;
-import org.flowable.engine.RuntimeService;
-import org.flowable.engine.TaskService;
 import org.flowable.engine.history.HistoricProcessInstance;
 import org.flowable.engine.repository.ProcessDefinition;
 import org.flowable.engine.runtime.ProcessInstance;
@@ -16,215 +13,105 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/v1/workflows")
 @RequiredArgsConstructor
-@Tag(name = "Workflow Management", description = "APIs for managing workflows and processes")
+@Tag(name = "Workflow Management", description = "APIs for business processes and approvals")
 public class WorkflowController {
     
-    private final RepositoryService repositoryService;
-    private final RuntimeService runtimeService;
-    private final TaskService taskService;
-    private final HistoryService historyService;
+    private final WorkflowService workflowService;
     
     @GetMapping("/definitions")
-    @Operation(summary = "List workflow definitions", description = "Get all deployed workflow definitions")
-    public ResponseEntity<List<ProcessDefinition>> getProcessDefinitions() {
-        List<ProcessDefinition> definitions = repositoryService.createProcessDefinitionQuery()
-            .latestVersion()
-            .list();
+    @Operation(summary = "List definitions", description = "Get available workflow definitions")
+    public ResponseEntity<List<ProcessDefinitionResponse>> getDefinitions() {
+        List<ProcessDefinitionResponse> definitions = workflowService.getProcessDefinitions().stream()
+            .map(ProcessDefinitionResponse::from)
+            .collect(Collectors.toList());
         return ResponseEntity.ok(definitions);
     }
     
-    @GetMapping("/definitions/{definitionId}")
-    @Operation(summary = "Get workflow definition", description = "Get a specific workflow definition")
-    public ResponseEntity<ProcessDefinition> getProcessDefinition(
-            @Parameter(description = "Definition ID") @PathVariable String definitionId) {
-        ProcessDefinition definition = repositoryService.createProcessDefinitionQuery()
-            .processDefinitionId(definitionId)
-            .singleResult();
-        return ResponseEntity.ok(definition);
+    @PostMapping("/document/{documentId}/approval")
+    @Operation(summary = "Start approval", description = "Start document approval workflow")
+    public ResponseEntity<ProcessInstanceResponse> startApproval(
+            @PathVariable UUID documentId,
+            @RequestBody StartApprovalRequest request) {
+        
+        ProcessInstance instance = workflowService.startDocumentApproval(
+            documentId, 
+            request.approvers(), 
+            request.comment()
+        );
+        return ResponseEntity.status(HttpStatus.CREATED)
+            .body(ProcessInstanceResponse.from(instance));
     }
     
-    @PostMapping("/instances")
-    @Operation(summary = "Start workflow", description = "Start a new workflow instance")
-    public ResponseEntity<ProcessInstance> startWorkflow(
-            @Parameter(description = "Process definition key") @RequestParam String processKey,
-            @Parameter(description = "Business key") @RequestParam(required = false) String businessKey,
-            @RequestBody(required = false) Map<String, Object> variables) {
-        
-        if (variables == null) {
-            variables = new HashMap<>();
-        }
-        
-        ProcessInstance instance;
-        if (businessKey != null) {
-            instance = runtimeService.startProcessInstanceByKey(processKey, businessKey, variables);
-        } else {
-            instance = runtimeService.startProcessInstanceByKey(processKey, variables);
-        }
-        
-        return ResponseEntity.status(HttpStatus.CREATED).body(instance);
-    }
-    
-    @GetMapping("/instances")
-    @Operation(summary = "List workflow instances", description = "Get active workflow instances")
-    public ResponseEntity<List<ProcessInstance>> getProcessInstances(
-            @Parameter(description = "Process definition key") @RequestParam(required = false) String processKey,
-            @Parameter(description = "Business key") @RequestParam(required = false) String businessKey) {
-        
-        var query = runtimeService.createProcessInstanceQuery();
-        
-        if (processKey != null) {
-            query.processDefinitionKey(processKey);
-        }
-        if (businessKey != null) {
-            query.processInstanceBusinessKey(businessKey);
-        }
-        
-        List<ProcessInstance> instances = query.list();
-        return ResponseEntity.ok(instances);
-    }
-    
-    @GetMapping("/instances/{instanceId}")
-    @Operation(summary = "Get workflow instance", description = "Get a specific workflow instance")
-    public ResponseEntity<ProcessInstance> getProcessInstance(
-            @Parameter(description = "Instance ID") @PathVariable String instanceId) {
-        ProcessInstance instance = runtimeService.createProcessInstanceQuery()
-            .processInstanceId(instanceId)
-            .singleResult();
-        return ResponseEntity.ok(instance);
-    }
-    
-    @DeleteMapping("/instances/{instanceId}")
-    @Operation(summary = "Cancel workflow", description = "Cancel a workflow instance")
-    public ResponseEntity<Void> cancelWorkflow(
-            @Parameter(description = "Instance ID") @PathVariable String instanceId,
-            @Parameter(description = "Reason") @RequestParam(required = false) String reason) {
-        
-        runtimeService.deleteProcessInstance(instanceId, reason != null ? reason : "Cancelled by user");
-        return ResponseEntity.noContent().build();
-    }
-    
-    @GetMapping("/tasks")
-    @Operation(summary = "List tasks", description = "Get tasks for current user")
-    public ResponseEntity<List<Task>> getTasks(
-            @Parameter(description = "Assignee") @RequestParam(required = false) String assignee,
-            @Parameter(description = "Process instance ID") @RequestParam(required = false) String processInstanceId) {
-        
-        var query = taskService.createTaskQuery();
-        
-        if (assignee != null) {
-            query.taskAssignee(assignee);
-        }
-        if (processInstanceId != null) {
-            query.processInstanceId(processInstanceId);
-        }
-        
-        List<Task> tasks = query.list();
+    @GetMapping("/tasks/my")
+    @Operation(summary = "My tasks", description = "Get tasks assigned to current user")
+    public ResponseEntity<List<TaskResponse>> getMyTasks() {
+        List<TaskResponse> tasks = workflowService.getMyTasks().stream()
+            .map(TaskResponse::from)
+            .collect(Collectors.toList());
         return ResponseEntity.ok(tasks);
     }
     
-    @GetMapping("/tasks/{taskId}")
-    @Operation(summary = "Get task", description = "Get a specific task")
-    public ResponseEntity<Task> getTask(
-            @Parameter(description = "Task ID") @PathVariable String taskId) {
-        Task task = taskService.createTaskQuery()
-            .taskId(taskId)
-            .singleResult();
-        return ResponseEntity.ok(task);
-    }
-    
     @PostMapping("/tasks/{taskId}/complete")
-    @Operation(summary = "Complete task", description = "Complete a workflow task")
+    @Operation(summary = "Complete task", description = "Complete a workflow task with variables (e.g. approved=true)")
     public ResponseEntity<Void> completeTask(
-            @Parameter(description = "Task ID") @PathVariable String taskId,
-            @RequestBody(required = false) Map<String, Object> variables) {
+            @PathVariable String taskId,
+            @RequestBody Map<String, Object> variables) {
         
-        if (variables != null) {
-            taskService.complete(taskId, variables);
-        } else {
-            taskService.complete(taskId);
-        }
-        
+        workflowService.completeTask(taskId, variables);
         return ResponseEntity.ok().build();
     }
     
-    @PostMapping("/tasks/{taskId}/claim")
-    @Operation(summary = "Claim task", description = "Claim a task for the current user")
-    public ResponseEntity<Void> claimTask(
-            @Parameter(description = "Task ID") @PathVariable String taskId,
-            @Parameter(description = "User ID") @RequestParam String userId) {
-        
-        taskService.claim(taskId, userId);
-        return ResponseEntity.ok().build();
+    @GetMapping("/document/{documentId}/instances")
+    @Operation(summary = "Document workflows", description = "Get active workflows for a document")
+    public ResponseEntity<List<ProcessInstanceResponse>> getDocumentWorkflows(@PathVariable UUID documentId) {
+        List<ProcessInstanceResponse> instances = workflowService.getDocumentWorkflows(documentId).stream()
+            .map(ProcessInstanceResponse::from)
+            .collect(Collectors.toList());
+        return ResponseEntity.ok(instances);
     }
     
-    @PostMapping("/tasks/{taskId}/unclaim")
-    @Operation(summary = "Unclaim task", description = "Release a claimed task")
-    public ResponseEntity<Void> unclaimTask(
-            @Parameter(description = "Task ID") @PathVariable String taskId) {
-        
-        taskService.unclaim(taskId);
-        return ResponseEntity.ok().build();
-    }
-    
-    @PostMapping("/tasks/{taskId}/delegate")
-    @Operation(summary = "Delegate task", description = "Delegate a task to another user")
-    public ResponseEntity<Void> delegateTask(
-            @Parameter(description = "Task ID") @PathVariable String taskId,
-            @Parameter(description = "User ID") @RequestParam String userId) {
-        
-        taskService.delegateTask(taskId, userId);
-        return ResponseEntity.ok().build();
-    }
-    
-    @GetMapping("/history/instances")
-    @Operation(summary = "Get workflow history", description = "Get completed workflow instances")
-    public ResponseEntity<List<HistoricProcessInstance>> getProcessHistory(
-            @Parameter(description = "Process definition key") @RequestParam(required = false) String processKey,
-            @Parameter(description = "Finished only") @RequestParam(defaultValue = "true") boolean finishedOnly) {
-        
-        var query = historyService.createHistoricProcessInstanceQuery();
-        
-        if (processKey != null) {
-            query.processDefinitionKey(processKey);
-        }
-        if (finishedOnly) {
-            query.finished();
-        }
-        
-        List<HistoricProcessInstance> history = query.list();
+    @GetMapping("/document/{documentId}/history")
+    @Operation(summary = "Document history", description = "Get completed workflows for a document")
+    public ResponseEntity<List<HistoricProcessInstanceResponse>> getDocumentHistory(@PathVariable UUID documentId) {
+        List<HistoricProcessInstanceResponse> history = workflowService.getDocumentHistory(documentId).stream()
+            .map(HistoricProcessInstanceResponse::from)
+            .collect(Collectors.toList());
         return ResponseEntity.ok(history);
     }
-    
-    @PostMapping("/document/{documentId}/start-approval")
-    @Operation(summary = "Start document approval", description = "Start an approval workflow for a document")
-    public ResponseEntity<ProcessInstance> startDocumentApproval(
-            @Parameter(description = "Document ID") @PathVariable UUID documentId,
-            @Parameter(description = "Approvers") @RequestBody List<String> approvers) {
-        
-        Map<String, Object> variables = new HashMap<>();
-        variables.put("documentId", documentId.toString());
-        variables.put("approvers", approvers);
-        variables.put("initiator", getCurrentUser());
-        
-        ProcessInstance instance = runtimeService.startProcessInstanceByKey(
-            "documentApproval", 
-            documentId.toString(), 
-            variables
-        );
-        
-        return ResponseEntity.status(HttpStatus.CREATED).body(instance);
+
+    // ==================== DTOs ====================
+
+    public record StartApprovalRequest(List<String> approvers, String comment) {}
+
+    public record ProcessDefinitionResponse(String id, String key, String name, int version) {
+        static ProcessDefinitionResponse from(ProcessDefinition pd) {
+            return new ProcessDefinitionResponse(pd.getId(), pd.getKey(), pd.getName(), pd.getVersion());
+        }
+    }
+
+    public record ProcessInstanceResponse(String id, String definitionKey, String businessKey, boolean ended) {
+        static ProcessInstanceResponse from(ProcessInstance pi) {
+            return new ProcessInstanceResponse(pi.getId(), pi.getProcessDefinitionKey(), pi.getBusinessKey(), pi.isEnded());
+        }
+    }
+
+    public record TaskResponse(String id, String name, String assignee, String description, java.util.Date createTime) {
+        static TaskResponse from(Task t) {
+            return new TaskResponse(t.getId(), t.getName(), t.getAssignee(), t.getDescription(), t.getCreateTime());
+        }
     }
     
-    private String getCurrentUser() {
-        // This should get from SecurityContext
-        return "currentUser";
+    public record HistoricProcessInstanceResponse(String id, String businessKey, java.util.Date startTime, java.util.Date endTime) {
+        static HistoricProcessInstanceResponse from(HistoricProcessInstance hpi) {
+            return new HistoricProcessInstanceResponse(hpi.getId(), hpi.getBusinessKey(), hpi.getStartTime(), hpi.getEndTime());
+        }
     }
 }

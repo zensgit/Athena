@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -14,11 +14,11 @@ import {
   ViewModule,
   Delete,
 } from '@mui/icons-material';
-import { useAppDispatch, useAppSelector } from '@/store';
-import { fetchNode, fetchChildren, deleteNodes } from '@/store/slices/nodeSlice';
-import { setViewMode } from '@/store/slices/uiSlice';
-import FileBreadcrumb from '@/components/browser/FileBreadcrumb';
-import FileList from '@/components/browser/FileList';
+import { useAppDispatch, useAppSelector } from 'store';
+import { fetchNode, fetchChildren, deleteNodes } from 'store/slices/nodeSlice';
+import { setViewMode } from 'store/slices/uiSlice';
+import FileBreadcrumb from 'components/browser/FileBreadcrumb';
+import FileList from 'components/browser/FileList';
 import { toast } from 'react-toastify';
 
 const FileBrowser: React.FC = () => {
@@ -29,14 +29,14 @@ const FileBrowser: React.FC = () => {
   const { currentNode, nodes, loading, selectedNodes } = useAppSelector((state) => state.node);
   const { viewMode, sortBy, sortAscending } = useAppSelector((state) => state.ui);
 
-  useEffect(() => {
-    loadNodeData();
-  }, [nodeId]);
-
-  const loadNodeData = async () => {
+  const loadNodeData = useCallback(async () => {
     await dispatch(fetchNode(nodeId));
     await dispatch(fetchChildren({ nodeId, sortBy, ascending: sortAscending }));
-  };
+  }, [dispatch, nodeId, sortAscending, sortBy]);
+
+  useEffect(() => {
+    loadNodeData();
+  }, [nodeId, loadNodeData]);
 
   const handleNodeDoubleClick = (node: any) => {
     if (node.nodeType === 'FOLDER') {

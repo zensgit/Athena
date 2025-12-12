@@ -1,432 +1,734 @@
 import React, { useEffect, useState } from 'react';
 import {
   Box,
+  Container,
   Grid,
   Paper,
   Typography,
   Card,
   CardContent,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemIcon,
+  Divider,
+  LinearProgress,
+  CircularProgress,
+  Chip,
   IconButton,
+  Tabs,
+  Tab,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
-  LinearProgress,
-  Chip,
   Button,
-  Tab,
-  Tabs,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  Switch,
+  Autocomplete,
 } from '@mui/material';
 import {
   Storage,
-  People,
-  Folder,
   Description,
+  People,
   TrendingUp,
   Refresh,
-  Settings,
-  Security,
+  History,
+  PictureAsPdf,
+  Image,
+  Article,
+  InsertDriveFile,
+  Delete as DeleteIcon,
+  Group as GroupIcon,
+  PersonAdd,
+  GroupAdd,
 } from '@mui/icons-material';
-import {
-  LineChart,
-  Line,
-  AreaChart,
-  Area,
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from 'recharts';
 import { format } from 'date-fns';
+import apiService from '../services/api';
+import { toast } from 'react-toastify';
+import userGroupService, { Group } from 'services/userGroupService';
+import { User } from 'types';
 
-interface SystemStats {
+// Types matching backend Analytics DTOs
+interface SystemSummary {
   totalDocuments: number;
   totalFolders: number;
-  totalUsers: number;
-  storageUsed: number;
-  storageTotal: number;
-  activeUsers: number;
-  documentsToday: number;
-  documentsGrowth: number;
+  totalSizeBytes: number;
+  formattedTotalSize: string;
 }
 
-interface ActivityData {
+interface MimeTypeStats {
+  mimeType: string;
+  count: number;
+  sizeBytes: number;
+}
+
+interface DailyActivity {
   date: string;
-  uploads: number;
-  downloads: number;
-  logins: number;
-}
-
-interface StorageByType {
-  type: string;
-  size: number;
-  color: string;
+  eventCount: number;
 }
 
 interface UserActivity {
   username: string;
-  lastLogin: string;
-  documentsCreated: number;
-  status: 'active' | 'inactive';
+  activityCount: number;
+}
+
+interface AuditLog {
+  id: string;
+  eventType: string;
+  nodeName: string;
+  username: string;
+  eventTime: string;
+  details: string;
+}
+
+interface DashboardData {
+  summary: SystemSummary;
+  storage: MimeTypeStats[];
+  activity: DailyActivity[];
+  topUsers: UserActivity[];
+  recentLogs?: AuditLog[]; // Fetched separately
 }
 
 const AdminDashboard: React.FC = () => {
-  const [tabValue, setTabValue] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState<SystemStats>({
-    totalDocuments: 15234,
-    totalFolders: 1892,
-    totalUsers: 156,
-    storageUsed: 456.7 * 1024 * 1024 * 1024, // GB to bytes
-    storageTotal: 1024 * 1024 * 1024 * 1024, // 1TB
-    activeUsers: 89,
-    documentsToday: 234,
-    documentsGrowth: 12.5,
+  const [tab, setTab] = useState(0);
+
+  // Overview/dashboard state
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [loadingDashboard, setLoadingDashboard] = useState(true);
+
+  // Users state
+  const [users, setUsers] = useState<User[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [userQuery, setUserQuery] = useState('');
+  const [createUserOpen, setCreateUserOpen] = useState(false);
+  const [newUser, setNewUser] = useState({
+    username: '',
+    email: '',
+    password: '',
+    firstName: '',
+    lastName: '',
+    enabled: true,
   });
 
-  const [activityData] = useState<ActivityData[]>([
-    { date: '2024-01-01', uploads: 120, downloads: 200, logins: 45 },
-    { date: '2024-01-02', uploads: 132, downloads: 180, logins: 52 },
-    { date: '2024-01-03', uploads: 101, downloads: 210, logins: 48 },
-    { date: '2024-01-04', uploads: 134, downloads: 195, logins: 61 },
-    { date: '2024-01-05', uploads: 90, downloads: 150, logins: 38 },
-    { date: '2024-01-06', uploads: 85, downloads: 140, logins: 35 },
-    { date: '2024-01-07', uploads: 140, downloads: 220, logins: 58 },
-  ]);
+  // Groups state
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [groupsLoading, setGroupsLoading] = useState(false);
+  const [createGroupOpen, setCreateGroupOpen] = useState(false);
+  const [newGroup, setNewGroup] = useState({ name: '', displayName: '' });
+  const [membersGroup, setMembersGroup] = useState<Group | null>(null);
+  const [availableUsernames, setAvailableUsernames] = useState<string[]>([]);
+  const [memberToAdd, setMemberToAdd] = useState('');
 
-  const [storageByType] = useState<StorageByType[]>([
-    { type: 'Documents', size: 45, color: '#0088FE' },
-    { type: 'Images', size: 25, color: '#00C49F' },
-    { type: 'Videos', size: 20, color: '#FFBB28' },
-    { type: 'Others', size: 10, color: '#FF8042' },
-  ]);
+  const fetchDashboard = async () => {
+    try {
+      setLoadingDashboard(true);
+      const dashboardRes = await apiService.get<DashboardData>('/analytics/dashboard');
+      setData(dashboardRes);
+      const logsRes = await apiService.get<AuditLog[]>('/analytics/audit/recent?limit=10');
+      setLogs(logsRes);
+    } catch {
+      toast.error('Failed to load dashboard data');
+    } finally {
+      setLoadingDashboard(false);
+    }
+  };
 
-  const [recentUsers] = useState<UserActivity[]>([
-    { username: 'admin', lastLogin: '2024-01-07 14:30', documentsCreated: 1234, status: 'active' },
-    { username: 'john.doe', lastLogin: '2024-01-07 12:15', documentsCreated: 567, status: 'active' },
-    { username: 'jane.smith', lastLogin: '2024-01-06 09:45', documentsCreated: 890, status: 'active' },
-    { username: 'mike.wilson', lastLogin: '2024-01-05 16:20', documentsCreated: 234, status: 'inactive' },
-    { username: 'sarah.jones', lastLogin: '2024-01-07 11:00', documentsCreated: 456, status: 'active' },
-  ]);
+  const loadUsers = async (query = '') => {
+    setUsersLoading(true);
+    try {
+      const res = query ? await userGroupService.searchUsers(query) : await userGroupService.listUsers();
+      setUsers(res);
+    } catch {
+      toast.error('Failed to load users');
+    } finally {
+      setUsersLoading(false);
+    }
+  };
+
+  const loadGroups = async () => {
+    setGroupsLoading(true);
+    try {
+      const res = await userGroupService.listGroups();
+      setGroups(res);
+    } catch {
+      toast.error('Failed to load groups');
+    } finally {
+      setGroupsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    // Simulate loading
-    setTimeout(() => setLoading(false), 1000);
+    fetchDashboard();
   }, []);
 
-  const formatBytes = (bytes: number): string => {
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(1024));
-    return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
+  useEffect(() => {
+    if (tab === 1) {
+      loadUsers();
+    } else if (tab === 2) {
+      loadGroups();
+    }
+  }, [tab]);
+
+  useEffect(() => {
+    if (membersGroup) {
+      userGroupService
+        .listUsers()
+        .then((res) => setAvailableUsernames(res.map((u) => u.username)))
+        .catch(() => undefined);
+    }
+  }, [membersGroup]);
+
+  const getFileIcon = (mimeType: string) => {
+    if (mimeType.includes('pdf')) return <PictureAsPdf color="error" />;
+    if (mimeType.includes('image')) return <Image color="primary" />;
+    if (mimeType.includes('word') || mimeType.includes('document')) return <Article color="info" />;
+    return <InsertDriveFile color="action" />;
   };
 
-  const getStoragePercentage = () => {
-    return (stats.storageUsed / stats.storageTotal) * 100;
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
   };
 
-  const MetricCard: React.FC<{
-    title: string;
-    value: string | number;
-    icon: React.ReactNode;
-    subtitle?: string;
-    trend?: number;
-  }> = ({ title, value, icon, subtitle, trend }) => (
-    <Card>
-      <CardContent>
-        <Box display="flex" justifyContent="space-between" alignItems="flex-start">
-          <Box>
-            <Typography color="textSecondary" gutterBottom>
-              {title}
-            </Typography>
-            <Typography variant="h4" component="div">
-              {value}
-            </Typography>
-            {subtitle && (
-              <Typography variant="body2" color="textSecondary">
-                {subtitle}
-              </Typography>
-            )}
-            {trend !== undefined && (
-              <Box display="flex" alignItems="center" mt={1}>
-                <TrendingUp
-                  sx={{
-                    color: trend > 0 ? 'success.main' : 'error.main',
-                    transform: trend < 0 ? 'rotate(180deg)' : 'none',
-                    mr: 0.5,
-                    fontSize: 16,
-                  }}
-                />
-                <Typography
-                  variant="body2"
-                  color={trend > 0 ? 'success.main' : 'error.main'}
-                >
-                  {Math.abs(trend)}%
-                </Typography>
-              </Box>
-            )}
-          </Box>
-          <Box
-            sx={{
-              backgroundColor: 'primary.light',
-              borderRadius: 2,
-              p: 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            {icon}
-          </Box>
+  const OverviewPanel = () => {
+    if (loadingDashboard && !data) {
+      return (
+        <Box p={4}>
+          <LinearProgress />
         </Box>
-      </CardContent>
-    </Card>
-  );
+      );
+    }
 
-  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
-    setTabValue(newValue);
-  };
-
-  if (loading) {
     return (
-      <Box sx={{ width: '100%' }}>
-        <LinearProgress />
-      </Box>
+      <>
+        <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+          <Typography variant="h4" component="h1">
+            System Dashboard
+          </Typography>
+          <IconButton onClick={fetchDashboard} color="primary">
+            <Refresh />
+          </IconButton>
+        </Box>
+
+        <Grid container spacing={3} mb={4}>
+          <Grid item xs={12} sm={6} md={3}>
+            <SummaryCard
+              title="Total Documents"
+              value={data?.summary.totalDocuments || 0}
+              icon={<Description fontSize="large" color="primary" />}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <SummaryCard
+              title="Storage Used"
+              value={formatFileSize(data?.summary.totalSizeBytes || 0)}
+              icon={<Storage fontSize="large" color="secondary" />}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <SummaryCard
+              title="Active Users"
+              value={data?.topUsers.length || 0}
+              icon={<People fontSize="large" color="success" />}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <SummaryCard
+              title="Today's Activity"
+              value={data?.activity[data.activity.length - 1]?.eventCount || 0}
+              icon={<TrendingUp fontSize="large" color="warning" />}
+            />
+          </Grid>
+        </Grid>
+
+        <Grid container spacing={3}>
+          <Grid item xs={12} md={8}>
+            <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%' }}>
+              <Typography component="h2" variant="h6" color="primary" gutterBottom>
+                Storage Distribution
+              </Typography>
+              <List>
+                {data?.storage.map((stat, index) => (
+                  <React.Fragment key={stat.mimeType}>
+                    <ListItem>
+                      <ListItemIcon>{getFileIcon(stat.mimeType)}</ListItemIcon>
+                      <ListItemText
+                        primary={stat.mimeType}
+                        secondary={`${stat.count} files`}
+                      />
+                      <Box sx={{ minWidth: 100, textAlign: 'right' }}>
+                        <Typography variant="body2" color="text.secondary">
+                          {formatFileSize(stat.sizeBytes)}
+                        </Typography>
+                      </Box>
+                    </ListItem>
+                    <Box sx={{ px: 2, pb: 1 }}>
+                      <LinearProgress
+                        variant="determinate"
+                        value={(stat.sizeBytes / (data?.summary.totalSizeBytes || 1)) * 100}
+                        sx={{ height: 8, borderRadius: 4 }}
+                      />
+                    </Box>
+                    {index < (data?.storage.length || 0) - 1 && <Divider component="li" />}
+                  </React.Fragment>
+                ))}
+              </List>
+            </Paper>
+          </Grid>
+
+          <Grid item xs={12} md={4}>
+            <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%' }}>
+              <Typography component="h2" variant="h6" color="primary" gutterBottom>
+                Top Active Users
+              </Typography>
+              <List dense>
+                {data?.topUsers.map((user) => (
+                  <ListItem key={user.username}>
+                    <ListItemIcon>
+                      <People fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText primary={user.username} />
+                    <Chip
+                      label={user.activityCount}
+                      size="small"
+                      color="primary"
+                      variant="outlined"
+                    />
+                  </ListItem>
+                ))}
+              </List>
+            </Paper>
+          </Grid>
+
+          <Grid item xs={12}>
+            <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column' }}>
+              <Typography component="h2" variant="h6" color="primary" gutterBottom>
+                Recent System Activity
+              </Typography>
+              <List>
+                {logs.map((log, index) => (
+                  <React.Fragment key={log.id}>
+                    <ListItem alignItems="flex-start">
+                      <ListItemIcon>
+                        <History />
+                      </ListItemIcon>
+                      <ListItemText
+                        primary={
+                          <Box display="flex" justifyContent="space-between">
+                            <Typography variant="subtitle2">
+                              {log.username} - {log.eventType}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {format(new Date(log.eventTime), 'PPpp')}
+                            </Typography>
+                          </Box>
+                        }
+                        secondary={
+                          <Typography
+                            variant="body2"
+                            color="text.secondary"
+                            sx={{ mt: 0.5 }}
+                          >
+                            {log.details || `Action on ${log.nodeName}`}
+                          </Typography>
+                        }
+                      />
+                    </ListItem>
+                    {index < logs.length - 1 && <Divider variant="inset" component="li" />}
+                  </React.Fragment>
+                ))}
+                {logs.length === 0 && (
+                  <Typography variant="body2" sx={{ p: 2 }}>
+                    No recent activity found.
+                  </Typography>
+                )}
+              </List>
+            </Paper>
+          </Grid>
+        </Grid>
+      </>
     );
-  }
+  };
 
   return (
-    <Box>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Typography variant="h4">Admin Dashboard</Typography>
-        <IconButton color="primary">
-          <Refresh />
-        </IconButton>
-      </Box>
+    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+      <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 3 }}>
+        <Tab label="Overview" />
+        <Tab label="Users" />
+        <Tab label="Groups" />
+      </Tabs>
 
-      <Grid container spacing={3} mb={3}>
-        <Grid item xs={12} sm={6} md={3}>
-          <MetricCard
-            title="Total Documents"
-            value={stats.totalDocuments.toLocaleString()}
-            icon={<Description sx={{ color: 'primary.main' }} />}
-            subtitle={`+${stats.documentsToday} today`}
-            trend={stats.documentsGrowth}
-          />
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <MetricCard
-            title="Total Folders"
-            value={stats.totalFolders.toLocaleString()}
-            icon={<Folder sx={{ color: 'primary.main' }} />}
-          />
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <MetricCard
-            title="Active Users"
-            value={stats.activeUsers}
-            icon={<People sx={{ color: 'primary.main' }} />}
-            subtitle={`of ${stats.totalUsers} total`}
-          />
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <MetricCard
-            title="Storage Used"
-            value={formatBytes(stats.storageUsed)}
-            icon={<Storage sx={{ color: 'primary.main' }} />}
-            subtitle={`${getStoragePercentage().toFixed(1)}% of ${formatBytes(stats.storageTotal)}`}
-          />
-        </Grid>
-      </Grid>
+      {tab === 0 && <OverviewPanel />}
 
-      <Paper sx={{ width: '100%', mb: 3 }}>
-        <Tabs value={tabValue} onChange={handleTabChange}>
-          <Tab label="Activity Overview" />
-          <Tab label="Storage Analytics" />
-          <Tab label="User Management" />
-          <Tab label="System Settings" />
-        </Tabs>
-      </Paper>
-
-      {tabValue === 0 && (
-        <Grid container spacing={3}>
-          <Grid item xs={12}>
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" gutterBottom>
-                System Activity (Last 7 Days)
-              </Typography>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={activityData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="date"
-                    tickFormatter={(value) => format(new Date(value), 'MMM dd')}
-                  />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Line type="monotone" dataKey="uploads" stroke="#8884d8" name="Uploads" />
-                  <Line type="monotone" dataKey="downloads" stroke="#82ca9d" name="Downloads" />
-                  <Line type="monotone" dataKey="logins" stroke="#ffc658" name="Logins" />
-                </LineChart>
-              </ResponsiveContainer>
-            </Paper>
-          </Grid>
-        </Grid>
-      )}
-
-      {tabValue === 1 && (
-        <Grid container spacing={3}>
-          <Grid item xs={12} md={6}>
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" gutterBottom>
-                Storage by File Type
-              </Typography>
-              <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                  <Pie
-                    data={storageByType}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={(entry) => `${entry.type}: ${entry.size}%`}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="size"
-                  >
-                    {storageByType.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            </Paper>
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" gutterBottom>
-                Storage Growth Trend
-              </Typography>
-              <ResponsiveContainer width="100%" height={300}>
-                <AreaChart
-                  data={activityData.map((d) => ({
-                    date: d.date,
-                    storage: Math.random() * 100 + 400,
-                  }))}
-                >
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="date"
-                    tickFormatter={(value) => format(new Date(value), 'MMM dd')}
-                  />
-                  <YAxis />
-                  <Tooltip />
-                  <Area type="monotone" dataKey="storage" stroke="#8884d8" fill="#8884d8" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </Paper>
-          </Grid>
-        </Grid>
-      )}
-
-      {tabValue === 2 && (
-        <Paper sx={{ p: 3 }}>
+      {tab === 1 && (
+        <>
           <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-            <Typography variant="h6">Recent User Activity</Typography>
-            <Button variant="contained" startIcon={<People />}>
-              Manage Users
-            </Button>
+            <TextField
+              placeholder="Search users..."
+              size="small"
+              value={userQuery}
+              onChange={(e) => setUserQuery(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && loadUsers(userQuery)}
+              sx={{ width: 280 }}
+            />
+            <Box display="flex" gap={1}>
+              <Button variant="outlined" onClick={() => loadUsers(userQuery)}>
+                Search
+              </Button>
+              <Button
+                variant="contained"
+                startIcon={<PersonAdd />}
+                onClick={() => setCreateUserOpen(true)}
+              >
+                New User
+              </Button>
+            </Box>
           </Box>
-          <TableContainer>
-            <Table>
+
+          <TableContainer component={Paper}>
+            <Table size="small">
               <TableHead>
                 <TableRow>
                   <TableCell>Username</TableCell>
-                  <TableCell>Last Login</TableCell>
-                  <TableCell>Documents Created</TableCell>
-                  <TableCell>Status</TableCell>
-                  <TableCell>Actions</TableCell>
+                  <TableCell>Email</TableCell>
+                  <TableCell>Full Name</TableCell>
+                  <TableCell align="center">Enabled</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {recentUsers.map((user) => (
-                  <TableRow key={user.username}>
-                    <TableCell>{user.username}</TableCell>
-                    <TableCell>{user.lastLogin}</TableCell>
-                    <TableCell>{user.documentsCreated}</TableCell>
-                    <TableCell>
-                      <Chip
-                        label={user.status}
-                        color={user.status === 'active' ? 'success' : 'default'}
-                        size="small"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Button size="small">View</Button>
-                      <Button size="small">Edit</Button>
+                {usersLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={4} align="center">
+                      <CircularProgress size={20} />
                     </TableCell>
                   </TableRow>
-                ))}
+                ) : (
+                  users.map((u) => (
+                    <TableRow key={u.username} hover>
+                      <TableCell>{u.username}</TableCell>
+                      <TableCell>{u.email}</TableCell>
+                      <TableCell>{`${u.firstName || ''} ${u.lastName || ''}`.trim() || '-'}</TableCell>
+                      <TableCell align="center">
+                        <Switch
+                          size="small"
+                          checked={u.enabled !== false}
+                          onChange={async (e) => {
+                            try {
+                              await userGroupService.updateUser(u.username, { enabled: e.target.checked });
+                              toast.success('User updated');
+                              loadUsers(userQuery);
+                            } catch {
+                              toast.error('Failed to update user');
+                            }
+                          }}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+                {!usersLoading && users.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={4} align="center">
+                      No users
+                    </TableCell>
+                  </TableRow>
+                )}
               </TableBody>
             </Table>
           </TableContainer>
-        </Paper>
+
+          <Dialog open={createUserOpen} onClose={() => setCreateUserOpen(false)} maxWidth="sm" fullWidth>
+            <DialogTitle>Create User</DialogTitle>
+            <DialogContent>
+              <Box display="flex" flexDirection="column" gap={2} mt={1}>
+                <TextField
+                  label="Username"
+                  value={newUser.username}
+                  onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
+                  size="small"
+                />
+                <TextField
+                  label="Email"
+                  value={newUser.email}
+                  onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                  size="small"
+                />
+                <TextField
+                  label="Password"
+                  type="password"
+                  value={newUser.password}
+                  onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                  size="small"
+                />
+                <TextField
+                  label="First Name"
+                  value={newUser.firstName}
+                  onChange={(e) => setNewUser({ ...newUser, firstName: e.target.value })}
+                  size="small"
+                />
+                <TextField
+                  label="Last Name"
+                  value={newUser.lastName}
+                  onChange={(e) => setNewUser({ ...newUser, lastName: e.target.value })}
+                  size="small"
+                />
+              </Box>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setCreateUserOpen(false)}>Cancel</Button>
+              <Button
+                variant="contained"
+                onClick={async () => {
+                  try {
+                    await userGroupService.createUser({
+                      username: newUser.username,
+                      email: newUser.email,
+                      password: newUser.password,
+                      firstName: newUser.firstName || undefined,
+                      lastName: newUser.lastName || undefined,
+                    });
+                    toast.success('User created');
+                    setCreateUserOpen(false);
+                    setNewUser({
+                      username: '',
+                      email: '',
+                      password: '',
+                      firstName: '',
+                      lastName: '',
+                      enabled: true,
+                    });
+                    loadUsers();
+                  } catch {
+                    toast.error('Failed to create user');
+                  }
+                }}
+                disabled={!newUser.username || !newUser.email || !newUser.password}
+              >
+                Create
+              </Button>
+            </DialogActions>
+          </Dialog>
+        </>
       )}
 
-      {tabValue === 3 && (
-        <Grid container spacing={3}>
-          <Grid item xs={12} md={6}>
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" gutterBottom>
-                System Configuration
-              </Typography>
-              <Box mt={2}>
-                <Button variant="outlined" startIcon={<Settings />} fullWidth sx={{ mb: 1 }}>
-                  General Settings
-                </Button>
-                <Button variant="outlined" startIcon={<Security />} fullWidth sx={{ mb: 1 }}>
-                  Security Settings
-                </Button>
-                <Button variant="outlined" startIcon={<Storage />} fullWidth sx={{ mb: 1 }}>
-                  Storage Settings
+      {tab === 2 && (
+        <>
+          <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+            <Typography variant="h6">Groups</Typography>
+            <Button
+              variant="contained"
+              startIcon={<GroupAdd />}
+              onClick={() => setCreateGroupOpen(true)}
+            >
+              New Group
+            </Button>
+          </Box>
+
+          <TableContainer component={Paper}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Name</TableCell>
+                  <TableCell>Display Name</TableCell>
+                  <TableCell align="center">Members</TableCell>
+                  <TableCell align="right" width={140}>Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {groupsLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={4} align="center">
+                      <CircularProgress size={20} />
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  groups.map((g) => (
+                    <TableRow key={g.name} hover>
+                      <TableCell>
+                        <Box display="flex" alignItems="center" gap={1}>
+                          <GroupIcon fontSize="small" />
+                          {g.name}
+                        </Box>
+                      </TableCell>
+                      <TableCell>{g.displayName || '-'}</TableCell>
+                      <TableCell align="center">{g.users?.length ?? '-'}</TableCell>
+                      <TableCell align="right">
+                        <Button size="small" onClick={() => setMembersGroup(g)}>
+                          Members
+                        </Button>
+                        <IconButton
+                          size="small"
+                          color="error"
+                          onClick={async () => {
+                            if (!window.confirm(`Delete group "${g.name}"?`)) return;
+                            try {
+                              await userGroupService.deleteGroup(g.name);
+                              toast.success('Group deleted');
+                              loadGroups();
+                            } catch {
+                              toast.error('Failed to delete group');
+                            }
+                          }}
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+                {!groupsLoading && groups.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={4} align="center">
+                      No groups
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+
+          <Dialog open={createGroupOpen} onClose={() => setCreateGroupOpen(false)} maxWidth="sm" fullWidth>
+            <DialogTitle>Create Group</DialogTitle>
+            <DialogContent>
+              <Box display="flex" flexDirection="column" gap={2} mt={1}>
+                <TextField
+                  label="Name"
+                  value={newGroup.name}
+                  onChange={(e) => setNewGroup({ ...newGroup, name: e.target.value })}
+                  size="small"
+                />
+                <TextField
+                  label="Display Name"
+                  value={newGroup.displayName}
+                  onChange={(e) => setNewGroup({ ...newGroup, displayName: e.target.value })}
+                  size="small"
+                />
+              </Box>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setCreateGroupOpen(false)}>Cancel</Button>
+              <Button
+                variant="contained"
+                onClick={async () => {
+                  try {
+                    await userGroupService.createGroup(newGroup.name, newGroup.displayName || undefined);
+                    toast.success('Group created');
+                    setCreateGroupOpen(false);
+                    setNewGroup({ name: '', displayName: '' });
+                    loadGroups();
+                  } catch {
+                    toast.error('Failed to create group');
+                  }
+                }}
+                disabled={!newGroup.name}
+              >
+                Create
+              </Button>
+            </DialogActions>
+          </Dialog>
+
+          <Dialog open={Boolean(membersGroup)} onClose={() => setMembersGroup(null)} maxWidth="sm" fullWidth>
+            <DialogTitle>Manage Members</DialogTitle>
+            <DialogContent>
+              <Box display="flex" gap={1} mt={1} mb={2}>
+                <Autocomplete
+                  options={availableUsernames}
+                  value={memberToAdd}
+                  onChange={(_, v) => setMemberToAdd(v || '')}
+                  renderInput={(params) => <TextField {...params} label="Add user" size="small" />}
+                  sx={{ flex: 1 }}
+                />
+                <Button
+                  variant="contained"
+                  onClick={async () => {
+                    if (!membersGroup || !memberToAdd) return;
+                    try {
+                      await userGroupService.addUserToGroup(membersGroup.name, memberToAdd);
+                      toast.success('Member added');
+                      setMemberToAdd('');
+                      loadGroups();
+                    } catch {
+                      toast.error('Failed to add member');
+                    }
+                  }}
+                  disabled={!memberToAdd}
+                >
+                  Add
                 </Button>
               </Box>
-            </Paper>
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" gutterBottom>
-                System Information
-              </Typography>
-              <Box mt={2}>
-                <Typography variant="body2" gutterBottom>
-                  <strong>Version:</strong> Athena ECM v1.0.0
-                </Typography>
-                <Typography variant="body2" gutterBottom>
-                  <strong>Database:</strong> PostgreSQL 13.0
-                </Typography>
-                <Typography variant="body2" gutterBottom>
-                  <strong>Search Engine:</strong> Elasticsearch 7.15.0
-                </Typography>
-                <Typography variant="body2" gutterBottom>
-                  <strong>Workflow Engine:</strong> Flowable 6.7.0
-                </Typography>
-              </Box>
-            </Paper>
-          </Grid>
-        </Grid>
+
+              <List dense>
+                {(membersGroup?.users || []).map((u) => (
+                  <ListItem
+                    key={u.username}
+                    secondaryAction={
+                      <IconButton
+                        edge="end"
+                        onClick={async () => {
+                          if (!membersGroup) return;
+                          try {
+                            await userGroupService.removeUserFromGroup(membersGroup.name, u.username);
+                            toast.success('Member removed');
+                            loadGroups();
+                          } catch {
+                            toast.error('Failed to remove member');
+                          }
+                        }}
+                      >
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    }
+                  >
+                    <ListItemText primary={u.username} secondary={u.email} />
+                  </ListItem>
+                ))}
+                {(membersGroup?.users || []).length === 0 && (
+                  <Typography variant="body2" color="text.secondary">
+                    Members not loaded; add by username above.
+                  </Typography>
+                )}
+              </List>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setMembersGroup(null)}>Close</Button>
+            </DialogActions>
+          </Dialog>
+        </>
       )}
-    </Box>
+    </Container>
   );
 };
+
+const SummaryCard: React.FC<{ title: string; value: string | number; icon: React.ReactNode }> = ({
+  title,
+  value,
+  icon,
+}) => (
+  <Card sx={{ height: '100%' }}>
+    <CardContent>
+      <Box display="flex" alignItems="center" justifyContent="space-between">
+        <Box>
+          <Typography color="textSecondary" gutterBottom variant="subtitle2">
+            {title}
+          </Typography>
+          <Typography variant="h4" component="div">
+            {value}
+          </Typography>
+        </Box>
+        {icon}
+      </Box>
+    </CardContent>
+  </Card>
+);
 
 export default AdminDashboard;

@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # ECM Core Application
   ecm-core:
@@ -7,19 +5,26 @@ services:
       context: ./ecm-core
       dockerfile: Dockerfile
     ports:
-      - "8080:8080"
+      - "${ECM_API_PORT:-8080}:8080"
     environment:
       - SPRING_PROFILES_ACTIVE=docker
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/ecm_db
-      - SPRING_DATASOURCE_USERNAME=ecm_user
-      - SPRING_DATASOURCE_PASSWORD=ecm_password
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER}
+      - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD}
       - SPRING_ELASTICSEARCH_URIS=http://elasticsearch:9200
       - SPRING_DATA_REDIS_HOST=redis
+      - SPRING_DATA_REDIS_PASSWORD=${REDIS_PASSWORD}
       - SPRING_RABBITMQ_HOST=rabbitmq
+      - SPRING_RABBITMQ_USERNAME=${RABBITMQ_USER}
+      - SPRING_RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD}
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
       - ECM_STORAGE_ROOT_PATH=/var/ecm/content
       - ECM_STORAGE_TEMP_PATH=/var/ecm/temp
       - ECM_ODOO_URL=http://odoo:8069
       - JODCONVERTER_LOCAL_OFFICE_HOME=/usr/lib/libreoffice
+      - ECM_ML_SERVICE_URL=http://ml-service:8080
     volumes:
       - ecm_content:/var/ecm/content
       - ecm_temp:/var/ecm/temp
@@ -29,6 +34,9 @@ services:
       - elasticsearch
       - redis
       - rabbitmq
+      - minio
+      - keycloak
+      - ml-service
     networks:
       - ecm-network
     restart: unless-stopped
@@ -42,20 +50,20 @@ services:
   postgres:
     image: postgres:15-alpine
     environment:
-      - POSTGRES_DB=ecm_db
-      - POSTGRES_USER=ecm_user
-      - POSTGRES_PASSWORD=ecm_password
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init-scripts:/docker-entrypoint-initdb.d
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     networks:
       - ecm-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ecm_user -d ecm_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -78,7 +86,7 @@ services:
     volumes:
       - elasticsearch_data:/usr/share/elasticsearch/data
     ports:
-      - "9200:9200"
+      - "${ELASTICSEARCH_PORT:-9200}:9200"
       - "9300:9300"
     networks:
       - ecm-network
@@ -92,11 +100,11 @@ services:
   # Redis Cache
   redis:
     image: redis:7-alpine
-    command: redis-server --appendonly yes --requirepass redis_password
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
     volumes:
       - redis_data:/data
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     networks:
       - ecm-network
     restart: unless-stopped
@@ -110,13 +118,13 @@ services:
   rabbitmq:
     image: rabbitmq:3.12-management-alpine
     environment:
-      - RABBITMQ_DEFAULT_USER=rabbitmq
-      - RABBITMQ_DEFAULT_PASS=rabbitmq_password
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD}
       - RABBITMQ_DEFAULT_VHOST=/
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     ports:
-      - "5672:5672"
+      - "${RABBITMQ_PORT:-5672}:5672"
       - "15672:15672"
     networks:
       - ecm-network
@@ -127,13 +135,88 @@ services:
       timeout: 10s
       retries: 5
 
+  # MinIO Object Storage
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ACCESS_KEY}
+      - MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    networks:
+      - ecm-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Keycloak IAM
+  keycloak:
+    image: quay.io/keycloak/keycloak:23.0.0
+    command: start-dev --import-realm
+    environment:
+      - KEYCLOAK_ADMIN=${KEYCLOAK_USER}
+      - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_PASSWORD}
+      - KC_DB=postgres
+      - KC_DB_URL=jdbc:postgresql://postgres-keycloak:5432/keycloak
+      - KC_DB_USERNAME=${KEYCLOAK_DB_USER}
+      - KC_DB_PASSWORD=${KEYCLOAK_DB_PASSWORD}
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm.json
+    ports:
+      - "8081:8080"
+    depends_on:
+      - postgres-keycloak
+    networks:
+      - ecm-network
+    restart: unless-stopped
+
+  # Postgres for Keycloak
+  postgres-keycloak:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=keycloak
+      - POSTGRES_USER=${KEYCLOAK_DB_USER}
+      - POSTGRES_PASSWORD=${KEYCLOAK_DB_PASSWORD}
+    volumes:
+      - postgres_keycloak_data:/var/lib/postgresql/data
+    networks:
+      - ecm-network
+    restart: unless-stopped
+
+  # ML Service
+  ml-service:
+    build: 
+      context: ./ml-service
+      dockerfile: Dockerfile
+    ports:
+      - "8082:8080"
+    volumes:
+      - ml_models:/var/ml-service
+    environment:
+      - MODEL_PATH=/var/ml-service/model.pkl
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - ecm-network
+    restart: unless-stopped
+
   # Odoo ERP Integration
   odoo:
     image: odoo:16
     environment:
       - HOST=postgres-odoo
-      - USER=odoo
-      - PASSWORD=odoo_password
+      - USER=${ODOO_DB_USER}
+      - PASSWORD=${ODOO_DB_PASSWORD}
     volumes:
       - odoo_data:/var/lib/odoo
       - ./odoo/addons:/mnt/extra-addons
@@ -151,8 +234,8 @@ services:
     image: postgres:15-alpine
     environment:
       - POSTGRES_DB=postgres
-      - POSTGRES_USER=odoo
-      - POSTGRES_PASSWORD=odoo_password
+      - POSTGRES_USER=${ODOO_DB_USER}
+      - POSTGRES_PASSWORD=${ODOO_DB_PASSWORD}
     volumes:
       - postgres_odoo_data:/var/lib/postgresql/data
     networks:
@@ -181,7 +264,7 @@ services:
       context: ./ecm-frontend
       dockerfile: Dockerfile
     ports:
-      - "3000:80"
+      - "${ECM_FRONTEND_PORT:-3000}:80"
     environment:
       - REACT_APP_API_BASE_URL=http://localhost:8080/api/v1
     depends_on:
@@ -250,11 +333,17 @@ volumes:
     driver: local
   postgres_odoo_data:
     driver: local
+  postgres_keycloak_data:
+    driver: local
   elasticsearch_data:
     driver: local
   redis_data:
     driver: local
   rabbitmq_data:
+    driver: local
+  minio_data:
+    driver: local
+  ml_models:
     driver: local
   odoo_data:
     driver: local

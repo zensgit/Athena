@@ -1,7 +1,7 @@
 package com.ecm.core.repository;
 
 import com.ecm.core.entity.Folder;
-import com.ecm.core.entity.FolderType;
+import com.ecm.core.entity.Folder.FolderType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;

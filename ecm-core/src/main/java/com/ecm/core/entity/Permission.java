@@ -48,27 +48,27 @@ public class Permission extends BaseEntity {
     public boolean isExpired() {
         return expiryDate != null && LocalDateTime.now().isAfter(expiryDate);
     }
-}
 
-enum AuthorityType {
-    USER,
-    GROUP,
-    ROLE,
-    EVERYONE
-}
+    public enum AuthorityType {
+        USER,
+        GROUP,
+        ROLE,
+        EVERYONE
+    }
 
-enum PermissionType {
-    READ,
-    WRITE,
-    DELETE,
-    CREATE_CHILDREN,
-    DELETE_CHILDREN,
-    EXECUTE,
-    CHANGE_PERMISSIONS,
-    TAKE_OWNERSHIP,
-    CHECKOUT,
-    CHECKIN,
-    CANCEL_CHECKOUT,
-    APPROVE,
-    REJECT
+    public enum PermissionType {
+        READ,
+        WRITE,
+        DELETE,
+        CREATE_CHILDREN,
+        DELETE_CHILDREN,
+        EXECUTE,
+        CHANGE_PERMISSIONS,
+        TAKE_OWNERSHIP,
+        CHECKOUT,
+        CHECKIN,
+        CANCEL_CHECKOUT,
+        APPROVE,
+        REJECT
+    }
 }

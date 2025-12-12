@@ -88,4 +88,5 @@ class TagService {
   }
 }
 
-export default new TagService();
+const tagService = new TagService();
+export default tagService;

@@ -77,4 +77,5 @@ class CommentService {
   }
 }
 
-export default new CommentService();
+const commentService = new CommentService();
+export default commentService;

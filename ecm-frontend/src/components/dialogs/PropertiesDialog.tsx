@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -27,11 +27,11 @@ import {
   Delete,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
-import { Node } from '@/types';
-import { useAppDispatch, useAppSelector } from '@/store';
-import { setPropertiesDialogOpen } from '@/store/slices/uiSlice';
-import { updateNode } from '@/store/slices/nodeSlice';
-import nodeService from '@/services/nodeService';
+import { Node } from 'types';
+import { useAppDispatch, useAppSelector } from 'store';
+import { setPropertiesDialogOpen } from 'store/slices/uiSlice';
+import { updateNode } from 'store/slices/nodeSlice';
+import nodeService from 'services/nodeService';
 import { toast } from 'react-toastify';
 
 interface PropertyField {
@@ -50,13 +50,7 @@ const PropertiesDialog: React.FC = () => {
   const [newPropertyKey, setNewPropertyKey] = useState('');
   const [newPropertyValue, setNewPropertyValue] = useState('');
 
-  useEffect(() => {
-    if (propertiesDialogOpen && selectedNodeId) {
-      loadNodeDetails();
-    }
-  }, [propertiesDialogOpen, selectedNodeId]);
-
-  const loadNodeDetails = async () => {
+  const loadNodeDetails = useCallback(async () => {
     if (!selectedNodeId) return;
 
     setLoading(true);
@@ -75,7 +69,13 @@ const PropertiesDialog: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedNodeId]);
+
+  useEffect(() => {
+    if (propertiesDialogOpen && selectedNodeId) {
+      loadNodeDetails();
+    }
+  }, [propertiesDialogOpen, selectedNodeId, loadNodeDetails]);
 
   const handleClose = () => {
     dispatch(setPropertiesDialogOpen(false));

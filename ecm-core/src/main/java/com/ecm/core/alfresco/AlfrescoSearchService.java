@@ -1,10 +1,17 @@
 package com.ecm.core.alfresco;
 
-import com.ecm.core.search.*;
+import com.ecm.core.alfresco.NodeRef;
+import com.ecm.core.search.NodeDocument;
+import com.ecm.core.search.SearchIndexService;
+import com.ecm.core.search.SearchRequest;
+import com.ecm.core.search.SimplePageRequest;
 import lombok.RequiredArgsConstructor;
+import lombok.AllArgsConstructor;
+import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -29,8 +36,10 @@ public class AlfrescoSearchService {
         request.setQuery(searchParameters.getQuery());
         
         if (searchParameters.getMaxItems() > 0) {
-            request.setPageable(org.springframework.data.domain.PageRequest.of(
-                0, searchParameters.getMaxItems()));
+            SimplePageRequest pageable = new SimplePageRequest();
+            pageable.setPage(0);
+            pageable.setSize(searchParameters.getMaxItems());
+            request.setPageable(pageable);
         }
         
         List<NodeDocument> results = searchIndexService.search(

@@ -20,6 +20,8 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
     Optional<Document> findByContentHash(String contentHash);
     
     List<Document> findByMimeType(String mimeType);
+
+    Page<Document> findByDeletedFalse(Pageable pageable);
     
     Page<Document> findByMimeTypeIn(List<String> mimeTypes, Pageable pageable);
     

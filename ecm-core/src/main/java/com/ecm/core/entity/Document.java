@@ -83,7 +83,12 @@ public class Document extends Node {
     public NodeType getNodeType() {
         return NodeType.DOCUMENT;
     }
-    
+
+    @Override
+    public Long getSize() {
+        return fileSize;
+    }
+
     public void addVersion(Version version) {
         versions.add(version);
         version.setDocument(this);

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -30,10 +30,10 @@ import {
   MoreVert,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
-import { Version } from '@/types';
-import { useAppDispatch, useAppSelector } from '@/store';
-import { setVersionHistoryDialogOpen } from '@/store/slices/uiSlice';
-import nodeService from '@/services/nodeService';
+import { Version } from 'types';
+import { useAppDispatch, useAppSelector } from 'store';
+import { setVersionHistoryDialogOpen } from 'store/slices/uiSlice';
+import nodeService from 'services/nodeService';
 import { toast } from 'react-toastify';
 
 const VersionHistoryDialog: React.FC = () => {
@@ -47,13 +47,7 @@ const VersionHistoryDialog: React.FC = () => {
     version: Version;
   } | null>(null);
 
-  useEffect(() => {
-    if (versionHistoryDialogOpen && selectedNodeId) {
-      loadVersionHistory();
-    }
-  }, [versionHistoryDialogOpen, selectedNodeId]);
-
-  const loadVersionHistory = async () => {
+  const loadVersionHistory = useCallback(async () => {
     if (!selectedNodeId) return;
 
     setLoading(true);
@@ -65,7 +59,13 @@ const VersionHistoryDialog: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedNodeId]);
+
+  useEffect(() => {
+    if (versionHistoryDialogOpen && selectedNodeId) {
+      loadVersionHistory();
+    }
+  }, [versionHistoryDialogOpen, selectedNodeId, loadVersionHistory]);
 
   const handleClose = () => {
     dispatch(setVersionHistoryDialogOpen(false));

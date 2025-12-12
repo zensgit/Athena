@@ -1,9 +1,14 @@
 package com.ecm.core.entity;
 
+import com.vladmihalcea.hibernate.type.json.JsonType;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.ToString;
+import org.hibernate.annotations.Type;
+
+import java.util.HashMap;
+import java.util.Map;
 
 @Data
 @Entity
@@ -28,6 +33,13 @@ public class Folder extends Node {
     
     @Column(name = "naming_pattern")
     private String namingPattern;
+
+    @Column(name = "is_smart", nullable = false)
+    private boolean smart = false;
+
+    @Type(JsonType.class)
+    @Column(name = "query_criteria", columnDefinition = "jsonb")
+    private Map<String, Object> queryCriteria = new HashMap<>();
     
     @Override
     public NodeType getNodeType() {
@@ -46,13 +58,13 @@ public class Folder extends Node {
         }
         return false;
     }
-}
 
-enum FolderType {
-    GENERAL,
-    WORKSPACE,
-    PROJECT,
-    ARCHIVE,
-    SYSTEM,
-    TEMP
+    public enum FolderType {
+        GENERAL,
+        WORKSPACE,
+        PROJECT,
+        ARCHIVE,
+        SYSTEM,
+        TEMP
+    }
 }

@@ -3,6 +3,7 @@ package com.ecm.core.alfresco;
 import com.ecm.core.entity.Document;
 import com.ecm.core.service.ContentService;
 import com.ecm.core.service.NodeService;
+import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -10,6 +11,7 @@ import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.Map;
 import java.util.UUID;
 
 /**

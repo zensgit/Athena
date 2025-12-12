@@ -3,24 +3,27 @@ package com.ecm.core.event;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Node;
 import com.ecm.core.entity.Version;
-import com.ecm.core.service.*;
+import com.ecm.core.search.SearchIndexService;
+import com.ecm.core.service.AuditService;
+import com.ecm.core.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class EventListener {
+public class EcmEventListener {
     
     private final AuditService auditService;
     private final SearchIndexService searchIndexService;
     private final NotificationService notificationService;
     
     @Async
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handleNodeCreated(NodeCreatedEvent event) {
         log.info("Node created: {}", event.getNode().getName());
         
@@ -35,7 +38,7 @@ public class EventListener {
     }
     
     @Async
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handleNodeUpdated(NodeUpdatedEvent event) {
         log.info("Node updated: {}", event.getNode().getName());
         
@@ -47,7 +50,7 @@ public class EventListener {
     }
     
     @Async
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handleNodeDeleted(NodeDeletedEvent event) {
         log.info("Node deleted: {}", event.getNode().getName());
         
@@ -66,7 +69,7 @@ public class EventListener {
     }
     
     @Async
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handleNodeMoved(NodeMovedEvent event) {
         log.info("Node moved: {} from {} to {}", 
             event.getNode().getName(), 
@@ -85,7 +88,7 @@ public class EventListener {
     }
     
     @Async
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handleNodeCopied(NodeCopiedEvent event) {
         log.info("Node copied: {} from {}", 
             event.getNode().getName(), event.getSourceNode().getName());
@@ -98,7 +101,7 @@ public class EventListener {
     }
     
     @Async
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handleNodeLocked(NodeLockedEvent event) {
         log.info("Node locked: {} by {}", event.getNode().getName(), event.getUsername());
         
@@ -110,7 +113,7 @@ public class EventListener {
     }
     
     @Async
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handleNodeUnlocked(NodeUnlockedEvent event) {
         log.info("Node unlocked: {} by {}", event.getNode().getName(), event.getUsername());
         
@@ -122,7 +125,7 @@ public class EventListener {
     }
     
     @Async
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handleVersionCreated(VersionCreatedEvent event) {
         Version version = event.getVersion();
         Document document = version.getDocument();
@@ -149,7 +152,7 @@ public class EventListener {
     }
     
     @Async
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handleVersionDeleted(VersionDeletedEvent event) {
         log.info("Version deleted: {}", event.getVersion().getVersionLabel());
         
@@ -158,7 +161,7 @@ public class EventListener {
     }
     
     @Async
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handleVersionReverted(VersionRevertedEvent event) {
         log.info("Document {} reverted to version {}", 
             event.getDocument().getName(), event.getTargetVersion().getVersionLabel());

@@ -1,5 +1,7 @@
 package com.ecm.core.service;
 
+import com.ecm.core.entity.Node;
+import com.ecm.core.entity.Permission.PermissionType;
 import com.ecm.core.model.*;
 import com.ecm.core.repository.*;
 import com.ecm.core.exception.*;
@@ -10,8 +12,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
 
 import java.util.*;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -42,11 +46,10 @@ public class CommentService {
      * 添加评论
      */
     public Comment addComment(String nodeId, String content, String parentCommentId) {
-        Node node = nodeRepository.findByIdAndDeletedFalse(nodeId)
-            .orElseThrow(() -> new NodeNotFoundException("Node not found: " + nodeId));
+        Node node = loadActiveNode(nodeId);
         
         // 权限检查
-        securityService.checkPermission(node, Permission.READ);
+        securityService.checkPermission(node, PermissionType.READ);
         
         Comment comment = new Comment();
         comment.setNode(node);
@@ -55,8 +58,7 @@ public class CommentService {
         
         // 设置父评论
         if (parentCommentId != null) {
-            Comment parentComment = commentRepository.findById(parentCommentId)
-                .orElseThrow(() -> new ResourceNotFoundException("Parent comment not found"));
+            Comment parentComment = loadComment(parentCommentId);
             
             // 检查评论深度
             if (parentComment.getLevel() >= MAX_COMMENT_DEPTH) {
@@ -76,9 +78,9 @@ public class CommentService {
         notifyMentionedUsers(comment, mentionedUsers);
         
         // 通知文档所有者
-        if (!comment.getAuthor().equals(node.getCreator())) {
+        if (!comment.getAuthor().equals(node.getCreatedBy())) {
             notificationService.notifyUser(
-                node.getCreator(),
+                node.getCreatedBy(),
                 "New comment on your document",
                 String.format("%s commented on '%s'", comment.getAuthor(), node.getName())
             );
@@ -94,11 +96,10 @@ public class CommentService {
      * 获取节点的评论
      */
     public Page<Comment> getNodeComments(String nodeId, Pageable pageable) {
-        Node node = nodeRepository.findByIdAndDeletedFalse(nodeId)
-            .orElseThrow(() -> new NodeNotFoundException("Node not found: " + nodeId));
+        Node node = loadActiveNode(nodeId);
         
         // 权限检查
-        securityService.checkPermission(node, Permission.READ);
+        securityService.checkPermission(node, PermissionType.READ);
         
         // 只获取顶级评论，回复通过嵌套加载
         return commentRepository.findByNodeAndParentCommentIsNullAndDeletedFalseOrderByCreatedDesc(
@@ -109,11 +110,10 @@ public class CommentService {
      * 获取评论树
      */
     public List<CommentTreeNode> getCommentTree(String nodeId) {
-        Node node = nodeRepository.findByIdAndDeletedFalse(nodeId)
-            .orElseThrow(() -> new NodeNotFoundException("Node not found: " + nodeId));
+        Node node = loadActiveNode(nodeId);
         
         // 权限检查
-        securityService.checkPermission(node, Permission.READ);
+        securityService.checkPermission(node, PermissionType.READ);
         
         List<Comment> rootComments = commentRepository
             .findByNodeAndParentCommentIsNullAndDeletedFalseOrderByCreatedDesc(node);
@@ -143,8 +143,7 @@ public class CommentService {
      * 编辑评论
      */
     public Comment editComment(String commentId, String newContent) {
-        Comment comment = commentRepository.findById(commentId)
-            .orElseThrow(() -> new ResourceNotFoundException("Comment not found"));
+        Comment comment = loadComment(commentId);
         
         // 只有作者可以编辑
         if (!comment.getAuthor().equals(securityService.getCurrentUser())) {
@@ -153,6 +152,7 @@ public class CommentService {
         
         comment.setContent(newContent);
         comment.setEditor(securityService.getCurrentUser());
+        comment.setEditedFlag(true);
         
         // 更新提及
         Set<String> newMentions = extractMentions(newContent);
@@ -172,8 +172,7 @@ public class CommentService {
      * 删除评论（软删除）
      */
     public void deleteComment(String commentId) {
-        Comment comment = commentRepository.findById(commentId)
-            .orElseThrow(() -> new ResourceNotFoundException("Comment not found"));
+        Comment comment = loadComment(commentId);
         
         // 只有作者或管理员可以删除
         String currentUser = securityService.getCurrentUser();
@@ -201,8 +200,7 @@ public class CommentService {
      * 添加反应
      */
     public void addReaction(String commentId, String reactionType) {
-        Comment comment = commentRepository.findById(commentId)
-            .orElseThrow(() -> new ResourceNotFoundException("Comment not found"));
+        Comment comment = loadComment(commentId);
         
         String currentUser = securityService.getCurrentUser();
         comment.addReaction(reactionType, currentUser);
@@ -223,8 +221,7 @@ public class CommentService {
      * 移除反应
      */
     public void removeReaction(String commentId) {
-        Comment comment = commentRepository.findById(commentId)
-            .orElseThrow(() -> new ResourceNotFoundException("Comment not found"));
+        Comment comment = loadComment(commentId);
         
         comment.removeReaction(securityService.getCurrentUser());
         commentRepository.save(comment);
@@ -248,11 +245,10 @@ public class CommentService {
      * 搜索评论
      */
     public List<Comment> searchComments(String nodeId, String query) {
-        Node node = nodeRepository.findByIdAndDeletedFalse(nodeId)
-            .orElseThrow(() -> new NodeNotFoundException("Node not found: " + nodeId));
+        Node node = loadActiveNode(nodeId);
         
         // 权限检查
-        securityService.checkPermission(node, Permission.READ);
+        securityService.checkPermission(node, PermissionType.READ);
         
         return commentRepository.findByNodeAndContentContainingIgnoreCaseAndDeletedFalse(
             node, query);
@@ -262,8 +258,7 @@ public class CommentService {
      * 获取评论统计
      */
     public CommentStatistics getCommentStatistics(String nodeId) {
-        Node node = nodeRepository.findByIdAndDeletedFalse(nodeId)
-            .orElseThrow(() -> new NodeNotFoundException("Node not found: " + nodeId));
+        Node node = loadActiveNode(nodeId);
         
         CommentStatistics stats = new CommentStatistics();
         stats.setNodeId(nodeId);
@@ -271,7 +266,8 @@ public class CommentService {
         stats.setUniqueCommenters(commentRepository.countUniqueCommenters(node));
         
         // 获取最活跃的评论者
-        List<Object[]> topCommenters = commentRepository.findTopCommenters(node, 5);
+        List<Object[]> topCommenters = commentRepository.findTopCommenters(
+            node, PageRequest.of(0, 5));
         Map<String, Long> commentersMap = new LinkedHashMap<>();
         for (Object[] row : topCommenters) {
             commentersMap.put((String) row[0], (Long) row[1]);
@@ -342,6 +338,26 @@ public class CommentService {
         public Map<String, Long> getTopCommenters() { return topCommenters; }
         public void setTopCommenters(Map<String, Long> topCommenters) { 
             this.topCommenters = topCommenters; 
+        }
+    }
+
+    private Node loadActiveNode(String nodeId) {
+        try {
+            UUID id = UUID.fromString(nodeId);
+            return nodeRepository.findByIdAndDeletedFalse(id)
+                .orElseThrow(() -> new NodeNotFoundException("Node not found: " + nodeId));
+        } catch (IllegalArgumentException ex) {
+            throw new NodeNotFoundException("Invalid node id: " + nodeId, ex);
+        }
+    }
+
+    private Comment loadComment(String commentId) {
+        try {
+            UUID id = UUID.fromString(commentId);
+            return commentRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Comment not found"));
+        } catch (IllegalArgumentException ex) {
+            throw new ResourceNotFoundException("Invalid comment id: " + commentId, ex);
         }
     }
 }

@@ -65,22 +65,22 @@ public class Role extends BaseEntity {
     public void removePermission(String permission) {
         permissions.remove(permission);
     }
-}
 
-enum Privilege {
-    ADMIN_USERS,
-    ADMIN_GROUPS,
-    ADMIN_ROLES,
-    ADMIN_SYSTEM,
-    CREATE_SITES,
-    DELETE_SITES,
-    MANAGE_WORKFLOWS,
-    MANAGE_TEMPLATES,
-    MANAGE_CATEGORIES,
-    MANAGE_TAGS,
-    BULK_IMPORT,
-    BULK_EXPORT,
-    VIEW_AUDIT,
-    MANAGE_AUDIT,
-    EXECUTE_SCRIPTS
+    public enum Privilege {
+        ADMIN_USERS,
+        ADMIN_GROUPS,
+        ADMIN_ROLES,
+        ADMIN_SYSTEM,
+        CREATE_SITES,
+        DELETE_SITES,
+        MANAGE_WORKFLOWS,
+        MANAGE_TEMPLATES,
+        MANAGE_CATEGORIES,
+        MANAGE_TAGS,
+        BULK_IMPORT,
+        BULK_EXPORT,
+        VIEW_AUDIT,
+        MANAGE_AUDIT,
+        EXECUTE_SCRIPTS
+    }
 }

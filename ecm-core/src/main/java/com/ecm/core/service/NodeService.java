@@ -1,6 +1,11 @@
 package com.ecm.core.service;
 
 import com.ecm.core.entity.*;
+import com.ecm.core.entity.Node.NodeStatus;
+import com.ecm.core.entity.Node.NodeType;
+import com.ecm.core.entity.Permission.PermissionType;
+import com.ecm.core.entity.Folder.FolderType;
+import com.ecm.core.event.*;
 import com.ecm.core.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -62,7 +67,7 @@ public class NodeService {
             copyPermissions(node.getParent(), savedNode);
         }
         
-        eventPublisher.publishEvent(new NodeCreatedEvent(savedNode));
+        eventPublisher.publishEvent(new NodeCreatedEvent(savedNode, securityService.getCurrentUser()));
         
         return savedNode;
     }
@@ -135,7 +140,7 @@ public class NodeService {
         }
         
         Node updatedNode = nodeRepository.save(node);
-        eventPublisher.publishEvent(new NodeUpdatedEvent(updatedNode));
+        eventPublisher.publishEvent(new NodeUpdatedEvent(updatedNode, securityService.getCurrentUser()));
         
         return updatedNode;
     }
@@ -168,9 +173,33 @@ public class NodeService {
         
         Node movedNode = nodeRepository.save(node);
         
-        eventPublisher.publishEvent(new NodeMovedEvent(movedNode, oldParent, targetParent));
+        eventPublisher.publishEvent(new NodeMovedEvent(
+            movedNode, oldParent, targetParent, securityService.getCurrentUser()));
         
         return movedNode;
+    }
+
+    /**
+     * Convenience helper to create a Document node with basic metadata.
+     * Content storage should be handled separately via ContentService.
+     */
+    public Document createDocument(String name, String mimeType, long size, UUID parentId) {
+        Document document = new Document();
+        document.setName(name);
+        document.setMimeType(mimeType);
+        document.setFileSize(size);
+
+        if (parentId != null) {
+            Folder parent = folderRepository.findById(parentId)
+                .orElseThrow(() -> new IllegalArgumentException("Parent folder not found: " + parentId));
+            document.setParent(parent);
+            document.setPath(parent.getPath() + "/" + name);
+        } else {
+            document.setPath("/" + name);
+        }
+
+        Node saved = createNode(document, parentId);
+        return (Document) saved;
     }
     
     public Node copyNode(UUID nodeId, UUID targetParentId, String newName, boolean deep) {
@@ -195,7 +224,7 @@ public class NodeService {
         
         Node copy = copyNodeRecursive(source, targetParent, copyName, deep);
         
-        eventPublisher.publishEvent(new NodeCopiedEvent(copy, source));
+        eventPublisher.publishEvent(new NodeCopiedEvent(copy, source, securityService.getCurrentUser()));
         
         return copy;
     }
@@ -213,7 +242,8 @@ public class NodeService {
             softDeleteNodeRecursive(node);
         }
         
-        eventPublisher.publishEvent(new NodeDeletedEvent(node, permanent));
+        eventPublisher.publishEvent(new NodeDeletedEvent(
+            node, securityService.getCurrentUser(), permanent));
     }
     
     public void lockNode(UUID nodeId) {
@@ -232,7 +262,7 @@ public class NodeService {
         node.setLockedDate(LocalDateTime.now());
         
         nodeRepository.save(node);
-        eventPublisher.publishEvent(new NodeLockedEvent(node));
+        eventPublisher.publishEvent(new NodeLockedEvent(node, securityService.getCurrentUser()));
     }
     
     public void unlockNode(UUID nodeId) {
@@ -251,7 +281,7 @@ public class NodeService {
         node.setLockedDate(null);
         
         nodeRepository.save(node);
-        eventPublisher.publishEvent(new NodeUnlockedEvent(node));
+        eventPublisher.publishEvent(new NodeUnlockedEvent(node, securityService.getCurrentUser()));
     }
     
     public List<Node> searchNodes(String query, Map<String, Object> filters, Pageable pageable) {

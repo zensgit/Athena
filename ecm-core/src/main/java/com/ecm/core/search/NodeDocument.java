@@ -1,8 +1,11 @@
 package com.ecm.core.search;
 
 import com.ecm.core.entity.Node;
-import com.ecm.core.entity.NodeType;
+import com.ecm.core.entity.Node.NodeType;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.elasticsearch.annotations.*;
 
@@ -13,6 +16,9 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 @Document(indexName = "ecm_documents")
 @Setting(replicas = 1, shards = 2)
 public class NodeDocument {
@@ -43,6 +49,18 @@ public class NodeDocument {
     
     @Field(type = FieldType.Text, analyzer = "standard")
     private String textContent;
+
+    @Field(type = FieldType.Text, analyzer = "standard")
+    private String content;
+
+    @Field(type = FieldType.Text, analyzer = "standard")
+    private String extractedText;
+
+    @Field(type = FieldType.Text, analyzer = "standard")
+    private String title;
+
+    @Field(type = FieldType.Keyword)
+    private String author;
     
     @Field(type = FieldType.Keyword)
     private String versionLabel;
@@ -104,6 +122,16 @@ public class NodeDocument {
         doc.setLockedBy(node.getLockedBy());
         doc.setDeleted(node.isDeleted());
         doc.setStatus(node.getStatus().toString());
+
+        if (node instanceof com.ecm.core.entity.Document document) {
+            doc.setMimeType(document.getMimeType());
+            doc.setFileSize(document.getFileSize());
+            doc.setVersionLabel(document.getVersionLabel());
+            // Store extracted text in both textContent and content for search fields
+            doc.setTextContent(document.getTextContent());
+            doc.setContent(document.getTextContent());
+            doc.setExtractedText(document.getTextContent());
+        }
         
         // Set tags and categories
         if (node.getTags() != null) {

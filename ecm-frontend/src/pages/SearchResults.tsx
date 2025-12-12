@@ -30,12 +30,13 @@ import {
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
-import { useAppSelector, useAppDispatch } from '@/store';
-import { searchNodes } from '@/store/slices/nodeSlice';
-import { setSearchOpen } from '@/store/slices/uiSlice';
-import nodeService from '@/services/nodeService';
-import { Node } from '@/types';
+import { useAppSelector, useAppDispatch } from 'store';
+import { searchNodes } from 'store/slices/nodeSlice';
+import { setSearchOpen } from 'store/slices/uiSlice';
+import nodeService from 'services/nodeService';
+import { Node } from 'types';
 import { toast } from 'react-toastify';
+import Highlight from 'components/search/Highlight';
 
 const SearchResults: React.FC = () => {
   const navigate = useNavigate();
@@ -114,8 +115,23 @@ const SearchResults: React.FC = () => {
     return <Chip label="File" size="small" />;
   };
 
+  const renderTagsCategories = (node: Node) => {
+    return (
+      <Box display="flex" gap={1} flexWrap="wrap" mt={1}>
+        {node.tags?.map((tag) => (
+          <Chip key={tag} label={tag} size="small" variant="outlined" />
+        ))}
+        {node.categories?.map((cat) => (
+          <Chip key={cat} label={cat} size="small" color="info" variant="outlined" />
+        ))}
+      </Box>
+    );
+  };
+
   const sortedNodes = [...nodes].sort((a, b) => {
     switch (sortBy) {
+      case 'relevance':
+        return (b.score || 0) - (a.score || 0);
       case 'name':
         return a.name.localeCompare(b.name);
       case 'modified':
@@ -238,6 +254,11 @@ const SearchResults: React.FC = () => {
                     <Typography variant="body2" color="text.secondary" gutterBottom>
                       {node.path}
                     </Typography>
+                    <Highlight
+                      text={node.description}
+                      highlights={node.highlights?.description || node.highlights?.content}
+                    />
+                    {renderTagsCategories(node)}
                     <Box mt={2}>
                       <Typography variant="caption" color="text.secondary">
                         Modified: {format(new Date(node.modified), 'PPp')}

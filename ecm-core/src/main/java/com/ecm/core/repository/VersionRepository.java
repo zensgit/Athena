@@ -1,7 +1,7 @@
 package com.ecm.core.repository;
 
 import com.ecm.core.entity.Version;
-import com.ecm.core.entity.VersionStatus;
+import com.ecm.core.entity.Version.VersionStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -40,4 +40,6 @@ public interface VersionRepository extends JpaRepository<Version, UUID> {
     Optional<Version> findByDocumentIdAndVersionNumbers(@Param("documentId") UUID documentId,
                                                         @Param("major") Integer major,
                                                         @Param("minor") Integer minor);
+
+    long countByDocumentId(UUID documentId);
 }

@@ -12,6 +12,11 @@ import MainLayout from './components/layout/MainLayout';
 import FileBrowser from './pages/FileBrowser';
 import SearchResults from './pages/SearchResults';
 import AdminDashboard from './pages/AdminDashboard';
+import EditorPage from './pages/EditorPage';
+import TasksPage from './pages/TasksPage';
+import AdvancedSearchPage from './pages/AdvancedSearchPage';
+import TrashPage from './pages/TrashPage';
+import RulesPage from './pages/RulesPage';
 import SearchDialog from './components/search/SearchDialog';
 import VersionHistoryDialog from './components/dialogs/VersionHistoryDialog';
 import PermissionsDialog from './components/dialogs/PermissionsDialog';
@@ -70,11 +75,50 @@ const App: React.FC = () => {
               }
             />
             <Route
+              path="/search"
+              element={
+                <PrivateRoute>
+                  <MainLayout>
+                    <AdvancedSearchPage />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
               path="/search-results"
               element={
                 <PrivateRoute>
                   <MainLayout>
                     <SearchResults />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/editor/:documentId"
+              element={
+                <PrivateRoute>
+                  {/* Editor takes full screen, no MainLayout */}
+                  <EditorPage />
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/tasks"
+              element={
+                <PrivateRoute>
+                  <MainLayout>
+                    <TasksPage />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/trash"
+              element={
+                <PrivateRoute>
+                  <MainLayout>
+                    <TrashPage />
                   </MainLayout>
                 </PrivateRoute>
               }
@@ -90,6 +134,16 @@ const App: React.FC = () => {
               }
             />
             <Route
+              path="/rules"
+              element={
+                <PrivateRoute requiredRoles={['ROLE_ADMIN', 'ROLE_EDITOR']}>
+                  <MainLayout>
+                    <RulesPage />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
               path="/unauthorized"
               element={
                 <div>
@@ -99,14 +153,14 @@ const App: React.FC = () => {
               }
             />
           </Routes>
+
+          {/* Global Dialogs - Must be inside Router for useNavigate */}
+          <SearchDialog />
+          <VersionHistoryDialog />
+          <PermissionsDialog />
+          <PropertiesDialog />
         </Router>
-        
-        {/* Global Dialogs */}
-        <SearchDialog />
-        <VersionHistoryDialog />
-        <PermissionsDialog />
-        <PropertiesDialog />
-        
+
         <ToastContainer
           position="bottom-right"
           autoClose={5000}

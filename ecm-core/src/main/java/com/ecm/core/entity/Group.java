@@ -81,11 +81,11 @@ public class Group extends BaseEntity {
         subGroups.remove(subGroup);
         subGroup.setParentGroup(null);
     }
-}
 
-enum GroupType {
-    SYSTEM,
-    DEPARTMENT,
-    PROJECT,
-    CUSTOM
+    public enum GroupType {
+        SYSTEM,
+        DEPARTMENT,
+        PROJECT,
+        CUSTOM
+    }
 }

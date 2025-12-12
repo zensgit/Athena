@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="006c-1" author="ecm-system">
+        <comment>Create table for comment mentions (@mentions)</comment>
+        <createTable tableName="comment_mentions">
+            <column name="comment_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="mentioned_user" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addPrimaryKey tableName="comment_mentions" columnNames="comment_id, mentioned_user"
+                       constraintName="pk_comment_mentions"/>
+        <addForeignKeyConstraint baseTableName="comment_mentions" baseColumnNames="comment_id"
+                                 referencedTableName="comments" referencedColumnNames="id"
+                                 constraintName="fk_comment_mentions_comment"/>
+    </changeSet>
+
+    <changeSet id="006c-2" author="ecm-system">
+        <comment>Create table for comment reactions (emoji/reaction list)</comment>
+        <createTable tableName="comment_reactions">
+            <column name="comment_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="reactions_order" type="int"/>
+            <column name="reaction_type" type="varchar(100)"/>
+            <column name="reaction_user" type="varchar(255)"/>
+            <column name="reaction_date" type="timestamp"/>
+        </createTable>
+        <addPrimaryKey tableName="comment_reactions" columnNames="comment_id, reactions_order"
+                       constraintName="pk_comment_reactions"/>
+        <addForeignKeyConstraint baseTableName="comment_reactions" baseColumnNames="comment_id"
+                                 referencedTableName="comments" referencedColumnNames="id"
+                                 constraintName="fk_comment_reactions_comment"/>
+    </changeSet>
+
+</databaseChangeLog>

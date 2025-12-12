@@ -1,5 +1,6 @@
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 import { toast } from 'react-toastify';
+import { keycloak } from './authService';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080/api';
 
@@ -17,7 +18,7 @@ class ApiService {
     // Request interceptor to add auth token
     this.api.interceptors.request.use(
       (config) => {
-        const token = localStorage.getItem('token');
+        const token = keycloak.token;
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
         }
@@ -58,6 +59,10 @@ class ApiService {
     return this.api.put<T>(url, data, config).then((response) => response.data);
   }
 
+  patch<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+    return this.api.patch<T>(url, data, config).then((response) => response.data);
+  }
+
   delete<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
     return this.api.delete<T>(url, config).then((response) => response.data);
   }
@@ -91,4 +96,5 @@ class ApiService {
   }
 }
 
-export default new ApiService();
+const apiService = new ApiService();
+export default apiService;

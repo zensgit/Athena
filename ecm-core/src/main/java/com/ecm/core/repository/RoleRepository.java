@@ -1,6 +1,6 @@
 package com.ecm.core.repository;
 
-import com.ecm.core.entity.Privilege;
+import com.ecm.core.entity.Role.Privilege;
 import com.ecm.core.entity.Role;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -34,6 +34,6 @@ public interface RoleRepository extends JpaRepository<Role, UUID> {
     @Query("SELECT DISTINCT r FROM Role r LEFT JOIN FETCH r.privileges WHERE r.id IN :roleIds")
     List<Role> findByIdsWithPrivileges(@Param("roleIds") List<UUID> roleIds);
     
-    @Query("SELECT r FROM Role r WHERE :permission MEMBER OF r.permissions")
+    @Query(value = "SELECT * FROM roles r WHERE r.permissions @> to_jsonb(ARRAY[:permission])", nativeQuery = true)
     List<Role> findByPermission(@Param("permission") String permission);
 }

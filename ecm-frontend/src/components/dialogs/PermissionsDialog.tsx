@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -16,7 +16,6 @@ import {
   TableHead,
   TableRow,
   Paper,
-  Chip,
   TextField,
   Autocomplete,
   FormControlLabel,
@@ -31,10 +30,11 @@ import {
   Add,
   Delete,
 } from '@mui/icons-material';
-import { PermissionType } from '@/types';
-import { useAppDispatch, useAppSelector } from '@/store';
-import { setPermissionsDialogOpen } from '@/store/slices/uiSlice';
-import nodeService from '@/services/nodeService';
+import { PermissionType } from 'types';
+import { useAppDispatch, useAppSelector } from 'store';
+import { setPermissionsDialogOpen } from 'store/slices/uiSlice';
+import nodeService from 'services/nodeService';
+import userGroupService from 'services/userGroupService';
 import { toast } from 'react-toastify';
 
 interface TabPanelProps {
@@ -71,10 +71,16 @@ const PERMISSION_LABELS: Record<PermissionType, string> = {
   READ: 'Read',
   WRITE: 'Write',
   DELETE: 'Delete',
-  ADD_CHILDREN: 'Add Children',
-  READ_PERMISSIONS: 'Read Permissions',
-  WRITE_PERMISSIONS: 'Change Permissions',
+  CREATE_CHILDREN: 'Create Children',
+  DELETE_CHILDREN: 'Delete Children',
   EXECUTE: 'Execute',
+  CHANGE_PERMISSIONS: 'Change Permissions',
+  TAKE_OWNERSHIP: 'Take Ownership',
+  CHECKOUT: 'Checkout',
+  CHECKIN: 'Checkin',
+  CANCEL_CHECKOUT: 'Cancel Checkout',
+  APPROVE: 'Approve',
+  REJECT: 'Reject',
 };
 
 const PermissionsDialog: React.FC = () => {
@@ -85,16 +91,10 @@ const PermissionsDialog: React.FC = () => {
   const [inheritPermissions, setInheritPermissions] = useState(true);
   const [permissions, setPermissions] = useState<PermissionEntry[]>([]);
   const [newPrincipal, setNewPrincipal] = useState('');
-  const [availableUsers] = useState(['admin', 'user1', 'user2', 'editor1', 'viewer1']);
-  const [availableGroups] = useState(['administrators', 'editors', 'viewers', 'everyone']);
+  const [availableUsers, setAvailableUsers] = useState<string[]>([]);
+  const [availableGroups, setAvailableGroups] = useState<string[]>([]);
 
-  useEffect(() => {
-    if (permissionsDialogOpen && selectedNodeId) {
-      loadPermissions();
-    }
-  }, [permissionsDialogOpen, selectedNodeId]);
-
-  const loadPermissions = async () => {
+  const loadPermissions = useCallback(async () => {
     if (!selectedNodeId) return;
 
     setLoading(true);
@@ -120,12 +120,36 @@ const PermissionsDialog: React.FC = () => {
       });
       
       setPermissions(entries);
+
+      // Load current inherit flag from node
+      const node = await nodeService.getNode(selectedNodeId);
+      setInheritPermissions(node.inheritPermissions ?? true);
     } catch (error) {
       toast.error('Failed to load permissions');
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedNodeId]);
+
+  const loadPrincipals = useCallback(async () => {
+    try {
+      const [users, groups] = await Promise.all([
+        userGroupService.listUsers(),
+        userGroupService.listGroups(),
+      ]);
+      setAvailableUsers(users.map((u) => u.username));
+      setAvailableGroups(groups.map((g) => g.name));
+    } catch {
+      // ignore principal load failures
+    }
+  }, []);
+
+  useEffect(() => {
+    if (permissionsDialogOpen && selectedNodeId) {
+      loadPermissions();
+      loadPrincipals();
+    }
+  }, [permissionsDialogOpen, selectedNodeId, loadPermissions, loadPrincipals]);
 
   const handleClose = () => {
     dispatch(setPermissionsDialogOpen(false));
@@ -160,7 +184,9 @@ const PermissionsDialog: React.FC = () => {
     if (!selectedNodeId) return;
 
     try {
-      await nodeService.setPermission(selectedNodeId, principal, permission, allowed);
+      const authorityType = principal.startsWith('GROUP_') ? 'GROUP' : 'USER';
+      const authority = principal.replace('GROUP_', '');
+      await nodeService.setPermission(selectedNodeId, authority, authorityType, permission, allowed);
       
       setPermissions((prev) =>
         prev.map((entry) =>
@@ -201,6 +227,13 @@ const PermissionsDialog: React.FC = () => {
 
     setPermissions([...permissions, newEntry]);
     setNewPrincipal('');
+
+    if (selectedNodeId) {
+      const authorityType = principalType === 'group' ? 'GROUP' : 'USER';
+      nodeService
+        .setPermission(selectedNodeId, newPrincipal, authorityType, 'READ', true)
+        .catch(() => toast.error('Failed to add principal'));
+    }
   };
 
   const handleRemovePrincipal = async (principal: string) => {
@@ -210,12 +243,12 @@ const PermissionsDialog: React.FC = () => {
       // Remove all permissions for this principal
       const entry = permissions.find((p) => p.principal === principal);
       if (entry) {
+        const authority = principal.replace('GROUP_', '');
         for (const permission of Object.keys(entry.permissions)) {
-          await nodeService.setPermission(
+          await nodeService.removePermission(
             selectedNodeId,
-            principal,
-            permission as PermissionType,
-            false
+            authority,
+            permission as PermissionType
           );
         }
       }

@@ -1,7 +1,7 @@
 package com.ecm.core.conversion;
 
 import com.ecm.core.entity.Document;
-import com.ecm.core.entity.PermissionType;
+import com.ecm.core.entity.Permission.PermissionType;
 import com.ecm.core.service.ContentService;
 import com.ecm.core.service.SecurityService;
 import lombok.RequiredArgsConstructor;
@@ -10,6 +10,7 @@ import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
+import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
@@ -19,8 +20,10 @@ import org.jodconverter.core.DocumentConverter;
 import org.jodconverter.core.document.DefaultDocumentFormatRegistry;
 import org.jodconverter.core.document.DocumentFormat;
 import org.jodconverter.core.office.OfficeException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.util.unit.DataSize;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -37,13 +40,15 @@ public class ConversionService {
     
     private final ContentService contentService;
     private final SecurityService securityService;
-    private final DocumentConverter documentConverter;
     
-    @Value("${ecm.conversion.output-formats}")
+    @Autowired(required = false)
+    private DocumentConverter documentConverter;
+    
+    @Value("${ecm.conversion.output-formats:pdf,html,txt,png,jpg,docx}")
     private List<String> supportedOutputFormats;
     
-    @Value("${ecm.conversion.max-file-size}")
-    private long maxFileSize;
+    @Value("${ecm.conversion.max-file-size:100MB}")
+    private DataSize maxFileSize;
     
     @Value("${ecm.storage.temp-path}")
     private String tempPath;
@@ -55,7 +60,7 @@ public class ConversionService {
         }
         
         // Check file size
-        if (document.getFileSize() > maxFileSize) {
+        if (document.getFileSize() > maxFileSize.toBytes()) {
             throw new IllegalArgumentException("File too large for conversion: " + document.getFileSize());
         }
         
@@ -178,27 +183,31 @@ public class ConversionService {
     }
     
     private byte[] extractTextFromPdf(Document document) throws IOException {
-        try (InputStream content = contentService.getContent(document.getContentId());
-             PDDocument pdf = PDDocument.load(content)) {
+        try (InputStream content = contentService.getContent(document.getContentId())) {
+            byte[] pdfBytes = content.readAllBytes();
+            try (PDDocument pdf = PDDocument.load(pdfBytes)) {
             
             PDFTextStripper stripper = new PDFTextStripper();
             String text = stripper.getText(pdf);
             
             return text.getBytes("UTF-8");
+            }
         }
     }
     
     private byte[] convertPdfToImage(Document document, String format) throws IOException {
         // This would convert first page of PDF to image
         // Full implementation would handle multiple pages
-        try (InputStream content = contentService.getContent(document.getContentId());
-             PDDocument pdf = PDDocument.load(content)) {
+        try (InputStream content = contentService.getContent(document.getContentId())) {
+            byte[] pdfBytes = content.readAllBytes();
+            try (PDDocument pdf = PDDocument.load(pdfBytes)) {
             
             org.apache.pdfbox.rendering.PDFRenderer renderer = 
                 new org.apache.pdfbox.rendering.PDFRenderer(pdf);
             BufferedImage image = renderer.renderImageWithDPI(0, 300);
             
             return imageToBytes(image, format);
+            }
         }
     }
     
@@ -221,7 +230,7 @@ public class ConversionService {
             
             try (PDPageContentStream contentStream = new PDPageContentStream(pdf, page)) {
                 contentStream.beginText();
-                contentStream.setFont(org.apache.pdfbox.pdmodel.font.PDType1Font.HELVETICA, 12);
+                contentStream.setFont(PDType1Font.HELVETICA, 12);
                 contentStream.setLeading(14.5f);
                 contentStream.newLineAtOffset(25, 725);
                 
@@ -243,6 +252,10 @@ public class ConversionService {
     
     private byte[] convertWithJodConverter(Document document, String targetFormat) 
             throws IOException {
+        if (documentConverter == null) {
+            throw new IllegalStateException("Document conversion is not configured");
+        }
+
         File inputFile = null;
         File outputFile = null;
         
@@ -282,7 +295,8 @@ public class ConversionService {
     
     private String extractText(InputStream content, String mimeType) throws IOException {
         if (mimeType.equals("application/pdf")) {
-            try (PDDocument pdf = PDDocument.load(content)) {
+            byte[] pdfBytes = content.readAllBytes();
+            try (PDDocument pdf = PDDocument.load(pdfBytes)) {
                 PDFTextStripper stripper = new PDFTextStripper();
                 return stripper.getText(pdf);
             }
@@ -339,5 +353,9 @@ public class ConversionService {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         ImageIO.write(image, format, baos);
         return baos.toByteArray();
+    }
+
+    private byte[] imageToBytes(BufferedImage image) throws IOException {
+        return imageToBytes(image, "png");
     }
 }

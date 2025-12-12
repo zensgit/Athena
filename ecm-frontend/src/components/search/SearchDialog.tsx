@@ -20,21 +20,22 @@ import {
   AccordionDetails,
   FormControlLabel,
   Checkbox,
+  ListItemText,
 } from '@mui/material';
 import {
   Close,
   Search,
   ExpandMore,
-  FilterList,
 } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
-import { SearchCriteria } from '@/types';
-import { useAppDispatch, useAppSelector } from '@/store';
-import { setSearchOpen } from '@/store/slices/uiSlice';
-import { searchNodes } from '@/store/slices/nodeSlice';
+import { SearchCriteria } from 'types';
+import { useAppDispatch, useAppSelector } from 'store';
+import { setSearchOpen } from 'store/slices/uiSlice';
+import { searchNodes } from 'store/slices/nodeSlice';
 import { useNavigate } from 'react-router-dom';
+import apiService from 'services/api';
 
 const CONTENT_TYPES = [
   { value: 'application/pdf', label: 'PDF' },
@@ -63,12 +64,50 @@ const SearchDialog: React.FC = () => {
     properties: {},
     aspects: [],
     contentType: '',
+    createdBy: '',
   });
   
   const [customProperties, setCustomProperties] = useState<{ key: string; value: string }[]>([]);
   const [newPropertyKey, setNewPropertyKey] = useState('');
   const [newPropertyValue, setNewPropertyValue] = useState('');
   const [expandedSection, setExpandedSection] = useState<string | false>('basic');
+
+  const [tags, setTags] = useState<string[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [minSize, setMinSize] = useState<number | undefined>();
+  const [maxSize, setMaxSize] = useState<number | undefined>();
+  const [pathPrefix, setPathPrefix] = useState<string>('');
+  const [facetOptions, setFacetOptions] = useState<{ tags: string[]; categories: string[]; mimeTypes: string[]; createdBy: string[] }>({
+    tags: [],
+    categories: [],
+    mimeTypes: [],
+    createdBy: [],
+  });
+
+  const loadFacets = async () => {
+    try {
+      const res = await apiService.post<any>('/search/faceted', {
+        query: '',
+        filters: {},
+        pageable: { page: 0, size: 1 },
+        facetFields: ['tags', 'categories', 'mimeType', 'createdBy'],
+      });
+      setFacetOptions({
+        tags: res.facets?.tags?.map((f: any) => f.value) || [],
+        categories: res.facets?.categories?.map((f: any) => f.value) || [],
+        mimeTypes: res.facets?.mimeType?.map((f: any) => f.value) || [],
+        createdBy: res.facets?.createdBy?.map((f: any) => f.value) || [],
+      });
+    } catch {
+      // ignore facet load failures
+    }
+  };
+
+  React.useEffect(() => {
+    if (searchOpen) {
+      loadFacets();
+    }
+  }, [searchOpen]);
 
   const handleClose = () => {
     dispatch(setSearchOpen(false));
@@ -81,6 +120,7 @@ const SearchDialog: React.FC = () => {
       properties: {},
       aspects: [],
       contentType: '',
+      createdBy: '',
     });
     setCustomProperties([]);
     setNewPropertyKey('');
@@ -95,6 +135,11 @@ const SearchDialog: React.FC = () => {
         acc[prop.key] = prop.value;
         return acc;
       }, {} as Record<string, any>),
+      tags,
+      categories,
+      minSize,
+      maxSize,
+      path: pathPrefix || undefined,
     };
 
     await dispatch(searchNodes(criteria));
@@ -127,12 +172,18 @@ const SearchDialog: React.FC = () => {
     return (
       searchCriteria.name ||
       searchCriteria.contentType ||
+      searchCriteria.createdBy ||
       (searchCriteria.aspects && searchCriteria.aspects.length > 0) ||
       customProperties.length > 0 ||
       searchCriteria.createdFrom ||
       searchCriteria.createdTo ||
       searchCriteria.modifiedFrom ||
-      searchCriteria.modifiedTo
+      searchCriteria.modifiedTo ||
+      tags.length > 0 ||
+      categories.length > 0 ||
+      minSize !== undefined ||
+      maxSize !== undefined ||
+      pathPrefix.length > 0
     );
   };
 
@@ -179,16 +230,47 @@ const SearchDialog: React.FC = () => {
                   <FormControl fullWidth>
                     <InputLabel>Content Type</InputLabel>
                     <Select
-                      value={searchCriteria.contentType}
-                      onChange={(e) =>
-                        setSearchCriteria({ ...searchCriteria, contentType: e.target.value })
-                      }
+                      multiple
+                      value={searchCriteria.contentType ? [searchCriteria.contentType] : []}
+                      onChange={(e) => {
+                        const val = e.target.value as string[]; 
+                        setSearchCriteria({ ...searchCriteria, contentType: val[0] || '' });
+                      }}
                       label="Content Type"
+                      renderValue={(selected) => selected.join(', ')}
                     >
                       <MenuItem value="">All Types</MenuItem>
-                      {CONTENT_TYPES.map((type) => (
-                        <MenuItem key={type.value} value={type.value}>
-                          {type.label}
+                      {facetOptions.mimeTypes.length > 0
+                        ? facetOptions.mimeTypes.map((mt) => (
+                            <MenuItem key={mt} value={mt}>
+                              {mt}
+                            </MenuItem>
+                          ))
+                        : CONTENT_TYPES.map((type) => (
+                            <MenuItem key={type.value} value={type.value}>
+                              {type.label}
+                            </MenuItem>
+                          ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid item xs={12}>
+                  <FormControl fullWidth>
+                    <InputLabel>Created By</InputLabel>
+                    <Select
+                      value={searchCriteria.createdBy || ''}
+                      label="Created By"
+                      onChange={(e) =>
+                        setSearchCriteria({
+                          ...searchCriteria,
+                          createdBy: e.target.value as string,
+                        })
+                      }
+                    >
+                      <MenuItem value="">Any creator</MenuItem>
+                      {facetOptions.createdBy.map((u) => (
+                        <MenuItem key={u} value={u}>
+                          {u}
                         </MenuItem>
                       ))}
                     </Select>
@@ -293,9 +375,9 @@ const SearchDialog: React.FC = () => {
 
           <Accordion
             expanded={expandedSection === 'properties'}
-            onChange={(_, isExpanded) => setExpandedSection(isExpanded ? 'properties' : false)}
-          >
-            <AccordionSummary expandIcon={<ExpandMore />}>
+          onChange={(_, isExpanded) => setExpandedSection(isExpanded ? 'properties' : false)}
+        >
+          <AccordionSummary expandIcon={<ExpandMore />}>
               <Typography>Custom Properties</Typography>
             </AccordionSummary>
             <AccordionDetails>
@@ -341,6 +423,102 @@ const SearchDialog: React.FC = () => {
                   ))}
                 </Box>
               </Box>
+            </AccordionDetails>
+          </Accordion>
+
+        <Accordion
+          expanded={expandedSection === 'meta'}
+          onChange={(_, isExpanded) => setExpandedSection(isExpanded ? 'meta' : false)}
+        >
+          <AccordionSummary expandIcon={<ExpandMore />}>
+            <Typography>Tags / Categories / Size / Path</Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <Grid container spacing={2}>
+              <Grid item xs={12}>
+                <FormControl fullWidth>
+                  <InputLabel>Tags</InputLabel>
+                  <Select
+                    multiple
+                    value={tags}
+                    label="Tags"
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setTags(typeof val === 'string' ? val.split(',') : val);
+                    }}
+                    renderValue={(selected) => (
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {selected.map((value) => (
+                          <Chip key={value} label={value} size="small" />
+                        ))}
+                      </Box>
+                    )}
+                  >
+                    {facetOptions.tags.map((t) => (
+                      <MenuItem key={t} value={t}>
+                        <Checkbox checked={tags.indexOf(t) > -1} />
+                        <ListItemText primary={t} />
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={12}>
+                <FormControl fullWidth>
+                  <InputLabel>Categories</InputLabel>
+                  <Select
+                    multiple
+                    value={categories}
+                    label="Categories"
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setCategories(typeof val === 'string' ? val.split(',') : val);
+                    }}
+                    renderValue={(selected) => (
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {selected.map((value) => (
+                          <Chip key={value} label={value} size="small" />
+                        ))}
+                      </Box>
+                    )}
+                  >
+                    {facetOptions.categories.map((c) => (
+                      <MenuItem key={c} value={c}>
+                        <Checkbox checked={categories.indexOf(c) > -1} />
+                        <ListItemText primary={c} />
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={6}>
+                <TextField
+                  fullWidth
+                  type="number"
+                    label="Min size (bytes)"
+                    value={minSize ?? ''}
+                    onChange={(e) => setMinSize(e.target.value ? Number(e.target.value) : undefined)}
+                  />
+                </Grid>
+                <Grid item xs={6}>
+                  <TextField
+                    fullWidth
+                    type="number"
+                    label="Max size (bytes)"
+                    value={maxSize ?? ''}
+                    onChange={(e) => setMaxSize(e.target.value ? Number(e.target.value) : undefined)}
+                  />
+                </Grid>
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    label="Path starts with"
+                    value={pathPrefix}
+                    onChange={(e) => setPathPrefix(e.target.value)}
+                    placeholder="/Documents/Projects"
+                  />
+                </Grid>
+              </Grid>
             </AccordionDetails>
           </Accordion>
         </Box>

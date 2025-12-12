@@ -1,8 +1,11 @@
 package com.ecm.core.repository;
 
+import com.ecm.core.entity.Document;
+import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Node;
-import com.ecm.core.entity.NodeStatus;
-import com.ecm.core.entity.NodeType;
+import com.ecm.core.entity.Node.NodeStatus;
+import com.ecm.core.model.Category;
+import com.ecm.core.model.Tag;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -15,7 +18,9 @@ import org.springframework.stereotype.Repository;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 @Repository
 public interface NodeRepository extends JpaRepository<Node, UUID>, JpaSpecificationExecutor<Node> {
@@ -31,7 +36,7 @@ public interface NodeRepository extends JpaRepository<Node, UUID>, JpaSpecificat
     @Query("SELECT n FROM Node n WHERE n.parent.id = :parentId AND n.name = :name AND n.deleted = false")
     Optional<Node> findByParentIdAndName(@Param("parentId") UUID parentId, @Param("name") String name);
     
-    @Query("SELECT n FROM Node n WHERE n.path LIKE :pathPrefix% AND n.deleted = false")
+    @Query("SELECT n FROM Node n WHERE n.path LIKE CONCAT(:pathPrefix, '%') AND n.deleted = false")
     List<Node> findByPathPrefix(@Param("pathPrefix") String pathPrefix);
     
     @Query("SELECT COUNT(n) FROM Node n WHERE n.parent.id = :parentId AND n.deleted = false")
@@ -63,28 +68,70 @@ public interface NodeRepository extends JpaRepository<Node, UUID>, JpaSpecificat
     
     @Query(value = "SELECT * FROM nodes WHERE properties @> :properties AND is_deleted = false", nativeQuery = true)
     List<Node> findByProperties(@Param("properties") String properties);
+
+    Page<Node> findByTagsContainingAndDeletedFalse(Tag tag, Pageable pageable);
+
+    @Query("SELECT n FROM Node n JOIN n.tags t WHERE t IN :tags AND n.deleted = false " +
+           "GROUP BY n.id HAVING COUNT(DISTINCT t) = :tagCount")
+    List<Node> findByAllTags(@Param("tags") List<Tag> tags, @Param("tagCount") long tagCount);
+
+    List<Node> findByCategoriesInAndDeletedFalse(Set<Category> categories);
     
     @Modifying
     @Query("UPDATE Node n SET n.deleted = true, n.status = 'DELETED' WHERE n.id = :nodeId")
     void softDelete(@Param("nodeId") UUID nodeId);
     
     @Modifying
-    @Query("UPDATE Node n SET n.deleted = true, n.status = 'DELETED' WHERE n.path LIKE :pathPrefix%")
+    @Query("UPDATE Node n SET n.deleted = true, n.status = 'DELETED' WHERE n.path LIKE CONCAT(:pathPrefix, '%')")
     void softDeleteByPathPrefix(@Param("pathPrefix") String pathPrefix);
+
+    // Trash / Recycle Bin queries
+
+    @Query("SELECT n FROM Node n WHERE n.id = :id")
+    Optional<Node> findByIdIncludeDeleted(@Param("id") UUID id);
+
+    @Query("SELECT n FROM Node n WHERE n.deleted = true AND n.createdBy = :username")
+    Page<Node> findByDeletedTrueAndCreatedBy(@Param("username") String username, Pageable pageable);
     
-    @Query("SELECT DISTINCT n FROM Node n " +
-           "LEFT JOIN n.permissions p " +
-           "WHERE n.deleted = false " +
-           "AND (n.inheritPermissions = false AND p.authority = :authority AND p.permission = :permission AND p.allowed = true) " +
-           "OR (n.inheritPermissions = true AND EXISTS (" +
-           "    SELECT parent FROM Node parent " +
-           "    LEFT JOIN parent.permissions pp " +
-           "    WHERE parent.id = n.parent.id " +
-           "    AND pp.authority = :authority " +
-           "    AND pp.permission = :permission " +
-           "    AND pp.allowed = true" +
-           "))")
-    Page<Node> findByPermission(@Param("authority") String authority, 
-                                @Param("permission") String permission, 
-                                Pageable pageable);
+    @Query("SELECT n FROM Node n WHERE n.deleted = true ORDER BY n.deletedAt DESC")
+    List<Node> findDeletedNodes();
+
+    @Query("SELECT n FROM Node n WHERE n.deleted = true AND n.deletedBy = :username ORDER BY n.deletedAt DESC")
+    List<Node> findDeletedByUser(@Param("username") String username);
+
+    @Query("SELECT n FROM Node n WHERE n.deleted = true AND n.deletedAt < :before ORDER BY n.deletedAt ASC")
+    List<Node> findDeletedBefore(@Param("before") LocalDateTime before);
+
+    @Query("SELECT n FROM Node n WHERE n.parent.id = :parentId AND n.deleted = true")
+    List<Node> findDeletedChildren(@Param("parentId") UUID parentId);
+
+    List<Node> findByParentId(UUID parentId);
+
+    @Query("SELECT n FROM Node n LEFT JOIN FETCH n.categories c WHERE n.deleted = false")
+    List<Node> findAllWithCategories();
+
+    // Analytics Queries
+
+    @Query("SELECT COUNT(d) FROM Document d WHERE d.deleted = false")
+    long countDocuments();
+
+    @Query("SELECT COUNT(f) FROM Folder f WHERE f.deleted = false")
+    long countFolders();
+
+    @Query("SELECT COALESCE(SUM(d.fileSize), 0) FROM Document d WHERE d.deleted = false")
+    long getTotalSize();
+
+    @Query("SELECT d.mimeType, COUNT(d), SUM(d.fileSize) FROM Document d WHERE d.deleted = false GROUP BY d.mimeType")
+    List<Object[]> countByMimeType();
+
+    @Query("SELECT d FROM Document d WHERE d.deleted = false")
+    List<Document> findAllDocuments();
+
+    // Index Rebuild
+    @Query("SELECT d FROM Document d WHERE d.deleted = false")
+    Stream<Node> streamAllDocuments();
+
+    // Folder helpers
+    @Query("SELECT f FROM Folder f WHERE f.parent IS NULL AND f.deleted = false")
+    List<Folder> findRootFolders();
 }

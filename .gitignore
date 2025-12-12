@@ -1,0 +1,157 @@
+# ===========================================
+# Athena ECM Project .gitignore
+# ===========================================
+
+# -------------------------------------------
+# Reference Projects (Local Only)
+# -------------------------------------------
+# 开源参考项目 - 仅本地使用，不上传至 GitHub
+reference-projects/
+
+# -------------------------------------------
+# IDE & Editor
+# -------------------------------------------
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# -------------------------------------------
+# Build Output
+# -------------------------------------------
+target/
+build/
+out/
+bin/
+*.class
+*.jar
+*.war
+*.ear
+
+# -------------------------------------------
+# Logs
+# -------------------------------------------
+*.log
+logs/
+log/
+
+# -------------------------------------------
+# OS Generated
+# -------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# -------------------------------------------
+# Temporary Files
+# -------------------------------------------
+*.tmp
+*.temp
+*.bak
+*.orig
+tmp/
+temp/
+
+# -------------------------------------------
+# Maven
+# -------------------------------------------
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# -------------------------------------------
+# Gradle
+# -------------------------------------------
+.gradle/
+gradle-app.setting
+!gradle-wrapper.jar
+.gradletasknamecache
+
+# -------------------------------------------
+# Spring Boot
+# -------------------------------------------
+HELP.md
+.springBeans
+
+# -------------------------------------------
+# Docker
+# -------------------------------------------
+.docker/
+docker-compose.override.yml
+
+# -------------------------------------------
+# Environment & Secrets
+# -------------------------------------------
+.env
+.env.local
+.env.*.local
+*.env
+secrets/
+credentials/
+*.key
+*.pem
+*.p12
+*.jks
+
+# -------------------------------------------
+# Database
+# -------------------------------------------
+*.db
+*.sqlite
+*.sqlite3
+h2/
+
+# -------------------------------------------
+# Test Output
+# -------------------------------------------
+test-output/
+coverage/
+jacoco/
+*.exec
+
+# -------------------------------------------
+# Node.js (if any frontend)
+# -------------------------------------------
+node_modules/
+npm-debug.log
+yarn-error.log
+package-lock.json
+yarn.lock
+
+# -------------------------------------------
+# Python (if any ML scripts)
+# -------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+venv/
+ENV/
+*.pkl
+*.model
+
+# -------------------------------------------
+# Content Storage (Runtime Data)
+# -------------------------------------------
+content-store/
+ecm-content/
+ecm-temp/
+uploads/

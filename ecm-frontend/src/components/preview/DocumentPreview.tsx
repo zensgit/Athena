@@ -2,14 +2,12 @@ import React, { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
-  DialogTitle,
   IconButton,
   Box,
   CircularProgress,
   Typography,
   AppBar,
   Toolbar,
-  Button,
   Menu,
   MenuItem,
   ListItemIcon,
@@ -23,16 +21,17 @@ import {
   ZoomOut,
   RotateLeft,
   RotateRight,
-  Fullscreen,
   MoreVert,
   NavigateBefore,
   NavigateNext,
+  Edit,
 } from '@mui/icons-material';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
-import { Node } from '@/types';
-import nodeService from '@/services/nodeService';
+import { useNavigate } from 'react-router-dom';
+import { Node } from 'types';
+import nodeService from 'services/nodeService';
 import { toast } from 'react-toastify';
 
 // Configure PDF.js worker
@@ -45,6 +44,7 @@ interface DocumentPreviewProps {
 }
 
 const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }) => {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fileUrl, setFileUrl] = useState<string | null>(null);
@@ -55,6 +55,32 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
   useEffect(() => {
+    const loadDocument = async () => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const response = await fetch(`/api/nodes/${node.id}/content`, {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('token')}`,
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to load document');
+        }
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        setFileUrl(url);
+      } catch (err) {
+        setError('Failed to load document');
+        toast.error('Failed to load document preview');
+      } finally {
+        setLoading(false);
+      }
+    };
+
     if (open && node) {
       loadDocument();
     }
@@ -64,33 +90,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
         URL.revokeObjectURL(fileUrl);
       }
     };
-  }, [open, node]);
-
-  const loadDocument = async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const response = await fetch(`/api/nodes/${node.id}/content`, {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to load document');
-      }
-
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      setFileUrl(url);
-    } catch (err) {
-      setError('Failed to load document');
-      toast.error('Failed to load document preview');
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [open, node, fileUrl]);
 
   const handleDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
     setNumPages(numPages);
@@ -308,6 +308,15 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
             open={Boolean(anchorEl)}
             onClose={handleMenuClose}
           >
+            <MenuItem onClick={() => {
+              navigate(`/editor/${node.id}?provider=wps&permission=write`);
+              onClose(); // Close preview dialog
+            }}>
+              <ListItemIcon>
+                <Edit fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Edit Online</ListItemText>
+            </MenuItem>
             <MenuItem onClick={() => { handleDownload(); handleMenuClose(); }}>
               <ListItemIcon>
                 <Download fontSize="small" />

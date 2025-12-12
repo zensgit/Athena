@@ -1,5 +1,7 @@
 package com.ecm.core.service;
 
+import com.ecm.core.entity.Node;
+import com.ecm.core.entity.Permission.PermissionType;
 import com.ecm.core.model.*;
 import com.ecm.core.repository.*;
 import com.ecm.core.exception.*;
@@ -8,8 +10,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 
 import java.util.*;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -61,18 +66,17 @@ public class TagService {
      * 获取热门标签
      */
     public List<Tag> getPopularTags(int limit) {
-        return tagRepository.findTopByOrderByUsageCountDesc(limit);
+        return tagRepository.findTopByOrderByUsageCountDesc(PageRequest.of(0, limit));
     }
     
     /**
      * 为节点添加标签
      */
     public void addTagToNode(String nodeId, String tagName) {
-        Node node = nodeRepository.findByIdAndDeletedFalse(nodeId)
-            .orElseThrow(() -> new NodeNotFoundException("Node not found: " + nodeId));
+        Node node = loadActiveNode(nodeId);
         
         // 权限检查
-        securityService.checkPermission(node, Permission.WRITE);
+        securityService.checkPermission(node, PermissionType.WRITE);
         
         // 获取或创建标签
         Tag tag = tagRepository.findByName(tagName.toLowerCase().trim())
@@ -90,11 +94,10 @@ public class TagService {
      * 为节点批量添加标签
      */
     public void addTagsToNode(String nodeId, List<String> tagNames) {
-        Node node = nodeRepository.findByIdAndDeletedFalse(nodeId)
-            .orElseThrow(() -> new NodeNotFoundException("Node not found: " + nodeId));
+        Node node = loadActiveNode(nodeId);
         
         // 权限检查
-        securityService.checkPermission(node, Permission.WRITE);
+        securityService.checkPermission(node, PermissionType.WRITE);
         
         for (String tagName : tagNames) {
             Tag tag = tagRepository.findByName(tagName.toLowerCase().trim())
@@ -113,11 +116,10 @@ public class TagService {
      * 从节点移除标签
      */
     public void removeTagFromNode(String nodeId, String tagName) {
-        Node node = nodeRepository.findByIdAndDeletedFalse(nodeId)
-            .orElseThrow(() -> new NodeNotFoundException("Node not found: " + nodeId));
+        Node node = loadActiveNode(nodeId);
         
         // 权限检查
-        securityService.checkPermission(node, Permission.WRITE);
+        securityService.checkPermission(node, PermissionType.WRITE);
         
         Tag tag = tagRepository.findByName(tagName.toLowerCase().trim())
             .orElseThrow(() -> new ResourceNotFoundException("Tag not found: " + tagName));
@@ -138,11 +140,10 @@ public class TagService {
      * 获取节点的所有标签
      */
     public Set<Tag> getNodeTags(String nodeId) {
-        Node node = nodeRepository.findByIdAndDeletedFalse(nodeId)
-            .orElseThrow(() -> new NodeNotFoundException("Node not found: " + nodeId));
+        Node node = loadActiveNode(nodeId);
         
         // 权限检查
-        securityService.checkPermission(node, Permission.READ);
+        securityService.checkPermission(node, PermissionType.READ);
         
         return node.getTags();
     }
@@ -158,7 +159,7 @@ public class TagService {
         
         // 过滤权限
         List<Node> filteredNodes = nodes.getContent().stream()
-            .filter(node -> securityService.hasPermission(node, Permission.READ))
+            .filter(node -> securityService.hasPermission(node, PermissionType.READ))
             .collect(Collectors.toList());
         
         return new PageImpl<>(filteredNodes, pageable, nodes.getTotalElements());
@@ -182,7 +183,7 @@ public class TagService {
         
         // 过滤权限
         return nodes.stream()
-            .filter(node -> securityService.hasPermission(node, Permission.READ))
+            .filter(node -> securityService.hasPermission(node, PermissionType.READ))
             .collect(Collectors.toList());
     }
     
@@ -190,8 +191,7 @@ public class TagService {
      * 更新标签
      */
     public Tag updateTag(String tagId, String name, String description, String color) {
-        Tag tag = tagRepository.findById(tagId)
-            .orElseThrow(() -> new ResourceNotFoundException("Tag not found: " + tagId));
+        Tag tag = loadTag(tagId);
         
         // 检查新名称是否已存在
         if (!tag.getName().equals(name) && tagRepository.existsByName(name)) {
@@ -209,8 +209,7 @@ public class TagService {
      * 删除标签
      */
     public void deleteTag(String tagId) {
-        Tag tag = tagRepository.findById(tagId)
-            .orElseThrow(() -> new ResourceNotFoundException("Tag not found: " + tagId));
+        Tag tag = loadTag(tagId);
         
         // 从所有节点中移除该标签
         for (Node node : tag.getNodes()) {
@@ -225,11 +224,8 @@ public class TagService {
      * 合并标签
      */
     public void mergeTags(String sourceTagId, String targetTagId) {
-        Tag sourceTag = tagRepository.findById(sourceTagId)
-            .orElseThrow(() -> new ResourceNotFoundException("Source tag not found: " + sourceTagId));
-        
-        Tag targetTag = tagRepository.findById(targetTagId)
-            .orElseThrow(() -> new ResourceNotFoundException("Target tag not found: " + targetTagId));
+        Tag sourceTag = loadTag(sourceTagId);
+        Tag targetTag = loadTag(targetTagId);
         
         // 将源标签的所有节点添加到目标标签
         for (Node node : sourceTag.getNodes()) {
@@ -278,5 +274,25 @@ public class TagService {
         public String getName() { return name; }
         public Integer getCount() { return count; }
         public String getColor() { return color; }
+    }
+
+    private Tag loadTag(String tagId) {
+        try {
+            UUID id = UUID.fromString(tagId);
+            return tagRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Tag not found: " + tagId));
+        } catch (IllegalArgumentException ex) {
+            throw new ResourceNotFoundException("Invalid tag id: " + tagId, ex);
+        }
+    }
+
+    private Node loadActiveNode(String nodeId) {
+        try {
+            UUID id = UUID.fromString(nodeId);
+            return nodeRepository.findByIdAndDeletedFalse(id)
+                .orElseThrow(() -> new NodeNotFoundException("Node not found: " + nodeId));
+        } catch (IllegalArgumentException ex) {
+            throw new NodeNotFoundException("Invalid node id: " + nodeId, ex);
+        }
     }
 }

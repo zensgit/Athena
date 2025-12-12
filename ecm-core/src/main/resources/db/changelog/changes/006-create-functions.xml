@@ -7,7 +7,7 @@
 
     <changeSet id="006-1" author="ecm-system">
         <comment>Create function to update node paths recursively</comment>
-        <sql>
+        <sql splitStatements="false"><![CDATA[
             CREATE OR REPLACE FUNCTION update_node_paths() RETURNS TRIGGER AS $$
             DECLARE
                 old_path_prefix VARCHAR(1000);
@@ -25,7 +25,7 @@
                 RETURN NEW;
             END;
             $$ LANGUAGE plpgsql;
-        </sql>
+        ]]></sql>
     </changeSet>
 
     <changeSet id="006-2" author="ecm-system">
@@ -41,7 +41,7 @@
 
     <changeSet id="006-3" author="ecm-system">
         <comment>Create function to calculate folder size</comment>
-        <sql>
+        <sql splitStatements="false"><![CDATA[
             CREATE OR REPLACE FUNCTION calculate_folder_size(folder_id UUID) RETURNS BIGINT AS $$
             DECLARE
                 total_size BIGINT;
@@ -55,12 +55,12 @@
                 RETURN total_size;
             END;
             $$ LANGUAGE plpgsql;
-        </sql>
+        ]]></sql>
     </changeSet>
 
     <changeSet id="006-4" author="ecm-system">
         <comment>Create function to check user permissions</comment>
-        <sql>
+        <sql splitStatements="false"><![CDATA[
             CREATE OR REPLACE FUNCTION has_permission(
                 p_user_id UUID,
                 p_node_id UUID,
@@ -115,12 +115,12 @@
                 RETURN has_perm;
             END;
             $$ LANGUAGE plpgsql;
-        </sql>
+        ]]></sql>
     </changeSet>
 
     <changeSet id="006-5" author="ecm-system">
         <comment>Create function to get node ancestors</comment>
-        <sql>
+        <sql splitStatements="false"><![CDATA[
             CREATE OR REPLACE FUNCTION get_node_ancestors(node_id UUID) 
             RETURNS TABLE(ancestor_id UUID, ancestor_name VARCHAR, level INTEGER) AS $$
             BEGIN
@@ -143,7 +143,7 @@
                 ORDER BY level DESC;
             END;
             $$ LANGUAGE plpgsql;
-        </sql>
+        ]]></sql>
     </changeSet>
 
 </databaseChangeLog>

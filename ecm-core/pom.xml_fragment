@@ -1,0 +1,10 @@
+<dependency>
+    <groupId>io.milton</groupId>
+    <artifactId>milton-server-ce</artifactId>
+    <version>3.0.0.181</version>
+</dependency>
+<dependency>
+    <groupId>io.milton</groupId>
+    <artifactId>milton-api</artifactId>
+    <version>3.0.0.181</version>
+</dependency>

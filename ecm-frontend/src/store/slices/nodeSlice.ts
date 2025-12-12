@@ -1,6 +1,6 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import nodeService from '@/services/nodeService';
-import { Node, NodeState, SearchCriteria } from '@/types';
+import nodeService from 'services/nodeService';
+import { Node, NodeState, SearchCriteria } from 'types';
 
 const initialState: NodeState = {
   currentNode: null,
@@ -66,11 +66,18 @@ export const copyNode = createAsyncThunk(
   }
 );
 
+export const updateNode = createAsyncThunk(
+  'node/updateNode',
+  async ({ nodeId, properties }: { nodeId: string; properties: Record<string, any> }) => {
+    const node = await nodeService.updateNode(nodeId, properties);
+    return node;
+  }
+);
+
 export const searchNodes = createAsyncThunk(
   'node/searchNodes',
   async (criteria: SearchCriteria) => {
-    const results = await nodeService.searchNodes(criteria);
-    return results;
+    return nodeService.searchNodes(criteria);
   }
 );
 
@@ -150,6 +157,15 @@ const nodeSlice = createSlice({
       .addCase(searchNodes.rejected, (state, action) => {
         state.loading = false;
         state.error = action.error.message || 'Search failed';
+      })
+      .addCase(updateNode.fulfilled, (state, action) => {
+        state.loading = false;
+        const updated = action.payload;
+        state.currentNode = updated;
+        state.nodes = state.nodes.map(node => (node.id === updated.id ? updated : node));
+      })
+      .addCase(updateNode.rejected, (state, action) => {
+        state.error = action.error.message || 'Failed to update node';
       });
   },
 });

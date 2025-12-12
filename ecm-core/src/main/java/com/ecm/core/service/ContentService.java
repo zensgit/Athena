@@ -11,6 +11,7 @@ import org.apache.commons.io.FilenameUtils;
 import org.apache.tika.Tika;
 import org.apache.tika.exception.TikaException;
 import org.apache.tika.metadata.Metadata;
+import org.apache.tika.metadata.TikaCoreProperties;
 import org.apache.tika.parser.AutoDetectParser;
 import org.apache.tika.parser.ParseContext;
 import org.apache.tika.parser.Parser;
@@ -22,6 +23,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.xml.sax.SAXException;
 
 import java.io.*;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -80,8 +82,13 @@ public class ContentService {
             // Ensure parent directories exist
             Files.createDirectories(storagePath.getParent());
             
-            // Move temp file to final location
-            Files.move(tempFile, storagePath, StandardCopyOption.ATOMIC_MOVE);
+            // Move temp file to final location (fallback to copy if cross-device)
+            try {
+                Files.move(tempFile, storagePath, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException ex) {
+                log.warn("Atomic move not supported between temp and storage, falling back to copy: {}", ex.getMessage());
+                Files.copy(tempFile, storagePath, StandardCopyOption.REPLACE_EXISTING);
+            }
             
             log.info("Stored content: {} at path: {}", contentId, storagePath);
             
@@ -113,6 +120,21 @@ public class ContentService {
         Files.deleteIfExists(contentPath);
         
         log.info("Deleted content: {}", contentId);
+    }
+
+    /**
+     * Check if content exists on disk.
+     */
+    public boolean exists(String contentId) {
+        Path contentPath = getStoragePath(contentId);
+        return Files.exists(contentPath);
+    }
+
+    /**
+     * Store content from a raw stream when filename is not important.
+     */
+    public String store(InputStream inputStream) throws IOException {
+        return storeContent(inputStream, "upload.bin");
     }
     
     public Map<String, Object> extractMetadata(String contentId) throws IOException {
@@ -155,7 +177,7 @@ public class ContentService {
     public String detectMimeType(InputStream inputStream, String filename) throws IOException {
         Metadata metadata = new Metadata();
         if (filename != null) {
-            metadata.set(Metadata.RESOURCE_NAME_KEY, filename);
+            metadata.set(TikaCoreProperties.RESOURCE_NAME_KEY, filename);
         }
         return tika.detect(inputStream, metadata);
     }

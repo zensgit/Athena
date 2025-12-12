@@ -1,0 +1,129 @@
+version: '3.8'
+
+services:
+  # ECM Core Application
+  ecm-core:
+    build:
+      context: ./ecm-core
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8080"  # 使用 8081 避免与 PLM 冲突
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/ecm_db
+      - SPRING_DATASOURCE_USERNAME=ecm_user
+      - SPRING_DATASOURCE_PASSWORD=ecm_password
+      - SPRING_ELASTICSEARCH_URIS=http://elasticsearch:9200
+      - SPRING_DATA_REDIS_HOST=redis
+      - SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI=http://keycloak:8080/realms/ecm
+      - SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI=http://keycloak:8080/realms/ecm/protocol/openid-connect/certs
+      - ECM_STORAGE_ROOT_PATH=/var/ecm/content
+      - ECM_STORAGE_TEMP_PATH=/var/ecm/temp
+    volumes:
+      - ecm_content:/var/ecm/content
+      - ecm_temp:/var/ecm/temp
+    depends_on:
+      - postgres
+      - elasticsearch
+      - redis
+      - keycloak
+    networks:
+      - ecm-network
+    restart: unless-stopped
+
+  # PostgreSQL Database (使用不同端口)
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=ecm_db
+      - POSTGRES_USER=ecm_user
+      - POSTGRES_PASSWORD=ecm_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5434:5432"  # 使用 5434 避免冲突
+    networks:
+      - ecm-network
+    restart: unless-stopped
+
+  # Elasticsearch
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.1
+    environment:
+      - node.name=elasticsearch
+      - cluster.name=ecm-cluster
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=false
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    ports:
+      - "9201:9200"  # 使用 9201 避免冲突
+    networks:
+      - ecm-network
+    restart: unless-stopped
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "16379:6379"  # 使用 16379 避免冲突
+    networks:
+      - ecm-network
+    restart: unless-stopped
+
+  # Keycloak Database (独立数据库)
+  keycloak-db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=keycloak_db
+      - POSTGRES_USER=keycloak
+      - POSTGRES_PASSWORD=keycloak
+    volumes:
+      - keycloak_data:/var/lib/postgresql/data
+    networks:
+      - ecm-network
+    restart: unless-stopped
+
+  # Keycloak Identity Provider
+  keycloak:
+    image: quay.io/keycloak/keycloak:23.0
+    command: start-dev --import-realm
+    environment:
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin
+      - KC_DB=postgres
+      - KC_DB_URL=jdbc:postgresql://keycloak-db:5432/keycloak_db
+      - KC_DB_USERNAME=keycloak
+      - KC_DB_PASSWORD=keycloak
+      - KC_HOSTNAME_STRICT=false
+      - KC_HTTP_ENABLED=true
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    ports:
+      - "8180:8080"  # Keycloak web console
+    depends_on:
+      - keycloak-db
+    networks:
+      - ecm-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  elasticsearch_data:
+  redis_data:
+  ecm_content:
+  ecm_temp:
+  keycloak_data:
+
+networks:
+  ecm-network:
+    driver: bridge
