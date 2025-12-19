@@ -95,12 +95,17 @@ const TrashPage: React.FC = () => {
       sortable: false,
       renderCell: (params) => (
         <Box display="flex" gap={1}>
-          <IconButton size="small" onClick={() => handleRestore(params.row as TrashItem)}>
+          <IconButton
+            size="small"
+            aria-label={`Restore ${String((params.row as TrashItem).name)}`}
+            onClick={() => handleRestore(params.row as TrashItem)}
+          >
             <RestoreFromTrash fontSize="small" />
           </IconButton>
           <IconButton
             size="small"
             color="error"
+            aria-label={`Permanently delete ${String((params.row as TrashItem).name)}`}
             onClick={() => handlePermanentDelete(params.row as TrashItem)}
           >
             <DeleteForever fontSize="small" />
@@ -147,4 +152,3 @@ const TrashPage: React.FC = () => {
 };
 
 export default TrashPage;
-

@@ -25,6 +25,8 @@ import {
 import { Close, Add, ContentCopy, Delete, Block } from '@mui/icons-material';
 import shareLinkService, { ShareLink, SharePermission } from 'services/shareLinkService';
 import { toast } from 'react-toastify';
+import { useAppSelector } from 'store';
+import authService from 'services/authService';
 
 interface ShareLinkManagerProps {
   open: boolean;
@@ -33,6 +35,11 @@ interface ShareLinkManagerProps {
 }
 
 const ShareLinkManager: React.FC<ShareLinkManagerProps> = ({ open, onClose, selectedNodeId }) => {
+  const { user } = useAppSelector((state) => state.auth);
+  const effectiveUser = user ?? authService.getCurrentUser();
+  const canWrite = Boolean(
+    effectiveUser?.roles?.includes('ROLE_ADMIN') || effectiveUser?.roles?.includes('ROLE_EDITOR')
+  );
   const [links, setLinks] = useState<ShareLink[]>([]);
   const [loading, setLoading] = useState(false);
   const [createMode, setCreateMode] = useState(false);
@@ -79,6 +86,10 @@ const ShareLinkManager: React.FC<ShareLinkManagerProps> = ({ open, onClose, sele
 
   const handleCreate = async () => {
     if (!selectedNodeId) return;
+    if (!canWrite) {
+      toast.error('Requires write permission');
+      return;
+    }
     try {
       const payload = {
         name: formData.name || undefined,
@@ -109,6 +120,10 @@ const ShareLinkManager: React.FC<ShareLinkManagerProps> = ({ open, onClose, sele
   };
 
   const handleDeactivate = async (token: string) => {
+    if (!canWrite) {
+      toast.error('Requires write permission');
+      return;
+    }
     try {
       await shareLinkService.deactivateLink(token);
       toast.success('Share link deactivated');
@@ -119,6 +134,10 @@ const ShareLinkManager: React.FC<ShareLinkManagerProps> = ({ open, onClose, sele
   };
 
   const handleDelete = async (token: string) => {
+    if (!canWrite) {
+      toast.error('Requires write permission');
+      return;
+    }
     if (!window.confirm('Delete this share link permanently?')) return;
     try {
       await shareLinkService.deleteLink(token);
@@ -147,13 +166,13 @@ const ShareLinkManager: React.FC<ShareLinkManagerProps> = ({ open, onClose, sele
             variant="contained"
             startIcon={<Add />}
             onClick={() => setCreateMode((v) => !v)}
-            disabled={!selectedNodeId}
+            disabled={!selectedNodeId || !canWrite}
           >
             New Share Link
           </Button>
         </Box>
 
-        {createMode && (
+        {canWrite && createMode && (
           <Paper sx={{ p: 2, mb: 2 }}>
             <Typography variant="h6" gutterBottom>
               Create Share Link
@@ -253,21 +272,32 @@ const ShareLinkManager: React.FC<ShareLinkManagerProps> = ({ open, onClose, sele
                       {link.accessCount}/{link.maxAccessCount ?? '∞'}
                     </TableCell>
                     <TableCell align="right">
-                      <IconButton size="small" onClick={() => handleCopy(link.token)}>
+                      <IconButton
+                        size="small"
+                        aria-label={`Copy share link ${link.name || link.token}`}
+                        onClick={() => handleCopy(link.token)}
+                      >
                         <ContentCopy fontSize="small" />
                       </IconButton>
-                      {link.active && (
-                        <IconButton size="small" onClick={() => handleDeactivate(link.token)}>
+                      {canWrite && link.active && (
+                        <IconButton
+                          size="small"
+                          aria-label={`Deactivate share link ${link.name || link.token}`}
+                          onClick={() => handleDeactivate(link.token)}
+                        >
                           <Block fontSize="small" />
                         </IconButton>
                       )}
-                      <IconButton
-                        size="small"
-                        color="error"
-                        onClick={() => handleDelete(link.token)}
-                      >
-                        <Delete fontSize="small" />
-                      </IconButton>
+                      {canWrite && (
+                        <IconButton
+                          size="small"
+                          color="error"
+                          aria-label={`Delete share link ${link.name || link.token}`}
+                          onClick={() => handleDelete(link.token)}
+                        >
+                          <Delete fontSize="small" />
+                        </IconButton>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -291,4 +321,3 @@ const ShareLinkManager: React.FC<ShareLinkManagerProps> = ({ open, onClose, sele
 };
 
 export default ShareLinkManager;
-

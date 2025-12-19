@@ -15,8 +15,13 @@ import AdminDashboard from './pages/AdminDashboard';
 import EditorPage from './pages/EditorPage';
 import TasksPage from './pages/TasksPage';
 import AdvancedSearchPage from './pages/AdvancedSearchPage';
+import SystemStatusPage from './pages/SystemStatusPage';
 import TrashPage from './pages/TrashPage';
 import RulesPage from './pages/RulesPage';
+import SettingsPage from './pages/SettingsPage';
+import CorrespondentsPage from './pages/CorrespondentsPage';
+import FavoritesPage from './pages/FavoritesPage';
+import SavedSearchesPage from './pages/SavedSearchesPage';
 import SearchDialog from './components/search/SearchDialog';
 import VersionHistoryDialog from './components/dialogs/VersionHistoryDialog';
 import PermissionsDialog from './components/dialogs/PermissionsDialog';
@@ -114,11 +119,51 @@ const App: React.FC = () => {
               }
             />
             <Route
+              path="/status"
+              element={
+                <PrivateRoute>
+                  <MainLayout>
+                    <SystemStatusPage />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/correspondents"
+              element={
+                <PrivateRoute requiredRoles={['ROLE_ADMIN', 'ROLE_EDITOR']}>
+                  <MainLayout>
+                    <CorrespondentsPage />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
               path="/trash"
               element={
                 <PrivateRoute>
                   <MainLayout>
                     <TrashPage />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/favorites"
+              element={
+                <PrivateRoute>
+                  <MainLayout>
+                    <FavoritesPage />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/saved-searches"
+              element={
+                <PrivateRoute>
+                  <MainLayout>
+                    <SavedSearchesPage />
                   </MainLayout>
                 </PrivateRoute>
               }
@@ -150,6 +195,16 @@ const App: React.FC = () => {
                   <h1>Unauthorized</h1>
                   <p>You do not have permission to access this page.</p>
                 </div>
+              }
+            />
+            <Route
+              path="/settings"
+              element={
+                <PrivateRoute>
+                  <MainLayout>
+                    <SettingsPage />
+                  </MainLayout>
+                </PrivateRoute>
               }
             />
           </Routes>

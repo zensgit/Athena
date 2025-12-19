@@ -28,6 +28,8 @@ export interface Node {
   highlights?: Record<string, string[]>;
   tags?: string[];
   categories?: string[];
+  correspondent?: string;
+  correspondentId?: string;
   score?: number;
   inheritPermissions?: boolean;
 }
@@ -80,6 +82,7 @@ export interface SearchCriteria {
   modifiedTo?: string;
   tags?: string[];
   categories?: string[];
+  correspondents?: string[];
   minSize?: number;
   maxSize?: number;
   path?: string;

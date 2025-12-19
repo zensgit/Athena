@@ -23,9 +23,10 @@ import {
   Chip,
   Stack,
 } from '@mui/material';
-import { Add, Delete, Edit, PlayArrow } from '@mui/icons-material';
+import { Add, Delete, Edit, PlayArrow, LocalOffer, Approval } from '@mui/icons-material';
 import ruleService, {
   CreateRuleRequest,
+  CronValidationResult,
   RuleResponse,
   RuleTemplate,
   TriggerType,
@@ -67,6 +68,71 @@ const DEFAULT_TEST_DATA = JSON.stringify(
   2
 );
 
+// Cron presets for common schedules
+const CRON_PRESETS = [
+  { label: 'Every minute', value: '0 * * * * *' },
+  { label: 'Every 5 minutes', value: '0 */5 * * * *' },
+  { label: 'Every 15 minutes', value: '0 */15 * * * *' },
+  { label: 'Every hour', value: '0 0 * * * *' },
+  { label: 'Every day at midnight', value: '0 0 0 * * *' },
+  { label: 'Every day at 9 AM', value: '0 0 9 * * *' },
+  { label: 'Every Monday at 9 AM', value: '0 0 9 * * MON' },
+  { label: 'Every weekday at 9 AM', value: '0 0 9 * * MON-FRI' },
+  { label: 'First day of month at midnight', value: '0 0 0 1 * *' },
+];
+
+// Common timezones
+const TIMEZONES = [
+  'UTC',
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'Europe/London',
+  'Europe/Paris',
+  'Europe/Berlin',
+  'Asia/Tokyo',
+  'Asia/Shanghai',
+  'Asia/Singapore',
+  'Australia/Sydney',
+];
+
+// Built-in quick templates for common rule patterns
+const QUICK_TEMPLATES = {
+  autoTagOnUpload: {
+    name: 'Auto-tag on Upload',
+    description: 'Automatically add a tag when a document is uploaded',
+    triggerType: 'DOCUMENT_CREATED' as TriggerType,
+    condition: { type: 'ALWAYS_TRUE' },
+    actions: [
+      {
+        type: 'ADD_TAG',
+        params: { tagName: 'new-upload' },
+        continueOnError: true,
+        order: 0,
+      },
+    ],
+  },
+  autoApprovalOnUpload: {
+    name: 'Auto-start Approval on Upload',
+    description: 'Automatically start approval workflow when a document is uploaded',
+    triggerType: 'DOCUMENT_CREATED' as TriggerType,
+    condition: { type: 'ALWAYS_TRUE' },
+    actions: [
+      {
+        type: 'START_WORKFLOW',
+        params: {
+          workflowKey: 'documentApproval',
+          approvers: ['admin'],
+          comment: 'Auto-started by upload rule',
+        },
+        continueOnError: false,
+        order: 0,
+      },
+    ],
+  },
+};
+
 const RulesPage: React.FC = () => {
   const [rules, setRules] = useState<RuleResponse[]>([]);
   const [templates, setTemplates] = useState<RuleTemplate[]>([]);
@@ -88,9 +154,15 @@ const RulesPage: React.FC = () => {
     scopeFolderId: null,
     condition: { type: 'ALWAYS_TRUE' },
     actions: [],
+    // Scheduled rule fields
+    cronExpression: '',
+    timezone: 'UTC',
+    maxItemsPerRun: 200,
   });
   const [conditionText, setConditionText] = useState(DEFAULT_CONDITION);
   const [actionsText, setActionsText] = useState(DEFAULT_ACTIONS);
+  const [cronValidation, setCronValidation] = useState<CronValidationResult | null>(null);
+  const [validatingCron, setValidatingCron] = useState(false);
 
   const [testOpen, setTestOpen] = useState(false);
   const [testRule, setTestRule] = useState<RuleResponse | null>(null);
@@ -140,9 +212,38 @@ const RulesPage: React.FC = () => {
       scopeFolderId: null,
       condition: { type: 'ALWAYS_TRUE' },
       actions: [],
+      cronExpression: '',
+      timezone: 'UTC',
+      maxItemsPerRun: 200,
     });
     setConditionText(DEFAULT_CONDITION);
     setActionsText(DEFAULT_ACTIONS);
+    setCronValidation(null);
+    setEditorOpen(true);
+  };
+
+  const applyQuickTemplate = (templateKey: keyof typeof QUICK_TEMPLATES) => {
+    const template = QUICK_TEMPLATES[templateKey];
+    setEditingRule(null);
+    setSelectedTemplateId('');
+    setForm({
+      name: template.name,
+      description: template.description,
+      triggerType: template.triggerType,
+      priority: 100,
+      enabled: true,
+      stopOnMatch: false,
+      scopeMimeTypes: '',
+      scopeFolderId: null,
+      condition: template.condition,
+      actions: template.actions,
+      cronExpression: '',
+      timezone: 'UTC',
+      maxItemsPerRun: 200,
+    });
+    setConditionText(JSON.stringify(template.condition, null, 2));
+    setActionsText(JSON.stringify(template.actions, null, 2));
+    setCronValidation(null);
     setEditorOpen(true);
   };
 
@@ -160,9 +261,13 @@ const RulesPage: React.FC = () => {
       scopeFolderId: rule.scopeFolderId || null,
       condition: rule.condition,
       actions: rule.actions || [],
+      cronExpression: rule.cronExpression || '',
+      timezone: rule.timezone || 'UTC',
+      maxItemsPerRun: rule.maxItemsPerRun ?? 200,
     });
     setConditionText(JSON.stringify(rule.condition ?? { type: 'ALWAYS_TRUE' }, null, 2));
     setActionsText(JSON.stringify(rule.actions ?? [], null, 2));
+    setCronValidation(null);
     setEditorOpen(true);
   };
 
@@ -188,11 +293,44 @@ const RulesPage: React.FC = () => {
     }
   };
 
+  const handleValidateCron = async () => {
+    if (!form.cronExpression?.trim()) {
+      toast.error('Cron expression is required');
+      return;
+    }
+    setValidatingCron(true);
+    try {
+      const result = await ruleService.validateCronExpression(
+        form.cronExpression,
+        form.timezone
+      );
+      setCronValidation(result);
+      if (result.valid) {
+        toast.success('Cron expression is valid');
+      } else {
+        toast.error(result.error || 'Invalid cron expression');
+      }
+    } catch (err: any) {
+      toast.error('Failed to validate cron expression');
+    } finally {
+      setValidatingCron(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!form.name.trim()) {
       toast.error('Rule name is required');
       return;
     }
+
+    // Validate scheduled rule fields
+    if (form.triggerType === 'SCHEDULED') {
+      if (!form.cronExpression?.trim()) {
+        toast.error('Cron expression is required for scheduled rules');
+        return;
+      }
+    }
+
     let condition;
     let actions;
     try {
@@ -208,6 +346,10 @@ const RulesPage: React.FC = () => {
       condition,
       actions,
       scopeFolderId: form.scopeFolderId || null,
+      // Only include scheduled fields if trigger type is SCHEDULED
+      cronExpression: form.triggerType === 'SCHEDULED' ? form.cronExpression : undefined,
+      timezone: form.triggerType === 'SCHEDULED' ? form.timezone : undefined,
+      maxItemsPerRun: form.triggerType === 'SCHEDULED' ? form.maxItemsPerRun : undefined,
     };
 
     try {
@@ -294,9 +436,27 @@ const RulesPage: React.FC = () => {
         <Typography variant="h5" sx={{ flexGrow: 1 }}>
           Automation Rules
         </Typography>
-        <Button startIcon={<Add />} variant="contained" onClick={openNewEditor}>
-          New Rule
-        </Button>
+        <Stack direction="row" spacing={1}>
+          <Button
+            startIcon={<LocalOffer />}
+            variant="outlined"
+            size="small"
+            onClick={() => applyQuickTemplate('autoTagOnUpload')}
+          >
+            Auto-tag Template
+          </Button>
+          <Button
+            startIcon={<Approval />}
+            variant="outlined"
+            size="small"
+            onClick={() => applyQuickTemplate('autoApprovalOnUpload')}
+          >
+            Auto-approval Template
+          </Button>
+          <Button startIcon={<Add />} variant="contained" onClick={openNewEditor}>
+            New Rule
+          </Button>
+        </Stack>
       </Box>
 
       {stats && (
@@ -351,13 +511,13 @@ const RulesPage: React.FC = () => {
                   {(rule.executionCount ?? 0).toString()} / {(rule.failureCount ?? 0).toString()}
                 </TableCell>
                 <TableCell align="right">
-                  <IconButton size="small" onClick={() => openTestDialog(rule)}>
+                  <IconButton size="small" onClick={() => openTestDialog(rule)} aria-label="Test">
                     <PlayArrow fontSize="small" />
                   </IconButton>
-                  <IconButton size="small" onClick={() => openEditEditor(rule)}>
+                  <IconButton size="small" onClick={() => openEditEditor(rule)} aria-label="Edit">
                     <Edit fontSize="small" />
                   </IconButton>
-                  <IconButton size="small" onClick={() => handleDelete(rule)}>
+                  <IconButton size="small" onClick={() => handleDelete(rule)} aria-label="Delete">
                     <Delete fontSize="small" />
                   </IconButton>
                 </TableCell>
@@ -441,6 +601,125 @@ const RulesPage: React.FC = () => {
               fullWidth
             />
           </Box>
+
+          {/* Scheduled Rule Fields - only visible when trigger type is SCHEDULED */}
+          {form.triggerType === 'SCHEDULED' && (
+            <Box sx={{
+              p: 2,
+              border: '1px solid',
+              borderColor: 'divider',
+              borderRadius: 1,
+              bgcolor: 'action.hover'
+            }}>
+              <Typography variant="subtitle2" sx={{ mb: 2 }}>
+                Schedule Configuration
+              </Typography>
+
+              <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+                <FormControl sx={{ minWidth: 200 }}>
+                  <InputLabel id="cron-preset-label">Cron Preset</InputLabel>
+                  <Select
+                    labelId="cron-preset-label"
+                    value=""
+                    label="Cron Preset"
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        setForm((prev) => ({ ...prev, cronExpression: e.target.value as string }));
+                        setCronValidation(null);
+                      }
+                    }}
+                  >
+                    <MenuItem value="">Custom</MenuItem>
+                    {CRON_PRESETS.map((preset) => (
+                      <MenuItem key={preset.value} value={preset.value}>
+                        {preset.label}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+
+                <TextField
+                  label="Cron Expression"
+                  value={form.cronExpression || ''}
+                  onChange={(e) => {
+                    setForm((prev) => ({ ...prev, cronExpression: e.target.value }));
+                    setCronValidation(null);
+                  }}
+                  placeholder="0 0 * * * *"
+                  helperText="Spring cron format: sec min hour day month weekday"
+                  fullWidth
+                  required
+                />
+
+                <Button
+                  variant="outlined"
+                  onClick={handleValidateCron}
+                  disabled={validatingCron || !form.cronExpression?.trim()}
+                  sx={{ minWidth: 120, alignSelf: 'flex-start', mt: 1 }}
+                >
+                  {validatingCron ? 'Validating...' : 'Validate'}
+                </Button>
+              </Box>
+
+              <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+                <FormControl sx={{ minWidth: 200 }}>
+                  <InputLabel id="timezone-label">Timezone</InputLabel>
+                  <Select
+                    labelId="timezone-label"
+                    value={form.timezone || 'UTC'}
+                    label="Timezone"
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, timezone: e.target.value as string }))
+                    }
+                  >
+                    {TIMEZONES.map((tz) => (
+                      <MenuItem key={tz} value={tz}>
+                        {tz}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+
+                <TextField
+                  label="Max Items Per Run"
+                  type="number"
+                  value={form.maxItemsPerRun ?? 200}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, maxItemsPerRun: Number(e.target.value) }))
+                  }
+                  helperText="Maximum documents to process per execution"
+                  inputProps={{ min: 1, max: 10000 }}
+                  sx={{ width: 200 }}
+                />
+              </Box>
+
+              {cronValidation && cronValidation.valid && cronValidation.nextExecutions && (
+                <Box sx={{ mt: 1 }}>
+                  <Typography variant="caption" color="text.secondary">
+                    Next scheduled executions:
+                  </Typography>
+                  <Stack direction="row" spacing={1} sx={{ mt: 0.5, flexWrap: 'wrap' }}>
+                    {cronValidation.nextExecutions.slice(0, 5).map((time, idx) => (
+                      <Chip key={idx} label={time} size="small" variant="outlined" />
+                    ))}
+                  </Stack>
+                </Box>
+              )}
+
+              {editingRule?.nextRunAt && (
+                <Box sx={{ mt: 2 }}>
+                  <Typography variant="caption" color="text.secondary">
+                    Next Run: {new Date(editingRule.nextRunAt).toLocaleString()}
+                  </Typography>
+                  {editingRule.lastRunAt && (
+                    <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+                      Last Run: {new Date(editingRule.lastRunAt).toLocaleString()}
+                    </Typography>
+                  )}
+                </Box>
+              )}
+            </Box>
+          )}
 
           <Box sx={{ display: 'flex', gap: 2 }}>
             <TextField

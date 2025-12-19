@@ -27,6 +27,7 @@ import { useAppDispatch, useAppSelector } from 'store';
 import { setUploadDialogOpen } from 'store/slices/uiSlice';
 import { uploadDocument } from 'store/slices/nodeSlice';
 import { toast } from 'react-toastify';
+import authService from 'services/authService';
 
 interface UploadFile {
   file: File;
@@ -39,21 +40,30 @@ const UploadDialog: React.FC = () => {
   const dispatch = useAppDispatch();
   const { uploadDialogOpen } = useAppSelector((state) => state.ui);
   const { currentNode } = useAppSelector((state) => state.node);
+  const { user } = useAppSelector((state) => state.auth);
+  const effectiveUser = user ?? authService.getCurrentUser();
+  const canWrite = Boolean(
+    effectiveUser?.roles?.includes('ROLE_ADMIN') || effectiveUser?.roles?.includes('ROLE_EDITOR')
+  );
   const [files, setFiles] = useState<UploadFile[]>([]);
   const [uploading, setUploading] = useState(false);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
+    if (!canWrite) {
+      return;
+    }
     const newFiles = acceptedFiles.map((file) => ({
       file,
       progress: 0,
       status: 'pending' as const,
     }));
     setFiles((prev) => [...prev, ...newFiles]);
-  }, []);
+  }, [canWrite]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     multiple: true,
+    disabled: uploading || !canWrite,
   });
 
   const handleClose = () => {
@@ -68,7 +78,12 @@ const UploadDialog: React.FC = () => {
   };
 
   const handleUpload = async () => {
-    if (!currentNode || files.length === 0) return;
+    if (files.length === 0) return;
+    if (!canWrite) {
+      toast.error('Requires write permission');
+      return;
+    }
+    const parentId = currentNode?.id || 'root';
 
     setUploading(true);
 
@@ -84,7 +99,7 @@ const UploadDialog: React.FC = () => {
       try {
         await dispatch(
           uploadDocument({
-            parentId: currentNode.id,
+            parentId,
             file: uploadFile.file,
           })
         ).unwrap();
@@ -163,7 +178,7 @@ const UploadDialog: React.FC = () => {
               : 'Drag & drop files here, or click to select files'}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            You can upload multiple files at once
+            {canWrite ? 'You can upload multiple files at once' : 'Read-only: you do not have permission to upload'}
           </Typography>
         </Box>
 
@@ -239,7 +254,7 @@ const UploadDialog: React.FC = () => {
         <Button
           onClick={handleUpload}
           variant="contained"
-          disabled={files.length === 0 || uploading}
+          disabled={files.length === 0 || uploading || !canWrite}
         >
           Upload {files.length > 0 && `(${files.length})`}
         </Button>

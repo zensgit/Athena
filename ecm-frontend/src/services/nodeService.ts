@@ -34,9 +34,90 @@ interface ApiNodeResponse {
   lastModifiedBy?: string;
   lastModifiedDate?: string;
   contentType?: string;
+  correspondentId?: string;
+  correspondentName?: string;
+}
+
+interface ApiNodeDetailsResponse {
+  id: string;
+  name: string;
+  description?: string;
+  path: string;
+  nodeType: 'FOLDER' | 'DOCUMENT';
+  parentId?: string;
+  size?: number;
+  contentType?: string;
+  currentVersionLabel?: string;
+  correspondentId?: string;
+  correspondentName?: string;
+  properties?: Record<string, any>;
+  metadata?: Record<string, any>;
+  aspects?: string[];
+  tags?: string[];
+  categories?: string[];
+  inheritPermissions?: boolean;
+  locked?: boolean;
+  lockedBy?: string;
+  createdBy: string;
+  createdDate: string;
+  lastModifiedBy?: string;
+  lastModifiedDate?: string;
+}
+
+interface ApiVersionResponse {
+  id: string;
+  documentId?: string;
+  versionLabel: string;
+  comment?: string;
+  createdDate: string;
+  creator: string;
+  size: number;
+  major: boolean;
+}
+
+interface UploadResponse {
+  success: boolean;
+  documentId?: string;
+  contentId?: string;
+  filename?: string;
+  processingTimeMs?: number;
+  errors?: Record<string, string>;
 }
 
 class NodeService {
+  private pickPrimaryRoot(roots: FolderResponse[]): FolderResponse {
+    if (!roots || roots.length === 0) {
+      throw new Error('No root folder found');
+    }
+
+    const isSystemRoot = (folder: FolderResponse) => folder.folderType?.toUpperCase() === 'SYSTEM';
+    const isRootPath = (folder: FolderResponse) => folder.path === '/Root' || folder.path === '/root';
+    const isRootName = (folder: FolderResponse) => folder.name === 'Root' || folder.name === 'root';
+    const createdDateAsc = (a: FolderResponse, b: FolderResponse) => a.createdDate.localeCompare(b.createdDate);
+
+    const preferred = roots.filter(isSystemRoot).filter(isRootPath).filter(isRootName);
+    if (preferred.length > 0) {
+      return [...preferred].sort(createdDateAsc)[0];
+    }
+
+    const systemByPath = roots.filter(isSystemRoot).filter(isRootPath);
+    if (systemByPath.length > 0) {
+      return [...systemByPath].sort(createdDateAsc)[0];
+    }
+
+    const system = roots.filter(isSystemRoot);
+    if (system.length > 0) {
+      return [...system].sort(createdDateAsc)[0];
+    }
+
+    return [...roots].sort(createdDateAsc)[0];
+  }
+
+  private async getRootFolder(): Promise<FolderResponse> {
+    const roots = await api.get<FolderResponse[]>('/folders/roots');
+    return this.pickPrimaryRoot(roots);
+  }
+
   private folderToNode(folder: FolderResponse): Node {
     return {
       id: folder.id,
@@ -69,60 +150,87 @@ class NodeService {
       modifier: apiNode.lastModifiedBy || apiNode.createdBy,
       size: apiNode.size,
       contentType: apiNode.contentType,
+      correspondentId: apiNode.correspondentId,
+      correspondent: apiNode.correspondentName,
     };
+  }
+
+  private apiNodeDetailsToNode(apiNode: ApiNodeDetailsResponse): Node {
+    const createdBy = apiNode.createdBy || '';
+    const createdDate = apiNode.createdDate || new Date().toISOString();
+    return {
+      id: apiNode.id,
+      name: apiNode.name,
+      path: apiNode.path,
+      nodeType: apiNode.nodeType,
+      parentId: apiNode.parentId,
+      properties: apiNode.properties || { description: apiNode.description },
+      aspects: apiNode.aspects || [],
+      created: createdDate,
+      modified: apiNode.lastModifiedDate || createdDate,
+      creator: createdBy,
+      modifier: apiNode.lastModifiedBy || createdBy,
+      size: apiNode.size,
+      contentType: apiNode.contentType,
+      currentVersionLabel: apiNode.currentVersionLabel,
+      description: apiNode.description,
+      tags: apiNode.tags,
+      categories: apiNode.categories,
+      correspondentId: apiNode.correspondentId,
+      correspondent: apiNode.correspondentName,
+      inheritPermissions: apiNode.inheritPermissions,
+    };
+  }
+
+  async getFolderByPath(path: string): Promise<Node> {
+    const folder = await api.get<FolderResponse>('/folders/path', { params: { path } });
+    return this.folderToNode(folder);
   }
 
   async getNode(nodeId: string): Promise<Node> {
     // Handle special "root" case by fetching first root folder
     if (nodeId === 'root') {
-      const roots = await api.get<FolderResponse[]>('/folders/roots');
-      if (roots && roots.length > 0) {
-        return this.folderToNode(roots[0]);
-      }
-      throw new Error('No root folder found');
+      const root = await this.getRootFolder();
+      return this.folderToNode(root);
     }
-    // For regular node IDs, try folder first, then fall back to node
-    try {
-      const folder = await api.get<FolderResponse>(`/folders/${nodeId}`);
-      return this.folderToNode(folder);
-    } catch {
-      // Fall back to generic node endpoint if folder not found
-      return api.get<Node>(`/nodes/${nodeId}`);
-    }
+    // /nodes/{id} works for both folders and documents; avoid noisy 404s from probing /folders/{id}.
+    const node = await api.get<ApiNodeDetailsResponse>(`/nodes/${nodeId}`);
+    return this.apiNodeDetailsToNode(node);
   }
 
   async getChildren(nodeId: string, sortBy = 'name', ascending = true): Promise<Node[]> {
     // Handle special "root" case
     if (nodeId === 'root') {
-      const roots = await api.get<FolderResponse[]>('/folders/roots');
-      if (roots && roots.length > 0) {
-        nodeId = roots[0].id;
-      } else {
-        return [];
-      }
+      const root = await this.getRootFolder();
+      nodeId = root.id;
     }
-    // Use folder contents endpoint
+    // Use folder contents endpoint (paginated in backend; request a large page size for tree/list views)
     try {
-      const response = await api.get<{ content: ApiNodeResponse[] }>(`/folders/${nodeId}/contents`);
+      const sortDirection = ascending ? 'asc' : 'desc';
+      const response = await api.get<{ content: ApiNodeResponse[] }>(`/folders/${nodeId}/contents`, {
+        params: {
+          page: 0,
+          size: 1000,
+          sort: `${sortBy},${sortDirection}`,
+        },
+      });
       const apiNodes = response.content || [];
       return apiNodes.map(node => this.apiNodeToNode(node));
     } catch {
       // Fall back to node children endpoint
-      return api.get<Node[]>(`/nodes/${nodeId}/children`, {
+      const response = await api.get<{ content: ApiNodeDetailsResponse[] }>(`/nodes/${nodeId}/children`, {
         params: { sortBy, ascending },
       });
+      const apiNodes = response.content || [];
+      return apiNodes.map((node) => this.apiNodeDetailsToNode(node));
     }
   }
 
   async createFolder(parentId: string, request: CreateFolderRequest): Promise<Node> {
     // Handle special "root" case
     if (parentId === 'root') {
-      const roots = await api.get<FolderResponse[]>('/folders/roots');
-      if (roots && roots.length > 0) {
-        parentId = roots[0].id;
-      } else {
-        throw new Error('No root folder found');
-      }
+      const root = await this.getRootFolder();
+      parentId = root.id;
     }
     const folder = await api.post<FolderResponse>('/folders', {
       name: request.name,
@@ -136,34 +244,16 @@ class NodeService {
   async uploadDocument(parentId: string, file: File, properties?: Record<string, any>, onProgress?: (progress: number) => void): Promise<Node> {
     // Handle special "root" case
     if (parentId === 'root') {
-      const roots = await api.get<FolderResponse[]>('/folders/roots');
-      if (roots && roots.length > 0) {
-        parentId = roots[0].id;
-      } else {
-        throw new Error('No root folder found');
-      }
+      const root = await this.getRootFolder();
+      parentId = root.id;
     }
 
-    // Use the v1 upload endpoint with folderId parameter
-    const url = `/documents/upload?folderId=${parentId}`;
-    const response = await api.uploadFile(url, file, onProgress);
-
-    // Map the upload response to Node format
-    return {
-      id: response.documentId,
-      name: file.name,
-      path: '',
-      nodeType: 'DOCUMENT',
-      parentId: parentId,
-      properties: {},
-      aspects: [],
-      created: new Date().toISOString(),
-      modified: new Date().toISOString(),
-      creator: '',
-      modifier: '',
-      size: file.size,
-      contentType: file.type,
-    };
+    const url = `/documents/upload?folderId=${encodeURIComponent(parentId)}`;
+    const response = (await api.uploadFile(url, file, onProgress)) as UploadResponse;
+    if (!response?.success || !response.documentId) {
+      throw new Error('Upload failed');
+    }
+    return this.getNode(response.documentId);
   }
 
   async downloadDocument(nodeId: string): Promise<void> {
@@ -171,16 +261,37 @@ class NodeService {
     return api.downloadFile(`/nodes/${nodeId}/content`, node.name);
   }
 
-  async updateNode(nodeId: string, properties: Record<string, any>): Promise<Node> {
-    return api.put<Node>(`/nodes/${nodeId}`, { properties });
+  async downloadNodesAsZip(nodeIds: string[], name = 'archive'): Promise<void> {
+    if (!nodeIds.length) {
+      return;
+    }
+
+    const idsParam = nodeIds.map((id) => encodeURIComponent(id)).join(',');
+    const safeName = name || 'archive';
+    const url = `/nodes/download/batch?ids=${idsParam}&name=${encodeURIComponent(safeName)}`;
+    const filename = `${safeName}.zip`;
+    return api.downloadFile(url, filename);
+  }
+
+  async updateNode(nodeId: string, updates: Record<string, any>): Promise<Node> {
+    const updated = await api.patch<ApiNodeDetailsResponse>(`/nodes/${nodeId}`, updates);
+    return this.apiNodeDetailsToNode(updated);
   }
 
   async moveNode(nodeId: string, targetParentId: string): Promise<Node> {
-    return api.post<Node>(`/nodes/${nodeId}/move`, { targetParentId });
+    const moved = await api.post<ApiNodeResponse>(`/folders/${targetParentId}/move`, {
+      nodeId,
+    });
+    return this.apiNodeToNode(moved);
   }
 
-  async copyNode(nodeId: string, targetParentId: string, deepCopy = true): Promise<Node> {
-    return api.post<Node>(`/nodes/${nodeId}/copy`, { targetParentId, deepCopy });
+  async copyNode(nodeId: string, targetParentId: string, deepCopy = true, newName?: string): Promise<Node> {
+    const copied = await api.post<ApiNodeResponse>(`/folders/${targetParentId}/copy`, {
+      nodeId,
+      newName: newName || null,
+      deep: deepCopy,
+    });
+    return this.apiNodeToNode(copied);
   }
 
   async deleteNode(nodeId: string): Promise<void> {
@@ -188,26 +299,58 @@ class NodeService {
   }
 
   async searchNodes(criteria: SearchCriteria): Promise<Node[]> {
-    // Use advanced search to leverage filters/highlights
-    const payload = {
-      query: criteria.name || criteria.contentType || '',
-      filters: {
-        mimeTypes: criteria.contentType ? [criteria.contentType] : undefined,
-        createdBy: criteria.createdBy || undefined,
-        tags: criteria.tags,
-        categories: criteria.categories,
-        minSize: criteria.minSize,
-        maxSize: criteria.maxSize,
-        dateFrom: criteria.createdFrom,
-        dateTo: criteria.createdTo,
-        modifiedFrom: criteria.modifiedFrom,
-        modifiedTo: criteria.modifiedTo,
-        path: criteria.path,
-      },
-      pageable: { page: 0, size: 50 },
-    };
+    const query = (criteria.name || '').trim();
+    const filters: Record<string, any> = {};
 
-    const response = await api.post<{ content: any[] }>('/search/advanced', payload);
+    if (criteria.contentType) {
+      filters.mimeTypes = [criteria.contentType];
+    }
+    if (criteria.createdBy) {
+      filters.createdBy = criteria.createdBy;
+    }
+    if (criteria.tags?.length) {
+      filters.tags = criteria.tags;
+    }
+    if (criteria.categories?.length) {
+      filters.categories = criteria.categories;
+    }
+    if (criteria.correspondents?.length) {
+      filters.correspondents = criteria.correspondents;
+    }
+    if (criteria.minSize !== undefined) {
+      filters.minSize = criteria.minSize;
+    }
+    if (criteria.maxSize !== undefined) {
+      filters.maxSize = criteria.maxSize;
+    }
+    if (criteria.createdFrom) {
+      filters.dateFrom = criteria.createdFrom;
+    }
+    if (criteria.createdTo) {
+      filters.dateTo = criteria.createdTo;
+    }
+    if (criteria.modifiedFrom) {
+      filters.modifiedFrom = criteria.modifiedFrom;
+    }
+    if (criteria.modifiedTo) {
+      filters.modifiedTo = criteria.modifiedTo;
+    }
+    if (criteria.path) {
+      filters.path = criteria.path;
+    }
+
+    const hasFilters = Object.keys(filters).length > 0;
+
+    // Fast path: for simple name-only searches, use the dedicated full-text endpoint.
+    // It handles punctuation (e.g. hyphens) more reliably than the Criteria-based advanced endpoint.
+    const response = !hasFilters && query
+      ? await api.get<{ content: any[] }>('/search', { params: { q: query, page: 0, size: 50 } })
+      : await api.post<{ content: any[] }>('/search/advanced', {
+          query,
+          filters,
+          pageable: { page: 0, size: 50 },
+        });
+
     return response.content.map((item) => ({
       id: item.id,
       name: item.name,
@@ -226,6 +369,7 @@ class NodeService {
       highlights: item.highlights,
       tags: item.tags,
       categories: item.categories,
+      correspondent: item.correspondent,
       score: item.score,
     } as Node));
   }
@@ -239,29 +383,47 @@ class NodeService {
   }
 
   async getVersionHistory(nodeId: string): Promise<Version[]> {
-    return api.get<Version[]>(`/nodes/${nodeId}/versions`);
+    const versions = await api.get<ApiVersionResponse[]>(`/documents/${nodeId}/versions`);
+    return versions.map((version) => ({
+      id: version.id,
+      documentId: version.documentId || nodeId,
+      versionLabel: version.versionLabel,
+      comment: version.comment,
+      created: version.createdDate,
+      creator: version.creator,
+      size: version.size,
+      isMajor: version.major,
+    }));
   }
 
   async createVersion(nodeId: string, file: File, comment?: string, major = false): Promise<Version> {
     const formData = new FormData();
     formData.append('file', file);
     if (comment) formData.append('comment', comment);
-    formData.append('major', major.toString());
+    formData.append('majorVersion', major.toString());
 
-    return api.post<Version>(`/nodes/${nodeId}/versions`, formData, {
+    // Reuse check-in endpoint to create a new version (backend persists via VersionService).
+    await api.post(`/documents/${nodeId}/checkin`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
+    const history = await this.getVersionHistory(nodeId);
+    if (history.length === 0) {
+      throw new Error('Version creation succeeded but version history is empty');
+    }
+    return history[0];
   }
 
   async downloadVersion(nodeId: string, versionId: string): Promise<void> {
-    const version = await api.get<Version>(`/nodes/${nodeId}/versions/${versionId}`);
     const node = await this.getNode(nodeId);
-    const filename = `${node.name}_v${version.versionLabel}`;
-    return api.downloadFile(`/nodes/${nodeId}/versions/${versionId}/content`, filename);
+    const versions = await this.getVersionHistory(nodeId);
+    const version = versions.find((v) => v.id === versionId);
+    const suffix = version?.versionLabel ? `_v${version.versionLabel}` : `_v${versionId}`;
+    return api.downloadFile(`/documents/${nodeId}/versions/${versionId}/download`, `${node.name}${suffix}`);
   }
 
   async revertToVersion(nodeId: string, versionId: string): Promise<Node> {
-    return api.post<Node>(`/nodes/${nodeId}/versions/${versionId}/revert`);
+    const node = await api.post<ApiNodeDetailsResponse>(`/documents/${nodeId}/versions/${versionId}/revert`);
+    return this.apiNodeDetailsToNode(node);
   }
 
   async getPermissions(nodeId: string): Promise<Record<string, Permission[]>> {

@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import nodeService from 'services/nodeService';
+import savedSearchService from 'services/savedSearchService';
 import { Node, NodeState, SearchCriteria } from 'types';
 
 const initialState: NodeState = {
@@ -60,16 +61,26 @@ export const moveNode = createAsyncThunk(
 
 export const copyNode = createAsyncThunk(
   'node/copyNode',
-  async ({ nodeId, targetParentId, deepCopy = true }: { nodeId: string; targetParentId: string; deepCopy?: boolean }) => {
-    const node = await nodeService.copyNode(nodeId, targetParentId, deepCopy);
+  async ({
+    nodeId,
+    targetParentId,
+    deepCopy = true,
+    newName,
+  }: {
+    nodeId: string;
+    targetParentId: string;
+    deepCopy?: boolean;
+    newName?: string;
+  }) => {
+    const node = await nodeService.copyNode(nodeId, targetParentId, deepCopy, newName);
     return node;
   }
 );
 
 export const updateNode = createAsyncThunk(
   'node/updateNode',
-  async ({ nodeId, properties }: { nodeId: string; properties: Record<string, any> }) => {
-    const node = await nodeService.updateNode(nodeId, properties);
+  async ({ nodeId, updates }: { nodeId: string; updates: Record<string, any> }) => {
+    const node = await nodeService.updateNode(nodeId, updates);
     return node;
   }
 );
@@ -78,6 +89,35 @@ export const searchNodes = createAsyncThunk(
   'node/searchNodes',
   async (criteria: SearchCriteria) => {
     return nodeService.searchNodes(criteria);
+  }
+);
+
+export const executeSavedSearch = createAsyncThunk(
+  'node/executeSavedSearch',
+  async (savedSearchId: string) => {
+    const response = await savedSearchService.execute(savedSearchId);
+    const items = response.results?.content || [];
+    return items.map((item) => ({
+      id: item.id,
+      name: item.name,
+      path: item.path,
+      nodeType: (item.nodeType as any) || 'DOCUMENT',
+      parentId: item.parentId,
+      properties: { description: item.description },
+      aspects: [],
+      created: item.createdDate || new Date().toISOString(),
+      modified: item.lastModifiedDate || item.createdDate || new Date().toISOString(),
+      creator: item.createdBy || '',
+      modifier: item.lastModifiedBy || item.createdBy || '',
+      size: item.fileSize,
+      contentType: item.mimeType,
+      description: item.description,
+      highlights: item.highlights,
+      tags: item.tags,
+      categories: item.categories,
+      correspondent: item.correspondent,
+      score: item.score,
+    } as Node));
   }
 );
 
@@ -157,6 +197,18 @@ const nodeSlice = createSlice({
       .addCase(searchNodes.rejected, (state, action) => {
         state.loading = false;
         state.error = action.error.message || 'Search failed';
+      })
+      .addCase(executeSavedSearch.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(executeSavedSearch.fulfilled, (state, action) => {
+        state.loading = false;
+        state.nodes = action.payload;
+      })
+      .addCase(executeSavedSearch.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.error.message || 'Saved search failed';
       })
       .addCase(updateNode.fulfilled, (state, action) => {
         state.loading = false;

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import axios from 'axios';
 import { Box, CircularProgress, Alert } from '@mui/material';
+import apiService from 'services/api';
 
 /**
  * Editor Page Component
@@ -14,7 +14,10 @@ import { Box, CircularProgress, Alert } from '@mui/material';
 const EditorPage: React.FC = () => {
   const { documentId } = useParams<{ documentId: string }>();
   const [searchParams] = useSearchParams();
-  const provider = searchParams.get('provider') || 'wps'; // Default to WPS
+  const rawProvider = searchParams.get('provider');
+  // WPS integration is optional and may be disabled in this deployment. Treat "wps" as a
+  // compatibility alias for WOPI to avoid hard failures (501 from backend).
+  const provider = rawProvider === 'wps' ? 'wopi' : rawProvider || 'wopi'; // Default to WOPI (Collabora)
   const permission = searchParams.get('permission') || 'read';
 
   const [editorUrl, setEditorUrl] = useState<string | null>(null);
@@ -28,17 +31,13 @@ const EditorPage: React.FC = () => {
         setError(null);
 
         let url = '';
-        if (provider === 'wps') {
-          // Fetch WPS Web Office URL
-          const response = await axios.get<{ wpsUrl: string }>(
-            `/api/v1/integration/wps/url/${documentId}?permission=${permission}`
-          );
-          url = response.data.wpsUrl;
-        } else if (provider === 'wopi') {
-          // Future: Fetch WOPI Client URL (e.g. Collabora / Office Online)
-          // const response = await axios.get(...)
-          setError("WOPI client integration not yet configured in frontend.");
-          return;
+        if (provider === 'wopi') {
+          const response = await apiService.get<{ wopiUrl: string }>(`/integration/wopi/url/${documentId}`, {
+            params: { permission },
+          });
+          url = response.wopiUrl;
+        } else {
+          setError(`Unsupported editor provider: ${provider}`);
         }
 
         if (url) {
@@ -48,7 +47,11 @@ const EditorPage: React.FC = () => {
         }
       } catch (err) {
         console.error("Error loading editor:", err);
-        setError("Failed to load editor. Please check permissions or try again.");
+        const backendMessage =
+          (err as any)?.response?.data?.message ||
+          (err as any)?.message ||
+          "Failed to load editor. Please check permissions or try again.";
+        setError(backendMessage);
       } finally {
         setLoading(false);
       }

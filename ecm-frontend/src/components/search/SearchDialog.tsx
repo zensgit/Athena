@@ -26,16 +26,19 @@ import {
   Close,
   Search,
   ExpandMore,
+  Save,
 } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { SearchCriteria } from 'types';
 import { useAppDispatch, useAppSelector } from 'store';
-import { setSearchOpen } from 'store/slices/uiSlice';
+import { setSearchOpen, setSearchPrefill } from 'store/slices/uiSlice';
 import { searchNodes } from 'store/slices/nodeSlice';
 import { useNavigate } from 'react-router-dom';
 import apiService from 'services/api';
+import savedSearchService from 'services/savedSearchService';
+import { toast } from 'react-toastify';
 
 const CONTENT_TYPES = [
   { value: 'application/pdf', label: 'PDF' },
@@ -57,7 +60,7 @@ const ASPECTS = [
 const SearchDialog: React.FC = () => {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
-  const { searchOpen } = useAppSelector((state) => state.ui);
+  const { searchOpen, searchPrefill } = useAppSelector((state) => state.ui);
   
   const [searchCriteria, setSearchCriteria] = useState<SearchCriteria>({
     name: '',
@@ -74,29 +77,35 @@ const SearchDialog: React.FC = () => {
 
   const [tags, setTags] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
+  const [correspondents, setCorrespondents] = useState<string[]>([]);
   const [minSize, setMinSize] = useState<number | undefined>();
   const [maxSize, setMaxSize] = useState<number | undefined>();
   const [pathPrefix, setPathPrefix] = useState<string>('');
-  const [facetOptions, setFacetOptions] = useState<{ tags: string[]; categories: string[]; mimeTypes: string[]; createdBy: string[] }>({
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [saveName, setSaveName] = useState('');
+  const [facetOptions, setFacetOptions] = useState<{
+    tags: string[];
+    categories: string[];
+    correspondents: string[];
+    mimeTypes: string[];
+    createdBy: string[];
+  }>({
     tags: [],
     categories: [],
+    correspondents: [],
     mimeTypes: [],
     createdBy: [],
   });
 
   const loadFacets = async () => {
     try {
-      const res = await apiService.post<any>('/search/faceted', {
-        query: '',
-        filters: {},
-        pageable: { page: 0, size: 1 },
-        facetFields: ['tags', 'categories', 'mimeType', 'createdBy'],
-      });
+      const res = await apiService.get<any>('/search/facets', { params: { q: '' } });
       setFacetOptions({
-        tags: res.facets?.tags?.map((f: any) => f.value) || [],
-        categories: res.facets?.categories?.map((f: any) => f.value) || [],
-        mimeTypes: res.facets?.mimeType?.map((f: any) => f.value) || [],
-        createdBy: res.facets?.createdBy?.map((f: any) => f.value) || [],
+        tags: res.tags?.map((f: any) => f.value) || [],
+        categories: res.categories?.map((f: any) => f.value) || [],
+        correspondents: res.correspondent?.map((f: any) => f.value) || [],
+        mimeTypes: res.mimeType?.map((f: any) => f.value) || [],
+        createdBy: res.createdBy?.map((f: any) => f.value) || [],
       });
     } catch {
       // ignore facet load failures
@@ -108,6 +117,39 @@ const SearchDialog: React.FC = () => {
       loadFacets();
     }
   }, [searchOpen]);
+
+  React.useEffect(() => {
+    if (!searchOpen || !searchPrefill) {
+      return;
+    }
+
+    // Start from a clean slate before applying prefill values.
+    setSearchCriteria({
+      name: searchPrefill.name || '',
+      properties: {},
+      aspects: [],
+      contentType: searchPrefill.contentType || '',
+      createdBy: searchPrefill.createdBy || '',
+      createdFrom: searchPrefill.createdFrom,
+      createdTo: searchPrefill.createdTo,
+      modifiedFrom: searchPrefill.modifiedFrom,
+      modifiedTo: searchPrefill.modifiedTo,
+    });
+    setCustomProperties([]);
+    setNewPropertyKey('');
+    setNewPropertyValue('');
+    setExpandedSection('basic');
+    setTags(searchPrefill.tags || []);
+    setCategories(searchPrefill.categories || []);
+    setCorrespondents(searchPrefill.correspondents || []);
+    setMinSize(searchPrefill.minSize);
+    setMaxSize(searchPrefill.maxSize);
+    setPathPrefix(searchPrefill.pathPrefix || '');
+    setSaveDialogOpen(false);
+    setSaveName('');
+
+    dispatch(setSearchPrefill(null));
+  }, [searchOpen, searchPrefill, dispatch]);
 
   const handleClose = () => {
     dispatch(setSearchOpen(false));
@@ -126,6 +168,82 @@ const SearchDialog: React.FC = () => {
     setNewPropertyKey('');
     setNewPropertyValue('');
     setExpandedSection('basic');
+    setTags([]);
+    setCategories([]);
+    setCorrespondents([]);
+    setMinSize(undefined);
+    setMaxSize(undefined);
+    setPathPrefix('');
+    setSaveDialogOpen(false);
+    setSaveName('');
+  };
+
+  const buildSavedSearchQueryParams = () => {
+    const query = (searchCriteria.name || '').trim();
+    const filters: Record<string, any> = {};
+
+    if (searchCriteria.contentType) {
+      filters.mimeTypes = [searchCriteria.contentType];
+    }
+    if (searchCriteria.createdBy) {
+      filters.createdBy = searchCriteria.createdBy;
+    }
+    if (tags.length) {
+      filters.tags = tags;
+    }
+    if (categories.length) {
+      filters.categories = categories;
+    }
+    if (correspondents.length) {
+      filters.correspondents = correspondents;
+    }
+    if (minSize !== undefined) {
+      filters.minSize = minSize;
+    }
+    if (maxSize !== undefined) {
+      filters.maxSize = maxSize;
+    }
+    if (searchCriteria.createdFrom) {
+      filters.dateFrom = searchCriteria.createdFrom;
+    }
+    if (searchCriteria.createdTo) {
+      filters.dateTo = searchCriteria.createdTo;
+    }
+    if (searchCriteria.modifiedFrom) {
+      filters.modifiedFrom = searchCriteria.modifiedFrom;
+    }
+    if (searchCriteria.modifiedTo) {
+      filters.modifiedTo = searchCriteria.modifiedTo;
+    }
+    if (pathPrefix.length > 0) {
+      filters.path = pathPrefix;
+    }
+
+    return {
+      query,
+      filters,
+      highlightEnabled: true,
+      facetFields: ['mimeType', 'createdBy', 'tags', 'categories', 'correspondent'],
+      pageable: { page: 0, size: 50 },
+    };
+  };
+
+  const handleSaveSearch = async () => {
+    const trimmed = saveName.trim();
+    if (!trimmed) {
+      toast.error('Please enter a saved search name');
+      return;
+    }
+
+    try {
+      await savedSearchService.save(trimmed, buildSavedSearchQueryParams());
+      toast.success('Saved search created');
+      setSaveDialogOpen(false);
+      setSaveName('');
+    } catch (err: any) {
+      const message = err?.response?.data?.message || err?.message || 'Failed to save search';
+      toast.error(message);
+    }
   };
 
   const handleSearch = async () => {
@@ -137,6 +255,7 @@ const SearchDialog: React.FC = () => {
       }, {} as Record<string, any>),
       tags,
       categories,
+      correspondents,
       minSize,
       maxSize,
       path: pathPrefix || undefined,
@@ -181,6 +300,7 @@ const SearchDialog: React.FC = () => {
       searchCriteria.modifiedTo ||
       tags.length > 0 ||
       categories.length > 0 ||
+      correspondents.length > 0 ||
       minSize !== undefined ||
       maxSize !== undefined ||
       pathPrefix.length > 0
@@ -188,44 +308,45 @@ const SearchDialog: React.FC = () => {
   };
 
   return (
-    <Dialog
-      open={searchOpen}
-      onClose={handleClose}
-      maxWidth="md"
-      fullWidth
-    >
-      <DialogTitle>
-        Advanced Search
-        <IconButton
-          aria-label="close"
-          onClick={handleClose}
-          sx={{ position: 'absolute', right: 8, top: 8 }}
-        >
-          <Close />
-        </IconButton>
-      </DialogTitle>
-      <DialogContent>
-        <Box sx={{ mt: 1 }}>
-          <Accordion
-            expanded={expandedSection === 'basic'}
-            onChange={(_, isExpanded) => setExpandedSection(isExpanded ? 'basic' : false)}
+    <>
+      <Dialog
+        open={searchOpen}
+        onClose={handleClose}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          Advanced Search
+          <IconButton
+            aria-label="close"
+            onClick={handleClose}
+            sx={{ position: 'absolute', right: 8, top: 8 }}
           >
-            <AccordionSummary expandIcon={<ExpandMore />}>
-              <Typography>Basic Search</Typography>
-            </AccordionSummary>
-            <AccordionDetails>
-              <Grid container spacing={2}>
-                <Grid item xs={12}>
-                  <TextField
-                    fullWidth
-                    label="Name contains"
-                    value={searchCriteria.name}
-                    onChange={(e) =>
-                      setSearchCriteria({ ...searchCriteria, name: e.target.value })
-                    }
-                    placeholder="Enter partial or full name"
-                  />
-                </Grid>
+            <Close />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 1 }}>
+            <Accordion
+              expanded={expandedSection === 'basic'}
+              onChange={(_, isExpanded) => setExpandedSection(isExpanded ? 'basic' : false)}
+            >
+              <AccordionSummary expandIcon={<ExpandMore />}>
+                <Typography>Basic Search</Typography>
+              </AccordionSummary>
+              <AccordionDetails>
+                <Grid container spacing={2}>
+                  <Grid item xs={12}>
+                    <TextField
+                      fullWidth
+                      label="Name contains"
+                      value={searchCriteria.name}
+                      onChange={(e) =>
+                        setSearchCriteria({ ...searchCriteria, name: e.target.value })
+                      }
+                      placeholder="Enter partial or full name"
+                    />
+                  </Grid>
                 <Grid item xs={12}>
                   <FormControl fullWidth>
                     <InputLabel>Content Type</InputLabel>
@@ -491,6 +612,34 @@ const SearchDialog: React.FC = () => {
                   </Select>
                 </FormControl>
               </Grid>
+              <Grid item xs={12}>
+                <FormControl fullWidth>
+                  <InputLabel>Correspondents</InputLabel>
+                  <Select
+                    multiple
+                    value={correspondents}
+                    label="Correspondents"
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setCorrespondents(typeof val === 'string' ? val.split(',') : val);
+                    }}
+                    renderValue={(selected) => (
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {selected.map((value) => (
+                          <Chip key={value} label={value} size="small" />
+                        ))}
+                      </Box>
+                    )}
+                  >
+                    {facetOptions.correspondents.map((c) => (
+                      <MenuItem key={c} value={c}>
+                        <Checkbox checked={correspondents.indexOf(c) > -1} />
+                        <ListItemText primary={c} />
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
               <Grid item xs={6}>
                 <TextField
                   fullWidth
@@ -521,21 +670,49 @@ const SearchDialog: React.FC = () => {
               </Grid>
             </AccordionDetails>
           </Accordion>
-        </Box>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={resetForm}>Clear All</Button>
-        <Button onClick={handleClose}>Cancel</Button>
-        <Button
-          onClick={handleSearch}
-          variant="contained"
-          startIcon={<Search />}
-          disabled={!isSearchValid()}
-        >
-          Search
-        </Button>
-      </DialogActions>
-    </Dialog>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={resetForm}>Clear All</Button>
+          <Button onClick={handleClose}>Cancel</Button>
+          <Button
+            onClick={() => setSaveDialogOpen(true)}
+            startIcon={<Save />}
+            disabled={!isSearchValid()}
+          >
+            Save Search
+          </Button>
+          <Button
+            onClick={handleSearch}
+            variant="contained"
+            startIcon={<Search />}
+            disabled={!isSearchValid()}
+          >
+            Search
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={saveDialogOpen} onClose={() => setSaveDialogOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Save Search</DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 1 }}>
+            <TextField
+              fullWidth
+              label="Name"
+              value={saveName}
+              onChange={(e) => setSaveName(e.target.value)}
+              placeholder="e.g. Recent PDFs"
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSaveDialogOpen(false)}>Cancel</Button>
+          <Button variant="contained" onClick={handleSaveSearch} disabled={!saveName.trim()}>
+            Save
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </>
   );
 };
 

@@ -11,6 +11,10 @@ import {
   Typography,
   Chip,
   Grid,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
   Divider,
   CircularProgress,
   List,
@@ -32,6 +36,7 @@ import { useAppDispatch, useAppSelector } from 'store';
 import { setPropertiesDialogOpen } from 'store/slices/uiSlice';
 import { updateNode } from 'store/slices/nodeSlice';
 import nodeService from 'services/nodeService';
+import correspondentService, { Correspondent } from 'services/correspondentService';
 import { toast } from 'react-toastify';
 
 interface PropertyField {
@@ -42,6 +47,8 @@ interface PropertyField {
 const PropertiesDialog: React.FC = () => {
   const dispatch = useAppDispatch();
   const { propertiesDialogOpen, selectedNodeId } = useAppSelector((state) => state.ui);
+  const user = useAppSelector((state) => state.auth.user);
+  const canWrite = Boolean(user?.roles?.includes('ROLE_ADMIN') || user?.roles?.includes('ROLE_EDITOR'));
   const [node, setNode] = useState<Node | null>(null);
   const [loading, setLoading] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -49,6 +56,11 @@ const PropertiesDialog: React.FC = () => {
   const [customProperties, setCustomProperties] = useState<PropertyField[]>([]);
   const [newPropertyKey, setNewPropertyKey] = useState('');
   const [newPropertyValue, setNewPropertyValue] = useState('');
+  const [availableCorrespondents, setAvailableCorrespondents] = useState<Correspondent[]>([]);
+  const [correspondentId, setCorrespondentId] = useState('');
+  const [correspondentLoading, setCorrespondentLoading] = useState(false);
+  const correspondentLabelId = 'correspondent-select-label';
+  const correspondentSelectId = 'correspondent-select';
 
   const loadNodeDetails = useCallback(async () => {
     if (!selectedNodeId) return;
@@ -58,6 +70,7 @@ const PropertiesDialog: React.FC = () => {
       const nodeData = await nodeService.getNode(selectedNodeId);
       setNode(nodeData);
       setEditedName(nodeData.name);
+      setCorrespondentId(nodeData.correspondentId || '');
       
       // Extract custom properties
       const customProps = Object.entries(nodeData.properties || {})
@@ -71,11 +84,30 @@ const PropertiesDialog: React.FC = () => {
     }
   }, [selectedNodeId]);
 
+  const loadCorrespondents = useCallback(async () => {
+    setCorrespondentLoading(true);
+    try {
+      const correspondents = await correspondentService.list(0, 500);
+      setAvailableCorrespondents(correspondents);
+    } catch {
+      toast.error('Failed to load correspondents');
+    } finally {
+      setCorrespondentLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (propertiesDialogOpen && selectedNodeId) {
       loadNodeDetails();
+      loadCorrespondents();
     }
-  }, [propertiesDialogOpen, selectedNodeId, loadNodeDetails]);
+  }, [propertiesDialogOpen, selectedNodeId, loadNodeDetails, loadCorrespondents]);
+
+  useEffect(() => {
+    if (!canWrite && editMode) {
+      setEditMode(false);
+    }
+  }, [canWrite, editMode]);
 
   const handleClose = () => {
     dispatch(setPropertiesDialogOpen(false));
@@ -84,6 +116,8 @@ const PropertiesDialog: React.FC = () => {
     setCustomProperties([]);
     setNewPropertyKey('');
     setNewPropertyValue('');
+    setAvailableCorrespondents([]);
+    setCorrespondentId('');
   };
 
   const handleSave = async () => {
@@ -106,7 +140,12 @@ const PropertiesDialog: React.FC = () => {
         }
       });
 
-      await dispatch(updateNode({ nodeId: selectedNodeId, properties: updatedProperties })).unwrap();
+      const updates: Record<string, any> = { properties: updatedProperties };
+      if (node.nodeType === 'DOCUMENT') {
+        updates.correspondentId = correspondentId || null;
+      }
+
+      await dispatch(updateNode({ nodeId: selectedNodeId, updates })).unwrap();
       
       // Update name if changed
       if (editedName !== node.name) {
@@ -227,6 +266,36 @@ const PropertiesDialog: React.FC = () => {
                       Version
                     </Typography>
                     <Typography variant="body1">{node.currentVersionLabel}</Typography>
+                  </Grid>
+                )}
+                {node.nodeType === 'DOCUMENT' && (
+                  <Grid item xs={12}>
+                    <FormControl fullWidth size="small" disabled={!editMode || correspondentLoading}>
+                      <InputLabel id={correspondentLabelId}>Correspondent</InputLabel>
+                      <Select
+                        id={correspondentSelectId}
+                        labelId={correspondentLabelId}
+                        value={correspondentId}
+                        label="Correspondent"
+                        onChange={(e) => setCorrespondentId(e.target.value as string)}
+                        renderValue={(selected) => {
+                          if (!selected) {
+                            return <em>None</em>;
+                          }
+                          const match = availableCorrespondents.find((c) => c.id === selected);
+                          return match?.name || node.correspondent || selected;
+                        }}
+                      >
+                        <MenuItem value="">
+                          <em>None</em>
+                        </MenuItem>
+                        {availableCorrespondents.map((c) => (
+                          <MenuItem key={c.id} value={c.id}>
+                            {c.name}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
                   </Grid>
                 )}
               </Grid>
@@ -380,13 +449,15 @@ const PropertiesDialog: React.FC = () => {
         ) : (
           <>
             <Button onClick={handleClose}>Close</Button>
-            <Button
-              onClick={() => setEditMode(true)}
-              variant="contained"
-              startIcon={<Edit />}
-            >
-              Edit
-            </Button>
+            {canWrite && (
+              <Button
+                onClick={() => setEditMode(true)}
+                variant="contained"
+                startIcon={<Edit />}
+              >
+                Edit
+              </Button>
+            )}
           </>
         )}
       </DialogActions>

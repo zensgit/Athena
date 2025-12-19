@@ -32,6 +32,7 @@ import 'react-pdf/dist/esm/Page/TextLayer.css';
 import { useNavigate } from 'react-router-dom';
 import { Node } from 'types';
 import nodeService from 'services/nodeService';
+import { keycloak } from 'services/authService';
 import { toast } from 'react-toastify';
 
 // Configure PDF.js worker
@@ -60,10 +61,9 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
       setError(null);
 
       try {
-        const response = await fetch(`/api/nodes/${node.id}/content`, {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem('token')}`,
-          },
+        const token = keycloak.token;
+        const response = await fetch(`/api/v1/nodes/${node.id}/content`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
 
         if (!response.ok) {
@@ -309,7 +309,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
             onClose={handleMenuClose}
           >
             <MenuItem onClick={() => {
-              navigate(`/editor/${node.id}?provider=wps&permission=write`);
+              navigate(`/editor/${node.id}?provider=wopi&permission=write`);
               onClose(); // Close preview dialog
             }}>
               <ListItemIcon>

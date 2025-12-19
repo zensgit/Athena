@@ -13,12 +13,14 @@ import {
   ViewList,
   ViewModule,
   Delete,
+  Download,
 } from '@mui/icons-material';
 import { useAppDispatch, useAppSelector } from 'store';
 import { fetchNode, fetchChildren, deleteNodes } from 'store/slices/nodeSlice';
 import { setViewMode } from 'store/slices/uiSlice';
 import FileBreadcrumb from 'components/browser/FileBreadcrumb';
 import FileList from 'components/browser/FileList';
+import nodeService from 'services/nodeService';
 import { toast } from 'react-toastify';
 
 const FileBrowser: React.FC = () => {
@@ -27,7 +29,9 @@ const FileBrowser: React.FC = () => {
   const dispatch = useAppDispatch();
   
   const { currentNode, nodes, loading, selectedNodes } = useAppSelector((state) => state.node);
-  const { viewMode, sortBy, sortAscending } = useAppSelector((state) => state.ui);
+  const { user } = useAppSelector((state) => state.auth);
+  const { viewMode, sortBy, sortAscending, compactMode } = useAppSelector((state) => state.ui);
+  const canWrite = Boolean(user?.roles?.includes('ROLE_ADMIN') || user?.roles?.includes('ROLE_EDITOR'));
 
   const loadNodeData = useCallback(async () => {
     await dispatch(fetchNode(nodeId));
@@ -45,9 +49,20 @@ const FileBrowser: React.FC = () => {
   };
 
   const handleNavigate = (path: string) => {
-    // Convert path to node ID navigation
-    // This is simplified - in real implementation, you'd resolve the path to node ID
-    navigate(`/browse/${path === '/' ? 'root' : path}`);
+    if (path === '/') {
+      navigate('/browse/root');
+      return;
+    }
+
+    void (async () => {
+      try {
+        const targetFolder = await nodeService.getFolderByPath(path);
+        navigate(`/browse/${targetFolder.id}`);
+      } catch (error) {
+        console.error('Failed to navigate by path:', error);
+        toast.error('Failed to navigate to folder');
+      }
+    })();
   };
 
   const handleViewModeChange = (_: any, newMode: 'list' | 'grid' | null) => {
@@ -66,6 +81,20 @@ const FileBrowser: React.FC = () => {
       } catch (error) {
         toast.error('Failed to delete items');
       }
+    }
+  };
+
+  const handleBatchDownload = async () => {
+    if (selectedNodes.length === 0) {
+      return;
+    }
+
+    try {
+      const baseName = currentNode?.name ? `${currentNode.name}-selection` : 'selection';
+      await nodeService.downloadNodesAsZip(selectedNodes, baseName);
+      toast.success('Download started');
+    } catch {
+      toast.error('Failed to download selection');
     }
   };
 
@@ -89,7 +118,7 @@ const FileBrowser: React.FC = () => {
 
   return (
     <Box>
-      <Paper sx={{ p: 2, mb: 2 }}>
+      <Paper sx={{ p: compactMode ? 1.5 : 2, mb: compactMode ? 1.5 : 2 }}>
         <Box display="flex" alignItems="center" justifyContent="space-between">
           <FileBreadcrumb path={currentNode.path} onNavigate={handleNavigate} />
           
@@ -99,9 +128,14 @@ const FileBrowser: React.FC = () => {
                 <Typography variant="body2" color="text.secondary" sx={{ mr: 2 }}>
                   {selectedNodes.length} selected
                 </Typography>
-                <IconButton onClick={handleDelete} color="error" size="small">
-                  <Delete />
+                <IconButton onClick={handleBatchDownload} color="primary" size="small" aria-label="Download selected">
+                  <Download />
                 </IconButton>
+                {canWrite && (
+                  <IconButton onClick={handleDelete} color="error" size="small" aria-label="Delete selected">
+                    <Delete />
+                  </IconButton>
+                )}
               </>
             )}
             

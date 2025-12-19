@@ -8,10 +8,22 @@ interface FileBreadcrumbProps {
 }
 
 const FileBreadcrumb: React.FC<FileBreadcrumbProps> = ({ path, onNavigate }) => {
-  const pathParts = path.split('/').filter(Boolean);
+  const navParts = (() => {
+    const parts = path.split('/').filter(Boolean);
+    if (parts.length > 1 && parts[0].toLowerCase() === 'root') {
+      while (parts.length > 1 && parts[1].toLowerCase() === 'root') {
+        parts.splice(1, 1);
+      }
+    }
+    return parts;
+  })();
+  const hasRootPrefix = navParts.length > 0 && navParts[0].toLowerCase() === 'root';
+  const pathParts = hasRootPrefix ? navParts.slice(1) : navParts;
+  const navOffset = hasRootPrefix ? 1 : 0;
 
   const handleClick = (index: number) => {
-    const targetPath = '/' + pathParts.slice(0, index + 1).join('/');
+    const navIndex = index + navOffset;
+    const targetPath = '/' + navParts.slice(0, navIndex + 1).join('/');
     onNavigate(targetPath);
   };
 

@@ -12,6 +12,7 @@ import { useAppDispatch, useAppSelector } from 'store';
 import { setCreateFolderDialogOpen } from 'store/slices/uiSlice';
 import { createFolder } from 'store/slices/nodeSlice';
 import { toast } from 'react-toastify';
+import authService from 'services/authService';
 
 interface CreateFolderFormData {
   name: string;
@@ -22,6 +23,11 @@ const CreateFolderDialog: React.FC = () => {
   const dispatch = useAppDispatch();
   const { createFolderDialogOpen } = useAppSelector((state) => state.ui);
   const { currentNode } = useAppSelector((state) => state.node);
+  const { user } = useAppSelector((state) => state.auth);
+  const effectiveUser = user ?? authService.getCurrentUser();
+  const canWrite = Boolean(
+    effectiveUser?.roles?.includes('ROLE_ADMIN') || effectiveUser?.roles?.includes('ROLE_EDITOR')
+  );
 
   const {
     register,
@@ -36,12 +42,16 @@ const CreateFolderDialog: React.FC = () => {
   };
 
   const onSubmit = async (data: CreateFolderFormData) => {
-    if (!currentNode) return;
+    if (!canWrite) {
+      toast.error('Requires write permission');
+      return;
+    }
+    const parentId = currentNode?.id || 'root';
 
     try {
       await dispatch(
         createFolder({
-          parentId: currentNode.id,
+          parentId,
           name: data.name,
           properties: data.description ? { description: data.description } : undefined,
         })
@@ -72,6 +82,7 @@ const CreateFolderDialog: React.FC = () => {
             variant="outlined"
             error={!!errors.name}
             helperText={errors.name?.message}
+            disabled={!canWrite}
             {...register('name', {
               required: 'Folder name is required',
               pattern: {
@@ -87,12 +98,13 @@ const CreateFolderDialog: React.FC = () => {
             variant="outlined"
             multiline
             rows={3}
+            disabled={!canWrite}
             {...register('description')}
           />
         </DialogContent>
         <DialogActions>
           <Button onClick={handleClose}>Cancel</Button>
-          <Button type="submit" variant="contained">
+          <Button type="submit" variant="contained" disabled={!canWrite}>
             Create
           </Button>
         </DialogActions>

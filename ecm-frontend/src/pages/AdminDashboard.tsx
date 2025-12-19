@@ -48,6 +48,9 @@ import {
   Group as GroupIcon,
   PersonAdd,
   GroupAdd,
+  WorkspacePremium,
+  Download as DownloadIcon,
+  CleaningServices as CleanupIcon,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import apiService from '../services/api';
@@ -96,13 +99,31 @@ interface DashboardData {
   recentLogs?: AuditLog[]; // Fetched separately
 }
 
+interface LicenseInfo {
+  edition: string;
+  maxUsers: number;
+  maxStorageGb: number;
+  expirationDate?: string | null;
+  features?: string[];
+  valid: boolean;
+}
+
+interface AuditRetentionInfo {
+  retentionDays: number;
+  expiredLogCount: number;
+}
+
 const AdminDashboard: React.FC = () => {
   const [tab, setTab] = useState(0);
 
   // Overview/dashboard state
   const [data, setData] = useState<DashboardData | null>(null);
   const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [licenseInfo, setLicenseInfo] = useState<LicenseInfo | null>(null);
   const [loadingDashboard, setLoadingDashboard] = useState(true);
+  const [retentionInfo, setRetentionInfo] = useState<AuditRetentionInfo | null>(null);
+  const [exportingAudit, setExportingAudit] = useState(false);
+  const [cleaningAudit, setCleaningAudit] = useState(false);
 
   // Users state
   const [users, setUsers] = useState<User[]>([]);
@@ -130,14 +151,81 @@ const AdminDashboard: React.FC = () => {
   const fetchDashboard = async () => {
     try {
       setLoadingDashboard(true);
-      const dashboardRes = await apiService.get<DashboardData>('/analytics/dashboard');
+      const [dashboardRes, logsRes, licenseRes, retentionRes] = await Promise.all([
+        apiService.get<DashboardData>('/analytics/dashboard'),
+        apiService.get<AuditLog[]>('/analytics/audit/recent?limit=10'),
+        apiService.get<LicenseInfo>('/system/license').catch(() => null),
+        apiService.get<AuditRetentionInfo>('/analytics/audit/retention').catch(() => null),
+      ]);
       setData(dashboardRes);
-      const logsRes = await apiService.get<AuditLog[]>('/analytics/audit/recent?limit=10');
       setLogs(logsRes);
+      setLicenseInfo(licenseRes);
+      setRetentionInfo(retentionRes);
     } catch {
       toast.error('Failed to load dashboard data');
     } finally {
       setLoadingDashboard(false);
+    }
+  };
+
+  const handleExportAuditLogs = async () => {
+    try {
+      setExportingAudit(true);
+      // Export last 30 days by default
+      const to = new Date();
+      const from = new Date();
+      from.setDate(from.getDate() - 30);
+
+      const fromStr = from.toISOString();
+      const toStr = to.toISOString();
+
+      const response = await fetch(
+        `${process.env.REACT_APP_API_URL || '/api/v1'}/analytics/audit/export?from=${fromStr}&to=${toStr}`,
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('access_token') || ''}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Export failed');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `audit_logs_${format(from, 'yyyyMMdd')}_to_${format(to, 'yyyyMMdd')}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast.success('Audit logs exported successfully');
+    } catch {
+      toast.error('Failed to export audit logs');
+    } finally {
+      setExportingAudit(false);
+    }
+  };
+
+  const handleCleanupAuditLogs = async () => {
+    if (!window.confirm('Are you sure you want to cleanup expired audit logs? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      setCleaningAudit(true);
+      const result = await apiService.post<{ deletedCount: number; message: string }>('/analytics/audit/cleanup', {});
+      toast.success(result.message);
+      // Refresh retention info
+      const retentionRes = await apiService.get<AuditRetentionInfo>('/analytics/audit/retention').catch(() => null);
+      setRetentionInfo(retentionRes);
+    } catch {
+      toast.error('Failed to cleanup audit logs');
+    } finally {
+      setCleaningAudit(false);
     }
   };
 
@@ -251,6 +339,56 @@ const AdminDashboard: React.FC = () => {
           </Grid>
         </Grid>
 
+        <Paper sx={{ p: 2, mb: 3 }}>
+          <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+            <Box display="flex" alignItems="center" gap={1}>
+              <WorkspacePremium color="primary" fontSize="small" />
+              <Typography component="h2" variant="h6" color="primary">
+                License
+              </Typography>
+            </Box>
+            {licenseInfo ? (
+              <Chip
+                size="small"
+                label={licenseInfo.valid ? 'Valid' : 'Invalid'}
+                color={licenseInfo.valid ? 'success' : 'error'}
+                variant="outlined"
+              />
+            ) : (
+              <Chip size="small" label="Unavailable" variant="outlined" />
+            )}
+          </Box>
+          {licenseInfo ? (
+            <>
+              <Box display="flex" gap={1} flexWrap="wrap">
+                <Chip size="small" label={`Edition: ${licenseInfo.edition}`} />
+                <Chip size="small" label={`Max Users: ${licenseInfo.maxUsers}`} variant="outlined" />
+                <Chip size="small" label={`Max Storage: ${licenseInfo.maxStorageGb} GB`} variant="outlined" />
+                <Chip
+                  size="small"
+                  label={
+                    licenseInfo.expirationDate
+                      ? `Expires: ${format(new Date(licenseInfo.expirationDate), 'PP')}`
+                      : 'Expires: Never'
+                  }
+                  variant="outlined"
+                />
+              </Box>
+              {(licenseInfo.features || []).length > 0 && (
+                <Box display="flex" gap={1} flexWrap="wrap" mt={1}>
+                  {(licenseInfo.features || []).map((feature) => (
+                    <Chip key={feature} size="small" label={feature} color="info" variant="outlined" />
+                  ))}
+                </Box>
+              )}
+            </>
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              Unable to fetch license info.
+            </Typography>
+          )}
+        </Paper>
+
         <Grid container spacing={3}>
           <Grid item xs={12} md={8}>
             <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -312,9 +450,49 @@ const AdminDashboard: React.FC = () => {
 
           <Grid item xs={12}>
             <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column' }}>
-              <Typography component="h2" variant="h6" color="primary" gutterBottom>
-                Recent System Activity
-              </Typography>
+              <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+                <Typography component="h2" variant="h6" color="primary">
+                  Recent System Activity
+                </Typography>
+                <Box display="flex" gap={1} alignItems="center">
+                  {retentionInfo && (
+                    <Chip
+                      size="small"
+                      label={`Retention: ${retentionInfo.retentionDays} days`}
+                      variant="outlined"
+                    />
+                  )}
+                  {retentionInfo && retentionInfo.expiredLogCount > 0 && (
+                    <Chip
+                      size="small"
+                      label={`${retentionInfo.expiredLogCount} expired`}
+                      color="warning"
+                      variant="outlined"
+                    />
+                  )}
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<DownloadIcon />}
+                    onClick={handleExportAuditLogs}
+                    disabled={exportingAudit}
+                  >
+                    {exportingAudit ? 'Exporting...' : 'Export CSV'}
+                  </Button>
+                  {retentionInfo && retentionInfo.expiredLogCount > 0 && (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      color="warning"
+                      startIcon={<CleanupIcon />}
+                      onClick={handleCleanupAuditLogs}
+                      disabled={cleaningAudit}
+                    >
+                      {cleaningAudit ? 'Cleaning...' : 'Cleanup'}
+                    </Button>
+                  )}
+                </Box>
+              </Box>
               <List>
                 {logs.map((log, index) => (
                   <React.Fragment key={log.id}>
@@ -402,13 +580,14 @@ const AdminDashboard: React.FC = () => {
                   <TableCell>Username</TableCell>
                   <TableCell>Email</TableCell>
                   <TableCell>Full Name</TableCell>
+                  <TableCell>Roles</TableCell>
                   <TableCell align="center">Enabled</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {usersLoading ? (
                   <TableRow>
-                    <TableCell colSpan={4} align="center">
+                    <TableCell colSpan={5} align="center">
                       <CircularProgress size={20} />
                     </TableCell>
                   </TableRow>
@@ -418,6 +597,17 @@ const AdminDashboard: React.FC = () => {
                       <TableCell>{u.username}</TableCell>
                       <TableCell>{u.email}</TableCell>
                       <TableCell>{`${u.firstName || ''} ${u.lastName || ''}`.trim() || '-'}</TableCell>
+                      <TableCell>
+                        {u.roles?.length ? (
+                          <Box display="flex" gap={0.5} flexWrap="wrap">
+                            {u.roles.map((role) => (
+                              <Chip key={role} label={role} size="small" variant="outlined" sx={{ mb: 0.5 }} />
+                            ))}
+                          </Box>
+                        ) : (
+                          '-'
+                        )}
+                      </TableCell>
                       <TableCell align="center">
                         <Switch
                           size="small"
@@ -438,7 +628,7 @@ const AdminDashboard: React.FC = () => {
                 )}
                 {!usersLoading && users.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={4} align="center">
+                    <TableCell colSpan={5} align="center">
                       No users
                     </TableCell>
                   </TableRow>

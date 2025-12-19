@@ -54,6 +54,12 @@ export interface RuleResponse {
   createdBy?: string;
   lastModifiedDate?: string;
   lastModifiedBy?: string;
+  // Scheduled rule fields
+  cronExpression?: string;
+  timezone?: string;
+  lastRunAt?: string;
+  nextRunAt?: string;
+  maxItemsPerRun?: number;
 }
 
 export interface ValidationResult {
@@ -81,6 +87,16 @@ export interface CreateRuleRequest {
   scopeFolderId?: string | null;
   scopeMimeTypes?: string;
   stopOnMatch?: boolean;
+  // Scheduled rule fields
+  cronExpression?: string;
+  timezone?: string;
+  maxItemsPerRun?: number;
+}
+
+export interface CronValidationResult {
+  valid: boolean;
+  nextExecutions?: string[];
+  error?: string;
 }
 
 export type UpdateRuleRequest = CreateRuleRequest;
@@ -154,6 +170,20 @@ class RuleService {
 
   async getRuleStats(ruleId: string): Promise<Record<string, any>> {
     return api.get<Record<string, any>>(`/rules/${ruleId}/stats`);
+  }
+
+  async validateCronExpression(
+    cronExpression: string,
+    timezone?: string
+  ): Promise<CronValidationResult> {
+    return api.post<CronValidationResult>('/rules/validate-cron', {
+      cronExpression,
+      timezone: timezone || 'UTC',
+    });
+  }
+
+  async triggerScheduledRule(ruleId: string): Promise<void> {
+    return api.post<void>(`/rules/${ruleId}/trigger`);
   }
 }
 

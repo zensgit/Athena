@@ -58,10 +58,6 @@ const CommentSection: React.FC<CommentSectionProps> = ({ nodeId }) => {
   const [expandedComments, setExpandedComments] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    loadComments();
-  }, [loadComments]);
-
   const loadComments = useCallback(async () => {
     setLoading(true);
     try {
@@ -73,6 +69,10 @@ const CommentSection: React.FC<CommentSectionProps> = ({ nodeId }) => {
       setLoading(false);
     }
   }, [nodeId]);
+
+  useEffect(() => {
+    loadComments();
+  }, [loadComments]);
 
   const handleSubmitComment = async () => {
     if (!newComment.trim()) return;

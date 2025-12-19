@@ -27,13 +27,12 @@ interface SearchResult {
   name: string;
   mimeType: string;
   fileSize: number;
-  highlight: {
-    content?: string[];
-    name?: string[];
-  };
+  highlights?: Record<string, string[]>;
   score: number;
   createdDate: string;
   path: string;
+  nodeType?: 'FOLDER' | 'DOCUMENT';
+  parentId?: string;
 }
 
 
@@ -353,7 +352,13 @@ const AdvancedSearchPage: React.FC = () => {
                   <Paper 
                     key={result.id} 
                     sx={{ p: 2, cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }}
-                    onClick={() => navigate(`/browse/${result.id}`)}
+                    onClick={() => {
+                      if (result.nodeType === 'FOLDER') {
+                        navigate(`/browse/${result.id}`);
+                      } else {
+                        navigate(`/browse/${result.parentId || 'root'}`);
+                      }
+                    }}
                   >
                     <Box display="flex" justifyContent="space-between">
                       <Typography variant="h6" color="primary" sx={{ textDecoration: 'underline' }}>
@@ -365,12 +370,12 @@ const AdvancedSearchPage: React.FC = () => {
                     </Box>
                     
                     {/* Snippets / Highlights */}
-                    {result.highlight?.content && (
+                    {result.highlights?.content && (
                         <Typography 
                             variant="body2" 
                             color="textSecondary" 
                             sx={{ mt: 1 }}
-                            dangerouslySetInnerHTML={{ __html: '...' + result.highlight.content[0] + '...' }} 
+                            dangerouslySetInnerHTML={{ __html: '...' + result.highlights.content[0] + '...' }} 
                         />
                     )}
                     

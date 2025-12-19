@@ -1,11 +1,33 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 
+const SIDEBAR_AUTO_COLLAPSE_STORAGE_KEY = 'athena.ecm.sidebarAutoCollapse';
+const SIDEBAR_OPEN_STORAGE_KEY = 'athena.ecm.sidebarOpen';
+const COMPACT_MODE_STORAGE_KEY = 'athena.ecm.compactMode';
+
+const readBooleanSetting = (key: string, defaultValue: boolean) => {
+  if (typeof window === 'undefined') {
+    return defaultValue;
+  }
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (raw === null) {
+      return defaultValue;
+    }
+    return raw === 'true';
+  } catch {
+    return defaultValue;
+  }
+};
+
 interface UIState {
   sidebarOpen: boolean;
+  sidebarAutoCollapse: boolean;
+  compactMode: boolean;
   viewMode: 'grid' | 'list';
   sortBy: string;
   sortAscending: boolean;
   searchOpen: boolean;
+  searchPrefill: SearchPrefill | null;
   uploadDialogOpen: boolean;
   createFolderDialogOpen: boolean;
   propertiesDialogOpen: boolean;
@@ -18,12 +40,31 @@ interface UIState {
   selectedNodeId: string | null;
 }
 
+export interface SearchPrefill {
+  name?: string;
+  contentType?: string;
+  createdBy?: string;
+  createdFrom?: string;
+  createdTo?: string;
+  modifiedFrom?: string;
+  modifiedTo?: string;
+  tags?: string[];
+  categories?: string[];
+  correspondents?: string[];
+  minSize?: number;
+  maxSize?: number;
+  pathPrefix?: string;
+}
+
 const initialState: UIState = {
-  sidebarOpen: true,
+  sidebarOpen: readBooleanSetting(SIDEBAR_OPEN_STORAGE_KEY, true),
+  sidebarAutoCollapse: readBooleanSetting(SIDEBAR_AUTO_COLLAPSE_STORAGE_KEY, true),
+  compactMode: readBooleanSetting(COMPACT_MODE_STORAGE_KEY, false),
   viewMode: 'list',
   sortBy: 'name',
   sortAscending: true,
   searchOpen: false,
+  searchPrefill: null,
   uploadDialogOpen: false,
   createFolderDialogOpen: false,
   propertiesDialogOpen: false,
@@ -42,9 +83,30 @@ const uiSlice = createSlice({
   reducers: {
     toggleSidebar: (state) => {
       state.sidebarOpen = !state.sidebarOpen;
+      try {
+        window.localStorage.setItem(SIDEBAR_OPEN_STORAGE_KEY, String(state.sidebarOpen));
+      } catch {
+        // ignore
+      }
     },
     setSidebarOpen: (state, action: PayloadAction<boolean>) => {
       state.sidebarOpen = action.payload;
+      try {
+        window.localStorage.setItem(SIDEBAR_OPEN_STORAGE_KEY, String(action.payload));
+      } catch {
+        // ignore
+      }
+    },
+    setSidebarAutoCollapse: (state, action: PayloadAction<boolean>) => {
+      state.sidebarAutoCollapse = action.payload;
+    },
+    setCompactMode: (state, action: PayloadAction<boolean>) => {
+      state.compactMode = action.payload;
+      try {
+        window.localStorage.setItem(COMPACT_MODE_STORAGE_KEY, String(action.payload));
+      } catch {
+        // ignore
+      }
     },
     setViewMode: (state, action: PayloadAction<'grid' | 'list'>) => {
       state.viewMode = action.payload;
@@ -57,6 +119,9 @@ const uiSlice = createSlice({
     },
     setSearchOpen: (state, action: PayloadAction<boolean>) => {
       state.searchOpen = action.payload;
+    },
+    setSearchPrefill: (state, action: PayloadAction<SearchPrefill | null>) => {
+      state.searchPrefill = action.payload;
     },
     setUploadDialogOpen: (state, action: PayloadAction<boolean>) => {
       state.uploadDialogOpen = action.payload;
@@ -105,10 +170,13 @@ const uiSlice = createSlice({
 export const {
   toggleSidebar,
   setSidebarOpen,
+  setSidebarAutoCollapse,
+  setCompactMode,
   setViewMode,
   setSortBy,
   toggleSortOrder,
   setSearchOpen,
+  setSearchPrefill,
   setUploadDialogOpen,
   setCreateFolderDialogOpen,
   setPropertiesDialogOpen,

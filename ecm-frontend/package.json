@@ -2,6 +2,7 @@
   "name": "athena-ecm-frontend",
   "version": "1.0.0",
   "private": true,
+  "proxy": "http://localhost:7700",
   "dependencies": {
     "@emotion/react": "^11.11.0",
     "@emotion/styled": "^11.11.0",
@@ -34,12 +35,17 @@
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
+    "e2e:install": "playwright install chromium",
+    "e2e": "playwright test",
     "eject": "react-scripts eject",
     "lint": "eslint src --ext .ts,.tsx",
     "format": "prettier --write src/**/*.{ts,tsx,css}"
   },
   "devDependencies": {
+    "@playwright/test": "^1.50.0",
     "@types/keycloak-js": "^2.5.4",
+    "@testing-library/react": "^14.2.0",
+    "@types/jest": "^29.5.12",
     "@typescript-eslint/eslint-plugin": "^5.60.0",
     "@typescript-eslint/parser": "^5.60.0",
     "eslint": "^8.43.0",

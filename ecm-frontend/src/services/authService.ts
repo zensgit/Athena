@@ -31,8 +31,8 @@ class AuthService {
     const preferredUsername = keycloak.tokenParsed.preferred_username as string | undefined;
     const email = keycloak.tokenParsed.email as string | undefined;
     const realmRoles: string[] = (keycloak.tokenParsed.realm_access as any)?.roles || [];
-    const clientRoles: string[] =
-      (keycloak.tokenParsed.resource_access as any)?.['ecm-api']?.roles || [];
+    const resourceAccess = (keycloak.tokenParsed.resource_access as any) || {};
+    const clientRoles: string[] = Object.values(resourceAccess).flatMap((access: any) => access?.roles || []);
     const rawRoles = [...realmRoles, ...clientRoles];
     const roles = Array.from(
       new Set(

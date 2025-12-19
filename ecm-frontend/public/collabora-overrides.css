@@ -1,0 +1,31 @@
+/*
+  Collabora Online UI overrides (same-origin via ecm-frontend nginx).
+
+  NOTE:
+  - Collabora CODE is not a white-label product. Removing/altering vendor branding
+    may violate Collabora's terms/trademarks. Use this only for local dev/testing.
+*/
+
+/* Hide Collabora toolbar logo area */
+#toolbar-logo {
+  display: none !important;
+}
+
+/* Remove Collabora-branded backgrounds/icons (loading spinner + notebookbar logo) */
+.leaflet-progress-spinner::before,
+html:not([data-theme='dark']) .leaflet-progress-spinner::before,
+html[data-theme='dark'] .leaflet-progress-spinner::before,
+.document-logo,
+html:not([data-theme='dark']) .document-logo,
+html[data-theme='dark'] .document-logo {
+  background: none !important;
+}
+
+/* Hide "About" dialog logos (still accessible via keyboard, but no vendor logos) */
+#about-dialog-logos,
+#integrator-logo,
+#product-logo,
+#lokit-logo {
+  display: none !important;
+}
+

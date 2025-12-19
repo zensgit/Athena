@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Box,
   Paper,
@@ -18,6 +18,9 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  Divider,
+  Checkbox,
+  ListItemText,
 } from '@mui/material';
 import {
   Search,
@@ -38,6 +41,8 @@ import { Node } from 'types';
 import { toast } from 'react-toastify';
 import Highlight from 'components/search/Highlight';
 
+type FacetValue = { value: string; count: number };
+
 const SearchResults: React.FC = () => {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
@@ -46,6 +51,12 @@ const SearchResults: React.FC = () => {
   const [sortBy, setSortBy] = useState('relevance');
   const [page, setPage] = useState(1);
   const itemsPerPage = 20;
+
+  const [selectedMimeTypes, setSelectedMimeTypes] = useState<string[]>([]);
+  const [selectedCreators, setSelectedCreators] = useState<string[]>([]);
+  const [selectedCorrespondents, setSelectedCorrespondents] = useState<string[]>([]);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
 
   const handleQuickSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,6 +72,23 @@ const SearchResults: React.FC = () => {
   const handleAdvancedSearch = () => {
     dispatch(setSearchOpen(true));
   };
+
+  const clearFacetFilters = () => {
+    setSelectedMimeTypes([]);
+    setSelectedCreators([]);
+    setSelectedCorrespondents([]);
+    setSelectedTags([]);
+    setSelectedCategories([]);
+  };
+
+  useEffect(() => {
+    setPage(1);
+    clearFacetFilters();
+  }, [nodes]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [selectedMimeTypes, selectedCreators, selectedCorrespondents, selectedTags, selectedCategories]);
 
   const handleViewNode = (node: Node) => {
     if (node.nodeType === 'FOLDER') {
@@ -118,6 +146,9 @@ const SearchResults: React.FC = () => {
   const renderTagsCategories = (node: Node) => {
     return (
       <Box display="flex" gap={1} flexWrap="wrap" mt={1}>
+        {node.correspondent && (
+          <Chip key={`corr-${node.id}`} label={node.correspondent} size="small" color="secondary" variant="outlined" />
+        )}
         {node.tags?.map((tag) => (
           <Chip key={tag} label={tag} size="small" variant="outlined" />
         ))}
@@ -128,7 +159,92 @@ const SearchResults: React.FC = () => {
     );
   };
 
-  const sortedNodes = [...nodes].sort((a, b) => {
+  const facets = useMemo(() => {
+    const mimeTypeCounts = new Map<string, number>();
+    const creatorCounts = new Map<string, number>();
+    const correspondentCounts = new Map<string, number>();
+    const tagCounts = new Map<string, number>();
+    const categoryCounts = new Map<string, number>();
+
+    const inc = (map: Map<string, number>, key: string) => {
+      map.set(key, (map.get(key) || 0) + 1);
+    };
+
+    for (const node of nodes) {
+      if (node.contentType) {
+        inc(mimeTypeCounts, node.contentType);
+      }
+      if (node.creator) {
+        inc(creatorCounts, node.creator);
+      }
+      if (node.correspondent) {
+        inc(correspondentCounts, node.correspondent);
+      }
+      for (const tag of node.tags || []) {
+        if (tag) {
+          inc(tagCounts, tag);
+        }
+      }
+      for (const category of node.categories || []) {
+        if (category) {
+          inc(categoryCounts, category);
+        }
+      }
+    }
+
+    const mapToSortedArray = (map: Map<string, number>): FacetValue[] => {
+      return Array.from(map.entries())
+        .map(([value, count]) => ({ value, count }))
+        .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+    };
+
+    return {
+      mimeTypes: mapToSortedArray(mimeTypeCounts),
+      creators: mapToSortedArray(creatorCounts),
+      correspondents: mapToSortedArray(correspondentCounts),
+      tags: mapToSortedArray(tagCounts),
+      categories: mapToSortedArray(categoryCounts),
+    };
+  }, [nodes]);
+
+  const filtersApplied =
+    selectedMimeTypes.length > 0 ||
+    selectedCreators.length > 0 ||
+    selectedCorrespondents.length > 0 ||
+    selectedTags.length > 0 ||
+    selectedCategories.length > 0;
+
+  const filteredNodes = useMemo(() => {
+    return nodes.filter((node) => {
+      if (selectedMimeTypes.length > 0 && (!node.contentType || !selectedMimeTypes.includes(node.contentType))) {
+        return false;
+      }
+      if (selectedCreators.length > 0 && (!node.creator || !selectedCreators.includes(node.creator))) {
+        return false;
+      }
+      if (
+        selectedCorrespondents.length > 0 &&
+        (!node.correspondent || !selectedCorrespondents.includes(node.correspondent))
+      ) {
+        return false;
+      }
+      if (selectedTags.length > 0) {
+        const tags = node.tags || [];
+        if (!selectedTags.some((tag) => tags.includes(tag))) {
+          return false;
+        }
+      }
+      if (selectedCategories.length > 0) {
+        const categories = node.categories || [];
+        if (!selectedCategories.some((category) => categories.includes(category))) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [nodes, selectedCategories, selectedCreators, selectedCorrespondents, selectedMimeTypes, selectedTags]);
+
+  const sortedNodes = [...filteredNodes].sort((a, b) => {
     switch (sortBy) {
       case 'relevance':
         return (b.score || 0) - (a.score || 0);
@@ -186,124 +302,284 @@ const SearchResults: React.FC = () => {
         </form>
       </Paper>
 
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-        <Typography variant="h6">
-          {loading ? 'Searching...' : `${nodes.length} results found`}
-        </Typography>
-        <FormControl size="small" sx={{ minWidth: 150 }}>
-          <InputLabel>Sort by</InputLabel>
-          <Select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-            label="Sort by"
-          >
-            <MenuItem value="relevance">Relevance</MenuItem>
-            <MenuItem value="name">Name</MenuItem>
-            <MenuItem value="modified">Modified Date</MenuItem>
-            <MenuItem value="size">Size</MenuItem>
-          </Select>
-        </FormControl>
-      </Box>
-
-      {loading ? (
-        <Box display="flex" justifyContent="center" p={4}>
-          <CircularProgress />
-        </Box>
-      ) : nodes.length === 0 ? (
-        <Paper sx={{ p: 4, textAlign: 'center' }}>
-          <Typography variant="h6" color="text.secondary" gutterBottom>
-            No results found
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Try adjusting your search criteria or use the advanced search for more options
-          </Typography>
-          <Button
-            variant="contained"
-            startIcon={<FilterList />}
-            onClick={handleAdvancedSearch}
-            sx={{ mt: 2 }}
-          >
-            Advanced Search
-          </Button>
-        </Paper>
-      ) : (
-        <>
-          <Grid container spacing={2}>
-            {paginatedNodes.map((node) => (
-              <Grid item xs={12} sm={6} md={4} key={node.id}>
-                <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                  <CardContent sx={{ flex: 1 }}>
-                    <Box display="flex" alignItems="center" mb={2}>
-                      {getFileIcon(node)}
-                      <Box ml={2} flex={1}>
-                        <Typography variant="h6" noWrap>
-                          {node.name}
-                        </Typography>
-                        <Box display="flex" gap={1} mt={0.5}>
-                          {getFileTypeChip(node.contentType)}
-                          {node.currentVersionLabel && (
-                            <Chip
-                              label={`v${node.currentVersionLabel}`}
-                              size="small"
-                              variant="outlined"
-                            />
-                          )}
-                        </Box>
-                      </Box>
-                    </Box>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>
-                      {node.path}
-                    </Typography>
-                    <Highlight
-                      text={node.description}
-                      highlights={node.highlights?.description || node.highlights?.content}
-                    />
-                    {renderTagsCategories(node)}
-                    <Box mt={2}>
-                      <Typography variant="caption" color="text.secondary">
-                        Modified: {format(new Date(node.modified), 'PPp')}
-                      </Typography>
-                      <br />
-                      <Typography variant="caption" color="text.secondary">
-                        Size: {formatFileSize(node.size)}
-                      </Typography>
-                    </Box>
-                  </CardContent>
-                  <CardActions>
-                    <Button
-                      size="small"
-                      startIcon={<Visibility />}
-                      onClick={() => handleViewNode(node)}
-                    >
-                      View
-                    </Button>
-                    {node.nodeType === 'DOCUMENT' && (
-                      <Button
-                        size="small"
-                        startIcon={<Download />}
-                        onClick={() => handleDownload(node)}
-                      >
-                        Download
-                      </Button>
-                    )}
-                  </CardActions>
-                </Card>
-              </Grid>
-            ))}
-          </Grid>
-
-          {totalPages > 1 && (
-            <Box display="flex" justifyContent="center" mt={4}>
-              <Pagination
-                count={totalPages}
-                page={page}
-                onChange={(_, value) => setPage(value)}
-                color="primary"
-              />
+      <Grid container spacing={2}>
+        <Grid item xs={12} md={3}>
+          <Paper sx={{ p: 2, height: '100%' }}>
+            <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+              <Typography variant="h6">Facets</Typography>
+              <Button size="small" disabled={!filtersApplied} onClick={clearFacetFilters}>
+                Clear
+              </Button>
             </Box>
+            <Divider sx={{ mb: 2 }} />
+
+            <Typography variant="subtitle2" gutterBottom>
+              File Type
+            </Typography>
+            <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+              <InputLabel>Mime Type</InputLabel>
+              <Select
+                multiple
+                value={selectedMimeTypes}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setSelectedMimeTypes(typeof value === 'string' ? value.split(',') : (value as string[]));
+                }}
+                label="Mime Type"
+                renderValue={(selected) => (
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                    {(selected as string[]).map((value) => (
+                      <Chip key={value} label={value.split('/')[1] || value} size="small" />
+                    ))}
+                  </Box>
+                )}
+              >
+                {facets.mimeTypes.map((facet) => (
+                  <MenuItem key={facet.value} value={facet.value}>
+                    <Checkbox checked={selectedMimeTypes.indexOf(facet.value) > -1} />
+                    <ListItemText primary={facet.value} secondary={`(${facet.count})`} />
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <Typography variant="subtitle2" gutterBottom>
+              Created By
+            </Typography>
+            <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+              <InputLabel>Creator</InputLabel>
+              <Select
+                multiple
+                value={selectedCreators}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setSelectedCreators(typeof value === 'string' ? value.split(',') : (value as string[]));
+                }}
+                label="Creator"
+                renderValue={(selected) => (
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                    {(selected as string[]).map((value) => (
+                      <Chip key={value} label={value} size="small" />
+                    ))}
+                  </Box>
+                )}
+              >
+                {facets.creators.map((facet) => (
+                  <MenuItem key={facet.value} value={facet.value}>
+                    <Checkbox checked={selectedCreators.indexOf(facet.value) > -1} />
+                    <ListItemText primary={facet.value} secondary={`(${facet.count})`} />
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <Typography variant="subtitle2" gutterBottom>
+              Correspondent
+            </Typography>
+            <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+              <InputLabel id="facet-correspondent-label">Correspondent</InputLabel>
+              <Select
+                id="facet-correspondent-select"
+                labelId="facet-correspondent-label"
+                multiple
+                value={selectedCorrespondents}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setSelectedCorrespondents(typeof value === 'string' ? value.split(',') : (value as string[]));
+                }}
+                label="Correspondent"
+                renderValue={(selected) => (
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                    {(selected as string[]).map((value) => (
+                      <Chip key={value} label={value} size="small" />
+                    ))}
+                  </Box>
+                )}
+              >
+                {facets.correspondents.map((facet) => (
+                  <MenuItem key={facet.value} value={facet.value}>
+                    <Checkbox checked={selectedCorrespondents.indexOf(facet.value) > -1} />
+                    <ListItemText primary={facet.value} secondary={`(${facet.count})`} />
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <Typography variant="subtitle2" gutterBottom>
+              Tags
+            </Typography>
+            <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+              <InputLabel>Tags</InputLabel>
+              <Select
+                multiple
+                value={selectedTags}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setSelectedTags(typeof value === 'string' ? value.split(',') : (value as string[]));
+                }}
+                label="Tags"
+                renderValue={(selected) => (
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                    {(selected as string[]).map((value) => (
+                      <Chip key={value} label={value} size="small" variant="outlined" />
+                    ))}
+                  </Box>
+                )}
+              >
+                {facets.tags.map((facet) => (
+                  <MenuItem key={facet.value} value={facet.value}>
+                    <Checkbox checked={selectedTags.indexOf(facet.value) > -1} />
+                    <ListItemText primary={facet.value} secondary={`(${facet.count})`} />
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <Typography variant="subtitle2" gutterBottom>
+              Categories
+            </Typography>
+            <FormControl fullWidth size="small">
+              <InputLabel>Categories</InputLabel>
+              <Select
+                multiple
+                value={selectedCategories}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setSelectedCategories(typeof value === 'string' ? value.split(',') : (value as string[]));
+                }}
+                label="Categories"
+                renderValue={(selected) => (
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                    {(selected as string[]).map((value) => (
+                      <Chip key={value} label={value} size="small" color="info" variant="outlined" />
+                    ))}
+                  </Box>
+                )}
+              >
+                {facets.categories.map((facet) => (
+                  <MenuItem key={facet.value} value={facet.value}>
+                    <Checkbox checked={selectedCategories.indexOf(facet.value) > -1} />
+                    <ListItemText primary={facet.value} secondary={`(${facet.count})`} />
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Paper>
+        </Grid>
+
+        <Grid item xs={12} md={9}>
+          <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+            <Typography variant="h6">
+              {loading
+                ? 'Searching...'
+                : filtersApplied
+                  ? `${sortedNodes.length} results (filtered from ${nodes.length})`
+                  : `${nodes.length} results found`}
+            </Typography>
+            <FormControl size="small" sx={{ minWidth: 150 }}>
+              <InputLabel>Sort by</InputLabel>
+              <Select value={sortBy} onChange={(e) => setSortBy(e.target.value)} label="Sort by">
+                <MenuItem value="relevance">Relevance</MenuItem>
+                <MenuItem value="name">Name</MenuItem>
+                <MenuItem value="modified">Modified Date</MenuItem>
+                <MenuItem value="size">Size</MenuItem>
+              </Select>
+            </FormControl>
+          </Box>
+
+          {loading ? (
+            <Box display="flex" justifyContent="center" p={4}>
+              <CircularProgress />
+            </Box>
+          ) : nodes.length === 0 ? (
+            <Paper sx={{ p: 4, textAlign: 'center' }}>
+              <Typography variant="h6" color="text.secondary" gutterBottom>
+                No results found
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Try adjusting your search criteria or use the advanced search for more options
+              </Typography>
+              <Button
+                variant="contained"
+                startIcon={<FilterList />}
+                onClick={handleAdvancedSearch}
+                sx={{ mt: 2 }}
+              >
+                Advanced Search
+              </Button>
+            </Paper>
+          ) : sortedNodes.length === 0 ? (
+            <Paper sx={{ p: 4, textAlign: 'center' }}>
+              <Typography variant="h6" color="text.secondary" gutterBottom>
+                No results match the selected facets
+              </Typography>
+              <Button variant="outlined" onClick={clearFacetFilters} sx={{ mt: 1 }}>
+                Clear facets
+              </Button>
+            </Paper>
+          ) : (
+            <>
+              <Grid container spacing={2}>
+                {paginatedNodes.map((node) => (
+                  <Grid item xs={12} sm={6} md={4} key={node.id}>
+                    <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                      <CardContent sx={{ flex: 1 }}>
+                        <Box display="flex" alignItems="center" mb={2}>
+                          {getFileIcon(node)}
+                          <Box ml={2} flex={1}>
+                            <Typography variant="h6" noWrap>
+                              {node.name}
+                            </Typography>
+                            <Box display="flex" gap={1} mt={0.5}>
+                              {getFileTypeChip(node.contentType)}
+                              {node.currentVersionLabel && (
+                                <Chip label={`v${node.currentVersionLabel}`} size="small" variant="outlined" />
+                              )}
+                            </Box>
+                          </Box>
+                        </Box>
+                        <Typography variant="body2" color="text.secondary" gutterBottom>
+                          {node.path}
+                        </Typography>
+                        <Highlight
+                          text={node.description}
+                          highlights={node.highlights?.description || node.highlights?.content}
+                        />
+                        {renderTagsCategories(node)}
+                        <Box mt={2}>
+                          <Typography variant="caption" color="text.secondary">
+                            Modified: {format(new Date(node.modified), 'PPp')}
+                          </Typography>
+                          <br />
+                          <Typography variant="caption" color="text.secondary">
+                            Size: {formatFileSize(node.size)}
+                          </Typography>
+                        </Box>
+                      </CardContent>
+                      <CardActions>
+                        <Button size="small" startIcon={<Visibility />} onClick={() => handleViewNode(node)}>
+                          View
+                        </Button>
+                        {node.nodeType === 'DOCUMENT' && (
+                          <Button size="small" startIcon={<Download />} onClick={() => handleDownload(node)}>
+                            Download
+                          </Button>
+                        )}
+                      </CardActions>
+                    </Card>
+                  </Grid>
+                ))}
+              </Grid>
+
+              {totalPages > 1 && (
+                <Box display="flex" justifyContent="center" mt={4}>
+                  <Pagination count={totalPages} page={page} onChange={(_, value) => setPage(value)} color="primary" />
+                </Box>
+              )}
+            </>
           )}
-        </>
-      )}
+        </Grid>
+      </Grid>
     </Box>
   );
 };

@@ -21,6 +21,7 @@ import {
   MoreVert,
   Download,
   Edit,
+  Visibility,
   Delete,
   FileCopy,
   DriveFileMove,
@@ -31,12 +32,14 @@ import {
   Category as CategoryIcon,
   Share as ShareIcon,
   AutoAwesome,
+  Star,
+  StarBorder,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { Node } from 'types';
 import { useAppDispatch, useAppSelector } from 'store';
-import { deleteNodes, setSelectedNodes } from 'store/slices/nodeSlice';
+import { copyNode, deleteNodes, fetchChildren, moveNode, setSelectedNodes } from 'store/slices/nodeSlice';
 import {
   setPropertiesDialogOpen,
   setPermissionsDialogOpen,
@@ -48,7 +51,9 @@ import {
   setMlSuggestionsOpen,
 } from 'store/slices/uiSlice';
 import nodeService from 'services/nodeService';
+import favoriteService from 'services/favoriteService';
 import { toast } from 'react-toastify';
+import MoveCopyDialog from 'components/dialogs/MoveCopyDialog';
 
 interface FileListProps {
   nodes: Node[];
@@ -59,12 +64,37 @@ interface FileListProps {
 const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick, onStartWorkflow }) => {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
-  const { selectedNodes } = useAppSelector((state) => state.node);
+  const { selectedNodes, currentNode } = useAppSelector((state) => state.node);
+  const { user } = useAppSelector((state) => state.auth);
+  const { compactMode, sortBy, sortAscending } = useAppSelector((state) => state.ui);
+  const canWrite = Boolean(user?.roles?.includes('ROLE_ADMIN') || user?.roles?.includes('ROLE_EDITOR'));
   const [contextMenu, setContextMenu] = React.useState<{
     mouseX: number;
     mouseY: number;
     node: Node;
   } | null>(null);
+  const [moveCopyOpen, setMoveCopyOpen] = React.useState(false);
+  const [moveCopyMode, setMoveCopyMode] = React.useState<'move' | 'copy'>('copy');
+  const [moveCopySource, setMoveCopySource] = React.useState<Node | null>(null);
+  const [favoriteIds, setFavoriteIds] = React.useState<Set<string>>(() => new Set());
+
+  React.useEffect(() => {
+    let cancelled = false;
+    const ids = Array.from(new Set(nodes.map((n) => n.id))).filter(Boolean);
+    void (async () => {
+      try {
+        const favorites = await favoriteService.checkBatch(ids);
+        if (!cancelled) {
+          setFavoriteIds(favorites);
+        }
+      } catch {
+        // best-effort: keep what we have
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [nodes]);
 
   const formatFileSize = (bytes?: number): string => {
     if (!bytes) return '-';
@@ -75,19 +105,40 @@ const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick, onStartWo
 
   const handleContextMenu = (event: React.MouseEvent, node: Node) => {
     event.preventDefault();
-    setContextMenu(
-      contextMenu === null
-        ? { mouseX: event.clientX + 2, mouseY: event.clientY - 6, node }
-        : null
-    );
+    setContextMenu({ mouseX: event.clientX + 2, mouseY: event.clientY - 6, node });
   };
 
   const handleCloseContextMenu = () => {
     setContextMenu(null);
   };
 
-  const handleEdit = (node: Node) => {
-    navigate(`/editor/${node.id}?provider=wps&permission=write`);
+  const toggleFavorite = async (node: Node) => {
+    const isFav = favoriteIds.has(node.id);
+    try {
+      if (isFav) {
+        await favoriteService.remove(node.id);
+        toast.success('Removed from favorites');
+        setFavoriteIds((prev) => {
+          const next = new Set(prev);
+          next.delete(node.id);
+          return next;
+        });
+      } else {
+        await favoriteService.add(node.id);
+        toast.success('Added to favorites');
+        setFavoriteIds((prev) => {
+          const next = new Set(prev);
+          next.add(node.id);
+          return next;
+        });
+      }
+    } catch {
+      toast.error(isFav ? 'Failed to remove from favorites' : 'Failed to add to favorites');
+    }
+  };
+
+  const handleEdit = (node: Node, permission: 'read' | 'write') => {
+    navigate(`/editor/${node.id}?provider=wopi&permission=${permission}`);
     handleCloseContextMenu();
   };
 
@@ -158,7 +209,46 @@ const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick, onStartWo
     handleCloseContextMenu();
   };
 
+  const refreshCurrentFolder = async () => {
+    const nodeId = currentNode?.id || 'root';
+    await dispatch(fetchChildren({ nodeId, sortBy, ascending: sortAscending }));
+  };
+
+  const openMoveCopyDialog = (mode: 'move' | 'copy') => {
+    if (!contextMenu) {
+      return;
+    }
+    setMoveCopyMode(mode);
+    setMoveCopySource(contextMenu.node);
+    setMoveCopyOpen(true);
+    handleCloseContextMenu();
+  };
+
   const columns: GridColDef[] = [
+    {
+      field: 'favorite',
+      headerName: '',
+      width: 44,
+      sortable: false,
+      filterable: false,
+      disableColumnMenu: true,
+      renderCell: (params: GridRenderCellParams<Node>) => {
+        const isFav = favoriteIds.has(params.row.id);
+        return (
+          <IconButton
+            size="small"
+            aria-label={`${isFav ? 'Unfavorite' : 'Favorite'} ${params.row.name}`}
+            onClick={async (e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              await toggleFavorite(params.row);
+            }}
+          >
+            {isFav ? <Star fontSize="small" /> : <StarBorder fontSize="small" />}
+          </IconButton>
+        );
+      },
+    },
     {
       field: 'name',
       headerName: 'Name',
@@ -213,6 +303,7 @@ const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick, onStartWo
       renderCell: (params: GridRenderCellParams<Node>) => (
         <IconButton
           size="small"
+          aria-label={`Actions for ${params.row.name}`}
           onClick={(e) => {
             e.stopPropagation();
             handleContextMenu(e, params.row);
@@ -239,6 +330,7 @@ const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick, onStartWo
       <DataGrid
         rows={nodes}
         columns={columns}
+        density={compactMode ? 'compact' : 'standard'}
         rowSelectionModel={selectedNodes}
         onRowSelectionModelChange={handleSelectionChange}
         onRowDoubleClick={handleRowDoubleClick}
@@ -264,11 +356,13 @@ const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick, onStartWo
         }
       >
         {contextMenu?.node.nodeType === 'DOCUMENT' && (
-          <MenuItem onClick={() => contextMenu && handleEdit(contextMenu.node)}>
+          <MenuItem
+            onClick={() => contextMenu && handleEdit(contextMenu.node, canWrite ? 'write' : 'read')}
+          >
             <ListItemIcon>
-              <Edit fontSize="small" />
+              {canWrite ? <Edit fontSize="small" /> : <Visibility fontSize="small" />}
             </ListItemIcon>
-            <ListItemText>Edit Online</ListItemText>
+            <ListItemText>{canWrite ? 'Edit Online' : 'View Online'}</ListItemText>
           </MenuItem>
         )}
         {contextMenu?.node.nodeType === 'DOCUMENT' && (
@@ -291,7 +385,7 @@ const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick, onStartWo
           </ListItemIcon>
           <ListItemText>Permissions</ListItemText>
         </MenuItem>
-        {contextMenu?.node.nodeType === 'DOCUMENT' && (
+        {canWrite && contextMenu?.node.nodeType === 'DOCUMENT' && (
           <MenuItem onClick={() => contextMenu && handleOpenTags(contextMenu.node)}>
             <ListItemIcon>
               <LocalOffer fontSize="small" />
@@ -299,7 +393,7 @@ const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick, onStartWo
             <ListItemText>Tags</ListItemText>
           </MenuItem>
         )}
-        {contextMenu?.node.nodeType === 'DOCUMENT' && (
+        {canWrite && contextMenu?.node.nodeType === 'DOCUMENT' && (
           <MenuItem onClick={() => contextMenu && handleOpenCategories(contextMenu.node)}>
             <ListItemIcon>
               <CategoryIcon fontSize="small" />
@@ -307,7 +401,7 @@ const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick, onStartWo
             <ListItemText>Categories</ListItemText>
           </MenuItem>
         )}
-        {contextMenu?.node.nodeType === 'DOCUMENT' && (
+        {canWrite && contextMenu?.node.nodeType === 'DOCUMENT' && (
           <MenuItem onClick={() => contextMenu && handleOpenShareLinks(contextMenu.node)}>
             <ListItemIcon>
               <ShareIcon fontSize="small" />
@@ -315,7 +409,7 @@ const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick, onStartWo
             <ListItemText>Share</ListItemText>
           </MenuItem>
         )}
-        {contextMenu?.node.nodeType === 'DOCUMENT' && (
+        {canWrite && contextMenu?.node.nodeType === 'DOCUMENT' && (
           <MenuItem onClick={() => contextMenu && handleOpenMlSuggestions(contextMenu.node)}>
             <ListItemIcon>
               <AutoAwesome fontSize="small" />
@@ -323,7 +417,7 @@ const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick, onStartWo
             <ListItemText>ML Suggestions</ListItemText>
           </MenuItem>
         )}
-        {contextMenu?.node.nodeType === 'DOCUMENT' && onStartWorkflow && (
+        {canWrite && contextMenu?.node.nodeType === 'DOCUMENT' && onStartWorkflow && (
           <MenuItem onClick={() => {
             if (contextMenu) onStartWorkflow(contextMenu.node);
             handleCloseContextMenu();
@@ -343,25 +437,88 @@ const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick, onStartWo
           </MenuItem>
         )}
         <MenuItem divider />
-        <MenuItem onClick={handleCloseContextMenu}>
+        {canWrite && (
+          <MenuItem onClick={() => openMoveCopyDialog('copy')}>
+            <ListItemIcon>
+              <FileCopy fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Copy</ListItemText>
+          </MenuItem>
+        )}
+        {canWrite && (
+          <MenuItem onClick={() => openMoveCopyDialog('move')}>
+            <ListItemIcon>
+              <DriveFileMove fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Move</ListItemText>
+          </MenuItem>
+        )}
+        <MenuItem
+          onClick={async () => {
+            if (contextMenu) {
+              await toggleFavorite(contextMenu.node);
+            }
+            handleCloseContextMenu();
+          }}
+        >
           <ListItemIcon>
-            <FileCopy fontSize="small" />
+            {contextMenu?.node && favoriteIds.has(contextMenu.node.id) ? <Star fontSize="small" /> : <StarBorder fontSize="small" />}
           </ListItemIcon>
-          <ListItemText>Copy</ListItemText>
+          <ListItemText>{contextMenu?.node && favoriteIds.has(contextMenu.node.id) ? 'Unfavorite' : 'Add to Favorites'}</ListItemText>
         </MenuItem>
-        <MenuItem onClick={handleCloseContextMenu}>
-          <ListItemIcon>
-            <DriveFileMove fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>Move</ListItemText>
-        </MenuItem>
-        <MenuItem onClick={() => contextMenu && handleDeleteNode(contextMenu.node)}>
-          <ListItemIcon>
-            <Delete fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>Delete</ListItemText>
-        </MenuItem>
+        {canWrite && (
+          <MenuItem onClick={() => contextMenu && handleDeleteNode(contextMenu.node)}>
+            <ListItemIcon>
+              <Delete fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Delete</ListItemText>
+          </MenuItem>
+        )}
       </Menu>
+
+      <MoveCopyDialog
+        open={moveCopyOpen}
+        mode={moveCopyMode}
+        sourceNode={moveCopySource}
+        initialFolderId={currentNode?.id}
+        initialFolderName={currentNode?.name}
+        onClose={() => {
+          setMoveCopyOpen(false);
+          setMoveCopySource(null);
+        }}
+        onConfirm={async (targetFolderId, options) => {
+          if (!moveCopySource) {
+            return;
+          }
+          try {
+            if (moveCopyMode === 'copy') {
+              await dispatch(
+                copyNode({
+                  nodeId: moveCopySource.id,
+                  targetParentId: targetFolderId,
+                  deepCopy: moveCopySource.nodeType === 'FOLDER',
+                  newName: options.newName,
+                })
+              ).unwrap();
+              toast.success('Item copied successfully');
+            } else {
+              await dispatch(
+                moveNode({
+                  nodeId: moveCopySource.id,
+                  targetParentId: targetFolderId,
+                })
+              ).unwrap();
+              toast.success('Item moved successfully');
+            }
+            dispatch(setSelectedNodes([]));
+            setMoveCopyOpen(false);
+            setMoveCopySource(null);
+            await refreshCurrentFolder();
+          } catch {
+            toast.error(moveCopyMode === 'copy' ? 'Failed to copy item' : 'Failed to move item');
+          }
+        }}
+      />
     </>
   );
 };

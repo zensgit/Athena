@@ -86,6 +86,8 @@ const PERMISSION_LABELS: Record<PermissionType, string> = {
 const PermissionsDialog: React.FC = () => {
   const dispatch = useAppDispatch();
   const { permissionsDialogOpen, selectedNodeId } = useAppSelector((state) => state.ui);
+  const user = useAppSelector((state) => state.auth.user);
+  const canWrite = Boolean(user?.roles?.includes('ROLE_ADMIN') || user?.roles?.includes('ROLE_EDITOR'));
   const [loading, setLoading] = useState(false);
   const [tabValue, setTabValue] = useState(0);
   const [inheritPermissions, setInheritPermissions] = useState(true);
@@ -163,6 +165,9 @@ const PermissionsDialog: React.FC = () => {
   };
 
   const handleInheritChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!canWrite) {
+      return;
+    }
     const inherit = event.target.checked;
     setInheritPermissions(inherit);
     
@@ -182,6 +187,7 @@ const PermissionsDialog: React.FC = () => {
     allowed: boolean
   ) => {
     if (!selectedNodeId) return;
+    if (!canWrite) return;
 
     try {
       const authorityType = principal.startsWith('GROUP_') ? 'GROUP' : 'USER';
@@ -209,6 +215,9 @@ const PermissionsDialog: React.FC = () => {
   };
 
   const handleAddPrincipal = () => {
+    if (!canWrite) {
+      return;
+    }
     if (!newPrincipal) return;
 
     const principalType = tabValue === 0 ? 'user' : 'group';
@@ -238,6 +247,7 @@ const PermissionsDialog: React.FC = () => {
 
   const handleRemovePrincipal = async (principal: string) => {
     if (!selectedNodeId) return;
+    if (!canWrite) return;
 
     try {
       // Remove all permissions for this principal
@@ -294,6 +304,7 @@ const PermissionsDialog: React.FC = () => {
                   <Switch
                     size="small"
                     checked={entry.permissions[perm as PermissionType] || false}
+                    disabled={!canWrite}
                     onChange={(e) =>
                       handlePermissionChange(
                         entry.principal,
@@ -308,6 +319,7 @@ const PermissionsDialog: React.FC = () => {
                 <IconButton
                   size="small"
                   onClick={() => handleRemovePrincipal(entry.principal)}
+                  disabled={!canWrite}
                 >
                   <Delete fontSize="small" />
                 </IconButton>
@@ -342,6 +354,7 @@ const PermissionsDialog: React.FC = () => {
             <Switch
               checked={inheritPermissions}
               onChange={handleInheritChange}
+              disabled={!canWrite}
             />
           }
           label="Inherit permissions from parent"
@@ -374,7 +387,7 @@ const PermissionsDialog: React.FC = () => {
                   variant="contained"
                   startIcon={<Add />}
                   onClick={handleAddPrincipal}
-                  disabled={!newPrincipal}
+                  disabled={!canWrite || !newPrincipal}
                 >
                   Add
                 </Button>
@@ -399,7 +412,7 @@ const PermissionsDialog: React.FC = () => {
                   variant="contained"
                   startIcon={<Add />}
                   onClick={handleAddPrincipal}
-                  disabled={!newPrincipal}
+                  disabled={!canWrite || !newPrincipal}
                 >
                   Add
                 </Button>

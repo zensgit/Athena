@@ -35,6 +35,8 @@ import {
 import { HexColorPicker } from 'react-colorful';
 import tagService from 'services/tagService';
 import { toast } from 'react-toastify';
+import { useAppSelector } from 'store';
+import authService from 'services/authService';
 
 interface Tag {
   id: string;
@@ -59,6 +61,11 @@ const TagManager: React.FC<TagManagerProps> = ({
   selectedNodeId,
   onTagsUpdated,
 }) => {
+  const { user } = useAppSelector((state) => state.auth);
+  const effectiveUser = user ?? authService.getCurrentUser();
+  const canWrite = Boolean(
+    effectiveUser?.roles?.includes('ROLE_ADMIN') || effectiveUser?.roles?.includes('ROLE_EDITOR')
+  );
   const [tags, setTags] = useState<Tag[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -113,6 +120,10 @@ const TagManager: React.FC<TagManagerProps> = ({
   };
 
   const handleCreateTag = () => {
+    if (!canWrite) {
+      toast.error('Requires write permission');
+      return;
+    }
     setCreateMode(true);
     setEditMode(false);
     setFormData({
@@ -123,6 +134,10 @@ const TagManager: React.FC<TagManagerProps> = ({
   };
 
   const handleEditTag = (tag: Tag) => {
+    if (!canWrite) {
+      toast.error('Requires write permission');
+      return;
+    }
     setSelectedTag(tag);
     setEditMode(true);
     setCreateMode(false);
@@ -135,6 +150,10 @@ const TagManager: React.FC<TagManagerProps> = ({
   };
 
   const handleDeleteTag = async (tag: Tag) => {
+    if (!canWrite) {
+      toast.error('Requires write permission');
+      return;
+    }
     if (window.confirm(`Delete tag "${tag.name}"? This action cannot be undone.`)) {
       try {
         await tagService.deleteTag(tag.id);
@@ -148,6 +167,10 @@ const TagManager: React.FC<TagManagerProps> = ({
   };
 
   const handleSave = async () => {
+    if (!canWrite) {
+      toast.error('Requires write permission');
+      return;
+    }
     if (!formData.name.trim()) {
       toast.error('Tag name is required');
       return;
@@ -187,6 +210,9 @@ const TagManager: React.FC<TagManagerProps> = ({
   };
 
   const handleContextMenu = (event: React.MouseEvent, tag: Tag) => {
+    if (!canWrite) {
+      return;
+    }
     event.preventDefault();
     setContextMenu({
       mouseX: event.clientX + 2,
@@ -201,6 +227,10 @@ const TagManager: React.FC<TagManagerProps> = ({
 
   const handleAddTagToNode = async (tag: Tag) => {
     if (!selectedNodeId) return;
+    if (!canWrite) {
+      toast.error('Requires write permission');
+      return;
+    }
 
     try {
       await tagService.addTagToNode(selectedNodeId, tag.name);
@@ -250,12 +280,13 @@ const TagManager: React.FC<TagManagerProps> = ({
             startIcon={<Add />}
             onClick={handleCreateTag}
             sx={{ whiteSpace: 'nowrap' }}
+            disabled={!canWrite}
           >
             New Tag
           </Button>
         </Box>
 
-        {(createMode || editMode) && (
+        {canWrite && (createMode || editMode) && (
           <Paper sx={{ p: 2, mb: 2 }}>
             <Typography variant="h6" gutterBottom>
               {createMode ? 'Create New Tag' : 'Edit Tag'}
@@ -362,8 +393,8 @@ const TagManager: React.FC<TagManagerProps> = ({
                     <TableCell>{tag.description || '-'}</TableCell>
                     <TableCell align="center">{tag.usageCount}</TableCell>
                     <TableCell>{tag.creator}</TableCell>
-                    <TableCell align="right">
-                      {selectedNodeId && (
+                  <TableCell align="right">
+                      {selectedNodeId && canWrite && (
                         <Button
                           size="small"
                           onClick={() => handleAddTagToNode(tag)}
@@ -371,12 +402,14 @@ const TagManager: React.FC<TagManagerProps> = ({
                           Add to Document
                         </Button>
                       )}
-                      <IconButton
-                        size="small"
-                        onClick={() => handleEditTag(tag)}
-                      >
-                        <Edit fontSize="small" />
-                      </IconButton>
+                      {canWrite && (
+                        <IconButton
+                          size="small"
+                          onClick={() => handleEditTag(tag)}
+                        >
+                          <Edit fontSize="small" />
+                        </IconButton>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -395,18 +428,22 @@ const TagManager: React.FC<TagManagerProps> = ({
               : undefined
           }
         >
-          <MenuItem onClick={() => contextMenu && handleEditTag(contextMenu.tag)}>
-            <ListItemIcon>
-              <Edit fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>Edit</ListItemText>
-          </MenuItem>
-          <MenuItem onClick={() => contextMenu && handleDeleteTag(contextMenu.tag)}>
-            <ListItemIcon>
-              <Delete fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>Delete</ListItemText>
-          </MenuItem>
+          {canWrite && (
+            <MenuItem onClick={() => contextMenu && handleEditTag(contextMenu.tag)}>
+              <ListItemIcon>
+                <Edit fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Edit</ListItemText>
+            </MenuItem>
+          )}
+          {canWrite && (
+            <MenuItem onClick={() => contextMenu && handleDeleteTag(contextMenu.tag)}>
+              <ListItemIcon>
+                <Delete fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Delete</ListItemText>
+            </MenuItem>
+          )}
         </Menu>
       </DialogContent>
       <DialogActions>
