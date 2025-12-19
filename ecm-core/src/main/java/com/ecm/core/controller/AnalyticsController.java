@@ -69,6 +69,20 @@ public class AnalyticsController {
         return ResponseEntity.ok(analyticsService.getRecentActivity(limit));
     }
 
+    @GetMapping("/rules/recent")
+    @Operation(summary = "Recent Rule Activity", description = "Get recent rule execution audit logs")
+    public ResponseEntity<List<AuditLog>> getRecentRuleActivity(
+            @RequestParam(defaultValue = "20") int limit) {
+        return ResponseEntity.ok(analyticsService.getRecentRuleActivity(limit));
+    }
+
+    @GetMapping("/rules/summary")
+    @Operation(summary = "Rule Execution Summary", description = "Get rule execution statistics for a time window")
+    public ResponseEntity<AnalyticsService.RuleExecutionSummary> getRuleExecutionSummary(
+            @RequestParam(defaultValue = "7") int days) {
+        return ResponseEntity.ok(analyticsService.getRuleExecutionSummary(days));
+    }
+
     @GetMapping("/dashboard")
     @Operation(summary = "Full Dashboard", description = "Get aggregated dashboard data")
     public ResponseEntity<Map<String, Object>> getDashboard() {

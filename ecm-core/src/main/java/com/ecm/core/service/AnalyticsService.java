@@ -35,6 +35,13 @@ public class AnalyticsService {
     private final AuditLogRepository auditLogRepository;
     private final NodeRepository nodeRepository;
 
+    private static final List<String> RULE_EVENT_TYPES = List.of(
+        "RULE_EXECUTED",
+        "RULE_EXECUTION_FAILED",
+        "SCHEDULED_RULE_BATCH_COMPLETED",
+        "SCHEDULED_RULE_BATCH_PARTIAL"
+    );
+
     @Value("${ecm.audit.retention-days:365}")
     private int auditRetentionDays;
 
@@ -119,6 +126,46 @@ public class AnalyticsService {
     public List<AuditLog> getRecentActivity(int limit) {
         return auditLogRepository.findAll(PageRequest.of(0, limit,
             org.springframework.data.domain.Sort.by("eventTime").descending())).getContent();
+    }
+
+    /**
+     * Get recent rule execution audit logs
+     */
+    public List<AuditLog> getRecentRuleActivity(int limit) {
+        return auditLogRepository.findByEventTypeInOrderByEventTimeDesc(
+            RULE_EVENT_TYPES,
+            PageRequest.of(0, limit)
+        ).getContent();
+    }
+
+    /**
+     * Get summary stats for rule execution audit logs
+     */
+    public RuleExecutionSummary getRuleExecutionSummary(int days) {
+        LocalDateTime startTime = LocalDateTime.now().minusDays(days);
+        List<Object[]> results = auditLogRepository.countByEventTypeSince(startTime, RULE_EVENT_TYPES);
+        Map<String, Long> counts = new HashMap<>();
+        for (Object[] row : results) {
+            counts.put((String) row[0], (Long) row[1]);
+        }
+
+        long executed = counts.getOrDefault("RULE_EXECUTED", 0L)
+            + counts.getOrDefault("RULE_EXECUTION_FAILED", 0L);
+        long failed = counts.getOrDefault("RULE_EXECUTION_FAILED", 0L);
+        long scheduledBatches = counts.getOrDefault("SCHEDULED_RULE_BATCH_COMPLETED", 0L)
+            + counts.getOrDefault("SCHEDULED_RULE_BATCH_PARTIAL", 0L);
+        long scheduledFailures = counts.getOrDefault("SCHEDULED_RULE_BATCH_PARTIAL", 0L);
+        double successRate = executed > 0 ? (double) (executed - failed) / executed * 100 : 0;
+
+        return new RuleExecutionSummary(
+            days,
+            executed,
+            failed,
+            successRate,
+            scheduledBatches,
+            scheduledFailures,
+            counts
+        );
     }
 
     /**
@@ -256,6 +303,16 @@ public class AnalyticsService {
         String mimeType,
         long count,
         long sizeBytes
+    ) {}
+
+    public record RuleExecutionSummary(
+        int windowDays,
+        long executions,
+        long failures,
+        double successRate,
+        long scheduledBatches,
+        long scheduledFailures,
+        Map<String, Long> countsByType
     ) {}
 
     public record DailyActivityStats(

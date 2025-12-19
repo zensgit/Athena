@@ -27,6 +27,12 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
     @Query("SELECT a.eventType, COUNT(a) FROM AuditLog a GROUP BY a.eventType")
     List<Object[]> countByEventType();
 
+    @Query("SELECT a.eventType, COUNT(a) FROM AuditLog a WHERE a.eventTime >= :startTime AND a.eventType IN :eventTypes GROUP BY a.eventType")
+    List<Object[]> countByEventTypeSince(@Param("startTime") LocalDateTime startTime,
+                                         @Param("eventTypes") List<String> eventTypes);
+
+    Page<AuditLog> findByEventTypeInOrderByEventTimeDesc(List<String> eventTypes, Pageable pageable);
+
     @Query("SELECT a.username, COUNT(a) FROM AuditLog a GROUP BY a.username ORDER BY COUNT(a) DESC")
     List<Object[]> findTopActiveUsers(Pageable pageable);
     

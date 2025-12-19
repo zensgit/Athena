@@ -113,12 +113,39 @@ interface AuditRetentionInfo {
   expiredLogCount: number;
 }
 
+interface RuleExecutionSummary {
+  windowDays: number;
+  executions: number;
+  failures: number;
+  successRate: number;
+  scheduledBatches: number;
+  scheduledFailures: number;
+  countsByType: Record<string, number>;
+}
+
+const RULE_EVENT_TYPES = [
+  'RULE_EXECUTED',
+  'RULE_EXECUTION_FAILED',
+  'SCHEDULED_RULE_BATCH_COMPLETED',
+  'SCHEDULED_RULE_BATCH_PARTIAL',
+];
+
+const RULE_EVENT_LABELS: Record<string, string> = {
+  RULE_EXECUTED: 'Rule Executed',
+  RULE_EXECUTION_FAILED: 'Rule Failed',
+  SCHEDULED_RULE_BATCH_COMPLETED: 'Scheduled Batch OK',
+  SCHEDULED_RULE_BATCH_PARTIAL: 'Scheduled Batch Partial',
+};
+
 const AdminDashboard: React.FC = () => {
   const [tab, setTab] = useState(0);
 
   // Overview/dashboard state
   const [data, setData] = useState<DashboardData | null>(null);
   const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [ruleSummary, setRuleSummary] = useState<RuleExecutionSummary | null>(null);
+  const [ruleEvents, setRuleEvents] = useState<AuditLog[]>([]);
+  const [ruleEventFilter, setRuleEventFilter] = useState<string[]>(RULE_EVENT_TYPES);
   const [licenseInfo, setLicenseInfo] = useState<LicenseInfo | null>(null);
   const [loadingDashboard, setLoadingDashboard] = useState(true);
   const [retentionInfo, setRetentionInfo] = useState<AuditRetentionInfo | null>(null);
@@ -151,16 +178,20 @@ const AdminDashboard: React.FC = () => {
   const fetchDashboard = async () => {
     try {
       setLoadingDashboard(true);
-      const [dashboardRes, logsRes, licenseRes, retentionRes] = await Promise.all([
+      const [dashboardRes, logsRes, licenseRes, retentionRes, ruleSummaryRes, ruleEventsRes] = await Promise.all([
         apiService.get<DashboardData>('/analytics/dashboard'),
         apiService.get<AuditLog[]>('/analytics/audit/recent?limit=10'),
         apiService.get<LicenseInfo>('/system/license').catch(() => null),
         apiService.get<AuditRetentionInfo>('/analytics/audit/retention').catch(() => null),
+        apiService.get<RuleExecutionSummary>('/analytics/rules/summary?days=7').catch(() => null),
+        apiService.get<AuditLog[]>('/analytics/rules/recent?limit=20').catch(() => []),
       ]);
       setData(dashboardRes);
       setLogs(logsRes);
       setLicenseInfo(licenseRes);
       setRetentionInfo(retentionRes);
+      setRuleSummary(ruleSummaryRes);
+      setRuleEvents(ruleEventsRes || []);
     } catch {
       toast.error('Failed to load dashboard data');
     } finally {
@@ -297,6 +328,10 @@ const AdminDashboard: React.FC = () => {
       );
     }
 
+    const filteredRuleEvents = ruleEvents.filter(
+      (event) => ruleEventFilter.length === 0 || ruleEventFilter.includes(event.eventType)
+    );
+
     return (
       <>
         <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
@@ -387,6 +422,112 @@ const AdminDashboard: React.FC = () => {
               Unable to fetch license info.
             </Typography>
           )}
+        </Paper>
+
+        <Paper sx={{ p: 2, mb: 3 }}>
+          <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+            <Typography component="h2" variant="h6" color="primary">
+              Rule Execution
+            </Typography>
+            <Chip
+              size="small"
+              label={`Last ${ruleSummary?.windowDays ?? 7} days`}
+              variant="outlined"
+            />
+          </Box>
+          <Grid container spacing={2} mb={1}>
+            <Grid item xs={12} sm={6} md={3}>
+              <SummaryCard
+                title="Executions"
+                value={ruleSummary?.executions ?? 0}
+                icon={<History fontSize="large" color="primary" />}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <SummaryCard
+                title="Failures"
+                value={ruleSummary?.failures ?? 0}
+                icon={<History fontSize="large" color="error" />}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <SummaryCard
+                title="Success Rate"
+                value={`${(ruleSummary?.successRate ?? 0).toFixed(1)}%`}
+                icon={<TrendingUp fontSize="large" color="success" />}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <SummaryCard
+                title="Scheduled Batches"
+                value={ruleSummary?.scheduledBatches ?? 0}
+                icon={<History fontSize="large" color="info" />}
+              />
+            </Grid>
+          </Grid>
+
+          <Box display="flex" justifyContent="space-between" alignItems="center" mb={1} mt={2}>
+            <Typography component="h3" variant="subtitle1" color="text.primary">
+              Recent Rule Activity
+            </Typography>
+            <Autocomplete
+              size="small"
+              multiple
+              options={RULE_EVENT_TYPES}
+              value={ruleEventFilter}
+              onChange={(_, value) => setRuleEventFilter(value)}
+              renderTags={(value, getTagProps) =>
+                value.map((option, index) => (
+                  <Chip
+                    {...getTagProps({ index })}
+                    key={option}
+                    size="small"
+                    label={RULE_EVENT_LABELS[option] || option}
+                    variant="outlined"
+                  />
+                ))
+              }
+              renderInput={(params) => (
+                <TextField {...params} label="Filter events" placeholder="Event types" />
+              )}
+              sx={{ minWidth: 260 }}
+            />
+          </Box>
+
+          <List dense>
+            {filteredRuleEvents.map((log, index) => (
+              <React.Fragment key={log.id}>
+                <ListItem alignItems="flex-start">
+                  <ListItemIcon>
+                    <History />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={
+                      <Box display="flex" justifyContent="space-between">
+                        <Typography variant="subtitle2">
+                          {RULE_EVENT_LABELS[log.eventType] || log.eventType}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {format(new Date(log.eventTime), 'PPpp')}
+                        </Typography>
+                      </Box>
+                    }
+                    secondary={
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                        {log.details || log.nodeName}
+                      </Typography>
+                    }
+                  />
+                </ListItem>
+                {index < filteredRuleEvents.length - 1 && <Divider variant="inset" component="li" />}
+              </React.Fragment>
+            ))}
+            {filteredRuleEvents.length === 0 && (
+              <Typography variant="body2" sx={{ p: 2 }}>
+                No rule activity found for the selected filters.
+              </Typography>
+            )}
+          </List>
         </Paper>
 
         <Grid container spacing={3}>
