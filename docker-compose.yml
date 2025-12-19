@@ -8,6 +8,11 @@ services:
       - "${ECM_API_PORT:-8080}:8080"
     environment:
       - SPRING_PROFILES_ACTIVE=docker
+      - ECM_IDENTITY_PROVIDER=keycloak
+      - ECM_KEYCLOAK_URL=http://keycloak:8080
+      - ECM_KEYCLOAK_REALM=ecm
+      - ECM_KEYCLOAK_ADMIN_USERNAME=${KEYCLOAK_USER}
+      - ECM_KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_PASSWORD}
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB}
       - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER}
       - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD}
@@ -25,6 +30,23 @@ services:
       - ECM_ODOO_URL=http://odoo:8069
       - JODCONVERTER_LOCAL_OFFICE_HOME=/usr/lib/libreoffice
       - ECM_ML_SERVICE_URL=http://ml-service:8080
+      # Optional: WPS online editor integration (disabled by default)
+      - ECM_WPS_ENABLED=${ECM_WPS_ENABLED:-false}
+      - ECM_WPS_APPID=${ECM_WPS_APPID:-}
+      - ECM_WPS_APPKEY=${ECM_WPS_APPKEY:-}
+      - ECM_WPS_DOMAIN=${ECM_WPS_DOMAIN:-https://wwo.wps.cn/office/}
+      - ECM_API_BASE_URL=${ECM_API_BASE_URL:-}
+      # Collabora/OnlyOffice via WOPI (open-source recommended)
+      - ECM_WOPI_ENABLED=${ECM_WOPI_ENABLED:-true}
+      - ECM_WOPI_DISCOVERY_URL=${ECM_WOPI_DISCOVERY_URL:-http://collabora:9980/hosting/discovery}
+      # Default to the frontend's same-origin Collabora proxy to avoid cross-origin iframe restrictions.
+      - ECM_WOPI_PUBLIC_URL=${ECM_WOPI_PUBLIC_URL:-http://localhost:${ECM_FRONTEND_PORT:-3000}}
+      # WOPISrc host URL must be reachable from the editor container
+      - ECM_WOPI_HOST_URL=${ECM_WOPI_HOST_URL:-http://ecm-core:8080}
+      # ClamAV Antivirus Integration
+      - ECM_ANTIVIRUS_ENABLED=${ECM_ANTIVIRUS_ENABLED:-true}
+      - ECM_ANTIVIRUS_CLAMD_HOST=clamav
+      - ECM_ANTIVIRUS_CLAMD_PORT=3310
     volumes:
       - ecm_content:/var/ecm/content
       - ecm_temp:/var/ecm/temp
@@ -37,6 +59,8 @@ services:
       - minio
       - keycloak
       - ml-service
+      - collabora
+      - clamav
     networks:
       - ecm-network
     restart: unless-stopped
@@ -114,6 +138,25 @@ services:
       timeout: 3s
       retries: 5
 
+  # Collabora Online (CODE) - Open-source online editor via WOPI
+  collabora:
+    image: collabora/code:24.04.13.2.1
+    ports:
+      - "${COLLABORA_PORT:-9980}:9980"
+    environment:
+      # Allow embedding from these hostnames (regex; host only, no scheme/port)
+      - domain=${COLLABORA_DOMAIN:-localhost}
+      # Run without TLS for local development
+      - extra_params=--o:ssl.enable=false --o:ssl.termination=false
+      # Optional admin console credentials
+      - username=${COLLABORA_ADMIN_USER:-admin}
+      - password=${COLLABORA_ADMIN_PASSWORD:-admin}
+    cap_add:
+      - MKNOD
+    networks:
+      - ecm-network
+    restart: unless-stopped
+
   # RabbitMQ Message Broker
   rabbitmq:
     image: rabbitmq:3.12-management-alpine
@@ -170,7 +213,7 @@ services:
     volumes:
       - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm.json
     ports:
-      - "8081:8080"
+      - "${KEYCLOAK_PORT:-8180}:8080"
     depends_on:
       - postgres-keycloak
     networks:
@@ -192,7 +235,7 @@ services:
 
   # ML Service
   ml-service:
-    build: 
+    build:
       context: ./ml-service
       dockerfile: Dockerfile
     ports:
@@ -209,6 +252,27 @@ services:
     networks:
       - ecm-network
     restart: unless-stopped
+
+  # ClamAV Antivirus Service
+  clamav:
+    image: clamav/clamav:stable
+    # clamav/clamav:stable doesn't publish an arm64 manifest; use amd64 on Apple Silicon via emulation.
+    platform: linux/amd64
+    ports:
+      - "${CLAMAV_PORT:-3310}:3310"
+    volumes:
+      - clamav_data:/var/lib/clamav
+    environment:
+      - CLAMAV_NO_FRESHCLAMD=${CLAMAV_NO_FRESHCLAMD:-false}
+    networks:
+      - ecm-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "clamdscan", "--ping", "5"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 120s
 
   # Odoo ERP Integration
   odoo:
@@ -242,22 +306,6 @@ services:
       - ecm-network
     restart: unless-stopped
 
-  # LibreOffice for Document Conversion
-  libreoffice:
-    image: libreoffice/online:latest
-    environment:
-      - domain=ecm-core
-      - username=admin
-      - password=admin_password
-      - DONT_GEN_SSL_CERT=1
-    ports:
-      - "9980:9980"
-    networks:
-      - ecm-network
-    restart: unless-stopped
-    cap_add:
-      - MKNOD
-
   # Frontend Application
   ecm-frontend:
     build:
@@ -265,8 +313,6 @@ services:
       dockerfile: Dockerfile
     ports:
       - "${ECM_FRONTEND_PORT:-3000}:80"
-    environment:
-      - REACT_APP_API_BASE_URL=http://localhost:8080/api/v1
     depends_on:
       - ecm-core
     networks:
@@ -354,6 +400,8 @@ volumes:
   prometheus_data:
     driver: local
   grafana_data:
+    driver: local
+  clamav_data:
     driver: local
 
 networks:
