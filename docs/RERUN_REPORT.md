@@ -9,6 +9,14 @@
 - ✅ `bash scripts/verify.sh`：全流程 PASS（含重启/健康检查/token/smoke/build/e2e）
 - ✅ 日志前缀：`tmp/20251219_115943_*`
 
+## 指定 PDF Smoke 复跑（J0924032-02上罐体组件v2-模型.pdf）
+
+日期：2025-12-19 13:19 CST
+
+- ✅ 命令：`ECM_UPLOAD_FILE="/Users/huazhou/Downloads/J0924032-02上罐体组件v2-模型.pdf" bash scripts/verify.sh --no-restart --smoke-only --skip-build`
+- ✅ 结果：PASS（smoke-only）
+- ✅ 日志前缀：`tmp/20251219_131910_*`
+
 ## 增量复跑（Sprint 2-4 复核闭环）
 
 日期：2025-12-19 09:35 CST
