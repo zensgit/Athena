@@ -51,10 +51,11 @@ docker-compose ps
 ```
 
 ### Access Points
-*   **Frontend**: [http://localhost:3000](http://localhost:3000)
-*   **Backend API**: [http://localhost:8080/api/v1](http://localhost:8080/api/v1)
-*   **Swagger Docs**: [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html)
-*   **MinIO Console**: [http://localhost:9001](http://localhost:9001) (User: minio_access_key, Pass: minio_secret_key)
+*   **Frontend**: [http://localhost:5500](http://localhost:5500)
+*   **Backend API**: [http://localhost:7700/api/v1](http://localhost:7700/api/v1)
+*   **Swagger Docs**: [http://localhost:7700/swagger-ui.html](http://localhost:7700/swagger-ui.html)
+*   **Keycloak**: [http://localhost:8180](http://localhost:8180)
+*   **MinIO Console**: [http://localhost:9206](http://localhost:9206) (User: minio_access_key, Pass: minio_secret_key)
 
 ## 4. Development Guide
 

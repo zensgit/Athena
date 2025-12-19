@@ -50,12 +50,14 @@
 | 服务 | 端口 | 协议 | 说明 |
 |------|------|------|------|
 | Nginx | 80, 443 | HTTP/HTTPS | Web服务器 |
-| ECM Core | 8080 | HTTP | 后端API |
-| Frontend | 3000 | HTTP | 前端应用 |
+| ECM Core | 7700 | HTTP | 后端API（宿主机端口，可在 `.env` 中配置） |
+| Frontend | 5500 | HTTP | 前端应用（宿主机端口，可在 `.env` 中配置） |
+| Keycloak | 8180 | HTTP | 统一认证（OIDC） |
 | PostgreSQL | 5432 | TCP | 主数据库 |
 | Elasticsearch | 9200, 9300 | HTTP/TCP | 搜索引擎 |
-| Redis | 6379 | TCP | 缓存服务 |
+| Redis | 6390 | TCP | 缓存服务（宿主机端口映射到容器 6379） |
 | RabbitMQ | 5672, 15672 | AMQP/HTTP | 消息队列 |
+| MinIO | 9205, 9206 | HTTP | 对象存储（API/Console） |
 | Grafana | 3001 | HTTP | 监控面板 |
 | Prometheus | 9090 | HTTP | 指标收集 |
 
@@ -110,7 +112,7 @@ docker-compose ps
 
 echo "=== 安装完成 ==="
 echo "访问地址: http://localhost"
-echo "API文档: http://localhost:8080/swagger-ui.html"
+echo "API文档: http://localhost:7700/swagger-ui.html"
 echo "监控面板: http://localhost:3001 (admin/admin_password)"
 echo ""
 echo "默认登录账号:"
@@ -318,19 +320,19 @@ docker-compose logs ecm-core | grep "Started EcmCoreApplication"
 docker-compose ps
 
 # 检查服务健康状态
-curl http://localhost:8080/actuator/health
+curl http://localhost:7700/actuator/health
 
 # 检查前端访问
-curl http://localhost:3000
+curl http://localhost:5500
 
 # 检查API文档
-curl http://localhost:8080/swagger-ui.html
+curl http://localhost:7700/swagger-ui.html
 ```
 
 #### 5.2 功能验证
 ```bash
 # 测试API端点
-curl -X GET http://localhost:8080/api/v1/nodes \
+curl -X GET http://localhost:7700/api/v1/nodes \
   -H "Content-Type: application/json"
 
 # 测试搜索功能

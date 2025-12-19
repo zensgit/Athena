@@ -13,6 +13,43 @@ WOPI (Web Application Open Platform Interface) 是微软推出的标准化协议
 
 这体现了 Alfresco 的架构理念：**不内置编辑器，而是提供强大的标准集成接口**。
 
+> 本地 Docker 开发建议：将 Collabora 通过前端 Nginx 反代到同源（例如 `http://localhost:5500/browser/...`），
+> 并在 `.env` 中设置 `ECM_WOPI_PUBLIC_URL=http://localhost:5500`，可避免跨域 iframe 带来的限制与控制台噪声。
+
+### 1.1 快速自检（推荐）
+
+后端提供 WOPI 自检接口（需登录）：
+
+- `GET /api/v1/integration/wopi/health`
+  - 返回：WOPI 是否启用、WOPI Host URL、Collabora discovery/capabilities 是否可达、支持的扩展名 sample 等。
+
+Collabora 本身也提供两个公开接口（可直接在浏览器打开查看）：
+
+- `GET <publicUrl>/hosting/capabilities`（返回 productName/productVersion 等信息）
+- `GET <publicUrl>/hosting/discovery`（WOPI discovery XML）
+
+> 如果 `publicUrl` 配置为前端同源代理（例如 `http://localhost:5500`），那么上面的 capabilities/discovery 也会通过前端 Nginx 反代到 Collabora 容器。
+
+### 1.2 关于 “Development Edition” 提示/弹窗（并发/限制）
+
+本项目默认使用 `collabora/code`（Collabora Online Development Edition, CODE），它是面向开发/评估的镜像：
+
+- 页面上出现 “Collabora Online Development Edition” 字样/提示属于编辑器自身行为（非 Athena 前端渲染）。
+- 并发/使用限制由 Collabora CODE 控制，Athena 无法在不改动编辑器的前提下完全屏蔽。
+- 需要 “无提示/白标/生产级支持” 时，请使用商业版 Collabora Online 或替换为 OnlyOffice（WOPI 模式）等方案。
+
+> Athena 已在前端 Nginx 中做了 **同源反代** + **cool.html 注入 overrides（`collabora-overrides.*`）**，可减少部分噪声/链接，但不保证能去除所有品牌与限制提示（取决于 Collabora 版本与页面结构）。
+
+### 1.3 配置项（Docker / `.env`）
+
+后端（Spring）主要配置项与默认值：
+
+- `ECM_WOPI_ENABLED`（默认：`true`）
+- `ECM_WOPI_PUBLIC_URL`（默认：`http://localhost:${ECM_FRONTEND_PORT}`，推荐同源 `http://localhost:5500`）
+- `ECM_WOPI_DISCOVERY_URL`（默认：`http://collabora:9980/hosting/discovery`，容器内访问）
+- `ECM_WOPI_CAPABILITIES_URL`（默认：`http://collabora:9980/hosting/capabilities`，容器内访问）
+- `ECM_WOPI_HOST_URL`（默认：`http://ecm-core:8080`，必须被 Collabora 容器访问到）
+
 ## 2. API 接口 (Standard WOPI)
 
 所有接口均位于 `/wopi/files/{id}` 路径下。

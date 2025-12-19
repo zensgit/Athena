@@ -34,4 +34,4 @@
 ## 4. 后续计划
 
 *   **RSA 签名**: 实现完整的公私钥签发和验证机制，防止 License 被篡改。
-*   **前端展示**: 在 Admin Dashboard 中显示 "Powered by Athena Enterprise" 或 "Community Edition" 标识。
+*   ✅ **前端展示已完成**: Admin Dashboard 增加 License 区块，展示 Edition/有效性/限制/到期时间/Features。

@@ -99,10 +99,11 @@ cd Athena
 # Start all services
 docker-compose up -d
 
-# Access the application
-# Frontend: http://localhost:3000
-# Backend: http://localhost:8080
-# API Docs: http://localhost:8080/swagger-ui.html
+# Access the application (ports configurable in `.env`)
+# Frontend: http://localhost:5500
+# Backend API: http://localhost:7700/api/v1
+# API Docs: http://localhost:7700/swagger-ui.html
+# Keycloak: http://localhost:8180
 ```
 
 ### Manual Setup

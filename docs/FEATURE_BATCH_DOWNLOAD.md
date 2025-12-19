@@ -23,6 +23,14 @@
 |------|------|------|------|
 | GET | `/api/v1/nodes/download/batch` | `ids` (UUID列表), `name` (可选文件名) | 下载 ZIP 文件流 |
 
+### 2.3 前端集成（File Browser）
+
+- 列表多选后，在顶部工具栏提供 **Download selected**（批量下载）按钮。
+- 前端调用 `GET /api/v1/nodes/download/batch?ids=...&name=...`，并以 `name.zip` 的文件名下载。
+- 代码：
+  - `ecm-frontend/src/pages/FileBrowser.tsx`
+  - `ecm-frontend/src/services/nodeService.ts`
+
 ## 3. 验证方法
 
 ```bash

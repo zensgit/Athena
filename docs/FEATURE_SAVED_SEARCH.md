@@ -60,5 +60,5 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/search/saved
 
 ## 4. 后续计划
 
-*   **前端集成**: 在 `AdvancedSearchPage` 增加 "Save Search" 按钮，并在侧边栏显示已保存的搜索列表。
-*   **共享搜索**: 允许管理员创建“全局保存搜索”，分享给所有用户使用。
+*   ✅ **前端集成已完成**：Advanced Search 弹窗支持 “Save Search”，并新增 `/saved-searches` 页面用于查看/执行/删除保存的搜索。
+*   可选增强：支持“共享搜索”（管理员创建全局保存搜索），以及把已保存搜索加入侧边栏常驻快捷入口。
