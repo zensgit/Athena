@@ -7,8 +7,10 @@ WORKDIR /app
 # Copy package files
 COPY package.json package-lock.json ./
 
-# Install dependencies (use install to tolerate minor lock drift)
-RUN npm install --omit=dev
+# Install dependencies (need dev deps for react-scripts build)
+# Playwright is only needed for local/CI E2E tests; skip browser downloads in the image build.
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+RUN npm ci --legacy-peer-deps --no-audit --no-fund
 
 # Copy source code
 COPY . .
