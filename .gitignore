@@ -126,6 +126,8 @@ test-output/
 coverage/
 jacoco/
 *.exec
+playwright-report/
+test-results/
 
 # -------------------------------------------
 # Node.js (if any frontend)
@@ -135,6 +137,7 @@ npm-debug.log
 yarn-error.log
 package-lock.json
 yarn.lock
+!ecm-frontend/package-lock.json
 
 # -------------------------------------------
 # Python (if any ML scripts)
