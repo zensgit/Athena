@@ -12,16 +12,17 @@ import com.ecm.core.service.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.net.URL;
 import java.time.ZoneOffset;
-import java.util.HashMap;
 import java.util.Map;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 /**
@@ -56,10 +57,15 @@ public class WpsIntegrationService {
     @Value("${ecm.api.base-url:http://localhost:8080}")
     private String apiBaseUrl;
 
+    @Value("${ecm.wps.enabled:false}")
+    private boolean wpsEnabled;
+
     /**
      * Generate the Web Office URL for frontend iframe.
      */
     public WpsUrlResponse generateWebOfficeUrl(UUID documentId, String permission) {
+        ensureWpsEnabledAndConfigured();
+
         Document document = (Document) nodeService.getNode(documentId);
         String currentUser = securityService.getCurrentUser();
 
@@ -81,8 +87,10 @@ public class WpsIntegrationService {
         // https://wwo.wps.cn/office/[type]/[fileId]?_w_appid=xxx&_w_signature=xxx
         
         String type = getWpsType(fileType); // w/s/p/f
-        String wpsUrl = String.format("%s%s/%s?_w_appid=%s&_w_tokentype=1&_w_filepath=%s", 
-            wpsDomain, type, documentId, appId, document.getName());
+        String domain = wpsDomain != null && wpsDomain.endsWith("/") ? wpsDomain : (wpsDomain + "/");
+        String encodedFilePath = URLEncoder.encode(document.getName(), StandardCharsets.UTF_8);
+        String wpsUrl = String.format("%s%s/%s?_w_appid=%s&_w_tokentype=1&_w_filepath=%s",
+            domain, type, documentId, appId, encodedFilePath);
 
         return WpsUrlResponse.builder()
             .wpsUrl(wpsUrl)
@@ -174,5 +182,24 @@ public class WpsIntegrationService {
             case "pdf" -> "f";
             default -> "w";
         };
+    }
+
+    private void ensureWpsEnabledAndConfigured() {
+        if (!wpsEnabled) {
+            throw new ResponseStatusException(
+                HttpStatus.NOT_IMPLEMENTED,
+                "WPS online editing is disabled. Set ecm.wps.enabled=true and configure ecm.wps.appid/ecm.wps.appkey."
+            );
+        }
+
+        boolean defaultAppId = appId == null || appId.isBlank() || "athena_ecm".equals(appId);
+        boolean defaultAppKey = appKey == null || appKey.isBlank() || "secret_key".equals(appKey);
+
+        if (defaultAppId || defaultAppKey) {
+            throw new ResponseStatusException(
+                HttpStatus.NOT_IMPLEMENTED,
+                "WPS online editing is not configured (invalid appId/appKey). Configure ecm.wps.appid/ecm.wps.appkey to avoid AppInfoNotExists."
+            );
+        }
     }
 }

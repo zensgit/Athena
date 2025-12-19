@@ -86,6 +86,9 @@ public class FacetedSearchService {
                 .queryTime(System.currentTimeMillis())
                 .build();
 
+        } catch (LinkageError e) {
+            log.error("Faceted search failed due to missing/invalid Elasticsearch client dependency", e);
+            return FacetedSearchResponse.empty();
         } catch (Exception e) {
             log.error("Faceted search failed", e);
             return FacetedSearchResponse.empty();
@@ -114,6 +117,9 @@ public class FacetedSearchService {
 
             return buildFacets(searchHits);
 
+        } catch (LinkageError e) {
+            log.error("Failed to get facets due to missing/invalid Elasticsearch client dependency", e);
+            return Collections.emptyMap();
         } catch (Exception e) {
             log.error("Failed to get facets", e);
             return Collections.emptyMap();
@@ -278,12 +284,12 @@ public class FacetedSearchService {
 
         // Text search with optional boosting
         if (request.getQuery() != null && !request.getQuery().trim().isEmpty()) {
-            String searchTerm = request.getQuery().trim().toLowerCase();
-            criteria = criteria.or("name").contains(searchTerm)
-                .or("content").contains(searchTerm)
-                .or("textContent").contains(searchTerm)
-                .or("title").contains(searchTerm)
-                .or("description").contains(searchTerm);
+            String searchTerm = request.getQuery().trim();
+            criteria = criteria.or("name").matches(searchTerm)
+                .or("content").matches(searchTerm)
+                .or("textContent").matches(searchTerm)
+                .or("title").matches(searchTerm)
+                .or("description").matches(searchTerm);
         }
 
         // Path prefix filter
@@ -312,15 +318,24 @@ public class FacetedSearchService {
 
     private Criteria applyFilters(Criteria criteria, SearchFilters filters) {
         if (filters.getMimeTypes() != null && !filters.getMimeTypes().isEmpty()) {
-            criteria = criteria.and("mimeType").in(filters.getMimeTypes());
+            criteria = criteria.and(
+                new Criteria("mimeType.keyword").in(filters.getMimeTypes())
+                    .or(new Criteria("mimeType").in(filters.getMimeTypes()))
+            );
         }
 
         if (filters.getNodeTypes() != null && !filters.getNodeTypes().isEmpty()) {
-            criteria = criteria.and("nodeType").in(filters.getNodeTypes());
+            criteria = criteria.and(
+                new Criteria("nodeType.keyword").in(filters.getNodeTypes())
+                    .or(new Criteria("nodeType").in(filters.getNodeTypes()))
+            );
         }
 
         if (filters.getCreatedBy() != null && !filters.getCreatedBy().isEmpty()) {
-            criteria = criteria.and("createdBy").is(filters.getCreatedBy());
+            criteria = criteria.and(
+                new Criteria("createdBy.keyword").is(filters.getCreatedBy())
+                    .or(new Criteria("createdBy").is(filters.getCreatedBy()))
+            );
         }
 
         if (filters.getDateFrom() != null) {
@@ -348,15 +363,31 @@ public class FacetedSearchService {
         }
 
         if (filters.getTags() != null && !filters.getTags().isEmpty()) {
-            criteria = criteria.and("tags").in(filters.getTags());
+            criteria = criteria.and(
+                new Criteria("tags.keyword").in(filters.getTags())
+                    .or(new Criteria("tags").in(filters.getTags()))
+            );
         }
 
         if (filters.getCategories() != null && !filters.getCategories().isEmpty()) {
-            criteria = criteria.and("categories").in(filters.getCategories());
+            criteria = criteria.and(
+                new Criteria("categories.keyword").in(filters.getCategories())
+                    .or(new Criteria("categories").in(filters.getCategories()))
+            );
+        }
+
+        if (filters.getCorrespondents() != null && !filters.getCorrespondents().isEmpty()) {
+            criteria = criteria.and(
+                new Criteria("correspondent.keyword").in(filters.getCorrespondents())
+                    .or(new Criteria("correspondent").in(filters.getCorrespondents()))
+            );
         }
 
         if (filters.getPath() != null && !filters.getPath().isEmpty()) {
-            criteria = criteria.and("path").startsWith(filters.getPath());
+            criteria = criteria.and(
+                new Criteria("path.keyword").startsWith(filters.getPath())
+                    .or(new Criteria("path").startsWith(filters.getPath()))
+            );
         }
 
         return criteria;
@@ -370,6 +401,7 @@ public class FacetedSearchService {
         Map<String, Integer> createdByCounts = new HashMap<>();
         Map<String, Integer> tagCounts = new HashMap<>();
         Map<String, Integer> categoryCounts = new HashMap<>();
+        Map<String, Integer> correspondentCounts = new HashMap<>();
 
         for (SearchHit<NodeDocument> hit : searchHits) {
             NodeDocument doc = hit.getContent();
@@ -397,6 +429,11 @@ public class FacetedSearchService {
                     categoryCounts.merge(category, 1, Integer::sum);
                 }
             }
+
+            // Count correspondents
+            if (doc.getCorrespondent() != null) {
+                correspondentCounts.merge(doc.getCorrespondent(), 1, Integer::sum);
+            }
         }
 
         // Convert to FacetValue lists
@@ -404,6 +441,7 @@ public class FacetedSearchService {
         facets.put("createdBy", toFacetValues(createdByCounts));
         facets.put("tags", toFacetValues(tagCounts));
         facets.put("categories", toFacetValues(categoryCounts));
+        facets.put("correspondent", toFacetValues(correspondentCounts));
 
         return facets;
     }
@@ -421,12 +459,20 @@ public class FacetedSearchService {
             .id(doc.getId())
             .name(doc.getName())
             .description(doc.getDescription())
+            .path(doc.getPath())
+            .nodeType(doc.getNodeType() != null ? doc.getNodeType().name() : null)
+            .parentId(doc.getParentId())
             .mimeType(doc.getMimeType())
             .fileSize(doc.getFileSize())
             .createdBy(doc.getCreatedBy())
             .createdDate(doc.getCreatedDate())
+            .lastModifiedBy(doc.getLastModifiedBy())
+            .lastModifiedDate(doc.getLastModifiedDate())
             .score(hit.getScore())
             .highlights(hit.getHighlightFields())
+            .tags(doc.getTags() != null ? List.copyOf(doc.getTags()) : List.of())
+            .categories(doc.getCategories() != null ? List.copyOf(doc.getCategories()) : List.of())
+            .correspondent(doc.getCorrespondent())
             .build();
     }
 

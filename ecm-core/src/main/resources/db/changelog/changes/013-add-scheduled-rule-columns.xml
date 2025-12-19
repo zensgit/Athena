@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="013-1-add-scheduled-rule-columns" author="claude">
+        <comment>Add columns to support scheduled/cron-based automation rules</comment>
+
+        <addColumn tableName="automation_rules">
+            <column name="cron_expression" type="varchar(100)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+
+        <addColumn tableName="automation_rules">
+            <column name="timezone" type="varchar(50)" defaultValue="UTC">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+
+        <addColumn tableName="automation_rules">
+            <column name="last_run_at" type="timestamp">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+
+        <addColumn tableName="automation_rules">
+            <column name="next_run_at" type="timestamp">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+
+        <addColumn tableName="automation_rules">
+            <column name="max_items_per_run" type="int" defaultValueNumeric="200">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="013-2-add-scheduled-rule-index" author="claude">
+        <comment>Add index for efficient scheduled rule queries</comment>
+
+        <createIndex tableName="automation_rules" indexName="idx_rules_scheduled_next_run">
+            <column name="enabled"/>
+            <column name="trigger_type"/>
+            <column name="next_run_at"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>

@@ -7,12 +7,17 @@ import com.ecm.core.repository.AuditLogRepository;
 import com.ecm.core.repository.NodeRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
+import java.io.StringWriter;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -29,6 +34,9 @@ public class AnalyticsService {
 
     private final AuditLogRepository auditLogRepository;
     private final NodeRepository nodeRepository;
+
+    @Value("${ecm.audit.retention-days:365}")
+    private int auditRetentionDays;
 
     /**
      * Get overall system summary stats
@@ -109,8 +117,124 @@ public class AnalyticsService {
      * Get recent audit logs
      */
     public List<AuditLog> getRecentActivity(int limit) {
-        return auditLogRepository.findAll(PageRequest.of(0, limit, 
+        return auditLogRepository.findAll(PageRequest.of(0, limit,
             org.springframework.data.domain.Sort.by("eventTime").descending())).getContent();
+    }
+
+    /**
+     * Export audit logs as CSV within a time range
+     */
+    public String exportAuditLogsCsv(LocalDateTime from, LocalDateTime to) {
+        List<AuditLog> logs = auditLogRepository.findByTimeRangeForExport(from, to);
+        return generateCsv(logs);
+    }
+
+    /**
+     * Get audit logs within a time range
+     */
+    public List<AuditLog> getAuditLogsInRange(LocalDateTime from, LocalDateTime to) {
+        return auditLogRepository.findByTimeRangeForExport(from, to);
+    }
+
+    /**
+     * Generate CSV content from audit logs
+     */
+    private String generateCsv(List<AuditLog> logs) {
+        StringBuilder csv = new StringBuilder();
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+        // CSV header
+        csv.append("ID,Event Type,Node ID,Node Name,Username,Event Time,Details,Client IP,User Agent\n");
+
+        // CSV data rows
+        for (AuditLog log : logs) {
+            csv.append(escapeCsv(log.getId() != null ? log.getId().toString() : "")).append(",");
+            csv.append(escapeCsv(log.getEventType())).append(",");
+            csv.append(escapeCsv(log.getNodeId() != null ? log.getNodeId().toString() : "")).append(",");
+            csv.append(escapeCsv(log.getNodeName())).append(",");
+            csv.append(escapeCsv(log.getUsername())).append(",");
+            csv.append(escapeCsv(log.getEventTime() != null ? log.getEventTime().format(formatter) : "")).append(",");
+            csv.append(escapeCsv(log.getDetails())).append(",");
+            csv.append(escapeCsv(log.getClientIp())).append(",");
+            csv.append(escapeCsv(log.getUserAgent())).append("\n");
+        }
+
+        return csv.toString();
+    }
+
+    /**
+     * Escape CSV field value
+     */
+    private String escapeCsv(String value) {
+        if (value == null) {
+            return "";
+        }
+        // Escape double quotes and wrap in quotes if contains special characters
+        if (value.contains(",") || value.contains("\"") || value.contains("\n") || value.contains("\r")) {
+            return "\"" + value.replace("\"", "\"\"") + "\"";
+        }
+        return value;
+    }
+
+    /**
+     * Get audit retention configuration
+     */
+    public int getAuditRetentionDays() {
+        return auditRetentionDays;
+    }
+
+    /**
+     * Get count of logs that would be cleaned up based on retention policy
+     */
+    public long getExpiredAuditLogCount() {
+        LocalDateTime threshold = LocalDateTime.now().minusDays(auditRetentionDays);
+        return auditLogRepository.countByEventTimeBefore(threshold);
+    }
+
+    /**
+     * Scheduled task to clean up old audit logs based on retention policy
+     * Runs daily at 2:00 AM
+     */
+    @Scheduled(cron = "0 0 2 * * *")
+    @Transactional
+    public void cleanupExpiredAuditLogs() {
+        if (auditRetentionDays <= 0) {
+            log.info("Audit log retention is disabled (retention-days={})", auditRetentionDays);
+            return;
+        }
+
+        LocalDateTime threshold = LocalDateTime.now().minusDays(auditRetentionDays);
+        long count = auditLogRepository.countByEventTimeBefore(threshold);
+
+        if (count > 0) {
+            log.info("Cleaning up {} audit logs older than {} days (before {})",
+                count, auditRetentionDays, threshold);
+            auditLogRepository.deleteByEventTimeBefore(threshold);
+            log.info("Audit log cleanup completed");
+        } else {
+            log.debug("No audit logs to clean up (retention-days={})", auditRetentionDays);
+        }
+    }
+
+    /**
+     * Manual trigger for audit log cleanup (admin only)
+     */
+    @Transactional
+    public long manualCleanupExpiredAuditLogs() {
+        if (auditRetentionDays <= 0) {
+            log.warn("Audit log retention is disabled, manual cleanup skipped");
+            return 0;
+        }
+
+        LocalDateTime threshold = LocalDateTime.now().minusDays(auditRetentionDays);
+        long count = auditLogRepository.countByEventTimeBefore(threshold);
+
+        if (count > 0) {
+            log.info("Manual cleanup: removing {} audit logs older than {}", count, threshold);
+            auditLogRepository.deleteByEventTimeBefore(threshold);
+        }
+
+        return count;
     }
 
     // ==================== DTOs ====================

@@ -29,6 +29,17 @@ spring:
           jwk-set-uri: ${SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI:http://keycloak:8080/realms/ecm/protocol/openid-connect/certs}
 
 ecm:
+  identity:
+    provider: ${ECM_IDENTITY_PROVIDER:keycloak}
+
+  keycloak:
+    url: ${ECM_KEYCLOAK_URL:http://keycloak:8080}
+    realm: ${ECM_KEYCLOAK_REALM:ecm}
+    admin-realm: ${ECM_KEYCLOAK_ADMIN_REALM:master}
+    admin-client-id: ${ECM_KEYCLOAK_ADMIN_CLIENT_ID:admin-cli}
+    admin-username: ${ECM_KEYCLOAK_ADMIN_USERNAME:}
+    admin-password: ${ECM_KEYCLOAK_ADMIN_PASSWORD:}
+
   storage:
     root-path: ${ECM_STORAGE_ROOT_PATH:/var/ecm/content}
     temp-path: ${ECM_STORAGE_TEMP_PATH:/var/ecm/temp}
@@ -37,10 +48,19 @@ ecm:
     enabled: ${ECM_CONVERSION_ENABLED:true}
     max-file-size: ${ECM_CONVERSION_MAX_FILE_SIZE:100MB}
 
+  search:
+    refresh-after-write: ${ECM_SEARCH_REFRESH_AFTER_WRITE:true}
+
   ml:
     service:
       url: ${ECM_ML_SERVICE_URL:http://ml-service:8080}
     enabled: ${ECM_ML_ENABLED:true}
+
+  antivirus:
+    enabled: ${ECM_ANTIVIRUS_ENABLED:true}
+    clamd:
+      host: ${ECM_ANTIVIRUS_CLAMD_HOST:clamav}
+      port: ${ECM_ANTIVIRUS_CLAMD_PORT:3310}
 
 minio:
   endpoint: ${MINIO_ENDPOINT:http://minio:9000}

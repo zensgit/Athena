@@ -1,13 +1,18 @@
 package com.ecm.core.service;
 
+import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Node;
 import com.ecm.core.entity.Permission.PermissionType;
+import com.ecm.core.entity.AutomationRule.TriggerType;
 import com.ecm.core.model.*;
 import com.ecm.core.repository.*;
 import com.ecm.core.exception.*;
 import com.ecm.core.event.*;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.Page;
@@ -20,24 +25,32 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @Transactional
 public class CommentService {
-    
+
     @Autowired
     private CommentRepository commentRepository;
-    
+
     @Autowired
     private NodeRepository nodeRepository;
-    
+
     @Autowired
     private SecurityService securityService;
-    
+
     @Autowired
     private NotificationService notificationService;
-    
+
     @Autowired
     private ApplicationEventPublisher eventPublisher;
+
+    @Autowired
+    @Lazy
+    private RuleEngineService ruleEngineService;
+
+    @Value("${ecm.rules.enabled:true}")
+    private boolean rulesEnabled;
     
     private static final Pattern MENTION_PATTERN = Pattern.compile("@([\\w.-]+)");
     private static final int MAX_COMMENT_DEPTH = 5;
@@ -76,7 +89,7 @@ public class CommentService {
         
         // 发送通知
         notifyMentionedUsers(comment, mentionedUsers);
-        
+
         // 通知文档所有者
         if (!comment.getAuthor().equals(node.getCreatedBy())) {
             notificationService.notifyUser(
@@ -85,10 +98,13 @@ public class CommentService {
                 String.format("%s commented on '%s'", comment.getAuthor(), node.getName())
             );
         }
-        
+
         // 发布事件
         eventPublisher.publishEvent(new CommentAddedEvent(comment));
-        
+
+        // Trigger automation rules for document comments
+        triggerRulesForDocument(node, TriggerType.COMMENT_ADDED);
+
         return comment;
     }
     
@@ -358,6 +374,32 @@ public class CommentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Comment not found"));
         } catch (IllegalArgumentException ex) {
             throw new ResourceNotFoundException("Invalid comment id: " + commentId, ex);
+        }
+    }
+
+    /**
+     * Trigger automation rules for a document.
+     * Only triggers for Document nodes, not Folders.
+     */
+    private void triggerRulesForDocument(Node node, TriggerType triggerType) {
+        if (!rulesEnabled) {
+            return;
+        }
+
+        if (!(node instanceof Document)) {
+            return;
+        }
+
+        try {
+            Document document = (Document) node;
+            log.debug("Triggering {} rules for document: {} ({})",
+                triggerType, document.getName(), document.getId());
+
+            ruleEngineService.evaluateAndExecute(document, triggerType);
+        } catch (Exception e) {
+            // Log but don't fail the main operation
+            log.error("Failed to trigger {} rules for node {}: {}",
+                triggerType, node.getId(), e.getMessage(), e);
         }
     }
 }

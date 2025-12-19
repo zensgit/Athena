@@ -1,7 +1,7 @@
 package com.ecm.core.controller;
 
+import com.ecm.core.dto.NodeDto;
 import com.ecm.core.entity.ContentType;
-import com.ecm.core.entity.Node;
 import com.ecm.core.service.ContentTypeService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -43,10 +43,10 @@ public class ContentTypeController {
 
     @PostMapping("/nodes/{nodeId}/apply")
     @Operation(summary = "Apply type", description = "Apply a content type and properties to a node")
-    public ResponseEntity<Node> applyType(
+    public ResponseEntity<NodeDto> applyType(
             @PathVariable UUID nodeId,
             @RequestParam String type,
             @RequestBody Map<String, Object> properties) {
-        return ResponseEntity.ok(contentTypeService.applyType(nodeId, type, properties));
+        return ResponseEntity.ok(NodeDto.from(contentTypeService.applyType(nodeId, type, properties)));
     }
 }

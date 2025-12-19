@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -150,4 +151,29 @@ public interface AutomationRuleRepository extends JpaRepository<AutomationRule, 
            "AND (LOWER(r.name) LIKE LOWER(CONCAT('%', :query, '%')) " +
            "     OR LOWER(r.description) LIKE LOWER(CONCAT('%', :query, '%')))")
     Page<AutomationRule> searchRules(@Param("query") String query, Pageable pageable);
+
+    /**
+     * Find scheduled rules that are due for execution
+     * Returns rules where: enabled=true, triggerType=SCHEDULED, nextRunAt <= now
+     */
+    @Query("SELECT r FROM AutomationRule r " +
+           "WHERE r.triggerType = 'SCHEDULED' " +
+           "AND r.enabled = true " +
+           "AND r.deleted = false " +
+           "AND r.cronExpression IS NOT NULL " +
+           "AND (r.nextRunAt IS NULL OR r.nextRunAt <= :now) " +
+           "ORDER BY r.priority ASC")
+    List<AutomationRule> findScheduledRulesDue(@Param("now") LocalDateTime now);
+
+    /**
+     * Update scheduled rule run timestamps
+     */
+    @Modifying
+    @Query("UPDATE AutomationRule r " +
+           "SET r.lastRunAt = :lastRun, r.nextRunAt = :nextRun " +
+           "WHERE r.id = :id")
+    int updateScheduledRunTimes(
+        @Param("id") UUID id,
+        @Param("lastRun") LocalDateTime lastRun,
+        @Param("nextRun") LocalDateTime nextRun);
 }

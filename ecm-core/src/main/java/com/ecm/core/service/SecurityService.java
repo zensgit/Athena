@@ -52,6 +52,10 @@ public class SecurityService {
         if (auth != null && auth.isAuthenticated()) {
             Object principal = auth.getPrincipal();
             if (principal instanceof org.springframework.security.oauth2.jwt.Jwt jwt) {
+                String preferredUsername = jwt.getClaimAsString("preferred_username");
+                if (preferredUsername != null && !preferredUsername.isBlank()) {
+                    return preferredUsername;
+                }
                 return jwt.getSubject();
             }
             if (principal instanceof UserDetails userDetails) {
@@ -68,7 +72,6 @@ public class SecurityService {
             .orElseThrow(() -> new NoSuchElementException("User not found: " + username));
     }
     
-    @Cacheable(value = "permissions", key = "#node.id + '_' + #permissionType")
     public boolean hasPermission(Node node, PermissionType permissionType) {
         return hasPermission(node, permissionType, getCurrentUser());
     }
@@ -83,6 +86,7 @@ public class SecurityService {
         return hasRole("ROLE_ADMIN", username);
     }
     
+    @Cacheable(value = "permissions", key = "#node.id + '_' + #permissionType + '_' + #username")
     public boolean hasPermission(Node node, PermissionType permissionType, String username) {
         // Admin has all permissions
         if (hasAuthority("ROLE_ADMIN") || hasRole("ROLE_ADMIN", username)) {
@@ -186,7 +190,7 @@ public class SecurityService {
     }
     
     @Transactional
-    @CacheEvict(value = "permissions", key = "#node.id + '*'")
+    @CacheEvict(value = "permissions", allEntries = true)
     public void setPermission(Node node, String authority, AuthorityType authorityType,
                               PermissionType permissionType, boolean allowed) {
         // Check if user has permission to change permissions
@@ -318,6 +322,19 @@ public class SecurityService {
         
         // Add EVERYONE
         authorities.add("EVERYONE");
+
+        // Include JWT authorities (realm/client roles) for the currently authenticated user.
+        // This is important when the identity provider is Keycloak and users are not mirrored
+        // into the local user table, but ACLs still reference ROLE_* authorities.
+        if (username != null && username.equals(getCurrentUser())) {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.getAuthorities() != null) {
+                auth.getAuthorities().stream()
+                    .map(GrantedAuthority::getAuthority)
+                    .filter(Objects::nonNull)
+                    .forEach(authorities::add);
+            }
+        }
         
         User user = userRepository.findByUsername(username).orElse(null);
         if (user != null) {

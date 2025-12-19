@@ -1,9 +1,12 @@
 package com.ecm.core.controller;
 
+import com.ecm.core.dto.PermissionDto;
+import com.ecm.core.dto.UserDto;
 import com.ecm.core.entity.Node;
 import com.ecm.core.entity.Permission;
 import com.ecm.core.entity.Permission.AuthorityType;
 import com.ecm.core.entity.Permission.PermissionType;
+import com.ecm.core.entity.Role;
 import com.ecm.core.entity.User;
 import com.ecm.core.service.SecurityService;
 import com.ecm.core.service.NodeService;
@@ -30,11 +33,11 @@ public class SecurityController {
     
     @GetMapping("/nodes/{nodeId}/permissions")
     @Operation(summary = "Get node permissions", description = "Get all permissions for a node")
-    public ResponseEntity<List<Permission>> getNodePermissions(
+    public ResponseEntity<List<PermissionDto>> getNodePermissions(
             @Parameter(description = "Node ID") @PathVariable UUID nodeId) {
         Node node = nodeService.getNode(nodeId);
         List<Permission> permissions = securityService.getNodePermissions(node);
-        return ResponseEntity.ok(permissions);
+        return ResponseEntity.ok(permissions.stream().map(PermissionDto::from).toList());
     }
     
     @GetMapping("/nodes/{nodeId}/effective-permissions")
@@ -95,9 +98,9 @@ public class SecurityController {
     
     @GetMapping("/users/current")
     @Operation(summary = "Get current user", description = "Get the current authenticated user")
-    public ResponseEntity<User> getCurrentUser() {
+    public ResponseEntity<UserDto> getCurrentUser() {
         User user = securityService.getCurrentUserEntity();
-        return ResponseEntity.ok(user);
+        return ResponseEntity.ok(toDto(user));
     }
     
     @GetMapping("/users/current/authorities")
@@ -124,5 +127,24 @@ public class SecurityController {
     public ResponseEntity<Void> cleanupExpiredPermissions() {
         securityService.cleanupExpiredPermissions();
         return ResponseEntity.ok().build();
+    }
+
+    private UserDto toDto(User user) {
+        if (user == null) {
+            return null;
+        }
+        List<String> roles = user.getRoles() != null
+            ? user.getRoles().stream().map(Role::getName).sorted().toList()
+            : List.of();
+        return new UserDto(
+            user.getId() != null ? user.getId().toString() : null,
+            user.getUsername(),
+            user.getEmail(),
+            roles,
+            user.getFirstName(),
+            user.getLastName(),
+            user.isEnabled(),
+            user.isLocked()
+        );
     }
 }

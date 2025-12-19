@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.6
 # Multi-stage build for ECM Core
 FROM maven:3.9-eclipse-temurin-17 AS build
 
@@ -9,13 +10,15 @@ COPY pom.xml .
 COPY lombok.config .
 
 # Download dependencies first (separate layer for caching)
-RUN mvn dependency:go-offline -B
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn dependency:go-offline -B
 
 # Copy source code
 COPY src ./src
 
 # Build the project (with clean to ensure fresh compilation)
-RUN mvn clean package -DskipTests
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn clean package -DskipTests
 
 # Runtime stage
 FROM eclipse-temurin:17-jdk

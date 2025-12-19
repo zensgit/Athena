@@ -50,6 +50,19 @@ public class CategoryService {
         List<Category> rootCategories = categoryRepository.findByParentIsNullAndActiveTrue();
         return buildCategoryTree(rootCategories);
     }
+
+    /**
+     * 获取所有分类（可选仅返回启用的分类）
+     */
+    public List<Category> getAllCategories(boolean activeOnly) {
+        List<Category> categories = categoryRepository.findAll();
+        if (!activeOnly) {
+            return categories;
+        }
+        return categories.stream()
+            .filter(c -> Boolean.TRUE.equals(c.getActive()))
+            .collect(Collectors.toList());
+    }
     
     private List<CategoryTreeNode> buildCategoryTree(List<Category> categories) {
         return categories.stream()

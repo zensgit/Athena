@@ -66,6 +66,16 @@ public class CategoryController {
         return ResponseEntity.status(HttpStatus.CREATED).body(CategoryResponse.from(created));
     }
 
+    @GetMapping
+    @Operation(summary = "List categories")
+    public ResponseEntity<List<CategoryResponse>> getAllCategories(
+            @RequestParam(defaultValue = "true") boolean activeOnly) {
+        List<CategoryResponse> categories = categoryService.getAllCategories(activeOnly).stream()
+            .map(CategoryResponse::from)
+            .toList();
+        return ResponseEntity.ok(categories);
+    }
+
     @GetMapping("/tree")
     @Operation(summary = "Get category tree")
     public ResponseEntity<List<CategoryService.CategoryTreeNode>> getCategoryTree() {
@@ -116,4 +126,3 @@ public class CategoryController {
         return ResponseEntity.ok(categoryService.getCategoryStatistics(categoryId));
     }
 }
-

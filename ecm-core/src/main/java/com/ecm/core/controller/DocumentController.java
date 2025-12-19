@@ -1,5 +1,7 @@
 package com.ecm.core.controller;
 
+import com.ecm.core.dto.NodeDto;
+import com.ecm.core.dto.VersionDto;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Version;
 import com.ecm.core.service.NodeService;
@@ -27,7 +29,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/v1/documents")
+@RequestMapping({"/api/documents", "/api/v1/documents"})
 @RequiredArgsConstructor
 @Tag(name = "Document Management", description = "APIs for managing documents")
 public class DocumentController {
@@ -38,11 +40,12 @@ public class DocumentController {
     private final PreviewService previewService;
     private final ConversionService conversionService;
     
-    @PostMapping("/upload")
-    @Operation(summary = "Upload document", description = "Upload a new document or create a new version")
-    public ResponseEntity<Document> uploadDocument(
+    @PostMapping("/upload-legacy")
+    @Operation(summary = "Upload document (legacy)", description = "Legacy endpoint; prefer /api/v1/documents/upload pipeline API")
+    public ResponseEntity<NodeDto> uploadDocumentLegacy(
             @Parameter(description = "File to upload") @RequestParam("file") MultipartFile file,
             @Parameter(description = "Parent folder ID") @RequestParam(required = false) UUID parentId,
+            @Parameter(description = "Parent folder ID (alias of parentId)") @RequestParam(required = false) UUID folderId,
             @Parameter(description = "Document ID for versioning") @RequestParam(required = false) UUID documentId,
             @Parameter(description = "Version comment") @RequestParam(required = false) String comment,
             @Parameter(description = "Major version") @RequestParam(defaultValue = "false") boolean majorVersion) 
@@ -52,7 +55,7 @@ public class DocumentController {
             // Create new version
             Version version = versionService.createVersion(documentId, file, comment, majorVersion);
             Document document = (Document) nodeService.getNode(documentId);
-            return ResponseEntity.ok(document);
+            return ResponseEntity.ok(NodeDto.from(document));
         } else {
             // Create new document
             Document document = new Document();
@@ -64,12 +67,13 @@ public class DocumentController {
             String contentId = contentService.storeContent(file);
             document.setContentId(contentId);
             
-            Document created = (Document) nodeService.createNode(document, parentId);
+            UUID effectiveParentId = parentId != null ? parentId : folderId;
+            Document created = (Document) nodeService.createNode(document, effectiveParentId);
             
             // Create initial version
             versionService.createVersion(created.getId(), file, "Initial version", true);
             
-            return ResponseEntity.status(HttpStatus.CREATED).body(created);
+            return ResponseEntity.status(HttpStatus.CREATED).body(NodeDto.from(created));
         }
     }
     
@@ -93,10 +97,10 @@ public class DocumentController {
     
     @GetMapping("/{documentId}/versions")
     @Operation(summary = "Get version history", description = "Retrieve version history of a document")
-    public ResponseEntity<List<Version>> getVersionHistory(
+    public ResponseEntity<List<VersionDto>> getVersionHistory(
             @Parameter(description = "Document ID") @PathVariable UUID documentId) {
         List<Version> versions = versionService.getVersionHistory(documentId);
-        return ResponseEntity.ok(versions);
+        return ResponseEntity.ok(versions.stream().map(VersionDto::from).toList());
     }
     
     @GetMapping("/{documentId}/versions/{versionId}/download")
@@ -122,28 +126,28 @@ public class DocumentController {
     
     @PostMapping("/{documentId}/versions/{versionId}/revert")
     @Operation(summary = "Revert to version", description = "Revert document to a specific version")
-    public ResponseEntity<Document> revertToVersion(
+    public ResponseEntity<NodeDto> revertToVersion(
             @Parameter(description = "Document ID") @PathVariable UUID documentId,
             @Parameter(description = "Version ID") @PathVariable UUID versionId) throws IOException {
         
         versionService.revertToVersion(documentId, versionId);
         Document document = (Document) nodeService.getNode(documentId);
-        return ResponseEntity.ok(document);
+        return ResponseEntity.ok(NodeDto.from(document));
     }
     
     @PostMapping("/{documentId}/checkout")
     @Operation(summary = "Check out document", description = "Check out a document for editing")
-    public ResponseEntity<Document> checkoutDocument(
+    public ResponseEntity<NodeDto> checkoutDocument(
             @Parameter(description = "Document ID") @PathVariable UUID documentId) {
         
         Document document = (Document) nodeService.getNode(documentId);
         document.checkout(document.getLastModifiedBy());
-        return ResponseEntity.ok(document);
+        return ResponseEntity.ok(NodeDto.from(document));
     }
     
     @PostMapping("/{documentId}/checkin")
     @Operation(summary = "Check in document", description = "Check in a document after editing")
-    public ResponseEntity<Document> checkinDocument(
+    public ResponseEntity<NodeDto> checkinDocument(
             @Parameter(description = "Document ID") @PathVariable UUID documentId,
             @Parameter(description = "New version file") @RequestParam(required = false) MultipartFile file,
             @Parameter(description = "Version comment") @RequestParam(required = false) String comment,
@@ -157,17 +161,17 @@ public class DocumentController {
         }
         
         document.checkin();
-        return ResponseEntity.ok(document);
+        return ResponseEntity.ok(NodeDto.from(document));
     }
     
     @PostMapping("/{documentId}/cancel-checkout")
     @Operation(summary = "Cancel checkout", description = "Cancel document checkout")
-    public ResponseEntity<Document> cancelCheckout(
+    public ResponseEntity<NodeDto> cancelCheckout(
             @Parameter(description = "Document ID") @PathVariable UUID documentId) {
         
         Document document = (Document) nodeService.getNode(documentId);
         document.checkin();
-        return ResponseEntity.ok(document);
+        return ResponseEntity.ok(NodeDto.from(document));
     }
     
     @GetMapping("/{documentId}/preview")

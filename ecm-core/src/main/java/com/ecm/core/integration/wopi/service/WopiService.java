@@ -1,7 +1,6 @@
 package com.ecm.core.integration.wopi.service;
 
 import com.ecm.core.entity.Document;
-import com.ecm.core.entity.Permission.PermissionType;
 import com.ecm.core.integration.wopi.model.WopiCheckFileInfoResponse;
 import com.ecm.core.service.ContentService;
 import com.ecm.core.service.NodeService;
@@ -9,11 +8,19 @@ import com.ecm.core.service.SecurityService;
 import com.ecm.core.service.VersionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -31,6 +38,10 @@ public class WopiService {
     private final ContentService contentService;
     private final SecurityService securityService;
     private final VersionService versionService;
+    private final WopiAccessTokenService accessTokenService;
+
+    @Value("${ecm.wopi.public-app-url:http://localhost:5500}")
+    private String publicAppUrl;
 
     /**
      * CheckFileInfo (GET)
@@ -38,26 +49,31 @@ public class WopiService {
      */
     @Transactional(readOnly = true)
     public WopiCheckFileInfoResponse checkFileInfo(UUID documentId, String accessToken) {
-        // In prod: Validate accessToken here
-        
-        Document doc = (Document) nodeService.getNode(documentId);
-        String currentUser = securityService.getCurrentUser();
-        boolean canWrite = securityService.hasPermission(doc, PermissionType.WRITE);
+        WopiAccessTokenService.TokenInfo tokenInfo = accessTokenService.validate(documentId, accessToken);
+        SecurityContext previous = pushAuthentication(tokenInfo);
+        try {
+            Document doc = (Document) nodeService.getNode(documentId);
+            boolean canWrite = tokenInfo.canWrite();
 
-        return WopiCheckFileInfoResponse.builder()
-            .baseFileName(doc.getName())
-            .ownerId(doc.getCreatedBy())
-            .size(doc.getSize())
-            .userId(currentUser)
-            .version(doc.getVersionLabel() != null ? doc.getVersionLabel() : "1.0")
-            .userCanWrite(canWrite)
-            .readOnly(!canWrite)
-            .userCanRename(false) // Simplified
-            .supportsLocks(true)
-            .supportsUpdate(true)
-            .breadcrumbBrandName("Athena ECM")
-            .breadcrumbDocName(doc.getName())
-            .build();
+            return WopiCheckFileInfoResponse.builder()
+                .baseFileName(doc.getName())
+                .ownerId(doc.getCreatedBy())
+                .size(doc.getSize())
+                .userId(tokenInfo.userId())
+                .userFriendlyName(tokenInfo.userFriendlyName())
+                .version(doc.getVersionLabel() != null ? doc.getVersionLabel() : "1.0")
+                .userCanWrite(canWrite)
+                .readOnly(!canWrite)
+                .userCanRename(false) // Simplified
+                .supportsLocks(true)
+                .supportsUpdate(true)
+                .postMessageOrigin(publicAppUrl)
+                .breadcrumbBrandName("Athena ECM")
+                .breadcrumbDocName(doc.getName())
+                .build();
+        } finally {
+            popAuthentication(previous);
+        }
     }
 
     /**
@@ -65,9 +81,15 @@ public class WopiService {
      * Returns the raw file content.
      */
     @Transactional(readOnly = true)
-    public InputStream getFileContent(UUID documentId) throws IOException {
-        Document doc = (Document) nodeService.getNode(documentId);
-        return contentService.getContent(doc.getContentId());
+    public InputStream getFileContent(UUID documentId, String accessToken) throws IOException {
+        WopiAccessTokenService.TokenInfo tokenInfo = accessTokenService.validate(documentId, accessToken);
+        SecurityContext previous = pushAuthentication(tokenInfo);
+        try {
+            Document doc = (Document) nodeService.getNode(documentId);
+            return contentService.getContent(doc.getContentId());
+        } finally {
+            popAuthentication(previous);
+        }
     }
 
     /**
@@ -75,28 +97,50 @@ public class WopiService {
      * Updates the file content.
      */
     @Transactional
-    public void putFile(UUID documentId, InputStream content, long size) throws IOException {
-        Document doc = (Document) nodeService.getNode(documentId);
-        
-        // 1. Create temporary file or byte array from stream (simplified)
-        // In a real scenario, VersionService handles the stream directly
-        // Here we mock a MultipartFile equivalent or overload createVersion
-        
-        log.info("WOPI PutFile: Updating document {}", documentId);
-        
-        // Create new version
-        // Assuming VersionService can take an InputStream. 
-        // For this demo, we'll assume we adapt it or have a method for it.
-        // versionService.createVersion(documentId, content, "Updated via WOPI", false);
-        
-        // Since VersionService currently takes MultipartFile, we'd need an adapter.
-        // For brevity in this generation step, we'll log the action.
-        
-        // Real logic:
-        // String contentId = contentService.store(content);
-        // doc.setContentId(contentId);
-        // doc.setFileSize(size);
-        // nodeRepository.save(doc);
-        // versionService.createVersionFromCurrent(doc, "Updated via WOPI");
+    public void putFile(UUID documentId, String accessToken, InputStream content, long size) throws IOException {
+        WopiAccessTokenService.TokenInfo tokenInfo = accessTokenService.validate(documentId, accessToken);
+        if (!tokenInfo.canWrite()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "WOPI token is read-only");
+        }
+
+        SecurityContext previous = pushAuthentication(tokenInfo);
+        try {
+            Document doc = (Document) nodeService.getNode(documentId);
+
+            log.info("WOPI PutFile: Updating document {} (size={} bytes)", documentId, size);
+
+            // VersionService will validate WRITE permission, checkout state, store content, and update doc metadata.
+            versionService.createVersion(documentId, content, doc.getName(), "Updated via WOPI", false);
+        } finally {
+            popAuthentication(previous);
+        }
+    }
+
+    private SecurityContext pushAuthentication(WopiAccessTokenService.TokenInfo tokenInfo) {
+        SecurityContext previous = SecurityContextHolder.getContext();
+
+        List<SimpleGrantedAuthority> authorities = tokenInfo.authorities() != null
+            ? tokenInfo.authorities().stream().map(SimpleGrantedAuthority::new).toList()
+            : List.of();
+
+        UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
+            tokenInfo.userId(),
+            "wopi",
+            authorities
+        );
+
+        SecurityContext context = SecurityContextHolder.createEmptyContext();
+        context.setAuthentication(auth);
+        SecurityContextHolder.setContext(context);
+
+        return previous;
+    }
+
+    private void popAuthentication(SecurityContext previous) {
+        if (previous != null) {
+            SecurityContextHolder.setContext(previous);
+        } else {
+            SecurityContextHolder.clearContext();
+        }
     }
 }

@@ -58,6 +58,18 @@ public class RuleEngineService {
     @Autowired
     private ApplicationEventPublisher eventPublisher;
 
+    @Autowired
+    private WorkflowService workflowService;
+
+    @Autowired
+    private SecurityService securityService;
+
+    @Autowired
+    private AuditService auditService;
+
+    @Autowired
+    private org.flowable.engine.RuntimeService runtimeService;
+
     // ==================== Rule Management ====================
 
     /**
@@ -82,6 +94,10 @@ public class RuleEngineService {
             .scopeFolderId(request.getScopeFolderId())
             .scopeMimeTypes(request.getScopeMimeTypes())
             .stopOnMatch(request.getStopOnMatch() != null ? request.getStopOnMatch() : false)
+            // Scheduled rule fields
+            .cronExpression(request.getCronExpression())
+            .timezone(request.getTimezone() != null ? request.getTimezone() : "UTC")
+            .maxItemsPerRun(request.getMaxItemsPerRun() != null ? request.getMaxItemsPerRun() : 200)
             .build();
 
         AutomationRule saved = ruleRepository.save(rule);
@@ -132,6 +148,16 @@ public class RuleEngineService {
         }
         if (request.getStopOnMatch() != null) {
             rule.setStopOnMatch(request.getStopOnMatch());
+        }
+        // Scheduled rule fields
+        if (request.getCronExpression() != null) {
+            rule.setCronExpression(request.getCronExpression());
+        }
+        if (request.getTimezone() != null) {
+            rule.setTimezone(request.getTimezone());
+        }
+        if (request.getMaxItemsPerRun() != null) {
+            rule.setMaxItemsPerRun(request.getMaxItemsPerRun());
         }
 
         return ruleRepository.save(rule);
@@ -203,12 +229,20 @@ public class RuleEngineService {
         // Get applicable rules
         List<AutomationRule> rules = ruleRepository.findByTriggerTypeAndEnabledTrueWithScope(trigger, folderId);
 
-        // Sort by priority
-        rules.sort(Comparator.comparingInt(AutomationRule::getPriority));
+        return evaluateAndExecute(document, trigger, rules);
+    }
+
+    /**
+     * Evaluate and execute specific rules for a document (used by scheduled runner)
+     */
+    @Transactional
+    public List<RuleExecutionResult> evaluateAndExecute(Document document, TriggerType trigger, List<AutomationRule> rules) {
+        List<AutomationRule> sortedRules = rules != null ? new ArrayList<>(rules) : new ArrayList<>();
+        sortedRules.sort(Comparator.comparingInt(r -> r.getPriority() != null ? r.getPriority() : 100));
 
         List<RuleExecutionResult> results = new ArrayList<>();
 
-        for (AutomationRule rule : rules) {
+        for (AutomationRule rule : sortedRules) {
             // Check MIME type scope
             if (!rule.isMimeTypeInScope(document.getMimeType())) {
                 continue;
@@ -288,6 +322,14 @@ public class RuleEngineService {
                 ruleRepository.incrementFailureCount(rule.getId());
             }
 
+            // Audit log: record rule execution summary (not per-action to avoid log explosion)
+            try {
+                String username = securityService.getCurrentUser();
+                auditService.logRuleExecution(result, username != null ? username : "system");
+            } catch (Exception e) {
+                log.warn("Failed to write rule execution audit log: {}", e.getMessage());
+            }
+
             return result;
 
         } catch (Exception e) {
@@ -297,7 +339,17 @@ public class RuleEngineService {
             ruleRepository.incrementExecutionCount(rule.getId());
             ruleRepository.incrementFailureCount(rule.getId());
 
-            return RuleExecutionResult.failed(rule, document, e.getMessage());
+            RuleExecutionResult failedResult = RuleExecutionResult.failed(rule, document, e.getMessage());
+
+            // Audit log: record failed rule execution
+            try {
+                String username = securityService.getCurrentUser();
+                auditService.logRuleExecution(failedResult, username != null ? username : "system");
+            } catch (Exception ae) {
+                log.warn("Failed to write rule execution audit log: {}", ae.getMessage());
+            }
+
+            return failedResult;
         }
     }
 
@@ -769,8 +821,74 @@ public class RuleEngineService {
             throw new IllegalArgumentException("Workflow key is required for START_WORKFLOW action");
         }
 
-        // TODO: Integrate with workflow engine
-        log.info("Start workflow {} for document {}", workflowKey, document.getId());
+        try {
+            // Special handling for documentApproval workflow
+            if ("documentApproval".equals(workflowKey)) {
+                // Get approvers from params (can be comma-separated string or list)
+                Object approversParam = action.getParams().get("approvers");
+                List<String> approvers = parseApprovers(approversParam);
+
+                if (approvers.isEmpty()) {
+                    throw new IllegalArgumentException("At least one approver is required for documentApproval workflow");
+                }
+
+                String comment = action.getParam("comment", "Auto-started by rule engine");
+                workflowService.startDocumentApproval(document.getId(), approvers, comment);
+                log.info("Started documentApproval workflow for document {} with approvers: {}",
+                    document.getId(), approvers);
+            } else {
+                // Generic workflow start
+                @SuppressWarnings("unchecked")
+                Map<String, Object> variables = action.getParam(RuleAction.ParamKeys.VARIABLES, new HashMap<>());
+
+                // Inject standard variables
+                variables.put("documentId", document.getId().toString());
+                variables.put("documentName", document.getName());
+                variables.put("initiator", securityService.getCurrentUser());
+
+                runtimeService.startProcessInstanceByKey(
+                    workflowKey,
+                    document.getId().toString(),
+                    variables
+                );
+                log.info("Started workflow {} for document {} with variables: {}",
+                    workflowKey, document.getId(), variables.keySet());
+            }
+        } catch (Exception e) {
+            log.error("Failed to start workflow {} for document {}: {}",
+                workflowKey, document.getId(), e.getMessage(), e);
+            throw new RuntimeException("Workflow start failed: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Parse approvers from various formats (string, list, comma-separated)
+     */
+    @SuppressWarnings("unchecked")
+    private List<String> parseApprovers(Object approversParam) {
+        if (approversParam == null) {
+            return new ArrayList<>();
+        }
+
+        if (approversParam instanceof List) {
+            return ((List<?>) approversParam).stream()
+                .map(Object::toString)
+                .collect(Collectors.toList());
+        }
+
+        if (approversParam instanceof String) {
+            String str = (String) approversParam;
+            if (str.contains(",")) {
+                return Arrays.stream(str.split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .collect(Collectors.toList());
+            } else {
+                return str.isEmpty() ? new ArrayList<>() : List.of(str.trim());
+            }
+        }
+
+        return new ArrayList<>();
     }
 
     // ==================== DTO Classes ====================
@@ -791,6 +909,10 @@ public class RuleEngineService {
         private UUID scopeFolderId;
         private String scopeMimeTypes;
         private Boolean stopOnMatch;
+        // Scheduled rule fields
+        private String cronExpression;
+        private String timezone;
+        private Integer maxItemsPerRun;
     }
 
     @lombok.Data
@@ -808,5 +930,9 @@ public class RuleEngineService {
         private UUID scopeFolderId;
         private String scopeMimeTypes;
         private Boolean stopOnMatch;
+        // Scheduled rule fields
+        private String cronExpression;
+        private String timezone;
+        private Integer maxItemsPerRun;
     }
 }

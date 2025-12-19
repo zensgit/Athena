@@ -21,14 +21,20 @@ public class SearchResult {
     private String id;
     private String name;
     private String description;
+    private String path;
+    private String nodeType;
+    private String parentId;
     private String mimeType;
     private Long fileSize;
     private String createdBy;
     private LocalDateTime createdDate;
+    private String lastModifiedBy;
+    private LocalDateTime lastModifiedDate;
     private float score;
     private Map<String, List<String>> highlights;
     private List<String> tags;
     private List<String> categories;
+    private String correspondent;
 
     /**
      * Get human-readable file size.

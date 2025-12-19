@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="012-1" author="ecm-system">
+        <comment>Backfill initial versions for documents that have none</comment>
+        <sql>
+            INSERT INTO versions (
+                document_id,
+                version_number,
+                version_label,
+                major_version,
+                minor_version,
+                content_id,
+                mime_type,
+                file_size,
+                content_hash,
+                comment,
+                changes,
+                is_major_version,
+                status,
+                created_by,
+                last_modified_by
+            )
+            SELECT
+                d.id,
+                1,
+                COALESCE(
+                    d.version_label,
+                    (COALESCE(d.major_version, 1)::text || '.' || COALESCE(d.minor_version, 0)::text)
+                ),
+                COALESCE(d.major_version, 1),
+                COALESCE(d.minor_version, 0),
+                d.content_id,
+                d.mime_type,
+                COALESCE(d.file_size, 0),
+                d.content_hash,
+                'Backfilled initial version',
+                '{}'::jsonb,
+                true,
+                'RELEASED',
+                n.created_by,
+                n.last_modified_by
+            FROM documents d
+            JOIN nodes n ON n.id = d.id
+            WHERE d.content_id IS NOT NULL
+              AND NOT EXISTS (SELECT 1 FROM versions v WHERE v.document_id = d.id);
+        </sql>
+    </changeSet>
+
+    <changeSet id="012-2" author="ecm-system">
+        <comment>Ensure documents point to their latest version</comment>
+        <sql>
+            UPDATE documents d
+            SET current_version_id = v.id,
+                version_label = v.version_label
+            FROM versions v
+            WHERE d.id = v.document_id
+              AND d.current_version_id IS NULL
+              AND v.version_number = (
+                  SELECT MAX(v2.version_number)
+                  FROM versions v2
+                  WHERE v2.document_id = d.id
+              );
+        </sql>
+    </changeSet>
+
+</databaseChangeLog>
+

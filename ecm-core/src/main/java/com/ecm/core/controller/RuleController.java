@@ -17,6 +17,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import com.ecm.core.service.ScheduledRuleRunner;
+
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -39,6 +41,7 @@ public class RuleController {
 
     private final RuleEngineService ruleEngineService;
     private final SecurityService securityService;
+    private final ScheduledRuleRunner scheduledRuleRunner;
 
     // ==================== Rule CRUD ====================
 
@@ -59,6 +62,10 @@ public class RuleController {
             .scopeFolderId(request.scopeFolderId())
             .scopeMimeTypes(request.scopeMimeTypes())
             .stopOnMatch(request.stopOnMatch())
+            // Scheduled rule fields
+            .cronExpression(request.cronExpression())
+            .timezone(request.timezone())
+            .maxItemsPerRun(request.maxItemsPerRun())
             .build();
 
         AutomationRule rule = ruleEngineService.createRule(serviceRequest);
@@ -121,6 +128,10 @@ public class RuleController {
             .scopeFolderId(request.scopeFolderId())
             .scopeMimeTypes(request.scopeMimeTypes())
             .stopOnMatch(request.stopOnMatch())
+            // Scheduled rule fields
+            .cronExpression(request.cronExpression())
+            .timezone(request.timezone())
+            .maxItemsPerRun(request.maxItemsPerRun())
             .build();
 
         AutomationRule rule = ruleEngineService.updateRule(ruleId, serviceRequest);
@@ -194,6 +205,43 @@ public class RuleController {
         } catch (Exception e) {
             return ResponseEntity.ok(new ValidationResult(false, "Invalid condition", e.getMessage()));
         }
+    }
+
+    @PostMapping("/validate-cron")
+    @Operation(summary = "Validate cron expression",
+               description = "Validate a cron expression and return next execution times")
+    public ResponseEntity<CronValidationResult> validateCronExpression(
+            @RequestBody CronValidationRequest request) {
+        try {
+            List<LocalDateTime> nextExecutions = scheduledRuleRunner.validateCronExpression(
+                request.cronExpression(),
+                request.timezone()
+            );
+            List<String> formattedTimes = nextExecutions.stream()
+                .map(LocalDateTime::toString)
+                .toList();
+            return ResponseEntity.ok(new CronValidationResult(true, formattedTimes, null));
+        } catch (Exception e) {
+            return ResponseEntity.ok(new CronValidationResult(false, null, e.getMessage()));
+        }
+    }
+
+    @PostMapping("/{ruleId}/trigger")
+    @Operation(summary = "Trigger scheduled rule",
+               description = "Manually trigger a scheduled rule execution")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Map<String, String>> triggerScheduledRule(@PathVariable UUID ruleId) {
+        AutomationRule rule = ruleEngineService.getRule(ruleId);
+        if (!rule.isScheduledRule()) {
+            return ResponseEntity.badRequest()
+                .body(Map.of("error", "Rule is not a scheduled rule"));
+        }
+        scheduledRuleRunner.triggerRule(rule);
+        return ResponseEntity.ok(Map.of(
+            "message", "Scheduled rule triggered successfully",
+            "ruleId", ruleId.toString(),
+            "ruleName", rule.getName()
+        ));
     }
 
     // ==================== Statistics ====================
@@ -350,7 +398,11 @@ public class RuleController {
         Boolean enabled,
         UUID scopeFolderId,
         String scopeMimeTypes,
-        Boolean stopOnMatch
+        Boolean stopOnMatch,
+        // Scheduled rule fields
+        String cronExpression,
+        String timezone,
+        Integer maxItemsPerRun
     ) {}
 
     public record UpdateRuleRequestDto(
@@ -363,7 +415,22 @@ public class RuleController {
         Boolean enabled,
         UUID scopeFolderId,
         String scopeMimeTypes,
-        Boolean stopOnMatch
+        Boolean stopOnMatch,
+        // Scheduled rule fields
+        String cronExpression,
+        String timezone,
+        Integer maxItemsPerRun
+    ) {}
+
+    public record CronValidationRequest(
+        String cronExpression,
+        String timezone
+    ) {}
+
+    public record CronValidationResult(
+        boolean valid,
+        List<String> nextExecutions,
+        String error
     ) {}
 
     public record TestRuleRequest(
@@ -411,7 +478,13 @@ public class RuleController {
         LocalDateTime createdDate,
         String createdBy,
         LocalDateTime lastModifiedDate,
-        String lastModifiedBy
+        String lastModifiedBy,
+        // Scheduled rule fields
+        String cronExpression,
+        String timezone,
+        LocalDateTime lastRunAt,
+        LocalDateTime nextRunAt,
+        Integer maxItemsPerRun
     ) {
         public static RuleResponse from(AutomationRule rule) {
             return new RuleResponse(
@@ -432,7 +505,13 @@ public class RuleController {
                 rule.getCreatedDate(),
                 rule.getCreatedBy(),
                 rule.getLastModifiedDate(),
-                rule.getLastModifiedBy()
+                rule.getLastModifiedBy(),
+                // Scheduled rule fields
+                rule.getCronExpression(),
+                rule.getTimezone(),
+                rule.getLastRunAt(),
+                rule.getNextRunAt(),
+                rule.getMaxItemsPerRun()
             );
         }
     }

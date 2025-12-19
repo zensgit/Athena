@@ -5,11 +5,15 @@ import com.ecm.core.entity.Node.NodeStatus;
 import com.ecm.core.entity.Node.NodeType;
 import com.ecm.core.entity.Permission.PermissionType;
 import com.ecm.core.entity.Folder.FolderType;
+import com.ecm.core.entity.AutomationRule.TriggerType;
 import com.ecm.core.event.*;
 import com.ecm.core.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -24,13 +28,21 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Transactional
 public class NodeService {
-    
+
     private final NodeRepository nodeRepository;
     private final FolderRepository folderRepository;
     private final DocumentRepository documentRepository;
     private final PermissionRepository permissionRepository;
+    private final CorrespondentRepository correspondentRepository;
     private final SecurityService securityService;
     private final ApplicationEventPublisher eventPublisher;
+
+    @Autowired
+    @Lazy
+    private RuleEngineService ruleEngineService;
+
+    @Value("${ecm.rules.enabled:true}")
+    private boolean rulesEnabled;
     
     public Node createNode(Node node, UUID parentId) {
         log.debug("Creating node: {} under parent: {}", node.getName(), parentId);
@@ -84,7 +96,7 @@ public class NodeService {
     }
     
     public Node getNodeByPath(String path) {
-        Node node = nodeRepository.findByPath(path)
+        Node node = nodeRepository.findFirstByPathAndDeletedFalseOrderByCreatedDateAsc(path)
             .orElseThrow(() -> new NoSuchElementException("Node not found at path: " + path));
         
         if (!securityService.hasPermission(node, PermissionType.READ)) {
@@ -138,13 +150,33 @@ public class NodeService {
             Map<String, Object> metadata = (Map<String, Object>) updates.get("metadata");
             node.getMetadata().putAll(metadata);
         }
+
+        if (updates.containsKey("correspondentId")) {
+            Object value = updates.get("correspondentId");
+            if (value == null || (value instanceof String str && str.isBlank())) {
+                node.setCorrespondent(null);
+            } else {
+                UUID correspondentId;
+                try {
+                    correspondentId = UUID.fromString(value.toString());
+                } catch (IllegalArgumentException ex) {
+                    throw new IllegalArgumentException("Invalid correspondentId: " + value, ex);
+                }
+                Correspondent correspondent = correspondentRepository.findById(correspondentId)
+                    .orElseThrow(() -> new IllegalArgumentException("Correspondent not found: " + correspondentId));
+                node.setCorrespondent(correspondent);
+            }
+        }
         
         Node updatedNode = nodeRepository.save(node);
         eventPublisher.publishEvent(new NodeUpdatedEvent(updatedNode, securityService.getCurrentUser()));
-        
+
+        // Trigger automation rules for document updates
+        triggerRulesForDocument(updatedNode, TriggerType.DOCUMENT_UPDATED);
+
         return updatedNode;
     }
-    
+
     public Node moveNode(UUID nodeId, UUID targetParentId) {
         Node node = getNode(nodeId);
         Folder targetParent = folderRepository.findById(targetParentId)
@@ -172,10 +204,13 @@ public class NodeService {
         node.setParent(targetParent);
         
         Node movedNode = nodeRepository.save(node);
-        
+
         eventPublisher.publishEvent(new NodeMovedEvent(
             movedNode, oldParent, targetParent, securityService.getCurrentUser()));
-        
+
+        // Trigger automation rules for document moves
+        triggerRulesForDocument(movedNode, TriggerType.DOCUMENT_MOVED);
+
         return movedNode;
     }
 
@@ -401,10 +436,35 @@ public class NodeService {
     }
     
     private void softDeleteNodeRecursive(Node node) {
-        // Soft delete children
-        nodeRepository.softDeleteByPathPrefix(node.getPath());
-        
-        // Soft delete node
-        nodeRepository.softDelete(node.getId());
+        String currentUser = securityService.getCurrentUser();
+        LocalDateTime deletedAt = LocalDateTime.now();
+        nodeRepository.softDeleteByPathPrefix(node.getPath(), deletedAt, currentUser);
+    }
+
+    /**
+     * Trigger automation rules for a document.
+     * Only triggers for Document nodes, not Folders.
+     * Catches all exceptions to avoid failing the main operation.
+     */
+    private void triggerRulesForDocument(Node node, TriggerType triggerType) {
+        if (!rulesEnabled) {
+            return;
+        }
+
+        if (!(node instanceof Document)) {
+            return;
+        }
+
+        try {
+            Document document = (Document) node;
+            log.debug("Triggering {} rules for document: {} ({})",
+                triggerType, document.getName(), document.getId());
+
+            ruleEngineService.evaluateAndExecute(document, triggerType);
+        } catch (Exception e) {
+            // Log but don't fail the main operation
+            log.error("Failed to trigger {} rules for node {}: {}",
+                triggerType, node.getId(), e.getMessage(), e);
+        }
     }
 }

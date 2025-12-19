@@ -58,7 +58,29 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
     @Query(value = "SELECT * FROM documents d " +
            "JOIN nodes n ON d.id = n.id " +
            "WHERE to_tsvector('english', d.text_content) @@ plainto_tsquery('english', :query) " +
-           "AND n.is_deleted = false", 
+           "AND n.is_deleted = false",
            nativeQuery = true)
     Page<Document> fullTextSearch(@Param("query") String query, Pageable pageable);
+
+    /**
+     * Find documents modified since a given date (for scheduled rules)
+     */
+    @Query("SELECT d FROM Document d " +
+           "WHERE d.deleted = false " +
+           "AND d.lastModifiedDate > :since " +
+           "ORDER BY d.lastModifiedDate ASC")
+    Page<Document> findModifiedSince(@Param("since") LocalDateTime since, Pageable pageable);
+
+    /**
+     * Find documents modified since a given date within a specific folder
+     */
+    @Query("SELECT d FROM Document d " +
+           "WHERE d.deleted = false " +
+           "AND d.lastModifiedDate > :since " +
+           "AND d.parent.id = :folderId " +
+           "ORDER BY d.lastModifiedDate ASC")
+    Page<Document> findModifiedSinceInFolder(
+        @Param("since") LocalDateTime since,
+        @Param("folderId") UUID folderId,
+        Pageable pageable);
 }

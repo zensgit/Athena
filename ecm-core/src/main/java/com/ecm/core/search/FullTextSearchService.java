@@ -4,6 +4,8 @@ import com.ecm.core.entity.Document;
 import com.ecm.core.repository.DocumentRepository;
 import co.elastic.clients.elasticsearch._types.query_dsl.Operator;
 import co.elastic.clients.elasticsearch._types.query_dsl.TextQueryType;
+import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery;
+import co.elastic.clients.json.JsonData;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -23,6 +25,8 @@ import org.springframework.data.elasticsearch.core.query.CriteriaQuery;
 import org.springframework.data.elasticsearch.core.query.Query;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -59,6 +63,8 @@ public class FullTextSearchService {
     private boolean searchEnabled;
 
     private static final String INDEX_NAME = "ecm_documents";
+    private static final DateTimeFormatter ES_DATE_TIME_FORMAT =
+        DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS");
 
     private final AtomicBoolean rebuildInProgress = new AtomicBoolean(false);
     private final AtomicInteger rebuildProgress = new AtomicInteger(0);
@@ -90,9 +96,12 @@ public class FullTextSearchService {
 
             return new PageImpl<>(results, pageable, searchHits.getTotalHits());
 
+        } catch (LinkageError e) {
+            log.error("Search failed due to missing/invalid Elasticsearch client dependency", e);
+            return new PageImpl<>(List.of(), pageable, 0);
         } catch (Exception e) {
             log.error("Search failed for query: {}", queryText, e);
-            return Page.empty();
+            return new PageImpl<>(List.of(), pageable, 0);
         }
     }
 
@@ -119,9 +128,18 @@ public class FullTextSearchService {
 
             return new PageImpl<>(results, pageable, searchHits.getTotalHits());
 
+        } catch (LinkageError e) {
+            Pageable pageable = request.getPageable() != null
+                ? request.getPageable().toPageable()
+                : PageRequest.of(0, 20);
+            log.error("Advanced search failed due to missing/invalid Elasticsearch client dependency", e);
+            return new PageImpl<>(List.of(), pageable, 0);
         } catch (Exception e) {
+            Pageable pageable = request.getPageable() != null
+                ? request.getPageable().toPageable()
+                : PageRequest.of(0, 20);
             log.error("Advanced search failed", e);
-            return Page.empty();
+            return new PageImpl<>(List.of(), pageable, 0);
         }
     }
 
@@ -183,6 +201,9 @@ public class FullTextSearchService {
             log.info("Index rebuild completed. Total indexed: {}", totalIndexed);
             return totalIndexed;
 
+        } catch (LinkageError e) {
+            log.error("Index rebuild failed due to missing/invalid Elasticsearch client dependency", e);
+            return -1;
         } catch (Exception e) {
             log.error("Index rebuild failed", e);
             return -1;
@@ -218,6 +239,12 @@ public class FullTextSearchService {
                 "documentCount", count,
                 "searchEnabled", searchEnabled
             );
+        } catch (LinkageError e) {
+            return Map.of(
+                "indexName", INDEX_NAME,
+                "error", e.toString(),
+                "searchEnabled", searchEnabled
+            );
         } catch (Exception e) {
             return Map.of(
                 "indexName", INDEX_NAME,
@@ -249,78 +276,137 @@ public class FullTextSearchService {
     }
 
     private Query buildAdvancedQuery(SearchRequest request, Pageable pageable) {
-        CriteriaQuery query = new CriteriaQuery(new Criteria());
+        String searchTerm = request.getQuery() != null ? request.getQuery().trim() : "";
+        SearchFilters filters = request.getFilters();
 
-        // Text search
-        if (request.getQuery() != null && !request.getQuery().isEmpty()) {
-            String searchTerm = request.getQuery().trim();
-            query.addCriteria(
-                new Criteria("name").matches(searchTerm)
-                    .or("content").matches(searchTerm)
-                    .or("textContent").matches(searchTerm)
-                    .or("extractedText").matches(searchTerm)
-                    .or("metadata.extractedText").matches(searchTerm)
-            );
+        NativeQueryBuilder builder = NativeQuery.builder().withPageable(pageable);
+
+        builder.withQuery(q -> q.bool(b -> {
+            // Text search
+            if (searchTerm.isEmpty()) {
+                b.must(m -> m.matchAll(ma -> ma));
+            } else {
+                b.must(m -> m.multiMatch(mq -> mq
+                    .query(searchTerm)
+                    .fields(SEARCH_FIELDS)
+                    .type(TextQueryType.BestFields)
+                    .operator(Operator.Or)
+                ));
+            }
+
+            // Include deleted?
+            if (filters == null || !filters.isIncludeDeleted()) {
+                b.filter(f -> f.term(t -> t.field("deleted").value(false)));
+            }
+
+            if (filters != null) {
+                addAnyOfTermsFilter(b, List.of("nodeType", "nodeType.keyword"), filters.getNodeTypes());
+                addAnyOfTermsFilter(b, List.of("mimeType", "mimeType.keyword"), filters.getMimeTypes());
+                addAnyOfTermsFilter(b, List.of("tags", "tags.keyword"), filters.getTags());
+                addAnyOfTermsFilter(b, List.of("categories", "categories.keyword"), filters.getCategories());
+                addAnyOfTermsFilter(b, List.of("correspondent", "correspondent.keyword"), filters.getCorrespondents());
+
+                if (filters.getCreatedBy() != null && !filters.getCreatedBy().isBlank()) {
+                    addAnyOfTermsFilter(b, List.of("createdBy", "createdBy.keyword"), List.of(filters.getCreatedBy()));
+                }
+
+                addDateRangeFilter(b, "createdDate", filters.getDateFrom(), filters.getDateTo());
+                addDateRangeFilter(b, "lastModifiedDate", filters.getModifiedFrom(), filters.getModifiedTo());
+
+                addNumberRangeFilter(b, "fileSize", filters.getMinSize(), filters.getMaxSize());
+
+                addAnyPrefixFilter(b, List.of("path.keyword", "path"), filters.getPath());
+            }
+
+            return b;
+        }));
+
+        return builder.build();
+    }
+
+    private static void addAnyOfTermsFilter(BoolQuery.Builder bool, List<String> fields, List<String> values) {
+        if (fields == null || fields.isEmpty() || values == null || values.isEmpty()) {
+            return;
         }
 
-        // Apply filters from SearchRequest
-        if (request.getFilters() != null) {
-            SearchFilters filters = request.getFilters();
-
-            if (filters.getMimeTypes() != null && !filters.getMimeTypes().isEmpty()) {
-                query.addCriteria(new Criteria("mimeType").in(filters.getMimeTypes()));
-            }
-
-            if (filters.getTags() != null && !filters.getTags().isEmpty()) {
-                query.addCriteria(new Criteria("tags").in(filters.getTags()));
-            }
-
-            if (filters.getCategories() != null && !filters.getCategories().isEmpty()) {
-                query.addCriteria(new Criteria("categories").in(filters.getCategories()));
-            }
-
-            if (filters.getCreatedBy() != null) {
-                query.addCriteria(new Criteria("createdBy").is(filters.getCreatedBy()));
-            }
-
-            if (filters.getDateFrom() != null) {
-                query.addCriteria(new Criteria("createdDate").greaterThanEqual(filters.getDateFrom()));
-            }
-
-            if (filters.getDateTo() != null) {
-                query.addCriteria(new Criteria("createdDate").lessThanEqual(filters.getDateTo()));
-            }
-
-            if (filters.getModifiedFrom() != null) {
-                query.addCriteria(new Criteria("lastModifiedDate").greaterThanEqual(filters.getModifiedFrom()));
-            }
-
-            if (filters.getModifiedTo() != null) {
-                query.addCriteria(new Criteria("lastModifiedDate").lessThanEqual(filters.getModifiedTo()));
-            }
-
-            if (filters.getMinSize() != null) {
-                query.addCriteria(new Criteria("fileSize").greaterThanEqual(filters.getMinSize()));
-            }
-
-            if (filters.getMaxSize() != null) {
-                query.addCriteria(new Criteria("fileSize").lessThanEqual(filters.getMaxSize()));
-            }
-            
-            if (filters.getPath() != null && !filters.getPath().isEmpty()) {
-                query.addCriteria(new Criteria("path").startsWith(filters.getPath()));
-            }
-
-            if (!filters.isIncludeDeleted()) {
-                query.addCriteria(new Criteria("deleted").is(false));
-            }
-        } else {
-            query.addCriteria(new Criteria("deleted").is(false));
+        List<String> normalizedFields = fields.stream()
+            .filter(v -> v != null && !v.isBlank())
+            .toList();
+        if (normalizedFields.isEmpty()) {
+            return;
         }
 
-        query.setPageable(pageable);
+        List<String> normalizedValues = values.stream()
+            .filter(v -> v != null && !v.isBlank())
+            .toList();
+        if (normalizedValues.isEmpty()) {
+            return;
+        }
 
-        return query;
+        bool.filter(f -> f.bool(b -> {
+            for (String value : normalizedValues) {
+                for (String field : normalizedFields) {
+                    b.should(s -> s.term(t -> t.field(field).value(value)));
+                }
+            }
+            b.minimumShouldMatch("1");
+            return b;
+        }));
+    }
+
+    private static void addAnyPrefixFilter(BoolQuery.Builder bool, List<String> fields, String prefix) {
+        if (fields == null || fields.isEmpty() || prefix == null || prefix.isBlank()) {
+            return;
+        }
+
+        List<String> normalizedFields = fields.stream()
+            .filter(v -> v != null && !v.isBlank())
+            .toList();
+        if (normalizedFields.isEmpty()) {
+            return;
+        }
+
+        bool.filter(f -> f.bool(b -> {
+            for (String field : normalizedFields) {
+                b.should(s -> s.prefix(p -> p.field(field).value(prefix)));
+            }
+            b.minimumShouldMatch("1");
+            return b;
+        }));
+    }
+
+    private static void addDateRangeFilter(BoolQuery.Builder bool, String field, LocalDateTime from, LocalDateTime to) {
+        if (from == null && to == null) {
+            return;
+        }
+
+        bool.filter(f -> f.range(r -> {
+            r.field(field);
+            if (from != null) {
+                r.gte(JsonData.of(from.format(ES_DATE_TIME_FORMAT)));
+            }
+            if (to != null) {
+                r.lte(JsonData.of(to.format(ES_DATE_TIME_FORMAT)));
+            }
+            return r;
+        }));
+    }
+
+    private static void addNumberRangeFilter(BoolQuery.Builder bool, String field, Long min, Long max) {
+        if (min == null && max == null) {
+            return;
+        }
+
+        bool.filter(f -> f.range(r -> {
+            r.field(field);
+            if (min != null) {
+                r.gte(JsonData.of(min));
+            }
+            if (max != null) {
+                r.lte(JsonData.of(max));
+            }
+            return r;
+        }));
     }
 
     private SearchResult toSearchResult(SearchHit<NodeDocument> hit) {
@@ -329,14 +415,20 @@ public class FullTextSearchService {
             .id(doc.getId())
             .name(doc.getName())
             .description(doc.getDescription())
+            .path(doc.getPath())
+            .nodeType(doc.getNodeType() != null ? doc.getNodeType().name() : null)
+            .parentId(doc.getParentId())
             .mimeType(doc.getMimeType())
             .fileSize(doc.getFileSize())
             .createdBy(doc.getCreatedBy())
             .createdDate(doc.getCreatedDate())
+            .lastModifiedBy(doc.getLastModifiedBy())
+            .lastModifiedDate(doc.getLastModifiedDate())
             .score(hit.getScore())
             .highlights(hit.getHighlightFields())
             .tags(doc.getTags() != null ? List.copyOf(doc.getTags()) : List.of())
             .categories(doc.getCategories() != null ? List.copyOf(doc.getCategories()) : List.of())
+            .correspondent(doc.getCorrespondent())
             .build();
     }
 

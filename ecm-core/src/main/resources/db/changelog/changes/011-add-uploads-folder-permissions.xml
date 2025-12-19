@@ -16,13 +16,13 @@
                     id, node_type, name, path, parent_id, properties, metadata,
                     is_locked, locked_by, locked_date, inherit_permissions, status,
                     created_date, last_modified_date, created_by, last_modified_by,
-                    version, is_deleted, deleted_at, deleted_by, correspondent_id
+                    version, is_deleted
                 )
                 SELECT
                     ${uuid_function}, 'FOLDER', 'uploads', '/uploads', NULL, '{}'::jsonb, '{}'::jsonb,
                     false, NULL, NULL, true, 'ACTIVE',
                     ${now}, ${now}, 'system', 'system',
-                    0, false, NULL, NULL, NULL
+                    0, false
                 WHERE NOT EXISTS (SELECT 1 FROM existing)
                 RETURNING id
             )

@@ -3,12 +3,16 @@ package com.ecm.core.service;
 import com.ecm.core.entity.*;
 import com.ecm.core.entity.Permission.PermissionType;
 import com.ecm.core.entity.Version.VersionStatus;
+import com.ecm.core.entity.AutomationRule.TriggerType;
 import com.ecm.core.event.*;
 import com.ecm.core.repository.DocumentRepository;
 import com.ecm.core.repository.VersionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -18,18 +22,26 @@ import java.io.InputStream;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.Objects;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
 public class VersionService {
-    
+
     private final VersionRepository versionRepository;
     private final DocumentRepository documentRepository;
     private final ContentService contentService;
     private final SecurityService securityService;
     private final ApplicationEventPublisher eventPublisher;
+
+    @Autowired
+    @Lazy
+    private RuleEngineService ruleEngineService;
+
+    @Value("${ecm.rules.enabled:true}")
+    private boolean rulesEnabled;
     
     public Version createVersion(UUID documentId, InputStream content, String filename, 
                                  String comment, boolean majorVersion) throws IOException {
@@ -63,18 +75,22 @@ public class VersionService {
         version.setFileSize(fileSize);
         version.setContentHash(contentHash);
         version.setComment(comment);
-        version.setMajorVersionFlag(majorVersion);
+        Integer currentMaxVersion = versionRepository.findMaxVersionNumber(documentId);
+        boolean isFirstVersion = currentMaxVersion == null || currentMaxVersion == 0;
+        version.setMajorVersionFlag(majorVersion || isFirstVersion);
         
         // Set version numbers
-        if (majorVersion) {
-            document.incrementMajorVersion();
-        } else {
-            document.incrementMinorVersion();
+        if (!isFirstVersion) {
+            if (majorVersion) {
+                document.incrementMajorVersion();
+            } else {
+                document.incrementMinorVersion();
+            }
         }
         
         version.setMajorVersion(document.getMajorVersion());
         version.setMinorVersion(document.getMinorVersion());
-        version.setVersionNumber(versionRepository.findMaxVersionNumber(documentId) + 1);
+        version.setVersionNumber(isFirstVersion ? 1 : currentMaxVersion + 1);
         version.setVersionLabel(document.getVersionString());
         
         // Record changes
@@ -100,13 +116,16 @@ public class VersionService {
         }
         
         documentRepository.save(document);
-        
+
         eventPublisher.publishEvent(new VersionCreatedEvent(savedVersion, securityService.getCurrentUser()));
-        
+
+        // Trigger automation rules for new version
+        triggerRulesForDocument(document, TriggerType.VERSION_CREATED);
+
         return savedVersion;
     }
-    
-    public Version createVersion(UUID documentId, MultipartFile file, String comment, 
+
+    public Version createVersion(UUID documentId, MultipartFile file, String comment,
                                  boolean majorVersion) throws IOException {
         return createVersion(documentId, file.getInputStream(), file.getOriginalFilename(), 
             comment, majorVersion);
@@ -277,33 +296,60 @@ public class VersionService {
     
     private Map<String, Object> compareVersions(Version v1, Version v2) {
         Map<String, Object> comparison = new HashMap<>();
-        
-        comparison.put("version1", Map.of(
-            "id", v1.getId(),
-            "label", v1.getVersionLabel(),
-            "createdDate", v1.getCreatedDate(),
-            "createdBy", v1.getCreatedBy(),
-            "fileSize", v1.getFileSize(),
-            "mimeType", v1.getMimeType()
-        ));
-        
-        comparison.put("version2", Map.of(
-            "id", v2.getId(),
-            "label", v2.getVersionLabel(),
-            "createdDate", v2.getCreatedDate(),
-            "createdBy", v2.getCreatedBy(),
-            "fileSize", v2.getFileSize(),
-            "mimeType", v2.getMimeType()
-        ));
-        
-        // Compare metadata
-        boolean metadataChanged = !v1.getMimeType().equals(v2.getMimeType()) ||
-                                 !v1.getFileSize().equals(v2.getFileSize());
-        
+
+        Map<String, Object> version1 = new LinkedHashMap<>();
+        version1.put("id", v1.getId());
+        version1.put("label", v1.getVersionLabel());
+        version1.put("createdDate", v1.getCreatedDate());
+        version1.put("createdBy", v1.getCreatedBy());
+        version1.put("fileSize", v1.getFileSize());
+        version1.put("mimeType", v1.getMimeType());
+        comparison.put("version1", version1);
+
+        Map<String, Object> version2 = new LinkedHashMap<>();
+        version2.put("id", v2.getId()); // may be null before persistence
+        version2.put("label", v2.getVersionLabel());
+        version2.put("createdDate", v2.getCreatedDate());
+        version2.put("createdBy", v2.getCreatedBy());
+        version2.put("fileSize", v2.getFileSize());
+        version2.put("mimeType", v2.getMimeType());
+        comparison.put("version2", version2);
+
+        // Compare metadata (null-safe)
+        boolean metadataChanged = !Objects.equals(v1.getMimeType(), v2.getMimeType()) ||
+                                 !Objects.equals(v1.getFileSize(), v2.getFileSize());
+
         comparison.put("metadataChanged", metadataChanged);
-        comparison.put("contentChanged", !v1.getContentHash().equals(v2.getContentHash()));
-        comparison.put("sizeDifference", v2.getFileSize() - v1.getFileSize());
-        
+        comparison.put("contentChanged", !Objects.equals(v1.getContentHash(), v2.getContentHash()));
+
+        Long size1 = v1.getFileSize();
+        Long size2 = v2.getFileSize();
+        if (size1 != null && size2 != null) {
+            comparison.put("sizeDifference", size2 - size1);
+        } else {
+            comparison.put("sizeDifference", null);
+        }
+
         return comparison;
+    }
+
+    /**
+     * Trigger automation rules for a document.
+     */
+    private void triggerRulesForDocument(Document document, TriggerType triggerType) {
+        if (!rulesEnabled) {
+            return;
+        }
+
+        try {
+            log.debug("Triggering {} rules for document: {} ({})",
+                triggerType, document.getName(), document.getId());
+
+            ruleEngineService.evaluateAndExecute(document, triggerType);
+        } catch (Exception e) {
+            // Log but don't fail the main operation
+            log.error("Failed to trigger {} rules for document {}: {}",
+                triggerType, document.getId(), e.getMessage(), e);
+        }
     }
 }

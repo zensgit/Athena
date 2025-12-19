@@ -19,6 +19,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -125,7 +126,7 @@ public class FolderService {
      */
     @Transactional(readOnly = true)
     public Folder getFolderByPath(String path) {
-        return folderRepository.findByPath(path)
+        return folderRepository.findFirstByPathAndDeletedFalseOrderByCreatedDateAsc(path)
             .orElseThrow(() -> new NoSuchElementException("Folder not found at path: " + path));
     }
 
@@ -457,8 +458,8 @@ public class FolderService {
 
     private void softDeleteFolderRecursive(Folder folder) {
         String currentUser = securityService.getCurrentUser();
-        nodeRepository.softDeleteByPathPrefix(folder.getPath());
-        nodeRepository.softDelete(folder.getId());
+        LocalDateTime deletedAt = LocalDateTime.now();
+        nodeRepository.softDeleteByPathPrefix(folder.getPath(), deletedAt, currentUser);
     }
 
     private FolderTreeNode buildFolderTreeNode(Folder folder, int currentDepth, int maxDepth) {

@@ -11,6 +11,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -76,5 +78,19 @@ public class FavoriteService {
     public boolean isFavorite(UUID nodeId) {
         String userId = securityService.getCurrentUser();
         return favoriteRepository.existsByUserIdAndNodeId(userId, nodeId);
+    }
+
+    /**
+     * Resolve which nodes are favorited by the current user (batch).
+     */
+    @Transactional(readOnly = true)
+    public Set<UUID> getFavoriteNodeIds(Collection<UUID> nodeIds) {
+        if (nodeIds == null || nodeIds.isEmpty()) {
+            return Set.of();
+        }
+        String userId = securityService.getCurrentUser();
+        return favoriteRepository.findByUserIdAndNodeIdIn(userId, nodeIds).stream()
+            .map(fav -> fav.getNode().getId())
+            .collect(java.util.stream.Collectors.toSet());
     }
 }

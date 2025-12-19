@@ -9,6 +9,7 @@ import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.Type;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -122,6 +123,42 @@ public class AutomationRule extends BaseEntity {
     @Builder.Default
     private Boolean stopOnMatch = false;
 
+    // ========== Scheduled Rule Fields ==========
+
+    /**
+     * Cron expression for scheduled rules (e.g., "0 0 * * * *" for hourly)
+     * Only applicable when triggerType = SCHEDULED
+     */
+    @Column(name = "cron_expression", length = 100)
+    private String cronExpression;
+
+    /**
+     * Timezone for cron expression evaluation (default: UTC)
+     */
+    @Column(name = "timezone", length = 50)
+    @Builder.Default
+    private String timezone = "UTC";
+
+    /**
+     * Last time this scheduled rule was executed
+     */
+    @Column(name = "last_run_at")
+    private LocalDateTime lastRunAt;
+
+    /**
+     * Next scheduled run time (computed from cron expression)
+     */
+    @Column(name = "next_run_at")
+    private LocalDateTime nextRunAt;
+
+    /**
+     * Maximum number of items to process per scheduled run
+     * Prevents runaway processing of large document sets
+     */
+    @Column(name = "max_items_per_run")
+    @Builder.Default
+    private Integer maxItemsPerRun = 200;
+
     /**
      * Event types that can trigger automation rules
      */
@@ -171,5 +208,35 @@ public class AutomationRule extends BaseEntity {
      */
     public void incrementFailureCount() {
         this.failureCount = (this.failureCount == null ? 0 : this.failureCount) + 1;
+    }
+
+    /**
+     * Check if this is a scheduled rule with a valid cron expression
+     */
+    public boolean isScheduledRule() {
+        return triggerType == TriggerType.SCHEDULED
+            && cronExpression != null
+            && !cronExpression.isBlank();
+    }
+
+    /**
+     * Check if this scheduled rule is due for execution
+     */
+    public boolean isDueForExecution() {
+        if (!isScheduledRule() || !Boolean.TRUE.equals(enabled)) {
+            return false;
+        }
+        if (nextRunAt == null) {
+            return true; // Never run, should run now
+        }
+        return LocalDateTime.now().isAfter(nextRunAt) || LocalDateTime.now().isEqual(nextRunAt);
+    }
+
+    /**
+     * Update the run timestamps after execution
+     */
+    public void markExecuted(LocalDateTime nextRun) {
+        this.lastRunAt = LocalDateTime.now();
+        this.nextRunAt = nextRun;
     }
 }

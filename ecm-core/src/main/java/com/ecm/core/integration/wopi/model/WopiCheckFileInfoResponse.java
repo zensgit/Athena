@@ -19,6 +19,9 @@ public class WopiCheckFileInfoResponse {
     
     @JsonProperty("UserId")
     private String userId;
+
+    @JsonProperty("UserFriendlyName")
+    private String userFriendlyName;
     
     @JsonProperty("Version")
     private String version;
@@ -36,6 +39,9 @@ public class WopiCheckFileInfoResponse {
     // URLs (Optional)
     @JsonProperty("DownloadUrl")
     private String downloadUrl;
+
+    @JsonProperty("PostMessageOrigin")
+    private String postMessageOrigin;
     
     // Branding
     @JsonProperty("BreadcrumbBrandName")

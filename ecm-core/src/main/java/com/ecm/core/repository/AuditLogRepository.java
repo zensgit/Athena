@@ -32,4 +32,20 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
     
     @Query("SELECT DATE(a.eventTime) as date, COUNT(a) FROM AuditLog a WHERE a.eventTime >= :startTime GROUP BY DATE(a.eventTime) ORDER BY date ASC")
     List<Object[]> getDailyActivityStats(@Param("startTime") LocalDateTime startTime);
+
+    /**
+     * Find audit logs within a time range for export
+     */
+    @Query("SELECT a FROM AuditLog a WHERE a.eventTime >= :from AND a.eventTime <= :to ORDER BY a.eventTime DESC")
+    List<AuditLog> findByTimeRangeForExport(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
+
+    /**
+     * Delete audit logs older than the specified date (for retention policy)
+     */
+    void deleteByEventTimeBefore(LocalDateTime threshold);
+
+    /**
+     * Count audit logs older than the specified date
+     */
+    long countByEventTimeBefore(LocalDateTime threshold);
 }

@@ -61,6 +61,9 @@ public class NodeDocument {
 
     @Field(type = FieldType.Keyword)
     private String author;
+
+    @Field(type = FieldType.Keyword)
+    private String correspondent;
     
     @Field(type = FieldType.Keyword)
     private String versionLabel;
@@ -144,6 +147,10 @@ public class NodeDocument {
             doc.setCategories(node.getCategories().stream()
                 .map(cat -> cat.getName())
                 .collect(Collectors.toSet()));
+        }
+
+        if (node.getCorrespondent() != null) {
+            doc.setCorrespondent(node.getCorrespondent().getName());
         }
         
         return doc;

@@ -9,10 +9,15 @@ import com.ecm.core.service.AnalyticsService.UserActivityStats;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 
@@ -72,6 +77,45 @@ public class AnalyticsController {
             "storage", analyticsService.getStorageByMimeType(),
             "activity", analyticsService.getDailyActivity(14), // Last 2 weeks
             "topUsers", analyticsService.getTopUsers(5)
+        ));
+    }
+
+    @GetMapping("/audit/export")
+    @Operation(summary = "Export Audit Logs", description = "Export audit logs as CSV within a time range")
+    public ResponseEntity<byte[]> exportAuditLogs(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to) {
+
+        String csvContent = analyticsService.exportAuditLogsCsv(from, to);
+        String filename = String.format("audit_logs_%s_to_%s.csv",
+            from.format(DateTimeFormatter.ofPattern("yyyyMMdd")),
+            to.format(DateTimeFormatter.ofPattern("yyyyMMdd")));
+
+        return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+            .contentType(MediaType.parseMediaType("text/csv; charset=UTF-8"))
+            .body(csvContent.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    @GetMapping("/audit/retention")
+    @Operation(summary = "Audit Retention Info", description = "Get audit log retention policy information")
+    public ResponseEntity<Map<String, Object>> getAuditRetentionInfo() {
+        return ResponseEntity.ok(Map.of(
+            "retentionDays", analyticsService.getAuditRetentionDays(),
+            "expiredLogCount", analyticsService.getExpiredAuditLogCount()
+        ));
+    }
+
+    @PostMapping("/audit/cleanup")
+    @Operation(summary = "Trigger Audit Cleanup", description = "Manually trigger audit log cleanup based on retention policy")
+    public ResponseEntity<Map<String, Object>> triggerAuditCleanup() {
+        long deletedCount = analyticsService.manualCleanupExpiredAuditLogs();
+        return ResponseEntity.ok(Map.of(
+            "deletedCount", deletedCount,
+            "retentionDays", analyticsService.getAuditRetentionDays(),
+            "message", deletedCount > 0
+                ? String.format("Deleted %d expired audit logs", deletedCount)
+                : "No expired audit logs to delete"
         ));
     }
 }

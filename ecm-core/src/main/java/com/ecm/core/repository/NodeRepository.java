@@ -25,7 +25,7 @@ import java.util.stream.Stream;
 @Repository
 public interface NodeRepository extends JpaRepository<Node, UUID>, JpaSpecificationExecutor<Node> {
     
-    Optional<Node> findByPath(String path);
+    Optional<Node> findFirstByPathAndDeletedFalseOrderByCreatedDateAsc(String path);
     
     Optional<Node> findByIdAndDeletedFalse(UUID id);
     
@@ -78,12 +78,18 @@ public interface NodeRepository extends JpaRepository<Node, UUID>, JpaSpecificat
     List<Node> findByCategoriesInAndDeletedFalse(Set<Category> categories);
     
     @Modifying
-    @Query("UPDATE Node n SET n.deleted = true, n.status = 'DELETED' WHERE n.id = :nodeId")
-    void softDelete(@Param("nodeId") UUID nodeId);
+    @Query("UPDATE Node n SET n.deleted = true, n.status = 'DELETED', n.deletedAt = :deletedAt, n.deletedBy = :deletedBy " +
+           "WHERE n.id = :nodeId AND n.deleted = false")
+    void softDelete(@Param("nodeId") UUID nodeId,
+                    @Param("deletedAt") LocalDateTime deletedAt,
+                    @Param("deletedBy") String deletedBy);
     
     @Modifying
-    @Query("UPDATE Node n SET n.deleted = true, n.status = 'DELETED' WHERE n.path LIKE CONCAT(:pathPrefix, '%')")
-    void softDeleteByPathPrefix(@Param("pathPrefix") String pathPrefix);
+    @Query("UPDATE Node n SET n.deleted = true, n.status = 'DELETED', n.deletedAt = :deletedAt, n.deletedBy = :deletedBy " +
+           "WHERE n.path LIKE CONCAT(:pathPrefix, '%') AND n.deleted = false")
+    void softDeleteByPathPrefix(@Param("pathPrefix") String pathPrefix,
+                                @Param("deletedAt") LocalDateTime deletedAt,
+                                @Param("deletedBy") String deletedBy);
 
     // Trash / Recycle Bin queries
 

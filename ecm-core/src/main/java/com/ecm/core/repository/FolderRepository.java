@@ -19,8 +19,7 @@ public interface FolderRepository extends JpaRepository<Folder, UUID> {
     @Query("SELECT f FROM Folder f WHERE f.folderType = :type AND f.deleted = false")
     List<Folder> findActiveFoldersByType(@Param("type") FolderType type);
     
-    @Query("SELECT f FROM Folder f WHERE f.path = :path AND f.deleted = false")
-    Optional<Folder> findByPath(@Param("path") String path);
+    Optional<Folder> findFirstByPathAndDeletedFalseOrderByCreatedDateAsc(String path);
     
     @Query("SELECT f FROM Folder f WHERE f.parent IS NULL AND f.deleted = false")
     List<Folder> findRootFolders();

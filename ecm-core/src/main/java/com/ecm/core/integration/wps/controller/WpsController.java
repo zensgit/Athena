@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -33,11 +34,16 @@ public class WpsController {
 
     @GetMapping("/url/{documentId}")
     @Operation(summary = "Get Editor URL", description = "Generate WPS Web Office URL for the document")
-    public ResponseEntity<WpsUrlResponse> getEditorUrl(
+    public ResponseEntity<?> getEditorUrl(
             @PathVariable UUID documentId,
             @RequestParam(defaultValue = "read") String permission) {
-        
-        return ResponseEntity.ok(wpsService.generateWebOfficeUrl(documentId, permission));
+        try {
+            return ResponseEntity.ok(wpsService.generateWebOfficeUrl(documentId, permission));
+        } catch (ResponseStatusException ex) {
+            return ResponseEntity.status(ex.getStatusCode()).body(Map.of(
+                "message", ex.getReason() != null ? ex.getReason() : "WPS integration is not available"
+            ));
+        }
     }
 
     // === WPS Callback API (3rd party interface) ===

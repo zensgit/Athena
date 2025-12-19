@@ -1,6 +1,7 @@
 package com.ecm.core.controller;
 
-import com.ecm.core.entity.Group;
+import com.ecm.core.dto.CreateGroupRequest;
+import com.ecm.core.dto.GroupDto;
 import com.ecm.core.service.UserGroupService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -10,8 +11,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/groups")
@@ -23,15 +22,15 @@ public class GroupController {
 
     @GetMapping
     @Operation(summary = "List groups", description = "Get all groups")
-    public ResponseEntity<Page<Group>> getGroups(Pageable pageable) {
+    public ResponseEntity<Page<GroupDto>> getGroups(Pageable pageable) {
         return ResponseEntity.ok(userGroupService.getGroups(pageable));
     }
 
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Create group", description = "Create a new group")
-    public ResponseEntity<Group> createGroup(@RequestBody CreateGroupRequest request) {
-        return ResponseEntity.ok(userGroupService.createGroup(request.name(), request.displayName()));
+    public ResponseEntity<GroupDto> createGroup(@RequestBody CreateGroupRequest request) {
+        return ResponseEntity.ok(userGroupService.createGroup(request));
     }
 
     @DeleteMapping("/{name}")
@@ -61,6 +60,4 @@ public class GroupController {
         userGroupService.removeUserFromGroup(username, groupName);
         return ResponseEntity.noContent().build();
     }
-
-    public record CreateGroupRequest(String name, String displayName) {}
 }

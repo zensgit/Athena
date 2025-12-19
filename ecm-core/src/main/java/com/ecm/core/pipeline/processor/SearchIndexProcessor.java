@@ -1,5 +1,6 @@
 package com.ecm.core.pipeline.processor;
 
+import com.ecm.core.entity.Document;
 import com.ecm.core.pipeline.DocumentContext;
 import com.ecm.core.pipeline.DocumentProcessor;
 import com.ecm.core.pipeline.ProcessingResult;
@@ -26,6 +27,9 @@ public class SearchIndexProcessor implements DocumentProcessor {
     @Value("${ecm.search.enabled:true}")
     private boolean searchEnabled;
 
+    @Value("${ecm.search.refresh-after-write:false}")
+    private boolean refreshAfterWrite;
+
     @Override
     public int getOrder() {
         return 500;
@@ -49,14 +53,7 @@ public class SearchIndexProcessor implements DocumentProcessor {
         long startTime = System.currentTimeMillis();
 
         try {
-            // Create search document
-            NodeDocument nodeDocument = NodeDocument.builder()
-                .id(context.getDocumentId().toString())
-                .name(context.getOriginalFilename())
-                .mimeType(context.getMimeType())
-                .content(context.getExtractedText())
-                .createdBy(context.getUserId())
-                .build();
+            NodeDocument nodeDocument = buildNodeDocument(context);
 
             // Add metadata fields
             if (context.getExtractedMetadata() != null) {
@@ -73,6 +70,13 @@ public class SearchIndexProcessor implements DocumentProcessor {
 
             // Index to Elasticsearch
             elasticsearchOperations.save(nodeDocument);
+            if (refreshAfterWrite) {
+                try {
+                    elasticsearchOperations.indexOps(NodeDocument.class).refresh();
+                } catch (Exception refreshEx) {
+                    log.debug("Failed to refresh Elasticsearch index after write: {}", refreshEx.getMessage());
+                }
+            }
 
             long processingTime = System.currentTimeMillis() - startTime;
 
@@ -91,5 +95,29 @@ public class SearchIndexProcessor implements DocumentProcessor {
             context.addError(getName(), e.getMessage());
             return ProcessingResult.failed("Indexing failed: " + e.getMessage());
         }
+    }
+
+    private NodeDocument buildNodeDocument(DocumentContext context) {
+        Document persisted = context.getDocument();
+        NodeDocument doc = persisted != null
+            ? NodeDocument.fromNode(persisted)
+            : NodeDocument.builder()
+                .id(context.getDocumentId().toString())
+                .name(context.getOriginalFilename())
+                .mimeType(context.getMimeType())
+                .fileSize(context.getFileSize())
+                .content(context.getExtractedText())
+                .createdBy(context.getUserId())
+                .deleted(false)
+                .build();
+
+        // Keep extracted text in the standard fields used by search.
+        if (context.getExtractedText() != null) {
+            doc.setTextContent(context.getExtractedText());
+            doc.setContent(context.getExtractedText());
+            doc.setExtractedText(context.getExtractedText());
+        }
+
+        return doc;
     }
 }

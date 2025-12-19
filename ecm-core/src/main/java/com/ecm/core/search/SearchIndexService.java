@@ -175,15 +175,24 @@ public class SearchIndexService {
         // Add filters
         if (request.getFilters() != null) {
             if (request.getFilters().getMimeTypes() != null && !request.getFilters().getMimeTypes().isEmpty()) {
-                query.addCriteria(new Criteria("mimeType").in(request.getFilters().getMimeTypes()));
+                query.addCriteria(
+                    new Criteria("mimeType.keyword").in(request.getFilters().getMimeTypes())
+                        .or(new Criteria("mimeType").in(request.getFilters().getMimeTypes()))
+                );
             }
             
             if (request.getFilters().getNodeTypes() != null && !request.getFilters().getNodeTypes().isEmpty()) {
-                query.addCriteria(new Criteria("nodeType").in(request.getFilters().getNodeTypes()));
+                query.addCriteria(
+                    new Criteria("nodeType.keyword").in(request.getFilters().getNodeTypes())
+                        .or(new Criteria("nodeType").in(request.getFilters().getNodeTypes()))
+                );
             }
             
             if (request.getFilters().getCreatedBy() != null) {
-                query.addCriteria(new Criteria("createdBy").is(request.getFilters().getCreatedBy()));
+                query.addCriteria(
+                    new Criteria("createdBy.keyword").is(request.getFilters().getCreatedBy())
+                        .or(new Criteria("createdBy").is(request.getFilters().getCreatedBy()))
+                );
             }
             
             if (request.getFilters().getDateFrom() != null) {
@@ -208,6 +217,13 @@ public class SearchIndexService {
             
             if (request.getFilters().getMaxSize() != null) {
                 query.addCriteria(new Criteria("fileSize").lessThanEqual(request.getFilters().getMaxSize()));
+            }
+
+            if (request.getFilters().getCorrespondents() != null && !request.getFilters().getCorrespondents().isEmpty()) {
+                query.addCriteria(
+                    new Criteria("correspondent.keyword").in(request.getFilters().getCorrespondents())
+                        .or(new Criteria("correspondent").in(request.getFilters().getCorrespondents()))
+                );
             }
         }
         

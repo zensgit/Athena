@@ -187,4 +187,12 @@ public class RuleExecutionResult {
         if (actionResults == null) return 0;
         return (int) actionResults.stream().filter(r -> !r.isSuccess()).count();
     }
+
+    /**
+     * Get total count of actions executed
+     */
+    public int getTotalActionCount() {
+        if (actionResults == null) return 0;
+        return actionResults.size();
+    }
 }

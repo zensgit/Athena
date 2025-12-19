@@ -10,6 +10,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @RestController
@@ -48,6 +50,15 @@ public class FavoriteController {
         return ResponseEntity.ok(favoriteService.isFavorite(nodeId));
     }
 
+    @PostMapping("/batch/check")
+    @Operation(summary = "Batch check status", description = "Check which nodes are favorited by the current user")
+    public ResponseEntity<BatchCheckResponse> batchCheckFavorites(@RequestBody BatchCheckRequest request) {
+        Set<UUID> favoritedNodeIds = favoriteService.getFavoriteNodeIds(
+            request != null ? request.nodeIds() : List.of()
+        );
+        return ResponseEntity.ok(new BatchCheckResponse(favoritedNodeIds));
+    }
+
     // DTO
     public record FavoriteResponse(UUID id, UUID nodeId, String nodeName, String nodeType, java.time.LocalDateTime createdAt) {
         public static FavoriteResponse from(Favorite fav) {
@@ -60,4 +71,8 @@ public class FavoriteController {
             );
         }
     }
+
+    public record BatchCheckRequest(List<UUID> nodeIds) {}
+
+    public record BatchCheckResponse(Set<UUID> favoritedNodeIds) {}
 }

@@ -40,6 +40,9 @@ public class UploadController {
             @Parameter(description = "Target folder ID")
             @RequestParam(value = "folderId", required = false) UUID folderId,
 
+            @Parameter(description = "Target folder ID (alias of folderId)")
+            @RequestParam(value = "parentId", required = false) UUID parentId,
+
             @Parameter(description = "Document description")
             @RequestParam(value = "description", required = false) String description) throws IOException {
 
@@ -48,7 +51,8 @@ public class UploadController {
             properties = Map.of("description", description);
         }
 
-        PipelineResult result = uploadService.uploadDocument(file, folderId, properties);
+        UUID effectiveFolderId = folderId != null ? folderId : parentId;
+        PipelineResult result = uploadService.uploadDocument(file, effectiveFolderId, properties);
 
         UploadResponse response = UploadResponse.builder()
             .success(result.isSuccess())
@@ -73,9 +77,13 @@ public class UploadController {
             @RequestParam("files") MultipartFile[] files,
 
             @Parameter(description = "Target folder ID")
-            @RequestParam(value = "folderId", required = false) UUID folderId) throws IOException {
+            @RequestParam(value = "folderId", required = false) UUID folderId,
 
-        Map<String, PipelineResult> results = uploadService.uploadBatch(files, folderId);
+            @Parameter(description = "Target folder ID (alias of folderId)")
+            @RequestParam(value = "parentId", required = false) UUID parentId) throws IOException {
+
+        UUID effectiveFolderId = folderId != null ? folderId : parentId;
+        Map<String, PipelineResult> results = uploadService.uploadBatch(files, effectiveFolderId);
 
         BatchUploadResponse response = BatchUploadResponse.builder()
             .totalFiles(files.length)

@@ -86,6 +86,20 @@ jodconverter:
     process-timeout: 120000
 
 ecm:
+  audit:
+    retention-days: ${ECM_AUDIT_RETENTION_DAYS:365}
+
+  identity:
+    provider: ${ECM_IDENTITY_PROVIDER:local}
+
+  keycloak:
+    url: ${ECM_KEYCLOAK_URL:http://keycloak:8080}
+    realm: ${ECM_KEYCLOAK_REALM:ecm}
+    admin-realm: ${ECM_KEYCLOAK_ADMIN_REALM:master}
+    admin-client-id: ${ECM_KEYCLOAK_ADMIN_CLIENT_ID:admin-cli}
+    admin-username: ${ECM_KEYCLOAK_ADMIN_USERNAME:}
+    admin-password: ${ECM_KEYCLOAK_ADMIN_PASSWORD:}
+
   storage:
     type: filesystem
     root-path: /var/ecm/content
@@ -134,6 +148,7 @@ ecm:
     enabled: true
     index-name: ecm_documents
     batch-size: 100
+    refresh-after-write: false
     highlight:
       enabled: true
       pre-tag: "<em>"
@@ -151,11 +166,21 @@ ecm:
     password: admin_password
     api-key: ${ODOO_API_KEY:}
 
+  antivirus:
+    enabled: ${ECM_ANTIVIRUS_ENABLED:false}
+    clamd:
+      host: ${ECM_ANTIVIRUS_CLAMD_HOST:localhost}
+      port: ${ECM_ANTIVIRUS_CLAMD_PORT:3310}
+      timeout: ${ECM_ANTIVIRUS_CLAMD_TIMEOUT:30000}
+    on-threat:
+      action: reject  # reject or quarantine
+      quarantine-path: /var/ecm/quarantine
+
 logging:
   level:
     root: INFO
     com.ecm: DEBUG
-    org.springframework.security: DEBUG
+    org.springframework.security: INFO
     org.flowable: WARN
     org.elasticsearch: WARN
     org.apache.pdfbox: WARN
@@ -181,7 +206,7 @@ management:
       application: ${spring.application.name}
 
 server:
-  port: 8080
+  port: ${SERVER_PORT:8080}
   compression:
     enabled: true
     mime-types: text/html,text/xml,text/plain,text/css,text/javascript,application/javascript,application/json

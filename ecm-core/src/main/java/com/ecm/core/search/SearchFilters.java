@@ -21,6 +21,7 @@ public class SearchFilters {
     private Long maxSize;
     private List<String> tags;
     private List<String> categories;
+    private List<String> correspondents;
     private String path;
     private boolean includeDeleted = false;
 }

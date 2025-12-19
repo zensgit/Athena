@@ -1,11 +1,16 @@
 package com.ecm.core.service;
 
+import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Node;
 import com.ecm.core.entity.Permission.PermissionType;
+import com.ecm.core.entity.AutomationRule.TriggerType;
 import com.ecm.core.model.*;
 import com.ecm.core.repository.*;
 import com.ecm.core.exception.*;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.Page;
@@ -17,18 +22,26 @@ import java.util.*;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @Transactional
 public class TagService {
-    
+
     @Autowired
     private TagRepository tagRepository;
-    
+
     @Autowired
     private NodeRepository nodeRepository;
-    
+
     @Autowired
     private SecurityService securityService;
+
+    @Autowired
+    @Lazy
+    private RuleEngineService ruleEngineService;
+
+    @Value("${ecm.rules.enabled:true}")
+    private boolean rulesEnabled;
     
     /**
      * 创建标签
@@ -74,19 +87,22 @@ public class TagService {
      */
     public void addTagToNode(String nodeId, String tagName) {
         Node node = loadActiveNode(nodeId);
-        
+
         // 权限检查
         securityService.checkPermission(node, PermissionType.WRITE);
-        
+
         // 获取或创建标签
         Tag tag = tagRepository.findByName(tagName.toLowerCase().trim())
             .orElseGet(() -> createTag(tagName, null, null));
-        
+
         // 添加标签
         if (node.getTags().add(tag)) {
             tag.incrementUsage();
             nodeRepository.save(node);
             tagRepository.save(tag);
+
+            // Trigger automation rules for document tagging
+            triggerRulesForDocument(node, TriggerType.DOCUMENT_TAGGED);
         }
     }
     
@@ -117,18 +133,21 @@ public class TagService {
      */
     public void removeTagFromNode(String nodeId, String tagName) {
         Node node = loadActiveNode(nodeId);
-        
+
         // 权限检查
         securityService.checkPermission(node, PermissionType.WRITE);
-        
+
         Tag tag = tagRepository.findByName(tagName.toLowerCase().trim())
             .orElseThrow(() -> new ResourceNotFoundException("Tag not found: " + tagName));
-        
+
         if (node.getTags().remove(tag)) {
             tag.decrementUsage();
             nodeRepository.save(node);
             tagRepository.save(tag);
-            
+
+            // Trigger automation rules for document tagging (removal is also a tag change)
+            triggerRulesForDocument(node, TriggerType.DOCUMENT_TAGGED);
+
             // 如果标签没有被使用，可以选择删除
             if (tag.getUsageCount() == 0) {
                 // tagRepository.delete(tag);
@@ -293,6 +312,32 @@ public class TagService {
                 .orElseThrow(() -> new NodeNotFoundException("Node not found: " + nodeId));
         } catch (IllegalArgumentException ex) {
             throw new NodeNotFoundException("Invalid node id: " + nodeId, ex);
+        }
+    }
+
+    /**
+     * Trigger automation rules for a document.
+     * Only triggers for Document nodes, not Folders.
+     */
+    private void triggerRulesForDocument(Node node, TriggerType triggerType) {
+        if (!rulesEnabled) {
+            return;
+        }
+
+        if (!(node instanceof Document)) {
+            return;
+        }
+
+        try {
+            Document document = (Document) node;
+            log.debug("Triggering {} rules for document: {} ({})",
+                triggerType, document.getName(), document.getId());
+
+            ruleEngineService.evaluateAndExecute(document, triggerType);
+        } catch (Exception e) {
+            // Log but don't fail the main operation
+            log.error("Failed to trigger {} rules for node {}: {}",
+                triggerType, node.getId(), e.getMessage(), e);
         }
     }
 }

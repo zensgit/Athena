@@ -1,7 +1,9 @@
 package com.ecm.core.service;
 
 import com.ecm.core.entity.AuditLog;
+import com.ecm.core.entity.AutomationRule;
 import com.ecm.core.entity.Node;
+import com.ecm.core.entity.RuleExecutionResult;
 import com.ecm.core.entity.Version;
 import com.ecm.core.repository.AuditLogRepository;
 import lombok.RequiredArgsConstructor;
@@ -85,7 +87,64 @@ public class AuditService {
     }
     
     public void logVersionReverted(Node document, Version targetVersion, String username) {
-        logEvent("VERSION_REVERTED", document.getId(), document.getName(), username, 
+        logEvent("VERSION_REVERTED", document.getId(), document.getName(), username,
             String.format("Reverted to version %s", targetVersion.getVersionLabel()));
+    }
+
+    // ==================== Rule Execution Audit ====================
+
+    /**
+     * Log rule execution result (summary level, not per-action)
+     * Records rule match/execution outcome to avoid log explosion while maintaining audit trail
+     */
+    public void logRuleExecution(RuleExecutionResult result, String username) {
+        if (result == null || result.getRule() == null) {
+            return;
+        }
+
+        AutomationRule rule = result.getRule();
+        String eventType = result.isSuccess() ? "RULE_EXECUTED" : "RULE_EXECUTION_FAILED";
+
+        String details = String.format(
+            "Rule '%s' [%s] on document '%s': %s (actions: %d/%d succeeded, duration: %dms)",
+            rule.getName(),
+            result.getTriggerType(),
+            result.getDocumentName(),
+            result.isSuccess() ? "SUCCESS" : "FAILED",
+            result.getSuccessfulActionCount(),
+            result.getTotalActionCount(),
+            result.getDurationMs() != null ? result.getDurationMs() : 0
+        );
+
+        if (!result.isSuccess() && result.getErrorMessage() != null) {
+            details += " - Error: " + result.getErrorMessage();
+        }
+
+        logEvent(eventType, result.getDocumentId(), result.getDocumentName(), username, details);
+    }
+
+    /**
+     * Log when a rule condition did not match (optional, for debugging/analytics)
+     * Only called when explicit tracking is needed, not for every non-match
+     */
+    public void logRuleNotMatched(AutomationRule rule, UUID documentId, String documentName, String username) {
+        logEvent("RULE_NOT_MATCHED", documentId, documentName, username,
+            String.format("Rule '%s' condition not satisfied", rule.getName()));
+    }
+
+    /**
+     * Log scheduled rule batch execution summary
+     * Provides high-level overview without logging every document processed
+     */
+    public void logScheduledRuleBatchExecution(AutomationRule rule, int documentsProcessed,
+            int successCount, int failureCount, long durationMs, String username) {
+        String eventType = failureCount == 0 ? "SCHEDULED_RULE_BATCH_COMPLETED" : "SCHEDULED_RULE_BATCH_PARTIAL";
+        String details = String.format(
+            "Scheduled rule '%s' batch execution: %d documents processed (%d succeeded, %d failed) in %dms",
+            rule.getName(), documentsProcessed, successCount, failureCount, durationMs
+        );
+
+        // Use rule ID as nodeId for batch operations (no single document)
+        logEvent(eventType, rule.getId(), rule.getName(), username, details);
     }
 }
