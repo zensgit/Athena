@@ -107,6 +107,29 @@ const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick, onStartWo
     return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
   };
 
+  const getFileTypeLabel = (node: Node) => {
+    if (node.nodeType === 'FOLDER') return null;
+    const type = node.contentType?.toLowerCase();
+    if (type) {
+      if (type.includes('pdf')) return 'PDF';
+      if (type.includes('word')) return 'Word';
+      if (type.includes('excel') || type.includes('spreadsheet')) return 'Excel';
+      if (type.includes('powerpoint') || type.includes('presentation')) return 'PPT';
+      if (type.startsWith('image/')) return 'Image';
+      if (type.startsWith('text/')) return 'Text';
+    }
+
+    const name = node.name?.toLowerCase() || '';
+    if (name.endsWith('.pdf')) return 'PDF';
+    if (name.endsWith('.doc') || name.endsWith('.docx')) return 'Word';
+    if (name.endsWith('.xls') || name.endsWith('.xlsx')) return 'Excel';
+    if (name.endsWith('.ppt') || name.endsWith('.pptx')) return 'PPT';
+    if (name.endsWith('.png') || name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'Image';
+    if (name.endsWith('.txt')) return 'Text';
+
+    return 'File';
+  };
+
   const formatModifiedDate = (value?: string) => {
     if (!value) return '-';
     try {
@@ -370,6 +393,7 @@ const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick, onStartWo
       <Box component="div" display="grid" gridTemplateColumns={{ xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)', lg: 'repeat(4, 1fr)' }} gap={compactMode ? 1.5 : 2}>
         {nodes.map((node) => {
           const isSelected = selectedNodes.includes(node.id);
+          const fileTypeLabel = getFileTypeLabel(node);
           return (
             <Card
               key={node.id}
@@ -413,6 +437,11 @@ const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick, onStartWo
                     </Box>
                     {node.currentVersionLabel && (
                       <Chip label={node.currentVersionLabel} size="small" sx={{ mt: 0.5 }} />
+                    )}
+                    {fileTypeLabel && (
+                      <Box display="flex" gap={0.5} flexWrap="wrap" mt={0.5}>
+                        <Chip label={fileTypeLabel} size="small" variant="outlined" />
+                      </Box>
                     )}
                   </Box>
                   <Box display="flex" alignItems="center" gap={0.5}>
