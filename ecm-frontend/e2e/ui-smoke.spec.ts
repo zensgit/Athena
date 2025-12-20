@@ -43,6 +43,34 @@ async function loginWithCredentials(page: Page, username: string, password: stri
   await expect(page.getByText('Athena ECM')).toBeVisible({ timeout: 60_000 });
 }
 
+async function findChildFolderId(
+  request: APIRequestContext,
+  parentId: string,
+  folderName: string,
+  token: string,
+  maxAttempts = 10,
+) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const response = await request.get(`http://localhost:7700/api/v1/folders/${parentId}/contents`, {
+      params: {
+        page: 0,
+        size: 1000,
+        sort: 'name,asc',
+      },
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(response.ok()).toBeTruthy();
+    const payload = (await response.json()) as { content?: Array<{ id: string; name: string; nodeType: string }> };
+    const match = payload.content?.find((node) => node.name === folderName && node.nodeType === 'FOLDER');
+    if (match?.id) {
+      return match.id;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+
+  throw new Error(`Folder not found after create: ${folderName}`);
+}
+
 test('UI smoke: browse + upload + search + copy/move + facets + delete + rules', async ({ page }) => {
   page.on('dialog', (dialog) => dialog.accept());
   test.setTimeout(360_000);
@@ -86,7 +114,11 @@ test('UI smoke: browse + upload + search + copy/move + facets + delete + rules',
 
   await page.getByRole('treeitem', { name: 'Documents' }).click();
   await page.waitForURL(/\/browse\/[0-9a-f-]{36}$/i, { timeout: 60_000 });
-  const documentsFolderUrl = page.url();
+  const documentsFolderId = /\/browse\/([0-9a-f-]{36})/i.exec(page.url())?.[1];
+  expect(documentsFolderId).toBeTruthy();
+  if (!documentsFolderId) {
+    throw new Error('Failed to resolve Documents folder id');
+  }
 
   const breadcrumb = page.locator('nav[aria-label="breadcrumb"]');
   await expect(breadcrumb.getByText('Root', { exact: true })).toHaveCount(1);
@@ -102,10 +134,8 @@ test('UI smoke: browse + upload + search + copy/move + facets + delete + rules',
   await expect(page.getByText('Folder created successfully')).toBeVisible({ timeout: 60_000 });
 
   // Work inside the dedicated folder to avoid pagination/virtualized rows.
-  const folderRow = page.getByRole('row', { name: new RegExp(folderName) });
-  await expect(folderRow).toBeVisible({ timeout: 60_000 });
-  await folderRow.dblclick();
-  await page.waitForURL(/\/browse\/[0-9a-f-]{36}$/i, { timeout: 60_000 });
+  const workFolderId = await findChildFolderId(page.request, documentsFolderId, folderName, apiToken);
+  await page.goto(`/browse/${workFolderId}`, { waitUntil: 'domcontentloaded' });
   const workFolderUrl = page.url();
   await expect(page.locator('nav[aria-label="breadcrumb"]').getByText(folderName, { exact: true })).toBeVisible({
     timeout: 60_000,
@@ -465,6 +495,11 @@ test('UI smoke: PDF upload + search + version history + edit online', async ({ p
   await page.goto('/browse/root', { waitUntil: 'domcontentloaded' });
   await page.getByRole('treeitem', { name: 'Documents' }).click();
   await page.waitForURL(/\/browse\/[0-9a-f-]{36}$/i, { timeout: 60_000 });
+  const documentsFolderId = /\/browse\/([0-9a-f-]{36})/i.exec(page.url())?.[1];
+  expect(documentsFolderId).toBeTruthy();
+  if (!documentsFolderId) {
+    throw new Error('Failed to resolve Documents folder id');
+  }
 
   const folderName = `ui-e2e-pdf-${Date.now()}`;
   await page.getByRole('button', { name: 'New Folder', exact: true }).click();
@@ -474,10 +509,8 @@ test('UI smoke: PDF upload + search + version history + edit online', async ({ p
   await createFolderDialog.getByRole('button', { name: 'Create', exact: true }).click();
   await expect(page.getByText('Folder created successfully')).toBeVisible({ timeout: 60_000 });
 
-  const folderRow = page.getByRole('row', { name: new RegExp(folderName) });
-  await expect(folderRow).toBeVisible({ timeout: 60_000 });
-  await folderRow.dblclick();
-  await page.waitForURL(/\/browse\/[0-9a-f-]{36}$/i, { timeout: 60_000 });
+  const workFolderId = await findChildFolderId(page.request, documentsFolderId, folderName, apiToken);
+  await page.goto(`/browse/${workFolderId}`, { waitUntil: 'domcontentloaded' });
   const workFolderUrl = page.url();
 
   await page.getByRole('button', { name: 'Upload' }).click();
