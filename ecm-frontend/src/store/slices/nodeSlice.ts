@@ -6,6 +6,7 @@ import { Node, NodeState, SearchCriteria } from 'types';
 const initialState: NodeState = {
   currentNode: null,
   nodes: [],
+  nodesTotal: 0,
   searchFacets: {},
   loading: false,
   error: null,
@@ -22,9 +23,20 @@ export const fetchNode = createAsyncThunk(
 
 export const fetchChildren = createAsyncThunk(
   'node/fetchChildren',
-  async ({ nodeId, sortBy = 'name', ascending = true }: { nodeId: string; sortBy?: string; ascending?: boolean }) => {
-    const children = await nodeService.getChildren(nodeId, sortBy, ascending);
-    return children;
+  async ({
+    nodeId,
+    sortBy = 'name',
+    ascending = true,
+    page = 0,
+    size = 50,
+  }: {
+    nodeId: string;
+    sortBy?: string;
+    ascending?: boolean;
+    page?: number;
+    size?: number;
+  }) => {
+    return nodeService.getChildrenPage(nodeId, sortBy, ascending, page, size);
   }
 );
 
@@ -89,8 +101,8 @@ export const updateNode = createAsyncThunk(
 export const searchNodes = createAsyncThunk(
   'node/searchNodes',
   async (criteria: SearchCriteria) => {
-    const nodes = await nodeService.searchNodes(criteria);
-    return { nodes, criteria };
+    const response = await nodeService.searchNodes(criteria);
+    return { nodes: response.nodes, total: response.total, criteria };
   }
 );
 
@@ -106,7 +118,7 @@ export const executeSavedSearch = createAsyncThunk(
   async (savedSearchId: string) => {
     const response = await savedSearchService.execute(savedSearchId);
     const items = response.results?.content || [];
-    return items.map((item) => {
+    const nodes = items.map((item) => {
       const inferredNodeType = item.mimeType || item.fileSize
         ? 'DOCUMENT'
         : (item.nodeType === 'FOLDER' || item.nodeType === 'DOCUMENT' ? item.nodeType : 'FOLDER');
@@ -133,6 +145,7 @@ export const executeSavedSearch = createAsyncThunk(
         score: item.score,
       } as Node);
     });
+    return { nodes, total: response.totalHits ?? nodes.length };
   }
 );
 
@@ -188,21 +201,26 @@ const nodeSlice = createSlice({
       })
       .addCase(fetchChildren.fulfilled, (state, action) => {
         state.loading = false;
-        state.nodes = action.payload;
+        state.nodes = action.payload.nodes;
+        state.nodesTotal = action.payload.total;
       })
       .addCase(fetchChildren.rejected, (state, action) => {
         state.loading = false;
         state.error = action.error.message || 'Failed to fetch children';
+        state.nodesTotal = 0;
       })
       .addCase(createFolder.fulfilled, (state, action) => {
         state.nodes.push(action.payload);
+        state.nodesTotal += 1;
       })
       .addCase(uploadDocument.fulfilled, (state, action) => {
         state.nodes.push(action.payload);
+        state.nodesTotal += 1;
       })
       .addCase(deleteNodes.fulfilled, (state, action) => {
         state.nodes = state.nodes.filter(node => !action.payload.includes(node.id));
         state.selectedNodes = [];
+        state.nodesTotal = Math.max(0, state.nodesTotal - action.payload.length);
       })
       .addCase(searchNodes.pending, (state) => {
         state.loading = true;
@@ -211,11 +229,13 @@ const nodeSlice = createSlice({
       .addCase(searchNodes.fulfilled, (state, action) => {
         state.loading = false;
         state.nodes = action.payload.nodes;
+        state.nodesTotal = action.payload.total;
         state.lastSearchCriteria = action.payload.criteria;
       })
       .addCase(searchNodes.rejected, (state, action) => {
         state.loading = false;
         state.error = action.error.message || 'Search failed';
+        state.nodesTotal = 0;
       })
       .addCase(fetchSearchFacets.fulfilled, (state, action) => {
         state.searchFacets = action.payload || {};
@@ -226,11 +246,13 @@ const nodeSlice = createSlice({
       })
       .addCase(executeSavedSearch.fulfilled, (state, action) => {
         state.loading = false;
-        state.nodes = action.payload;
+        state.nodes = action.payload.nodes;
+        state.nodesTotal = action.payload.total;
       })
       .addCase(executeSavedSearch.rejected, (state, action) => {
         state.loading = false;
         state.error = action.error.message || 'Saved search failed';
+        state.nodesTotal = 0;
       })
       .addCase(updateNode.fulfilled, (state, action) => {
         state.loading = false;

@@ -13,6 +13,7 @@ import {
   IconButton,
   Typography,
   Chip,
+  Pagination,
   Menu,
   MenuItem,
   ListItemIcon,
@@ -63,9 +64,23 @@ interface FileListProps {
   nodes: Node[];
   onNodeDoubleClick?: (node: Node) => void;
   onStartWorkflow?: (node: Node) => void;
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (size: number) => void;
 }
 
-const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick, onStartWorkflow }) => {
+const FileList: React.FC<FileListProps> = ({
+  nodes,
+  onNodeDoubleClick,
+  onStartWorkflow,
+  page,
+  pageSize,
+  totalCount,
+  onPageChange,
+  onPageSizeChange,
+}) => {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const { selectedNodes, currentNode } = useAppSelector((state) => state.node);
@@ -266,7 +281,7 @@ const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick, onStartWo
 
   const refreshCurrentFolder = async () => {
     const nodeId = currentNode?.id || 'root';
-    await dispatch(fetchChildren({ nodeId, sortBy, ascending: sortAscending }));
+    await dispatch(fetchChildren({ nodeId, sortBy, ascending: sortAscending, page, size: pageSize }));
   };
 
   const openMoveCopyDialog = (mode: 'move' | 'copy') => {
@@ -388,9 +403,12 @@ const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick, onStartWo
     }
   };
 
-  const renderGridView = () => (
-    <Box p={compactMode ? 1.5 : 2}>
-      <Box component="div" display="grid" gridTemplateColumns={{ xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)', lg: 'repeat(4, 1fr)' }} gap={compactMode ? 1.5 : 2}>
+  const renderGridView = () => {
+    const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+
+    return (
+      <Box p={compactMode ? 1.5 : 2}>
+        <Box component="div" display="grid" gridTemplateColumns={{ xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)', lg: 'repeat(4, 1fr)' }} gap={compactMode ? 1.5 : 2}>
         {nodes.map((node) => {
           const isSelected = selectedNodes.includes(node.id);
           const fileTypeLabel = getFileTypeLabel(node);
@@ -496,9 +514,21 @@ const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick, onStartWo
             </Card>
           );
         })}
+        </Box>
+        {totalPages > 1 && (
+          <Box display="flex" justifyContent="center" mt={compactMode ? 2 : 3}>
+            <Pagination
+              count={totalPages}
+              page={page + 1}
+              onChange={(_, value) => onPageChange(value - 1)}
+              color="primary"
+              size={compactMode ? 'small' : 'medium'}
+            />
+          </Box>
+        )}
       </Box>
-    </Box>
-  );
+    );
+  };
 
   return (
     <>
@@ -510,6 +540,18 @@ const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick, onStartWo
           columns={columns}
           density={compactMode ? 'compact' : 'standard'}
           getRowHeight={() => (compactMode ? 52 : 'auto')}
+          paginationMode="server"
+          pagination
+          rowCount={totalCount}
+          paginationModel={{ page, pageSize }}
+          onPaginationModelChange={(model) => {
+            if (model.pageSize !== pageSize) {
+              onPageSizeChange(model.pageSize);
+            } else if (model.page !== page) {
+              onPageChange(model.page);
+            }
+          }}
+          pageSizeOptions={[25, 50, 100]}
           rowSelectionModel={selectedNodes}
           onRowSelectionModelChange={handleSelectionChange}
           onRowDoubleClick={handleRowDoubleClick}

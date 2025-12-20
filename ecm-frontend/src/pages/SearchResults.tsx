@@ -49,11 +49,11 @@ type FacetValue = { value: string; count: number };
 const SearchResults: React.FC = () => {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
-  const { nodes, loading, error, searchFacets, lastSearchCriteria } = useAppSelector((state) => state.node);
+  const { nodes, nodesTotal, loading, error, searchFacets, lastSearchCriteria } = useAppSelector((state) => state.node);
   const [quickSearch, setQuickSearch] = useState('');
   const [sortBy, setSortBy] = useState('relevance');
   const [page, setPage] = useState(1);
-  const itemsPerPage = 20;
+  const pageSize = 20;
 
   const [selectedMimeTypes, setSelectedMimeTypes] = useState<string[]>([]);
   const [selectedCreators, setSelectedCreators] = useState<string[]>([]);
@@ -69,7 +69,8 @@ const SearchResults: React.FC = () => {
     if (!query) {
       return;
     }
-    await dispatch(searchNodes({ name: query }));
+    setPage(1);
+    await dispatch(searchNodes({ name: query, page: 0, size: pageSize }));
   };
 
   const handleClearSearch = () => {
@@ -131,6 +132,12 @@ const SearchResults: React.FC = () => {
   }, [lastSearchCriteria]);
 
   useEffect(() => {
+    if (lastSearchCriteria?.page !== undefined) {
+      setPage(lastSearchCriteria.page + 1);
+    }
+  }, [lastSearchCriteria]);
+
+  useEffect(() => {
     if (!lastSearchCriteria || suppressFacetSearch.current) {
       return;
     }
@@ -180,6 +187,8 @@ const SearchResults: React.FC = () => {
         tags: nextTags.length ? nextTags : undefined,
         categories: nextCategories.length ? nextCategories : undefined,
         correspondents: nextCorrespondents.length ? nextCorrespondents : undefined,
+        page: 0,
+        size: pageSize,
       })
     );
   }, [
@@ -190,6 +199,7 @@ const SearchResults: React.FC = () => {
     selectedCategories,
     lastSearchCriteria,
     dispatch,
+    pageSize,
   ]);
 
   useEffect(() => {
@@ -355,37 +365,7 @@ const SearchResults: React.FC = () => {
     selectedTags.length > 0 ||
     selectedCategories.length > 0;
 
-  const filteredNodes = useMemo(() => {
-    return nodes.filter((node) => {
-      if (selectedMimeTypes.length > 0 && (!node.contentType || !selectedMimeTypes.includes(node.contentType))) {
-        return false;
-      }
-      if (selectedCreators.length > 0 && (!node.creator || !selectedCreators.includes(node.creator))) {
-        return false;
-      }
-      if (
-        selectedCorrespondents.length > 0 &&
-        (!node.correspondent || !selectedCorrespondents.includes(node.correspondent))
-      ) {
-        return false;
-      }
-      if (selectedTags.length > 0) {
-        const tags = node.tags || [];
-        if (!selectedTags.some((tag) => tags.includes(tag))) {
-          return false;
-        }
-      }
-      if (selectedCategories.length > 0) {
-        const categories = node.categories || [];
-        if (!selectedCategories.some((category) => categories.includes(category))) {
-          return false;
-        }
-      }
-      return true;
-    });
-  }, [nodes, selectedCategories, selectedCreators, selectedCorrespondents, selectedMimeTypes, selectedTags]);
-
-  const sortedNodes = [...filteredNodes].sort((a, b) => {
+  const sortedNodes = useMemo(() => [...nodes].sort((a, b) => {
     switch (sortBy) {
       case 'relevance':
         return (b.score || 0) - (a.score || 0);
@@ -398,14 +378,10 @@ const SearchResults: React.FC = () => {
       default:
         return 0;
     }
-  });
+  }), [nodes, sortBy]);
 
-  const paginatedNodes = sortedNodes.slice(
-    (page - 1) * itemsPerPage,
-    page * itemsPerPage
-  );
-
-  const totalPages = Math.ceil(sortedNodes.length / itemsPerPage);
+  const paginatedNodes = sortedNodes;
+  const totalPages = Math.ceil(nodesTotal / pageSize);
 
   return (
     <Box>
@@ -779,7 +755,18 @@ const SearchResults: React.FC = () => {
 
               {totalPages > 1 && (
                 <Box display="flex" justifyContent="center" mt={4}>
-                  <Pagination count={totalPages} page={page} onChange={(_, value) => setPage(value)} color="primary" />
+                  <Pagination
+                    count={totalPages}
+                    page={page}
+                    onChange={(_, value) => {
+                      setPage(value);
+                      if (lastSearchCriteria) {
+                        dispatch(searchNodes({ ...lastSearchCriteria, page: value - 1, size: pageSize }));
+                      }
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    color="primary"
+                  />
                 </Box>
               )}
             </>

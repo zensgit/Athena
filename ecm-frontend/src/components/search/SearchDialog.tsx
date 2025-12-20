@@ -269,6 +269,8 @@ const SearchDialog: React.FC = () => {
       minSize,
       maxSize,
       path: pathPrefix || undefined,
+      page: 0,
+      size: 20,
     };
 
     try {

@@ -226,6 +226,43 @@ class NodeService {
     }
   }
 
+  async getChildrenPage(
+    nodeId: string,
+    sortBy = 'name',
+    ascending = true,
+    page = 0,
+    size = 50
+  ): Promise<{ nodes: Node[]; total: number }> {
+    if (nodeId === 'root') {
+      const root = await this.getRootFolder();
+      nodeId = root.id;
+    }
+    try {
+      const sortDirection = ascending ? 'asc' : 'desc';
+      const response = await api.get<{
+        content: ApiNodeResponse[];
+        totalElements?: number;
+        number?: number;
+        size?: number;
+      }>(`/folders/${nodeId}/contents`, {
+        params: {
+          page,
+          size,
+          sort: `${sortBy},${sortDirection}`,
+        },
+      });
+      const apiNodes = response.content || [];
+      const total = response.totalElements ?? apiNodes.length;
+      return { nodes: apiNodes.map((node) => this.apiNodeToNode(node)), total };
+    } catch {
+      const response = await api.get<{ content: ApiNodeDetailsResponse[] }>(`/nodes/${nodeId}/children`, {
+        params: { sortBy, ascending },
+      });
+      const apiNodes = response.content || [];
+      return { nodes: apiNodes.map((node) => this.apiNodeDetailsToNode(node)), total: apiNodes.length };
+    }
+  }
+
   async createFolder(parentId: string, request: CreateFolderRequest): Promise<Node> {
     // Handle special "root" case
     if (parentId === 'root') {
@@ -298,9 +335,11 @@ class NodeService {
     return api.delete(`/nodes/${nodeId}`);
   }
 
-  async searchNodes(criteria: SearchCriteria): Promise<Node[]> {
+  async searchNodes(criteria: SearchCriteria): Promise<{ nodes: Node[]; total: number }> {
     const query = (criteria.name || '').trim();
     const filters: Record<string, any> = {};
+    const page = criteria.page ?? 0;
+    const size = criteria.size ?? 50;
 
     if (criteria.mimeTypes?.length) {
       filters.mimeTypes = criteria.mimeTypes;
@@ -348,14 +387,14 @@ class NodeService {
     // Fast path: for simple name-only searches, use the dedicated full-text endpoint.
     // It handles punctuation (e.g. hyphens) more reliably than the Criteria-based advanced endpoint.
     const response = !hasFilters && query
-      ? await api.get<{ content: any[] }>('/search', { params: { q: query, page: 0, size: 50 } })
-      : await api.post<{ content: any[] }>('/search/advanced', {
+      ? await api.get<{ content: any[]; totalElements?: number }>('/search', { params: { q: query, page, size } })
+      : await api.post<{ content: any[]; totalElements?: number }>('/search/advanced', {
           query,
           filters,
-          pageable: { page: 0, size: 50 },
+          pageable: { page, size },
         });
 
-    return response.content.map((item) => {
+    const nodes = response.content.map((item) => {
       const inferredNodeType = item.mimeType || item.fileSize
         ? 'DOCUMENT'
         : (item.nodeType === 'FOLDER' || item.nodeType === 'DOCUMENT' ? item.nodeType : 'FOLDER');
@@ -382,6 +421,8 @@ class NodeService {
         score: item.score,
       } as Node);
     });
+
+    return { nodes, total: response.totalElements ?? nodes.length };
   }
 
   async getSearchFacets(query = ''): Promise<Record<string, { value: string; count: number }[]>> {

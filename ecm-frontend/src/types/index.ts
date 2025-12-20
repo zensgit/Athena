@@ -88,6 +88,8 @@ export interface SearchCriteria {
   minSize?: number;
   maxSize?: number;
   path?: string;
+  page?: number;
+  size?: number;
 }
 
 export interface AuthState {
@@ -101,6 +103,7 @@ export interface AuthState {
 export interface NodeState {
   currentNode: Node | null;
   nodes: Node[];
+  nodesTotal: number;
   searchFacets?: Record<string, { value: string; count: number }[]>;
   lastSearchCriteria?: SearchCriteria;
   loading: boolean;

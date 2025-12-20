@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -28,19 +28,25 @@ const FileBrowser: React.FC = () => {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
   
-  const { currentNode, nodes, loading, selectedNodes } = useAppSelector((state) => state.node);
+  const { currentNode, nodes, nodesTotal, loading, selectedNodes } = useAppSelector((state) => state.node);
   const { user } = useAppSelector((state) => state.auth);
   const { viewMode, sortBy, sortAscending, compactMode } = useAppSelector((state) => state.ui);
   const canWrite = Boolean(user?.roles?.includes('ROLE_ADMIN') || user?.roles?.includes('ROLE_EDITOR'));
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(50);
 
   const loadNodeData = useCallback(async () => {
     await dispatch(fetchNode(nodeId));
-    await dispatch(fetchChildren({ nodeId, sortBy, ascending: sortAscending }));
-  }, [dispatch, nodeId, sortAscending, sortBy]);
+    await dispatch(fetchChildren({ nodeId, sortBy, ascending: sortAscending, page, size: pageSize }));
+  }, [dispatch, nodeId, sortAscending, sortBy, page, pageSize]);
 
   useEffect(() => {
     loadNodeData();
   }, [nodeId, loadNodeData]);
+  
+  useEffect(() => {
+    setPage(0);
+  }, [nodeId, sortBy, sortAscending]);
 
   const handleNodeDoubleClick = (node: any) => {
     if (node.nodeType === 'FOLDER') {
@@ -171,6 +177,14 @@ const FileBrowser: React.FC = () => {
           <FileList
             nodes={nodes}
             onNodeDoubleClick={handleNodeDoubleClick}
+            page={page}
+            pageSize={pageSize}
+            totalCount={nodesTotal}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setPage(0);
+            }}
           />
         )}
       </Paper>
