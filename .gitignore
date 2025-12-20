@@ -63,6 +63,7 @@ desktop.ini
 *.orig
 tmp/
 temp/
+docs/VERIFICATION_REPORT_*.md
 
 # -------------------------------------------
 # Maven
