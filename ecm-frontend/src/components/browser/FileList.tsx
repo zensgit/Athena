@@ -7,6 +7,9 @@ import {
 } from '@mui/x-data-grid';
 import {
   Box,
+  Card,
+  CardContent,
+  Checkbox,
   IconButton,
   Typography,
   Chip,
@@ -40,7 +43,7 @@ import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { Node } from 'types';
 import { useAppDispatch, useAppSelector } from 'store';
-import { copyNode, deleteNodes, fetchChildren, moveNode, setSelectedNodes } from 'store/slices/nodeSlice';
+import { copyNode, deleteNodes, fetchChildren, moveNode, setSelectedNodes, toggleNodeSelection } from 'store/slices/nodeSlice';
 import {
   setPropertiesDialogOpen,
   setPermissionsDialogOpen,
@@ -67,7 +70,7 @@ const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick, onStartWo
   const navigate = useNavigate();
   const { selectedNodes, currentNode } = useAppSelector((state) => state.node);
   const { user } = useAppSelector((state) => state.auth);
-  const { compactMode, sortBy, sortAscending } = useAppSelector((state) => state.ui);
+  const { compactMode, sortBy, sortAscending, viewMode } = useAppSelector((state) => state.ui);
   const canWrite = Boolean(user?.roles?.includes('ROLE_ADMIN') || user?.roles?.includes('ROLE_EDITOR'));
   const [contextMenu, setContextMenu] = React.useState<{
     mouseX: number;
@@ -102,6 +105,15 @@ const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick, onStartWo
     const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
     const i = Math.floor(Math.log(bytes) / Math.log(1024));
     return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
+  };
+
+  const formatModifiedDate = (value?: string) => {
+    if (!value) return '-';
+    try {
+      return format(new Date(value), 'PPp');
+    } catch {
+      return '-';
+    }
   };
 
   const getNameTypographySx = (name: string) => {
@@ -342,32 +354,146 @@ const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick, onStartWo
     dispatch(setSelectedNodes(selectionModel as string[]));
   };
 
+  const handleToggleSelection = (nodeId: string) => {
+    dispatch(toggleNodeSelection(nodeId));
+  };
+
   const handleRowDoubleClick = (params: any) => {
     if (onNodeDoubleClick) {
       onNodeDoubleClick(params.row);
     }
   };
 
+  const renderGridView = () => (
+    <Box p={compactMode ? 1.5 : 2}>
+      <Box component="div" display="grid" gridTemplateColumns={{ xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)', lg: 'repeat(4, 1fr)' }} gap={compactMode ? 1.5 : 2}>
+        {nodes.map((node) => {
+          const isSelected = selectedNodes.includes(node.id);
+          return (
+            <Card
+              key={node.id}
+              variant="outlined"
+              onClick={() => handleToggleSelection(node.id)}
+              onDoubleClick={() => onNodeDoubleClick?.(node)}
+              onContextMenu={(event) => handleContextMenu(event, node)}
+              sx={{
+                height: '100%',
+                cursor: 'pointer',
+                borderColor: isSelected ? 'primary.main' : 'divider',
+                boxShadow: isSelected ? 3 : 1,
+                transition: 'box-shadow 0.2s ease, border-color 0.2s ease',
+                '&:hover': {
+                  boxShadow: 4,
+                },
+              }}
+            >
+              <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: compactMode ? 1 : 1.5, height: '100%' }}>
+                <Box display="flex" alignItems="flex-start" gap={1} sx={{ minWidth: 0 }}>
+                  <Checkbox
+                    size="small"
+                    checked={isSelected}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleToggleSelection(node.id);
+                    }}
+                  />
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Box display="flex" alignItems="center" gap={1} sx={{ minWidth: 0 }}>
+                      {node.nodeType === 'FOLDER' ? (
+                        <Folder sx={{ color: 'primary.main' }} />
+                      ) : (
+                        <InsertDriveFile sx={{ color: 'text.secondary' }} />
+                      )}
+                      <Tooltip title={node.name} placement="top-start" arrow>
+                        <Typography variant="subtitle1" sx={getNameTypographySx(node.name)}>
+                          {node.name}
+                        </Typography>
+                      </Tooltip>
+                    </Box>
+                    {node.currentVersionLabel && (
+                      <Chip label={node.currentVersionLabel} size="small" sx={{ mt: 0.5 }} />
+                    )}
+                  </Box>
+                  <Box display="flex" alignItems="center" gap={0.5}>
+                    <IconButton
+                      size="small"
+                      aria-label={`${favoriteIds.has(node.id) ? 'Unfavorite' : 'Favorite'} ${node.name}`}
+                      onClick={async (event) => {
+                        event.stopPropagation();
+                        await toggleFavorite(node);
+                      }}
+                    >
+                      {favoriteIds.has(node.id) ? <Star fontSize="small" /> : <StarBorder fontSize="small" />}
+                    </IconButton>
+                    <IconButton
+                      size="small"
+                      aria-label={`Actions for ${node.name}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleContextMenu(event, node);
+                      }}
+                    >
+                      <MoreVert fontSize="small" />
+                    </IconButton>
+                  </Box>
+                </Box>
+
+                {node.description && (
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical',
+                      overflow: 'hidden',
+                      wordBreak: 'break-word',
+                    }}
+                  >
+                    {node.description}
+                  </Typography>
+                )}
+
+                <Box display="flex" justifyContent="space-between" alignItems="center" mt="auto">
+                  <Typography variant="caption" color="text.secondary">
+                    Modified: {formatModifiedDate(node.modified)}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Size: {formatFileSize(node.size)}
+                  </Typography>
+                </Box>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </Box>
+    </Box>
+  );
+
   return (
     <>
-      <DataGrid
-        rows={nodes}
-        columns={columns}
-        density={compactMode ? 'compact' : 'standard'}
-        getRowHeight={() => (compactMode ? 52 : 'auto')}
-        rowSelectionModel={selectedNodes}
-        onRowSelectionModelChange={handleSelectionChange}
-        onRowDoubleClick={handleRowDoubleClick}
-        checkboxSelection
-        disableRowSelectionOnClick
-        autoHeight
-        sx={{
-          border: 'none',
-          '& .MuiDataGrid-cell': {
-            cursor: 'pointer',
-          },
-        }}
-      />
+      {viewMode === 'grid' ? (
+        renderGridView()
+      ) : (
+        <DataGrid
+          rows={nodes}
+          columns={columns}
+          density={compactMode ? 'compact' : 'standard'}
+          getRowHeight={() => (compactMode ? 52 : 'auto')}
+          rowSelectionModel={selectedNodes}
+          onRowSelectionModelChange={handleSelectionChange}
+          onRowDoubleClick={handleRowDoubleClick}
+          checkboxSelection
+          disableRowSelectionOnClick
+          autoHeight
+          sx={{
+            border: 'none',
+            '& .MuiDataGrid-cell': {
+              cursor: 'pointer',
+            },
+          }}
+        />
+      )}
 
       <Menu
         open={contextMenu !== null}
