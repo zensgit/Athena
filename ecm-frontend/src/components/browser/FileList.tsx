@@ -121,6 +121,7 @@ const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick, onStartWo
     const isLong = length > 28;
     const isExtraLong = length > 40;
     const lineClamp = compactMode ? 2 : isLong ? 3 : 2;
+    const fontSize = compactMode ? '0.85rem' : isExtraLong ? '0.95rem' : isLong ? '1rem' : undefined;
 
     return {
       display: '-webkit-box',
@@ -130,7 +131,7 @@ const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick, onStartWo
       wordBreak: 'break-word',
       overflowWrap: 'anywhere',
       lineHeight: isExtraLong ? 1.15 : 1.25,
-      fontSize: compactMode ? '0.85rem' : isExtraLong ? '0.95rem' : isLong ? '1rem' : undefined,
+      ...(fontSize ? { fontSize } : {}),
     };
   };
 

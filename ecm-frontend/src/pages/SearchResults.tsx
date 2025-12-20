@@ -237,6 +237,7 @@ const SearchResults: React.FC = () => {
     const length = name?.length ?? 0;
     const isLong = length > 28;
     const isExtraLong = length > 40;
+    const fontSize = isExtraLong ? '1rem' : isLong ? '1.1rem' : undefined;
 
     return {
       display: '-webkit-box',
@@ -246,7 +247,7 @@ const SearchResults: React.FC = () => {
       wordBreak: 'break-word',
       overflowWrap: 'anywhere',
       lineHeight: isExtraLong ? 1.2 : isLong ? 1.25 : 1.3,
-      fontSize: isExtraLong ? '1rem' : isLong ? '1.1rem' : undefined,
+      ...(fontSize ? { fontSize } : {}),
     };
   };
 
