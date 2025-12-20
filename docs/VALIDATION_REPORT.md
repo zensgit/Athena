@@ -3,6 +3,24 @@
 日期：2025-12-19 11:59 CST（最近一次 `scripts/verify.sh` 全量复跑 PASS）  
 范围：ECM 后端 API + 前端 UI 端到端（Playwright）+ 关键缺陷修复回归
 
+## 搜索排序与分页验证（2025-12-20）
+
+结论：通过
+
+- Elasticsearch 映射确认：`nameSort` 为 `keyword`（索引已重建）
+- UI 排序验证（Playwright headless）：
+  - Name：升序正确
+  - Modified Date：降序正确
+  - Size：降序正确
+- UI 分页与 API 一致（Name 升序）：第 1/2 页前 5 条与 API 对齐
+
+环境：
+- 前端：`http://localhost:5500`
+- 后端：`http://localhost:7700`
+- Keycloak：`http://localhost:8180`
+
+说明：MCP UI 自动化不可用（chrome-devtools transport closed），改用 Playwright headless 验证。
+
 ## Sprint A 一键验证（verify.sh）复跑结论（已验证）
 
 日期：2025-12-19
