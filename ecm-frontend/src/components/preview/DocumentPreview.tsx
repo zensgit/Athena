@@ -25,12 +25,14 @@ import {
   NavigateBefore,
   NavigateNext,
   Edit,
+  Visibility,
 } from '@mui/icons-material';
 import { Document, Page, pdfjs } from 'react-pdf';
-import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
-import 'react-pdf/dist/esm/Page/TextLayer.css';
+import 'react-pdf/dist/Page/AnnotationLayer.css';
+import 'react-pdf/dist/Page/TextLayer.css';
 import { useNavigate } from 'react-router-dom';
 import { Node } from 'types';
+import apiService from 'services/api';
 import nodeService from 'services/nodeService';
 import { keycloak } from 'services/authService';
 import { toast } from 'react-toastify';
@@ -44,11 +46,51 @@ interface DocumentPreviewProps {
   node: Node;
 }
 
+const OFFICE_MIME_TYPES = new Set([
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.oasis.opendocument.text',
+  'application/vnd.oasis.opendocument.spreadsheet',
+  'application/vnd.oasis.opendocument.presentation',
+  'application/rtf',
+  'text/rtf',
+]);
+
+const OFFICE_EXTENSIONS = [
+  '.doc',
+  '.docx',
+  '.xls',
+  '.xlsx',
+  '.ppt',
+  '.pptx',
+  '.odt',
+  '.ods',
+  '.odp',
+  '.rtf',
+];
+
+const isOfficeDocument = (contentType?: string, name?: string) => {
+  const normalizedType = contentType?.toLowerCase();
+  if (normalizedType && OFFICE_MIME_TYPES.has(normalizedType)) {
+    return true;
+  }
+  const normalizedName = name?.toLowerCase() || '';
+  return OFFICE_EXTENSIONS.some((ext) => normalizedName.endsWith(ext));
+};
+
 const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }) => {
   const navigate = useNavigate();
+  const nodeId = node?.id;
+  const nodeName = node?.name;
+  const officeDocument = isOfficeDocument(node?.contentType, nodeName);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fileUrl, setFileUrl] = useState<string | null>(null);
+  const [wopiUrl, setWopiUrl] = useState<string | null>(null);
   const [numPages, setNumPages] = useState<number | null>(null);
   const [pageNumber, setPageNumber] = useState(1);
   const [scale, setScale] = useState(1.0);
@@ -56,13 +98,22 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
   useEffect(() => {
-    const loadDocument = async () => {
-      setLoading(true);
-      setError(null);
+    if (!open || !nodeId) {
+      return;
+    }
 
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setFileUrl(null);
+    setWopiUrl(null);
+    setNumPages(null);
+    setPageNumber(1);
+
+    const loadDocument = async () => {
       try {
         const token = keycloak.token;
-        const response = await fetch(`/api/v1/nodes/${node.id}/content`, {
+        const response = await fetch(`/api/v1/nodes/${nodeId}/content`, {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
 
@@ -72,25 +123,59 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
 
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
-        setFileUrl(url);
+        if (!cancelled) {
+          setFileUrl(url);
+        }
       } catch (err) {
-        setError('Failed to load document');
-        toast.error('Failed to load document preview');
+        if (!cancelled) {
+          setError('Failed to load document');
+          toast.error('Failed to load document preview');
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
 
-    if (open && node) {
-      loadDocument();
+    const loadOfficeDocument = async () => {
+      try {
+        const response = await apiService.get<{ wopiUrl: string }>(`/integration/wopi/url/${nodeId}`, {
+          params: { permission: 'read' },
+        });
+        if (!cancelled) {
+          setWopiUrl(response.wopiUrl);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError('Failed to load document');
+          toast.error('Failed to load document preview');
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    if (officeDocument) {
+      void loadOfficeDocument();
+    } else {
+      void loadDocument();
     }
 
+    return () => {
+      cancelled = true;
+    };
+  }, [open, nodeId, officeDocument]);
+
+  useEffect(() => {
     return () => {
       if (fileUrl) {
         URL.revokeObjectURL(fileUrl);
       }
     };
-  }, [open, node, fileUrl]);
+  }, [fileUrl]);
 
   const handleDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
     setNumPages(numPages);
@@ -154,6 +239,19 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
       return (
         <Box display="flex" justifyContent="center" alignItems="center" height="60vh">
           <Typography color="error">{error}</Typography>
+        </Box>
+      );
+    }
+
+    if (officeDocument) {
+      return (
+        <Box height="calc(100vh - 200px)" sx={{ overflow: 'hidden' }}>
+          <iframe
+            src={wopiUrl || undefined}
+            title={node.name}
+            style={{ width: '100%', height: '100%', border: 'none' }}
+            allow="clipboard-read; clipboard-write; fullscreen"
+          />
         </Box>
       );
     }
@@ -308,9 +406,22 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
             open={Boolean(anchorEl)}
             onClose={handleMenuClose}
           >
+            {officeDocument && (
+              <MenuItem onClick={() => {
+                navigate(`/editor/${node.id}?provider=wopi&permission=read`);
+                handleMenuClose();
+                onClose();
+              }}>
+                <ListItemIcon>
+                  <Visibility fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>View Online</ListItemText>
+              </MenuItem>
+            )}
             <MenuItem onClick={() => {
               navigate(`/editor/${node.id}?provider=wopi&permission=write`);
-              onClose(); // Close preview dialog
+              handleMenuClose();
+              onClose();
             }}>
               <ListItemIcon>
                 <Edit fontSize="small" />
