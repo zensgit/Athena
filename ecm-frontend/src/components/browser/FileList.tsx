@@ -156,10 +156,19 @@ const FileList: React.FC<FileListProps> = ({
 
   const getNameTypographySx = (name: string) => {
     const length = name?.length ?? 0;
-    const isLong = length > 28;
-    const isExtraLong = length > 40;
+    const isLong = length > 24;
+    const isExtraLong = length > 36;
+    const isVeryLong = length > 60;
     const lineClamp = compactMode ? 2 : isLong ? 3 : 2;
-    const fontSize = compactMode ? '0.85rem' : isExtraLong ? '0.95rem' : isLong ? '1rem' : undefined;
+    const fontSize = compactMode
+      ? '0.82rem'
+      : isVeryLong
+        ? '0.85rem'
+        : isExtraLong
+          ? '0.92rem'
+          : isLong
+            ? '0.98rem'
+            : undefined;
 
     return {
       display: '-webkit-box',
@@ -168,7 +177,7 @@ const FileList: React.FC<FileListProps> = ({
       overflow: 'hidden',
       wordBreak: 'break-word',
       overflowWrap: 'anywhere',
-      lineHeight: isExtraLong ? 1.15 : 1.25,
+      lineHeight: isVeryLong ? 1.05 : isExtraLong ? 1.15 : 1.25,
       ...(fontSize ? { fontSize } : {}),
     };
   };
