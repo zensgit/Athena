@@ -14,6 +14,7 @@ import {
   MenuItem,
   ListItemIcon,
   ListItemText,
+  Tooltip,
 } from '@mui/material';
 import {
   Folder,
@@ -101,6 +102,24 @@ const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick, onStartWo
     const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
     const i = Math.floor(Math.log(bytes) / Math.log(1024));
     return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
+  };
+
+  const getNameTypographySx = (name: string) => {
+    const length = name?.length ?? 0;
+    const isLong = length > 28;
+    const isExtraLong = length > 40;
+    const lineClamp = compactMode ? 2 : isLong ? 3 : 2;
+
+    return {
+      display: '-webkit-box',
+      WebkitLineClamp: lineClamp,
+      WebkitBoxOrient: 'vertical',
+      overflow: 'hidden',
+      wordBreak: 'break-word',
+      overflowWrap: 'anywhere',
+      lineHeight: isExtraLong ? 1.15 : 1.25,
+      fontSize: compactMode ? '0.85rem' : isExtraLong ? '0.95rem' : isLong ? '1rem' : undefined,
+    };
   };
 
   const handleContextMenu = (event: React.MouseEvent, node: Node) => {
@@ -254,13 +273,17 @@ const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick, onStartWo
       headerName: 'Name',
       flex: 2,
       renderCell: (params: GridRenderCellParams<Node>) => (
-        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
           {params.row.nodeType === 'FOLDER' ? (
             <Folder sx={{ mr: 1, color: 'primary.main' }} />
           ) : (
             <InsertDriveFile sx={{ mr: 1, color: 'text.secondary' }} />
           )}
-          <Typography variant="body2">{params.value}</Typography>
+          <Tooltip title={params.row.name} placement="top-start" arrow>
+            <Typography variant="body2" sx={getNameTypographySx(params.row.name)}>
+              {params.value}
+            </Typography>
+          </Tooltip>
           {params.row.aspects?.includes('cm:versionable') && (
             <Chip
               label={params.row.currentVersionLabel}
@@ -331,6 +354,7 @@ const FileList: React.FC<FileListProps> = ({ nodes, onNodeDoubleClick, onStartWo
         rows={nodes}
         columns={columns}
         density={compactMode ? 'compact' : 'standard'}
+        getRowHeight={() => (compactMode ? 52 : 'auto')}
         rowSelectionModel={selectedNodes}
         onRowSelectionModelChange={handleSelectionChange}
         onRowDoubleClick={handleRowDoubleClick}
