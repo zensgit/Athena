@@ -155,6 +155,20 @@ test('UI smoke: browse + upload + search + copy/move + facets + delete + rules',
   await expect(uploadDialog).toBeHidden({ timeout: 60_000 });
 
   await expect(page.getByRole('row', { name: new RegExp(filename) })).toBeVisible({ timeout: 60_000 });
+  const gridToggle = page.getByRole('button', { name: 'grid view' });
+  const listToggle = page.getByRole('button', { name: 'list view' });
+
+  await listToggle.click();
+  await expect(page.locator('.MuiDataGrid-root')).toHaveCount(1);
+
+  await gridToggle.click();
+  await expect(gridToggle).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.MuiDataGrid-root')).toHaveCount(0);
+  await expect(page.getByText('Modified:').first()).toBeVisible({ timeout: 60_000 });
+
+  await listToggle.click();
+  await expect(page.locator('.MuiDataGrid-root')).toHaveCount(1);
+
   const row = page.getByRole('row', { name: new RegExp(filename) });
 
   // Edit Online (WOPI/Collabora)
