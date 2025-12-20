@@ -1,7 +1,9 @@
 package com.ecm.core.integration.wopi.service;
 
 import com.ecm.core.entity.Document;
+import com.ecm.core.entity.Version;
 import com.ecm.core.integration.wopi.model.WopiCheckFileInfoResponse;
+import com.ecm.core.service.AuditService;
 import com.ecm.core.service.ContentService;
 import com.ecm.core.service.NodeService;
 import com.ecm.core.service.SecurityService;
@@ -39,6 +41,7 @@ public class WopiService {
     private final SecurityService securityService;
     private final VersionService versionService;
     private final WopiAccessTokenService accessTokenService;
+    private final AuditService auditService;
 
     @Value("${ecm.wopi.public-app-url:http://localhost:5500}")
     private String publicAppUrl;
@@ -110,7 +113,12 @@ public class WopiService {
             log.info("WOPI PutFile: Updating document {} (size={} bytes)", documentId, size);
 
             // VersionService will validate WRITE permission, checkout state, store content, and update doc metadata.
-            versionService.createVersion(documentId, content, doc.getName(), "Updated via WOPI", false);
+            Version version = versionService.createVersion(documentId, content, doc.getName(), "Updated via WOPI", false);
+            String versionLabel = version.getVersionLabel();
+            String details = versionLabel != null
+                ? String.format("Updated via WOPI (version %s)", versionLabel)
+                : "Updated via WOPI";
+            auditService.logEvent("WOPI_UPDATED", doc.getId(), doc.getName(), tokenInfo.userId(), details);
         } finally {
             popAuthentication(previous);
         }

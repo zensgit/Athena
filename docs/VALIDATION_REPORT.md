@@ -160,6 +160,21 @@ npm run e2e
 - Search 索引存在“最终一致性”，首次上传后立即搜索可能短暂查不到（已在脚本与 E2E 中增加重试）。
 - `scripts/get-token.sh` 可能未设置可执行位；用 `bash scripts/get-token.sh ...` 运行即可。
 
+## WOPI 专项验证（Playwright）
+
+日期：2025-12-20  
+命令：`./scripts/verify.sh --wopi-only`
+
+验证项（结果：通过）：
+
+- Office 文件预览 iframe 正常加载
+- 预览菜单包含 `View Online` / `Edit Online`
+- `View Online` 只读编辑器可打开
+- WOPI `PutFile` 写入后产生审计事件 `WOPI_UPDATED`
+
+日志：`tmp/20251220_084736_verify-wopi.log`  
+报告：`docs/WOPI_VERIFICATION_REPORT.md`
+
 ## 下一步建议（可选）
 
 - 增加 API 层对版本信息的返回一致性（例如 `NodeDto` 已提供 `currentVersionLabel`，前端可统一显示该字段）。

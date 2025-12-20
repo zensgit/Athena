@@ -22,20 +22,33 @@ cd "${REPO_ROOT}"
 SKIP_RESTART=0
 SMOKE_ONLY=0
 SKIP_BUILD=0
+WOPI_ONLY=0
+SKIP_WOPI=0
 for arg in "$@"; do
   case "$arg" in
     --no-restart) SKIP_RESTART=1 ;;
     --smoke-only) SMOKE_ONLY=1 ;;
     --skip-build) SKIP_BUILD=1 ;;
+    --wopi-only) WOPI_ONLY=1 ;;
+    --skip-wopi) SKIP_WOPI=1 ;;
     --help|-h)
       echo "Usage: $0 [--no-restart] [--smoke-only] [--skip-build]"
       echo "  --no-restart  Skip docker-compose restart (services must be running)"
       echo "  --smoke-only  Only run API smoke tests, skip E2E tests"
       echo "  --skip-build  Skip frontend build step"
+      echo "  --wopi-only   Only run WOPI verification (skip other steps)"
+      echo "  --skip-wopi   Skip WOPI verification step"
       exit 0
       ;;
   esac
 done
+
+# If wopi-only is enabled, skip all other steps.
+if [[ ${WOPI_ONLY} -eq 1 ]]; then
+  SKIP_RESTART=1
+  SMOKE_ONLY=1
+  SKIP_BUILD=1
+fi
 
 # Load environment
 if [[ -f .env ]]; then
@@ -49,6 +62,9 @@ fi
 KEYCLOAK_URL="${KEYCLOAK_URL:-http://localhost:${KEYCLOAK_PORT:-8180}}"
 ECM_API_URL="${ECM_API_URL:-http://localhost:${ECM_API_PORT:-7700}}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-ecm}"
+ECM_FRONTEND_URL="${ECM_FRONTEND_URL:-http://localhost:${ECM_FRONTEND_PORT:-5500}}"
+ECM_VERIFY_USER="${ECM_VERIFY_USER:-${KEYCLOAK_USER:-admin}}"
+ECM_VERIFY_PASS="${ECM_VERIFY_PASS:-${KEYCLOAK_PASSWORD:-admin}}"
 FRONTEND_DIR="${REPO_ROOT}/ecm-frontend"
 LOG_DIR="${REPO_ROOT}/tmp"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
@@ -259,34 +275,49 @@ run_step_optional "clamav-health" ensure_clamav_health
 # ============================================================
 # STEP 3: Create test users in Keycloak
 # ============================================================
-log_info "=== Step 3: Creating test users in Keycloak ==="
-if [[ -f "${SCRIPT_DIR}/keycloak/create-test-users.sh" ]]; then
-  run_step_optional "create-test-users" bash "${SCRIPT_DIR}/keycloak/create-test-users.sh"
+if [[ ${WOPI_ONLY} -eq 0 ]]; then
+  log_info "=== Step 3: Creating test users in Keycloak ==="
+  if [[ -f "${SCRIPT_DIR}/keycloak/create-test-users.sh" ]]; then
+    run_step_optional "create-test-users" bash "${SCRIPT_DIR}/keycloak/create-test-users.sh"
+  else
+    log_warn "create-test-users.sh not found, skipping"
+    ((STEPS_SKIPPED+=1))
+  fi
 else
-  log_warn "create-test-users.sh not found, skipping"
+  log_info "=== Step 3: Skipping test user creation (--wopi-only) ==="
   ((STEPS_SKIPPED+=1))
 fi
 
 # ============================================================
 # STEP 4: Get access token
 # ============================================================
-log_info "=== Step 4: Getting access token ==="
-if [[ -f "${SCRIPT_DIR}/get-token.sh" ]]; then
-  run_step "get-token" bash "${SCRIPT_DIR}/get-token.sh" admin admin
+if [[ ${WOPI_ONLY} -eq 0 ]]; then
+  log_info "=== Step 4: Getting access token ==="
+  if [[ -f "${SCRIPT_DIR}/get-token.sh" ]]; then
+    run_step "get-token" bash "${SCRIPT_DIR}/get-token.sh" admin admin
+  else
+    log_warn "get-token.sh not found, skipping"
+    ((STEPS_SKIPPED+=1))
+  fi
 else
-  log_warn "get-token.sh not found, skipping"
+  log_info "=== Step 4: Skipping token fetch (--wopi-only) ==="
   ((STEPS_SKIPPED+=1))
 fi
 
 # ============================================================
 # STEP 5: Run API smoke tests
 # ============================================================
-log_info "=== Step 5: Running API smoke tests ==="
-if [[ -f "${SCRIPT_DIR}/smoke.sh" ]]; then
-  run_step "smoke-test" bash "${SCRIPT_DIR}/smoke.sh"
+if [[ ${WOPI_ONLY} -eq 0 ]]; then
+  log_info "=== Step 5: Running API smoke tests ==="
+  if [[ -f "${SCRIPT_DIR}/smoke.sh" ]]; then
+    run_step "smoke-test" bash "${SCRIPT_DIR}/smoke.sh"
+  else
+    log_error "smoke.sh not found!"
+    ((STEPS_FAILED+=1))
+  fi
 else
-  log_error "smoke.sh not found!"
-  ((STEPS_FAILED+=1))
+  log_info "=== Step 5: Skipping API smoke tests (--wopi-only) ==="
+  ((STEPS_SKIPPED+=1))
 fi
 
 # ============================================================
@@ -305,6 +336,38 @@ if [[ ${SKIP_BUILD} -eq 0 ]]; then
   fi
 else
   log_info "=== Step 6: Skipping frontend build (--skip-build) ==="
+  ((STEPS_SKIPPED+=1))
+fi
+
+# ============================================================
+# STEP 6.5: Verify WOPI preview/edit + audit (optional)
+# ============================================================
+if [[ ${SKIP_WOPI} -eq 0 ]]; then
+  log_info "=== Step 6.5: Verifying WOPI preview + audit ==="
+  if [[ -f "${SCRIPT_DIR}/verify-wopi.js" ]]; then
+    if [[ -d "${FRONTEND_DIR}" ]]; then
+      cd "${FRONTEND_DIR}"
+      ensure_frontend_deps
+      if ! npx playwright --version > /dev/null 2>&1; then
+        log_info "Installing Playwright browsers..."
+        npx playwright install chromium > /dev/null 2>&1 || true
+      fi
+      cd "${REPO_ROOT}"
+    fi
+    run_step "verify-wopi" env \
+      ECM_FRONTEND_URL="${ECM_FRONTEND_URL}" \
+      ECM_API_URL="${ECM_API_URL}" \
+      KEYCLOAK_URL="${KEYCLOAK_URL}" \
+      KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
+      ECM_VERIFY_USER="${ECM_VERIFY_USER}" \
+      ECM_VERIFY_PASS="${ECM_VERIFY_PASS}" \
+      node "${SCRIPT_DIR}/verify-wopi.js"
+  else
+    log_warn "verify-wopi.js not found, skipping"
+    ((STEPS_SKIPPED+=1))
+  fi
+else
+  log_info "=== Step 6.5: Skipping WOPI verification (--skip-wopi) ==="
   ((STEPS_SKIPPED+=1))
 fi
 
