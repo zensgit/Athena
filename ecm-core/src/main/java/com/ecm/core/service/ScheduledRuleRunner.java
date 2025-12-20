@@ -11,6 +11,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.scheduling.support.CronExpression;
 import org.springframework.stereotype.Service;
@@ -33,6 +37,7 @@ public class ScheduledRuleRunner {
     private final DocumentRepository documentRepository;
     private final RuleEngineService ruleEngineService;
     private final AuditService auditService;
+    private final SecurityService securityService;
 
     @Value("${ecm.rules.enabled:true}")
     private boolean rulesEnabled;
@@ -85,6 +90,9 @@ public class ScheduledRuleRunner {
         log.info("Executing scheduled rule '{}' (id={}, cron={})",
             rule.getName(), rule.getId(), rule.getCronExpression());
 
+        SecurityContext previousContext = pushRuleAuthentication(rule);
+        String auditActor = resolveRuleActor(rule);
+
         LocalDateTime since = rule.getLastRunAt();
         if (since == null) {
             // First run: process documents from last 24 hours
@@ -109,32 +117,36 @@ public class ScheduledRuleRunner {
         int matchedCount = 0;
         int failedCount = 0;
 
-        for (Document document : candidateDocuments.getContent()) {
-            try {
-                // Check MIME type scope
-                if (!rule.isMimeTypeInScope(document.getMimeType())) {
-                    continue;
-                }
+        try {
+            for (Document document : candidateDocuments.getContent()) {
+                try {
+                    // Check MIME type scope
+                    if (!rule.isMimeTypeInScope(document.getMimeType())) {
+                        continue;
+                    }
 
-                processedCount++;
+                    processedCount++;
 
-                // Evaluate and execute the rule for this document
-                List<RuleExecutionResult> results = ruleEngineService.evaluateAndExecute(
-                    document, TriggerType.SCHEDULED, List.of(rule));
+                    // Evaluate and execute the rule for this document
+                    List<RuleExecutionResult> results = ruleEngineService.evaluateAndExecute(
+                        document, TriggerType.SCHEDULED, List.of(rule));
 
-                for (RuleExecutionResult result : results) {
-                    if (result.isConditionMatched()) {
-                        matchedCount++;
-                        if (!result.isSuccess()) {
-                            failedCount++;
+                    for (RuleExecutionResult result : results) {
+                        if (result.isConditionMatched()) {
+                            matchedCount++;
+                            if (!result.isSuccess()) {
+                                failedCount++;
+                            }
                         }
                     }
+                } catch (Exception e) {
+                    log.warn("Error processing document {} for scheduled rule '{}': {}",
+                        document.getId(), rule.getName(), e.getMessage());
+                    failedCount++;
                 }
-            } catch (Exception e) {
-                log.warn("Error processing document {} for scheduled rule '{}': {}",
-                    document.getId(), rule.getName(), e.getMessage());
-                failedCount++;
             }
+        } finally {
+            popRuleAuthentication(previousContext);
         }
 
         long durationMs = System.currentTimeMillis() - startTimeMs;
@@ -144,7 +156,7 @@ public class ScheduledRuleRunner {
         // Audit log: batch execution summary (high-level, avoids per-document log explosion)
         try {
             auditService.logScheduledRuleBatchExecution(
-                rule, processedCount, matchedCount - failedCount, failedCount, durationMs, "system");
+                rule, processedCount, matchedCount - failedCount, failedCount, durationMs, auditActor);
         } catch (Exception e) {
             log.warn("Failed to write scheduled rule batch audit log: {}", e.getMessage());
         }
@@ -211,5 +223,44 @@ public class ScheduledRuleRunner {
         } catch (Exception e) {
             throw new IllegalArgumentException("Invalid cron expression: " + cronExpression, e);
         }
+    }
+
+    private SecurityContext pushRuleAuthentication(AutomationRule rule) {
+        String actor = resolveRuleActor(rule);
+        List<SimpleGrantedAuthority> authorities = new java.util.ArrayList<>();
+        if ("system".equalsIgnoreCase(actor)) {
+            authorities.add(new SimpleGrantedAuthority("ROLE_ADMIN"));
+        }
+
+        SecurityContext previous = SecurityContextHolder.getContext();
+        UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
+            actor,
+            "scheduled-rule",
+            authorities
+        );
+        SecurityContext context = SecurityContextHolder.createEmptyContext();
+        context.setAuthentication(auth);
+        SecurityContextHolder.setContext(context);
+        return previous;
+    }
+
+    private void popRuleAuthentication(SecurityContext previous) {
+        if (previous != null) {
+            SecurityContextHolder.setContext(previous);
+        } else {
+            SecurityContextHolder.clearContext();
+        }
+    }
+
+    private String resolveRuleActor(AutomationRule rule) {
+        String owner = rule.getOwner();
+        if (owner != null && !owner.isBlank()) {
+            return owner;
+        }
+        String current = securityService.getCurrentUser();
+        if (current == null || current.isBlank() || "anonymous".equalsIgnoreCase(current)) {
+            return "system";
+        }
+        return current;
     }
 }
