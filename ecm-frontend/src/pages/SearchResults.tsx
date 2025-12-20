@@ -63,6 +63,19 @@ const SearchResults: React.FC = () => {
   const [previewNode, setPreviewNode] = useState<Node | null>(null);
   const suppressFacetSearch = useRef(false);
 
+  const getSortParams = (value: string) => {
+    switch (value) {
+      case 'name':
+        return { sortBy: 'name', sortDirection: 'asc' as const };
+      case 'modified':
+        return { sortBy: 'modified', sortDirection: 'desc' as const };
+      case 'size':
+        return { sortBy: 'size', sortDirection: 'desc' as const };
+      default:
+        return { sortBy: undefined, sortDirection: undefined };
+    }
+  };
+
   const handleQuickSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     const query = quickSearch.trim();
@@ -70,7 +83,8 @@ const SearchResults: React.FC = () => {
       return;
     }
     setPage(1);
-    await dispatch(searchNodes({ name: query, page: 0, size: pageSize }));
+    const sortParams = getSortParams(sortBy);
+    await dispatch(searchNodes({ name: query, page: 0, size: pageSize, ...sortParams }));
   };
 
   const handleClearSearch = () => {
@@ -177,6 +191,7 @@ const SearchResults: React.FC = () => {
       return;
     }
 
+    const sortParams = getSortParams(sortBy);
     dispatch(
       searchNodes({
         ...lastSearchCriteria,
@@ -189,6 +204,7 @@ const SearchResults: React.FC = () => {
         correspondents: nextCorrespondents.length ? nextCorrespondents : undefined,
         page: 0,
         size: pageSize,
+        ...sortParams,
       })
     );
   }, [
@@ -200,11 +216,27 @@ const SearchResults: React.FC = () => {
     lastSearchCriteria,
     dispatch,
     pageSize,
+    sortBy,
   ]);
 
   useEffect(() => {
     setPage(1);
   }, [selectedMimeTypes, selectedCreators, selectedCorrespondents, selectedTags, selectedCategories]);
+
+  useEffect(() => {
+    if (!lastSearchCriteria) {
+      return;
+    }
+    const sortParams = getSortParams(sortBy);
+    if (
+      lastSearchCriteria.sortBy === sortParams.sortBy
+      && lastSearchCriteria.sortDirection === sortParams.sortDirection
+    ) {
+      return;
+    }
+    setPage(1);
+    dispatch(searchNodes({ ...lastSearchCriteria, page: 0, size: pageSize, ...sortParams }));
+  }, [sortBy, lastSearchCriteria, dispatch, pageSize]);
 
   const isDocumentNode = (node: Node) =>
     node.nodeType === 'DOCUMENT' || Boolean(node.contentType || node.size || node.currentVersionLabel);
@@ -365,22 +397,7 @@ const SearchResults: React.FC = () => {
     selectedTags.length > 0 ||
     selectedCategories.length > 0;
 
-  const sortedNodes = useMemo(() => [...nodes].sort((a, b) => {
-    switch (sortBy) {
-      case 'relevance':
-        return (b.score || 0) - (a.score || 0);
-      case 'name':
-        return a.name.localeCompare(b.name);
-      case 'modified':
-        return new Date(b.modified).getTime() - new Date(a.modified).getTime();
-      case 'size':
-        return (b.size || 0) - (a.size || 0);
-      default:
-        return 0;
-    }
-  }), [nodes, sortBy]);
-
-  const paginatedNodes = sortedNodes;
+  const paginatedNodes = nodes;
   const totalPages = Math.ceil(nodesTotal / pageSize);
 
   return (
@@ -602,9 +619,9 @@ const SearchResults: React.FC = () => {
             <Typography variant="h6">
               {loading
                 ? 'Searching...'
-                : filtersApplied
-                  ? `${sortedNodes.length} results (filtered from ${nodes.length})`
-                  : `${nodes.length} results found`}
+                : nodesTotal > 0
+                  ? `Showing ${nodes.length} of ${nodesTotal} results`
+                  : '0 results found'}
             </Typography>
             <FormControl size="small" sx={{ minWidth: 150 }}>
               <InputLabel>Sort by</InputLabel>
@@ -685,15 +702,6 @@ const SearchResults: React.FC = () => {
                 Advanced Search
               </Button>
             </Paper>
-          ) : sortedNodes.length === 0 ? (
-            <Paper sx={{ p: 4, textAlign: 'center' }}>
-              <Typography variant="h6" color="text.secondary" gutterBottom>
-                No results match the selected facets
-              </Typography>
-              <Button variant="outlined" onClick={clearFacetFilters} sx={{ mt: 1 }}>
-                Clear facets
-              </Button>
-            </Paper>
           ) : (
             <>
               <Grid container spacing={2}>
@@ -761,7 +769,8 @@ const SearchResults: React.FC = () => {
                     onChange={(_, value) => {
                       setPage(value);
                       if (lastSearchCriteria) {
-                        dispatch(searchNodes({ ...lastSearchCriteria, page: value - 1, size: pageSize }));
+                        const sortParams = getSortParams(sortBy);
+                        dispatch(searchNodes({ ...lastSearchCriteria, page: value - 1, size: pageSize, ...sortParams }));
                       }
                       window.scrollTo({ top: 0, behavior: 'smooth' });
                     }}

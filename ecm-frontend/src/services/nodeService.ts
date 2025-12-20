@@ -387,10 +387,20 @@ class NodeService {
     // Fast path: for simple name-only searches, use the dedicated full-text endpoint.
     // It handles punctuation (e.g. hyphens) more reliably than the Criteria-based advanced endpoint.
     const response = !hasFilters && query
-      ? await api.get<{ content: any[]; totalElements?: number }>('/search', { params: { q: query, page, size } })
+      ? await api.get<{ content: any[]; totalElements?: number }>('/search', {
+          params: {
+            q: query,
+            page,
+            size,
+            sortBy: criteria.sortBy,
+            sortDirection: criteria.sortDirection,
+          },
+        })
       : await api.post<{ content: any[]; totalElements?: number }>('/search/advanced', {
           query,
           filters,
+          sortBy: criteria.sortBy,
+          sortDirection: criteria.sortDirection,
           pageable: { page, size },
         });
 

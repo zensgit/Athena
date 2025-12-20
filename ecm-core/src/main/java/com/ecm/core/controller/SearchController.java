@@ -44,9 +44,13 @@ public class SearchController {
             @Parameter(description = "Page number (0-based)")
             @RequestParam(defaultValue = "0") int page,
             @Parameter(description = "Page size")
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") int size,
+            @Parameter(description = "Sort field (relevance, name, modified, size)")
+            @RequestParam(required = false) String sortBy,
+            @Parameter(description = "Sort direction (asc, desc)")
+            @RequestParam(required = false) String sortDirection) {
 
-        Page<SearchResult> results = fullTextSearchService.search(q, page, size);
+        Page<SearchResult> results = fullTextSearchService.search(q, page, size, sortBy, sortDirection);
         return ResponseEntity.ok(results);
     }
 

@@ -90,6 +90,8 @@ export interface SearchCriteria {
   path?: string;
   page?: number;
   size?: number;
+  sortBy?: string;
+  sortDirection?: 'asc' | 'desc';
 }
 
 export interface AuthState {

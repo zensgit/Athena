@@ -104,6 +104,7 @@ public class SearchIndexProcessor implements DocumentProcessor {
             : NodeDocument.builder()
                 .id(context.getDocumentId().toString())
                 .name(context.getOriginalFilename())
+                .nameSort(context.getOriginalFilename() != null ? context.getOriginalFilename().toLowerCase() : null)
                 .mimeType(context.getMimeType())
                 .fileSize(context.getFileSize())
                 .content(context.getExtractedText())

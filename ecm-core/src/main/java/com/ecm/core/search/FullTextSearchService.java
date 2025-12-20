@@ -13,6 +13,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.elasticsearch.client.elc.NativeQuery;
 import org.springframework.data.elasticsearch.client.elc.NativeQueryBuilder;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
@@ -78,6 +79,10 @@ public class FullTextSearchService {
      * @return Page of search results
      */
     public Page<SearchResult> search(String queryText, int page, int size) {
+        return search(queryText, page, size, null, null);
+    }
+
+    public Page<SearchResult> search(String queryText, int page, int size, String sortBy, String sortDirection) {
         if (!searchEnabled) {
             log.warn("Search is disabled");
             return Page.empty();
@@ -86,7 +91,7 @@ public class FullTextSearchService {
         Pageable pageable = PageRequest.of(page, size);
 
         try {
-            Query query = buildFullTextQuery(queryText, pageable);
+            Query query = buildFullTextQuery(queryText, pageable, sortBy, sortDirection);
             SearchHits<NodeDocument> searchHits = elasticsearchOperations.search(
                 query, NodeDocument.class, IndexCoordinates.of(INDEX_NAME));
 
@@ -254,7 +259,7 @@ public class FullTextSearchService {
         }
     }
 
-    private Query buildFullTextQuery(String queryText, Pageable pageable) {
+    private Query buildFullTextQuery(String queryText, Pageable pageable, String sortBy, String sortDirection) {
         String searchTerm = queryText != null ? queryText.trim() : "";
 
         NativeQueryBuilder builder = NativeQuery.builder()
@@ -271,6 +276,8 @@ public class FullTextSearchService {
                 .operator(Operator.Or)
             ));
         }
+
+        applySort(builder, sortBy, sortDirection);
 
         return builder.build();
     }
@@ -323,7 +330,32 @@ public class FullTextSearchService {
             return b;
         }));
 
+        applySort(builder, request.getSortBy(), request.getSortDirection());
+
         return builder.build();
+    }
+
+    private void applySort(NativeQueryBuilder builder, String sortBy, String sortDirection) {
+        if (sortBy == null || sortBy.isBlank() || "relevance".equalsIgnoreCase(sortBy)) {
+            return;
+        }
+
+        String field = switch (sortBy.toLowerCase()) {
+            case "name" -> "nameSort";
+            case "modified" -> "lastModifiedDate";
+            case "size" -> "fileSize";
+            default -> null;
+        };
+
+        if (field == null) {
+            return;
+        }
+
+        Sort.Direction direction = "asc".equalsIgnoreCase(sortDirection)
+            ? Sort.Direction.ASC
+            : Sort.Direction.DESC;
+
+        builder.withSort(Sort.by(new Sort.Order(direction, field)));
     }
 
     private static void addAnyOfTermsFilter(BoolQuery.Builder bool, List<String> fields, List<String> values) {

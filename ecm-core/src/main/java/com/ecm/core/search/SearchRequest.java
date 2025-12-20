@@ -8,6 +8,8 @@ import java.util.List;
 public class SearchRequest {
     private String query;
     private SearchFilters filters;
+    private String sortBy;
+    private String sortDirection;
     /**
      * Simple page request to avoid direct Pageable deserialization issues.
      */

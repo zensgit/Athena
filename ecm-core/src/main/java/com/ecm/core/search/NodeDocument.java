@@ -28,6 +28,9 @@ public class NodeDocument {
     
     @Field(type = FieldType.Text, analyzer = "standard")
     private String name;
+
+    @Field(type = FieldType.Keyword)
+    private String nameSort;
     
     @Field(type = FieldType.Text, analyzer = "standard")
     private String description;
@@ -111,6 +114,7 @@ public class NodeDocument {
         NodeDocument doc = new NodeDocument();
         doc.setId(node.getId().toString());
         doc.setName(node.getName());
+        doc.setNameSort(node.getName() != null ? node.getName().toLowerCase() : null);
         doc.setDescription(node.getDescription());
         doc.setPath(node.getPath());
         doc.setNodeType(node.getNodeType());
