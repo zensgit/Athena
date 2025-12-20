@@ -75,7 +75,9 @@ export interface SearchCriteria {
   properties?: Record<string, any>;
   aspects?: string[];
   contentType?: string;
+  mimeTypes?: string[];
   createdBy?: string;
+  createdByList?: string[];
   createdFrom?: string;
   createdTo?: string;
   modifiedFrom?: string;
@@ -99,6 +101,8 @@ export interface AuthState {
 export interface NodeState {
   currentNode: Node | null;
   nodes: Node[];
+  searchFacets?: Record<string, { value: string; count: number }[]>;
+  lastSearchCriteria?: SearchCriteria;
   loading: boolean;
   error: string | null;
   selectedNodes: string[];

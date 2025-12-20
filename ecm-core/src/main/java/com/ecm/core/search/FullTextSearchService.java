@@ -306,7 +306,9 @@ public class FullTextSearchService {
                 addAnyOfTermsFilter(b, List.of("categories", "categories.keyword"), filters.getCategories());
                 addAnyOfTermsFilter(b, List.of("correspondent", "correspondent.keyword"), filters.getCorrespondents());
 
-                if (filters.getCreatedBy() != null && !filters.getCreatedBy().isBlank()) {
+                if (filters.getCreatedByList() != null && !filters.getCreatedByList().isEmpty()) {
+                    addAnyOfTermsFilter(b, List.of("createdBy", "createdBy.keyword"), filters.getCreatedByList());
+                } else if (filters.getCreatedBy() != null && !filters.getCreatedBy().isBlank()) {
                     addAnyOfTermsFilter(b, List.of("createdBy", "createdBy.keyword"), List.of(filters.getCreatedBy()));
                 }
 

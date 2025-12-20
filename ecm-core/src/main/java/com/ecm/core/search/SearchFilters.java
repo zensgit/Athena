@@ -13,6 +13,7 @@ public class SearchFilters {
     private List<String> nodeTypes;
     private List<String> mimeTypes;
     private String createdBy;
+    private List<String> createdByList;
     private LocalDateTime dateFrom;
     private LocalDateTime dateTo;
     private LocalDateTime modifiedFrom;

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Box,
   Paper,
@@ -14,6 +14,7 @@ import {
   Button,
   Pagination,
   CircularProgress,
+  Alert,
   FormControl,
   InputLabel,
   Select,
@@ -21,6 +22,7 @@ import {
   Divider,
   Checkbox,
   ListItemText,
+  Tooltip,
 } from '@mui/material';
 import {
   Search,
@@ -34,19 +36,20 @@ import {
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { useAppSelector, useAppDispatch } from 'store';
-import { searchNodes } from 'store/slices/nodeSlice';
+import { fetchSearchFacets, searchNodes } from 'store/slices/nodeSlice';
 import { setSearchOpen } from 'store/slices/uiSlice';
 import nodeService from 'services/nodeService';
 import { Node } from 'types';
 import { toast } from 'react-toastify';
 import Highlight from 'components/search/Highlight';
+import DocumentPreview from 'components/preview/DocumentPreview';
 
 type FacetValue = { value: string; count: number };
 
 const SearchResults: React.FC = () => {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
-  const { nodes, loading } = useAppSelector((state) => state.node);
+  const { nodes, loading, error, searchFacets, lastSearchCriteria } = useAppSelector((state) => state.node);
   const [quickSearch, setQuickSearch] = useState('');
   const [sortBy, setSortBy] = useState('relevance');
   const [page, setPage] = useState(1);
@@ -57,12 +60,16 @@ const SearchResults: React.FC = () => {
   const [selectedCorrespondents, setSelectedCorrespondents] = useState<string[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [previewNode, setPreviewNode] = useState<Node | null>(null);
+  const suppressFacetSearch = useRef(false);
 
   const handleQuickSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (quickSearch.trim()) {
-      await dispatch(searchNodes({ name: quickSearch }));
+    const query = quickSearch.trim();
+    if (!query) {
+      return;
     }
+    await dispatch(searchNodes({ name: query }));
   };
 
   const handleClearSearch = () => {
@@ -81,10 +88,109 @@ const SearchResults: React.FC = () => {
     setSelectedCategories([]);
   };
 
+  const removeFacetValue = (
+    setter: React.Dispatch<React.SetStateAction<string[]>>,
+    value: string
+  ) => {
+    setter((prev) => prev.filter((item) => item !== value));
+  };
+
   useEffect(() => {
+    if (!lastSearchCriteria) {
+      return;
+    }
+    suppressFacetSearch.current = true;
+    const baseMimeTypes = lastSearchCriteria.mimeTypes
+      ?? (lastSearchCriteria.contentType ? [lastSearchCriteria.contentType] : []);
+    const baseCreators = lastSearchCriteria.createdByList
+      ?? (lastSearchCriteria.createdBy ? [lastSearchCriteria.createdBy] : []);
+
+    setSelectedMimeTypes(baseMimeTypes);
+    setSelectedCreators(baseCreators);
+    setSelectedCorrespondents(lastSearchCriteria.correspondents || []);
+    setSelectedTags(lastSearchCriteria.tags || []);
+    setSelectedCategories(lastSearchCriteria.categories || []);
     setPage(1);
-    clearFacetFilters();
-  }, [nodes]);
+
+    const timer = window.setTimeout(() => {
+      suppressFacetSearch.current = false;
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [lastSearchCriteria]);
+
+  useEffect(() => {
+    const query = (lastSearchCriteria?.name || '').trim();
+    dispatch(fetchSearchFacets(query));
+  }, [lastSearchCriteria, dispatch]);
+
+  useEffect(() => {
+    if (lastSearchCriteria?.name !== undefined) {
+      setQuickSearch(lastSearchCriteria.name || '');
+    }
+  }, [lastSearchCriteria]);
+
+  useEffect(() => {
+    if (!lastSearchCriteria || suppressFacetSearch.current) {
+      return;
+    }
+
+    const normalize = (values: string[]) =>
+      values.map((value) => value.trim()).filter((value) => value.length > 0).sort();
+    const arraysEqual = (left: string[], right: string[]) => {
+      if (left.length !== right.length) return false;
+      return left.every((value, index) => value === right[index]);
+    };
+
+    const baseMimeTypes = normalize(
+      lastSearchCriteria.mimeTypes
+        ?? (lastSearchCriteria.contentType ? [lastSearchCriteria.contentType] : [])
+    );
+    const baseCreators = normalize(
+      lastSearchCriteria.createdByList
+        ?? (lastSearchCriteria.createdBy ? [lastSearchCriteria.createdBy] : [])
+    );
+    const baseTags = normalize(lastSearchCriteria.tags || []);
+    const baseCategories = normalize(lastSearchCriteria.categories || []);
+    const baseCorrespondents = normalize(lastSearchCriteria.correspondents || []);
+
+    const nextMimeTypes = normalize(selectedMimeTypes);
+    const nextCreators = normalize(selectedCreators);
+    const nextTags = normalize(selectedTags);
+    const nextCategories = normalize(selectedCategories);
+    const nextCorrespondents = normalize(selectedCorrespondents);
+
+    if (
+      arraysEqual(baseMimeTypes, nextMimeTypes)
+      && arraysEqual(baseCreators, nextCreators)
+      && arraysEqual(baseTags, nextTags)
+      && arraysEqual(baseCategories, nextCategories)
+      && arraysEqual(baseCorrespondents, nextCorrespondents)
+    ) {
+      return;
+    }
+
+    dispatch(
+      searchNodes({
+        ...lastSearchCriteria,
+        mimeTypes: nextMimeTypes.length ? nextMimeTypes : undefined,
+        contentType: undefined,
+        createdByList: nextCreators.length ? nextCreators : undefined,
+        createdBy: undefined,
+        tags: nextTags.length ? nextTags : undefined,
+        categories: nextCategories.length ? nextCategories : undefined,
+        correspondents: nextCorrespondents.length ? nextCorrespondents : undefined,
+      })
+    );
+  }, [
+    selectedMimeTypes,
+    selectedCreators,
+    selectedCorrespondents,
+    selectedTags,
+    selectedCategories,
+    lastSearchCriteria,
+    dispatch,
+  ]);
 
   useEffect(() => {
     setPage(1);
@@ -94,8 +200,7 @@ const SearchResults: React.FC = () => {
     if (node.nodeType === 'FOLDER') {
       navigate(`/browse/${node.id}`);
     } else {
-      // For documents, show in properties dialog
-      navigate(`/browse/${node.parentId || 'root'}`);
+      setPreviewNode(node);
     }
   };
 
@@ -160,6 +265,19 @@ const SearchResults: React.FC = () => {
   };
 
   const facets = useMemo(() => {
+    if (searchFacets && Object.keys(searchFacets).length > 0) {
+      const toSorted = (values?: FacetValue[]) =>
+        (values || []).slice().sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+
+      return {
+        mimeTypes: toSorted(searchFacets.mimeType),
+        creators: toSorted(searchFacets.createdBy),
+        correspondents: toSorted(searchFacets.correspondent),
+        tags: toSorted(searchFacets.tags),
+        categories: toSorted(searchFacets.categories),
+      };
+    }
+
     const mimeTypeCounts = new Map<string, number>();
     const creatorCounts = new Map<string, number>();
     const correspondentCounts = new Map<string, number>();
@@ -205,7 +323,7 @@ const SearchResults: React.FC = () => {
       tags: mapToSortedArray(tagCounts),
       categories: mapToSortedArray(categoryCounts),
     };
-  }, [nodes]);
+  }, [nodes, searchFacets]);
 
   const filtersApplied =
     selectedMimeTypes.length > 0 ||
@@ -468,6 +586,19 @@ const SearchResults: React.FC = () => {
         </Grid>
 
         <Grid item xs={12} md={9}>
+          {error && (
+            <Alert
+              severity="error"
+              sx={{ mb: 2 }}
+              action={
+                <Button color="inherit" size="small" onClick={handleAdvancedSearch}>
+                  Advanced
+                </Button>
+              }
+            >
+              {error}
+            </Alert>
+          )}
           <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
             <Typography variant="h6">
               {loading
@@ -486,6 +617,53 @@ const SearchResults: React.FC = () => {
               </Select>
             </FormControl>
           </Box>
+          {filtersApplied && (
+            <Box display="flex" flexWrap="wrap" gap={1} mb={2}>
+              {selectedMimeTypes.map((value) => (
+                <Chip
+                  key={`mime-${value}`}
+                  label={`Type: ${value}`}
+                  size="small"
+                  onDelete={() => removeFacetValue(setSelectedMimeTypes, value)}
+                />
+              ))}
+              {selectedCreators.map((value) => (
+                <Chip
+                  key={`creator-${value}`}
+                  label={`Creator: ${value}`}
+                  size="small"
+                  onDelete={() => removeFacetValue(setSelectedCreators, value)}
+                />
+              ))}
+              {selectedCorrespondents.map((value) => (
+                <Chip
+                  key={`corr-${value}`}
+                  label={`Correspondent: ${value}`}
+                  size="small"
+                  onDelete={() => removeFacetValue(setSelectedCorrespondents, value)}
+                />
+              ))}
+              {selectedTags.map((value) => (
+                <Chip
+                  key={`tag-${value}`}
+                  label={`Tag: ${value}`}
+                  size="small"
+                  onDelete={() => removeFacetValue(setSelectedTags, value)}
+                />
+              ))}
+              {selectedCategories.map((value) => (
+                <Chip
+                  key={`cat-${value}`}
+                  label={`Category: ${value}`}
+                  size="small"
+                  onDelete={() => removeFacetValue(setSelectedCategories, value)}
+                />
+              ))}
+              <Button size="small" onClick={clearFacetFilters}>
+                Clear all
+              </Button>
+            </Box>
+          )}
 
           {loading ? (
             <Box display="flex" justifyContent="center" p={4}>
@@ -526,10 +704,21 @@ const SearchResults: React.FC = () => {
                       <CardContent sx={{ flex: 1 }}>
                         <Box display="flex" alignItems="center" mb={2}>
                           {getFileIcon(node)}
-                          <Box ml={2} flex={1}>
-                            <Typography variant="h6" noWrap>
-                              {node.name}
-                            </Typography>
+                          <Box ml={2} flex={1} sx={{ minWidth: 0 }}>
+                            <Tooltip title={node.name} placement="top-start" arrow>
+                              <Typography
+                                variant="h6"
+                                sx={{
+                                  display: '-webkit-box',
+                                  WebkitLineClamp: 2,
+                                  WebkitBoxOrient: 'vertical',
+                                  overflow: 'hidden',
+                                  wordBreak: 'break-all',
+                                }}
+                              >
+                                {node.name}
+                              </Typography>
+                            </Tooltip>
                             <Box display="flex" gap={1} mt={0.5}>
                               {getFileTypeChip(node.contentType)}
                               {node.currentVersionLabel && (
@@ -580,6 +769,14 @@ const SearchResults: React.FC = () => {
           )}
         </Grid>
       </Grid>
+
+      {previewNode && (
+        <DocumentPreview
+          open={Boolean(previewNode)}
+          onClose={() => setPreviewNode(null)}
+          node={previewNode}
+        />
+      )}
     </Box>
   );
 };

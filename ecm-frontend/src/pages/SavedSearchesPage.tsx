@@ -7,8 +7,9 @@ import { toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
 import savedSearchService, { SavedSearch } from 'services/savedSearchService';
 import { useAppDispatch } from 'store';
-import { executeSavedSearch } from 'store/slices/nodeSlice';
+import { executeSavedSearch, setLastSearchCriteria } from 'store/slices/nodeSlice';
 import { setSearchOpen, setSearchPrefill } from 'store/slices/uiSlice';
+import { SearchCriteria } from 'types';
 
 const SavedSearchesPage: React.FC = () => {
   const dispatch = useAppDispatch();
@@ -32,9 +33,40 @@ const SavedSearchesPage: React.FC = () => {
     loadSavedSearches();
   }, []);
 
+  const normalizeList = (input: unknown) =>
+    Array.isArray(input)
+      ? input.map((value) => String(value).trim()).filter((value) => value.length > 0)
+      : [];
+
+  const buildSearchCriteria = (item: SavedSearch): SearchCriteria => {
+    const queryParams = item.queryParams || {};
+    const filters = (queryParams.filters || {}) as Record<string, any>;
+    const mimeTypes = Array.isArray(filters.mimeTypes) ? filters.mimeTypes : [];
+    const createdByList = normalizeList(filters.createdByList);
+
+    return {
+      name: typeof queryParams.query === 'string' ? queryParams.query : '',
+      contentType: typeof mimeTypes[0] === 'string' ? mimeTypes[0] : '',
+      mimeTypes: normalizeList(filters.mimeTypes),
+      createdBy: typeof filters.createdBy === 'string' ? filters.createdBy : '',
+      createdByList: createdByList.length ? createdByList : undefined,
+      createdFrom: typeof filters.dateFrom === 'string' ? filters.dateFrom : undefined,
+      createdTo: typeof filters.dateTo === 'string' ? filters.dateTo : undefined,
+      modifiedFrom: typeof filters.modifiedFrom === 'string' ? filters.modifiedFrom : undefined,
+      modifiedTo: typeof filters.modifiedTo === 'string' ? filters.modifiedTo : undefined,
+      tags: normalizeList(filters.tags),
+      categories: normalizeList(filters.categories),
+      correspondents: normalizeList(filters.correspondents),
+      minSize: typeof filters.minSize === 'number' ? filters.minSize : undefined,
+      maxSize: typeof filters.maxSize === 'number' ? filters.maxSize : undefined,
+      path: typeof filters.path === 'string' ? filters.path : undefined,
+    };
+  };
+
   const handleRun = async (item: SavedSearch) => {
     try {
       await dispatch(executeSavedSearch(item.id)).unwrap();
+      dispatch(setLastSearchCriteria(buildSearchCriteria(item)));
       navigate('/search-results');
     } catch {
       toast.error('Failed to execute saved search');
@@ -66,9 +98,9 @@ const SavedSearchesPage: React.FC = () => {
         createdTo: typeof filters.dateTo === 'string' ? filters.dateTo : undefined,
         modifiedFrom: typeof filters.modifiedFrom === 'string' ? filters.modifiedFrom : undefined,
         modifiedTo: typeof filters.modifiedTo === 'string' ? filters.modifiedTo : undefined,
-        tags: Array.isArray(filters.tags) ? filters.tags : [],
-        categories: Array.isArray(filters.categories) ? filters.categories : [],
-        correspondents: Array.isArray(filters.correspondents) ? filters.correspondents : [],
+        tags: normalizeList(filters.tags),
+        categories: normalizeList(filters.categories),
+        correspondents: normalizeList(filters.correspondents),
         minSize: typeof filters.minSize === 'number' ? filters.minSize : undefined,
         maxSize: typeof filters.maxSize === 'number' ? filters.maxSize : undefined,
         pathPrefix: typeof filters.path === 'string' ? filters.path : '',

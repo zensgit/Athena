@@ -302,10 +302,14 @@ class NodeService {
     const query = (criteria.name || '').trim();
     const filters: Record<string, any> = {};
 
-    if (criteria.contentType) {
+    if (criteria.mimeTypes?.length) {
+      filters.mimeTypes = criteria.mimeTypes;
+    } else if (criteria.contentType) {
       filters.mimeTypes = [criteria.contentType];
     }
-    if (criteria.createdBy) {
+    if (criteria.createdByList?.length) {
+      filters.createdByList = criteria.createdByList;
+    } else if (criteria.createdBy) {
       filters.createdBy = criteria.createdBy;
     }
     if (criteria.tags?.length) {
@@ -372,6 +376,12 @@ class NodeService {
       correspondent: item.correspondent,
       score: item.score,
     } as Node));
+  }
+
+  async getSearchFacets(query = ''): Promise<Record<string, { value: string; count: number }[]>> {
+    return api.get<Record<string, { value: string; count: number }[]>>('/search/facets', {
+      params: { q: query },
+    });
   }
 
   async addAspect(nodeId: string, aspect: string, properties?: Record<string, any>): Promise<Node> {

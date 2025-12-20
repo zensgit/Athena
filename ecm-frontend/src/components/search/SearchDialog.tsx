@@ -8,6 +8,7 @@ import {
   TextField,
   Box,
   Grid,
+  Autocomplete,
   FormControl,
   InputLabel,
   Select,
@@ -20,7 +21,6 @@ import {
   AccordionDetails,
   FormControlLabel,
   Checkbox,
-  ListItemText,
 } from '@mui/material';
 import {
   Close,
@@ -96,6 +96,9 @@ const SearchDialog: React.FC = () => {
     mimeTypes: [],
     createdBy: [],
   });
+
+  const normalizeList = (items: string[]) =>
+    items.map((item) => item.trim()).filter((item) => item.length > 0);
 
   const loadFacets = async () => {
     try {
@@ -181,6 +184,9 @@ const SearchDialog: React.FC = () => {
   const buildSavedSearchQueryParams = () => {
     const query = (searchCriteria.name || '').trim();
     const filters: Record<string, any> = {};
+    const normalizedTags = normalizeList(tags);
+    const normalizedCategories = normalizeList(categories);
+    const normalizedCorrespondents = normalizeList(correspondents);
 
     if (searchCriteria.contentType) {
       filters.mimeTypes = [searchCriteria.contentType];
@@ -188,14 +194,14 @@ const SearchDialog: React.FC = () => {
     if (searchCriteria.createdBy) {
       filters.createdBy = searchCriteria.createdBy;
     }
-    if (tags.length) {
-      filters.tags = tags;
+    if (normalizedTags.length) {
+      filters.tags = normalizedTags;
     }
-    if (categories.length) {
-      filters.categories = categories;
+    if (normalizedCategories.length) {
+      filters.categories = normalizedCategories;
     }
-    if (correspondents.length) {
-      filters.correspondents = correspondents;
+    if (normalizedCorrespondents.length) {
+      filters.correspondents = normalizedCorrespondents;
     }
     if (minSize !== undefined) {
       filters.minSize = minSize;
@@ -247,23 +253,32 @@ const SearchDialog: React.FC = () => {
   };
 
   const handleSearch = async () => {
+    const normalizedTags = normalizeList(tags);
+    const normalizedCategories = normalizeList(categories);
+    const normalizedCorrespondents = normalizeList(correspondents);
+
     const criteria: SearchCriteria = {
       ...searchCriteria,
       properties: customProperties.reduce((acc, prop) => {
         acc[prop.key] = prop.value;
         return acc;
       }, {} as Record<string, any>),
-      tags,
-      categories,
-      correspondents,
+      tags: normalizedTags,
+      categories: normalizedCategories,
+      correspondents: normalizedCorrespondents,
       minSize,
       maxSize,
       path: pathPrefix || undefined,
     };
 
-    await dispatch(searchNodes(criteria));
-    navigate('/search-results');
-    handleClose();
+    try {
+      await dispatch(searchNodes(criteria)).unwrap();
+      navigate('/search-results');
+      handleClose();
+    } catch (err: any) {
+      const message = err?.message || err?.response?.data?.message || 'Search failed';
+      toast.error(message);
+    }
   };
 
   const handleAddProperty = () => {
@@ -351,14 +366,11 @@ const SearchDialog: React.FC = () => {
                   <FormControl fullWidth>
                     <InputLabel>Content Type</InputLabel>
                     <Select
-                      multiple
-                      value={searchCriteria.contentType ? [searchCriteria.contentType] : []}
+                      value={searchCriteria.contentType || ''}
                       onChange={(e) => {
-                        const val = e.target.value as string[]; 
-                        setSearchCriteria({ ...searchCriteria, contentType: val[0] || '' });
+                        setSearchCriteria({ ...searchCriteria, contentType: e.target.value as string });
                       }}
                       label="Content Type"
-                      renderValue={(selected) => selected.join(', ')}
                     >
                       <MenuItem value="">All Types</MenuItem>
                       {facetOptions.mimeTypes.length > 0
@@ -496,9 +508,9 @@ const SearchDialog: React.FC = () => {
 
           <Accordion
             expanded={expandedSection === 'properties'}
-          onChange={(_, isExpanded) => setExpandedSection(isExpanded ? 'properties' : false)}
-        >
-          <AccordionSummary expandIcon={<ExpandMore />}>
+            onChange={(_, isExpanded) => setExpandedSection(isExpanded ? 'properties' : false)}
+          >
+            <AccordionSummary expandIcon={<ExpandMore />}>
               <Typography>Custom Properties</Typography>
             </AccordionSummary>
             <AccordionDetails>
@@ -547,103 +559,66 @@ const SearchDialog: React.FC = () => {
             </AccordionDetails>
           </Accordion>
 
-        <Accordion
-          expanded={expandedSection === 'meta'}
-          onChange={(_, isExpanded) => setExpandedSection(isExpanded ? 'meta' : false)}
-        >
-          <AccordionSummary expandIcon={<ExpandMore />}>
-            <Typography>Tags / Categories / Size / Path</Typography>
-          </AccordionSummary>
-          <AccordionDetails>
-            <Grid container spacing={2}>
-              <Grid item xs={12}>
-                <FormControl fullWidth>
-                  <InputLabel>Tags</InputLabel>
-                  <Select
+          <Accordion
+            expanded={expandedSection === 'meta'}
+            onChange={(_, isExpanded) => setExpandedSection(isExpanded ? 'meta' : false)}
+          >
+            <AccordionSummary expandIcon={<ExpandMore />}>
+              <Typography>Tags / Categories / Size / Path</Typography>
+            </AccordionSummary>
+            <AccordionDetails>
+              <Grid container spacing={2}>
+                <Grid item xs={12}>
+                  <Autocomplete
                     multiple
+                    freeSolo
+                    options={facetOptions.tags}
                     value={tags}
-                    label="Tags"
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setTags(typeof val === 'string' ? val.split(',') : val);
-                    }}
-                    renderValue={(selected) => (
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        {selected.map((value) => (
-                          <Chip key={value} label={value} size="small" />
-                        ))}
-                      </Box>
-                    )}
-                  >
-                    {facetOptions.tags.map((t) => (
-                      <MenuItem key={t} value={t}>
-                        <Checkbox checked={tags.indexOf(t) > -1} />
-                        <ListItemText primary={t} />
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Grid>
-              <Grid item xs={12}>
-                <FormControl fullWidth>
-                  <InputLabel>Categories</InputLabel>
-                  <Select
+                    onChange={(_, value) => setTags(value.map((item) => item.toString()))}
+                    renderTags={(value, getTagProps) =>
+                      value.map((option, index) => (
+                        <Chip label={option} size="small" {...getTagProps({ index })} />
+                      ))
+                    }
+                    renderInput={(params) => <TextField {...params} label="Tags" placeholder="Add tags" />}
+                  />
+                </Grid>
+                <Grid item xs={12}>
+                  <Autocomplete
                     multiple
+                    freeSolo
+                    options={facetOptions.categories}
                     value={categories}
-                    label="Categories"
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setCategories(typeof val === 'string' ? val.split(',') : val);
-                    }}
-                    renderValue={(selected) => (
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        {selected.map((value) => (
-                          <Chip key={value} label={value} size="small" />
-                        ))}
-                      </Box>
-                    )}
-                  >
-                    {facetOptions.categories.map((c) => (
-                      <MenuItem key={c} value={c}>
-                        <Checkbox checked={categories.indexOf(c) > -1} />
-                        <ListItemText primary={c} />
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Grid>
-              <Grid item xs={12}>
-                <FormControl fullWidth>
-                  <InputLabel>Correspondents</InputLabel>
-                  <Select
+                    onChange={(_, value) => setCategories(value.map((item) => item.toString()))}
+                    renderTags={(value, getTagProps) =>
+                      value.map((option, index) => (
+                        <Chip label={option} size="small" {...getTagProps({ index })} />
+                      ))
+                    }
+                    renderInput={(params) => <TextField {...params} label="Categories" placeholder="Add categories" />}
+                  />
+                </Grid>
+                <Grid item xs={12}>
+                  <Autocomplete
                     multiple
+                    freeSolo
+                    options={facetOptions.correspondents}
                     value={correspondents}
-                    label="Correspondents"
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setCorrespondents(typeof val === 'string' ? val.split(',') : val);
-                    }}
-                    renderValue={(selected) => (
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        {selected.map((value) => (
-                          <Chip key={value} label={value} size="small" />
-                        ))}
-                      </Box>
+                    onChange={(_, value) => setCorrespondents(value.map((item) => item.toString()))}
+                    renderTags={(value, getTagProps) =>
+                      value.map((option, index) => (
+                        <Chip label={option} size="small" {...getTagProps({ index })} />
+                      ))
+                    }
+                    renderInput={(params) => (
+                      <TextField {...params} label="Correspondents" placeholder="Add correspondents" />
                     )}
-                  >
-                    {facetOptions.correspondents.map((c) => (
-                      <MenuItem key={c} value={c}>
-                        <Checkbox checked={correspondents.indexOf(c) > -1} />
-                        <ListItemText primary={c} />
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Grid>
-              <Grid item xs={6}>
-                <TextField
-                  fullWidth
-                  type="number"
+                  />
+                </Grid>
+                <Grid item xs={6}>
+                  <TextField
+                    fullWidth
+                    type="number"
                     label="Min size (bytes)"
                     value={minSize ?? ''}
                     onChange={(e) => setMinSize(e.target.value ? Number(e.target.value) : undefined)}

@@ -6,6 +6,7 @@ import { Node, NodeState, SearchCriteria } from 'types';
 const initialState: NodeState = {
   currentNode: null,
   nodes: [],
+  searchFacets: {},
   loading: false,
   error: null,
   selectedNodes: [],
@@ -88,7 +89,15 @@ export const updateNode = createAsyncThunk(
 export const searchNodes = createAsyncThunk(
   'node/searchNodes',
   async (criteria: SearchCriteria) => {
-    return nodeService.searchNodes(criteria);
+    const nodes = await nodeService.searchNodes(criteria);
+    return { nodes, criteria };
+  }
+);
+
+export const fetchSearchFacets = createAsyncThunk(
+  'node/fetchSearchFacets',
+  async (query: string | undefined) => {
+    return nodeService.getSearchFacets(query || '');
   }
 );
 
@@ -127,6 +136,9 @@ const nodeSlice = createSlice({
   reducers: {
     setCurrentNode: (state, action: PayloadAction<Node>) => {
       state.currentNode = action.payload;
+    },
+    setLastSearchCriteria: (state, action: PayloadAction<SearchCriteria | null>) => {
+      state.lastSearchCriteria = action.payload || undefined;
     },
     clearCurrentNode: (state) => {
       state.currentNode = null;
@@ -192,11 +204,15 @@ const nodeSlice = createSlice({
       })
       .addCase(searchNodes.fulfilled, (state, action) => {
         state.loading = false;
-        state.nodes = action.payload;
+        state.nodes = action.payload.nodes;
+        state.lastSearchCriteria = action.payload.criteria;
       })
       .addCase(searchNodes.rejected, (state, action) => {
         state.loading = false;
         state.error = action.error.message || 'Search failed';
+      })
+      .addCase(fetchSearchFacets.fulfilled, (state, action) => {
+        state.searchFacets = action.payload || {};
       })
       .addCase(executeSavedSearch.pending, (state) => {
         state.loading = true;
@@ -229,6 +245,7 @@ export const {
   toggleNodeSelection,
   clearSelection,
   clearError,
+  setLastSearchCriteria,
 } = nodeSlice.actions;
 
 export default nodeSlice.reducer;

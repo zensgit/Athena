@@ -331,7 +331,12 @@ public class FacetedSearchService {
             );
         }
 
-        if (filters.getCreatedBy() != null && !filters.getCreatedBy().isEmpty()) {
+        if (filters.getCreatedByList() != null && !filters.getCreatedByList().isEmpty()) {
+            criteria = criteria.and(
+                new Criteria("createdBy.keyword").in(filters.getCreatedByList())
+                    .or(new Criteria("createdBy").in(filters.getCreatedByList()))
+            );
+        } else if (filters.getCreatedBy() != null && !filters.getCreatedBy().isEmpty()) {
             criteria = criteria.and(
                 new Criteria("createdBy.keyword").is(filters.getCreatedBy())
                     .or(new Criteria("createdBy").is(filters.getCreatedBy()))
