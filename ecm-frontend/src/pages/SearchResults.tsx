@@ -46,6 +46,24 @@ import DocumentPreview from 'components/preview/DocumentPreview';
 
 type FacetValue = { value: string; count: number };
 
+const FILE_EXTENSIONS = [
+  '.pdf',
+  '.txt',
+  '.doc',
+  '.docx',
+  '.xls',
+  '.xlsx',
+  '.ppt',
+  '.pptx',
+  '.csv',
+  '.rtf',
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.gif',
+  '.webp',
+];
+
 const SearchResults: React.FC = () => {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
@@ -238,8 +256,13 @@ const SearchResults: React.FC = () => {
     dispatch(searchNodes({ ...lastSearchCriteria, page: 0, size: pageSize, ...sortParams }));
   }, [sortBy, lastSearchCriteria, dispatch, pageSize]);
 
-  const isDocumentNode = (node: Node) =>
-    node.nodeType === 'DOCUMENT' || Boolean(node.contentType || node.size || node.currentVersionLabel);
+  const isDocumentNode = (node: Node) => {
+    const normalizedName = node.name?.toLowerCase() || '';
+    const hasExtension = FILE_EXTENSIONS.some((ext) => normalizedName.endsWith(ext));
+    return node.nodeType === 'DOCUMENT'
+      || Boolean(node.contentType || node.size || node.currentVersionLabel)
+      || hasExtension;
+  };
 
   const isFolderNode = (node: Node) => node.nodeType === 'FOLDER' && !isDocumentNode(node);
 
