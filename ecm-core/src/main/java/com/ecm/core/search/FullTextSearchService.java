@@ -13,7 +13,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
+import co.elastic.clients.elasticsearch._types.SortOrder;
 import org.springframework.data.elasticsearch.client.elc.NativeQuery;
 import org.springframework.data.elasticsearch.client.elc.NativeQueryBuilder;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
@@ -351,11 +351,11 @@ public class FullTextSearchService {
             return;
         }
 
-        Sort.Direction direction = "asc".equalsIgnoreCase(sortDirection)
-            ? Sort.Direction.ASC
-            : Sort.Direction.DESC;
+        SortOrder order = "asc".equalsIgnoreCase(sortDirection)
+            ? SortOrder.Asc
+            : SortOrder.Desc;
 
-        builder.withSort(Sort.by(new Sort.Order(direction, field)));
+        builder.withSort(s -> s.field(f -> f.field(field).order(order)));
     }
 
     private static void addAnyOfTermsFilter(BoolQuery.Builder bool, List<String> fields, List<String> values) {
