@@ -106,27 +106,33 @@ export const executeSavedSearch = createAsyncThunk(
   async (savedSearchId: string) => {
     const response = await savedSearchService.execute(savedSearchId);
     const items = response.results?.content || [];
-    return items.map((item) => ({
-      id: item.id,
-      name: item.name,
-      path: item.path,
-      nodeType: (item.nodeType as any) || 'DOCUMENT',
-      parentId: item.parentId,
-      properties: { description: item.description },
-      aspects: [],
-      created: item.createdDate || new Date().toISOString(),
-      modified: item.lastModifiedDate || item.createdDate || new Date().toISOString(),
-      creator: item.createdBy || '',
-      modifier: item.lastModifiedBy || item.createdBy || '',
-      size: item.fileSize,
-      contentType: item.mimeType,
-      description: item.description,
-      highlights: item.highlights,
-      tags: item.tags,
-      categories: item.categories,
-      correspondent: item.correspondent,
-      score: item.score,
-    } as Node));
+    return items.map((item) => {
+      const inferredNodeType = item.mimeType || item.fileSize
+        ? 'DOCUMENT'
+        : (item.nodeType === 'FOLDER' || item.nodeType === 'DOCUMENT' ? item.nodeType : 'FOLDER');
+
+      return ({
+        id: item.id,
+        name: item.name,
+        path: item.path,
+        nodeType: inferredNodeType,
+        parentId: item.parentId,
+        properties: { description: item.description },
+        aspects: [],
+        created: item.createdDate || new Date().toISOString(),
+        modified: item.lastModifiedDate || item.createdDate || new Date().toISOString(),
+        creator: item.createdBy || '',
+        modifier: item.lastModifiedBy || item.createdBy || '',
+        size: item.fileSize,
+        contentType: item.mimeType,
+        description: item.description,
+        highlights: item.highlights,
+        tags: item.tags,
+        categories: item.categories,
+        correspondent: item.correspondent,
+        score: item.score,
+      } as Node);
+    });
   }
 );
 

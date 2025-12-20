@@ -196,8 +196,13 @@ const SearchResults: React.FC = () => {
     setPage(1);
   }, [selectedMimeTypes, selectedCreators, selectedCorrespondents, selectedTags, selectedCategories]);
 
+  const isDocumentNode = (node: Node) =>
+    node.nodeType === 'DOCUMENT' || Boolean(node.contentType || node.size || node.currentVersionLabel);
+
+  const isFolderNode = (node: Node) => node.nodeType === 'FOLDER' && !isDocumentNode(node);
+
   const handleViewNode = (node: Node) => {
-    if (node.nodeType === 'FOLDER') {
+    if (isFolderNode(node)) {
       navigate(`/browse/${node.id}`);
     } else {
       setPreviewNode(node);
@@ -205,7 +210,7 @@ const SearchResults: React.FC = () => {
   };
 
   const handleDownload = async (node: Node) => {
-    if (node.nodeType === 'DOCUMENT') {
+    if (isDocumentNode(node)) {
       try {
         await nodeService.downloadDocument(node.id);
       } catch (error) {
@@ -222,7 +227,7 @@ const SearchResults: React.FC = () => {
   };
 
   const getFileIcon = (node: Node) => {
-    if (node.nodeType === 'FOLDER') {
+    if (isFolderNode(node)) {
       return <Folder sx={{ fontSize: 48, color: 'primary.main' }} />;
     }
     return <InsertDriveFile sx={{ fontSize: 48, color: 'text.secondary' }} />;
@@ -749,7 +754,7 @@ const SearchResults: React.FC = () => {
                         <Button size="small" startIcon={<Visibility />} onClick={() => handleViewNode(node)}>
                           View
                         </Button>
-                        {node.nodeType === 'DOCUMENT' && (
+                        {isDocumentNode(node) && (
                           <Button size="small" startIcon={<Download />} onClick={() => handleDownload(node)}>
                             Download
                           </Button>

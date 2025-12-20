@@ -355,27 +355,33 @@ class NodeService {
           pageable: { page: 0, size: 50 },
         });
 
-    return response.content.map((item) => ({
-      id: item.id,
-      name: item.name,
-      path: item.path,
-      nodeType: item.nodeType || 'DOCUMENT',
-      parentId: item.parentId,
-      properties: { description: item.description },
-      aspects: [],
-      created: item.createdDate,
-      modified: item.lastModifiedDate || item.createdDate,
-      creator: item.createdBy,
-      modifier: item.lastModifiedBy || item.createdBy,
-      size: item.fileSize,
-      contentType: item.mimeType,
-      description: item.description,
-      highlights: item.highlights,
-      tags: item.tags,
-      categories: item.categories,
-      correspondent: item.correspondent,
-      score: item.score,
-    } as Node));
+    return response.content.map((item) => {
+      const inferredNodeType = item.mimeType || item.fileSize
+        ? 'DOCUMENT'
+        : (item.nodeType === 'FOLDER' || item.nodeType === 'DOCUMENT' ? item.nodeType : 'FOLDER');
+
+      return ({
+        id: item.id,
+        name: item.name,
+        path: item.path,
+        nodeType: inferredNodeType,
+        parentId: item.parentId,
+        properties: { description: item.description },
+        aspects: [],
+        created: item.createdDate,
+        modified: item.lastModifiedDate || item.createdDate,
+        creator: item.createdBy,
+        modifier: item.lastModifiedBy || item.createdBy,
+        size: item.fileSize,
+        contentType: item.mimeType,
+        description: item.description,
+        highlights: item.highlights,
+        tags: item.tags,
+        categories: item.categories,
+        correspondent: item.correspondent,
+        score: item.score,
+      } as Node);
+    });
   }
 
   async getSearchFacets(query = ''): Promise<Record<string, { value: string; count: number }[]>> {
