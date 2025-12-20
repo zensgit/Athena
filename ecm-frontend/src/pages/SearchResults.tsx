@@ -233,6 +233,23 @@ const SearchResults: React.FC = () => {
     return <InsertDriveFile sx={{ fontSize: 48, color: 'text.secondary' }} />;
   };
 
+  const getNameTypographySx = (name: string) => {
+    const length = name?.length ?? 0;
+    const isLong = length > 28;
+    const isExtraLong = length > 40;
+
+    return {
+      display: '-webkit-box',
+      WebkitLineClamp: isLong ? 3 : 2,
+      WebkitBoxOrient: 'vertical',
+      overflow: 'hidden',
+      wordBreak: 'break-word',
+      overflowWrap: 'anywhere',
+      lineHeight: isExtraLong ? 1.2 : isLong ? 1.25 : 1.3,
+      fontSize: isExtraLong ? '1rem' : isLong ? '1.1rem' : undefined,
+    };
+  };
+
   const getFileTypeChip = (contentType?: string) => {
     if (!contentType) return null;
 
@@ -713,13 +730,7 @@ const SearchResults: React.FC = () => {
                             <Tooltip title={node.name} placement="top-start" arrow>
                               <Typography
                                 variant="h6"
-                                sx={{
-                                  display: '-webkit-box',
-                                  WebkitLineClamp: 2,
-                                  WebkitBoxOrient: 'vertical',
-                                  overflow: 'hidden',
-                                  wordBreak: 'break-all',
-                                }}
+                                sx={getNameTypographySx(node.name)}
                               >
                                 {node.name}
                               </Typography>
