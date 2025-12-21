@@ -42,7 +42,7 @@ import nodeService from 'services/nodeService';
 import { Node } from 'types';
 import { toast } from 'react-toastify';
 import Highlight from 'components/search/Highlight';
-import DocumentPreview from 'components/preview/DocumentPreview';
+const DocumentPreview = React.lazy(() => import('components/preview/DocumentPreview'));
 
 type FacetValue = { value: string; count: number };
 
@@ -79,6 +79,7 @@ const SearchResults: React.FC = () => {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [previewNode, setPreviewNode] = useState<Node | null>(null);
+  const previewOpen = Boolean(previewNode);
   const suppressFacetSearch = useRef(false);
 
   const getSortParams = (value: string) => {
@@ -272,6 +273,10 @@ const SearchResults: React.FC = () => {
     } else {
       setPreviewNode(node);
     }
+  };
+
+  const handleClosePreview = () => {
+    setPreviewNode(null);
   };
 
   const handleDownload = async (node: Node) => {
@@ -806,12 +811,30 @@ const SearchResults: React.FC = () => {
         </Grid>
       </Grid>
 
-      {previewNode && (
-        <DocumentPreview
-          open={Boolean(previewNode)}
-          onClose={() => setPreviewNode(null)}
-          node={previewNode}
-        />
+      {previewOpen && previewNode && (
+        <React.Suspense
+          fallback={(
+            <Box
+              sx={{
+                position: 'fixed',
+                inset: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                bgcolor: 'rgba(0,0,0,0.35)',
+                zIndex: (theme) => theme.zIndex.modal + 1,
+              }}
+            >
+              <CircularProgress />
+            </Box>
+          )}
+        >
+          <DocumentPreview
+            open={previewOpen}
+            onClose={handleClosePreview}
+            node={previewNode}
+          />
+        </React.Suspense>
       )}
     </Box>
   );
