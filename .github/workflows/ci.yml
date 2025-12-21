@@ -45,6 +45,7 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+          cache-dependency-path: ecm-frontend/package-lock.json
 
       - name: Install dependencies
         run: npm ci --legacy-peer-deps --no-audit --no-fund
@@ -71,7 +72,15 @@ jobs:
 
       - name: Start verification stack
         run: |
-          docker compose up -d postgres redis rabbitmq minio keycloak keycloak-db ml-service collabora clamav ecm-core
+          if command -v docker-compose >/dev/null 2>&1; then
+            DC="docker-compose"
+          else
+            DC="docker compose"
+          fi
+          ECM_WOPI_ENABLED=false ECM_ANTIVIRUS_ENABLED=false ECM_PREVIEW_CAD_ENABLED=false \
+            ${DC} up -d postgres redis rabbitmq minio keycloak keycloak-db elasticsearch
+          ECM_WOPI_ENABLED=false ECM_ANTIVIRUS_ENABLED=false ECM_PREVIEW_CAD_ENABLED=false \
+            ${DC} up -d --no-deps ecm-core
 
       - name: Run Phase C verification
         run: |
