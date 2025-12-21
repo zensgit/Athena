@@ -4,7 +4,8 @@ import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
+const publicUrl = process.env.PUBLIC_URL || '';
+pdfjs.GlobalWorkerOptions.workerSrc = `${publicUrl}/pdf.worker.min.mjs`;
 
 type PdfPreviewProps = {
   fileUrl: string | null;
