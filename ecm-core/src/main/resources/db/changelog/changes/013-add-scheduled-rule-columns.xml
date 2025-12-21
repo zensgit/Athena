@@ -5,8 +5,78 @@
     xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
                         http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
 
+    <changeSet id="013-0-create-automation-rules-table" author="claude">
+        <comment>Create automation rules table for rule engine</comment>
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="automation_rules"/>
+            </not>
+        </preConditions>
+
+        <createTable tableName="automation_rules">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="name" type="VARCHAR(200)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="description" type="TEXT"/>
+            <column name="trigger_type" type="VARCHAR(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="conditions" type="JSONB"/>
+            <column name="actions" type="JSONB"/>
+            <column name="priority" type="INTEGER" defaultValueNumeric="100"/>
+            <column name="enabled" type="BOOLEAN" defaultValueBoolean="true"/>
+            <column name="owner" type="VARCHAR(255)"/>
+            <column name="scope_folder_id" type="${uuid_type}"/>
+            <column name="scope_mime_types" type="VARCHAR(500)"/>
+            <column name="execution_count" type="BIGINT" defaultValueNumeric="0"/>
+            <column name="failure_count" type="BIGINT" defaultValueNumeric="0"/>
+            <column name="stop_on_match" type="BOOLEAN" defaultValueBoolean="false"/>
+            <column name="cron_expression" type="VARCHAR(100)"/>
+            <column name="timezone" type="VARCHAR(50)" defaultValue="UTC"/>
+            <column name="last_run_at" type="TIMESTAMP"/>
+            <column name="next_run_at" type="TIMESTAMP"/>
+            <column name="max_items_per_run" type="INTEGER" defaultValueNumeric="200"/>
+            <column name="created_date" type="TIMESTAMP" defaultValueComputed="${now}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_date" type="TIMESTAMP"/>
+            <column name="created_by" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_by" type="VARCHAR(255)"/>
+            <column name="version" type="BIGINT" defaultValue="0"/>
+            <column name="is_deleted" type="BOOLEAN" defaultValue="false">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <createIndex tableName="automation_rules" indexName="idx_rule_trigger">
+            <column name="trigger_type"/>
+        </createIndex>
+        <createIndex tableName="automation_rules" indexName="idx_rule_enabled">
+            <column name="enabled"/>
+        </createIndex>
+        <createIndex tableName="automation_rules" indexName="idx_rule_owner">
+            <column name="owner"/>
+        </createIndex>
+        <createIndex tableName="automation_rules" indexName="idx_rule_priority">
+            <column name="priority"/>
+        </createIndex>
+    </changeSet>
+
     <changeSet id="013-1-add-scheduled-rule-columns" author="claude">
         <comment>Add columns to support scheduled/cron-based automation rules</comment>
+        <preConditions onFail="MARK_RAN">
+            <and>
+                <tableExists tableName="automation_rules"/>
+                <not>
+                    <columnExists tableName="automation_rules" columnName="cron_expression"/>
+                </not>
+            </and>
+        </preConditions>
 
         <addColumn tableName="automation_rules">
             <column name="cron_expression" type="varchar(100)">
@@ -41,6 +111,14 @@
 
     <changeSet id="013-2-add-scheduled-rule-index" author="claude">
         <comment>Add index for efficient scheduled rule queries</comment>
+        <preConditions onFail="MARK_RAN">
+            <and>
+                <tableExists tableName="automation_rules"/>
+                <not>
+                    <indexExists indexName="idx_rules_scheduled_next_run"/>
+                </not>
+            </and>
+        </preConditions>
 
         <createIndex tableName="automation_rules" indexName="idx_rules_scheduled_next_run">
             <column name="enabled"/>
