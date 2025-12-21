@@ -104,9 +104,27 @@ jobs:
         run: |
           ./scripts/verify.sh --no-restart --smoke-only --skip-build --skip-wopi
 
-      - name: Dump ECM Core logs (on failure)
+      - name: Collect verification logs (on failure)
         if: failure()
-        run: docker compose logs ecm-core
+        run: |
+          ls -la tmp || true
+          latest_log="$(ls -t tmp/*verify-phase-c.log 2>/dev/null | head -n 1)"
+          if [[ -n "${latest_log}" ]]; then
+            echo "Latest verify-phase-c log: ${latest_log}"
+            tail -n 200 "${latest_log}" || true
+          fi
+          ls -t tmp/*.log 2>/dev/null | head -n 20 || true
+          ls -t tmp/phase-c-*.json 2>/dev/null | head -n 5 || true
+          docker compose logs ecm-core || true
+          docker compose logs keycloak || true
+
+      - name: Upload verification logs (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase-c-logs
+          path: tmp
+          if-no-files-found: ignore
 
       - name: Shutdown stack
         if: always()
