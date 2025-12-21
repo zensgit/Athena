@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAppSelector } from 'store';
-import authService, { keycloak } from 'services/authService';
+import authService from 'services/authService';
 
 interface PrivateRouteProps {
   children: React.ReactNode;
@@ -42,18 +42,19 @@ const buildSafeRedirectUri = (pathname: string, search: string, hash: string) =>
 const PrivateRoute: React.FC<PrivateRouteProps> = ({ children, requiredRoles }) => {
   const location = useLocation();
   const { isAuthenticated, user } = useAppSelector((state) => state.auth);
+  const keycloakAuthenticated = authService.isAuthenticated();
 
   useEffect(() => {
-    if (isAuthenticated || keycloak.authenticated) return;
+    if (isAuthenticated || keycloakAuthenticated) return;
     if (hasKeycloakCallbackParams()) return;
     if (sessionStorage.getItem(LOGIN_IN_PROGRESS_KEY) === '1') return;
 
     sessionStorage.setItem(LOGIN_IN_PROGRESS_KEY, '1');
     const redirectUri = buildSafeRedirectUri(location.pathname, location.search, location.hash);
-    keycloak.login({ redirectUri });
-  }, [isAuthenticated, location.hash, location.pathname, location.search]);
+    authService.login({ redirectUri });
+  }, [isAuthenticated, keycloakAuthenticated, location.hash, location.pathname, location.search]);
 
-  if (!isAuthenticated && !keycloak.authenticated) {
+  if (!isAuthenticated && !keycloakAuthenticated) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 

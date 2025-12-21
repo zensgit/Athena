@@ -16,7 +16,7 @@ import { Security as SecurityIcon, OpenInNew as OpenInNewIcon } from '@mui/icons
 import { toast } from 'react-toastify';
 import { useAppDispatch, useAppSelector } from 'store';
 import { setCompactMode, setSidebarAutoCollapse } from 'store/slices/uiSlice';
-import authService, { keycloak } from 'services/authService';
+import authService from 'services/authService';
 import apiService from 'services/api';
 
 type CollaboraCapabilities = {
@@ -67,7 +67,7 @@ const SettingsPage: React.FC = () => {
     };
   }, []);
 
-  const tokenParsed = (keycloak.tokenParsed || {}) as {
+  const tokenParsed = (authService.getTokenParsed() || {}) as {
     exp?: number;
     iat?: number;
     sid?: string;

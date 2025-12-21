@@ -34,7 +34,7 @@ import { useNavigate } from 'react-router-dom';
 import { Node } from 'types';
 import apiService from 'services/api';
 import nodeService from 'services/nodeService';
-import { keycloak } from 'services/authService';
+import authService from 'services/authService';
 import { toast } from 'react-toastify';
 
 // Configure PDF.js worker
@@ -112,7 +112,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
 
     const loadDocument = async () => {
       try {
-        const token = keycloak.token;
+        const token = (await authService.refreshToken()) || authService.getToken();
         const response = await fetch(`/api/v1/nodes/${nodeId}/content`, {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });

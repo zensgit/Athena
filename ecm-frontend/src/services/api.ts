@@ -1,6 +1,6 @@
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 import { toast } from 'react-toastify';
-import { keycloak } from './authService';
+import authService from './authService';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '/api/v1';
 
@@ -19,14 +19,12 @@ class ApiService {
     this.api.interceptors.request.use(
       async (config) => {
         try {
-          if (keycloak.authenticated) {
-            await keycloak.updateToken(30);
-          }
+          await authService.refreshToken();
         } catch {
           // If refresh fails, let the request proceed; the 401 handler will redirect to login.
         }
 
-        const token = keycloak.token;
+        const token = authService.getToken();
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
         }

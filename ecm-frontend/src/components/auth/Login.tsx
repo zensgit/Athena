@@ -1,10 +1,10 @@
 import React from 'react';
 import { Box, Card, CardContent, Button, Typography } from '@mui/material';
-import { keycloak } from 'services/authService';
+import authService from 'services/authService';
 
 const Login: React.FC = () => {
   const handleLogin = () => {
-    keycloak.login({ redirectUri: window.location.origin + '/' });
+    authService.login({ redirectUri: window.location.origin + '/' });
   };
 
   return (

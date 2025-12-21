@@ -2,7 +2,6 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
 import App from './App';
-import { keycloak } from 'services/authService';
 import authService from 'services/authService';
 import { store } from './store';
 import { setSession } from 'store/slices/authSlice';
@@ -18,14 +17,13 @@ const renderApp = () => {
   );
 };
 
-// Initialize Keycloak before rendering
-keycloak
-  .init({
-    onLoad: 'check-sso',
-    pkceMethod: 'S256',
-    checkLoginIframe: false, // Disable iframe check to prevent CORS issues
-  })
-  .then((authenticated: boolean) => {
+const initAuth = async () => {
+  try {
+    const authenticated = await authService.init({
+      onLoad: 'check-sso',
+      pkceMethod: 'S256',
+      checkLoginIframe: false, // Disable iframe check to prevent CORS issues
+    });
     sessionStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
     store.dispatch(
       setSession({
@@ -36,16 +34,14 @@ keycloak
     );
     renderApp();
     if (authenticated) {
-      // Only set up token refresh if authenticated
-      setInterval(() => {
-        keycloak.updateToken(30).catch(() => {
-          console.warn('Token refresh failed, user may need to re-login');
-        });
-      }, 20000);
+      authService.startTokenRefresh();
     }
-  })
-  .catch((error: Error) => {
+  } catch (error) {
     sessionStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
     console.error('Keycloak init error:', error);
     renderApp();
-  });
+  }
+};
+
+// Initialize Keycloak before rendering
+void initAuth();
