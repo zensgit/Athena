@@ -27,9 +27,6 @@ import {
   Edit,
   Visibility,
 } from '@mui/icons-material';
-import { Document, Page, pdfjs } from 'react-pdf';
-import 'react-pdf/dist/Page/AnnotationLayer.css';
-import 'react-pdf/dist/Page/TextLayer.css';
 import { useNavigate } from 'react-router-dom';
 import { Node } from 'types';
 import apiService from 'services/api';
@@ -37,14 +34,13 @@ import nodeService from 'services/nodeService';
 import authService from 'services/authService';
 import { toast } from 'react-toastify';
 
-// Configure PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
-
 interface DocumentPreviewProps {
   open: boolean;
   onClose: () => void;
   node: Node;
 }
+
+const PdfPreview = React.lazy(() => import('./PdfPreview'));
 
 const OFFICE_MIME_TYPES = new Set([
   'application/msword',
@@ -290,20 +286,15 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
           height="calc(100vh - 200px)"
           sx={{ overflow: 'auto' }}
         >
-          <Document
-            file={fileUrl}
-            onLoadSuccess={handleDocumentLoadSuccess}
-            loading={<CircularProgress />}
-            error={<Typography color="error">Failed to load PDF</Typography>}
-          >
-            <Page
+          <React.Suspense fallback={<CircularProgress />}>
+            <PdfPreview
+              fileUrl={fileUrl}
               pageNumber={pageNumber}
               scale={scale}
-              rotate={rotation}
-              renderTextLayer={true}
-              renderAnnotationLayer={true}
+              rotation={rotation}
+              onLoadSuccess={handleDocumentLoadSuccess}
             />
-          </Document>
+          </React.Suspense>
         </Box>
       );
     }
