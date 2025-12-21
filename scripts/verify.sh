@@ -294,7 +294,8 @@ fi
 if [[ ${WOPI_ONLY} -eq 0 ]]; then
   log_info "=== Step 4: Getting access token ==="
   if [[ -f "${SCRIPT_DIR}/get-token.sh" ]]; then
-    run_step "get-token" bash "${SCRIPT_DIR}/get-token.sh" admin admin
+    run_step "get-token-admin" bash "${SCRIPT_DIR}/get-token.sh" admin admin
+    run_step "get-token-viewer" bash "${SCRIPT_DIR}/get-token.sh" viewer viewer
   else
     log_warn "get-token.sh not found, skipping"
     ((STEPS_SKIPPED+=1))
@@ -317,6 +318,22 @@ if [[ ${WOPI_ONLY} -eq 0 ]]; then
   fi
 else
   log_info "=== Step 5: Skipping API smoke tests (--wopi-only) ==="
+  ((STEPS_SKIPPED+=1))
+fi
+
+# ============================================================
+# STEP 5.5: Phase C security verification (ACL + share links)
+# ============================================================
+if [[ ${WOPI_ONLY} -eq 0 ]]; then
+  log_info "=== Step 5.5: Running security verification (Phase C) ==="
+  if [[ -f "${SCRIPT_DIR}/verify-phase-c.py" ]]; then
+    run_step "verify-phase-c" python3 "${SCRIPT_DIR}/verify-phase-c.py"
+  else
+    log_warn "verify-phase-c.py not found, skipping"
+    ((STEPS_SKIPPED+=1))
+  fi
+else
+  log_info "=== Step 5.5: Skipping security verification (--wopi-only) ==="
   ((STEPS_SKIPPED+=1))
 fi
 

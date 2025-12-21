@@ -49,6 +49,7 @@ public class SecurityConfig {
                 .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                 .requestMatchers("/error").permitAll()
                 .requestMatchers("/api/v1/ml/health").permitAll()
+                .requestMatchers("/api/v1/share/access/**", "/api/share/access/**").permitAll()
                 // WOPI host endpoints are validated via opaque access_token query param
                 .requestMatchers("/wopi/**").permitAll()
                 // All other API endpoints require authentication
