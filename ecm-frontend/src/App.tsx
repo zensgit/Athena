@@ -22,10 +22,11 @@ import SettingsPage from './pages/SettingsPage';
 import CorrespondentsPage from './pages/CorrespondentsPage';
 import FavoritesPage from './pages/FavoritesPage';
 import SavedSearchesPage from './pages/SavedSearchesPage';
-import SearchDialog from './components/search/SearchDialog';
 import VersionHistoryDialog from './components/dialogs/VersionHistoryDialog';
 import PermissionsDialog from './components/dialogs/PermissionsDialog';
 import PropertiesDialog from './components/dialogs/PropertiesDialog';
+
+const SearchDialog = React.lazy(() => import('./components/search/SearchDialog'));
 
 const theme = createTheme({
   palette: {
@@ -210,7 +211,9 @@ const App: React.FC = () => {
           </Routes>
 
           {/* Global Dialogs - Must be inside Router for useNavigate */}
-          <SearchDialog />
+          <React.Suspense fallback={null}>
+            <SearchDialog />
+          </React.Suspense>
           <VersionHistoryDialog />
           <PermissionsDialog />
           <PropertiesDialog />
