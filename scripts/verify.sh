@@ -311,7 +311,10 @@ fi
 if [[ ${WOPI_ONLY} -eq 0 ]]; then
   log_info "=== Step 5: Running API smoke tests ==="
   if [[ -f "${SCRIPT_DIR}/smoke.sh" ]]; then
-    run_step "smoke-test" bash "${SCRIPT_DIR}/smoke.sh"
+    run_step "smoke-test" env \
+      ECM_API="${ECM_API_URL}" \
+      ECM_TOKEN_FILE="${REPO_ROOT}/tmp/admin.access_token" \
+      bash "${SCRIPT_DIR}/smoke.sh"
   else
     log_error "smoke.sh not found!"
     ((STEPS_FAILED+=1))
@@ -327,7 +330,9 @@ fi
 if [[ ${WOPI_ONLY} -eq 0 ]]; then
   log_info "=== Step 5.5: Running security verification (Phase C) ==="
   if [[ -f "${SCRIPT_DIR}/verify-phase-c.py" ]]; then
-    run_step "verify-phase-c" python3 "${SCRIPT_DIR}/verify-phase-c.py"
+    run_step "verify-phase-c" env \
+      API_BASE_URL="${ECM_API_URL}" \
+      python3 "${SCRIPT_DIR}/verify-phase-c.py"
   else
     log_warn "verify-phase-c.py not found, skipping"
     ((STEPS_SKIPPED+=1))
