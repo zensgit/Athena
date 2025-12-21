@@ -15,7 +15,16 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.RestTemplate;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
@@ -48,6 +57,18 @@ public class PreviewService {
     
     @Value("${ecm.preview.thumbnail.height:200}")
     private int thumbnailHeight;
+
+    @Value("${ecm.preview.cad.enabled:true}")
+    private boolean cadPreviewEnabled;
+
+    @Value("${ecm.preview.cad.render-url:}")
+    private String cadRenderUrl;
+
+    @Value("${ecm.preview.cad.auth-token:}")
+    private String cadRenderAuthToken;
+
+    @Value("${ecm.preview.cad.timeout-ms:30000}")
+    private int cadRenderTimeoutMs;
     
     @Value("${ecm.storage.temp-path}")
     private String tempPath;
@@ -59,13 +80,15 @@ public class PreviewService {
             throw new SecurityException("No permission to preview document");
         }
         
-        String mimeType = document.getMimeType();
+        String mimeType = normalizeMimeType(document.getMimeType());
         PreviewResult result = new PreviewResult();
         result.setDocumentId(document.getId());
         result.setMimeType(mimeType);
         
         try (InputStream content = contentService.getContent(document.getContentId())) {
-            if (mimeType.startsWith("image/")) {
+            if (isCadDocument(mimeType, document.getName())) {
+                result = generateCadPreview(content, document);
+            } else if (mimeType.startsWith("image/")) {
                 result = generateImagePreview(content, document);
             } else if (mimeType.equals("application/pdf")) {
                 result = generatePdfPreview(content, document);
@@ -73,8 +96,6 @@ public class PreviewService {
                 result = generateOfficePreview(content, document, mimeType);
             } else if (mimeType.startsWith("text/")) {
                 result = generateTextPreview(content, document);
-            } else if (isCadDocument(mimeType)) {
-                result = generateCadPreview(content, document);
             } else {
                 result.setSupported(false);
                 result.setMessage("Preview not supported for mime type: " + mimeType);
@@ -85,6 +106,8 @@ public class PreviewService {
             result.setMessage("Error generating preview: " + e.getMessage());
         }
         
+        result.setDocumentId(document.getId());
+        result.setMimeType(mimeType);
         return result;
     }
     
@@ -95,10 +118,12 @@ public class PreviewService {
             throw new SecurityException("No permission to view thumbnail");
         }
         
-        String mimeType = document.getMimeType();
+        String mimeType = normalizeMimeType(document.getMimeType());
         
         try (InputStream content = contentService.getContent(document.getContentId())) {
-            if (mimeType.startsWith("image/")) {
+            if (isCadDocument(mimeType, document.getName())) {
+                return generateCadThumbnail(content, document);
+            } else if (mimeType.startsWith("image/")) {
                 return generateImageThumbnail(content);
             } else if (mimeType.equals("application/pdf")) {
                 return generatePdfThumbnail(content);
@@ -298,13 +323,97 @@ public class PreviewService {
     private PreviewResult generateCadPreview(InputStream content, Document document) 
             throws IOException {
         PreviewResult result = new PreviewResult();
-        
-        // CAD preview would require specialized libraries
-        // For now, we'll mark it as unsupported
-        result.setSupported(false);
-        result.setMessage("CAD preview requires specialized processing");
-        
+
+        if (!cadPreviewEnabled) {
+            result.setSupported(false);
+            result.setMessage("CAD preview disabled");
+            return result;
+        }
+        if (cadRenderUrl == null || cadRenderUrl.isBlank()) {
+            result.setSupported(false);
+            result.setMessage("CAD preview service not configured");
+            return result;
+        }
+
+        CadRenderResult renderResult = renderCadToPng(content, document);
+        PreviewPage page = new PreviewPage();
+        page.setPageNumber(1);
+        page.setWidth(renderResult.width());
+        page.setHeight(renderResult.height());
+        page.setFormat("png");
+        page.setContent(renderResult.pngBytes());
+
+        result.setSupported(true);
+        result.setPages(List.of(page));
+        result.setPageCount(1);
         return result;
+    }
+
+    private byte[] generateCadThumbnail(InputStream content, Document document) throws IOException {
+        if (!cadPreviewEnabled || cadRenderUrl == null || cadRenderUrl.isBlank()) {
+            return generateDefaultThumbnail("cad");
+        }
+        try {
+            CadRenderResult renderResult = renderCadToPng(content, document);
+            try (ByteArrayInputStream pngStream = new ByteArrayInputStream(renderResult.pngBytes())) {
+                return generateImageThumbnail(pngStream);
+            }
+        } catch (Exception e) {
+            log.warn("CAD thumbnail generation failed, using default thumbnail", e);
+            return generateDefaultThumbnail("cad");
+        }
+    }
+
+    private CadRenderResult renderCadToPng(InputStream content, Document document) throws IOException {
+        byte[] cadBytes = content.readAllBytes();
+        if (cadBytes.length == 0) {
+            throw new IOException("CAD content is empty");
+        }
+        String fileName = document.getName() != null ? document.getName() : "drawing.dwg";
+        String contentType = normalizeMimeType(document.getMimeType());
+
+        byte[] pngBytes = requestCadRender(cadBytes, fileName, contentType);
+        BufferedImage image = ImageIO.read(new ByteArrayInputStream(pngBytes));
+        if (image == null) {
+            throw new IOException("CAD render returned invalid image");
+        }
+        return new CadRenderResult(pngBytes, image.getWidth(), image.getHeight());
+    }
+
+    private byte[] requestCadRender(byte[] cadBytes, String fileName, String contentType) throws IOException {
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(cadRenderTimeoutMs);
+        requestFactory.setReadTimeout(cadRenderTimeoutMs);
+
+        RestTemplate restTemplate = new RestTemplate(requestFactory);
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+
+        ByteArrayResource resource = new ByteArrayResource(cadBytes) {
+            @Override
+            public String getFilename() {
+                return fileName;
+            }
+        };
+        HttpHeaders partHeaders = new HttpHeaders();
+        if (contentType != null && !contentType.isBlank()) {
+            partHeaders.setContentType(MediaType.parseMediaType(contentType));
+        }
+        HttpEntity<ByteArrayResource> filePart = new HttpEntity<>(resource, partHeaders);
+        body.add("file", filePart);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+        headers.setAccept(List.of(MediaType.IMAGE_PNG));
+        if (cadRenderAuthToken != null && !cadRenderAuthToken.isBlank()) {
+            headers.setBearerAuth(cadRenderAuthToken);
+        }
+
+        HttpEntity<MultiValueMap<String, Object>> request = new HttpEntity<>(body, headers);
+        ResponseEntity<byte[]> response = restTemplate.postForEntity(cadRenderUrl, request, byte[].class);
+        if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
+            throw new IOException("CAD render service returned " + response.getStatusCode());
+        }
+        return response.getBody();
     }
     
     private byte[] generateImageThumbnail(InputStream content) throws IOException {
@@ -374,11 +483,21 @@ public class PreviewService {
                mimeType.contains("opendocument");
     }
     
-    private boolean isCadDocument(String mimeType) {
-        return mimeType.contains("dwg") || 
-               mimeType.contains("dxf") ||
-               mimeType.contains("autocad") ||
-               mimeType.contains("cad");
+    private boolean isCadDocument(String mimeType, String fileName) {
+        if (mimeType != null && (
+            mimeType.contains("dwg") ||
+            mimeType.contains("dxf") ||
+            mimeType.contains("autocad") ||
+            mimeType.contains("cad")
+        )) {
+            return true;
+        }
+        String name = fileName == null ? "" : fileName.toLowerCase();
+        return name.endsWith(".dwg") || name.endsWith(".dxf");
+    }
+
+    private String normalizeMimeType(String mimeType) {
+        return mimeType == null ? "" : mimeType;
     }
     
     private String getFileTypeFromMimeType(String mimeType) {
@@ -391,6 +510,7 @@ public class PreviewService {
         if (mimeType.contains("video")) return "VID";
         if (mimeType.contains("audio")) return "AUD";
         if (mimeType.contains("zip") || mimeType.contains("archive")) return "ZIP";
+        if (mimeType.contains("cad") || mimeType.contains("dwg") || mimeType.contains("dxf")) return "CAD";
         return "FILE";
     }
     
@@ -399,6 +519,8 @@ public class PreviewService {
         ImageIO.write(image, format, baos);
         return baos.toByteArray();
     }
+
+    private record CadRenderResult(byte[] pngBytes, int width, int height) {}
 
     public boolean isCacheEnabled() {
         return cacheEnabled;

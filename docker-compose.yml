@@ -43,6 +43,11 @@ services:
       - ECM_WOPI_PUBLIC_URL=${ECM_WOPI_PUBLIC_URL:-http://localhost:${ECM_FRONTEND_PORT:-3000}}
       # WOPISrc host URL must be reachable from the editor container
       - ECM_WOPI_HOST_URL=${ECM_WOPI_HOST_URL:-http://ecm-core:8080}
+      # CAD preview renderer (optional, defaults to disabled when URL is empty)
+      - ECM_PREVIEW_CAD_ENABLED=${ECM_PREVIEW_CAD_ENABLED:-true}
+      - ECM_PREVIEW_CAD_RENDER_URL=${ECM_PREVIEW_CAD_RENDER_URL:-}
+      - ECM_PREVIEW_CAD_AUTH_TOKEN=${ECM_PREVIEW_CAD_AUTH_TOKEN:-}
+      - ECM_PREVIEW_CAD_TIMEOUT_MS=${ECM_PREVIEW_CAD_TIMEOUT_MS:-30000}
       # ClamAV Antivirus Integration
       - ECM_ANTIVIRUS_ENABLED=${ECM_ANTIVIRUS_ENABLED:-true}
       - ECM_ANTIVIRUS_CLAMD_HOST=clamav

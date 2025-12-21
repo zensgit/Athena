@@ -129,6 +129,11 @@ ecm:
       width: 200
       height: 200
       quality: 0.8
+    cad:
+      enabled: ${ECM_PREVIEW_CAD_ENABLED:true}
+      render-url: ${ECM_PREVIEW_CAD_RENDER_URL:}
+      auth-token: ${ECM_PREVIEW_CAD_AUTH_TOKEN:}
+      timeout-ms: ${ECM_PREVIEW_CAD_TIMEOUT_MS:30000}
   
   conversion:
     output-formats:
