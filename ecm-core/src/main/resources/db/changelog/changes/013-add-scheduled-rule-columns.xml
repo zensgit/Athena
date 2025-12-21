@@ -6,12 +6,12 @@
                         http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
 
     <changeSet id="013-0-create-automation-rules-table" author="claude">
-        <comment>Create automation rules table for rule engine</comment>
         <preConditions onFail="MARK_RAN">
             <not>
                 <tableExists tableName="automation_rules"/>
             </not>
         </preConditions>
+        <comment>Create automation rules table for rule engine</comment>
 
         <createTable tableName="automation_rules">
             <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
@@ -68,7 +68,6 @@
     </changeSet>
 
     <changeSet id="013-1-add-scheduled-rule-columns" author="claude">
-        <comment>Add columns to support scheduled/cron-based automation rules</comment>
         <preConditions onFail="MARK_RAN">
             <and>
                 <tableExists tableName="automation_rules"/>
@@ -77,6 +76,7 @@
                 </not>
             </and>
         </preConditions>
+        <comment>Add columns to support scheduled/cron-based automation rules</comment>
 
         <addColumn tableName="automation_rules">
             <column name="cron_expression" type="varchar(100)">
@@ -110,7 +110,6 @@
     </changeSet>
 
     <changeSet id="013-2-add-scheduled-rule-index" author="claude">
-        <comment>Add index for efficient scheduled rule queries</comment>
         <preConditions onFail="MARK_RAN">
             <and>
                 <tableExists tableName="automation_rules"/>
@@ -119,6 +118,7 @@
                 </not>
             </and>
         </preConditions>
+        <comment>Add index for efficient scheduled rule queries</comment>
 
         <createIndex tableName="automation_rules" indexName="idx_rules_scheduled_next_run">
             <column name="enabled"/>
