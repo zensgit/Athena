@@ -64,6 +64,7 @@ desktop.ini
 tmp/
 temp/
 docs/VERIFICATION_REPORT_*.md
+docs/SMOKE_CAD_PREVIEW_*.md
 
 # -------------------------------------------
 # Maven
