@@ -12,6 +12,8 @@ CAD_FILE="${CAD_FILE:-}"
 REPORT_DIR="${REPORT_DIR:-/Users/huazhou/Downloads/Github/Athena/docs}"
 STAMP=$(date +"%Y%m%d_%H%M%S")
 REPORT_PATH="$REPORT_DIR/SMOKE_CAD_PREVIEW_${STAMP}.md"
+RENDER_LOG_PATH="${RENDER_LOG_PATH:-/tmp/cad_render_server.log}"
+RENDER_LOG_TAIL="${RENDER_LOG_TAIL:-40}"
 
 if [[ -z "$CAD_FILE" ]]; then
   echo "CAD_FILE is required. Example: CAD_FILE=/path/to/file.dwg $0" >&2
@@ -73,6 +75,17 @@ parsed = json.loads(raw)
 print({"supported": parsed.get("supported"), "pageCount": parsed.get("pageCount")})
 PY
 )
+PREVIEW_HAS_NEWLINE=$(python3 - <<'PY'
+from pathlib import Path
+raw = Path("/tmp/athena_cad_preview.json").read_bytes()
+content_idx = raw.find(b'"content"')
+if content_idx == -1:
+    print("unknown")
+else:
+    segment = raw[content_idx:]
+    print("yes" if b"\\n" in segment else "no")
+PY
+)
 
 THUMB_STATUS=$(curl -s -o "$THUMB_PATH" -w "%{http_code}" -H "Authorization: Bearer $TOKEN" \
   "$ECM_API_URL/api/v1/documents/$DOC_ID/thumbnail")
@@ -96,9 +109,22 @@ cat <<EOF > "$REPORT_PATH"
 - CAD_FILE: $CAD_FILE
 - Document ID: $DOC_ID
 - Preview: $PREVIEW_SUMMARY
+- Preview base64 newline: $PREVIEW_HAS_NEWLINE
 - Thumbnail: $THUMB_FILE
 - Result: OK
+
+## Render Service Log (tail)
 EOF
+
+if [[ -f "$RENDER_LOG_PATH" ]]; then
+  {
+    echo '```'
+    tail -n "$RENDER_LOG_TAIL" "$RENDER_LOG_PATH" | tr -d '\000'
+    echo '```'
+  } >> "$REPORT_PATH"
+else
+  echo "(render log not found)" >> "$REPORT_PATH"
+fi
 
 echo "$PREVIEW_SUMMARY"
 echo "$THUMB_FILE"
