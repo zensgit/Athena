@@ -72,13 +72,31 @@ jobs:
 
       - name: Start verification stack
         run: |
+          cat <<'EOF' > .env
+          POSTGRES_DB=ecm_db
+          POSTGRES_USER=ecm_user
+          POSTGRES_PASSWORD=ecm_password
+          REDIS_PASSWORD=redis_password
+          RABBITMQ_USER=rabbitmq
+          RABBITMQ_PASSWORD=rabbitmq_password
+          MINIO_ACCESS_KEY=minio_access_key
+          MINIO_SECRET_KEY=minio_secret_key
+          KEYCLOAK_USER=admin
+          KEYCLOAK_PASSWORD=admin
+          KEYCLOAK_DB_USER=keycloak
+          KEYCLOAK_DB_PASSWORD=keycloak_password
+          ODOO_DB_USER=odoo
+          ODOO_DB_PASSWORD=odoo_password
+          ECM_API_PORT=8080
+          KEYCLOAK_PORT=8180
+          EOF
           if command -v docker-compose >/dev/null 2>&1; then
             DC="docker-compose"
           else
             DC="docker compose"
           fi
           ECM_WOPI_ENABLED=false ECM_ANTIVIRUS_ENABLED=false ECM_PREVIEW_CAD_ENABLED=false \
-            ${DC} up -d postgres redis rabbitmq minio keycloak keycloak-db elasticsearch
+            ${DC} up -d postgres redis rabbitmq minio keycloak postgres-keycloak elasticsearch
           ECM_WOPI_ENABLED=false ECM_ANTIVIRUS_ENABLED=false ECM_PREVIEW_CAD_ENABLED=false \
             ${DC} up -d --no-deps ecm-core
 
