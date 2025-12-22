@@ -477,6 +477,27 @@ else
   exit 1
 fi
 
+# 4.0.0 PDF preview API check (server-rendered fallback)
+log_info "Checking PDF preview API..."
+preview_resp=$(curl_maybe "${BASE_URL}/api/v1/documents/${doc_id}/preview")
+if command -v jq &> /dev/null; then
+  preview_supported=$(echo "$preview_resp" | jq -r '.supported // false')
+  preview_page_count=$(echo "$preview_resp" | jq -r '.pageCount // 0')
+  preview_content=$(echo "$preview_resp" | jq -r '.pages[0].content // empty')
+else
+  preview_supported=$(echo "$preview_resp" | grep -o '"supported":[^,]*' | head -1 | cut -d: -f2 | tr -d ' ' || true)
+  preview_page_count=$(echo "$preview_resp" | grep -o '"pageCount":[0-9]*' | head -1 | cut -d: -f2 || true)
+  preview_content=$(echo "$preview_resp" | grep -o '"content":"[^"]*"' | head -1 | cut -d'"' -f4 || true)
+fi
+
+if [[ "$preview_supported" == "true" && -n "${preview_content:-}" ]]; then
+  log_info "PDF preview API OK (pages=${preview_page_count})."
+else
+  log_error "PDF preview API failed or returned empty content."
+  echo "Response: $preview_resp"
+  exit 1
+fi
+
 # 4.0 Rule Automation (create rule -> upload -> verify auto-tag)
 log_info "Testing Rule Automation..."
 rule_tag_name="auto-rule-tag-$(date +%s)"
@@ -687,6 +708,57 @@ if [[ -n "${scheduled_rule_id:-}" ]]; then
       else
         log_warn "Scheduled rule trigger: tag '${scheduled_tag}' not found on document (rule may not have matched or tag application delayed)."
         echo "Tags response: $scheduled_tags_resp"
+      fi
+
+      # Verify scheduled rule audit log entries (rule execution + batch summary)
+      log_info "Verifying scheduled rule audit logs..."
+      scheduled_audit_found=0
+      audit_events=""
+      for attempt in {1..12}; do
+        sleep 1
+        scheduled_audit_resp=$(curl_maybe "${BASE_URL}/api/v1/analytics/rules/recent?limit=25")
+        if command -v jq &> /dev/null; then
+          audit_events=$(echo "$scheduled_audit_resp" | jq -r --arg rule "${scheduled_rule_name}" '
+            map(select((.nodeName // "") == $rule or (.details // "" | contains($rule))) | .eventType)
+            | unique
+            | join(",")')
+        else
+          if echo "$scheduled_audit_resp" | grep -q "${scheduled_rule_name}"; then
+            audit_events="found"
+          else
+            audit_events=""
+          fi
+        fi
+
+        if [[ -n "${audit_events:-}" ]]; then
+          scheduled_audit_found=1
+          break
+        fi
+      done
+
+      if [[ "$scheduled_audit_found" -eq 1 ]]; then
+        log_info "Scheduled rule audit log OK (events: ${audit_events})."
+      else
+        if [[ "$scheduled_tag_found" -eq 1 ]]; then
+          log_error "Scheduled rule audit log missing for '${scheduled_rule_name}'."
+          echo "Audit response: ${scheduled_audit_resp}"
+          exit 1
+        else
+          log_warn "Scheduled rule audit log not found (tag not applied; rule may not have executed)."
+        fi
+      fi
+
+      # Verify rule execution summary endpoint is responsive
+      rule_summary_resp=$(curl_maybe "${BASE_URL}/api/v1/analytics/rules/summary?days=1")
+      if command -v jq &> /dev/null; then
+        summary_executions=$(echo "$rule_summary_resp" | jq -r '.executions // empty')
+      else
+        summary_executions=$(echo "$rule_summary_resp" | grep -o '"executions":[0-9]*' | head -1 | cut -d: -f2 || true)
+      fi
+      if [[ -n "${summary_executions:-}" ]]; then
+        log_info "Rule execution summary endpoint OK (executions=${summary_executions})."
+      else
+        log_warn "Rule execution summary did not return expected payload."
       fi
     else
       log_warn "Scheduled rule trigger failed (HTTP ${trigger_resp_status}). Manual trigger endpoint may not exist."

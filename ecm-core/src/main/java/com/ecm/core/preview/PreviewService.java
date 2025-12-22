@@ -13,6 +13,7 @@ import org.apache.poi.xslf.usermodel.XMLSlideShow;
 import org.apache.poi.xslf.usermodel.XSLFSlide;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.core.io.ByteArrayResource;
@@ -45,6 +46,7 @@ public class PreviewService {
     
     private final ContentService contentService;
     private final SecurityService securityService;
+    private final MeterRegistry meterRegistry;
     
     @Value("${ecm.preview.cache.enabled:true}")
     private boolean cacheEnabled;
@@ -327,26 +329,37 @@ public class PreviewService {
         if (!cadPreviewEnabled) {
             result.setSupported(false);
             result.setMessage("CAD preview disabled");
+            meterRegistry.counter("cad_preview_total", "status", "error", "reason", "disabled").increment();
             return result;
         }
         if (cadRenderUrl == null || cadRenderUrl.isBlank()) {
             result.setSupported(false);
             result.setMessage("CAD preview service not configured");
+            meterRegistry.counter("cad_preview_total", "status", "error", "reason", "missing_render_url").increment();
             return result;
         }
 
-        CadRenderResult renderResult = renderCadToPng(content, document);
-        PreviewPage page = new PreviewPage();
-        page.setPageNumber(1);
-        page.setWidth(renderResult.width());
-        page.setHeight(renderResult.height());
-        page.setFormat("png");
-        page.setContent(renderResult.pngBytes());
+        try {
+            CadRenderResult renderResult = renderCadToPng(content, document);
+            PreviewPage page = new PreviewPage();
+            page.setPageNumber(1);
+            page.setWidth(renderResult.width());
+            page.setHeight(renderResult.height());
+            page.setFormat("png");
+            page.setContent(renderResult.pngBytes());
 
-        result.setSupported(true);
-        result.setPages(List.of(page));
-        result.setPageCount(1);
-        return result;
+            result.setSupported(true);
+            result.setPages(List.of(page));
+            result.setPageCount(1);
+            meterRegistry.counter("cad_preview_total", "status", "ok", "reason", "rendered").increment();
+            return result;
+        } catch (Exception e) {
+            result.setSupported(false);
+            result.setMessage("CAD preview failed: " + e.getMessage());
+            log.warn("CAD preview failed for document: {}", document.getId(), e);
+            meterRegistry.counter("cad_preview_total", "status", "error", "reason", "render_failed").increment();
+            return result;
+        }
     }
 
     private byte[] generateCadThumbnail(InputStream content, Document document) throws IOException {

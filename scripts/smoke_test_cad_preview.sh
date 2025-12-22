@@ -4,21 +4,16 @@ set -euo pipefail
 ECM_API_URL="${ECM_API_URL:-http://localhost:7700}"
 KEYCLOAK_URL="${KEYCLOAK_URL:-http://localhost:8180}"
 REALM="${ECM_KEYCLOAK_REALM:-ecm}"
-CLIENT_ID="${ECM_KEYCLOAK_CLIENT_ID:-unified-portal}"
-CLIENT_SECRET="${ECM_KEYCLOAK_CLIENT_SECRET:-}"
+CLIENT_ID="${ECM_KEYCLOAK_CLIENT_ID:-ecm-api}"
+CLIENT_SECRET="${ECM_KEYCLOAK_CLIENT_SECRET:-ecmapi-2025-SECURE-9b3c2f4d8a}"
 USERNAME="${ECM_KEYCLOAK_USERNAME:-admin}"
 PASSWORD="${ECM_KEYCLOAK_PASSWORD:-admin}"
-CAD_FILE="${CAD_FILE:-}"
+CAD_FILE="${CAD_FILE:-/Users/huazhou/Downloads/训练图纸/训练图纸/BTJ01231501522-00短轴承座(盖)v2.dwg}"
 REPORT_DIR="${REPORT_DIR:-/Users/huazhou/Downloads/Github/Athena/docs}"
 STAMP=$(date +"%Y%m%d_%H%M%S")
 REPORT_PATH="$REPORT_DIR/SMOKE_CAD_PREVIEW_${STAMP}.md"
 RENDER_LOG_PATH="${RENDER_LOG_PATH:-/tmp/cad_render_server.log}"
 RENDER_LOG_TAIL="${RENDER_LOG_TAIL:-40}"
-
-if [[ -z "$CAD_FILE" ]]; then
-  echo "CAD_FILE is required. Example: CAD_FILE=/path/to/file.dwg $0" >&2
-  exit 1
-fi
 
 if [[ ! -f "$CAD_FILE" ]]; then
   echo "CAD file not found: $CAD_FILE" >&2

@@ -3,7 +3,7 @@ import json
 import os
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import requests
 
@@ -228,6 +228,17 @@ def main() -> int:
         ok = resp.ok and isinstance(access, dict) and access.get("nodeId") == document_id
         record(results, "access_share_link", ok, {"status": resp.status_code, "response": access})
 
+        # 9.1) Share link access count increments (admin view)
+        resp, share_info = request_json(
+            admin,
+            "GET",
+            f"{base_url}/api/v1/share/{share_token}",
+        )
+        ok = resp.ok and isinstance(share_info, dict) and (share_info.get("accessCount") or 0) >= 1
+        record(results, "share_link_access_count_incremented", ok, {"status": resp.status_code, "response": share_info})
+        if not ok:
+            return finalize(run_id, output_dir, results, artifacts, 1)
+
         # 10) Verify permissions endpoint for viewer
         resp, check = request_json(
             viewer,
@@ -238,7 +249,195 @@ def main() -> int:
         ok = resp.ok and check is True
         record(results, "viewer_check_read_permission", ok, {"status": resp.status_code, "response": check})
 
-        # 11) Optional cleanup
+        # 11) Password-protected share link
+        password_value = "phase-c-pass"
+        resp, share_pwd = request_json(
+            admin,
+            "POST",
+            f"{base_url}/api/v1/share/nodes/{document_id}",
+            json={
+                "name": f"{run_id}-share-password",
+                "permissionLevel": "VIEW",
+                "password": password_value,
+            },
+        )
+        ok = resp.status_code == 201
+        record(results, "create_share_link_password", ok, {"status": resp.status_code, "response": share_pwd})
+        if not ok:
+            return finalize(run_id, output_dir, results, artifacts, 1)
+        share_pwd_token = share_pwd.get("token")
+
+        resp, access_no_pwd = request_json(
+            requests.Session(),
+            "GET",
+            f"{base_url}/api/v1/share/access/{share_pwd_token}",
+        )
+        ok = resp.status_code == 401 and isinstance(access_no_pwd, dict) and access_no_pwd.get("passwordRequired") is True
+        record(results, "share_link_password_required", ok, {"status": resp.status_code, "response": access_no_pwd})
+        if not ok:
+            return finalize(run_id, output_dir, results, artifacts, 1)
+
+        resp, access_wrong_pwd = request_json(
+            requests.Session(),
+            "GET",
+            f"{base_url}/api/v1/share/access/{share_pwd_token}",
+            params={"password": "wrong-pass"},
+        )
+        ok = resp.status_code == 401
+        record(results, "share_link_password_wrong", ok, {"status": resp.status_code, "response": access_wrong_pwd})
+        if not ok:
+            return finalize(run_id, output_dir, results, artifacts, 1)
+
+        resp, access_ok_pwd = request_json(
+            requests.Session(),
+            "GET",
+            f"{base_url}/api/v1/share/access/{share_pwd_token}",
+            params={"password": password_value},
+        )
+        ok = resp.ok and isinstance(access_ok_pwd, dict) and access_ok_pwd.get("nodeId") == document_id
+        record(results, "share_link_password_success", ok, {"status": resp.status_code, "response": access_ok_pwd})
+        if not ok:
+            return finalize(run_id, output_dir, results, artifacts, 1)
+
+        # 12) Access limit enforcement
+        resp, share_limit = request_json(
+            admin,
+            "POST",
+            f"{base_url}/api/v1/share/nodes/{document_id}",
+            json={
+                "name": f"{run_id}-share-limit",
+                "permissionLevel": "VIEW",
+                "maxAccessCount": 2,
+            },
+        )
+        ok = resp.status_code == 201
+        record(results, "create_share_link_limit", ok, {"status": resp.status_code, "response": share_limit})
+        if not ok:
+            return finalize(run_id, output_dir, results, artifacts, 1)
+        share_limit_token = share_limit.get("token")
+
+        resp, access_limit_1 = request_json(
+            requests.Session(),
+            "GET",
+            f"{base_url}/api/v1/share/access/{share_limit_token}",
+        )
+        ok = resp.ok
+        record(results, "share_link_limit_access_1", ok, {"status": resp.status_code, "response": access_limit_1})
+        if not ok:
+            return finalize(run_id, output_dir, results, artifacts, 1)
+
+        resp, access_limit_2 = request_json(
+            requests.Session(),
+            "GET",
+            f"{base_url}/api/v1/share/access/{share_limit_token}",
+        )
+        ok = resp.ok
+        record(results, "share_link_limit_access_2", ok, {"status": resp.status_code, "response": access_limit_2})
+        if not ok:
+            return finalize(run_id, output_dir, results, artifacts, 1)
+
+        resp, access_limit_3 = request_json(
+            requests.Session(),
+            "GET",
+            f"{base_url}/api/v1/share/access/{share_limit_token}",
+        )
+        ok = resp.status_code == 403
+        record(results, "share_link_limit_access_denied", ok, {"status": resp.status_code, "response": access_limit_3})
+        if not ok:
+            return finalize(run_id, output_dir, results, artifacts, 1)
+
+        # 13) Deactivate share link
+        resp, share_deactivate = request_json(
+            admin,
+            "POST",
+            f"{base_url}/api/v1/share/nodes/{document_id}",
+            json={
+                "name": f"{run_id}-share-deactivate",
+                "permissionLevel": "VIEW",
+            },
+        )
+        ok = resp.status_code == 201
+        record(results, "create_share_link_deactivate", ok, {"status": resp.status_code, "response": share_deactivate})
+        if not ok:
+            return finalize(run_id, output_dir, results, artifacts, 1)
+        share_deactivate_token = share_deactivate.get("token")
+
+        resp, deactivate_resp = request_json(
+            admin,
+            "POST",
+            f"{base_url}/api/v1/share/{share_deactivate_token}/deactivate",
+        )
+        ok = resp.status_code in (200, 204)
+        record(results, "share_link_deactivated", ok, {"status": resp.status_code})
+        if not ok:
+            return finalize(run_id, output_dir, results, artifacts, 1)
+
+        resp, access_deactivated = request_json(
+            requests.Session(),
+            "GET",
+            f"{base_url}/api/v1/share/access/{share_deactivate_token}",
+        )
+        ok = resp.status_code == 403
+        record(results, "share_link_deactivated_access_denied", ok, {"status": resp.status_code, "response": access_deactivated})
+        if not ok:
+            return finalize(run_id, output_dir, results, artifacts, 1)
+
+        # 14) IP restriction enforcement
+        resp, share_ip = request_json(
+            admin,
+            "POST",
+            f"{base_url}/api/v1/share/nodes/{document_id}",
+            json={
+                "name": f"{run_id}-share-ip",
+                "permissionLevel": "VIEW",
+                "allowedIps": "203.0.113.1/32",
+            },
+        )
+        ok = resp.status_code == 201
+        record(results, "create_share_link_ip_restricted", ok, {"status": resp.status_code, "response": share_ip})
+        if not ok:
+            return finalize(run_id, output_dir, results, artifacts, 1)
+        share_ip_token = share_ip.get("token")
+
+        resp, access_ip = request_json(
+            requests.Session(),
+            "GET",
+            f"{base_url}/api/v1/share/access/{share_ip_token}",
+        )
+        ok = resp.status_code == 403
+        record(results, "share_link_ip_restriction_enforced", ok, {"status": resp.status_code, "response": access_ip})
+        if not ok:
+            return finalize(run_id, output_dir, results, artifacts, 1)
+
+        # 15) Expired share link
+        expired_at = (datetime.utcnow() - timedelta(minutes=1)).replace(microsecond=0).isoformat()
+        resp, share_expired = request_json(
+            admin,
+            "POST",
+            f"{base_url}/api/v1/share/nodes/{document_id}",
+            json={
+                "name": f"{run_id}-share-expired",
+                "permissionLevel": "VIEW",
+                "expiryDate": expired_at,
+            },
+        )
+        ok = resp.status_code == 201
+        record(results, "create_share_link_expired", ok, {"status": resp.status_code, "response": share_expired})
+        if not ok:
+            return finalize(run_id, output_dir, results, artifacts, 1)
+        share_expired_token = share_expired.get("token")
+
+        resp, access_expired = request_json(
+            requests.Session(),
+            "GET",
+            f"{base_url}/api/v1/share/access/{share_expired_token}",
+        )
+        ok = resp.status_code == 403
+        record(results, "share_link_expired_access_denied", ok, {"status": resp.status_code, "response": access_expired})
+        if not ok:
+            return finalize(run_id, output_dir, results, artifacts, 1)
+
+        # 16) Optional cleanup
         if cleanup:
             resp, cleanup_res = request_json(
                 admin,

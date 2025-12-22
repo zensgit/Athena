@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -41,6 +41,24 @@ interface DocumentPreviewProps {
 }
 
 const PdfPreview = React.lazy(() => import('./PdfPreview'));
+
+type PreviewPage = {
+  pageNumber: number;
+  width?: number;
+  height?: number;
+  format?: string;
+  content?: string;
+  textContent?: string;
+};
+
+type PreviewResult = {
+  documentId?: string;
+  mimeType?: string;
+  supported?: boolean;
+  message?: string;
+  pages?: PreviewPage[];
+  pageCount?: number;
+};
 
 const OFFICE_MIME_TYPES = new Set([
   'application/msword',
@@ -92,6 +110,10 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
   const [scale, setScale] = useState(1.0);
   const [rotation, setRotation] = useState(0);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [serverPreview, setServerPreview] = useState<PreviewResult | null>(null);
+  const [serverPreviewLoading, setServerPreviewLoading] = useState(false);
+  const [serverPreviewError, setServerPreviewError] = useState<string | null>(null);
+  const pdfContainerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!open || !nodeId) {
@@ -105,6 +127,9 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
     setWopiUrl(null);
     setNumPages(null);
     setPageNumber(1);
+    setServerPreview(null);
+    setServerPreviewLoading(false);
+    setServerPreviewError(null);
 
     const loadDocument = async () => {
       try {
@@ -173,9 +198,66 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
     };
   }, [fileUrl]);
 
+  const loadServerPreview = useCallback(async () => {
+    if (!nodeId) {
+      return;
+    }
+    setServerPreviewLoading(true);
+    setServerPreviewError(null);
+    try {
+      const preview = await apiService.get<PreviewResult>(`/documents/${nodeId}/preview`);
+      setServerPreview(preview);
+      if (preview?.pageCount) {
+        setNumPages(preview.pageCount);
+      } else if (preview?.pages?.length) {
+        setNumPages(preview.pages.length);
+      }
+    } catch (err) {
+      const message = 'Failed to load server preview';
+      setServerPreviewError(message);
+      setServerPreview({ supported: false, message });
+    } finally {
+      setServerPreviewLoading(false);
+    }
+  }, [nodeId]);
+
+  useEffect(() => {
+    if (!open || node.contentType !== 'application/pdf') {
+      return;
+    }
+    if (!fileUrl) {
+      return;
+    }
+    if (serverPreview || serverPreviewLoading) {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      const hasCanvas = Boolean(
+        pdfContainerRef.current?.querySelector('.react-pdf__Page__canvas')
+      );
+      const hasError = Boolean(
+        pdfContainerRef.current?.querySelector('[data-testid="pdf-preview-error"]')
+      );
+      if ((!hasCanvas || hasError) && !serverPreview && !serverPreviewLoading) {
+        void loadServerPreview();
+      }
+    }, 8000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [open, node.contentType, fileUrl, serverPreview, serverPreviewLoading, loadServerPreview]);
+
   const handleDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
     setNumPages(numPages);
     setLoading(false);
+  };
+
+  const handlePdfLoadError = () => {
+    if (serverPreview || serverPreviewLoading) {
+      return;
+    }
+    void loadServerPreview();
   };
 
   const handleDownload = async () => {
@@ -278,8 +360,64 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
 
     // PDF preview
     if (node.contentType === 'application/pdf') {
+      if (serverPreviewLoading) {
+        return (
+          <Box display="flex" justifyContent="center" alignItems="center" height="60vh">
+            <CircularProgress />
+          </Box>
+        );
+      }
+
+      if (serverPreview) {
+        if (serverPreview.supported === false) {
+          return (
+            <Box display="flex" justifyContent="center" alignItems="center" height="60vh">
+              <Typography color="error">
+                {serverPreview.message || 'Preview not available for this document'}
+              </Typography>
+            </Box>
+          );
+        }
+
+        const pages = serverPreview.pages || [];
+        const currentPage = pages.find((page) => page.pageNumber === pageNumber) || pages[0];
+        if (!currentPage || !currentPage.content) {
+          return (
+            <Box display="flex" justifyContent="center" alignItems="center" height="60vh">
+              <Typography color="error">
+                {serverPreviewError || 'Preview not available for this document'}
+              </Typography>
+            </Box>
+          );
+        }
+
+        const imageSrc = `data:image/${currentPage.format || 'png'};base64,${currentPage.content}`;
+        return (
+          <Box
+            display="flex"
+            flexDirection="column"
+            alignItems="center"
+            height="calc(100vh - 200px)"
+            sx={{ overflow: 'auto' }}
+            data-testid="pdf-preview-fallback"
+          >
+            <img
+              src={imageSrc}
+              alt={`${node.name} page ${currentPage.pageNumber}`}
+              style={{
+                maxWidth: '100%',
+                transform: `scale(${scale}) rotate(${rotation}deg)`,
+                transformOrigin: 'top center',
+                transition: 'transform 0.3s',
+              }}
+            />
+          </Box>
+        );
+      }
+
       return (
         <Box
+          ref={pdfContainerRef}
           display="flex"
           flexDirection="column"
           alignItems="center"
@@ -293,6 +431,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
               scale={scale}
               rotation={rotation}
               onLoadSuccess={handleDocumentLoadSuccess}
+              onLoadError={handlePdfLoadError}
             />
           </React.Suspense>
         </Box>

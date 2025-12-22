@@ -10,7 +10,7 @@ Set the following environment variables for `ecm-core`:
 ```
 ECM_PREVIEW_CAD_ENABLED=true
 ECM_PREVIEW_CAD_RENDER_URL=http://host.docker.internal:18002/api/v1/render/cad
-ECM_PREVIEW_CAD_AUTH_TOKEN=
+ECM_PREVIEW_CAD_AUTH_TOKEN=  # optional bearer token for CAD render service
 ECM_PREVIEW_CAD_TIMEOUT_MS=30000
 ```
 
@@ -40,3 +40,12 @@ GET /api/v1/documents/{documentId}/thumbnail
 Expected:
 - `preview.supported=true`
 - `thumbnail` returns PNG bytes
+
+## Metrics
+
+- `cad_preview_total{status="ok|error", reason="rendered|disabled|missing_render_url|render_failed"}`
+
+## Production notes
+
+For deployment patterns and Windows ODA setup, see:
+`cad-ml-platform/docs/CAD_RENDER_PRODUCTION.md`.

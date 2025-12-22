@@ -13,6 +13,7 @@ type PdfPreviewProps = {
   scale: number;
   rotation: number;
   onLoadSuccess: (payload: { numPages: number }) => void;
+  onLoadError?: () => void;
 };
 
 const PdfPreview: React.FC<PdfPreviewProps> = ({
@@ -21,6 +22,7 @@ const PdfPreview: React.FC<PdfPreviewProps> = ({
   scale,
   rotation,
   onLoadSuccess,
+  onLoadError,
 }) => {
   if (!fileUrl) {
     return (
@@ -30,12 +32,25 @@ const PdfPreview: React.FC<PdfPreviewProps> = ({
     );
   }
 
+  const renderError = () => {
+    if (onLoadError) {
+      onLoadError();
+    }
+    return (
+      <Box data-testid="pdf-preview-error">
+        <Typography color="error">Failed to load PDF</Typography>
+      </Box>
+    );
+  };
+
   return (
     <Document
       file={fileUrl}
       onLoadSuccess={onLoadSuccess}
+      onLoadError={onLoadError}
+      onSourceError={onLoadError}
       loading={<CircularProgress />}
-      error={<Typography color="error">Failed to load PDF</Typography>}
+      error={renderError}
     >
       <Page
         pageNumber={pageNumber}
@@ -43,6 +58,9 @@ const PdfPreview: React.FC<PdfPreviewProps> = ({
         rotate={rotation}
         renderTextLayer={true}
         renderAnnotationLayer={true}
+        onLoadError={onLoadError}
+        onRenderError={onLoadError}
+        error={renderError}
       />
     </Document>
   );
