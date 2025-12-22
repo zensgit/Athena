@@ -17,6 +17,8 @@
   - Evidence: `tmp/20251222_130300_e2e-pdf-preview.log`
 - `npx playwright test e2e/pdf-preview.spec.ts`
   - Evidence: `tmp/20251222_140754_e2e-pdf-preview.log`
+- `npx playwright test e2e/search-view.spec.ts`
+  - Evidence: `tmp/20251222_141758_search-view.log`
 - `./scripts/verify.sh --no-restart --skip-build`
   - Evidence: `tmp/20251222_132714_verify.log`
   - Evidence: `tmp/20251222_132715_e2e-test.log` (partial; CLI timeout during E2E)
@@ -41,6 +43,8 @@
 - `docs/SMOKE_E2E_VERIFICATION_20251222.md`
 - `docs/PREVIEW_STABILITY_STEP3_DESIGN.md`
 - `docs/PREVIEW_STABILITY_STEP3_VERIFICATION.md`
+- `docs/SEARCH_VIEW_FIX_DESIGN.md`
+- `docs/SEARCH_VIEW_FIX_VERIFICATION.md`
 
 ## Notes / Next Steps
 - When CAD preview service is available, re-run `scripts/smoke_test_cad_preview.sh` and attach output to docs.

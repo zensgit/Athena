@@ -260,9 +260,18 @@ const SearchResults: React.FC = () => {
   const isDocumentNode = (node: Node) => {
     const normalizedName = node.name?.toLowerCase() || '';
     const hasExtension = FILE_EXTENSIONS.some((ext) => normalizedName.endsWith(ext));
+    const normalizedPath = node.path?.toLowerCase() || '';
+    const hasPathExtension = FILE_EXTENSIONS.some((ext) => normalizedPath.endsWith(ext));
+    const contentTypeHint = node.contentType
+      || node.properties?.mimeType
+      || node.properties?.contentType;
+    const sizeHint = node.size
+      || node.properties?.fileSize
+      || node.properties?.size;
     return node.nodeType === 'DOCUMENT'
-      || Boolean(node.contentType || node.size || node.currentVersionLabel)
-      || hasExtension;
+      || Boolean(contentTypeHint || sizeHint || node.currentVersionLabel)
+      || hasExtension
+      || hasPathExtension;
   };
 
   const isFolderNode = (node: Node) => node.nodeType === 'FOLDER' && !isDocumentNode(node);
