@@ -32,7 +32,6 @@ import { useNavigate } from 'react-router-dom';
 import { Node } from 'types';
 import apiService from 'services/api';
 import nodeService from 'services/nodeService';
-import authService from 'services/authService';
 import { toast } from 'react-toastify';
 
 interface DocumentPreviewProps {
@@ -135,16 +134,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
 
     const loadDocument = async () => {
       try {
-        const token = (await authService.refreshToken()) || authService.getToken();
-        const response = await fetch(`/api/v1/nodes/${nodeId}/content`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to load document');
-        }
-
-        const blob = await response.blob();
+        const blob = await apiService.getBlob(`/nodes/${nodeId}/content`);
         const url = URL.createObjectURL(blob);
         if (!cancelled) {
           setFileUrl(url);

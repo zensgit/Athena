@@ -73,6 +73,12 @@ class ApiService {
     return this.api.delete<T>(url, config).then((response) => response.data);
   }
 
+  getBlob(url: string, config?: AxiosRequestConfig): Promise<Blob> {
+    return this.api
+      .get(url, { ...config, responseType: 'blob' })
+      .then((response) => response.data as Blob);
+  }
+
   uploadFile(url: string, file: File, onProgress?: (progress: number) => void): Promise<any> {
     const formData = new FormData();
     formData.append('file', file);
