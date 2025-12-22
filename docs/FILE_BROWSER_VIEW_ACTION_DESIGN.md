@@ -13,10 +13,12 @@ The file browser context menu only offered "Edit Online"/"View Online" (WOPI) fo
 - Restrict WOPI "Edit Online"/"View Online" to office file types only.
 - Enable double-click on documents to open the preview dialog.
 - Wire the preview dialog at the FileBrowser page level, matching the Search Results behavior.
+- Infer preview content type from filename when folder listings omit or genericize MIME types (e.g., application/octet-stream).
 
 ## Files Updated
 - `ecm-frontend/src/components/browser/FileList.tsx`
 - `ecm-frontend/src/pages/FileBrowser.tsx`
+- `ecm-frontend/src/components/preview/DocumentPreview.tsx`
 
 ## Risks / Rollback
 - Low risk; limited to file browser UI actions.

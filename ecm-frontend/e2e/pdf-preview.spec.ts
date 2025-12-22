@@ -258,3 +258,44 @@ test('PDF preview falls back to server render when client PDF fails', async ({ p
     headers: { Authorization: `Bearer ${apiToken}` },
   }).catch(() => null);
 });
+
+test('File browser view action opens preview', async ({ page, request }) => {
+  test.setTimeout(240_000);
+
+  await waitForApiReady(request);
+  const apiToken = await fetchAccessToken(request, defaultUsername, defaultPassword);
+  const rootId = await getRootFolderId(request, apiToken);
+  const documentsId = await findChildFolderId(request, rootId, 'Documents', apiToken);
+
+  const folderName = `e2e-file-browser-view-${Date.now()}`;
+  const folderId = await createFolder(request, documentsId, folderName, apiToken);
+
+  const filename = `e2e-file-browser-view-${Date.now()}.pdf`;
+  await uploadPdf(request, folderId, filename, apiToken);
+
+  await loginWithCredentials(page, defaultUsername, defaultPassword);
+
+  await page.goto(`${baseUiUrl}/browse/${folderId}`, { waitUntil: 'domcontentloaded' });
+
+  const listToggle = page.getByLabel('list view');
+  if (await listToggle.isVisible()) {
+    await listToggle.click();
+  }
+
+  const actionsButton = page.getByLabel(`Actions for ${filename}`);
+  await expect(actionsButton).toBeVisible({ timeout: 60_000 });
+  await actionsButton.click();
+
+  const viewItem = page.getByRole('menuitem', { name: /^View$/ });
+  await expect(viewItem).toBeVisible();
+  await viewItem.click();
+
+  await expect(page.getByLabel('close')).toBeVisible({ timeout: 60_000 });
+  await page.waitForSelector('.react-pdf__Page__canvas, [data-testid="pdf-preview-fallback"]', { timeout: 60_000 });
+
+  await page.getByLabel('close').click();
+
+  await request.delete(`${baseApiUrl}/api/v1/nodes/${folderId}`, {
+    headers: { Authorization: `Bearer ${apiToken}` },
+  }).catch(() => null);
+});

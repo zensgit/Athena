@@ -4,6 +4,7 @@ Date: 2025-12-22
 
 ## Automated Checks
 - `npm run lint` (ecm-frontend)
+- `npx playwright test e2e/pdf-preview.spec.ts --project=chromium`
 
 ## Manual Verification Steps
 1. Open the file browser and right-click a PDF document.
