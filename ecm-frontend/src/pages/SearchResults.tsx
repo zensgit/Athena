@@ -315,17 +315,18 @@ const SearchResults: React.FC = () => {
   const getNameTypographySx = (name: string) => {
     const length = name?.length ?? 0;
     const isLong = length > 28;
-    const isExtraLong = length > 40;
-    const fontSize = isExtraLong ? '1rem' : isLong ? '1.1rem' : undefined;
+    const isExtraLong = length > 48;
+    const lineClamp = isLong ? 3 : 2;
+    const fontSize = isExtraLong ? '0.9rem' : lineClamp === 3 ? '0.98rem' : undefined;
 
     return {
       display: '-webkit-box',
-      WebkitLineClamp: isLong ? 3 : 2,
+      WebkitLineClamp: lineClamp,
       WebkitBoxOrient: 'vertical',
       overflow: 'hidden',
       wordBreak: 'break-word',
       overflowWrap: 'anywhere',
-      lineHeight: isExtraLong ? 1.2 : isLong ? 1.25 : 1.3,
+      lineHeight: lineClamp === 3 ? (isExtraLong ? 1.15 : 1.2) : 1.3,
       ...(fontSize ? { fontSize } : {}),
     };
   };
