@@ -7,6 +7,12 @@
 
 ## Runs
 
+### 0) One-click Verify (partial)
+- Command: `./scripts/verify.sh --no-restart --skip-build`
+- Result: ✅ Steps 1-6.5 completed; Step 7 (E2E) continued separately due to CLI timeout
+- Evidence: `tmp/20251222_132714_verify.log`
+- E2E partial log: `tmp/20251222_132715_e2e-test.log`
+
 ### 1) API Smoke
 - Command: `ECM_TOKEN_FILE=tmp/admin.access_token ./scripts/smoke.sh`
 - Result: ✅ Passed (end-to-end workflow, rules, WOPI, search, tags/categories, trash)
@@ -25,6 +31,11 @@ Key checkpoints from the run:
 - Command: `npx playwright test e2e/pdf-preview.spec.ts`
 - Result: ✅ 2/2 passed
 - Evidence: `tmp/20251222_130300_e2e-pdf-preview.log`
+
+### 3) UI E2E (Full Suite)
+- Command: `npx playwright test`
+- Result: ✅ 12/12 passed
+- Evidence: `tmp/20251222_133014_e2e-full.log`
 
 ## Notes
 - ClamAV was restarted prior to verification and is now healthy.

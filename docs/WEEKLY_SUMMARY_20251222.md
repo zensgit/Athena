@@ -15,6 +15,11 @@
   - Evidence: `tmp/20251222_130230_smoke.log`
 - `npx playwright test e2e/pdf-preview.spec.ts`
   - Evidence: `tmp/20251222_130300_e2e-pdf-preview.log`
+- `./scripts/verify.sh --no-restart --skip-build`
+  - Evidence: `tmp/20251222_132714_verify.log`
+  - Evidence: `tmp/20251222_132715_e2e-test.log` (partial; CLI timeout during E2E)
+- `npx playwright test`
+  - Evidence: `tmp/20251222_133014_e2e-full.log`
 
 ## New/Updated Docs
 - `docs/PHASE_C_STEP3_DESIGN.md`
