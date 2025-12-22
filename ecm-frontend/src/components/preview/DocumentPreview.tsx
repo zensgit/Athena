@@ -4,6 +4,7 @@ import {
   DialogContent,
   IconButton,
   Box,
+  Button,
   CircularProgress,
   Typography,
   AppBar,
@@ -113,6 +114,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
   const [serverPreview, setServerPreview] = useState<PreviewResult | null>(null);
   const [serverPreviewLoading, setServerPreviewLoading] = useState(false);
   const [serverPreviewError, setServerPreviewError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const pdfContainerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -188,7 +190,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
     return () => {
       cancelled = true;
     };
-  }, [open, nodeId, officeDocument]);
+  }, [open, nodeId, officeDocument, reloadKey]);
 
   useEffect(() => {
     return () => {
@@ -296,6 +298,10 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
     setPageNumber((prev) => Math.min(prev + 1, numPages || 1));
   };
 
+  const handleRetry = () => {
+    setReloadKey((prev) => prev + 1);
+  };
+
   const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
   };
@@ -303,6 +309,28 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
   const handleMenuClose = () => {
     setAnchorEl(null);
   };
+
+  const renderPreviewError = (message: string) => (
+    <Box
+      display="flex"
+      flexDirection="column"
+      alignItems="center"
+      justifyContent="center"
+      height="60vh"
+      gap={2}
+      textAlign="center"
+    >
+      <Typography color="error">{message}</Typography>
+      <Box display="flex" gap={1} flexWrap="wrap" justifyContent="center">
+        <Button variant="contained" size="small" onClick={handleRetry}>
+          Retry
+        </Button>
+        <Button variant="outlined" size="small" onClick={handleDownload}>
+          Download
+        </Button>
+      </Box>
+    </Box>
+  );
 
   const renderPreview = () => {
     if (loading) {
@@ -314,11 +342,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
     }
 
     if (error) {
-      return (
-        <Box display="flex" justifyContent="center" alignItems="center" height="60vh">
-          <Typography color="error">{error}</Typography>
-        </Box>
-      );
+      return renderPreviewError(error);
     }
 
     if (officeDocument) {
@@ -362,32 +386,27 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
     if (node.contentType === 'application/pdf') {
       if (serverPreviewLoading) {
         return (
-          <Box display="flex" justifyContent="center" alignItems="center" height="60vh">
+          <Box display="flex" flexDirection="column" justifyContent="center" alignItems="center" height="60vh">
             <CircularProgress />
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+              Loading server preview...
+            </Typography>
           </Box>
         );
       }
 
       if (serverPreview) {
         if (serverPreview.supported === false) {
-          return (
-            <Box display="flex" justifyContent="center" alignItems="center" height="60vh">
-              <Typography color="error">
-                {serverPreview.message || 'Preview not available for this document'}
-              </Typography>
-            </Box>
+          return renderPreviewError(
+            serverPreview.message || 'Preview not available for this document'
           );
         }
 
         const pages = serverPreview.pages || [];
         const currentPage = pages.find((page) => page.pageNumber === pageNumber) || pages[0];
         if (!currentPage || !currentPage.content) {
-          return (
-            <Box display="flex" justifyContent="center" alignItems="center" height="60vh">
-              <Typography color="error">
-                {serverPreviewError || 'Preview not available for this document'}
-              </Typography>
-            </Box>
+          return renderPreviewError(
+            serverPreviewError || 'Preview not available for this document'
           );
         }
 
@@ -401,6 +420,9 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
             sx={{ overflow: 'auto' }}
             data-testid="pdf-preview-fallback"
           >
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 1, mb: 2 }}>
+              Using server-rendered preview
+            </Typography>
             <img
               src={imageSrc}
               alt={`${node.name} page ${currentPage.pageNumber}`}
