@@ -10,12 +10,14 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -105,10 +107,15 @@ public class AnalyticsController {
             from.format(DateTimeFormatter.ofPattern("yyyyMMdd")),
             to.format(DateTimeFormatter.ofPattern("yyyyMMdd")));
 
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentDisposition(ContentDisposition.attachment()
+            .filename(filename, StandardCharsets.UTF_8)
+            .build());
+        headers.setContentType(MediaType.parseMediaType("text/csv; charset=UTF-8"));
+
         return ResponseEntity.ok()
-            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
-            .contentType(MediaType.parseMediaType("text/csv; charset=UTF-8"))
-            .body(csvContent.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            .headers(headers)
+            .body(csvContent.getBytes(StandardCharsets.UTF_8));
     }
 
     @GetMapping("/audit/retention")

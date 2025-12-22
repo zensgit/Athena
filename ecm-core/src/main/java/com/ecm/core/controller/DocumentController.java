@@ -16,6 +16,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -25,6 +26,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 
@@ -87,7 +89,9 @@ public class DocumentController {
         
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.parseMediaType(document.getMimeType()));
-        headers.setContentDispositionFormData("attachment", document.getName());
+        headers.setContentDisposition(ContentDisposition.attachment()
+            .filename(document.getName(), StandardCharsets.UTF_8)
+            .build());
         headers.setContentLength(document.getFileSize());
         
         return ResponseEntity.ok()
@@ -115,8 +119,9 @@ public class DocumentController {
         
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.parseMediaType(version.getMimeType()));
-        headers.setContentDispositionFormData("attachment", 
-            document.getName() + "_v" + version.getVersionLabel());
+        headers.setContentDisposition(ContentDisposition.attachment()
+            .filename(document.getName() + "_v" + version.getVersionLabel(), StandardCharsets.UTF_8)
+            .build());
         headers.setContentLength(version.getFileSize());
         
         return ResponseEntity.ok()
@@ -212,8 +217,9 @@ public class DocumentController {
         
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.parseMediaType(result.getMimeType()));
-        headers.setContentDispositionFormData("attachment", 
-            document.getName() + "." + format);
+        headers.setContentDisposition(ContentDisposition.attachment()
+            .filename(document.getName() + "." + format, StandardCharsets.UTF_8)
+            .build());
         
         return ResponseEntity.ok()
             .headers(headers)

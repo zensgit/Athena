@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -20,6 +21,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 import static org.springframework.http.HttpStatus.BAD_REQUEST;
@@ -51,7 +53,9 @@ public class NodeContentController {
         } else {
             headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
         }
-        headers.setContentDispositionFormData("attachment", document.getName());
+        headers.setContentDisposition(ContentDisposition.attachment()
+            .filename(document.getName(), StandardCharsets.UTF_8)
+            .build());
         if (document.getFileSize() != null) {
             headers.setContentLength(document.getFileSize());
         }
@@ -61,4 +65,3 @@ public class NodeContentController {
                 .body(new InputStreamResource(content));
     }
 }
-

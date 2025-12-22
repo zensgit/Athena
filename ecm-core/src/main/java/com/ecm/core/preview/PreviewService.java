@@ -82,7 +82,7 @@ public class PreviewService {
             throw new SecurityException("No permission to preview document");
         }
         
-        String mimeType = normalizeMimeType(document.getMimeType());
+        String mimeType = normalizeMimeType(document.getMimeType(), document.getName());
         PreviewResult result = new PreviewResult();
         result.setDocumentId(document.getId());
         result.setMimeType(mimeType);
@@ -120,7 +120,7 @@ public class PreviewService {
             throw new SecurityException("No permission to view thumbnail");
         }
         
-        String mimeType = normalizeMimeType(document.getMimeType());
+        String mimeType = normalizeMimeType(document.getMimeType(), document.getName());
         
         try (InputStream content = contentService.getContent(document.getContentId())) {
             if (isCadDocument(mimeType, document.getName())) {
@@ -186,11 +186,17 @@ public class PreviewService {
     private PreviewResult generatePdfPreview(InputStream content, Document document) 
             throws IOException {
         PreviewResult result = new PreviewResult();
+        byte[] pdfBytes = content.readAllBytes();
+        if (pdfBytes.length == 0) {
+            log.warn("Preview skipped for empty PDF content. documentId={}, name={}", document.getId(), document.getName());
+            result.setSupported(false);
+            result.setMessage("Preview not available for empty PDF content");
+            return result;
+        }
+
         result.setSupported(true);
         
         List<PreviewPage> pages = new ArrayList<>();
-        
-        byte[] pdfBytes = content.readAllBytes();
         try (PDDocument pdf = PDDocument.load(pdfBytes)) {
             PDFRenderer renderer = new PDFRenderer(pdf);
             int pageCount = Math.min(pdf.getNumberOfPages(), maxPages);
@@ -383,7 +389,7 @@ public class PreviewService {
             throw new IOException("CAD content is empty");
         }
         String fileName = document.getName() != null ? document.getName() : "drawing.dwg";
-        String contentType = normalizeMimeType(document.getMimeType());
+        String contentType = normalizeMimeType(document.getMimeType(), document.getName());
 
         byte[] pngBytes = requestCadRender(cadBytes, fileName, contentType);
         BufferedImage image = ImageIO.read(new ByteArrayInputStream(pngBytes));
@@ -445,6 +451,9 @@ public class PreviewService {
     
     private byte[] generatePdfThumbnail(InputStream content) throws IOException {
         byte[] pdfBytes = content.readAllBytes();
+        if (pdfBytes.length == 0) {
+            return generateDefaultThumbnail("application/pdf");
+        }
         try (PDDocument pdf = PDDocument.load(pdfBytes)) {
             PDFRenderer renderer = new PDFRenderer(pdf);
             BufferedImage image = renderer.renderImageWithDPI(0, 72);
@@ -509,8 +518,61 @@ public class PreviewService {
         return name.endsWith(".dwg") || name.endsWith(".dxf");
     }
 
-    private String normalizeMimeType(String mimeType) {
-        return mimeType == null ? "" : mimeType;
+    private String normalizeMimeType(String mimeType, String fileName) {
+        String normalized = mimeType == null ? "" : mimeType.trim().toLowerCase();
+        int separator = normalized.indexOf(';');
+        if (separator >= 0) {
+            normalized = normalized.substring(0, separator).trim();
+        }
+        if (isGenericMimeType(normalized)) {
+            String inferred = inferMimeTypeFromName(fileName);
+            if (inferred != null && !inferred.isBlank()) {
+                return inferred;
+            }
+        }
+        return normalized;
+    }
+
+    private boolean isGenericMimeType(String mimeType) {
+        return mimeType == null
+            || mimeType.isBlank()
+            || mimeType.equals("application/octet-stream")
+            || mimeType.equals("binary/octet-stream")
+            || mimeType.equals("application/x-empty");
+    }
+
+    private String inferMimeTypeFromName(String fileName) {
+        if (fileName == null || fileName.isBlank()) {
+            return "";
+        }
+        String normalized = fileName.toLowerCase();
+        if (normalized.endsWith(".pdf")) return "application/pdf";
+        if (normalized.endsWith(".png")) return "image/png";
+        if (normalized.endsWith(".jpg") || normalized.endsWith(".jpeg")) return "image/jpeg";
+        if (normalized.endsWith(".gif")) return "image/gif";
+        if (normalized.endsWith(".webp")) return "image/webp";
+        if (normalized.endsWith(".txt") || normalized.endsWith(".md") || normalized.endsWith(".csv")) {
+            return "text/plain";
+        }
+        if (normalized.endsWith(".doc")) return "application/msword";
+        if (normalized.endsWith(".docx")) {
+            return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        }
+        if (normalized.endsWith(".xls")) return "application/vnd.ms-excel";
+        if (normalized.endsWith(".xlsx")) {
+            return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        }
+        if (normalized.endsWith(".ppt")) return "application/vnd.ms-powerpoint";
+        if (normalized.endsWith(".pptx")) {
+            return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+        }
+        if (normalized.endsWith(".odt")) return "application/vnd.oasis.opendocument.text";
+        if (normalized.endsWith(".ods")) return "application/vnd.oasis.opendocument.spreadsheet";
+        if (normalized.endsWith(".odp")) return "application/vnd.oasis.opendocument.presentation";
+        if (normalized.endsWith(".rtf")) return "application/rtf";
+        if (normalized.endsWith(".dwg")) return "application/dwg";
+        if (normalized.endsWith(".dxf")) return "application/dxf";
+        return "";
     }
     
     private String getFileTypeFromMimeType(String mimeType) {
