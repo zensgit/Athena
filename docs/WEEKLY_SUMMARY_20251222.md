@@ -18,6 +18,9 @@
 - `./scripts/verify.sh --no-restart --skip-build`
   - Evidence: `tmp/20251222_132714_verify.log`
   - Evidence: `tmp/20251222_132715_e2e-test.log` (partial; CLI timeout during E2E)
+- `./scripts/verify.sh --no-restart --skip-build`
+  - Evidence: `tmp/20251222_133958_verify-full.log` (full run)
+  - Evidence: `tmp/20251222_133959_e2e-test.log`
 - `npx playwright test`
   - Evidence: `tmp/20251222_133014_e2e-full.log`
 

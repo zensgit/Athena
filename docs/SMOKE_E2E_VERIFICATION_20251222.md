@@ -13,6 +13,12 @@
 - Evidence: `tmp/20251222_132714_verify.log`
 - E2E partial log: `tmp/20251222_132715_e2e-test.log`
 
+### 0b) One-click Verify (full)
+- Command: `./scripts/verify.sh --no-restart --skip-build`
+- Result: ✅ Passed (9 passed, 0 failed, 2 skipped)
+- Evidence: `tmp/20251222_133958_verify-full.log`
+- E2E log: `tmp/20251222_133959_e2e-test.log`
+
 ### 1) API Smoke
 - Command: `ECM_TOKEN_FILE=tmp/admin.access_token ./scripts/smoke.sh`
 - Result: ✅ Passed (end-to-end workflow, rules, WOPI, search, tags/categories, trash)
