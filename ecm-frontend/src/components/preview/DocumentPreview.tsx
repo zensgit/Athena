@@ -108,14 +108,35 @@ const inferContentTypeFromName = (name?: string) => {
   return undefined;
 };
 
+const normalizeContentType = (value?: string) => {
+  if (!value) {
+    return undefined;
+  }
+  return value.split(';')[0]?.trim().toLowerCase();
+};
+
+const isGenericContentType = (value?: string) => {
+  if (!value) {
+    return true;
+  }
+  return value === 'application/octet-stream'
+    || value === 'binary/octet-stream'
+    || value === 'application/x-empty';
+};
+
 const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }) => {
   const navigate = useNavigate();
   const nodeId = node?.id;
   const nodeName = node?.name;
-  const resolvedContentType = node?.contentType
-    || node?.properties?.mimeType
-    || node?.properties?.contentType
-    || inferContentTypeFromName(nodeName);
+  const resolvedContentType = (() => {
+    const candidates = [
+      normalizeContentType(node?.contentType),
+      normalizeContentType(node?.properties?.mimeType),
+      normalizeContentType(node?.properties?.contentType),
+    ];
+    const specific = candidates.find((candidate) => candidate && !isGenericContentType(candidate));
+    return specific || inferContentTypeFromName(nodeName);
+  })();
   const officeDocument = isOfficeDocument(resolvedContentType, nodeName);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
