@@ -1,6 +1,7 @@
 package com.ecm.core.controller;
 
 import com.ecm.core.entity.Folder;
+import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Folder.FolderType;
 import com.ecm.core.entity.Node;
 import com.ecm.core.service.FolderService;
@@ -385,6 +386,7 @@ public class FolderController {
         String nodeType,
         UUID parentId,
         Long size,
+        String contentType,
         boolean isFolder,
         boolean locked,
         String lockedBy,
@@ -394,6 +396,10 @@ public class FolderController {
         LocalDateTime lastModifiedDate
     ) {
         public static NodeResponse from(Node node) {
+            String contentType = null;
+            if (node instanceof Document document) {
+                contentType = document.getMimeType();
+            }
             return new NodeResponse(
                 node.getId(),
                 node.getName(),
@@ -402,6 +408,7 @@ public class FolderController {
                 node.getNodeType().name(),
                 node.getParent() != null ? node.getParent().getId() : null,
                 node.getSize(),
+                contentType,
                 node.isFolder(),
                 node.isLocked(),
                 node.getLockedBy(),
