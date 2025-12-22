@@ -20,8 +20,11 @@ import { fetchNode, fetchChildren, deleteNodes } from 'store/slices/nodeSlice';
 import { setViewMode } from 'store/slices/uiSlice';
 import FileBreadcrumb from 'components/browser/FileBreadcrumb';
 import FileList from 'components/browser/FileList';
+import { Node } from 'types';
 import nodeService from 'services/nodeService';
 import { toast } from 'react-toastify';
+
+const DocumentPreview = React.lazy(() => import('components/preview/DocumentPreview'));
 
 const FileBrowser: React.FC = () => {
   const { nodeId = 'root' } = useParams<{ nodeId: string }>();
@@ -34,6 +37,8 @@ const FileBrowser: React.FC = () => {
   const canWrite = Boolean(user?.roles?.includes('ROLE_ADMIN') || user?.roles?.includes('ROLE_EDITOR'));
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(50);
+  const [previewNode, setPreviewNode] = useState<Node | null>(null);
+  const previewOpen = Boolean(previewNode);
 
   const loadNodeData = useCallback(async () => {
     await dispatch(fetchNode(nodeId));
@@ -48,10 +53,22 @@ const FileBrowser: React.FC = () => {
     setPage(0);
   }, [nodeId, sortBy, sortAscending]);
 
-  const handleNodeDoubleClick = (node: any) => {
+  const handleNodeDoubleClick = (node: Node) => {
     if (node.nodeType === 'FOLDER') {
       navigate(`/browse/${node.id}`);
+      return;
     }
+    setPreviewNode(node);
+  };
+
+  const handlePreviewNode = (node: Node) => {
+    if (node.nodeType === 'DOCUMENT') {
+      setPreviewNode(node);
+    }
+  };
+
+  const handleClosePreview = () => {
+    setPreviewNode(null);
   };
 
   const handleNavigate = (path: string) => {
@@ -177,6 +194,7 @@ const FileBrowser: React.FC = () => {
           <FileList
             nodes={nodes}
             onNodeDoubleClick={handleNodeDoubleClick}
+            onPreviewNode={handlePreviewNode}
             page={page}
             pageSize={pageSize}
             totalCount={nodesTotal}
@@ -188,6 +206,32 @@ const FileBrowser: React.FC = () => {
           />
         )}
       </Paper>
+
+      {previewOpen && previewNode && (
+        <React.Suspense
+          fallback={(
+            <Box
+              sx={{
+                position: 'fixed',
+                inset: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                bgcolor: 'rgba(0,0,0,0.35)',
+                zIndex: (theme) => theme.zIndex.modal + 1,
+              }}
+            >
+              <CircularProgress />
+            </Box>
+          )}
+        >
+          <DocumentPreview
+            open={previewOpen}
+            onClose={handleClosePreview}
+            node={previewNode}
+          />
+        </React.Suspense>
+      )}
     </Box>
   );
 };

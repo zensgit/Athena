@@ -63,6 +63,7 @@ import MoveCopyDialog from 'components/dialogs/MoveCopyDialog';
 interface FileListProps {
   nodes: Node[];
   onNodeDoubleClick?: (node: Node) => void;
+  onPreviewNode?: (node: Node) => void;
   onStartWorkflow?: (node: Node) => void;
   page: number;
   pageSize: number;
@@ -74,6 +75,7 @@ interface FileListProps {
 const FileList: React.FC<FileListProps> = ({
   nodes,
   onNodeDoubleClick,
+  onPreviewNode,
   onStartWorkflow,
   page,
   pageSize,
@@ -143,6 +145,44 @@ const FileList: React.FC<FileListProps> = ({
     if (name.endsWith('.txt')) return 'Text';
 
     return 'File';
+  };
+
+  const isOfficeDocument = (node: Node) => {
+    const contentType = node.contentType
+      || node.properties?.mimeType
+      || node.properties?.contentType;
+    const normalizedType = contentType?.toLowerCase();
+    if (normalizedType) {
+      const officeTypes = new Set([
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.ms-powerpoint',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'application/vnd.oasis.opendocument.text',
+        'application/vnd.oasis.opendocument.spreadsheet',
+        'application/vnd.oasis.opendocument.presentation',
+        'application/rtf',
+        'text/rtf',
+      ]);
+      if (officeTypes.has(normalizedType)) {
+        return true;
+      }
+    }
+    const name = node.name?.toLowerCase() || '';
+    return [
+      '.doc',
+      '.docx',
+      '.xls',
+      '.xlsx',
+      '.ppt',
+      '.pptx',
+      '.odt',
+      '.ods',
+      '.odp',
+      '.rtf',
+    ].some((ext) => name.endsWith(ext));
   };
 
   const formatModifiedDate = (value?: string) => {
@@ -219,6 +259,13 @@ const FileList: React.FC<FileListProps> = ({
 
   const handleEdit = (node: Node, permission: 'read' | 'write') => {
     navigate(`/editor/${node.id}?provider=wopi&permission=${permission}`);
+    handleCloseContextMenu();
+  };
+
+  const handlePreview = (node: Node) => {
+    if (onPreviewNode) {
+      onPreviewNode(node);
+    }
     handleCloseContextMenu();
   };
 
@@ -588,6 +635,14 @@ const FileList: React.FC<FileListProps> = ({
         }
       >
         {contextMenu?.node.nodeType === 'DOCUMENT' && (
+          <MenuItem onClick={() => contextMenu && handlePreview(contextMenu.node)}>
+            <ListItemIcon>
+              <Visibility fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>View</ListItemText>
+          </MenuItem>
+        )}
+        {contextMenu?.node.nodeType === 'DOCUMENT' && isOfficeDocument(contextMenu.node) && (
           <MenuItem
             onClick={() => contextMenu && handleEdit(contextMenu.node, canWrite ? 'write' : 'read')}
           >
