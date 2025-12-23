@@ -73,3 +73,9 @@ Date: 2025-12-23 (local)
 - Command: `npm run e2e`
 - Result: `13 passed`
 - Note: antivirus section still reports unavailable; EICAR skipped (as expected).
+
+## Playwright E2E (post-editor guard)
+- Change: WOPI health pre-check in editor route to surface clear error when discovery is unavailable.
+- Command: `npm run e2e`
+- Result: `13 passed`
+- Note: ClamAV healthy; EICAR upload correctly rejected (HTTP 400).
