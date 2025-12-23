@@ -5,7 +5,7 @@
 - WOPI menu gating for office documents
 
 ## Changes
-- Added `ecm-frontend/public/pdf.worker.min.mjs` (pdfjs-dist 5.4.296) for client PDF rendering.
+- Verified `ecm-frontend/public/pdf.worker.min.mjs` (pdfjs-dist 5.4.296) is available for client PDF rendering.
 - Limited WOPI "Edit/View Online" menus to office document types only.
 - Document preview menu now respects user write roles (Edit vs View).
 
