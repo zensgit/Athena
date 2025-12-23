@@ -21,6 +21,7 @@ import {
   ListItemText,
   CircularProgress,
   Box,
+  Tooltip,
 } from '@mui/material';
 import {
   Close,
@@ -118,6 +119,40 @@ const VersionHistoryDialog: React.FC = () => {
     return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
   };
 
+  const renderVersionLabel = (version: Version, index: number) => {
+    const hasDetails = Boolean(version.mimeType || version.contentHash || version.contentId || version.status);
+    const label = (
+      <Box component="span" display="flex" alignItems="center" gap={1}>
+        {version.versionLabel}
+        {version.isMajor && (
+          <Chip label="Major" size="small" color="primary" />
+        )}
+        {index === 0 && (
+          <Chip label="Current" size="small" color="success" />
+        )}
+      </Box>
+    );
+
+    if (!hasDetails) {
+      return label;
+    }
+
+    const details = (
+      <Box>
+        <Typography variant="caption" display="block">Mime: {version.mimeType ?? '-'}</Typography>
+        <Typography variant="caption" display="block">Hash: {version.contentHash ?? '-'}</Typography>
+        <Typography variant="caption" display="block">Content ID: {version.contentId ?? '-'}</Typography>
+        <Typography variant="caption" display="block">Status: {version.status ?? '-'}</Typography>
+      </Box>
+    );
+
+    return (
+      <Tooltip title={details} placement="top-start" arrow>
+        {label}
+      </Tooltip>
+    );
+  };
+
   return (
     <Dialog
       open={versionHistoryDialogOpen}
@@ -161,15 +196,7 @@ const VersionHistoryDialog: React.FC = () => {
                 {versions.map((version, index) => (
                   <TableRow key={version.id} hover>
                     <TableCell>
-                      <Box display="flex" alignItems="center" gap={1}>
-                        {version.versionLabel}
-                        {version.isMajor && (
-                          <Chip label="Major" size="small" color="primary" />
-                        )}
-                        {index === 0 && (
-                          <Chip label="Current" size="small" color="success" />
-                        )}
-                      </Box>
+                      {renderVersionLabel(version, index)}
                     </TableCell>
                     <TableCell>
                       {format(new Date(version.created), 'PPp')}

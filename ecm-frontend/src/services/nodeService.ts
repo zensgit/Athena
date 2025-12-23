@@ -73,6 +73,10 @@ interface ApiVersionResponse {
   creator: string;
   size: number;
   major: boolean;
+  mimeType?: string;
+  contentHash?: string;
+  contentId?: string;
+  status?: string;
 }
 
 interface UploadResponse {
@@ -460,6 +464,10 @@ class NodeService {
       creator: version.creator,
       size: version.size,
       isMajor: version.major,
+      mimeType: version.mimeType,
+      contentHash: version.contentHash,
+      contentId: version.contentId,
+      status: version.status,
     }));
   }
 

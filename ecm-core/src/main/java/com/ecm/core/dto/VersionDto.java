@@ -13,7 +13,11 @@ public record VersionDto(
     LocalDateTime createdDate,
     String creator,
     long size,
-    boolean major
+    boolean major,
+    String mimeType,
+    String contentHash,
+    String contentId,
+    String status
 ) {
     public static VersionDto from(Version version) {
         if (version == null) {
@@ -29,8 +33,11 @@ public record VersionDto(
             version.getCreatedDate(),
             version.getCreatedBy(),
             version.getFileSize() != null ? version.getFileSize() : 0L,
-            version.isMajorVersionFlag()
+            version.isMajorVersionFlag(),
+            version.getMimeType(),
+            version.getContentHash(),
+            version.getContentId(),
+            version.getStatus() != null ? version.getStatus().name() : null
         );
     }
 }
-

@@ -43,6 +43,10 @@ export interface Version {
   creator: string;
   size: number;
   isMajor: boolean;
+  mimeType?: string;
+  contentHash?: string;
+  contentId?: string;
+  status?: string;
 }
 
 export interface Permission {
