@@ -27,4 +27,5 @@ npx playwright test e2e/pdf-preview.spec.ts
 - Rebuilt/restarted frontend container: `docker compose up -d --build ecm-frontend`.
 - PDF context menu: shows View/Download without Edit Online.
 - Office context menu (mcp-wopi-test.docx): shows Edit Online.
+- Office context menu (工作簿1.xlsx): shows Edit Online, Collabora spreadsheet loads successfully.
 - PDF View action opens preview dialog and renders content.
