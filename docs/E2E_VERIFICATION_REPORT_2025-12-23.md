@@ -11,8 +11,8 @@ npm run e2e
 
 ## Result
 - Status: PASS
-- Tests: 13 passed
-- Duration: ~3.0m
+- Tests: 14 passed
+- Duration: ~3.2m
 
 ## Highlights
 - PDF preview and fallback flows passed.

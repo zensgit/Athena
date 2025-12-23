@@ -12,7 +12,7 @@ npm run e2e
 ## Result
 - Status: PASS
 - Tests: 14 passed
-- Duration: ~3.5m
+- Duration: ~3.2m
 
 ## Observations
 - Scheduled rules flow created and cleaned a dedicated test folder and verified auto-tagging.
