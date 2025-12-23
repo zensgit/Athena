@@ -22,3 +22,9 @@ npx playwright test e2e/pdf-preview.spec.ts
 
 ## Notes
 - Playwright warning about NO_COLOR/ FORCE_COLOR is benign.
+
+## MCP UI Verification
+- Rebuilt/restarted frontend container: `docker compose up -d --build ecm-frontend`.
+- PDF context menu: shows View/Download without Edit Online.
+- Office context menu (mcp-wopi-test.docx): shows Edit Online.
+- PDF View action opens preview dialog and renders content.
