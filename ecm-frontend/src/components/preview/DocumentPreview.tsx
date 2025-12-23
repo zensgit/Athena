@@ -131,19 +131,10 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
   const canWrite = Boolean(user?.roles?.includes('ROLE_ADMIN') || user?.roles?.includes('ROLE_EDITOR'));
   const nodeId = node?.id;
   const nodeName = node?.name;
-  const resolvedContentType = (() => {
-    const candidates = [
-      normalizeContentType(node?.contentType),
-      normalizeContentType(node?.properties?.mimeType),
-      normalizeContentType(node?.properties?.contentType),
-    ];
-    const specific = candidates.find((candidate) => candidate && !isGenericContentType(candidate));
-    return specific || inferContentTypeFromName(nodeName);
-  })();
-  const officeDocument = isOfficeDocument(resolvedContentType, nodeName);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fileUrl, setFileUrl] = useState<string | null>(null);
+  const [blobContentType, setBlobContentType] = useState<string | null>(null);
   const [wopiUrl, setWopiUrl] = useState<string | null>(null);
   const [numPages, setNumPages] = useState<number | null>(null);
   const [pageNumber, setPageNumber] = useState(1);
@@ -156,6 +147,17 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
   const [serverPreviewError, setServerPreviewError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const pdfContainerRef = useRef<HTMLDivElement | null>(null);
+  const resolvedContentType = (() => {
+    const candidates = [
+      normalizeContentType(node?.contentType),
+      normalizeContentType(node?.properties?.mimeType),
+      normalizeContentType(node?.properties?.contentType),
+    ];
+    const specific = candidates.find((candidate) => candidate && !isGenericContentType(candidate));
+    return specific || inferContentTypeFromName(nodeName);
+  })();
+  const effectiveContentType = blobContentType || resolvedContentType;
+  const officeDocument = isOfficeDocument(resolvedContentType, nodeName);
 
   const loadServerPreview = useCallback(async () => {
     if (!nodeId) {
@@ -189,6 +191,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
     setLoading(true);
     setError(null);
     setFileUrl(null);
+    setBlobContentType(null);
     setWopiUrl(null);
     setNumPages(null);
     setPageNumber(1);
@@ -201,9 +204,13 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
       try {
         const blob = await apiService.getBlob(`/nodes/${nodeId}/content`);
         const url = URL.createObjectURL(blob);
+        const detectedType = normalizeContentType(blob.type);
         if (!cancelled) {
           setFileUrl(url);
-          if (resolvedContentType === 'application/pdf' && blob.size === 0) {
+          if (detectedType) {
+            setBlobContentType(detectedType);
+          }
+          if ((detectedType === 'application/pdf' || resolvedContentType === 'application/pdf') && blob.size === 0) {
             setPdfLoadFailed(true);
             void loadServerPreview();
           }
@@ -260,7 +267,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
   }, [fileUrl]);
 
   useEffect(() => {
-    if (!open || resolvedContentType !== 'application/pdf') {
+    if (!open || effectiveContentType !== 'application/pdf') {
       return;
     }
     if (!fileUrl) {
@@ -284,7 +291,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [open, resolvedContentType, fileUrl, serverPreview, serverPreviewLoading, loadServerPreview]);
+  }, [open, effectiveContentType, fileUrl, serverPreview, serverPreviewLoading, loadServerPreview]);
 
   const handleDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
     setNumPages(numPages);
@@ -397,7 +404,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
     }
 
     // Image preview
-    if (resolvedContentType?.startsWith('image/')) {
+    if (effectiveContentType?.startsWith('image/')) {
       return (
         <Box
           display="flex"
@@ -421,7 +428,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
     }
 
     // PDF preview
-    if (resolvedContentType === 'application/pdf') {
+    if (effectiveContentType === 'application/pdf') {
       if (serverPreviewLoading) {
         return (
           <Box display="flex" flexDirection="column" justifyContent="center" alignItems="center" height="60vh">
@@ -503,7 +510,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
     }
 
     // Text preview
-    if (resolvedContentType?.startsWith('text/')) {
+    if (effectiveContentType?.startsWith('text/')) {
       return (
         <Box
           sx={{
@@ -550,7 +557,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
           </Typography>
 
           {/* Navigation controls for PDF */}
-          {resolvedContentType === 'application/pdf' && numPages && (
+          {effectiveContentType === 'application/pdf' && numPages && (
             <Box display="flex" alignItems="center" mr={2}>
               <IconButton
                 color="inherit"
