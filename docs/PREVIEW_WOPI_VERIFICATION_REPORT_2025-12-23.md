@@ -29,3 +29,8 @@ npx playwright test e2e/pdf-preview.spec.ts
 - Office context menu (mcp-wopi-test.docx): shows Edit Online.
 - Office context menu (工作簿1.xlsx): shows Edit Online, Collabora spreadsheet loads successfully.
 - PDF View action opens preview dialog and renders content.
+
+## Viewer Role Verification
+- Uploaded `viewer-wopi-test.xlsx` to uploads root for a viewer-visible office document.
+- Playwright check: viewer opens Search Results, sees the file, preview menu shows View Online (no Edit Online).
+- Viewer WOPI action loads Collabora with `permission=read`.
