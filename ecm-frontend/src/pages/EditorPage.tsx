@@ -3,6 +3,14 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { Box, CircularProgress, Alert } from '@mui/material';
 import apiService from 'services/api';
 
+type WopiHealthResponse = {
+  enabled: boolean;
+  discovery?: {
+    reachable?: boolean;
+    lastError?: string;
+  };
+};
+
 /**
  * Editor Page Component
  * 
@@ -32,6 +40,16 @@ const EditorPage: React.FC = () => {
 
         let url = '';
         if (provider === 'wopi') {
+          const health = await apiService.get<WopiHealthResponse>('/integration/wopi/health');
+          if (!health.enabled) {
+            setError('Online editor is disabled in this environment.');
+            return;
+          }
+          if (health.discovery?.reachable === false) {
+            const detail = health.discovery.lastError ? ` (${health.discovery.lastError})` : '';
+            setError(`Online editor is unavailable${detail}.`);
+            return;
+          }
           const response = await apiService.get<{ wopiUrl: string }>(`/integration/wopi/url/${documentId}`, {
             params: { permission },
           });
