@@ -165,6 +165,9 @@ const FileList: React.FC<FileListProps> = ({
         'application/vnd.oasis.opendocument.presentation',
         'application/rtf',
         'text/rtf',
+        'application/pdf',
+        'text/plain',
+        'text/csv',
       ]);
       if (officeTypes.has(normalizedType)) {
         return true;
@@ -172,6 +175,7 @@ const FileList: React.FC<FileListProps> = ({
     }
     const name = node.name?.toLowerCase() || '';
     return [
+      '.pdf',
       '.doc',
       '.docx',
       '.xls',
@@ -182,6 +186,8 @@ const FileList: React.FC<FileListProps> = ({
       '.ods',
       '.odp',
       '.rtf',
+      '.txt',
+      '.csv',
     ].some((ext) => name.endsWith(ext));
   };
 
@@ -196,19 +202,19 @@ const FileList: React.FC<FileListProps> = ({
 
   const getNameTypographySx = (name: string) => {
     const length = name?.length ?? 0;
-    const isLong = length > 24;
-    const isExtraLong = length > 36;
-    const isVeryLong = length > 60;
-    const lineClamp = compactMode ? 2 : isLong ? 3 : 2;
-    const shouldShrink = lineClamp === 3;
+    const isLong = length > 28;
+    const isExtraLong = length > 48;
+    const isVeryLong = length > 72;
+    const lineClamp = compactMode ? 2 : isVeryLong ? 4 : isLong ? 3 : 2;
+    const shouldShrink = lineClamp > 2;
     const fontSize = compactMode
-      ? '0.82rem'
+      ? '0.8rem'
       : isVeryLong
-        ? '0.85rem'
+        ? '0.82rem'
         : isExtraLong
-          ? '0.9rem'
+          ? '0.88rem'
           : shouldShrink
-            ? '0.96rem'
+            ? '0.94rem'
             : undefined;
 
     return {
@@ -218,7 +224,7 @@ const FileList: React.FC<FileListProps> = ({
       overflow: 'hidden',
       wordBreak: 'break-word',
       overflowWrap: 'anywhere',
-      lineHeight: isVeryLong ? 1.05 : isExtraLong ? 1.12 : shouldShrink ? 1.18 : 1.25,
+      lineHeight: isVeryLong ? 1.08 : isExtraLong ? 1.12 : shouldShrink ? 1.18 : 1.25,
       ...(fontSize ? { fontSize } : {}),
     };
   };

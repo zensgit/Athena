@@ -63,6 +63,10 @@ public class EcmEventListener {
         } else {
             searchIndexService.updateNode(event.getNode());
         }
+
+        if (event.getNode().isFolder()) {
+            searchIndexService.updateNodeChildren(event.getNode());
+        }
         
         // Send notifications
         notificationService.notifyNodeDeleted(event.getNode());

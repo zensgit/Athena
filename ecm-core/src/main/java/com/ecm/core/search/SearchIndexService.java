@@ -122,21 +122,50 @@ public class SearchIndexService {
     
     public void updateNodeChildren(Node parentNode) {
         try {
-            // Find all children by path prefix
-            Criteria criteria = new Criteria("path").startsWith(parentNode.getPath() + "/");
+            if (parentNode == null || parentNode.getPath() == null) {
+                return;
+            }
+
+            String pathPrefix = parentNode.getPath() + "/";
+            Criteria criteria = new Criteria("path").startsWith(pathPrefix);
             Query query = new CriteriaQuery(criteria);
-            
+
             SearchHits<NodeDocument> searchHits = elasticsearchOperations.search(
                 query, NodeDocument.class, IndexCoordinates.of(INDEX_NAME));
-            
-            // Update each child's path
+
+            int updated = 0;
+            int deleted = 0;
+
             for (SearchHit<NodeDocument> hit : searchHits) {
-                NodeDocument child = hit.getContent();
-                // Update path would be done here
-                elasticsearchOperations.save(child, IndexCoordinates.of(INDEX_NAME));
+                NodeDocument childDoc = hit.getContent();
+                if (childDoc == null || childDoc.getId() == null) {
+                    continue;
+                }
+
+                UUID childId;
+                try {
+                    childId = UUID.fromString(childDoc.getId());
+                } catch (IllegalArgumentException ex) {
+                    log.warn("Invalid node id in search index: {}", childDoc.getId());
+                    elasticsearchOperations.delete(childDoc.getId(), IndexCoordinates.of(INDEX_NAME));
+                    deleted++;
+                    continue;
+                }
+
+                Node child = nodeRepository.findByIdIncludeDeleted(childId).orElse(null);
+                if (child == null) {
+                    elasticsearchOperations.delete(childDoc.getId(), IndexCoordinates.of(INDEX_NAME));
+                    deleted++;
+                    continue;
+                }
+
+                NodeDocument refreshed = NodeDocument.fromNode(child);
+                elasticsearchOperations.save(refreshed, IndexCoordinates.of(INDEX_NAME));
+                updated++;
             }
-            
-            log.debug("Updated {} children of node: {}", searchHits.getTotalHits(), parentNode.getId());
+
+            log.debug("Synced {} children of node {} (updated={}, deleted={})",
+                searchHits.getTotalHits(), parentNode.getId(), updated, deleted);
         } catch (Exception e) {
             log.error("Failed to update children of node: {}", parentNode.getId(), e);
         }

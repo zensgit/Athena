@@ -79,6 +79,7 @@ const SearchResults: React.FC = () => {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [previewNode, setPreviewNode] = useState<Node | null>(null);
+  const [hiddenNodeIds, setHiddenNodeIds] = useState<string[]>([]);
   const previewOpen = Boolean(previewNode);
   const suppressFacetSearch = useRef(false);
 
@@ -95,11 +96,16 @@ const SearchResults: React.FC = () => {
     }
   };
 
-  const handleQuickSearch = async (e: React.FormEvent) => {
+  const handleQuickSearch = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const query = quickSearch.trim();
+    const formData = new FormData(e.currentTarget);
+    const rawQuery = formData.get('quickSearch');
+    const query = (typeof rawQuery === 'string' ? rawQuery : quickSearch).trim();
     if (!query) {
       return;
+    }
+    if (query !== quickSearch) {
+      setQuickSearch(query);
     }
     setPage(1);
     const sortParams = getSortParams(sortBy);
@@ -167,6 +173,12 @@ const SearchResults: React.FC = () => {
   useEffect(() => {
     if (lastSearchCriteria?.page !== undefined) {
       setPage(lastSearchCriteria.page + 1);
+    }
+  }, [lastSearchCriteria]);
+
+  useEffect(() => {
+    if (lastSearchCriteria) {
+      setHiddenNodeIds([]);
     }
   }, [lastSearchCriteria]);
 
@@ -276,11 +288,24 @@ const SearchResults: React.FC = () => {
 
   const isFolderNode = (node: Node) => node.nodeType === 'FOLDER' && !isDocumentNode(node);
 
-  const handleViewNode = (node: Node) => {
-    if (isFolderNode(node)) {
-      navigate(`/browse/${node.id}`);
-    } else {
-      setPreviewNode(node);
+  const hideNodeFromResults = (nodeId: string) => {
+    setHiddenNodeIds((prev) => (prev.includes(nodeId) ? prev : [...prev, nodeId]));
+  };
+
+  const handleViewNode = async (node: Node) => {
+    try {
+      const freshNode = await nodeService.getNode(node.id);
+      if (isFolderNode(freshNode)) {
+        navigate(`/browse/${freshNode.id}`);
+      } else {
+        setPreviewNode(freshNode);
+      }
+    } catch (error: any) {
+      const status = error?.response?.status;
+      if (status === 404 || status === 410) {
+        hideNodeFromResults(node.id);
+        toast.info('This item is no longer available and was removed from search results.');
+      }
     }
   };
 
@@ -314,10 +339,11 @@ const SearchResults: React.FC = () => {
 
   const getNameTypographySx = (name: string) => {
     const length = name?.length ?? 0;
-    const isLong = length > 28;
-    const isExtraLong = length > 48;
-    const lineClamp = isLong ? 3 : 2;
-    const fontSize = isExtraLong ? '0.9rem' : lineClamp === 3 ? '0.98rem' : undefined;
+    const isLong = length > 32;
+    const isExtraLong = length > 56;
+    const isVeryLong = length > 80;
+    const lineClamp = isVeryLong ? 4 : isLong ? 3 : 2;
+    const fontSize = isVeryLong ? '0.82rem' : isExtraLong ? '0.88rem' : lineClamp === 3 ? '0.94rem' : undefined;
 
     return {
       display: '-webkit-box',
@@ -326,7 +352,7 @@ const SearchResults: React.FC = () => {
       overflow: 'hidden',
       wordBreak: 'break-word',
       overflowWrap: 'anywhere',
-      lineHeight: lineClamp === 3 ? (isExtraLong ? 1.15 : 1.2) : 1.3,
+      lineHeight: lineClamp >= 3 ? (isVeryLong ? 1.08 : isExtraLong ? 1.12 : 1.18) : 1.3,
       ...(fontSize ? { fontSize } : {}),
     };
   };
@@ -435,7 +461,7 @@ const SearchResults: React.FC = () => {
     selectedTags.length > 0 ||
     selectedCategories.length > 0;
 
-  const paginatedNodes = nodes;
+  const paginatedNodes = nodes.filter((node) => !hiddenNodeIds.includes(node.id));
   const totalPages = Math.ceil(nodesTotal / pageSize);
 
   return (
@@ -446,6 +472,7 @@ const SearchResults: React.FC = () => {
             <TextField
               fullWidth
               placeholder="Quick search by name..."
+              name="quickSearch"
               value={quickSearch}
               onChange={(e) => setQuickSearch(e.target.value)}
               InputProps={{
@@ -658,7 +685,7 @@ const SearchResults: React.FC = () => {
               {loading
                 ? 'Searching...'
                 : nodesTotal > 0
-                  ? `Showing ${nodes.length} of ${nodesTotal} results`
+                  ? `Showing ${paginatedNodes.length} of ${nodesTotal} results`
                   : '0 results found'}
             </Typography>
             <FormControl size="small" sx={{ minWidth: 150 }}>
@@ -723,7 +750,7 @@ const SearchResults: React.FC = () => {
             <Box display="flex" justifyContent="center" p={4}>
               <CircularProgress />
             </Box>
-          ) : nodes.length === 0 ? (
+          ) : paginatedNodes.length === 0 ? (
             <Paper sx={{ p: 4, textAlign: 'center' }}>
               <Typography variant="h6" color="text.secondary" gutterBottom>
                 No results found
@@ -785,7 +812,7 @@ const SearchResults: React.FC = () => {
                         </Box>
                       </CardContent>
                       <CardActions>
-                        <Button size="small" startIcon={<Visibility />} onClick={() => handleViewNode(node)}>
+                        <Button size="small" startIcon={<Visibility />} onClick={() => void handleViewNode(node)}>
                           View
                         </Button>
                         {isDocumentNode(node) && (

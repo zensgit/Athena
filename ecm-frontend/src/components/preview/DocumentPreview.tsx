@@ -146,12 +146,36 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
   const [pageNumber, setPageNumber] = useState(1);
   const [scale, setScale] = useState(1.0);
   const [rotation, setRotation] = useState(0);
+  const [pdfLoadFailed, setPdfLoadFailed] = useState(false);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [serverPreview, setServerPreview] = useState<PreviewResult | null>(null);
   const [serverPreviewLoading, setServerPreviewLoading] = useState(false);
   const [serverPreviewError, setServerPreviewError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const pdfContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const loadServerPreview = useCallback(async () => {
+    if (!nodeId) {
+      return;
+    }
+    setServerPreviewLoading(true);
+    setServerPreviewError(null);
+    try {
+      const preview = await apiService.get<PreviewResult>(`/documents/${nodeId}/preview`);
+      setServerPreview(preview);
+      if (preview?.pageCount) {
+        setNumPages(preview.pageCount);
+      } else if (preview?.pages?.length) {
+        setNumPages(preview.pages.length);
+      }
+    } catch (err) {
+      const message = 'Failed to load server preview';
+      setServerPreviewError(message);
+      setServerPreview({ supported: false, message });
+    } finally {
+      setServerPreviewLoading(false);
+    }
+  }, [nodeId]);
 
   useEffect(() => {
     if (!open || !nodeId) {
@@ -165,6 +189,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
     setWopiUrl(null);
     setNumPages(null);
     setPageNumber(1);
+    setPdfLoadFailed(false);
     setServerPreview(null);
     setServerPreviewLoading(false);
     setServerPreviewError(null);
@@ -175,6 +200,10 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
         const url = URL.createObjectURL(blob);
         if (!cancelled) {
           setFileUrl(url);
+          if (resolvedContentType === 'application/pdf' && blob.size === 0) {
+            setPdfLoadFailed(true);
+            void loadServerPreview();
+          }
         }
       } catch (err) {
         if (!cancelled) {
@@ -217,7 +246,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
     return () => {
       cancelled = true;
     };
-  }, [open, nodeId, officeDocument, reloadKey]);
+  }, [open, nodeId, officeDocument, reloadKey, resolvedContentType, loadServerPreview]);
 
   useEffect(() => {
     return () => {
@@ -226,29 +255,6 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
       }
     };
   }, [fileUrl]);
-
-  const loadServerPreview = useCallback(async () => {
-    if (!nodeId) {
-      return;
-    }
-    setServerPreviewLoading(true);
-    setServerPreviewError(null);
-    try {
-      const preview = await apiService.get<PreviewResult>(`/documents/${nodeId}/preview`);
-      setServerPreview(preview);
-      if (preview?.pageCount) {
-        setNumPages(preview.pageCount);
-      } else if (preview?.pages?.length) {
-        setNumPages(preview.pages.length);
-      }
-    } catch (err) {
-      const message = 'Failed to load server preview';
-      setServerPreviewError(message);
-      setServerPreview({ supported: false, message });
-    } finally {
-      setServerPreviewLoading(false);
-    }
-  }, [nodeId]);
 
   useEffect(() => {
     if (!open || resolvedContentType !== 'application/pdf') {
@@ -283,6 +289,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
   };
 
   const handlePdfLoadError = () => {
+    setPdfLoadFailed(true);
     if (serverPreview || serverPreviewLoading) {
       return;
     }
@@ -326,6 +333,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
   };
 
   const handleRetry = () => {
+    setPdfLoadFailed(false);
     setReloadKey((prev) => prev + 1);
   };
 
@@ -462,6 +470,10 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
             />
           </Box>
         );
+      }
+
+      if (pdfLoadFailed) {
+        return renderPreviewError('Failed to load PDF');
       }
 
       return (
