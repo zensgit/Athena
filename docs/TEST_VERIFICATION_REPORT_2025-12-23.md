@@ -28,3 +28,5 @@ npm run e2e
 - Result: PASS (viewer WOPI check included; View Online only with read permission).
 - Command: `npx playwright test e2e/ui-smoke.spec.ts -g "editor can access rules"`
 - Result: PASS (editor WOPI edit + version increment verified).
+- Command: `npx playwright test e2e/version-details.spec.ts`
+- Result: PASS (version metadata fields validated after check-in).
