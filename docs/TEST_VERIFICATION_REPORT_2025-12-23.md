@@ -25,3 +25,5 @@ npm run e2e
 ## Additional Checks
 - Command: `npx playwright test e2e/ui-smoke.spec.ts -g "viewer cannot access rules"`
 - Result: PASS (viewer WOPI check included; View Online only with read permission).
+- Command: `npx playwright test e2e/ui-smoke.spec.ts -g "editor can access rules"`
+- Result: PASS (editor WOPI edit + version increment verified).

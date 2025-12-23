@@ -37,3 +37,4 @@ npx playwright test e2e/pdf-preview.spec.ts
 
 ## E2E Update
 - Added viewer WOPI gating to `ecm-frontend/e2e/ui-smoke.spec.ts`.
+- Added editor WOPI edit + version increment check to `ecm-frontend/e2e/ui-smoke.spec.ts`.

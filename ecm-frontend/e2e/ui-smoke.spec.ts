@@ -95,6 +95,37 @@ async function waitForSearchIndex(
   throw new Error(`Search index did not include '${query}'`);
 }
 
+async function getVersionCount(
+  request: APIRequestContext,
+  documentId: string,
+  token: string,
+) {
+  const res = await request.get(`http://localhost:7700/api/v1/documents/${documentId}/versions`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(res.ok()).toBeTruthy();
+  const versions = (await res.json()) as Array<{ id: string }>;
+  return versions.length;
+}
+
+async function waitForVersionCount(
+  request: APIRequestContext,
+  documentId: string,
+  token: string,
+  minCount: number,
+  maxAttempts = 15,
+) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const count = await getVersionCount(request, documentId, token);
+    if (count >= minCount) {
+      return count;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+
+  throw new Error(`Version count did not reach ${minCount} for document ${documentId}`);
+}
+
 test('UI smoke: browse + upload + search + copy/move + facets + delete + rules', async ({ page }) => {
   page.on('dialog', (dialog) => dialog.accept());
   test.setTimeout(360_000);
@@ -628,7 +659,7 @@ test('UI smoke: PDF upload + search + version history + edit online', async ({ p
 
 test('RBAC smoke: editor can access rules but not admin endpoints', async ({ page, request }) => {
   page.on('dialog', (dialog) => dialog.accept());
-  test.setTimeout(180_000);
+  test.setTimeout(300_000);
 
   const editorUsername = process.env.ECM_E2E_EDITOR_USERNAME || 'editor';
   const editorPassword = process.env.ECM_E2E_EDITOR_PASSWORD || 'editor';
@@ -662,6 +693,92 @@ test('RBAC smoke: editor can access rules but not admin endpoints', async ({ pag
     headers: { Authorization: `Bearer ${token}` },
   });
   expect(licenseRes.status()).toBe(403);
+
+  // Editor WOPI edit flow should create a new version.
+  const rootsRes = await request.get('http://localhost:7700/api/v1/folders/roots', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(rootsRes.ok()).toBeTruthy();
+  const roots = (await rootsRes.json()) as { id: string; name: string }[];
+  const uploadsFolder = roots.find((root) => root.name === 'uploads') ?? roots[0];
+  expect(uploadsFolder?.id).toBeTruthy();
+
+  const officeFilename = `e2e-editor-wopi-${Date.now()}.xlsx`;
+  const officeBytes = Buffer.from(XLSX_SAMPLE_BASE64, 'base64');
+  const uploadRes = await request.post(
+    `http://localhost:7700/api/v1/documents/upload?folderId=${uploadsFolder.id}`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+      multipart: {
+        file: {
+          name: officeFilename,
+          mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          buffer: officeBytes,
+        },
+      },
+    },
+  );
+  expect(uploadRes.ok()).toBeTruthy();
+  const uploadResult = (await uploadRes.json()) as { documentId?: string; id?: string };
+  const docId = uploadResult.documentId ?? uploadResult.id;
+  expect(docId).toBeTruthy();
+
+  const initialVersions = await getVersionCount(request, docId, token);
+
+  await request.post(`http://localhost:7700/api/v1/search/index/${docId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await waitForSearchIndex(request, officeFilename, token);
+
+  await page.goto('/search-results', { waitUntil: 'domcontentloaded' });
+  await page.getByPlaceholder('Quick search by name...').fill(officeFilename);
+  await page.keyboard.press('Enter');
+
+  const heading = page.getByRole('heading', { name: officeFilename }).first();
+  await expect(heading).toBeVisible({ timeout: 60_000 });
+
+  const resultCard = page.locator('div.MuiCard-root', { hasText: officeFilename }).first();
+  await resultCard.getByRole('button', { name: 'View' }).click();
+
+  const menuButton = page.locator('button:has(svg[data-testid=\"MoreVertIcon\"])').first();
+  await expect(menuButton).toBeVisible({ timeout: 60_000 });
+  await menuButton.click();
+
+  await expect(page.getByRole('menuitem', { name: 'Edit Online' })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('menuitem', { name: 'Edit Online' }).click();
+
+  await page.waitForURL(/\/editor\//, { timeout: 60_000 });
+  await expect(page).toHaveURL(/permission=write/);
+  const editorFrame = page.frameLocator('iframe[title=\"Online Editor\"]');
+  const canvas = editorFrame.locator('canvas').first();
+  await expect(canvas).toBeVisible({ timeout: 60_000 });
+  const welcomeModal = editorFrame.locator('.iframe-welcome-wrap, .iframe-welcome-content').first();
+  if (await welcomeModal.count()) {
+    const closeButton = editorFrame.locator('button[aria-label=\"Close\"], .iframe-welcome-wrap button').first();
+    if (await closeButton.count()) {
+      await closeButton.click();
+    } else {
+      await page.keyboard.press('Escape');
+    }
+  }
+
+  await canvas.click({ position: { x: 120, y: 160 }, force: true });
+  const editStamp = `E2E-${Date.now()}`;
+  await page.keyboard.type(editStamp);
+  await page.keyboard.press('Enter');
+
+  const saveButton = editorFrame.getByRole('button', { name: 'Save' });
+  if (await saveButton.count()) {
+    await saveButton.click();
+  } else {
+    await page.keyboard.press('Control+S');
+  }
+
+  await waitForVersionCount(request, docId, token, initialVersions + 1);
+
+  await request.delete(`http://localhost:7700/api/v1/nodes/${docId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
 });
 
 test('RBAC smoke: viewer cannot access rules or admin endpoints', async ({ page, request }) => {
