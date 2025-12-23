@@ -107,6 +107,7 @@ export interface NodeState {
   nodes: Node[];
   nodesTotal: number;
   searchFacets?: Record<string, { value: string; count: number }[]>;
+  searchFacetsCache?: Record<string, Record<string, { value: string; count: number }[]>>;
   lastSearchCriteria?: SearchCriteria;
   loading: boolean;
   error: string | null;

@@ -31,3 +31,4 @@ Date: 2025-12-23 (local)
 ## Enhancements (2025-12-23)
 - Quick search input now debounces typing (400ms) to reduce redundant requests.
 - Empty results show a “results may still be indexing” hint with an optional retry, while keeping the last non-empty results visible.
+- Search facets now cache by query string to avoid repeated facet calls for identical searches.

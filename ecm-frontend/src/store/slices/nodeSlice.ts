@@ -8,6 +8,7 @@ const initialState: NodeState = {
   nodes: [],
   nodesTotal: 0,
   searchFacets: {},
+  searchFacetsCache: {},
   loading: false,
   error: null,
   selectedNodes: [],
@@ -108,8 +109,15 @@ export const searchNodes = createAsyncThunk(
 
 export const fetchSearchFacets = createAsyncThunk(
   'node/fetchSearchFacets',
-  async (query: string | undefined) => {
-    return nodeService.getSearchFacets(query || '');
+  async (query: string | undefined, { getState }) => {
+    const normalizedQuery = (query || '').trim().toLowerCase();
+    const state = getState() as { node: NodeState };
+    const cached = state.node.searchFacetsCache?.[normalizedQuery];
+    if (cached) {
+      return { facets: cached, query: normalizedQuery, cached: true };
+    }
+    const facets = await nodeService.getSearchFacets(query || '');
+    return { facets, query: normalizedQuery, cached: false };
   }
 );
 
@@ -238,7 +246,9 @@ const nodeSlice = createSlice({
         state.nodesTotal = 0;
       })
       .addCase(fetchSearchFacets.fulfilled, (state, action) => {
-        state.searchFacets = action.payload || {};
+        state.searchFacets = action.payload.facets || {};
+        state.searchFacetsCache = state.searchFacetsCache || {};
+        state.searchFacetsCache[action.payload.query] = action.payload.facets || {};
       })
       .addCase(executeSavedSearch.pending, (state) => {
         state.loading = true;
