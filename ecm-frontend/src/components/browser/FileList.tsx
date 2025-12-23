@@ -147,6 +147,24 @@ const FileList: React.FC<FileListProps> = ({
     return 'File';
   };
 
+  const isDocumentNode = (node: Node) => {
+    if (node.nodeType === 'DOCUMENT') {
+      return true;
+    }
+    if (node.nodeType === 'FOLDER') {
+      return false;
+    }
+    const name = node.name?.toLowerCase() || '';
+    const contentTypeHint = node.contentType
+      || node.properties?.mimeType
+      || node.properties?.contentType;
+    const sizeHint = node.size
+      || node.properties?.fileSize
+      || node.properties?.size;
+    const hasExtension = name.includes('.') && !name.endsWith('.');
+    return Boolean(contentTypeHint || sizeHint || node.currentVersionLabel || hasExtension);
+  };
+
   const isOfficeDocument = (node: Node) => {
     const contentType = node.contentType
       || node.properties?.mimeType
@@ -270,7 +288,7 @@ const FileList: React.FC<FileListProps> = ({
   };
 
   const handleDownload = async (node: Node) => {
-    if (node.nodeType === 'DOCUMENT') {
+    if (isDocumentNode(node)) {
       try {
         await nodeService.downloadDocument(node.id);
       } catch (error) {
@@ -293,7 +311,7 @@ const FileList: React.FC<FileListProps> = ({
   };
 
   const handleVersionHistory = (node: Node) => {
-    if (node.nodeType === 'DOCUMENT') {
+    if (isDocumentNode(node)) {
       dispatch(setSelectedNodeId(node.id));
       dispatch(setVersionHistoryDialogOpen(true));
     }
@@ -634,7 +652,7 @@ const FileList: React.FC<FileListProps> = ({
             : undefined
         }
       >
-        {contextMenu?.node.nodeType === 'DOCUMENT' && (
+        {contextMenu && isDocumentNode(contextMenu.node) && (
           <MenuItem onClick={() => contextMenu && handlePreview(contextMenu.node)}>
             <ListItemIcon>
               <Visibility fontSize="small" />
@@ -642,7 +660,7 @@ const FileList: React.FC<FileListProps> = ({
             <ListItemText>View</ListItemText>
           </MenuItem>
         )}
-        {contextMenu?.node.nodeType === 'DOCUMENT' && isOfficeDocument(contextMenu.node) && (
+        {contextMenu && isDocumentNode(contextMenu.node) && isOfficeDocument(contextMenu.node) && (
           <MenuItem
             onClick={() => contextMenu && handleEdit(contextMenu.node, canWrite ? 'write' : 'read')}
           >
@@ -652,7 +670,7 @@ const FileList: React.FC<FileListProps> = ({
             <ListItemText>{canWrite ? 'Edit Online' : 'View Online'}</ListItemText>
           </MenuItem>
         )}
-        {contextMenu?.node.nodeType === 'DOCUMENT' && (
+        {contextMenu && isDocumentNode(contextMenu.node) && (
           <MenuItem onClick={() => handleDownload(contextMenu.node)}>
             <ListItemIcon>
               <Download fontSize="small" />
@@ -672,7 +690,7 @@ const FileList: React.FC<FileListProps> = ({
           </ListItemIcon>
           <ListItemText>Permissions</ListItemText>
         </MenuItem>
-        {canWrite && contextMenu?.node.nodeType === 'DOCUMENT' && (
+        {canWrite && contextMenu && isDocumentNode(contextMenu.node) && (
           <MenuItem onClick={() => contextMenu && handleOpenTags(contextMenu.node)}>
             <ListItemIcon>
               <LocalOffer fontSize="small" />
@@ -680,7 +698,7 @@ const FileList: React.FC<FileListProps> = ({
             <ListItemText>Tags</ListItemText>
           </MenuItem>
         )}
-        {canWrite && contextMenu?.node.nodeType === 'DOCUMENT' && (
+        {canWrite && contextMenu && isDocumentNode(contextMenu.node) && (
           <MenuItem onClick={() => contextMenu && handleOpenCategories(contextMenu.node)}>
             <ListItemIcon>
               <CategoryIcon fontSize="small" />
@@ -688,7 +706,7 @@ const FileList: React.FC<FileListProps> = ({
             <ListItemText>Categories</ListItemText>
           </MenuItem>
         )}
-        {canWrite && contextMenu?.node.nodeType === 'DOCUMENT' && (
+        {canWrite && contextMenu && isDocumentNode(contextMenu.node) && (
           <MenuItem onClick={() => contextMenu && handleOpenShareLinks(contextMenu.node)}>
             <ListItemIcon>
               <ShareIcon fontSize="small" />
@@ -696,7 +714,7 @@ const FileList: React.FC<FileListProps> = ({
             <ListItemText>Share</ListItemText>
           </MenuItem>
         )}
-        {canWrite && contextMenu?.node.nodeType === 'DOCUMENT' && (
+        {canWrite && contextMenu && isDocumentNode(contextMenu.node) && (
           <MenuItem onClick={() => contextMenu && handleOpenMlSuggestions(contextMenu.node)}>
             <ListItemIcon>
               <AutoAwesome fontSize="small" />
@@ -704,7 +722,7 @@ const FileList: React.FC<FileListProps> = ({
             <ListItemText>ML Suggestions</ListItemText>
           </MenuItem>
         )}
-        {canWrite && contextMenu?.node.nodeType === 'DOCUMENT' && onStartWorkflow && (
+        {canWrite && contextMenu && isDocumentNode(contextMenu.node) && onStartWorkflow && (
           <MenuItem onClick={() => {
             if (contextMenu) onStartWorkflow(contextMenu.node);
             handleCloseContextMenu();
@@ -715,7 +733,7 @@ const FileList: React.FC<FileListProps> = ({
             <ListItemText>Start Approval</ListItemText>
           </MenuItem>
         )}
-        {contextMenu?.node.nodeType === 'DOCUMENT' && (
+        {contextMenu && isDocumentNode(contextMenu.node) && (
           <MenuItem onClick={() => handleVersionHistory(contextMenu.node)}>
             <ListItemIcon>
               <History fontSize="small" />

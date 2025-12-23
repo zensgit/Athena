@@ -53,16 +53,36 @@ const FileBrowser: React.FC = () => {
     setPage(0);
   }, [nodeId, sortBy, sortAscending]);
 
+  const isDocumentNode = (node: Node) => {
+    if (node.nodeType === 'DOCUMENT') {
+      return true;
+    }
+    if (node.nodeType === 'FOLDER') {
+      return false;
+    }
+    const name = node.name?.toLowerCase() || '';
+    const contentTypeHint = node.contentType
+      || node.properties?.mimeType
+      || node.properties?.contentType;
+    const sizeHint = node.size
+      || node.properties?.fileSize
+      || node.properties?.size;
+    const hasExtension = name.includes('.') && !name.endsWith('.');
+    return Boolean(contentTypeHint || sizeHint || node.currentVersionLabel || hasExtension);
+  };
+
   const handleNodeDoubleClick = (node: Node) => {
     if (node.nodeType === 'FOLDER') {
       navigate(`/browse/${node.id}`);
       return;
     }
-    setPreviewNode(node);
+    if (isDocumentNode(node)) {
+      setPreviewNode(node);
+    }
   };
 
   const handlePreviewNode = (node: Node) => {
-    if (node.nodeType === 'DOCUMENT') {
+    if (isDocumentNode(node)) {
       setPreviewNode(node);
     }
   };
