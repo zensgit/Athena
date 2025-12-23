@@ -1,4 +1,5 @@
 import { APIRequestContext, expect, Page, test } from '@playwright/test';
+import { XLSX_SAMPLE_BASE64 } from './fixtures/xlsxSample';
 
 const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
@@ -69,6 +70,29 @@ async function findChildFolderId(
   }
 
   throw new Error(`Folder not found after create: ${folderName}`);
+}
+
+async function waitForSearchIndex(
+  request: APIRequestContext,
+  query: string,
+  token: string,
+  maxAttempts = 10,
+) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const res = await request.get('http://localhost:7700/api/v1/search', {
+      params: { q: query, page: 0, size: 10 },
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok()) {
+      const payload = (await res.json()) as { content?: Array<{ name: string }> };
+      if (payload.content?.some((item) => item.name === query)) {
+        return;
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+
+  throw new Error(`Search index did not include '${query}'`);
 }
 
 test('UI smoke: browse + upload + search + copy/move + facets + delete + rules', async ({ page }) => {
@@ -642,7 +666,7 @@ test('RBAC smoke: editor can access rules but not admin endpoints', async ({ pag
 
 test('RBAC smoke: viewer cannot access rules or admin endpoints', async ({ page, request }) => {
   page.on('dialog', (dialog) => dialog.accept());
-  test.setTimeout(180_000);
+  test.setTimeout(240_000);
 
   const viewerUsername = process.env.ECM_E2E_VIEWER_USERNAME || 'viewer';
   const viewerPassword = process.env.ECM_E2E_VIEWER_PASSWORD || 'viewer';
@@ -678,6 +702,67 @@ test('RBAC smoke: viewer cannot access rules or admin endpoints', async ({ page,
     headers: { Authorization: `Bearer ${token}` },
   });
   expect(licenseRes.status()).toBe(403);
+
+  // Viewer should only see View Online for office docs.
+  const adminToken = await fetchAccessToken(request, defaultUsername, defaultPassword);
+  const rootsRes = await request.get('http://localhost:7700/api/v1/folders/roots', {
+    headers: { Authorization: `Bearer ${adminToken}` },
+  });
+  expect(rootsRes.ok()).toBeTruthy();
+  const roots = (await rootsRes.json()) as { id: string; name: string }[];
+  const uploadsFolder = roots.find((root) => root.name === 'uploads') ?? roots[0];
+  expect(uploadsFolder?.id).toBeTruthy();
+
+  const officeFilename = `e2e-viewer-wopi-${Date.now()}.xlsx`;
+  const officeBytes = Buffer.from(XLSX_SAMPLE_BASE64, 'base64');
+  const uploadRes = await request.post(
+    `http://localhost:7700/api/v1/documents/upload?folderId=${uploadsFolder.id}`,
+    {
+      headers: { Authorization: `Bearer ${adminToken}` },
+      multipart: {
+        file: {
+          name: officeFilename,
+          mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          buffer: officeBytes,
+        },
+      },
+    },
+  );
+  expect(uploadRes.ok()).toBeTruthy();
+  const uploadResult = (await uploadRes.json()) as { documentId?: string; id?: string };
+  const docId = uploadResult.documentId ?? uploadResult.id;
+  expect(docId).toBeTruthy();
+
+  await request.post(`http://localhost:7700/api/v1/search/index/${docId}`, {
+    headers: { Authorization: `Bearer ${adminToken}` },
+  });
+  await waitForSearchIndex(request, officeFilename, adminToken);
+
+  await page.goto('/search-results', { waitUntil: 'domcontentloaded' });
+  await page.getByPlaceholder('Quick search by name...').fill(officeFilename);
+  await page.keyboard.press('Enter');
+
+  const heading = page.getByRole('heading', { name: officeFilename }).first();
+  await expect(heading).toBeVisible({ timeout: 60_000 });
+
+  const resultCard = page.locator('div.MuiCard-root', { hasText: officeFilename }).first();
+  await resultCard.getByRole('button', { name: 'View' }).click();
+
+  const menuButton = page.locator('button:has(svg[data-testid=\"MoreVertIcon\"])').first();
+  await expect(menuButton).toBeVisible({ timeout: 60_000 });
+  await menuButton.click();
+
+  await expect(page.getByRole('menuitem', { name: 'View Online' })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('menuitem', { name: 'Edit Online' })).toHaveCount(0);
+
+  await page.getByRole('menuitem', { name: 'View Online' }).click();
+  await page.waitForURL(/\/editor\//, { timeout: 60_000 });
+  await expect(page).toHaveURL(/permission=read/);
+  await expect(page.locator('iframe[title=\"Online Editor\"]')).toBeVisible({ timeout: 60_000 });
+
+  await request.delete(`http://localhost:7700/api/v1/nodes/${docId}`, {
+    headers: { Authorization: `Bearer ${adminToken}` },
+  });
 });
 
 test('Rule Automation: auto-tag on document upload', async ({ page, request }) => {

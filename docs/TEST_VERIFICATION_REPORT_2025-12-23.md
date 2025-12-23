@@ -21,3 +21,7 @@ npm run e2e
 
 ## Notes
 - Node warning: NO_COLOR ignored due to FORCE_COLOR set (no impact on results).
+
+## Additional Checks
+- Command: `npx playwright test e2e/ui-smoke.spec.ts -g "viewer cannot access rules"`
+- Result: PASS (viewer WOPI check included; View Online only with read permission).

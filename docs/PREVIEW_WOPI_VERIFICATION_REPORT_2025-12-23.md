@@ -34,3 +34,6 @@ npx playwright test e2e/pdf-preview.spec.ts
 - Uploaded `viewer-wopi-test.xlsx` to uploads root for a viewer-visible office document.
 - Playwright check: viewer opens Search Results, sees the file, preview menu shows View Online (no Edit Online).
 - Viewer WOPI action loads Collabora with `permission=read`.
+
+## E2E Update
+- Added viewer WOPI gating to `ecm-frontend/e2e/ui-smoke.spec.ts`.
