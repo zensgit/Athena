@@ -165,9 +165,6 @@ const FileList: React.FC<FileListProps> = ({
         'application/vnd.oasis.opendocument.presentation',
         'application/rtf',
         'text/rtf',
-        'application/pdf',
-        'text/plain',
-        'text/csv',
       ]);
       if (officeTypes.has(normalizedType)) {
         return true;
@@ -175,7 +172,6 @@ const FileList: React.FC<FileListProps> = ({
     }
     const name = node.name?.toLowerCase() || '';
     return [
-      '.pdf',
       '.doc',
       '.docx',
       '.xls',
@@ -186,8 +182,6 @@ const FileList: React.FC<FileListProps> = ({
       '.ods',
       '.odp',
       '.rtf',
-      '.txt',
-      '.csv',
     ].some((ext) => name.endsWith(ext));
   };
 

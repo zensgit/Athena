@@ -30,6 +30,7 @@ import {
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { Node } from 'types';
+import { useAppSelector } from 'store';
 import apiService from 'services/api';
 import nodeService from 'services/nodeService';
 import { toast } from 'react-toastify';
@@ -126,6 +127,8 @@ const isGenericContentType = (value?: string) => {
 
 const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }) => {
   const navigate = useNavigate();
+  const { user } = useAppSelector((state) => state.auth);
+  const canWrite = Boolean(user?.roles?.includes('ROLE_ADMIN') || user?.roles?.includes('ROLE_EDITOR'));
   const nodeId = node?.id;
   const nodeName = node?.name;
   const resolvedContentType = (() => {
@@ -599,26 +602,17 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
           >
             {officeDocument && (
               <MenuItem onClick={() => {
-                navigate(`/editor/${node.id}?provider=wopi&permission=read`);
+                const permission = canWrite ? 'write' : 'read';
+                navigate(`/editor/${node.id}?provider=wopi&permission=${permission}`);
                 handleMenuClose();
                 onClose();
               }}>
                 <ListItemIcon>
-                  <Visibility fontSize="small" />
+                  {canWrite ? <Edit fontSize="small" /> : <Visibility fontSize="small" />}
                 </ListItemIcon>
-                <ListItemText>View Online</ListItemText>
+                <ListItemText>{canWrite ? 'Edit Online' : 'View Online'}</ListItemText>
               </MenuItem>
             )}
-            <MenuItem onClick={() => {
-              navigate(`/editor/${node.id}?provider=wopi&permission=write`);
-              handleMenuClose();
-              onClose();
-            }}>
-              <ListItemIcon>
-                <Edit fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>Edit Online</ListItemText>
-            </MenuItem>
             <MenuItem onClick={() => { handleDownload(); handleMenuClose(); }}>
               <ListItemIcon>
                 <Download fontSize="small" />
