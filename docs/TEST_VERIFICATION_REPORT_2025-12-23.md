@@ -17,6 +17,7 @@ npm run e2e
 ## Observations
 - Scheduled rules flow created and cleaned a dedicated test folder and verified auto-tagging.
 - Antivirus EICAR test correctly rejected upload (HTTP 400) with "Eicar-Test-Signature".
+- UI smoke suite validates preview for txt/PDF while keeping WOPI edit coverage on office files.
 - HTML report available via `npx playwright show-report`.
 
 ## Notes

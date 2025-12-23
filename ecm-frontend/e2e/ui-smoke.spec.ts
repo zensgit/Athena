@@ -1,4 +1,4 @@
-import { APIRequestContext, expect, Page, test } from '@playwright/test';
+import { APIRequestContext, expect, FrameLocator, Page, test } from '@playwright/test';
 import { XLSX_SAMPLE_BASE64 } from './fixtures/xlsxSample';
 
 const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
@@ -72,6 +72,34 @@ async function findChildFolderId(
   throw new Error(`Folder not found after create: ${folderName}`);
 }
 
+async function findDocumentId(
+  request: APIRequestContext,
+  folderId: string,
+  filename: string,
+  token: string,
+  maxAttempts = 10,
+) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const response = await request.get(`http://localhost:7700/api/v1/folders/${folderId}/contents`, {
+      params: {
+        page: 0,
+        size: 1000,
+        sort: 'name,asc',
+      },
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(response.ok()).toBeTruthy();
+    const payload = (await response.json()) as { content?: Array<{ id: string; name: string; nodeType: string }> };
+    const match = payload.content?.find((node) => node.name === filename && node.nodeType === 'DOCUMENT');
+    if (match?.id) {
+      return match.id;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+
+  throw new Error(`Document not found after upload: ${filename}`);
+}
+
 async function waitForSearchIndex(
   request: APIRequestContext,
   query: string,
@@ -124,6 +152,25 @@ async function waitForVersionCount(
   }
 
   throw new Error(`Version count did not reach ${minCount} for document ${documentId}`);
+}
+
+async function dismissWopiWelcome(page: Page, editorFrame: FrameLocator) {
+  const welcomeModal = editorFrame.locator('.iframe-welcome-wrap, .iframe-welcome-content').first();
+  if (await welcomeModal.count()) {
+    try {
+      if (await welcomeModal.isVisible()) {
+        const closeButton = editorFrame.locator('button[aria-label="Close"], button[title="Close"]').first();
+        if (await closeButton.count()) {
+          await closeButton.click({ force: true });
+        } else {
+          await page.keyboard.press('Escape');
+        }
+        await expect(welcomeModal).toBeHidden({ timeout: 10_000 });
+      }
+    } catch {
+      // Ignore transient overlay timing.
+    }
+  }
 }
 
 test('UI smoke: browse + upload + search + copy/move + facets + delete + rules', async ({ page }) => {
@@ -225,20 +272,15 @@ test('UI smoke: browse + upload + search + copy/move + facets + delete + rules',
   await expect(page.locator('.MuiDataGrid-root')).toHaveCount(1);
 
   const row = page.getByRole('row', { name: new RegExp(filename) });
+  const uploadedDocumentId = await findDocumentId(page.request, workFolderId, filename, apiToken);
 
-  // Edit Online (WOPI/Collabora)
+  // Preview (View)
   await row.getByRole('button', { name: `Actions for ${filename}` }).click();
-  await page.getByRole('menuitem', { name: 'Edit Online', exact: true }).click();
-  await page.waitForURL(/\/editor\/[0-9a-f-]{36}/i, { timeout: 60_000 });
-  const uploadedDocumentId = /\/editor\/([0-9a-f-]{36})/i.exec(page.url())?.[1];
-  expect(uploadedDocumentId).toBeTruthy();
-  if (!uploadedDocumentId) {
-    throw new Error('Failed to capture uploaded document id from editor URL');
-  }
-  const editorFrame = page.locator('iframe[title="Online Editor"]');
-  await expect(editorFrame).toBeVisible({ timeout: 60_000 });
-  await expect(editorFrame).toHaveAttribute('src', /WOPISrc=/, { timeout: 60_000 });
-  await page.goto(workFolderUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('menuitem', { name: 'View', exact: true }).click();
+  const previewDialog = page.getByRole('dialog').filter({ hasText: filename });
+  await expect(previewDialog).toBeVisible({ timeout: 60_000 });
+  await expect(previewDialog.getByRole('button', { name: 'close' })).toBeVisible({ timeout: 60_000 });
+  await previewDialog.getByRole('button', { name: 'close' }).click();
 
   // Ensure the uploaded document is indexed before searching (avoids ES refresh timing flakes).
   const preIndexRes = await page.request.post(`http://localhost:7700/api/v1/search/index/${uploadedDocumentId}`, {
@@ -554,7 +596,7 @@ test('UI smoke: browse + upload + search + copy/move + facets + delete + rules',
   await expect(page.getByRole('columnheader', { name: 'Name', exact: true })).toBeVisible({ timeout: 60_000 });
 });
 
-test('UI smoke: PDF upload + search + version history + edit online', async ({ page }) => {
+test('UI smoke: PDF upload + search + version history + preview', async ({ page }) => {
   page.on('dialog', (dialog) => dialog.accept());
   test.setTimeout(240_000);
 
@@ -608,6 +650,8 @@ test('UI smoke: PDF upload + search + version history + edit online', async ({ p
   }
   expect(pdfVisible).toBeTruthy();
 
+  const pdfDocumentId = await findDocumentId(page.request, workFolderId, pdfName, apiToken);
+
   await pdfRow.getByRole('button', { name: `Actions for ${pdfName}` }).click();
   await page.getByRole('menuitem', { name: 'Version History' }).click();
   const versionsDialog = page.getByRole('dialog').filter({ hasText: 'Version History' });
@@ -616,17 +660,11 @@ test('UI smoke: PDF upload + search + version history + edit online', async ({ p
   await versionsDialog.getByRole('button', { name: 'Close', exact: true }).click();
 
   await pdfRow.getByRole('button', { name: `Actions for ${pdfName}` }).click();
-  await page.getByRole('menuitem', { name: 'Edit Online', exact: true }).click();
-  await page.waitForURL(/\/editor\/[0-9a-f-]{36}/i, { timeout: 60_000 });
-  const pdfDocumentId = /\/editor\/([0-9a-f-]{36})/i.exec(page.url())?.[1];
-  expect(pdfDocumentId).toBeTruthy();
-  if (!pdfDocumentId) {
-    throw new Error('Failed to capture PDF document id from editor URL');
-  }
-  const editorFrame = page.locator('iframe[title="Online Editor"]');
-  await expect(editorFrame).toBeVisible({ timeout: 60_000 });
-  await expect(editorFrame).toHaveAttribute('src', /WOPISrc=/, { timeout: 60_000 });
-  await page.goto(workFolderUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('menuitem', { name: 'View', exact: true }).click();
+  const previewDialog = page.getByRole('dialog').filter({ hasText: pdfName });
+  await expect(previewDialog).toBeVisible({ timeout: 60_000 });
+  await expect(previewDialog.getByRole('button', { name: 'close' })).toBeVisible({ timeout: 60_000 });
+  await previewDialog.getByRole('button', { name: 'close' }).click();
 
   const indexRes = await page.request.post(`http://localhost:7700/api/v1/search/index/${pdfDocumentId}`, {
     headers: { Authorization: `Bearer ${apiToken}` },
@@ -752,15 +790,7 @@ test('RBAC smoke: editor can access rules but not admin endpoints', async ({ pag
   const editorFrame = page.frameLocator('iframe[title=\"Online Editor\"]');
   const canvas = editorFrame.locator('canvas').first();
   await expect(canvas).toBeVisible({ timeout: 60_000 });
-  const welcomeModal = editorFrame.locator('.iframe-welcome-wrap, .iframe-welcome-content').first();
-  if (await welcomeModal.count()) {
-    const closeButton = editorFrame.locator('button[aria-label=\"Close\"], .iframe-welcome-wrap button').first();
-    if (await closeButton.count()) {
-      await closeButton.click();
-    } else {
-      await page.keyboard.press('Escape');
-    }
-  }
+  await dismissWopiWelcome(page, editorFrame);
 
   await canvas.click({ position: { x: 120, y: 160 }, force: true });
   const editStamp = `E2E-${Date.now()}`;
@@ -769,6 +799,7 @@ test('RBAC smoke: editor can access rules but not admin endpoints', async ({ pag
 
   const saveButton = editorFrame.getByRole('button', { name: 'Save' });
   if (await saveButton.count()) {
+    await dismissWopiWelcome(page, editorFrame);
     await saveButton.click();
   } else {
     await page.keyboard.press('Control+S');
