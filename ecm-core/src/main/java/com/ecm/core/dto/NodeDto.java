@@ -69,6 +69,15 @@ public record NodeDto(
         List<String> aspects = new ArrayList<>();
         if (node instanceof Document document) {
             contentType = document.getMimeType();
+            if (contentType == null) {
+                Object fallbackType = properties.get("mimeType");
+                if (fallbackType == null) {
+                    fallbackType = properties.get("contentType");
+                }
+                if (fallbackType instanceof String fallbackString && !fallbackString.isBlank()) {
+                    contentType = fallbackString;
+                }
+            }
             currentVersionLabel = document.getVersionLabel() != null ? document.getVersionLabel() : document.getVersionString();
             if (document.isVersioned()) {
                 aspects.add("cm:versionable");
