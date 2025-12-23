@@ -80,8 +80,11 @@ const SearchResults: React.FC = () => {
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [previewNode, setPreviewNode] = useState<Node | null>(null);
   const [hiddenNodeIds, setHiddenNodeIds] = useState<string[]>([]);
+  const [fallbackNodes, setFallbackNodes] = useState<Node[]>([]);
+  const [fallbackLabel, setFallbackLabel] = useState('');
   const previewOpen = Boolean(previewNode);
   const suppressFacetSearch = useRef(false);
+  const quickSearchDebounceRef = useRef<number | null>(null);
 
   const getSortParams = (value: string) => {
     switch (value) {
@@ -98,6 +101,9 @@ const SearchResults: React.FC = () => {
 
   const handleQuickSearch = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (quickSearchDebounceRef.current) {
+      window.clearTimeout(quickSearchDebounceRef.current);
+    }
     const formData = new FormData(e.currentTarget);
     const rawQuery = formData.get('quickSearch');
     const query = (typeof rawQuery === 'string' ? rawQuery : quickSearch).trim();
@@ -118,6 +124,14 @@ const SearchResults: React.FC = () => {
 
   const handleAdvancedSearch = () => {
     dispatch(setSearchOpen(true));
+  };
+
+  const handleRetrySearch = () => {
+    if (!lastSearchCriteria) {
+      return;
+    }
+    const sortParams = getSortParams(sortBy);
+    dispatch(searchNodes({ ...lastSearchCriteria, page: 0, size: pageSize, ...sortParams }));
   };
 
   const clearFacetFilters = () => {
@@ -171,6 +185,29 @@ const SearchResults: React.FC = () => {
   }, [lastSearchCriteria]);
 
   useEffect(() => {
+    const query = quickSearch.trim();
+    if (!query) {
+      return;
+    }
+    if (query === (lastSearchCriteria?.name || '')) {
+      return;
+    }
+    if (quickSearchDebounceRef.current) {
+      window.clearTimeout(quickSearchDebounceRef.current);
+    }
+    quickSearchDebounceRef.current = window.setTimeout(() => {
+      const sortParams = getSortParams(sortBy);
+      dispatch(searchNodes({ name: query, page: 0, size: pageSize, ...sortParams }));
+    }, 400);
+
+    return () => {
+      if (quickSearchDebounceRef.current) {
+        window.clearTimeout(quickSearchDebounceRef.current);
+      }
+    };
+  }, [quickSearch, lastSearchCriteria, dispatch, pageSize, sortBy]);
+
+  useEffect(() => {
     if (lastSearchCriteria?.page !== undefined) {
       setPage(lastSearchCriteria.page + 1);
     }
@@ -181,6 +218,13 @@ const SearchResults: React.FC = () => {
       setHiddenNodeIds([]);
     }
   }, [lastSearchCriteria]);
+
+  useEffect(() => {
+    if (nodes.length > 0) {
+      setFallbackNodes(nodes);
+      setFallbackLabel((lastSearchCriteria?.name || '').trim());
+    }
+  }, [nodes, lastSearchCriteria]);
 
   useEffect(() => {
     if (!lastSearchCriteria || suppressFacetSearch.current) {
@@ -461,7 +505,10 @@ const SearchResults: React.FC = () => {
     selectedTags.length > 0 ||
     selectedCategories.length > 0;
 
-  const paginatedNodes = nodes.filter((node) => !hiddenNodeIds.includes(node.id));
+  const hasActiveCriteria = Boolean((lastSearchCriteria?.name || '').trim()) || filtersApplied;
+  const shouldShowFallback = !loading && nodes.length === 0 && fallbackNodes.length > 0 && hasActiveCriteria;
+  const displayNodes = shouldShowFallback ? fallbackNodes : nodes;
+  const paginatedNodes = displayNodes.filter((node) => !hiddenNodeIds.includes(node.id));
   const totalPages = Math.ceil(nodesTotal / pageSize);
 
   return (
@@ -680,13 +727,30 @@ const SearchResults: React.FC = () => {
               {error}
             </Alert>
           )}
+          {shouldShowFallback && (
+            <Alert
+              severity="info"
+              sx={{ mb: 2 }}
+              action={(
+                <Button color="inherit" size="small" onClick={handleRetrySearch}>
+                  Retry
+                </Button>
+              )}
+            >
+              {fallbackLabel
+                ? `Search results may still be indexing. Showing previous results for "${fallbackLabel}".`
+                : 'Search results may still be indexing. Showing previous results.'}
+            </Alert>
+          )}
           <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
             <Typography variant="h6">
               {loading
                 ? 'Searching...'
-                : nodesTotal > 0
-                  ? `Showing ${paginatedNodes.length} of ${nodesTotal} results`
-                  : '0 results found'}
+                : shouldShowFallback
+                  ? `Showing previous results (${paginatedNodes.length}) while the index refreshes`
+                  : nodesTotal > 0
+                    ? `Showing ${paginatedNodes.length} of ${nodesTotal} results`
+                    : '0 results found'}
             </Typography>
             <FormControl size="small" sx={{ minWidth: 150 }}>
               <InputLabel>Sort by</InputLabel>

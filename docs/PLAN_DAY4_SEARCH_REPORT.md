@@ -27,3 +27,7 @@ Date: 2025-12-23 (local)
 
 ## Notes
 - Quick search parameters now align with `/api/v1/search`; continue monitoring for office doc previews.
+
+## Enhancements (2025-12-23)
+- Quick search input now debounces typing (400ms) to reduce redundant requests.
+- Empty results show a “results may still be indexing” hint with an optional retry, while keeping the last non-empty results visible.
