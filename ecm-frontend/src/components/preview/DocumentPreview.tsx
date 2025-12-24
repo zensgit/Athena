@@ -147,6 +147,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
   const [serverPreviewError, setServerPreviewError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const pdfContainerRef = useRef<HTMLDivElement | null>(null);
+  const previewHeight = 'calc(100vh - 64px)';
   const resolvedContentType = (() => {
     const candidates = [
       normalizeContentType(node?.contentType),
@@ -392,7 +393,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
 
     if (officeDocument) {
       return (
-        <Box height="calc(100vh - 200px)" sx={{ overflow: 'hidden' }}>
+        <Box height={previewHeight} sx={{ overflow: 'hidden' }}>
           <iframe
             src={wopiUrl || undefined}
             title={node.name}
@@ -410,7 +411,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
           display="flex"
           justifyContent="center"
           alignItems="center"
-          height="calc(100vh - 200px)"
+          height={previewHeight}
           sx={{ overflow: 'auto' }}
         >
           <img
@@ -461,7 +462,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
             display="flex"
             flexDirection="column"
             alignItems="center"
-            height="calc(100vh - 200px)"
+            height={previewHeight}
             sx={{ overflow: 'auto' }}
             data-testid="pdf-preview-fallback"
           >
@@ -492,7 +493,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
           display="flex"
           flexDirection="column"
           alignItems="center"
-          height="calc(100vh - 200px)"
+          height={previewHeight}
           sx={{ overflow: 'auto' }}
         >
           <React.Suspense fallback={<CircularProgress />}>
@@ -514,7 +515,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
       return (
         <Box
           sx={{
-            height: 'calc(100vh - 200px)',
+            height: previewHeight,
             overflow: 'auto',
             p: 2,
             bgcolor: 'background.paper',
