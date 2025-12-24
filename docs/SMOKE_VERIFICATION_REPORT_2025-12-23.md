@@ -6,7 +6,10 @@
 
 ## Command
 ```
-ECM_TOKEN=<admin token> scripts/smoke.sh
+ECM_UPLOAD_FILE="/Users/huazhou/Downloads/J0924032-02上罐体组件v2-模型.pdf" \
+ECM_API=http://localhost:7700 \
+ECM_TOKEN_FILE=tmp/admin.access_token \
+bash scripts/smoke.sh
 ```
 
 ## Result
