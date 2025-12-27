@@ -10,6 +10,7 @@ import {
   Card,
   CardContent,
   Checkbox,
+  Button,
   IconButton,
   Typography,
   Chip,
@@ -19,6 +20,10 @@ import {
   ListItemIcon,
   ListItemText,
   Tooltip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
 } from '@mui/material';
 import {
   Folder,
@@ -28,6 +33,7 @@ import {
   Edit,
   Visibility,
   Delete,
+  ContentCopy,
   FileCopy,
   DriveFileMove,
   History,
@@ -63,7 +69,7 @@ import MoveCopyDialog from 'components/dialogs/MoveCopyDialog';
 interface FileListProps {
   nodes: Node[];
   onNodeDoubleClick?: (node: Node) => void;
-  onPreviewNode?: (node: Node) => void;
+  onPreviewNode?: (node: Node, options?: { annotate?: boolean }) => void;
   onStartWorkflow?: (node: Node) => void;
   page: number;
   pageSize: number;
@@ -97,6 +103,7 @@ const FileList: React.FC<FileListProps> = ({
   const [moveCopyOpen, setMoveCopyOpen] = React.useState(false);
   const [moveCopyMode, setMoveCopyMode] = React.useState<'move' | 'copy'>('copy');
   const [moveCopySource, setMoveCopySource] = React.useState<Node | null>(null);
+  const [nameDialogNode, setNameDialogNode] = React.useState<Node | null>(null);
   const [favoriteIds, setFavoriteIds] = React.useState<Set<string>>(() => new Set());
 
   React.useEffect(() => {
@@ -203,6 +210,18 @@ const FileList: React.FC<FileListProps> = ({
     ].some((ext) => name.endsWith(ext));
   };
 
+  const isPdfDocument = (node: Node) => {
+    const contentType = node.contentType
+      || node.properties?.mimeType
+      || node.properties?.contentType;
+    const normalizedType = contentType?.toLowerCase();
+    if (normalizedType && normalizedType.includes('pdf')) {
+      return true;
+    }
+    const name = node.name?.toLowerCase() || '';
+    return name.endsWith('.pdf');
+  };
+
   const formatModifiedDate = (value?: string) => {
     if (!value) return '-';
     try {
@@ -212,12 +231,30 @@ const FileList: React.FC<FileListProps> = ({
     }
   };
 
+  const getVisualLength = (value?: string) => {
+    if (!value) return 0;
+    let total = 0;
+    for (const char of value) {
+      total += char.charCodeAt(0) > 0xff ? 2 : 1;
+    }
+    return total;
+  };
+
   const getNameTypographySx = (name: string) => {
-    const length = name?.length ?? 0;
-    const isLong = length > 28;
-    const isExtraLong = length > 48;
-    const isVeryLong = length > 72;
-    const lineClamp = compactMode ? 2 : isVeryLong ? 4 : isLong ? 3 : 2;
+    const length = getVisualLength(name);
+    const longThreshold = compactMode ? 20 : 24;
+    const extraLongThreshold = compactMode ? 34 : 40;
+    const veryLongThreshold = compactMode ? 50 : 60;
+    const isLong = length > longThreshold;
+    const isExtraLong = length > extraLongThreshold;
+    const isVeryLong = length > veryLongThreshold;
+    const lineClamp = compactMode
+      ? (isLong ? 3 : 2)
+      : isVeryLong
+        ? 4
+        : isLong
+          ? 3
+          : 2;
     const shouldShrink = lineClamp > 2;
     const fontSize = compactMode
       ? '0.8rem'
@@ -236,6 +273,7 @@ const FileList: React.FC<FileListProps> = ({
       overflow: 'hidden',
       wordBreak: 'break-word',
       overflowWrap: 'anywhere',
+      whiteSpace: 'normal',
       lineHeight: isVeryLong ? 1.08 : isExtraLong ? 1.12 : shouldShrink ? 1.18 : 1.25,
       ...(fontSize ? { fontSize } : {}),
     };
@@ -280,11 +318,15 @@ const FileList: React.FC<FileListProps> = ({
     handleCloseContextMenu();
   };
 
-  const handlePreview = (node: Node) => {
+  const handlePreview = (node: Node, options?: { annotate?: boolean }) => {
     if (onPreviewNode) {
-      onPreviewNode(node);
+      onPreviewNode(node, options);
     }
     handleCloseContextMenu();
+  };
+
+  const handleAnnotate = (node: Node) => {
+    handlePreview(node, { annotate: true });
   };
 
   const handleDownload = async (node: Node) => {
@@ -367,6 +409,39 @@ const FileList: React.FC<FileListProps> = ({
     setMoveCopySource(contextMenu.node);
     setMoveCopyOpen(true);
     handleCloseContextMenu();
+  };
+
+  const openNameDialog = (node: Node) => {
+    setNameDialogNode(node);
+    handleCloseContextMenu();
+  };
+
+  const handleCopyName = async (value?: string) => {
+    if (!value) {
+      return;
+    }
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = value;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        const copied = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        if (!copied) {
+          throw new Error('copy failed');
+        }
+      }
+      toast.success('Copied file name');
+    } catch (error) {
+      console.error('Failed to copy name', error);
+      toast.error('Failed to copy file name');
+    }
   };
 
   const columns: GridColDef[] = [
@@ -638,6 +713,13 @@ const FileList: React.FC<FileListProps> = ({
             '& .MuiDataGrid-cell': {
               cursor: 'pointer',
             },
+            '& .MuiDataGrid-cell[data-field="name"]': {
+              whiteSpace: 'normal',
+              lineHeight: '1.2',
+              alignItems: 'flex-start',
+              paddingTop: 6,
+              paddingBottom: 6,
+            },
           }}
         />
       )}
@@ -660,7 +742,15 @@ const FileList: React.FC<FileListProps> = ({
             <ListItemText>View</ListItemText>
           </MenuItem>
         )}
-        {contextMenu && isDocumentNode(contextMenu.node) && isOfficeDocument(contextMenu.node) && (
+        {contextMenu && isDocumentNode(contextMenu.node) && isPdfDocument(contextMenu.node) && canWrite && (
+          <MenuItem onClick={() => contextMenu && handleAnnotate(contextMenu.node)}>
+            <ListItemIcon>
+              <Edit fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Annotate</ListItemText>
+          </MenuItem>
+        )}
+        {contextMenu && isDocumentNode(contextMenu.node) && isOfficeDocument(contextMenu.node) && !isPdfDocument(contextMenu.node) && (
           <MenuItem
             onClick={() => contextMenu && handleEdit(contextMenu.node, canWrite ? 'write' : 'read')}
           >
@@ -676,6 +766,14 @@ const FileList: React.FC<FileListProps> = ({
               <Download fontSize="small" />
             </ListItemIcon>
             <ListItemText>Download</ListItemText>
+          </MenuItem>
+        )}
+        {contextMenu && (
+          <MenuItem onClick={() => openNameDialog(contextMenu.node)}>
+            <ListItemIcon>
+              <ContentCopy fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Full Name</ListItemText>
           </MenuItem>
         )}
         <MenuItem onClick={() => contextMenu && handleProperties(contextMenu.node)}>
@@ -780,6 +878,26 @@ const FileList: React.FC<FileListProps> = ({
           </MenuItem>
         )}
       </Menu>
+
+      <Dialog
+        open={Boolean(nameDialogNode)}
+        onClose={() => setNameDialogNode(null)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Full Name</DialogTitle>
+        <DialogContent dividers>
+          <Typography variant="body2" sx={{ wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>
+            {nameDialogNode?.name || '-'}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => handleCopyName(nameDialogNode?.name)} disabled={!nameDialogNode?.name}>
+            Copy
+          </Button>
+          <Button onClick={() => setNameDialogNode(null)}>Close</Button>
+        </DialogActions>
+      </Dialog>
 
       <MoveCopyDialog
         open={moveCopyOpen}

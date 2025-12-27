@@ -38,6 +38,7 @@ const FileBrowser: React.FC = () => {
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(50);
   const [previewNode, setPreviewNode] = useState<Node | null>(null);
+  const [previewAnnotate, setPreviewAnnotate] = useState(false);
   const previewOpen = Boolean(previewNode);
 
   const loadNodeData = useCallback(async () => {
@@ -77,18 +78,21 @@ const FileBrowser: React.FC = () => {
       return;
     }
     if (isDocumentNode(node)) {
+      setPreviewAnnotate(false);
       setPreviewNode(node);
     }
   };
 
-  const handlePreviewNode = (node: Node) => {
+  const handlePreviewNode = (node: Node, options?: { annotate?: boolean }) => {
     if (isDocumentNode(node)) {
+      setPreviewAnnotate(Boolean(options?.annotate));
       setPreviewNode(node);
     }
   };
 
   const handleClosePreview = () => {
     setPreviewNode(null);
+    setPreviewAnnotate(false);
   };
 
   const handleNavigate = (path: string) => {
@@ -249,6 +253,7 @@ const FileBrowser: React.FC = () => {
             open={previewOpen}
             onClose={handleClosePreview}
             node={previewNode}
+            initialAnnotateMode={previewAnnotate}
           />
         </React.Suspense>
       )}

@@ -8,6 +8,25 @@ import { setSession } from 'store/slices/authSlice';
 
 const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
 const LOGIN_IN_PROGRESS_KEY = 'ecm_kc_login_in_progress';
+const KEYCLOAK_CALLBACK_KEYS = ['code', 'state', 'session_state', 'iss'] as const;
+
+const stripKeycloakCallbackParams = () => {
+  const url = new URL(window.location.href);
+  KEYCLOAK_CALLBACK_KEYS.forEach((key) => url.searchParams.delete(key));
+
+  const rawHash = url.hash.startsWith('#') ? url.hash.slice(1) : '';
+  if (rawHash && KEYCLOAK_CALLBACK_KEYS.some((key) => rawHash.includes(`${key}=`))) {
+    const hashParams = new URLSearchParams(rawHash);
+    KEYCLOAK_CALLBACK_KEYS.forEach((key) => hashParams.delete(key));
+    const cleaned = hashParams.toString();
+    url.hash = cleaned ? `#${cleaned}` : '';
+  }
+
+  const cleanedUrl = url.toString();
+  if (cleanedUrl !== window.location.href) {
+    window.history.replaceState({}, '', cleanedUrl);
+  }
+};
 
 const renderApp = () => {
   root.render(
@@ -32,6 +51,7 @@ const initAuth = async () => {
         isAuthenticated: authenticated,
       })
     );
+    stripKeycloakCallbackParams();
     renderApp();
     if (authenticated) {
       authService.startTokenRefresh();

@@ -1,10 +1,13 @@
 package com.ecm.core.controller;
 
 import com.ecm.core.dto.NodeDto;
+import com.ecm.core.dto.PdfAnnotationSaveRequest;
+import com.ecm.core.dto.PdfAnnotationStateDto;
 import com.ecm.core.dto.VersionDto;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Version;
 import com.ecm.core.service.NodeService;
+import com.ecm.core.service.PdfAnnotationService;
 import com.ecm.core.service.VersionService;
 import com.ecm.core.service.ContentService;
 import com.ecm.core.preview.PreviewService;
@@ -41,6 +44,7 @@ public class DocumentController {
     private final ContentService contentService;
     private final PreviewService previewService;
     private final ConversionService conversionService;
+    private final PdfAnnotationService pdfAnnotationService;
     
     @PostMapping("/upload-legacy")
     @Operation(summary = "Upload document (legacy)", description = "Legacy endpoint; prefer /api/v1/documents/upload pipeline API")
@@ -187,6 +191,21 @@ public class DocumentController {
         Document document = (Document) nodeService.getNode(documentId);
         PreviewResult preview = previewService.generatePreview(document);
         return ResponseEntity.ok(preview);
+    }
+
+    @GetMapping("/{documentId}/annotations")
+    @Operation(summary = "Get PDF annotations", description = "Retrieve PDF annotations for a document")
+    public ResponseEntity<PdfAnnotationStateDto> getPdfAnnotations(
+            @Parameter(description = "Document ID") @PathVariable UUID documentId) {
+        return ResponseEntity.ok(pdfAnnotationService.getAnnotations(documentId));
+    }
+
+    @PostMapping("/{documentId}/annotations")
+    @Operation(summary = "Save PDF annotations", description = "Save PDF annotations for a document")
+    public ResponseEntity<PdfAnnotationStateDto> savePdfAnnotations(
+            @Parameter(description = "Document ID") @PathVariable UUID documentId,
+            @RequestBody PdfAnnotationSaveRequest request) {
+        return ResponseEntity.ok(pdfAnnotationService.saveAnnotations(documentId, request));
     }
     
     @GetMapping("/{documentId}/thumbnail")

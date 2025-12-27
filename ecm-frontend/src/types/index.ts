@@ -34,6 +34,23 @@ export interface Node {
   inheritPermissions?: boolean;
 }
 
+export interface PdfAnnotation {
+  id?: string;
+  page: number;
+  x: number;
+  y: number;
+  text: string;
+  color?: string;
+  createdBy?: string;
+  createdAt?: string;
+}
+
+export interface PdfAnnotationState {
+  annotations: PdfAnnotation[];
+  updatedBy?: string | null;
+  updatedAt?: string | null;
+}
+
 export interface Version {
   id: string;
   documentId: string;

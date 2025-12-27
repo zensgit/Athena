@@ -1,5 +1,13 @@
 import api from './api';
-import { Node, SearchCriteria, Version, Permission, PermissionType } from 'types';
+import {
+  Node,
+  SearchCriteria,
+  Version,
+  Permission,
+  PermissionType,
+  PdfAnnotation,
+  PdfAnnotationState,
+} from 'types';
 
 interface CreateFolderRequest {
   name: string;
@@ -499,6 +507,14 @@ class NodeService {
   async revertToVersion(nodeId: string, versionId: string): Promise<Node> {
     const node = await api.post<ApiNodeDetailsResponse>(`/documents/${nodeId}/versions/${versionId}/revert`);
     return this.apiNodeDetailsToNode(node);
+  }
+
+  async getPdfAnnotations(nodeId: string): Promise<PdfAnnotationState> {
+    return api.get<PdfAnnotationState>(`/documents/${nodeId}/annotations`);
+  }
+
+  async savePdfAnnotations(nodeId: string, annotations: PdfAnnotation[]): Promise<PdfAnnotationState> {
+    return api.post<PdfAnnotationState>(`/documents/${nodeId}/annotations`, { annotations });
   }
 
   async getPermissions(nodeId: string): Promise<Record<string, Permission[]>> {

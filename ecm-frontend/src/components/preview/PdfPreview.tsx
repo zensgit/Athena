@@ -14,6 +14,9 @@ type PdfPreviewProps = {
   rotation: number;
   onLoadSuccess: (payload: { numPages: number }) => void;
   onLoadError?: () => void;
+  onPageLoadSuccess?: (page: { getViewport: (options: { scale: number; rotation?: number }) => { width: number; height: number } }) => void;
+  overlay?: React.ReactNode;
+  markers?: React.ReactNode;
 };
 
 const PdfPreview: React.FC<PdfPreviewProps> = ({
@@ -23,6 +26,9 @@ const PdfPreview: React.FC<PdfPreviewProps> = ({
   rotation,
   onLoadSuccess,
   onLoadError,
+  onPageLoadSuccess,
+  overlay,
+  markers,
 }) => {
   if (!fileUrl) {
     return (
@@ -52,16 +58,21 @@ const PdfPreview: React.FC<PdfPreviewProps> = ({
       loading={<CircularProgress />}
       error={renderError}
     >
-      <Page
-        pageNumber={pageNumber}
-        scale={scale}
-        rotate={rotation}
-        renderTextLayer={true}
-        renderAnnotationLayer={true}
-        onLoadError={onLoadError}
-        onRenderError={onLoadError}
-        error={renderError}
-      />
+      <Box sx={{ position: 'relative', display: 'inline-block' }}>
+        <Page
+          pageNumber={pageNumber}
+          scale={scale}
+          rotate={rotation}
+          renderTextLayer={true}
+          renderAnnotationLayer={true}
+          onLoadSuccess={onPageLoadSuccess}
+          onLoadError={onLoadError}
+          onRenderError={onLoadError}
+          error={renderError}
+        />
+        {overlay}
+        {markers}
+      </Box>
     </Document>
   );
 };

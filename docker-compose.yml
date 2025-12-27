@@ -152,7 +152,7 @@ services:
       # Allow embedding from these hostnames (regex; host only, no scheme/port)
       - domain=${COLLABORA_DOMAIN:-localhost}
       # Run without TLS for local development
-      - extra_params=--o:ssl.enable=false --o:ssl.termination=false
+      - extra_params=--o:ssl.enable=false --o:ssl.termination=false --o:home_mode.enable=true
       # Optional admin console credentials
       - username=${COLLABORA_ADMIN_USER:-admin}
       - password=${COLLABORA_ADMIN_PASSWORD:-admin}

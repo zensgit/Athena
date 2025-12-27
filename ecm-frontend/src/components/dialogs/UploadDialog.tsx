@@ -86,6 +86,8 @@ const UploadDialog: React.FC = () => {
     const parentId = currentNode?.id || 'root';
 
     setUploading(true);
+    let successCount = 0;
+    let errorCount = 0;
 
     for (let i = 0; i < files.length; i++) {
       const uploadFile = files[i];
@@ -104,12 +106,14 @@ const UploadDialog: React.FC = () => {
           })
         ).unwrap();
 
+        successCount += 1;
         setFiles((prev) =>
           prev.map((f, idx) =>
             idx === i ? { ...f, status: 'success' as const, progress: 100 } : f
           )
         );
       } catch (error) {
+        errorCount += 1;
         setFiles((prev) =>
           prev.map((f, idx) =>
             idx === i
@@ -125,11 +129,16 @@ const UploadDialog: React.FC = () => {
     }
 
     setUploading(false);
-    toast.success(`${files.length} file(s) uploaded successfully`);
-
-    setTimeout(() => {
-      handleClose();
-    }, 1000);
+    if (errorCount === 0) {
+      toast.success(`${successCount} file(s) uploaded successfully`);
+      setTimeout(() => {
+        handleClose();
+      }, 1000);
+    } else if (successCount > 0) {
+      toast.warn(`Uploaded ${successCount} file(s); ${errorCount} failed`);
+    } else {
+      toast.error('All uploads failed');
+    }
   };
 
   const formatFileSize = (bytes: number): string => {

@@ -39,6 +39,9 @@ class ApiService {
     this.api.interceptors.response.use(
       (response) => response,
       (error) => {
+        if (axios.isCancel(error) || error.code === 'ERR_CANCELED') {
+          return Promise.reject(error);
+        }
         if (error.response?.status === 401) {
           localStorage.removeItem('token');
           window.location.href = '/login';

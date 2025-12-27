@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Dialog,
+  DialogActions,
   DialogContent,
+  DialogTitle,
   IconButton,
   Box,
   Button,
   CircularProgress,
+  TextField,
   Typography,
   AppBar,
   Toolbar,
@@ -13,6 +16,7 @@ import {
   MenuItem,
   ListItemIcon,
   ListItemText,
+  Tooltip,
 } from '@mui/material';
 import {
   Close,
@@ -22,6 +26,8 @@ import {
   ZoomOut,
   RotateLeft,
   RotateRight,
+  FitScreen,
+  ArrowDropDown,
   MoreVert,
   NavigateBefore,
   NavigateNext,
@@ -29,7 +35,7 @@ import {
   Visibility,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
-import { Node } from 'types';
+import { Node, PdfAnnotation, PdfAnnotationState } from 'types';
 import { useAppSelector } from 'store';
 import apiService from 'services/api';
 import nodeService from 'services/nodeService';
@@ -39,9 +45,31 @@ interface DocumentPreviewProps {
   open: boolean;
   onClose: () => void;
   node: Node;
+  initialAnnotateMode?: boolean;
 }
 
 const PdfPreview = React.lazy(() => import('./PdfPreview'));
+
+const DEFAULT_ANNOTATION_COLOR = '#1976d2';
+const FIT_MODE_STORAGE_KEY = 'ecm_pdf_fit_mode';
+const FIT_MODE_VERSION_KEY = 'ecm_pdf_fit_mode_version';
+const FIT_MODE_VERSION = '2025-12-25';
+
+type FitMode = 'screen' | 'height' | 'width' | 'actual';
+
+const parseFitMode = (value: string | null): FitMode => {
+  if (value === 'height' || value === 'width' || value === 'actual') {
+    return value;
+  }
+  return 'height';
+};
+
+const fitModeLabels: Record<FitMode, string> = {
+  screen: 'Fit to screen (F)',
+  height: 'Fit to height (H)',
+  width: 'Fit to width (W)',
+  actual: 'Actual size (0)',
+};
 
 type PreviewPage = {
   pageNumber: number;
@@ -97,6 +125,15 @@ const isOfficeDocument = (contentType?: string, name?: string) => {
   return OFFICE_EXTENSIONS.some((ext) => normalizedName.endsWith(ext));
 };
 
+const isPdfDocument = (contentType?: string, name?: string) => {
+  const normalizedType = contentType?.toLowerCase();
+  if (normalizedType && normalizedType.includes('pdf')) {
+    return true;
+  }
+  const normalizedName = name?.toLowerCase() || '';
+  return normalizedName.endsWith('.pdf');
+};
+
 const inferContentTypeFromName = (name?: string) => {
   const normalizedName = name?.toLowerCase() || '';
   if (normalizedName.endsWith('.pdf')) return 'application/pdf';
@@ -125,7 +162,14 @@ const isGenericContentType = (value?: string) => {
     || value === 'application/x-empty';
 };
 
-const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }) => {
+const clampToUnit = (value: number) => Math.min(Math.max(value, 0), 1);
+
+const DocumentPreview: React.FC<DocumentPreviewProps> = ({
+  open,
+  onClose,
+  node,
+  initialAnnotateMode = false,
+}) => {
   const navigate = useNavigate();
   const { user } = useAppSelector((state) => state.auth);
   const canWrite = Boolean(user?.roles?.includes('ROLE_ADMIN') || user?.roles?.includes('ROLE_EDITOR'));
@@ -139,15 +183,39 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
   const [numPages, setNumPages] = useState<number | null>(null);
   const [pageNumber, setPageNumber] = useState(1);
   const [scale, setScale] = useState(1.0);
+  const [fitScale, setFitScale] = useState<number | null>(null);
+  const [autoScaleEnabled, setAutoScaleEnabled] = useState(true);
+  const [fitMode, setFitMode] = useState<FitMode>(() => {
+    if (typeof window === 'undefined') {
+      return 'height';
+    }
+    const storedVersion = window.localStorage.getItem(FIT_MODE_VERSION_KEY);
+    if (storedVersion !== FIT_MODE_VERSION) {
+      window.localStorage.setItem(FIT_MODE_VERSION_KEY, FIT_MODE_VERSION);
+      window.localStorage.setItem(FIT_MODE_STORAGE_KEY, 'height');
+      return 'height';
+    }
+    return parseFitMode(window.localStorage.getItem(FIT_MODE_STORAGE_KEY));
+  });
   const [rotation, setRotation] = useState(0);
   const [pdfLoadFailed, setPdfLoadFailed] = useState(false);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [fitMenuAnchor, setFitMenuAnchor] = useState<null | HTMLElement>(null);
   const [serverPreview, setServerPreview] = useState<PreviewResult | null>(null);
   const [serverPreviewLoading, setServerPreviewLoading] = useState(false);
   const [serverPreviewError, setServerPreviewError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [pageSize, setPageSize] = useState<{ width: number; height: number } | null>(null);
+  const [annotations, setAnnotations] = useState<PdfAnnotation[]>([]);
+  const [annotationsUpdatedBy, setAnnotationsUpdatedBy] = useState<string | null>(null);
+  const [annotationsUpdatedAt, setAnnotationsUpdatedAt] = useState<string | null>(null);
+  const [annotationsLoading, setAnnotationsLoading] = useState(false);
+  const [annotateMode, setAnnotateMode] = useState(false);
+  const [annotationDialogOpen, setAnnotationDialogOpen] = useState(false);
+  const [annotationDraft, setAnnotationDraft] = useState<PdfAnnotation | null>(null);
+  const [annotationSaving, setAnnotationSaving] = useState(false);
   const pdfContainerRef = useRef<HTMLDivElement | null>(null);
-  const previewHeight = 'calc(100vh - 64px)';
+  const previewHeight = '100%';
   const resolvedContentType = (() => {
     const candidates = [
       normalizeContentType(node?.contentType),
@@ -159,6 +227,23 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
   })();
   const effectiveContentType = blobContentType || resolvedContentType;
   const officeDocument = isOfficeDocument(resolvedContentType, nodeName);
+  const pdfDocument = isPdfDocument(resolvedContentType, nodeName);
+  const rotationNormalized = ((rotation % 360) + 360) % 360;
+  const annotationsDisabledForRotation = rotationNormalized !== 0;
+  const canAnnotate = canWrite && !annotationsDisabledForRotation;
+  const fitModeLabel = fitModeLabels[fitMode];
+  const fitScaleLabel = fitScale ? ` (${Math.round(fitScale * 100)}%)` : '';
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    if (initialAnnotateMode && canAnnotate) {
+      setAnnotateMode(true);
+    } else {
+      setAnnotateMode(false);
+    }
+  }, [open, nodeId, initialAnnotateMode, canAnnotate]);
 
   const loadServerPreview = useCallback(async () => {
     if (!nodeId) {
@@ -196,10 +281,21 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
     setWopiUrl(null);
     setNumPages(null);
     setPageNumber(1);
+    setScale(1.0);
+    setFitScale(null);
+    setAutoScaleEnabled(true);
     setPdfLoadFailed(false);
     setServerPreview(null);
     setServerPreviewLoading(false);
     setServerPreviewError(null);
+    setAnnotations([]);
+    setAnnotationsUpdatedBy(null);
+    setAnnotationsUpdatedAt(null);
+    setAnnotationsLoading(false);
+    setAnnotateMode(initialAnnotateMode);
+    setAnnotationDialogOpen(false);
+    setAnnotationDraft(null);
+    setPageSize(null);
 
     const loadDocument = async () => {
       try {
@@ -257,7 +353,47 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
     return () => {
       cancelled = true;
     };
-  }, [open, nodeId, officeDocument, reloadKey, resolvedContentType, loadServerPreview]);
+  }, [open, nodeId, officeDocument, reloadKey, resolvedContentType, loadServerPreview, initialAnnotateMode]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.localStorage.setItem(FIT_MODE_STORAGE_KEY, fitMode);
+  }, [fitMode]);
+
+  useEffect(() => {
+    if (!open || !nodeId || !pdfDocument) {
+      return;
+    }
+
+    let cancelled = false;
+    setAnnotationsLoading(true);
+
+    nodeService.getPdfAnnotations(nodeId)
+      .then((state: PdfAnnotationState) => {
+        if (cancelled) {
+          return;
+        }
+        setAnnotations(state.annotations || []);
+        setAnnotationsUpdatedBy(state.updatedBy ?? null);
+        setAnnotationsUpdatedAt(state.updatedAt ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          toast.error('Failed to load annotations');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setAnnotationsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, nodeId, pdfDocument]);
 
   useEffect(() => {
     return () => {
@@ -299,6 +435,13 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
     setLoading(false);
   };
 
+  const handlePdfPageLoadSuccess = useCallback((page: {
+    getViewport: (options: { scale: number; rotation?: number }) => { width: number; height: number };
+  }) => {
+    const viewport = page.getViewport({ scale: 1 });
+    setPageSize({ width: viewport.width, height: viewport.height });
+  }, []);
+
   const handlePdfLoadError = () => {
     setPdfLoadFailed(true);
     if (serverPreview || serverPreviewLoading) {
@@ -319,13 +462,79 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
     window.print();
   };
 
-  const handleZoomIn = () => {
+  const handleZoomIn = useCallback(() => {
+    setAutoScaleEnabled(false);
     setScale((prev) => Math.min(prev + 0.25, 3));
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    setAutoScaleEnabled(false);
+    setScale((prev) => Math.max(prev - 0.25, 0.5));
+  }, []);
+
+  const computeFitScale = useCallback((mode: FitMode = fitMode) => {
+    if (!pdfContainerRef.current || !pageSize) {
+      return null;
+    }
+    const containerHeight = pdfContainerRef.current.clientHeight;
+    const containerWidth = pdfContainerRef.current.clientWidth;
+    if (!containerHeight || !containerWidth) {
+      return null;
+    }
+    const rotated = rotationNormalized % 180 !== 0;
+    const pageWidth = rotated ? pageSize.height : pageSize.width;
+    const pageHeight = rotated ? pageSize.width : pageSize.height;
+    const heightScale = containerHeight / pageHeight;
+    const widthScale = containerWidth / pageWidth;
+    let nextScale = 1;
+
+    switch (mode) {
+      case 'height':
+        nextScale = heightScale;
+        break;
+      case 'width':
+        nextScale = widthScale;
+        break;
+      case 'actual':
+        nextScale = 1;
+        break;
+      case 'screen':
+      default: {
+        const useHeightScale = pageWidth * heightScale <= containerWidth;
+        nextScale = useHeightScale ? heightScale : widthScale;
+        break;
+      }
+    }
+    const clampedScale = Math.min(Math.max(nextScale, 0.5), 3);
+    setFitScale(clampedScale);
+    return clampedScale;
+  }, [fitMode, pageSize, rotationNormalized]);
+
+  const applyFitScale = useCallback((mode?: FitMode) => {
+    const nextScale = computeFitScale(mode);
+    if (nextScale !== null) {
+      setScale(nextScale);
+    }
+  }, [computeFitScale]);
+
+  const handleApplyFitMode = useCallback((mode?: FitMode) => {
+    setAutoScaleEnabled(true);
+    applyFitScale(mode);
+  }, [applyFitScale]);
+
+  const handleFitMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
+    setFitMenuAnchor(event.currentTarget);
   };
 
-  const handleZoomOut = () => {
-    setScale((prev) => Math.max(prev - 0.25, 0.5));
-  };
+  const handleFitMenuClose = useCallback(() => {
+    setFitMenuAnchor(null);
+  }, []);
+
+  const handleSelectFitMode = useCallback((mode: FitMode) => {
+    setFitMode(mode);
+    handleApplyFitMode(mode);
+    handleFitMenuClose();
+  }, [handleApplyFitMode, handleFitMenuClose]);
 
   const handleRotateLeft = () => {
     setRotation((prev) => prev - 90);
@@ -346,6 +555,186 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
   const handleRetry = () => {
     setPdfLoadFailed(false);
     setReloadKey((prev) => prev + 1);
+  };
+
+  useEffect(() => {
+    if (!open || !pdfDocument || !autoScaleEnabled) {
+      return;
+    }
+    applyFitScale();
+  }, [open, pdfDocument, autoScaleEnabled, applyFitScale]);
+
+  useEffect(() => {
+    if (!open || !pdfDocument) {
+      return;
+    }
+    const handleResize = () => {
+      if (!autoScaleEnabled) {
+        return;
+      }
+      applyFitScale();
+    };
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [open, pdfDocument, autoScaleEnabled, applyFitScale]);
+
+  useEffect(() => {
+    if (!open || !pdfDocument) {
+      return;
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) {
+        return;
+      }
+      const target = event.target as HTMLElement | null;
+      if (target) {
+        const tagName = target.tagName?.toLowerCase();
+        if (tagName === 'input' || tagName === 'textarea' || tagName === 'select' || target.isContentEditable) {
+          return;
+        }
+      }
+      switch (event.key) {
+        case 'f':
+        case 'F':
+          event.preventDefault();
+          handleApplyFitMode('screen');
+          break;
+        case 'h':
+        case 'H':
+          event.preventDefault();
+          handleSelectFitMode('height');
+          break;
+        case 'w':
+        case 'W':
+          event.preventDefault();
+          handleSelectFitMode('width');
+          break;
+        case '0':
+          event.preventDefault();
+          handleSelectFitMode('actual');
+          break;
+        case '+':
+        case '=':
+          event.preventDefault();
+          handleZoomIn();
+          break;
+        case '-':
+        case '_':
+          event.preventDefault();
+          handleZoomOut();
+          break;
+        default:
+          break;
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [open, pdfDocument, handleApplyFitMode, handleSelectFitMode, handleZoomIn, handleZoomOut]);
+
+  const handleToggleAnnotate = () => {
+    if (!canWrite) {
+      return;
+    }
+    if (annotationsDisabledForRotation) {
+      toast.info('Rotate to 0° to add annotations');
+      return;
+    }
+    setAnnotateMode((prev) => !prev);
+  };
+
+  const handleAnnotationOverlayClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!annotateMode || !canAnnotate) {
+      return;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) {
+      return;
+    }
+    const x = clampToUnit((event.clientX - rect.left) / rect.width);
+    const y = clampToUnit((event.clientY - rect.top) / rect.height);
+    setAnnotationDraft({
+      page: pageNumber,
+      x,
+      y,
+      text: '',
+      color: DEFAULT_ANNOTATION_COLOR,
+    });
+    setAnnotationDialogOpen(true);
+  };
+
+  const handleAnnotationEdit = (annotation: PdfAnnotation) => {
+    setAnnotationDraft(annotation);
+    setAnnotationDialogOpen(true);
+  };
+
+  const handleAnnotationDialogClose = () => {
+    setAnnotationDialogOpen(false);
+    setAnnotationDraft(null);
+  };
+
+  useEffect(() => {
+    if (!annotationsDisabledForRotation) {
+      return;
+    }
+    if (annotateMode) {
+      setAnnotateMode(false);
+    }
+    if (annotationDialogOpen) {
+      setAnnotationDialogOpen(false);
+      setAnnotationDraft(null);
+    }
+  }, [annotationsDisabledForRotation, annotateMode, annotationDialogOpen]);
+
+  const persistAnnotations = async (next: PdfAnnotation[]) => {
+    if (!nodeId) {
+      return;
+    }
+    setAnnotationSaving(true);
+    try {
+      const state = await nodeService.savePdfAnnotations(nodeId, next);
+      setAnnotations(state.annotations || []);
+      setAnnotationsUpdatedBy(state.updatedBy ?? null);
+      setAnnotationsUpdatedAt(state.updatedAt ?? null);
+    } catch (error) {
+      toast.error('Failed to save annotations');
+    } finally {
+      setAnnotationSaving(false);
+    }
+  };
+
+  const handleAnnotationSave = async () => {
+    if (!annotationDraft) {
+      return;
+    }
+    const text = annotationDraft.text?.trim();
+    if (!text) {
+      toast.error('Annotation text is required');
+      return;
+    }
+    const nextAnnotation: PdfAnnotation = {
+      ...annotationDraft,
+      text,
+      color: annotationDraft.color || DEFAULT_ANNOTATION_COLOR,
+    };
+    const next = annotationDraft.id
+      ? annotations.map((annotation) => (annotation.id === annotationDraft.id ? nextAnnotation : annotation))
+      : [...annotations, nextAnnotation];
+    await persistAnnotations(next);
+    handleAnnotationDialogClose();
+  };
+
+  const handleAnnotationDelete = async () => {
+    if (!annotationDraft?.id) {
+      handleAnnotationDialogClose();
+      return;
+    }
+    const next = annotations.filter((annotation) => annotation.id !== annotationDraft.id);
+    await persistAnnotations(next);
+    handleAnnotationDialogClose();
   };
 
   const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
@@ -378,6 +767,59 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
     </Box>
   );
 
+  const currentPageAnnotations = annotations.filter((annotation) => annotation.page === pageNumber);
+
+  const renderAnnotationMarkers = () => {
+    if (annotationsDisabledForRotation) {
+      return null;
+    }
+    return currentPageAnnotations.map((annotation, index) => {
+      const key = annotation.id || `${annotation.page}-${index}`;
+      const label = annotation.text?.trim() || 'Annotation';
+      return (
+        <Tooltip key={key} title={label} arrow>
+          <Box
+            onClick={(event) => {
+              event.stopPropagation();
+              handleAnnotationEdit(annotation);
+            }}
+            sx={{
+              position: 'absolute',
+              left: `${annotation.x * 100}%`,
+              top: `${annotation.y * 100}%`,
+              transform: 'translate(-50%, -50%)',
+              width: 14,
+              height: 14,
+              borderRadius: '50%',
+              backgroundColor: annotation.color || DEFAULT_ANNOTATION_COLOR,
+              border: '2px solid #fff',
+              boxShadow: 2,
+              cursor: 'pointer',
+              zIndex: 2,
+            }}
+          />
+        </Tooltip>
+      );
+    });
+  };
+
+  const renderAnnotationOverlay = () => {
+    if (!annotateMode || !canAnnotate) {
+      return null;
+    }
+    return (
+      <Box
+        onClick={handleAnnotationOverlayClick}
+        sx={{
+          position: 'absolute',
+          inset: 0,
+          cursor: 'crosshair',
+          zIndex: 1,
+        }}
+      />
+    );
+  };
+
   const renderPreview = () => {
     if (loading) {
       return (
@@ -393,7 +835,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
 
     if (officeDocument) {
       return (
-        <Box height={previewHeight} sx={{ overflow: 'hidden' }}>
+        <Box height={previewHeight} sx={{ overflow: 'hidden', flex: 1, minHeight: 0 }}>
           <iframe
             src={wopiUrl || undefined}
             title={node.name}
@@ -412,7 +854,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
           justifyContent="center"
           alignItems="center"
           height={previewHeight}
-          sx={{ overflow: 'auto' }}
+          sx={{ overflow: 'auto', flex: 1, minHeight: 0 }}
         >
           <img
             src={fileUrl!}
@@ -463,22 +905,32 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
             flexDirection="column"
             alignItems="center"
             height={previewHeight}
-            sx={{ overflow: 'auto' }}
+            sx={{ overflow: 'auto', flex: 1, minHeight: 0 }}
             data-testid="pdf-preview-fallback"
           >
             <Typography variant="caption" color="text.secondary" sx={{ mt: 1, mb: 2 }}>
               Using server-rendered preview
             </Typography>
-            <img
-              src={imageSrc}
-              alt={`${node.name} page ${currentPage.pageNumber}`}
-              style={{
-                maxWidth: '100%',
+            <Box
+              sx={{
+                position: 'relative',
+                display: 'inline-block',
                 transform: `scale(${scale}) rotate(${rotation}deg)`,
                 transformOrigin: 'top center',
                 transition: 'transform 0.3s',
               }}
-            />
+            >
+              <img
+                src={imageSrc}
+                alt={`${node.name} page ${currentPage.pageNumber}`}
+                style={{
+                  maxWidth: '100%',
+                  display: 'block',
+                }}
+              />
+              {renderAnnotationOverlay()}
+              {renderAnnotationMarkers()}
+            </Box>
           </Box>
         );
       }
@@ -494,7 +946,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
           flexDirection="column"
           alignItems="center"
           height={previewHeight}
-          sx={{ overflow: 'auto' }}
+          sx={{ overflow: 'auto', flex: 1, minHeight: 0 }}
         >
           <React.Suspense fallback={<CircularProgress />}>
             <PdfPreview
@@ -504,6 +956,9 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
               rotation={rotation}
               onLoadSuccess={handleDocumentLoadSuccess}
               onLoadError={handlePdfLoadError}
+              onPageLoadSuccess={handlePdfPageLoadSuccess}
+              overlay={renderAnnotationOverlay()}
+              markers={<>{renderAnnotationMarkers()}</>}
             />
           </React.Suspense>
         </Box>
@@ -519,6 +974,8 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
             overflow: 'auto',
             p: 2,
             bgcolor: 'background.paper',
+            flex: 1,
+            minHeight: 0,
           }}
         >
           <iframe
@@ -546,8 +1003,24 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
     );
   };
 
+  const annotationDialogTitle = annotationDraft?.id ? 'Edit annotation' : 'Add annotation';
+  const annotationText = annotationDraft?.text ?? '';
+  const canEditAnnotations = canWrite;
+  const annotationUpdatedLabel = annotationsUpdatedAt
+    ? (() => {
+      const date = new Date(annotationsUpdatedAt);
+      return Number.isNaN(date.getTime()) ? annotationsUpdatedAt : date.toLocaleString();
+    })()
+    : null;
+
   return (
-    <Dialog open={open} onClose={onClose} maxWidth={false} fullScreen>
+    <Dialog
+      open={open}
+      onClose={onClose}
+      maxWidth={false}
+      fullScreen
+      PaperProps={{ sx: { display: 'flex', flexDirection: 'column' } }}
+    >
       <AppBar position="relative">
         <Toolbar>
           <IconButton edge="start" color="inherit" onClick={onClose} aria-label="close">
@@ -556,6 +1029,45 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
           <Typography sx={{ ml: 2, flex: 1 }} variant="h6" component="div">
             {node.name}
           </Typography>
+          {pdfDocument && (
+            <Typography variant="body2" sx={{ mr: 2, opacity: 0.8 }}>
+              PDF preview is read-only{canWrite ? ', annotations available' : ''}
+            </Typography>
+          )}
+
+          {pdfDocument && (
+            <Tooltip
+              title={
+                !canWrite
+                  ? 'You do not have permission to annotate'
+                  : annotationsDisabledForRotation
+                    ? 'Rotate to 0° to annotate'
+                    : annotateMode
+                      ? 'Exit annotate mode'
+                      : 'Add annotations'
+              }
+            >
+              <span>
+                <Button
+                  color="inherit"
+                  variant={annotateMode ? 'outlined' : 'text'}
+                  onClick={handleToggleAnnotate}
+                  disabled={!canAnnotate}
+                  sx={{ mr: 2 }}
+                >
+                  {annotateMode ? 'Annotating' : 'Annotate'}
+                </Button>
+              </span>
+            </Tooltip>
+          )}
+
+          {pdfDocument && annotationUpdatedLabel && (
+            <Tooltip title={`Updated by ${annotationsUpdatedBy || 'unknown'}`}>
+              <Typography variant="caption" sx={{ mr: 2, opacity: 0.8 }}>
+                Notes updated {annotationUpdatedLabel}
+              </Typography>
+            </Tooltip>
+          )}
 
           {/* Navigation controls for PDF */}
           {effectiveContentType === 'application/pdf' && numPages && (
@@ -590,6 +1102,43 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
           <IconButton color="inherit" onClick={handleZoomIn}>
             <ZoomIn />
           </IconButton>
+
+          {pdfDocument && (
+            <Box display="flex" alignItems="center">
+              <Tooltip title={`${fitModeLabel}${fitScaleLabel}`}>
+                <IconButton color="inherit" onClick={() => handleApplyFitMode()}>
+                  <FitScreen />
+                </IconButton>
+              </Tooltip>
+              <IconButton
+                color="inherit"
+                aria-label="Change fit mode"
+                onClick={handleFitMenuOpen}
+                size="small"
+                sx={{ ml: -0.5 }}
+              >
+                <ArrowDropDown />
+              </IconButton>
+              <Menu
+                anchorEl={fitMenuAnchor}
+                open={Boolean(fitMenuAnchor)}
+                onClose={handleFitMenuClose}
+              >
+                <MenuItem selected={fitMode === 'screen'} onClick={() => handleSelectFitMode('screen')}>
+                  <ListItemText>Fit to screen (F)</ListItemText>
+                </MenuItem>
+                <MenuItem selected={fitMode === 'height'} onClick={() => handleSelectFitMode('height')}>
+                  <ListItemText>Fit to height (H)</ListItemText>
+                </MenuItem>
+                <MenuItem selected={fitMode === 'width'} onClick={() => handleSelectFitMode('width')}>
+                  <ListItemText>Fit to width (W)</ListItemText>
+                </MenuItem>
+                <MenuItem selected={fitMode === 'actual'} onClick={() => handleSelectFitMode('actual')}>
+                  <ListItemText>Actual size (100%) (0)</ListItemText>
+                </MenuItem>
+              </Menu>
+            </Box>
+          )}
 
           {/* Rotation controls */}
           <IconButton color="inherit" onClick={handleRotateLeft}>
@@ -637,9 +1186,67 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ open, onClose, node }
         </Toolbar>
       </AppBar>
 
-      <DialogContent sx={{ p: 0, bgcolor: 'grey.100' }}>
+      <DialogContent
+        sx={{
+          p: 0,
+          bgcolor: 'grey.100',
+          flex: 1,
+          minHeight: 0,
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
         {renderPreview()}
       </DialogContent>
+
+      <Dialog
+        open={annotationDialogOpen}
+        onClose={handleAnnotationDialogClose}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>{annotationDialogTitle}</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Annotation"
+            type="text"
+            fullWidth
+            multiline
+            minRows={3}
+            value={annotationText}
+            disabled={!canEditAnnotations}
+            onChange={(event) => {
+              if (!annotationDraft) {
+                return;
+              }
+              setAnnotationDraft({ ...annotationDraft, text: event.target.value });
+            }}
+          />
+        </DialogContent>
+        <DialogActions>
+          {canEditAnnotations && annotationDraft?.id && (
+            <Button
+              color="error"
+              onClick={handleAnnotationDelete}
+              disabled={annotationSaving}
+            >
+              Delete
+            </Button>
+          )}
+          <Button onClick={handleAnnotationDialogClose}>Cancel</Button>
+          {canEditAnnotations && (
+            <Button
+              onClick={handleAnnotationSave}
+              disabled={annotationSaving || annotationsLoading}
+              variant="contained"
+            >
+              Save
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
     </Dialog>
   );
 };
