@@ -847,7 +847,7 @@ test('RBAC smoke: editor can access rules but not admin endpoints', async ({ pag
   await expect(heading).toBeVisible({ timeout: 60_000 });
 
   const resultCard = page.locator('div.MuiCard-root', { hasText: officeFilename }).first();
-  await resultCard.getByRole('button', { name: 'View' }).click();
+  await resultCard.getByRole('button', { name: 'View', exact: true }).click();
 
   const menuButton = page.locator('button:has(svg[data-testid=\"MoreVertIcon\"])').first();
   await expect(menuButton).toBeVisible({ timeout: 60_000 });
@@ -965,7 +965,7 @@ test('RBAC smoke: viewer cannot access rules or admin endpoints', async ({ page,
   await expect(heading).toBeVisible({ timeout: 60_000 });
 
   const resultCard = page.locator('div.MuiCard-root', { hasText: officeFilename }).first();
-  await resultCard.getByRole('button', { name: 'View' }).click();
+  await resultCard.getByRole('button', { name: 'View', exact: true }).click();
 
   const menuButton = page.locator('button:has(svg[data-testid=\"MoreVertIcon\"])').first();
   await expect(menuButton).toBeVisible({ timeout: 60_000 });
