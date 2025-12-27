@@ -31,6 +31,7 @@ import {
   InsertDriveFile,
   Download,
   Visibility,
+  Edit,
   FilterList,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
@@ -68,6 +69,7 @@ const SearchResults: React.FC = () => {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
   const { nodes, nodesTotal, loading, error, searchFacets, lastSearchCriteria } = useAppSelector((state) => state.node);
+  const { user } = useAppSelector((state) => state.auth);
   const [quickSearch, setQuickSearch] = useState('');
   const [sortBy, setSortBy] = useState('relevance');
   const [page, setPage] = useState(1);
@@ -79,10 +81,12 @@ const SearchResults: React.FC = () => {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [previewNode, setPreviewNode] = useState<Node | null>(null);
+  const [previewAnnotate, setPreviewAnnotate] = useState(false);
   const [hiddenNodeIds, setHiddenNodeIds] = useState<string[]>([]);
   const [fallbackNodes, setFallbackNodes] = useState<Node[]>([]);
   const [fallbackLabel, setFallbackLabel] = useState('');
   const previewOpen = Boolean(previewNode);
+  const canWrite = Boolean(user?.roles?.includes('ROLE_ADMIN') || user?.roles?.includes('ROLE_EDITOR'));
   const suppressFacetSearch = useRef(false);
   const quickSearchDebounceRef = useRef<number | null>(null);
 
@@ -330,14 +334,65 @@ const SearchResults: React.FC = () => {
       || hasPathExtension;
   };
 
+  const isPdfDocument = (node: Node) => {
+    const contentTypeHint = node.contentType
+      || node.properties?.mimeType
+      || node.properties?.contentType;
+    const normalizedType = contentTypeHint?.toLowerCase();
+    if (normalizedType && normalizedType.includes('pdf')) {
+      return true;
+    }
+    const normalizedName = node.name?.toLowerCase() || '';
+    return normalizedName.endsWith('.pdf');
+  };
+
+  const isOfficeDocument = (node: Node) => {
+    const contentTypeHint = node.contentType
+      || node.properties?.mimeType
+      || node.properties?.contentType;
+    const normalizedType = contentTypeHint?.toLowerCase();
+    if (normalizedType) {
+      const officeTypes = new Set([
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.ms-powerpoint',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'application/vnd.oasis.opendocument.text',
+        'application/vnd.oasis.opendocument.spreadsheet',
+        'application/vnd.oasis.opendocument.presentation',
+        'application/rtf',
+        'text/rtf',
+      ]);
+      if (officeTypes.has(normalizedType)) {
+        return true;
+      }
+    }
+    const normalizedName = node.name?.toLowerCase() || '';
+    return [
+      '.doc',
+      '.docx',
+      '.xls',
+      '.xlsx',
+      '.ppt',
+      '.pptx',
+      '.odt',
+      '.ods',
+      '.odp',
+      '.rtf',
+    ].some((ext) => normalizedName.endsWith(ext));
+  };
+
   const isFolderNode = (node: Node) => node.nodeType === 'FOLDER' && !isDocumentNode(node);
 
   const hideNodeFromResults = (nodeId: string) => {
     setHiddenNodeIds((prev) => (prev.includes(nodeId) ? prev : [...prev, nodeId]));
   };
 
-  const handleViewNode = async (node: Node) => {
+  const handlePreviewNode = async (node: Node, options?: { annotate?: boolean }) => {
     try {
+      setPreviewAnnotate(Boolean(options?.annotate));
       const freshNode = await nodeService.getNode(node.id);
       if (isFolderNode(freshNode)) {
         navigate(`/browse/${freshNode.id}`);
@@ -355,6 +410,11 @@ const SearchResults: React.FC = () => {
 
   const handleClosePreview = () => {
     setPreviewNode(null);
+    setPreviewAnnotate(false);
+  };
+
+  const handleEditOnline = (node: Node, permission: 'read' | 'write') => {
+    navigate(`/editor/${node.id}?provider=wopi&permission=${permission}`);
   };
 
   const handleDownload = async (node: Node) => {
@@ -876,9 +936,23 @@ const SearchResults: React.FC = () => {
                         </Box>
                       </CardContent>
                       <CardActions>
-                        <Button size="small" startIcon={<Visibility />} onClick={() => void handleViewNode(node)}>
+                        <Button size="small" startIcon={<Visibility />} onClick={() => void handlePreviewNode(node)}>
                           View
                         </Button>
+                        {isDocumentNode(node) && isPdfDocument(node) && canWrite && (
+                          <Button size="small" startIcon={<Edit />} onClick={() => void handlePreviewNode(node, { annotate: true })}>
+                            Annotate
+                          </Button>
+                        )}
+                        {isDocumentNode(node) && isOfficeDocument(node) && !isPdfDocument(node) && (
+                          <Button
+                            size="small"
+                            startIcon={canWrite ? <Edit /> : <Visibility />}
+                            onClick={() => handleEditOnline(node, canWrite ? 'write' : 'read')}
+                          >
+                            {canWrite ? 'Edit Online' : 'View Online'}
+                          </Button>
+                        )}
                         {isDocumentNode(node) && (
                           <Button size="small" startIcon={<Download />} onClick={() => handleDownload(node)}>
                             Download
@@ -934,6 +1008,7 @@ const SearchResults: React.FC = () => {
             open={previewOpen}
             onClose={handleClosePreview}
             node={previewNode}
+            initialAnnotateMode={previewAnnotate}
           />
         </React.Suspense>
       )}
