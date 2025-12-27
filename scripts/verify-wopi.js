@@ -153,13 +153,18 @@ const findDocument = (results, preferredName) => {
 
   log('Checking preview menu');
   await page.locator('button svg[data-testid="MoreVertIcon"]').first().click();
-  await page.getByRole('menuitem', { name: 'View Online' }).waitFor({ timeout: 30000 });
-  await page.getByRole('menuitem', { name: 'Edit Online' }).waitFor({ timeout: 30000 });
-  log('Menu contains View Online / Edit Online');
+  const onlineMenuItem = page.getByRole('menuitem', { name: /^(View|Edit) Online$/ });
+  await onlineMenuItem.first().waitFor({ timeout: 30000 });
+  const menuLabel = (await onlineMenuItem.first().innerText())?.trim() || 'Online';
+  const isEditOnline = menuLabel.toLowerCase().includes('edit');
+  log(`Menu contains ${menuLabel}`);
 
-  log('Opening View Online');
-  await page.getByRole('menuitem', { name: 'View Online' }).click();
-  await page.waitForURL(/\/editor\/.+permission=read/, { timeout: 60000 });
+  log(`Opening ${menuLabel}`);
+  await onlineMenuItem.first().click();
+  await page.waitForURL(
+    new RegExp(`/editor/.+permission=${isEditOnline ? 'write' : 'read'}`),
+    { timeout: 60000 }
+  );
   await page.waitForSelector('iframe', { timeout: 60000 });
   const editorIframeSrc = await page.$eval('iframe', (el) => el.getAttribute('src'));
   log(`Editor iframe src: ${editorIframeSrc ? 'present' : 'missing'}`);
