@@ -211,6 +211,7 @@ test('PDF preview shows dialog and controls', async ({ page, request }) => {
   await expect(page.locator('[data-testid=ZoomOutIcon]')).toBeVisible();
   await expect(page.locator('[data-testid=RotateLeftIcon]')).toBeVisible();
   await expect(page.locator('[data-testid=RotateRightIcon]')).toBeVisible();
+  await expect(page.getByRole('button', { name: /annotate/i })).toBeVisible();
 
   await page.getByLabel('close').click();
 

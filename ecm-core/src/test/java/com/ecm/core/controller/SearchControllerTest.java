@@ -57,7 +57,7 @@ class SearchControllerTest {
             PageRequest.of(0, 10),
             1
         );
-        Mockito.when(fullTextSearchService.search("keyword", 0, 10)).thenReturn(page);
+        Mockito.when(fullTextSearchService.search("keyword", 0, 10, null, null)).thenReturn(page);
 
         mockMvc.perform(get("/api/v1/search")
                 .param("q", "keyword")

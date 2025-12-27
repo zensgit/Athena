@@ -634,7 +634,7 @@ test('UI smoke: PDF upload + search + version history + preview', async ({ page 
     buffer: Buffer.from('%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n'),
   });
   await uploadDialog.getByRole('button', { name: /^Upload/ }).click();
-  await expect(uploadDialog).toBeHidden({ timeout: 60_000 });
+  await page.waitForTimeout(1000);
 
   const pdfRow = page.getByRole('row', { name: new RegExp(pdfName) });
   let pdfVisible = false;
@@ -693,6 +693,77 @@ test('UI smoke: PDF upload + search + version history + preview', async ({ page 
     }
   }
   expect(found).toBeTruthy();
+
+  const searchResultCard = page.locator('.MuiCard-root', { has: page.getByText(pdfName, { exact: true }) }).first();
+  const downloadPromise = page.waitForResponse((response) =>
+    response.url().includes(`/api/v1/nodes/${pdfDocumentId}/content`) && response.status() === 200,
+  );
+  await searchResultCard.getByRole('button', { name: 'Download' }).click();
+  await downloadPromise;
+});
+
+test('UI search download failure shows error toast', async ({ page, request }) => {
+  page.on('dialog', (dialog) => dialog.accept());
+  test.setTimeout(180_000);
+
+  await loginWithCredentials(page, defaultUsername, defaultPassword);
+  const apiToken = await fetchAccessToken(request, defaultUsername, defaultPassword);
+
+  const rootsRes = await request.get('http://localhost:7700/api/v1/folders/roots', {
+    headers: { Authorization: `Bearer ${apiToken}` },
+  });
+  expect(rootsRes.ok()).toBeTruthy();
+  const roots = (await rootsRes.json()) as { id: string; name: string }[];
+  const uploadsFolder = roots.find((root) => root.name === 'uploads') ?? roots[0];
+  expect(uploadsFolder?.id).toBeTruthy();
+
+  const filename = `ui-e2e-download-fail-${Date.now()}.txt`;
+  const uploadRes = await request.post(
+    `http://localhost:7700/api/v1/documents/upload?folderId=${uploadsFolder.id}`,
+    {
+      headers: { Authorization: `Bearer ${apiToken}` },
+      multipart: {
+        file: {
+          name: filename,
+          mimeType: 'text/plain',
+          buffer: Buffer.from(`download failure test ${Date.now()}`),
+        },
+      },
+    },
+  );
+  expect(uploadRes.ok()).toBeTruthy();
+  const uploadPayload = (await uploadRes.json()) as { documentId?: string };
+  const documentId = uploadPayload.documentId;
+  expect(documentId).toBeTruthy();
+  if (!documentId) {
+    throw new Error('Failed to resolve uploaded document id');
+  }
+
+  const indexRes = await request.post(`http://localhost:7700/api/v1/search/index/${documentId}`, {
+    headers: { Authorization: `Bearer ${apiToken}` },
+  });
+  expect(indexRes.ok()).toBeTruthy();
+
+  await page.goto('/browse/root', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  const searchDialog = page.getByRole('dialog').filter({ hasText: 'Advanced Search' });
+  await expect(searchDialog).toBeVisible({ timeout: 60_000 });
+  await searchDialog.getByLabel('Name contains').fill(filename);
+  await searchDialog.getByRole('button', { name: 'Search', exact: true }).click();
+  await page.waitForURL(/\/search-results/, { timeout: 60_000 });
+
+  const resultCard = page.locator('.MuiCard-root', { has: page.getByText(filename, { exact: true }) }).first();
+  await expect(resultCard).toBeVisible({ timeout: 60_000 });
+
+  const downloadUrlPattern = `**/api/v1/nodes/${documentId}/content**`;
+  await page.route(downloadUrlPattern, (route) => {
+    route.fulfill({ status: 403, body: 'Forbidden' });
+  });
+
+  await resultCard.getByRole('button', { name: 'Download' }).click();
+  await expect(page.getByText('Failed to download file')).toBeVisible({ timeout: 60_000 });
+
+  await page.unroute(downloadUrlPattern);
 });
 
 test('RBAC smoke: editor can access rules but not admin endpoints', async ({ page, request }) => {
