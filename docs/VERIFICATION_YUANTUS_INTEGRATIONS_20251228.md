@@ -53,3 +53,26 @@
 ### Results
 - `integrations/health`: `ok=true` with `athena/cad_ml/dedup_vision` all OK.
 - Script output: `ALL CHECKS PASSED` (client-credentials path).
+
+## Re-Verification After Restart (2025-12-28, PM)
+### Restarted Containers
+- `yuantus-api-1`, `yuantus-worker-1`
+- `cad-ml-api`, `dedupcad-vision-api`
+- `athena-ecm-core-1`
+
+### Checks
+- Authenticated `POST /api/v1/auth/login` to obtain Yuantus token (tenant-1/org-1).
+- `GET /api/v1/integrations/health` with Bearer token + tenant/org headers.
+- `scripts/verify_integrations_athena.sh` with `VERIFY_CLIENT_CREDENTIALS=1`.
+
+### Results
+- `integrations/health`: `ok=true` with `athena/cad_ml/dedup_vision` all OK.
+- Script output: `ALL CHECKS PASSED` (client-credentials path).
+
+## Athena API Smoke (2025-12-28, PM)
+### Steps
+- Refreshed Keycloak token: `bash scripts/get-token.sh admin admin`.
+- Ran `ECM_API=http://localhost:7700 ECM_TOKEN_FILE=tmp/admin.access_token ./scripts/smoke.sh`.
+
+### Result
+- `scripts/smoke.sh` completed successfully (health, upload, search, WOPI edit, rules, scheduled rules, tags, categories, workflow, trash).
