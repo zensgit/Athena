@@ -43,3 +43,13 @@
 - `cad_ml.ok=true` with full health payload.
 - `dedup_vision.ok=true`.
 - `athena.ok=true` with service-account token (client credentials).
+
+## Re-Verification (2025-12-28, PM)
+### Checks
+- Authenticated `POST /api/v1/auth/login` to obtain Yuantus token (tenant-1/org-1).
+- `GET /api/v1/integrations/health` with Bearer token + tenant/org headers.
+- `scripts/verify_integrations_athena.sh` with `VERIFY_CLIENT_CREDENTIALS=1`.
+
+### Results
+- `integrations/health`: `ok=true` with `athena/cad_ml/dedup_vision` all OK.
+- Script output: `ALL CHECKS PASSED` (client-credentials path).
