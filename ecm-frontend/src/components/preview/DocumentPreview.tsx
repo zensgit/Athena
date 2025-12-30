@@ -53,7 +53,7 @@ const PdfPreview = React.lazy(() => import('./PdfPreview'));
 const DEFAULT_ANNOTATION_COLOR = '#1976d2';
 const FIT_MODE_STORAGE_KEY = 'ecm_pdf_fit_mode';
 const FIT_MODE_VERSION_KEY = 'ecm_pdf_fit_mode_version';
-const FIT_MODE_VERSION = '2025-12-25';
+const FIT_MODE_VERSION = '2025-12-30';
 
 type FitMode = 'screen' | 'height' | 'width' | 'actual';
 
@@ -577,6 +577,29 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     window.addEventListener('resize', handleResize);
     return () => {
       window.removeEventListener('resize', handleResize);
+    };
+  }, [open, pdfDocument, autoScaleEnabled, applyFitScale]);
+
+  useEffect(() => {
+    if (!open || !pdfDocument || !autoScaleEnabled) {
+      return;
+    }
+    if (typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    const element = pdfContainerRef.current;
+    if (!element) {
+      return;
+    }
+    const observer = new ResizeObserver(() => {
+      if (!autoScaleEnabled) {
+        return;
+      }
+      applyFitScale();
+    });
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
     };
   }, [open, pdfDocument, autoScaleEnabled, applyFitScale]);
 
