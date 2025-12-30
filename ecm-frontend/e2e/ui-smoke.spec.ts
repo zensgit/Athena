@@ -300,7 +300,8 @@ test('UI smoke: browse + upload + search + copy/move + facets + delete + rules',
   await page.getByRole('option', { name: correspondentName, exact: true }).click();
   await propertiesDialog.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.getByText('Properties updated successfully')).toBeVisible({ timeout: 60_000 });
-  await propertiesDialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.keyboard.press('Escape');
+  await expect(propertiesDialog).toBeHidden({ timeout: 60_000 });
 
   // Favorites (star column add -> verify -> remove)
   await row.getByRole('button', { name: `Favorite ${filename}` }).click();
