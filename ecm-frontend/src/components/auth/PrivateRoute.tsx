@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { Box, CircularProgress, Typography } from '@mui/material';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAppSelector } from 'store';
 import authService from 'services/authService';
@@ -43,18 +44,40 @@ const PrivateRoute: React.FC<PrivateRouteProps> = ({ children, requiredRoles }) 
   const location = useLocation();
   const { isAuthenticated, user } = useAppSelector((state) => state.auth);
   const keycloakAuthenticated = authService.isAuthenticated();
+  const loginInProgress = sessionStorage.getItem(LOGIN_IN_PROGRESS_KEY) === '1';
+  const hasCallbackParams = hasKeycloakCallbackParams();
 
   useEffect(() => {
     if (isAuthenticated || keycloakAuthenticated) return;
-    if (hasKeycloakCallbackParams()) return;
-    if (sessionStorage.getItem(LOGIN_IN_PROGRESS_KEY) === '1') return;
+    if (hasCallbackParams) return;
+    if (loginInProgress) return;
 
     sessionStorage.setItem(LOGIN_IN_PROGRESS_KEY, '1');
     const redirectUri = buildSafeRedirectUri(location.pathname, location.search, location.hash);
     authService.login({ redirectUri });
-  }, [isAuthenticated, keycloakAuthenticated, location.hash, location.pathname, location.search]);
+  }, [isAuthenticated, keycloakAuthenticated, location.hash, location.pathname, location.search, hasCallbackParams, loginInProgress]);
 
   if (!isAuthenticated && !keycloakAuthenticated) {
+    if (hasCallbackParams || loginInProgress) {
+      return (
+        <Box
+          sx={{
+            minHeight: '100vh',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 2,
+            bgcolor: 'background.default',
+          }}
+        >
+          <CircularProgress />
+          <Typography variant="body2" color="text.secondary">
+            Signing you in...
+          </Typography>
+        </Box>
+      );
+    }
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 

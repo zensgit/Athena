@@ -2,7 +2,9 @@ import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 import { toast } from 'react-toastify';
 import authService from './authService';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || '/api/v1';
+const API_BASE_URL = process.env.REACT_APP_API_URL
+  || process.env.REACT_APP_API_BASE_URL
+  || '/api/v1';
 
 class ApiService {
   private api: AxiosInstance;

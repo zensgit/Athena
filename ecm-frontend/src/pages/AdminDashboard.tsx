@@ -210,8 +210,11 @@ const AdminDashboard: React.FC = () => {
       const fromStr = from.toISOString();
       const toStr = to.toISOString();
 
+      const apiBaseUrl = process.env.REACT_APP_API_URL
+        || process.env.REACT_APP_API_BASE_URL
+        || '/api/v1';
       const response = await fetch(
-        `${process.env.REACT_APP_API_URL || '/api/v1'}/analytics/audit/export?from=${fromStr}&to=${toStr}`,
+        `${apiBaseUrl}/analytics/audit/export?from=${fromStr}&to=${toStr}`,
         {
           headers: {
             Authorization: `Bearer ${localStorage.getItem('access_token') || ''}`,

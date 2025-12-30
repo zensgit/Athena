@@ -60,7 +60,9 @@ const SettingsPage: React.FC = () => {
 
   const env = useMemo(() => {
     return {
-      apiBaseUrl: process.env.REACT_APP_API_URL || '/api/v1',
+      apiBaseUrl: process.env.REACT_APP_API_URL
+        || process.env.REACT_APP_API_BASE_URL
+        || '/api/v1',
       keycloakUrl: process.env.REACT_APP_KEYCLOAK_URL || '',
       keycloakRealm: process.env.REACT_APP_KEYCLOAK_REALM || '',
       keycloakClientId: process.env.REACT_APP_KEYCLOAK_CLIENT_ID || '',
