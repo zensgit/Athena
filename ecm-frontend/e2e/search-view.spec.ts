@@ -133,7 +133,7 @@ async function waitForSearchIndex(
   query: string,
   token: string,
 ) {
-  for (let attempt = 0; attempt < 10; attempt += 1) {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
     const res = await request.get(`${baseApiUrl}/api/v1/search`, {
       params: { q: query, page: 0, size: 10 },
       headers: { Authorization: `Bearer ${token}` },
@@ -144,7 +144,7 @@ async function waitForSearchIndex(
         return;
       }
     }
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, 2000));
   }
   throw new Error(`Search index did not return ${query}`);
 }

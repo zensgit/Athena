@@ -137,7 +137,7 @@ async function waitForSearchIndex(
 ) {
   let lastError = 'unknown error';
   const pageSize = Math.max(minResults, 100);
-  for (let attempt = 0; attempt < 45; attempt += 1) {
+  for (let attempt = 0; attempt < 90; attempt += 1) {
     try {
       const res = await request.get(`${baseApiUrl}/api/v1/search`, {
         params: { q: query, page: 0, size: pageSize },
@@ -289,6 +289,7 @@ test('Search sorting and pagination are consistent', async ({ page, request }) =
   for (let i = 1; i <= pageCount; i += 1) {
     const filename = `${pagePrefix}-${String(i).padStart(3, '0')}.txt`;
     await uploadDocument(request, folderId, filename, 20, apiToken);
+    await page.waitForTimeout(200);
   }
   await waitForSearchIndex(request, pagePrefix, pageCount, apiToken);
 

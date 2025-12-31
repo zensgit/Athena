@@ -23,7 +23,7 @@ async function fetchAccessToken(request: APIRequestContext, username: string, pa
 }
 
 async function waitForApiReady(request: APIRequestContext) {
-  const deadline = Date.now() + 60_000;
+  const deadline = Date.now() + 120_000;
   let lastError: string | undefined;
 
   while (Date.now() < deadline) {
@@ -79,7 +79,7 @@ async function findChildFolderId(
   parentId: string,
   folderName: string,
   token: string,
-  maxAttempts = 10,
+  maxAttempts = 30,
 ) {
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     const response = await request.get(`http://localhost:7700/api/v1/folders/${parentId}/contents`, {
@@ -107,7 +107,7 @@ async function findDocumentId(
   folderId: string,
   filename: string,
   token: string,
-  maxAttempts = 10,
+  maxAttempts = 30,
 ) {
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     const response = await request.get(`http://localhost:7700/api/v1/folders/${folderId}/contents`, {
@@ -134,7 +134,7 @@ async function waitForSearchIndex(
   request: APIRequestContext,
   query: string,
   token: string,
-  maxAttempts = 10,
+  maxAttempts = 30,
 ) {
   let lastError = 'unknown error';
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {

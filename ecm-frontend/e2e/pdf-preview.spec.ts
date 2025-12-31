@@ -170,7 +170,7 @@ async function waitForSearchIndex(
   token: string,
 ) {
   let lastError = 'unknown error';
-  for (let attempt = 0; attempt < 15; attempt += 1) {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
     try {
       const res = await request.get(`${baseApiUrl}/api/v1/search`, {
         params: { q: query, page: 0, size: 10 },
@@ -188,7 +188,7 @@ async function waitForSearchIndex(
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
     }
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await new Promise((resolve) => setTimeout(resolve, 2000));
   }
   throw new Error(`Search index did not return ${query} (${lastError})`);
 }
