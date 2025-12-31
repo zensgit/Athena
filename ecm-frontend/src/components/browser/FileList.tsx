@@ -248,19 +248,15 @@ const FileList: React.FC<FileListProps> = ({
     const isLong = length > longThreshold;
     const isExtraLong = length > extraLongThreshold;
     const isVeryLong = length > veryLongThreshold;
-    const lineClamp = isVeryLong ? (compactMode ? 3 : 4) : isLong ? 3 : 2;
-    const shouldShrink = lineClamp > 2;
-    const fontSize = compactMode
-      ? '0.8rem'
-      : lineClamp >= 4
-        ? '0.8rem'
-        : isVeryLong
-          ? '0.84rem'
-          : isExtraLong
-            ? '0.88rem'
-            : shouldShrink
-              ? '0.94rem'
-              : undefined;
+    const lineClamp = isLong ? 3 : 2;
+    const fontSize = lineClamp === 3
+      ? compactMode
+        ? (isVeryLong ? '0.72rem' : isExtraLong ? '0.76rem' : '0.8rem')
+        : (isVeryLong ? '0.8rem' : isExtraLong ? '0.86rem' : '0.9rem')
+      : undefined;
+    const lineHeight = lineClamp === 3
+      ? (compactMode ? (isVeryLong ? 1.04 : isExtraLong ? 1.08 : 1.12) : (isVeryLong ? 1.05 : isExtraLong ? 1.1 : 1.16))
+      : 1.25;
 
     return {
       display: '-webkit-box',
@@ -270,7 +266,7 @@ const FileList: React.FC<FileListProps> = ({
       wordBreak: 'break-word',
       overflowWrap: 'anywhere',
       whiteSpace: 'normal',
-      lineHeight: lineClamp >= 4 ? 1.05 : isVeryLong ? 1.08 : isExtraLong ? 1.12 : shouldShrink ? 1.18 : 1.25,
+      lineHeight,
       ...(fontSize ? { fontSize } : {}),
     };
   };

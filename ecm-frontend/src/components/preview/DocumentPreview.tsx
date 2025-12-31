@@ -165,6 +165,19 @@ const isGenericContentType = (value?: string) => {
 };
 
 const clampToUnit = (value: number) => Math.min(Math.max(value, 0), 1);
+const getPreviewErrorMessage = (error: unknown, fallback: string) => {
+  const status = (error as { response?: { status?: number } })?.response?.status;
+  if (status === 404) {
+    return 'Preview unavailable. The file was not found.';
+  }
+  if (status === 401 || status === 403) {
+    return 'Preview unavailable. Access denied.';
+  }
+  if (status && status >= 500) {
+    return 'Preview unavailable. The server returned an error.';
+  }
+  return fallback;
+};
 
 const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   open,
@@ -265,7 +278,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         setNumPages(preview.pages.length);
       }
     } catch (err) {
-      const message = 'Failed to load server preview';
+      const message = getPreviewErrorMessage(err, 'Failed to load server preview');
       setServerPreviewError(message);
       setServerPreview({ supported: false, message });
     } finally {
@@ -319,7 +332,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         }
       } catch (err) {
         if (!cancelled) {
-          setError('Failed to load document');
+          setError(getPreviewErrorMessage(err, 'Failed to load document'));
           toast.error('Failed to load document preview');
         }
       } finally {
@@ -339,7 +352,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         }
       } catch (err) {
         if (!cancelled) {
-          setError('Failed to load document');
+          setError(getPreviewErrorMessage(err, 'Failed to load document'));
           toast.error('Failed to load document preview');
         }
       } finally {
@@ -463,6 +476,19 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     }
   };
 
+  const handleOpenInEditor = () => {
+    const permission = canWrite ? 'write' : 'read';
+    navigate(`/editor/${node.id}?provider=wopi&permission=${permission}`);
+    onClose();
+  };
+
+  const handleOpenFile = () => {
+    if (!fileUrl) {
+      return;
+    }
+    window.open(fileUrl, '_blank', 'noopener,noreferrer');
+  };
+
   const handlePrint = () => {
     window.print();
   };
@@ -559,7 +585,15 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
 
   const handleRetry = () => {
     setPdfLoadFailed(false);
+    setError(null);
+    setServerPreview(null);
+    setServerPreviewError(null);
     setReloadKey((prev) => prev + 1);
+  };
+
+  const handleLoadServerPreview = () => {
+    setServerPreviewError(null);
+    void loadServerPreview();
   };
 
   useEffect(() => {
@@ -773,27 +807,55 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     setAnchorEl(null);
   };
 
-  const renderPreviewError = (message: string) => (
-    <Box
-      display="flex"
-      flexDirection="column"
-      alignItems="center"
-      justifyContent="center"
-      height={previewHeight}
-      gap={2}
-      textAlign="center"
-    >
-      <Typography color="error">{message}</Typography>
-      <Box display="flex" gap={1} flexWrap="wrap" justifyContent="center">
-        <Button variant="contained" size="small" onClick={handleRetry}>
-          Retry
-        </Button>
-        <Button variant="outlined" size="small" onClick={handleDownload}>
-          Download
-        </Button>
+  const renderPreviewError = (
+    message: string,
+    options?: {
+      showRetry?: boolean;
+      showServerPreview?: boolean;
+      showOpenFile?: boolean;
+      showOpenInEditor?: boolean;
+    }
+  ) => {
+    const showRetry = options?.showRetry ?? true;
+    return (
+      <Box
+        display="flex"
+        flexDirection="column"
+        alignItems="center"
+        justifyContent="center"
+        height={previewHeight}
+        gap={2}
+        textAlign="center"
+      >
+        <Typography color="error">{message}</Typography>
+        <Box display="flex" gap={1} flexWrap="wrap" justifyContent="center">
+          {showRetry && (
+            <Button variant="contained" size="small" onClick={handleRetry}>
+              Retry
+            </Button>
+          )}
+          {options?.showServerPreview && (
+            <Button variant="outlined" size="small" onClick={handleLoadServerPreview}>
+              Try server preview
+            </Button>
+          )}
+          {options?.showOpenInEditor && (
+            <Button variant="outlined" size="small" onClick={handleOpenInEditor}>
+              Open in editor
+            </Button>
+          )}
+          {options?.showOpenFile && (
+            <Button variant="outlined" size="small" onClick={handleOpenFile}>
+              Open file
+            </Button>
+          )}
+          <Button variant="outlined" size="small" onClick={handleDownload}>
+            Download
+          </Button>
+        </Box>
       </Box>
-    </Box>
-  );
+    );
+  };
 
   const currentPageAnnotations = annotations.filter((annotation) => annotation.page === pageNumber);
 
@@ -858,7 +920,11 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     }
 
     if (error) {
-      return renderPreviewError(error);
+      return renderPreviewError(error, {
+        showServerPreview: pdfDocument && !serverPreviewLoading,
+        showOpenInEditor: officeDocument,
+        showOpenFile: Boolean(fileUrl),
+      });
     }
 
     if (officeDocument) {
@@ -914,7 +980,11 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
       if (serverPreview) {
         if (serverPreview.supported === false) {
           return renderPreviewError(
-            serverPreview.message || 'Preview not available for this document'
+            serverPreview.message || 'Preview not available for this document',
+            {
+              showServerPreview: true,
+              showOpenFile: Boolean(fileUrl),
+            }
           );
         }
 
@@ -922,7 +992,11 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         const currentPage = pages.find((page) => page.pageNumber === pageNumber) || pages[0];
         if (!currentPage || !currentPage.content) {
           return renderPreviewError(
-            serverPreviewError || 'Preview not available for this document'
+            serverPreviewError || 'Preview not available for this document',
+            {
+              showServerPreview: true,
+              showOpenFile: Boolean(fileUrl),
+            }
           );
         }
 
@@ -964,7 +1038,10 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
       }
 
       if (pdfLoadFailed) {
-        return renderPreviewError('Failed to load PDF');
+        return renderPreviewError('Failed to load PDF', {
+          showServerPreview: true,
+          showOpenFile: Boolean(fileUrl),
+        });
       }
 
       return (
@@ -1022,13 +1099,11 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     }
 
     // Unsupported format
-    return (
-      <Box display="flex" justifyContent="center" alignItems="center" height={previewHeight}>
-        <Typography variant="h6" color="text.secondary">
-          Preview not available for this file type
-        </Typography>
-      </Box>
-    );
+    return renderPreviewError('Preview not available for this file type', {
+      showRetry: false,
+      showOpenInEditor: officeDocument,
+      showOpenFile: Boolean(fileUrl),
+    });
   };
 
   const annotationDialogTitle = annotationDraft?.id ? 'Edit annotation' : 'Add annotation';
