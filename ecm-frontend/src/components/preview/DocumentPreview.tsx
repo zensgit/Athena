@@ -123,7 +123,7 @@ const isOfficeDocument = (contentType?: string, name?: string) => {
   if (normalizedType && OFFICE_MIME_TYPES.has(normalizedType)) {
     return true;
   }
-  const normalizedName = name?.toLowerCase() || '';
+  const normalizedName = name?.trim().toLowerCase() || '';
   return OFFICE_EXTENSIONS.some((ext) => normalizedName.endsWith(ext));
 };
 
@@ -132,12 +132,12 @@ const isPdfDocument = (contentType?: string, name?: string) => {
   if (normalizedType && normalizedType.includes('pdf')) {
     return true;
   }
-  const normalizedName = name?.toLowerCase() || '';
+  const normalizedName = name?.trim().toLowerCase() || '';
   return normalizedName.endsWith('.pdf');
 };
 
 const inferContentTypeFromName = (name?: string) => {
-  const normalizedName = name?.toLowerCase() || '';
+  const normalizedName = name?.trim().toLowerCase() || '';
   if (normalizedName.endsWith('.pdf')) return 'application/pdf';
   if (normalizedName.endsWith('.png')) return 'image/png';
   if (normalizedName.endsWith('.jpg') || normalizedName.endsWith('.jpeg')) return 'image/jpeg';

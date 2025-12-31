@@ -318,9 +318,9 @@ const SearchResults: React.FC = () => {
   }, [sortBy, lastSearchCriteria, dispatch, pageSize]);
 
   const isDocumentNode = (node: Node) => {
-    const normalizedName = node.name?.toLowerCase() || '';
+    const normalizedName = node.name?.trim().toLowerCase() || '';
     const hasExtension = FILE_EXTENSIONS.some((ext) => normalizedName.endsWith(ext));
-    const normalizedPath = node.path?.toLowerCase() || '';
+    const normalizedPath = node.path?.trim().toLowerCase() || '';
     const hasPathExtension = FILE_EXTENSIONS.some((ext) => normalizedPath.endsWith(ext));
     const contentTypeHint = node.contentType
       || node.properties?.mimeType
@@ -342,7 +342,7 @@ const SearchResults: React.FC = () => {
     if (normalizedType && normalizedType.includes('pdf')) {
       return true;
     }
-    const normalizedName = node.name?.toLowerCase() || '';
+    const normalizedName = node.name?.trim().toLowerCase() || '';
     return normalizedName.endsWith('.pdf');
   };
 
@@ -369,7 +369,7 @@ const SearchResults: React.FC = () => {
         return true;
       }
     }
-    const normalizedName = node.name?.toLowerCase() || '';
+    const normalizedName = node.name?.trim().toLowerCase() || '';
     return [
       '.doc',
       '.docx',
@@ -950,7 +950,7 @@ const SearchResults: React.FC = () => {
                         </Button>
                         {isDocumentNode(node) && isPdfDocument(node) && canWrite && (
                           <Button size="small" startIcon={<Edit />} onClick={() => void handlePreviewNode(node, { annotate: true })}>
-                            Annotate
+                            Annotate (PDF)
                           </Button>
                         )}
                         {isDocumentNode(node) && isOfficeDocument(node) && !isPdfDocument(node) && (

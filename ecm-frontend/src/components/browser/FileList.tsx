@@ -143,7 +143,7 @@ const FileList: React.FC<FileListProps> = ({
       if (type.startsWith('text/')) return 'Text';
     }
 
-    const name = node.name?.toLowerCase() || '';
+    const name = node.name?.trim().toLowerCase() || '';
     if (name.endsWith('.pdf')) return 'PDF';
     if (name.endsWith('.doc') || name.endsWith('.docx')) return 'Word';
     if (name.endsWith('.xls') || name.endsWith('.xlsx')) return 'Excel';
@@ -161,7 +161,7 @@ const FileList: React.FC<FileListProps> = ({
     if (node.nodeType === 'FOLDER') {
       return false;
     }
-    const name = node.name?.toLowerCase() || '';
+    const name = node.name?.trim().toLowerCase() || '';
     const contentTypeHint = node.contentType
       || node.properties?.mimeType
       || node.properties?.contentType;
@@ -195,7 +195,7 @@ const FileList: React.FC<FileListProps> = ({
         return true;
       }
     }
-    const name = node.name?.toLowerCase() || '';
+    const name = node.name?.trim().toLowerCase() || '';
     return [
       '.doc',
       '.docx',
@@ -749,7 +749,7 @@ const FileList: React.FC<FileListProps> = ({
             <ListItemIcon>
               <Edit fontSize="small" />
             </ListItemIcon>
-            <ListItemText>Annotate</ListItemText>
+            <ListItemText>Annotate (PDF)</ListItemText>
           </MenuItem>
         )}
         {contextMenu && isDocumentNode(contextMenu.node) && isOfficeDocument(contextMenu.node) && !isPdfDocument(contextMenu.node) && (
