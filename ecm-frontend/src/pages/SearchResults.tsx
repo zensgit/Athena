@@ -455,8 +455,8 @@ const SearchResults: React.FC = () => {
     const isLong = length > 32;
     const isExtraLong = length > 56;
     const isVeryLong = length > 80;
-    const lineClamp = isLong ? 3 : 2;
-    const fontSize = isVeryLong ? '0.82rem' : isExtraLong ? '0.88rem' : lineClamp === 3 ? '0.94rem' : undefined;
+    const lineClamp = isVeryLong ? 4 : isLong ? 3 : 2;
+    const fontSize = lineClamp >= 4 ? '0.82rem' : isExtraLong ? '0.88rem' : lineClamp === 3 ? '0.94rem' : undefined;
 
     return {
       display: '-webkit-box',
@@ -465,7 +465,7 @@ const SearchResults: React.FC = () => {
       overflow: 'hidden',
       wordBreak: 'break-word',
       overflowWrap: 'anywhere',
-      lineHeight: lineClamp >= 3 ? (isVeryLong ? 1.08 : isExtraLong ? 1.12 : 1.18) : 1.3,
+      lineHeight: lineClamp >= 4 ? 1.05 : lineClamp >= 3 ? (isVeryLong ? 1.08 : isExtraLong ? 1.12 : 1.18) : 1.3,
       ...(fontSize ? { fontSize } : {}),
     };
   };

@@ -17,7 +17,9 @@ import {
   ListItemIcon,
   ListItemText,
   Tooltip,
+  useMediaQuery,
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import {
   Close,
   Download,
@@ -53,7 +55,7 @@ const PdfPreview = React.lazy(() => import('./PdfPreview'));
 const DEFAULT_ANNOTATION_COLOR = '#1976d2';
 const FIT_MODE_STORAGE_KEY = 'ecm_pdf_fit_mode';
 const FIT_MODE_VERSION_KEY = 'ecm_pdf_fit_mode_version';
-const FIT_MODE_VERSION = '2025-12-30';
+const FIT_MODE_VERSION = '2025-12-31';
 
 type FitMode = 'screen' | 'height' | 'width' | 'actual';
 
@@ -214,8 +216,11 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   const [annotationDialogOpen, setAnnotationDialogOpen] = useState(false);
   const [annotationDraft, setAnnotationDraft] = useState<PdfAnnotation | null>(null);
   const [annotationSaving, setAnnotationSaving] = useState(false);
+  const theme = useTheme();
+  const isSmallScreen = useMediaQuery(theme.breakpoints.down('sm'));
+  const toolbarHeight = isSmallScreen ? 56 : 64;
   const pdfContainerRef = useRef<HTMLDivElement | null>(null);
-  const previewHeight = '100%';
+  const previewHeight = `calc(100dvh - ${toolbarHeight}px)`;
   const resolvedContentType = (() => {
     const candidates = [
       normalizeContentType(node?.contentType),
@@ -774,7 +779,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
       flexDirection="column"
       alignItems="center"
       justifyContent="center"
-      height="60vh"
+      height={previewHeight}
       gap={2}
       textAlign="center"
     >
@@ -846,7 +851,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   const renderPreview = () => {
     if (loading) {
       return (
-        <Box display="flex" justifyContent="center" alignItems="center" height="60vh">
+        <Box display="flex" justifyContent="center" alignItems="center" height={previewHeight}>
           <CircularProgress />
         </Box>
       );
@@ -897,7 +902,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     if (effectiveContentType === 'application/pdf') {
       if (serverPreviewLoading) {
         return (
-          <Box display="flex" flexDirection="column" justifyContent="center" alignItems="center" height="60vh">
+          <Box display="flex" flexDirection="column" justifyContent="center" alignItems="center" height={previewHeight}>
             <CircularProgress />
             <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
               Loading server preview...
@@ -1018,7 +1023,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
 
     // Unsupported format
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" height="60vh">
+      <Box display="flex" justifyContent="center" alignItems="center" height={previewHeight}>
         <Typography variant="h6" color="text.secondary">
           Preview not available for this file type
         </Typography>
@@ -1180,6 +1185,20 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
             open={Boolean(anchorEl)}
             onClose={handleMenuClose}
           >
+            {pdfDocument && (
+              <MenuItem
+                onClick={() => {
+                  handleToggleAnnotate();
+                  handleMenuClose();
+                }}
+                disabled={!canAnnotate}
+              >
+                <ListItemIcon>
+                  <Edit fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>{annotateMode ? 'Stop Annotating' : 'Annotate'}</ListItemText>
+              </MenuItem>
+            )}
             {officeDocument && (
               <MenuItem onClick={() => {
                 const permission = canWrite ? 'write' : 'read';
@@ -1215,6 +1234,9 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
           bgcolor: 'grey.100',
           flex: 1,
           minHeight: 0,
+          height: previewHeight,
+          maxHeight: previewHeight,
+          overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
         }}
