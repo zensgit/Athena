@@ -25,6 +25,7 @@ import {
   DialogContent,
   DialogTitle,
 } from '@mui/material';
+import { SxProps, Theme } from '@mui/material/styles';
 import {
   Folder,
   InsertDriveFile,
@@ -240,7 +241,24 @@ const FileList: React.FC<FileListProps> = ({
     return total;
   };
 
-  const getNameTypographySx = (name: string) => {
+  const getNameTypographySx = (name: string, variant: 'grid' | 'list'): SxProps<Theme> => {
+    const base: SxProps<Theme> = {
+      display: 'block',
+      minWidth: 0,
+      maxWidth: '100%',
+      lineHeight: 1.25,
+    };
+
+    if (variant === 'list') {
+      return {
+        ...base,
+        flex: 1,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+      };
+    }
+
     const length = getVisualLength(name);
     const longThreshold = compactMode ? 20 : 24;
     const extraLongThreshold = compactMode ? 34 : 40;
@@ -249,16 +267,17 @@ const FileList: React.FC<FileListProps> = ({
     const isExtraLong = length > extraLongThreshold;
     const isVeryLong = length > veryLongThreshold;
     const lineClamp = isLong ? 3 : 2;
+    const lineHeight = lineClamp === 3
+      ? (compactMode ? (isVeryLong ? 1.04 : isExtraLong ? 1.08 : 1.12) : (isVeryLong ? 1.05 : isExtraLong ? 1.1 : 1.16))
+      : 1.25;
     const fontSize = lineClamp === 3
       ? compactMode
         ? (isVeryLong ? '0.72rem' : isExtraLong ? '0.76rem' : '0.8rem')
         : (isVeryLong ? '0.8rem' : isExtraLong ? '0.86rem' : '0.9rem')
       : undefined;
-    const lineHeight = lineClamp === 3
-      ? (compactMode ? (isVeryLong ? 1.04 : isExtraLong ? 1.08 : 1.12) : (isVeryLong ? 1.05 : isExtraLong ? 1.1 : 1.16))
-      : 1.25;
 
     return {
+      ...base,
       display: '-webkit-box',
       WebkitLineClamp: lineClamp,
       WebkitBoxOrient: 'vertical',
@@ -473,7 +492,7 @@ const FileList: React.FC<FileListProps> = ({
             <InsertDriveFile sx={{ mr: 1, color: 'text.secondary' }} />
           )}
           <Tooltip title={params.row.name} placement="top-start" arrow>
-            <Typography variant="body2" sx={getNameTypographySx(params.row.name)}>
+            <Typography variant="body2" sx={getNameTypographySx(params.row.name, 'list')}>
               {params.value}
             </Typography>
           </Tooltip>
@@ -596,7 +615,7 @@ const FileList: React.FC<FileListProps> = ({
                         <InsertDriveFile sx={{ color: 'text.secondary' }} />
                       )}
                       <Tooltip title={node.name} placement="top-start" arrow>
-                        <Typography variant="subtitle1" sx={getNameTypographySx(node.name)}>
+                        <Typography variant="subtitle1" sx={getNameTypographySx(node.name, 'grid')}>
                           {node.name}
                         </Typography>
                       </Tooltip>
@@ -712,11 +731,9 @@ const FileList: React.FC<FileListProps> = ({
               cursor: 'pointer',
             },
             '& .MuiDataGrid-cell[data-field="name"]': {
-              whiteSpace: 'normal',
-              lineHeight: '1.2',
-              alignItems: 'flex-start',
-              paddingTop: 6,
-              paddingBottom: 6,
+              whiteSpace: 'nowrap',
+              alignItems: 'center',
+              overflow: 'hidden',
             },
           }}
         />
