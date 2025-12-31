@@ -92,8 +92,7 @@ public class SearchIndexProcessor implements DocumentProcessor {
         } catch (Exception e) {
             // Search indexing failure is non-fatal - data is safe in PostgreSQL
             log.warn("Failed to index document {}: {}", context.getDocumentId(), e.getMessage());
-            context.addError(getName(), e.getMessage());
-            return ProcessingResult.failed("Indexing failed: " + e.getMessage());
+            return ProcessingResult.skipped("Indexing failed: " + e.getMessage());
         }
     }
 

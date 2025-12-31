@@ -434,6 +434,15 @@ const SearchResults: React.FC = () => {
     return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
   };
 
+  const getVisualLength = (value?: string) => {
+    if (!value) return 0;
+    let total = 0;
+    for (const char of value) {
+      total += char.charCodeAt(0) > 0xff ? 2 : 1;
+    }
+    return total;
+  };
+
   const getFileIcon = (node: Node) => {
     if (isFolderNode(node)) {
       return <Folder sx={{ fontSize: 48, color: 'primary.main' }} />;
@@ -442,11 +451,11 @@ const SearchResults: React.FC = () => {
   };
 
   const getNameTypographySx = (name: string) => {
-    const length = name?.length ?? 0;
+    const length = getVisualLength(name);
     const isLong = length > 32;
     const isExtraLong = length > 56;
     const isVeryLong = length > 80;
-    const lineClamp = isVeryLong ? 4 : isLong ? 3 : 2;
+    const lineClamp = isLong ? 3 : 2;
     const fontSize = isVeryLong ? '0.82rem' : isExtraLong ? '0.88rem' : lineClamp === 3 ? '0.94rem' : undefined;
 
     return {
@@ -895,7 +904,7 @@ const SearchResults: React.FC = () => {
             <>
               <Grid container spacing={2}>
                 {paginatedNodes.map((node) => (
-                  <Grid item xs={12} sm={6} md={4} key={node.id}>
+                  <Grid item xs={12} sm={6} md={4} lg={3} xl={2} key={node.id}>
                     <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                       <CardContent sx={{ flex: 1 }}>
                         <Box display="flex" alignItems="center" mb={2}>

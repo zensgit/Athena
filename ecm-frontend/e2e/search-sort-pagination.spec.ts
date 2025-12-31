@@ -22,6 +22,32 @@ async function fetchAccessToken(request: APIRequestContext, username: string, pa
   return tokenJson.access_token;
 }
 
+async function waitForApiReady(request: APIRequestContext) {
+  const deadline = Date.now() + 60_000;
+  let lastError: string | undefined;
+
+  while (Date.now() < deadline) {
+    try {
+      const res = await request.get(`${baseApiUrl}/actuator/health`);
+      if (res.ok()) {
+        const payload = (await res.json()) as { status?: string };
+        if (!payload?.status || payload.status.toUpperCase() !== 'DOWN') {
+          return;
+        }
+        lastError = `health status=${payload.status}`;
+      } else {
+        lastError = `health status code=${res.status()}`;
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+
+  throw new Error(`API did not become ready: ${lastError ?? 'unknown error'}`);
+}
+
 async function loginWithCredentials(page: Page, username: string, password: string) {
   await page.goto(`${baseUiUrl}/`, { waitUntil: 'domcontentloaded' });
 
@@ -39,6 +65,9 @@ async function loginWithCredentials(page: Page, username: string, password: stri
     ]);
   }
 
+  if (!/\/browse\//.test(page.url())) {
+    await page.goto(`${baseUiUrl}/browse/root`, { waitUntil: 'domcontentloaded' });
+  }
   await page.waitForURL(/\/browse\//, { timeout: 60_000 });
 }
 
@@ -106,21 +135,30 @@ async function waitForSearchIndex(
   minResults: number,
   token: string,
 ) {
-  for (let attempt = 0; attempt < 12; attempt += 1) {
-    const res = await request.get(`${baseApiUrl}/api/v1/search`, {
-      params: { q: query, page: 0, size: Math.max(minResults, 50) },
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.ok()) {
-      const payload = (await res.json()) as { content?: Array<{ name: string }> };
-      const count = payload.content?.length ?? 0;
-      if (count >= minResults) {
-        return;
+  let lastError = 'unknown error';
+  const pageSize = Math.max(minResults, 100);
+  for (let attempt = 0; attempt < 45; attempt += 1) {
+    try {
+      const res = await request.get(`${baseApiUrl}/api/v1/search`, {
+        params: { q: query, page: 0, size: pageSize },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok()) {
+        const payload = (await res.json()) as { content?: Array<{ name: string }> };
+        const count = payload.content?.length ?? 0;
+        if (count >= minResults) {
+          return;
+        }
+        lastError = `status=${res.status()} count=${count}`;
+      } else {
+        lastError = `status=${res.status()}`;
       }
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
     }
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, 2000));
   }
-  throw new Error(`Search index did not return ${minResults} results for ${query}`);
+  throw new Error(`Search index did not return ${minResults} results for ${query} (${lastError})`);
 }
 
 async function uploadDocument(
@@ -130,31 +168,40 @@ async function uploadDocument(
   size: number,
   token: string,
 ) {
-  const uploadRes = await request.post(
-    `${baseApiUrl}/api/v1/documents/upload?folderId=${folderId}`,
-    {
-      headers: { Authorization: `Bearer ${token}` },
-      multipart: {
-        file: {
-          name: filename,
-          mimeType: 'text/plain',
-          buffer: Buffer.alloc(size, 'a'),
+  let lastError = 'Upload failed';
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const uploadRes = await request.post(
+      `${baseApiUrl}/api/v1/documents/upload?folderId=${folderId}`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        multipart: {
+          file: {
+            name: filename,
+            mimeType: 'text/plain',
+            buffer: Buffer.alloc(size, 'a'),
+          },
         },
       },
-    },
-  );
-  expect(uploadRes.ok()).toBeTruthy();
-  const uploadJson = (await uploadRes.json()) as { documentId?: string; id?: string };
-  const documentId = uploadJson.documentId ?? uploadJson.id;
-  if (!documentId) {
-    throw new Error('Upload did not return document id');
-  }
+    );
+    if (uploadRes.ok()) {
+      const uploadJson = (await uploadRes.json()) as { documentId?: string; id?: string };
+      const documentId = uploadJson.documentId ?? uploadJson.id;
+      if (!documentId) {
+        throw new Error('Upload did not return document id');
+      }
 
-  const indexRes = await request.post(`${baseApiUrl}/api/v1/search/index/${documentId}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  expect(indexRes.ok()).toBeTruthy();
-  return documentId;
+      const indexRes = await request.post(`${baseApiUrl}/api/v1/search/index/${documentId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(indexRes.ok()).toBeTruthy();
+      return documentId;
+    }
+
+    const body = await uploadRes.text().catch(() => '');
+    lastError = `Upload failed (attempt ${attempt + 1}/3): ${uploadRes.status()} ${body}`;
+    await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
+  }
+  throw new Error(lastError);
 }
 
 async function waitForResults(page: Page) {
@@ -216,6 +263,7 @@ function parseSize(raw: string) {
 test('Search sorting and pagination are consistent', async ({ page, request }) => {
   test.setTimeout(360_000);
 
+  await waitForApiReady(request);
   const apiToken = await fetchAccessToken(request, defaultUsername, defaultPassword);
   const rootId = await getRootFolderId(request, apiToken);
   const documentsId = await findChildFolderId(request, rootId, 'Documents', apiToken);

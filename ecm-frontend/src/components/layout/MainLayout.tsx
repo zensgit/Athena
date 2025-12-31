@@ -471,34 +471,34 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
             }
           }}
           onDoubleClick={() => setDrawerWidth(DEFAULT_DRAWER_WIDTH)}
-	          sx={{
-	            width: 6,
-	            flexShrink: 0,
-	            cursor: 'col-resize',
-	            backgroundColor: (theme) => alpha(theme.palette.divider, 0.35),
-	            '&:hover': {
-	              backgroundColor: (theme) => alpha(theme.palette.divider, 0.8),
-	            },
-	            '&:focus-visible': {
-	              outline: '2px solid',
-	              outlineColor: 'primary.main',
-	              outlineOffset: -2,
+          sx={{
+            width: 6,
+            flexShrink: 0,
+            cursor: 'col-resize',
+            backgroundColor: (theme) => alpha(theme.palette.divider, 0.35),
+            '&:hover': {
+              backgroundColor: (theme) => alpha(theme.palette.divider, 0.8),
+            },
+            '&:focus-visible': {
+              outline: '2px solid',
+              outlineColor: 'primary.main',
+              outlineOffset: -2,
             },
           }}
         />
       )}
 
       <Box
-	        component="main"
-	        sx={{
-	          flexGrow: 1,
-	          minWidth: 0,
-	          p: compactMode ? 2 : 3,
-	        }}
-	      >
-	        <Toolbar />
-	        {children}
-	      </Box>
+        component="main"
+        sx={{
+          flexGrow: 1,
+          minWidth: 0,
+          p: compactMode ? 1.5 : 2,
+        }}
+      >
+        <Toolbar />
+        {children}
+      </Box>
 
       <UploadDialog />
       <CreateFolderDialog />

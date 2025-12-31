@@ -248,13 +248,7 @@ const FileList: React.FC<FileListProps> = ({
     const isLong = length > longThreshold;
     const isExtraLong = length > extraLongThreshold;
     const isVeryLong = length > veryLongThreshold;
-    const lineClamp = compactMode
-      ? (isLong ? 3 : 2)
-      : isVeryLong
-        ? 4
-        : isLong
-          ? 3
-          : 2;
+    const lineClamp = isLong ? 3 : 2;
     const shouldShrink = lineClamp > 2;
     const fontSize = compactMode
       ? '0.8rem'
@@ -555,10 +549,16 @@ const FileList: React.FC<FileListProps> = ({
 
   const renderGridView = () => {
     const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+    const gridMinWidth = compactMode ? 220 : 260;
 
     return (
-      <Box p={compactMode ? 1.5 : 2}>
-        <Box component="div" display="grid" gridTemplateColumns={{ xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)', lg: 'repeat(4, 1fr)' }} gap={compactMode ? 1.5 : 2}>
+      <Box p={compactMode ? 1 : 1.5}>
+        <Box
+          component="div"
+          display="grid"
+          gridTemplateColumns={`repeat(auto-fit, minmax(${gridMinWidth}px, 1fr))`}
+          gap={compactMode ? 1 : 1.5}
+        >
         {nodes.map((node) => {
           const isSelected = selectedNodes.includes(node.id);
           const fileTypeLabel = getFileTypeLabel(node);
