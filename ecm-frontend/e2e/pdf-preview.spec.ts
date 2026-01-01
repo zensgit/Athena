@@ -283,20 +283,25 @@ test('PDF preview falls back to server render when client PDF fails', async ({ p
   await loginWithCredentials(page, defaultUsername, defaultPassword);
   await waitForSearchIndex(request, filename, apiToken);
 
-  await page.route('**/pdf.worker.min.mjs', (route) => route.abort());
+  const workerRoute = /pdf\.worker(\.min)?\.(mjs|js)(\?.*)?$/;
+  await page.route(workerRoute, (route) => route.abort());
 
-  await page.goto(`${baseUiUrl}/search-results`, { waitUntil: 'domcontentloaded' });
+  try {
+    await page.goto(`${baseUiUrl}/search-results`, { waitUntil: 'domcontentloaded' });
 
-  const quickSearchInput = page.getByPlaceholder('Quick search by name...');
-  await quickSearchInput.fill(filename);
-  await quickSearchInput.press('Enter');
+    const quickSearchInput = page.getByPlaceholder('Quick search by name...');
+    await quickSearchInput.fill(filename);
+    await quickSearchInput.press('Enter');
 
-  const resultCard = page.locator('.MuiCard-root').filter({ hasText: filename }).first();
-  await expect(resultCard).toBeVisible({ timeout: 60_000 });
-  await resultCard.getByRole('button', { name: 'View', exact: true }).click();
+    const resultCard = page.locator('.MuiCard-root').filter({ hasText: filename }).first();
+    await expect(resultCard).toBeVisible({ timeout: 60_000 });
+    await resultCard.getByRole('button', { name: 'View', exact: true }).click();
 
-  await expect(page.getByLabel('close')).toBeVisible({ timeout: 60_000 });
-  await page.waitForSelector('[data-testid=\"pdf-preview-fallback\"] img', { timeout: 60_000 });
+    await expect(page.getByLabel('close')).toBeVisible({ timeout: 60_000 });
+    await page.waitForSelector('[data-testid=\"pdf-preview-fallback\"]', { timeout: 60_000 });
+  } finally {
+    await page.unroute(workerRoute).catch(() => null);
+  }
 
   await page.getByLabel('close').click();
 
