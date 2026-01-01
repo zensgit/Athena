@@ -144,6 +144,20 @@ public class SearchController {
         }
     }
 
+    @GetMapping("/index/{documentId}/status")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('EDITOR')")
+    @Operation(summary = "Check document index status",
+               description = "Check if a document is present in the search index")
+    public ResponseEntity<Map<String, Object>> getIndexStatus(
+            @PathVariable String documentId) {
+
+        boolean indexed = searchIndexService.isDocumentIndexed(documentId);
+        return ResponseEntity.ok(Map.of(
+            "documentId", documentId,
+            "indexed", indexed
+        ));
+    }
+
     @DeleteMapping("/index/{documentId}")
     @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Remove document from index",

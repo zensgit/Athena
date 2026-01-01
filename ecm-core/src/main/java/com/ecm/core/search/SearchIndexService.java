@@ -30,6 +30,20 @@ public class SearchIndexService {
     private final ElasticsearchOperations elasticsearchOperations;
     private static final String INDEX_NAME = "ecm_documents";
 
+    public boolean isDocumentIndexed(String documentId) {
+        try {
+            NodeDocument document = elasticsearchOperations.get(
+                documentId,
+                NodeDocument.class,
+                IndexCoordinates.of(INDEX_NAME)
+            );
+            return document != null;
+        } catch (Exception e) {
+            log.warn("Failed to check index status for {}: {}", documentId, e.getMessage());
+            return false;
+        }
+    }
+
     /**
      * Re-index a single document by id.
      */

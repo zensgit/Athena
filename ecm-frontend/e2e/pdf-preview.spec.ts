@@ -193,6 +193,26 @@ async function waitForSearchIndex(
   throw new Error(`Search index did not return ${query} (${lastError})`);
 }
 
+async function waitForIndexStatus(
+  request: APIRequestContext,
+  documentId: string,
+  token: string,
+) {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const res = await request.get(`${baseApiUrl}/api/v1/search/index/${documentId}/status`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok()) {
+      const payload = (await res.json()) as { indexed?: boolean };
+      if (payload.indexed) {
+        return true;
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+  return false;
+}
+
 test('PDF preview shows dialog and controls', async ({ page, request }) => {
   test.setTimeout(240_000);
 
@@ -205,8 +225,12 @@ test('PDF preview shows dialog and controls', async ({ page, request }) => {
   const folderId = await createFolder(request, documentsId, folderName, apiToken);
 
   const filename = `e2e-preview-${Date.now()}.pdf`;
-  await uploadPdf(request, folderId, filename, apiToken);
+  const documentId = await uploadPdf(request, folderId, filename, apiToken);
 
+  const indexed = await waitForIndexStatus(request, documentId, apiToken);
+  if (!indexed) {
+    console.log(`Index status not ready for ${documentId}; falling back to search polling`);
+  }
   await waitForSearchIndex(request, filename, apiToken);
 
   await loginWithCredentials(page, defaultUsername, defaultPassword);
@@ -249,7 +273,11 @@ test('PDF preview falls back to server render when client PDF fails', async ({ p
   const folderId = await createFolder(request, documentsId, folderName, apiToken);
 
   const filename = `e2e-preview-fallback-${Date.now()}.pdf`;
-  await uploadPdf(request, folderId, filename, apiToken);
+  const documentId = await uploadPdf(request, folderId, filename, apiToken);
+  const indexed = await waitForIndexStatus(request, documentId, apiToken);
+  if (!indexed) {
+    console.log(`Index status not ready for ${documentId}; falling back to search polling`);
+  }
   await waitForSearchIndex(request, filename, apiToken);
 
   await loginWithCredentials(page, defaultUsername, defaultPassword);
