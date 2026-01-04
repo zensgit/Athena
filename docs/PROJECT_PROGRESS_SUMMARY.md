@@ -4,6 +4,11 @@
 
 ECM Core 是一个企业内容管理系统的核心服务模块，采用 Spring Boot 3.x 构建，提供文档管理、版本控制、权限管理、全文搜索、ML 智能分类等功能。
 
+## Recent Verification (2026-01-04)
+
+- Frontend E2E: `ECM_UI_URL=http://localhost:5500 ECM_API_URL=http://localhost:7700 npx playwright test` (15 passed)
+- Backend tests: `docker run --rm -v "$(pwd)":/workspace -v "$HOME/.m2":/root/.m2 -w /workspace/ecm-core maven:3-eclipse-temurin-17 mvn test` (17 tests, 0 failures)
+
 ## Architecture
 
 ```
@@ -465,4 +470,4 @@ open http://localhost:8080/swagger-ui.html
 
 ---
 
-*Last Updated: 2025-12-09*
+*Last Updated: 2026-01-04*
