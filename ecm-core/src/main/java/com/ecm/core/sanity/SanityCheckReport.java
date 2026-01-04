@@ -1,6 +1,7 @@
 package com.ecm.core.sanity;
 
 import lombok.Builder;
+import lombok.Builder.Default;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -14,7 +15,9 @@ public class SanityCheckReport {
     private LocalDateTime startTime;
     private LocalDateTime endTime;
     private Status status;
+    @Default
     private List<String> issues = new ArrayList<>();
+    @Default
     private List<String> fixes = new ArrayList<>();
     private int itemsChecked;
     private int issuesFound;
