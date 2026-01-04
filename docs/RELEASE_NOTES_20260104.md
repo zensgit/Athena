@@ -30,3 +30,6 @@
 ## Notes
 - Audit export uses browser-local datetime input; backend expects ISO timestamps.
 - Lombok @Builder initialization warnings observed during build (non-blocking).
+
+## Release Link
+- https://github.com/zensgit/Athena/releases/tag/release-20260104
