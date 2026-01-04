@@ -33,43 +33,81 @@ async function waitForApiReady(request: APIRequestContext) {
 }
 
 async function fetchAccessToken(request: APIRequestContext, username: string, password: string) {
-  const tokenRes = await request.post('http://localhost:8180/realms/ecm/protocol/openid-connect/token', {
-    form: {
-      grant_type: 'password',
-      client_id: 'unified-portal',
-      username,
-      password,
-    },
-  });
-  expect(tokenRes.ok()).toBeTruthy();
-  const tokenJson = (await tokenRes.json()) as { access_token?: string };
-  if (!tokenJson.access_token) {
-    throw new Error('Failed to obtain access token for API calls');
+  const deadline = Date.now() + 60_000;
+  let lastError: string | undefined;
+
+  while (Date.now() < deadline) {
+    try {
+      const tokenRes = await request.post('http://localhost:8180/realms/ecm/protocol/openid-connect/token', {
+        form: {
+          grant_type: 'password',
+          client_id: 'unified-portal',
+          username,
+          password,
+        },
+      });
+      if (!tokenRes.ok()) {
+        lastError = `token status=${tokenRes.status()}`;
+      } else {
+        const tokenJson = (await tokenRes.json()) as { access_token?: string };
+        if (tokenJson.access_token) {
+          return tokenJson.access_token;
+        }
+        lastError = 'access_token missing';
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 2000));
   }
-  return tokenJson.access_token;
+
+  throw new Error(`Failed to obtain access token for API calls: ${lastError ?? 'unknown error'}`);
 }
 
 async function loginWithCredentials(page: Page, username: string, password: string) {
-  await page.goto(`${baseUiUrl}/`, { waitUntil: 'domcontentloaded' });
+  const authPattern = /\/protocol\/openid-connect\/auth/;
+  const browsePattern = /\/browse\//;
 
-  if (page.url().endsWith('/login')) {
-    await page.getByRole('button', { name: /sign in with keycloak/i }).click();
+  await page.goto(`${baseUiUrl}/login`, { waitUntil: 'domcontentloaded' });
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await page.waitForURL(/(\/login$|\/browse\/|\/protocol\/openid-connect\/auth|login_required)/, { timeout: 60_000 });
+
+    if (page.url().endsWith('/login')) {
+      const keycloakButton = page.getByRole('button', { name: /sign in with keycloak/i });
+      try {
+        await keycloakButton.waitFor({ state: 'visible', timeout: 30_000 });
+        await keycloakButton.click();
+      } catch {
+        // Retry loop if login screen is not ready yet.
+      }
+      continue;
+    }
+
+    if (page.url().includes('login_required')) {
+      await page.goto(`${baseUiUrl}/login`, { waitUntil: 'domcontentloaded' });
+      continue;
+    }
+
+    if (authPattern.test(page.url())) {
+      await page.locator('#username').fill(username);
+      await page.locator('#password').fill(password);
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
+        page.locator('#kc-login').click(),
+      ]);
+    }
+
+    if (browsePattern.test(page.url())) {
+      break;
+    }
   }
 
-  await page.waitForURL(/(\/browse\/|\/protocol\/openid-connect\/auth)/, { timeout: 60_000 });
-  if (page.url().includes('/protocol/openid-connect/auth')) {
-    await page.locator('#username').fill(username);
-    await page.locator('#password').fill(password);
-    await Promise.all([
-      page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
-      page.locator('#kc-login').click(),
-    ]);
-  }
-
-  if (!/\/browse\//.test(page.url())) {
+  if (!browsePattern.test(page.url())) {
     await page.goto(`${baseUiUrl}/browse/root`, { waitUntil: 'domcontentloaded' });
   }
-  await page.waitForURL(/\/browse\//, { timeout: 60_000 });
+  await page.waitForURL(browsePattern, { timeout: 60_000 });
 }
 
 async function getRootFolderId(request: APIRequestContext, token: string) {
@@ -87,6 +125,10 @@ async function getRootFolderId(request: APIRequestContext, token: string) {
   }
   return (preferred ?? roots[0]).id;
 }
+
+test.beforeEach(async ({ request }) => {
+  await waitForApiReady(request);
+});
 
 async function findChildFolderId(
   request: APIRequestContext,
@@ -132,28 +174,49 @@ async function uploadPdf(
   token: string,
 ) {
   const pdfBytes = Buffer.from(PDF_SAMPLE_BASE64, 'base64');
-  const uploadRes = await request.post(
-    `${baseApiUrl}/api/v1/documents/upload?folderId=${folderId}`,
-    {
-      headers: { Authorization: `Bearer ${token}` },
-      multipart: {
-        file: {
-          name: filename,
-          mimeType: 'application/pdf',
-          buffer: pdfBytes,
+  const deadline = Date.now() + 90_000;
+  let documentId: string | undefined;
+  let lastError: string | undefined;
+
+  while (Date.now() < deadline && !documentId) {
+    try {
+      const uploadRes = await request.post(
+        `${baseApiUrl}/api/v1/documents/upload?folderId=${folderId}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          multipart: {
+            file: {
+              name: filename,
+              mimeType: 'application/pdf',
+              buffer: pdfBytes,
+            },
+          },
+          timeout: 60_000,
         },
-      },
-    },
-  );
-  if (!uploadRes.ok()) {
-    const body = await uploadRes.text().catch(() => '');
-    throw new Error(`PDF upload failed (${uploadRes.status()}): ${body}`);
+      );
+      if (!uploadRes.ok()) {
+        const body = await uploadRes.text().catch(() => '');
+        lastError = `upload status=${uploadRes.status()} ${body}`;
+      } else {
+        const uploadJson = (await uploadRes.json()) as { documentId?: string; id?: string };
+        documentId = uploadJson.documentId ?? uploadJson.id;
+        if (!documentId) {
+          lastError = 'upload missing document id';
+        }
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+
+    if (!documentId) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
   }
-  const uploadJson = (await uploadRes.json()) as { documentId?: string; id?: string };
-  const documentId = uploadJson.documentId ?? uploadJson.id;
+
   if (!documentId) {
-    throw new Error('Upload did not return document id');
+    throw new Error(`PDF upload failed: ${lastError ?? 'unknown error'}`);
   }
+
   const indexRes = await request.post(`${baseApiUrl}/api/v1/search/index/${documentId}`, {
     headers: { Authorization: `Bearer ${token}` },
   });

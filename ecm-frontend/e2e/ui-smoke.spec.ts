@@ -6,20 +6,36 @@ const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
 
 async function fetchAccessToken(request: APIRequestContext, username: string, password: string) {
-  const tokenRes = await request.post('http://localhost:8180/realms/ecm/protocol/openid-connect/token', {
-    form: {
-      grant_type: 'password',
-      client_id: 'unified-portal',
-      username,
-      password,
-    },
-  });
-  expect(tokenRes.ok()).toBeTruthy();
-  const tokenJson = (await tokenRes.json()) as { access_token?: string };
-  if (!tokenJson.access_token) {
-    throw new Error('Failed to obtain access token for API calls');
+  const deadline = Date.now() + 60_000;
+  let lastError: string | undefined;
+
+  while (Date.now() < deadline) {
+    try {
+      const tokenRes = await request.post('http://localhost:8180/realms/ecm/protocol/openid-connect/token', {
+        form: {
+          grant_type: 'password',
+          client_id: 'unified-portal',
+          username,
+          password,
+        },
+      });
+      if (!tokenRes.ok()) {
+        lastError = `token status=${tokenRes.status()}`;
+      } else {
+        const tokenJson = (await tokenRes.json()) as { access_token?: string };
+        if (tokenJson.access_token) {
+          return tokenJson.access_token;
+        }
+        lastError = 'access_token missing';
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 2000));
   }
-  return tokenJson.access_token;
+
+  throw new Error(`Failed to obtain access token for API calls: ${lastError ?? 'unknown error'}`);
 }
 
 async function waitForApiReady(request: APIRequestContext) {
@@ -49,28 +65,49 @@ async function waitForApiReady(request: APIRequestContext) {
 }
 
 async function loginWithCredentials(page: Page, username: string, password: string) {
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  const authPattern = /\/protocol\/openid-connect\/auth/;
+  const browsePattern = /\/browse\//;
 
-  // If we land on the app login screen, trigger the Keycloak redirect.
-  if (page.url().endsWith('/login')) {
-    await page.getByRole('button', { name: /sign in with keycloak/i }).click();
+  await page.goto('/login', { waitUntil: 'domcontentloaded' });
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await page.waitForURL(/(\/login$|\/browse\/|\/protocol\/openid-connect\/auth|login_required)/, { timeout: 60_000 });
+
+    if (page.url().endsWith('/login')) {
+      const keycloakButton = page.getByRole('button', { name: /sign in with keycloak/i });
+      try {
+        await keycloakButton.waitFor({ state: 'visible', timeout: 30_000 });
+        await keycloakButton.click();
+      } catch {
+        // Retry loop if login screen is not ready yet.
+      }
+      continue;
+    }
+
+    if (page.url().includes('login_required')) {
+      await page.goto('/login', { waitUntil: 'domcontentloaded' });
+      continue;
+    }
+
+    if (authPattern.test(page.url())) {
+      await page.locator('#username').fill(username);
+      await page.locator('#password').fill(password);
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
+        page.locator('#kc-login').click(),
+      ]);
+    }
+
+    if (browsePattern.test(page.url())) {
+      break;
+    }
   }
 
-  // Keycloak login page
-  await page.waitForURL(/(\/browse\/|\/protocol\/openid-connect\/auth)/, { timeout: 60_000 });
-  if (page.url().includes('/protocol/openid-connect/auth')) {
-    await page.locator('#username').fill(username);
-    await page.locator('#password').fill(password);
-    await Promise.all([
-      page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
-      page.locator('#kc-login').click(),
-    ]);
-  }
-
-  if (!/\/browse\//.test(page.url())) {
+  if (!browsePattern.test(page.url())) {
     await page.goto('/browse/root', { waitUntil: 'domcontentloaded' });
   }
-  await page.waitForURL(/\/browse\//, { timeout: 60_000 });
+
+  await page.waitForURL(browsePattern, { timeout: 60_000 });
   await expect(page.getByText('Athena ECM')).toBeVisible({ timeout: 60_000 });
 }
 
@@ -352,6 +389,11 @@ async function dismissWopiWelcome(page: Page, editorFrame: FrameLocator) {
     }
   }
 }
+
+const formatDateTimeLocal = (date: Date) => {
+  const offsetMs = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+};
 
 test.beforeEach(async ({ request }) => {
   await waitForApiReady(request);
@@ -872,6 +914,12 @@ test('UI smoke: PDF upload + search + version history + preview', async ({ page 
   await page.getByRole('menuitem', { name: 'Version History' }).click();
   const versionsDialog = page.getByRole('dialog').filter({ hasText: 'Version History' });
   await expect(versionsDialog).toBeVisible({ timeout: 60_000 });
+  await expect(versionsDialog.getByRole('columnheader', { name: 'Created By' })).toBeVisible({ timeout: 60_000 });
+  await expect(versionsDialog.getByRole('columnheader', { name: 'Size' })).toBeVisible({ timeout: 60_000 });
+  const firstVersionRow = versionsDialog.getByRole('row').nth(1);
+  await expect(firstVersionRow.getByRole('cell').nth(1)).toContainText(/\d{4}/);
+  await expect(firstVersionRow.getByRole('cell').nth(2)).not.toHaveText('-');
+  await expect(firstVersionRow.getByRole('cell').nth(3)).toContainText('B');
   await expect(versionsDialog.getByText('Current', { exact: true })).toBeVisible({ timeout: 60_000 });
   await versionsDialog.getByRole('button', { name: 'Close', exact: true }).click();
 
@@ -880,6 +928,13 @@ test('UI smoke: PDF upload + search + version history + preview', async ({ page 
   const previewDialog = page.getByRole('dialog').filter({ hasText: pdfName });
   await expect(previewDialog).toBeVisible({ timeout: 60_000 });
   await expect(previewDialog.getByRole('button', { name: 'close' })).toBeVisible({ timeout: 60_000 });
+  const dialogBox = await previewDialog.boundingBox();
+  const appBarBox = await previewDialog.locator('.MuiAppBar-root').boundingBox();
+  const contentBox = await previewDialog.locator('.MuiDialogContent-root').boundingBox();
+  if (dialogBox && appBarBox && contentBox) {
+    const gap = Math.abs(dialogBox.height - (appBarBox.height + contentBox.height));
+    expect(gap).toBeLessThan(12);
+  }
   await previewDialog.getByRole('button', { name: 'close' }).click();
 
   const indexRes = await page.request.post(`http://localhost:7700/api/v1/search/index/${pdfDocumentId}`, {
@@ -972,17 +1027,17 @@ test('UI search download failure shows error toast', async ({ page, request }) =
     const resultCard = page.locator('.MuiCard-root', { has: page.getByText(filename, { exact: true }) }).first();
     await expect(resultCard).toBeVisible({ timeout: 60_000 });
 
-    const downloadUrlPattern = /\/api\/v1\/nodes\/[^/]+\/content/;
+    const downloadUrlPattern = '**/api/v1/nodes/*/content**';
     await page.route(downloadUrlPattern, (route) => {
-      route.fulfill({ status: 403, body: 'Forbidden' });
+      route.abort();
     });
 
     try {
-      const responsePromise = page.waitForResponse(
-        (response) => downloadUrlPattern.test(response.url()) && response.status() === 403,
+      const requestPromise = page.waitForRequest(
+        (req) => req.url().includes('/api/v1/nodes/') && req.url().includes('/content'),
       );
       await resultCard.getByRole('button', { name: 'Download' }).click();
-      await responsePromise;
+      await requestPromise;
 
       const failureToast = page.getByText(/Failed to download file|An unexpected error occurred/i).first();
       try {
@@ -1661,6 +1716,11 @@ test('Security Features: MFA guidance + Audit export + Retention', async ({ page
   // Verify Recent System Activity section has export button
   await expect(page.getByText('Recent System Activity')).toBeVisible({ timeout: 60_000 });
   await expect(page.getByRole('button', { name: 'Export CSV' })).toBeVisible({ timeout: 60_000 });
+
+  const auditTo = new Date();
+  const auditFrom = new Date(auditTo.getTime() - 7 * 24 * 60 * 60 * 1000);
+  await page.getByLabel('From', { exact: true }).fill(formatDateTimeLocal(auditFrom));
+  await page.getByLabel('To', { exact: true }).fill(formatDateTimeLocal(auditTo));
 
   // Verify retention info is displayed
   await expect(page.getByText(/Retention:/)).toBeVisible({ timeout: 60_000 });

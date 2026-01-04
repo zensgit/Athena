@@ -1,7 +1,11 @@
 package com.ecm.core.search;
 
 import com.ecm.core.entity.Document;
+import com.ecm.core.entity.Node;
+import com.ecm.core.entity.Permission.PermissionType;
 import com.ecm.core.repository.DocumentRepository;
+import com.ecm.core.repository.NodeRepository;
+import com.ecm.core.service.SecurityService;
 import co.elastic.clients.elasticsearch._types.query_dsl.Operator;
 import co.elastic.clients.elasticsearch._types.query_dsl.TextQueryType;
 import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery;
@@ -28,8 +32,10 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
@@ -50,6 +56,8 @@ public class FullTextSearchService {
 
     private final ElasticsearchOperations elasticsearchOperations;
     private final DocumentRepository documentRepository;
+    private final NodeRepository nodeRepository;
+    private final SecurityService securityService;
 
     private static final List<String> SEARCH_FIELDS = List.of(
         "name^2",
@@ -95,11 +103,9 @@ public class FullTextSearchService {
             SearchHits<NodeDocument> searchHits = elasticsearchOperations.search(
                 query, NodeDocument.class, IndexCoordinates.of(INDEX_NAME));
 
-            List<SearchResult> results = searchHits.stream()
-                .map(this::toSearchResult)
-                .collect(Collectors.toList());
+            List<SearchResult> results = filterAuthorizedResults(searchHits);
 
-            return new PageImpl<>(results, pageable, searchHits.getTotalHits());
+            return new PageImpl<>(results, pageable, results.size());
 
         } catch (LinkageError e) {
             log.error("Search failed due to missing/invalid Elasticsearch client dependency", e);
@@ -127,11 +133,9 @@ public class FullTextSearchService {
             SearchHits<NodeDocument> searchHits = elasticsearchOperations.search(
                 query, NodeDocument.class, IndexCoordinates.of(INDEX_NAME));
 
-            List<SearchResult> results = searchHits.stream()
-                .map(this::toSearchResult)
-                .collect(Collectors.toList());
+            List<SearchResult> results = filterAuthorizedResults(searchHits);
 
-            return new PageImpl<>(results, pageable, searchHits.getTotalHits());
+            return new PageImpl<>(results, pageable, results.size());
 
         } catch (LinkageError e) {
             Pageable pageable = request.getPageable() != null
@@ -215,6 +219,52 @@ public class FullTextSearchService {
 
         } finally {
             rebuildInProgress.set(false);
+        }
+    }
+
+    private List<SearchResult> filterAuthorizedResults(SearchHits<NodeDocument> searchHits) {
+        if (securityService.hasRole("ROLE_ADMIN")) {
+            return searchHits.stream()
+                .map(this::toSearchResult)
+                .collect(Collectors.toList());
+        }
+
+        Map<UUID, Node> nodesById = loadNodes(searchHits);
+        return searchHits.stream()
+            .filter(hit -> {
+                UUID nodeId = toUuid(hit.getContent().getId());
+                Node node = nodeId != null ? nodesById.get(nodeId) : null;
+                return node != null && securityService.hasPermission(node, PermissionType.READ);
+            })
+            .map(this::toSearchResult)
+            .collect(Collectors.toList());
+    }
+
+    private Map<UUID, Node> loadNodes(SearchHits<NodeDocument> searchHits) {
+        Map<UUID, Node> nodesById = new LinkedHashMap<>();
+        List<UUID> ids = searchHits.stream()
+            .map(hit -> toUuid(hit.getContent().getId()))
+            .filter(id -> id != null)
+            .distinct()
+            .collect(Collectors.toList());
+
+        if (ids.isEmpty()) {
+            return nodesById;
+        }
+
+        nodeRepository.findAllById(ids).forEach(node -> nodesById.put(node.getId(), node));
+        return nodesById;
+    }
+
+    private UUID toUuid(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException ex) {
+            log.warn("Invalid node id in search index: {}", value);
+            return null;
         }
     }
 

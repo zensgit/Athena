@@ -175,6 +175,14 @@ const AdminDashboard: React.FC = () => {
   const [availableUsernames, setAvailableUsernames] = useState<string[]>([]);
   const [memberToAdd, setMemberToAdd] = useState('');
 
+  const formatDateTimeInput = (date: Date) => format(date, "yyyy-MM-dd'T'HH:mm");
+  const [auditExportFrom, setAuditExportFrom] = useState(() => {
+    const from = new Date();
+    from.setDate(from.getDate() - 30);
+    return formatDateTimeInput(from);
+  });
+  const [auditExportTo, setAuditExportTo] = useState(() => formatDateTimeInput(new Date()));
+
   const fetchDashboard = async () => {
     try {
       setLoadingDashboard(true);
@@ -202,13 +210,24 @@ const AdminDashboard: React.FC = () => {
   const handleExportAuditLogs = async () => {
     try {
       setExportingAudit(true);
-      // Export last 30 days by default
-      const to = new Date();
-      const from = new Date();
-      from.setDate(from.getDate() - 30);
+      const fallbackTo = new Date();
+      const fallbackFrom = new Date();
+      fallbackFrom.setDate(fallbackFrom.getDate() - 30);
 
-      const fromStr = from.toISOString();
-      const toStr = to.toISOString();
+      const fromInput = auditExportFrom?.trim() ? new Date(auditExportFrom) : fallbackFrom;
+      const toInput = auditExportTo?.trim() ? new Date(auditExportTo) : fallbackTo;
+
+      if (Number.isNaN(fromInput.getTime()) || Number.isNaN(toInput.getTime())) {
+        toast.error('Invalid audit export date range');
+        return;
+      }
+      if (fromInput > toInput) {
+        toast.error('Audit export start time must be before end time');
+        return;
+      }
+
+      const fromStr = fromInput.toISOString();
+      const toStr = toInput.toISOString();
 
       const apiBaseUrl = process.env.REACT_APP_API_URL
         || process.env.REACT_APP_API_BASE_URL
@@ -230,14 +249,15 @@ const AdminDashboard: React.FC = () => {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `audit_logs_${format(from, 'yyyyMMdd')}_to_${format(to, 'yyyyMMdd')}.csv`;
+      a.download = `audit_logs_${format(fromInput, 'yyyyMMdd')}_to_${format(toInput, 'yyyyMMdd')}.csv`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
 
       toast.success('Audit logs exported successfully');
-    } catch {
+    } catch (error) {
+      console.error(error);
       toast.error('Failed to export audit logs');
     } finally {
       setExportingAudit(false);
@@ -598,7 +618,7 @@ const AdminDashboard: React.FC = () => {
                 <Typography component="h2" variant="h6" color="primary">
                   Recent System Activity
                 </Typography>
-                <Box display="flex" gap={1} alignItems="center">
+                <Box display="flex" gap={1} alignItems="center" flexWrap="wrap">
                   {retentionInfo && (
                     <Chip
                       size="small"
@@ -614,6 +634,24 @@ const AdminDashboard: React.FC = () => {
                       variant="outlined"
                     />
                   )}
+                  <TextField
+                    label="From"
+                    type="datetime-local"
+                    size="small"
+                    value={auditExportFrom}
+                    onChange={(event) => setAuditExportFrom(event.target.value)}
+                    InputLabelProps={{ shrink: true }}
+                    sx={{ minWidth: 210 }}
+                  />
+                  <TextField
+                    label="To"
+                    type="datetime-local"
+                    size="small"
+                    value={auditExportTo}
+                    onChange={(event) => setAuditExportTo(event.target.value)}
+                    InputLabelProps={{ shrink: true }}
+                    sx={{ minWidth: 210 }}
+                  />
                   <Button
                     size="small"
                     variant="outlined"

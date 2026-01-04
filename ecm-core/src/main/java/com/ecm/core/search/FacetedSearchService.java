@@ -1,7 +1,11 @@
 package com.ecm.core.search;
 
 import com.ecm.core.entity.Document;
+import com.ecm.core.entity.Node;
+import com.ecm.core.entity.Permission.PermissionType;
 import com.ecm.core.repository.DocumentRepository;
+import com.ecm.core.repository.NodeRepository;
+import com.ecm.core.service.SecurityService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,7 +25,15 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.stream.Collectors;
 import java.util.stream.Collectors;
 
 /**
@@ -42,6 +54,8 @@ public class FacetedSearchService {
 
     private final ElasticsearchOperations elasticsearchOperations;
     private final DocumentRepository documentRepository;
+    private final NodeRepository nodeRepository;
+    private final SecurityService securityService;
 
     @Value("${ecm.search.enabled:true}")
     private boolean searchEnabled;
@@ -65,24 +79,26 @@ public class FacetedSearchService {
             SearchHits<NodeDocument> searchHits = elasticsearchOperations.search(
                 query, NodeDocument.class, IndexCoordinates.of(INDEX_NAME));
 
+            List<SearchHit<NodeDocument>> authorizedHits = filterAuthorizedHits(searchHits);
+
             // Convert to results
-            List<SearchResult> results = searchHits.stream()
+            List<SearchResult> results = authorizedHits.stream()
                 .map(this::toSearchResult)
                 .collect(Collectors.toList());
 
             // Build facets from results (simplified aggregation)
-            Map<String, List<FacetValue>> facets = buildFacets(searchHits);
+            Map<String, List<FacetValue>> facets = buildFacets(authorizedHits);
 
             Pageable pageable = request.getPageable() != null
                 ? request.getPageable().toPageable()
                 : PageRequest.of(0, 20);
 
-            Page<SearchResult> resultPage = new PageImpl<>(results, pageable, searchHits.getTotalHits());
+            Page<SearchResult> resultPage = new PageImpl<>(results, pageable, results.size());
 
             return FacetedSearchResponse.builder()
                 .results(resultPage)
                 .facets(facets)
-                .totalHits(searchHits.getTotalHits())
+                .totalHits(results.size())
                 .queryTime(System.currentTimeMillis())
                 .build();
 
@@ -115,7 +131,7 @@ public class FacetedSearchService {
             SearchHits<NodeDocument> searchHits = elasticsearchOperations.search(
                 esQuery, NodeDocument.class, IndexCoordinates.of(INDEX_NAME));
 
-            return buildFacets(searchHits);
+            return buildFacets(filterAuthorizedHits(searchHits));
 
         } catch (LinkageError e) {
             log.error("Failed to get facets due to missing/invalid Elasticsearch client dependency", e);
@@ -398,7 +414,7 @@ public class FacetedSearchService {
         return criteria;
     }
 
-    private Map<String, List<FacetValue>> buildFacets(SearchHits<NodeDocument> searchHits) {
+    private Map<String, List<FacetValue>> buildFacets(Iterable<SearchHit<NodeDocument>> searchHits) {
         Map<String, List<FacetValue>> facets = new HashMap<>();
 
         // Build facets from actual results (simplified aggregation)
@@ -449,6 +465,51 @@ public class FacetedSearchService {
         facets.put("correspondent", toFacetValues(correspondentCounts));
 
         return facets;
+    }
+
+    private List<SearchHit<NodeDocument>> filterAuthorizedHits(SearchHits<NodeDocument> searchHits) {
+        if (securityService.hasRole("ROLE_ADMIN")) {
+            return searchHits.stream().collect(Collectors.toList());
+        }
+
+        Map<UUID, Node> nodesById = loadNodes(searchHits);
+        List<SearchHit<NodeDocument>> authorized = new ArrayList<>();
+        for (SearchHit<NodeDocument> hit : searchHits) {
+            UUID nodeId = toUuid(hit.getContent().getId());
+            Node node = nodeId != null ? nodesById.get(nodeId) : null;
+            if (node != null && securityService.hasPermission(node, PermissionType.READ)) {
+                authorized.add(hit);
+            }
+        }
+        return authorized;
+    }
+
+    private Map<UUID, Node> loadNodes(SearchHits<NodeDocument> searchHits) {
+        Map<UUID, Node> nodesById = new LinkedHashMap<>();
+        List<UUID> ids = searchHits.stream()
+            .map(hit -> toUuid(hit.getContent().getId()))
+            .filter(id -> id != null)
+            .distinct()
+            .collect(Collectors.toList());
+
+        if (ids.isEmpty()) {
+            return nodesById;
+        }
+
+        nodeRepository.findAllById(ids).forEach(node -> nodesById.put(node.getId(), node));
+        return nodesById;
+    }
+
+    private UUID toUuid(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException ex) {
+            log.warn("Invalid node id in search index: {}", value);
+            return null;
+        }
     }
 
     private List<FacetValue> toFacetValues(Map<String, Integer> counts) {

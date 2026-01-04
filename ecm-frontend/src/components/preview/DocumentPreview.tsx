@@ -17,9 +17,7 @@ import {
   ListItemIcon,
   ListItemText,
   Tooltip,
-  useMediaQuery,
 } from '@mui/material';
-import { useTheme } from '@mui/material/styles';
 import {
   Close,
   Download,
@@ -229,11 +227,8 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   const [annotationDialogOpen, setAnnotationDialogOpen] = useState(false);
   const [annotationDraft, setAnnotationDraft] = useState<PdfAnnotation | null>(null);
   const [annotationSaving, setAnnotationSaving] = useState(false);
-  const theme = useTheme();
-  const isSmallScreen = useMediaQuery(theme.breakpoints.down('sm'));
-  const toolbarHeight = isSmallScreen ? 56 : 64;
   const pdfContainerRef = useRef<HTMLDivElement | null>(null);
-  const previewHeight = `calc(100dvh - ${toolbarHeight}px)`;
+  const previewHeight = '100%';
   const resolvedContentType = (() => {
     const candidates = [
       normalizeContentType(node?.contentType),
@@ -1309,8 +1304,6 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
           bgcolor: 'grey.100',
           flex: 1,
           minHeight: 0,
-          height: previewHeight,
-          maxHeight: previewHeight,
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',

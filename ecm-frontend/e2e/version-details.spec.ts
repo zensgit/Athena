@@ -5,20 +5,62 @@ const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
 
 async function fetchAccessToken(request: APIRequestContext, username: string, password: string) {
-  const tokenRes = await request.post('http://localhost:8180/realms/ecm/protocol/openid-connect/token', {
-    form: {
-      grant_type: 'password',
-      client_id: 'unified-portal',
-      username,
-      password,
-    },
-  });
-  expect(tokenRes.ok()).toBeTruthy();
-  const tokenJson = (await tokenRes.json()) as { access_token?: string };
-  if (!tokenJson.access_token) {
-    throw new Error('Failed to obtain access token for API calls');
+  const deadline = Date.now() + 60_000;
+  let lastError: string | undefined;
+
+  while (Date.now() < deadline) {
+    try {
+      const tokenRes = await request.post('http://localhost:8180/realms/ecm/protocol/openid-connect/token', {
+        form: {
+          grant_type: 'password',
+          client_id: 'unified-portal',
+          username,
+          password,
+        },
+      });
+      if (!tokenRes.ok()) {
+        lastError = `token status=${tokenRes.status()}`;
+      } else {
+        const tokenJson = (await tokenRes.json()) as { access_token?: string };
+        if (tokenJson.access_token) {
+          return tokenJson.access_token;
+        }
+        lastError = 'access_token missing';
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 2000));
   }
-  return tokenJson.access_token;
+
+  throw new Error(`Failed to obtain access token for API calls: ${lastError ?? 'unknown error'}`);
+}
+
+async function waitForApiReady(request: APIRequestContext) {
+  const deadline = Date.now() + 60_000;
+  let lastError: string | undefined;
+
+  while (Date.now() < deadline) {
+    try {
+      const res = await request.get(`${baseApiUrl}/actuator/health`);
+      if (res.ok()) {
+        const payload = (await res.json()) as { status?: string };
+        if (!payload?.status || payload.status.toUpperCase() !== 'DOWN') {
+          return;
+        }
+        lastError = `health status=${payload.status}`;
+      } else {
+        lastError = `health status code=${res.status()}`;
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+
+  throw new Error(`API did not become ready: ${lastError ?? 'unknown error'}`);
 }
 
 async function getUploadsFolderId(request: APIRequestContext, token: string) {
@@ -41,23 +83,40 @@ async function uploadTextFile(
   content: string,
   token: string,
 ) {
-  const uploadRes = await request.post(`${baseApiUrl}/api/v1/documents/upload?folderId=${folderId}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    multipart: {
-      file: {
-        name: filename,
-        mimeType: 'text/plain',
-        buffer: Buffer.from(content),
-      },
-    },
-  });
-  expect(uploadRes.ok()).toBeTruthy();
-  const uploadJson = (await uploadRes.json()) as { documentId?: string; id?: string };
-  const docId = uploadJson.documentId ?? uploadJson.id;
-  if (!docId) {
-    throw new Error('Upload did not return document id');
+  const deadline = Date.now() + 90_000;
+  let lastError: string | undefined;
+
+  while (Date.now() < deadline) {
+    try {
+      const uploadRes = await request.post(`${baseApiUrl}/api/v1/documents/upload?folderId=${folderId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        multipart: {
+          file: {
+            name: filename,
+            mimeType: 'text/plain',
+            buffer: Buffer.from(content),
+          },
+        },
+        timeout: 60_000,
+      });
+      if (!uploadRes.ok()) {
+        lastError = `upload status=${uploadRes.status()}`;
+      } else {
+        const uploadJson = (await uploadRes.json()) as { documentId?: string; id?: string };
+        const docId = uploadJson.documentId ?? uploadJson.id;
+        if (docId) {
+          return docId;
+        }
+        lastError = 'upload missing document id';
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 2000));
   }
-  return docId;
+
+  throw new Error(`Upload did not return document id: ${lastError ?? 'unknown error'}`);
 }
 
 async function getVersions(request: APIRequestContext, documentId: string, token: string) {
@@ -99,6 +158,7 @@ async function waitForVersionCount(
 }
 
 test('Version details: checkin metadata matches expectations', async ({ request }) => {
+  await waitForApiReady(request);
   const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
   const uploadsId = await getUploadsFolderId(request, token);
 
