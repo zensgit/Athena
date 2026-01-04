@@ -15,6 +15,7 @@ Date: 2026-01-04 (local)
 - API smoke: full `scripts/smoke.sh` run passed with all core flows (upload/search/tag/category/workflow/trash).
 - Frontend E2E: full Playwright run passed (15 tests).
 - Backend tests: `mvn test` passed (17 tests).
+- Backend verify: `mvn verify` passed (17 tests).
 
 ## Commands Run
 - `scripts/smoke.sh`
@@ -23,6 +24,7 @@ Date: 2026-01-04 (local)
 - `scripts/verify.sh --no-restart --smoke-only --skip-build`
 - `ECM_UI_URL=http://localhost:5500 ECM_API_URL=http://localhost:7700 npx playwright test`
 - `docker run --rm -v "$(pwd)":/workspace -v "$HOME/.m2":/root/.m2 -w /workspace/ecm-core maven:3-eclipse-temurin-17 mvn test`
+- `docker run --rm -v "$(pwd)":/workspace -v "$HOME/.m2":/root/.m2 -w /workspace/ecm-core maven:3-eclipse-temurin-17 mvn verify`
 
 ## Artifacts
 - Primary report: `docs/PLAN_DAY5_REGRESSION_REPORT.md`
