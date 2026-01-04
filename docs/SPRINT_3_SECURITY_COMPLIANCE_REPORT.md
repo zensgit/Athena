@@ -274,7 +274,7 @@ Admin Dashboard 页面增加 “Export CSV” 按钮（默认导出最近 30 天
 
 并展示审计保留策略信息（Retention days / expired count），当存在过期日志时显示 “Cleanup” 按钮进行手动清理。
 
-> TODO：若需要可配置导出时间范围，可在前端增加 from/to 选择对话框并传入导出接口。
+前端已支持导出时间范围（From/To 时间选择），导出请求将传入所选时间区间。
 
 ---
 
