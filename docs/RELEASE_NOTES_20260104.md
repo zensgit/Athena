@@ -33,3 +33,4 @@
 
 ## Release Link
 - https://github.com/zensgit/Athena/releases/tag/release-20260104
+- Patch release: https://github.com/zensgit/Athena/releases/tag/release-20260104.1
