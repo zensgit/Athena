@@ -15,6 +15,7 @@
 - ECM_UI_URL=http://localhost:5500 ECM_API_URL=http://localhost:7700 npx playwright test (15 passed)
 - docker run --rm -v "$(pwd)":/workspace -v "$HOME/.m2":/root/.m2 -w /workspace/ecm-core maven:3-eclipse-temurin-17 mvn test (17 tests, 0 failures)
 - docker run --rm -v "$(pwd)":/workspace -v "$HOME/.m2":/root/.m2 -w /workspace/ecm-core maven:3-eclipse-temurin-17 mvn verify (17 tests, 0 failures)
+- cd ecm-core && mvn test (30 tests, 0 failures; includes SearchAclElasticsearchTest using ECM_ELASTICSEARCH_URL or http://localhost:9200)
 
 ## Docs
 - docs/STEP_2_GAP_FIX_VERIFICATION.md
