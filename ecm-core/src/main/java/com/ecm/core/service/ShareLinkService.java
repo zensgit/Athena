@@ -13,6 +13,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.Base64;
@@ -294,7 +296,11 @@ public class ShareLinkService {
 
         String[] allowed = allowedIps.split(",");
         for (String cidr : allowed) {
-            if (isIpInCidr(clientIp, cidr.trim())) {
+            String trimmed = cidr.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            if (isIpInCidr(clientIp, trimmed)) {
                 return true;
             }
         }
@@ -302,16 +308,61 @@ public class ShareLinkService {
     }
 
     /**
-     * Check if IP is in CIDR range (simplified implementation)
+     * Check if IP is in CIDR range or matches a single IP entry.
      */
     private boolean isIpInCidr(String ip, String cidr) {
-        // Simple exact match for now
-        // TODO: Implement proper CIDR matching
-        if (cidr.contains("/")) {
-            String cidrIp = cidr.substring(0, cidr.indexOf("/"));
-            return ip.equals(cidrIp) || ip.startsWith(cidrIp.substring(0, cidrIp.lastIndexOf(".")));
+        if (ip == null || cidr == null || cidr.isBlank()) {
+            return false;
         }
-        return ip.equals(cidr);
+
+        try {
+            String trimmed = cidr.trim();
+            InetAddress ipAddress = InetAddress.getByName(ip);
+
+            int slashIndex = trimmed.lastIndexOf('/');
+            if (slashIndex < 0) {
+                return ipAddress.equals(InetAddress.getByName(trimmed));
+            }
+
+            String network = trimmed.substring(0, slashIndex);
+            String prefix = trimmed.substring(slashIndex + 1);
+            if (network.isEmpty() || prefix.isEmpty()) {
+                return false;
+            }
+
+            int prefixLength = Integer.parseInt(prefix);
+            InetAddress networkAddress = InetAddress.getByName(network);
+
+            byte[] ipBytes = ipAddress.getAddress();
+            byte[] networkBytes = networkAddress.getAddress();
+            if (ipBytes.length != networkBytes.length) {
+                return false;
+            }
+
+            int maxBits = ipBytes.length * 8;
+            if (prefixLength < 0 || prefixLength > maxBits) {
+                return false;
+            }
+
+            int fullBytes = prefixLength / 8;
+            int remainingBits = prefixLength % 8;
+            for (int i = 0; i < fullBytes; i++) {
+                if (ipBytes[i] != networkBytes[i]) {
+                    return false;
+                }
+            }
+
+            if (remainingBits == 0) {
+                return true;
+            }
+
+            int mask = 0xFF << (8 - remainingBits);
+            int ipByte = ipBytes[fullBytes] & 0xFF;
+            int networkByte = networkBytes[fullBytes] & 0xFF;
+            return (ipByte & mask) == (networkByte & mask);
+        } catch (UnknownHostException | NumberFormatException ex) {
+            return false;
+        }
     }
 
     // Request/Response records
