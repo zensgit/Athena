@@ -14,7 +14,9 @@ public class SanityCheckReport {
     private LocalDateTime startTime;
     private LocalDateTime endTime;
     private Status status;
+    @Builder.Default
     private List<String> issues = new ArrayList<>();
+    @Builder.Default
     private List<String> fixes = new ArrayList<>();
     private int itemsChecked;
     private int issuesFound;
