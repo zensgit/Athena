@@ -109,4 +109,15 @@ class AnalyticsControllerTest {
 
         Mockito.verifyNoInteractions(analyticsService);
     }
+
+    @Test
+    @DisplayName("Audit export rejects range after offset normalization")
+    void exportAuditLogsRejectsOffsetNormalizedRange() throws Exception {
+        mockMvc.perform(get("/api/v1/analytics/audit/export")
+                .param("from", "2026-01-05T10:00:00+08:00")
+                .param("to", "2026-01-05T01:00:00+00:00"))
+            .andExpect(status().isBadRequest());
+
+        Mockito.verifyNoInteractions(analyticsService);
+    }
 }
