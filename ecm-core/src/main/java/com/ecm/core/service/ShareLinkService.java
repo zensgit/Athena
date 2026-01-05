@@ -55,6 +55,8 @@ public class ShareLinkService {
             throw new SecurityException("No permission to share this document");
         }
 
+        validateAllowedIps(request.allowedIps());
+
         String token = generateUniqueToken();
         String currentUser = securityService.getCurrentUser();
 
@@ -221,6 +223,7 @@ public class ShareLinkService {
             shareLink.setPermissionLevel(request.permissionLevel());
         }
         if (request.allowedIps() != null) {
+            validateAllowedIps(request.allowedIps());
             shareLink.setAllowedIps(request.allowedIps().isEmpty() ? null : request.allowedIps());
         }
         if (request.password() != null) {
@@ -360,6 +363,46 @@ public class ShareLinkService {
             int ipByte = ipBytes[fullBytes] & 0xFF;
             int networkByte = networkBytes[fullBytes] & 0xFF;
             return (ipByte & mask) == (networkByte & mask);
+        } catch (UnknownHostException | NumberFormatException ex) {
+            return false;
+        }
+    }
+
+    private void validateAllowedIps(String allowedIps) {
+        if (allowedIps == null || allowedIps.isBlank()) {
+            return;
+        }
+
+        String[] entries = allowedIps.split(",");
+        for (String entry : entries) {
+            String trimmed = entry.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            if (!isValidAllowedIpEntry(trimmed)) {
+                throw new IllegalArgumentException("Invalid allowedIps entry: " + trimmed);
+            }
+        }
+    }
+
+    private boolean isValidAllowedIpEntry(String entry) {
+        try {
+            int slashIndex = entry.lastIndexOf('/');
+            if (slashIndex < 0) {
+                InetAddress.getByName(entry);
+                return true;
+            }
+
+            String network = entry.substring(0, slashIndex);
+            String prefix = entry.substring(slashIndex + 1);
+            if (network.isEmpty() || prefix.isEmpty()) {
+                return false;
+            }
+
+            InetAddress networkAddress = InetAddress.getByName(network);
+            int prefixLength = Integer.parseInt(prefix);
+            int maxBits = networkAddress.getAddress().length * 8;
+            return prefixLength >= 0 && prefixLength <= maxBits;
         } catch (UnknownHostException | NumberFormatException ex) {
             return false;
         }

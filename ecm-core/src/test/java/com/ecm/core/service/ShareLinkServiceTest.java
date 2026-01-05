@@ -1,6 +1,7 @@
 package com.ecm.core.service;
 
 import com.ecm.core.entity.Document;
+import com.ecm.core.entity.Permission.PermissionType;
 import com.ecm.core.entity.ShareLink;
 import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.repository.ShareLinkRepository;
@@ -13,9 +14,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.never;
@@ -95,12 +98,61 @@ class ShareLinkServiceTest {
         assertEquals("Access from this IP is not allowed", result.error());
     }
 
-    private ShareLink buildShareLink(String allowedIps) {
+    @Test
+    @DisplayName("Create share link rejects invalid allowed IP entries")
+    void createShareLinkRejectsInvalidAllowedIps() {
+        Document document = buildDocument();
+        when(nodeRepository.findById(any(UUID.class))).thenReturn(Optional.of(document));
+        when(securityService.hasPermission(document, PermissionType.READ)).thenReturn(true);
+
+        ShareLinkService.CreateShareLinkRequest request = new ShareLinkService.CreateShareLinkRequest(
+            "share",
+            null,
+            null,
+            ShareLink.SharePermission.VIEW,
+            null,
+            "192.168.1.0/33"
+        );
+
+        assertThrows(IllegalArgumentException.class,
+            () -> shareLinkService.createShareLink(UUID.randomUUID(), request));
+        verify(shareLinkRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Update share link rejects invalid allowed IP entries")
+    void updateShareLinkRejectsInvalidAllowedIps() {
+        ShareLink shareLink = buildShareLink("192.168.1.0/24");
+        when(shareLinkRepository.findByToken("token")).thenReturn(Optional.of(shareLink));
+        when(securityService.getCurrentUser()).thenReturn("tester");
+        when(securityService.hasPermission(shareLink.getNode(), PermissionType.CHANGE_PERMISSIONS))
+            .thenReturn(true);
+
+        ShareLinkService.UpdateShareLinkRequest request = new ShareLinkService.UpdateShareLinkRequest(
+            null,
+            null,
+            null,
+            null,
+            null,
+            "192.168.1.0/33",
+            null
+        );
+
+        assertThrows(IllegalArgumentException.class,
+            () -> shareLinkService.updateShareLink("token", request));
+        verify(shareLinkRepository, never()).save(any());
+    }
+
+    private Document buildDocument() {
         Document document = new Document();
         document.setName("doc");
         document.setPath("/doc");
         document.setMimeType("application/pdf");
+        return document;
+    }
 
+    private ShareLink buildShareLink(String allowedIps) {
+        Document document = buildDocument();
         return ShareLink.builder()
             .token("token")
             .node(document)
