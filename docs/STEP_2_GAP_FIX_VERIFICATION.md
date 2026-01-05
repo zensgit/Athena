@@ -16,6 +16,9 @@
 - UI test (audit export range):
   - Command: `ECM_UI_URL=http://localhost:5500 ECM_API_URL=http://localhost:7700 npx playwright test e2e/ui-smoke.spec.ts -g "Security Features"`
   - Result: ✅ Passed
+- API test (offset normalization):
+  - Rebuilt API: `docker compose up -d --build ecm-core`
+  - Called `/api/v1/analytics/audit/export` with `from/to` in `-03:00` and `+08:00` representing the same instant (anchored to `/api/v1/analytics/audit/recent`); both returned matching row counts and included the target event.
 
 ## Notes
 - ACL filtering uses `PermissionType.READ` for non-admins to align with existing authorization rules.
