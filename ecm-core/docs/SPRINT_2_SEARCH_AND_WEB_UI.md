@@ -379,8 +379,8 @@ spring:
 
 | 端点 | 权限要求 |
 |------|----------|
-| `GET /api/v1/search` | 公开 |
-| `POST /api/v1/search/advanced` | 公开 |
+| `GET /api/v1/search` | 认证 |
+| `POST /api/v1/search/advanced` | 认证 |
 | `POST /api/v1/search/index/rebuild` | ADMIN |
 | `GET /api/v1/search/index/rebuild/status` | ADMIN |
 | `POST /api/v1/search/index/{id}` | ADMIN, EDITOR |
@@ -389,7 +389,7 @@ spring:
 ### 数据安全
 
 - 搜索结果自动过滤已删除文档（除非明确请求）
-- 用户只能搜索有权限访问的文档（TODO: Sprint 3）
+- 用户只能搜索有权限访问的文档（通过 ACL 过滤搜索结果与聚合统计）
 
 ## 数据一致性保证
 

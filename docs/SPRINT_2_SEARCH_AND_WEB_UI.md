@@ -379,8 +379,8 @@ spring:
 
 | 端点 | 权限要求 |
 |------|----------|
-| `GET /api/v1/search` | 公开 |
-| `POST /api/v1/search/advanced` | 公开 |
+| `GET /api/v1/search` | 认证 |
+| `POST /api/v1/search/advanced` | 认证 |
 | `POST /api/v1/search/index/rebuild` | ADMIN |
 | `GET /api/v1/search/index/rebuild/status` | ADMIN |
 | `POST /api/v1/search/index/{id}` | ADMIN, EDITOR |
