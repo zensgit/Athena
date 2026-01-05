@@ -7,6 +7,7 @@
 
 ## Changes
 - Backend: search ACL filtering in FullTextSearchService and FacetedSearchService.
+- Backend: enforce CIDR IP matching for share links with IPv4/IPv6 coverage.
 - Frontend: Admin audit export From/To range inputs; PDF preview layout now flex-fills.
 - E2E: improved login fallback, API readiness, preview/version validation.
 - Docs: added step verification reports and updated audit/progress/regression summaries.
@@ -17,6 +18,7 @@
 - docker run --rm -v "$(pwd)":/workspace -v "$HOME/.m2":/root/.m2 -w /workspace/ecm-core maven:3-eclipse-temurin-17 mvn verify (17 tests, 0 failures)
 - cd ecm-core && mvn test (30 tests, 0 failures; includes SearchAclElasticsearchTest using ECM_ELASTICSEARCH_URL or http://localhost:9200)
 - cd ecm-core && mvn verify (30 tests, 0 failures)
+- cd ecm-core && mvn -Dtest=ShareLinkServiceTest test (4 tests, 0 failures)
 
 ## Docs
 - docs/STEP_2_GAP_FIX_VERIFICATION.md

@@ -22,6 +22,9 @@
 - Backend tests (ACL via Elasticsearch):
   - Command: `cd ecm-core && mvn -Dtest=SearchAclElasticsearchTest test`
   - Result: ✅ Passed (uses `ECM_ELASTICSEARCH_URL` or defaults to `http://localhost:9200`)
+- Backend tests (share link CIDR):
+  - Command: `cd ecm-core && mvn -Dtest=ShareLinkServiceTest test`
+  - Result: ✅ Passed
 
 ## Notes
 - ACL filtering uses `PermissionType.READ` for non-admins to align with existing authorization rules.
