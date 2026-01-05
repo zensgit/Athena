@@ -176,6 +176,7 @@ const AdminDashboard: React.FC = () => {
   const [memberToAdd, setMemberToAdd] = useState('');
 
   const formatDateTimeInput = (date: Date) => format(date, "yyyy-MM-dd'T'HH:mm");
+  const formatDateTimeOffset = (date: Date) => format(date, "yyyy-MM-dd'T'HH:mm:ssXXX");
   const [auditExportFrom, setAuditExportFrom] = useState(() => {
     const from = new Date();
     from.setDate(from.getDate() - 30);
@@ -226,8 +227,8 @@ const AdminDashboard: React.FC = () => {
         return;
       }
 
-      const fromStr = fromInput.toISOString();
-      const toStr = toInput.toISOString();
+      const fromStr = encodeURIComponent(formatDateTimeOffset(fromInput));
+      const toStr = encodeURIComponent(formatDateTimeOffset(toInput));
 
       const apiBaseUrl = process.env.REACT_APP_API_URL
         || process.env.REACT_APP_API_BASE_URL

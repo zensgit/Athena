@@ -19,4 +19,4 @@
 
 ## Notes
 - ACL filtering uses `PermissionType.READ` for non-admins to align with existing authorization rules.
-- Export range uses browser-local datetime values; backend expects ISO timestamps.
+- Export range sends ISO-8601 with timezone offset; backend accepts offset or local time and normalizes to server time.

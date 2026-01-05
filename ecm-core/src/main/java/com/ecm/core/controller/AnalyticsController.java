@@ -9,17 +9,21 @@ import com.ecm.core.service.AnalyticsService.UserActivityStats;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
-import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Map;
 
@@ -99,13 +103,19 @@ public class AnalyticsController {
     @GetMapping("/audit/export")
     @Operation(summary = "Export Audit Logs", description = "Export audit logs as CSV within a time range")
     public ResponseEntity<byte[]> exportAuditLogs(
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to) {
+            @RequestParam String from,
+            @RequestParam String to) {
 
-        String csvContent = analyticsService.exportAuditLogsCsv(from, to);
+        LocalDateTime fromTime = parseAuditExportDateTime(from, "from");
+        LocalDateTime toTime = parseAuditExportDateTime(to, "to");
+        if (fromTime.isAfter(toTime)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "from must be before to");
+        }
+
+        String csvContent = analyticsService.exportAuditLogsCsv(fromTime, toTime);
         String filename = String.format("audit_logs_%s_to_%s.csv",
-            from.format(DateTimeFormatter.ofPattern("yyyyMMdd")),
-            to.format(DateTimeFormatter.ofPattern("yyyyMMdd")));
+            fromTime.format(DateTimeFormatter.ofPattern("yyyyMMdd")),
+            toTime.format(DateTimeFormatter.ofPattern("yyyyMMdd")));
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentDisposition(ContentDisposition.attachment()
@@ -116,6 +126,25 @@ public class AnalyticsController {
         return ResponseEntity.ok()
             .headers(headers)
             .body(csvContent.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private LocalDateTime parseAuditExportDateTime(String value, String paramName) {
+        if (value == null || value.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, paramName + " is required");
+        }
+
+        try {
+            OffsetDateTime offsetDateTime = OffsetDateTime.parse(value, DateTimeFormatter.ISO_OFFSET_DATE_TIME);
+            return LocalDateTime.ofInstant(offsetDateTime.toInstant(), ZoneId.systemDefault());
+        } catch (DateTimeParseException ignored) {
+            // Fall back to local datetime without offset.
+        }
+
+        try {
+            return LocalDateTime.parse(value, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+        } catch (DateTimeParseException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid " + paramName + " datetime");
+        }
     }
 
     @GetMapping("/audit/retention")
