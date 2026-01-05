@@ -19,6 +19,9 @@
 - API test (offset normalization):
   - Rebuilt API: `docker compose up -d --build ecm-core`
   - Called `/api/v1/analytics/audit/export` with `from/to` in `-03:00` and `+08:00` representing the same instant (anchored to `/api/v1/analytics/audit/recent`); both returned matching row counts and included the target event.
+- Backend tests (ACL via Elasticsearch):
+  - Command: `cd ecm-core && mvn -Dtest=SearchAclElasticsearchTest test`
+  - Result: ✅ Passed (uses `ECM_ELASTICSEARCH_URL` or defaults to `http://localhost:9200`)
 
 ## Notes
 - ACL filtering uses `PermissionType.READ` for non-admins to align with existing authorization rules.
