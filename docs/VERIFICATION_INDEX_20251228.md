@@ -58,6 +58,8 @@
   - Rules recent endpoint default limit
 - `docs/VERIFICATION_RULES_RECENT_LIMIT_PARAM_20260106.md`
   - Rules recent endpoint explicit limit
+- `docs/VERIFICATION_RULES_SUMMARY_DAYS_PARAM_20260106.md`
+  - Rules summary default + explicit days parameter
 - `docs/VERIFICATION_DAILY_ACTIVITY_DEFAULT_DAYS_20260106.md`
   - Daily activity default + explicit days parameter
 - `docs/VERIFICATION_TOP_USERS_LIMIT_PARAM_20260106.md`

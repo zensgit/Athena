@@ -20,6 +20,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.TimeZone;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -299,6 +300,61 @@ class AnalyticsControllerTest {
             .andExpect(jsonPath("$[0].username").value("automation"));
 
         Mockito.verify(analyticsService).getRecentRuleActivity(3);
+    }
+
+    @Test
+    @DisplayName("Rule execution summary defaults to 7 days")
+    void ruleExecutionSummaryDefaultsToWindow() throws Exception {
+        AnalyticsService.RuleExecutionSummary summary = new AnalyticsService.RuleExecutionSummary(
+            7,
+            12,
+            2,
+            0.83,
+            4,
+            1,
+            Map.of("RULE_EXECUTED", 12L)
+        );
+
+        Mockito.when(analyticsService.getRuleExecutionSummary(7)).thenReturn(summary);
+
+        mockMvc.perform(get("/api/v1/analytics/rules/summary"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.windowDays").value(7))
+            .andExpect(jsonPath("$.executions").value(12))
+            .andExpect(jsonPath("$.failures").value(2))
+            .andExpect(jsonPath("$.scheduledBatches").value(4))
+            .andExpect(jsonPath("$.scheduledFailures").value(1))
+            .andExpect(jsonPath("$.countsByType.RULE_EXECUTED").value(12));
+
+        Mockito.verify(analyticsService).getRuleExecutionSummary(7);
+    }
+
+    @Test
+    @DisplayName("Rule execution summary respects explicit days parameter")
+    void ruleExecutionSummaryRespectsDaysParameter() throws Exception {
+        AnalyticsService.RuleExecutionSummary summary = new AnalyticsService.RuleExecutionSummary(
+            14,
+            20,
+            0,
+            1.0,
+            5,
+            0,
+            Map.of("RULE_EXECUTED", 20L)
+        );
+
+        Mockito.when(analyticsService.getRuleExecutionSummary(14)).thenReturn(summary);
+
+        mockMvc.perform(get("/api/v1/analytics/rules/summary")
+                .param("days", "14"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.windowDays").value(14))
+            .andExpect(jsonPath("$.executions").value(20))
+            .andExpect(jsonPath("$.failures").value(0))
+            .andExpect(jsonPath("$.scheduledBatches").value(5))
+            .andExpect(jsonPath("$.scheduledFailures").value(0))
+            .andExpect(jsonPath("$.countsByType.RULE_EXECUTED").value(20));
+
+        Mockito.verify(analyticsService).getRuleExecutionSummary(14);
     }
 
     @Test

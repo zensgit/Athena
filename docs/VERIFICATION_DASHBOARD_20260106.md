@@ -19,6 +19,7 @@
 - Audit recent limit parameter: `docs/VERIFICATION_AUDIT_RECENT_LIMIT_PARAM_20260106.md`
 - Rules recent default limit: `docs/VERIFICATION_RULES_RECENT_DEFAULT_LIMIT_20260106.md`
 - Rules recent limit parameter: `docs/VERIFICATION_RULES_RECENT_LIMIT_PARAM_20260106.md`
+- Rules summary days parameter: `docs/VERIFICATION_RULES_SUMMARY_DAYS_PARAM_20260106.md`
 - Daily activity days parameter: `docs/VERIFICATION_DAILY_ACTIVITY_DEFAULT_DAYS_20260106.md`
 - Top users limit parameter: `docs/VERIFICATION_TOP_USERS_LIMIT_PARAM_20260106.md`
 - Dashboard aggregation: `docs/VERIFICATION_DASHBOARD_AGGREGATION_20260106.md`
