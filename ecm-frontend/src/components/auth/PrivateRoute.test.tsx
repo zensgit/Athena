@@ -128,3 +128,11 @@ test('shows spinner when Keycloak callback params are present', async () => {
 
   expect(await screen.findByText('Signing you in...')).toBeTruthy();
 });
+
+test('shows spinner when login is already in progress', async () => {
+  sessionStorage.setItem('ecm_kc_login_in_progress', '1');
+
+  renderPrivateRoute({ isAuthenticated: false });
+
+  expect(await screen.findByText('Signing you in...')).toBeTruthy();
+});

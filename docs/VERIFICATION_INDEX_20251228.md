@@ -32,6 +32,8 @@
   - PrivateRoute redirects and role gating
 - `docs/VERIFICATION_PRIVATE_ROUTE_CALLBACK_SPINNER_20260106.md`
   - PrivateRoute spinner on Keycloak callback params
+- `docs/VERIFICATION_PRIVATE_ROUTE_LOGIN_IN_PROGRESS_20260106.md`
+  - PrivateRoute spinner on login-in-progress flag
 
 ## Backend Tests
 - `docs/VERIFICATION_BACKEND_MVN_TEST_20260106.md`
