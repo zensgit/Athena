@@ -109,8 +109,9 @@ write_wopi_summary() {
 }
 
 write_verification_report() {
+  local exit_code="${1:-0}"
   local status="PASSED"
-  if [[ ${STEPS_FAILED} -gt 0 ]]; then
+  if [[ ${STEPS_FAILED} -gt 0 || ${exit_code} -ne 0 ]]; then
     status="FAILED"
   fi
 
@@ -128,6 +129,7 @@ write_verification_report() {
     echo "- Passed: ${STEPS_PASSED}"
     echo "- Failed: ${STEPS_FAILED}"
     echo "- Skipped: ${STEPS_SKIPPED}"
+    echo "- Exit code: ${exit_code}"
     echo "- Status: ${status}"
     echo ""
     echo "## Artifacts"
@@ -138,7 +140,18 @@ write_verification_report() {
   } > "${REPORT_FILE}"
 }
 
-trap write_verification_report EXIT
+handle_exit() {
+  local exit_code=$?
+  set +e
+  write_verification_report "${exit_code}"
+  log_info "Report: ${REPORT_FILE}"
+  if [[ -f "${WOPI_SUMMARY_FILE}" ]]; then
+    log_info "WOPI summary: ${WOPI_SUMMARY_FILE}"
+  fi
+  return "${exit_code}"
+}
+
+trap handle_exit EXIT
 
 run_step() {
   local step_name="$1"
