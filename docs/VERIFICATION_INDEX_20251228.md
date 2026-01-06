@@ -22,6 +22,10 @@
 ## Frontend Tests
 - `docs/VERIFICATION_FRONTEND_LINT_TEST_20260106.md`
   - ESLint + React test suite pass
+- `docs/VERIFICATION_ROUTER_FUTURE_FLAGS_20260106.md`
+  - React Router future flags enabled for tests
+- `docs/VERIFICATION_APP_TEST_SUSPENSE_ACT_20260106.md`
+  - App smoke test Suspense act warning cleared
 
 ## Backend Tests
 - `docs/VERIFICATION_BACKEND_MVN_TEST_20260106.md`

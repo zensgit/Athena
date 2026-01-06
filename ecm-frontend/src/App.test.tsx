@@ -1,17 +1,19 @@
 import React from 'react';
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { Provider } from 'react-redux';
 import { store } from './store';
 import App from './App';
 
-test('renders Athena ECM app without crashing', () => {
+jest.mock('./components/search/SearchDialog', () => ({
+  __esModule: true,
+  default: () => <div data-testid="search-dialog" />,
+}));
+
+test('renders Athena ECM app without crashing', async () => {
   render(
     <Provider store={store}>
       <App />
     </Provider>
   );
-  // Basic smoke test - just checking if it mounts
-  // In a real scenario, we'd look for specific text like "Athena ECM"
-  // but that might be behind a login screen.
-  expect(document.body).toBeTruthy();
+  expect(await screen.findByTestId('search-dialog')).toBeTruthy();
 });

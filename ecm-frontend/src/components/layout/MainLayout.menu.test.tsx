@@ -38,7 +38,10 @@ const renderLayoutWithRoles = (roles: string[]) => {
 
   render(
     <Provider store={store}>
-      <MemoryRouter initialEntries={['/browse/root']}>
+      <MemoryRouter
+        initialEntries={['/browse/root']}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
         <Routes>
           <Route
             path="/browse/:nodeId"
