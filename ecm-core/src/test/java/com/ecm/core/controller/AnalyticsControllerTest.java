@@ -243,4 +243,23 @@ class AnalyticsControllerTest {
 
         Mockito.verify(analyticsService).getRecentActivity(50);
     }
+
+    @Test
+    @DisplayName("Recent audit respects explicit limit parameter")
+    void recentAuditRespectsLimitParameter() throws Exception {
+        AuditLog log = new AuditLog();
+        log.setEventType("VIEW");
+        log.setUsername("bob");
+        log.setEventTime(LocalDateTime.of(2026, 1, 2, 0, 0));
+
+        Mockito.when(analyticsService.getRecentActivity(5)).thenReturn(List.of(log));
+
+        mockMvc.perform(get("/api/v1/analytics/audit/recent")
+                .param("limit", "5"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].eventType").value("VIEW"))
+            .andExpect(jsonPath("$[0].username").value("bob"));
+
+        Mockito.verify(analyticsService).getRecentActivity(5);
+    }
 }

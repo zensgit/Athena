@@ -52,6 +52,8 @@
   - Audit cleanup response messages verified
 - `docs/VERIFICATION_AUDIT_RECENT_DEFAULT_LIMIT_20260106.md`
   - Audit recent endpoint default limit
+- `docs/VERIFICATION_AUDIT_RECENT_LIMIT_PARAM_20260106.md`
+  - Audit recent endpoint explicit limit
 - `docs/VERIFICATION_SEARCH_DISABLED_GUARD_20260106.md`
   - Search disabled guard paths in search services
 - `docs/VERIFICATION_SEARCH_AVAILABLE_FACETS_DISABLED_20260106.md`
