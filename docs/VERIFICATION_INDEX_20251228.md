@@ -43,7 +43,7 @@
 - `docs/VERIFICATION_BACKEND_MVN_TEST_20260106.md`
   - `mvn test`: 80 tests passed
 - `docs/VERIFICATION_BACKEND_MVN_VERIFY_20260106.md`
-  - `mvn verify`: 79 tests passed
+  - `mvn verify`: 80 tests passed
 - `docs/VERIFICATION_AUDIT_EXPORT_MAX_RANGE_BOUNDARY_20260106.md`
   - Audit export max-range boundary accepted
 - `docs/VERIFICATION_AUDIT_EXPORT_BLANK_PARAMS_20260106.md`
