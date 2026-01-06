@@ -66,6 +66,8 @@
   - Suggested filters guard when search is disabled
 - `docs/VERIFICATION_SEARCH_ADVANCED_INCLUDE_DELETED_20260106.md`
   - Advanced search include-deleted filter toggle
+- `docs/VERIFICATION_SEARCH_ADVANCED_CREATEDBY_PRECEDENCE_20260106.md`
+  - Advanced search createdBy precedence
 
 ## Integration Health + Smoke
 - `docs/VERIFICATION_YUANTUS_INTEGRATIONS_20251228.md`
