@@ -86,6 +86,8 @@
   - Advanced search createdBy precedence
 
 ## Integration Health + Smoke
+- `docs/VERIFICATION_VERIFY_20260106.md`
+  - Full verify.sh run + WOPI-only rerun notes
 - `docs/VERIFICATION_YUANTUS_INTEGRATIONS_20251228.md`
   - Yuantus integrations health OK (Athena/CAD-ML/Dedup)
   - Post-restart validation OK

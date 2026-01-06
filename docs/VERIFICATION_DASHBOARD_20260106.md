@@ -61,6 +61,7 @@
 - E2E version history actions: `docs/VERIFICATION_E2E_VERSION_HISTORY_ACTIONS_20260106.md`
 - E2E share link access: `docs/VERIFICATION_E2E_SHARE_LINK_ACCESS_20260106.md`
 - Full E2E run: `docs/VERIFICATION_E2E_FULL_RUN_20260106.md`
+- Full verify.sh report: `docs/VERIFICATION_VERIFY_20260106.md`
 - UI E2E (historical): `docs/VERIFICATION_UI_E2E_20251228.md`
 
 ## Full Index
