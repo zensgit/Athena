@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+const fs = require('fs');
 const path = require('path');
 
 const FRONTEND_DIR = process.env.FRONTEND_DIR || path.resolve(__dirname, '..', 'ecm-frontend');
@@ -20,12 +21,25 @@ const KEYCLOAK_REALM = process.env.KEYCLOAK_REALM || 'ecm';
 const API_BASE_OVERRIDE = process.env.ECM_API_URL || '';
 const FILE_NAME_OVERRIDE = process.env.ECM_VERIFY_FILE || '';
 const FILE_QUERY = process.env.ECM_VERIFY_QUERY || 'xlsx';
+const SAMPLE_FILE_NAME = 'verify-wopi-sample.xlsx';
+const SAMPLE_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 const log = (message) => {
   process.stdout.write(`[verify] ${message}\n`);
 };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const loadXlsxSampleBuffer = () => {
+  const samplePath = path.join(FRONTEND_DIR, 'e2e', 'fixtures', 'xlsxSample.ts');
+  const sampleSource = fs.readFileSync(samplePath, 'utf8');
+  const matches = [...sampleSource.matchAll(/'([^']+)'/g)];
+  if (!matches.length) {
+    throw new Error('Unable to load XLSX sample fixture');
+  }
+  const base64 = matches.map((match) => match[1]).join('');
+  return Buffer.from(base64, 'base64');
+};
 
 const fetchAccessToken = async (request, username, password) => {
   const tokenRes = await request.post(`${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token`, {
@@ -44,6 +58,29 @@ const fetchAccessToken = async (request, username, password) => {
     throw new Error('Access token missing from Keycloak response');
   }
   return tokenJson.access_token;
+};
+
+const fetchSearchResults = async (request, apiBase, token, query) => {
+  const searchRes = await request.get(`${apiBase}/api/v1/search`, {
+    params: { q: query, size: 20 },
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!searchRes.ok()) {
+    throw new Error(`Search API failed: ${searchRes.status()}`);
+  }
+  const searchJson = await searchRes.json();
+  return searchJson.content || [];
+};
+
+const waitForSearchIndex = async (request, apiBase, token, query) => {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const results = await fetchSearchResults(request, apiBase, token, query);
+    if (results.some((item) => item.name === query && item.nodeType === 'DOCUMENT')) {
+      return true;
+    }
+    await sleep(2000);
+  }
+  return false;
 };
 
 const normalizeApiBase = (value) => {
@@ -74,6 +111,67 @@ const resolveApiBase = async (request) => {
     }
   }
   return candidates[0];
+};
+
+const resolveDocumentsFolderId = async (request, apiBase, token) => {
+  const rootsRes = await request.get(`${apiBase}/api/v1/folders/roots`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!rootsRes.ok()) {
+    throw new Error(`Root folders request failed: ${rootsRes.status()}`);
+  }
+  const roots = await rootsRes.json();
+  const rootFolder = roots.find((item) => item.name === 'Root') || roots[0];
+  if (!rootFolder?.id) {
+    throw new Error('Root folder not found');
+  }
+
+  const contentsRes = await request.get(`${apiBase}/api/v1/folders/${rootFolder.id}/contents`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!contentsRes.ok()) {
+    throw new Error(`Root folder contents request failed: ${contentsRes.status()}`);
+  }
+  const contentsJson = await contentsRes.json();
+  const documentsFolder = (contentsJson.content || []).find(
+    (item) => item.nodeType === 'FOLDER' && item.name === 'Documents'
+  );
+  if (!documentsFolder?.id) {
+    throw new Error('Documents folder not found');
+  }
+  return documentsFolder.id;
+};
+
+const uploadSampleDocument = async (request, apiBase, token) => {
+  const folderId = await resolveDocumentsFolderId(request, apiBase, token);
+  const buffer = loadXlsxSampleBuffer();
+  const uploadRes = await request.post(`${apiBase}/api/v1/documents/upload?folderId=${folderId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    multipart: {
+      file: {
+        name: SAMPLE_FILE_NAME,
+        mimeType: SAMPLE_MIME_TYPE,
+        buffer,
+      },
+    },
+  });
+  if (!uploadRes.ok()) {
+    throw new Error(`Sample upload failed: ${uploadRes.status()}`);
+  }
+  const uploadJson = await uploadRes.json();
+  const documentId = uploadJson.documentId || uploadJson.id;
+  if (!documentId) {
+    throw new Error('Upload did not return document id');
+  }
+
+  const indexRes = await request.post(`${apiBase}/api/v1/search/index/${documentId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!indexRes.ok()) {
+    throw new Error(`Search index request failed: ${indexRes.status()}`);
+  }
+
+  return { id: documentId, name: SAMPLE_FILE_NAME };
 };
 
 const findDocument = (results, preferredName) => {
@@ -113,14 +211,17 @@ const findDocument = (results, preferredName) => {
   const apiToken = await fetchAccessToken(page.request, USER, PASS);
 
   log('Fetching document via search API');
-  const searchRes = await page.request.get(`${apiBase}/api/v1/search?q=${encodeURIComponent(FILE_QUERY)}&size=20`, {
-    headers: { Authorization: `Bearer ${apiToken}` },
-  });
-  if (!searchRes.ok()) {
-    throw new Error(`Search API failed: ${searchRes.status()}`);
+  let searchResults = await fetchSearchResults(page.request, apiBase, apiToken, FILE_QUERY);
+  let documentMatch = findDocument(searchResults, FILE_NAME_OVERRIDE);
+
+  if (!documentMatch && !FILE_NAME_OVERRIDE) {
+    log(`No matching .xlsx document found, uploading ${SAMPLE_FILE_NAME} for verification...`);
+    const sampleDocument = await uploadSampleDocument(page.request, apiBase, apiToken);
+    await waitForSearchIndex(page.request, apiBase, apiToken, sampleDocument.name);
+    searchResults = await fetchSearchResults(page.request, apiBase, apiToken, sampleDocument.name);
+    documentMatch = findDocument(searchResults, sampleDocument.name);
   }
-  const searchJson = await searchRes.json();
-  const documentMatch = findDocument(searchJson.content || [], FILE_NAME_OVERRIDE);
+
   if (!documentMatch?.id || !documentMatch?.name) {
     throw new Error('No matching .xlsx document found for verification');
   }
