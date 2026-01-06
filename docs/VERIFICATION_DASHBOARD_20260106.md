@@ -5,13 +5,14 @@
 - Search ACL: edge-case coverage and ES pagination/deleted filtering.
 - Share links: allowed IP validation + access control flows.
 - Rules: notification integration and notification type parameter.
-- Backend: full `mvn test` pass.
+- Backend: `mvn test` + `mvn verify` pass.
 - Frontend: lint + unit tests pass.
 - E2E: full suite + version history/share link flows.
 
 ## Backend / API
 - Audit export validation: `docs/VERIFICATION_AUDIT_EXPORT_RANGE_VALIDATION_20260106.md`
 - Backend test run: `docs/VERIFICATION_BACKEND_MVN_TEST_20260106.md`
+- Backend verify run: `docs/VERIFICATION_BACKEND_MVN_VERIFY_20260106.md`
 - Share link validation: `docs/VERIFICATION_SHARE_LINK_ALLOWED_IP_VALIDATION_20260106.md`
 - Share link update validation: `docs/VERIFICATION_SHARE_LINK_UPDATE_ALLOWED_IP_VALIDATION_20260106.md`
 - Share link CIDR parsing: `docs/VERIFICATION_SHARE_LINK_CIDR_20260105.md`

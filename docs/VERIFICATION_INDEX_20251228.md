@@ -26,6 +26,8 @@
 ## Backend Tests
 - `docs/VERIFICATION_BACKEND_MVN_TEST_20260106.md`
   - `mvn test`: 53 tests passed
+- `docs/VERIFICATION_BACKEND_MVN_VERIFY_20260106.md`
+  - `mvn verify`: 53 tests passed
 
 ## Integration Health + Smoke
 - `docs/VERIFICATION_YUANTUS_INTEGRATIONS_20251228.md`
