@@ -2,4 +2,4 @@
 
 - `cd ecm-frontend && npm run lint`
 - `cd ecm-frontend && CI=true npm test -- --watchAll=false`
-- Result: pass (3 test suites, 5 tests). No React Router future-flag or Suspense act warnings.
+- Result: pass (4 test suites, 8 tests). No React Router future-flag or Suspense act warnings.

@@ -28,6 +28,8 @@
   - App smoke test Suspense act warning cleared
 - `docs/VERIFICATION_MAINLAYOUT_MENU_TEST_STRENGTHENING_20260106.md`
   - MainLayout menu assertions for admin/viewer roles
+- `docs/VERIFICATION_PRIVATE_ROUTE_TESTS_20260106.md`
+  - PrivateRoute redirects and role gating
 
 ## Backend Tests
 - `docs/VERIFICATION_BACKEND_MVN_TEST_20260106.md`
