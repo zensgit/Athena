@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.ArrayList;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -168,6 +169,46 @@ class SearchAclElasticsearchTest {
         assertEquals(1, facets.get("mimeType").get(0).getCount());
         assertEquals("alice", facets.get("createdBy").get(0).getValue());
         assertEquals("confidential", facets.get("tags").get(0).getValue());
+    }
+
+    @Test
+    @DisplayName("Full-text search paginates sorted results and excludes deleted documents")
+    void fullTextSearchPaginatesAndExcludesDeletedDocuments() {
+        Mockito.when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+
+        List<NodeDocument> docs = new ArrayList<>();
+        for (int i = 1; i <= 25; i++) {
+            String name = String.format("doc-%03d", i);
+            docs.add(NodeDocument.builder()
+                .id(UUID.randomUUID().toString())
+                .name(name)
+                .nameSort(name)
+                .deleted(false)
+                .build());
+        }
+        docs.add(NodeDocument.builder()
+            .id(UUID.randomUUID().toString())
+            .name("zzz-deleted-001")
+            .nameSort("zzz-deleted-001")
+            .deleted(true)
+            .build());
+        docs.add(NodeDocument.builder()
+            .id(UUID.randomUUID().toString())
+            .name("zzz-deleted-002")
+            .nameSort("zzz-deleted-002")
+            .deleted(true)
+            .build());
+
+        indexDocuments(docs.toArray(new NodeDocument[0]));
+
+        var results = fullTextSearchService.search("", 1, 10, "name", "asc");
+
+        assertEquals(10, results.getContent().size());
+        assertEquals("doc-011", results.getContent().get(0).getName());
+        assertEquals("doc-020", results.getContent().get(9).getName());
+        boolean hasDeleted = results.getContent().stream()
+            .anyMatch(result -> result.getName().startsWith("zzz-deleted"));
+        assertEquals(false, hasDeleted);
     }
 
     private void indexDocuments(NodeDocument... docs) {

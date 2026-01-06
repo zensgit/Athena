@@ -9,6 +9,7 @@ import com.ecm.core.service.AnalyticsService.UserActivityStats;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -41,6 +43,9 @@ import java.util.Map;
 public class AnalyticsController {
 
     private final AnalyticsService analyticsService;
+
+    @Value("${ecm.audit.export.max-range-days:90}")
+    private int auditExportMaxRangeDays;
 
     @GetMapping("/summary")
     @Operation(summary = "System Summary", description = "Get overall system usage statistics")
@@ -108,11 +113,18 @@ public class AnalyticsController {
 
         LocalDateTime fromTime = parseAuditExportDateTime(from, "from");
         LocalDateTime toTime = parseAuditExportDateTime(to, "to");
-        if (fromTime.isAfter(toTime)) {
+        if (!fromTime.isBefore(toTime)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "from must be before to");
         }
+        if (auditExportMaxRangeDays > 0
+            && Duration.between(fromTime, toTime).compareTo(Duration.ofDays(auditExportMaxRangeDays)) > 0) {
+            throw new ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "Range exceeds maximum of " + auditExportMaxRangeDays + " days"
+            );
+        }
 
-        String csvContent = analyticsService.exportAuditLogsCsv(fromTime, toTime);
+        AnalyticsService.AuditExportResult exportResult = analyticsService.exportAuditLogsCsv(fromTime, toTime);
         String filename = String.format("audit_logs_%s_to_%s.csv",
             fromTime.format(DateTimeFormatter.ofPattern("yyyyMMdd")),
             toTime.format(DateTimeFormatter.ofPattern("yyyyMMdd")));
@@ -122,10 +134,11 @@ public class AnalyticsController {
             .filename(filename, StandardCharsets.UTF_8)
             .build());
         headers.setContentType(MediaType.parseMediaType("text/csv; charset=UTF-8"));
+        headers.add("X-Audit-Export-Count", String.valueOf(exportResult.rowCount()));
 
         return ResponseEntity.ok()
             .headers(headers)
-            .body(csvContent.getBytes(StandardCharsets.UTF_8));
+            .body(exportResult.csvContent().getBytes(StandardCharsets.UTF_8));
     }
 
     private LocalDateTime parseAuditExportDateTime(String value, String paramName) {
@@ -152,7 +165,8 @@ public class AnalyticsController {
     public ResponseEntity<Map<String, Object>> getAuditRetentionInfo() {
         return ResponseEntity.ok(Map.of(
             "retentionDays", analyticsService.getAuditRetentionDays(),
-            "expiredLogCount", analyticsService.getExpiredAuditLogCount()
+            "expiredLogCount", analyticsService.getExpiredAuditLogCount(),
+            "exportMaxRangeDays", auditExportMaxRangeDays
         ));
     }
 

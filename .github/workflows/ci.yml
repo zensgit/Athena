@@ -8,7 +8,7 @@ on:
 
 jobs:
   backend:
-    name: Backend Compile
+    name: Backend Tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -24,11 +24,8 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
-      - name: Compile
-        run: mvn -B -q compile -DskipTests
-
-      - name: Verify (tests disabled)
-        run: mvn -B -q verify -DskipTests
+      - name: Test
+        run: mvn -B -q test
 
   frontend:
     name: Frontend Build & Test

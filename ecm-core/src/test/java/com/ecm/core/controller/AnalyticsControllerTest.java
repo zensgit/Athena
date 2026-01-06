@@ -14,6 +14,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.util.TimeZone;
@@ -21,6 +22,7 @@ import java.util.TimeZone;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @ExtendWith(MockitoExtension.class)
@@ -40,6 +42,7 @@ class AnalyticsControllerTest {
     void setup() {
         originalTimeZone = TimeZone.getDefault();
         TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
+        ReflectionTestUtils.setField(analyticsController, "auditExportMaxRangeDays", 30);
         mockMvc = MockMvcBuilders.standaloneSetup(analyticsController).build();
     }
 
@@ -52,13 +55,14 @@ class AnalyticsControllerTest {
     @DisplayName("Audit export accepts ISO offset datetime")
     void exportAuditLogsAcceptsOffsetDatetime() throws Exception {
         Mockito.when(analyticsService.exportAuditLogsCsv(Mockito.any(), Mockito.any()))
-            .thenReturn("header\n");
+            .thenReturn(new AnalyticsService.AuditExportResult("header\n", 0));
 
         mockMvc.perform(get("/api/v1/analytics/audit/export")
                 .param("from", "2026-01-05T10:15:30+08:00")
                 .param("to", "2026-01-05T12:15:30+08:00"))
             .andExpect(status().isOk())
-            .andExpect(content().contentTypeCompatibleWith(MediaType.parseMediaType("text/csv")));
+            .andExpect(content().contentTypeCompatibleWith(MediaType.parseMediaType("text/csv")))
+            .andExpect(header().string("X-Audit-Export-Count", "0"));
 
         ArgumentCaptor<LocalDateTime> fromCaptor = ArgumentCaptor.forClass(LocalDateTime.class);
         ArgumentCaptor<LocalDateTime> toCaptor = ArgumentCaptor.forClass(LocalDateTime.class);
@@ -72,7 +76,7 @@ class AnalyticsControllerTest {
     @DisplayName("Audit export accepts local datetime without offset")
     void exportAuditLogsAcceptsLocalDatetime() throws Exception {
         Mockito.when(analyticsService.exportAuditLogsCsv(Mockito.any(), Mockito.any()))
-            .thenReturn("header\n");
+            .thenReturn(new AnalyticsService.AuditExportResult("header\n", 0));
 
         mockMvc.perform(get("/api/v1/analytics/audit/export")
                 .param("from", "2026-01-05T10:15:30")
@@ -116,6 +120,28 @@ class AnalyticsControllerTest {
         mockMvc.perform(get("/api/v1/analytics/audit/export")
                 .param("from", "2026-01-05T10:00:00+08:00")
                 .param("to", "2026-01-05T01:00:00+00:00"))
+            .andExpect(status().isBadRequest());
+
+        Mockito.verifyNoInteractions(analyticsService);
+    }
+
+    @Test
+    @DisplayName("Audit export rejects empty range")
+    void exportAuditLogsRejectsEmptyRange() throws Exception {
+        mockMvc.perform(get("/api/v1/analytics/audit/export")
+                .param("from", "2026-01-05T10:15:30")
+                .param("to", "2026-01-05T10:15:30"))
+            .andExpect(status().isBadRequest());
+
+        Mockito.verifyNoInteractions(analyticsService);
+    }
+
+    @Test
+    @DisplayName("Audit export rejects range exceeding max window")
+    void exportAuditLogsRejectsRangeExceedingMax() throws Exception {
+        mockMvc.perform(get("/api/v1/analytics/audit/export")
+                .param("from", "2026-01-01T00:00:00")
+                .param("to", "2026-02-02T00:00:00"))
             .andExpect(status().isBadRequest());
 
         Mockito.verifyNoInteractions(analyticsService);

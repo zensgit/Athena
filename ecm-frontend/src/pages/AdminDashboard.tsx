@@ -111,6 +111,7 @@ interface LicenseInfo {
 interface AuditRetentionInfo {
   retentionDays: number;
   expiredLogCount: number;
+  exportMaxRangeDays?: number;
 }
 
 interface RuleExecutionSummary {
@@ -183,6 +184,38 @@ const AdminDashboard: React.FC = () => {
     return formatDateTimeInput(from);
   });
   const [auditExportTo, setAuditExportTo] = useState(() => formatDateTimeInput(new Date()));
+  const maxExportRangeDays = retentionInfo?.exportMaxRangeDays ?? 90;
+
+  const resolveAuditExportRange = () => {
+    const fallbackTo = new Date();
+    const fallbackFrom = new Date();
+    fallbackFrom.setDate(fallbackFrom.getDate() - 30);
+
+    const fromInput = auditExportFrom?.trim() ? new Date(auditExportFrom) : fallbackFrom;
+    const toInput = auditExportTo?.trim() ? new Date(auditExportTo) : fallbackTo;
+    return { fromInput, toInput };
+  };
+
+  const getAuditExportRangeError = (fromInput: Date, toInput: Date) => {
+    if (Number.isNaN(fromInput.getTime()) || Number.isNaN(toInput.getTime())) {
+      return 'Invalid audit export date range';
+    }
+    if (fromInput >= toInput) {
+      return 'Audit export start time must be before end time';
+    }
+    if (maxExportRangeDays > 0) {
+      const maxRangeMs = maxExportRangeDays * 24 * 60 * 60 * 1000;
+      if (toInput.getTime() - fromInput.getTime() > maxRangeMs) {
+        return `Audit export range cannot exceed ${maxExportRangeDays} days`;
+      }
+    }
+    return null;
+  };
+
+  const { fromInput: previewFrom, toInput: previewTo } = resolveAuditExportRange();
+  const auditExportRangeError = getAuditExportRangeError(previewFrom, previewTo);
+  const auditExportHelperText = auditExportRangeError
+    ?? (maxExportRangeDays > 0 ? `Max range: ${maxExportRangeDays} days` : 'No max range limit');
 
   const fetchDashboard = async () => {
     try {
@@ -209,23 +242,15 @@ const AdminDashboard: React.FC = () => {
   };
 
   const handleExportAuditLogs = async () => {
+    const { fromInput, toInput } = resolveAuditExportRange();
+    const rangeError = getAuditExportRangeError(fromInput, toInput);
+    if (rangeError) {
+      toast.error(rangeError);
+      return;
+    }
+
     try {
       setExportingAudit(true);
-      const fallbackTo = new Date();
-      const fallbackFrom = new Date();
-      fallbackFrom.setDate(fallbackFrom.getDate() - 30);
-
-      const fromInput = auditExportFrom?.trim() ? new Date(auditExportFrom) : fallbackFrom;
-      const toInput = auditExportTo?.trim() ? new Date(auditExportTo) : fallbackTo;
-
-      if (Number.isNaN(fromInput.getTime()) || Number.isNaN(toInput.getTime())) {
-        toast.error('Invalid audit export date range');
-        return;
-      }
-      if (fromInput > toInput) {
-        toast.error('Audit export start time must be before end time');
-        return;
-      }
 
       const fromStr = encodeURIComponent(formatDateTimeOffset(fromInput));
       const toStr = encodeURIComponent(formatDateTimeOffset(toInput));
@@ -243,9 +268,25 @@ const AdminDashboard: React.FC = () => {
       );
 
       if (!response.ok) {
-        throw new Error('Export failed');
+        let message = 'Failed to export audit logs';
+        try {
+          const text = await response.text();
+          if (text) {
+            try {
+              const payload = JSON.parse(text) as { message?: string; error?: string };
+              message = payload.message || payload.error || text;
+            } catch {
+              message = text;
+            }
+          }
+        } catch {
+          // Keep default message.
+        }
+        throw new Error(message);
       }
 
+      const exportCountHeader = response.headers.get('X-Audit-Export-Count');
+      const exportCount = exportCountHeader ? Number.parseInt(exportCountHeader, 10) : null;
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -256,10 +297,17 @@ const AdminDashboard: React.FC = () => {
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
 
-      toast.success('Audit logs exported successfully');
+      if (exportCount === 0) {
+        toast.info('No audit logs found for selected range');
+      } else {
+        toast.success('Audit logs exported successfully');
+      }
     } catch (error) {
       console.error(error);
-      toast.error('Failed to export audit logs');
+      const message = error instanceof Error && error.message
+        ? error.message
+        : 'Failed to export audit logs';
+      toast.error(message);
     } finally {
       setExportingAudit(false);
     }
@@ -642,6 +690,7 @@ const AdminDashboard: React.FC = () => {
                     value={auditExportFrom}
                     onChange={(event) => setAuditExportFrom(event.target.value)}
                     InputLabelProps={{ shrink: true }}
+                    error={Boolean(auditExportRangeError)}
                     sx={{ minWidth: 210 }}
                   />
                   <TextField
@@ -651,6 +700,8 @@ const AdminDashboard: React.FC = () => {
                     value={auditExportTo}
                     onChange={(event) => setAuditExportTo(event.target.value)}
                     InputLabelProps={{ shrink: true }}
+                    error={Boolean(auditExportRangeError)}
+                    helperText={auditExportHelperText}
                     sx={{ minWidth: 210 }}
                   />
                   <Button
@@ -658,7 +709,7 @@ const AdminDashboard: React.FC = () => {
                     variant="outlined"
                     startIcon={<DownloadIcon />}
                     onClick={handleExportAuditLogs}
-                    disabled={exportingAudit}
+                    disabled={exportingAudit || Boolean(auditExportRangeError)}
                   >
                     {exportingAudit ? 'Exporting...' : 'Export CSV'}
                   </Button>

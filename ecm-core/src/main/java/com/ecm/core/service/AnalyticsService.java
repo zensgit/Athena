@@ -171,9 +171,9 @@ public class AnalyticsService {
     /**
      * Export audit logs as CSV within a time range
      */
-    public String exportAuditLogsCsv(LocalDateTime from, LocalDateTime to) {
+    public AuditExportResult exportAuditLogsCsv(LocalDateTime from, LocalDateTime to) {
         List<AuditLog> logs = auditLogRepository.findByTimeRangeForExport(from, to);
-        return generateCsv(logs);
+        return new AuditExportResult(generateCsv(logs), logs.size());
     }
 
     /**
@@ -323,5 +323,10 @@ public class AnalyticsService {
     public record UserActivityStats(
         String username,
         long activityCount
+    ) {}
+
+    public record AuditExportResult(
+        String csvContent,
+        long rowCount
     ) {}
 }

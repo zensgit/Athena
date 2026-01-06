@@ -26,9 +26,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @ExtendWith(MockitoExtension.class)
 class SearchAclFilteringTest {
@@ -112,6 +114,104 @@ class SearchAclFilteringTest {
     }
 
     @Test
+    @DisplayName("Full-text search bypasses ACL filtering for admins")
+    void fullTextSearchBypassesAclForAdmins() {
+        UUID firstId = UUID.randomUUID();
+        UUID secondId = UUID.randomUUID();
+
+        NodeDocument firstDoc = NodeDocument.builder()
+            .id(firstId.toString())
+            .name("first")
+            .build();
+        NodeDocument secondDoc = NodeDocument.builder()
+            .id(secondId.toString())
+            .name("second")
+            .build();
+
+        SearchHits<NodeDocument> searchHits = searchHits(searchHit(firstDoc), searchHit(secondDoc));
+
+        Mockito.when(elasticsearchOperations.search(
+                Mockito.any(Query.class),
+                Mockito.eq(NodeDocument.class),
+                Mockito.any(IndexCoordinates.class)))
+            .thenReturn(searchHits);
+        Mockito.when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+
+        var results = fullTextSearchService.search("query", 0, 10, null, null);
+
+        assertEquals(2, results.getTotalElements());
+        assertEquals(firstId.toString(), results.getContent().get(0).getId());
+        assertEquals(secondId.toString(), results.getContent().get(1).getId());
+        Mockito.verifyNoInteractions(nodeRepository);
+    }
+
+    @Test
+    @DisplayName("Full-text search skips hits with missing node IDs for non-admins")
+    void fullTextSearchSkipsMissingNodeIds() {
+        NodeDocument blankDoc = NodeDocument.builder()
+            .id(" ")
+            .name("blank")
+            .build();
+        NodeDocument invalidDoc = NodeDocument.builder()
+            .id("not-a-uuid")
+            .name("invalid")
+            .build();
+
+        SearchHits<NodeDocument> searchHits = searchHits(searchHit(blankDoc), searchHit(invalidDoc));
+
+        Mockito.when(elasticsearchOperations.search(
+                Mockito.any(Query.class),
+                Mockito.eq(NodeDocument.class),
+                Mockito.any(IndexCoordinates.class)))
+            .thenReturn(searchHits);
+        Mockito.when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
+
+        var results = fullTextSearchService.search("query", 0, 10, null, null);
+
+        assertEquals(0, results.getTotalElements());
+        Mockito.verifyNoInteractions(nodeRepository);
+        Mockito.verify(securityService, Mockito.never()).hasPermission(Mockito.any(), Mockito.any());
+    }
+
+    @Test
+    @DisplayName("Full-text search filters hits for nodes missing from the repository")
+    void fullTextSearchSkipsMissingNodes() {
+        UUID existingId = UUID.randomUUID();
+        UUID missingId = UUID.randomUUID();
+
+        NodeDocument existingDoc = NodeDocument.builder()
+            .id(existingId.toString())
+            .name("existing")
+            .build();
+        NodeDocument missingDoc = NodeDocument.builder()
+            .id(missingId.toString())
+            .name("missing")
+            .build();
+
+        SearchHits<NodeDocument> searchHits = searchHits(searchHit(existingDoc), searchHit(missingDoc));
+
+        Mockito.when(elasticsearchOperations.search(
+                Mockito.any(Query.class),
+                Mockito.eq(NodeDocument.class),
+                Mockito.any(IndexCoordinates.class)))
+            .thenReturn(searchHits);
+
+        Document existingNode = new Document();
+        existingNode.setId(existingId);
+
+        Mockito.when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
+        Mockito.when(nodeRepository.findAllById(Mockito.<UUID>anyIterable()))
+            .thenReturn(List.of(existingNode));
+        Mockito.when(securityService.hasPermission(existingNode, PermissionType.READ)).thenReturn(true);
+
+        var results = fullTextSearchService.search("query", 0, 10, null, null);
+
+        assertEquals(1, results.getTotalElements());
+        assertEquals(existingId.toString(), results.getContent().get(0).getId());
+        Mockito.verify(securityService, Mockito.times(1)).hasPermission(Mockito.any(), Mockito.eq(PermissionType.READ));
+    }
+
+    @Test
     @DisplayName("Faceted search builds facets from authorized hits only")
     void facetedSearchBuildsFacetsFromAuthorizedHits() {
         UUID allowedId = UUID.randomUUID();
@@ -166,6 +266,126 @@ class SearchAclFilteringTest {
         assertEquals("alice", facets.get("createdBy").get(0).getValue());
         assertEquals("confidential", facets.get("tags").get(0).getValue());
         assertEquals(1, facets.get("tags").get(0).getCount());
+    }
+
+    @Test
+    @DisplayName("Faceted search bypasses ACL filtering for admins")
+    void facetedSearchBypassesAclForAdmins() {
+        UUID firstId = UUID.randomUUID();
+        UUID secondId = UUID.randomUUID();
+
+        NodeDocument firstDoc = NodeDocument.builder()
+            .id(firstId.toString())
+            .name("alpha")
+            .mimeType("application/pdf")
+            .createdBy("alice")
+            .tags(Set.of("confidential"))
+            .build();
+        NodeDocument secondDoc = NodeDocument.builder()
+            .id(secondId.toString())
+            .name("beta")
+            .mimeType("image/png")
+            .createdBy("bob")
+            .tags(Set.of("public"))
+            .build();
+
+        SearchHits<NodeDocument> searchHits = searchHits(searchHit(firstDoc), searchHit(secondDoc));
+
+        Mockito.when(elasticsearchOperations.search(
+                Mockito.any(Query.class),
+                Mockito.eq(NodeDocument.class),
+                Mockito.any(IndexCoordinates.class)))
+            .thenReturn(searchHits);
+        Mockito.when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+
+        FacetedSearchService.FacetedSearchRequest request = new FacetedSearchService.FacetedSearchRequest();
+        FacetedSearchService.FacetedSearchResponse response = facetedSearchService.search(request);
+
+        assertEquals(2, response.getTotalHits());
+        assertEquals(2, response.getResults().getTotalElements());
+        Map<String, List<FacetedSearchService.FacetValue>> facets = response.getFacets();
+        Set<String> mimeTypes = facets.get("mimeType").stream()
+            .map(FacetedSearchService.FacetValue::getValue)
+            .collect(Collectors.toSet());
+        assertTrue(mimeTypes.containsAll(Set.of("application/pdf", "image/png")));
+        Mockito.verifyNoInteractions(nodeRepository);
+    }
+
+    @Test
+    @DisplayName("Faceted search skips hits with missing node IDs for non-admins")
+    void facetedSearchSkipsMissingNodeIds() {
+        NodeDocument blankDoc = NodeDocument.builder()
+            .id("")
+            .name("blank")
+            .mimeType("application/pdf")
+            .build();
+        NodeDocument invalidDoc = NodeDocument.builder()
+            .id("not-a-uuid")
+            .name("invalid")
+            .mimeType("image/png")
+            .build();
+
+        SearchHits<NodeDocument> searchHits = searchHits(searchHit(blankDoc), searchHit(invalidDoc));
+
+        Mockito.when(elasticsearchOperations.search(
+                Mockito.any(Query.class),
+                Mockito.eq(NodeDocument.class),
+                Mockito.any(IndexCoordinates.class)))
+            .thenReturn(searchHits);
+        Mockito.when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
+
+        FacetedSearchService.FacetedSearchRequest request = new FacetedSearchService.FacetedSearchRequest();
+        FacetedSearchService.FacetedSearchResponse response = facetedSearchService.search(request);
+
+        assertEquals(0, response.getTotalHits());
+        assertEquals(0, response.getResults().getTotalElements());
+        Mockito.verifyNoInteractions(nodeRepository);
+        Mockito.verify(securityService, Mockito.never()).hasPermission(Mockito.any(), Mockito.any());
+    }
+
+    @Test
+    @DisplayName("Faceted search filters hits for nodes missing from the repository")
+    void facetedSearchSkipsMissingNodes() {
+        UUID existingId = UUID.randomUUID();
+        UUID missingId = UUID.randomUUID();
+
+        NodeDocument existingDoc = NodeDocument.builder()
+            .id(existingId.toString())
+            .name("existing")
+            .mimeType("application/pdf")
+            .createdBy("alice")
+            .build();
+        NodeDocument missingDoc = NodeDocument.builder()
+            .id(missingId.toString())
+            .name("missing")
+            .mimeType("image/png")
+            .createdBy("bob")
+            .build();
+
+        SearchHits<NodeDocument> searchHits = searchHits(searchHit(existingDoc), searchHit(missingDoc));
+
+        Mockito.when(elasticsearchOperations.search(
+                Mockito.any(Query.class),
+                Mockito.eq(NodeDocument.class),
+                Mockito.any(IndexCoordinates.class)))
+            .thenReturn(searchHits);
+
+        Document existingNode = new Document();
+        existingNode.setId(existingId);
+
+        Mockito.when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
+        Mockito.when(nodeRepository.findAllById(Mockito.<UUID>anyIterable()))
+            .thenReturn(List.of(existingNode));
+        Mockito.when(securityService.hasPermission(existingNode, PermissionType.READ)).thenReturn(true);
+
+        FacetedSearchService.FacetedSearchRequest request = new FacetedSearchService.FacetedSearchRequest();
+        FacetedSearchService.FacetedSearchResponse response = facetedSearchService.search(request);
+
+        assertEquals(1, response.getTotalHits());
+        assertEquals(existingId.toString(), response.getResults().getContent().get(0).getId());
+        Map<String, List<FacetedSearchService.FacetValue>> facets = response.getFacets();
+        assertEquals("application/pdf", facets.get("mimeType").get(0).getValue());
+        assertEquals(1, facets.get("mimeType").get(0).getCount());
     }
 
     private static SearchHit<NodeDocument> searchHit(NodeDocument doc) {

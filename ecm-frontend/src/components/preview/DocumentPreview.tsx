@@ -223,6 +223,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   const [annotationsUpdatedBy, setAnnotationsUpdatedBy] = useState<string | null>(null);
   const [annotationsUpdatedAt, setAnnotationsUpdatedAt] = useState<string | null>(null);
   const [annotationsLoading, setAnnotationsLoading] = useState(false);
+  const [emptyPdf, setEmptyPdf] = useState(false);
   const [annotateMode, setAnnotateMode] = useState(false);
   const [annotationDialogOpen, setAnnotationDialogOpen] = useState(false);
   const [annotationDraft, setAnnotationDraft] = useState<PdfAnnotation | null>(null);
@@ -305,6 +306,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     setAnnotationsUpdatedBy(null);
     setAnnotationsUpdatedAt(null);
     setAnnotationsLoading(false);
+    setEmptyPdf(false);
     setAnnotateMode(initialAnnotateMode);
     setAnnotationDialogOpen(false);
     setAnnotationDraft(null);
@@ -321,6 +323,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
             setBlobContentType(detectedType);
           }
           if ((detectedType === 'application/pdf' || resolvedContentType === 'application/pdf') && blob.size === 0) {
+            setEmptyPdf(true);
             setPdfLoadFailed(true);
             void loadServerPreview();
           }
@@ -580,6 +583,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
 
   const handleRetry = () => {
     setPdfLoadFailed(false);
+    setEmptyPdf(false);
     setError(null);
     setServerPreview(null);
     setServerPreviewError(null);
@@ -973,9 +977,19 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
       }
 
       if (serverPreview) {
+        const previewPageCount = serverPreview.pageCount ?? serverPreview.pages?.length ?? 0;
         if (serverPreview.supported === false) {
           return renderPreviewError(
             serverPreview.message || 'Preview not available for this document',
+            {
+              showServerPreview: true,
+              showOpenFile: Boolean(fileUrl),
+            }
+          );
+        }
+        if (previewPageCount === 0) {
+          return renderPreviewError(
+            serverPreview.message || 'No preview pages available for this document',
             {
               showServerPreview: true,
               showOpenFile: Boolean(fileUrl),
@@ -1030,6 +1044,13 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
             </Box>
           </Box>
         );
+      }
+
+      if (emptyPdf) {
+        return renderPreviewError('This PDF has no pages to preview.', {
+          showServerPreview: true,
+          showOpenFile: Boolean(fileUrl),
+        });
       }
 
       if (pdfLoadFailed) {
