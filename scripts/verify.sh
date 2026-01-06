@@ -17,6 +17,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
+ORIGINAL_ARGS="$*"
 
 # Parse arguments
 SKIP_RESTART=0
@@ -68,6 +69,8 @@ ECM_VERIFY_PASS="${ECM_VERIFY_PASS:-${KEYCLOAK_PASSWORD:-admin}}"
 FRONTEND_DIR="${REPO_ROOT}/ecm-frontend"
 LOG_DIR="${REPO_ROOT}/tmp"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
+REPORT_FILE="${LOG_DIR}/${TIMESTAMP}_verify-report.md"
+WOPI_SUMMARY_FILE="${LOG_DIR}/${TIMESTAMP}_verify-wopi.summary.log"
 FRONTEND_DEPS_INSTALLED=0
 NPM_CACHE_DIR="${REPO_ROOT}/tmp/npm-cache"
 
@@ -91,6 +94,52 @@ STEPS_PASSED=0
 STEPS_FAILED=0
 STEPS_SKIPPED=0
 
+write_wopi_summary() {
+  local status="$1"
+  local log_file="$2"
+  {
+    echo "verify-wopi status: ${status}"
+    echo "log: ${log_file}"
+    if [[ -f "${log_file}" ]]; then
+      echo ""
+      echo "verify-wopi output:"
+      grep -E '^\[verify\]' "${log_file}" || true
+    fi
+  } > "${WOPI_SUMMARY_FILE}"
+}
+
+write_verification_report() {
+  local status="PASSED"
+  if [[ ${STEPS_FAILED} -gt 0 ]]; then
+    status="FAILED"
+  fi
+
+  {
+    echo "# Verification Report (${TIMESTAMP})"
+    echo ""
+    echo "## Command"
+    if [[ -n "${ORIGINAL_ARGS}" ]]; then
+      echo "- $0 ${ORIGINAL_ARGS}"
+    else
+      echo "- $0"
+    fi
+    echo ""
+    echo "## Results"
+    echo "- Passed: ${STEPS_PASSED}"
+    echo "- Failed: ${STEPS_FAILED}"
+    echo "- Skipped: ${STEPS_SKIPPED}"
+    echo "- Status: ${status}"
+    echo ""
+    echo "## Artifacts"
+    echo "- Logs prefix: ${LOG_DIR}/${TIMESTAMP}_*"
+    if [[ -f "${WOPI_SUMMARY_FILE}" ]]; then
+      echo "- WOPI summary: ${WOPI_SUMMARY_FILE}"
+    fi
+  } > "${REPORT_FILE}"
+}
+
+trap write_verification_report EXIT
+
 run_step() {
   local step_name="$1"
   local log_file="${LOG_DIR}/${TIMESTAMP}_${step_name}.log"
@@ -101,11 +150,17 @@ run_step() {
   if "$@" > "${log_file}" 2>&1; then
     log_success "${step_name} passed (log: ${log_file})"
     ((STEPS_PASSED+=1))
+    if [[ "${step_name}" == "verify-wopi" ]]; then
+      write_wopi_summary "passed" "${log_file}"
+    fi
     return 0
   else
     local exit_code=$?
     log_error "${step_name} failed (exit code: ${exit_code}, log: ${log_file})"
     ((STEPS_FAILED+=1))
+    if [[ "${step_name}" == "verify-wopi" ]]; then
+      write_wopi_summary "failed" "${log_file}"
+    fi
     return ${exit_code}
   fi
 }

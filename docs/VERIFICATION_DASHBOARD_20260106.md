@@ -62,6 +62,7 @@
 - E2E share link access: `docs/VERIFICATION_E2E_SHARE_LINK_ACCESS_20260106.md`
 - Full E2E run: `docs/VERIFICATION_E2E_FULL_RUN_20260106.md`
 - Full verify.sh report: `docs/VERIFICATION_VERIFY_20260106.md`
+- verify.sh reporting artifacts: `docs/VERIFICATION_VERIFY_SCRIPT_REPORTING_20260106.md`
 - WOPI auto-upload fallback: `docs/VERIFICATION_WOPI_AUTO_UPLOAD_20260106.md`
 - WOPI sample cleanup: `docs/VERIFICATION_WOPI_SAMPLE_CLEANUP_20260106.md`
 - UI E2E (historical): `docs/VERIFICATION_UI_E2E_20251228.md`
