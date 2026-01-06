@@ -19,6 +19,7 @@
 - Audit recent limit parameter: `docs/VERIFICATION_AUDIT_RECENT_LIMIT_PARAM_20260106.md`
 - Rules recent default limit: `docs/VERIFICATION_RULES_RECENT_DEFAULT_LIMIT_20260106.md`
 - Rules recent limit parameter: `docs/VERIFICATION_RULES_RECENT_LIMIT_PARAM_20260106.md`
+- Daily activity days parameter: `docs/VERIFICATION_DAILY_ACTIVITY_DEFAULT_DAYS_20260106.md`
 - Backend test run: `docs/VERIFICATION_BACKEND_MVN_TEST_20260106.md`
 - Backend verify run: `docs/VERIFICATION_BACKEND_MVN_VERIFY_20260106.md`
 - Share link validation: `docs/VERIFICATION_SHARE_LINK_ALLOWED_IP_VALIDATION_20260106.md`

@@ -17,6 +17,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.TimeZone;
@@ -298,5 +299,44 @@ class AnalyticsControllerTest {
             .andExpect(jsonPath("$[0].username").value("automation"));
 
         Mockito.verify(analyticsService).getRecentRuleActivity(3);
+    }
+
+    @Test
+    @DisplayName("Daily activity defaults to 30 days")
+    void dailyActivityDefaultsToWindow() throws Exception {
+        List<AnalyticsService.DailyActivityStats> stats = List.of(
+            new AnalyticsService.DailyActivityStats(LocalDate.of(2026, 1, 1), 4)
+        );
+
+        Mockito.when(analyticsService.getDailyActivity(30)).thenReturn(stats);
+
+        mockMvc.perform(get("/api/v1/analytics/activity/daily"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].date[0]").value(2026))
+            .andExpect(jsonPath("$[0].date[1]").value(1))
+            .andExpect(jsonPath("$[0].date[2]").value(1))
+            .andExpect(jsonPath("$[0].eventCount").value(4));
+
+        Mockito.verify(analyticsService).getDailyActivity(30);
+    }
+
+    @Test
+    @DisplayName("Daily activity respects explicit days parameter")
+    void dailyActivityRespectsDaysParameter() throws Exception {
+        List<AnalyticsService.DailyActivityStats> stats = List.of(
+            new AnalyticsService.DailyActivityStats(LocalDate.of(2026, 1, 2), 2)
+        );
+
+        Mockito.when(analyticsService.getDailyActivity(7)).thenReturn(stats);
+
+        mockMvc.perform(get("/api/v1/analytics/activity/daily")
+                .param("days", "7"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].date[0]").value(2026))
+            .andExpect(jsonPath("$[0].date[1]").value(1))
+            .andExpect(jsonPath("$[0].date[2]").value(2))
+            .andExpect(jsonPath("$[0].eventCount").value(2));
+
+        Mockito.verify(analyticsService).getDailyActivity(7);
     }
 }
