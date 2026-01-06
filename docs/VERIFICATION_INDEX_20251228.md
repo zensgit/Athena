@@ -90,6 +90,8 @@
   - Full verify.sh run + WOPI-only rerun notes
 - `docs/VERIFICATION_WOPI_AUTO_UPLOAD_20260106.md`
   - WOPI verification auto-uploads an XLSX sample when missing
+- `docs/VERIFICATION_WOPI_SAMPLE_CLEANUP_20260106.md`
+  - WOPI XLSX sample cleanup (stale index noted)
 - `docs/VERIFICATION_YUANTUS_INTEGRATIONS_20251228.md`
   - Yuantus integrations health OK (Athena/CAD-ML/Dedup)
   - Post-restart validation OK
