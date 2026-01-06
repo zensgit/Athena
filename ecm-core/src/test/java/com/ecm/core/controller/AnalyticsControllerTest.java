@@ -1,5 +1,6 @@
 package com.ecm.core.controller;
 
+import com.ecm.core.entity.AuditLog;
 import com.ecm.core.service.AnalyticsService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,6 +18,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.TimeZone;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -222,5 +224,23 @@ class AnalyticsControllerTest {
             .andExpect(jsonPath("$.deletedCount").value(0))
             .andExpect(jsonPath("$.retentionDays").value(90))
             .andExpect(jsonPath("$.message").value("No expired audit logs to delete"));
+    }
+
+    @Test
+    @DisplayName("Recent audit defaults to limit 50")
+    void recentAuditDefaultsToLimit() throws Exception {
+        AuditLog log = new AuditLog();
+        log.setEventType("LOGIN");
+        log.setUsername("alice");
+        log.setEventTime(LocalDateTime.of(2026, 1, 1, 0, 0));
+
+        Mockito.when(analyticsService.getRecentActivity(50)).thenReturn(List.of(log));
+
+        mockMvc.perform(get("/api/v1/analytics/audit/recent"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].eventType").value("LOGIN"))
+            .andExpect(jsonPath("$[0].username").value("alice"));
+
+        Mockito.verify(analyticsService).getRecentActivity(50);
     }
 }
