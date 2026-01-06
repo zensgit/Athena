@@ -44,6 +44,8 @@
   - `mvn verify`: 53 tests passed
 - `docs/VERIFICATION_SEARCH_DISABLED_GUARD_20260106.md`
   - Search disabled guard paths in search services
+- `docs/VERIFICATION_SEARCH_AVAILABLE_FACETS_DISABLED_20260106.md`
+  - Available facets guard when search is disabled
 
 ## Integration Health + Smoke
 - `docs/VERIFICATION_YUANTUS_INTEGRATIONS_20251228.md`

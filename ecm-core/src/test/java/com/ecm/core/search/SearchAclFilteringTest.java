@@ -339,6 +339,17 @@ class SearchAclFilteringTest {
     }
 
     @Test
+    @DisplayName("Available facets returns empty when search is disabled")
+    void availableFacetsReturnsEmptyWhenDisabled() {
+        ReflectionTestUtils.setField(facetedSearchService, "searchEnabled", false);
+
+        Map<String, List<FacetedSearchService.FacetValue>> facets = facetedSearchService.getAvailableFacets("doc");
+
+        assertTrue(facets.isEmpty());
+        Mockito.verifyNoInteractions(elasticsearchOperations, documentRepository, nodeRepository, securityService);
+    }
+
+    @Test
     @DisplayName("Faceted search skips hits with missing node IDs for non-admins")
     void facetedSearchSkipsMissingNodeIds() {
         NodeDocument blankDoc = NodeDocument.builder()
