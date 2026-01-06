@@ -7,6 +7,7 @@
 - Mock `authService` to avoid Keycloak side effects.
 - Validate unauthenticated redirects to `/login` and role failures to `/unauthorized`.
 - Confirm authenticated users can render protected content.
+- Cover Keycloak callback parameters to assert the signing-in spinner state.
 
 ## Files
 - ecm-frontend/src/components/auth/PrivateRoute.test.tsx

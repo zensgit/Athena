@@ -30,6 +30,8 @@
   - MainLayout menu assertions for admin/viewer roles
 - `docs/VERIFICATION_PRIVATE_ROUTE_TESTS_20260106.md`
   - PrivateRoute redirects and role gating
+- `docs/VERIFICATION_PRIVATE_ROUTE_CALLBACK_SPINNER_20260106.md`
+  - PrivateRoute spinner on Keycloak callback params
 
 ## Backend Tests
 - `docs/VERIFICATION_BACKEND_MVN_TEST_20260106.md`

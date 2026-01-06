@@ -30,10 +30,12 @@ const renderPrivateRoute = ({
   isAuthenticated,
   roles,
   requiredRoles,
+  initialEntries = ['/protected'],
 }: {
   isAuthenticated: boolean;
   roles?: string[];
   requiredRoles?: string[];
+  initialEntries?: string[];
 }) => {
   const store = configureStore({
     reducer: {
@@ -61,7 +63,7 @@ const renderPrivateRoute = ({
   render(
     <Provider store={store}>
       <MemoryRouter
-        initialEntries={['/protected']}
+        initialEntries={initialEntries}
         future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
       >
         <Routes>
@@ -85,6 +87,7 @@ beforeEach(() => {
   authServiceMock.isAuthenticated.mockReturnValue(false);
   authServiceMock.getCurrentUser.mockReturnValue(null);
   authServiceMock.getToken.mockReturnValue(undefined);
+  window.history.pushState({}, 'Test', '/');
   sessionStorage.clear();
   localStorage.clear();
 });
@@ -113,4 +116,15 @@ test('redirects users missing required roles', async () => {
   });
 
   expect(await screen.findByText('Unauthorized Page')).toBeTruthy();
+});
+
+test('shows spinner when Keycloak callback params are present', async () => {
+  window.history.pushState({}, 'Callback', '/protected?code=abc&state=def');
+
+  renderPrivateRoute({
+    isAuthenticated: false,
+    initialEntries: ['/protected?code=abc&state=def'],
+  });
+
+  expect(await screen.findByText('Signing you in...')).toBeTruthy();
 });
