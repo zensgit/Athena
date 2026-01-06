@@ -350,6 +350,22 @@ class SearchAclFilteringTest {
     }
 
     @Test
+    @DisplayName("Suggested filters return date ranges when search is disabled")
+    void suggestedFiltersReturnDateRangesWhenDisabled() {
+        ReflectionTestUtils.setField(facetedSearchService, "searchEnabled", false);
+
+        List<FacetedSearchService.SuggestedFilter> suggestions = facetedSearchService.getSuggestedFilters("doc");
+
+        assertEquals(3, suggestions.size());
+        assertTrue(suggestions.stream().allMatch(suggestion -> "dateRange".equals(suggestion.getField())));
+        assertEquals(
+            Set.of("7d", "30d", "1y"),
+            suggestions.stream().map(FacetedSearchService.SuggestedFilter::getValue).collect(Collectors.toSet())
+        );
+        Mockito.verifyNoInteractions(elasticsearchOperations, documentRepository, nodeRepository, securityService);
+    }
+
+    @Test
     @DisplayName("Faceted search skips hits with missing node IDs for non-admins")
     void facetedSearchSkipsMissingNodeIds() {
         NodeDocument blankDoc = NodeDocument.builder()
