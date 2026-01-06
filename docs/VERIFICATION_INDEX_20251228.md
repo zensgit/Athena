@@ -42,6 +42,8 @@
   - `mvn test`: 53 tests passed
 - `docs/VERIFICATION_BACKEND_MVN_VERIFY_20260106.md`
   - `mvn verify`: 53 tests passed
+- `docs/VERIFICATION_SEARCH_DISABLED_GUARD_20260106.md`
+  - Search disabled guard paths in search services
 
 ## Integration Health + Smoke
 - `docs/VERIFICATION_YUANTUS_INTEGRATIONS_20251228.md`

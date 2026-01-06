@@ -146,6 +146,17 @@ class SearchAclFilteringTest {
     }
 
     @Test
+    @DisplayName("Full-text search returns empty results when search is disabled")
+    void fullTextSearchReturnsEmptyWhenDisabled() {
+        ReflectionTestUtils.setField(fullTextSearchService, "searchEnabled", false);
+
+        var results = fullTextSearchService.search("query", 0, 10, null, null);
+
+        assertTrue(results.isEmpty());
+        Mockito.verifyNoInteractions(elasticsearchOperations, documentRepository, nodeRepository, securityService);
+    }
+
+    @Test
     @DisplayName("Full-text search skips hits with missing node IDs for non-admins")
     void fullTextSearchSkipsMissingNodeIds() {
         NodeDocument blankDoc = NodeDocument.builder()
@@ -309,6 +320,22 @@ class SearchAclFilteringTest {
             .collect(Collectors.toSet());
         assertTrue(mimeTypes.containsAll(Set.of("application/pdf", "image/png")));
         Mockito.verifyNoInteractions(nodeRepository);
+    }
+
+    @Test
+    @DisplayName("Faceted search returns empty response when search is disabled")
+    void facetedSearchReturnsEmptyWhenDisabled() {
+        ReflectionTestUtils.setField(facetedSearchService, "searchEnabled", false);
+
+        FacetedSearchService.FacetedSearchRequest request = new FacetedSearchService.FacetedSearchRequest();
+        request.setQuery("doc");
+
+        FacetedSearchService.FacetedSearchResponse response = facetedSearchService.search(request);
+
+        assertEquals(0, response.getTotalHits());
+        assertTrue(response.getResults().isEmpty());
+        assertTrue(response.getFacets().isEmpty());
+        Mockito.verifyNoInteractions(elasticsearchOperations, documentRepository, nodeRepository, securityService);
     }
 
     @Test
