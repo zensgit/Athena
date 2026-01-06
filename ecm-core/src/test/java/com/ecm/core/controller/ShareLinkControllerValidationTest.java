@@ -22,6 +22,7 @@ import java.util.UUID;
 
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(ShareLinkController.class)
@@ -66,6 +67,20 @@ class ShareLinkControllerValidationTest {
         mockMvc.perform(post("/api/v1/share/nodes/{nodeId}", nodeId)
                 .contentType(APPLICATION_JSON)
                 .content("{\"name\":\"share\",\"allowedIps\":\"192.168.1.0/33\"}"))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("Invalid allowedIps on update returns bad request")
+    void updateShareLinkRejectsInvalidAllowedIps() throws Exception {
+        String token = "token";
+        Mockito.when(shareLinkService.updateShareLink(Mockito.eq(token), Mockito.any()))
+            .thenThrow(new IllegalArgumentException("Invalid allowedIps entry: 192.168.1.0/33"));
+
+        mockMvc.perform(put("/api/v1/share/{token}", token)
+                .contentType(APPLICATION_JSON)
+                .content("{\"allowedIps\":\"192.168.1.0/33\"}"))
             .andExpect(status().isBadRequest());
     }
 }
