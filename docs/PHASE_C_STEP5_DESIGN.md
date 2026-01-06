@@ -11,6 +11,7 @@ Validate that share links respect IP allowlists and expiry timestamps.
 - Update `scripts/verify-phase-c.py` to:
   - Create a link with `allowedIps` set to `203.0.113.1/32` and confirm `403` on access.
   - Create a link with `expiryDate` set to now minus 1 minute and confirm `403` on access.
+- Note: `allowedIps` accepts comma-separated IP/CIDR entries, is normalized (trimmed, empty entries removed), and invalid entries return HTTP 400.
 
 ## Success Criteria
 - IP-restricted link denies access from non-allowed IPs.

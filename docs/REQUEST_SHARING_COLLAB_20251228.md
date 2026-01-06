@@ -7,6 +7,7 @@ Share links, collaboration flows, and permissions for external access.
 1. **Share link management**
    - Create, revoke, and list share links per document.
    - Support expiry date/time and max access count (optional).
+   - Accept comma-separated IP/CIDR allowlists; invalid entries are rejected and blank input clears restrictions.
 
 2. **Permission levels**
    - Read-only vs edit/annotate (if supported).
