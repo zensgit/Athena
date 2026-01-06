@@ -339,4 +339,75 @@ class AnalyticsControllerTest {
 
         Mockito.verify(analyticsService).getDailyActivity(7);
     }
+
+    @Test
+    @DisplayName("Top users defaults to limit 10")
+    void topUsersDefaultsToLimit() throws Exception {
+        List<AnalyticsService.UserActivityStats> stats = List.of(
+            new AnalyticsService.UserActivityStats("alice", 3)
+        );
+
+        Mockito.when(analyticsService.getTopUsers(10)).thenReturn(stats);
+
+        mockMvc.perform(get("/api/v1/analytics/users/top"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].username").value("alice"))
+            .andExpect(jsonPath("$[0].activityCount").value(3));
+
+        Mockito.verify(analyticsService).getTopUsers(10);
+    }
+
+    @Test
+    @DisplayName("Top users respects explicit limit parameter")
+    void topUsersRespectsLimitParameter() throws Exception {
+        List<AnalyticsService.UserActivityStats> stats = List.of(
+            new AnalyticsService.UserActivityStats("bob", 1)
+        );
+
+        Mockito.when(analyticsService.getTopUsers(5)).thenReturn(stats);
+
+        mockMvc.perform(get("/api/v1/analytics/users/top")
+                .param("limit", "5"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].username").value("bob"))
+            .andExpect(jsonPath("$[0].activityCount").value(1));
+
+        Mockito.verify(analyticsService).getTopUsers(5);
+    }
+
+    @Test
+    @DisplayName("Dashboard aggregates summary, storage, activity, and top users")
+    void dashboardAggregatesAnalytics() throws Exception {
+        AnalyticsService.SystemSummaryStats summary = new AnalyticsService.SystemSummaryStats(10, 4, 2048);
+        List<AnalyticsService.MimeTypeStats> storage = List.of(
+            new AnalyticsService.MimeTypeStats("application/pdf", 2, 1024)
+        );
+        List<AnalyticsService.DailyActivityStats> activity = List.of(
+            new AnalyticsService.DailyActivityStats(LocalDate.of(2026, 1, 5), 6)
+        );
+        List<AnalyticsService.UserActivityStats> topUsers = List.of(
+            new AnalyticsService.UserActivityStats("carol", 8)
+        );
+
+        Mockito.when(analyticsService.getSystemSummary()).thenReturn(summary);
+        Mockito.when(analyticsService.getStorageByMimeType()).thenReturn(storage);
+        Mockito.when(analyticsService.getDailyActivity(14)).thenReturn(activity);
+        Mockito.when(analyticsService.getTopUsers(5)).thenReturn(topUsers);
+
+        mockMvc.perform(get("/api/v1/analytics/dashboard"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.summary.totalDocuments").value(10))
+            .andExpect(jsonPath("$.summary.totalFolders").value(4))
+            .andExpect(jsonPath("$.summary.totalSizeBytes").value(2048))
+            .andExpect(jsonPath("$.storage[0].mimeType").value("application/pdf"))
+            .andExpect(jsonPath("$.activity[0].date[0]").value(2026))
+            .andExpect(jsonPath("$.activity[0].date[2]").value(5))
+            .andExpect(jsonPath("$.topUsers[0].username").value("carol"))
+            .andExpect(jsonPath("$.topUsers[0].activityCount").value(8));
+
+        Mockito.verify(analyticsService).getSystemSummary();
+        Mockito.verify(analyticsService).getStorageByMimeType();
+        Mockito.verify(analyticsService).getDailyActivity(14);
+        Mockito.verify(analyticsService).getTopUsers(5);
+    }
 }

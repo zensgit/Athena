@@ -60,6 +60,10 @@
   - Rules recent endpoint explicit limit
 - `docs/VERIFICATION_DAILY_ACTIVITY_DEFAULT_DAYS_20260106.md`
   - Daily activity default + explicit days parameter
+- `docs/VERIFICATION_TOP_USERS_LIMIT_PARAM_20260106.md`
+  - Top users default + explicit limit
+- `docs/VERIFICATION_DASHBOARD_AGGREGATION_20260106.md`
+  - Dashboard aggregation payload
 - `docs/VERIFICATION_SEARCH_DISABLED_GUARD_20260106.md`
   - Search disabled guard paths in search services
 - `docs/VERIFICATION_SEARCH_AVAILABLE_FACETS_DISABLED_20260106.md`
