@@ -13,6 +13,7 @@
 - Audit export validation: `docs/VERIFICATION_AUDIT_EXPORT_RANGE_VALIDATION_20260106.md`
 - Audit export max-range boundary: `docs/VERIFICATION_AUDIT_EXPORT_MAX_RANGE_BOUNDARY_20260106.md`
 - Audit export blank parameters: `docs/VERIFICATION_AUDIT_EXPORT_BLANK_PARAMS_20260106.md`
+- Audit export response headers: `docs/VERIFICATION_AUDIT_EXPORT_RESPONSE_HEADERS_20260106.md`
 - Audit retention info payload: `docs/VERIFICATION_AUDIT_RETENTION_INFO_TEST_20260106.md`
 - Audit cleanup responses: `docs/VERIFICATION_AUDIT_CLEANUP_RESPONSE_TESTS_20260106.md`
 - Audit recent default limit: `docs/VERIFICATION_AUDIT_RECENT_DEFAULT_LIMIT_20260106.md`

@@ -2,6 +2,7 @@ package com.ecm.core.controller;
 
 import com.ecm.core.entity.AuditLog;
 import com.ecm.core.service.AnalyticsService;
+import org.hamcrest.Matchers;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -187,6 +188,25 @@ class AnalyticsControllerTest {
 
         assertEquals(LocalDateTime.of(2026, 1, 1, 0, 0, 0), fromCaptor.getValue());
         assertEquals(LocalDateTime.of(2026, 1, 31, 0, 0, 0), toCaptor.getValue());
+    }
+
+    @Test
+    @DisplayName("Audit export sets CSV headers and filename")
+    void exportAuditLogsSetsCsvHeadersAndFilename() throws Exception {
+        Mockito.when(analyticsService.exportAuditLogsCsv(Mockito.any(), Mockito.any()))
+            .thenReturn(new AnalyticsService.AuditExportResult("header\nrow\n", 2));
+
+        mockMvc.perform(get("/api/v1/analytics/audit/export")
+                .param("from", "2026-01-05T00:00:00")
+                .param("to", "2026-01-06T00:00:00"))
+            .andExpect(status().isOk())
+            .andExpect(content().contentType("text/csv; charset=UTF-8"))
+            .andExpect(header().string("Content-Disposition",
+                Matchers.containsString("audit_logs_20260105_to_20260106.csv")))
+            .andExpect(header().string("X-Audit-Export-Count", "2"))
+            .andExpect(content().string("header\nrow\n"));
+
+        Mockito.verify(analyticsService).exportAuditLogsCsv(Mockito.any(), Mockito.any());
     }
 
     @Test

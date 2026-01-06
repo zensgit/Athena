@@ -48,6 +48,8 @@
   - Audit export max-range boundary accepted
 - `docs/VERIFICATION_AUDIT_EXPORT_BLANK_PARAMS_20260106.md`
   - Audit export blank parameters rejected
+- `docs/VERIFICATION_AUDIT_EXPORT_RESPONSE_HEADERS_20260106.md`
+  - Audit export response headers + filename
 - `docs/VERIFICATION_AUDIT_RETENTION_INFO_TEST_20260106.md`
   - Audit retention info payload verified
 - `docs/VERIFICATION_AUDIT_CLEANUP_RESPONSE_TESTS_20260106.md`
