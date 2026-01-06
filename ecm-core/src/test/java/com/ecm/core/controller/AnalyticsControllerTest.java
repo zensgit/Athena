@@ -280,4 +280,23 @@ class AnalyticsControllerTest {
 
         Mockito.verify(analyticsService).getRecentRuleActivity(20);
     }
+
+    @Test
+    @DisplayName("Recent rule activity respects explicit limit parameter")
+    void recentRuleActivityRespectsLimitParameter() throws Exception {
+        AuditLog log = new AuditLog();
+        log.setEventType("RULE_EXECUTED");
+        log.setUsername("automation");
+        log.setEventTime(LocalDateTime.of(2026, 1, 4, 0, 0));
+
+        Mockito.when(analyticsService.getRecentRuleActivity(3)).thenReturn(List.of(log));
+
+        mockMvc.perform(get("/api/v1/analytics/rules/recent")
+                .param("limit", "3"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].eventType").value("RULE_EXECUTED"))
+            .andExpect(jsonPath("$[0].username").value("automation"));
+
+        Mockito.verify(analyticsService).getRecentRuleActivity(3);
+    }
 }
