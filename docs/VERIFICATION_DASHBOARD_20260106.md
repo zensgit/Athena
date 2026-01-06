@@ -45,6 +45,7 @@
 - Audit export UI feedback: `docs/VERIFICATION_AUDIT_EXPORT_FEEDBACK_20260106.md`
 - Audit export max-range UI: `docs/VERIFICATION_AUDIT_EXPORT_MAX_RANGE_UI_20260106.md`
 - Frontend lint + unit tests: `docs/VERIFICATION_FRONTEND_LINT_TEST_20260106.md`
+- Frontend build: `docs/VERIFICATION_FRONTEND_BUILD_20260106.md`
 - Router future flags: `docs/VERIFICATION_ROUTER_FUTURE_FLAGS_20260106.md`
 - App test Suspense act warning: `docs/VERIFICATION_APP_TEST_SUSPENSE_ACT_20260106.md`
 - MainLayout menu tests: `docs/VERIFICATION_MAINLAYOUT_MENU_TEST_STRENGTHENING_20260106.md`
