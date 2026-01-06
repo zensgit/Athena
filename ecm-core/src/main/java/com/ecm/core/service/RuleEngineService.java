@@ -70,6 +70,9 @@ public class RuleEngineService {
     @Autowired
     private org.flowable.engine.RuntimeService runtimeService;
 
+    @Autowired
+    private NotificationService notificationService;
+
     // ==================== Rule Management ====================
 
     /**
@@ -780,6 +783,7 @@ public class RuleEngineService {
     private void executeSendNotification(RuleAction action, Document document) {
         String recipient = action.getParam(RuleAction.ParamKeys.RECIPIENT);
         String message = action.getParam(RuleAction.ParamKeys.MESSAGE);
+        String type = action.getParam(RuleAction.ParamKeys.NOTIFICATION_TYPE);
 
         if (recipient == null || message == null) {
             throw new IllegalArgumentException("Recipient and message are required for SEND_NOTIFICATION action");
@@ -789,7 +793,12 @@ public class RuleEngineService {
         message = message.replace("{documentName}", document.getName());
         message = message.replace("{documentId}", document.getId().toString());
 
-        // TODO: Integrate with notification service
+        String title = "Rule Notification";
+        if (type != null && !type.isBlank()) {
+            title = String.format("Rule Notification (%s)", type.trim());
+        }
+
+        notificationService.notifyUser(recipient, title, message);
         log.info("Notification to {}: {}", recipient, message);
     }
 
