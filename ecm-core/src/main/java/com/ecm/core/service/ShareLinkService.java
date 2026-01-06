@@ -17,6 +17,7 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.NoSuchElementException;
@@ -55,7 +56,8 @@ public class ShareLinkService {
             throw new SecurityException("No permission to share this document");
         }
 
-        validateAllowedIps(request.allowedIps());
+        String normalizedAllowedIps = normalizeAllowedIps(request.allowedIps());
+        validateAllowedIps(normalizedAllowedIps);
 
         String token = generateUniqueToken();
         String currentUser = securityService.getCurrentUser();
@@ -68,7 +70,7 @@ public class ShareLinkService {
             .expiryDate(request.expiryDate())
             .maxAccessCount(request.maxAccessCount())
             .permissionLevel(request.permissionLevel() != null ? request.permissionLevel() : SharePermission.VIEW)
-            .allowedIps(request.allowedIps())
+            .allowedIps(normalizedAllowedIps)
             .build();
 
         // Set password if provided
@@ -223,8 +225,9 @@ public class ShareLinkService {
             shareLink.setPermissionLevel(request.permissionLevel());
         }
         if (request.allowedIps() != null) {
-            validateAllowedIps(request.allowedIps());
-            shareLink.setAllowedIps(request.allowedIps().isEmpty() ? null : request.allowedIps());
+            String normalizedAllowedIps = normalizeAllowedIps(request.allowedIps());
+            validateAllowedIps(normalizedAllowedIps);
+            shareLink.setAllowedIps(normalizedAllowedIps);
         }
         if (request.password() != null) {
             if (request.password().isEmpty()) {
@@ -406,6 +409,30 @@ public class ShareLinkService {
         } catch (UnknownHostException | NumberFormatException ex) {
             return false;
         }
+    }
+
+    private String normalizeAllowedIps(String allowedIps) {
+        if (allowedIps == null) {
+            return null;
+        }
+        String trimmed = allowedIps.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+
+        String[] entries = allowedIps.split(",");
+        List<String> normalized = new ArrayList<>();
+        for (String entry : entries) {
+            String value = entry.trim();
+            if (!value.isEmpty()) {
+                normalized.add(value);
+            }
+        }
+
+        if (normalized.isEmpty()) {
+            return null;
+        }
+        return String.join(",", normalized);
     }
 
     // Request/Response records

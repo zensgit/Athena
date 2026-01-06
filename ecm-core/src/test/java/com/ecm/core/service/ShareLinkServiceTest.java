@@ -143,6 +143,54 @@ class ShareLinkServiceTest {
         verify(shareLinkRepository, never()).save(any());
     }
 
+    @Test
+    @DisplayName("Create share link normalizes allowed IP entries")
+    void createShareLinkNormalizesAllowedIps() {
+        Document document = buildDocument();
+        when(nodeRepository.findById(any(UUID.class))).thenReturn(Optional.of(document));
+        when(securityService.hasPermission(document, PermissionType.READ)).thenReturn(true);
+        when(securityService.getCurrentUser()).thenReturn("tester");
+        when(shareLinkRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ShareLinkService.CreateShareLinkRequest request = new ShareLinkService.CreateShareLinkRequest(
+            "share",
+            null,
+            null,
+            ShareLink.SharePermission.VIEW,
+            null,
+            " 10.0.0.1 , 10.0.0.2 , "
+        );
+
+        ShareLink shareLink = shareLinkService.createShareLink(UUID.randomUUID(), request);
+
+        assertEquals("10.0.0.1,10.0.0.2", shareLink.getAllowedIps());
+    }
+
+    @Test
+    @DisplayName("Update share link clears allowed IPs on blank input")
+    void updateShareLinkClearsAllowedIpsOnBlankInput() {
+        ShareLink shareLink = buildShareLink("10.0.0.1/32");
+        when(shareLinkRepository.findByToken("token")).thenReturn(Optional.of(shareLink));
+        when(securityService.getCurrentUser()).thenReturn("tester");
+        when(securityService.hasPermission(shareLink.getNode(), PermissionType.CHANGE_PERMISSIONS))
+            .thenReturn(true);
+        when(shareLinkRepository.save(shareLink)).thenReturn(shareLink);
+
+        ShareLinkService.UpdateShareLinkRequest request = new ShareLinkService.UpdateShareLinkRequest(
+            null,
+            null,
+            null,
+            null,
+            null,
+            "   ",
+            null
+        );
+
+        ShareLink updated = shareLinkService.updateShareLink("token", request);
+
+        assertEquals(null, updated.getAllowedIps());
+    }
+
     private Document buildDocument() {
         Document document = new Document();
         document.setName("doc");
