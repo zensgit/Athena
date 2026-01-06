@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @ExtendWith(MockitoExtension.class)
@@ -181,5 +182,18 @@ class AnalyticsControllerTest {
 
         assertEquals(LocalDateTime.of(2026, 1, 1, 0, 0, 0), fromCaptor.getValue());
         assertEquals(LocalDateTime.of(2026, 1, 31, 0, 0, 0), toCaptor.getValue());
+    }
+
+    @Test
+    @DisplayName("Audit retention info returns policy details")
+    void auditRetentionInfoReturnsPolicyDetails() throws Exception {
+        Mockito.when(analyticsService.getAuditRetentionDays()).thenReturn(120);
+        Mockito.when(analyticsService.getExpiredAuditLogCount()).thenReturn(42L);
+
+        mockMvc.perform(get("/api/v1/analytics/audit/retention"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.retentionDays").value(120))
+            .andExpect(jsonPath("$.expiredLogCount").value(42))
+            .andExpect(jsonPath("$.exportMaxRangeDays").value(30));
     }
 }

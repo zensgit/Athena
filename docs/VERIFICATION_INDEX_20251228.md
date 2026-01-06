@@ -46,6 +46,8 @@
   - Audit export max-range boundary accepted
 - `docs/VERIFICATION_AUDIT_EXPORT_BLANK_PARAMS_20260106.md`
   - Audit export blank parameters rejected
+- `docs/VERIFICATION_AUDIT_RETENTION_INFO_TEST_20260106.md`
+  - Audit retention info payload verified
 - `docs/VERIFICATION_SEARCH_DISABLED_GUARD_20260106.md`
   - Search disabled guard paths in search services
 - `docs/VERIFICATION_SEARCH_AVAILABLE_FACETS_DISABLED_20260106.md`
