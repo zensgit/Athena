@@ -252,12 +252,23 @@ public class RuleAction implements Serializable {
      * Factory method for SEND_NOTIFICATION action
      */
     public static RuleAction sendNotification(String recipient, String message) {
+        return sendNotification(recipient, message, null);
+    }
+
+    /**
+     * Factory method for SEND_NOTIFICATION action with type
+     */
+    public static RuleAction sendNotification(String recipient, String message, String type) {
+        Map<String, Object> params = new HashMap<>();
+        params.put(ParamKeys.RECIPIENT, recipient);
+        params.put(ParamKeys.MESSAGE, message);
+        if (type != null && !type.isBlank()) {
+            params.put(ParamKeys.NOTIFICATION_TYPE, type);
+        }
+
         return RuleAction.builder()
             .type(ActionType.SEND_NOTIFICATION)
-            .params(Map.of(
-                ParamKeys.RECIPIENT, recipient,
-                ParamKeys.MESSAGE, message
-            ))
+            .params(params)
             .build();
     }
 
