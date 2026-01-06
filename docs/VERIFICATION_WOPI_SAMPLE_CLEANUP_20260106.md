@@ -8,4 +8,4 @@
 ## Results
 - One sample document removed (204).
 - Two documents already missing (404 on delete and fetch), indicating prior removal.
-- Search index still returning stale entries; node fetch returns 404.
+- Ran `POST /api/v1/search/index/rebuild` (documentsIndexed: 961); search no longer returns `verify-wopi-sample.xlsx`.
