@@ -10,10 +10,13 @@ jest.mock('./components/search/SearchDialog', () => ({
 }));
 
 test('renders Athena ECM app without crashing', async () => {
+  window.history.pushState({}, 'Login', '/login');
+
   render(
     <Provider store={store}>
       <App />
     </Provider>
   );
-  expect(await screen.findByTestId('search-dialog')).toBeTruthy();
+  expect(await screen.findByRole('heading', { name: 'Athena ECM' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Sign in with Keycloak' })).toBeTruthy();
 });

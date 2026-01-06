@@ -5,7 +5,8 @@
 
 ## Approach
 - Mock the lazy-loaded `SearchDialog` to a synchronous test component.
-- Await the mocked component render to ensure Suspense resolves inside the test lifecycle.
+- Push the route to `/login` to avoid auth redirects in the smoke test.
+- Assert the login heading and sign-in button to confirm the UI renders.
 
 ## Files
 - ecm-frontend/src/App.test.tsx
