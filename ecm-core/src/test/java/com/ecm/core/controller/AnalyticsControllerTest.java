@@ -262,4 +262,22 @@ class AnalyticsControllerTest {
 
         Mockito.verify(analyticsService).getRecentActivity(5);
     }
+
+    @Test
+    @DisplayName("Recent rule activity defaults to limit 20")
+    void recentRuleActivityDefaultsToLimit() throws Exception {
+        AuditLog log = new AuditLog();
+        log.setEventType("RULE_EXECUTED");
+        log.setUsername("system");
+        log.setEventTime(LocalDateTime.of(2026, 1, 3, 0, 0));
+
+        Mockito.when(analyticsService.getRecentRuleActivity(20)).thenReturn(List.of(log));
+
+        mockMvc.perform(get("/api/v1/analytics/rules/recent"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].eventType").value("RULE_EXECUTED"))
+            .andExpect(jsonPath("$[0].username").value("system"));
+
+        Mockito.verify(analyticsService).getRecentRuleActivity(20);
+    }
 }
