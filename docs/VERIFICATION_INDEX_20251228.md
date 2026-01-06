@@ -56,6 +56,8 @@
   - Available facets guard when search is disabled
 - `docs/VERIFICATION_SEARCH_SUGGESTED_FILTERS_DISABLED_20260106.md`
   - Suggested filters guard when search is disabled
+- `docs/VERIFICATION_SEARCH_ADVANCED_INCLUDE_DELETED_20260106.md`
+  - Advanced search include-deleted filter toggle
 
 ## Integration Health + Smoke
 - `docs/VERIFICATION_YUANTUS_INTEGRATIONS_20251228.md`

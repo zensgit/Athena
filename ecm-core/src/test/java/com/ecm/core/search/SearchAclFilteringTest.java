@@ -10,9 +10,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.elasticsearch.client.elc.NativeQuery;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.data.elasticsearch.core.SearchHit;
 import org.springframework.data.elasticsearch.core.SearchHits;
@@ -30,6 +32,7 @@ import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @ExtendWith(MockitoExtension.class)
@@ -395,6 +398,82 @@ class SearchAclFilteringTest {
         assertEquals(0, response.getResults().getTotalElements());
         Mockito.verifyNoInteractions(nodeRepository);
         Mockito.verify(securityService, Mockito.never()).hasPermission(Mockito.any(), Mockito.any());
+    }
+
+    @Test
+    @DisplayName("Advanced search filters deleted documents by default")
+    void advancedSearchFiltersDeletedByDefault() {
+        SearchRequest request = new SearchRequest();
+        request.setQuery("doc");
+        request.setFilters(new SearchFilters());
+
+        Mockito.when(elasticsearchOperations.search(
+                Mockito.any(Query.class),
+                Mockito.eq(NodeDocument.class),
+                Mockito.any(IndexCoordinates.class)))
+            .thenReturn(searchHits());
+        Mockito.when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+
+        fullTextSearchService.advancedSearch(request);
+
+        ArgumentCaptor<Query> queryCaptor = ArgumentCaptor.forClass(Query.class);
+        Mockito.verify(elasticsearchOperations).search(
+            queryCaptor.capture(),
+            Mockito.eq(NodeDocument.class),
+            Mockito.any(IndexCoordinates.class)
+        );
+
+        Query captured = queryCaptor.getValue();
+        assertTrue(captured instanceof NativeQuery);
+        NativeQuery nativeQuery = (NativeQuery) captured;
+        co.elastic.clients.elasticsearch._types.query_dsl.Query esQuery = nativeQuery.getQuery();
+
+        assertTrue(esQuery.isBool());
+        boolean hasDeletedFilter = esQuery.bool().filter().stream()
+            .filter(co.elastic.clients.elasticsearch._types.query_dsl.Query::isTerm)
+            .map(co.elastic.clients.elasticsearch._types.query_dsl.Query::term)
+            .anyMatch(term -> "deleted".equals(term.field())
+                && term.value().isBoolean()
+                && !term.value().booleanValue());
+        assertTrue(hasDeletedFilter);
+    }
+
+    @Test
+    @DisplayName("Advanced search omits deleted filter when includeDeleted is true")
+    void advancedSearchOmitsDeletedFilterWhenIncludeDeleted() {
+        SearchFilters filters = new SearchFilters();
+        filters.setIncludeDeleted(true);
+        SearchRequest request = new SearchRequest();
+        request.setQuery("doc");
+        request.setFilters(filters);
+
+        Mockito.when(elasticsearchOperations.search(
+                Mockito.any(Query.class),
+                Mockito.eq(NodeDocument.class),
+                Mockito.any(IndexCoordinates.class)))
+            .thenReturn(searchHits());
+        Mockito.when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+
+        fullTextSearchService.advancedSearch(request);
+
+        ArgumentCaptor<Query> queryCaptor = ArgumentCaptor.forClass(Query.class);
+        Mockito.verify(elasticsearchOperations).search(
+            queryCaptor.capture(),
+            Mockito.eq(NodeDocument.class),
+            Mockito.any(IndexCoordinates.class)
+        );
+
+        Query captured = queryCaptor.getValue();
+        assertTrue(captured instanceof NativeQuery);
+        NativeQuery nativeQuery = (NativeQuery) captured;
+        co.elastic.clients.elasticsearch._types.query_dsl.Query esQuery = nativeQuery.getQuery();
+
+        assertTrue(esQuery.isBool());
+        boolean hasDeletedFilter = esQuery.bool().filter().stream()
+            .filter(co.elastic.clients.elasticsearch._types.query_dsl.Query::isTerm)
+            .map(co.elastic.clients.elasticsearch._types.query_dsl.Query::term)
+            .anyMatch(term -> "deleted".equals(term.field()));
+        assertFalse(hasDeletedFilter);
     }
 
     @Test
