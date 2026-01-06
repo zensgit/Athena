@@ -64,6 +64,10 @@
   - Top users default + explicit limit
 - `docs/VERIFICATION_DASHBOARD_AGGREGATION_20260106.md`
   - Dashboard aggregation payload
+- `docs/VERIFICATION_ANALYTICS_SUMMARY_ENDPOINT_20260106.md`
+  - Analytics summary endpoint payload
+- `docs/VERIFICATION_ANALYTICS_STORAGE_MIMETYPE_ENDPOINT_20260106.md`
+  - Analytics storage-by-MIME payload
 - `docs/VERIFICATION_SEARCH_DISABLED_GUARD_20260106.md`
   - Search disabled guard paths in search services
 - `docs/VERIFICATION_SEARCH_AVAILABLE_FACETS_DISABLED_20260106.md`

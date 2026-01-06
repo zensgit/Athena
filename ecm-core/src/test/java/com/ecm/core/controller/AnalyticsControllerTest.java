@@ -341,6 +341,40 @@ class AnalyticsControllerTest {
     }
 
     @Test
+    @DisplayName("System summary returns counts and size")
+    void systemSummaryReturnsCounts() throws Exception {
+        AnalyticsService.SystemSummaryStats summary = new AnalyticsService.SystemSummaryStats(12, 3, 4096);
+
+        Mockito.when(analyticsService.getSystemSummary()).thenReturn(summary);
+
+        mockMvc.perform(get("/api/v1/analytics/summary"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalDocuments").value(12))
+            .andExpect(jsonPath("$.totalFolders").value(3))
+            .andExpect(jsonPath("$.totalSizeBytes").value(4096));
+
+        Mockito.verify(analyticsService).getSystemSummary();
+    }
+
+    @Test
+    @DisplayName("Storage by MIME type returns stats")
+    void storageByMimeTypeReturnsStats() throws Exception {
+        List<AnalyticsService.MimeTypeStats> stats = List.of(
+            new AnalyticsService.MimeTypeStats("application/pdf", 2, 2048)
+        );
+
+        Mockito.when(analyticsService.getStorageByMimeType()).thenReturn(stats);
+
+        mockMvc.perform(get("/api/v1/analytics/storage/mimetype"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].mimeType").value("application/pdf"))
+            .andExpect(jsonPath("$[0].count").value(2))
+            .andExpect(jsonPath("$[0].sizeBytes").value(2048));
+
+        Mockito.verify(analyticsService).getStorageByMimeType();
+    }
+
+    @Test
     @DisplayName("Top users defaults to limit 10")
     void topUsersDefaultsToLimit() throws Exception {
         List<AnalyticsService.UserActivityStats> stats = List.of(

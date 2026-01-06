@@ -22,6 +22,8 @@
 - Daily activity days parameter: `docs/VERIFICATION_DAILY_ACTIVITY_DEFAULT_DAYS_20260106.md`
 - Top users limit parameter: `docs/VERIFICATION_TOP_USERS_LIMIT_PARAM_20260106.md`
 - Dashboard aggregation: `docs/VERIFICATION_DASHBOARD_AGGREGATION_20260106.md`
+- Analytics summary endpoint: `docs/VERIFICATION_ANALYTICS_SUMMARY_ENDPOINT_20260106.md`
+- Analytics storage-by-MIME endpoint: `docs/VERIFICATION_ANALYTICS_STORAGE_MIMETYPE_ENDPOINT_20260106.md`
 - Backend test run: `docs/VERIFICATION_BACKEND_MVN_TEST_20260106.md`
 - Backend verify run: `docs/VERIFICATION_BACKEND_MVN_VERIFY_20260106.md`
 - Share link validation: `docs/VERIFICATION_SHARE_LINK_ALLOWED_IP_VALIDATION_20260106.md`
