@@ -148,6 +148,22 @@ class AnalyticsControllerTest {
     }
 
     @Test
+    @DisplayName("Audit export rejects blank parameters")
+    void exportAuditLogsRejectsBlankParameters() throws Exception {
+        mockMvc.perform(get("/api/v1/analytics/audit/export")
+                .param("from", " ")
+                .param("to", "2026-01-05T12:15:30"))
+            .andExpect(status().isBadRequest());
+
+        mockMvc.perform(get("/api/v1/analytics/audit/export")
+                .param("from", "2026-01-05T10:15:30")
+                .param("to", " "))
+            .andExpect(status().isBadRequest());
+
+        Mockito.verifyNoInteractions(analyticsService);
+    }
+
+    @Test
     @DisplayName("Audit export accepts range at max window")
     void exportAuditLogsAcceptsMaxWindow() throws Exception {
         Mockito.when(analyticsService.exportAuditLogsCsv(Mockito.any(), Mockito.any()))
