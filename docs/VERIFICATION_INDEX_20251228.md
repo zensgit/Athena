@@ -34,6 +34,8 @@
   - PrivateRoute spinner on Keycloak callback params
 - `docs/VERIFICATION_PRIVATE_ROUTE_LOGIN_IN_PROGRESS_20260106.md`
   - PrivateRoute spinner on login-in-progress flag
+- `docs/VERIFICATION_UNAUTHORIZED_ROUTE_TEST_20260106.md`
+  - Unauthorized route renders expected copy
 
 ## Backend Tests
 - `docs/VERIFICATION_BACKEND_MVN_TEST_20260106.md`
