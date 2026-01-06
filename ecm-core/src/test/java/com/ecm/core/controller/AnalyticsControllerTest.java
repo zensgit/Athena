@@ -146,4 +146,24 @@ class AnalyticsControllerTest {
 
         Mockito.verifyNoInteractions(analyticsService);
     }
+
+    @Test
+    @DisplayName("Audit export accepts range at max window")
+    void exportAuditLogsAcceptsMaxWindow() throws Exception {
+        Mockito.when(analyticsService.exportAuditLogsCsv(Mockito.any(), Mockito.any()))
+            .thenReturn(new AnalyticsService.AuditExportResult("header\nrow\n", 1));
+
+        mockMvc.perform(get("/api/v1/analytics/audit/export")
+                .param("from", "2026-01-01T00:00:00")
+                .param("to", "2026-01-31T00:00:00"))
+            .andExpect(status().isOk())
+            .andExpect(header().string("X-Audit-Export-Count", "1"));
+
+        ArgumentCaptor<LocalDateTime> fromCaptor = ArgumentCaptor.forClass(LocalDateTime.class);
+        ArgumentCaptor<LocalDateTime> toCaptor = ArgumentCaptor.forClass(LocalDateTime.class);
+        Mockito.verify(analyticsService).exportAuditLogsCsv(fromCaptor.capture(), toCaptor.capture());
+
+        assertEquals(LocalDateTime.of(2026, 1, 1, 0, 0, 0), fromCaptor.getValue());
+        assertEquals(LocalDateTime.of(2026, 1, 31, 0, 0, 0), toCaptor.getValue());
+    }
 }

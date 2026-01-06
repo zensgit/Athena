@@ -42,6 +42,8 @@
   - `mvn test`: 53 tests passed
 - `docs/VERIFICATION_BACKEND_MVN_VERIFY_20260106.md`
   - `mvn verify`: 53 tests passed
+- `docs/VERIFICATION_AUDIT_EXPORT_MAX_RANGE_BOUNDARY_20260106.md`
+  - Audit export max-range boundary accepted
 - `docs/VERIFICATION_SEARCH_DISABLED_GUARD_20260106.md`
   - Search disabled guard paths in search services
 - `docs/VERIFICATION_SEARCH_AVAILABLE_FACETS_DISABLED_20260106.md`
