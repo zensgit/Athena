@@ -60,9 +60,15 @@ const renderLayoutWithRoles = (roles: string[]) => {
 test('account menu shows Tags/Categories for admin/editor roles', async () => {
   renderLayoutWithRoles(['ROLE_ADMIN']);
 
+  const uploadButton = screen.getByRole('button', { name: 'Upload', exact: true });
+  expect((uploadButton as HTMLButtonElement).disabled).toBe(false);
+  const newFolderButton = screen.getByRole('button', { name: 'New Folder', exact: true });
+  expect((newFolderButton as HTMLButtonElement).disabled).toBe(false);
+
   fireEvent.click(screen.getByRole('button', { name: 'Account menu' }));
   expect(await screen.findByRole('menuitem', { name: 'Tags' })).toBeTruthy();
   expect(screen.getByRole('menuitem', { name: 'Categories' })).toBeTruthy();
+  expect(screen.getByRole('menuitem', { name: 'Admin Dashboard' })).toBeTruthy();
 });
 
 test('account menu hides Tags/Categories for viewer role', async () => {
@@ -77,4 +83,5 @@ test('account menu hides Tags/Categories for viewer role', async () => {
   expect(await screen.findByRole('menuitem', { name: 'Tasks' })).toBeTruthy();
   expect(screen.queryByRole('menuitem', { name: 'Tags' })).toBeNull();
   expect(screen.queryByRole('menuitem', { name: 'Categories' })).toBeNull();
+  expect(screen.queryByRole('menuitem', { name: 'Admin Dashboard' })).toBeNull();
 });

@@ -26,6 +26,8 @@
   - React Router future flags enabled for tests
 - `docs/VERIFICATION_APP_TEST_SUSPENSE_ACT_20260106.md`
   - App smoke test Suspense act warning cleared
+- `docs/VERIFICATION_MAINLAYOUT_MENU_TEST_STRENGTHENING_20260106.md`
+  - MainLayout menu assertions for admin/viewer roles
 
 ## Backend Tests
 - `docs/VERIFICATION_BACKEND_MVN_TEST_20260106.md`
