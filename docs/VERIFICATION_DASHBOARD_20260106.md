@@ -14,6 +14,7 @@
 - Audit export max-range boundary: `docs/VERIFICATION_AUDIT_EXPORT_MAX_RANGE_BOUNDARY_20260106.md`
 - Audit export blank parameters: `docs/VERIFICATION_AUDIT_EXPORT_BLANK_PARAMS_20260106.md`
 - Audit retention info payload: `docs/VERIFICATION_AUDIT_RETENTION_INFO_TEST_20260106.md`
+- Audit cleanup responses: `docs/VERIFICATION_AUDIT_CLEANUP_RESPONSE_TESTS_20260106.md`
 - Backend test run: `docs/VERIFICATION_BACKEND_MVN_TEST_20260106.md`
 - Backend verify run: `docs/VERIFICATION_BACKEND_MVN_VERIFY_20260106.md`
 - Share link validation: `docs/VERIFICATION_SHARE_LINK_ALLOWED_IP_VALIDATION_20260106.md`

@@ -21,6 +21,7 @@ import java.util.TimeZone;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -195,5 +196,31 @@ class AnalyticsControllerTest {
             .andExpect(jsonPath("$.retentionDays").value(120))
             .andExpect(jsonPath("$.expiredLogCount").value(42))
             .andExpect(jsonPath("$.exportMaxRangeDays").value(30));
+    }
+
+    @Test
+    @DisplayName("Audit cleanup returns deletion summary")
+    void auditCleanupReturnsDeletionSummary() throws Exception {
+        Mockito.when(analyticsService.manualCleanupExpiredAuditLogs()).thenReturn(7L);
+        Mockito.when(analyticsService.getAuditRetentionDays()).thenReturn(120);
+
+        mockMvc.perform(post("/api/v1/analytics/audit/cleanup"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.deletedCount").value(7))
+            .andExpect(jsonPath("$.retentionDays").value(120))
+            .andExpect(jsonPath("$.message").value("Deleted 7 expired audit logs"));
+    }
+
+    @Test
+    @DisplayName("Audit cleanup returns no-op message when nothing deleted")
+    void auditCleanupReturnsNoopMessage() throws Exception {
+        Mockito.when(analyticsService.manualCleanupExpiredAuditLogs()).thenReturn(0L);
+        Mockito.when(analyticsService.getAuditRetentionDays()).thenReturn(90);
+
+        mockMvc.perform(post("/api/v1/analytics/audit/cleanup"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.deletedCount").value(0))
+            .andExpect(jsonPath("$.retentionDays").value(90))
+            .andExpect(jsonPath("$.message").value("No expired audit logs to delete"));
     }
 }
