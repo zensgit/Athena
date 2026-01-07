@@ -70,6 +70,7 @@
 - verify.sh skip WOPI: `docs/VERIFICATION_VERIFY_SKIP_WOPI_20260107.md`
 - verify.sh skip WOPI (full): `docs/VERIFICATION_VERIFY_SKIP_WOPI_FULL_20260107.md`
 - verify.sh WOPI query missing: `docs/VERIFICATION_VERIFY_WOPI_QUERY_MISSING_20260107.md`
+- verify.sh skip WOPI summary: `docs/VERIFICATION_VERIFY_SKIP_WOPI_SUMMARY_20260107.md`
 - verify.sh help output: `docs/VERIFICATION_VERIFY_HELP_20260107.md`
 - WOPI auto-upload fallback: `docs/VERIFICATION_WOPI_AUTO_UPLOAD_20260106.md`
 - WOPI sample cleanup: `docs/VERIFICATION_WOPI_SAMPLE_CLEANUP_20260106.md`

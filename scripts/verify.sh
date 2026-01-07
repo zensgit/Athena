@@ -116,11 +116,15 @@ STEPS_SKIPPED=0
 
 write_wopi_summary() {
   local status="$1"
-  local log_file="$2"
+  local log_file="${2:-}"
+  local reason="${3:-}"
   {
     echo "verify-wopi status: ${status}"
     echo "log: ${log_file}"
-    if [[ -f "${log_file}" ]]; then
+    if [[ -n "${reason}" ]]; then
+      echo "reason: ${reason}"
+    fi
+    if [[ -n "${log_file}" && -f "${log_file}" ]]; then
       echo ""
       echo "verify-wopi output:"
       grep -E '^\[verify\]' "${log_file}" || true
@@ -487,10 +491,12 @@ if [[ ${SKIP_WOPI} -eq 0 ]]; then
   else
     log_warn "verify-wopi.js not found, skipping"
     ((STEPS_SKIPPED+=1))
+    write_wopi_summary "skipped" "" "verify-wopi.js not found"
   fi
 else
   log_info "=== Step 6.5: Skipping WOPI verification (--skip-wopi) ==="
   ((STEPS_SKIPPED+=1))
+  write_wopi_summary "skipped" "" "Skipped via --skip-wopi flag"
 fi
 
 # ============================================================
