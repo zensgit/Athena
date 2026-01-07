@@ -91,6 +91,7 @@ LOG_DIR="${REPO_ROOT}/tmp"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 REPORT_FILE="${LOG_DIR}/${TIMESTAMP}_verify-report.md"
 WOPI_SUMMARY_FILE="${LOG_DIR}/${TIMESTAMP}_verify-wopi.summary.log"
+STEP_SUMMARY_FILE="${LOG_DIR}/${TIMESTAMP}_verify-steps.log"
 FRONTEND_DEPS_INSTALLED=0
 NPM_CACHE_DIR="${REPO_ROOT}/tmp/npm-cache"
 
@@ -113,6 +114,17 @@ log_error() { echo -e "${RED}[ERROR]${NC} $*"; }
 STEPS_PASSED=0
 STEPS_FAILED=0
 STEPS_SKIPPED=0
+
+record_step() {
+  local name="$1"
+  local status="$2"
+  local duration="$3"
+  local log_file="${4:-}"
+  if [[ ! -f "${STEP_SUMMARY_FILE}" ]]; then
+    echo "step,status,duration_s,log" > "${STEP_SUMMARY_FILE}"
+  fi
+  echo "${name},${status},${duration},${log_file}" >> "${STEP_SUMMARY_FILE}"
+}
 
 write_wopi_summary() {
   local status="$1"
@@ -171,6 +183,9 @@ write_verification_report() {
       fi
       echo "- WOPI summary: ${WOPI_SUMMARY_FILE}"
     fi
+    if [[ -f "${STEP_SUMMARY_FILE}" ]]; then
+      echo "- Step summary: ${STEP_SUMMARY_FILE}"
+    fi
   } > "${REPORT_FILE}"
 }
 
@@ -198,10 +213,13 @@ run_step() {
   shift
 
   log_info "Running: ${step_name}..."
+  local start_ts
+  start_ts="$(date +%s)"
 
   if "$@" > "${log_file}" 2>&1; then
     log_success "${step_name} passed (log: ${log_file})"
     ((STEPS_PASSED+=1))
+    record_step "${step_name}" "passed" "$(( $(date +%s) - start_ts ))" "${log_file}"
     if [[ "${step_name}" == "verify-wopi" ]]; then
       write_wopi_summary "passed" "${log_file}"
     fi
@@ -210,6 +228,7 @@ run_step() {
     local exit_code=$?
     log_error "${step_name} failed (exit code: ${exit_code}, log: ${log_file})"
     ((STEPS_FAILED+=1))
+    record_step "${step_name}" "failed" "$(( $(date +%s) - start_ts ))" "${log_file}"
     if [[ "${step_name}" == "verify-wopi" ]]; then
       write_wopi_summary "failed" "${log_file}"
     fi
@@ -223,15 +242,19 @@ run_step_optional() {
   shift
 
   log_info "Running: ${step_name}..."
+  local start_ts
+  start_ts="$(date +%s)"
 
   if "$@" > "${log_file}" 2>&1; then
     log_success "${step_name} passed (log: ${log_file})"
     ((STEPS_PASSED+=1))
+    record_step "${step_name}" "passed" "$(( $(date +%s) - start_ts ))" "${log_file}"
     return 0
   else
     local exit_code=$?
     log_warn "${step_name} failed (non-critical, exit code: ${exit_code}, log: ${log_file})"
     ((STEPS_SKIPPED+=1))
+    record_step "${step_name}" "skipped" "$(( $(date +%s) - start_ts ))" "${log_file}"
     return 0
   fi
 }

@@ -108,6 +108,8 @@
   - verify.sh report includes WOPI status
 - `docs/VERIFICATION_VERIFY_WOPI_REASON_REPORT_20260107.md`
   - verify.sh report includes WOPI reason
+- `docs/VERIFICATION_VERIFY_STEP_SUMMARY_20260107.md`
+  - verify.sh step summary log
 - `docs/VERIFICATION_VERIFY_WOPI_QUERY_MISSING_20260107.md`
   - verify.sh missing wopi-query argument
 - `docs/VERIFICATION_VERIFY_HELP_20260107.md`
