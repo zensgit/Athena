@@ -159,6 +159,11 @@ write_verification_report() {
     echo "## Artifacts"
     echo "- Logs prefix: ${LOG_DIR}/${TIMESTAMP}_*"
     if [[ -f "${WOPI_SUMMARY_FILE}" ]]; then
+      local wopi_status
+      wopi_status="$(grep -m1 '^verify-wopi status:' "${WOPI_SUMMARY_FILE}" | sed 's/^verify-wopi status: //' || true)"
+      if [[ -n "${wopi_status}" ]]; then
+        echo "- WOPI status: ${wopi_status}"
+      fi
       echo "- WOPI summary: ${WOPI_SUMMARY_FILE}"
     fi
   } > "${REPORT_FILE}"

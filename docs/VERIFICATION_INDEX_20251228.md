@@ -104,6 +104,8 @@
   - verify.sh skip WOPI path with E2E
 - `docs/VERIFICATION_VERIFY_SKIP_WOPI_SUMMARY_20260107.md`
   - verify.sh skip WOPI summary output
+- `docs/VERIFICATION_VERIFY_WOPI_STATUS_REPORT_20260107.md`
+  - verify.sh report includes WOPI status
 - `docs/VERIFICATION_VERIFY_WOPI_QUERY_MISSING_20260107.md`
   - verify.sh missing wopi-query argument
 - `docs/VERIFICATION_VERIFY_HELP_20260107.md`
