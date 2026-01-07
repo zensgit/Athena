@@ -18,6 +18,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 ORIGINAL_ARGS="$*"
+PARSE_ERROR=0
+PARSE_ERROR_MESSAGE=""
 
 # Parse arguments
 SKIP_RESTART=0
@@ -37,8 +39,9 @@ while [[ $# -gt 0 ]]; do
     --wopi-cleanup) WOPI_CLEANUP=1 ;;
     --wopi-query)
       if [[ $# -lt 2 ]]; then
-        echo "Missing value for --wopi-query"
-        exit 1
+        PARSE_ERROR=1
+        PARSE_ERROR_MESSAGE="Missing value for --wopi-query"
+        break
       fi
       WOPI_QUERY_OVERRIDE="$2"
       shift 2
@@ -169,6 +172,11 @@ handle_exit() {
 }
 
 trap handle_exit EXIT
+
+if [[ ${PARSE_ERROR} -eq 1 ]]; then
+  log_error "${PARSE_ERROR_MESSAGE}"
+  exit 1
+fi
 
 run_step() {
   local step_name="$1"

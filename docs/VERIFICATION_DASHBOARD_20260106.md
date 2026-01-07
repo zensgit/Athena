@@ -69,6 +69,7 @@
 - verify.sh WOPI flags (space form): `docs/VERIFICATION_VERIFY_WOPI_FLAGS_SPACE_20260107.md`
 - verify.sh skip WOPI: `docs/VERIFICATION_VERIFY_SKIP_WOPI_20260107.md`
 - verify.sh skip WOPI (full): `docs/VERIFICATION_VERIFY_SKIP_WOPI_FULL_20260107.md`
+- verify.sh WOPI query missing: `docs/VERIFICATION_VERIFY_WOPI_QUERY_MISSING_20260107.md`
 - WOPI auto-upload fallback: `docs/VERIFICATION_WOPI_AUTO_UPLOAD_20260106.md`
 - WOPI sample cleanup: `docs/VERIFICATION_WOPI_SAMPLE_CLEANUP_20260106.md`
 - UI E2E (historical): `docs/VERIFICATION_UI_E2E_20251228.md`
