@@ -63,6 +63,7 @@
 - Full E2E run: `docs/VERIFICATION_E2E_FULL_RUN_20260106.md`
 - Full verify.sh report: `docs/VERIFICATION_VERIFY_20260106.md`
 - Full verify.sh report (2026-01-07 run): `docs/VERIFICATION_VERIFY_20260107.md`
+- Full verify.sh report (2026-01-07 wopi flags): `docs/VERIFICATION_VERIFY_20260107_FULL_WOPI_FLAGS.md`
 - verify.sh reporting artifacts: `docs/VERIFICATION_VERIFY_SCRIPT_REPORTING_20260106.md`
 - verify.sh WOPI flags: `docs/VERIFICATION_VERIFY_WOPI_FLAGS_20260107.md`
 - WOPI auto-upload fallback: `docs/VERIFICATION_WOPI_AUTO_UPLOAD_20260106.md`
