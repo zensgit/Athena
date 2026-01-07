@@ -92,6 +92,8 @@
   - Full verify.sh run (no restart)
 - `docs/VERIFICATION_VERIFY_SCRIPT_REPORTING_20260106.md`
   - verify.sh report + WOPI summary artifacts
+- `docs/VERIFICATION_VERIFY_WOPI_FLAGS_20260107.md`
+  - verify.sh CLI flags for WOPI query + cleanup
 - `docs/VERIFICATION_WOPI_AUTO_UPLOAD_20260106.md`
   - WOPI verification auto-uploads an XLSX sample when missing
 - `docs/VERIFICATION_WOPI_SAMPLE_CLEANUP_20260106.md`

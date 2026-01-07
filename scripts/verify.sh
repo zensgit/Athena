@@ -25,6 +25,8 @@ SMOKE_ONLY=0
 SKIP_BUILD=0
 WOPI_ONLY=0
 SKIP_WOPI=0
+WOPI_CLEANUP=0
+WOPI_QUERY_OVERRIDE=""
 for arg in "$@"; do
   case "$arg" in
     --no-restart) SKIP_RESTART=1 ;;
@@ -32,13 +34,17 @@ for arg in "$@"; do
     --skip-build) SKIP_BUILD=1 ;;
     --wopi-only) WOPI_ONLY=1 ;;
     --skip-wopi) SKIP_WOPI=1 ;;
+    --wopi-cleanup) WOPI_CLEANUP=1 ;;
+    --wopi-query=*) WOPI_QUERY_OVERRIDE="${arg#*=}" ;;
     --help|-h)
-      echo "Usage: $0 [--no-restart] [--smoke-only] [--skip-build]"
+      echo "Usage: $0 [--no-restart] [--smoke-only] [--skip-build] [--wopi-only] [--skip-wopi] [--wopi-cleanup] [--wopi-query=<query>]"
       echo "  --no-restart  Skip docker-compose restart (services must be running)"
       echo "  --smoke-only  Only run API smoke tests, skip E2E tests"
       echo "  --skip-build  Skip frontend build step"
       echo "  --wopi-only   Only run WOPI verification (skip other steps)"
       echo "  --skip-wopi   Skip WOPI verification step"
+      echo "  --wopi-cleanup  Remove auto-uploaded WOPI sample after verification"
+      echo "  --wopi-query=<query>  Search query to find WOPI document"
       exit 0
       ;;
   esac
@@ -444,14 +450,21 @@ if [[ ${SKIP_WOPI} -eq 0 ]]; then
       fi
       cd "${REPO_ROOT}"
     fi
-    run_step "verify-wopi" env \
-      ECM_FRONTEND_URL="${ECM_FRONTEND_URL}" \
-      ECM_API_URL="${ECM_API_URL}" \
-      KEYCLOAK_URL="${KEYCLOAK_URL}" \
-      KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
-      ECM_VERIFY_USER="${ECM_VERIFY_USER}" \
-      ECM_VERIFY_PASS="${ECM_VERIFY_PASS}" \
-      node "${SCRIPT_DIR}/verify-wopi.js"
+    wopi_env=(
+      "ECM_FRONTEND_URL=${ECM_FRONTEND_URL}"
+      "ECM_API_URL=${ECM_API_URL}"
+      "KEYCLOAK_URL=${KEYCLOAK_URL}"
+      "KEYCLOAK_REALM=${KEYCLOAK_REALM}"
+      "ECM_VERIFY_USER=${ECM_VERIFY_USER}"
+      "ECM_VERIFY_PASS=${ECM_VERIFY_PASS}"
+    )
+    if [[ ${WOPI_CLEANUP} -eq 1 ]]; then
+      wopi_env+=("ECM_VERIFY_CLEANUP=1")
+    fi
+    if [[ -n "${WOPI_QUERY_OVERRIDE}" ]]; then
+      wopi_env+=("ECM_VERIFY_QUERY=${WOPI_QUERY_OVERRIDE}")
+    fi
+    run_step "verify-wopi" env "${wopi_env[@]}" node "${SCRIPT_DIR}/verify-wopi.js"
   else
     log_warn "verify-wopi.js not found, skipping"
     ((STEPS_SKIPPED+=1))
