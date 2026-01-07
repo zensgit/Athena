@@ -100,6 +100,8 @@
   - verify.sh CLI flags for WOPI query (space form)
 - `docs/VERIFICATION_VERIFY_SKIP_WOPI_20260107.md`
   - verify.sh skip WOPI path
+- `docs/VERIFICATION_VERIFY_SKIP_WOPI_FULL_20260107.md`
+  - verify.sh skip WOPI path with E2E
 - `docs/VERIFICATION_WOPI_AUTO_UPLOAD_20260106.md`
   - WOPI verification auto-uploads an XLSX sample when missing
 - `docs/VERIFICATION_WOPI_SAMPLE_CLEANUP_20260106.md`
