@@ -104,6 +104,8 @@
   - verify.sh skip WOPI path with E2E
 - `docs/VERIFICATION_VERIFY_WOPI_QUERY_MISSING_20260107.md`
   - verify.sh missing wopi-query argument
+- `docs/VERIFICATION_VERIFY_HELP_20260107.md`
+  - verify.sh help output
 - `docs/VERIFICATION_WOPI_AUTO_UPLOAD_20260106.md`
   - WOPI verification auto-uploads an XLSX sample when missing
 - `docs/VERIFICATION_WOPI_SAMPLE_CLEANUP_20260106.md`
