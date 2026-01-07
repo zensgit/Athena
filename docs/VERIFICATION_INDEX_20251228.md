@@ -88,6 +88,8 @@
 ## Integration Health + Smoke
 - `docs/VERIFICATION_VERIFY_20260106.md`
   - Full verify.sh run + WOPI-only rerun notes
+- `docs/VERIFICATION_VERIFY_20260107.md`
+  - Full verify.sh run (no restart)
 - `docs/VERIFICATION_VERIFY_SCRIPT_REPORTING_20260106.md`
   - verify.sh report + WOPI summary artifacts
 - `docs/VERIFICATION_WOPI_AUTO_UPLOAD_20260106.md`
