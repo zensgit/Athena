@@ -20,6 +20,7 @@ cd "${REPO_ROOT}"
 ORIGINAL_ARGS="$*"
 PARSE_ERROR=0
 PARSE_ERROR_MESSAGE=""
+RUN_START_EPOCH="$(date +%s)"
 
 # Parse arguments
 SKIP_RESTART=0
@@ -120,10 +121,11 @@ record_step() {
   local status="$2"
   local duration="$3"
   local log_file="${4:-}"
+  local reason="${5:-}"
   if [[ ! -f "${STEP_SUMMARY_FILE}" ]]; then
-    echo "step,status,duration_s,log" > "${STEP_SUMMARY_FILE}"
+    echo "step,status,duration_s,log,reason" > "${STEP_SUMMARY_FILE}"
   fi
-  echo "${name},${status},${duration},${log_file}" >> "${STEP_SUMMARY_FILE}"
+  echo "${name},${status},${duration},${log_file},${reason}" >> "${STEP_SUMMARY_FILE}"
 }
 
 write_wopi_summary() {
@@ -162,6 +164,7 @@ write_verification_report() {
     fi
     echo ""
     echo "## Results"
+    echo "- Duration (s): $(( $(date +%s) - RUN_START_EPOCH ))"
     echo "- Passed: ${STEPS_PASSED}"
     echo "- Failed: ${STEPS_FAILED}"
     echo "- Skipped: ${STEPS_SKIPPED}"
@@ -489,6 +492,7 @@ if [[ ${SKIP_BUILD} -eq 0 ]]; then
 else
   log_info "=== Step 6: Skipping frontend build (--skip-build) ==="
   ((STEPS_SKIPPED+=1))
+  record_step "frontend-build" "skipped" "0" "" "Skipped via --skip-build flag"
 fi
 
 # ============================================================
@@ -525,11 +529,13 @@ if [[ ${SKIP_WOPI} -eq 0 ]]; then
     log_warn "verify-wopi.js not found, skipping"
     ((STEPS_SKIPPED+=1))
     write_wopi_summary "skipped" "" "verify-wopi.js not found"
+    record_step "verify-wopi" "skipped" "0" "" "verify-wopi.js not found"
   fi
 else
   log_info "=== Step 6.5: Skipping WOPI verification (--skip-wopi) ==="
   ((STEPS_SKIPPED+=1))
   write_wopi_summary "skipped" "" "Skipped via --skip-wopi flag"
+  record_step "verify-wopi" "skipped" "0" "" "Skipped via --skip-wopi flag"
 fi
 
 # ============================================================
@@ -555,6 +561,7 @@ if [[ ${SMOKE_ONLY} -eq 0 ]]; then
 else
   log_info "=== Step 7: Skipping E2E tests (--smoke-only) ==="
   ((STEPS_SKIPPED+=1))
+  record_step "e2e-test" "skipped" "0" "" "Skipped via --smoke-only flag"
 fi
 
 # ============================================================

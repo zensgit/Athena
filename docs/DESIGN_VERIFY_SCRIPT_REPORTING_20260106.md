@@ -11,6 +11,8 @@
 - When the WOPI step runs, write `tmp/<timestamp>_verify-wopi.summary.log` with `[verify]` output lines.
 - When WOPI is skipped, write a summary with `status: skipped` and the skip reason.
 - Write a step summary log (`tmp/<timestamp>_verify-steps.log`) with status and duration per step.
+- Include skip reasons in the step summary CSV.
+- Record total duration in the verification report.
 - Print report + WOPI summary paths to the console on exit.
 - Emit a report even when CLI parsing fails, capturing the non-zero exit code.
 
