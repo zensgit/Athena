@@ -7,6 +7,7 @@
 - Capture the original CLI arguments and always emit a report on exit.
 - Write `tmp/<timestamp>_verify-report.md` with pass/fail counts, exit code, and artifact paths.
 - Include the WOPI status in the report when a WOPI summary exists.
+- Include the WOPI skip reason in the report when present.
 - When the WOPI step runs, write `tmp/<timestamp>_verify-wopi.summary.log` with `[verify]` output lines.
 - When WOPI is skipped, write a summary with `status: skipped` and the skip reason.
 - Print report + WOPI summary paths to the console on exit.

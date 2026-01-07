@@ -164,6 +164,11 @@ write_verification_report() {
       if [[ -n "${wopi_status}" ]]; then
         echo "- WOPI status: ${wopi_status}"
       fi
+      local wopi_reason
+      wopi_reason="$(grep -m1 '^reason:' "${WOPI_SUMMARY_FILE}" | sed 's/^reason: //' || true)"
+      if [[ -n "${wopi_reason}" ]]; then
+        echo "- WOPI reason: ${wopi_reason}"
+      fi
       echo "- WOPI summary: ${WOPI_SUMMARY_FILE}"
     fi
   } > "${REPORT_FILE}"
