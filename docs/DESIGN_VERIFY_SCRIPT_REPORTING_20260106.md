@@ -14,6 +14,7 @@
 - Include skip reasons in the step summary CSV.
 - Record total duration in the verification report.
 - Write a JSON summary (`tmp/<timestamp>_verify-summary.json`) with results and artifact paths.
+- Include parsed step details in the JSON summary when the step log is available.
 - Print report + WOPI summary paths to the console on exit.
 - Emit a report even when CLI parsing fails, capturing the non-zero exit code.
 

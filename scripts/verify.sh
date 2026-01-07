@@ -215,6 +215,23 @@ write_json_report() {
     wopi_status="$(grep -m1 '^verify-wopi status:' "${WOPI_SUMMARY_FILE}" | sed 's/^verify-wopi status: //' || true)"
     wopi_reason="$(grep -m1 '^reason:' "${WOPI_SUMMARY_FILE}" | sed 's/^reason: //' || true)"
   fi
+  local steps_json="[]"
+  if [[ -f "${STEP_SUMMARY_FILE}" ]]; then
+    steps_json="$(
+      jq -Rn --rawfile steps "${STEP_SUMMARY_FILE}" '
+        ($steps | split("\n") | map(select(length > 0))) as $lines
+        | if ($lines | length) <= 1 then []
+          else $lines[1:] | map(split(",") | {
+            step: .[0],
+            status: .[1],
+            durationSeconds: (.[2] | tonumber),
+            log: (if (.[3] // "") == "" then null else .[3] end),
+            reason: (if (.[4] // "") == "" then null else .[4] end)
+          })
+        end
+      '
+    )"
+  fi
 
   jq -n \
     --arg timestamp "${TIMESTAMP}" \
@@ -226,6 +243,7 @@ write_json_report() {
     --arg wopiSummary "${WOPI_SUMMARY_FILE}" \
     --arg stepSummary "${STEP_SUMMARY_FILE}" \
     --arg report "${REPORT_FILE}" \
+    --argjson steps "${steps_json}" \
     --argjson exitCode "${exit_code}" \
     --argjson duration "${duration}" \
     --argjson passed "${STEPS_PASSED}" \
@@ -238,6 +256,7 @@ write_json_report() {
       exitCode: $exitCode,
       durationSeconds: $duration,
       results: { passed: $passed, failed: $failed, skipped: $skipped },
+      steps: $steps,
       artifacts: {
         logsPrefix: $logsPrefix,
         report: $report,
