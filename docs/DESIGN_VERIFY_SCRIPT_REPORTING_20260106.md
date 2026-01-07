@@ -13,6 +13,7 @@
 - Write a step summary log (`tmp/<timestamp>_verify-steps.log`) with status and duration per step.
 - Include skip reasons in the step summary CSV.
 - Record total duration in the verification report.
+- Write a JSON summary (`tmp/<timestamp>_verify-summary.json`) with results and artifact paths.
 - Print report + WOPI summary paths to the console on exit.
 - Emit a report even when CLI parsing fails, capturing the non-zero exit code.
 

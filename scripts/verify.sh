@@ -91,6 +91,7 @@ FRONTEND_DIR="${REPO_ROOT}/ecm-frontend"
 LOG_DIR="${REPO_ROOT}/tmp"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 REPORT_FILE="${LOG_DIR}/${TIMESTAMP}_verify-report.md"
+SUMMARY_JSON_FILE="${LOG_DIR}/${TIMESTAMP}_verify-summary.json"
 WOPI_SUMMARY_FILE="${LOG_DIR}/${TIMESTAMP}_verify-wopi.summary.log"
 STEP_SUMMARY_FILE="${LOG_DIR}/${TIMESTAMP}_verify-steps.log"
 FRONTEND_DEPS_INSTALLED=0
@@ -148,6 +149,7 @@ write_wopi_summary() {
 
 write_verification_report() {
   local exit_code="${1:-0}"
+  local duration="${2:-0}"
   local status="PASSED"
   if [[ ${STEPS_FAILED} -gt 0 || ${exit_code} -ne 0 ]]; then
     status="FAILED"
@@ -164,7 +166,7 @@ write_verification_report() {
     fi
     echo ""
     echo "## Results"
-    echo "- Duration (s): $(( $(date +%s) - RUN_START_EPOCH ))"
+    echo "- Duration (s): ${duration}"
     echo "- Passed: ${STEPS_PASSED}"
     echo "- Failed: ${STEPS_FAILED}"
     echo "- Skipped: ${STEPS_SKIPPED}"
@@ -189,13 +191,71 @@ write_verification_report() {
     if [[ -f "${STEP_SUMMARY_FILE}" ]]; then
       echo "- Step summary: ${STEP_SUMMARY_FILE}"
     fi
+    if [[ -f "${SUMMARY_JSON_FILE}" ]]; then
+      echo "- JSON summary: ${SUMMARY_JSON_FILE}"
+    fi
   } > "${REPORT_FILE}"
+}
+
+write_json_report() {
+  local exit_code="${1:-0}"
+  local duration="${2:-0}"
+  if ! command -v jq >/dev/null 2>&1; then
+    return
+  fi
+
+  local status="PASSED"
+  if [[ ${STEPS_FAILED} -gt 0 || ${exit_code} -ne 0 ]]; then
+    status="FAILED"
+  fi
+
+  local wopi_status=""
+  local wopi_reason=""
+  if [[ -f "${WOPI_SUMMARY_FILE}" ]]; then
+    wopi_status="$(grep -m1 '^verify-wopi status:' "${WOPI_SUMMARY_FILE}" | sed 's/^verify-wopi status: //' || true)"
+    wopi_reason="$(grep -m1 '^reason:' "${WOPI_SUMMARY_FILE}" | sed 's/^reason: //' || true)"
+  fi
+
+  jq -n \
+    --arg timestamp "${TIMESTAMP}" \
+    --arg command "$0 ${ORIGINAL_ARGS}" \
+    --arg status "${status}" \
+    --arg logsPrefix "${LOG_DIR}/${TIMESTAMP}_*" \
+    --arg wopiStatus "${wopi_status}" \
+    --arg wopiReason "${wopi_reason}" \
+    --arg wopiSummary "${WOPI_SUMMARY_FILE}" \
+    --arg stepSummary "${STEP_SUMMARY_FILE}" \
+    --arg report "${REPORT_FILE}" \
+    --argjson exitCode "${exit_code}" \
+    --argjson duration "${duration}" \
+    --argjson passed "${STEPS_PASSED}" \
+    --argjson failed "${STEPS_FAILED}" \
+    --argjson skipped "${STEPS_SKIPPED}" \
+    '{
+      timestamp: $timestamp,
+      command: $command,
+      status: $status,
+      exitCode: $exitCode,
+      durationSeconds: $duration,
+      results: { passed: $passed, failed: $failed, skipped: $skipped },
+      artifacts: {
+        logsPrefix: $logsPrefix,
+        report: $report,
+        wopiSummary: $wopiSummary,
+        wopiStatus: $wopiStatus,
+        wopiReason: $wopiReason,
+        stepSummary: $stepSummary
+      }
+    }' > "${SUMMARY_JSON_FILE}"
 }
 
 handle_exit() {
   local exit_code=$?
+  local duration
+  duration="$(( $(date +%s) - RUN_START_EPOCH ))"
   set +e
-  write_verification_report "${exit_code}"
+  write_verification_report "${exit_code}" "${duration}"
+  write_json_report "${exit_code}" "${duration}"
   log_info "Report: ${REPORT_FILE}"
   if [[ -f "${WOPI_SUMMARY_FILE}" ]]; then
     log_info "WOPI summary: ${WOPI_SUMMARY_FILE}"
