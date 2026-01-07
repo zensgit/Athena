@@ -5,6 +5,7 @@
 
 ## Approach
 - Add `--wopi-query=<query>` to set `ECM_VERIFY_QUERY` for the WOPI step.
+- Add `--wopi-query <query>` as a space-delimited alternative.
 - Add `--wopi-cleanup` to set `ECM_VERIFY_CLEANUP=1` for auto-upload cleanup.
 - Pass the overrides only for the `verify-wopi` command invocation.
 

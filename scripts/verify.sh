@@ -27,15 +27,24 @@ WOPI_ONLY=0
 SKIP_WOPI=0
 WOPI_CLEANUP=0
 WOPI_QUERY_OVERRIDE=""
-for arg in "$@"; do
-  case "$arg" in
+while [[ $# -gt 0 ]]; do
+  case "$1" in
     --no-restart) SKIP_RESTART=1 ;;
     --smoke-only) SMOKE_ONLY=1 ;;
     --skip-build) SKIP_BUILD=1 ;;
     --wopi-only) WOPI_ONLY=1 ;;
     --skip-wopi) SKIP_WOPI=1 ;;
     --wopi-cleanup) WOPI_CLEANUP=1 ;;
-    --wopi-query=*) WOPI_QUERY_OVERRIDE="${arg#*=}" ;;
+    --wopi-query)
+      if [[ $# -lt 2 ]]; then
+        echo "Missing value for --wopi-query"
+        exit 1
+      fi
+      WOPI_QUERY_OVERRIDE="$2"
+      shift 2
+      continue
+      ;;
+    --wopi-query=*) WOPI_QUERY_OVERRIDE="${1#*=}" ;;
     --help|-h)
       echo "Usage: $0 [--no-restart] [--smoke-only] [--skip-build] [--wopi-only] [--skip-wopi] [--wopi-cleanup] [--wopi-query=<query>]"
       echo "  --no-restart  Skip docker-compose restart (services must be running)"
@@ -45,9 +54,11 @@ for arg in "$@"; do
       echo "  --skip-wopi   Skip WOPI verification step"
       echo "  --wopi-cleanup  Remove auto-uploaded WOPI sample after verification"
       echo "  --wopi-query=<query>  Search query to find WOPI document"
+      echo "  --wopi-query <query>  Search query to find WOPI document"
       exit 0
       ;;
   esac
+  shift
 done
 
 # If wopi-only is enabled, skip all other steps.
