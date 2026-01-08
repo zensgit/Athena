@@ -84,10 +84,31 @@ if [[ ${REPORT_LATEST} -eq 1 ]]; then
     echo "ERROR: No verify-summary.json files found in ${log_dir}" >&2
     exit 1
   fi
-  jq -s '{count: length, runs: .}' "${summary_files[@]}" > "${latest_json}"
+  jq -s '{
+    summary: {
+      generatedAt: (now | todateiso8601),
+      count: length,
+      passedRuns: (map(select(.status == "PASSED")) | length),
+      failedRuns: (map(select(.status == "FAILED")) | length),
+      totalDurationSeconds: (map(.durationSeconds) | add),
+      avgDurationSeconds: (if length == 0 then 0 else ((map(.durationSeconds) | add) / length | round) end)
+    },
+    runs: .
+  }' "${summary_files[@]}" > "${latest_json}"
+  summary_tsv="$(
+    jq -s -r '[
+      length,
+      (map(select(.status == "PASSED")) | length),
+      (map(select(.status == "FAILED")) | length),
+      ((map(.durationSeconds) | add) / length | round),
+      (map(.durationSeconds) | add)
+    ] | @tsv' "${summary_files[@]}"
+  )"
+  IFS=$'\t' read -r summary_runs summary_passed summary_failed summary_avg summary_total <<< "${summary_tsv}"
   {
     echo "# Verification Summary (latest ${#summary_files[@]})"
     echo ""
+    echo "- Summary: runs=${summary_runs} passed=${summary_passed} failed=${summary_failed} avgDuration=${summary_avg}s totalDuration=${summary_total}s"
     for file in "${summary_files[@]}"; do
       jq -r '"- \(.timestamp) \(.status) passed=\(.results.passed) failed=\(.results.failed) skipped=\(.results.skipped) duration=\(.durationSeconds)s (\(.command))"' "${file}"
     done
