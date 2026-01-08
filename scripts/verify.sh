@@ -33,6 +33,7 @@ WOPI_QUERY_OVERRIDE=""
 REPORT_LATEST=0
 REPORT_LATEST_COUNT=5
 REPORT_LATEST_STATUS=""
+REPORT_LATEST_SINCE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --no-restart) SKIP_RESTART=1 ;;
@@ -62,6 +63,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --report-latest=*) REPORT_LATEST=1; REPORT_LATEST_COUNT="${1#*=}" ;;
     --report-latest-status=*) REPORT_LATEST=1; REPORT_LATEST_STATUS="${1#*=}" ;;
+    --report-latest-since=*) REPORT_LATEST=1; REPORT_LATEST_SINCE="${1#*=}" ;;
     --help|-h)
       echo "Usage: $0 [--no-restart] [--smoke-only] [--skip-build] [--wopi-only] [--skip-wopi] [--wopi-cleanup] [--wopi-query=<query>] [--report-latest[=N]]"
       echo "  --no-restart  Skip docker-compose restart (services must be running)"
@@ -75,6 +77,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --report-latest[=N]  Summarize the latest N verify-summary.json files"
       echo "  --report-latest <N>  Summarize the latest N verify-summary.json files"
       echo "  --report-latest-status=<STATUS>  Filter latest summaries by status (PASSED/FAILED)"
+      echo "  --report-latest-since=<timestamp>  Filter summaries at/after timestamp (YYYYMMDD_HHMMSS)"
       exit 0
       ;;
   esac
@@ -98,6 +101,19 @@ if [[ ${REPORT_LATEST} -eq 1 ]]; then
     echo "ERROR: No verify-summary.json files found in ${log_dir}" >&2
     exit 1
   fi
+  if [[ -n "${REPORT_LATEST_SINCE}" ]]; then
+    if [[ ! "${REPORT_LATEST_SINCE}" =~ ^[0-9]{8}_[0-9]{6}$ ]]; then
+      echo "ERROR: --report-latest-since must match YYYYMMDD_HHMMSS" >&2
+      exit 1
+    fi
+    mapfile -t summary_files < <(
+      jq -r 'select(.timestamp >= $since) | .artifacts.report' \
+        --arg since "${REPORT_LATEST_SINCE}" \
+        "${summary_files[@]}" 2>/dev/null \
+        | sed 's/_verify-report.md/_verify-summary.json/' \
+        | head -n "${REPORT_LATEST_COUNT}"
+    )
+  fi
   if [[ -n "${REPORT_LATEST_STATUS}" ]]; then
     status_filter="$(printf '%s' "${REPORT_LATEST_STATUS}" | tr '[:lower:]' '[:upper:]')"
     if [[ "${status_filter}" != "PASSED" && "${status_filter}" != "FAILED" ]]; then
@@ -113,7 +129,7 @@ if [[ ${REPORT_LATEST} -eq 1 ]]; then
     )
   fi
   if [[ ${#summary_files[@]} -eq 0 ]]; then
-    echo "ERROR: No verify-summary.json files match the filter in ${log_dir}" >&2
+    echo "ERROR: No verify-summary.json files match the filters in ${log_dir}" >&2
     exit 1
   fi
 
@@ -121,6 +137,7 @@ if [[ ${REPORT_LATEST} -eq 1 ]]; then
     summary: {
       generatedAt: (now | todateiso8601),
       statusFilter: (if $statusFilter == "" then null else $statusFilter end),
+      sinceFilter: (if $sinceFilter == "" then null else $sinceFilter end),
       count: length,
       passedRuns: (map(select(.status == "PASSED")) | length),
       failedRuns: (map(select(.status == "FAILED")) | length),
@@ -149,7 +166,7 @@ if [[ ${REPORT_LATEST} -eq 1 ]]; then
       )
     },
     runs: .
-  }' --arg statusFilter "${status_filter}" --arg stepStatsCsv "${latest_steps_csv}" --arg runsCsv "${latest_runs_csv}" "${summary_files[@]}" > "${latest_json}"
+  }' --arg statusFilter "${status_filter}" --arg sinceFilter "${REPORT_LATEST_SINCE}" --arg stepStatsCsv "${latest_steps_csv}" --arg runsCsv "${latest_runs_csv}" "${summary_files[@]}" > "${latest_json}"
   summary_tsv="$(
     jq -s -r '[
       length,
@@ -222,6 +239,9 @@ if [[ ${REPORT_LATEST} -eq 1 ]]; then
     echo "- Summary: runs=${summary_runs} passed=${summary_passed} failed=${summary_failed} avgDuration=${summary_avg}s totalDuration=${summary_total}s"
     if [[ -n "${status_filter}" ]]; then
       echo "- Filter: status=${status_filter}"
+    fi
+    if [[ -n "${REPORT_LATEST_SINCE}" ]]; then
+      echo "- Filter: since=${REPORT_LATEST_SINCE}"
     fi
     echo "- WOPI: passed=${summary_wopi_passed} failed=${summary_wopi_failed} skipped=${summary_wopi_skipped}"
     if [[ -n "${step_lines}" ]]; then
