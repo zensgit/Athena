@@ -30,6 +30,8 @@ WOPI_ONLY=0
 SKIP_WOPI=0
 WOPI_CLEANUP=0
 WOPI_QUERY_OVERRIDE=""
+REPORT_LATEST=0
+REPORT_LATEST_COUNT=5
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --no-restart) SKIP_RESTART=1 ;;
@@ -49,8 +51,10 @@ while [[ $# -gt 0 ]]; do
       continue
       ;;
     --wopi-query=*) WOPI_QUERY_OVERRIDE="${1#*=}" ;;
+    --report-latest) REPORT_LATEST=1 ;;
+    --report-latest=*) REPORT_LATEST=1; REPORT_LATEST_COUNT="${1#*=}" ;;
     --help|-h)
-      echo "Usage: $0 [--no-restart] [--smoke-only] [--skip-build] [--wopi-only] [--skip-wopi] [--wopi-cleanup] [--wopi-query=<query>]"
+      echo "Usage: $0 [--no-restart] [--smoke-only] [--skip-build] [--wopi-only] [--skip-wopi] [--wopi-cleanup] [--wopi-query=<query>] [--report-latest[=N]]"
       echo "  --no-restart  Skip docker-compose restart (services must be running)"
       echo "  --smoke-only  Only run API smoke tests, skip E2E tests"
       echo "  --skip-build  Skip frontend build step"
@@ -59,11 +63,39 @@ while [[ $# -gt 0 ]]; do
       echo "  --wopi-cleanup  Remove auto-uploaded WOPI sample after verification"
       echo "  --wopi-query=<query>  Search query to find WOPI document"
       echo "  --wopi-query <query>  Search query to find WOPI document"
+      echo "  --report-latest[=N]  Summarize the latest N verify-summary.json files"
       exit 0
       ;;
   esac
   shift
 done
+
+if [[ ${REPORT_LATEST} -eq 1 ]]; then
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "ERROR: jq is required for --report-latest" >&2
+    exit 1
+  fi
+  log_dir="${REPO_ROOT}/tmp"
+  mkdir -p "${log_dir}"
+  latest_json="${log_dir}/verify-latest.json"
+  latest_md="${log_dir}/verify-latest.md"
+  mapfile -t summary_files < <(ls -1t "${log_dir}"/*_verify-summary.json 2>/dev/null | head -n "${REPORT_LATEST_COUNT}")
+  if [[ ${#summary_files[@]} -eq 0 ]]; then
+    echo "ERROR: No verify-summary.json files found in ${log_dir}" >&2
+    exit 1
+  fi
+  jq -s '{count: length, runs: .}' "${summary_files[@]}" > "${latest_json}"
+  {
+    echo "# Verification Summary (latest ${#summary_files[@]})"
+    echo ""
+    for file in "${summary_files[@]}"; do
+      jq -r '"- \(.timestamp) \(.status) passed=\(.results.passed) failed=\(.results.failed) skipped=\(.results.skipped) duration=\(.durationSeconds)s (\(.command))"' "${file}"
+    done
+  } > "${latest_md}"
+  echo "Wrote ${latest_json}"
+  echo "Wrote ${latest_md}"
+  exit 0
+fi
 
 # If wopi-only is enabled, skip all other steps.
 if [[ ${WOPI_ONLY} -eq 1 ]]; then
