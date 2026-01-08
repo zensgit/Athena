@@ -90,6 +90,9 @@ if [[ ${REPORT_LATEST} -eq 1 ]]; then
       count: length,
       passedRuns: (map(select(.status == "PASSED")) | length),
       failedRuns: (map(select(.status == "FAILED")) | length),
+      wopiPassed: (map(select(.artifacts.wopiStatus == "passed")) | length),
+      wopiFailed: (map(select(.artifacts.wopiStatus == "failed")) | length),
+      wopiSkipped: (map(select(.artifacts.wopiStatus == "skipped")) | length),
       totalDurationSeconds: (map(.durationSeconds) | add),
       avgDurationSeconds: (if length == 0 then 0 else ((map(.durationSeconds) | add) / length | round) end)
     },
@@ -100,15 +103,19 @@ if [[ ${REPORT_LATEST} -eq 1 ]]; then
       length,
       (map(select(.status == "PASSED")) | length),
       (map(select(.status == "FAILED")) | length),
+      (map(select(.artifacts.wopiStatus == "passed")) | length),
+      (map(select(.artifacts.wopiStatus == "failed")) | length),
+      (map(select(.artifacts.wopiStatus == "skipped")) | length),
       ((map(.durationSeconds) | add) / length | round),
       (map(.durationSeconds) | add)
     ] | @tsv' "${summary_files[@]}"
   )"
-  IFS=$'\t' read -r summary_runs summary_passed summary_failed summary_avg summary_total <<< "${summary_tsv}"
+  IFS=$'\t' read -r summary_runs summary_passed summary_failed summary_wopi_passed summary_wopi_failed summary_wopi_skipped summary_avg summary_total <<< "${summary_tsv}"
   {
     echo "# Verification Summary (latest ${#summary_files[@]})"
     echo ""
     echo "- Summary: runs=${summary_runs} passed=${summary_passed} failed=${summary_failed} avgDuration=${summary_avg}s totalDuration=${summary_total}s"
+    echo "- WOPI: passed=${summary_wopi_passed} failed=${summary_wopi_failed} skipped=${summary_wopi_skipped}"
     for file in "${summary_files[@]}"; do
       jq -r '"- \(.timestamp) \(.status) passed=\(.results.passed) failed=\(.results.failed) skipped=\(.results.skipped) duration=\(.durationSeconds)s (\(.command))"' "${file}"
     done

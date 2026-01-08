@@ -18,6 +18,7 @@
 - Include wait and skip steps in the step summary with reasons where applicable.
 - Support `--report-latest[=N]` to aggregate recent JSON summaries into `tmp/verify-latest.json` and `tmp/verify-latest.md`.
 - Include aggregate totals (runs, pass/fail counts, duration stats) in report-latest outputs.
+- Include WOPI status counts in report-latest aggregation.
 - Print report + WOPI summary paths to the console on exit.
 - Emit a report even when CLI parsing fails, capturing the non-zero exit code.
 
