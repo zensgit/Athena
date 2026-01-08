@@ -51,7 +51,14 @@ while [[ $# -gt 0 ]]; do
       continue
       ;;
     --wopi-query=*) WOPI_QUERY_OVERRIDE="${1#*=}" ;;
-    --report-latest) REPORT_LATEST=1 ;;
+    --report-latest)
+      REPORT_LATEST=1
+      if [[ $# -gt 1 && "${2}" =~ ^[0-9]+$ ]]; then
+        REPORT_LATEST_COUNT="${2}"
+        shift 2
+        continue
+      fi
+      ;;
     --report-latest=*) REPORT_LATEST=1; REPORT_LATEST_COUNT="${1#*=}" ;;
     --help|-h)
       echo "Usage: $0 [--no-restart] [--smoke-only] [--skip-build] [--wopi-only] [--skip-wopi] [--wopi-cleanup] [--wopi-query=<query>] [--report-latest[=N]]"
@@ -64,6 +71,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --wopi-query=<query>  Search query to find WOPI document"
       echo "  --wopi-query <query>  Search query to find WOPI document"
       echo "  --report-latest[=N]  Summarize the latest N verify-summary.json files"
+      echo "  --report-latest <N>  Summarize the latest N verify-summary.json files"
       exit 0
       ;;
   esac
