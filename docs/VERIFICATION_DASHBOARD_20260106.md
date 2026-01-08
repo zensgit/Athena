@@ -77,6 +77,7 @@
 - verify.sh step summary reasons: `docs/VERIFICATION_VERIFY_STEP_SUMMARY_REASON_20260107.md`
 - verify.sh JSON summary: `docs/VERIFICATION_VERIFY_JSON_SUMMARY_20260107.md`
 - verify.sh JSON steps: `docs/VERIFICATION_VERIFY_JSON_STEPS_20260107.md`
+- verify.sh step summary expanded: `docs/VERIFICATION_VERIFY_STEP_SUMMARY_EXPANDED_20260108.md`
 - verify.sh help output: `docs/VERIFICATION_VERIFY_HELP_20260107.md`
 - WOPI auto-upload fallback: `docs/VERIFICATION_WOPI_AUTO_UPLOAD_20260106.md`
 - WOPI sample cleanup: `docs/VERIFICATION_WOPI_SAMPLE_CLEANUP_20260106.md`

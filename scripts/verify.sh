@@ -336,9 +336,24 @@ run_step_optional() {
     local exit_code=$?
     log_warn "${step_name} failed (non-critical, exit code: ${exit_code}, log: ${log_file})"
     ((STEPS_SKIPPED+=1))
-    record_step "${step_name}" "skipped" "$(( $(date +%s) - start_ts ))" "${log_file}"
+    record_step "${step_name}" "skipped" "$(( $(date +%s) - start_ts ))" "${log_file}" "non-critical failure"
     return 0
   fi
+}
+
+record_wait_step() {
+  local step_name="$1"
+  local service_label="$2"
+  local url="$3"
+  local attempts="${4:-30}"
+  local start_ts
+  start_ts="$(date +%s)"
+  if wait_for_service "${service_label}" "${url}" "${attempts}"; then
+    record_step "${step_name}" "passed" "$(( $(date +%s) - start_ts ))" ""
+    return 0
+  fi
+  record_step "${step_name}" "failed" "$(( $(date +%s) - start_ts ))" "" "service not ready"
+  return 1
 }
 
 docker_compose() {
@@ -453,10 +468,13 @@ if [[ ${SKIP_RESTART} -eq 0 ]]; then
     run_step "restart-ecm" bash "${SCRIPT_DIR}/restart-ecm.sh" || true
   else
     log_warn "restart-ecm.sh not found, skipping restart"
+    ((STEPS_SKIPPED+=1))
+    record_step "restart-ecm" "skipped" "0" "" "restart-ecm.sh not found"
   fi
 else
   log_info "=== Step 1: Skipping service restart (--no-restart) ==="
   ((STEPS_SKIPPED+=1))
+  record_step "restart-ecm" "skipped" "0" "" "Skipped via --no-restart flag"
 fi
 
 # ============================================================
@@ -465,13 +483,13 @@ fi
 log_info "=== Step 2: Waiting for services ==="
 
 # Wait for Keycloak
-wait_for_service "Keycloak" "${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" 60 || {
+record_wait_step "wait-keycloak" "Keycloak" "${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" 60 || {
   log_error "Keycloak not ready, aborting"
   exit 1
 }
 
 # Wait for ECM Core API
-wait_for_service "ECM Core API" "${ECM_API_URL}/actuator/health" 60 || {
+record_wait_step "wait-ecm-api" "ECM Core API" "${ECM_API_URL}/actuator/health" 60 || {
   log_error "ECM Core API not ready, aborting"
   exit 1
 }
@@ -494,10 +512,12 @@ if [[ ${WOPI_ONLY} -eq 0 ]]; then
   else
     log_warn "create-test-users.sh not found, skipping"
     ((STEPS_SKIPPED+=1))
+    record_step "create-test-users" "skipped" "0" "" "create-test-users.sh not found"
   fi
 else
   log_info "=== Step 3: Skipping test user creation (--wopi-only) ==="
   ((STEPS_SKIPPED+=1))
+  record_step "create-test-users" "skipped" "0" "" "Skipped via --wopi-only flag"
 fi
 
 # ============================================================
@@ -511,10 +531,14 @@ if [[ ${WOPI_ONLY} -eq 0 ]]; then
   else
     log_warn "get-token.sh not found, skipping"
     ((STEPS_SKIPPED+=1))
+    record_step "get-token-admin" "skipped" "0" "" "get-token.sh not found"
+    record_step "get-token-viewer" "skipped" "0" "" "get-token.sh not found"
   fi
 else
   log_info "=== Step 4: Skipping token fetch (--wopi-only) ==="
   ((STEPS_SKIPPED+=1))
+  record_step "get-token-admin" "skipped" "0" "" "Skipped via --wopi-only flag"
+  record_step "get-token-viewer" "skipped" "0" "" "Skipped via --wopi-only flag"
 fi
 
 # ============================================================
@@ -534,6 +558,7 @@ if [[ ${WOPI_ONLY} -eq 0 ]]; then
 else
   log_info "=== Step 5: Skipping API smoke tests (--wopi-only) ==="
   ((STEPS_SKIPPED+=1))
+  record_step "smoke-test" "skipped" "0" "" "Skipped via --wopi-only flag"
 fi
 
 # ============================================================
@@ -552,6 +577,7 @@ if [[ ${WOPI_ONLY} -eq 0 ]]; then
 else
   log_info "=== Step 5.5: Skipping security verification (--wopi-only) ==="
   ((STEPS_SKIPPED+=1))
+  record_step "verify-phase-c" "skipped" "0" "" "Skipped via --wopi-only flag"
 fi
 
 # ============================================================
