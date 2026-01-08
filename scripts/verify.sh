@@ -32,6 +32,7 @@ WOPI_CLEANUP=0
 WOPI_QUERY_OVERRIDE=""
 REPORT_LATEST=0
 REPORT_LATEST_COUNT=5
+REPORT_LATEST_STATUS=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --no-restart) SKIP_RESTART=1 ;;
@@ -60,6 +61,7 @@ while [[ $# -gt 0 ]]; do
       fi
       ;;
     --report-latest=*) REPORT_LATEST=1; REPORT_LATEST_COUNT="${1#*=}" ;;
+    --report-latest-status=*) REPORT_LATEST=1; REPORT_LATEST_STATUS="${1#*=}" ;;
     --help|-h)
       echo "Usage: $0 [--no-restart] [--smoke-only] [--skip-build] [--wopi-only] [--skip-wopi] [--wopi-cleanup] [--wopi-query=<query>] [--report-latest[=N]]"
       echo "  --no-restart  Skip docker-compose restart (services must be running)"
@@ -72,6 +74,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --wopi-query <query>  Search query to find WOPI document"
       echo "  --report-latest[=N]  Summarize the latest N verify-summary.json files"
       echo "  --report-latest <N>  Summarize the latest N verify-summary.json files"
+      echo "  --report-latest-status=<STATUS>  Filter latest summaries by status (PASSED/FAILED)"
       exit 0
       ;;
   esac
@@ -92,6 +95,25 @@ if [[ ${REPORT_LATEST} -eq 1 ]]; then
     echo "ERROR: No verify-summary.json files found in ${log_dir}" >&2
     exit 1
   fi
+  if [[ -n "${REPORT_LATEST_STATUS}" ]]; then
+    status_filter="$(printf '%s' "${REPORT_LATEST_STATUS}" | tr '[:lower:]' '[:upper:]')"
+    if [[ "${status_filter}" != "PASSED" && "${status_filter}" != "FAILED" ]]; then
+      echo "ERROR: --report-latest-status must be PASSED or FAILED" >&2
+      exit 1
+    fi
+    mapfile -t summary_files < <(
+      jq -r 'select(.status == $status) | .artifacts.report' \
+        --arg status "${status_filter}" \
+        "${summary_files[@]}" 2>/dev/null \
+        | sed 's/_verify-report.md/_verify-summary.json/' \
+        | head -n "${REPORT_LATEST_COUNT}"
+    )
+  fi
+  if [[ ${#summary_files[@]} -eq 0 ]]; then
+    echo "ERROR: No verify-summary.json files match the filter in ${log_dir}" >&2
+    exit 1
+  fi
+
   jq -s '{
     summary: {
       generatedAt: (now | todateiso8601),

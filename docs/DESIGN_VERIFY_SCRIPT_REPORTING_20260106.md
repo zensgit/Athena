@@ -21,6 +21,7 @@
 - Include WOPI status counts in report-latest aggregation.
 - Support `--report-latest <N>` as a space-delimited alternative.
 - Include top step duration summary in report-latest outputs.
+- Support `--report-latest-status=PASSED|FAILED` to filter aggregation.
 - Print report + WOPI summary paths to the console on exit.
 - Emit a report even when CLI parsing fails, capturing the non-zero exit code.
 
