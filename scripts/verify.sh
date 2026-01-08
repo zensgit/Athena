@@ -90,6 +90,7 @@ if [[ ${REPORT_LATEST} -eq 1 ]]; then
   mkdir -p "${log_dir}"
   latest_json="${log_dir}/verify-latest.json"
   latest_md="${log_dir}/verify-latest.md"
+  latest_steps_csv="${log_dir}/verify-latest-steps.csv"
   mapfile -t summary_files < <(ls -1t "${log_dir}"/*_verify-summary.json 2>/dev/null | head -n "${REPORT_LATEST_COUNT}")
   if [[ ${#summary_files[@]} -eq 0 ]]; then
     echo "ERROR: No verify-summary.json files found in ${log_dir}" >&2
@@ -125,6 +126,7 @@ if [[ ${REPORT_LATEST} -eq 1 ]]; then
       wopiSkipped: (map(select(.artifacts.wopiStatus == "skipped")) | length),
       totalDurationSeconds: (map(.durationSeconds) | add),
       avgDurationSeconds: (if length == 0 then 0 else ((map(.durationSeconds) | add) / length | round) end),
+      stepStatsCsv: $stepStatsCsv,
       stepStats: (
         [.[] | (.steps // []) | .[]]
         | sort_by(.step)
@@ -143,7 +145,7 @@ if [[ ${REPORT_LATEST} -eq 1 ]]; then
       )
     },
     runs: .
-  }' "${summary_files[@]}" > "${latest_json}"
+  }' --arg stepStatsCsv "${latest_steps_csv}" "${summary_files[@]}" > "${latest_json}"
   summary_tsv="$(
     jq -s -r '[
       length,
@@ -157,6 +159,26 @@ if [[ ${REPORT_LATEST} -eq 1 ]]; then
     ] | @tsv' "${summary_files[@]}"
   )"
   IFS=$'\t' read -r summary_runs summary_passed summary_failed summary_wopi_passed summary_wopi_failed summary_wopi_skipped summary_avg summary_total <<< "${summary_tsv}"
+  step_stats_csv="$(
+    jq -s -r '[.[] | (.steps // []) | .[]]
+      | sort_by(.step)
+      | group_by(.step)
+      | map({
+          step: .[0].step,
+          runs: length,
+          passed: (map(select(.status == "passed")) | length),
+          failed: (map(select(.status == "failed")) | length),
+          skipped: (map(select(.status == "skipped")) | length),
+          avg: ((map(.durationSeconds) | add) / length | round),
+          max: (map(.durationSeconds) | max)
+        })
+      | sort_by(.avg)
+      | reverse
+      | (["step","runs","passed","failed","skipped","avg_duration_s","max_duration_s"] | @csv),
+        (.[] | [ .step, .runs, .passed, .failed, .skipped, .avg, .max ] | @csv)
+      ' "${summary_files[@]}"
+  )"
+  printf '%s\n' "${step_stats_csv}" > "${latest_steps_csv}"
   step_lines="$(
     jq -s -r '[.[] | (.steps // []) | .[]]
       | sort_by(.step)
@@ -184,6 +206,7 @@ if [[ ${REPORT_LATEST} -eq 1 ]]; then
     if [[ -n "${step_lines}" ]]; then
       echo "- Top steps by avg duration:"
       printf '%s\n' "${step_lines}"
+      echo "- Step stats CSV: ${latest_steps_csv}"
     fi
     for file in "${summary_files[@]}"; do
       jq -r '"- \(.timestamp) \(.status) passed=\(.results.passed) failed=\(.results.failed) skipped=\(.results.skipped) duration=\(.durationSeconds)s (\(.command))"' "${file}"

@@ -22,6 +22,7 @@
 - Support `--report-latest <N>` as a space-delimited alternative.
 - Include top step duration summary in report-latest outputs.
 - Support `--report-latest-status=PASSED|FAILED` to filter aggregation.
+- Write `tmp/verify-latest-steps.csv` with aggregated step stats.
 - Print report + WOPI summary paths to the console on exit.
 - Emit a report even when CLI parsing fails, capturing the non-zero exit code.
 
