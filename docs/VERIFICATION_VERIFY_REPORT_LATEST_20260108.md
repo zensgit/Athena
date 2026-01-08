@@ -16,3 +16,7 @@
 - Result: summary limited to runs at/after the timestamp and filter recorded in JSON + Markdown output.
 - Command: `bash scripts/verify.sh --report-latest-since=bad --report-latest=1`
 - Result: exits non-zero with `ERROR: --report-latest-since must match YYYYMMDD_HHMMSS`.
+
+## Combined filters
+- Command: `bash scripts/verify.sh --report-latest-since=20260108_000000 --report-latest-status=PASSED --report-latest=2`
+- Result: summary limited to PASSED runs at/after the timestamp and both filters recorded in JSON + Markdown output.
