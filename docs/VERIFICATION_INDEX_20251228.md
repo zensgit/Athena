@@ -18,6 +18,8 @@
   - Version history download + restore flow (latest)
 - `docs/VERIFICATION_E2E_SHARE_LINK_ACCESS_20260106.md`
   - Share link password/deactivate/access-limit validation (latest)
+- `docs/VERIFICATION_E2E_CORRESPONDENT_LIST_20260108.md`
+  - Correspondent create/search row visibility stability (latest)
 
 ## Frontend Tests
 - `docs/VERIFICATION_FRONTEND_LINT_TEST_20260106.md`

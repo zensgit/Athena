@@ -60,6 +60,7 @@
 ## E2E / Automation
 - E2E version history actions: `docs/VERIFICATION_E2E_VERSION_HISTORY_ACTIONS_20260106.md`
 - E2E share link access: `docs/VERIFICATION_E2E_SHARE_LINK_ACCESS_20260106.md`
+- E2E correspondent list stability: `docs/VERIFICATION_E2E_CORRESPONDENT_LIST_20260108.md`
 - Full E2E run: `docs/VERIFICATION_E2E_FULL_RUN_20260106.md`
 - Full verify.sh report: `docs/VERIFICATION_VERIFY_20260106.md`
 - Full verify.sh report (2026-01-07 run): `docs/VERIFICATION_VERIFY_20260107.md`

@@ -16,6 +16,9 @@
 - E2E failure: `ecm-frontend/e2e/ui-smoke.spec.ts:402` (timeout waiting for correspondent search row).
 - Playwright summary: 16 passed, 1 failed.
 
+## Follow-up
+- Isolated UI smoke rerun after correspondent list stabilization: `docs/VERIFICATION_E2E_CORRESPONDENT_LIST_20260108.md`.
+
 ## Artifacts
 - Report: `tmp/20260108_132606_verify-report.md`
 - WOPI summary: `tmp/20260108_132606_verify-wopi.summary.log`

@@ -167,6 +167,33 @@ async function findDocumentId(
   throw new Error(`Document not found after upload: ${filename}`);
 }
 
+async function waitForCorrespondent(
+  request: APIRequestContext,
+  name: string,
+  token: string,
+  maxAttempts = 30,
+) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const response = await request.get('http://localhost:7700/api/v1/correspondents', {
+      params: {
+        page: 0,
+        size: 200,
+        sort: 'name,asc',
+      },
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(response.ok()).toBeTruthy();
+    const payload = (await response.json()) as { content?: Array<{ id: string; name: string }> };
+    const match = payload.content?.find((item) => item.name === name);
+    if (match?.id) {
+      return match.id;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+
+  throw new Error(`Correspondent not found after create: ${name}`);
+}
+
 async function waitForSearchIndex(
   request: APIRequestContext,
   query: string,
@@ -415,7 +442,7 @@ test('UI smoke: browse + upload + search + copy/move + facets + delete + rules',
   await page.goto('/correspondents', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: 'Correspondents' })).toBeVisible({ timeout: 60_000 });
 
-  const correspondentName = `ui-e2e-correspondent-${Date.now()}`;
+  const correspondentName = `00-ui-e2e-correspondent-${Date.now()}`;
   await page.getByRole('button', { name: 'New Correspondent', exact: true }).click();
   const correspondentDialog = page.getByRole('dialog').filter({ hasText: 'Correspondent' });
   await expect(correspondentDialog).toBeVisible({ timeout: 60_000 });
@@ -423,8 +450,18 @@ test('UI smoke: browse + upload + search + copy/move + facets + delete + rules',
   await correspondentDialog.getByLabel('Match Algorithm').click();
   await page.getByRole('option', { name: 'ANY', exact: true }).click();
   await correspondentDialog.getByLabel('Match Pattern').fill('Amazon AWS');
+  const createResponsePromise = page.waitForResponse(
+    (response) =>
+      response.url().includes('/api/v1/correspondents') && response.request().method() === 'POST',
+    { timeout: 60_000 },
+  );
   await correspondentDialog.getByRole('button', { name: 'Save', exact: true }).click();
+  const createResponse = await createResponsePromise;
+  expect(createResponse.ok()).toBeTruthy();
   await expect(correspondentDialog).toBeHidden({ timeout: 60_000 });
+  await waitForCorrespondent(page.request, correspondentName, apiToken);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('heading', { name: 'Correspondents' })).toBeVisible({ timeout: 60_000 });
   await page.getByRole('textbox', { name: 'Search correspondents' }).fill(correspondentName);
   await expect(page.getByRole('row', { name: new RegExp(correspondentName) })).toBeVisible({ timeout: 60_000 });
 
