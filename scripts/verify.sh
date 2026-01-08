@@ -92,6 +92,7 @@ if [[ ${REPORT_LATEST} -eq 1 ]]; then
   latest_md="${log_dir}/verify-latest.md"
   latest_steps_csv="${log_dir}/verify-latest-steps.csv"
   latest_runs_csv="${log_dir}/verify-latest-runs.csv"
+  status_filter=""
   mapfile -t summary_files < <(ls -1t "${log_dir}"/*_verify-summary.json 2>/dev/null | head -n "${REPORT_LATEST_COUNT}")
   if [[ ${#summary_files[@]} -eq 0 ]]; then
     echo "ERROR: No verify-summary.json files found in ${log_dir}" >&2
@@ -119,6 +120,7 @@ if [[ ${REPORT_LATEST} -eq 1 ]]; then
   jq -s '{
     summary: {
       generatedAt: (now | todateiso8601),
+      statusFilter: (if $statusFilter == "" then null else $statusFilter end),
       count: length,
       passedRuns: (map(select(.status == "PASSED")) | length),
       failedRuns: (map(select(.status == "FAILED")) | length),
@@ -147,7 +149,7 @@ if [[ ${REPORT_LATEST} -eq 1 ]]; then
       )
     },
     runs: .
-  }' --arg stepStatsCsv "${latest_steps_csv}" --arg runsCsv "${latest_runs_csv}" "${summary_files[@]}" > "${latest_json}"
+  }' --arg statusFilter "${status_filter}" --arg stepStatsCsv "${latest_steps_csv}" --arg runsCsv "${latest_runs_csv}" "${summary_files[@]}" > "${latest_json}"
   summary_tsv="$(
     jq -s -r '[
       length,
@@ -218,6 +220,9 @@ if [[ ${REPORT_LATEST} -eq 1 ]]; then
     echo "# Verification Summary (latest ${#summary_files[@]})"
     echo ""
     echo "- Summary: runs=${summary_runs} passed=${summary_passed} failed=${summary_failed} avgDuration=${summary_avg}s totalDuration=${summary_total}s"
+    if [[ -n "${status_filter}" ]]; then
+      echo "- Filter: status=${status_filter}"
+    fi
     echo "- WOPI: passed=${summary_wopi_passed} failed=${summary_wopi_failed} skipped=${summary_wopi_skipped}"
     if [[ -n "${step_lines}" ]]; then
       echo "- Top steps by avg duration:"

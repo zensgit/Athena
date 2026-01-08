@@ -9,4 +9,4 @@
 
 ## Status filtering
 - Command: `bash scripts/verify.sh --report-latest-status=PASSED --report-latest=2`
-- Result: summary limited to PASSED runs. Invalid status returns a non-zero exit code.
+- Result: summary limited to PASSED runs and filter recorded in the output. Invalid status returns a non-zero exit code.
