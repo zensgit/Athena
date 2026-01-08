@@ -102,7 +102,23 @@ if [[ ${REPORT_LATEST} -eq 1 ]]; then
       wopiFailed: (map(select(.artifacts.wopiStatus == "failed")) | length),
       wopiSkipped: (map(select(.artifacts.wopiStatus == "skipped")) | length),
       totalDurationSeconds: (map(.durationSeconds) | add),
-      avgDurationSeconds: (if length == 0 then 0 else ((map(.durationSeconds) | add) / length | round) end)
+      avgDurationSeconds: (if length == 0 then 0 else ((map(.durationSeconds) | add) / length | round) end),
+      stepStats: (
+        [.[] | (.steps // []) | .[]]
+        | sort_by(.step)
+        | group_by(.step)
+        | map({
+            step: .[0].step,
+            runs: length,
+            passed: (map(select(.status == "passed")) | length),
+            failed: (map(select(.status == "failed")) | length),
+            skipped: (map(select(.status == "skipped")) | length),
+            avgDurationSeconds: ((map(.durationSeconds) | add) / length | round),
+            maxDurationSeconds: (map(.durationSeconds) | max)
+          })
+        | sort_by(.avgDurationSeconds)
+        | reverse
+      )
     },
     runs: .
   }' "${summary_files[@]}" > "${latest_json}"
@@ -119,11 +135,34 @@ if [[ ${REPORT_LATEST} -eq 1 ]]; then
     ] | @tsv' "${summary_files[@]}"
   )"
   IFS=$'\t' read -r summary_runs summary_passed summary_failed summary_wopi_passed summary_wopi_failed summary_wopi_skipped summary_avg summary_total <<< "${summary_tsv}"
+  step_lines="$(
+    jq -s -r '[.[] | (.steps // []) | .[]]
+      | sort_by(.step)
+      | group_by(.step)
+      | map({
+          step: .[0].step,
+          runs: length,
+          passed: (map(select(.status == "passed")) | length),
+          failed: (map(select(.status == "failed")) | length),
+          skipped: (map(select(.status == "skipped")) | length),
+          avg: ((map(.durationSeconds) | add) / length | round),
+          max: (map(.durationSeconds) | max)
+        })
+      | sort_by(.avg)
+      | reverse
+      | .[:5]
+      | map("- \(.step): avg=\(.avg)s max=\(.max)s runs=\(.runs) passed=\(.passed) failed=\(.failed) skipped=\(.skipped)")
+      | .[]' "${summary_files[@]}"
+  )"
   {
     echo "# Verification Summary (latest ${#summary_files[@]})"
     echo ""
     echo "- Summary: runs=${summary_runs} passed=${summary_passed} failed=${summary_failed} avgDuration=${summary_avg}s totalDuration=${summary_total}s"
     echo "- WOPI: passed=${summary_wopi_passed} failed=${summary_wopi_failed} skipped=${summary_wopi_skipped}"
+    if [[ -n "${step_lines}" ]]; then
+      echo "- Top steps by avg duration:"
+      printf '%s\n' "${step_lines}"
+    fi
     for file in "${summary_files[@]}"; do
       jq -r '"- \(.timestamp) \(.status) passed=\(.results.passed) failed=\(.results.failed) skipped=\(.results.skipped) duration=\(.durationSeconds)s (\(.command))"' "${file}"
     done
