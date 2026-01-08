@@ -12,3 +12,8 @@
 ## Artifacts
 - HTML report: `ecm-frontend/playwright-report/`
 - Last run marker: `ecm-frontend/test-results/.last-run.json`
+
+## Full suite follow-up
+- Command: `ECM_UI_URL=http://localhost:5500 ECM_API_URL=http://localhost:7700 npx playwright test --project=chromium`
+- Result: PASS (17 tests).
+- HTML report: `ecm-frontend/playwright-report/`
