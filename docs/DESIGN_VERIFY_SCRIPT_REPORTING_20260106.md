@@ -23,6 +23,7 @@
 - Include top step duration summary in report-latest outputs.
 - Support `--report-latest-status=PASSED|FAILED` to filter aggregation.
 - Write `tmp/verify-latest-steps.csv` with aggregated step stats.
+- Write `tmp/verify-latest-runs.csv` with per-run summary rows.
 - Print report + WOPI summary paths to the console on exit.
 - Emit a report even when CLI parsing fails, capturing the non-zero exit code.
 

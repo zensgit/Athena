@@ -5,6 +5,7 @@
 - JSON summary: `tmp/verify-latest.json`
 - Markdown summary: `tmp/verify-latest.md`
 - Step stats CSV: `tmp/verify-latest-steps.csv`
+- Runs CSV: `tmp/verify-latest-runs.csv`
 
 ## Status filtering
 - Command: `bash scripts/verify.sh --report-latest-status=PASSED --report-latest=2`

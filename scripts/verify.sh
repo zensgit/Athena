@@ -91,6 +91,7 @@ if [[ ${REPORT_LATEST} -eq 1 ]]; then
   latest_json="${log_dir}/verify-latest.json"
   latest_md="${log_dir}/verify-latest.md"
   latest_steps_csv="${log_dir}/verify-latest-steps.csv"
+  latest_runs_csv="${log_dir}/verify-latest-runs.csv"
   mapfile -t summary_files < <(ls -1t "${log_dir}"/*_verify-summary.json 2>/dev/null | head -n "${REPORT_LATEST_COUNT}")
   if [[ ${#summary_files[@]} -eq 0 ]]; then
     echo "ERROR: No verify-summary.json files found in ${log_dir}" >&2
@@ -127,6 +128,7 @@ if [[ ${REPORT_LATEST} -eq 1 ]]; then
       totalDurationSeconds: (map(.durationSeconds) | add),
       avgDurationSeconds: (if length == 0 then 0 else ((map(.durationSeconds) | add) / length | round) end),
       stepStatsCsv: $stepStatsCsv,
+      runsCsv: $runsCsv,
       stepStats: (
         [.[] | (.steps // []) | .[]]
         | sort_by(.step)
@@ -145,7 +147,7 @@ if [[ ${REPORT_LATEST} -eq 1 ]]; then
       )
     },
     runs: .
-  }' --arg stepStatsCsv "${latest_steps_csv}" "${summary_files[@]}" > "${latest_json}"
+  }' --arg stepStatsCsv "${latest_steps_csv}" --arg runsCsv "${latest_runs_csv}" "${summary_files[@]}" > "${latest_json}"
   summary_tsv="$(
     jq -s -r '[
       length,
@@ -179,6 +181,20 @@ if [[ ${REPORT_LATEST} -eq 1 ]]; then
       ' "${summary_files[@]}"
   )"
   printf '%s\n' "${step_stats_csv}" > "${latest_steps_csv}"
+  runs_csv="$(
+    jq -s -r '(["timestamp","status","passed","failed","skipped","duration_s","wopi_status","command"] | @csv),
+      (.[] | [
+        .timestamp,
+        .status,
+        .results.passed,
+        .results.failed,
+        .results.skipped,
+        .durationSeconds,
+        (.artifacts.wopiStatus // ""),
+        .command
+      ] | @csv)' "${summary_files[@]}"
+  )"
+  printf '%s\n' "${runs_csv}" > "${latest_runs_csv}"
   step_lines="$(
     jq -s -r '[.[] | (.steps // []) | .[]]
       | sort_by(.step)
@@ -208,6 +224,7 @@ if [[ ${REPORT_LATEST} -eq 1 ]]; then
       printf '%s\n' "${step_lines}"
       echo "- Step stats CSV: ${latest_steps_csv}"
     fi
+    echo "- Runs CSV: ${latest_runs_csv}"
     for file in "${summary_files[@]}"; do
       jq -r '"- \(.timestamp) \(.status) passed=\(.results.passed) failed=\(.results.failed) skipped=\(.results.skipped) duration=\(.durationSeconds)s (\(.command))"' "${file}"
     done
