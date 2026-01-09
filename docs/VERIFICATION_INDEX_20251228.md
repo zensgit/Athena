@@ -48,6 +48,8 @@
   - `mvn test`: 80 tests passed
 - `docs/VERIFICATION_BACKEND_MVN_VERIFY_20260106.md`
   - `mvn verify`: 80 tests passed
+- `docs/VERIFICATION_BACKEND_CORRESPONDENT_API_CONSISTENCY_TEST_20260108.md`
+  - Correspondent create + list consistency via controller test
 - `docs/VERIFICATION_AUDIT_EXPORT_MAX_RANGE_BOUNDARY_20260106.md`
   - Audit export max-range boundary accepted
 - `docs/VERIFICATION_AUDIT_EXPORT_BLANK_PARAMS_20260106.md`
