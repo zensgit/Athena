@@ -20,3 +20,7 @@
 ## Combined filters
 - Command: `bash scripts/verify.sh --report-latest-since=20260108_000000 --report-latest-status=PASSED --report-latest=2`
 - Result: summary limited to PASSED runs at/after the timestamp and both filters recorded in JSON + Markdown output.
+
+## Markdown tables
+- Command: `bash scripts/verify.sh --report-latest=3`
+- Result: Markdown output includes tables for failed runs and top steps by avg duration.

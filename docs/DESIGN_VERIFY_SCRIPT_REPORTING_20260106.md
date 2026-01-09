@@ -23,6 +23,7 @@
 - Include top step duration summary in report-latest outputs.
 - Support `--report-latest-status=PASSED|FAILED` to filter aggregation.
 - Support `--report-latest-since=YYYYMMDD_HHMMSS` to filter aggregation by timestamp.
+- Render failed runs and top-step summaries as Markdown tables in report-latest output.
 - Write `tmp/verify-latest-steps.csv` with aggregated step stats.
 - Write `tmp/verify-latest-runs.csv` with per-run summary rows.
 - Record the status filter in report-latest outputs when used.

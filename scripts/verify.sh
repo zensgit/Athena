@@ -214,7 +214,14 @@ if [[ ${REPORT_LATEST} -eq 1 ]]; then
       ] | @csv)' "${summary_files[@]}"
   )"
   printf '%s\n' "${runs_csv}" > "${latest_runs_csv}"
-  step_lines="$(
+  failed_table_rows="$(
+    jq -s -r 'map(select(.status == "FAILED"))
+      | sort_by(.timestamp)
+      | reverse
+      | map("| \(.timestamp) | \(.results.failed) | \(.durationSeconds) | \(.command) |")
+      | .[]' "${summary_files[@]}"
+  )"
+  step_table_rows="$(
     jq -s -r '[.[] | (.steps // []) | .[]]
       | sort_by(.step)
       | group_by(.step)
@@ -230,7 +237,7 @@ if [[ ${REPORT_LATEST} -eq 1 ]]; then
       | sort_by(.avg)
       | reverse
       | .[:5]
-      | map("- \(.step): avg=\(.avg)s max=\(.max)s runs=\(.runs) passed=\(.passed) failed=\(.failed) skipped=\(.skipped)")
+      | map("| \(.step) | \(.avg) | \(.max) | \(.runs) | \(.passed) | \(.failed) | \(.skipped) |")
       | .[]' "${summary_files[@]}"
   )"
   {
@@ -244,9 +251,23 @@ if [[ ${REPORT_LATEST} -eq 1 ]]; then
       echo "- Filter: since=${REPORT_LATEST_SINCE}"
     fi
     echo "- WOPI: passed=${summary_wopi_passed} failed=${summary_wopi_failed} skipped=${summary_wopi_skipped}"
-    if [[ -n "${step_lines}" ]]; then
-      echo "- Top steps by avg duration:"
-      printf '%s\n' "${step_lines}"
+    if [[ -n "${failed_table_rows}" ]]; then
+      echo ""
+      echo "## Failed runs"
+      echo ""
+      echo "| Timestamp | Failed | Duration(s) | Command |"
+      echo "| --- | --- | --- | --- |"
+      printf '%s\n' "${failed_table_rows}"
+    else
+      echo "- Failed runs: none"
+    fi
+    if [[ -n "${step_table_rows}" ]]; then
+      echo ""
+      echo "## Top steps by avg duration"
+      echo ""
+      echo "| Step | Avg(s) | Max(s) | Runs | Passed | Failed | Skipped |"
+      echo "| --- | --- | --- | --- | --- | --- | --- |"
+      printf '%s\n' "${step_table_rows}"
       echo "- Step stats CSV: ${latest_steps_csv}"
     fi
     echo "- Runs CSV: ${latest_runs_csv}"
