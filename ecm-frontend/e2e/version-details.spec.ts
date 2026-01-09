@@ -1,67 +1,9 @@
 import { APIRequestContext, expect, test } from '@playwright/test';
+import { fetchAccessToken, waitForApiReady } from './helpers/api';
 
 const baseApiUrl = process.env.ECM_API_URL || 'http://localhost:7700';
 const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
-
-async function fetchAccessToken(request: APIRequestContext, username: string, password: string) {
-  const deadline = Date.now() + 60_000;
-  let lastError: string | undefined;
-
-  while (Date.now() < deadline) {
-    try {
-      const tokenRes = await request.post('http://localhost:8180/realms/ecm/protocol/openid-connect/token', {
-        form: {
-          grant_type: 'password',
-          client_id: 'unified-portal',
-          username,
-          password,
-        },
-      });
-      if (!tokenRes.ok()) {
-        lastError = `token status=${tokenRes.status()}`;
-      } else {
-        const tokenJson = (await tokenRes.json()) as { access_token?: string };
-        if (tokenJson.access_token) {
-          return tokenJson.access_token;
-        }
-        lastError = 'access_token missing';
-      }
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-  }
-
-  throw new Error(`Failed to obtain access token for API calls: ${lastError ?? 'unknown error'}`);
-}
-
-async function waitForApiReady(request: APIRequestContext) {
-  const deadline = Date.now() + 60_000;
-  let lastError: string | undefined;
-
-  while (Date.now() < deadline) {
-    try {
-      const res = await request.get(`${baseApiUrl}/actuator/health`);
-      if (res.ok()) {
-        const payload = (await res.json()) as { status?: string };
-        if (!payload?.status || payload.status.toUpperCase() !== 'DOWN') {
-          return;
-        }
-        lastError = `health status=${payload.status}`;
-      } else {
-        lastError = `health status code=${res.status()}`;
-      }
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-  }
-
-  throw new Error(`API did not become ready: ${lastError ?? 'unknown error'}`);
-}
 
 async function getUploadsFolderId(request: APIRequestContext, token: string) {
   const rootsRes = await request.get(`${baseApiUrl}/api/v1/folders/roots`, {
@@ -158,7 +100,7 @@ async function waitForVersionCount(
 }
 
 test('Version details: checkin metadata matches expectations', async ({ request }) => {
-  await waitForApiReady(request);
+  await waitForApiReady(request, { apiUrl: baseApiUrl });
   const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
   const uploadsId = await getUploadsFolderId(request, token);
 

@@ -1,68 +1,17 @@
 import { APIRequestContext, expect, FrameLocator, Page, test } from '@playwright/test';
+import {
+  fetchAccessToken,
+  findChildFolderId,
+  findDocumentId,
+  waitForApiReady,
+  waitForListItem,
+  waitForSearchIndex,
+} from './helpers/api';
 import { PDF_SAMPLE_BASE64 } from './fixtures/pdfSample';
 import { XLSX_SAMPLE_BASE64 } from './fixtures/xlsxSample';
 
 const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
-
-async function fetchAccessToken(request: APIRequestContext, username: string, password: string) {
-  const deadline = Date.now() + 60_000;
-  let lastError: string | undefined;
-
-  while (Date.now() < deadline) {
-    try {
-      const tokenRes = await request.post('http://localhost:8180/realms/ecm/protocol/openid-connect/token', {
-        form: {
-          grant_type: 'password',
-          client_id: 'unified-portal',
-          username,
-          password,
-        },
-      });
-      if (!tokenRes.ok()) {
-        lastError = `token status=${tokenRes.status()}`;
-      } else {
-        const tokenJson = (await tokenRes.json()) as { access_token?: string };
-        if (tokenJson.access_token) {
-          return tokenJson.access_token;
-        }
-        lastError = 'access_token missing';
-      }
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-  }
-
-  throw new Error(`Failed to obtain access token for API calls: ${lastError ?? 'unknown error'}`);
-}
-
-async function waitForApiReady(request: APIRequestContext) {
-  const deadline = Date.now() + 120_000;
-  let lastError: string | undefined;
-
-  while (Date.now() < deadline) {
-    try {
-      const res = await request.get('http://localhost:7700/actuator/health');
-      if (res.ok()) {
-        const payload = (await res.json()) as { status?: string };
-        if (!payload?.status || payload.status.toUpperCase() !== 'DOWN') {
-          return;
-        }
-        lastError = `health status=${payload.status}`;
-      } else {
-        lastError = `health status code=${res.status()}`;
-      }
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-  }
-
-  throw new Error(`API did not become ready: ${lastError ?? 'unknown error'}`);
-}
 
 async function loginWithCredentials(page: Page, username: string, password: string) {
   const authPattern = /\/protocol\/openid-connect\/auth/;
@@ -111,97 +60,6 @@ async function loginWithCredentials(page: Page, username: string, password: stri
   await expect(page.getByText('Athena ECM')).toBeVisible({ timeout: 60_000 });
 }
 
-async function findChildFolderId(
-  request: APIRequestContext,
-  parentId: string,
-  folderName: string,
-  token: string,
-  maxAttempts = 30,
-) {
-  const match = await waitForListItem<{ id: string; name: string; nodeType: string }>(request, {
-    url: `http://localhost:7700/api/v1/folders/${parentId}/contents`,
-    token,
-    params: {
-      page: 0,
-      size: 1000,
-      sort: 'name,asc',
-    },
-    predicate: (node) => node.name === folderName && node.nodeType === 'FOLDER',
-    maxAttempts,
-    description: `Folder '${folderName}'`,
-  });
-
-  return match.id;
-}
-
-async function findDocumentId(
-  request: APIRequestContext,
-  folderId: string,
-  filename: string,
-  token: string,
-  maxAttempts = 30,
-) {
-  const match = await waitForListItem<{ id: string; name: string; nodeType: string }>(request, {
-    url: `http://localhost:7700/api/v1/folders/${folderId}/contents`,
-    token,
-    params: {
-      page: 0,
-      size: 1000,
-      sort: 'name,asc',
-    },
-    predicate: (node) => node.name === filename && node.nodeType === 'DOCUMENT',
-    maxAttempts,
-    description: `Document '${filename}'`,
-  });
-
-  return match.id;
-}
-
-type ListResponse<T> = {
-  content?: T[];
-};
-
-type WaitForListOptions<T> = {
-  url: string;
-  token: string;
-  params?: Record<string, string | number>;
-  predicate: (item: T) => boolean;
-  maxAttempts?: number;
-  delayMs?: number;
-  description?: string;
-};
-
-async function waitForListItem<T>(
-  request: APIRequestContext,
-  options: WaitForListOptions<T>,
-) {
-  const {
-    url,
-    token,
-    params,
-    predicate,
-    maxAttempts = 30,
-    delayMs = 1000,
-    description,
-  } = options;
-
-  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    const response = await request.get(url, {
-      params,
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    expect(response.ok()).toBeTruthy();
-    const payload = (await response.json()) as ListResponse<T>;
-    const match = payload.content?.find(predicate);
-    if (match) {
-      return match;
-    }
-    await new Promise((resolve) => setTimeout(resolve, delayMs));
-  }
-
-  throw new Error(`${description ?? 'Item'} not found after create`);
-}
-
 async function waitForCorrespondent(
   request: APIRequestContext,
   name: string,
@@ -222,37 +80,6 @@ async function waitForCorrespondent(
   });
 
   return match.id;
-}
-
-async function waitForSearchIndex(
-  request: APIRequestContext,
-  query: string,
-  token: string,
-  maxAttempts = 30,
-) {
-  let lastError = 'unknown error';
-  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    try {
-      const res = await request.get('http://localhost:7700/api/v1/search', {
-        params: { q: query, page: 0, size: 10 },
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok()) {
-        const payload = (await res.json()) as { content?: Array<{ name: string }> };
-        if (payload.content?.some((item) => item.name === query)) {
-          return;
-        }
-        lastError = `status=${res.status()}`;
-      } else {
-        lastError = `status=${res.status()}`;
-      }
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-  }
-
-  throw new Error(`Search index did not include '${query}' (${lastError})`);
 }
 
 async function isSearchAvailable(request: APIRequestContext, token: string) {
@@ -453,7 +280,7 @@ const formatDateTimeLocal = (date: Date) => {
 };
 
 test.beforeEach(async ({ request }) => {
-  await waitForApiReady(request);
+  await waitForApiReady(request, { timeoutMs: 120_000 });
 });
 
 test('UI smoke: browse + upload + search + copy/move + facets + delete + rules', async ({ page }) => {
@@ -530,7 +357,11 @@ test('UI smoke: browse + upload + search + copy/move + facets + delete + rules',
   await expect(page.getByText('Folder created successfully')).toBeVisible({ timeout: 60_000 });
 
   // Work inside the dedicated folder to avoid pagination/virtualized rows.
-  const workFolderId = await findChildFolderId(page.request, documentsFolderId, folderName, apiToken);
+  const workFolderId = await findChildFolderId(page.request, documentsFolderId, folderName, apiToken, {
+    maxAttempts: 30,
+    delayMs: 1000,
+    pageSize: 1000,
+  });
   await page.goto(`/browse/${workFolderId}`, { waitUntil: 'domcontentloaded' });
   const workFolderUrl = page.url();
   await expect(page.locator('nav[aria-label="breadcrumb"]').getByText(folderName, { exact: true })).toBeVisible({
@@ -738,13 +569,11 @@ test('UI smoke: browse + upload + search + copy/move + facets + delete + rules',
     await targetFolderRow.dblclick({ timeout: 30_000 });
     await page.waitForURL(/\/browse\/[0-9a-f-]{36}$/i, { timeout: 60_000 });
   } catch {
-    const targetFolderId = await findChildFolderId(
-      page.request,
-      documentsFolderId,
-      targetFolderName,
-      apiToken,
-      15,
-    );
+    const targetFolderId = await findChildFolderId(page.request, documentsFolderId, targetFolderName, apiToken, {
+      maxAttempts: 15,
+      delayMs: 1000,
+      pageSize: 1000,
+    });
     await page.goto(`/browse/${targetFolderId}`, { waitUntil: 'domcontentloaded' });
     await page.waitForURL(/\/browse\/[0-9a-f-]{36}$/i, { timeout: 60_000 });
   }
@@ -949,7 +778,11 @@ test('UI smoke: PDF upload + search + version history + preview', async ({ page 
   await createFolderDialog.getByRole('button', { name: 'Create', exact: true }).click();
   await expect(page.getByText('Folder created successfully')).toBeVisible({ timeout: 60_000 });
 
-  const workFolderId = await findChildFolderId(page.request, documentsFolderId, folderName, apiToken);
+  const workFolderId = await findChildFolderId(page.request, documentsFolderId, folderName, apiToken, {
+    maxAttempts: 30,
+    delayMs: 1000,
+    pageSize: 1000,
+  });
   await page.goto(`/browse/${workFolderId}`, { waitUntil: 'domcontentloaded' });
   const workFolderUrl = page.url();
 
@@ -975,7 +808,10 @@ test('UI smoke: PDF upload + search + version history + preview', async ({ page 
   }
   expect(pdfVisible).toBeTruthy();
 
-  const pdfDocumentId = await findDocumentId(page.request, workFolderId, pdfName, apiToken, 20);
+  const pdfDocumentId = await findDocumentId(page.request, workFolderId, pdfName, apiToken, {
+    maxAttempts: 20,
+    delayMs: 1000,
+  });
 
   await pdfRow.getByRole('button', { name: `Actions for ${pdfName}` }).click();
   await page.getByRole('menuitem', { name: 'Version History' }).click();
@@ -1009,7 +845,7 @@ test('UI smoke: PDF upload + search + version history + preview', async ({ page 
   });
   if (searchAvailable) {
     expect(indexRes.ok()).toBeTruthy();
-    await waitForSearchIndex(page.request, pdfName, apiToken, 15);
+    await waitForSearchIndex(page.request, pdfName, apiToken, { maxAttempts: 15, delayMs: 1000 });
 
     await page.getByRole('button', { name: 'Search', exact: true }).click();
     const searchDialog = page.getByRole('dialog').filter({ hasText: 'Advanced Search' });
@@ -1081,7 +917,7 @@ test('UI search download failure shows error toast', async ({ page, request }) =
     headers: { Authorization: `Bearer ${apiToken}` },
   });
   expect(indexRes.ok()).toBeTruthy();
-  await waitForSearchIndex(request, filename, apiToken, 15);
+  await waitForSearchIndex(request, filename, apiToken, { maxAttempts: 15, delayMs: 1000 });
 
   try {
     await page.goto('/browse/root', { waitUntil: 'domcontentloaded' });
@@ -1322,7 +1158,7 @@ test('RBAC smoke: viewer cannot access rules or admin endpoints', async ({ page,
     });
   }
   if (viewerSearchAvailable) {
-    await waitForSearchIndex(request, officeFilename, adminToken);
+    await waitForSearchIndex(request, officeFilename, adminToken, { delayMs: 1000 });
 
     await page.goto('/search-results', { waitUntil: 'domcontentloaded' });
     await page.getByPlaceholder('Quick search by name...').fill(officeFilename);

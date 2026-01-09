@@ -24,6 +24,8 @@
   - Correspondent create/search row visibility stability (latest)
 - `docs/VERIFICATION_E2E_LIST_POLLING_HELPER_20260108.md`
   - E2E list polling helper refactor verification (latest)
+- `docs/VERIFICATION_E2E_SHARED_API_HELPERS_20260109.md`
+  - Shared E2E API helper extraction verification (latest)
 
 ## Frontend Tests
 - `docs/VERIFICATION_FRONTEND_LINT_TEST_20260106.md`

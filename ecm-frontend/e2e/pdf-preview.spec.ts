@@ -1,69 +1,17 @@
 import { APIRequestContext, expect, Page, test } from '@playwright/test';
+import {
+  fetchAccessToken,
+  findChildFolderId,
+  getRootFolderId,
+  waitForApiReady,
+  waitForSearchIndex,
+} from './helpers/api';
 import { PDF_SAMPLE_BASE64 } from './fixtures/pdfSample';
 
 const baseApiUrl = process.env.ECM_API_URL || 'http://localhost:7700';
 const baseUiUrl = process.env.ECM_UI_URL || 'http://localhost:5500';
 const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
-
-async function waitForApiReady(request: APIRequestContext) {
-  const deadline = Date.now() + 60_000;
-  let lastError: string | undefined;
-
-  while (Date.now() < deadline) {
-    try {
-      const res = await request.get(`${baseApiUrl}/actuator/health`);
-      if (res.ok()) {
-        const payload = (await res.json()) as { status?: string };
-        if (!payload?.status || payload.status.toUpperCase() !== 'DOWN') {
-          return;
-        }
-        lastError = `health status=${payload.status}`;
-      } else {
-        lastError = `health status code=${res.status()}`;
-      }
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-  }
-
-  throw new Error(`API did not become ready: ${lastError ?? 'unknown error'}`);
-}
-
-async function fetchAccessToken(request: APIRequestContext, username: string, password: string) {
-  const deadline = Date.now() + 60_000;
-  let lastError: string | undefined;
-
-  while (Date.now() < deadline) {
-    try {
-      const tokenRes = await request.post('http://localhost:8180/realms/ecm/protocol/openid-connect/token', {
-        form: {
-          grant_type: 'password',
-          client_id: 'unified-portal',
-          username,
-          password,
-        },
-      });
-      if (!tokenRes.ok()) {
-        lastError = `token status=${tokenRes.status()}`;
-      } else {
-        const tokenJson = (await tokenRes.json()) as { access_token?: string };
-        if (tokenJson.access_token) {
-          return tokenJson.access_token;
-        }
-        lastError = 'access_token missing';
-      }
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-  }
-
-  throw new Error(`Failed to obtain access token for API calls: ${lastError ?? 'unknown error'}`);
-}
 
 async function loginWithCredentials(page: Page, username: string, password: string) {
   const authPattern = /\/protocol\/openid-connect\/auth/;
@@ -110,44 +58,9 @@ async function loginWithCredentials(page: Page, username: string, password: stri
   await page.waitForURL(browsePattern, { timeout: 60_000 });
 }
 
-async function getRootFolderId(request: APIRequestContext, token: string) {
-  const res = await request.get(`${baseApiUrl}/api/v1/folders/roots`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  expect(res.ok()).toBeTruthy();
-  const roots = (await res.json()) as Array<{ id: string; name: string; path?: string; folderType?: string }>;
-  const preferred = roots.find((root) => {
-    const isSystem = root.folderType?.toUpperCase() === 'SYSTEM';
-    return isSystem || root.name === 'Root' || root.path === '/Root';
-  });
-  if (!preferred && roots.length === 0) {
-    throw new Error('No root folders returned');
-  }
-  return (preferred ?? roots[0]).id;
-}
-
 test.beforeEach(async ({ request }) => {
-  await waitForApiReady(request);
+  await waitForApiReady(request, { apiUrl: baseApiUrl });
 });
-
-async function findChildFolderId(
-  request: APIRequestContext,
-  parentId: string,
-  folderName: string,
-  token: string,
-) {
-  const response = await request.get(`${baseApiUrl}/api/v1/folders/${parentId}/contents`, {
-    params: { page: 0, size: 200, sort: 'name,asc' },
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  expect(response.ok()).toBeTruthy();
-  const payload = (await response.json()) as { content?: Array<{ id: string; name: string; nodeType: string }> };
-  const match = payload.content?.find((node) => node.name === folderName && node.nodeType === 'FOLDER');
-  if (!match?.id) {
-    throw new Error(`Folder not found: ${folderName}`);
-  }
-  return match.id;
-}
 
 async function createFolder(
   request: APIRequestContext,
@@ -227,35 +140,6 @@ async function uploadPdf(
   return documentId;
 }
 
-async function waitForSearchIndex(
-  request: APIRequestContext,
-  query: string,
-  token: string,
-) {
-  let lastError = 'unknown error';
-  for (let attempt = 0; attempt < 40; attempt += 1) {
-    try {
-      const res = await request.get(`${baseApiUrl}/api/v1/search`, {
-        params: { q: query, page: 0, size: 10 },
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok()) {
-        const payload = (await res.json()) as { content?: Array<{ name: string }> };
-        if (payload.content?.some((item) => item.name === query)) {
-          return;
-        }
-        lastError = `status=${res.status()}`;
-      } else {
-        lastError = `status=${res.status()}`;
-      }
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-  }
-  throw new Error(`Search index did not return ${query} (${lastError})`);
-}
-
 async function waitForIndexStatus(
   request: APIRequestContext,
   documentId: string,
@@ -279,10 +163,10 @@ async function waitForIndexStatus(
 test('PDF preview shows dialog and controls', async ({ page, request }) => {
   test.setTimeout(240_000);
 
-  await waitForApiReady(request);
+  await waitForApiReady(request, { apiUrl: baseApiUrl });
   const apiToken = await fetchAccessToken(request, defaultUsername, defaultPassword);
-  const rootId = await getRootFolderId(request, apiToken);
-  const documentsId = await findChildFolderId(request, rootId, 'Documents', apiToken);
+  const rootId = await getRootFolderId(request, apiToken, { apiUrl: baseApiUrl });
+  const documentsId = await findChildFolderId(request, rootId, 'Documents', apiToken, { apiUrl: baseApiUrl });
 
   const folderName = `e2e-pdf-preview-${Date.now()}`;
   const folderId = await createFolder(request, documentsId, folderName, apiToken);
@@ -294,10 +178,10 @@ test('PDF preview shows dialog and controls', async ({ page, request }) => {
   if (!indexed) {
     console.log(`Index status not ready for ${documentId}; falling back to search polling`);
   }
-  await waitForSearchIndex(request, filename, apiToken);
+  await waitForSearchIndex(request, filename, apiToken, { apiUrl: baseApiUrl, maxAttempts: 40 });
 
   await loginWithCredentials(page, defaultUsername, defaultPassword);
-  await waitForSearchIndex(request, filename, apiToken);
+  await waitForSearchIndex(request, filename, apiToken, { apiUrl: baseApiUrl, maxAttempts: 40 });
 
   await page.goto(`${baseUiUrl}/search-results`, { waitUntil: 'domcontentloaded' });
 
@@ -327,10 +211,10 @@ test('PDF preview shows dialog and controls', async ({ page, request }) => {
 test('PDF preview falls back to server render when client PDF fails', async ({ page, request }) => {
   test.setTimeout(240_000);
 
-  await waitForApiReady(request);
+  await waitForApiReady(request, { apiUrl: baseApiUrl });
   const apiToken = await fetchAccessToken(request, defaultUsername, defaultPassword);
-  const rootId = await getRootFolderId(request, apiToken);
-  const documentsId = await findChildFolderId(request, rootId, 'Documents', apiToken);
+  const rootId = await getRootFolderId(request, apiToken, { apiUrl: baseApiUrl });
+  const documentsId = await findChildFolderId(request, rootId, 'Documents', apiToken, { apiUrl: baseApiUrl });
 
   const folderName = `e2e-pdf-fallback-${Date.now()}`;
   const folderId = await createFolder(request, documentsId, folderName, apiToken);
@@ -341,10 +225,10 @@ test('PDF preview falls back to server render when client PDF fails', async ({ p
   if (!indexed) {
     console.log(`Index status not ready for ${documentId}; falling back to search polling`);
   }
-  await waitForSearchIndex(request, filename, apiToken);
+  await waitForSearchIndex(request, filename, apiToken, { apiUrl: baseApiUrl, maxAttempts: 40 });
 
   await loginWithCredentials(page, defaultUsername, defaultPassword);
-  await waitForSearchIndex(request, filename, apiToken);
+  await waitForSearchIndex(request, filename, apiToken, { apiUrl: baseApiUrl, maxAttempts: 40 });
 
   const workerRoute = /pdf\.worker(\.min)?\.(mjs|js)(\?.*)?$/;
   await page.route(workerRoute, (route) => route.abort());
@@ -376,10 +260,10 @@ test('PDF preview falls back to server render when client PDF fails', async ({ p
 test('File browser view action opens preview', async ({ page, request }) => {
   test.setTimeout(240_000);
 
-  await waitForApiReady(request);
+  await waitForApiReady(request, { apiUrl: baseApiUrl });
   const apiToken = await fetchAccessToken(request, defaultUsername, defaultPassword);
-  const rootId = await getRootFolderId(request, apiToken);
-  const documentsId = await findChildFolderId(request, rootId, 'Documents', apiToken);
+  const rootId = await getRootFolderId(request, apiToken, { apiUrl: baseApiUrl });
+  const documentsId = await findChildFolderId(request, rootId, 'Documents', apiToken, { apiUrl: baseApiUrl });
 
   const folderName = `e2e-file-browser-view-${Date.now()}`;
   const folderId = await createFolder(request, documentsId, folderName, apiToken);

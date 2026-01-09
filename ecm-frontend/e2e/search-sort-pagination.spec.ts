@@ -1,68 +1,16 @@
 import { APIRequestContext, expect, Page, test } from '@playwright/test';
+import {
+  fetchAccessToken,
+  findChildFolderId,
+  getRootFolderId,
+  waitForApiReady,
+  waitForSearchIndex,
+} from './helpers/api';
 
 const baseApiUrl = process.env.ECM_API_URL || 'http://localhost:7700';
 const baseUiUrl = process.env.ECM_UI_URL || 'http://localhost:5500';
 const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
-
-async function fetchAccessToken(request: APIRequestContext, username: string, password: string) {
-  const deadline = Date.now() + 60_000;
-  let lastError: string | undefined;
-
-  while (Date.now() < deadline) {
-    try {
-      const tokenRes = await request.post('http://localhost:8180/realms/ecm/protocol/openid-connect/token', {
-        form: {
-          grant_type: 'password',
-          client_id: 'unified-portal',
-          username,
-          password,
-        },
-      });
-      if (!tokenRes.ok()) {
-        lastError = `token status=${tokenRes.status()}`;
-      } else {
-        const tokenJson = (await tokenRes.json()) as { access_token?: string };
-        if (tokenJson.access_token) {
-          return tokenJson.access_token;
-        }
-        lastError = 'access_token missing';
-      }
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-  }
-
-  throw new Error(`Failed to obtain access token for API calls: ${lastError ?? 'unknown error'}`);
-}
-
-async function waitForApiReady(request: APIRequestContext) {
-  const deadline = Date.now() + 60_000;
-  let lastError: string | undefined;
-
-  while (Date.now() < deadline) {
-    try {
-      const res = await request.get(`${baseApiUrl}/actuator/health`);
-      if (res.ok()) {
-        const payload = (await res.json()) as { status?: string };
-        if (!payload?.status || payload.status.toUpperCase() !== 'DOWN') {
-          return;
-        }
-        lastError = `health status=${payload.status}`;
-      } else {
-        lastError = `health status code=${res.status()}`;
-      }
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-  }
-
-  throw new Error(`API did not become ready: ${lastError ?? 'unknown error'}`);
-}
 
 async function loginWithCredentials(page: Page, username: string, password: string) {
   const authPattern = /\/protocol\/openid-connect\/auth/;
@@ -109,46 +57,6 @@ async function loginWithCredentials(page: Page, username: string, password: stri
   await page.waitForURL(browsePattern, { timeout: 60_000 });
 }
 
-async function getRootFolderId(request: APIRequestContext, token: string) {
-  const res = await request.get(`${baseApiUrl}/api/v1/folders/roots`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  expect(res.ok()).toBeTruthy();
-  const roots = (await res.json()) as Array<{
-    id: string;
-    name: string;
-    path?: string;
-    folderType?: string;
-  }>;
-  if (!roots.length) {
-    throw new Error('No root folders returned');
-  }
-  const preferred = roots.find((root) => {
-    const isSystem = root.folderType?.toUpperCase() === 'SYSTEM';
-    return isSystem || root.name === 'Root' || root.path === '/Root';
-  });
-  return (preferred ?? roots[0]).id;
-}
-
-async function findChildFolderId(
-  request: APIRequestContext,
-  parentId: string,
-  folderName: string,
-  token: string,
-) {
-  const response = await request.get(`${baseApiUrl}/api/v1/folders/${parentId}/contents`, {
-    params: { page: 0, size: 200, sort: 'name,asc' },
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  expect(response.ok()).toBeTruthy();
-  const payload = (await response.json()) as { content?: Array<{ id: string; name: string; nodeType: string }> };
-  const match = payload.content?.find((node) => node.name === folderName && node.nodeType === 'FOLDER');
-  if (!match?.id) {
-    throw new Error(`Folder not found: ${folderName}`);
-  }
-  return match.id;
-}
-
 async function createFolder(
   request: APIRequestContext,
   parentId: string,
@@ -165,38 +73,6 @@ async function createFolder(
     throw new Error('Failed to create folder');
   }
   return payload.id;
-}
-
-async function waitForSearchIndex(
-  request: APIRequestContext,
-  query: string,
-  minResults: number,
-  token: string,
-) {
-  let lastError = 'unknown error';
-  const pageSize = Math.max(minResults, 100);
-  for (let attempt = 0; attempt < 90; attempt += 1) {
-    try {
-      const res = await request.get(`${baseApiUrl}/api/v1/search`, {
-        params: { q: query, page: 0, size: pageSize },
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok()) {
-        const payload = (await res.json()) as { content?: Array<{ name: string }> };
-        const count = payload.content?.length ?? 0;
-        if (count >= minResults) {
-          return;
-        }
-        lastError = `status=${res.status()} count=${count}`;
-      } else {
-        lastError = `status=${res.status()}`;
-      }
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-  }
-  throw new Error(`Search index did not return ${minResults} results for ${query} (${lastError})`);
 }
 
 async function uploadDocument(
@@ -301,10 +177,10 @@ function parseSize(raw: string) {
 test('Search sorting and pagination are consistent', async ({ page, request }) => {
   test.setTimeout(360_000);
 
-  await waitForApiReady(request);
+  await waitForApiReady(request, { apiUrl: baseApiUrl });
   const apiToken = await fetchAccessToken(request, defaultUsername, defaultPassword);
-  const rootId = await getRootFolderId(request, apiToken);
-  const documentsId = await findChildFolderId(request, rootId, 'Documents', apiToken);
+  const rootId = await getRootFolderId(request, apiToken, { apiUrl: baseApiUrl });
+  const documentsId = await findChildFolderId(request, rootId, 'Documents', apiToken, { apiUrl: baseApiUrl });
 
   const folderName = `e2e-search-sort-${Date.now()}`;
   const folderId = await createFolder(request, documentsId, folderName, apiToken);
@@ -320,7 +196,12 @@ test('Search sorting and pagination are consistent', async ({ page, request }) =
     await uploadDocument(request, folderId, doc.name, doc.size, apiToken);
     await page.waitForTimeout(500);
   }
-  await waitForSearchIndex(request, sortPrefix, sortDocs.length, apiToken);
+  await waitForSearchIndex(request, sortPrefix, apiToken, {
+    apiUrl: baseApiUrl,
+    minResults: sortDocs.length,
+    maxAttempts: 90,
+    delayMs: 2000,
+  });
 
   const pagePrefix = `e2epage${Date.now()}`;
   const pageCount = 25;
@@ -329,7 +210,12 @@ test('Search sorting and pagination are consistent', async ({ page, request }) =
     await uploadDocument(request, folderId, filename, 20, apiToken);
     await page.waitForTimeout(200);
   }
-  await waitForSearchIndex(request, pagePrefix, pageCount, apiToken);
+  await waitForSearchIndex(request, pagePrefix, apiToken, {
+    apiUrl: baseApiUrl,
+    minResults: pageCount,
+    maxAttempts: 90,
+    delayMs: 2000,
+  });
 
   await loginWithCredentials(page, defaultUsername, defaultPassword);
 
