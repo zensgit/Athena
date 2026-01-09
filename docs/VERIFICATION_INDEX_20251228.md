@@ -46,6 +46,8 @@
   - Unauthorized route renders expected copy
 
 ## Backend Tests
+- `docs/VERIFICATION_BACKEND_MVN_VERIFY_20260109.md`
+  - `mvn verify`: build success
 - `docs/VERIFICATION_BACKEND_MVN_TEST_20260109.md`
   - `mvn test`: 81 tests passed
 - `docs/VERIFICATION_BACKEND_MVN_TEST_20260106.md`

@@ -11,6 +11,7 @@
 
 ## Backend / API
 - Backend test run (2026-01-09): `docs/VERIFICATION_BACKEND_MVN_TEST_20260109.md`
+- Backend verify run (2026-01-09): `docs/VERIFICATION_BACKEND_MVN_VERIFY_20260109.md`
 - Audit export validation: `docs/VERIFICATION_AUDIT_EXPORT_RANGE_VALIDATION_20260106.md`
 - Audit export max-range boundary: `docs/VERIFICATION_AUDIT_EXPORT_MAX_RANGE_BOUNDARY_20260106.md`
 - Audit export blank parameters: `docs/VERIFICATION_AUDIT_EXPORT_BLANK_PARAMS_20260106.md`
