@@ -20,6 +20,8 @@
   - Share link password/deactivate/access-limit validation (latest)
 - `docs/VERIFICATION_E2E_CORRESPONDENT_LIST_20260108.md`
   - Correspondent create/search row visibility stability (latest)
+- `docs/VERIFICATION_E2E_LIST_POLLING_HELPER_20260108.md`
+  - E2E list polling helper refactor verification (latest)
 
 ## Frontend Tests
 - `docs/VERIFICATION_FRONTEND_LINT_TEST_20260106.md`

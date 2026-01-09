@@ -118,25 +118,20 @@ async function findChildFolderId(
   token: string,
   maxAttempts = 30,
 ) {
-  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    const response = await request.get(`http://localhost:7700/api/v1/folders/${parentId}/contents`, {
-      params: {
-        page: 0,
-        size: 1000,
-        sort: 'name,asc',
-      },
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    expect(response.ok()).toBeTruthy();
-    const payload = (await response.json()) as { content?: Array<{ id: string; name: string; nodeType: string }> };
-    const match = payload.content?.find((node) => node.name === folderName && node.nodeType === 'FOLDER');
-    if (match?.id) {
-      return match.id;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-  }
+  const match = await waitForListItem<{ id: string; name: string; nodeType: string }>(request, {
+    url: `http://localhost:7700/api/v1/folders/${parentId}/contents`,
+    token,
+    params: {
+      page: 0,
+      size: 1000,
+      sort: 'name,asc',
+    },
+    predicate: (node) => node.name === folderName && node.nodeType === 'FOLDER',
+    maxAttempts,
+    description: `Folder '${folderName}'`,
+  });
 
-  throw new Error(`Folder not found after create: ${folderName}`);
+  return match.id;
 }
 
 async function findDocumentId(
@@ -146,25 +141,65 @@ async function findDocumentId(
   token: string,
   maxAttempts = 30,
 ) {
+  const match = await waitForListItem<{ id: string; name: string; nodeType: string }>(request, {
+    url: `http://localhost:7700/api/v1/folders/${folderId}/contents`,
+    token,
+    params: {
+      page: 0,
+      size: 1000,
+      sort: 'name,asc',
+    },
+    predicate: (node) => node.name === filename && node.nodeType === 'DOCUMENT',
+    maxAttempts,
+    description: `Document '${filename}'`,
+  });
+
+  return match.id;
+}
+
+type ListResponse<T> = {
+  content?: T[];
+};
+
+type WaitForListOptions<T> = {
+  url: string;
+  token: string;
+  params?: Record<string, string | number>;
+  predicate: (item: T) => boolean;
+  maxAttempts?: number;
+  delayMs?: number;
+  description?: string;
+};
+
+async function waitForListItem<T>(
+  request: APIRequestContext,
+  options: WaitForListOptions<T>,
+) {
+  const {
+    url,
+    token,
+    params,
+    predicate,
+    maxAttempts = 30,
+    delayMs = 1000,
+    description,
+  } = options;
+
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    const response = await request.get(`http://localhost:7700/api/v1/folders/${folderId}/contents`, {
-      params: {
-        page: 0,
-        size: 1000,
-        sort: 'name,asc',
-      },
+    const response = await request.get(url, {
+      params,
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(response.ok()).toBeTruthy();
-    const payload = (await response.json()) as { content?: Array<{ id: string; name: string; nodeType: string }> };
-    const match = payload.content?.find((node) => node.name === filename && node.nodeType === 'DOCUMENT');
-    if (match?.id) {
-      return match.id;
+    const payload = (await response.json()) as ListResponse<T>;
+    const match = payload.content?.find(predicate);
+    if (match) {
+      return match;
     }
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
   }
 
-  throw new Error(`Document not found after upload: ${filename}`);
+  throw new Error(`${description ?? 'Item'} not found after create`);
 }
 
 async function waitForCorrespondent(
@@ -173,25 +208,20 @@ async function waitForCorrespondent(
   token: string,
   maxAttempts = 30,
 ) {
-  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    const response = await request.get('http://localhost:7700/api/v1/correspondents', {
-      params: {
-        page: 0,
-        size: 200,
-        sort: 'name,asc',
-      },
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    expect(response.ok()).toBeTruthy();
-    const payload = (await response.json()) as { content?: Array<{ id: string; name: string }> };
-    const match = payload.content?.find((item) => item.name === name);
-    if (match?.id) {
-      return match.id;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-  }
+  const match = await waitForListItem<{ id: string; name: string }>(request, {
+    url: 'http://localhost:7700/api/v1/correspondents',
+    token,
+    params: {
+      page: 0,
+      size: 200,
+      sort: 'name,asc',
+    },
+    predicate: (item) => item.name === name,
+    maxAttempts,
+    description: `Correspondent '${name}'`,
+  });
 
-  throw new Error(`Correspondent not found after create: ${name}`);
+  return match.id;
 }
 
 async function waitForSearchIndex(
