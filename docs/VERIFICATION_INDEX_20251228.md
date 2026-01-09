@@ -10,6 +10,8 @@
   - Viewer shows read-only banner and annotation mode
 
 ## UI E2E
+- `docs/VERIFICATION_E2E_FULL_RUN_20260109.md`
+  - Playwright full suite: 17/17 passed
 - `docs/VERIFICATION_UI_E2E_20251228.md`
   - Playwright `npm run e2e`: 15/15 passed
 - `docs/VERIFICATION_E2E_FULL_RUN_20260106.md`
@@ -44,6 +46,8 @@
   - Unauthorized route renders expected copy
 
 ## Backend Tests
+- `docs/VERIFICATION_BACKEND_MVN_TEST_20260109.md`
+  - `mvn test`: 81 tests passed
 - `docs/VERIFICATION_BACKEND_MVN_TEST_20260106.md`
   - `mvn test`: 80 tests passed
 - `docs/VERIFICATION_BACKEND_MVN_VERIFY_20260106.md`

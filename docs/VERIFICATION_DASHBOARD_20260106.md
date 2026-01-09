@@ -10,6 +10,7 @@
 - E2E: full suite + version history/share link flows.
 
 ## Backend / API
+- Backend test run (2026-01-09): `docs/VERIFICATION_BACKEND_MVN_TEST_20260109.md`
 - Audit export validation: `docs/VERIFICATION_AUDIT_EXPORT_RANGE_VALIDATION_20260106.md`
 - Audit export max-range boundary: `docs/VERIFICATION_AUDIT_EXPORT_MAX_RANGE_BOUNDARY_20260106.md`
 - Audit export blank parameters: `docs/VERIFICATION_AUDIT_EXPORT_BLANK_PARAMS_20260106.md`
@@ -59,6 +60,7 @@
 - PDF preview layout/fit mode checks: `docs/VERIFICATION_PDF_PREVIEW_LAYOUT_20251225.md`, `docs/VERIFICATION_PDF_PREVIEW_FITMODE_DEFAULT_20251225.md`, `docs/VERIFICATION_PDF_PREVIEW_FITMODE_OVERRIDE_20251225.md`, `docs/VERIFICATION_PDF_PREVIEW_FITMODE_SHORTCUTS_20251225.md`
 
 ## E2E / Automation
+- Full E2E run (2026-01-09): `docs/VERIFICATION_E2E_FULL_RUN_20260109.md`
 - E2E version history actions: `docs/VERIFICATION_E2E_VERSION_HISTORY_ACTIONS_20260106.md`
 - E2E share link access: `docs/VERIFICATION_E2E_SHARE_LINK_ACCESS_20260106.md`
 - E2E correspondent list stability: `docs/VERIFICATION_E2E_CORRESPONDENT_LIST_20260108.md`
