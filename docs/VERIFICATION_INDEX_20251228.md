@@ -108,6 +108,8 @@
   - Full verify.sh run (E2E failure on ui-smoke)
 - `docs/VERIFICATION_VERIFY_20260108_PASS.md`
   - Full verify.sh run (all steps pass)
+- `docs/VERIFICATION_VERIFY_20260109.md`
+  - Full verify.sh run (all steps pass)
 - `docs/VERIFICATION_VERIFY_20260107_FULL_WOPI_FLAGS.md`
   - Full verify.sh run with WOPI flags
 - `docs/VERIFICATION_VERIFY_SCRIPT_REPORTING_20260106.md`

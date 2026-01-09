@@ -73,6 +73,7 @@
 - Full verify.sh report (2026-01-07 wopi flags): `docs/VERIFICATION_VERIFY_20260107_FULL_WOPI_FLAGS.md`
 - Full verify.sh report (2026-01-08 run): `docs/VERIFICATION_VERIFY_20260108.md`
 - Full verify.sh report (2026-01-08 pass): `docs/VERIFICATION_VERIFY_20260108_PASS.md`
+- Full verify.sh report (2026-01-09 pass): `docs/VERIFICATION_VERIFY_20260109.md`
 - verify.sh reporting artifacts: `docs/VERIFICATION_VERIFY_SCRIPT_REPORTING_20260106.md`
 - verify.sh WOPI flags: `docs/VERIFICATION_VERIFY_WOPI_FLAGS_20260107.md`
 - verify.sh WOPI flags (space form): `docs/VERIFICATION_VERIFY_WOPI_FLAGS_SPACE_20260107.md`
