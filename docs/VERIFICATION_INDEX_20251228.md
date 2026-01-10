@@ -50,6 +50,10 @@
 ## Backend Tests
 - `docs/VERIFICATION_BACKEND_MVN_VERIFY_20260109.md`
   - `mvn verify`: build success
+- `docs/VERIFICATION_BACKEND_MVN_VERIFY_20260110.md`
+  - `mvn verify`: failed due to Mockito inline mock maker attach error
+- `docs/VERIFICATION_BACKEND_MVN_VERIFY_20260110_PASS.md`
+  - `mvn verify`: build success with subclass mock maker
 - `docs/VERIFICATION_BACKEND_MVN_TEST_20260109.md`
   - `mvn test`: 81 tests passed
 - `docs/VERIFICATION_BACKEND_MVN_TEST_20260106.md`
