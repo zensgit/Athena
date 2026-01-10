@@ -140,6 +140,8 @@
   - verify.sh step summary includes wait/skip steps
 - `docs/VERIFICATION_VERIFY_REPORT_LATEST_20260108.md`
   - verify.sh report-latest aggregation output
+- `docs/VERIFICATION_VERIFY_REPORT_LATEST_20260109.md`
+  - verify.sh report-latest aggregation output
 - `docs/VERIFICATION_VERIFY_WOPI_QUERY_MISSING_20260107.md`
   - verify.sh missing wopi-query argument
 - `docs/VERIFICATION_VERIFY_HELP_20260107.md`
