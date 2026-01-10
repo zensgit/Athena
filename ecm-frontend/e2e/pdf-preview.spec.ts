@@ -245,7 +245,11 @@ test('PDF preview falls back to server render when client PDF fails', async ({ p
     await resultCard.getByRole('button', { name: 'View', exact: true }).click();
 
     await expect(page.getByLabel('close')).toBeVisible({ timeout: 60_000 });
-    await page.waitForSelector('[data-testid=\"pdf-preview-fallback\"]', { timeout: 60_000 });
+    const fallbackPreview = page.getByTestId('pdf-preview-fallback');
+    await expect(fallbackPreview).toBeVisible({ timeout: 60_000 });
+    await expect(fallbackPreview.getByText(/server-rendered preview/i)).toBeVisible();
+    await expect(fallbackPreview.getByRole('button', { name: 'Try PDF viewer' })).toBeVisible();
+    await expect(fallbackPreview.getByRole('button', { name: 'Download original' })).toBeVisible();
   } finally {
     await page.unroute(workerRoute).catch(() => null);
   }
