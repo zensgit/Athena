@@ -30,6 +30,8 @@
 ## Frontend Tests
 - `docs/VERIFICATION_FRONTEND_LINT_TEST_20260106.md`
   - ESLint + React test suite pass
+- `docs/VERIFICATION_FRONTEND_LINT_TEST_20260110.md`
+  - ESLint + React test suite pass
 - `docs/VERIFICATION_FRONTEND_BUILD_20260106.md`
   - Frontend build (`npm run build`) succeeds
 - `docs/VERIFICATION_ROUTER_FUTURE_FLAGS_20260106.md`
