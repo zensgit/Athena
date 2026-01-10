@@ -11,6 +11,8 @@ const baseApiUrl = process.env.ECM_API_URL || 'http://localhost:7700';
 const baseUiUrl = process.env.ECM_UI_URL || 'http://localhost:5500';
 const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
+const viewerUsername = process.env.ECM_E2E_VIEWER_USERNAME || 'viewer';
+const viewerPassword = process.env.ECM_E2E_VIEWER_PASSWORD || 'viewer';
 
 async function loginWithCredentials(page: Page, username: string, password: string) {
   const authPattern = /\/protocol\/openid-connect\/auth/;
@@ -80,6 +82,28 @@ async function createFolder(
   return payload.id;
 }
 
+async function isSearchAvailable(request: APIRequestContext, token: string) {
+  try {
+    const res = await request.get(`${baseApiUrl}/api/v1/system/status`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok()) {
+      return false;
+    }
+    const payload = (await res.json()) as { search?: { error?: string; searchEnabled?: boolean } };
+    const search = payload.search;
+    if (!search) {
+      return false;
+    }
+    if (search.searchEnabled === false) {
+      return false;
+    }
+    return !search.error;
+  } catch {
+    return false;
+  }
+}
+
 async function uploadDocument(
   request: APIRequestContext,
   folderId: string,
@@ -111,6 +135,29 @@ async function uploadDocument(
   });
   expect(indexRes.ok()).toBeTruthy();
   return documentId;
+}
+
+async function setPermission(
+  request: APIRequestContext,
+  nodeId: string,
+  token: string,
+  options: {
+    authority: string;
+    authorityType: 'USER' | 'GROUP' | 'ROLE' | 'EVERYONE';
+    permissionType: 'READ' | 'WRITE' | 'DELETE' | 'CHANGE_PERMISSIONS';
+    allowed: boolean;
+  },
+) {
+  const res = await request.post(`${baseApiUrl}/api/v1/security/nodes/${nodeId}/permissions`, {
+    params: {
+      authority: options.authority,
+      authorityType: options.authorityType,
+      permissionType: options.permissionType,
+      allowed: options.allowed,
+    },
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(res.ok()).toBeTruthy();
 }
 
 async function waitForIndexStatus(
@@ -166,6 +213,49 @@ test('Search results view opens preview for documents', async ({ page, request }
   await expect(page.getByLabel('close')).toBeVisible({ timeout: 60_000 });
 
   await page.getByLabel('close').click();
+
+  await request.delete(`${baseApiUrl}/api/v1/nodes/${folderId}`, {
+    headers: { Authorization: `Bearer ${apiToken}` },
+  }).catch(() => null);
+});
+
+test('Search results hide unauthorized documents for viewer', async ({ page, request }) => {
+  test.setTimeout(240_000);
+
+  const apiToken = await fetchAccessToken(request, defaultUsername, defaultPassword);
+  const searchAvailable = await isSearchAvailable(request, apiToken);
+  test.skip(!searchAvailable, 'Search is disabled');
+
+  const rootId = await getRootFolderId(request, apiToken, { apiUrl: baseApiUrl });
+  const documentsId = await findChildFolderId(request, rootId, 'Documents', apiToken, { apiUrl: baseApiUrl });
+
+  const folderName = `e2e-search-acl-${Date.now()}`;
+  const folderId = await createFolder(request, documentsId, folderName, apiToken);
+
+  const filename = `e2e-acl-${Date.now()}.txt`;
+  const documentId = await uploadDocument(request, folderId, filename, apiToken);
+  const indexed = await waitForIndexStatus(request, documentId, apiToken);
+  if (!indexed) {
+    console.log(`Index status not ready for ${documentId}; falling back to search polling`);
+  }
+  await waitForSearchIndex(request, filename, apiToken, { apiUrl: baseApiUrl });
+
+  await setPermission(request, documentId, apiToken, {
+    authority: 'EVERYONE',
+    authorityType: 'EVERYONE',
+    permissionType: 'READ',
+    allowed: false,
+  });
+
+  await loginWithCredentials(page, viewerUsername, viewerPassword);
+  await page.goto(`${baseUiUrl}/search-results`, { waitUntil: 'domcontentloaded' });
+
+  const quickSearchInput = page.getByPlaceholder('Quick search by name...');
+  await quickSearchInput.fill(filename);
+  await quickSearchInput.press('Enter');
+
+  await expect(page.getByText('No results found')).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('.MuiCard-root', { hasText: filename })).toHaveCount(0);
 
   await request.delete(`${baseApiUrl}/api/v1/nodes/${folderId}`, {
     headers: { Authorization: `Bearer ${apiToken}` },

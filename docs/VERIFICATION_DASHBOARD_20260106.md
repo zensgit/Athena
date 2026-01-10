@@ -38,6 +38,7 @@
 - Share link update validation: `docs/VERIFICATION_SHARE_LINK_UPDATE_ALLOWED_IP_VALIDATION_20260106.md`
 - Share link CIDR parsing: `docs/VERIFICATION_SHARE_LINK_CIDR_20260105.md`
 - Search ACL edge cases: `docs/VERIFICATION_SEARCH_ACL_EDGE_CASE_TESTS_20260106.md`
+- Search ACL regression coverage: `docs/VERIFICATION_SEARCH_ACL_REGRESSION_20260110.md`
 - Search pagination/deleted filter: `docs/VERIFICATION_SEARCH_PAGINATION_DELETED_TESTS_20260106.md`
 - Search disabled guards: `docs/VERIFICATION_SEARCH_DISABLED_GUARD_20260106.md`
 - Search available facets disabled: `docs/VERIFICATION_SEARCH_AVAILABLE_FACETS_DISABLED_20260106.md`

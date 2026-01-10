@@ -188,6 +188,47 @@ class SearchAclFilteringTest {
     }
 
     @Test
+    @DisplayName("Full-text search returns empty when user lacks permissions")
+    void fullTextSearchReturnsEmptyWhenNoPermissions() {
+        UUID firstId = UUID.randomUUID();
+        UUID secondId = UUID.randomUUID();
+
+        NodeDocument firstDoc = NodeDocument.builder()
+            .id(firstId.toString())
+            .name("first")
+            .build();
+        NodeDocument secondDoc = NodeDocument.builder()
+            .id(secondId.toString())
+            .name("second")
+            .build();
+
+        SearchHits<NodeDocument> searchHits = searchHits(searchHit(firstDoc), searchHit(secondDoc));
+
+        Mockito.when(elasticsearchOperations.search(
+                Mockito.any(Query.class),
+                Mockito.eq(NodeDocument.class),
+                Mockito.any(IndexCoordinates.class)))
+            .thenReturn(searchHits);
+
+        Document firstNode = new Document();
+        firstNode.setId(firstId);
+        Document secondNode = new Document();
+        secondNode.setId(secondId);
+
+        Mockito.when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
+        Mockito.when(nodeRepository.findAllById(Mockito.<UUID>anyIterable()))
+            .thenReturn(List.of(firstNode, secondNode));
+        Mockito.when(securityService.hasPermission(Mockito.any(Node.class), Mockito.eq(PermissionType.READ)))
+            .thenReturn(false);
+
+        var results = fullTextSearchService.search("query", 0, 10, null, null);
+
+        assertEquals(0, results.getTotalElements());
+        Mockito.verify(securityService, Mockito.times(2))
+            .hasPermission(Mockito.any(Node.class), Mockito.eq(PermissionType.READ));
+    }
+
+    @Test
     @DisplayName("Full-text search filters hits for nodes missing from the repository")
     void fullTextSearchSkipsMissingNodes() {
         UUID existingId = UUID.randomUUID();
@@ -350,6 +391,57 @@ class SearchAclFilteringTest {
 
         assertTrue(facets.isEmpty());
         Mockito.verifyNoInteractions(elasticsearchOperations, documentRepository, nodeRepository, securityService);
+    }
+
+    @Test
+    @DisplayName("Available facets filter unauthorized hits for non-admins")
+    void availableFacetsFiltersUnauthorizedHits() {
+        UUID allowedId = UUID.randomUUID();
+        UUID deniedId = UUID.randomUUID();
+
+        NodeDocument allowedDoc = NodeDocument.builder()
+            .id(allowedId.toString())
+            .name("allowed")
+            .mimeType("application/pdf")
+            .createdBy("alice")
+            .tags(Set.of("confidential"))
+            .build();
+        NodeDocument deniedDoc = NodeDocument.builder()
+            .id(deniedId.toString())
+            .name("denied")
+            .mimeType("image/png")
+            .createdBy("bob")
+            .tags(Set.of("public"))
+            .build();
+
+        SearchHits<NodeDocument> searchHits = searchHits(searchHit(allowedDoc), searchHit(deniedDoc));
+
+        Mockito.when(elasticsearchOperations.search(
+                Mockito.any(Query.class),
+                Mockito.eq(NodeDocument.class),
+                Mockito.any(IndexCoordinates.class)))
+            .thenReturn(searchHits);
+
+        Document allowedNode = new Document();
+        allowedNode.setId(allowedId);
+        Document deniedNode = new Document();
+        deniedNode.setId(deniedId);
+
+        Mockito.when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
+        Mockito.when(nodeRepository.findAllById(Mockito.<UUID>anyIterable()))
+            .thenReturn(List.of(allowedNode, deniedNode));
+        Mockito.when(securityService.hasPermission(allowedNode, PermissionType.READ)).thenReturn(true);
+        Mockito.when(securityService.hasPermission(deniedNode, PermissionType.READ)).thenReturn(false);
+
+        Map<String, List<FacetedSearchService.FacetValue>> facets = facetedSearchService.getAvailableFacets("doc");
+
+        Set<String> mimeTypes = facets.get("mimeType").stream()
+            .map(FacetedSearchService.FacetValue::getValue)
+            .collect(Collectors.toSet());
+        assertEquals(Set.of("application/pdf"), mimeTypes);
+        assertTrue(
+            facets.get("tags").stream().noneMatch(tag -> "public".equals(tag.getValue()))
+        );
     }
 
     @Test

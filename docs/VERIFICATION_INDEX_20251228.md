@@ -104,6 +104,8 @@
   - Analytics storage-by-MIME payload
 - `docs/VERIFICATION_SEARCH_DISABLED_GUARD_20260106.md`
   - Search disabled guard paths in search services
+- `docs/VERIFICATION_SEARCH_ACL_REGRESSION_20260110.md`
+  - Search ACL regression coverage (backend + E2E)
 - `docs/VERIFICATION_SEARCH_AVAILABLE_FACETS_DISABLED_20260106.md`
   - Available facets guard when search is disabled
 - `docs/VERIFICATION_SEARCH_SUGGESTED_FILTERS_DISABLED_20260106.md`
