@@ -12,6 +12,8 @@
 ## UI E2E
 - `docs/VERIFICATION_E2E_FULL_RUN_20260109.md`
   - Playwright full suite: 17/17 passed
+- `docs/VERIFICATION_E2E_FULL_RUN_20260110.md`
+  - Playwright full suite: 17/17 passed
 - `docs/VERIFICATION_UI_E2E_20251228.md`
   - Playwright `npm run e2e`: 15/15 passed
 - `docs/VERIFICATION_PDF_PREVIEW_LOADING_FALLBACK_20260110.md`
