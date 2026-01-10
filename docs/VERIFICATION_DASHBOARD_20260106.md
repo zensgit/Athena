@@ -11,6 +11,7 @@
 
 ## Backend / API
 - Backend test run (2026-01-09): `docs/VERIFICATION_BACKEND_MVN_TEST_20260109.md`
+- Backend test run (2026-01-10): `docs/VERIFICATION_BACKEND_MVN_TEST_20260110.md`
 - Backend verify run (2026-01-09): `docs/VERIFICATION_BACKEND_MVN_VERIFY_20260109.md`
 - Backend verify run (2026-01-10, fail): `docs/VERIFICATION_BACKEND_MVN_VERIFY_20260110.md`
 - Backend verify run (2026-01-10, pass): `docs/VERIFICATION_BACKEND_MVN_VERIFY_20260110_PASS.md`
@@ -93,6 +94,7 @@
 - verify.sh step summary expanded: `docs/VERIFICATION_VERIFY_STEP_SUMMARY_EXPANDED_20260108.md`
 - verify.sh report-latest aggregation: `docs/VERIFICATION_VERIFY_REPORT_LATEST_20260108.md`
 - verify.sh report-latest aggregation (2026-01-09): `docs/VERIFICATION_VERIFY_REPORT_LATEST_20260109.md`
+- verify.sh report-latest aggregation (2026-01-10): `docs/VERIFICATION_VERIFY_REPORT_LATEST_20260110.md`
 - verify.sh help output: `docs/VERIFICATION_VERIFY_HELP_20260107.md`
 - WOPI auto-upload fallback: `docs/VERIFICATION_WOPI_AUTO_UPLOAD_20260106.md`
 - WOPI sample cleanup: `docs/VERIFICATION_WOPI_SAMPLE_CLEANUP_20260106.md`

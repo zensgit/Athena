@@ -56,6 +56,8 @@
   - `mvn verify`: build success with subclass mock maker
 - `docs/VERIFICATION_BACKEND_MVN_TEST_20260109.md`
   - `mvn test`: 81 tests passed
+- `docs/VERIFICATION_BACKEND_MVN_TEST_20260110.md`
+  - `mvn test`: 81 tests passed
 - `docs/VERIFICATION_BACKEND_MVN_TEST_20260106.md`
   - `mvn test`: 80 tests passed
 - `docs/VERIFICATION_BACKEND_MVN_VERIFY_20260106.md`
@@ -147,6 +149,8 @@
 - `docs/VERIFICATION_VERIFY_REPORT_LATEST_20260108.md`
   - verify.sh report-latest aggregation output
 - `docs/VERIFICATION_VERIFY_REPORT_LATEST_20260109.md`
+  - verify.sh report-latest aggregation output
+- `docs/VERIFICATION_VERIFY_REPORT_LATEST_20260110.md`
   - verify.sh report-latest aggregation output
 - `docs/VERIFICATION_VERIFY_WOPI_QUERY_MISSING_20260107.md`
   - verify.sh missing wopi-query argument
