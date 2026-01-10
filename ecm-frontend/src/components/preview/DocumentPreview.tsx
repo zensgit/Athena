@@ -17,6 +17,7 @@ import {
   ListItemIcon,
   ListItemText,
   Tooltip,
+  Skeleton,
 } from '@mui/material';
 import {
   Close,
@@ -806,6 +807,62 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     setAnchorEl(null);
   };
 
+  const renderLoadingState = (message: string, detail?: string) => (
+    <Box
+      display="flex"
+      flexDirection="column"
+      alignItems="center"
+      justifyContent="center"
+      height={previewHeight}
+      gap={2}
+      textAlign="center"
+      px={2}
+      role="status"
+      aria-live="polite"
+      aria-busy={true}
+    >
+      <CircularProgress size={32} />
+      <Typography variant="body2" color="text.secondary">
+        {message}
+      </Typography>
+      {detail && (
+        <Typography variant="caption" color="text.secondary">
+          {detail}
+        </Typography>
+      )}
+      <Box sx={{ width: '90%', maxWidth: 720 }}>
+        <Skeleton variant="rectangular" height={260} sx={{ borderRadius: 1 }} />
+        <Skeleton variant="text" sx={{ mt: 1 }} />
+      </Box>
+    </Box>
+  );
+
+  const renderPdfLoadingOverlay = () => (
+    <Box
+      role="status"
+      aria-live="polite"
+      aria-busy={true}
+      sx={{
+        position: 'absolute',
+        inset: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        bgcolor: 'rgba(255, 255, 255, 0.8)',
+        zIndex: 1,
+        pointerEvents: 'none',
+      }}
+    >
+      <Box sx={{ width: '90%', maxWidth: 520, textAlign: 'center' }}>
+        <CircularProgress size={28} />
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+          Rendering PDF preview...
+        </Typography>
+        <Skeleton variant="rectangular" height={200} sx={{ mt: 2, borderRadius: 1 }} />
+      </Box>
+    </Box>
+  );
+
   const renderPreviewError = (
     message: string,
     options?: {
@@ -835,7 +892,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
           )}
           {options?.showServerPreview && (
             <Button variant="outlined" size="small" onClick={handleLoadServerPreview}>
-              Try server preview
+              Switch to server preview
             </Button>
           )}
           {options?.showOpenInEditor && (
@@ -845,11 +902,11 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
           )}
           {options?.showOpenFile && (
             <Button variant="outlined" size="small" onClick={handleOpenFile}>
-              Open file
+              Open original
             </Button>
           )}
           <Button variant="outlined" size="small" onClick={handleDownload}>
-            Download
+            Download original
           </Button>
         </Box>
       </Box>
@@ -911,11 +968,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
 
   const renderPreview = () => {
     if (loading) {
-      return (
-        <Box display="flex" justifyContent="center" alignItems="center" height={previewHeight}>
-          <CircularProgress />
-        </Box>
-      );
+      return renderLoadingState('Preparing preview...', 'Fetching document content');
     }
 
     if (error) {
@@ -966,14 +1019,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     // PDF preview
     if (effectiveContentType === 'application/pdf') {
       if (serverPreviewLoading) {
-        return (
-          <Box display="flex" flexDirection="column" justifyContent="center" alignItems="center" height={previewHeight}>
-            <CircularProgress />
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-              Loading server preview...
-            </Typography>
-          </Box>
-        );
+        return renderLoadingState('Loading server preview...', 'Rendering pages on the server');
       }
 
       if (serverPreview) {
@@ -997,6 +1043,11 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
           );
         }
 
+        const serverPreviewNotice = emptyPdf
+          ? 'PDF is empty; showing server-rendered preview.'
+          : pdfLoadFailed
+            ? 'Client preview failed; showing server-rendered preview.'
+            : 'Server-rendered preview.';
         const pages = serverPreview.pages || [];
         const currentPage = pages.find((page) => page.pageNumber === pageNumber) || pages[0];
         if (!currentPage || !currentPage.content) {
@@ -1019,9 +1070,44 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
             sx={{ overflow: 'auto', flex: 1, minHeight: 0 }}
             data-testid="pdf-preview-fallback"
           >
-            <Typography variant="caption" color="text.secondary" sx={{ mt: 1, mb: 2 }}>
-              Using server-rendered preview
-            </Typography>
+            <Box
+              display="flex"
+              alignItems="center"
+              justifyContent="space-between"
+              flexWrap="wrap"
+              width="100%"
+              px={2}
+              py={1}
+              gap={1}
+              sx={{ bgcolor: 'background.paper', borderBottom: 1, borderColor: 'divider' }}
+              data-testid="pdf-preview-fallback-banner"
+            >
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                data-testid="pdf-preview-fallback-message"
+              >
+                {serverPreviewNotice}
+              </Typography>
+              <Box display="flex" gap={1} flexWrap="wrap">
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={handleRetry}
+                  data-testid="pdf-preview-fallback-retry"
+                >
+                  Try PDF viewer
+                </Button>
+                <Button
+                  size="small"
+                  variant="text"
+                  onClick={handleDownload}
+                  data-testid="pdf-preview-fallback-download"
+                >
+                  Download original
+                </Button>
+              </Box>
+            </Box>
             <Box
               sx={{
                 position: 'relative',
@@ -1060,6 +1146,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         });
       }
 
+      const showPdfLoadingOverlay = Boolean(fileUrl) && !pageSize && !pdfLoadFailed;
       return (
         <Box
           ref={pdfContainerRef}
@@ -1067,8 +1154,9 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
           flexDirection="column"
           alignItems="center"
           height={previewHeight}
-          sx={{ overflow: 'auto', flex: 1, minHeight: 0 }}
+          sx={{ overflow: 'auto', flex: 1, minHeight: 0, position: 'relative' }}
         >
+          {showPdfLoadingOverlay && renderPdfLoadingOverlay()}
           <React.Suspense fallback={<CircularProgress />}>
             <PdfPreview
               fileUrl={fileUrl}

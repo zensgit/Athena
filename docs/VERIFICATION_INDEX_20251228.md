@@ -12,8 +12,12 @@
 ## UI E2E
 - `docs/VERIFICATION_E2E_FULL_RUN_20260109.md`
   - Playwright full suite: 17/17 passed
+- `docs/VERIFICATION_E2E_FULL_RUN_20260110.md`
+  - Playwright full suite: 17/17 passed
 - `docs/VERIFICATION_UI_E2E_20251228.md`
   - Playwright `npm run e2e`: 15/15 passed
+- `docs/VERIFICATION_PDF_PREVIEW_LOADING_FALLBACK_20260110.md`
+  - PDF preview fallback banner/actions via targeted Playwright run
 - `docs/VERIFICATION_E2E_FULL_RUN_20260106.md`
   - Playwright full suite: 17/17 passed
 - `docs/VERIFICATION_E2E_VERSION_HISTORY_ACTIONS_20260106.md`
@@ -60,6 +64,8 @@
   - `mvn test`: 81 tests passed
 - `docs/VERIFICATION_BACKEND_MVN_TEST_20260110.md`
   - `mvn test`: 81 tests passed
+- `docs/VERIFICATION_BACKEND_MVN_TEST_20260110_2.md`
+  - `mvn test`: 81 tests passed (rerun)
 - `docs/VERIFICATION_BACKEND_MVN_TEST_20260106.md`
   - `mvn test`: 80 tests passed
 - `docs/VERIFICATION_BACKEND_MVN_VERIFY_20260106.md`
@@ -122,6 +128,8 @@
   - Full verify.sh run (all steps pass)
 - `docs/VERIFICATION_CI_TEST_PIPELINE_20260110.md`
   - CI backend job runs `mvn verify`
+- `docs/VERIFICATION_CI_PR_20260110.md`
+  - PR CI checks pass (Backend Verify, Frontend Build & Test, Phase C Security Verification)
 - `docs/VERIFICATION_VERIFY_20260107_FULL_WOPI_FLAGS.md`
   - Full verify.sh run with WOPI flags
 - `docs/VERIFICATION_VERIFY_SCRIPT_REPORTING_20260106.md`
