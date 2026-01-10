@@ -66,8 +66,12 @@
   - `mvn test`: 81 tests passed
 - `docs/VERIFICATION_BACKEND_MVN_TEST_20260110_2.md`
   - `mvn test`: 81 tests passed (rerun)
+- `docs/VERIFICATION_BACKEND_MVN_TEST_20260110_3.md`
+  - `mvn test`: 88 tests passed
 - `docs/VERIFICATION_SECURITY_ACL_INHERITANCE_TESTS_20260110.md`
   - Security ACL inheritance/deny regression tests
+- `docs/VERIFICATION_CHILD_LISTING_ACL_FILTERING_20260110.md`
+  - Folder/node child listing ACL filtering before pagination
 - `docs/VERIFICATION_BACKEND_MVN_TEST_20260106.md`
   - `mvn test`: 80 tests passed
 - `docs/VERIFICATION_BACKEND_MVN_VERIFY_20260106.md`
