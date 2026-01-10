@@ -8,7 +8,7 @@ on:
 
 jobs:
   backend:
-    name: Backend Tests
+    name: Backend Verify
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -24,8 +24,8 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
-      - name: Test
-        run: mvn -B -q test
+      - name: Verify
+        run: mvn -B -q verify
 
   frontend:
     name: Frontend Build & Test

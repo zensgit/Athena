@@ -120,6 +120,8 @@
   - Full verify.sh run (all steps pass)
 - `docs/VERIFICATION_VERIFY_20260110.md`
   - Full verify.sh run (all steps pass)
+- `docs/VERIFICATION_CI_TEST_PIPELINE_20260110.md`
+  - CI backend job runs `mvn verify`
 - `docs/VERIFICATION_VERIFY_20260107_FULL_WOPI_FLAGS.md`
   - Full verify.sh run with WOPI flags
 - `docs/VERIFICATION_VERIFY_SCRIPT_REPORTING_20260106.md`
