@@ -1,11 +1,5 @@
 import { APIRequestContext, expect, Page, test } from '@playwright/test';
-import {
-  fetchAccessToken,
-  findChildFolderId,
-  getRootFolderId,
-  waitForApiReady,
-  waitForSearchIndex,
-} from './helpers/api';
+import { fetchAccessToken, findChildFolderId, getRootFolderId, waitForApiReady } from './helpers/api';
 
 const baseApiUrl = process.env.ECM_API_URL || 'http://localhost:7700';
 const baseUiUrl = process.env.ECM_UI_URL || 'http://localhost:5500';
@@ -82,28 +76,6 @@ async function createFolder(
   return payload.id;
 }
 
-async function isSearchAvailable(request: APIRequestContext, token: string) {
-  try {
-    const res = await request.get(`${baseApiUrl}/api/v1/system/status`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok()) {
-      return false;
-    }
-    const payload = (await res.json()) as { search?: { error?: string; searchEnabled?: boolean } };
-    const search = payload.search;
-    if (!search) {
-      return false;
-    }
-    if (search.searchEnabled === false) {
-      return false;
-    }
-    return !search.error;
-  } catch {
-    return false;
-  }
-}
-
 async function uploadDocument(
   request: APIRequestContext,
   folderId: string,
@@ -118,7 +90,7 @@ async function uploadDocument(
         file: {
           name: filename,
           mimeType: 'text/plain',
-          buffer: Buffer.from(`Search view e2e ${new Date().toISOString()}\n`),
+          buffer: Buffer.from(`Browse ACL e2e ${new Date().toISOString()}\n`),
         },
       },
     },
@@ -129,11 +101,6 @@ async function uploadDocument(
   if (!documentId) {
     throw new Error('Upload did not return document id');
   }
-
-  const indexRes = await request.post(`${baseApiUrl}/api/v1/search/index/${documentId}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  expect(indexRes.ok()).toBeTruthy();
   return documentId;
 }
 
@@ -160,85 +127,25 @@ async function setPermission(
   expect(res.ok()).toBeTruthy();
 }
 
-async function waitForIndexStatus(
-  request: APIRequestContext,
-  documentId: string,
-  token: string,
-) {
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    const res = await request.get(`${baseApiUrl}/api/v1/search/index/${documentId}/status`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.ok()) {
-      const payload = (await res.json()) as { indexed?: boolean };
-      if (payload.indexed) {
-        return true;
-      }
-    }
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-  }
-  return false;
-}
-
-test('Search results view opens preview for documents', async ({ page, request }) => {
+test('Browse view hides unauthorized documents for viewer', async ({ page, request }) => {
   test.setTimeout(240_000);
 
   const apiToken = await fetchAccessToken(request, defaultUsername, defaultPassword);
   const rootId = await getRootFolderId(request, apiToken, { apiUrl: baseApiUrl });
   const documentsId = await findChildFolderId(request, rootId, 'Documents', apiToken, { apiUrl: baseApiUrl });
 
-  const folderName = `e2e-search-view-${Date.now()}`;
+  const folderName = `e2e-browse-acl-${Date.now()}`;
   const folderId = await createFolder(request, documentsId, folderName, apiToken);
 
-  const filename = `e2e-view-${Date.now()}.txt`;
+  const filename = `e2e-browse-${Date.now()}.txt`;
   const documentId = await uploadDocument(request, folderId, filename, apiToken);
-  const indexed = await waitForIndexStatus(request, documentId, apiToken);
-  if (!indexed) {
-    console.log(`Index status not ready for ${documentId}; falling back to search polling`);
-  }
-  await waitForSearchIndex(request, filename, apiToken, { apiUrl: baseApiUrl });
 
-  await loginWithCredentials(page, defaultUsername, defaultPassword);
-  await page.goto(`${baseUiUrl}/search-results`, { waitUntil: 'domcontentloaded' });
-
-  const quickSearchInput = page.getByPlaceholder('Quick search by name...');
-  await quickSearchInput.fill(filename);
-  await quickSearchInput.press('Enter');
-
-  const resultCard = page.locator('.MuiCard-root').filter({ hasText: filename }).first();
-  await expect(resultCard).toBeVisible({ timeout: 60_000 });
-  await resultCard.getByRole('button', { name: 'View', exact: true }).click();
-
-  await expect(page).toHaveURL(/\/search-results/);
-  await expect(page.getByLabel('close')).toBeVisible({ timeout: 60_000 });
-
-  await page.getByLabel('close').click();
-
-  await request.delete(`${baseApiUrl}/api/v1/nodes/${folderId}`, {
-    headers: { Authorization: `Bearer ${apiToken}` },
-  }).catch(() => null);
-});
-
-test('Search results hide unauthorized documents for viewer', async ({ page, request }) => {
-  test.setTimeout(240_000);
-
-  const apiToken = await fetchAccessToken(request, defaultUsername, defaultPassword);
-  const searchAvailable = await isSearchAvailable(request, apiToken);
-  test.skip(!searchAvailable, 'Search is disabled');
-
-  const rootId = await getRootFolderId(request, apiToken, { apiUrl: baseApiUrl });
-  const documentsId = await findChildFolderId(request, rootId, 'Documents', apiToken, { apiUrl: baseApiUrl });
-
-  const folderName = `e2e-search-acl-${Date.now()}`;
-  const folderId = await createFolder(request, documentsId, folderName, apiToken);
-
-  const filename = `e2e-acl-${Date.now()}.txt`;
-  const documentId = await uploadDocument(request, folderId, filename, apiToken);
-  const indexed = await waitForIndexStatus(request, documentId, apiToken);
-  if (!indexed) {
-    console.log(`Index status not ready for ${documentId}; falling back to search polling`);
-  }
-  await waitForSearchIndex(request, filename, apiToken, { apiUrl: baseApiUrl });
+  await setPermission(request, folderId, apiToken, {
+    authority: 'EVERYONE',
+    authorityType: 'EVERYONE',
+    permissionType: 'READ',
+    allowed: true,
+  });
 
   await setPermission(request, documentId, apiToken, {
     authority: 'EVERYONE',
@@ -248,28 +155,12 @@ test('Search results hide unauthorized documents for viewer', async ({ page, req
   });
 
   await loginWithCredentials(page, viewerUsername, viewerPassword);
-  await page.goto(`${baseUiUrl}/search-results`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`${baseUiUrl}/browse/${folderId}`, { waitUntil: 'domcontentloaded' });
 
-  const quickSearchInput = page.getByPlaceholder('Quick search by name...');
-  await quickSearchInput.fill(filename);
-  const searchResponsePromise = page.waitForResponse((response) => {
-    if (!response.url().includes('/api/v1/search')) {
-      return false;
-    }
-    try {
-      const params = new URL(response.url()).searchParams;
-      return params.get('q') === filename && response.status() === 200;
-    } catch {
-      return false;
-    }
-  });
-  await quickSearchInput.press('Enter');
-  const searchResponse = await searchResponsePromise;
-  const searchPayload = (await searchResponse.json()) as { content?: Array<{ name?: string }> };
-  const searchNames = searchPayload.content?.map((item) => item.name) ?? [];
-  expect(searchNames).not.toContain(filename);
+  await page.getByRole('button', { name: 'list view' }).click();
 
-  await expect(page.locator('.MuiCard-root', { hasText: filename })).toHaveCount(0);
+  await expect(page.getByText('This folder is empty')).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(filename)).toHaveCount(0);
 
   await request.delete(`${baseApiUrl}/api/v1/nodes/${folderId}`, {
     headers: { Authorization: `Bearer ${apiToken}` },

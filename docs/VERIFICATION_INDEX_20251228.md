@@ -14,6 +14,14 @@
   - Playwright full suite: 17/17 passed
 - `docs/VERIFICATION_E2E_FULL_RUN_20260110.md`
   - Playwright full suite: 17/17 passed
+- `docs/VERIFICATION_E2E_FULL_RUN_20260110_2.md`
+  - Playwright full suite: 19/19 passed
+- `docs/VERIFICATION_E2E_BROWSE_ACL_20260110.md`
+  - Browse view hides denied documents
+- `docs/VERIFICATION_E2E_UI_SMOKE_ACL_20260110.md`
+  - UI smoke + browse ACL: 10/10 passed
+- `docs/VERIFICATION_E2E_SEARCH_ACL_STABILITY_20260110.md`
+  - Search ACL test stability adjustment
 - `docs/VERIFICATION_UI_E2E_20251228.md`
   - Playwright `npm run e2e`: 15/15 passed
 - `docs/VERIFICATION_PDF_PREVIEW_LOADING_FALLBACK_20260110.md`
