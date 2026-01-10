@@ -14,6 +14,14 @@
   - Playwright full suite: 17/17 passed
 - `docs/VERIFICATION_E2E_FULL_RUN_20260110.md`
   - Playwright full suite: 17/17 passed
+- `docs/VERIFICATION_E2E_FULL_RUN_20260110_2.md`
+  - Playwright full suite: 19/19 passed
+- `docs/VERIFICATION_E2E_BROWSE_ACL_20260110.md`
+  - Browse view hides denied documents
+- `docs/VERIFICATION_E2E_UI_SMOKE_ACL_20260110.md`
+  - UI smoke + browse ACL: 10/10 passed
+- `docs/VERIFICATION_E2E_SEARCH_ACL_STABILITY_20260110.md`
+  - Search ACL test stability adjustment
 - `docs/VERIFICATION_UI_E2E_20251228.md`
   - Playwright `npm run e2e`: 15/15 passed
 - `docs/VERIFICATION_PDF_PREVIEW_LOADING_FALLBACK_20260110.md`
@@ -66,8 +74,12 @@
   - `mvn test`: 81 tests passed
 - `docs/VERIFICATION_BACKEND_MVN_TEST_20260110_2.md`
   - `mvn test`: 81 tests passed (rerun)
+- `docs/VERIFICATION_BACKEND_MVN_TEST_20260110_3.md`
+  - `mvn test`: 88 tests passed
 - `docs/VERIFICATION_SECURITY_ACL_INHERITANCE_TESTS_20260110.md`
   - Security ACL inheritance/deny regression tests
+- `docs/VERIFICATION_CHILD_LISTING_ACL_FILTERING_20260110.md`
+  - Folder/node child listing ACL filtering before pagination
 - `docs/VERIFICATION_BACKEND_MVN_TEST_20260106.md`
   - `mvn test`: 80 tests passed
 - `docs/VERIFICATION_BACKEND_MVN_VERIFY_20260106.md`

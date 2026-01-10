@@ -8,6 +8,7 @@ import com.ecm.core.model.Category;
 import com.ecm.core.model.Tag;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
@@ -30,6 +31,8 @@ public interface NodeRepository extends JpaRepository<Node, UUID>, JpaSpecificat
     Optional<Node> findByIdAndDeletedFalse(UUID id);
     
     List<Node> findByParentIdAndDeletedFalse(UUID parentId);
+
+    List<Node> findByParentIdAndDeletedFalse(UUID parentId, Sort sort);
     
     Page<Node> findByParentIdAndDeletedFalse(UUID parentId, Pageable pageable);
     
