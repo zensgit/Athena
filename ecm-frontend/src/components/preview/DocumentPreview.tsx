@@ -817,6 +817,9 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
       gap={2}
       textAlign="center"
       px={2}
+      role="status"
+      aria-live="polite"
+      aria-busy={true}
     >
       <CircularProgress size={32} />
       <Typography variant="body2" color="text.secondary">
@@ -836,6 +839,9 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
 
   const renderPdfLoadingOverlay = () => (
     <Box
+      role="status"
+      aria-live="polite"
+      aria-busy={true}
       sx={{
         position: 'absolute',
         inset: 0,
@@ -1037,9 +1043,11 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
           );
         }
 
-        const serverPreviewNotice = pdfLoadFailed
-          ? 'Client preview failed; showing server-rendered preview.'
-          : 'Server-rendered preview.';
+        const serverPreviewNotice = emptyPdf
+          ? 'PDF is empty; showing server-rendered preview.'
+          : pdfLoadFailed
+            ? 'Client preview failed; showing server-rendered preview.'
+            : 'Server-rendered preview.';
         const pages = serverPreview.pages || [];
         const currentPage = pages.find((page) => page.pageNumber === pageNumber) || pages[0];
         if (!currentPage || !currentPage.content) {
@@ -1072,15 +1080,30 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
               py={1}
               gap={1}
               sx={{ bgcolor: 'background.paper', borderBottom: 1, borderColor: 'divider' }}
+              data-testid="pdf-preview-fallback-banner"
             >
-              <Typography variant="caption" color="text.secondary">
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                data-testid="pdf-preview-fallback-message"
+              >
                 {serverPreviewNotice}
               </Typography>
               <Box display="flex" gap={1} flexWrap="wrap">
-                <Button size="small" variant="outlined" onClick={handleRetry}>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={handleRetry}
+                  data-testid="pdf-preview-fallback-retry"
+                >
                   Try PDF viewer
                 </Button>
-                <Button size="small" variant="text" onClick={handleDownload}>
+                <Button
+                  size="small"
+                  variant="text"
+                  onClick={handleDownload}
+                  data-testid="pdf-preview-fallback-download"
+                >
                   Download original
                 </Button>
               </Box>
