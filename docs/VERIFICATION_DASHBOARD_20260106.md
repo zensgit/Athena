@@ -17,6 +17,7 @@
 - Backend verify run (2026-01-10, fail): `docs/VERIFICATION_BACKEND_MVN_VERIFY_20260110.md`
 - Backend verify run (2026-01-10, pass): `docs/VERIFICATION_BACKEND_MVN_VERIFY_20260110_PASS.md`
 - Audit export validation: `docs/VERIFICATION_AUDIT_EXPORT_RANGE_VALIDATION_20260106.md`
+- Security ACL inheritance tests: `docs/VERIFICATION_SECURITY_ACL_INHERITANCE_TESTS_20260110.md`
 - Audit export max-range boundary: `docs/VERIFICATION_AUDIT_EXPORT_MAX_RANGE_BOUNDARY_20260106.md`
 - Audit export blank parameters: `docs/VERIFICATION_AUDIT_EXPORT_BLANK_PARAMS_20260106.md`
 - Audit export response headers: `docs/VERIFICATION_AUDIT_EXPORT_RESPONSE_HEADERS_20260106.md`
