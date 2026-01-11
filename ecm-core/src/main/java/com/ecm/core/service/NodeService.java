@@ -15,6 +15,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -108,7 +109,31 @@ public class NodeService {
     
     public Page<Node> getChildren(UUID parentId, Pageable pageable) {
         Node parent = getNode(parentId);
-        return nodeRepository.findByParentIdAndDeletedFalse(parentId, pageable);
+        if (securityService.hasRole("ROLE_ADMIN")) {
+            return nodeRepository.findByParentIdAndDeletedFalse(parentId, pageable);
+        }
+
+        List<Node> children = nodeRepository.findByParentIdAndDeletedFalse(parentId, pageable.getSort());
+        List<Node> permitted = children.stream()
+            .filter(child -> securityService.hasPermission(child, PermissionType.READ))
+            .collect(Collectors.toList());
+
+        return pageFromList(permitted, pageable);
+    }
+
+    private Page<Node> pageFromList(List<Node> nodes, Pageable pageable) {
+        if (pageable == null || pageable.isUnpaged()) {
+            return new PageImpl<>(nodes);
+        }
+
+        long offset = pageable.getOffset();
+        if (offset >= nodes.size()) {
+            return new PageImpl<>(List.of(), pageable, nodes.size());
+        }
+
+        int start = Math.toIntExact(offset);
+        int end = Math.min(start + pageable.getPageSize(), nodes.size());
+        return new PageImpl<>(nodes.subList(start, end), pageable, nodes.size());
     }
     
     public Node updateNode(UUID nodeId, Map<String, Object> updates) {
