@@ -80,6 +80,10 @@
   - Security ACL inheritance/deny regression tests
 - `docs/VERIFICATION_CHILD_LISTING_ACL_FILTERING_20260110.md`
   - Folder/node child listing ACL filtering before pagination
+- `docs/VERIFICATION_FOLDER_TREE_STATS_ACL_FILTERING_20260111.md`
+  - Folder tree child counts + stats ACL filtering
+- `docs/VERIFICATION_COUNT_BASED_ENDPOINT_ROLE_GUARDS_20260111.md`
+  - Admin-only guards for count-based diagnostics + index stats
 - `docs/VERIFICATION_BACKEND_MVN_TEST_20260106.md`
   - `mvn test`: 80 tests passed
 - `docs/VERIFICATION_BACKEND_MVN_VERIFY_20260106.md`
