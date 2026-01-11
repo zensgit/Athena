@@ -10,6 +10,10 @@ ECM Core 是一个企业内容管理系统的核心服务模块，采用 Spring 
 - Backend tests: `docker run --rm -v "$(pwd)":/workspace -v "$HOME/.m2":/root/.m2 -w /workspace/ecm-core maven:3-eclipse-temurin-17 mvn test` (17 tests, 0 failures)
 - Backend verify: `docker run --rm -v "$(pwd)":/workspace -v "$HOME/.m2":/root/.m2 -w /workspace/ecm-core maven:3-eclipse-temurin-17 mvn verify` (17 tests, 0 failures)
 
+## Recent Delivery (2026-01-10)
+
+- Child listing ACL + E2E coverage: `docs/DELIVERY_SUMMARY_ACL_CHILD_LISTING_20260110.md`
+
 ## Architecture
 
 ```
