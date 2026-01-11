@@ -76,6 +76,8 @@
   - `mvn test`: 81 tests passed (rerun)
 - `docs/VERIFICATION_BACKEND_MVN_TEST_20260110_3.md`
   - `mvn test`: 88 tests passed
+- `docs/VERIFICATION_BACKEND_MVN_TEST_20260111.md`
+  - `mvn test`: 96 tests passed
 - `docs/VERIFICATION_SECURITY_ACL_INHERITANCE_TESTS_20260110.md`
   - Security ACL inheritance/deny regression tests
 - `docs/VERIFICATION_CHILD_LISTING_ACL_FILTERING_20260110.md`
