@@ -16,6 +16,8 @@
   - Playwright full suite: 17/17 passed
 - `docs/VERIFICATION_E2E_FULL_RUN_20260110_2.md`
   - Playwright full suite: 19/19 passed
+- `docs/VERIFICATION_E2E_FULL_RUN_20260111.md`
+  - Playwright full suite: 18/19 passed (1 failed)
 - `docs/VERIFICATION_E2E_BROWSE_ACL_20260110.md`
   - Browse view hides denied documents
 - `docs/VERIFICATION_E2E_UI_SMOKE_ACL_20260110.md`
@@ -44,7 +46,11 @@
   - ESLint + React test suite pass
 - `docs/VERIFICATION_FRONTEND_LINT_TEST_20260110.md`
   - ESLint + React test suite pass
+- `docs/VERIFICATION_FRONTEND_TEST_20260111.md`
+  - React test suite pass
 - `docs/VERIFICATION_FRONTEND_BUILD_20260106.md`
+  - Frontend build (`npm run build`) succeeds
+- `docs/VERIFICATION_FRONTEND_BUILD_20260111.md`
   - Frontend build (`npm run build`) succeeds
 - `docs/VERIFICATION_ROUTER_FUTURE_FLAGS_20260106.md`
   - React Router future flags enabled for tests
