@@ -327,6 +327,7 @@ public class FolderService {
     @Transactional(readOnly = true)
     public List<FolderTreeNode> getFolderTree(UUID rootId, int maxDepth) {
         List<FolderTreeNode> tree = new ArrayList<>();
+        boolean isAdmin = securityService.hasRole("ROLE_ADMIN");
 
         List<Folder> roots;
         if (rootId != null) {
@@ -337,7 +338,7 @@ public class FolderService {
         }
 
         for (Folder root : roots) {
-            tree.add(buildFolderTreeNode(root, 0, maxDepth));
+            tree.add(buildFolderTreeNode(root, 0, maxDepth, isAdmin));
         }
 
         return tree;
@@ -380,9 +381,10 @@ public class FolderService {
     @Transactional(readOnly = true)
     public FolderStats getFolderStats(UUID folderId) {
         Folder folder = getFolder(folderId);
+        boolean isAdmin = securityService.hasRole("ROLE_ADMIN");
 
         // Count direct children
-        List<Node> children = nodeRepository.findByParentIdAndDeletedFalse(folderId);
+        List<Node> children = loadReadableChildren(folderId, isAdmin);
         int directFolders = 0;
         int directDocuments = 0;
         long directSize = 0;
@@ -399,7 +401,7 @@ public class FolderService {
         }
 
         // Count all descendants recursively
-        int[] totalCounts = countDescendantsRecursive(folderId);
+        int[] totalCounts = countDescendantsRecursive(folderId, isAdmin);
 
         return new FolderStats(
             directFolders,
@@ -473,15 +475,19 @@ public class FolderService {
         nodeRepository.softDeleteByPathPrefix(folder.getPath(), deletedAt, currentUser);
     }
 
-    private FolderTreeNode buildFolderTreeNode(Folder folder, int currentDepth, int maxDepth) {
+    private FolderTreeNode buildFolderTreeNode(Folder folder, int currentDepth, int maxDepth, boolean isAdmin) {
         List<FolderTreeNode> children = new ArrayList<>();
-        long childCount = folderRepository.countChildren(folder.getId());
+        List<Node> childNodes = isAdmin && currentDepth >= maxDepth
+            ? Collections.emptyList()
+            : loadReadableChildren(folder.getId(), isAdmin);
+        long childCount = isAdmin && currentDepth >= maxDepth
+            ? folderRepository.countChildren(folder.getId())
+            : childNodes.size();
 
         if (currentDepth < maxDepth) {
-            List<Node> childNodes = nodeRepository.findByParentIdAndDeletedFalse(folder.getId());
             for (Node child : childNodes) {
-                if (child instanceof Folder && securityService.hasPermission(child, PermissionType.READ)) {
-                    children.add(buildFolderTreeNode((Folder) child, currentDepth + 1, maxDepth));
+                if (child instanceof Folder) {
+                    children.add(buildFolderTreeNode((Folder) child, currentDepth + 1, maxDepth, isAdmin));
                 }
             }
         }
@@ -497,16 +503,26 @@ public class FolderService {
         );
     }
 
-    private int[] countDescendantsRecursive(UUID folderId) {
+    private List<Node> loadReadableChildren(UUID folderId, boolean isAdmin) {
+        List<Node> children = nodeRepository.findByParentIdAndDeletedFalse(folderId);
+        if (isAdmin) {
+            return children;
+        }
+        return children.stream()
+            .filter(child -> securityService.hasPermission(child, PermissionType.READ))
+            .collect(Collectors.toList());
+    }
+
+    private int[] countDescendantsRecursive(UUID folderId, boolean isAdmin) {
         int totalFolders = 0;
         int totalDocuments = 0;
         long totalSize = 0;
 
-        List<Node> children = nodeRepository.findByParentIdAndDeletedFalse(folderId);
+        List<Node> children = loadReadableChildren(folderId, isAdmin);
         for (Node child : children) {
             if (child.isFolder()) {
                 totalFolders++;
-                int[] descendantCounts = countDescendantsRecursive(child.getId());
+                int[] descendantCounts = countDescendantsRecursive(child.getId(), isAdmin);
                 totalFolders += descendantCounts[0];
                 totalDocuments += descendantCounts[1];
                 totalSize += descendantCounts[2];

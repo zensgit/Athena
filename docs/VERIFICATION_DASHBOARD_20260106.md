@@ -20,6 +20,8 @@
 - Audit export validation: `docs/VERIFICATION_AUDIT_EXPORT_RANGE_VALIDATION_20260106.md`
 - Security ACL inheritance tests: `docs/VERIFICATION_SECURITY_ACL_INHERITANCE_TESTS_20260110.md`
 - Child listing ACL filtering: `docs/VERIFICATION_CHILD_LISTING_ACL_FILTERING_20260110.md`
+- Folder tree + stats ACL filtering: `docs/VERIFICATION_FOLDER_TREE_STATS_ACL_FILTERING_20260111.md`
+- Count-based endpoint role guards: `docs/VERIFICATION_COUNT_BASED_ENDPOINT_ROLE_GUARDS_20260111.md`
 - Audit export max-range boundary: `docs/VERIFICATION_AUDIT_EXPORT_MAX_RANGE_BOUNDARY_20260106.md`
 - Audit export blank parameters: `docs/VERIFICATION_AUDIT_EXPORT_BLANK_PARAMS_20260106.md`
 - Audit export response headers: `docs/VERIFICATION_AUDIT_EXPORT_RESPONSE_HEADERS_20260106.md`

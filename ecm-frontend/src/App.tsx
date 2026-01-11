@@ -122,7 +122,7 @@ const App: React.FC = () => {
             <Route
               path="/status"
               element={
-                <PrivateRoute>
+                <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
                   <MainLayout>
                     <SystemStatusPage />
                   </MainLayout>

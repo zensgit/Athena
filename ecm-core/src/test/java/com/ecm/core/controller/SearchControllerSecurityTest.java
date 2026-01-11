@@ -23,6 +23,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.boot.test.mock.mockito.MockBean;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -110,5 +111,28 @@ class SearchControllerSecurityTest {
             .andExpect(status().isOk());
 
         Mockito.verify(fullTextSearchService).rebuildIndex();
+    }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    @DisplayName("Index stats require admin role")
+    void indexStatsRequiresAdmin() throws Exception {
+        mockMvc.perform(get("/api/v1/search/index/stats"))
+            .andExpect(status().isForbidden());
+
+        Mockito.verifyNoInteractions(fullTextSearchService);
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("Admin can access index stats")
+    void indexStatsAllowsAdmin() throws Exception {
+        Mockito.when(fullTextSearchService.getIndexStats())
+            .thenReturn(Map.of("documentCount", 0L));
+
+        mockMvc.perform(get("/api/v1/search/index/stats"))
+            .andExpect(status().isOk());
+
+        Mockito.verify(fullTextSearchService).getIndexStats();
     }
 }

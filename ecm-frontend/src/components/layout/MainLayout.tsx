@@ -320,12 +320,14 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                 </ListItemIcon>
                 <ListItemText>Tasks</ListItemText>
               </MenuItem>
-              <MenuItem onClick={() => navigate('/status')}>
-                <ListItemIcon>
-                  <InfoOutlined fontSize="small" />
-                </ListItemIcon>
-                <ListItemText>System Status</ListItemText>
-              </MenuItem>
+              {effectiveUser?.roles?.includes('ROLE_ADMIN') && (
+                <MenuItem onClick={() => navigate('/status')}>
+                  <ListItemIcon>
+                    <InfoOutlined fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>System Status</ListItemText>
+                </MenuItem>
+              )}
               {(effectiveUser?.roles?.includes('ROLE_ADMIN') || effectiveUser?.roles?.includes('ROLE_EDITOR')) && (
                 <MenuItem onClick={() => navigate('/correspondents')}>
                   <ListItemIcon>

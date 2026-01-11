@@ -60,7 +60,7 @@ public class SystemStatusController {
 
     @GetMapping("/status")
     @Operation(summary = "System status", description = "Aggregate health and integration status for local diagnostics")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<SystemStatusDto> status() {
         Map<String, Object> database = checkDatabase();
         Map<String, Object> redis = checkRedis();

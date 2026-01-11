@@ -113,6 +113,7 @@ public class SearchController {
     }
 
     @GetMapping("/index/stats")
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Get index statistics",
                description = "Get search index statistics")
     public ResponseEntity<Map<String, Object>> getIndexStats() {
