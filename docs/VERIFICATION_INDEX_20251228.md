@@ -50,6 +50,8 @@
   - ESLint + React test suite pass
 - `docs/VERIFICATION_FRONTEND_TEST_20260111.md`
   - React test suite pass
+- `docs/VERIFICATION_FRONTEND_TEST_20260111_2.md`
+  - React test suite pass (rerun)
 - `docs/VERIFICATION_FRONTEND_BUILD_20260106.md`
   - Frontend build (`npm run build`) succeeds
 - `docs/VERIFICATION_FRONTEND_BUILD_20260111.md`

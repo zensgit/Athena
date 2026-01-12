@@ -65,6 +65,7 @@
 - Frontend lint + unit tests: `docs/VERIFICATION_FRONTEND_LINT_TEST_20260106.md`
 - Frontend lint + unit tests (2026-01-10): `docs/VERIFICATION_FRONTEND_LINT_TEST_20260110.md`
 - Frontend tests (2026-01-11): `docs/VERIFICATION_FRONTEND_TEST_20260111.md`
+- Frontend tests rerun (2026-01-11): `docs/VERIFICATION_FRONTEND_TEST_20260111_2.md`
 - Frontend build: `docs/VERIFICATION_FRONTEND_BUILD_20260106.md`
 - Frontend build (2026-01-11): `docs/VERIFICATION_FRONTEND_BUILD_20260111.md`
 - Router future flags: `docs/VERIFICATION_ROUTER_FUTURE_FLAGS_20260106.md`
