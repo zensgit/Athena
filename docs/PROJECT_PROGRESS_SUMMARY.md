@@ -14,6 +14,7 @@ ECM Core 是一个企业内容管理系统的核心服务模块，采用 Spring 
 
 - Child listing ACL + E2E coverage: `docs/DELIVERY_SUMMARY_ACL_CHILD_LISTING_20260110.md`
 - ACL count guards + system status role gating: `docs/DELIVERY_SUMMARY_ACL_COUNTS_ROLE_GUARDS_20260111.md`
+- Upload dialog auto-close fix + verification: `docs/DELIVERY_SUMMARY_UPLOAD_DIALOG_AUTO_CLOSE_20260111.md`
 
 ## Architecture
 

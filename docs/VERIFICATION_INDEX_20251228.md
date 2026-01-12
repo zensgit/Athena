@@ -10,6 +10,8 @@
   - Viewer shows read-only banner and annotation mode
 
 ## UI E2E
+- `docs/DELIVERY_SUMMARY_UPLOAD_DIALOG_AUTO_CLOSE_20260111.md`
+  - Upload dialog auto-close delivery summary
 - `docs/VERIFICATION_UPLOAD_DIALOG_AUTO_CLOSE_20260111.md`
   - UI smoke upload dialog auto-close (PDF flow)
 - `docs/VERIFICATION_E2E_FULL_RUN_20260109.md`
