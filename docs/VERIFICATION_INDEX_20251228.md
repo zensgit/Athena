@@ -10,6 +10,8 @@
   - Viewer shows read-only banner and annotation mode
 
 ## UI E2E
+- `docs/VERIFICATION_UPLOAD_DIALOG_AUTO_CLOSE_20260111.md`
+  - UI smoke upload dialog auto-close (PDF flow)
 - `docs/VERIFICATION_E2E_FULL_RUN_20260109.md`
   - Playwright full suite: 17/17 passed
 - `docs/VERIFICATION_E2E_FULL_RUN_20260110.md`
@@ -17,7 +19,7 @@
 - `docs/VERIFICATION_E2E_FULL_RUN_20260110_2.md`
   - Playwright full suite: 19/19 passed
 - `docs/VERIFICATION_E2E_FULL_RUN_20260111.md`
-  - Playwright full suite: 18/19 passed (1 failed)
+  - Playwright full suite: 19/19 passed (rerun after fix)
 - `docs/VERIFICATION_E2E_BROWSE_ACL_20260110.md`
   - Browse view hides denied documents
 - `docs/VERIFICATION_E2E_UI_SMOKE_ACL_20260110.md`

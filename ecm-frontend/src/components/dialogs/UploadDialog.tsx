@@ -48,6 +48,11 @@ const UploadDialog: React.FC = () => {
   const [files, setFiles] = useState<UploadFile[]>([]);
   const [uploading, setUploading] = useState(false);
 
+  const resetDialog = () => {
+    dispatch(setUploadDialogOpen(false));
+    setFiles([]);
+  };
+
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (!canWrite) {
       return;
@@ -68,8 +73,7 @@ const UploadDialog: React.FC = () => {
 
   const handleClose = () => {
     if (!uploading) {
-      dispatch(setUploadDialogOpen(false));
-      setFiles([]);
+      resetDialog();
     }
   };
 
@@ -132,7 +136,7 @@ const UploadDialog: React.FC = () => {
     if (errorCount === 0) {
       toast.success(`${successCount} file(s) uploaded successfully`);
       setTimeout(() => {
-        handleClose();
+        resetDialog();
       }, 1000);
     } else if (successCount > 0) {
       toast.warn(`Uploaded ${successCount} file(s); ${errorCount} failed`);

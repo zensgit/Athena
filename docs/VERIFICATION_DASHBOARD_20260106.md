@@ -7,7 +7,8 @@
 - Rules: notification integration and notification type parameter.
 - Backend: `mvn test` + `mvn verify` pass.
 - Frontend: lint + unit tests pass.
-- E2E: full suite + version history/share link flows.
+- E2E: full suite rerun passes (19/19).
+- Upload dialog auto-close verified in UI smoke flow.
 
 ## Backend / API
 - Backend test run (2026-01-09): `docs/VERIFICATION_BACKEND_MVN_TEST_20260109.md`
@@ -82,6 +83,7 @@
 - Full E2E run (2026-01-10): `docs/VERIFICATION_E2E_FULL_RUN_20260110.md`
 - Full E2E run (2026-01-10 rerun): `docs/VERIFICATION_E2E_FULL_RUN_20260110_2.md`
 - Full E2E run (2026-01-11): `docs/VERIFICATION_E2E_FULL_RUN_20260111.md`
+- Upload dialog auto-close (2026-01-11): `docs/VERIFICATION_UPLOAD_DIALOG_AUTO_CLOSE_20260111.md`
 - E2E browse ACL (2026-01-10): `docs/VERIFICATION_E2E_BROWSE_ACL_20260110.md`
 - UI smoke + browse ACL (2026-01-10): `docs/VERIFICATION_E2E_UI_SMOKE_ACL_20260110.md`
 - E2E search ACL stability (2026-01-10): `docs/VERIFICATION_E2E_SEARCH_ACL_STABILITY_20260110.md`
