@@ -184,6 +184,19 @@ services:
       timeout: 10s
       retries: 5
 
+  # GreenMail for local IMAP/SMTP testing
+  greenmail:
+    image: greenmail/standalone:2.0.0
+    environment:
+      - GREENMAIL_USERS=${GREENMAIL_USERS:-mailuser:mailpass@local.test}
+    ports:
+      - "3025:3025"  # SMTP
+      - "3143:3143"  # IMAP
+      - "8085:8080"  # GreenMail API/UI
+    networks:
+      - ecm-network
+    restart: unless-stopped
+
   # MinIO Object Storage
   minio:
     image: minio/minio:latest
