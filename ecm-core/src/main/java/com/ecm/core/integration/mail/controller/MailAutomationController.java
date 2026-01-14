@@ -25,18 +25,125 @@ public class MailAutomationController {
     private final MailRuleRepository ruleRepository;
     private final MailFetcherService fetcherService;
 
+    // === DTOs ===
+
+    public record MailAccountRequest(
+        String name,
+        String host,
+        Integer port,
+        String username,
+        String password,
+        MailAccount.SecurityType security,
+        Boolean enabled,
+        Integer pollIntervalMinutes
+    ) {}
+
+    public record MailAccountResponse(
+        UUID id,
+        String name,
+        String host,
+        Integer port,
+        String username,
+        MailAccount.SecurityType security,
+        boolean enabled,
+        Integer pollIntervalMinutes
+    ) {
+        static MailAccountResponse from(MailAccount account) {
+            return new MailAccountResponse(
+                account.getId(),
+                account.getName(),
+                account.getHost(),
+                account.getPort(),
+                account.getUsername(),
+                account.getSecurity(),
+                account.isEnabled(),
+                account.getPollIntervalMinutes()
+            );
+        }
+    }
+
+    public record MailRuleRequest(
+        String name,
+        UUID accountId,
+        Integer priority,
+        String subjectFilter,
+        String fromFilter,
+        String bodyFilter,
+        MailRule.MailActionType actionType,
+        UUID assignTagId,
+        UUID assignFolderId
+    ) {}
+
+    public record MailRuleResponse(
+        UUID id,
+        String name,
+        UUID accountId,
+        Integer priority,
+        String subjectFilter,
+        String fromFilter,
+        String bodyFilter,
+        MailRule.MailActionType actionType,
+        UUID assignTagId,
+        UUID assignFolderId
+    ) {
+        static MailRuleResponse from(MailRule rule) {
+            return new MailRuleResponse(
+                rule.getId(),
+                rule.getName(),
+                rule.getAccountId(),
+                rule.getPriority(),
+                rule.getSubjectFilter(),
+                rule.getFromFilter(),
+                rule.getBodyFilter(),
+                rule.getActionType(),
+                rule.getAssignTagId(),
+                rule.getAssignFolderId()
+            );
+        }
+    }
+
     // === Accounts ===
 
     @GetMapping("/accounts")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<List<MailAccount>> getAccounts() {
-        return ResponseEntity.ok(accountRepository.findAll());
+    public ResponseEntity<List<MailAccountResponse>> getAccounts() {
+        List<MailAccountResponse> accounts = accountRepository.findAll().stream()
+            .map(MailAccountResponse::from)
+            .toList();
+        return ResponseEntity.ok(accounts);
     }
 
     @PostMapping("/accounts")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<MailAccount> createAccount(@RequestBody MailAccount account) {
-        return ResponseEntity.ok(accountRepository.save(account));
+    public ResponseEntity<MailAccountResponse> createAccount(@RequestBody MailAccountRequest request) {
+        MailAccount account = new MailAccount();
+        account.setName(request.name());
+        account.setHost(request.host());
+        account.setPort(request.port());
+        account.setUsername(request.username());
+        account.setPassword(request.password());
+        account.setSecurity(request.security() != null ? request.security() : MailAccount.SecurityType.SSL);
+        account.setEnabled(request.enabled() != null ? request.enabled() : true);
+        account.setPollIntervalMinutes(request.pollIntervalMinutes() != null ? request.pollIntervalMinutes() : 10);
+        return ResponseEntity.ok(MailAccountResponse.from(accountRepository.save(account)));
+    }
+
+    @PutMapping("/accounts/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<MailAccountResponse> updateAccount(@PathVariable UUID id, @RequestBody MailAccountRequest request) {
+        MailAccount account = accountRepository.findById(id)
+            .orElseThrow(() -> new IllegalArgumentException("Mail account not found: " + id));
+
+        if (request.name() != null) account.setName(request.name());
+        if (request.host() != null) account.setHost(request.host());
+        if (request.port() != null) account.setPort(request.port());
+        if (request.username() != null) account.setUsername(request.username());
+        if (request.password() != null && !request.password().isBlank()) account.setPassword(request.password());
+        if (request.security() != null) account.setSecurity(request.security());
+        if (request.enabled() != null) account.setEnabled(request.enabled());
+        if (request.pollIntervalMinutes() != null) account.setPollIntervalMinutes(request.pollIntervalMinutes());
+
+        return ResponseEntity.ok(MailAccountResponse.from(accountRepository.save(account)));
     }
 
     @DeleteMapping("/accounts/{id}")
@@ -50,14 +157,53 @@ public class MailAutomationController {
 
     @GetMapping("/rules")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<List<MailRule>> getRules() {
-        return ResponseEntity.ok(ruleRepository.findAllByOrderByPriorityAsc());
+    public ResponseEntity<List<MailRuleResponse>> getRules() {
+        List<MailRuleResponse> rules = ruleRepository.findAllByOrderByPriorityAsc().stream()
+            .map(MailRuleResponse::from)
+            .toList();
+        return ResponseEntity.ok(rules);
     }
 
     @PostMapping("/rules")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<MailRule> createRule(@RequestBody MailRule rule) {
-        return ResponseEntity.ok(ruleRepository.save(rule));
+    public ResponseEntity<MailRuleResponse> createRule(@RequestBody MailRuleRequest request) {
+        MailRule rule = new MailRule();
+        rule.setName(request.name());
+        rule.setAccountId(request.accountId());
+        rule.setPriority(request.priority() != null ? request.priority() : 100);
+        rule.setSubjectFilter(request.subjectFilter());
+        rule.setFromFilter(request.fromFilter());
+        rule.setBodyFilter(request.bodyFilter());
+        rule.setActionType(request.actionType() != null ? request.actionType() : MailRule.MailActionType.ATTACHMENTS_ONLY);
+        rule.setAssignTagId(request.assignTagId());
+        rule.setAssignFolderId(request.assignFolderId());
+        return ResponseEntity.ok(MailRuleResponse.from(ruleRepository.save(rule)));
+    }
+
+    @PutMapping("/rules/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<MailRuleResponse> updateRule(@PathVariable UUID id, @RequestBody MailRuleRequest request) {
+        MailRule rule = ruleRepository.findById(id)
+            .orElseThrow(() -> new IllegalArgumentException("Mail rule not found: " + id));
+
+        if (request.name() != null) rule.setName(request.name());
+        if (request.accountId() != null) rule.setAccountId(request.accountId());
+        if (request.priority() != null) rule.setPriority(request.priority());
+        if (request.subjectFilter() != null) rule.setSubjectFilter(request.subjectFilter());
+        if (request.fromFilter() != null) rule.setFromFilter(request.fromFilter());
+        if (request.bodyFilter() != null) rule.setBodyFilter(request.bodyFilter());
+        if (request.actionType() != null) rule.setActionType(request.actionType());
+        if (request.assignTagId() != null) rule.setAssignTagId(request.assignTagId());
+        if (request.assignFolderId() != null) rule.setAssignFolderId(request.assignFolderId());
+
+        return ResponseEntity.ok(MailRuleResponse.from(ruleRepository.save(rule)));
+    }
+
+    @DeleteMapping("/rules/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> deleteRule(@PathVariable UUID id) {
+        ruleRepository.deleteById(id);
+        return ResponseEntity.noContent().build();
     }
 
     // === Actions ===

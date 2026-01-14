@@ -123,10 +123,8 @@ public class MailFetcherService {
         
         // Apply Tags
         if (result.isSuccess() && rule.getAssignTagId() != null) {
-            // Need a way to add tag by ID, assuming TagService supports it or we lookup name
-            // For now, simple logging
+            tagService.addTagToNodeById(result.getDocumentId().toString(), rule.getAssignTagId());
             log.info("Applied tag {} to document {}", rule.getAssignTagId(), result.getDocumentId());
-            // tagService.addTag(result.getDocumentId(), rule.getAssignTagId()); 
         }
     }
 

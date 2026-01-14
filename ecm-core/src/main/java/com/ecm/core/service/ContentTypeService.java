@@ -4,7 +4,6 @@ import com.ecm.core.entity.ContentType;
 import com.ecm.core.entity.ContentType.PropertyDefinition;
 import com.ecm.core.entity.Node;
 import com.ecm.core.repository.ContentTypeRepository;
-import com.ecm.core.repository.NodeRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -21,7 +20,7 @@ import java.util.regex.Pattern;
 public class ContentTypeService {
 
     private final ContentTypeRepository contentTypeRepository;
-    private final NodeRepository nodeRepository;
+    private final NodeService nodeService;
 
     public ContentType createType(ContentType contentType) {
         if (contentTypeRepository.findByName(contentType.getName()).isPresent()) {
@@ -39,35 +38,53 @@ public class ContentTypeService {
             .orElseThrow(() -> new NoSuchElementException("Type not found: " + name));
     }
 
+    @Transactional
+    public ContentType updateType(String name, ContentType updates) {
+        ContentType existing = getType(name);
+
+        if (updates.getDisplayName() != null) {
+            existing.setDisplayName(updates.getDisplayName());
+        }
+        if (updates.getDescription() != null) {
+            existing.setDescription(updates.getDescription());
+        }
+        if (updates.getParentType() != null) {
+            existing.setParentType(updates.getParentType());
+        }
+        if (updates.getProperties() != null) {
+            existing.setProperties(updates.getProperties());
+        }
+
+        return contentTypeRepository.save(existing);
+    }
+
+    @Transactional
+    public void deleteType(String name) {
+        ContentType existing = getType(name);
+        contentTypeRepository.delete(existing);
+    }
+
     /**
      * Validate and Apply metadata to a node based on a Content Type
      */
     @Transactional
     public Node applyType(UUID nodeId, String typeName, Map<String, Object> properties) {
-        Node node = nodeRepository.findById(nodeId)
-            .orElseThrow(() -> new NoSuchElementException("Node not found: " + nodeId));
-        
         ContentType type = getType(typeName);
+        Map<String, Object> normalizedProperties = properties != null ? properties : Map.of();
         
         // Validate properties against schema
-        List<String> errors = validateProperties(type, properties);
+        List<String> errors = validateProperties(type, normalizedProperties);
         if (!errors.isEmpty()) {
             throw new IllegalArgumentException("Validation failed: " + String.join(", ", errors));
         }
 
-        // Apply
-        if (node.getProperties() == null) {
-            node.setProperties(new HashMap<>());
+        Map<String, Object> updates = new HashMap<>();
+        if (!normalizedProperties.isEmpty()) {
+            updates.put("properties", normalizedProperties);
         }
-        node.getProperties().putAll(properties);
-        
-        // Store the type name in metadata for reference
-        if (node.getMetadata() == null) {
-            node.setMetadata(new HashMap<>());
-        }
-        node.getMetadata().put("ecm:contentType", typeName);
+        updates.put("metadata", Map.of("ecm:contentType", typeName));
 
-        return nodeRepository.save(node);
+        return nodeService.updateNode(nodeId, updates);
     }
 
     private List<String> validateProperties(ContentType type, Map<String, Object> properties) {

@@ -115,6 +115,27 @@ public class CategoryService {
         node.getCategories().add(category);
         nodeRepository.save(node);
     }
+
+    /**
+     * 为节点批量添加分类
+     */
+    public void addCategoriesToNode(String nodeId, List<String> categoryIds) {
+        if (categoryIds == null || categoryIds.isEmpty()) {
+            return;
+        }
+
+        Node node = loadActiveNode(nodeId);
+
+        // 权限检查
+        securityService.checkPermission(node, PermissionType.WRITE);
+
+        for (String categoryId : categoryIds) {
+            Category category = loadCategory(categoryId);
+            node.getCategories().add(category);
+        }
+
+        nodeRepository.save(node);
+    }
     
     /**
      * 从节点移除分类

@@ -105,6 +105,27 @@ public class TagService {
             triggerRulesForDocument(node, TriggerType.DOCUMENT_TAGGED);
         }
     }
+
+    /**
+     * 为节点添加指定 ID 的标签
+     */
+    public void addTagToNodeById(String nodeId, UUID tagId) {
+        Node node = loadActiveNode(nodeId);
+
+        // 权限检查
+        securityService.checkPermission(node, PermissionType.WRITE);
+
+        Tag tag = tagRepository.findById(tagId)
+            .orElseThrow(() -> new ResourceNotFoundException("Tag not found: " + tagId));
+
+        if (node.getTags().add(tag)) {
+            tag.incrementUsage();
+            nodeRepository.save(node);
+            tagRepository.save(tag);
+
+            triggerRulesForDocument(node, TriggerType.DOCUMENT_TAGGED);
+        }
+    }
     
     /**
      * 为节点批量添加标签

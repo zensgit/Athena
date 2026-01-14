@@ -1,5 +1,6 @@
 package com.ecm.core.controller;
 
+import com.ecm.core.service.BulkMetadataService;
 import com.ecm.core.service.BulkOperationService;
 import com.ecm.core.service.BulkOperationService.BulkOperationResult;
 import io.swagger.v3.oas.annotations.Operation;
@@ -18,6 +19,7 @@ import java.util.UUID;
 public class BulkOperationController {
 
     private final BulkOperationService bulkService;
+    private final BulkMetadataService bulkMetadataService;
 
     @PostMapping("/move")
     @Operation(summary = "Bulk move", description = "Move multiple nodes to a target folder")
@@ -47,6 +49,13 @@ public class BulkOperationController {
     @Operation(summary = "Bulk restore", description = "Restore multiple nodes from trash")
     public ResponseEntity<BulkOperationResult> bulkRestore(@RequestBody BulkRequest request) {
         return ResponseEntity.ok(bulkService.bulkRestore(request.ids()));
+    }
+
+    @PostMapping("/metadata")
+    @Operation(summary = "Bulk metadata update", description = "Apply tags, categories, or correspondent updates to nodes")
+    public ResponseEntity<BulkMetadataService.BulkMetadataResult> bulkMetadataUpdate(
+            @RequestBody BulkMetadataService.BulkMetadataRequest request) {
+        return ResponseEntity.ok(bulkMetadataService.applyMetadata(request));
     }
 
     // DTO

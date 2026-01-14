@@ -41,6 +41,23 @@ public class ContentTypeController {
         return ResponseEntity.ok(contentTypeService.getType(name));
     }
 
+    @PutMapping("/{name}")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Update type", description = "Update display name, description, parent, or properties")
+    public ResponseEntity<ContentType> updateType(
+            @PathVariable String name,
+            @RequestBody ContentType updates) {
+        return ResponseEntity.ok(contentTypeService.updateType(name, updates));
+    }
+
+    @DeleteMapping("/{name}")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Delete type", description = "Delete a content type by name")
+    public ResponseEntity<Void> deleteType(@PathVariable String name) {
+        contentTypeService.deleteType(name);
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/nodes/{nodeId}/apply")
     @Operation(summary = "Apply type", description = "Apply a content type and properties to a node")
     public ResponseEntity<NodeDto> applyType(
