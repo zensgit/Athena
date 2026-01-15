@@ -4,7 +4,13 @@
 - Frontend unit test:
   - `npm test -- --runTestsByPath src/components/layout/MainLayout.menu.test.tsx --watchAll=false`
   - Result: PASS (2 tests)
+- Frontend unit test (rerun):
+  - `npm test -- --watchAll=false`
+  - Result: PASS (4 suites, 11 tests)
 - Frontend lint:
+  - `npm run lint`
+  - Result: SUCCESS
+- Frontend lint (rerun):
   - `npm run lint`
   - Result: SUCCESS
 - Frontend E2E (Playwright):
