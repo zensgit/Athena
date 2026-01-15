@@ -24,6 +24,7 @@
     <include file="db/changelog/changes/011-add-uploads-folder-permissions.xml"/>
     <include file="db/changelog/changes/012-backfill-document-versions.xml"/>
     <include file="db/changelog/changes/013-add-scheduled-rule-columns.xml"/>
+    <include file="db/changelog/changes/014-add-mail-automation-tables.xml"/>
     <include file="db/changelog/changes/007-insert-initial-data.xml"/>
 
 </databaseChangeLog>

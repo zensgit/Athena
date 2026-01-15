@@ -2,6 +2,7 @@ import api from './api';
 
 export type MailSecurityType = 'NONE' | 'SSL' | 'STARTTLS';
 export type MailActionType = 'ATTACHMENTS_ONLY' | 'METADATA_ONLY' | 'EVERYTHING';
+export type MailPostAction = 'NONE' | 'MARK_READ' | 'DELETE' | 'MOVE' | 'FLAG' | 'TAG';
 
 export interface MailAccount {
   id: string;
@@ -30,10 +31,18 @@ export interface MailRule {
   name: string;
   accountId?: string | null;
   priority: number;
+  folder?: string | null;
   subjectFilter?: string | null;
   fromFilter?: string | null;
+  toFilter?: string | null;
   bodyFilter?: string | null;
+  attachmentFilenameInclude?: string | null;
+  attachmentFilenameExclude?: string | null;
+  maxAgeDays?: number | null;
+  includeInlineAttachments?: boolean | null;
   actionType: MailActionType;
+  mailAction?: MailPostAction | null;
+  mailActionParam?: string | null;
   assignTagId?: string | null;
   assignFolderId?: string | null;
 }
@@ -42,10 +51,18 @@ export interface MailRuleRequest {
   name: string;
   accountId?: string | null;
   priority?: number;
+  folder?: string | null;
   subjectFilter?: string | null;
   fromFilter?: string | null;
+  toFilter?: string | null;
   bodyFilter?: string | null;
+  attachmentFilenameInclude?: string | null;
+  attachmentFilenameExclude?: string | null;
+  maxAgeDays?: number | null;
+  includeInlineAttachments?: boolean | null;
   actionType?: MailActionType;
+  mailAction?: MailPostAction | null;
+  mailActionParam?: string | null;
   assignTagId?: string | null;
   assignFolderId?: string | null;
 }

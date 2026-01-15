@@ -66,10 +66,18 @@ public class MailAutomationController {
         String name,
         UUID accountId,
         Integer priority,
+        String folder,
         String subjectFilter,
         String fromFilter,
+        String toFilter,
         String bodyFilter,
+        String attachmentFilenameInclude,
+        String attachmentFilenameExclude,
+        Integer maxAgeDays,
+        Boolean includeInlineAttachments,
         MailRule.MailActionType actionType,
+        MailRule.MailPostAction mailAction,
+        String mailActionParam,
         UUID assignTagId,
         UUID assignFolderId
     ) {}
@@ -79,10 +87,18 @@ public class MailAutomationController {
         String name,
         UUID accountId,
         Integer priority,
+        String folder,
         String subjectFilter,
         String fromFilter,
+        String toFilter,
         String bodyFilter,
+        String attachmentFilenameInclude,
+        String attachmentFilenameExclude,
+        Integer maxAgeDays,
+        Boolean includeInlineAttachments,
         MailRule.MailActionType actionType,
+        MailRule.MailPostAction mailAction,
+        String mailActionParam,
         UUID assignTagId,
         UUID assignFolderId
     ) {
@@ -92,10 +108,18 @@ public class MailAutomationController {
                 rule.getName(),
                 rule.getAccountId(),
                 rule.getPriority(),
+                rule.getFolder(),
                 rule.getSubjectFilter(),
                 rule.getFromFilter(),
+                rule.getToFilter(),
                 rule.getBodyFilter(),
+                rule.getAttachmentFilenameInclude(),
+                rule.getAttachmentFilenameExclude(),
+                rule.getMaxAgeDays(),
+                rule.getIncludeInlineAttachments(),
                 rule.getActionType(),
+                rule.getMailAction(),
+                rule.getMailActionParam(),
                 rule.getAssignTagId(),
                 rule.getAssignFolderId()
             );
@@ -171,10 +195,18 @@ public class MailAutomationController {
         rule.setName(request.name());
         rule.setAccountId(request.accountId());
         rule.setPriority(request.priority() != null ? request.priority() : 100);
+        rule.setFolder(request.folder() != null && !request.folder().isBlank() ? request.folder() : "INBOX");
         rule.setSubjectFilter(request.subjectFilter());
         rule.setFromFilter(request.fromFilter());
+        rule.setToFilter(request.toFilter());
         rule.setBodyFilter(request.bodyFilter());
+        rule.setAttachmentFilenameInclude(request.attachmentFilenameInclude());
+        rule.setAttachmentFilenameExclude(request.attachmentFilenameExclude());
+        rule.setMaxAgeDays(request.maxAgeDays());
+        rule.setIncludeInlineAttachments(request.includeInlineAttachments() != null && request.includeInlineAttachments());
         rule.setActionType(request.actionType() != null ? request.actionType() : MailRule.MailActionType.ATTACHMENTS_ONLY);
+        rule.setMailAction(request.mailAction() != null ? request.mailAction() : MailRule.MailPostAction.MARK_READ);
+        rule.setMailActionParam(request.mailActionParam());
         rule.setAssignTagId(request.assignTagId());
         rule.setAssignFolderId(request.assignFolderId());
         return ResponseEntity.ok(MailRuleResponse.from(ruleRepository.save(rule)));
@@ -189,10 +221,22 @@ public class MailAutomationController {
         if (request.name() != null) rule.setName(request.name());
         if (request.accountId() != null) rule.setAccountId(request.accountId());
         if (request.priority() != null) rule.setPriority(request.priority());
+        if (request.folder() != null) {
+            rule.setFolder(request.folder().isBlank() ? "INBOX" : request.folder());
+        }
         if (request.subjectFilter() != null) rule.setSubjectFilter(request.subjectFilter());
         if (request.fromFilter() != null) rule.setFromFilter(request.fromFilter());
+        if (request.toFilter() != null) rule.setToFilter(request.toFilter());
         if (request.bodyFilter() != null) rule.setBodyFilter(request.bodyFilter());
+        if (request.attachmentFilenameInclude() != null) rule.setAttachmentFilenameInclude(request.attachmentFilenameInclude());
+        if (request.attachmentFilenameExclude() != null) rule.setAttachmentFilenameExclude(request.attachmentFilenameExclude());
+        if (request.maxAgeDays() != null) rule.setMaxAgeDays(request.maxAgeDays());
+        if (request.includeInlineAttachments() != null) {
+            rule.setIncludeInlineAttachments(request.includeInlineAttachments());
+        }
         if (request.actionType() != null) rule.setActionType(request.actionType());
+        if (request.mailAction() != null) rule.setMailAction(request.mailAction());
+        if (request.mailActionParam() != null) rule.setMailActionParam(request.mailActionParam());
         if (request.assignTagId() != null) rule.setAssignTagId(request.assignTagId());
         if (request.assignFolderId() != null) rule.setAssignFolderId(request.assignFolderId());
 

@@ -5,12 +5,14 @@ import {
   Card,
   CardContent,
   Chip,
+  Checkbox,
   CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   FormControl,
+  FormControlLabel,
   InputLabel,
   MenuItem,
   Select,
@@ -35,6 +37,7 @@ import mailAutomationService, {
   MailRuleRequest,
   MailActionType,
   MailSecurityType,
+  MailPostAction,
 } from 'services/mailAutomationService';
 import tagService from 'services/tagService';
 import nodeService from 'services/nodeService';
@@ -59,10 +62,18 @@ const DEFAULT_RULE_FORM: MailRuleRequest & { folderPath: string; folderIdOverrid
   name: '',
   accountId: '',
   priority: 100,
+  folder: 'INBOX',
   subjectFilter: '',
   fromFilter: '',
+  toFilter: '',
   bodyFilter: '',
+  attachmentFilenameInclude: '',
+  attachmentFilenameExclude: '',
+  maxAgeDays: 0,
+  includeInlineAttachments: false,
   actionType: 'ATTACHMENTS_ONLY',
+  mailAction: 'MARK_READ',
+  mailActionParam: '',
   assignTagId: '',
   assignFolderId: '',
   folderPath: '',
@@ -86,6 +97,7 @@ const MailAutomationPage: React.FC = () => {
 
   const securityOptions: MailSecurityType[] = ['SSL', 'STARTTLS', 'NONE'];
   const actionOptions: MailActionType[] = ['ATTACHMENTS_ONLY', 'METADATA_ONLY', 'EVERYTHING'];
+  const postActionOptions: MailPostAction[] = ['MARK_READ', 'MOVE', 'DELETE', 'FLAG', 'TAG', 'NONE'];
 
   const loadAll = async () => {
     setLoading(true);
@@ -202,10 +214,18 @@ const MailAutomationPage: React.FC = () => {
       name: rule.name,
       accountId: rule.accountId || '',
       priority: rule.priority,
+      folder: rule.folder || 'INBOX',
       subjectFilter: rule.subjectFilter || '',
       fromFilter: rule.fromFilter || '',
+      toFilter: rule.toFilter || '',
       bodyFilter: rule.bodyFilter || '',
+      attachmentFilenameInclude: rule.attachmentFilenameInclude || '',
+      attachmentFilenameExclude: rule.attachmentFilenameExclude || '',
+      maxAgeDays: rule.maxAgeDays || 0,
+      includeInlineAttachments: rule.includeInlineAttachments || false,
       actionType: rule.actionType,
+      mailAction: rule.mailAction || 'MARK_READ',
+      mailActionParam: rule.mailActionParam || '',
       assignTagId: rule.assignTagId || '',
       assignFolderId: rule.assignFolderId || '',
       folderPath: '',
@@ -243,10 +263,18 @@ const MailAutomationPage: React.FC = () => {
         name: ruleForm.name,
         accountId: ruleForm.accountId || null,
         priority: ruleForm.priority,
+        folder: ruleForm.folder || 'INBOX',
         subjectFilter: ruleForm.subjectFilter || null,
         fromFilter: ruleForm.fromFilter || null,
+        toFilter: ruleForm.toFilter || null,
         bodyFilter: ruleForm.bodyFilter || null,
+        attachmentFilenameInclude: ruleForm.attachmentFilenameInclude || null,
+        attachmentFilenameExclude: ruleForm.attachmentFilenameExclude || null,
+        maxAgeDays: ruleForm.maxAgeDays && ruleForm.maxAgeDays > 0 ? ruleForm.maxAgeDays : null,
+        includeInlineAttachments: ruleForm.includeInlineAttachments || false,
         actionType: ruleForm.actionType,
+        mailAction: ruleForm.mailAction || 'MARK_READ',
+        mailActionParam: ruleForm.mailActionParam || null,
         assignTagId: ruleForm.assignTagId || null,
         assignFolderId: folderId || null,
       };
@@ -280,6 +308,12 @@ const MailAutomationPage: React.FC = () => {
   };
 
   const selectedTag = tags.find((tag) => tag.id === ruleForm.assignTagId) || null;
+  const mailActionHelper =
+    ruleForm.mailAction === 'MOVE'
+      ? 'Target mailbox folder (IMAP)'
+      : ruleForm.mailAction === 'TAG'
+      ? 'IMAP keyword/label to apply'
+      : 'Optional';
 
   return (
     <Box maxWidth={1100}>
@@ -381,9 +415,9 @@ const MailAutomationPage: React.FC = () => {
                       <TableCell>Account</TableCell>
                       <TableCell>Priority</TableCell>
                       <TableCell>Filters</TableCell>
-                      <TableCell>Action</TableCell>
+                      <TableCell>Processing</TableCell>
                       <TableCell>Tag</TableCell>
-                      <TableCell>Folder</TableCell>
+                      <TableCell>Target Folder</TableCell>
                       <TableCell align="right">Actions</TableCell>
                     </TableRow>
                   </TableHead>
@@ -402,15 +436,34 @@ const MailAutomationPage: React.FC = () => {
                         <TableCell>{rule.priority}</TableCell>
                         <TableCell>
                           <Box display="flex" flexDirection="column" gap={0.5}>
+                            <Typography variant="caption">Mailbox: {rule.folder || 'INBOX'}</Typography>
                             {rule.subjectFilter && <Typography variant="caption">Subject: {rule.subjectFilter}</Typography>}
                             {rule.fromFilter && <Typography variant="caption">From: {rule.fromFilter}</Typography>}
+                            {rule.toFilter && <Typography variant="caption">To: {rule.toFilter}</Typography>}
                             {rule.bodyFilter && <Typography variant="caption">Body: {rule.bodyFilter}</Typography>}
-                            {!rule.subjectFilter && !rule.fromFilter && !rule.bodyFilter && (
-                              <Typography variant="caption" color="text.secondary">None</Typography>
+                            {rule.attachmentFilenameInclude && (
+                              <Typography variant="caption">Attach: {rule.attachmentFilenameInclude}</Typography>
+                            )}
+                            {rule.attachmentFilenameExclude && (
+                              <Typography variant="caption">Exclude: {rule.attachmentFilenameExclude}</Typography>
+                            )}
+                            {rule.maxAgeDays && rule.maxAgeDays > 0 && (
+                              <Typography variant="caption">Max age: {rule.maxAgeDays}d</Typography>
+                            )}
+                            {rule.includeInlineAttachments && (
+                              <Typography variant="caption">Inline: yes</Typography>
                             )}
                           </Box>
                         </TableCell>
-                        <TableCell>{rule.actionType}</TableCell>
+                        <TableCell>
+                          <Box display="flex" flexDirection="column" gap={0.5}>
+                            <Typography variant="caption">Process: {rule.actionType}</Typography>
+                            <Typography variant="caption">
+                              Mail: {rule.mailAction || 'MARK_READ'}
+                              {rule.mailActionParam ? ` (${rule.mailActionParam})` : ''}
+                            </Typography>
+                          </Box>
+                        </TableCell>
                         <TableCell>{rule.assignTagId ? tagNameById.get(rule.assignTagId) : '-'}</TableCell>
                         <TableCell>{rule.assignFolderId || '-'}</TableCell>
                         <TableCell align="right">
@@ -562,6 +615,14 @@ const MailAutomationPage: React.FC = () => {
               fullWidth
             />
             <TextField
+              label="Mailbox folder"
+              value={ruleForm.folder}
+              onChange={(event) => setRuleForm({ ...ruleForm, folder: event.target.value })}
+              size="small"
+              helperText="IMAP folder name, default INBOX"
+              fullWidth
+            />
+            <TextField
               label="Subject filter (regex)"
               value={ruleForm.subjectFilter}
               onChange={(event) => setRuleForm({ ...ruleForm, subjectFilter: event.target.value })}
@@ -576,18 +637,62 @@ const MailAutomationPage: React.FC = () => {
               fullWidth
             />
             <TextField
+              label="To filter (regex)"
+              value={ruleForm.toFilter}
+              onChange={(event) => setRuleForm({ ...ruleForm, toFilter: event.target.value })}
+              size="small"
+              fullWidth
+            />
+            <TextField
               label="Body filter (regex)"
               value={ruleForm.bodyFilter}
               onChange={(event) => setRuleForm({ ...ruleForm, bodyFilter: event.target.value })}
               size="small"
               fullWidth
             />
+            <TextField
+              label="Attachment filename include"
+              value={ruleForm.attachmentFilenameInclude}
+              onChange={(event) => setRuleForm({ ...ruleForm, attachmentFilenameInclude: event.target.value })}
+              size="small"
+              helperText="Wildcard supported, e.g. *.pdf"
+              fullWidth
+            />
+            <TextField
+              label="Attachment filename exclude"
+              value={ruleForm.attachmentFilenameExclude}
+              onChange={(event) => setRuleForm({ ...ruleForm, attachmentFilenameExclude: event.target.value })}
+              size="small"
+              helperText="Wildcard supported, e.g. *secret*"
+              fullWidth
+            />
+            <TextField
+              label="Max age (days)"
+              type="number"
+              value={ruleForm.maxAgeDays}
+              onChange={(event) => setRuleForm({ ...ruleForm, maxAgeDays: Number(event.target.value) })}
+              size="small"
+              helperText="0 to disable"
+              fullWidth
+            />
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={ruleForm.includeInlineAttachments || false}
+                  onChange={(event) => setRuleForm({
+                    ...ruleForm,
+                    includeInlineAttachments: event.target.checked,
+                  })}
+                />
+              }
+              label="Include inline attachments"
+            />
             <FormControl size="small" fullWidth>
-              <InputLabel id="mail-action-label">Action</InputLabel>
+              <InputLabel id="mail-action-label">Processing scope</InputLabel>
               <Select
                 labelId="mail-action-label"
                 value={ruleForm.actionType}
-                label="Action"
+                label="Processing scope"
                 onChange={(event) => setRuleForm({
                   ...ruleForm,
                   actionType: event.target.value as MailActionType,
@@ -598,6 +703,31 @@ const MailAutomationPage: React.FC = () => {
                 ))}
               </Select>
             </FormControl>
+            <FormControl size="small" fullWidth>
+              <InputLabel id="mail-post-action-label">Mail action</InputLabel>
+              <Select
+                labelId="mail-post-action-label"
+                value={ruleForm.mailAction || 'MARK_READ'}
+                label="Mail action"
+                onChange={(event) => setRuleForm({
+                  ...ruleForm,
+                  mailAction: event.target.value as MailPostAction,
+                })}
+              >
+                {postActionOptions.map((option) => (
+                  <MenuItem key={option} value={option}>{option}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <TextField
+              label="Mail action parameter"
+              value={ruleForm.mailActionParam}
+              onChange={(event) => setRuleForm({ ...ruleForm, mailActionParam: event.target.value })}
+              size="small"
+              helperText={mailActionHelper}
+              disabled={!['MOVE', 'TAG'].includes(ruleForm.mailAction || '')}
+              fullWidth
+            />
             <FormControl size="small" fullWidth>
               <InputLabel id="mail-tag-label">Assign tag</InputLabel>
               <Select
