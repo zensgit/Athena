@@ -46,6 +46,8 @@
   - Shared E2E API helper extraction verification (latest)
 
 ## Frontend Tests
+- `docs/VERIFICATION_P0_METADATA_MAIL_CONTENT_TYPES_20260111.md`
+  - P0 mail automation + content types + bulk metadata: lint + backend mvn test
 - `docs/VERIFICATION_FRONTEND_LINT_TEST_20260106.md`
   - ESLint + React test suite pass
 - `docs/VERIFICATION_FRONTEND_LINT_TEST_20260110.md`
