@@ -25,6 +25,7 @@
     <include file="db/changelog/changes/012-backfill-document-versions.xml"/>
     <include file="db/changelog/changes/013-add-scheduled-rule-columns.xml"/>
     <include file="db/changelog/changes/014-add-mail-automation-tables.xml"/>
+    <include file="db/changelog/changes/015-add-mail-account-oauth-fields.xml"/>
     <include file="db/changelog/changes/007-insert-initial-data.xml"/>
 
 </databaseChangeLog>

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="015-1" author="ecm-system">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <not>
+                <columnExists tableName="mail_accounts" columnName="oauth_provider"/>
+            </not>
+        </preConditions>
+        <comment>Add OAuth fields to mail_accounts</comment>
+        <addColumn tableName="mail_accounts">
+            <column name="oauth_provider" type="VARCHAR(50)"/>
+            <column name="oauth_token_endpoint" type="VARCHAR(255)"/>
+            <column name="oauth_client_id" type="VARCHAR(255)"/>
+            <column name="oauth_client_secret" type="TEXT"/>
+            <column name="oauth_tenant_id" type="VARCHAR(255)"/>
+            <column name="oauth_scope" type="TEXT"/>
+            <column name="oauth_access_token" type="TEXT"/>
+            <column name="oauth_refresh_token" type="TEXT"/>
+            <column name="oauth_token_expires_at" type="TIMESTAMP"/>
+        </addColumn>
+    </changeSet>
+
+</databaseChangeLog>

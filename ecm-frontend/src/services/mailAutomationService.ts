@@ -1,6 +1,7 @@
 import api from './api';
 
-export type MailSecurityType = 'NONE' | 'SSL' | 'STARTTLS';
+export type MailSecurityType = 'NONE' | 'SSL' | 'STARTTLS' | 'OAUTH2';
+export type MailOAuthProvider = 'GOOGLE' | 'MICROSOFT' | 'CUSTOM';
 export type MailActionType = 'ATTACHMENTS_ONLY' | 'METADATA_ONLY' | 'EVERYTHING';
 export type MailPostAction = 'NONE' | 'MARK_READ' | 'DELETE' | 'MOVE' | 'FLAG' | 'TAG';
 
@@ -13,6 +14,12 @@ export interface MailAccount {
   security: MailSecurityType;
   enabled: boolean;
   pollIntervalMinutes: number;
+  oauthProvider?: MailOAuthProvider | null;
+  oauthTokenEndpoint?: string | null;
+  oauthClientId?: string | null;
+  oauthTenantId?: string | null;
+  oauthScope?: string | null;
+  oauthTokenExpiresAt?: string | null;
 }
 
 export interface MailAccountRequest {
@@ -24,6 +31,15 @@ export interface MailAccountRequest {
   security?: MailSecurityType;
   enabled?: boolean;
   pollIntervalMinutes?: number;
+  oauthProvider?: MailOAuthProvider | null;
+  oauthTokenEndpoint?: string;
+  oauthClientId?: string;
+  oauthClientSecret?: string;
+  oauthTenantId?: string;
+  oauthScope?: string;
+  oauthAccessToken?: string;
+  oauthRefreshToken?: string;
+  oauthTokenExpiresAt?: string | null;
 }
 
 export interface MailRule {

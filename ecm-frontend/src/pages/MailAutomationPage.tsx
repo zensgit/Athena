@@ -37,6 +37,7 @@ import mailAutomationService, {
   MailRuleRequest,
   MailActionType,
   MailSecurityType,
+  MailOAuthProvider,
   MailPostAction,
 } from 'services/mailAutomationService';
 import tagService from 'services/tagService';
@@ -56,6 +57,15 @@ const DEFAULT_ACCOUNT_FORM: MailAccountRequest = {
   security: 'SSL',
   enabled: true,
   pollIntervalMinutes: 10,
+  oauthProvider: 'CUSTOM',
+  oauthTokenEndpoint: '',
+  oauthClientId: '',
+  oauthClientSecret: '',
+  oauthTenantId: '',
+  oauthScope: '',
+  oauthAccessToken: '',
+  oauthRefreshToken: '',
+  oauthTokenExpiresAt: '',
 };
 
 const DEFAULT_RULE_FORM: MailRuleRequest & { folderPath: string; folderIdOverride: string } = {
@@ -95,9 +105,11 @@ const MailAutomationPage: React.FC = () => {
   const [ruleForm, setRuleForm] = useState(DEFAULT_RULE_FORM);
   const [editingRule, setEditingRule] = useState<MailRule | null>(null);
 
-  const securityOptions: MailSecurityType[] = ['SSL', 'STARTTLS', 'NONE'];
+  const securityOptions: MailSecurityType[] = ['SSL', 'STARTTLS', 'NONE', 'OAUTH2'];
+  const oauthProviderOptions: MailOAuthProvider[] = ['MICROSOFT', 'GOOGLE', 'CUSTOM'];
   const actionOptions: MailActionType[] = ['ATTACHMENTS_ONLY', 'METADATA_ONLY', 'EVERYTHING'];
   const postActionOptions: MailPostAction[] = ['MARK_READ', 'MOVE', 'DELETE', 'FLAG', 'TAG', 'NONE'];
+  const isOauthAccount = accountForm.security === 'OAUTH2';
 
   const loadAll = async () => {
     setLoading(true);
@@ -158,6 +170,15 @@ const MailAutomationPage: React.FC = () => {
       security: account.security,
       enabled: account.enabled,
       pollIntervalMinutes: account.pollIntervalMinutes,
+      oauthProvider: account.oauthProvider || 'CUSTOM',
+      oauthTokenEndpoint: account.oauthTokenEndpoint || '',
+      oauthClientId: account.oauthClientId || '',
+      oauthClientSecret: '',
+      oauthTenantId: account.oauthTenantId || '',
+      oauthScope: account.oauthScope || '',
+      oauthAccessToken: '',
+      oauthRefreshToken: '',
+      oauthTokenExpiresAt: account.oauthTokenExpiresAt || '',
     });
     setAccountDialogOpen(true);
   };
@@ -169,16 +190,46 @@ const MailAutomationPage: React.FC = () => {
         return;
       }
 
-      if (!editingAccount && !accountForm.password) {
+      if (!editingAccount && !isOauthAccount && !accountForm.password) {
         toast.warn('Password is required for new accounts');
         return;
       }
 
+      if (isOauthAccount) {
+        if (!accountForm.oauthAccessToken && !accountForm.oauthRefreshToken) {
+          toast.warn('OAuth access token or refresh token is required');
+          return;
+        }
+        if (accountForm.oauthProvider === 'CUSTOM' && !accountForm.oauthTokenEndpoint) {
+          toast.warn('OAuth token endpoint is required for custom providers');
+          return;
+        }
+        if (accountForm.oauthRefreshToken && !accountForm.oauthClientId) {
+          toast.warn('OAuth client ID is required when using refresh tokens');
+          return;
+        }
+      }
+
+      const payload: MailAccountRequest = { ...accountForm };
+      if (isOauthAccount) {
+        payload.password = undefined;
+      } else {
+        payload.oauthProvider = undefined;
+        payload.oauthTokenEndpoint = undefined;
+        payload.oauthClientId = undefined;
+        payload.oauthClientSecret = undefined;
+        payload.oauthTenantId = undefined;
+        payload.oauthScope = undefined;
+        payload.oauthAccessToken = undefined;
+        payload.oauthRefreshToken = undefined;
+        payload.oauthTokenExpiresAt = undefined;
+      }
+
       if (editingAccount) {
-        await mailAutomationService.updateAccount(editingAccount.id, accountForm);
+        await mailAutomationService.updateAccount(editingAccount.id, payload);
         toast.success('Mail account updated');
       } else {
-        await mailAutomationService.createAccount(accountForm);
+        await mailAutomationService.createAccount(payload);
         toast.success('Mail account created');
       }
 
@@ -521,14 +572,16 @@ const MailAutomationPage: React.FC = () => {
               size="small"
               fullWidth
             />
-            <TextField
-              label={editingAccount ? 'Password (leave blank to keep)' : 'Password'}
-              type="password"
-              value={accountForm.password}
-              onChange={(event) => setAccountForm({ ...accountForm, password: event.target.value })}
-              size="small"
-              fullWidth
-            />
+            {!isOauthAccount && (
+              <TextField
+                label={editingAccount ? 'Password (leave blank to keep)' : 'Password'}
+                type="password"
+                value={accountForm.password}
+                onChange={(event) => setAccountForm({ ...accountForm, password: event.target.value })}
+                size="small"
+                fullWidth
+              />
+            )}
             <FormControl size="small" fullWidth>
               <InputLabel id="mail-security-label">Security</InputLabel>
               <Select
@@ -545,6 +598,82 @@ const MailAutomationPage: React.FC = () => {
                 ))}
               </Select>
             </FormControl>
+            {isOauthAccount && (
+              <>
+                <FormControl size="small" fullWidth>
+                  <InputLabel id="oauth-provider-label">OAuth provider</InputLabel>
+                  <Select
+                    labelId="oauth-provider-label"
+                    value={accountForm.oauthProvider || 'CUSTOM'}
+                    label="OAuth provider"
+                    onChange={(event) => setAccountForm({
+                      ...accountForm,
+                      oauthProvider: event.target.value as MailOAuthProvider,
+                    })}
+                  >
+                    {oauthProviderOptions.map((option) => (
+                      <MenuItem key={option} value={option}>{option}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <TextField
+                  label="OAuth token endpoint (custom)"
+                  value={accountForm.oauthTokenEndpoint}
+                  onChange={(event) => setAccountForm({ ...accountForm, oauthTokenEndpoint: event.target.value })}
+                  size="small"
+                  fullWidth
+                />
+                <TextField
+                  label="OAuth client ID"
+                  value={accountForm.oauthClientId}
+                  onChange={(event) => setAccountForm({ ...accountForm, oauthClientId: event.target.value })}
+                  size="small"
+                  fullWidth
+                />
+                <TextField
+                  label="OAuth client secret (leave blank to keep)"
+                  type="password"
+                  value={accountForm.oauthClientSecret}
+                  onChange={(event) => setAccountForm({ ...accountForm, oauthClientSecret: event.target.value })}
+                  size="small"
+                  fullWidth
+                />
+                <TextField
+                  label="OAuth tenant ID (Microsoft)"
+                  value={accountForm.oauthTenantId}
+                  onChange={(event) => setAccountForm({ ...accountForm, oauthTenantId: event.target.value })}
+                  size="small"
+                  fullWidth
+                />
+                <TextField
+                  label="OAuth scope"
+                  value={accountForm.oauthScope}
+                  onChange={(event) => setAccountForm({ ...accountForm, oauthScope: event.target.value })}
+                  size="small"
+                  fullWidth
+                />
+                <TextField
+                  label="OAuth access token (leave blank to keep)"
+                  type="password"
+                  value={accountForm.oauthAccessToken}
+                  onChange={(event) => setAccountForm({ ...accountForm, oauthAccessToken: event.target.value })}
+                  size="small"
+                  fullWidth
+                  multiline
+                  minRows={2}
+                />
+                <TextField
+                  label="OAuth refresh token (leave blank to keep)"
+                  type="password"
+                  value={accountForm.oauthRefreshToken}
+                  onChange={(event) => setAccountForm({ ...accountForm, oauthRefreshToken: event.target.value })}
+                  size="small"
+                  fullWidth
+                  multiline
+                  minRows={2}
+                />
+              </>
+            )}
             <FormControl size="small" fullWidth>
               <InputLabel id="mail-enabled-label">Status</InputLabel>
               <Select

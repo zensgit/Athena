@@ -26,6 +26,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.IOUtils;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -35,6 +38,9 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayOutputStream;
@@ -71,6 +77,7 @@ public class MailFetcherService {
     private final TagService tagService;
     private final EmailIngestionService emailIngestionService;
     private final MeterRegistry meterRegistry;
+    private final RestTemplate restTemplate = new RestTemplate();
 
     @Value("${ecm.mail.fetcher.run-as-user:admin}")
     private String runAsUser;
@@ -611,6 +618,102 @@ public class MailFetcherService {
     private record AttachmentPart(BodyPart part, String fileName, boolean inline) {
     }
 
+    private String resolveOAuthAccessToken(MailAccount account) {
+        String accessToken = account.getOauthAccessToken();
+        if (accessToken == null || accessToken.isBlank()) {
+            if (account.getOauthRefreshToken() == null || account.getOauthRefreshToken().isBlank()) {
+                throw new IllegalStateException("OAuth access token missing for account " + account.getName());
+            }
+            return refreshOAuthAccessToken(account).accessToken();
+        }
+
+        if (!isTokenExpired(account.getOauthTokenExpiresAt())) {
+            return accessToken;
+        }
+
+        if (account.getOauthRefreshToken() == null || account.getOauthRefreshToken().isBlank()) {
+            log.warn("OAuth access token expired for account {} and no refresh token provided", account.getName());
+            return accessToken;
+        }
+
+        return refreshOAuthAccessToken(account).accessToken();
+    }
+
+    private OAuthTokenResponse refreshOAuthAccessToken(MailAccount account) {
+        if (account.getOauthClientId() == null || account.getOauthClientId().isBlank()) {
+            throw new IllegalStateException("OAuth client id missing for account " + account.getName());
+        }
+        if (account.getOauthRefreshToken() == null || account.getOauthRefreshToken().isBlank()) {
+            throw new IllegalStateException("OAuth refresh token missing for account " + account.getName());
+        }
+
+        String tokenEndpoint = resolveOAuthTokenEndpoint(account);
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("grant_type", "refresh_token");
+        form.add("client_id", account.getOauthClientId());
+        if (account.getOauthClientSecret() != null && !account.getOauthClientSecret().isBlank()) {
+            form.add("client_secret", account.getOauthClientSecret());
+        }
+        form.add("refresh_token", account.getOauthRefreshToken());
+        if (account.getOauthScope() != null && !account.getOauthScope().isBlank()) {
+            form.add("scope", account.getOauthScope());
+        }
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+        var response = restTemplate.postForEntity(tokenEndpoint, new HttpEntity<>(form, headers), Map.class);
+        Map<?, ?> body = response.getBody();
+        if (body == null || body.get("access_token") == null) {
+            throw new IllegalStateException("OAuth token refresh failed for account " + account.getName());
+        }
+
+        String accessToken = body.get("access_token").toString();
+        String refreshToken = body.get("refresh_token") != null ? body.get("refresh_token").toString() : null;
+        Long expiresIn = body.get("expires_in") instanceof Number number ? number.longValue() : null;
+
+        account.setOauthAccessToken(accessToken);
+        if (refreshToken != null && !refreshToken.isBlank()) {
+            account.setOauthRefreshToken(refreshToken);
+        }
+        if (expiresIn != null && expiresIn > 0) {
+            account.setOauthTokenExpiresAt(LocalDateTime.now().plusSeconds(expiresIn));
+        }
+        accountRepository.save(account);
+
+        return new OAuthTokenResponse(accessToken, refreshToken, expiresIn);
+    }
+
+    private String resolveOAuthTokenEndpoint(MailAccount account) {
+        if (account.getOauthTokenEndpoint() != null && !account.getOauthTokenEndpoint().isBlank()) {
+            return account.getOauthTokenEndpoint();
+        }
+        if (account.getOauthProvider() == null) {
+            throw new IllegalStateException("OAuth provider not configured for account " + account.getName());
+        }
+        return switch (account.getOauthProvider()) {
+            case GOOGLE -> "https://oauth2.googleapis.com/token";
+            case MICROSOFT -> {
+                String tenantId = account.getOauthTenantId();
+                if (tenantId == null || tenantId.isBlank()) {
+                    tenantId = "common";
+                }
+                yield "https://login.microsoftonline.com/" + tenantId + "/oauth2/v2.0/token";
+            }
+            case CUSTOM -> throw new IllegalStateException("OAuth token endpoint not configured for account "
+                + account.getName());
+        };
+    }
+
+    private boolean isTokenExpired(LocalDateTime expiresAt) {
+        if (expiresAt == null) {
+            return false;
+        }
+        return expiresAt.isBefore(LocalDateTime.now().plusMinutes(1));
+    }
+
+    private record OAuthTokenResponse(String accessToken, String refreshToken, Long expiresIn) {
+    }
+
     private Store connect(MailAccount account) throws Exception {
         Properties props = new Properties();
         props.put("mail.store.protocol", "imap");
@@ -619,11 +722,22 @@ public class MailFetcherService {
             props.put("mail.imap.ssl.enable", "true");
         } else if (account.getSecurity() == MailAccount.SecurityType.STARTTLS) {
             props.put("mail.imap.starttls.enable", "true");
+        } else if (account.getSecurity() == MailAccount.SecurityType.OAUTH2) {
+            props.put("mail.imap.ssl.enable", "true");
+            props.put("mail.imap.sasl.enable", "true");
+            props.put("mail.imap.sasl.mechanisms", "XOAUTH2");
+            props.put("mail.imap.auth.login.disable", "true");
+            props.put("mail.imap.auth.plain.disable", "true");
         }
 
         Session session = Session.getInstance(props);
         Store store = session.getStore("imap");
-        store.connect(account.getHost(), account.getPort(), account.getUsername(), account.getPassword());
+        if (account.getSecurity() == MailAccount.SecurityType.OAUTH2) {
+            String accessToken = resolveOAuthAccessToken(account);
+            store.connect(account.getHost(), account.getPort(), account.getUsername(), accessToken);
+        } else {
+            store.connect(account.getHost(), account.getPort(), account.getUsername(), account.getPassword());
+        }
         return store;
     }
 }

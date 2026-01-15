@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -35,7 +36,16 @@ public class MailAutomationController {
         String password,
         MailAccount.SecurityType security,
         Boolean enabled,
-        Integer pollIntervalMinutes
+        Integer pollIntervalMinutes,
+        MailAccount.OAuthProvider oauthProvider,
+        String oauthTokenEndpoint,
+        String oauthClientId,
+        String oauthClientSecret,
+        String oauthTenantId,
+        String oauthScope,
+        String oauthAccessToken,
+        String oauthRefreshToken,
+        LocalDateTime oauthTokenExpiresAt
     ) {}
 
     public record MailAccountResponse(
@@ -46,7 +56,13 @@ public class MailAutomationController {
         String username,
         MailAccount.SecurityType security,
         boolean enabled,
-        Integer pollIntervalMinutes
+        Integer pollIntervalMinutes,
+        MailAccount.OAuthProvider oauthProvider,
+        String oauthTokenEndpoint,
+        String oauthClientId,
+        String oauthTenantId,
+        String oauthScope,
+        LocalDateTime oauthTokenExpiresAt
     ) {
         static MailAccountResponse from(MailAccount account) {
             return new MailAccountResponse(
@@ -57,7 +73,13 @@ public class MailAutomationController {
                 account.getUsername(),
                 account.getSecurity(),
                 account.isEnabled(),
-                account.getPollIntervalMinutes()
+                account.getPollIntervalMinutes(),
+                account.getOauthProvider(),
+                account.getOauthTokenEndpoint(),
+                account.getOauthClientId(),
+                account.getOauthTenantId(),
+                account.getOauthScope(),
+                account.getOauthTokenExpiresAt()
             );
         }
     }
@@ -149,6 +171,21 @@ public class MailAutomationController {
         account.setSecurity(request.security() != null ? request.security() : MailAccount.SecurityType.SSL);
         account.setEnabled(request.enabled() != null ? request.enabled() : true);
         account.setPollIntervalMinutes(request.pollIntervalMinutes() != null ? request.pollIntervalMinutes() : 10);
+        account.setOauthProvider(request.oauthProvider());
+        account.setOauthTokenEndpoint(request.oauthTokenEndpoint());
+        account.setOauthClientId(request.oauthClientId());
+        account.setOauthTenantId(request.oauthTenantId());
+        account.setOauthScope(request.oauthScope());
+        account.setOauthTokenExpiresAt(request.oauthTokenExpiresAt());
+        if (request.oauthClientSecret() != null && !request.oauthClientSecret().isBlank()) {
+            account.setOauthClientSecret(request.oauthClientSecret());
+        }
+        if (request.oauthAccessToken() != null && !request.oauthAccessToken().isBlank()) {
+            account.setOauthAccessToken(request.oauthAccessToken());
+        }
+        if (request.oauthRefreshToken() != null && !request.oauthRefreshToken().isBlank()) {
+            account.setOauthRefreshToken(request.oauthRefreshToken());
+        }
         return ResponseEntity.ok(MailAccountResponse.from(accountRepository.save(account)));
     }
 
@@ -166,6 +203,21 @@ public class MailAutomationController {
         if (request.security() != null) account.setSecurity(request.security());
         if (request.enabled() != null) account.setEnabled(request.enabled());
         if (request.pollIntervalMinutes() != null) account.setPollIntervalMinutes(request.pollIntervalMinutes());
+        if (request.oauthProvider() != null) account.setOauthProvider(request.oauthProvider());
+        if (request.oauthTokenEndpoint() != null) account.setOauthTokenEndpoint(request.oauthTokenEndpoint());
+        if (request.oauthClientId() != null) account.setOauthClientId(request.oauthClientId());
+        if (request.oauthTenantId() != null) account.setOauthTenantId(request.oauthTenantId());
+        if (request.oauthScope() != null) account.setOauthScope(request.oauthScope());
+        if (request.oauthTokenExpiresAt() != null) account.setOauthTokenExpiresAt(request.oauthTokenExpiresAt());
+        if (request.oauthClientSecret() != null && !request.oauthClientSecret().isBlank()) {
+            account.setOauthClientSecret(request.oauthClientSecret());
+        }
+        if (request.oauthAccessToken() != null && !request.oauthAccessToken().isBlank()) {
+            account.setOauthAccessToken(request.oauthAccessToken());
+        }
+        if (request.oauthRefreshToken() != null && !request.oauthRefreshToken().isBlank()) {
+            account.setOauthRefreshToken(request.oauthRefreshToken());
+        }
 
         return ResponseEntity.ok(MailAccountResponse.from(accountRepository.save(account)));
     }
