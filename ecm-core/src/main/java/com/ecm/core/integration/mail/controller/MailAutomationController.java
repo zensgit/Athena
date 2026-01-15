@@ -256,7 +256,7 @@ public class MailAutomationController {
     @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Trigger fetch", description = "Manually trigger mail fetching")
     public ResponseEntity<Void> triggerFetch() {
-        fetcherService.fetchAllAccounts();
+        fetcherService.fetchAllAccounts(true);
         return ResponseEntity.ok().build();
     }
 }

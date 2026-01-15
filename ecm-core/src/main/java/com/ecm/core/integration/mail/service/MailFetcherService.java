@@ -9,6 +9,8 @@ import com.ecm.core.integration.mail.repository.MailRuleRepository;
 import com.ecm.core.integration.mail.repository.ProcessedMailRepository;
 import com.ecm.core.service.DocumentUploadService;
 import com.ecm.core.service.TagService;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import jakarta.mail.BodyPart;
 import jakarta.mail.Flags;
 import jakarta.mail.Folder;
@@ -23,13 +25,22 @@ import jakarta.mail.search.FlagTerm;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.IOUtils;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -40,6 +51,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
@@ -50,26 +62,61 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class MailFetcherService {
 
+    private static final int DEFAULT_POLL_INTERVAL_MINUTES = 10;
+
     private final MailAccountRepository accountRepository;
     private final MailRuleRepository ruleRepository;
     private final ProcessedMailRepository processedMailRepository;
     private final DocumentUploadService uploadService;
     private final TagService tagService;
     private final EmailIngestionService emailIngestionService;
+    private final MeterRegistry meterRegistry;
 
-    // Run every 5 minutes
-    @Scheduled(fixedDelay = 300000)
+    @Value("${ecm.mail.fetcher.run-as-user:admin}")
+    private String runAsUser;
+
+    private final Map<UUID, Instant> lastPollByAccount = new ConcurrentHashMap<>();
+
+    @Scheduled(fixedDelayString = "${ecm.mail.fetcher.poll-interval-ms:60000}")
     public void fetchAllAccounts() {
+        fetchAllAccounts(false);
+    }
+
+    public void fetchAllAccounts(boolean force) {
         List<MailAccount> accounts = accountRepository.findByEnabledTrue();
-        log.info("Starting mail fetch for {} accounts", accounts.size());
-        
+        log.info("Starting mail fetch for {} accounts (force={})", accounts.size(), force);
+
+        Timer.Sample runSample = Timer.start(meterRegistry);
+        int skippedAccounts = 0;
+        int attemptedAccounts = 0;
         for (MailAccount account : accounts) {
+            Instant now = Instant.now();
+            if (!force && !shouldProcessAccount(account, now)) {
+                skippedAccounts++;
+                incrementAccountMetric("skipped", "poll_interval");
+                continue;
+            }
+
+            attemptedAccounts++;
+            String status = "ok";
+            String reason = "none";
+            Timer.Sample accountSample = Timer.start(meterRegistry);
             try {
-                processAccount(account);
+                runWithSystemAuthenticationIfMissing(() -> processAccount(account));
             } catch (Exception e) {
+                status = "error";
+                reason = "exception";
                 log.error("Failed to process mail account: {}", account.getName(), e);
+            } finally {
+                lastPollByAccount.put(account.getId(), now);
+                accountSample.stop(meterRegistry.timer("mail_fetch_account_duration", "status", status));
+                incrementAccountMetric(status, reason);
             }
         }
+
+        runSample.stop(meterRegistry.timer("mail_fetch_run_duration"));
+        log.info("Mail fetch completed: accounts={}, attempted={}, skipped={}, force={}",
+            accounts.size(), attemptedAccounts, skippedAccounts, force);
     }
 
     private void processAccount(MailAccount account) throws Exception {
@@ -128,6 +175,7 @@ public class MailFetcherService {
         String uid = resolveMessageUid(folder, message);
         if (processedMailRepository.existsByAccountIdAndFolderAndUid(account.getId(), folderName, uid)) {
             log.debug("Skipping already processed mail UID {} in {}", uid, folderName);
+            incrementMessageMetric("skipped", "already_processed");
             return false;
         }
 
@@ -149,6 +197,7 @@ public class MailFetcherService {
         MailRule matchedRule = findMatchingRule(rules, messageData);
         if (matchedRule == null) {
             log.debug("No rule matched for email in {}", folderName);
+            incrementMessageMetric("skipped", "no_rule");
             return false;
         }
 
@@ -159,15 +208,18 @@ public class MailFetcherService {
             processed = processContent(message, matchedRule, attachments);
             if (!processed) {
                 log.debug("Rule matched but no content processed for UID {}", uid);
+                incrementMessageMetric("skipped", "no_content");
                 return false;
             }
 
             boolean expungeNeeded = applyMailAction(matchedRule, folder, message);
             recordProcessedMail(account, folderName, uid, matchedRule, message, ProcessedMail.Status.PROCESSED, null);
+            incrementMessageMetric("processed", "content");
             return expungeNeeded;
         } catch (Exception e) {
             recordProcessedMail(account, folderName, uid, matchedRule, message, ProcessedMail.Status.ERROR,
                 e.getMessage());
+            incrementMessageMetric("error", "exception");
             throw e;
         }
     }
@@ -488,6 +540,66 @@ public class MailFetcherService {
             return "INBOX";
         }
         return folder.trim();
+    }
+
+    private boolean shouldProcessAccount(MailAccount account, Instant now) {
+        int pollIntervalMinutes = resolvePollIntervalMinutes(account);
+        Instant lastPoll = lastPollByAccount.get(account.getId());
+        if (lastPoll == null) {
+            return true;
+        }
+        long elapsedMs = Duration.between(lastPoll, now).toMillis();
+        long intervalMs = Duration.ofMinutes(pollIntervalMinutes).toMillis();
+        if (elapsedMs < intervalMs) {
+            log.debug("Skipping mail account {} due to poll interval ({} minutes)", account.getName(),
+                pollIntervalMinutes);
+            return false;
+        }
+        return true;
+    }
+
+    private int resolvePollIntervalMinutes(MailAccount account) {
+        Integer pollInterval = account.getPollIntervalMinutes();
+        if (pollInterval == null || pollInterval <= 0) {
+            return DEFAULT_POLL_INTERVAL_MINUTES;
+        }
+        return pollInterval;
+    }
+
+    private void incrementAccountMetric(String status, String reason) {
+        meterRegistry.counter("mail_fetch_accounts_total", "status", status, "reason", reason).increment();
+    }
+
+    private void incrementMessageMetric(String status, String reason) {
+        meterRegistry.counter("mail_fetch_messages_total", "status", status, "reason", reason).increment();
+    }
+
+    private void runWithSystemAuthenticationIfMissing(MailFetcherTask task) throws Exception {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.isAuthenticated()) {
+            task.run();
+            return;
+        }
+
+        SecurityContext previousContext = SecurityContextHolder.getContext();
+        SecurityContext systemContext = SecurityContextHolder.createEmptyContext();
+        systemContext.setAuthentication(createSystemAuthentication());
+        SecurityContextHolder.setContext(systemContext);
+        try {
+            task.run();
+        } finally {
+            SecurityContextHolder.setContext(previousContext);
+        }
+    }
+
+    private Authentication createSystemAuthentication() {
+        List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_ADMIN"));
+        return new UsernamePasswordAuthenticationToken(runAsUser, "N/A", authorities);
+    }
+
+    @FunctionalInterface
+    private interface MailFetcherTask {
+        void run() throws Exception;
     }
 
     private String buildEmailFilename(String subject) {
