@@ -15,6 +15,7 @@ export interface Node {
   nodeType: 'FOLDER' | 'DOCUMENT';
   parentId?: string;
   properties: Record<string, any>;
+  metadata?: Record<string, any>;
   aspects: string[];
   created: string;
   modified: string;

@@ -12,6 +12,8 @@ import MainLayout from './components/layout/MainLayout';
 import FileBrowser from './pages/FileBrowser';
 import SearchResults from './pages/SearchResults';
 import AdminDashboard from './pages/AdminDashboard';
+import MailAutomationPage from './pages/MailAutomationPage';
+import ContentTypesPage from './pages/ContentTypesPage';
 import EditorPage from './pages/EditorPage';
 import TasksPage from './pages/TasksPage';
 import AdvancedSearchPage from './pages/AdvancedSearchPage';
@@ -175,6 +177,26 @@ const App: React.FC = () => {
                 <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
                   <MainLayout>
                     <AdminDashboard />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/admin/mail"
+              element={
+                <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
+                  <MainLayout>
+                    <MailAutomationPage />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/admin/content-types"
+              element={
+                <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
+                  <MainLayout>
+                    <ContentTypesPage />
                   </MainLayout>
                 </PrivateRoute>
               }

@@ -177,6 +177,7 @@ class NodeService {
       nodeType: apiNode.nodeType,
       parentId: apiNode.parentId,
       properties: apiNode.properties || { description: apiNode.description },
+      metadata: apiNode.metadata || {},
       aspects: apiNode.aspects || [],
       created: createdDate,
       modified: apiNode.lastModifiedDate || createdDate,

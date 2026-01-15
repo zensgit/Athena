@@ -14,12 +14,14 @@ import {
   ViewModule,
   Delete,
   Download,
+  EditNote,
 } from '@mui/icons-material';
 import { useAppDispatch, useAppSelector } from 'store';
 import { fetchNode, fetchChildren, deleteNodes } from 'store/slices/nodeSlice';
 import { setViewMode } from 'store/slices/uiSlice';
 import FileBreadcrumb from 'components/browser/FileBreadcrumb';
 import FileList from 'components/browser/FileList';
+import BulkMetadataDialog from 'components/dialogs/BulkMetadataDialog';
 import { Node } from 'types';
 import nodeService from 'services/nodeService';
 import { toast } from 'react-toastify';
@@ -39,6 +41,7 @@ const FileBrowser: React.FC = () => {
   const [pageSize, setPageSize] = useState(50);
   const [previewNode, setPreviewNode] = useState<Node | null>(null);
   const [previewAnnotate, setPreviewAnnotate] = useState(false);
+  const [bulkMetadataOpen, setBulkMetadataOpen] = useState(false);
   const previewOpen = Boolean(previewNode);
 
   const loadNodeData = useCallback(async () => {
@@ -173,16 +176,26 @@ const FileBrowser: React.FC = () => {
             {selectedNodes.length > 0 && (
               <>
                 <Typography variant="body2" color="text.secondary" sx={{ mr: 2 }}>
-                  {selectedNodes.length} selected
-                </Typography>
-                <IconButton onClick={handleBatchDownload} color="primary" size="small" aria-label="Download selected">
-                  <Download />
-                </IconButton>
-                {canWrite && (
-                  <IconButton onClick={handleDelete} color="error" size="small" aria-label="Delete selected">
-                    <Delete />
-                  </IconButton>
-                )}
+              {selectedNodes.length} selected
+            </Typography>
+            <IconButton onClick={handleBatchDownload} color="primary" size="small" aria-label="Download selected">
+              <Download />
+            </IconButton>
+            {canWrite && (
+              <IconButton
+                onClick={() => setBulkMetadataOpen(true)}
+                color="primary"
+                size="small"
+                aria-label="Edit metadata for selected"
+              >
+                <EditNote />
+              </IconButton>
+            )}
+            {canWrite && (
+              <IconButton onClick={handleDelete} color="error" size="small" aria-label="Delete selected">
+                <Delete />
+              </IconButton>
+            )}
               </>
             )}
             
@@ -257,6 +270,13 @@ const FileBrowser: React.FC = () => {
           />
         </React.Suspense>
       )}
+
+      <BulkMetadataDialog
+        open={bulkMetadataOpen}
+        nodeIds={selectedNodes}
+        onClose={() => setBulkMetadataOpen(false)}
+        onApplied={() => loadNodeData()}
+      />
     </Box>
   );
 };

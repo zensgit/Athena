@@ -14,6 +14,7 @@ import {
   FormControl,
   InputLabel,
   Select,
+  SelectChangeEvent,
   MenuItem,
   Divider,
   CircularProgress,
@@ -37,12 +38,47 @@ import { setPropertiesDialogOpen } from 'store/slices/uiSlice';
 import { updateNode } from 'store/slices/nodeSlice';
 import nodeService from 'services/nodeService';
 import correspondentService, { Correspondent } from 'services/correspondentService';
+import contentTypeService, { ContentTypeDefinition, ContentTypePropertyDefinition } from 'services/contentTypeService';
 import { toast } from 'react-toastify';
 
 interface PropertyField {
   key: string;
   value: string;
 }
+
+const resolveContentTypeValue = (value: unknown, fallback?: string) => {
+  if (value === null || value === undefined || value === '') {
+    return fallback ?? '';
+  }
+  return String(value);
+};
+
+const normalizeDateValue = (value: string) => {
+  if (!value) return '';
+  return value.includes('T') ? value.split('T')[0] : value;
+};
+
+const derivePropertyState = (nodeData: Node, typeDefinition?: ContentTypeDefinition | null) => {
+  const properties = nodeData.properties || {};
+  const reservedKeys = new Set(['name', 'description']);
+  const contentTypeKeys = new Set((typeDefinition?.properties || []).map((prop) => prop.name));
+
+  const customProps = Object.entries(properties)
+    .filter(([key]) => !reservedKeys.has(key) && !contentTypeKeys.has(key))
+    .map(([key, value]) => ({ key, value: resolveContentTypeValue(value) }));
+
+  const typeValues: Record<string, string> = {};
+  if (typeDefinition) {
+    typeDefinition.properties.forEach((prop) => {
+      typeValues[prop.name] = resolveContentTypeValue(
+        properties[prop.name],
+        prop.defaultValue ?? ''
+      );
+    });
+  }
+
+  return { customProps, typeValues };
+};
 
 const PropertiesDialog: React.FC = () => {
   const dispatch = useAppDispatch();
@@ -59,55 +95,106 @@ const PropertiesDialog: React.FC = () => {
   const [availableCorrespondents, setAvailableCorrespondents] = useState<Correspondent[]>([]);
   const [correspondentId, setCorrespondentId] = useState('');
   const [correspondentLoading, setCorrespondentLoading] = useState(false);
+  const [contentTypes, setContentTypes] = useState<ContentTypeDefinition[]>([]);
+  const [contentTypeLoading, setContentTypeLoading] = useState(false);
+  const [selectedContentType, setSelectedContentType] = useState('');
+  const [contentTypeValues, setContentTypeValues] = useState<Record<string, string>>({});
   const correspondentLabelId = 'correspondent-select-label';
   const correspondentSelectId = 'correspondent-select';
+  const contentTypeLabelId = 'content-type-select-label';
+  const contentTypeSelectId = 'content-type-select';
 
-  const loadNodeDetails = useCallback(async () => {
+  const loadDialogData = useCallback(async () => {
     if (!selectedNodeId) return;
 
     setLoading(true);
+    setCorrespondentLoading(true);
+    setContentTypeLoading(true);
+
     try {
-      const nodeData = await nodeService.getNode(selectedNodeId);
+      const [nodeResult, correspondentsResult, typesResult] = await Promise.allSettled([
+        nodeService.getNode(selectedNodeId),
+        correspondentService.list(0, 500),
+        contentTypeService.listTypes(),
+      ]);
+
+      if (nodeResult.status !== 'fulfilled') {
+        toast.error('Failed to load node details');
+        return;
+      }
+
+      const nodeData = nodeResult.value;
       setNode(nodeData);
       setEditedName(nodeData.name);
       setCorrespondentId(nodeData.correspondentId || '');
-      
-      // Extract custom properties
-      const customProps = Object.entries(nodeData.properties || {})
-        .filter(([key]) => !['name', 'description'].includes(key))
-        .map(([key, value]) => ({ key, value: String(value) }));
+
+      if (correspondentsResult.status === 'fulfilled') {
+        setAvailableCorrespondents(correspondentsResult.value);
+      } else {
+        toast.error('Failed to load correspondents');
+      }
+
+      if (typesResult.status === 'fulfilled') {
+        setContentTypes(typesResult.value);
+      } else {
+        setContentTypes([]);
+        toast.error('Failed to load content types');
+      }
+
+      const metadataType = nodeData.metadata?.['ecm:contentType'];
+      const initialType = typeof metadataType === 'string' ? metadataType : '';
+      const typeDefinition =
+        typesResult.status === 'fulfilled'
+          ? typesResult.value.find((type) => type.name === initialType)
+          : null;
+
+      setSelectedContentType(initialType);
+      const { customProps, typeValues } = derivePropertyState(nodeData, typeDefinition);
       setCustomProperties(customProps);
-    } catch (error) {
-      toast.error('Failed to load node details');
+      setContentTypeValues(typeValues);
     } finally {
       setLoading(false);
+      setCorrespondentLoading(false);
+      setContentTypeLoading(false);
     }
   }, [selectedNodeId]);
 
-  const loadCorrespondents = useCallback(async () => {
-    setCorrespondentLoading(true);
-    try {
-      const correspondents = await correspondentService.list(0, 500);
-      setAvailableCorrespondents(correspondents);
-    } catch {
-      toast.error('Failed to load correspondents');
-    } finally {
-      setCorrespondentLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
     if (propertiesDialogOpen && selectedNodeId) {
-      loadNodeDetails();
-      loadCorrespondents();
+      loadDialogData();
     }
-  }, [propertiesDialogOpen, selectedNodeId, loadNodeDetails, loadCorrespondents]);
+  }, [propertiesDialogOpen, selectedNodeId, loadDialogData]);
 
   useEffect(() => {
     if (!canWrite && editMode) {
       setEditMode(false);
     }
   }, [canWrite, editMode]);
+
+  const selectedTypeDefinition =
+    contentTypes.find((type) => type.name === selectedContentType) || null;
+
+  const handleContentTypeChange = (event: SelectChangeEvent<string>) => {
+    const nextType = event.target.value;
+    setSelectedContentType(nextType);
+
+    if (!node) {
+      setContentTypeValues({});
+      return;
+    }
+
+    const typeDefinition = contentTypes.find((type) => type.name === nextType) || null;
+    const { customProps, typeValues } = derivePropertyState(node, typeDefinition);
+    setCustomProperties(customProps);
+    setContentTypeValues(typeValues);
+  };
+
+  const handleContentTypeValueChange = (name: string, value: string) => {
+    setContentTypeValues((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
 
   const handleClose = () => {
     dispatch(setPropertiesDialogOpen(false));
@@ -118,15 +205,46 @@ const PropertiesDialog: React.FC = () => {
     setNewPropertyValue('');
     setAvailableCorrespondents([]);
     setCorrespondentId('');
+    setContentTypes([]);
+    setSelectedContentType('');
+    setContentTypeValues({});
+    setContentTypeLoading(false);
   };
 
   const handleSave = async () => {
     if (!node || !selectedNodeId) return;
 
     try {
-      const updatedProperties: Record<string, any> = {
-        ...node.properties,
-      };
+      if (selectedContentType && selectedTypeDefinition) {
+        const missingRequired: string[] = [];
+        const payload: Record<string, any> = {};
+
+        selectedTypeDefinition.properties.forEach((prop) => {
+          const rawValue = contentTypeValues[prop.name];
+          const trimmedValue = typeof rawValue === 'string' ? rawValue.trim() : rawValue;
+          const normalizedValue =
+            prop.type === 'date' && typeof trimmedValue === 'string'
+              ? normalizeDateValue(trimmedValue)
+              : trimmedValue;
+
+          if (normalizedValue === undefined || normalizedValue === null || normalizedValue === '') {
+            if (prop.required) {
+              missingRequired.push(prop.title || prop.name);
+            }
+            return;
+          }
+          payload[prop.name] = normalizedValue;
+        });
+
+        if (missingRequired.length > 0) {
+          toast.warn(`Missing required fields: ${missingRequired.join(', ')}`);
+          return;
+        }
+
+        await contentTypeService.applyType(selectedNodeId, selectedContentType, payload);
+      }
+
+      const updatedProperties: Record<string, any> = {};
 
       // Update custom properties
       customProperties.forEach(({ key, value }) => {
@@ -134,18 +252,27 @@ const PropertiesDialog: React.FC = () => {
       });
 
       // Remove deleted properties
+      const contentTypeKeys = new Set((selectedTypeDefinition?.properties || []).map((prop) => prop.name));
       Object.keys(node.properties || {}).forEach((key) => {
-        if (!customProperties.find((p) => p.key === key) && !['name', 'description'].includes(key)) {
+        if (['name', 'description'].includes(key) || contentTypeKeys.has(key)) {
+          return;
+        }
+        if (!customProperties.find((p) => p.key === key)) {
           updatedProperties[key] = null;
         }
       });
 
-      const updates: Record<string, any> = { properties: updatedProperties };
+      const updates: Record<string, any> = {};
+      if (Object.keys(updatedProperties).length > 0) {
+        updates.properties = updatedProperties;
+      }
       if (node.nodeType === 'DOCUMENT') {
         updates.correspondentId = correspondentId || null;
       }
 
-      await dispatch(updateNode({ nodeId: selectedNodeId, updates })).unwrap();
+      if (Object.keys(updates).length > 0) {
+        await dispatch(updateNode({ nodeId: selectedNodeId, updates })).unwrap();
+      }
       
       // Update name if changed
       if (editedName !== node.name) {
@@ -155,7 +282,7 @@ const PropertiesDialog: React.FC = () => {
 
       toast.success('Properties updated successfully');
       setEditMode(false);
-      await loadNodeDetails();
+      await loadDialogData();
     } catch (error) {
       toast.error('Failed to update properties');
     }
@@ -183,6 +310,79 @@ const PropertiesDialog: React.FC = () => {
       customProperties.map((prop, i) =>
         i === index ? { ...prop, value } : prop
       )
+    );
+  };
+
+  const renderContentTypeField = (prop: ContentTypePropertyDefinition) => {
+    const label = prop.title || prop.name;
+    const value = contentTypeValues[prop.name] ?? '';
+    const disabled = !editMode;
+    const selectLabelId = `content-type-${prop.name}-label`;
+    const selectId = `content-type-${prop.name}`;
+
+    if (prop.type === 'boolean') {
+      return (
+        <FormControl size="small" fullWidth disabled={disabled}>
+          <InputLabel id={selectLabelId}>{label}</InputLabel>
+          <Select
+            id={selectId}
+            labelId={selectLabelId}
+            value={value}
+            label={label}
+            displayEmpty
+            onChange={(event) => handleContentTypeValueChange(prop.name, event.target.value)}
+          >
+            <MenuItem value="">
+              <em>Unset</em>
+            </MenuItem>
+            <MenuItem value="true">True</MenuItem>
+            <MenuItem value="false">False</MenuItem>
+          </Select>
+        </FormControl>
+      );
+    }
+
+    if (prop.type === 'list' && prop.options && prop.options.length > 0) {
+      return (
+        <FormControl size="small" fullWidth disabled={disabled}>
+          <InputLabel id={selectLabelId}>{label}</InputLabel>
+          <Select
+            id={selectId}
+            labelId={selectLabelId}
+            value={value}
+            label={label}
+            displayEmpty
+            onChange={(event) => handleContentTypeValueChange(prop.name, event.target.value)}
+          >
+            <MenuItem value="">
+              <em>None</em>
+            </MenuItem>
+            {prop.options.map((option) => (
+              <MenuItem key={option} value={option}>
+                {option}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+      );
+    }
+
+    const resolvedValue = prop.type === 'date' ? normalizeDateValue(value) : value;
+    const inputType =
+      prop.type === 'number' ? 'number' : prop.type === 'date' ? 'date' : 'text';
+
+    return (
+      <TextField
+        label={label}
+        value={resolvedValue}
+        onChange={(event) => handleContentTypeValueChange(prop.name, event.target.value)}
+        size="small"
+        fullWidth
+        disabled={disabled}
+        type={inputType}
+        InputLabelProps={prop.type === 'date' ? { shrink: true } : undefined}
+        required={prop.required}
+      />
     );
   };
 
@@ -362,6 +562,74 @@ const PropertiesDialog: React.FC = () => {
                 </Box>
               </>
             )}
+
+            <Divider sx={{ my: 2 }} />
+
+            <Box mb={3}>
+              <Typography variant="h6" gutterBottom>
+                Content Type
+              </Typography>
+              {contentTypeLoading ? (
+                <Box display="flex" justifyContent="center" p={2}>
+                  <CircularProgress size={20} />
+                </Box>
+              ) : contentTypes.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">
+                  No content types defined.
+                </Typography>
+              ) : (
+                <Box display="flex" flexDirection="column" gap={2}>
+                  <FormControl size="small" fullWidth disabled={!editMode || contentTypeLoading}>
+                    <InputLabel id={contentTypeLabelId}>Type</InputLabel>
+                    <Select
+                      id={contentTypeSelectId}
+                      labelId={contentTypeLabelId}
+                      value={selectedContentType}
+                      label="Type"
+                      displayEmpty
+                      onChange={handleContentTypeChange}
+                      renderValue={(selected) => {
+                        const selectedValue = selected as string;
+                        if (!selectedValue) {
+                          return <em>None</em>;
+                        }
+                        const match = contentTypes.find((type) => type.name === selectedValue);
+                        return match ? `${match.displayName} (${match.name})` : selectedValue;
+                      }}
+                    >
+                      <MenuItem value="">
+                        <em>None</em>
+                      </MenuItem>
+                      {contentTypes.map((type) => (
+                        <MenuItem key={type.name} value={type.name}>
+                          {type.displayName} ({type.name})
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+
+                  {selectedTypeDefinition ? (
+                    selectedTypeDefinition.properties.length > 0 ? (
+                      <Grid container spacing={2}>
+                        {selectedTypeDefinition.properties.map((prop) => (
+                          <Grid item xs={12} sm={6} md={4} key={prop.name}>
+                            {renderContentTypeField(prop)}
+                          </Grid>
+                        ))}
+                      </Grid>
+                    ) : (
+                      <Typography variant="body2" color="text.secondary">
+                        This content type has no custom fields.
+                      </Typography>
+                    )
+                  ) : (
+                    <Typography variant="body2" color="text.secondary">
+                      Select a content type to edit its fields.
+                    </Typography>
+                  )}
+                </Box>
+              )}
+            </Box>
 
             <Divider sx={{ my: 2 }} />
 

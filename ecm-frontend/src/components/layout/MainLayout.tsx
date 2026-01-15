@@ -32,6 +32,8 @@ import {
   LocalOffer,
   Category as CategoryIcon,
   SavedSearch as SavedSearchIcon,
+  MailOutline,
+  Description,
   PushPin,
   PushPinOutlined,
 } from '@mui/icons-material';
@@ -336,13 +338,27 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                   <ListItemText>Correspondents</ListItemText>
                 </MenuItem>
               )}
-	            {effectiveUser?.roles?.includes('ROLE_ADMIN') && (
-	              <MenuItem onClick={() => navigate('/admin')}>
-	                <ListItemIcon>
-	                  <Settings fontSize="small" />
-	                </ListItemIcon>
-	                <ListItemText>Admin Dashboard</ListItemText>
-              </MenuItem>
+            {effectiveUser?.roles?.includes('ROLE_ADMIN') && (
+              <>
+                <MenuItem onClick={() => navigate('/admin')}>
+                  <ListItemIcon>
+                    <Settings fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Admin Dashboard</ListItemText>
+                </MenuItem>
+                <MenuItem onClick={() => navigate('/admin/mail')}>
+                  <ListItemIcon>
+                    <MailOutline fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Mail Automation</ListItemText>
+                </MenuItem>
+                <MenuItem onClick={() => navigate('/admin/content-types')}>
+                  <ListItemIcon>
+                    <Description fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Content Types</ListItemText>
+                </MenuItem>
+              </>
             )}
             <MenuItem onClick={() => navigate('/trash')}>
               <ListItemIcon>

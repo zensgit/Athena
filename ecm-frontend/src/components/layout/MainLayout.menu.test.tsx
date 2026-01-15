@@ -69,6 +69,8 @@ test('account menu shows Tags/Categories for admin/editor roles', async () => {
   expect(await screen.findByRole('menuitem', { name: 'Tags' })).toBeTruthy();
   expect(screen.getByRole('menuitem', { name: 'Categories' })).toBeTruthy();
   expect(screen.getByRole('menuitem', { name: 'Admin Dashboard' })).toBeTruthy();
+  expect(screen.getByRole('menuitem', { name: 'Mail Automation' })).toBeTruthy();
+  expect(screen.getByRole('menuitem', { name: 'Content Types' })).toBeTruthy();
   expect(screen.getByRole('menuitem', { name: 'System Status' })).toBeTruthy();
 });
 
@@ -85,5 +87,7 @@ test('account menu hides Tags/Categories for viewer role', async () => {
   expect(screen.queryByRole('menuitem', { name: 'Tags' })).toBeNull();
   expect(screen.queryByRole('menuitem', { name: 'Categories' })).toBeNull();
   expect(screen.queryByRole('menuitem', { name: 'Admin Dashboard' })).toBeNull();
+  expect(screen.queryByRole('menuitem', { name: 'Mail Automation' })).toBeNull();
+  expect(screen.queryByRole('menuitem', { name: 'Content Types' })).toBeNull();
   expect(screen.queryByRole('menuitem', { name: 'System Status' })).toBeNull();
 });
