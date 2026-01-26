@@ -89,30 +89,33 @@ public class MailFetcherService {
         fetchAllAccounts(false);
     }
 
-    public void fetchAllAccounts(boolean force) {
+    public MailFetchSummary fetchAllAccounts(boolean force) {
         List<MailAccount> accounts = accountRepository.findByEnabledTrue();
         log.info("Starting mail fetch for {} accounts (force={})", accounts.size(), force);
 
+        MailFetchRunStats stats = new MailFetchRunStats();
+        stats.accounts = accounts.size();
+        long startNs = System.nanoTime();
+
         Timer.Sample runSample = Timer.start(meterRegistry);
-        int skippedAccounts = 0;
-        int attemptedAccounts = 0;
         for (MailAccount account : accounts) {
             Instant now = Instant.now();
             if (!force && !shouldProcessAccount(account, now)) {
-                skippedAccounts++;
+                stats.skippedAccounts++;
                 incrementAccountMetric("skipped", "poll_interval");
                 continue;
             }
 
-            attemptedAccounts++;
+            stats.attemptedAccounts++;
             String status = "ok";
             String reason = "none";
             Timer.Sample accountSample = Timer.start(meterRegistry);
             try {
-                runWithSystemAuthenticationIfMissing(() -> processAccount(account));
+                runWithSystemAuthenticationIfMissing(() -> processAccount(account, stats));
             } catch (Exception e) {
                 status = "error";
                 reason = "exception";
+                stats.accountErrors++;
                 log.error("Failed to process mail account: {}", account.getName(), e);
             } finally {
                 lastPollByAccount.put(account.getId(), now);
@@ -122,11 +125,14 @@ public class MailFetcherService {
         }
 
         runSample.stop(meterRegistry.timer("mail_fetch_run_duration"));
+        long durationMs = (System.nanoTime() - startNs) / 1_000_000L;
         log.info("Mail fetch completed: accounts={}, attempted={}, skipped={}, force={}",
-            accounts.size(), attemptedAccounts, skippedAccounts, force);
+            accounts.size(), stats.attemptedAccounts, stats.skippedAccounts, force);
+
+        return stats.toSummary(durationMs);
     }
 
-    private void processAccount(MailAccount account) throws Exception {
+    private void processAccount(MailAccount account, MailFetchRunStats stats) throws Exception {
         Store store = connect(account);
 
         List<MailRule> rules = ruleRepository.findAllByOrderByPriorityAsc().stream()
@@ -143,13 +149,14 @@ public class MailFetcherService {
             .collect(Collectors.groupingBy(rule -> normalizeFolder(rule.getFolder())));
 
         for (Map.Entry<String, List<MailRule>> entry : rulesByFolder.entrySet()) {
-            processFolder(store, account, entry.getKey(), entry.getValue());
+            processFolder(store, account, entry.getKey(), entry.getValue(), stats);
         }
 
         store.close();
     }
 
-    private void processFolder(Store store, MailAccount account, String folderName, List<MailRule> rules)
+    private void processFolder(Store store, MailAccount account, String folderName, List<MailRule> rules,
+            MailFetchRunStats stats)
             throws Exception {
         Folder folder = store.getFolder(folderName);
         if (!folder.exists()) {
@@ -161,11 +168,12 @@ public class MailFetcherService {
 
         Message[] messages = folder.search(new FlagTerm(new Flags(Flags.Flag.SEEN), false));
         log.info("Found {} unread messages in {} ({})", messages.length, account.getName(), folderName);
+        stats.foundMessages += messages.length;
 
         boolean expungeNeeded = false;
         for (Message message : messages) {
             try {
-                expungeNeeded |= processMessage(message, rules, account, folderName, folder);
+                expungeNeeded |= processMessage(message, rules, account, folderName, folder, stats);
             } catch (Exception e) {
                 log.error("Error processing message: {}", safeSubject(message), e);
             }
@@ -178,11 +186,12 @@ public class MailFetcherService {
     }
 
     private boolean processMessage(Message message, List<MailRule> rules, MailAccount account, String folderName,
-            Folder folder) throws Exception {
+            Folder folder, MailFetchRunStats stats) throws Exception {
         String uid = resolveMessageUid(folder, message);
         if (processedMailRepository.existsByAccountIdAndFolderAndUid(account.getId(), folderName, uid)) {
             log.debug("Skipping already processed mail UID {} in {}", uid, folderName);
             incrementMessageMetric("skipped", "already_processed");
+            stats.skippedMessages++;
             return false;
         }
 
@@ -205,10 +214,12 @@ public class MailFetcherService {
         if (matchedRule == null) {
             log.debug("No rule matched for email in {}", folderName);
             incrementMessageMetric("skipped", "no_rule");
+            stats.skippedMessages++;
             return false;
         }
 
         log.info("Email matched rule: {}", matchedRule.getName());
+        stats.matchedMessages++;
 
         boolean processed = false;
         try {
@@ -216,18 +227,94 @@ public class MailFetcherService {
             if (!processed) {
                 log.debug("Rule matched but no content processed for UID {}", uid);
                 incrementMessageMetric("skipped", "no_content");
+                stats.skippedMessages++;
                 return false;
             }
 
             boolean expungeNeeded = applyMailAction(matchedRule, folder, message);
             recordProcessedMail(account, folderName, uid, matchedRule, message, ProcessedMail.Status.PROCESSED, null);
             incrementMessageMetric("processed", "content");
+            stats.processedMessages++;
             return expungeNeeded;
         } catch (Exception e) {
             recordProcessedMail(account, folderName, uid, matchedRule, message, ProcessedMail.Status.ERROR,
                 e.getMessage());
             incrementMessageMetric("error", "exception");
+            stats.errorMessages++;
             throw e;
+        }
+    }
+
+    public MailConnectionTestResult testConnection(UUID accountId) {
+        MailAccount account = accountRepository.findById(accountId)
+            .orElseThrow(() -> new IllegalArgumentException("Mail account not found: " + accountId));
+        return testConnection(account);
+    }
+
+    public MailConnectionTestResult testConnection(MailAccount account) {
+        long startNs = System.nanoTime();
+        Store store = null;
+        try {
+            store = connect(account);
+            long durationMs = (System.nanoTime() - startNs) / 1_000_000L;
+            return new MailConnectionTestResult(true, "Connected", durationMs);
+        } catch (Exception e) {
+            long durationMs = (System.nanoTime() - startNs) / 1_000_000L;
+            String message = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            log.warn("Mail connection test failed for {}: {}", account.getName(), message);
+            return new MailConnectionTestResult(false, message, durationMs);
+        } finally {
+            if (store != null) {
+                try {
+                    store.close();
+                } catch (Exception ignored) {
+                    // best effort
+                }
+            }
+        }
+    }
+
+    public record MailConnectionTestResult(boolean success, String message, long durationMs) {
+    }
+
+    public record MailFetchSummary(
+        int accounts,
+        int attemptedAccounts,
+        int skippedAccounts,
+        int accountErrors,
+        int foundMessages,
+        int matchedMessages,
+        int processedMessages,
+        int skippedMessages,
+        int errorMessages,
+        long durationMs
+    ) {
+    }
+
+    private static final class MailFetchRunStats {
+        private int accounts;
+        private int attemptedAccounts;
+        private int skippedAccounts;
+        private int accountErrors;
+        private int foundMessages;
+        private int matchedMessages;
+        private int processedMessages;
+        private int skippedMessages;
+        private int errorMessages;
+
+        private MailFetchSummary toSummary(long durationMs) {
+            return new MailFetchSummary(
+                accounts,
+                attemptedAccounts,
+                skippedAccounts,
+                accountErrors,
+                foundMessages,
+                matchedMessages,
+                processedMessages,
+                skippedMessages,
+                errorMessages,
+                durationMs
+            );
         }
     }
 

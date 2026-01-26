@@ -229,6 +229,13 @@ public class MailAutomationController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping("/accounts/{id}/test")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Test connection", description = "Test connectivity for a mail account")
+    public ResponseEntity<MailFetcherService.MailConnectionTestResult> testAccountConnection(@PathVariable UUID id) {
+        return ResponseEntity.ok(fetcherService.testConnection(id));
+    }
+
     // === Rules ===
 
     @GetMapping("/rules")
@@ -307,8 +314,7 @@ public class MailAutomationController {
     @PostMapping("/fetch")
     @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Trigger fetch", description = "Manually trigger mail fetching")
-    public ResponseEntity<Void> triggerFetch() {
-        fetcherService.fetchAllAccounts(true);
-        return ResponseEntity.ok().build();
+    public ResponseEntity<MailFetcherService.MailFetchSummary> triggerFetch() {
+        return ResponseEntity.ok(fetcherService.fetchAllAccounts(true));
     }
 }
