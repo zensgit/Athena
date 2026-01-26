@@ -23,14 +23,21 @@ RUN --mount=type=cache,target=/root/.m2 \
 # Runtime stage
 FROM eclipse-temurin:17-jdk
 
-# Install LibreOffice and other tools
+# Optional: skip LibreOffice to speed up local builds
+ARG SKIP_LIBREOFFICE=false
+
+# Install runtime tools (curl is required for healthcheck)
 RUN apt-get update && apt-get install -y \
-    libreoffice \
     curl \
     wget \
     fontconfig \
     fonts-liberation \
     fonts-dejavu-core \
+    && if [ "$SKIP_LIBREOFFICE" != "true" ]; then \
+         apt-get install -y libreoffice; \
+       else \
+         echo "Skipping LibreOffice install"; \
+       fi \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -47,8 +54,9 @@ COPY --from=build /app/target/*.jar app.jar
 RUN mkdir -p /var/ecm/content /var/ecm/temp /app/logs \
     && chown -R app:app /var/ecm /app
 
-# Switch to app user
-USER app
+# Copy entrypoint (handles volume permission fixes)
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 # Expose port
 EXPOSE 8080
@@ -58,4 +66,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8080/actuator/health || exit 1
 
 # Start application
-ENTRYPOINT ["java", "-jar", "-Djava.security.egd=file:/dev/./urandom", "app.jar"]
+ENTRYPOINT ["/entrypoint.sh"]
