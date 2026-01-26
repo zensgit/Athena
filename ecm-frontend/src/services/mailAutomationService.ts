@@ -83,6 +83,25 @@ export interface MailRuleRequest {
   assignFolderId?: string | null;
 }
 
+export interface MailConnectionTestResult {
+  success: boolean;
+  message: string;
+  durationMs: number;
+}
+
+export interface MailFetchSummary {
+  accounts: number;
+  attemptedAccounts: number;
+  skippedAccounts: number;
+  accountErrors: number;
+  foundMessages: number;
+  matchedMessages: number;
+  processedMessages: number;
+  skippedMessages: number;
+  errorMessages: number;
+  durationMs: number;
+}
+
 class MailAutomationService {
   async listAccounts(): Promise<MailAccount[]> {
     return api.get<MailAccount[]>('/integration/mail/accounts');
@@ -116,8 +135,12 @@ class MailAutomationService {
     return api.delete(`/integration/mail/rules/${ruleId}`);
   }
 
-  async triggerFetch(): Promise<void> {
-    return api.post('/integration/mail/fetch');
+  async testConnection(accountId: string): Promise<MailConnectionTestResult> {
+    return api.post<MailConnectionTestResult>(`/integration/mail/accounts/${accountId}/test`);
+  }
+
+  async triggerFetch(): Promise<MailFetchSummary> {
+    return api.post<MailFetchSummary>('/integration/mail/fetch');
   }
 }
 

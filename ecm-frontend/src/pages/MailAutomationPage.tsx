@@ -28,11 +28,13 @@ import {
   IconButton,
   Tooltip,
 } from '@mui/material';
-import { Add, Delete, Edit, Refresh } from '@mui/icons-material';
+import { Add, Delete, Edit, Link, Refresh } from '@mui/icons-material';
 import { toast } from 'react-toastify';
 import mailAutomationService, {
   MailAccount,
   MailAccountRequest,
+  MailConnectionTestResult,
+  MailFetchSummary,
   MailRule,
   MailRuleRequest,
   MailActionType,
@@ -96,6 +98,7 @@ const MailAutomationPage: React.FC = () => {
   const [tags, setTags] = useState<TagOption[]>([]);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
+  const [testingAccountId, setTestingAccountId] = useState<string | null>(null);
 
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
   const [accountForm, setAccountForm] = useState<MailAccountRequest>(DEFAULT_ACCOUNT_FORM);
@@ -144,12 +147,37 @@ const MailAutomationPage: React.FC = () => {
   const handleTriggerFetch = async () => {
     setFetching(true);
     try {
-      await mailAutomationService.triggerFetch();
-      toast.success('Mail fetch triggered');
+      const summary: MailFetchSummary = await mailAutomationService.triggerFetch();
+      const durationSeconds = (summary.durationMs / 1000).toFixed(1);
+      const message =
+        `Processed ${summary.processedMessages} of ${summary.matchedMessages} matched ` +
+        `(${summary.foundMessages} unread, ${summary.skippedMessages} skipped) in ${durationSeconds}s`;
+      if (summary.errorMessages > 0 || summary.accountErrors > 0) {
+        toast.warn(`${message}. Errors: ${summary.errorMessages}, account errors: ${summary.accountErrors}`);
+      } else {
+        toast.success(message);
+      }
     } catch {
       toast.error('Failed to trigger mail fetch');
     } finally {
       setFetching(false);
+    }
+  };
+
+  const handleTestConnection = async (accountId: string) => {
+    setTestingAccountId(accountId);
+    try {
+      const result: MailConnectionTestResult = await mailAutomationService.testConnection(accountId);
+      const durationSeconds = (result.durationMs / 1000).toFixed(1);
+      if (result.success) {
+        toast.success(`Connection OK in ${durationSeconds}s`);
+      } else {
+        toast.error(`Connection failed: ${result.message}`);
+      }
+    } catch {
+      toast.error('Failed to test connection');
+    } finally {
+      setTestingAccountId((current) => (current === accountId ? null : current));
     }
   };
 
@@ -431,6 +459,21 @@ const MailAutomationPage: React.FC = () => {
                           />
                         </TableCell>
                         <TableCell align="right">
+                          <Tooltip title="Test connection">
+                            <span>
+                              <IconButton
+                                size="small"
+                                onClick={() => handleTestConnection(account.id)}
+                                disabled={testingAccountId === account.id}
+                              >
+                                {testingAccountId === account.id ? (
+                                  <CircularProgress size={16} />
+                                ) : (
+                                  <Link fontSize="small" />
+                                )}
+                              </IconButton>
+                            </span>
+                          </Tooltip>
                           <Tooltip title="Edit">
                             <IconButton size="small" onClick={() => openEditAccount(account)}>
                               <Edit fontSize="small" />
