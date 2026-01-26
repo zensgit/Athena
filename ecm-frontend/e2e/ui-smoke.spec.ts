@@ -12,6 +12,7 @@ import { XLSX_SAMPLE_BASE64 } from './fixtures/xlsxSample';
 
 const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
+const apiUrl = process.env.ECM_API_URL || 'http://localhost:7700';
 
 async function loginWithCredentials(page: Page, username: string, password: string) {
   const authPattern = /\/protocol\/openid-connect\/auth/;
@@ -962,6 +963,41 @@ test('UI search download failure shows error toast', async ({ page, request }) =
       description: `Search download failure validation skipped: ${message}`,
     });
   }
+});
+
+test('Mail automation actions', async ({ page, request }) => {
+  await waitForApiReady(request);
+  const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+  const accountsRes = await request.get(`${apiUrl}/api/v1/integration/mail/accounts`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(accountsRes.ok()).toBeTruthy();
+  const accounts = (await accountsRes.json()) as Array<{ id: string }>;
+  test.skip(!accounts.length, 'No mail accounts configured');
+
+  await loginWithCredentials(page, defaultUsername, defaultPassword);
+  await page.goto('/admin/mail', { waitUntil: 'domcontentloaded' });
+  await page.waitForURL(/\/admin\/mail/, { timeout: 60_000 });
+
+  const heading = page.getByRole('heading', { name: /mail automation/i });
+  await expect(heading).toBeVisible({ timeout: 60_000 });
+
+  const linkIcon = page.locator('svg[data-testid="LinkIcon"]').first();
+  await expect(linkIcon).toBeVisible({ timeout: 30_000 });
+  await linkIcon.locator('xpath=ancestor::button[1]').click();
+
+  const connectionToast = page.locator('.Toastify__toast').last();
+  await expect(connectionToast).toContainText(
+    /Connection (OK|failed)|Failed to test connection/i,
+    { timeout: 60_000 },
+  );
+
+  const triggerButton = page.getByRole('button', { name: /trigger fetch/i });
+  await expect(triggerButton).toBeEnabled({ timeout: 30_000 });
+  await triggerButton.click();
+
+  const fetchToast = page.locator('.Toastify__toast').last();
+  await expect(fetchToast).toContainText(/Processed|Failed to trigger mail fetch/i, { timeout: 60_000 });
 });
 
 test('RBAC smoke: editor can access rules but not admin endpoints', async ({ page, request }) => {
