@@ -26,6 +26,8 @@
     <include file="db/changelog/changes/013-add-scheduled-rule-columns.xml"/>
     <include file="db/changelog/changes/014-add-mail-automation-tables.xml"/>
     <include file="db/changelog/changes/015-add-mail-account-oauth-fields.xml"/>
+    <include file="db/changelog/changes/016-add-audit-log-client-ip.xml"/>
+    <include file="db/changelog/changes/017-make-mail-account-password-nullable.xml"/>
     <include file="db/changelog/changes/007-insert-initial-data.xml"/>
 
 </databaseChangeLog>

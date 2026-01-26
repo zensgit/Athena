@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="016-1" author="ecm-system">
+        <comment>Add missing columns to audit_log table</comment>
+        <addColumn tableName="audit_log">
+            <column name="client_ip" type="varchar(45)"/>
+            <column name="user_agent" type="varchar(500)"/>
+            <column name="metadata" type="jsonb"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

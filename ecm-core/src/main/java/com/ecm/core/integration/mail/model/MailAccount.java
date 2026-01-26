@@ -31,7 +31,7 @@ public class MailAccount extends BaseEntity {
     @Column(nullable = false)
     private String username;
 
-    @Column(nullable = false)
+    @Column
     private String password; // Should be encrypted in prod
 
     @Enumerated(EnumType.STRING)
