@@ -1,0 +1,8 @@
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: update
+
+jodconverter:
+  local:
+    enabled: false

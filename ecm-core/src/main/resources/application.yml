@@ -17,7 +17,7 @@ spring:
   jpa:
     database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     properties:
       hibernate:
         format_sql: true
@@ -79,7 +79,7 @@ flowable:
   
 jodconverter:
   local:
-    enabled: false
+    enabled: true
     office-home: /usr/lib/libreoffice
     port-numbers: 2002
     max-tasks-per-process: 10
