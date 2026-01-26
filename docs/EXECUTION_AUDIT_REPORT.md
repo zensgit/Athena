@@ -34,3 +34,16 @@
 - Backend tests (local): `cd ecm-core && mvn test` (30 tests, 0 failures; includes `SearchAclElasticsearchTest` using `ECM_ELASTICSEARCH_URL` or `http://localhost:9200`).
 - Backend verify: `docker run --rm -v "$(pwd)":/workspace -v "$HOME/.m2":/root/.m2 -w /workspace/ecm-core maven:3-eclipse-temurin-17 mvn verify` (17 tests, 0 failures).
 - Backend verify (local): `cd ecm-core && mvn verify` (30 tests, 0 failures).
+
+## Ops Note: Content Storage Permissions (2026-01-25)
+- Issue: Frontend uploads failed with `Content storage failed: /var/ecm/content/2026/01/25` (HTTP 400).
+- Cause: `/var/ecm/content` inside `athena-ecm-core-1` was owned by UID 999, not the app user.
+- Fix: `docker exec -u 0 athena-ecm-core-1 chown -R app:app /var/ecm/content` and create missing date folder.
+- Hardening: `ecm-core` entrypoint now corrects `/var/ecm/content` ownership on startup.
+- Verification: Full Playwright E2E re-run PASS (21/21).
+
+## Mail Automation Verification (2026-01-23 to 2026-01-24)
+- Connectivity: Gmail IMAP OAuth2 connection confirmed after token refresh.
+- Rule execution: ECM-TEST folder used to validate metadata ingestion (email stored as .eml).
+- Evidence recorded in: `docs/MAIL_AUTOMATION_VERIFICATION.md`.
+- Attachment ingestion: Verified with INBOX unread attachment (document ingested successfully).

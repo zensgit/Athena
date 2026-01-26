@@ -77,6 +77,12 @@ docker-compose ps
 3.  **Edit**: In the file list, click the "Edit" (Pencil) icon. Verify Editor opens.
 4.  **Workflow**: (API only currently) Use Swagger to `POST /api/v1/workflows/document/{id}/approval`.
 
+## 5.1 Ops Notes (Storage Permissions)
+
+- If uploads fail with `Content storage failed: /var/ecm/content/...`, the storage volume is likely owned by the wrong user.
+- The `ecm-core` container startup now fixes ownership for `/var/ecm/content`, but legacy volumes may still require a one-time fix:
+  - `docker exec -u 0 athena-ecm-core-1 chown -R app:app /var/ecm/content`
+
 ## 6. Known Limitations & Next Steps
 
 *   **WPS Signature**: The signature verification in `WpsController` is currently simplified. For production, implement the full HMAC-SHA256 signature check required by WPS open platform.

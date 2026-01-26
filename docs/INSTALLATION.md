@@ -248,6 +248,11 @@ mkdir -p ssl
 # 设置权限
 chmod 755 storage logs ssl
 sudo chown -R 1000:1000 storage logs
+
+# 如果使用 Docker 命名卷，容器内目录可能保持原属主。
+# 新版 ecm-core 启动时会自动修复 /var/ecm/content 权限，
+# 但旧卷仍可能需要一次性修复：
+# docker exec -u 0 athena-ecm-core-1 chown -R app:app /var/ecm/content
 ```
 
 ### 步骤3: SSL证书配置 (生产环境)
