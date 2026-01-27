@@ -107,6 +107,7 @@ const MailAutomationPage: React.FC = () => {
   const [tags, setTags] = useState<TagOption[]>([]);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [testingAccountId, setTestingAccountId] = useState<string | null>(null);
 
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
@@ -140,8 +141,22 @@ const MailAutomationPage: React.FC = () => {
     return date.toLocaleString();
   };
 
-  const loadAll = async () => {
-    setLoading(true);
+  const summarizeError = (value?: string | null, maxLength = 160) => {
+    if (!value) {
+      return '';
+    }
+    if (value.length <= maxLength) {
+      return value;
+    }
+    return `${value.slice(0, Math.max(0, maxLength - 3))}...`;
+  };
+
+  const loadAll = async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true;
+    if (!silent) {
+      setLoading(true);
+    }
+    let ok = false;
     try {
       const [accountList, ruleList, tagList] = await Promise.all([
         mailAutomationService.listAccounts(),
@@ -151,11 +166,15 @@ const MailAutomationPage: React.FC = () => {
       setAccounts(accountList);
       setRules(ruleList);
       setTags(tagList.map((tag) => ({ id: tag.id, name: tag.name })));
+      ok = true;
     } catch {
       toast.error('Failed to load mail automation data');
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
+    return ok;
   };
 
   useEffect(() => {
@@ -187,6 +206,18 @@ const MailAutomationPage: React.FC = () => {
       toast.error('Failed to trigger mail fetch');
     } finally {
       setFetching(false);
+    }
+  };
+
+  const handleRefreshStatus = async () => {
+    setRefreshing(true);
+    try {
+      const ok = await loadAll({ silent: true });
+      if (ok) {
+        toast.success('Mail status refreshed');
+      }
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -432,9 +463,19 @@ const MailAutomationPage: React.FC = () => {
             <CardContent>
               <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
                 <Typography variant="h6">Mail Accounts</Typography>
-                <Button variant="contained" startIcon={<Add />} onClick={openCreateAccount}>
-                  New Account
-                </Button>
+                <Stack direction="row" spacing={1}>
+                  <Button
+                    variant="outlined"
+                    startIcon={refreshing ? <CircularProgress size={16} /> : <Refresh />}
+                    onClick={handleRefreshStatus}
+                    disabled={refreshing}
+                  >
+                    Refresh Status
+                  </Button>
+                  <Button variant="contained" startIcon={<Add />} onClick={openCreateAccount}>
+                    New Account
+                  </Button>
+                </Stack>
               </Box>
               <TableContainer>
                 <Table size="small">
@@ -479,13 +520,29 @@ const MailAutomationPage: React.FC = () => {
                                   size="small"
                                   variant="outlined"
                                   label={account.lastFetchStatus}
-                                  color={account.lastFetchStatus === 'SUCCESS' ? 'success' : account.lastFetchStatus === 'ERROR' ? 'error' : 'default'}
+                                  color={
+                                    account.lastFetchStatus === 'SUCCESS'
+                                      ? 'success'
+                                      : account.lastFetchStatus === 'ERROR'
+                                      ? 'error'
+                                      : 'default'
+                                  }
                                 />
                               </Tooltip>
                             )}
+                            {account.lastFetchStatus === 'ERROR' && account.lastFetchError && (
+                              <Typography variant="caption" color="error.main">
+                                {summarizeError(account.lastFetchError)}
+                              </Typography>
+                            )}
                             {account.security === 'OAUTH2' && account.oauthEnvConfigured === false && (
                               <Tooltip title={formatMissingOAuthKeys(account.oauthMissingEnvKeys)}>
-                                <Chip size="small" variant="outlined" color="warning" label="OAuth env missing" />
+                                <Chip
+                                  size="small"
+                                  variant="outlined"
+                                  color="warning"
+                                  label="OAuth env missing"
+                                />
                               </Tooltip>
                             )}
                           </Stack>
