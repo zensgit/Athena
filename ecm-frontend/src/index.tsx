@@ -51,9 +51,12 @@ const renderApp = () => {
 const initAuth = async () => {
   try {
     const canUsePkce = !!(window.crypto && window.crypto.subtle);
+    if (!canUsePkce) {
+      console.warn('PKCE disabled: Web Crypto API is unavailable in this context.');
+    }
     const authenticated = await authService.init({
       onLoad: 'check-sso',
-      pkceMethod: canUsePkce ? 'S256' : allowInsecureCrypto ? undefined : 'S256',
+      pkceMethod: canUsePkce ? 'S256' : undefined,
       checkLoginIframe: false, // Disable iframe check to prevent CORS issues
     });
     sessionStorage.removeItem(LOGIN_IN_PROGRESS_KEY);

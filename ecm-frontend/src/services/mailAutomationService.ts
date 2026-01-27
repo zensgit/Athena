@@ -16,10 +16,14 @@ export interface MailAccount {
   pollIntervalMinutes: number;
   oauthProvider?: MailOAuthProvider | null;
   oauthTokenEndpoint?: string | null;
-  oauthClientId?: string | null;
   oauthTenantId?: string | null;
   oauthScope?: string | null;
-  oauthTokenExpiresAt?: string | null;
+  oauthCredentialKey?: string | null;
+  oauthEnvConfigured?: boolean;
+  oauthMissingEnvKeys?: string[];
+  lastFetchAt?: string | null;
+  lastFetchStatus?: string | null;
+  lastFetchError?: string | null;
 }
 
 export interface MailAccountRequest {
@@ -33,13 +37,9 @@ export interface MailAccountRequest {
   pollIntervalMinutes?: number;
   oauthProvider?: MailOAuthProvider | null;
   oauthTokenEndpoint?: string;
-  oauthClientId?: string;
-  oauthClientSecret?: string;
   oauthTenantId?: string;
   oauthScope?: string;
-  oauthAccessToken?: string;
-  oauthRefreshToken?: string;
-  oauthTokenExpiresAt?: string | null;
+  oauthCredentialKey?: string;
 }
 
 export interface MailRule {

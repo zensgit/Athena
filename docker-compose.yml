@@ -6,6 +6,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "${ECM_API_PORT:-8080}:8080"
+    env_file:
+      - .env
     environment:
       - SPRING_PROFILES_ACTIVE=docker
       - ECM_IDENTITY_PROVIDER=keycloak

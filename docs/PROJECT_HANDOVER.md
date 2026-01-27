@@ -69,6 +69,9 @@ docker-compose ps
 *   **Environment Variables**: Managed in `.env` file at root.
 *   **Backend Config**: `ecm-core/src/main/resources/application.yml`
 *   **WPS/WOPI Config**: Update `ecm.wps.*` properties in application.yml for production usage.
+*   **Mail Automation OAuth**: Configure env-only credentials using:
+    `ECM_MAIL_OAUTH_<KEY>_CLIENT_ID`, `ECM_MAIL_OAUTH_<KEY>_CLIENT_SECRET`,
+    `ECM_MAIL_OAUTH_<KEY>_REFRESH_TOKEN` (optional `TOKEN_ENDPOINT`, `SCOPE`).
 
 ## 5. Feature Verification (Smoke Test)
 
@@ -82,6 +85,11 @@ docker-compose ps
 - If uploads fail with `Content storage failed: /var/ecm/content/...`, the storage volume is likely owned by the wrong user.
 - The `ecm-core` container startup now fixes ownership for `/var/ecm/content`, but legacy volumes may still require a one-time fix:
   - `docker exec -u 0 athena-ecm-core-1 chown -R app:app /var/ecm/content`
+
+## 5.2 Ops Notes (Mail Automation OAuth)
+
+- OAuth2 secrets are not stored in the database. They must be present as env vars on the API host.
+- Update `.env` and restart `ecm-core` after adding `ECM_MAIL_OAUTH_<KEY>_*`.
 
 ## 6. Known Limitations & Next Steps
 

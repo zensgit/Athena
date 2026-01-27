@@ -39,13 +39,9 @@ public class MailAutomationController {
         Integer pollIntervalMinutes,
         MailAccount.OAuthProvider oauthProvider,
         String oauthTokenEndpoint,
-        String oauthClientId,
-        String oauthClientSecret,
         String oauthTenantId,
         String oauthScope,
-        String oauthAccessToken,
-        String oauthRefreshToken,
-        LocalDateTime oauthTokenExpiresAt
+        String oauthCredentialKey
     ) {}
 
     public record MailAccountResponse(
@@ -59,12 +55,19 @@ public class MailAutomationController {
         Integer pollIntervalMinutes,
         MailAccount.OAuthProvider oauthProvider,
         String oauthTokenEndpoint,
-        String oauthClientId,
         String oauthTenantId,
         String oauthScope,
-        LocalDateTime oauthTokenExpiresAt
+        String oauthCredentialKey,
+        boolean oauthEnvConfigured,
+        List<String> oauthMissingEnvKeys,
+        LocalDateTime lastFetchAt,
+        String lastFetchStatus,
+        String lastFetchError
     ) {
-        static MailAccountResponse from(MailAccount account) {
+        static MailAccountResponse from(
+            MailAccount account,
+            MailFetcherService.OAuthEnvCheckResult envCheck
+        ) {
             return new MailAccountResponse(
                 account.getId(),
                 account.getName(),
@@ -76,10 +79,14 @@ public class MailAutomationController {
                 account.getPollIntervalMinutes(),
                 account.getOauthProvider(),
                 account.getOauthTokenEndpoint(),
-                account.getOauthClientId(),
                 account.getOauthTenantId(),
                 account.getOauthScope(),
-                account.getOauthTokenExpiresAt()
+                account.getOauthCredentialKey(),
+                envCheck.configured(),
+                envCheck.missingEnvKeys(),
+                account.getLastFetchAt(),
+                account.getLastFetchStatus(),
+                account.getLastFetchError()
             );
         }
     }
@@ -154,7 +161,7 @@ public class MailAutomationController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<MailAccountResponse>> getAccounts() {
         List<MailAccountResponse> accounts = accountRepository.findAll().stream()
-            .map(MailAccountResponse::from)
+            .map(account -> MailAccountResponse.from(account, fetcherService.checkOAuthEnv(account)))
             .toList();
         return ResponseEntity.ok(accounts);
     }
@@ -173,20 +180,12 @@ public class MailAutomationController {
         account.setPollIntervalMinutes(request.pollIntervalMinutes() != null ? request.pollIntervalMinutes() : 10);
         account.setOauthProvider(request.oauthProvider());
         account.setOauthTokenEndpoint(request.oauthTokenEndpoint());
-        account.setOauthClientId(request.oauthClientId());
         account.setOauthTenantId(request.oauthTenantId());
         account.setOauthScope(request.oauthScope());
-        account.setOauthTokenExpiresAt(request.oauthTokenExpiresAt());
-        if (request.oauthClientSecret() != null && !request.oauthClientSecret().isBlank()) {
-            account.setOauthClientSecret(request.oauthClientSecret());
-        }
-        if (request.oauthAccessToken() != null && !request.oauthAccessToken().isBlank()) {
-            account.setOauthAccessToken(request.oauthAccessToken());
-        }
-        if (request.oauthRefreshToken() != null && !request.oauthRefreshToken().isBlank()) {
-            account.setOauthRefreshToken(request.oauthRefreshToken());
-        }
-        return ResponseEntity.ok(MailAccountResponse.from(accountRepository.save(account)));
+        account.setOauthCredentialKey(request.oauthCredentialKey());
+        applyOAuthSettings(account);
+        MailAccount saved = accountRepository.save(account);
+        return ResponseEntity.ok(MailAccountResponse.from(saved, fetcherService.checkOAuthEnv(saved)));
     }
 
     @PutMapping("/accounts/{id}")
@@ -205,21 +204,38 @@ public class MailAutomationController {
         if (request.pollIntervalMinutes() != null) account.setPollIntervalMinutes(request.pollIntervalMinutes());
         if (request.oauthProvider() != null) account.setOauthProvider(request.oauthProvider());
         if (request.oauthTokenEndpoint() != null) account.setOauthTokenEndpoint(request.oauthTokenEndpoint());
-        if (request.oauthClientId() != null) account.setOauthClientId(request.oauthClientId());
         if (request.oauthTenantId() != null) account.setOauthTenantId(request.oauthTenantId());
         if (request.oauthScope() != null) account.setOauthScope(request.oauthScope());
-        if (request.oauthTokenExpiresAt() != null) account.setOauthTokenExpiresAt(request.oauthTokenExpiresAt());
-        if (request.oauthClientSecret() != null && !request.oauthClientSecret().isBlank()) {
-            account.setOauthClientSecret(request.oauthClientSecret());
-        }
-        if (request.oauthAccessToken() != null && !request.oauthAccessToken().isBlank()) {
-            account.setOauthAccessToken(request.oauthAccessToken());
-        }
-        if (request.oauthRefreshToken() != null && !request.oauthRefreshToken().isBlank()) {
-            account.setOauthRefreshToken(request.oauthRefreshToken());
+        if (request.oauthCredentialKey() != null) account.setOauthCredentialKey(request.oauthCredentialKey());
+        applyOAuthSettings(account);
+
+        MailAccount saved = accountRepository.save(account);
+        return ResponseEntity.ok(MailAccountResponse.from(saved, fetcherService.checkOAuthEnv(saved)));
+    }
+
+    private void applyOAuthSettings(MailAccount account) {
+        if (account.getSecurity() == MailAccount.SecurityType.OAUTH2) {
+            if (account.getOauthCredentialKey() == null || account.getOauthCredentialKey().isBlank()) {
+                throw new IllegalArgumentException("OAuth credential key is required for OAuth2 accounts");
+            }
+            account.setPassword(null);
+        } else {
+            account.setOauthProvider(null);
+            account.setOauthTokenEndpoint(null);
+            account.setOauthTenantId(null);
+            account.setOauthScope(null);
+            account.setOauthCredentialKey(null);
         }
 
-        return ResponseEntity.ok(MailAccountResponse.from(accountRepository.save(account)));
+        clearOAuthSecrets(account);
+    }
+
+    private void clearOAuthSecrets(MailAccount account) {
+        account.setOauthClientId(null);
+        account.setOauthClientSecret(null);
+        account.setOauthAccessToken(null);
+        account.setOauthRefreshToken(null);
+        account.setOauthTokenExpiresAt(null);
     }
 
     @DeleteMapping("/accounts/{id}")

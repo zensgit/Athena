@@ -410,6 +410,35 @@ index.number_of_shards: 1
 index.number_of_replicas: 0
 ```
 
+### Mail Automation OAuth 配置
+
+Mail Automation 的 OAuth2 凭据不再存库，需通过服务器环境变量提供。每个账号设置
+`oauthCredentialKey`，系统会自动读取以下环境变量：
+
+- `ECM_MAIL_OAUTH_<KEY>_CLIENT_ID` (required)
+- `ECM_MAIL_OAUTH_<KEY>_CLIENT_SECRET` (optional)
+- `ECM_MAIL_OAUTH_<KEY>_REFRESH_TOKEN` (required)
+- `ECM_MAIL_OAUTH_<KEY>_TOKEN_ENDPOINT` (optional)
+- `ECM_MAIL_OAUTH_<KEY>_SCOPE` (optional)
+
+`<KEY>` 会在后端标准化：转大写并把非字母数字替换为 `_`。
+
+建议将变量写入 `.env` 并通过 `docker-compose` 传入容器：
+
+```bash
+# .env 示例
+ECM_MAIL_OAUTH_GMAIL_HAROLD_CLIENT_ID=...
+ECM_MAIL_OAUTH_GMAIL_HAROLD_CLIENT_SECRET=...
+ECM_MAIL_OAUTH_GMAIL_HAROLD_REFRESH_TOKEN=...
+ECM_MAIL_OAUTH_GMAIL_HAROLD_SCOPE=...
+```
+
+修改后重启后端：
+
+```bash
+docker-compose up -d --no-deps --force-recreate ecm-core
+```
+
 ### Nginx 配置
 
 #### 性能优化配置

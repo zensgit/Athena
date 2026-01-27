@@ -45,6 +45,9 @@ public class MailAccount extends BaseEntity {
     @Column(name = "oauth_token_endpoint")
     private String oauthTokenEndpoint;
 
+    @Column(name = "oauth_credential_key")
+    private String oauthCredentialKey;
+
     @Column(name = "oauth_client_id")
     private String oauthClientId;
 
@@ -71,6 +74,15 @@ public class MailAccount extends BaseEntity {
 
     @Column(name = "poll_interval_minutes")
     private Integer pollIntervalMinutes = 10;
+
+    @Column(name = "last_fetch_at")
+    private LocalDateTime lastFetchAt;
+
+    @Column(name = "last_fetch_status")
+    private String lastFetchStatus;
+
+    @Column(name = "last_fetch_error", columnDefinition = "TEXT")
+    private String lastFetchError;
 
     public enum SecurityType {
         NONE, SSL, STARTTLS, OAUTH2

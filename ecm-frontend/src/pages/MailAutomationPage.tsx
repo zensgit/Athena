@@ -50,6 +50,19 @@ interface TagOption {
   name: string;
 }
 
+const normalizeCredentialKey = (value: string) =>
+  value.trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+
+const formatMissingOAuthKeys = (keys?: string[]) => {
+  if (!keys || keys.length === 0) {
+    return '';
+  }
+  if (keys.includes('oauthCredentialKey')) {
+    return 'Missing oauthCredentialKey';
+  }
+  return keys.join(', ');
+};
+
 const DEFAULT_ACCOUNT_FORM: MailAccountRequest = {
   name: '',
   host: '',
@@ -61,13 +74,9 @@ const DEFAULT_ACCOUNT_FORM: MailAccountRequest = {
   pollIntervalMinutes: 10,
   oauthProvider: 'CUSTOM',
   oauthTokenEndpoint: '',
-  oauthClientId: '',
-  oauthClientSecret: '',
   oauthTenantId: '',
   oauthScope: '',
-  oauthAccessToken: '',
-  oauthRefreshToken: '',
-  oauthTokenExpiresAt: '',
+  oauthCredentialKey: '',
 };
 
 const DEFAULT_RULE_FORM: MailRuleRequest & { folderPath: string; folderIdOverride: string } = {
@@ -113,6 +122,23 @@ const MailAutomationPage: React.FC = () => {
   const actionOptions: MailActionType[] = ['ATTACHMENTS_ONLY', 'METADATA_ONLY', 'EVERYTHING'];
   const postActionOptions: MailPostAction[] = ['MARK_READ', 'MOVE', 'DELETE', 'FLAG', 'TAG', 'NONE'];
   const isOauthAccount = accountForm.security === 'OAUTH2';
+  const normalizedCredentialKey = accountForm.oauthCredentialKey
+    ? normalizeCredentialKey(accountForm.oauthCredentialKey)
+    : '';
+  const oauthEnvPrefix = normalizedCredentialKey
+    ? `ECM_MAIL_OAUTH_${normalizedCredentialKey}_`
+    : 'ECM_MAIL_OAUTH_<KEY>_';
+
+  const formatDateTime = (value?: string | null) => {
+    if (!value) {
+      return 'N/A';
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return value;
+    }
+    return date.toLocaleString();
+  };
 
   const loadAll = async () => {
     setLoading(true);
@@ -200,13 +226,9 @@ const MailAutomationPage: React.FC = () => {
       pollIntervalMinutes: account.pollIntervalMinutes,
       oauthProvider: account.oauthProvider || 'CUSTOM',
       oauthTokenEndpoint: account.oauthTokenEndpoint || '',
-      oauthClientId: account.oauthClientId || '',
-      oauthClientSecret: '',
       oauthTenantId: account.oauthTenantId || '',
       oauthScope: account.oauthScope || '',
-      oauthAccessToken: '',
-      oauthRefreshToken: '',
-      oauthTokenExpiresAt: account.oauthTokenExpiresAt || '',
+      oauthCredentialKey: account.oauthCredentialKey || '',
     });
     setAccountDialogOpen(true);
   };
@@ -224,16 +246,12 @@ const MailAutomationPage: React.FC = () => {
       }
 
       if (isOauthAccount) {
-        if (!accountForm.oauthAccessToken && !accountForm.oauthRefreshToken) {
-          toast.warn('OAuth access token or refresh token is required');
+        if (!accountForm.oauthCredentialKey) {
+          toast.warn('OAuth credential key is required');
           return;
         }
         if (accountForm.oauthProvider === 'CUSTOM' && !accountForm.oauthTokenEndpoint) {
           toast.warn('OAuth token endpoint is required for custom providers');
-          return;
-        }
-        if (accountForm.oauthRefreshToken && !accountForm.oauthClientId) {
-          toast.warn('OAuth client ID is required when using refresh tokens');
           return;
         }
       }
@@ -244,13 +262,9 @@ const MailAutomationPage: React.FC = () => {
       } else {
         payload.oauthProvider = undefined;
         payload.oauthTokenEndpoint = undefined;
-        payload.oauthClientId = undefined;
-        payload.oauthClientSecret = undefined;
         payload.oauthTenantId = undefined;
         payload.oauthScope = undefined;
-        payload.oauthAccessToken = undefined;
-        payload.oauthRefreshToken = undefined;
-        payload.oauthTokenExpiresAt = undefined;
+        payload.oauthCredentialKey = undefined;
       }
 
       if (editingAccount) {
@@ -431,6 +445,7 @@ const MailAutomationPage: React.FC = () => {
                       <TableCell>Username</TableCell>
                       <TableCell>Security</TableCell>
                       <TableCell>Poll (min)</TableCell>
+                      <TableCell>Last fetch</TableCell>
                       <TableCell>Status</TableCell>
                       <TableCell align="right">Actions</TableCell>
                     </TableRow>
@@ -438,7 +453,7 @@ const MailAutomationPage: React.FC = () => {
                   <TableBody>
                     {accounts.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={7} align="center">
+                        <TableCell colSpan={8} align="center">
                           No mail accounts configured
                         </TableCell>
                       </TableRow>
@@ -450,6 +465,31 @@ const MailAutomationPage: React.FC = () => {
                         <TableCell>{account.username}</TableCell>
                         <TableCell>{account.security}</TableCell>
                         <TableCell>{account.pollIntervalMinutes}</TableCell>
+                        <TableCell>
+                          <Stack spacing={0.5}>
+                            <Typography variant="caption">
+                              {formatDateTime(account.lastFetchAt)}
+                            </Typography>
+                            {account.lastFetchStatus && (
+                              <Tooltip
+                                title={account.lastFetchError || ''}
+                                disableHoverListener={!account.lastFetchError}
+                              >
+                                <Chip
+                                  size="small"
+                                  variant="outlined"
+                                  label={account.lastFetchStatus}
+                                  color={account.lastFetchStatus === 'SUCCESS' ? 'success' : account.lastFetchStatus === 'ERROR' ? 'error' : 'default'}
+                                />
+                              </Tooltip>
+                            )}
+                            {account.security === 'OAUTH2' && account.oauthEnvConfigured === false && (
+                              <Tooltip title={formatMissingOAuthKeys(account.oauthMissingEnvKeys)}>
+                                <Chip size="small" variant="outlined" color="warning" label="OAuth env missing" />
+                              </Tooltip>
+                            )}
+                          </Stack>
+                        </TableCell>
                         <TableCell>
                           <Chip
                             size="small"
@@ -660,24 +700,17 @@ const MailAutomationPage: React.FC = () => {
                   </Select>
                 </FormControl>
                 <TextField
+                  label="OAuth credential key"
+                  value={accountForm.oauthCredentialKey}
+                  onChange={(event) => setAccountForm({ ...accountForm, oauthCredentialKey: event.target.value })}
+                  size="small"
+                  helperText={`Server env prefix: ${oauthEnvPrefix}`}
+                  fullWidth
+                />
+                <TextField
                   label="OAuth token endpoint (custom)"
                   value={accountForm.oauthTokenEndpoint}
                   onChange={(event) => setAccountForm({ ...accountForm, oauthTokenEndpoint: event.target.value })}
-                  size="small"
-                  fullWidth
-                />
-                <TextField
-                  label="OAuth client ID"
-                  value={accountForm.oauthClientId}
-                  onChange={(event) => setAccountForm({ ...accountForm, oauthClientId: event.target.value })}
-                  size="small"
-                  fullWidth
-                />
-                <TextField
-                  label="OAuth client secret (leave blank to keep)"
-                  type="password"
-                  value={accountForm.oauthClientSecret}
-                  onChange={(event) => setAccountForm({ ...accountForm, oauthClientSecret: event.target.value })}
                   size="small"
                   fullWidth
                 />
@@ -695,25 +728,35 @@ const MailAutomationPage: React.FC = () => {
                   size="small"
                   fullWidth
                 />
+                <Typography variant="caption" color="text.secondary">
+                  OAuth credentials are loaded from server environment variables:
+                  {' '}
+                  {oauthEnvPrefix}CLIENT_ID,
+                  {' '}
+                  {oauthEnvPrefix}CLIENT_SECRET,
+                  {' '}
+                  {oauthEnvPrefix}REFRESH_TOKEN
+                </Typography>
                 <TextField
-                  label="OAuth access token (leave blank to keep)"
-                  type="password"
-                  value={accountForm.oauthAccessToken}
-                  onChange={(event) => setAccountForm({ ...accountForm, oauthAccessToken: event.target.value })}
+                  label="OAuth client ID (from env)"
+                  value="********"
                   size="small"
                   fullWidth
-                  multiline
-                  minRows={2}
+                  disabled
                 />
                 <TextField
-                  label="OAuth refresh token (leave blank to keep)"
-                  type="password"
-                  value={accountForm.oauthRefreshToken}
-                  onChange={(event) => setAccountForm({ ...accountForm, oauthRefreshToken: event.target.value })}
+                  label="OAuth client secret (from env)"
+                  value="********"
                   size="small"
                   fullWidth
-                  multiline
-                  minRows={2}
+                  disabled
+                />
+                <TextField
+                  label="OAuth refresh token (from env)"
+                  value="********"
+                  size="small"
+                  fullWidth
+                  disabled
                 />
               </>
             )}
