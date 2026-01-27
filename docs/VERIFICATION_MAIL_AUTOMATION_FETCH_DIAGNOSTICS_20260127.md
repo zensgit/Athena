@@ -26,4 +26,6 @@
 - Mail Automation now has a "Fetch Diagnostics (Dry Run)" card that:
   - Runs without ingesting content.
   - Shows skip reasons and per-folder visibility.
-
+- Backend logs now include diagnostic summaries, e.g.:
+  - `Mail debug folder <account>:INBOX found=...`
+  - `Mail debug summary for <account>: found=..., matched=..., processable=...`

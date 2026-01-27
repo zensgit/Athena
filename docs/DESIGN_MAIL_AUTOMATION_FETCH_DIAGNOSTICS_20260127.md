@@ -11,6 +11,10 @@
   - `MailFetchDebugResult`
   - `MailFetchDebugAccountResult`
   - `MailFetchDebugFolderResult`
+- New diagnostic logging summaries:
+  - Per-folder debug summary
+  - Per-account debug summary (including top skip reasons and top rule matches)
+  - Global top skip reasons when present
 - Safety guarantees for dry runs:
   - Folders are opened `READ_ONLY`.
   - No ingestion is attempted.
@@ -52,4 +56,3 @@
   - `ecm-frontend/src/services/mailAutomationService.ts`
   - `ecm-frontend/src/pages/MailAutomationPage.tsx`
   - `ecm-frontend/e2e/mail-automation.spec.ts`
-

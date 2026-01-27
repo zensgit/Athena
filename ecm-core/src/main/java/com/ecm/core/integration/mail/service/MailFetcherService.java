@@ -226,6 +226,10 @@ public class MailFetcherService {
             summary.skippedAccounts(),
             summary.accountErrors()
         );
+        String topReasons = formatTopCounts(stats.skipReasons, 6);
+        if (!topReasons.isBlank()) {
+            log.info("Mail fetch debug top skip reasons: {}", topReasons);
+        }
         return new MailFetchDebugResult(summary, effectiveMaxMessages, stats.skipReasons, stats.accountResults);
     }
 
@@ -600,6 +604,17 @@ public class MailFetcherService {
                 folderResult.skipReasons().forEach((reason, count) -> incrementReason(skipReasons, reason, count));
             }
 
+            log.info(
+                "Mail debug summary for {}: found={}, matched={}, processable={}, skipped={}, errors={}, topSkips=[{}], topRules=[{}]",
+                account.getName(),
+                foundMessages,
+                matchedMessages,
+                processableMessages,
+                skippedMessages,
+                errorMessages,
+                formatTopCounts(skipReasons, 5),
+                formatTopCounts(ruleMatches, 5)
+            );
             return new MailFetchDebugAccountResult(
                 account.getId(),
                 account.getName(),
@@ -695,6 +710,17 @@ public class MailFetcherService {
                 incrementReason(skipReasons, result.reason, 1);
             }
 
+            log.info(
+                "Mail debug folder {}:{} found={}, scanned={}, matched={}, processable={}, skipped={}, errors={}",
+                account.getName(),
+                folderName,
+                foundMessages,
+                scannedMessages,
+                matchedMessages,
+                processableMessages,
+                skippedMessages,
+                errorMessages
+            );
             return new MailFetchDebugFolderResult(
                 folderName,
                 rules.size(),
@@ -815,6 +841,17 @@ public class MailFetcherService {
             return;
         }
         reasons.merge(reason, amount, Integer::sum);
+    }
+
+    private static String formatTopCounts(Map<String, Integer> counts, int limit) {
+        if (counts == null || counts.isEmpty()) {
+            return "";
+        }
+        return counts.entrySet().stream()
+            .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
+            .limit(Math.max(1, limit))
+            .map(entry -> entry.getKey() + "=" + entry.getValue())
+            .collect(Collectors.joining(", "));
     }
 
     private MailRule findMatchingRule(List<MailRule> rules, MailRuleMatcher.MailMessageData messageData) {
