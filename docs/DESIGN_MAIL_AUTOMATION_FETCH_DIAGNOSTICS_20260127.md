@@ -20,6 +20,9 @@
   - No ingestion is attempted.
   - No mail actions (mark read/move/delete/tag) are applied.
   - No processed-mail records are written.
+- Folder coverage:
+  - Mail rule folder now supports comma-separated folder names (e.g. `INBOX,[Gmail]/All Mail`).
+  - Both normal fetch and debug fetch evaluate all listed folders.
 - Skip reasons are aggregated at three levels:
   - Per-folder
   - Per-account

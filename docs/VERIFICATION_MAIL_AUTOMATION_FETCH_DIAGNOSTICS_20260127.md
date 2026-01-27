@@ -29,3 +29,14 @@
 - Backend logs now include diagnostic summaries, e.g.:
   - `Mail debug folder <account>:INBOX found=...`
   - `Mail debug summary for <account>: found=..., matched=..., processable=...`
+- Folder coverage:
+  - Mail rule folder supports comma-separated folders (e.g. `INBOX,[Gmail]/All Mail`).
+  - Both normal fetch and debug fetch evaluate all listed folders.
+
+## Observed Diagnostics (2026-01-27)
+- Command (API debug fetch):
+  - `POST /api/v1/integration/mail/fetch/debug?force=true&maxMessagesPerFolder=200`
+- Result snapshot:
+  - `foundMessages=0` for `gmail-imap` `INBOX`
+  - Logs:
+    - `Mail debug folder gmail-imap:INBOX found=0, scanned=0, matched=0, processable=0, skipped=0, errors=0`

@@ -247,7 +247,13 @@ public class MailFetcherService {
         }
 
         Map<String, List<MailRule>> rulesByFolder = rules.stream()
-            .collect(Collectors.groupingBy(rule -> normalizeFolder(rule.getFolder())));
+            .flatMap(rule -> normalizeFolders(rule.getFolder()).stream().map(folder -> Map.entry(folder, rule)))
+            .collect(
+                Collectors.groupingBy(
+                    Map.Entry::getKey,
+                    Collectors.mapping(Map.Entry::getValue, Collectors.toList())
+                )
+            );
 
         for (Map.Entry<String, List<MailRule>> entry : rulesByFolder.entrySet()) {
             processFolder(store, account, entry.getKey(), entry.getValue(), stats);
@@ -570,7 +576,13 @@ public class MailFetcherService {
         }
 
         Map<String, List<MailRule>> rulesByFolder = rules.stream()
-            .collect(Collectors.groupingBy(rule -> normalizeFolder(rule.getFolder())));
+            .flatMap(rule -> normalizeFolders(rule.getFolder()).stream().map(folder -> Map.entry(folder, rule)))
+            .collect(
+                Collectors.groupingBy(
+                    Map.Entry::getKey,
+                    Collectors.mapping(Map.Entry::getValue, Collectors.toList())
+                )
+            );
 
         Store store = null;
         try {
@@ -1165,11 +1177,18 @@ public class MailFetcherService {
         }
     }
 
-    private String normalizeFolder(String folder) {
-        if (folder == null || folder.isBlank()) {
-            return "INBOX";
+    private List<String> normalizeFolders(String folders) {
+        if (folders == null || folders.isBlank()) {
+            return List.of("INBOX");
         }
-        return folder.trim();
+        List<String> normalized = List.of(folders.split(",")).stream()
+            .map(String::trim)
+            .filter(value -> !value.isBlank())
+            .collect(Collectors.toList());
+        if (normalized.isEmpty()) {
+            return List.of("INBOX");
+        }
+        return normalized;
     }
 
     private boolean shouldProcessAccount(MailAccount account, Instant now) {

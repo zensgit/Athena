@@ -1103,7 +1103,7 @@ const MailAutomationPage: React.FC = () => {
               value={ruleForm.folder}
               onChange={(event) => setRuleForm({ ...ruleForm, folder: event.target.value })}
               size="small"
-              helperText="IMAP folder name, default INBOX"
+              helperText="IMAP folder name(s), comma-separated, default INBOX"
               fullWidth
             />
             <TextField
