@@ -1,5 +1,6 @@
 package com.ecm.core.integration.mail.service;
 
+import com.ecm.core.entity.Document;
 import com.ecm.core.integration.email.EmailIngestionService;
 import com.ecm.core.integration.mail.model.MailAccount;
 import com.ecm.core.integration.mail.model.MailRule;
@@ -7,7 +8,9 @@ import com.ecm.core.integration.mail.model.ProcessedMail;
 import com.ecm.core.integration.mail.repository.MailAccountRepository;
 import com.ecm.core.integration.mail.repository.MailRuleRepository;
 import com.ecm.core.integration.mail.repository.ProcessedMailRepository;
+import com.ecm.core.repository.DocumentRepository;
 import com.ecm.core.service.DocumentUploadService;
+import com.ecm.core.service.NodeService;
 import com.ecm.core.service.TagService;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -25,6 +28,7 @@ import jakarta.mail.search.FlagTerm;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.IOUtils;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.http.HttpEntity;
@@ -78,7 +82,9 @@ public class MailFetcherService {
     private final MailAccountRepository accountRepository;
     private final MailRuleRepository ruleRepository;
     private final ProcessedMailRepository processedMailRepository;
+    private final DocumentRepository documentRepository;
     private final DocumentUploadService uploadService;
+    private final NodeService nodeService;
     private final TagService tagService;
     private final EmailIngestionService emailIngestionService;
     private final MeterRegistry meterRegistry;
@@ -244,6 +250,16 @@ public class MailFetcherService {
         }
     }
 
+    public MailDiagnosticsResult getDiagnostics(Integer limit) {
+        int effectiveLimit = Math.max(1, Math.min(limit != null ? limit : 25, 200));
+        try {
+            return runWithSystemAuthenticationWithResult(() -> buildDiagnostics(effectiveLimit));
+        } catch (Exception e) {
+            String message = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            throw new IllegalArgumentException("Failed to build mail diagnostics: " + message, e);
+        }
+    }
+
     private void processAccount(MailAccount account, MailFetchRunStats stats) throws Exception {
         Store store = connect(account);
 
@@ -313,17 +329,31 @@ public class MailFetcherService {
             return false;
         }
 
-        List<AttachmentPart> attachments = collectAttachmentParts(message);
+        List<AttachmentPart> attachments;
+        try {
+            attachments = collectAttachmentParts(message);
+        } catch (Exception e) {
+            log.debug("Mail attachment collection failed: {}", e.getMessage());
+            attachments = new ArrayList<>();
+        }
         List<String> attachmentNames = attachments.stream()
             .map(AttachmentPart::fileName)
             .filter(name -> name != null && !name.isBlank())
             .collect(Collectors.toList());
 
+        String bodyText;
+        try {
+            bodyText = extractBodyText(message);
+        } catch (Exception e) {
+            log.debug("Mail body extraction failed: {}", e.getMessage());
+            bodyText = "";
+        }
+
         MailRuleMatcher.MailMessageData messageData = new MailRuleMatcher.MailMessageData(
             safeSubject(message),
             safeFrom(message),
             safeRecipients(message),
-            extractBodyText(message),
+            bodyText,
             attachmentNames,
             toLocalDateTime(message.getReceivedDate(), message.getSentDate())
         );
@@ -339,9 +369,10 @@ public class MailFetcherService {
         log.info("Email matched rule: {}", matchedRule.getName());
         stats.matchedMessages++;
 
+        Map<String, Object> mailProperties = buildMailProperties(account, folderName, uid, matchedRule);
         boolean processed = false;
         try {
-            processed = processContent(message, matchedRule, attachments);
+            processed = processContent(message, matchedRule, attachments, mailProperties);
             if (!processed) {
                 log.debug("Rule matched but no content processed for UID {}", uid);
                 incrementMessageMetric("skipped", "no_content");
@@ -447,6 +478,45 @@ public class MailFetcherService {
         int maxMessagesPerFolder,
         Map<String, Integer> skipReasons,
         List<MailFetchDebugAccountResult> accounts
+    ) {
+    }
+
+    public record ProcessedMailDiagnosticItem(
+        UUID id,
+        LocalDateTime processedAt,
+        ProcessedMail.Status status,
+        UUID accountId,
+        String accountName,
+        UUID ruleId,
+        String ruleName,
+        String folder,
+        String uid,
+        String subject,
+        String errorMessage
+    ) {
+    }
+
+    public record MailDocumentDiagnosticItem(
+        UUID documentId,
+        String name,
+        String path,
+        LocalDateTime createdDate,
+        String createdBy,
+        String mimeType,
+        Long fileSize,
+        UUID accountId,
+        String accountName,
+        UUID ruleId,
+        String ruleName,
+        String folder,
+        String uid
+    ) {
+    }
+
+    public record MailDiagnosticsResult(
+        int limit,
+        List<ProcessedMailDiagnosticItem> recentProcessed,
+        List<MailDocumentDiagnosticItem> recentDocuments
     ) {
     }
 
@@ -558,6 +628,89 @@ public class MailFetcherService {
         return ruleRepository.findAllByOrderByPriorityAsc().stream()
             .filter(rule -> rule.getAccountId() == null || Objects.equals(rule.getAccountId(), account.getId()))
             .collect(Collectors.toList());
+    }
+
+    private MailDiagnosticsResult buildDiagnostics(int limit) {
+        Map<UUID, String> accountNames = accountRepository.findAll().stream()
+            .collect(Collectors.toMap(MailAccount::getId, MailAccount::getName));
+        Map<UUID, String> ruleNames = ruleRepository.findAllByOrderByPriorityAsc().stream()
+            .collect(Collectors.toMap(MailRule::getId, MailRule::getName));
+
+        List<ProcessedMailDiagnosticItem> recentProcessed = processedMailRepository
+            .findAllByOrderByProcessedAtDesc(PageRequest.of(0, limit))
+            .stream()
+            .map(mail -> new ProcessedMailDiagnosticItem(
+                mail.getId(),
+                mail.getProcessedAt(),
+                mail.getStatus(),
+                mail.getAccountId(),
+                accountNames.get(mail.getAccountId()),
+                mail.getRuleId(),
+                mail.getRuleId() != null ? ruleNames.get(mail.getRuleId()) : null,
+                mail.getFolder(),
+                mail.getUid(),
+                mail.getSubject(),
+                mail.getErrorMessage()
+            ))
+            .toList();
+
+        List<MailDocumentDiagnosticItem> recentDocuments = documentRepository.findRecentMailDocuments(limit)
+            .stream()
+            .map(doc -> toMailDocumentDiagnosticItem(doc, accountNames, ruleNames))
+            .toList();
+
+        return new MailDiagnosticsResult(limit, recentProcessed, recentDocuments);
+    }
+
+    private MailDocumentDiagnosticItem toMailDocumentDiagnosticItem(
+        Document doc,
+        Map<UUID, String> accountNames,
+        Map<UUID, String> ruleNames
+    ) {
+        Map<String, Object> props = doc.getProperties() != null ? doc.getProperties() : Map.of();
+        UUID accountId = parseUuid(props.get("mail:accountId"));
+        UUID ruleId = parseUuid(props.get("mail:ruleId"));
+        String accountName = accountId != null ? accountNames.get(accountId) : null;
+        if ((accountName == null || accountName.isBlank()) && props.get("mail:accountName") != null) {
+            accountName = props.get("mail:accountName").toString();
+        }
+        String ruleName = ruleId != null ? ruleNames.get(ruleId) : null;
+        if ((ruleName == null || ruleName.isBlank()) && props.get("mail:ruleName") != null) {
+            ruleName = props.get("mail:ruleName").toString();
+        }
+        String folder = asString(props.get("mail:folder"));
+        String uid = asString(props.get("mail:uid"));
+
+        return new MailDocumentDiagnosticItem(
+            doc.getId(),
+            doc.getName(),
+            doc.getPath(),
+            doc.getCreatedDate(),
+            doc.getCreatedBy(),
+            doc.getMimeType(),
+            doc.getFileSize(),
+            accountId,
+            accountName,
+            ruleId,
+            ruleName,
+            folder,
+            uid
+        );
+    }
+
+    private UUID parseUuid(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return UUID.fromString(value.toString().trim());
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    private String asString(Object value) {
+        return value != null ? value.toString() : null;
     }
 
     private List<String> listFolders(MailAccount account) throws Exception {
@@ -954,7 +1107,12 @@ public class MailFetcherService {
         return null;
     }
 
-    private boolean processContent(Message message, MailRule rule, List<AttachmentPart> attachments) throws Exception {
+    private boolean processContent(
+        Message message,
+        MailRule rule,
+        List<AttachmentPart> attachments,
+        Map<String, Object> mailProperties
+    ) throws Exception {
         boolean processed = false;
         MailRule.MailActionType actionType = rule.getActionType() != null
             ? rule.getActionType()
@@ -962,27 +1120,31 @@ public class MailFetcherService {
 
         if (actionType == MailRule.MailActionType.METADATA_ONLY
             || actionType == MailRule.MailActionType.EVERYTHING) {
-            processed |= ingestEmailMessage(message, rule);
+            processed |= ingestEmailMessage(message, rule, mailProperties);
         }
 
         if (actionType == MailRule.MailActionType.ATTACHMENTS_ONLY
             || actionType == MailRule.MailActionType.EVERYTHING) {
-            processed |= ingestAttachments(attachments, rule);
+            processed |= ingestAttachments(attachments, rule, mailProperties);
         }
 
         return processed;
     }
 
-    private boolean ingestEmailMessage(Message message, MailRule rule) throws Exception {
+    private boolean ingestEmailMessage(Message message, MailRule rule, Map<String, Object> mailProperties) throws Exception {
         MultipartFile file = buildEmlFile(message);
-        var document = emailIngestionService.ingestEmail(file, rule.getAssignFolderId());
+        var document = emailIngestionService.ingestEmail(file, rule.getAssignFolderId(), mailProperties);
         if (document != null && rule.getAssignTagId() != null) {
             tagService.addTagToNodeById(document.getId().toString(), rule.getAssignTagId());
         }
         return document != null;
     }
 
-    private boolean ingestAttachments(List<AttachmentPart> attachments, MailRule rule) throws Exception {
+    private boolean ingestAttachments(
+        List<AttachmentPart> attachments,
+        MailRule rule,
+        Map<String, Object> mailProperties
+    ) throws Exception {
         boolean includeInline = Boolean.TRUE.equals(rule.getIncludeInlineAttachments());
         boolean processed = false;
 
@@ -1005,6 +1167,7 @@ public class MailFetcherService {
             var result = uploadService.uploadDocument(file, rule.getAssignFolderId(), null);
             if (result.isSuccess()) {
                 processed = true;
+                updateMailDocumentProperties(result.getDocumentId(), mailProperties);
                 if (rule.getAssignTagId() != null) {
                     tagService.addTagToNodeById(result.getDocumentId().toString(), rule.getAssignTagId());
                 }
@@ -1012,6 +1175,37 @@ public class MailFetcherService {
         }
 
         return processed;
+    }
+
+    private void updateMailDocumentProperties(UUID documentId, Map<String, Object> mailProperties) {
+        if (documentId == null || mailProperties == null || mailProperties.isEmpty()) {
+            return;
+        }
+        try {
+            nodeService.updateNode(documentId, Map.of("properties", mailProperties));
+        } catch (Exception e) {
+            log.warn("Failed to update mail properties for document {}", documentId, e);
+        }
+    }
+
+    private Map<String, Object> buildMailProperties(
+        MailAccount account,
+        String folderName,
+        String uid,
+        MailRule rule
+    ) {
+        Map<String, Object> props = new HashMap<>();
+        props.put("mail:source", true);
+        props.put("mail:accountId", account.getId().toString());
+        props.put("mail:accountName", account.getName());
+        props.put("mail:folder", folderName);
+        props.put("mail:uid", uid);
+        props.put("mail:processedAt", LocalDateTime.now().toString());
+        if (rule != null && rule.getId() != null) {
+            props.put("mail:ruleId", rule.getId().toString());
+            props.put("mail:ruleName", rule.getName());
+        }
+        return props;
     }
 
     private boolean attachmentMatchesRule(String fileName, MailRule rule) {

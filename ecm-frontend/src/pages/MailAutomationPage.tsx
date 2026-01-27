@@ -34,6 +34,7 @@ import mailAutomationService, {
   MailAccount,
   MailAccountRequest,
   MailConnectionTestResult,
+  MailDiagnosticsResult,
   MailFetchDebugResult,
   MailFetchSummary,
   MailRule,
@@ -42,6 +43,8 @@ import mailAutomationService, {
   MailSecurityType,
   MailOAuthProvider,
   MailPostAction,
+  MailDocumentDiagnosticItem,
+  ProcessedMailDiagnosticItem,
 } from 'services/mailAutomationService';
 import tagService from 'services/tagService';
 import nodeService from 'services/nodeService';
@@ -115,6 +118,8 @@ const MailAutomationPage: React.FC = () => {
   const [folderAccountId, setFolderAccountId] = useState('');
   const [listingFolders, setListingFolders] = useState(false);
   const [availableFolders, setAvailableFolders] = useState<string[]>([]);
+  const [diagnostics, setDiagnostics] = useState<MailDiagnosticsResult | null>(null);
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
   const [testingAccountId, setTestingAccountId] = useState<string | null>(null);
 
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
@@ -129,6 +134,7 @@ const MailAutomationPage: React.FC = () => {
   const oauthProviderOptions: MailOAuthProvider[] = ['MICROSOFT', 'GOOGLE', 'CUSTOM'];
   const actionOptions: MailActionType[] = ['ATTACHMENTS_ONLY', 'METADATA_ONLY', 'EVERYTHING'];
   const postActionOptions: MailPostAction[] = ['MARK_READ', 'MOVE', 'DELETE', 'FLAG', 'TAG', 'NONE'];
+  const diagnosticsLimit = 25;
   const isOauthAccount = accountForm.security === 'OAUTH2';
   const normalizedCredentialKey = accountForm.oauthCredentialKey
     ? normalizeCredentialKey(accountForm.oauthCredentialKey)
@@ -156,6 +162,26 @@ const MailAutomationPage: React.FC = () => {
       return value;
     }
     return `${value.slice(0, Math.max(0, maxLength - 3))}...`;
+  };
+
+  const summarizeText = (value?: string | null, maxLength = 120) => {
+    if (!value) {
+      return '';
+    }
+    if (value.length <= maxLength) {
+      return value;
+    }
+    return `${value.slice(0, Math.max(0, maxLength - 3))}...`;
+  };
+
+  const statusColor = (status?: string | null): 'default' | 'success' | 'error' => {
+    if (status === 'ERROR') {
+      return 'error';
+    }
+    if (status === 'PROCESSED') {
+      return 'success';
+    }
+    return 'default';
   };
 
   const toSortedEntries = (map?: Record<string, number> | null) =>
@@ -189,8 +215,26 @@ const MailAutomationPage: React.FC = () => {
     return ok;
   };
 
+  const loadDiagnostics = async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true;
+    if (!silent) {
+      setDiagnosticsLoading(true);
+    }
+    try {
+      const result = await mailAutomationService.getDiagnostics(diagnosticsLimit);
+      setDiagnostics(result);
+    } catch {
+      if (!silent) {
+        toast.error('Failed to load mail diagnostics');
+      }
+    } finally {
+      setDiagnosticsLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadAll();
+    loadDiagnostics();
   }, []);
 
   useEffect(() => {
@@ -207,6 +251,9 @@ const MailAutomationPage: React.FC = () => {
     return new Map(tags.map((tag) => [tag.id, tag.name]));
   }, [tags]);
 
+  const recentProcessed: ProcessedMailDiagnosticItem[] = diagnostics?.recentProcessed ?? [];
+  const recentDocuments: MailDocumentDiagnosticItem[] = diagnostics?.recentDocuments ?? [];
+
   const handleTriggerFetch = async () => {
     setFetching(true);
     try {
@@ -220,6 +267,7 @@ const MailAutomationPage: React.FC = () => {
       } else {
         toast.success(message);
       }
+      await loadDiagnostics({ silent: true });
     } catch {
       toast.error('Failed to trigger mail fetch');
     } finally {
@@ -243,6 +291,7 @@ const MailAutomationPage: React.FC = () => {
       toast.success(
         `Diagnostics complete: matched ${result.summary.matchedMessages}, processable ${result.summary.processedMessages} in ${durationSeconds}s`
       );
+      await loadDiagnostics({ silent: true });
     } catch {
       toast.error('Failed to run mail diagnostics');
     } finally {
@@ -272,6 +321,7 @@ const MailAutomationPage: React.FC = () => {
     try {
       const ok = await loadAll({ silent: true });
       if (ok) {
+        await loadDiagnostics({ silent: true });
         toast.success('Mail status refreshed');
       }
     } finally {
@@ -737,6 +787,124 @@ const MailAutomationPage: React.FC = () => {
           <Card variant="outlined">
             <CardContent>
               <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
+                <Typography variant="h6">Recent Mail Activity</Typography>
+                <Button
+                  variant="outlined"
+                  startIcon={diagnosticsLoading ? <CircularProgress size={16} /> : <Refresh />}
+                  onClick={() => loadDiagnostics()}
+                  disabled={diagnosticsLoading}
+                >
+                  {diagnosticsLoading ? 'Refreshing...' : 'Refresh'}
+                </Button>
+              </Box>
+
+              {diagnosticsLoading && !diagnostics ? (
+                <Box display="flex" justifyContent="center" py={2}>
+                  <CircularProgress size={24} />
+                </Box>
+              ) : (
+                <Stack spacing={2}>
+                  <Typography variant="caption" color="text.secondary">
+                    Showing last {diagnostics?.limit ?? diagnosticsLimit} items tagged by mail ingestion.
+                  </Typography>
+
+                  <Box>
+                    <Typography variant="subtitle2" gutterBottom>
+                      Processed Messages
+                    </Typography>
+                    {recentProcessed.length === 0 ? (
+                      <Typography variant="body2" color="text.secondary">
+                        No processed messages recorded yet.
+                      </Typography>
+                    ) : (
+                      <TableContainer sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+                        <Table size="small">
+                          <TableHead>
+                            <TableRow>
+                              <TableCell>Processed</TableCell>
+                              <TableCell>Status</TableCell>
+                              <TableCell>Account</TableCell>
+                              <TableCell>Rule</TableCell>
+                              <TableCell>Folder</TableCell>
+                              <TableCell>UID</TableCell>
+                              <TableCell>Subject</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {recentProcessed.map((item) => (
+                              <TableRow key={item.id} hover>
+                                <TableCell>{formatDateTime(item.processedAt)}</TableCell>
+                                <TableCell>
+                                  <Chip size="small" color={statusColor(item.status)} label={item.status} />
+                                </TableCell>
+                                <TableCell>{item.accountName || item.accountId || '-'}</TableCell>
+                                <TableCell>{item.ruleName || item.ruleId || '-'}</TableCell>
+                                <TableCell>{item.folder}</TableCell>
+                                <TableCell>{item.uid}</TableCell>
+                                <TableCell>
+                                  <Typography variant="caption" title={item.subject || ''}>
+                                    {summarizeText(item.subject) || '-'}
+                                  </Typography>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </TableContainer>
+                    )}
+                  </Box>
+
+                  <Box>
+                    <Typography variant="subtitle2" gutterBottom>
+                      Mail Documents
+                    </Typography>
+                    {recentDocuments.length === 0 ? (
+                      <Typography variant="body2" color="text.secondary">
+                        No mail documents found yet (new mail will appear here).
+                      </Typography>
+                    ) : (
+                      <TableContainer sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+                        <Table size="small">
+                          <TableHead>
+                            <TableRow>
+                              <TableCell>Created</TableCell>
+                              <TableCell>Name</TableCell>
+                              <TableCell>Path</TableCell>
+                              <TableCell>Account</TableCell>
+                              <TableCell>Rule</TableCell>
+                              <TableCell>Folder</TableCell>
+                              <TableCell>UID</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {recentDocuments.map((doc) => (
+                              <TableRow key={doc.documentId} hover>
+                                <TableCell>{formatDateTime(doc.createdDate)}</TableCell>
+                                <TableCell>{doc.name}</TableCell>
+                                <TableCell>
+                                  <Typography variant="caption" title={doc.path}>
+                                    {summarizeText(doc.path, 80)}
+                                  </Typography>
+                                </TableCell>
+                                <TableCell>{doc.accountName || doc.accountId || '-'}</TableCell>
+                                <TableCell>{doc.ruleName || doc.ruleId || '-'}</TableCell>
+                                <TableCell>{doc.folder || '-'}</TableCell>
+                                <TableCell>{doc.uid || '-'}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </TableContainer>
+                    )}
+                  </Box>
+                </Stack>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card variant="outlined">
+            <CardContent>
+              <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
                 <Typography variant="h6">Mail Accounts</Typography>
                 <Stack direction="row" spacing={1}>
                   <Button
@@ -763,7 +931,12 @@ const MailAutomationPage: React.FC = () => {
                       <TableCell>Poll (min)</TableCell>
                       <TableCell>Last fetch</TableCell>
                       <TableCell>Status</TableCell>
-                      <TableCell align="right">Actions</TableCell>
+                      <TableCell
+                        align="right"
+                        sx={{ position: 'sticky', right: 0, backgroundColor: 'background.paper', zIndex: 2 }}
+                      >
+                        Actions
+                      </TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -932,7 +1105,10 @@ const MailAutomationPage: React.FC = () => {
                         </TableCell>
                         <TableCell>{rule.assignTagId ? tagNameById.get(rule.assignTagId) : '-'}</TableCell>
                         <TableCell>{rule.assignFolderId || '-'}</TableCell>
-                        <TableCell align="right">
+                        <TableCell
+                          align="right"
+                          sx={{ position: 'sticky', right: 0, backgroundColor: 'background.paper', zIndex: 1 }}
+                        >
                           <Tooltip title="Edit">
                             <IconButton size="small" onClick={() => openEditRule(rule)}>
                               <Edit fontSize="small" />

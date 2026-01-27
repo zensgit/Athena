@@ -5,7 +5,9 @@ import com.ecm.core.integration.mail.model.MailAccount;
 import com.ecm.core.integration.mail.repository.MailAccountRepository;
 import com.ecm.core.integration.mail.repository.MailRuleRepository;
 import com.ecm.core.integration.mail.repository.ProcessedMailRepository;
+import com.ecm.core.repository.DocumentRepository;
 import com.ecm.core.service.DocumentUploadService;
+import com.ecm.core.service.NodeService;
 import com.ecm.core.service.TagService;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,7 +38,13 @@ class MailFetcherServiceOAuthEnvTest {
     private ProcessedMailRepository processedMailRepository;
 
     @Mock
+    private DocumentRepository documentRepository;
+
+    @Mock
     private DocumentUploadService uploadService;
+
+    @Mock
+    private NodeService nodeService;
 
     @Mock
     private TagService tagService;
@@ -58,7 +66,9 @@ class MailFetcherServiceOAuthEnvTest {
             accountRepository,
             ruleRepository,
             processedMailRepository,
+            documentRepository,
             uploadService,
+            nodeService,
             tagService,
             emailIngestionService,
             meterRegistry,
@@ -117,4 +127,3 @@ class MailFetcherServiceOAuthEnvTest {
         assertEquals(List.of(), result.missingEnvKeys());
     }
 }
-

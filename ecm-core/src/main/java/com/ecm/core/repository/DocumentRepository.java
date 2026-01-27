@@ -62,6 +62,18 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
            nativeQuery = true)
     Page<Document> fullTextSearch(@Param("query") String query, Pageable pageable);
 
+    @Query(
+        value = "SELECT n.*, d.* FROM documents d " +
+            "JOIN nodes n ON d.id = n.id " +
+            "WHERE n.is_deleted = false " +
+            "AND n.node_type = 'DOCUMENT' " +
+            "AND n.properties ->> 'mail:source' = 'true' " +
+            "ORDER BY n.created_date DESC " +
+            "LIMIT :limit",
+        nativeQuery = true
+    )
+    List<Document> findRecentMailDocuments(@Param("limit") int limit);
+
     /**
      * Find documents modified since a given date (for scheduled rules)
      */

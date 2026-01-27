@@ -33,6 +33,11 @@ public class EmailIngestionService {
 
     @Transactional
     public Document ingestEmail(MultipartFile file, UUID parentFolderId) {
+        return ingestEmail(file, parentFolderId, Map.of());
+    }
+
+    @Transactional
+    public Document ingestEmail(MultipartFile file, UUID parentFolderId, Map<String, Object> mailProperties) {
         try {
             // 1. Store content
             String contentId = contentService.storeContent(file);
@@ -63,6 +68,9 @@ public class EmailIngestionService {
             docMeta.put("email:sentDate", metadata.get("Creation-Date"));
             
             doc.setMetadata(docMeta);
+            if (mailProperties != null && !mailProperties.isEmpty()) {
+                doc.getProperties().putAll(mailProperties);
+            }
 
             Document savedDoc = (Document) nodeService.createNode(doc, parentFolderId);
 

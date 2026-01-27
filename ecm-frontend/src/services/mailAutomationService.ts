@@ -140,6 +140,42 @@ export interface MailFetchDebugResult {
   accounts: MailFetchDebugAccountResult[];
 }
 
+export interface ProcessedMailDiagnosticItem {
+  id: string;
+  processedAt: string;
+  status: 'PROCESSED' | 'ERROR' | string;
+  accountId?: string | null;
+  accountName?: string | null;
+  ruleId?: string | null;
+  ruleName?: string | null;
+  folder: string;
+  uid: string;
+  subject?: string | null;
+  errorMessage?: string | null;
+}
+
+export interface MailDocumentDiagnosticItem {
+  documentId: string;
+  name: string;
+  path: string;
+  createdDate: string;
+  createdBy: string;
+  mimeType?: string | null;
+  fileSize?: number | null;
+  accountId?: string | null;
+  accountName?: string | null;
+  ruleId?: string | null;
+  ruleName?: string | null;
+  folder?: string | null;
+  uid?: string | null;
+}
+
+export interface MailDiagnosticsResult {
+  limit: number;
+  recentProcessed: ProcessedMailDiagnosticItem[];
+  recentDocuments: MailDocumentDiagnosticItem[];
+}
+
 class MailAutomationService {
   async listAccounts(): Promise<MailAccount[]> {
     return api.get<MailAccount[]>('/integration/mail/accounts');
@@ -179,6 +215,12 @@ class MailAutomationService {
 
   async listFolders(accountId: string): Promise<string[]> {
     return api.get<string[]>(`/integration/mail/accounts/${accountId}/folders`);
+  }
+
+  async getDiagnostics(limit = 25): Promise<MailDiagnosticsResult> {
+    return api.get<MailDiagnosticsResult>('/integration/mail/diagnostics', {
+      params: { limit },
+    });
   }
 
   async triggerFetch(): Promise<MailFetchSummary> {

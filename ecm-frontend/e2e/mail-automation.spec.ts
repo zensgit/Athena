@@ -134,7 +134,10 @@ test('Mail automation lists folders and shows folder helper text', async ({ page
 
   await expect(page.getByText(/Available folders \(/i)).toBeVisible({ timeout: 60_000 });
 
-  const ruleRow = page.getByRole('row', { name: new RegExp(ruleName, 'i') }).first();
+  const rulesSection = page
+    .getByRole('heading', { name: /mail rules/i })
+    .locator('xpath=ancestor::div[contains(@class,"MuiCardContent-root")]');
+  const ruleRow = rulesSection.getByRole('row', { name: new RegExp(ruleName, 'i') }).first();
   await expect(ruleRow).toBeVisible({ timeout: 30_000 });
   await ruleRow.getByRole('button', { name: /edit/i }).click();
 

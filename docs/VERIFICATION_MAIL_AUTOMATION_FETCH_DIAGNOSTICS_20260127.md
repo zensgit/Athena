@@ -16,18 +16,35 @@
 - Mail automation targeted:
   - Command:
     - `cd ecm-frontend && ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 npx playwright test e2e/mail-automation.spec.ts`
-  - Result: ✅ 2 passed (~27s)
+  - Result: ✅ 2 passed (~28s)
 - Full regression:
   - Command:
     - `cd ecm-frontend && ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 npx playwright test`
-  - Result: ✅ 23 passed (~5.5m)
+  - Result: ✅ 23 passed (~5.6m)
 - New coverage:
   - Mail automation folder discovery UI (`List Folders`) and rule dialog helper text.
+  - Recent activity tables no longer interfere with rule editing row selection.
 
 ## Manual Notes
 - Mail Automation now has a "Fetch Diagnostics (Dry Run)" card that:
   - Runs without ingesting content.
   - Shows skip reasons and per-folder visibility.
+- Mail Automation now also has a "Recent Mail Activity" card that:
+  - Shows recent processed messages (from processed-mail records).
+  - Shows recent ingested documents tagged with mail provenance.
+  - Refreshes after `Trigger Fetch` and `Run Diagnostics`.
+
+## Recent Activity Diagnostics API (2026-01-27)
+- Command:
+  - Token acquisition (Keycloak):
+    - `POST http://localhost:8180/realms/ecm/protocol/openid-connect/token`
+  - Diagnostics:
+    - `GET http://localhost:7700/api/v1/integration/mail/diagnostics?limit=5`
+- Result:
+  - ✅ HTTP 200
+  - `recentProcessed` returned populated entries.
+  - `recentDocuments` may be empty until new mail is ingested after the
+    provenance tagging change.
 - Backend logs now include diagnostic summaries, e.g.:
   - `Mail debug folder <account>:INBOX found=...`
   - `Mail debug summary for <account>: found=..., matched=..., processable=...`

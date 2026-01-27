@@ -259,6 +259,15 @@ public class MailAutomationController {
         return ResponseEntity.ok(fetcherService.listFolders(id));
     }
 
+    @GetMapping("/diagnostics")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Mail diagnostics", description = "Recent processed messages and mail-ingested documents")
+    public ResponseEntity<MailFetcherService.MailDiagnosticsResult> getDiagnostics(
+        @RequestParam(required = false) Integer limit
+    ) {
+        return ResponseEntity.ok(fetcherService.getDiagnostics(limit));
+    }
+
     // === Rules ===
 
     @GetMapping("/rules")
