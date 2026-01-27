@@ -106,3 +106,42 @@ test('Mail automation test connection and fetch summary', async ({ page, request
     timeout: 60_000,
   });
 });
+
+test('Mail automation lists folders and shows folder helper text', async ({ page, request }) => {
+  await waitForApiReady(request);
+  const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+  const accountsRes = await request.get(`${apiUrl}/api/v1/integration/mail/accounts`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(accountsRes.ok()).toBeTruthy();
+  const accounts = (await accountsRes.json()) as Array<{ id: string }>;
+  test.skip(!accounts.length, 'No mail accounts configured');
+  const rulesRes = await request.get(`${apiUrl}/api/v1/integration/mail/rules`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(rulesRes.ok()).toBeTruthy();
+  const rules = (await rulesRes.json()) as Array<{ name: string }>;
+  test.skip(!rules.length, 'No mail rules configured');
+  const ruleName = rules[0].name;
+
+  await loginWithCredentials(page, defaultUsername, defaultPassword);
+  await page.goto('/admin/mail', { waitUntil: 'domcontentloaded' });
+  await page.waitForURL(/\/admin\/mail/, { timeout: 60_000 });
+
+  const listFoldersButton = page.getByRole('button', { name: /list folders/i });
+  await expect(listFoldersButton).toBeEnabled({ timeout: 30_000 });
+  await listFoldersButton.click();
+
+  await expect(page.getByText(/Available folders \(/i)).toBeVisible({ timeout: 60_000 });
+
+  const ruleRow = page.getByRole('row', { name: new RegExp(ruleName, 'i') }).first();
+  await expect(ruleRow).toBeVisible({ timeout: 30_000 });
+  await ruleRow.getByRole('button', { name: /edit/i }).click();
+
+  await expect(page.getByRole('dialog')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/IMAP folder name\(s\), comma-separated, default INBOX/i)).toBeVisible({
+    timeout: 30_000,
+  });
+
+  await page.getByRole('button', { name: /cancel/i }).click();
+});

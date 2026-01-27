@@ -16,11 +16,13 @@
 - Mail automation targeted:
   - Command:
     - `cd ecm-frontend && ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 npx playwright test e2e/mail-automation.spec.ts`
-  - Result: ✅ 1 passed (~12.5s)
+  - Result: ✅ 2 passed (~27s)
 - Full regression:
   - Command:
     - `cd ecm-frontend && ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 npx playwright test`
-  - Result: ✅ 22 passed (~5.2m)
+  - Result: ✅ 23 passed (~5.5m)
+- New coverage:
+  - Mail automation folder discovery UI (`List Folders`) and rule dialog helper text.
 
 ## Manual Notes
 - Mail Automation now has a "Fetch Diagnostics (Dry Run)" card that:
