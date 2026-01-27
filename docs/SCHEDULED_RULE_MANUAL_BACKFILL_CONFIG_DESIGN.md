@@ -34,12 +34,18 @@
   - `ecm-frontend/src/pages/RulesPage.tsx`
     - Scheduled rules now show the effective backfill setting in the Trigger cell.
     - Save validation now guards `manualBackfillMinutes` to `1-1440` to match backend rules.
+    - Save error handling now avoids a second generic toast when the server already returns a
+      specific validation message.
 
 ## Test Coverage
 - Unit test for manual trigger selection logic:
   - `ecm-core/src/test/java/com/ecm/core/service/ScheduledRuleRunnerTest.java`
+- Service validation now covers both create and update paths:
+  - `ecm-core/src/test/java/com/ecm/core/service/RuleEngineServiceValidationTest.java`
 - E2E scheduled rule flow now asserts UI and API round-trip:
   - `ecm-frontend/e2e/ui-smoke.spec.ts`
+- E2E validation now asserts the out-of-range guard blocks the POST:
+  - `ecm-frontend/e2e/rules-manual-backfill-validation.spec.ts`
 - A lightweight stress runner helps catch regressions quickly:
   - `ecm-frontend/scripts/scheduled-rules-stress.sh`
   - `ecm-frontend/package.json` exposes `npm run test:scheduled:stress`

@@ -389,8 +389,11 @@ const RulesPage: React.FC = () => {
       }
       setEditorOpen(false);
       loadAll();
-    } catch (error) {
-      toast.error(editingRule ? 'Failed to update rule' : 'Failed to create rule');
+    } catch (error: any) {
+      // Axios interceptor already toasts server-provided messages.
+      if (!error?.response?.data?.message) {
+        toast.error(editingRule ? 'Failed to update rule' : 'Failed to create rule');
+      }
     }
   };
 
