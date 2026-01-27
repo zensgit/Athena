@@ -33,6 +33,7 @@
 - UI:
   - `ecm-frontend/src/pages/RulesPage.tsx`
     - Scheduled rules now show the effective backfill setting in the Trigger cell.
+    - Save validation now guards `manualBackfillMinutes` to `1-1440` to match backend rules.
 
 ## Test Coverage
 - Unit test for manual trigger selection logic:

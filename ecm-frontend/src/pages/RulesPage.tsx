@@ -347,6 +347,14 @@ const RulesPage: React.FC = () => {
       toast.error('Manual backfill minutes must be at least 1');
       return;
     }
+    if (
+      form.triggerType === 'SCHEDULED' &&
+      normalizedBackfillMinutes !== undefined &&
+      normalizedBackfillMinutes > 1440
+    ) {
+      toast.error('Manual backfill minutes must be 1440 or less');
+      return;
+    }
 
     let condition;
     let actions;
