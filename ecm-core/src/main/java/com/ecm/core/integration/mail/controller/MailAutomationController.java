@@ -333,4 +333,17 @@ public class MailAutomationController {
     public ResponseEntity<MailFetcherService.MailFetchSummary> triggerFetch() {
         return ResponseEntity.ok(fetcherService.fetchAllAccounts(true));
     }
+
+    @PostMapping("/fetch/debug")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(
+        summary = "Debug fetch (dry run)",
+        description = "Dry-run mail fetch to diagnose matching and skip reasons without ingesting content"
+    )
+    public ResponseEntity<MailFetcherService.MailFetchDebugResult> triggerFetchDebug(
+        @RequestParam(name = "force", defaultValue = "true") boolean force,
+        @RequestParam(name = "maxMessagesPerFolder", required = false) Integer maxMessagesPerFolder
+    ) {
+        return ResponseEntity.ok(fetcherService.fetchAllAccountsDebug(force, maxMessagesPerFolder));
+    }
 }

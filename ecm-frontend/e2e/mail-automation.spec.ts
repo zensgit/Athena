@@ -96,4 +96,13 @@ test('Mail automation test connection and fetch summary', async ({ page, request
 
   const fetchToast = page.locator('.Toastify__toast').last();
   await expect(fetchToast).toContainText(/Processed|Failed to trigger mail fetch/i, { timeout: 60_000 });
+
+  const diagnosticsButton = page.getByRole('button', { name: /run diagnostics/i });
+  await expect(diagnosticsButton).toBeEnabled({ timeout: 30_000 });
+  await diagnosticsButton.click();
+
+  const diagnosticsToast = page.locator('.Toastify__toast').last();
+  await expect(diagnosticsToast).toContainText(/Diagnostics complete|Failed to run mail diagnostics/i, {
+    timeout: 60_000,
+  });
 });

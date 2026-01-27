@@ -53,6 +53,7 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -70,6 +71,7 @@ import java.util.stream.Collectors;
 public class MailFetcherService {
 
     private static final int DEFAULT_POLL_INTERVAL_MINUTES = 10;
+    private static final int DEFAULT_DEBUG_MAX_MESSAGES_PER_FOLDER = 200;
     private static final int MAX_ERROR_LENGTH = 500;
     private static final String OAUTH_ENV_PREFIX = "ECM_MAIL_OAUTH_";
 
@@ -85,6 +87,9 @@ public class MailFetcherService {
 
     @Value("${ecm.mail.fetcher.run-as-user:admin}")
     private String runAsUser;
+
+    @Value("${ecm.mail.fetcher.debug.max-messages-per-folder:200}")
+    private int debugMaxMessagesPerFolder;
 
     private final Map<UUID, Instant> lastPollByAccount = new ConcurrentHashMap<>();
     private final Map<UUID, OAuthSession> oauthSessionByAccount = new ConcurrentHashMap<>();
@@ -137,6 +142,91 @@ public class MailFetcherService {
             accounts.size(), stats.attemptedAccounts, stats.skippedAccounts, force);
 
         return stats.toSummary(durationMs);
+    }
+
+    public MailFetchDebugResult fetchAllAccountsDebug(boolean force, Integer maxMessagesPerFolder) {
+        List<MailAccount> accounts = accountRepository.findByEnabledTrue();
+        int effectiveMaxMessages = resolveDebugMaxMessages(maxMessagesPerFolder);
+        log.info(
+            "Starting mail fetch debug run for {} accounts (force={}, maxMessagesPerFolder={})",
+            accounts.size(),
+            force,
+            effectiveMaxMessages
+        );
+
+        MailFetchDebugRunStats stats = new MailFetchDebugRunStats(effectiveMaxMessages);
+        stats.accounts = accounts.size();
+        long startNs = System.nanoTime();
+
+        for (MailAccount account : accounts) {
+            Instant now = Instant.now();
+            List<MailRule> rules = findRulesForAccount(account);
+
+            if (!force && !shouldProcessAccount(account, now)) {
+                stats.skippedAccounts++;
+                MailFetchDebugAccountResult result = new MailFetchDebugAccountResult(
+                    account.getId(),
+                    account.getName(),
+                    false,
+                    "poll_interval",
+                    null,
+                    rules.size(),
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    Map.of("poll_interval", 1),
+                    Map.of(),
+                    List.of()
+                );
+                stats.addAccountResult(result);
+                continue;
+            }
+
+            stats.attemptedAccounts++;
+            try {
+                MailFetchDebugAccountResult result = runWithSystemAuthenticationWithResult(
+                    () -> processAccountDebug(account, rules, effectiveMaxMessages)
+                );
+                stats.addAccountResult(result);
+            } catch (Exception e) {
+                stats.accountErrors++;
+                MailFetchDebugAccountResult result = new MailFetchDebugAccountResult(
+                    account.getId(),
+                    account.getName(),
+                    true,
+                    "account_error",
+                    truncateError(e.getMessage()),
+                    rules.size(),
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    Map.of("account_error", 1),
+                    Map.of(),
+                    List.of()
+                );
+                stats.addAccountResult(result);
+                log.warn("Mail debug run failed for account {}: {}", account.getName(), e.getMessage());
+            }
+        }
+
+        long durationMs = (System.nanoTime() - startNs) / 1_000_000L;
+        MailFetchSummary summary = stats.toSummary(durationMs);
+        log.info(
+            "Mail fetch debug run completed: accounts={}, attempted={}, skipped={}, errors={}",
+            summary.accounts(),
+            summary.attemptedAccounts(),
+            summary.skippedAccounts(),
+            summary.accountErrors()
+        );
+        return new MailFetchDebugResult(summary, effectiveMaxMessages, stats.skipReasons, stats.accountResults);
     }
 
     private void processAccount(MailAccount account, MailFetchRunStats stats) throws Exception {
@@ -298,6 +388,47 @@ public class MailFetcherService {
     ) {
     }
 
+    public record MailFetchDebugFolderResult(
+        String folder,
+        int rules,
+        int foundMessages,
+        int scannedMessages,
+        int matchedMessages,
+        int processableMessages,
+        int skippedMessages,
+        int errorMessages,
+        Map<String, Integer> skipReasons
+    ) {
+    }
+
+    public record MailFetchDebugAccountResult(
+        UUID accountId,
+        String accountName,
+        boolean attempted,
+        String skipReason,
+        String accountError,
+        int rules,
+        int folders,
+        int foundMessages,
+        int scannedMessages,
+        int matchedMessages,
+        int processableMessages,
+        int skippedMessages,
+        int errorMessages,
+        Map<String, Integer> skipReasons,
+        Map<String, Integer> ruleMatches,
+        List<MailFetchDebugFolderResult> folderResults
+    ) {
+    }
+
+    public record MailFetchDebugResult(
+        MailFetchSummary summary,
+        int maxMessagesPerFolder,
+        Map<String, Integer> skipReasons,
+        List<MailFetchDebugAccountResult> accounts
+    ) {
+    }
+
     private static final class MailFetchRunStats {
         private int accounts;
         private int attemptedAccounts;
@@ -323,6 +454,367 @@ public class MailFetcherService {
                 durationMs
             );
         }
+    }
+
+    private static final class MailFetchDebugRunStats {
+        private final int maxMessagesPerFolder;
+        private int accounts;
+        private int attemptedAccounts;
+        private int skippedAccounts;
+        private int accountErrors;
+        private int foundMessages;
+        private int matchedMessages;
+        private int processedMessages;
+        private int skippedMessages;
+        private int errorMessages;
+        private final Map<String, Integer> skipReasons = new HashMap<>();
+        private final List<MailFetchDebugAccountResult> accountResults = new ArrayList<>();
+
+        private MailFetchDebugRunStats(int maxMessagesPerFolder) {
+            this.maxMessagesPerFolder = maxMessagesPerFolder;
+        }
+
+        private void addAccountResult(MailFetchDebugAccountResult result) {
+            accountResults.add(result);
+            foundMessages += result.foundMessages();
+            matchedMessages += result.matchedMessages();
+            processedMessages += result.processableMessages();
+            skippedMessages += result.skippedMessages();
+            errorMessages += result.errorMessages();
+            mergeReasons(result.skipReasons());
+        }
+
+        private void mergeReasons(Map<String, Integer> reasons) {
+            reasons.forEach(this::incrementSkipReason);
+        }
+
+        private void incrementSkipReason(String reason, int amount) {
+            if (amount <= 0) {
+                return;
+            }
+            skipReasons.merge(reason, amount, Integer::sum);
+        }
+
+        private MailFetchSummary toSummary(long durationMs) {
+            return new MailFetchSummary(
+                accounts,
+                attemptedAccounts,
+                skippedAccounts,
+                accountErrors,
+                foundMessages,
+                matchedMessages,
+                processedMessages,
+                skippedMessages,
+                errorMessages,
+                durationMs
+            );
+        }
+    }
+
+    private static final class MessageDebugResult {
+        private final boolean matched;
+        private final boolean processable;
+        private final boolean error;
+        private final String reason;
+
+        private MessageDebugResult(boolean matched, boolean processable, boolean error, String reason) {
+            this.matched = matched;
+            this.processable = processable;
+            this.error = error;
+            this.reason = reason;
+        }
+    }
+
+    private int resolveDebugMaxMessages(Integer requested) {
+        int configured = debugMaxMessagesPerFolder > 0 ? debugMaxMessagesPerFolder : DEFAULT_DEBUG_MAX_MESSAGES_PER_FOLDER;
+        if (requested == null || requested <= 0) {
+            return configured;
+        }
+        return requested;
+    }
+
+    private List<MailRule> findRulesForAccount(MailAccount account) {
+        return ruleRepository.findAllByOrderByPriorityAsc().stream()
+            .filter(rule -> rule.getAccountId() == null || Objects.equals(rule.getAccountId(), account.getId()))
+            .collect(Collectors.toList());
+    }
+
+    private MailFetchDebugAccountResult processAccountDebug(
+        MailAccount account,
+        List<MailRule> rules,
+        int maxMessagesPerFolder
+    ) throws Exception {
+        if (rules.isEmpty()) {
+            return new MailFetchDebugAccountResult(
+                account.getId(),
+                account.getName(),
+                true,
+                "no_rules",
+                null,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                Map.of("no_rules", 1),
+                Map.of(),
+                List.of()
+            );
+        }
+
+        Map<String, List<MailRule>> rulesByFolder = rules.stream()
+            .collect(Collectors.groupingBy(rule -> normalizeFolder(rule.getFolder())));
+
+        Store store = null;
+        try {
+            store = connect(account);
+            Map<String, Integer> skipReasons = new HashMap<>();
+            Map<String, Integer> ruleMatches = new HashMap<>();
+            List<MailFetchDebugFolderResult> folderResults = new ArrayList<>();
+            int foundMessages = 0;
+            int scannedMessages = 0;
+            int matchedMessages = 0;
+            int processableMessages = 0;
+            int skippedMessages = 0;
+            int errorMessages = 0;
+
+            for (Map.Entry<String, List<MailRule>> entry : rulesByFolder.entrySet()) {
+                MailFetchDebugFolderResult folderResult = processFolderDebug(
+                    store,
+                    account,
+                    entry.getKey(),
+                    entry.getValue(),
+                    maxMessagesPerFolder,
+                    ruleMatches
+                );
+                folderResults.add(folderResult);
+                foundMessages += folderResult.foundMessages();
+                scannedMessages += folderResult.scannedMessages();
+                matchedMessages += folderResult.matchedMessages();
+                processableMessages += folderResult.processableMessages();
+                skippedMessages += folderResult.skippedMessages();
+                errorMessages += folderResult.errorMessages();
+                folderResult.skipReasons().forEach((reason, count) -> incrementReason(skipReasons, reason, count));
+            }
+
+            return new MailFetchDebugAccountResult(
+                account.getId(),
+                account.getName(),
+                true,
+                null,
+                null,
+                rules.size(),
+                rulesByFolder.size(),
+                foundMessages,
+                scannedMessages,
+                matchedMessages,
+                processableMessages,
+                skippedMessages,
+                errorMessages,
+                skipReasons,
+                ruleMatches,
+                folderResults
+            );
+        } finally {
+            if (store != null) {
+                try {
+                    store.close();
+                } catch (Exception ignored) {
+                    // best effort for debug runs
+                }
+            }
+        }
+    }
+
+    private MailFetchDebugFolderResult processFolderDebug(
+        Store store,
+        MailAccount account,
+        String folderName,
+        List<MailRule> rules,
+        int maxMessagesPerFolder,
+        Map<String, Integer> ruleMatches
+    ) {
+        Map<String, Integer> skipReasons = new HashMap<>();
+        Folder folder = null;
+        try {
+            folder = store.getFolder(folderName);
+            if (!folder.exists()) {
+                incrementReason(skipReasons, "folder_missing", 1);
+                log.warn("Mail folder '{}' does not exist for account {} (debug run)", folderName, account.getName());
+                return new MailFetchDebugFolderResult(
+                    folderName,
+                    rules.size(),
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    skipReasons
+                );
+            }
+
+            folder.open(Folder.READ_ONLY);
+            Message[] messages = folder.search(new FlagTerm(new Flags(Flags.Flag.SEEN), false));
+            int foundMessages = messages.length;
+            int scannedMessages = foundMessages;
+            int notScanned = 0;
+            if (maxMessagesPerFolder > 0 && foundMessages > maxMessagesPerFolder) {
+                scannedMessages = maxMessagesPerFolder;
+                notScanned = foundMessages - scannedMessages;
+                incrementReason(skipReasons, "limit_not_scanned", notScanned);
+            }
+
+            int matchedMessages = 0;
+            int processableMessages = 0;
+            int skippedMessages = 0;
+            int errorMessages = 0;
+            if (notScanned > 0) {
+                skippedMessages += notScanned;
+            }
+
+            for (int i = 0; i < scannedMessages; i++) {
+                Message message = messages[i];
+                MessageDebugResult result = processMessageDebug(message, rules, account, folderName, folder, ruleMatches);
+                if (result.error) {
+                    errorMessages++;
+                    incrementReason(skipReasons, result.reason, 1);
+                    continue;
+                }
+                if (result.matched) {
+                    matchedMessages++;
+                }
+                if (result.processable) {
+                    processableMessages++;
+                    continue;
+                }
+                skippedMessages++;
+                incrementReason(skipReasons, result.reason, 1);
+            }
+
+            return new MailFetchDebugFolderResult(
+                folderName,
+                rules.size(),
+                foundMessages,
+                scannedMessages,
+                matchedMessages,
+                processableMessages,
+                skippedMessages,
+                errorMessages,
+                skipReasons
+            );
+        } catch (Exception e) {
+            incrementReason(skipReasons, "folder_error", 1);
+            log.warn(
+                "Mail debug run failed for account {} folder {}: {}",
+                account.getName(),
+                folderName,
+                e.getMessage()
+            );
+            return new MailFetchDebugFolderResult(
+                folderName,
+                rules.size(),
+                0,
+                0,
+                0,
+                0,
+                0,
+                1,
+                skipReasons
+            );
+        } finally {
+            if (folder != null && folder.isOpen()) {
+                try {
+                    folder.close(false);
+                } catch (Exception ignored) {
+                    // best effort for debug runs
+                }
+            }
+        }
+    }
+
+    private MessageDebugResult processMessageDebug(
+        Message message,
+        List<MailRule> rules,
+        MailAccount account,
+        String folderName,
+        Folder folder,
+        Map<String, Integer> ruleMatches
+    ) {
+        try {
+            String uid = resolveMessageUid(folder, message);
+            if (processedMailRepository.existsByAccountIdAndFolderAndUid(account.getId(), folderName, uid)) {
+                return new MessageDebugResult(false, false, false, "already_processed");
+            }
+
+            List<AttachmentPart> attachments = collectAttachmentParts(message);
+            List<String> attachmentNames = attachments.stream()
+                .map(AttachmentPart::fileName)
+                .filter(name -> name != null && !name.isBlank())
+                .collect(Collectors.toList());
+
+            MailRuleMatcher.MailMessageData messageData = new MailRuleMatcher.MailMessageData(
+                safeSubject(message),
+                safeFrom(message),
+                safeRecipients(message),
+                extractBodyText(message),
+                attachmentNames,
+                toLocalDateTime(message.getReceivedDate(), message.getSentDate())
+            );
+
+            MailRule matchedRule = findMatchingRule(rules, messageData);
+            if (matchedRule == null) {
+                return new MessageDebugResult(false, false, false, "no_rule");
+            }
+
+            ruleMatches.merge(matchedRule.getName(), 1, Integer::sum);
+            boolean processable = wouldProcessContent(matchedRule, attachments);
+            if (!processable) {
+                return new MessageDebugResult(true, false, false, "no_content");
+            }
+
+            return new MessageDebugResult(true, true, false, "processable");
+        } catch (Exception e) {
+            log.debug("Mail debug message processing failed: {}", e.getMessage());
+            return new MessageDebugResult(false, false, true, "message_error");
+        }
+    }
+
+    private boolean wouldProcessContent(MailRule rule, List<AttachmentPart> attachments) {
+        MailRule.MailActionType actionType = rule.getActionType() != null
+            ? rule.getActionType()
+            : MailRule.MailActionType.ATTACHMENTS_ONLY;
+
+        if (actionType == MailRule.MailActionType.METADATA_ONLY
+            || actionType == MailRule.MailActionType.EVERYTHING) {
+            return true;
+        }
+
+        return countEligibleAttachments(rule, attachments) > 0;
+    }
+
+    private int countEligibleAttachments(MailRule rule, List<AttachmentPart> attachments) {
+        boolean includeInline = Boolean.TRUE.equals(rule.getIncludeInlineAttachments());
+        int eligible = 0;
+        for (AttachmentPart attachment : attachments) {
+            if (!includeInline && attachment.inline()) {
+                continue;
+            }
+            if (attachmentMatchesRule(attachment.fileName(), rule)) {
+                eligible++;
+            }
+        }
+        return eligible;
+    }
+
+    private static void incrementReason(Map<String, Integer> reasons, String reason, int amount) {
+        if (amount <= 0) {
+            return;
+        }
+        reasons.merge(reason, amount, Integer::sum);
     }
 
     private MailRule findMatchingRule(List<MailRule> rules, MailRuleMatcher.MailMessageData messageData) {
@@ -715,6 +1207,23 @@ public class MailFetcherService {
         }
     }
 
+    private <T> T runWithSystemAuthenticationWithResult(MailFetcherSupplier<T> task) throws Exception {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.isAuthenticated()) {
+            return task.get();
+        }
+
+        SecurityContext previousContext = SecurityContextHolder.getContext();
+        SecurityContext systemContext = SecurityContextHolder.createEmptyContext();
+        systemContext.setAuthentication(createSystemAuthentication());
+        SecurityContextHolder.setContext(systemContext);
+        try {
+            return task.get();
+        } finally {
+            SecurityContextHolder.setContext(previousContext);
+        }
+    }
+
     private Authentication createSystemAuthentication() {
         List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_ADMIN"));
         return new UsernamePasswordAuthenticationToken(runAsUser, "N/A", authorities);
@@ -723,6 +1232,11 @@ public class MailFetcherService {
     @FunctionalInterface
     private interface MailFetcherTask {
         void run() throws Exception;
+    }
+
+    @FunctionalInterface
+    private interface MailFetcherSupplier<T> {
+        T get() throws Exception;
     }
 
     private String buildEmailFilename(String subject) {

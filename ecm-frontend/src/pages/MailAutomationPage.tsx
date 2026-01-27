@@ -34,6 +34,7 @@ import mailAutomationService, {
   MailAccount,
   MailAccountRequest,
   MailConnectionTestResult,
+  MailFetchDebugResult,
   MailFetchSummary,
   MailRule,
   MailRuleRequest,
@@ -108,6 +109,9 @@ const MailAutomationPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [debugging, setDebugging] = useState(false);
+  const [debugResult, setDebugResult] = useState<MailFetchDebugResult | null>(null);
+  const [debugMaxMessages, setDebugMaxMessages] = useState(200);
   const [testingAccountId, setTestingAccountId] = useState<string | null>(null);
 
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
@@ -150,6 +154,11 @@ const MailAutomationPage: React.FC = () => {
     }
     return `${value.slice(0, Math.max(0, maxLength - 3))}...`;
   };
+
+  const toSortedEntries = (map?: Record<string, number> | null) =>
+    Object.entries(map || {}).sort((a, b) => b[1] - a[1]);
+
+  const formatReason = (reason: string) => reason.replace(/_/g, ' ');
 
   const loadAll = async (options?: { silent?: boolean }) => {
     const silent = options?.silent === true;
@@ -206,6 +215,29 @@ const MailAutomationPage: React.FC = () => {
       toast.error('Failed to trigger mail fetch');
     } finally {
       setFetching(false);
+    }
+  };
+
+  const handleDebugFetch = async () => {
+    setDebugging(true);
+    try {
+      const maxMessagesPerFolder =
+        Number.isFinite(debugMaxMessages) && debugMaxMessages > 0
+          ? Math.floor(debugMaxMessages)
+          : undefined;
+      const result = await mailAutomationService.triggerFetchDebug({
+        force: true,
+        maxMessagesPerFolder,
+      });
+      setDebugResult(result);
+      const durationSeconds = (result.summary.durationMs / 1000).toFixed(1);
+      toast.success(
+        `Diagnostics complete: matched ${result.summary.matchedMessages}, processable ${result.summary.processedMessages} in ${durationSeconds}s`
+      );
+    } catch {
+      toast.error('Failed to run mail diagnostics');
+    } finally {
+      setDebugging(false);
     }
   };
 
@@ -459,6 +491,186 @@ const MailAutomationPage: React.FC = () => {
         </Box>
       ) : (
         <Stack spacing={3}>
+          <Card variant="outlined">
+            <CardContent>
+              <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
+                <Typography variant="h6">Fetch Diagnostics (Dry Run)</Typography>
+                <Stack direction="row" spacing={1}>
+                  <TextField
+                    label="Max messages / folder"
+                    type="number"
+                    size="small"
+                    value={
+                      Number.isFinite(debugMaxMessages) && debugMaxMessages > 0 ? debugMaxMessages : ''
+                    }
+                    onChange={(e) =>
+                      setDebugMaxMessages(e.target.value === '' ? 0 : Number(e.target.value))
+                    }
+                    inputProps={{ min: 1, max: 2000 }}
+                    sx={{ width: 220 }}
+                  />
+                  <Button
+                    variant="outlined"
+                    startIcon={debugging ? <CircularProgress size={16} /> : <Refresh />}
+                    onClick={handleDebugFetch}
+                    disabled={debugging}
+                  >
+                    {debugging ? 'Running...' : 'Run Diagnostics'}
+                  </Button>
+                </Stack>
+              </Box>
+
+              {debugResult ? (
+                <Stack spacing={1.5}>
+                  <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
+                    <Chip size="small" label={`Attempted: ${debugResult.summary.attemptedAccounts}`} />
+                    <Chip size="small" label={`Found: ${debugResult.summary.foundMessages}`} />
+                    <Chip size="small" label={`Matched: ${debugResult.summary.matchedMessages}`} />
+                    <Chip size="small" label={`Processable: ${debugResult.summary.processedMessages}`} />
+                    <Chip size="small" label={`Skipped: ${debugResult.summary.skippedMessages}`} />
+                    <Chip size="small" label={`Errors: ${debugResult.summary.errorMessages}`} />
+                    <Chip size="small" variant="outlined" label={`Max/folder: ${debugResult.maxMessagesPerFolder}`} />
+                    <Chip
+                      size="small"
+                      variant="outlined"
+                      label={`Duration: ${(debugResult.summary.durationMs / 1000).toFixed(1)}s`}
+                    />
+                  </Stack>
+
+                  {toSortedEntries(debugResult.skipReasons).length > 0 && (
+                    <Box>
+                      <Typography variant="caption" color="text.secondary">
+                        Top skip reasons
+                      </Typography>
+                      <Stack direction="row" spacing={1} sx={{ mt: 0.5, flexWrap: 'wrap', gap: 1 }}>
+                        {toSortedEntries(debugResult.skipReasons)
+                          .slice(0, 6)
+                          .map(([reason, count]) => (
+                            <Chip
+                              key={`global-${reason}`}
+                              size="small"
+                              variant="outlined"
+                              label={`${formatReason(reason)}: ${count}`}
+                            />
+                          ))}
+                      </Stack>
+                    </Box>
+                  )}
+
+                  <Stack spacing={1.5}>
+                    {debugResult.accounts.map((account) => {
+                      const accountSkipEntries = toSortedEntries(account.skipReasons);
+                      const accountRuleEntries = toSortedEntries(account.ruleMatches);
+                      return (
+                        <Box
+                          key={account.accountId}
+                          sx={{
+                            p: 1.5,
+                            border: '1px dashed',
+                            borderColor: 'divider',
+                            borderRadius: 1,
+                          }}
+                        >
+                          <Stack spacing={1}>
+                            <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: 'wrap', gap: 1 }}>
+                              <Typography variant="subtitle2">{account.accountName}</Typography>
+                              {account.accountError && (
+                                <Chip size="small" color="error" label="Account error" />
+                              )}
+                              {account.skipReason && !account.accountError && (
+                                <Chip
+                                  size="small"
+                                  variant="outlined"
+                                  label={`Skip: ${formatReason(account.skipReason)}`}
+                                />
+                              )}
+                              <Chip size="small" label={`Found: ${account.foundMessages}`} />
+                              <Chip size="small" label={`Matched: ${account.matchedMessages}`} />
+                              <Chip size="small" label={`Processable: ${account.processableMessages}`} />
+                            </Stack>
+
+                            {account.accountError && (
+                              <Typography variant="caption" color="error.main">
+                                {summarizeError(account.accountError, 240)}
+                              </Typography>
+                            )}
+
+                            {accountSkipEntries.length > 0 && (
+                              <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
+                                {accountSkipEntries.slice(0, 6).map(([reason, count]) => (
+                                  <Chip
+                                    key={`${account.accountId}-skip-${reason}`}
+                                    size="small"
+                                    variant="outlined"
+                                    label={`${formatReason(reason)}: ${count}`}
+                                  />
+                                ))}
+                              </Stack>
+                            )}
+
+                            {accountRuleEntries.length > 0 && (
+                              <Box>
+                                <Typography variant="caption" color="text.secondary">
+                                  Rule matches
+                                </Typography>
+                                <Stack direction="row" spacing={1} sx={{ mt: 0.5, flexWrap: 'wrap', gap: 1 }}>
+                                  {accountRuleEntries.slice(0, 6).map(([ruleName, count]) => (
+                                    <Chip
+                                      key={`${account.accountId}-rule-${ruleName}`}
+                                      size="small"
+                                      label={`${ruleName}: ${count}`}
+                                    />
+                                  ))}
+                                </Stack>
+                              </Box>
+                            )}
+
+                            {account.folderResults.length > 0 && (
+                              <TableContainer
+                                sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1 }}
+                              >
+                                <Table size="small">
+                                  <TableHead>
+                                    <TableRow>
+                                      <TableCell>Folder</TableCell>
+                                      <TableCell>Found</TableCell>
+                                      <TableCell>Scanned</TableCell>
+                                      <TableCell>Matched</TableCell>
+                                      <TableCell>Processable</TableCell>
+                                      <TableCell>Skipped</TableCell>
+                                      <TableCell>Errors</TableCell>
+                                    </TableRow>
+                                  </TableHead>
+                                  <TableBody>
+                                    {account.folderResults.map((folderResult) => (
+                                      <TableRow key={`${account.accountId}-${folderResult.folder}`} hover>
+                                        <TableCell>{folderResult.folder}</TableCell>
+                                        <TableCell>{folderResult.foundMessages}</TableCell>
+                                        <TableCell>{folderResult.scannedMessages}</TableCell>
+                                        <TableCell>{folderResult.matchedMessages}</TableCell>
+                                        <TableCell>{folderResult.processableMessages}</TableCell>
+                                        <TableCell>{folderResult.skippedMessages}</TableCell>
+                                        <TableCell>{folderResult.errorMessages}</TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                              </TableContainer>
+                            )}
+                          </Stack>
+                        </Box>
+                      );
+                    })}
+                  </Stack>
+                </Stack>
+              ) : (
+                <Typography variant="body2" color="text.secondary">
+                  Run a dry-run diagnostics pass to see skip reasons and match coverage without ingesting mail.
+                </Typography>
+              )}
+            </CardContent>
+          </Card>
+
           <Card variant="outlined">
             <CardContent>
               <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>

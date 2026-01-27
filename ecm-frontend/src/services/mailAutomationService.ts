@@ -102,6 +102,44 @@ export interface MailFetchSummary {
   durationMs: number;
 }
 
+export interface MailFetchDebugFolderResult {
+  folder: string;
+  rules: number;
+  foundMessages: number;
+  scannedMessages: number;
+  matchedMessages: number;
+  processableMessages: number;
+  skippedMessages: number;
+  errorMessages: number;
+  skipReasons: Record<string, number>;
+}
+
+export interface MailFetchDebugAccountResult {
+  accountId: string;
+  accountName: string;
+  attempted: boolean;
+  skipReason?: string | null;
+  accountError?: string | null;
+  rules: number;
+  folders: number;
+  foundMessages: number;
+  scannedMessages: number;
+  matchedMessages: number;
+  processableMessages: number;
+  skippedMessages: number;
+  errorMessages: number;
+  skipReasons: Record<string, number>;
+  ruleMatches: Record<string, number>;
+  folderResults: MailFetchDebugFolderResult[];
+}
+
+export interface MailFetchDebugResult {
+  summary: MailFetchSummary;
+  maxMessagesPerFolder: number;
+  skipReasons: Record<string, number>;
+  accounts: MailFetchDebugAccountResult[];
+}
+
 class MailAutomationService {
   async listAccounts(): Promise<MailAccount[]> {
     return api.get<MailAccount[]>('/integration/mail/accounts');
@@ -141,6 +179,20 @@ class MailAutomationService {
 
   async triggerFetch(): Promise<MailFetchSummary> {
     return api.post<MailFetchSummary>('/integration/mail/fetch');
+  }
+
+  async triggerFetchDebug(options?: {
+    force?: boolean;
+    maxMessagesPerFolder?: number;
+  }): Promise<MailFetchDebugResult> {
+    const force = options?.force ?? true;
+    const maxMessagesPerFolder = options?.maxMessagesPerFolder;
+    return api.post<MailFetchDebugResult>('/integration/mail/fetch/debug', undefined, {
+      params: {
+        force,
+        maxMessagesPerFolder,
+      },
+    });
   }
 }
 
