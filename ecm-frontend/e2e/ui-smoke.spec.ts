@@ -1455,6 +1455,7 @@ test('Scheduled Rules: CRUD + cron validation + UI configuration', async ({ page
   const ruleRow = page.getByRole('row', { name: new RegExp(scheduledRuleName) });
   await expect(ruleRow).toBeVisible({ timeout: 60_000 });
   await expect(ruleRow.getByRole('cell', { name: /SCHEDULED/ })).toBeVisible({ timeout: 60_000 });
+  await expect(ruleRow).toContainText('Backfill: 15m');
 
   // Edit the scheduled rule and verify the schedule configuration fields appear
   await ruleRow.getByRole('button', { name: /Edit/i }).click();
@@ -1512,6 +1513,7 @@ test('Scheduled Rules: CRUD + cron validation + UI configuration', async ({ page
   const newRuleRow = page.getByRole('row', { name: new RegExp(uiScheduledRuleName) });
   await expect(newRuleRow).toBeVisible({ timeout: 60_000 });
   await expect(newRuleRow.getByRole('cell', { name: /SCHEDULED/ })).toBeVisible({ timeout: 60_000 });
+  await expect(newRuleRow).toContainText('Backfill: default');
 
   // ============================================================
   // STEP 5: Manual trigger test with STRONG ASSERTIONS

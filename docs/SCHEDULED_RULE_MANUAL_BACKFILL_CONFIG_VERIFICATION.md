@@ -8,6 +8,9 @@
   - Command: `cd ecm-core && mvn -q -Dtest=ScheduledRuleRunnerTest test`
   - Result: ✅ Passed
   - Includes: fallback to default backfill when `manualBackfillMinutes <= 0`
+- Targeted validation test:
+  - Command: `cd ecm-core && mvn -q -Dtest=RuleEngineServiceValidationTest test`
+  - Result: ✅ Passed (rejects out-of-range values; accepts valid values)
 
 ## Migration
 - Rebuilt backend container:
@@ -20,11 +23,11 @@
   - Command: `cd ecm-frontend && ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 npx playwright test e2e/ui-smoke.spec.ts -g "Scheduled Rules"`
   - Result: ✅ Passed
 - Scheduled rules stress runner:
-  - Command: `cd ecm-frontend && ./scripts/scheduled-rules-stress.sh 5`
+  - Command: `cd ecm-frontend && npm run test:scheduled:stress`
   - Result: ✅ Passed (5/5)
 - Full regression:
   - Command: `cd ecm-frontend && ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 npx playwright test`
-  - Result: ✅ 21 passed (~6.7m)
+  - Result: ✅ 21 passed (~5.3m)
 
 ## Observability
 - Backend logs now include the effective manual trigger window:

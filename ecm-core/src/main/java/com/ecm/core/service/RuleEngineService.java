@@ -40,6 +40,9 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class RuleEngineService {
 
+    private static final int MIN_MANUAL_BACKFILL_MINUTES = 1;
+    private static final int MAX_MANUAL_BACKFILL_MINUTES = 1440;
+
     private final AutomationRuleRepository ruleRepository;
     private final NodeRepository nodeRepository;
     private final TagRepository tagRepository;
@@ -84,6 +87,7 @@ public class RuleEngineService {
         if (ruleRepository.findByName(request.getName()).isPresent()) {
             throw new DuplicateResourceException("Rule with name already exists: " + request.getName());
         }
+        validateManualBackfillMinutes(request.getManualBackfillMinutes());
 
         AutomationRule rule = AutomationRule.builder()
             .name(request.getName())
@@ -164,6 +168,7 @@ public class RuleEngineService {
             rule.setMaxItemsPerRun(request.getMaxItemsPerRun());
         }
         if (request.getManualBackfillMinutes() != null) {
+            validateManualBackfillMinutes(request.getManualBackfillMinutes());
             rule.setManualBackfillMinutes(request.getManualBackfillMinutes());
         }
 
@@ -949,5 +954,20 @@ public class RuleEngineService {
         private String timezone;
         private Integer maxItemsPerRun;
         private Integer manualBackfillMinutes;
+    }
+
+    private void validateManualBackfillMinutes(Integer manualBackfillMinutes) {
+        if (manualBackfillMinutes == null) {
+            return;
+        }
+        if (manualBackfillMinutes < MIN_MANUAL_BACKFILL_MINUTES
+            || manualBackfillMinutes > MAX_MANUAL_BACKFILL_MINUTES) {
+            throw new IllegalArgumentException(
+                "Manual backfill minutes must be between "
+                    + MIN_MANUAL_BACKFILL_MINUTES
+                    + " and "
+                    + MAX_MANUAL_BACKFILL_MINUTES
+            );
+        }
     }
 }

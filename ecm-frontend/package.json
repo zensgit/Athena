@@ -39,7 +39,8 @@
     "e2e": "playwright test",
     "eject": "react-scripts eject",
     "lint": "eslint src --ext .ts,.tsx",
-    "format": "prettier --write src/**/*.{ts,tsx,css}"
+    "format": "prettier --write src/**/*.{ts,tsx,css}",
+    "test:scheduled:stress": "./scripts/scheduled-rules-stress.sh 5"
   },
   "devDependencies": {
     "@playwright/test": "^1.50.0",
