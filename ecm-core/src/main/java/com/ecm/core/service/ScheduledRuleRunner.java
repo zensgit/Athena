@@ -48,6 +48,9 @@ public class ScheduledRuleRunner {
     @Value("${ecm.rules.scheduled.poll-interval-ms:60000}")
     private long pollIntervalMs;
 
+    @Value("${ecm.rules.scheduled.manual-backfill-minutes:5}")
+    private long manualBackfillMinutes;
+
     /**
      * Main scheduler that runs at a fixed delay to check for due scheduled rules.
      * Default: runs every minute (60000ms).
@@ -71,7 +74,7 @@ public class ScheduledRuleRunner {
 
         for (AutomationRule rule : dueRules) {
             try {
-                executeScheduledRule(rule);
+                executeScheduledRule(rule, null);
             } catch (Exception e) {
                 log.error("Failed to execute scheduled rule '{}' (id={}): {}",
                     rule.getName(), rule.getId(), e.getMessage(), e);
@@ -85,7 +88,7 @@ public class ScheduledRuleRunner {
     /**
      * Execute a single scheduled rule against eligible documents.
      */
-    private void executeScheduledRule(AutomationRule rule) {
+    private void executeScheduledRule(AutomationRule rule, LocalDateTime sinceOverride) {
         long startTimeMs = System.currentTimeMillis();
         log.info("Executing scheduled rule '{}' (id={}, cron={})",
             rule.getName(), rule.getId(), rule.getCronExpression());
@@ -93,7 +96,7 @@ public class ScheduledRuleRunner {
         SecurityContext previousContext = pushRuleAuthentication(rule);
         String auditActor = resolveRuleActor(rule);
 
-        LocalDateTime since = rule.getLastRunAt();
+        LocalDateTime since = sinceOverride != null ? sinceOverride : rule.getLastRunAt();
         if (since == null) {
             // First run: process documents from last 24 hours
             since = LocalDateTime.now().minusHours(24);
@@ -200,7 +203,12 @@ public class ScheduledRuleRunner {
         if (!rule.isScheduledRule()) {
             throw new IllegalArgumentException("Rule is not a scheduled rule: " + rule.getId());
         }
-        executeScheduledRule(rule);
+        LocalDateTime backfillSince = LocalDateTime.now().minusMinutes(manualBackfillMinutes);
+        LocalDateTime lastRunAt = rule.getLastRunAt();
+        LocalDateTime sinceOverride = lastRunAt == null || lastRunAt.isAfter(backfillSince)
+            ? backfillSince
+            : lastRunAt;
+        executeScheduledRule(rule, sinceOverride);
     }
 
     /**
