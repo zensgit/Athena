@@ -423,10 +423,11 @@ Mail Automation 的 OAuth2 凭据不再存库，需通过服务器环境变量�
 
 `<KEY>` 会在后端标准化：转大写并把非字母数字替换为 `_`。
 
-建议将变量写入 `.env` 并通过 `docker-compose` 传入容器：
+建议将变量写入 `.env.mail`（与 `.env` 分离更安全），并通过 `docker-compose`
+的 `env_file` 自动传入容器（当前已配置为同时加载 `.env` 和 `.env.mail`）：
 
 ```bash
-# .env 示例
+# .env.mail 示例（可从 .env.mail.example 复制）
 ECM_MAIL_OAUTH_GMAIL_HAROLD_CLIENT_ID=...
 ECM_MAIL_OAUTH_GMAIL_HAROLD_CLIENT_SECRET=...
 ECM_MAIL_OAUTH_GMAIL_HAROLD_REFRESH_TOKEN=...

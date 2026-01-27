@@ -12,10 +12,12 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -74,6 +76,16 @@ class MailAutomationControllerTest {
     @Test
     @DisplayName("OAuth2 account save clears password and stored secrets")
     void createOauthAccountClearsPasswordAndSecrets() {
+        when(fetcherService.checkOAuthEnv(any(MailAccount.class)))
+            .thenReturn(
+                new MailFetcherService.OAuthEnvCheckResult(
+                    true,
+                    false,
+                    "GMAIL_JOSHUA",
+                    List.of("ECM_MAIL_OAUTH_GMAIL_JOSHUA_CLIENT_ID")
+                )
+            );
+
         var request = new MailAutomationController.MailAccountRequest(
             "gmail",
             "imap.gmail.com",
@@ -90,7 +102,7 @@ class MailAutomationControllerTest {
             "gmail_joshua"
         );
 
-        controller.createAccount(request);
+        var response = controller.createAccount(request).getBody();
 
         assertNull(lastSavedAccount.getPassword());
         assertEquals("gmail_joshua", lastSavedAccount.getOauthCredentialKey());
@@ -99,6 +111,8 @@ class MailAutomationControllerTest {
         assertNull(lastSavedAccount.getOauthAccessToken());
         assertNull(lastSavedAccount.getOauthRefreshToken());
         assertNull(lastSavedAccount.getOauthTokenExpiresAt());
+        assertFalse(response.oauthEnvConfigured());
+        assertEquals(List.of("ECM_MAIL_OAUTH_GMAIL_JOSHUA_CLIENT_ID"), response.oauthMissingEnvKeys());
     }
 
     @Test

@@ -103,6 +103,7 @@ docker-compose.override.yml
 # Environment & Secrets
 # -------------------------------------------
 .env
+.env.mail
 .env.local
 .env.*.local
 *.env

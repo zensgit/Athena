@@ -8,6 +8,7 @@ services:
       - "${ECM_API_PORT:-8080}:8080"
     env_file:
       - .env
+      - .env.mail
     environment:
       - SPRING_PROFILES_ACTIVE=docker
       - ECM_IDENTITY_PROVIDER=keycloak

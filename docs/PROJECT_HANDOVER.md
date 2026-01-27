@@ -72,6 +72,7 @@ docker-compose ps
 *   **Mail Automation OAuth**: Configure env-only credentials using:
     `ECM_MAIL_OAUTH_<KEY>_CLIENT_ID`, `ECM_MAIL_OAUTH_<KEY>_CLIENT_SECRET`,
     `ECM_MAIL_OAUTH_<KEY>_REFRESH_TOKEN` (optional `TOKEN_ENDPOINT`, `SCOPE`).
+    Recommended location: `.env.mail` (gitignored).
 
 ## 5. Feature Verification (Smoke Test)
 

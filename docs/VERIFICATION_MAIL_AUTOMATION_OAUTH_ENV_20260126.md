@@ -13,7 +13,7 @@ ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 \
 ## Results
 - `e2e/mail-automation.spec.ts` - Mail automation test connection and fetch summary: **passed**
 - `e2e/ui-smoke.spec.ts` - Mail automation actions: **passed**
-- Overall: **2 passed** (31.9s)
+- Overall: **2 passed** (22.9s)
 
 ## Targeted e2e
 ```bash
@@ -31,6 +31,7 @@ mvn -q -DskipITs test
 Result:
 - Maven test run: **passed** (exit code 0)
 - Includes new `MailAutomationControllerTest`
+- Includes new `MailFetcherServiceOAuthEnvTest`
 
 ## Full Playwright regression
 ```bash
@@ -68,6 +69,7 @@ Result (for `gmail-imap`):
 ## Notes
 - Tests assume at least one mail account exists; otherwise they skip.
 - OAuth env vars are required before connection/fetch can succeed.
-- `.env` has been filled and `ecm-core` recreated; connection test now succeeds.
+- OAuth env vars are now kept in `.env.mail` (ignored) and loaded by `docker-compose`.
+- `ecm-core` recreated; connection test now succeeds.
 - UI now surfaces missing env keys via `oauthEnvConfigured` and `oauthMissingEnvKeys`.
 - `mail-automation.spec.ts` now asserts the `OAuth env missing` warning based on API data.

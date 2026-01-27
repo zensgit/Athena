@@ -40,4 +40,5 @@
 ## Notes
 - `oauthCredentialKey` is normalized to `ECM_MAIL_OAUTH_<KEY>_...` (uppercase, non-alphanumeric -> `_`).
 - Ensure env vars are set before triggering OAuth mail fetch or test connection.
-- `docker-compose.yml` now loads `.env` into the `ecm-core` container via `env_file` so OAuth vars are available.
+- `docker-compose.yml` now loads both `.env` and `.env.mail` into the `ecm-core` container via `env_file`.
+- `.env.mail.example` provides a safe template; `.env.mail` is gitignored for secrets.
