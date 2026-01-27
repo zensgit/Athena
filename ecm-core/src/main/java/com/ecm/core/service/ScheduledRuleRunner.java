@@ -212,6 +212,13 @@ public class ScheduledRuleRunner {
         LocalDateTime sinceOverride = lastRunAt == null || lastRunAt.isAfter(backfillSince)
             ? backfillSince
             : lastRunAt;
+        log.info(
+            "Manual trigger for scheduled rule '{}' uses since={} (lastRunAt={}, backfillMinutes={})",
+            rule.getName(),
+            sinceOverride,
+            lastRunAt,
+            effectiveBackfillMinutes
+        );
         executeScheduledRule(rule, sinceOverride);
     }
 

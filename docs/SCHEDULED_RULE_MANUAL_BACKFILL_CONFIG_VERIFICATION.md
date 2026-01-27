@@ -22,6 +22,10 @@
   - Command: `cd ecm-frontend && ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 npx playwright test`
   - Result: ✅ 21 passed (~5.4m)
 
+## Observability
+- Backend logs now include the effective manual trigger window:
+  - Example: `Manual trigger for scheduled rule '...' uses since=... (lastRunAt=..., backfillMinutes=...)`
+
 ## Conclusion
 - The manual backfill window is now configurable per scheduled rule.
 - The manual trigger race fix remains stable under full E2E regression.
