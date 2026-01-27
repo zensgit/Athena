@@ -160,6 +160,13 @@ public class AutomationRule extends BaseEntity {
     private Integer maxItemsPerRun = 200;
 
     /**
+     * Optional manual trigger backfill window in minutes for scheduled rules.
+     * When set, manual triggers will include documents modified within this window.
+     */
+    @Column(name = "manual_backfill_minutes")
+    private Integer manualBackfillMinutes;
+
+    /**
      * Event types that can trigger automation rules
      */
     public enum TriggerType {

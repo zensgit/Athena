@@ -29,6 +29,7 @@
     <include file="db/changelog/changes/016-add-audit-log-client-ip.xml"/>
     <include file="db/changelog/changes/017-make-mail-account-password-nullable.xml"/>
     <include file="db/changelog/changes/018-add-mail-account-fetch-status-credential-key.xml"/>
+    <include file="db/changelog/changes/019-add-scheduled-rule-manual-backfill-minutes.xml"/>
     <include file="db/changelog/changes/007-insert-initial-data.xml"/>
 
 </databaseChangeLog>

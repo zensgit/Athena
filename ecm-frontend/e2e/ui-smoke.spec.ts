@@ -1409,6 +1409,7 @@ test('Scheduled Rules: CRUD + cron validation + UI configuration', async ({ page
     cronExpression: '0 0 9 * * MON-FRI',
     timezone: 'America/New_York',
     maxItemsPerRun: 50,
+    manualBackfillMinutes: 15,
   };
 
   const createRuleRes = await request.post('http://localhost:7700/api/v1/rules', {
@@ -1421,12 +1422,14 @@ test('Scheduled Rules: CRUD + cron validation + UI configuration', async ({ page
     cronExpression?: string;
     timezone?: string;
     maxItemsPerRun?: number;
+    manualBackfillMinutes?: number;
     triggerType?: string;
   };
   expect(createdRule.id).toBeTruthy();
   expect(createdRule.cronExpression).toBe('0 0 9 * * MON-FRI');
   expect(createdRule.timezone).toBe('America/New_York');
   expect(createdRule.maxItemsPerRun).toBe(50);
+  expect(createdRule.manualBackfillMinutes).toBe(15);
   expect(createdRule.triggerType).toBe('SCHEDULED');
 
   // Fetch the rule to verify persistence
@@ -1438,9 +1441,11 @@ test('Scheduled Rules: CRUD + cron validation + UI configuration', async ({ page
     cronExpression?: string;
     timezone?: string;
     maxItemsPerRun?: number;
+    manualBackfillMinutes?: number;
   };
   expect(fetchedRule.cronExpression).toBe('0 0 9 * * MON-FRI');
   expect(fetchedRule.timezone).toBe('America/New_York');
+  expect(fetchedRule.manualBackfillMinutes).toBe(15);
 
   // Navigate to Rules page and verify the scheduled rule shows
   await page.goto('/rules', { waitUntil: 'domcontentloaded' });
@@ -1461,6 +1466,9 @@ test('Scheduled Rules: CRUD + cron validation + UI configuration', async ({ page
   await expect(editDialog.getByLabel('Cron Expression')).toHaveValue('0 0 9 * * MON-FRI', { timeout: 60_000 });
   await expect(editDialog.getByLabel('Timezone')).toBeVisible({ timeout: 60_000 });
   await expect(editDialog.getByLabel('Max Items Per Run')).toHaveValue('50', { timeout: 60_000 });
+  await expect(editDialog.getByLabel('Manual Trigger Backfill (minutes)')).toHaveValue('15', {
+    timeout: 60_000,
+  });
 
   // Test cron validation button in UI
   await editDialog.getByRole('button', { name: 'Validate', exact: true }).click();

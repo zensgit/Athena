@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="019-1-add-manual-backfill-minutes" author="codex">
+        <preConditions onFail="MARK_RAN">
+            <and>
+                <tableExists tableName="automation_rules"/>
+                <not>
+                    <columnExists tableName="automation_rules" columnName="manual_backfill_minutes"/>
+                </not>
+            </and>
+        </preConditions>
+        <comment>Add per-rule manual trigger backfill window (minutes) for scheduled rules</comment>
+
+        <addColumn tableName="automation_rules">
+            <column name="manual_backfill_minutes" type="int">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+</databaseChangeLog>
+

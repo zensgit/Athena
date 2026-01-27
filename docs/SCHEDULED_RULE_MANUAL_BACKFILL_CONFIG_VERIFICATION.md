@@ -1,0 +1,27 @@
+# Scheduled Rule Manual Backfill Config Verification
+
+## Backend Tests
+- Full backend suite:
+  - Command: `cd ecm-core && mvn -q test`
+  - Result: ✅ Passed
+- Targeted manual trigger test:
+  - Command: `cd ecm-core && mvn -q -Dtest=ScheduledRuleRunnerTest test`
+  - Result: ✅ Passed
+
+## Migration
+- Rebuilt backend container:
+  - Command: `docker-compose up -d --build ecm-core`
+- Liquibase applied the new column:
+  - Observed in logs: change set `019-1-add-manual-backfill-minutes` ran successfully.
+
+## Playwright E2E
+- Scheduled rule flow (includes manual backfill UI assertion):
+  - Command: `cd ecm-frontend && ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 npx playwright test e2e/ui-smoke.spec.ts -g "Scheduled Rules"`
+  - Result: ✅ Passed
+- Full regression:
+  - Command: `cd ecm-frontend && ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 npx playwright test`
+  - Result: ✅ 21 passed (~5.4m)
+
+## Conclusion
+- The manual backfill window is now configurable per scheduled rule.
+- The manual trigger race fix remains stable under full E2E regression.

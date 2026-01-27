@@ -203,7 +203,11 @@ public class ScheduledRuleRunner {
         if (!rule.isScheduledRule()) {
             throw new IllegalArgumentException("Rule is not a scheduled rule: " + rule.getId());
         }
-        LocalDateTime backfillSince = LocalDateTime.now().minusMinutes(manualBackfillMinutes);
+        long effectiveBackfillMinutes = manualBackfillMinutes;
+        if (rule.getManualBackfillMinutes() != null && rule.getManualBackfillMinutes() > 0) {
+            effectiveBackfillMinutes = rule.getManualBackfillMinutes();
+        }
+        LocalDateTime backfillSince = LocalDateTime.now().minusMinutes(effectiveBackfillMinutes);
         LocalDateTime lastRunAt = rule.getLastRunAt();
         LocalDateTime sinceOverride = lastRunAt == null || lastRunAt.isAfter(backfillSince)
             ? backfillSince

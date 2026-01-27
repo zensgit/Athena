@@ -60,6 +60,7 @@ export interface RuleResponse {
   lastRunAt?: string;
   nextRunAt?: string;
   maxItemsPerRun?: number;
+  manualBackfillMinutes?: number;
 }
 
 export interface ValidationResult {
@@ -91,6 +92,7 @@ export interface CreateRuleRequest {
   cronExpression?: string;
   timezone?: string;
   maxItemsPerRun?: number;
+  manualBackfillMinutes?: number;
 }
 
 export interface CronValidationResult {
@@ -189,4 +191,3 @@ class RuleService {
 
 const ruleService = new RuleService();
 export default ruleService;
-

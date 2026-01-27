@@ -66,6 +66,7 @@ public class RuleController {
             .cronExpression(request.cronExpression())
             .timezone(request.timezone())
             .maxItemsPerRun(request.maxItemsPerRun())
+            .manualBackfillMinutes(request.manualBackfillMinutes())
             .build();
 
         AutomationRule rule = ruleEngineService.createRule(serviceRequest);
@@ -132,6 +133,7 @@ public class RuleController {
             .cronExpression(request.cronExpression())
             .timezone(request.timezone())
             .maxItemsPerRun(request.maxItemsPerRun())
+            .manualBackfillMinutes(request.manualBackfillMinutes())
             .build();
 
         AutomationRule rule = ruleEngineService.updateRule(ruleId, serviceRequest);
@@ -402,7 +404,8 @@ public class RuleController {
         // Scheduled rule fields
         String cronExpression,
         String timezone,
-        Integer maxItemsPerRun
+        Integer maxItemsPerRun,
+        Integer manualBackfillMinutes
     ) {}
 
     public record UpdateRuleRequestDto(
@@ -419,7 +422,8 @@ public class RuleController {
         // Scheduled rule fields
         String cronExpression,
         String timezone,
-        Integer maxItemsPerRun
+        Integer maxItemsPerRun,
+        Integer manualBackfillMinutes
     ) {}
 
     public record CronValidationRequest(
@@ -484,7 +488,8 @@ public class RuleController {
         String timezone,
         LocalDateTime lastRunAt,
         LocalDateTime nextRunAt,
-        Integer maxItemsPerRun
+        Integer maxItemsPerRun,
+        Integer manualBackfillMinutes
     ) {
         public static RuleResponse from(AutomationRule rule) {
             return new RuleResponse(
@@ -511,7 +516,8 @@ public class RuleController {
                 rule.getTimezone(),
                 rule.getLastRunAt(),
                 rule.getNextRunAt(),
-                rule.getMaxItemsPerRun()
+                rule.getMaxItemsPerRun(),
+                rule.getManualBackfillMinutes()
             );
         }
     }

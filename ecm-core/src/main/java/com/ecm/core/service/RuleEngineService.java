@@ -101,6 +101,7 @@ public class RuleEngineService {
             .cronExpression(request.getCronExpression())
             .timezone(request.getTimezone() != null ? request.getTimezone() : "UTC")
             .maxItemsPerRun(request.getMaxItemsPerRun() != null ? request.getMaxItemsPerRun() : 200)
+            .manualBackfillMinutes(request.getManualBackfillMinutes())
             .build();
 
         AutomationRule saved = ruleRepository.save(rule);
@@ -161,6 +162,9 @@ public class RuleEngineService {
         }
         if (request.getMaxItemsPerRun() != null) {
             rule.setMaxItemsPerRun(request.getMaxItemsPerRun());
+        }
+        if (request.getManualBackfillMinutes() != null) {
+            rule.setManualBackfillMinutes(request.getManualBackfillMinutes());
         }
 
         return ruleRepository.save(rule);
@@ -922,6 +926,7 @@ public class RuleEngineService {
         private String cronExpression;
         private String timezone;
         private Integer maxItemsPerRun;
+        private Integer manualBackfillMinutes;
     }
 
     @lombok.Data
@@ -943,5 +948,6 @@ public class RuleEngineService {
         private String cronExpression;
         private String timezone;
         private Integer maxItemsPerRun;
+        private Integer manualBackfillMinutes;
     }
 }

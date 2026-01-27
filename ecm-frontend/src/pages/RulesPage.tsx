@@ -158,6 +158,7 @@ const RulesPage: React.FC = () => {
     cronExpression: '',
     timezone: 'UTC',
     maxItemsPerRun: 200,
+    manualBackfillMinutes: undefined,
   });
   const [conditionText, setConditionText] = useState(DEFAULT_CONDITION);
   const [actionsText, setActionsText] = useState(DEFAULT_ACTIONS);
@@ -215,6 +216,7 @@ const RulesPage: React.FC = () => {
       cronExpression: '',
       timezone: 'UTC',
       maxItemsPerRun: 200,
+      manualBackfillMinutes: undefined,
     });
     setConditionText(DEFAULT_CONDITION);
     setActionsText(DEFAULT_ACTIONS);
@@ -240,6 +242,7 @@ const RulesPage: React.FC = () => {
       cronExpression: '',
       timezone: 'UTC',
       maxItemsPerRun: 200,
+      manualBackfillMinutes: undefined,
     });
     setConditionText(JSON.stringify(template.condition, null, 2));
     setActionsText(JSON.stringify(template.actions, null, 2));
@@ -264,6 +267,7 @@ const RulesPage: React.FC = () => {
       cronExpression: rule.cronExpression || '',
       timezone: rule.timezone || 'UTC',
       maxItemsPerRun: rule.maxItemsPerRun ?? 200,
+      manualBackfillMinutes: rule.manualBackfillMinutes ?? undefined,
     });
     setConditionText(JSON.stringify(rule.condition ?? { type: 'ALWAYS_TRUE' }, null, 2));
     setActionsText(JSON.stringify(rule.actions ?? [], null, 2));
@@ -331,6 +335,19 @@ const RulesPage: React.FC = () => {
       }
     }
 
+    const normalizedBackfillMinutes =
+      typeof form.manualBackfillMinutes === 'number' && !Number.isNaN(form.manualBackfillMinutes)
+        ? form.manualBackfillMinutes
+        : undefined;
+    if (
+      form.triggerType === 'SCHEDULED' &&
+      normalizedBackfillMinutes !== undefined &&
+      normalizedBackfillMinutes < 1
+    ) {
+      toast.error('Manual backfill minutes must be at least 1');
+      return;
+    }
+
     let condition;
     let actions;
     try {
@@ -350,6 +367,8 @@ const RulesPage: React.FC = () => {
       cronExpression: form.triggerType === 'SCHEDULED' ? form.cronExpression : undefined,
       timezone: form.triggerType === 'SCHEDULED' ? form.timezone : undefined,
       maxItemsPerRun: form.triggerType === 'SCHEDULED' ? form.maxItemsPerRun : undefined,
+      manualBackfillMinutes:
+        form.triggerType === 'SCHEDULED' ? normalizedBackfillMinutes : undefined,
     };
 
     try {
@@ -690,6 +709,22 @@ const RulesPage: React.FC = () => {
                   helperText="Maximum documents to process per execution"
                   inputProps={{ min: 1, max: 10000 }}
                   sx={{ width: 200 }}
+                />
+
+                <TextField
+                  label="Manual Trigger Backfill (minutes)"
+                  type="number"
+                  value={form.manualBackfillMinutes ?? ''}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setForm((prev) => ({
+                      ...prev,
+                      manualBackfillMinutes: value === '' ? undefined : Number(value),
+                    }));
+                  }}
+                  helperText="Optional: include recently modified docs on manual trigger"
+                  inputProps={{ min: 1, max: 1440 }}
+                  sx={{ width: 260 }}
                 />
               </Box>
 

@@ -60,7 +60,7 @@ class ScheduledRuleRunnerTest {
     @Test
     void triggerRule_backfillsRecentWindow_whenLastRunIsTooRecent() {
         LocalDateTime now = LocalDateTime.now();
-        AutomationRule rule = buildScheduledRule(now.minusSeconds(10));
+        AutomationRule rule = buildScheduledRule(now.minusSeconds(10), null);
 
         scheduledRuleRunner.triggerRule(rule);
 
@@ -75,7 +75,7 @@ class ScheduledRuleRunnerTest {
     @Test
     void triggerRule_usesLastRunAt_whenItIsOlderThanBackfillWindow() {
         LocalDateTime lastRunAt = LocalDateTime.of(2020, 1, 1, 0, 0);
-        AutomationRule rule = buildScheduledRule(lastRunAt);
+        AutomationRule rule = buildScheduledRule(lastRunAt, null);
 
         scheduledRuleRunner.triggerRule(rule);
 
@@ -83,13 +83,29 @@ class ScheduledRuleRunnerTest {
         assertEquals(lastRunAt, sinceCaptor.getValue());
     }
 
-    private AutomationRule buildScheduledRule(LocalDateTime lastRunAt) {
+    @Test
+    void triggerRule_usesRuleSpecificBackfill_whenProvided() {
+        LocalDateTime now = LocalDateTime.now();
+        AutomationRule rule = buildScheduledRule(now.minusSeconds(10), 2);
+
+        scheduledRuleRunner.triggerRule(rule);
+
+        verify(documentRepository).findModifiedSince(sinceCaptor.capture(), any(Pageable.class));
+        LocalDateTime usedSince = sinceCaptor.getValue();
+        LocalDateTime recentFloor = now.minusMinutes(1);
+
+        assertFalse(usedSince.isAfter(recentFloor), "Rule-specific backfill should be applied");
+        assertTrue(usedSince.isAfter(now.minusMinutes(10)), "Rule-specific backfill should remain bounded");
+    }
+
+    private AutomationRule buildScheduledRule(LocalDateTime lastRunAt, Integer manualBackfillMinutes) {
         AutomationRule rule = AutomationRule.builder()
             .name("scheduled-rule-test")
             .triggerType(AutomationRule.TriggerType.SCHEDULED)
             .cronExpression("0 * * * * *")
             .enabled(true)
             .lastRunAt(lastRunAt)
+            .manualBackfillMinutes(manualBackfillMinutes)
             .build();
         ReflectionTestUtils.setField(rule, "id", UUID.randomUUID());
         return rule;
