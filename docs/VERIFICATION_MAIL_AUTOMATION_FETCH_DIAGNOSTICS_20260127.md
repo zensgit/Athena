@@ -60,3 +60,20 @@
   - Updated rule folder to `ECM-TEST,INBOX` (valid folders discovered via the new endpoint).
 - Result:
   - `folder_missing` skip reason no longer appears in debug summaries.
+
+## Malformed Message Resilience (2026-01-27)
+- Diagnostic technique:
+  - Temporarily included `[Gmail]/所有邮件` in the rule folder for a debug run only, then reverted to `ECM-TEST,INBOX`.
+- Before resilience changes:
+  - Debug logs showed:
+    - `Mail debug message processing failed: Unknown encoding: HEXA`
+  - Skip reason: `message_error`
+- After resilience changes:
+  - Debug summary (with All Mail temporarily included):
+    - `foundMessages=1`
+    - `errorMessages=0`
+    - `skippedMessages=1`
+    - Skip reasons: `no_rule=1`
+  - Interpretation:
+    - A malformed/oddly encoded message no longer breaks diagnostics.
+    - The remaining skip reason is actionable (likely no attachments, so rule does not match).

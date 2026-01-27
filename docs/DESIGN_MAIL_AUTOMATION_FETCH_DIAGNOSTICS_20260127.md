@@ -27,6 +27,10 @@
   - Per-folder
   - Per-account
   - Global run
+- Resilience improvements:
+  - Malformed header encodings (e.g., unknown charset/encoding tokens) no longer fail the entire debug run.
+  - Multipart read failures are handled per-part with debug logs and safe fallbacks.
+  - This shifts outcomes from `message_error` to more actionable skip reasons like `no_rule` or `no_content`.
 - New endpoint:
   - `POST /api/v1/integration/mail/fetch/debug`
   - Query params:

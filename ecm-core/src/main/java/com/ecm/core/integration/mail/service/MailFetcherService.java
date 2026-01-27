@@ -853,17 +853,31 @@ public class MailFetcherService {
                 return new MessageDebugResult(false, false, false, "already_processed");
             }
 
-            List<AttachmentPart> attachments = collectAttachmentParts(message);
+            List<AttachmentPart> attachments;
+            try {
+                attachments = collectAttachmentParts(message);
+            } catch (Exception e) {
+                log.debug("Mail debug attachment collection failed: {}", e.getMessage());
+                attachments = new ArrayList<>();
+            }
             List<String> attachmentNames = attachments.stream()
                 .map(AttachmentPart::fileName)
                 .filter(name -> name != null && !name.isBlank())
                 .collect(Collectors.toList());
 
+            String bodyText;
+            try {
+                bodyText = extractBodyText(message);
+            } catch (Exception e) {
+                log.debug("Mail debug body extraction failed: {}", e.getMessage());
+                bodyText = "";
+            }
+
             MailRuleMatcher.MailMessageData messageData = new MailRuleMatcher.MailMessageData(
                 safeSubject(message),
                 safeFrom(message),
                 safeRecipients(message),
-                extractBodyText(message),
+                bodyText,
                 attachmentNames,
                 toLocalDateTime(message.getReceivedDate(), message.getSentDate())
             );
@@ -1096,16 +1110,28 @@ public class MailFetcherService {
         List<AttachmentPart> attachments = new ArrayList<>();
 
         if (part.isMimeType("multipart/*")) {
-            Multipart multipart = (Multipart) part.getContent();
+            Multipart multipart;
+            try {
+                multipart = (Multipart) part.getContent();
+            } catch (Exception e) {
+                log.debug("Mail multipart read failed: {}", e.getMessage());
+                return attachments;
+            }
             for (int i = 0; i < multipart.getCount(); i++) {
-                BodyPart bodyPart = multipart.getBodyPart(i);
+                BodyPart bodyPart;
+                try {
+                    bodyPart = multipart.getBodyPart(i);
+                } catch (Exception e) {
+                    log.debug("Mail multipart body part read failed: {}", e.getMessage());
+                    continue;
+                }
                 if (bodyPart.isMimeType("multipart/*")) {
                     attachments.addAll(collectAttachmentParts(bodyPart));
                     continue;
                 }
 
-                String fileName = bodyPart.getFileName();
-                String disposition = bodyPart.getDisposition();
+                String fileName = safeFileName(bodyPart);
+                String disposition = safeDisposition(bodyPart);
                 boolean hasFilename = fileName != null && !fileName.isBlank();
                 boolean isAttachment = Part.ATTACHMENT.equalsIgnoreCase(disposition) || hasFilename;
                 if (isAttachment && hasFilename) {
@@ -1123,6 +1149,24 @@ public class MailFetcherService {
         return attachments;
     }
 
+    private String safeFileName(Part part) {
+        try {
+            return part.getFileName();
+        } catch (Exception e) {
+            log.debug("Mail attachment filename decode failed: {}", e.getMessage());
+            return "";
+        }
+    }
+
+    private String safeDisposition(Part part) {
+        try {
+            return part.getDisposition();
+        } catch (Exception e) {
+            log.debug("Mail attachment disposition decode failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
     private String extractBodyText(Part part) throws Exception {
         if (part.isMimeType("text/plain")) {
             return safeContent(part.getContent());
@@ -1132,9 +1176,21 @@ public class MailFetcherService {
         }
         if (part.isMimeType("multipart/*")) {
             StringBuilder builder = new StringBuilder();
-            Multipart multipart = (Multipart) part.getContent();
+            Multipart multipart;
+            try {
+                multipart = (Multipart) part.getContent();
+            } catch (Exception e) {
+                log.debug("Mail multipart body read failed: {}", e.getMessage());
+                return "";
+            }
             for (int i = 0; i < multipart.getCount(); i++) {
-                BodyPart bodyPart = multipart.getBodyPart(i);
+                BodyPart bodyPart;
+                try {
+                    bodyPart = multipart.getBodyPart(i);
+                } catch (Exception e) {
+                    log.debug("Mail multipart body part read failed: {}", e.getMessage());
+                    continue;
+                }
                 String text = extractBodyText(bodyPart);
                 if (!text.isBlank()) {
                     if (!builder.isEmpty()) {
@@ -1168,7 +1224,8 @@ public class MailFetcherService {
     private String safeSubject(Message message) {
         try {
             return message.getSubject() != null ? message.getSubject() : "";
-        } catch (MessagingException e) {
+        } catch (Exception e) {
+            log.debug("Mail subject decode failed: {}", e.getMessage());
             return "";
         }
     }
@@ -1179,8 +1236,8 @@ public class MailFetcherService {
             if (from != null && from.length > 0) {
                 return from[0].toString();
             }
-        } catch (MessagingException ignored) {
-            // fall through
+        } catch (Exception e) {
+            log.debug("Mail from decode failed: {}", e.getMessage());
         }
         return "";
     }
@@ -1191,7 +1248,8 @@ public class MailFetcherService {
             addRecipients(message, Message.RecipientType.TO, recipients);
             addRecipients(message, Message.RecipientType.CC, recipients);
             return String.join(", ", recipients);
-        } catch (MessagingException e) {
+        } catch (Exception e) {
+            log.debug("Mail recipients decode failed: {}", e.getMessage());
             return "";
         }
     }
