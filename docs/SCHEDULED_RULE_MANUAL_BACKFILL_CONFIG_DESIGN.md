@@ -29,9 +29,12 @@
   - `ecm-frontend/src/services/ruleService.ts`
 - UI:
   - `ecm-frontend/src/pages/RulesPage.tsx`
+    - Scheduled rules now show the effective backfill setting in the Trigger cell.
 
 ## Test Coverage
 - Unit test for manual trigger selection logic:
   - `ecm-core/src/test/java/com/ecm/core/service/ScheduledRuleRunnerTest.java`
 - E2E scheduled rule flow now asserts UI and API round-trip:
   - `ecm-frontend/e2e/ui-smoke.spec.ts`
+- A lightweight stress runner helps catch regressions quickly:
+  - `ecm-frontend/scripts/scheduled-rules-stress.sh`

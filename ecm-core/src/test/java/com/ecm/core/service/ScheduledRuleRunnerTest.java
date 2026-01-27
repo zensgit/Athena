@@ -98,6 +98,21 @@ class ScheduledRuleRunnerTest {
         assertTrue(usedSince.isAfter(now.minusMinutes(10)), "Rule-specific backfill should remain bounded");
     }
 
+    @Test
+    void triggerRule_fallsBackToDefaultBackfill_whenRuleBackfillIsNonPositive() {
+        LocalDateTime now = LocalDateTime.now();
+        AutomationRule rule = buildScheduledRule(now.minusSeconds(10), 0);
+
+        scheduledRuleRunner.triggerRule(rule);
+
+        verify(documentRepository).findModifiedSince(sinceCaptor.capture(), any(Pageable.class));
+        LocalDateTime usedSince = sinceCaptor.getValue();
+        LocalDateTime backfillFloor = now.minusMinutes(4);
+
+        assertFalse(usedSince.isAfter(backfillFloor), "Non-positive rule backfill should use default");
+        assertTrue(usedSince.isAfter(now.minusHours(1)), "Fallback window should remain bounded");
+    }
+
     private AutomationRule buildScheduledRule(LocalDateTime lastRunAt, Integer manualBackfillMinutes) {
         AutomationRule rule = AutomationRule.builder()
             .name("scheduled-rule-test")

@@ -7,6 +7,7 @@
 - Targeted manual trigger test:
   - Command: `cd ecm-core && mvn -q -Dtest=ScheduledRuleRunnerTest test`
   - Result: ✅ Passed
+  - Includes: fallback to default backfill when `manualBackfillMinutes <= 0`
 
 ## Migration
 - Rebuilt backend container:
@@ -18,13 +19,17 @@
 - Scheduled rule flow (includes manual backfill UI assertion):
   - Command: `cd ecm-frontend && ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 npx playwright test e2e/ui-smoke.spec.ts -g "Scheduled Rules"`
   - Result: ✅ Passed
+- Scheduled rules stress runner:
+  - Command: `cd ecm-frontend && ./scripts/scheduled-rules-stress.sh 5`
+  - Result: ✅ Passed (5/5)
 - Full regression:
   - Command: `cd ecm-frontend && ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 npx playwright test`
-  - Result: ✅ 21 passed (~5.4m)
+  - Result: ✅ 21 passed (~6.7m)
 
 ## Observability
 - Backend logs now include the effective manual trigger window:
   - Example: `Manual trigger for scheduled rule '...' uses since=... (lastRunAt=..., backfillMinutes=...)`
+- The Trigger cell now includes backfill details, and E2E assertions were updated to match `SCHEDULED` non-exactly.
 
 ## Conclusion
 - The manual backfill window is now configurable per scheduled rule.

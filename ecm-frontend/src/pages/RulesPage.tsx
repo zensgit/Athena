@@ -517,7 +517,15 @@ const RulesPage: React.FC = () => {
                     </Typography>
                   )}
                 </TableCell>
-                <TableCell>{rule.triggerType}</TableCell>
+                <TableCell>
+                  <Typography variant="body2">{rule.triggerType}</Typography>
+                  {rule.triggerType === 'SCHEDULED' && (
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                      Backfill:{' '}
+                      {rule.manualBackfillMinutes ? `${rule.manualBackfillMinutes}m` : 'default'}
+                    </Typography>
+                  )}
+                </TableCell>
                 <TableCell>{rule.priority ?? '-'}</TableCell>
                 <TableCell>
                   <Switch
