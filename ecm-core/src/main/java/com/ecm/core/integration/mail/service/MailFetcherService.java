@@ -233,6 +233,17 @@ public class MailFetcherService {
         return new MailFetchDebugResult(summary, effectiveMaxMessages, stats.skipReasons, stats.accountResults);
     }
 
+    public List<String> listFolders(UUID accountId) {
+        MailAccount account = accountRepository.findById(accountId)
+            .orElseThrow(() -> new IllegalArgumentException("Mail account not found: " + accountId));
+        try {
+            return runWithSystemAuthenticationWithResult(() -> listFolders(account));
+        } catch (Exception e) {
+            String message = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            throw new IllegalArgumentException("Failed to list folders for account " + account.getName() + ": " + message, e);
+        }
+    }
+
     private void processAccount(MailAccount account, MailFetchRunStats stats) throws Exception {
         Store store = connect(account);
 
@@ -547,6 +558,60 @@ public class MailFetcherService {
         return ruleRepository.findAllByOrderByPriorityAsc().stream()
             .filter(rule -> rule.getAccountId() == null || Objects.equals(rule.getAccountId(), account.getId()))
             .collect(Collectors.toList());
+    }
+
+    private List<String> listFolders(MailAccount account) throws Exception {
+        Store store = null;
+        try {
+            store = connect(account);
+            Folder defaultFolder = store.getDefaultFolder();
+            Folder[] folders = defaultFolder.list("*");
+            if (folders == null || folders.length == 0) {
+                folders = defaultFolder.list();
+            }
+
+            List<String> names = new ArrayList<>();
+            if (folders != null) {
+                for (Folder folder : folders) {
+                    collectFolderNames(folder, names);
+                }
+            }
+
+            List<String> distinctSorted = names.stream()
+                .filter(name -> name != null && !name.isBlank())
+                .distinct()
+                .sorted()
+                .collect(Collectors.toList());
+            if (!distinctSorted.isEmpty()) {
+                log.info("Mail folders for {}: {}", account.getName(), distinctSorted.stream().limit(20).collect(Collectors.joining(", ")));
+            }
+            return distinctSorted;
+        } finally {
+            if (store != null) {
+                try {
+                    store.close();
+                } catch (Exception ignored) {
+                    // best effort for diagnostics
+                }
+            }
+        }
+    }
+
+    private void collectFolderNames(Folder folder, List<String> target) throws MessagingException {
+        String fullName = folder.getFullName();
+        if (fullName != null && !fullName.isBlank()) {
+            target.add(fullName);
+        }
+        if ((folder.getType() & Folder.HOLDS_FOLDERS) == 0) {
+            return;
+        }
+        Folder[] children = folder.list();
+        if (children == null || children.length == 0) {
+            return;
+        }
+        for (Folder child : children) {
+            collectFolderNames(child, target);
+        }
     }
 
     private MailFetchDebugAccountResult processAccountDebug(

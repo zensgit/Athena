@@ -252,6 +252,13 @@ public class MailAutomationController {
         return ResponseEntity.ok(fetcherService.testConnection(id));
     }
 
+    @GetMapping("/accounts/{id}/folders")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "List folders", description = "List available IMAP folders for a mail account")
+    public ResponseEntity<List<String>> listAccountFolders(@PathVariable UUID id) {
+        return ResponseEntity.ok(fetcherService.listFolders(id));
+    }
+
     // === Rules ===
 
     @GetMapping("/rules")

@@ -32,6 +32,9 @@
   - Query params:
     - `force` (default `true`)
     - `maxMessagesPerFolder` (optional limit)
+- New folder discovery endpoint:
+  - `GET /api/v1/integration/mail/accounts/{id}/folders`
+  - Purpose: list available IMAP folders to avoid misconfigured folder names.
 - New configuration:
   - `ecm.mail.fetcher.debug.max-messages-per-folder` (default `200`)
 
@@ -41,6 +44,7 @@
 - Mail Automation page changes:
   - New "Fetch Diagnostics (Dry Run)" card above Mail Accounts.
   - Admin can set "Max messages / folder" and run diagnostics.
+  - Admin can select an account and list available folders.
   - Results show:
     - Summary chips (attempted/found/matched/processable/skipped/errors)
     - Top global skip reasons

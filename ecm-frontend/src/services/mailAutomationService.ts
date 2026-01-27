@@ -177,6 +177,10 @@ class MailAutomationService {
     return api.post<MailConnectionTestResult>(`/integration/mail/accounts/${accountId}/test`);
   }
 
+  async listFolders(accountId: string): Promise<string[]> {
+    return api.get<string[]>(`/integration/mail/accounts/${accountId}/folders`);
+  }
+
   async triggerFetch(): Promise<MailFetchSummary> {
     return api.post<MailFetchSummary>('/integration/mail/fetch');
   }

@@ -37,6 +37,26 @@
 - Command (API debug fetch):
   - `POST /api/v1/integration/mail/fetch/debug?force=true&maxMessagesPerFolder=200`
 - Result snapshot:
-  - `foundMessages=0` for `gmail-imap` `INBOX`
+  - `foundMessages=0` for `gmail-imap` across `ECM-TEST` and `INBOX`
   - Logs:
+    - `Mail debug folder gmail-imap:ECM-TEST found=0, scanned=0, matched=0, processable=0, skipped=0, errors=0`
     - `Mail debug folder gmail-imap:INBOX found=0, scanned=0, matched=0, processable=0, skipped=0, errors=0`
+
+## Folder Discovery
+- Folder list endpoint:
+  - `GET /api/v1/integration/mail/accounts/{id}/folders`
+- This helps confirm whether rule folder names exist (e.g., when `folder_missing` appears in diagnostics).
+- Verified via API:
+  - Result: ✅ Returned 18 folders.
+  - Notable folders present:
+    - `ECM-TEST`
+    - `INBOX`
+    - `[Gmail]/所有邮件` (Gmail "All Mail" in this mailbox locale)
+
+## Runtime Rule Fix (2026-01-27)
+- Issue:
+  - Diagnostics previously showed `folder_missing` for `[Gmail]/All Mail`.
+- Action:
+  - Updated rule folder to `ECM-TEST,INBOX` (valid folders discovered via the new endpoint).
+- Result:
+  - `folder_missing` skip reason no longer appears in debug summaries.

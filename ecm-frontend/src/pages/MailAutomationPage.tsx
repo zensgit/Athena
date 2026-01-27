@@ -112,6 +112,9 @@ const MailAutomationPage: React.FC = () => {
   const [debugging, setDebugging] = useState(false);
   const [debugResult, setDebugResult] = useState<MailFetchDebugResult | null>(null);
   const [debugMaxMessages, setDebugMaxMessages] = useState(200);
+  const [folderAccountId, setFolderAccountId] = useState('');
+  const [listingFolders, setListingFolders] = useState(false);
+  const [availableFolders, setAvailableFolders] = useState<string[]>([]);
   const [testingAccountId, setTestingAccountId] = useState<string | null>(null);
 
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
@@ -190,6 +193,12 @@ const MailAutomationPage: React.FC = () => {
     loadAll();
   }, []);
 
+  useEffect(() => {
+    if (!folderAccountId && accounts.length > 0) {
+      setFolderAccountId(accounts[0].id);
+    }
+  }, [accounts, folderAccountId]);
+
   const accountNameById = useMemo(() => {
     return new Map(accounts.map((account) => [account.id, account.name]));
   }, [accounts]);
@@ -238,6 +247,23 @@ const MailAutomationPage: React.FC = () => {
       toast.error('Failed to run mail diagnostics');
     } finally {
       setDebugging(false);
+    }
+  };
+
+  const handleListFolders = async () => {
+    if (!folderAccountId) {
+      toast.error('Select an account first');
+      return;
+    }
+    setListingFolders(true);
+    try {
+      const folders = await mailAutomationService.listFolders(folderAccountId);
+      setAvailableFolders(folders);
+      toast.success(`Found ${folders.length} folders`);
+    } catch {
+      toast.error('Failed to list folders');
+    } finally {
+      setListingFolders(false);
     }
   };
 
@@ -496,6 +522,22 @@ const MailAutomationPage: React.FC = () => {
               <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
                 <Typography variant="h6">Fetch Diagnostics (Dry Run)</Typography>
                 <Stack direction="row" spacing={1}>
+                  <FormControl size="small" sx={{ minWidth: 220 }}>
+                    <InputLabel id="diagnostics-account-label">Account</InputLabel>
+                    <Select
+                      labelId="diagnostics-account-label"
+                      label="Account"
+                      value={folderAccountId}
+                      onChange={(event) => setFolderAccountId(event.target.value)}
+                      disabled={accounts.length === 0}
+                    >
+                      {accounts.map((account) => (
+                        <MenuItem key={account.id} value={account.id}>
+                          {account.name}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
                   <TextField
                     label="Max messages / folder"
                     type="number"
@@ -511,6 +553,14 @@ const MailAutomationPage: React.FC = () => {
                   />
                   <Button
                     variant="outlined"
+                    startIcon={listingFolders ? <CircularProgress size={16} /> : <Refresh />}
+                    onClick={handleListFolders}
+                    disabled={listingFolders || accounts.length === 0}
+                  >
+                    {listingFolders ? 'Listing...' : 'List Folders'}
+                  </Button>
+                  <Button
+                    variant="outlined"
                     startIcon={debugging ? <CircularProgress size={16} /> : <Refresh />}
                     onClick={handleDebugFetch}
                     disabled={debugging}
@@ -519,6 +569,19 @@ const MailAutomationPage: React.FC = () => {
                   </Button>
                 </Stack>
               </Box>
+
+              {availableFolders.length > 0 && (
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="caption" color="text.secondary">
+                    Available folders ({availableFolders.length})
+                  </Typography>
+                  <Stack direction="row" spacing={1} sx={{ mt: 0.5, flexWrap: 'wrap', gap: 1 }}>
+                    {availableFolders.slice(0, 40).map((folder) => (
+                      <Chip key={`folder-${folder}`} size="small" variant="outlined" label={folder} />
+                    ))}
+                  </Stack>
+                </Box>
+              )}
 
               {debugResult ? (
                 <Stack spacing={1.5}>
