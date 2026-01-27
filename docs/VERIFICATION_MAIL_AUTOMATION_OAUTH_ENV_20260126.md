@@ -15,6 +15,14 @@ ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 \
 - `e2e/ui-smoke.spec.ts` - Mail automation actions: **passed**
 - Overall: **2 passed** (31.9s)
 
+## Targeted e2e
+```bash
+ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 \
+  npx playwright test e2e/mail-automation.spec.ts
+```
+Result:
+- `mail-automation.spec.ts`: **1 passed** (10.7s)
+
 ## Backend tests
 ```bash
 cd ecm-core
@@ -62,3 +70,4 @@ Result (for `gmail-imap`):
 - OAuth env vars are required before connection/fetch can succeed.
 - `.env` has been filled and `ecm-core` recreated; connection test now succeeds.
 - UI now surfaces missing env keys via `oauthEnvConfigured` and `oauthMissingEnvKeys`.
+- `mail-automation.spec.ts` now asserts the `OAuth env missing` warning based on API data.

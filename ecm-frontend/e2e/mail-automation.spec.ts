@@ -59,8 +59,15 @@ test('Mail automation test connection and fetch summary', async ({ page, request
     headers: { Authorization: `Bearer ${token}` },
   });
   expect(accountsRes.ok()).toBeTruthy();
-  const accounts = (await accountsRes.json()) as Array<{ id: string }>;
+  const accounts = (await accountsRes.json()) as Array<{
+    id: string;
+    security?: string;
+    oauthEnvConfigured?: boolean;
+  }>;
   test.skip(!accounts.length, 'No mail accounts configured');
+  const hasOauthMissing = accounts.some(
+    (account) => account.security === 'OAUTH2' && account.oauthEnvConfigured === false,
+  );
 
   await loginWithCredentials(page, defaultUsername, defaultPassword);
   await page.goto('/admin/mail', { waitUntil: 'domcontentloaded' });
@@ -68,6 +75,13 @@ test('Mail automation test connection and fetch summary', async ({ page, request
 
   const heading = page.getByRole('heading', { name: /mail automation/i });
   await expect(heading).toBeVisible({ timeout: 60_000 });
+
+  const oauthMissingChip = page.getByText(/OAuth env missing/i);
+  if (hasOauthMissing) {
+    await expect(oauthMissingChip.first()).toBeVisible({ timeout: 30_000 });
+  } else {
+    await expect(oauthMissingChip).toHaveCount(0);
+  }
 
   const linkIcon = page.locator('svg[data-testid="LinkIcon"]').first();
   await expect(linkIcon).toBeVisible({ timeout: 30_000 });
