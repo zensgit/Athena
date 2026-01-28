@@ -1056,6 +1056,9 @@ test('Mail automation actions', async ({ page, request }) => {
       await expect(documentsSection.getByText(/No mail documents found yet/i)).toBeVisible({ timeout: 30_000 });
     }
   }
+
+  const exportButton = recentCard.getByRole('button', { name: /export csv/i });
+  await expect(exportButton).toBeVisible({ timeout: 30_000 });
 });
 
 test('RBAC smoke: editor can access rules but not admin endpoints', async ({ page, request }) => {

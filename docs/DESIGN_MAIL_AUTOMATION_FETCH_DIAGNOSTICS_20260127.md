@@ -69,6 +69,7 @@
   - Admin can set "Max messages / folder" and run diagnostics.
   - Admin can select an account and list available folders.
   - Admin can filter recent activity by account and rule.
+  - Admin can export recent activity as CSV from the page.
   - Results show:
     - Summary chips (attempted/found/matched/processable/skipped/errors)
     - Top global skip reasons

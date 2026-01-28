@@ -67,6 +67,20 @@ const formatMissingOAuthKeys = (keys?: string[]) => {
   return keys.join(', ');
 };
 
+const csvEscape = (value?: string | number | null) => {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  const text = String(value);
+  if (/[",\n]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+};
+
+const buildCsvRow = (values: Array<string | number | null | undefined>) =>
+  values.map((value) => csvEscape(value ?? '')).join(',');
+
 const DEFAULT_ACCOUNT_FORM: MailAccountRequest = {
   name: '',
   host: '',
@@ -261,6 +275,77 @@ const MailAutomationPage: React.FC = () => {
 
   const recentProcessed: ProcessedMailDiagnosticItem[] = diagnostics?.recentProcessed ?? [];
   const recentDocuments: MailDocumentDiagnosticItem[] = diagnostics?.recentDocuments ?? [];
+
+  const exportDiagnosticsCsv = () => {
+    if (!diagnostics) {
+      toast.error('Diagnostics data not loaded yet');
+      return;
+    }
+
+    const accountLabel =
+      diagnosticsAccountId && accountNameById.get(diagnosticsAccountId)
+        ? accountNameById.get(diagnosticsAccountId)
+        : diagnosticsAccountId || 'ALL';
+    const ruleMatch = diagnosticsRuleId ? rules.find((rule) => rule.id === diagnosticsRuleId) : undefined;
+    const ruleLabel = ruleMatch?.name || diagnosticsRuleId || 'ALL';
+
+    const lines: string[] = [];
+    lines.push(buildCsvRow(['Mail Diagnostics Export']));
+    lines.push(buildCsvRow(['GeneratedAt', new Date().toISOString()]));
+    lines.push(buildCsvRow(['Limit', diagnostics.limit]));
+    lines.push(buildCsvRow(['AccountFilter', accountLabel]));
+    lines.push(buildCsvRow(['RuleFilter', ruleLabel]));
+    lines.push('');
+    lines.push(buildCsvRow(['Processed Messages']));
+    lines.push(
+      buildCsvRow(['ProcessedAt', 'Status', 'Account', 'Rule', 'Folder', 'UID', 'Subject', 'Error']),
+    );
+    recentProcessed.forEach((item) => {
+      lines.push(
+        buildCsvRow([
+          item.processedAt,
+          item.status,
+          item.accountName || item.accountId || '-',
+          item.ruleName || item.ruleId || '-',
+          item.folder,
+          item.uid,
+          item.subject || '',
+          item.errorMessage || '',
+        ]),
+      );
+    });
+    lines.push('');
+    lines.push(buildCsvRow(['Mail Documents']));
+    lines.push(buildCsvRow(['CreatedAt', 'Name', 'Path', 'Account', 'Rule', 'Folder', 'UID', 'MimeType', 'FileSize']));
+    recentDocuments.forEach((doc) => {
+      lines.push(
+        buildCsvRow([
+          doc.createdDate,
+          doc.name,
+          doc.path,
+          doc.accountName || doc.accountId || '-',
+          doc.ruleName || doc.ruleId || '-',
+          doc.folder || '',
+          doc.uid || '',
+          doc.mimeType || '',
+          doc.fileSize ?? '',
+        ]),
+      );
+    });
+
+    const csvContent = `${lines.join('\n')}\n`;
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    anchor.href = url;
+    anchor.download = `mail-diagnostics-${timestamp}.csv`;
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+  };
 
   const handleTriggerFetch = async () => {
     setFetching(true);
@@ -796,14 +881,19 @@ const MailAutomationPage: React.FC = () => {
             <CardContent>
               <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
                 <Typography variant="h6">Recent Mail Activity</Typography>
-                <Button
-                  variant="outlined"
-                  startIcon={diagnosticsLoading ? <CircularProgress size={16} /> : <Refresh />}
-                  onClick={() => loadDiagnostics()}
-                  disabled={diagnosticsLoading}
-                >
-                  {diagnosticsLoading ? 'Refreshing...' : 'Refresh'}
-                </Button>
+                <Stack direction="row" spacing={1}>
+                  <Button variant="outlined" onClick={exportDiagnosticsCsv} disabled={!diagnostics}>
+                    Export CSV
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    startIcon={diagnosticsLoading ? <CircularProgress size={16} /> : <Refresh />}
+                    onClick={() => loadDiagnostics()}
+                    disabled={diagnosticsLoading}
+                  >
+                    {diagnosticsLoading ? 'Refreshing...' : 'Refresh'}
+                  </Button>
+                </Stack>
               </Box>
 
               {diagnosticsLoading && !diagnostics ? (
