@@ -122,14 +122,29 @@ const MailAutomationPage: React.FC = () => {
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
   const [diagnosticsAccountId, setDiagnosticsAccountId] = useState('');
   const [diagnosticsRuleId, setDiagnosticsRuleId] = useState('');
-  const [exportOptions, setExportOptions] = useState({
-    includeProcessed: true,
-    includeDocuments: true,
-    includeSubject: true,
-    includeError: true,
-    includePath: true,
-    includeMimeType: true,
-    includeFileSize: true,
+  const [exportOptions, setExportOptions] = useState(() => {
+    const fallback = {
+      includeProcessed: true,
+      includeDocuments: true,
+      includeSubject: true,
+      includeError: true,
+      includePath: true,
+      includeMimeType: true,
+      includeFileSize: true,
+    };
+    try {
+      const raw = window.localStorage.getItem('mailDiagnosticsExportOptions');
+      if (!raw) {
+        return fallback;
+      }
+      const parsed = JSON.parse(raw) as Partial<typeof fallback>;
+      return {
+        ...fallback,
+        ...parsed,
+      };
+    } catch {
+      return fallback;
+    }
   });
   const [testingAccountId, setTestingAccountId] = useState<string | null>(null);
 
@@ -259,6 +274,14 @@ const MailAutomationPage: React.FC = () => {
       setFolderAccountId(accounts[0].id);
     }
   }, [accounts, folderAccountId]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('mailDiagnosticsExportOptions', JSON.stringify(exportOptions));
+    } catch {
+      // Ignore storage failures (private mode, disabled storage).
+    }
+  }, [exportOptions]);
 
   const accountNameById = useMemo(() => {
     return new Map(accounts.map((account) => [account.id, account.name]));

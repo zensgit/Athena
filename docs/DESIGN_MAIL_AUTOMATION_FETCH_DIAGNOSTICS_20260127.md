@@ -79,6 +79,7 @@
   - Admin can export recent activity as CSV (server-generated).
   - Export UI clarifies the CSV is capped at the current limit (max 200).
   - Export UI allows selecting which sections/columns to include.
+  - Export field selection persists locally per browser session (localStorage).
   - Results show:
     - Summary chips (attempted/found/matched/processable/skipped/errors)
     - Top global skip reasons

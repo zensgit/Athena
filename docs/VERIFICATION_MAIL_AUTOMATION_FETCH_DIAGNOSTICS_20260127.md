@@ -51,6 +51,7 @@
   - Supports exporting a CSV from the UI (server-generated).
   - UI indicates exports are capped at the same limit shown in the table.
   - Export options allow selecting which sections/columns to include.
+  - Export options persist across reloads (localStorage).
 
 ## Recent Activity Diagnostics API (2026-01-27)
 - Command:
