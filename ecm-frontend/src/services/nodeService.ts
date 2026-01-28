@@ -417,41 +417,50 @@ class NodeService {
           pageable: { page, size },
         });
 
-    const nodes = response.content.map((item) => {
-      const inferredNodeType = item.mimeType || item.fileSize
-        ? 'DOCUMENT'
-        : (item.nodeType === 'FOLDER' || item.nodeType === 'DOCUMENT' ? item.nodeType : 'FOLDER');
-
-      return ({
-        id: item.id,
-        name: item.name,
-        path: item.path,
-        nodeType: inferredNodeType,
-        parentId: item.parentId,
-        properties: { description: item.description },
-        aspects: [],
-        created: item.createdDate,
-        modified: item.lastModifiedDate || item.createdDate,
-        creator: item.createdBy,
-        modifier: item.lastModifiedBy || item.createdBy,
-        size: item.fileSize,
-        contentType: item.mimeType,
-        description: item.description,
-        highlights: item.highlights,
-        tags: item.tags,
-        categories: item.categories,
-        correspondent: item.correspondent,
-        score: item.score,
-      } as Node);
-    });
+    const nodes = (response.content || []).map((item) => this.mapSearchItemToNode(item));
 
     return { nodes, total: response.totalElements ?? nodes.length };
+  }
+
+  async findSimilar(documentId: string, maxResults = 5): Promise<Node[]> {
+    const results = await api.get<any[]>(`/search/similar/${documentId}`, {
+      params: { maxResults },
+    });
+    return (results || []).map((item) => this.mapSearchItemToNode(item));
   }
 
   async getSearchFacets(query = ''): Promise<Record<string, { value: string; count: number }[]>> {
     return api.get<Record<string, { value: string; count: number }[]>>('/search/facets', {
       params: { q: query },
     });
+  }
+
+  private mapSearchItemToNode(item: any): Node {
+    const inferredNodeType = item.mimeType || item.fileSize
+      ? 'DOCUMENT'
+      : (item.nodeType === 'FOLDER' || item.nodeType === 'DOCUMENT' ? item.nodeType : 'FOLDER');
+
+    return ({
+      id: item.id,
+      name: item.name,
+      path: item.path,
+      nodeType: inferredNodeType,
+      parentId: item.parentId,
+      properties: { description: item.description },
+      aspects: [],
+      created: item.createdDate,
+      modified: item.lastModifiedDate || item.createdDate,
+      creator: item.createdBy,
+      modifier: item.lastModifiedBy || item.createdBy,
+      size: item.fileSize,
+      contentType: item.mimeType,
+      description: item.description,
+      highlights: item.highlights,
+      tags: item.tags,
+      categories: item.categories,
+      correspondent: item.correspondent,
+      score: item.score,
+    } as Node);
   }
 
   async addAspect(nodeId: string, aspect: string, properties?: Record<string, any>): Promise<Node> {

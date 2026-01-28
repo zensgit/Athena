@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Box,
   Paper,
@@ -32,6 +32,7 @@ import {
   Download,
   Visibility,
   Edit,
+  AutoAwesome,
   FilterList,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
@@ -40,7 +41,7 @@ import { useAppSelector, useAppDispatch } from 'store';
 import { fetchSearchFacets, searchNodes } from 'store/slices/nodeSlice';
 import { setSearchOpen } from 'store/slices/uiSlice';
 import nodeService from 'services/nodeService';
-import { Node } from 'types';
+import { Node, SearchCriteria } from 'types';
 import { toast } from 'react-toastify';
 import Highlight from 'components/search/Highlight';
 const DocumentPreview = React.lazy(() => import('components/preview/DocumentPreview'));
@@ -85,10 +86,30 @@ const SearchResults: React.FC = () => {
   const [hiddenNodeIds, setHiddenNodeIds] = useState<string[]>([]);
   const [fallbackNodes, setFallbackNodes] = useState<Node[]>([]);
   const [fallbackLabel, setFallbackLabel] = useState('');
+  const [similarResults, setSimilarResults] = useState<Node[] | null>(null);
+  const [similarSource, setSimilarSource] = useState<Node | null>(null);
+  const [similarLoadingId, setSimilarLoadingId] = useState<string | null>(null);
+  const [similarError, setSimilarError] = useState<string | null>(null);
   const previewOpen = Boolean(previewNode);
   const canWrite = Boolean(user?.roles?.includes('ROLE_ADMIN') || user?.roles?.includes('ROLE_EDITOR'));
   const suppressFacetSearch = useRef(false);
   const quickSearchDebounceRef = useRef<number | null>(null);
+  const isSimilarMode = similarResults !== null;
+
+  const clearSimilarResults = useCallback(() => {
+    setSimilarResults(null);
+    setSimilarSource(null);
+    setSimilarLoadingId(null);
+    setSimilarError(null);
+  }, []);
+
+  const runSearch = useCallback(
+    (criteria: SearchCriteria) => {
+      clearSimilarResults();
+      return dispatch(searchNodes(criteria));
+    },
+    [clearSimilarResults, dispatch]
+  );
 
   const getSortParams = (value: string) => {
     switch (value) {
@@ -119,7 +140,7 @@ const SearchResults: React.FC = () => {
     }
     setPage(1);
     const sortParams = getSortParams(sortBy);
-    await dispatch(searchNodes({ name: query, page: 0, size: pageSize, ...sortParams }));
+    await runSearch({ name: query, page: 0, size: pageSize, ...sortParams });
   };
 
   const handleClearSearch = () => {
@@ -135,7 +156,7 @@ const SearchResults: React.FC = () => {
       return;
     }
     const sortParams = getSortParams(sortBy);
-    dispatch(searchNodes({ ...lastSearchCriteria, page: 0, size: pageSize, ...sortParams }));
+    runSearch({ ...lastSearchCriteria, page: 0, size: pageSize, ...sortParams });
   };
 
   const clearFacetFilters = () => {
@@ -201,7 +222,7 @@ const SearchResults: React.FC = () => {
     }
     quickSearchDebounceRef.current = window.setTimeout(() => {
       const sortParams = getSortParams(sortBy);
-      dispatch(searchNodes({ name: query, page: 0, size: pageSize, ...sortParams }));
+      runSearch({ name: query, page: 0, size: pageSize, ...sortParams });
     }, 400);
 
     return () => {
@@ -209,7 +230,7 @@ const SearchResults: React.FC = () => {
         window.clearTimeout(quickSearchDebounceRef.current);
       }
     };
-  }, [quickSearch, lastSearchCriteria, dispatch, pageSize, sortBy]);
+  }, [quickSearch, lastSearchCriteria, pageSize, runSearch, sortBy]);
 
   useEffect(() => {
     if (lastSearchCriteria?.page !== undefined) {
@@ -271,21 +292,19 @@ const SearchResults: React.FC = () => {
     }
 
     const sortParams = getSortParams(sortBy);
-    dispatch(
-      searchNodes({
-        ...lastSearchCriteria,
-        mimeTypes: nextMimeTypes.length ? nextMimeTypes : undefined,
-        contentType: undefined,
-        createdByList: nextCreators.length ? nextCreators : undefined,
-        createdBy: undefined,
-        tags: nextTags.length ? nextTags : undefined,
-        categories: nextCategories.length ? nextCategories : undefined,
-        correspondents: nextCorrespondents.length ? nextCorrespondents : undefined,
-        page: 0,
-        size: pageSize,
-        ...sortParams,
-      })
-    );
+    runSearch({
+      ...lastSearchCriteria,
+      mimeTypes: nextMimeTypes.length ? nextMimeTypes : undefined,
+      contentType: undefined,
+      createdByList: nextCreators.length ? nextCreators : undefined,
+      createdBy: undefined,
+      tags: nextTags.length ? nextTags : undefined,
+      categories: nextCategories.length ? nextCategories : undefined,
+      correspondents: nextCorrespondents.length ? nextCorrespondents : undefined,
+      page: 0,
+      size: pageSize,
+      ...sortParams,
+    });
   }, [
     selectedMimeTypes,
     selectedCreators,
@@ -293,8 +312,8 @@ const SearchResults: React.FC = () => {
     selectedTags,
     selectedCategories,
     lastSearchCriteria,
-    dispatch,
     pageSize,
+    runSearch,
     sortBy,
   ]);
 
@@ -314,8 +333,8 @@ const SearchResults: React.FC = () => {
       return;
     }
     setPage(1);
-    dispatch(searchNodes({ ...lastSearchCriteria, page: 0, size: pageSize, ...sortParams }));
-  }, [sortBy, lastSearchCriteria, dispatch, pageSize]);
+    runSearch({ ...lastSearchCriteria, page: 0, size: pageSize, ...sortParams });
+  }, [sortBy, lastSearchCriteria, pageSize, runSearch]);
 
   const isDocumentNode = (node: Node) => {
     const normalizedName = node.name?.trim().toLowerCase() || '';
@@ -424,6 +443,29 @@ const SearchResults: React.FC = () => {
       } catch (error) {
         toast.error('Failed to download file');
       }
+    }
+  };
+
+  const handleFindSimilar = async (node: Node) => {
+    if (!isDocumentNode(node)) {
+      return;
+    }
+    setSimilarLoadingId(node.id);
+    setSimilarError(null);
+    try {
+      const results = await nodeService.findSimilar(node.id, pageSize);
+      setSimilarResults(results);
+      setSimilarSource(node);
+      setPage(1);
+      if (!results || results.length === 0) {
+        toast.info('No similar documents found');
+      }
+    } catch (error: any) {
+      const message = error?.response?.data?.message || 'Failed to load similar documents';
+      setSimilarError(message);
+      toast.error(message);
+    } finally {
+      setSimilarLoadingId(null);
     }
   };
 
@@ -577,11 +619,14 @@ const SearchResults: React.FC = () => {
     selectedTags.length > 0 ||
     selectedCategories.length > 0;
 
-  const hasActiveCriteria = Boolean((lastSearchCriteria?.name || '').trim()) || filtersApplied;
-  const shouldShowFallback = !loading && nodes.length === 0 && fallbackNodes.length > 0 && hasActiveCriteria;
-  const displayNodes = shouldShowFallback ? fallbackNodes : nodes;
+  const hasActiveCriteria = isSimilarMode
+    || Boolean((lastSearchCriteria?.name || '').trim())
+    || filtersApplied;
+  const shouldShowFallback = !isSimilarMode && !loading && nodes.length === 0 && fallbackNodes.length > 0 && hasActiveCriteria;
+  const displayNodes = isSimilarMode ? (similarResults || []) : (shouldShowFallback ? fallbackNodes : nodes);
   const paginatedNodes = displayNodes.filter((node) => !hiddenNodeIds.includes(node.id));
-  const totalPages = Math.ceil(nodesTotal / pageSize);
+  const displayTotal = isSimilarMode ? paginatedNodes.length : nodesTotal;
+  const totalPages = Math.max(1, Math.ceil(displayTotal / pageSize));
 
   return (
     <Box>
@@ -799,6 +844,26 @@ const SearchResults: React.FC = () => {
               {error}
             </Alert>
           )}
+          {similarError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {similarError}
+            </Alert>
+          )}
+          {isSimilarMode && (
+            <Alert
+              severity="info"
+              sx={{ mb: 2 }}
+              action={(
+                <Button color="inherit" size="small" onClick={clearSimilarResults}>
+                  Back to results
+                </Button>
+              )}
+            >
+              {similarSource?.name
+                ? `Showing documents similar to "${similarSource.name}".`
+                : 'Showing similar documents.'}
+            </Alert>
+          )}
           {shouldShowFallback && (
             <Alert
               severity="info"
@@ -818,11 +883,15 @@ const SearchResults: React.FC = () => {
             <Typography variant="h6">
               {loading
                 ? 'Searching...'
-                : shouldShowFallback
-                  ? `Showing previous results (${paginatedNodes.length}) while the index refreshes`
-                  : nodesTotal > 0
-                    ? `Showing ${paginatedNodes.length} of ${nodesTotal} results`
-                    : '0 results found'}
+                : isSimilarMode
+                  ? (paginatedNodes.length > 0
+                    ? `Showing ${paginatedNodes.length} similar result${paginatedNodes.length === 1 ? '' : 's'}`
+                    : '0 similar results found')
+                  : shouldShowFallback
+                    ? `Showing previous results (${paginatedNodes.length}) while the index refreshes`
+                    : displayTotal > 0
+                      ? `Showing ${paginatedNodes.length} of ${displayTotal} results`
+                      : '0 results found'}
             </Typography>
             <FormControl size="small" sx={{ minWidth: 150 }}>
               <InputLabel>Sort by</InputLabel>
@@ -970,6 +1039,16 @@ const SearchResults: React.FC = () => {
                             Download
                           </Button>
                         )}
+                        {isDocumentNode(node) && (
+                          <Button
+                            size="small"
+                            startIcon={<AutoAwesome />}
+                            onClick={() => handleFindSimilar(node)}
+                            disabled={similarLoadingId === node.id}
+                          >
+                            {similarLoadingId === node.id ? 'Finding...' : 'More like this'}
+                          </Button>
+                        )}
                       </CardActions>
                     </Card>
                   </Grid>
@@ -985,7 +1064,7 @@ const SearchResults: React.FC = () => {
                       setPage(value);
                       if (lastSearchCriteria) {
                         const sortParams = getSortParams(sortBy);
-                        dispatch(searchNodes({ ...lastSearchCriteria, page: value - 1, size: pageSize, ...sortParams }));
+                        runSearch({ ...lastSearchCriteria, page: value - 1, size: pageSize, ...sortParams });
                       }
                       window.scrollTo({ top: 0, behavior: 'smooth' });
                     }}
