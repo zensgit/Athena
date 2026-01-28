@@ -87,8 +87,26 @@ class MailAutomationControllerSecurityTest {
 
         mockMvc.perform(get("/api/v1/integration/mail/diagnostics").param("limit", "5"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.limit").value(5));
+            .andExpect(jsonPath("$.limit").value(5))
+            .andExpect(jsonPath("$.recentProcessed").isArray())
+            .andExpect(jsonPath("$.recentDocuments").isArray());
 
         Mockito.verify(fetcherService).getDiagnostics(5);
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("Mail diagnostics uses default limit when not provided")
+    void diagnosticsUsesDefaultLimit() throws Exception {
+        Mockito.when(fetcherService.getDiagnostics(null))
+            .thenReturn(new MailFetcherService.MailDiagnosticsResult(25, List.of(), List.of()));
+
+        mockMvc.perform(get("/api/v1/integration/mail/diagnostics"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.limit").value(25))
+            .andExpect(jsonPath("$.recentProcessed").isArray())
+            .andExpect(jsonPath("$.recentDocuments").isArray());
+
+        Mockito.verify(fetcherService).getDiagnostics(null);
     }
 }
