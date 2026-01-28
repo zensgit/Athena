@@ -45,6 +45,22 @@
   - `recentProcessed` returned populated entries.
   - `recentDocuments` may be empty until new mail is ingested after the
     provenance tagging change.
+
+## UI Confirmation (2026-01-28)
+- Manual steps:
+  - Open `http://localhost:3000/admin/mail`
+  - In "Recent Mail Activity", click `Refresh`
+  - Confirm at least one row appears under **Mail Documents**
+- Screenshot:
+  - `ecm-frontend/test-results/tmp-mail-activity.png`
+
+## Automated Diagnostics Script (2026-01-28)
+- Script:
+  - `./scripts/verify-mail-diagnostics.sh`
+- Defaults:
+  - `LIMIT=5`, `EXPECTED_MIN=1`
+- Result:
+  - ✅ `limit=5 recentProcessed=5 recentDocuments=1`
 - Backend logs now include diagnostic summaries, e.g.:
   - `Mail debug folder <account>:INBOX found=...`
   - `Mail debug summary for <account>: found=..., matched=..., processable=...`
