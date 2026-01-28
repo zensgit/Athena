@@ -673,9 +673,23 @@ public class MailFetcherService {
         Map<UUID, String> ruleNames = ruleRepository.findAllByOrderByPriorityAsc().stream()
             .collect(Collectors.toMap(MailRule::getId, MailRule::getName));
 
-        List<ProcessedMailDiagnosticItem> recentProcessed = processedMailRepository
-            .findRecentByFilters(accountId, ruleId, PageRequest.of(0, limit))
-            .stream()
+        PageRequest pageable = PageRequest.of(0, limit);
+        List<ProcessedMail> processedMails;
+        if (accountId == null && ruleId == null) {
+            processedMails = processedMailRepository.findAllByOrderByProcessedAtDesc(pageable);
+        } else if (accountId != null && ruleId != null) {
+            processedMails = processedMailRepository.findAllByAccountIdAndRuleIdOrderByProcessedAtDesc(
+                accountId,
+                ruleId,
+                pageable
+            );
+        } else if (accountId != null) {
+            processedMails = processedMailRepository.findAllByAccountIdOrderByProcessedAtDesc(accountId, pageable);
+        } else {
+            processedMails = processedMailRepository.findAllByRuleIdOrderByProcessedAtDesc(ruleId, pageable);
+        }
+
+        List<ProcessedMailDiagnosticItem> recentProcessed = processedMails.stream()
             .map(mail -> new ProcessedMailDiagnosticItem(
                 mail.getId(),
                 mail.getProcessedAt(),
@@ -693,9 +707,13 @@ public class MailFetcherService {
 
         String accountFilter = accountId != null ? accountId.toString() : null;
         String ruleFilter = ruleId != null ? ruleId.toString() : null;
-        List<MailDocumentDiagnosticItem> recentDocuments = documentRepository
-            .findRecentMailDocumentsWithFilters(limit, accountFilter, ruleFilter)
-            .stream()
+        List<Document> recentDocs;
+        if (accountId == null && ruleId == null) {
+            recentDocs = documentRepository.findRecentMailDocuments(limit);
+        } else {
+            recentDocs = documentRepository.findRecentMailDocumentsWithFilters(limit, accountFilter, ruleFilter);
+        }
+        List<MailDocumentDiagnosticItem> recentDocuments = recentDocs.stream()
             .map(doc -> toMailDocumentDiagnosticItem(doc, accountNames, ruleNames))
             .toList();
 

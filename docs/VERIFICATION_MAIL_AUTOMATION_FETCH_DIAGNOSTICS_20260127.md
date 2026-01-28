@@ -67,6 +67,10 @@
     - `recentProcessed` returned populated entries.
     - `recentDocuments` may be empty until new mail is ingested after the
       provenance tagging change.
+  - Re-validated (2026-01-28):
+    - `bash scripts/get-token.sh admin admin`
+    - `GET http://localhost:7700/api/v1/integration/mail/diagnostics?limit=5`
+    - ✅ HTTP 200 after container rebuild
 
 ## Diagnostics Export API (2026-01-28)
 - Endpoint:
@@ -79,6 +83,12 @@
     - `includePath`, `includeMimeType`, `includeFileSize`
   - Audit log event:
     - `MAIL_DIAGNOSTICS_EXPORTED` recorded with filters + field toggles (validated via controller test).
+  - Validation:
+    - `bash scripts/get-token.sh admin admin`
+    - `GET http://localhost:7700/api/v1/integration/mail/diagnostics/export?limit=5`
+    - ✅ HTTP 200 (CSV saved)
+    - `GET http://localhost:7700/api/v1/analytics/audit/recent?limit=100`
+    - ✅ Found `MAIL_DIAGNOSTICS_EXPORTED` event with `limit=5` in details.
 
 ## UI Confirmation (2026-01-28)
 - Manual steps:

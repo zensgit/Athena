@@ -126,7 +126,7 @@ class MailFetcherServiceDiagnosticsTest {
 
         when(accountRepository.findAll()).thenReturn(List.of(account));
         when(ruleRepository.findAllByOrderByPriorityAsc()).thenReturn(List.of(rule));
-        when(processedMailRepository.findRecentByFilters(
+        when(processedMailRepository.findAllByAccountIdAndRuleIdOrderByProcessedAtDesc(
             Mockito.eq(accountId),
             Mockito.eq(ruleId),
             any(Pageable.class)))
@@ -150,18 +150,18 @@ class MailFetcherServiceDiagnosticsTest {
     void diagnosticsClampsLimit() {
         when(accountRepository.findAll()).thenReturn(List.of());
         when(ruleRepository.findAllByOrderByPriorityAsc()).thenReturn(List.of());
-        when(processedMailRepository.findRecentByFilters(Mockito.isNull(), Mockito.isNull(), any(Pageable.class)))
+        when(processedMailRepository.findAllByOrderByProcessedAtDesc(any(Pageable.class)))
             .thenReturn(List.of());
-        when(documentRepository.findRecentMailDocumentsWithFilters(200, null, null)).thenReturn(List.of());
+        when(documentRepository.findRecentMailDocuments(200)).thenReturn(List.of());
 
         var result = service.getDiagnostics(999, null, null);
 
         assertEquals(200, result.limit());
 
         ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
-        verify(processedMailRepository).findRecentByFilters(Mockito.isNull(), Mockito.isNull(), pageableCaptor.capture());
+        verify(processedMailRepository).findAllByOrderByProcessedAtDesc(pageableCaptor.capture());
         assertEquals(200, pageableCaptor.getValue().getPageSize());
-        verify(documentRepository).findRecentMailDocumentsWithFilters(200, null, null);
+        verify(documentRepository).findRecentMailDocuments(200);
     }
 
     @Test
@@ -206,7 +206,10 @@ class MailFetcherServiceDiagnosticsTest {
         when(ruleRepository.findAllByOrderByPriorityAsc()).thenReturn(List.of(rule));
         when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
         when(ruleRepository.findById(ruleId)).thenReturn(Optional.of(rule));
-        when(processedMailRepository.findRecentByFilters(Mockito.eq(accountId), Mockito.eq(ruleId), any(Pageable.class)))
+        when(processedMailRepository.findAllByAccountIdAndRuleIdOrderByProcessedAtDesc(
+            Mockito.eq(accountId),
+            Mockito.eq(ruleId),
+            any(Pageable.class)))
             .thenReturn(List.of(processed));
         when(documentRepository.findRecentMailDocumentsWithFilters(10, accountId.toString(), ruleId.toString()))
             .thenReturn(List.of(document));

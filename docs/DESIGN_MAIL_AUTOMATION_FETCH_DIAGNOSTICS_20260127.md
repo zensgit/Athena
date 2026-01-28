@@ -46,6 +46,9 @@
     - Uses system auth context internally for consistent visibility
   - Filters:
     - Optional `accountId` and `ruleId` narrow the recent lists
+  - Query selection:
+    - When no filters are provided, uses dedicated repository methods without
+      nullable parameters to avoid Postgres type ambiguity.
 - New export endpoint:
   - `GET /api/v1/integration/mail/diagnostics/export?limit=25&accountId=<uuid>&ruleId=<uuid>`
   - Optional field toggles:

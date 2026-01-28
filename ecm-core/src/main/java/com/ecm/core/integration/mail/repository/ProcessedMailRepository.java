@@ -16,6 +16,16 @@ public interface ProcessedMailRepository extends JpaRepository<ProcessedMail, UU
 
     List<ProcessedMail> findAllByOrderByProcessedAtDesc(Pageable pageable);
 
+    List<ProcessedMail> findAllByAccountIdOrderByProcessedAtDesc(UUID accountId, Pageable pageable);
+
+    List<ProcessedMail> findAllByRuleIdOrderByProcessedAtDesc(UUID ruleId, Pageable pageable);
+
+    List<ProcessedMail> findAllByAccountIdAndRuleIdOrderByProcessedAtDesc(
+        UUID accountId,
+        UUID ruleId,
+        Pageable pageable
+    );
+
     @Query("SELECT p FROM ProcessedMail p " +
            "WHERE (:accountId IS NULL OR p.accountId = :accountId) " +
            "AND (:ruleId IS NULL OR p.ruleId = :ruleId) " +
