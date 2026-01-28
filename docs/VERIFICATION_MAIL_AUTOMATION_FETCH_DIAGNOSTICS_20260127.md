@@ -13,6 +13,9 @@
 - Mail automation diagnostics sample response test:
   - Command: `cd ecm-core && mvn -q -Dtest=MailAutomationControllerDiagnosticsTest test`
   - Result: ✅ Passed
+- Mail diagnostics service mapping + limit clamp test:
+  - Command: `cd ecm-core && mvn -q -Dtest=MailFetcherServiceDiagnosticsTest test`
+  - Result: ✅ Passed
 
 ## Frontend Lint
 - Command: `cd ecm-frontend && npm run lint`
