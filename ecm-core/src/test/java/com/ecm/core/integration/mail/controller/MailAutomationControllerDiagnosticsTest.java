@@ -4,6 +4,8 @@ import com.ecm.core.integration.mail.model.ProcessedMail;
 import com.ecm.core.integration.mail.repository.MailAccountRepository;
 import com.ecm.core.integration.mail.repository.MailRuleRepository;
 import com.ecm.core.integration.mail.service.MailFetcherService;
+import com.ecm.core.service.AuditService;
+import com.ecm.core.service.SecurityService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -46,6 +48,12 @@ class MailAutomationControllerDiagnosticsTest {
 
     @MockBean
     private MailFetcherService fetcherService;
+
+    @MockBean
+    private AuditService auditService;
+
+    @MockBean
+    private SecurityService securityService;
 
     @Configuration
     @EnableWebSecurity

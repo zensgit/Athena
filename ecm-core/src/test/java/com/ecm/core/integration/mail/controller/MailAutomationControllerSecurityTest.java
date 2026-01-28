@@ -3,9 +3,12 @@ package com.ecm.core.integration.mail.controller;
 import com.ecm.core.integration.mail.repository.MailAccountRepository;
 import com.ecm.core.integration.mail.repository.MailRuleRepository;
 import com.ecm.core.integration.mail.service.MailFetcherService;
+import com.ecm.core.service.AuditService;
+import com.ecm.core.service.SecurityService;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentMatchers;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -46,6 +49,12 @@ class MailAutomationControllerSecurityTest {
 
     @MockBean
     private MailFetcherService fetcherService;
+
+    @MockBean
+    private AuditService auditService;
+
+    @MockBean
+    private SecurityService securityService;
 
     @Configuration
     @EnableWebSecurity
@@ -127,6 +136,7 @@ class MailAutomationControllerSecurityTest {
     @WithMockUser(roles = "ADMIN")
     @DisplayName("Admin can export mail diagnostics")
     void diagnosticsExportAllowsAdmin() throws Exception {
+        Mockito.when(securityService.getCurrentUser()).thenReturn("admin");
         Mockito.when(fetcherService.exportDiagnosticsCsv(
             5,
             null,
@@ -157,6 +167,13 @@ class MailAutomationControllerSecurityTest {
             null,
             null,
             null
+        );
+        Mockito.verify(auditService).logEvent(
+            Mockito.eq("MAIL_DIAGNOSTICS_EXPORTED"),
+            Mockito.isNull(),
+            Mockito.eq("MAIL_DIAGNOSTICS"),
+            Mockito.eq("admin"),
+            ArgumentMatchers.contains("limit=5")
         );
     }
 }

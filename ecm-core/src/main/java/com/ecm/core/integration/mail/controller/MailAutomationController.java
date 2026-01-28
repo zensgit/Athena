@@ -5,6 +5,8 @@ import com.ecm.core.integration.mail.model.MailRule;
 import com.ecm.core.integration.mail.repository.MailAccountRepository;
 import com.ecm.core.integration.mail.repository.MailRuleRepository;
 import com.ecm.core.integration.mail.service.MailFetcherService;
+import com.ecm.core.service.AuditService;
+import com.ecm.core.service.SecurityService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +30,8 @@ public class MailAutomationController {
     private final MailAccountRepository accountRepository;
     private final MailRuleRepository ruleRepository;
     private final MailFetcherService fetcherService;
+    private final AuditService auditService;
+    private final SecurityService securityService;
 
     // === DTOs ===
 
@@ -288,6 +292,15 @@ public class MailAutomationController {
         @RequestParam(required = false) Boolean includeMimeType,
         @RequestParam(required = false) Boolean includeFileSize
     ) {
+        MailDiagnosticsExportAuditOptions auditOptions = resolveExportAuditOptions(
+            includeProcessed,
+            includeDocuments,
+            includeSubject,
+            includeError,
+            includePath,
+            includeMimeType,
+            includeFileSize
+        );
         String csv = fetcherService.exportDiagnosticsCsv(
             limit,
             accountId,
@@ -300,11 +313,87 @@ public class MailAutomationController {
             includeMimeType,
             includeFileSize
         );
+        auditDiagnosticsExport(limit, accountId, ruleId, auditOptions);
         String filename = "mail-diagnostics-" + LocalDate.now() + ".csv";
         return ResponseEntity.ok()
             .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
             .contentType(MediaType.valueOf("text/csv"))
             .body(csv);
+    }
+
+    private void auditDiagnosticsExport(
+        Integer limit,
+        UUID accountId,
+        UUID ruleId,
+        MailDiagnosticsExportAuditOptions exportOptions
+    ) {
+        int effectiveLimit = resolveEffectiveLimit(limit);
+        UUID auditNodeId = accountId != null ? accountId : ruleId;
+        String auditNodeName = accountId != null
+            ? "MAIL_ACCOUNT"
+            : (ruleId != null ? "MAIL_RULE" : "MAIL_DIAGNOSTICS");
+        String details = String.format(
+            "Exported mail diagnostics (limit=%d, accountId=%s, ruleId=%s, includeProcessed=%s, " +
+                "includeDocuments=%s, includeSubject=%s, includeError=%s, includePath=%s, " +
+                "includeMimeType=%s, includeFileSize=%s)",
+            effectiveLimit,
+            accountId != null ? accountId : "ALL",
+            ruleId != null ? ruleId : "ALL",
+            exportOptions.includeProcessed(),
+            exportOptions.includeDocuments(),
+            exportOptions.includeSubject(),
+            exportOptions.includeError(),
+            exportOptions.includePath(),
+            exportOptions.includeMimeType(),
+            exportOptions.includeFileSize()
+        );
+        auditService.logEvent(
+            "MAIL_DIAGNOSTICS_EXPORTED",
+            auditNodeId,
+            auditNodeName,
+            resolveAuditUsername(),
+            details
+        );
+    }
+
+    private MailDiagnosticsExportAuditOptions resolveExportAuditOptions(
+        Boolean includeProcessed,
+        Boolean includeDocuments,
+        Boolean includeSubject,
+        Boolean includeError,
+        Boolean includePath,
+        Boolean includeMimeType,
+        Boolean includeFileSize
+    ) {
+        return new MailDiagnosticsExportAuditOptions(
+            includeProcessed == null || includeProcessed,
+            includeDocuments == null || includeDocuments,
+            includeSubject == null || includeSubject,
+            includeError == null || includeError,
+            includePath == null || includePath,
+            includeMimeType == null || includeMimeType,
+            includeFileSize == null || includeFileSize
+        );
+    }
+
+    private int resolveEffectiveLimit(Integer limit) {
+        return Math.max(1, Math.min(limit != null ? limit : 25, 200));
+    }
+
+    private String resolveAuditUsername() {
+        String username = securityService.getCurrentUser();
+        return username == null || username.isBlank() ? "unknown" : username;
+    }
+
+    private record MailDiagnosticsExportAuditOptions(
+        boolean includeProcessed,
+        boolean includeDocuments,
+        boolean includeSubject,
+        boolean includeError,
+        boolean includePath,
+        boolean includeMimeType,
+        boolean includeFileSize
+    ) {
     }
 
     // === Rules ===

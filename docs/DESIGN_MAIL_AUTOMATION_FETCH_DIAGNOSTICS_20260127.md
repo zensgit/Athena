@@ -53,6 +53,7 @@
     - `includeSubject`, `includeError`
     - `includePath`, `includeMimeType`, `includeFileSize`
   - Returns CSV with header metadata + processed/documents sections.
+  - Audit log: emits `MAIL_DIAGNOSTICS_EXPORTED` with filters + field toggles.
 - New folder discovery endpoint:
   - `GET /api/v1/integration/mail/accounts/{id}/folders`
   - Purpose: list available IMAP folders to avoid misconfigured folder names.

@@ -4,6 +4,8 @@ import com.ecm.core.integration.mail.model.MailAccount;
 import com.ecm.core.integration.mail.repository.MailAccountRepository;
 import com.ecm.core.integration.mail.repository.MailRuleRepository;
 import com.ecm.core.integration.mail.service.MailFetcherService;
+import com.ecm.core.service.AuditService;
+import com.ecm.core.service.SecurityService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,12 +38,24 @@ class MailAutomationControllerTest {
     @Mock
     private MailFetcherService fetcherService;
 
+    @Mock
+    private AuditService auditService;
+
+    @Mock
+    private SecurityService securityService;
+
     private MailAutomationController controller;
     private MailAccount lastSavedAccount;
 
     @BeforeEach
     void setUp() {
-        controller = new MailAutomationController(accountRepository, ruleRepository, fetcherService);
+        controller = new MailAutomationController(
+            accountRepository,
+            ruleRepository,
+            fetcherService,
+            auditService,
+            securityService
+        );
         lastSavedAccount = null;
         lenient().when(accountRepository.save(any(MailAccount.class))).thenAnswer(invocation -> {
             lastSavedAccount = invocation.getArgument(0);

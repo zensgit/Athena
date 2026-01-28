@@ -7,6 +7,9 @@
 - Mail automation controller test:
   - Command: `cd ecm-core && mvn -q -Dtest=MailAutomationControllerTest test`
   - Result: ✅ Passed
+- Mail automation controller (account + security + diagnostics):
+  - Command: `cd ecm-core && mvn -q -Dtest=MailAutomationControllerTest,MailAutomationControllerSecurityTest,MailAutomationControllerDiagnosticsTest test`
+  - Result: ✅ Passed
 - Mail automation diagnostics security test:
   - Command: `cd ecm-core && mvn -q -Dtest=MailAutomationControllerSecurityTest test`
   - Result: ✅ Passed
@@ -74,6 +77,8 @@
     - `includeProcessed`, `includeDocuments`
     - `includeSubject`, `includeError`
     - `includePath`, `includeMimeType`, `includeFileSize`
+  - Audit log event:
+    - `MAIL_DIAGNOSTICS_EXPORTED` recorded with filters + field toggles (validated via controller test).
 
 ## UI Confirmation (2026-01-28)
 - Manual steps:
