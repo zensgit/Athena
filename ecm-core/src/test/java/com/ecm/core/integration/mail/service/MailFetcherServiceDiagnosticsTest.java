@@ -26,9 +26,11 @@ import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -160,5 +162,83 @@ class MailFetcherServiceDiagnosticsTest {
         verify(processedMailRepository).findRecentByFilters(Mockito.isNull(), Mockito.isNull(), pageableCaptor.capture());
         assertEquals(200, pageableCaptor.getValue().getPageSize());
         verify(documentRepository).findRecentMailDocumentsWithFilters(200, null, null);
+    }
+
+    @Test
+    @DisplayName("Export CSV respects selected fields")
+    void exportCsvRespectsSelectedFields() {
+        UUID accountId = UUID.randomUUID();
+        UUID ruleId = UUID.randomUUID();
+        LocalDateTime now = LocalDateTime.of(2026, 1, 28, 10, 15);
+
+        MailAccount account = new MailAccount();
+        account.setId(accountId);
+        account.setName("gmail-imap");
+
+        MailRule rule = new MailRule();
+        rule.setId(ruleId);
+        rule.setName("gmail-attachments");
+
+        ProcessedMail processed = new ProcessedMail();
+        processed.setId(UUID.randomUUID());
+        processed.setAccountId(accountId);
+        processed.setRuleId(ruleId);
+        processed.setFolder("INBOX");
+        processed.setUid("12345");
+        processed.setSubject("subject");
+        processed.setProcessedAt(now);
+        processed.setStatus(ProcessedMail.Status.PROCESSED);
+
+        Document document = new Document();
+        document.setId(UUID.randomUUID());
+        document.setName("mail-attachment.pdf");
+        document.setPath("/Root/Documents/mail-attachment.pdf");
+        document.setCreatedDate(now);
+        document.setCreatedBy("admin");
+        document.setMimeType("application/pdf");
+        document.setFileSize(1024L);
+        document.getProperties().put("mail:accountId", accountId.toString());
+        document.getProperties().put("mail:ruleId", ruleId.toString());
+        document.getProperties().put("mail:folder", "INBOX");
+        document.getProperties().put("mail:uid", "12345");
+
+        when(accountRepository.findAll()).thenReturn(List.of(account));
+        when(ruleRepository.findAllByOrderByPriorityAsc()).thenReturn(List.of(rule));
+        when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
+        when(ruleRepository.findById(ruleId)).thenReturn(Optional.of(rule));
+        when(processedMailRepository.findRecentByFilters(Mockito.eq(accountId), Mockito.eq(ruleId), any(Pageable.class)))
+            .thenReturn(List.of(processed));
+        when(documentRepository.findRecentMailDocumentsWithFilters(10, accountId.toString(), ruleId.toString()))
+            .thenReturn(List.of(document));
+
+        String csv = service.exportDiagnosticsCsv(
+            10,
+            accountId,
+            ruleId,
+            true,
+            true,
+            false,
+            false,
+            false,
+            true,
+            false
+        );
+
+        String processedHeader = csv.lines()
+            .filter((line) -> line.startsWith("ProcessedAt,"))
+            .findFirst()
+            .orElse("");
+        assertTrue(processedHeader.contains("ProcessedAt"));
+        assertTrue(!processedHeader.contains("Subject"));
+        assertTrue(!processedHeader.contains("Error"));
+
+        String docHeader = csv.lines()
+            .filter((line) -> line.startsWith("CreatedAt,"))
+            .findFirst()
+            .orElse("");
+        assertTrue(docHeader.contains("CreatedAt"));
+        assertTrue(!docHeader.contains("Path"));
+        assertTrue(docHeader.contains("MimeType"));
+        assertTrue(!docHeader.contains("FileSize"));
     }
 }

@@ -181,6 +181,16 @@ export interface MailDiagnosticsFilters {
   ruleId?: string | null;
 }
 
+export interface MailDiagnosticsExportOptions {
+  includeProcessed?: boolean;
+  includeDocuments?: boolean;
+  includeSubject?: boolean;
+  includeError?: boolean;
+  includePath?: boolean;
+  includeMimeType?: boolean;
+  includeFileSize?: boolean;
+}
+
 class MailAutomationService {
   async listAccounts(): Promise<MailAccount[]> {
     return api.get<MailAccount[]>('/integration/mail/accounts');
@@ -232,12 +242,23 @@ class MailAutomationService {
     });
   }
 
-  async exportDiagnosticsCsv(limit = 25, filters?: MailDiagnosticsFilters): Promise<Blob> {
+  async exportDiagnosticsCsv(
+    limit = 25,
+    filters?: MailDiagnosticsFilters,
+    options?: MailDiagnosticsExportOptions,
+  ): Promise<Blob> {
     return api.getBlob('/integration/mail/diagnostics/export', {
       params: {
         limit,
         accountId: filters?.accountId || undefined,
         ruleId: filters?.ruleId || undefined,
+        includeProcessed: options?.includeProcessed ?? undefined,
+        includeDocuments: options?.includeDocuments ?? undefined,
+        includeSubject: options?.includeSubject ?? undefined,
+        includeError: options?.includeError ?? undefined,
+        includePath: options?.includePath ?? undefined,
+        includeMimeType: options?.includeMimeType ?? undefined,
+        includeFileSize: options?.includeFileSize ?? undefined,
       },
     });
   }

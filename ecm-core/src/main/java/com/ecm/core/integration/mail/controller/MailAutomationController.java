@@ -279,9 +279,27 @@ public class MailAutomationController {
     public ResponseEntity<String> exportDiagnostics(
         @RequestParam(required = false) Integer limit,
         @RequestParam(required = false) UUID accountId,
-        @RequestParam(required = false) UUID ruleId
+        @RequestParam(required = false) UUID ruleId,
+        @RequestParam(required = false) Boolean includeProcessed,
+        @RequestParam(required = false) Boolean includeDocuments,
+        @RequestParam(required = false) Boolean includeSubject,
+        @RequestParam(required = false) Boolean includeError,
+        @RequestParam(required = false) Boolean includePath,
+        @RequestParam(required = false) Boolean includeMimeType,
+        @RequestParam(required = false) Boolean includeFileSize
     ) {
-        String csv = fetcherService.exportDiagnosticsCsv(limit, accountId, ruleId);
+        String csv = fetcherService.exportDiagnosticsCsv(
+            limit,
+            accountId,
+            ruleId,
+            includeProcessed,
+            includeDocuments,
+            includeSubject,
+            includeError,
+            includePath,
+            includeMimeType,
+            includeFileSize
+        );
         String filename = "mail-diagnostics-" + LocalDate.now() + ".csv";
         return ResponseEntity.ok()
             .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")

@@ -127,7 +127,18 @@ class MailAutomationControllerSecurityTest {
     @WithMockUser(roles = "ADMIN")
     @DisplayName("Admin can export mail diagnostics")
     void diagnosticsExportAllowsAdmin() throws Exception {
-        Mockito.when(fetcherService.exportDiagnosticsCsv(5, null, null))
+        Mockito.when(fetcherService.exportDiagnosticsCsv(
+            5,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+        ))
             .thenReturn("Mail Diagnostics Export\n");
 
         mockMvc.perform(get("/api/v1/integration/mail/diagnostics/export").param("limit", "5"))
@@ -135,6 +146,17 @@ class MailAutomationControllerSecurityTest {
             .andExpect(header().string("Content-Type", Matchers.containsString("text/csv")))
             .andExpect(content().string(Matchers.containsString("Mail Diagnostics Export")));
 
-        Mockito.verify(fetcherService).exportDiagnosticsCsv(5, null, null);
+        Mockito.verify(fetcherService).exportDiagnosticsCsv(
+            5,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+        );
     }
 }

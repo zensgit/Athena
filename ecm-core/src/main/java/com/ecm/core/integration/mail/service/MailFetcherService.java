@@ -265,10 +265,32 @@ public class MailFetcherService {
         }
     }
 
-    public String exportDiagnosticsCsv(Integer limit, UUID accountId, UUID ruleId) {
+    public String exportDiagnosticsCsv(
+        Integer limit,
+        UUID accountId,
+        UUID ruleId,
+        Boolean includeProcessed,
+        Boolean includeDocuments,
+        Boolean includeSubject,
+        Boolean includeError,
+        Boolean includePath,
+        Boolean includeMimeType,
+        Boolean includeFileSize
+    ) {
         int effectiveLimit = Math.max(1, Math.min(limit != null ? limit : 25, 200));
+        MailDiagnosticsExportOptions exportOptions = resolveExportOptions(
+            includeProcessed,
+            includeDocuments,
+            includeSubject,
+            includeError,
+            includePath,
+            includeMimeType,
+            includeFileSize
+        );
         try {
-            return runWithSystemAuthenticationWithResult(() -> buildDiagnosticsCsv(effectiveLimit, accountId, ruleId));
+            return runWithSystemAuthenticationWithResult(
+                () -> buildDiagnosticsCsv(effectiveLimit, accountId, ruleId, exportOptions)
+            );
         } catch (Exception e) {
             String message = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             throw new IllegalArgumentException("Failed to export mail diagnostics: " + message, e);
@@ -680,7 +702,12 @@ public class MailFetcherService {
         return new MailDiagnosticsResult(limit, recentProcessed, recentDocuments);
     }
 
-    private String buildDiagnosticsCsv(int limit, UUID accountId, UUID ruleId) {
+    private String buildDiagnosticsCsv(
+        int limit,
+        UUID accountId,
+        UUID ruleId,
+        MailDiagnosticsExportOptions exportOptions
+    ) {
         MailDiagnosticsResult diagnostics = buildDiagnostics(limit, accountId, ruleId);
         String accountLabel = resolveAccountLabel(accountId);
         String ruleLabel = resolveRuleLabel(ruleId);
@@ -691,40 +718,124 @@ public class MailFetcherService {
         appendCsvRow(csv, "Limit", diagnostics.limit());
         appendCsvRow(csv, "AccountFilter", accountLabel);
         appendCsvRow(csv, "RuleFilter", ruleLabel);
+        appendCsvRow(csv, "IncludeProcessed", exportOptions.includeProcessed());
+        appendCsvRow(csv, "IncludeDocuments", exportOptions.includeDocuments());
+        appendCsvRow(csv, "IncludeSubject", exportOptions.includeSubject());
+        appendCsvRow(csv, "IncludeError", exportOptions.includeError());
+        appendCsvRow(csv, "IncludePath", exportOptions.includePath());
+        appendCsvRow(csv, "IncludeMimeType", exportOptions.includeMimeType());
+        appendCsvRow(csv, "IncludeFileSize", exportOptions.includeFileSize());
         csv.append("\n");
-        appendCsvRow(csv, "Processed Messages");
-        appendCsvRow(csv, "ProcessedAt", "Status", "Account", "Rule", "Folder", "UID", "Subject", "Error");
-        for (ProcessedMailDiagnosticItem item : diagnostics.recentProcessed()) {
-            appendCsvRow(
-                csv,
-                item.processedAt(),
-                item.status(),
-                item.accountName() != null ? item.accountName() : item.accountId(),
-                item.ruleName() != null ? item.ruleName() : item.ruleId(),
-                item.folder(),
-                item.uid(),
-                item.subject(),
-                item.errorMessage()
-            );
+        if (!exportOptions.includeProcessed() && !exportOptions.includeDocuments()) {
+            appendCsvRow(csv, "No sections selected");
+            return csv.toString();
         }
-        csv.append("\n");
-        appendCsvRow(csv, "Mail Documents");
-        appendCsvRow(csv, "CreatedAt", "Name", "Path", "Account", "Rule", "Folder", "UID", "MimeType", "FileSize");
-        for (MailDocumentDiagnosticItem doc : diagnostics.recentDocuments()) {
-            appendCsvRow(
-                csv,
-                doc.createdDate(),
-                doc.name(),
-                doc.path(),
-                doc.accountName() != null ? doc.accountName() : doc.accountId(),
-                doc.ruleName() != null ? doc.ruleName() : doc.ruleId(),
-                doc.folder(),
-                doc.uid(),
-                doc.mimeType(),
-                doc.fileSize()
-            );
+
+        if (exportOptions.includeProcessed()) {
+            List<String> processedHeaders = new ArrayList<>(List.of(
+                "ProcessedAt",
+                "Status",
+                "Account",
+                "Rule",
+                "Folder",
+                "UID"
+            ));
+            if (exportOptions.includeSubject()) {
+                processedHeaders.add("Subject");
+            }
+            if (exportOptions.includeError()) {
+                processedHeaders.add("Error");
+            }
+            appendCsvRow(csv, "Processed Messages");
+            appendCsvRow(csv, processedHeaders.toArray(new Object[0]));
+            for (ProcessedMailDiagnosticItem item : diagnostics.recentProcessed()) {
+                List<Object> row = new ArrayList<>();
+                row.add(item.processedAt());
+                row.add(item.status());
+                row.add(item.accountName() != null ? item.accountName() : item.accountId());
+                row.add(item.ruleName() != null ? item.ruleName() : item.ruleId());
+                row.add(item.folder());
+                row.add(item.uid());
+                if (exportOptions.includeSubject()) {
+                    row.add(item.subject());
+                }
+                if (exportOptions.includeError()) {
+                    row.add(item.errorMessage());
+                }
+                appendCsvRow(csv, row.toArray());
+            }
+            csv.append("\n");
+        }
+
+        if (exportOptions.includeDocuments()) {
+            List<String> docHeaders = new ArrayList<>(List.of(
+                "CreatedAt",
+                "Name"
+            ));
+            if (exportOptions.includePath()) {
+                docHeaders.add("Path");
+            }
+            docHeaders.addAll(List.of("Account", "Rule", "Folder", "UID"));
+            if (exportOptions.includeMimeType()) {
+                docHeaders.add("MimeType");
+            }
+            if (exportOptions.includeFileSize()) {
+                docHeaders.add("FileSize");
+            }
+            appendCsvRow(csv, "Mail Documents");
+            appendCsvRow(csv, docHeaders.toArray(new Object[0]));
+            for (MailDocumentDiagnosticItem doc : diagnostics.recentDocuments()) {
+                List<Object> row = new ArrayList<>();
+                row.add(doc.createdDate());
+                row.add(doc.name());
+                if (exportOptions.includePath()) {
+                    row.add(doc.path());
+                }
+                row.add(doc.accountName() != null ? doc.accountName() : doc.accountId());
+                row.add(doc.ruleName() != null ? doc.ruleName() : doc.ruleId());
+                row.add(doc.folder());
+                row.add(doc.uid());
+                if (exportOptions.includeMimeType()) {
+                    row.add(doc.mimeType());
+                }
+                if (exportOptions.includeFileSize()) {
+                    row.add(doc.fileSize());
+                }
+                appendCsvRow(csv, row.toArray());
+            }
         }
         return csv.toString();
+    }
+
+    private MailDiagnosticsExportOptions resolveExportOptions(
+        Boolean includeProcessed,
+        Boolean includeDocuments,
+        Boolean includeSubject,
+        Boolean includeError,
+        Boolean includePath,
+        Boolean includeMimeType,
+        Boolean includeFileSize
+    ) {
+        return new MailDiagnosticsExportOptions(
+            includeProcessed == null || includeProcessed,
+            includeDocuments == null || includeDocuments,
+            includeSubject == null || includeSubject,
+            includeError == null || includeError,
+            includePath == null || includePath,
+            includeMimeType == null || includeMimeType,
+            includeFileSize == null || includeFileSize
+        );
+    }
+
+    private record MailDiagnosticsExportOptions(
+        boolean includeProcessed,
+        boolean includeDocuments,
+        boolean includeSubject,
+        boolean includeError,
+        boolean includePath,
+        boolean includeMimeType,
+        boolean includeFileSize
+    ) {
     }
 
     private String resolveAccountLabel(UUID accountId) {

@@ -122,6 +122,15 @@ const MailAutomationPage: React.FC = () => {
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
   const [diagnosticsAccountId, setDiagnosticsAccountId] = useState('');
   const [diagnosticsRuleId, setDiagnosticsRuleId] = useState('');
+  const [exportOptions, setExportOptions] = useState({
+    includeProcessed: true,
+    includeDocuments: true,
+    includeSubject: true,
+    includeError: true,
+    includePath: true,
+    includeMimeType: true,
+    includeFileSize: true,
+  });
   const [testingAccountId, setTestingAccountId] = useState<string | null>(null);
 
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
@@ -261,13 +270,18 @@ const MailAutomationPage: React.FC = () => {
 
   const recentProcessed: ProcessedMailDiagnosticItem[] = diagnostics?.recentProcessed ?? [];
   const recentDocuments: MailDocumentDiagnosticItem[] = diagnostics?.recentDocuments ?? [];
+  const exportDisabled = !exportOptions.includeProcessed && !exportOptions.includeDocuments;
 
   const exportDiagnosticsCsv = async () => {
+    if (exportDisabled) {
+      toast.error('Select at least one export section');
+      return;
+    }
     try {
       const blob = await mailAutomationService.exportDiagnosticsCsv(diagnosticsLimit, {
         accountId: diagnosticsAccountId || undefined,
         ruleId: diagnosticsRuleId || undefined,
-      });
+      }, exportOptions);
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -818,7 +832,7 @@ const MailAutomationPage: React.FC = () => {
               <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
                 <Typography variant="h6">Recent Mail Activity</Typography>
                 <Stack direction="row" spacing={1}>
-                  <Button variant="outlined" onClick={exportDiagnosticsCsv} disabled={!diagnostics}>
+                  <Button variant="outlined" onClick={exportDiagnosticsCsv} disabled={!diagnostics || exportDisabled}>
                     Export CSV
                   </Button>
                   <Button
@@ -875,6 +889,114 @@ const MailAutomationPage: React.FC = () => {
                         ))}
                       </Select>
                     </FormControl>
+                  </Stack>
+                  <Stack spacing={1}>
+                    <Typography variant="subtitle2">Export Fields</Typography>
+                    <Stack direction="row" spacing={2} flexWrap="wrap">
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={exportOptions.includeProcessed}
+                            onChange={(event) =>
+                              setExportOptions((prev) => ({
+                                ...prev,
+                                includeProcessed: event.target.checked,
+                              }))
+                            }
+                          />
+                        }
+                        label="Processed Messages"
+                      />
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={exportOptions.includeDocuments}
+                            onChange={(event) =>
+                              setExportOptions((prev) => ({
+                                ...prev,
+                                includeDocuments: event.target.checked,
+                              }))
+                            }
+                          />
+                        }
+                        label="Mail Documents"
+                      />
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={exportOptions.includeSubject}
+                            onChange={(event) =>
+                              setExportOptions((prev) => ({
+                                ...prev,
+                                includeSubject: event.target.checked,
+                              }))
+                            }
+                            disabled={!exportOptions.includeProcessed}
+                          />
+                        }
+                        label="Subject"
+                      />
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={exportOptions.includeError}
+                            onChange={(event) =>
+                              setExportOptions((prev) => ({
+                                ...prev,
+                                includeError: event.target.checked,
+                              }))
+                            }
+                            disabled={!exportOptions.includeProcessed}
+                          />
+                        }
+                        label="Error"
+                      />
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={exportOptions.includePath}
+                            onChange={(event) =>
+                              setExportOptions((prev) => ({
+                                ...prev,
+                                includePath: event.target.checked,
+                              }))
+                            }
+                            disabled={!exportOptions.includeDocuments}
+                          />
+                        }
+                        label="Path"
+                      />
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={exportOptions.includeMimeType}
+                            onChange={(event) =>
+                              setExportOptions((prev) => ({
+                                ...prev,
+                                includeMimeType: event.target.checked,
+                              }))
+                            }
+                            disabled={!exportOptions.includeDocuments}
+                          />
+                        }
+                        label="MIME Type"
+                      />
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={exportOptions.includeFileSize}
+                            onChange={(event) =>
+                              setExportOptions((prev) => ({
+                                ...prev,
+                                includeFileSize: event.target.checked,
+                              }))
+                            }
+                            disabled={!exportOptions.includeDocuments}
+                          />
+                        }
+                        label="File Size"
+                      />
+                    </Stack>
                   </Stack>
                   <Typography variant="caption" color="text.secondary">
                     Showing last {diagnostics?.limit ?? diagnosticsLimit} items tagged by mail ingestion.

@@ -1060,6 +1060,11 @@ test('Mail automation actions', async ({ page, request }) => {
   const exportButton = recentCard.getByRole('button', { name: /export csv/i });
   await expect(exportButton).toBeVisible({ timeout: 30_000 });
 
+  const subjectCheckbox = recentCard.getByLabel('Subject');
+  await subjectCheckbox.uncheck();
+  const pathCheckbox = recentCard.getByLabel('Path');
+  await pathCheckbox.uncheck();
+
   const exportRequestPromise = page.waitForRequest((request) =>
     request.url().includes('/api/v1/integration/mail/diagnostics/export'),
   );
@@ -1072,6 +1077,14 @@ test('Mail automation actions', async ({ page, request }) => {
     const csvText = await exportResponse.text();
     expect(csvText).toContain('Processed Messages');
     expect(csvText).toContain('Mail Documents');
+    const processedHeader = csvText
+      .split('\n')
+      .find((line) => line.startsWith('ProcessedAt,')) || '';
+    expect(processedHeader).not.toContain('Subject');
+    const documentHeader = csvText
+      .split('\n')
+      .find((line) => line.startsWith('CreatedAt,')) || '';
+    expect(documentHeader).not.toContain('Path');
   } else {
     test.info().annotations.push({
       type: 'warning',

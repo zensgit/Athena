@@ -29,7 +29,7 @@
 - UI smoke (mail automation actions):
   - Command:
     - `cd ecm-frontend && ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 npx playwright test e2e/ui-smoke.spec.ts -g "Mail automation actions"`
-  - Result: ✅ 1 passed (~49s)
+  - Result: ✅ 1 passed (~40s)
 - Full regression:
   - Command:
     - `cd ecm-frontend && ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 npx playwright test`
@@ -37,7 +37,7 @@
 - New coverage:
   - Mail automation folder discovery UI (`List Folders`) and rule dialog helper text.
   - Recent activity tables no longer interfere with rule editing row selection.
-  - CSV export button triggers backend export response and includes both "Processed Messages" and "Mail Documents" sections.
+  - CSV export button triggers backend export response and respects column toggles (Subject/Path disabled).
 
 ## Manual Notes
 - Mail Automation now has a "Fetch Diagnostics (Dry Run)" card that:
@@ -50,6 +50,7 @@
   - Supports filtering by account and rule.
   - Supports exporting a CSV from the UI (server-generated).
   - UI indicates exports are capped at the same limit shown in the table.
+  - Export options allow selecting which sections/columns to include.
 
 ## Recent Activity Diagnostics API (2026-01-27)
 - Command:
@@ -68,6 +69,10 @@
   - `GET /api/v1/integration/mail/diagnostics/export`
 - Behavior:
   - Returns CSV with metadata header + "Processed Messages" + "Mail Documents".
+  - Optional query params for field selection:
+    - `includeProcessed`, `includeDocuments`
+    - `includeSubject`, `includeError`
+    - `includePath`, `includeMimeType`, `includeFileSize`
 
 ## UI Confirmation (2026-01-28)
 - Manual steps:
