@@ -54,6 +54,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
@@ -261,6 +262,16 @@ public class MailFetcherService {
         } catch (Exception e) {
             String message = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             throw new IllegalArgumentException("Failed to build mail diagnostics: " + message, e);
+        }
+    }
+
+    public String exportDiagnosticsCsv(Integer limit, UUID accountId, UUID ruleId) {
+        int effectiveLimit = Math.max(1, Math.min(limit != null ? limit : 25, 200));
+        try {
+            return runWithSystemAuthenticationWithResult(() -> buildDiagnosticsCsv(effectiveLimit, accountId, ruleId));
+        } catch (Exception e) {
+            String message = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            throw new IllegalArgumentException("Failed to export mail diagnostics: " + message, e);
         }
     }
 
@@ -667,6 +678,89 @@ public class MailFetcherService {
             .toList();
 
         return new MailDiagnosticsResult(limit, recentProcessed, recentDocuments);
+    }
+
+    private String buildDiagnosticsCsv(int limit, UUID accountId, UUID ruleId) {
+        MailDiagnosticsResult diagnostics = buildDiagnostics(limit, accountId, ruleId);
+        String accountLabel = resolveAccountLabel(accountId);
+        String ruleLabel = resolveRuleLabel(ruleId);
+
+        StringBuilder csv = new StringBuilder();
+        appendCsvRow(csv, "Mail Diagnostics Export");
+        appendCsvRow(csv, "GeneratedAt", LocalDateTime.now());
+        appendCsvRow(csv, "Limit", diagnostics.limit());
+        appendCsvRow(csv, "AccountFilter", accountLabel);
+        appendCsvRow(csv, "RuleFilter", ruleLabel);
+        csv.append("\n");
+        appendCsvRow(csv, "Processed Messages");
+        appendCsvRow(csv, "ProcessedAt", "Status", "Account", "Rule", "Folder", "UID", "Subject", "Error");
+        for (ProcessedMailDiagnosticItem item : diagnostics.recentProcessed()) {
+            appendCsvRow(
+                csv,
+                item.processedAt(),
+                item.status(),
+                item.accountName() != null ? item.accountName() : item.accountId(),
+                item.ruleName() != null ? item.ruleName() : item.ruleId(),
+                item.folder(),
+                item.uid(),
+                item.subject(),
+                item.errorMessage()
+            );
+        }
+        csv.append("\n");
+        appendCsvRow(csv, "Mail Documents");
+        appendCsvRow(csv, "CreatedAt", "Name", "Path", "Account", "Rule", "Folder", "UID", "MimeType", "FileSize");
+        for (MailDocumentDiagnosticItem doc : diagnostics.recentDocuments()) {
+            appendCsvRow(
+                csv,
+                doc.createdDate(),
+                doc.name(),
+                doc.path(),
+                doc.accountName() != null ? doc.accountName() : doc.accountId(),
+                doc.ruleName() != null ? doc.ruleName() : doc.ruleId(),
+                doc.folder(),
+                doc.uid(),
+                doc.mimeType(),
+                doc.fileSize()
+            );
+        }
+        return csv.toString();
+    }
+
+    private String resolveAccountLabel(UUID accountId) {
+        if (accountId == null) {
+            return "ALL";
+        }
+        return accountRepository.findById(accountId)
+            .map(MailAccount::getName)
+            .orElse(accountId.toString());
+    }
+
+    private String resolveRuleLabel(UUID ruleId) {
+        if (ruleId == null) {
+            return "ALL";
+        }
+        return ruleRepository.findById(ruleId)
+            .map(MailRule::getName)
+            .orElse(ruleId.toString());
+    }
+
+    private static void appendCsvRow(StringBuilder target, Object... values) {
+        String row = Arrays.stream(values)
+            .map(MailFetcherService::csvEscape)
+            .collect(Collectors.joining(","));
+        target.append(row).append("\n");
+    }
+
+    private static String csvEscape(Object value) {
+        if (value == null) {
+            return "";
+        }
+        String text = value.toString();
+        if (text.contains("\"") || text.contains(",") || text.contains("\n") || text.contains("\r")) {
+            return "\"" + text.replace("\"", "\"\"") + "\"";
+        }
+        return text;
     }
 
     private MailDocumentDiagnosticItem toMailDocumentDiagnosticItem(

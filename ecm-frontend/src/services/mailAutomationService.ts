@@ -232,6 +232,16 @@ class MailAutomationService {
     });
   }
 
+  async exportDiagnosticsCsv(limit = 25, filters?: MailDiagnosticsFilters): Promise<Blob> {
+    return api.getBlob('/integration/mail/diagnostics/export', {
+      params: {
+        limit,
+        accountId: filters?.accountId || undefined,
+        ruleId: filters?.ruleId || undefined,
+      },
+    });
+  }
+
   async triggerFetch(): Promise<MailFetchSummary> {
     return api.post<MailFetchSummary>('/integration/mail/fetch');
   }

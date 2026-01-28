@@ -46,6 +46,9 @@
     - Uses system auth context internally for consistent visibility
   - Filters:
     - Optional `accountId` and `ruleId` narrow the recent lists
+- New export endpoint:
+  - `GET /api/v1/integration/mail/diagnostics/export?limit=25&accountId=<uuid>&ruleId=<uuid>`
+  - Returns CSV with header metadata + processed/documents sections.
 - New folder discovery endpoint:
   - `GET /api/v1/integration/mail/accounts/{id}/folders`
   - Purpose: list available IMAP folders to avoid misconfigured folder names.
@@ -69,7 +72,7 @@
   - Admin can set "Max messages / folder" and run diagnostics.
   - Admin can select an account and list available folders.
   - Admin can filter recent activity by account and rule.
-  - Admin can export recent activity as CSV from the page.
+  - Admin can export recent activity as CSV (server-generated).
   - Results show:
     - Summary chips (attempted/found/matched/processable/skipped/errors)
     - Top global skip reasons

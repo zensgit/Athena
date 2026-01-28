@@ -29,7 +29,7 @@
 - UI smoke (mail automation actions):
   - Command:
     - `cd ecm-frontend && ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 npx playwright test e2e/ui-smoke.spec.ts -g "Mail automation actions"`
-  - Result: ✅ 1 passed (~16s)
+  - Result: ✅ 1 passed (~40s)
 - Full regression:
   - Command:
     - `cd ecm-frontend && ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 npx playwright test`
@@ -37,7 +37,7 @@
 - New coverage:
   - Mail automation folder discovery UI (`List Folders`) and rule dialog helper text.
   - Recent activity tables no longer interfere with rule editing row selection.
-  - CSV export button triggers download and includes both "Processed Messages" and "Mail Documents" sections.
+  - CSV export button triggers backend export response and includes both "Processed Messages" and "Mail Documents" sections.
 
 ## Manual Notes
 - Mail Automation now has a "Fetch Diagnostics (Dry Run)" card that:
@@ -48,7 +48,7 @@
   - Shows recent ingested documents tagged with mail provenance.
   - Refreshes after `Trigger Fetch` and `Run Diagnostics`.
   - Supports filtering by account and rule.
-  - Supports exporting a CSV from the UI.
+  - Supports exporting a CSV from the UI (server-generated).
 
 ## Recent Activity Diagnostics API (2026-01-27)
 - Command:
@@ -56,11 +56,17 @@
     - `POST http://localhost:8180/realms/ecm/protocol/openid-connect/token`
   - Diagnostics:
     - `GET http://localhost:7700/api/v1/integration/mail/diagnostics?limit=5`
-- Result:
-  - ✅ HTTP 200
-  - `recentProcessed` returned populated entries.
-  - `recentDocuments` may be empty until new mail is ingested after the
-    provenance tagging change.
+  - Result:
+    - ✅ HTTP 200
+    - `recentProcessed` returned populated entries.
+    - `recentDocuments` may be empty until new mail is ingested after the
+      provenance tagging change.
+
+## Diagnostics Export API (2026-01-28)
+- Endpoint:
+  - `GET /api/v1/integration/mail/diagnostics/export`
+- Behavior:
+  - Returns CSV with metadata header + "Processed Messages" + "Mail Documents".
 
 ## UI Confirmation (2026-01-28)
 - Manual steps:

@@ -3,6 +3,7 @@ package com.ecm.core.integration.mail.controller;
 import com.ecm.core.integration.mail.repository.MailAccountRepository;
 import com.ecm.core.integration.mail.repository.MailRuleRepository;
 import com.ecm.core.integration.mail.service.MailFetcherService;
+import org.hamcrest.Matchers;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -22,6 +23,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.List;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -79,6 +82,16 @@ class MailAutomationControllerSecurityTest {
     }
 
     @Test
+    @WithMockUser(roles = "USER")
+    @DisplayName("Mail diagnostics export requires admin role")
+    void diagnosticsExportRequiresAdminRole() throws Exception {
+        mockMvc.perform(get("/api/v1/integration/mail/diagnostics/export"))
+            .andExpect(status().isForbidden());
+
+        Mockito.verifyNoInteractions(fetcherService);
+    }
+
+    @Test
     @WithMockUser(roles = "ADMIN")
     @DisplayName("Admin can access mail diagnostics")
     void diagnosticsAllowsAdmin() throws Exception {
@@ -108,5 +121,20 @@ class MailAutomationControllerSecurityTest {
             .andExpect(jsonPath("$.recentDocuments").isArray());
 
         Mockito.verify(fetcherService).getDiagnostics(null, null, null);
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("Admin can export mail diagnostics")
+    void diagnosticsExportAllowsAdmin() throws Exception {
+        Mockito.when(fetcherService.exportDiagnosticsCsv(5, null, null))
+            .thenReturn("Mail Diagnostics Export\n");
+
+        mockMvc.perform(get("/api/v1/integration/mail/diagnostics/export").param("limit", "5"))
+            .andExpect(status().isOk())
+            .andExpect(header().string("Content-Type", Matchers.containsString("text/csv")))
+            .andExpect(content().string(Matchers.containsString("Mail Diagnostics Export")));
+
+        Mockito.verify(fetcherService).exportDiagnosticsCsv(5, null, null);
     }
 }

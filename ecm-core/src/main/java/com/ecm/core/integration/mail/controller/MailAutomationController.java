@@ -9,10 +9,13 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -268,6 +271,22 @@ public class MailAutomationController {
         @RequestParam(required = false) UUID ruleId
     ) {
         return ResponseEntity.ok(fetcherService.getDiagnostics(limit, accountId, ruleId));
+    }
+
+    @GetMapping("/diagnostics/export")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Export mail diagnostics", description = "Export recent mail diagnostics as CSV")
+    public ResponseEntity<String> exportDiagnostics(
+        @RequestParam(required = false) Integer limit,
+        @RequestParam(required = false) UUID accountId,
+        @RequestParam(required = false) UUID ruleId
+    ) {
+        String csv = fetcherService.exportDiagnosticsCsv(limit, accountId, ruleId);
+        String filename = "mail-diagnostics-" + LocalDate.now() + ".csv";
+        return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+            .contentType(MediaType.valueOf("text/csv"))
+            .body(csv);
     }
 
     // === Rules ===
