@@ -29,7 +29,7 @@
 - UI smoke (mail automation actions):
   - Command:
     - `cd ecm-frontend && ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 npx playwright test e2e/ui-smoke.spec.ts -g "Mail automation actions"`
-  - Result: ✅ 1 passed (~40s)
+  - Result: ✅ 1 passed (~49s)
 - Full regression:
   - Command:
     - `cd ecm-frontend && ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 npx playwright test`
@@ -49,6 +49,7 @@
   - Refreshes after `Trigger Fetch` and `Run Diagnostics`.
   - Supports filtering by account and rule.
   - Supports exporting a CSV from the UI (server-generated).
+  - UI indicates exports are capped at the same limit shown in the table.
 
 ## Recent Activity Diagnostics API (2026-01-27)
 - Command:

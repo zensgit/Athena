@@ -73,6 +73,7 @@
   - Admin can select an account and list available folders.
   - Admin can filter recent activity by account and rule.
   - Admin can export recent activity as CSV (server-generated).
+  - Export UI clarifies the CSV is capped at the current limit (max 200).
   - Results show:
     - Summary chips (attempted/found/matched/processable/skipped/errors)
     - Top global skip reasons

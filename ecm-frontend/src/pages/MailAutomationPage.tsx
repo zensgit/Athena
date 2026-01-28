@@ -878,6 +878,9 @@ const MailAutomationPage: React.FC = () => {
                   </Stack>
                   <Typography variant="caption" color="text.secondary">
                     Showing last {diagnostics?.limit ?? diagnosticsLimit} items tagged by mail ingestion.
+                    {diagnostics?.limit
+                      ? ` Exported CSV is limited to the same ${diagnostics.limit} items.`
+                      : ''}
                   </Typography>
 
                   <Box>
