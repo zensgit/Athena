@@ -1027,6 +1027,35 @@ test('Mail automation actions', async ({ page, request }) => {
   } else {
     await expect(documentsSection.getByText(/No mail documents found yet/i)).toBeVisible({ timeout: 30_000 });
   }
+
+  const accountSelect = recentCard.getByLabel('Account');
+  await accountSelect.click();
+  await page.getByRole('option', { name: accounts[0].name }).click();
+  await refreshButton.click();
+
+  if ((await processedSection.getByRole('table').count()) > 0) {
+    await expect(processedSection.getByRole('table').first()).toBeVisible({ timeout: 30_000 });
+  } else {
+    await expect(processedSection.getByText(/No processed messages recorded yet/i)).toBeVisible({ timeout: 30_000 });
+  }
+
+  const rulesRes = await request.get(`${apiUrl}/api/v1/integration/mail/rules`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(rulesRes.ok()).toBeTruthy();
+  const rules = (await rulesRes.json()) as Array<{ id: string; name: string }>;
+  if (rules.length > 0) {
+    const ruleSelect = recentCard.getByLabel('Rule');
+    await ruleSelect.click();
+    await page.getByRole('option', { name: rules[0].name }).click();
+    await refreshButton.click();
+
+    if ((await documentsSection.getByRole('table').count()) > 0) {
+      await expect(documentsSection.getByRole('table').first()).toBeVisible({ timeout: 30_000 });
+    } else {
+      await expect(documentsSection.getByText(/No mail documents found yet/i)).toBeVisible({ timeout: 30_000 });
+    }
+  }
 });
 
 test('RBAC smoke: editor can access rules but not admin endpoints', async ({ page, request }) => {
