@@ -10,6 +10,7 @@
 
 ## Frontend Design
 - Add a "More like this" action to document cards in `SearchResults`.
+- Add the same action in the document preview action menu.
 - On click, fetch similar results via `nodeService.findSimilar` and swap the results list locally.
 - Display an info banner indicating the source document and a "Back to results" action.
 - Keep the last search results in state; returning clears the similar override.
@@ -22,3 +23,4 @@
 ## Files
 - `ecm-frontend/src/pages/SearchResults.tsx`
 - `ecm-frontend/src/services/nodeService.ts`
+- `ecm-frontend/src/components/preview/DocumentPreview.tsx`

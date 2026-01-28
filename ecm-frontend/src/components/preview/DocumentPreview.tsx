@@ -34,6 +34,7 @@ import {
   NavigateNext,
   Edit,
   Visibility,
+  AutoAwesome,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { Node, PdfAnnotation, PdfAnnotationState } from 'types';
@@ -807,6 +808,14 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     setAnchorEl(null);
   };
 
+  const handleFindSimilar = () => {
+    navigate('/search-results', {
+      state: { similarSourceId: node.id, similarSourceName: node.name },
+    });
+    handleMenuClose();
+    onClose();
+  };
+
   const renderLoadingState = (message: string, detail?: string) => (
     <Box
       display="flex"
@@ -1402,6 +1411,12 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                 <Print fontSize="small" />
               </ListItemIcon>
               <ListItemText>Print</ListItemText>
+            </MenuItem>
+            <MenuItem onClick={handleFindSimilar}>
+              <ListItemIcon>
+                <AutoAwesome fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>More like this</ListItemText>
             </MenuItem>
           </Menu>
         </Toolbar>

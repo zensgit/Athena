@@ -36,7 +36,7 @@ import {
   FilterList,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppSelector, useAppDispatch } from 'store';
 import { fetchSearchFacets, searchNodes } from 'store/slices/nodeSlice';
 import { setSearchOpen } from 'store/slices/uiSlice';
@@ -68,6 +68,7 @@ const FILE_EXTENSIONS = [
 
 const SearchResults: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const dispatch = useAppDispatch();
   const { nodes, nodesTotal, loading, error, searchFacets, lastSearchCriteria } = useAppSelector((state) => state.node);
   const { user } = useAppSelector((state) => state.auth);
@@ -87,7 +88,7 @@ const SearchResults: React.FC = () => {
   const [fallbackNodes, setFallbackNodes] = useState<Node[]>([]);
   const [fallbackLabel, setFallbackLabel] = useState('');
   const [similarResults, setSimilarResults] = useState<Node[] | null>(null);
-  const [similarSource, setSimilarSource] = useState<Node | null>(null);
+  const [similarSource, setSimilarSource] = useState<{ id: string; name?: string } | null>(null);
   const [similarLoadingId, setSimilarLoadingId] = useState<string | null>(null);
   const [similarError, setSimilarError] = useState<string | null>(null);
   const [suggestedFilters, setSuggestedFilters] = useState<
@@ -245,6 +246,44 @@ const SearchResults: React.FC = () => {
       setQuickSearch(lastSearchCriteria.name || '');
     }
   }, [lastSearchCriteria]);
+
+  useEffect(() => {
+    const state = location.state as { similarSourceId?: string; similarSourceName?: string } | null;
+    if (!state?.similarSourceId) {
+      return;
+    }
+
+    let active = true;
+    setSimilarLoadingId(state.similarSourceId);
+    setSimilarError(null);
+    nodeService.findSimilar(state.similarSourceId, pageSize)
+      .then((results) => {
+        if (!active) return;
+        setSimilarResults(results);
+        setSimilarSource({ id: state.similarSourceId, name: state.similarSourceName });
+        setPage(1);
+        if (!results || results.length === 0) {
+          toast.info('No similar documents found');
+        }
+      })
+      .catch((error: any) => {
+        if (!active) return;
+        const message = error?.response?.data?.message || 'Failed to load similar documents';
+        setSimilarError(message);
+        toast.error(message);
+      })
+      .finally(() => {
+        if (active) {
+          setSimilarLoadingId(null);
+        }
+      });
+
+    navigate(location.pathname, { replace: true, state: null });
+
+    return () => {
+      active = false;
+    };
+  }, [location.pathname, location.state, navigate, pageSize]);
 
   useEffect(() => {
     const query = quickSearch.trim();
@@ -492,7 +531,7 @@ const SearchResults: React.FC = () => {
     try {
       const results = await nodeService.findSimilar(node.id, pageSize);
       setSimilarResults(results);
-      setSimilarSource(node);
+      setSimilarSource({ id: node.id, name: node.name });
       setPage(1);
       if (!results || results.length === 0) {
         toast.info('No similar documents found');

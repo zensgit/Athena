@@ -11,6 +11,9 @@
   - Results list swaps to similar documents.
   - Info banner shows the source document name.
   - Clicking **Back to results** restores the original search list.
+- In document preview (open any result), open the menu and click **More like this**.
+- Expected:
+  - Navigates to Search Results with similar mode active.
 
 ## API Spot Check
 - Command:

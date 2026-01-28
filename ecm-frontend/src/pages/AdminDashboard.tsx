@@ -51,12 +51,20 @@ import {
   WorkspacePremium,
   Download as DownloadIcon,
   CleaningServices as CleanupIcon,
+  PlayArrow,
+  Star,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import apiService from '../services/api';
 import { toast } from 'react-toastify';
 import userGroupService, { Group } from 'services/userGroupService';
+import savedSearchService, { SavedSearch } from 'services/savedSearchService';
+import { useNavigate } from 'react-router-dom';
+import { useAppDispatch } from 'store';
+import { executeSavedSearch, setLastSearchCriteria } from 'store/slices/nodeSlice';
 import { User } from 'types';
+import { buildSearchCriteriaFromSavedSearch } from 'utils/savedSearchUtils';
+import { loadPinnedSavedSearchIds, togglePinnedSavedSearchId } from 'utils/savedSearchPins';
 
 // Types matching backend Analytics DTOs
 interface SystemSummary {
@@ -139,6 +147,8 @@ const RULE_EVENT_LABELS: Record<string, string> = {
 };
 
 const AdminDashboard: React.FC = () => {
+  const navigate = useNavigate();
+  const dispatch = useAppDispatch();
   const [tab, setTab] = useState(0);
 
   // Overview/dashboard state
@@ -152,6 +162,10 @@ const AdminDashboard: React.FC = () => {
   const [retentionInfo, setRetentionInfo] = useState<AuditRetentionInfo | null>(null);
   const [exportingAudit, setExportingAudit] = useState(false);
   const [cleaningAudit, setCleaningAudit] = useState(false);
+  const [pinnedSearches, setPinnedSearches] = useState<SavedSearch[]>([]);
+  const [pinnedLoading, setPinnedLoading] = useState(false);
+  const [pinnedError, setPinnedError] = useState<string | null>(null);
+  const [pinnedIds, setPinnedIds] = useState<string[]>(() => loadPinnedSavedSearchIds());
 
   // Users state
   const [users, setUsers] = useState<User[]>([]);
@@ -239,6 +253,44 @@ const AdminDashboard: React.FC = () => {
     } finally {
       setLoadingDashboard(false);
     }
+  };
+
+  const loadPinnedSearches = async () => {
+    const ids = loadPinnedSavedSearchIds();
+    setPinnedIds(ids);
+    if (ids.length === 0) {
+      setPinnedSearches([]);
+      setPinnedError(null);
+      return;
+    }
+    setPinnedLoading(true);
+    try {
+      const searches = await savedSearchService.list();
+      const byId = new Map(searches.map((item) => [item.id, item]));
+      setPinnedSearches(ids.map((id) => byId.get(id)).filter(Boolean) as SavedSearch[]);
+      setPinnedError(null);
+    } catch {
+      setPinnedError('Failed to load pinned saved searches');
+      setPinnedSearches([]);
+    } finally {
+      setPinnedLoading(false);
+    }
+  };
+
+  const handleRunPinnedSearch = async (item: SavedSearch) => {
+    try {
+      await dispatch(executeSavedSearch(item.id)).unwrap();
+      dispatch(setLastSearchCriteria(buildSearchCriteriaFromSavedSearch(item)));
+      navigate('/search-results');
+    } catch {
+      toast.error('Failed to execute saved search');
+    }
+  };
+
+  const handleTogglePinnedSearch = (item: SavedSearch) => {
+    const next = togglePinnedSavedSearchId(pinnedIds, item.id);
+    setPinnedIds(next);
+    loadPinnedSearches();
   };
 
   const handleExportAuditLogs = async () => {
@@ -358,6 +410,7 @@ const AdminDashboard: React.FC = () => {
 
   useEffect(() => {
     fetchDashboard();
+    loadPinnedSearches();
   }, []);
 
   useEffect(() => {
@@ -445,6 +498,69 @@ const AdminDashboard: React.FC = () => {
             />
           </Grid>
         </Grid>
+
+        <Paper sx={{ p: 2, mb: 3 }}>
+          <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+            <Box display="flex" alignItems="center" gap={1}>
+              <Star fontSize="small" color="warning" />
+              <Typography component="h2" variant="h6" color="primary">
+                Pinned Saved Searches
+              </Typography>
+            </Box>
+            <Button variant="outlined" size="small" onClick={() => navigate('/saved-searches')}>
+              Manage
+            </Button>
+          </Box>
+          {pinnedLoading ? (
+            <Box display="flex" alignItems="center" gap={2} py={1}>
+              <CircularProgress size={20} />
+              <Typography variant="body2" color="text.secondary">
+                Loading pinned searches…
+              </Typography>
+            </Box>
+          ) : pinnedError ? (
+            <Typography variant="body2" color="error">
+              {pinnedError}
+            </Typography>
+          ) : pinnedSearches.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">
+              No pinned searches yet. Pin a saved search to see it here.
+            </Typography>
+          ) : (
+            <List dense>
+              {pinnedSearches.map((item, index) => (
+                <React.Fragment key={item.id}>
+                  <ListItem
+                    secondaryAction={(
+                      <Box display="flex" gap={1}>
+                        <IconButton
+                          size="small"
+                          aria-label={`Run saved search ${item.name}`}
+                          onClick={() => handleRunPinnedSearch(item)}
+                        >
+                          <PlayArrow fontSize="small" />
+                        </IconButton>
+                        <IconButton
+                          size="small"
+                          aria-label={`Unpin saved search ${item.name}`}
+                          onClick={() => handleTogglePinnedSearch(item)}
+                        >
+                          <Star fontSize="small" color="warning" />
+                        </IconButton>
+                      </Box>
+                    )}
+                  >
+                    <ListItemText
+                      primary={item.name}
+                      secondary={item.createdAt ? `Created ${format(new Date(item.createdAt), 'PPp')}` : undefined}
+                    />
+                  </ListItem>
+                  {index < pinnedSearches.length - 1 && <Divider component="li" />}
+                </React.Fragment>
+              ))}
+            </List>
+          )}
+        </Paper>
 
         <Paper sx={{ p: 2, mb: 3 }}>
           <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>

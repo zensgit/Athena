@@ -1,7 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Paper, Typography, IconButton, CircularProgress, Button } from '@mui/material';
+import { Box, Paper, Typography, IconButton, CircularProgress, Button, Tooltip } from '@mui/material';
 import { DataGrid, GridColDef } from '@mui/x-data-grid';
-import { ContentPasteSearch, Delete, PlayArrow, Refresh, SavedSearch as SavedSearchIcon } from '@mui/icons-material';
+import {
+  ContentPasteSearch,
+  Delete,
+  PlayArrow,
+  Refresh,
+  SavedSearch as SavedSearchIcon,
+  Star,
+  StarBorder,
+} from '@mui/icons-material';
 import { format } from 'date-fns';
 import { toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
@@ -9,13 +17,18 @@ import savedSearchService, { SavedSearch } from 'services/savedSearchService';
 import { useAppDispatch } from 'store';
 import { executeSavedSearch, setLastSearchCriteria } from 'store/slices/nodeSlice';
 import { setSearchOpen, setSearchPrefill } from 'store/slices/uiSlice';
-import { SearchCriteria } from 'types';
+import { buildSearchCriteriaFromSavedSearch } from 'utils/savedSearchUtils';
+import {
+  loadPinnedSavedSearchIds,
+  togglePinnedSavedSearchId,
+} from 'utils/savedSearchPins';
 
 const SavedSearchesPage: React.FC = () => {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const [items, setItems] = useState<SavedSearch[]>([]);
   const [loading, setLoading] = useState(false);
+  const [pinnedIds, setPinnedIds] = useState<string[]>(() => loadPinnedSavedSearchIds());
 
   const loadSavedSearches = async () => {
     setLoading(true);
@@ -38,39 +51,20 @@ const SavedSearchesPage: React.FC = () => {
       ? input.map((value) => String(value).trim()).filter((value) => value.length > 0)
       : [];
 
-  const buildSearchCriteria = (item: SavedSearch): SearchCriteria => {
-    const queryParams = item.queryParams || {};
-    const filters = (queryParams.filters || {}) as Record<string, any>;
-    const mimeTypes = Array.isArray(filters.mimeTypes) ? filters.mimeTypes : [];
-    const createdByList = normalizeList(filters.createdByList);
-
-    return {
-      name: typeof queryParams.query === 'string' ? queryParams.query : '',
-      contentType: typeof mimeTypes[0] === 'string' ? mimeTypes[0] : '',
-      mimeTypes: normalizeList(filters.mimeTypes),
-      createdBy: typeof filters.createdBy === 'string' ? filters.createdBy : '',
-      createdByList: createdByList.length ? createdByList : undefined,
-      createdFrom: typeof filters.dateFrom === 'string' ? filters.dateFrom : undefined,
-      createdTo: typeof filters.dateTo === 'string' ? filters.dateTo : undefined,
-      modifiedFrom: typeof filters.modifiedFrom === 'string' ? filters.modifiedFrom : undefined,
-      modifiedTo: typeof filters.modifiedTo === 'string' ? filters.modifiedTo : undefined,
-      tags: normalizeList(filters.tags),
-      categories: normalizeList(filters.categories),
-      correspondents: normalizeList(filters.correspondents),
-      minSize: typeof filters.minSize === 'number' ? filters.minSize : undefined,
-      maxSize: typeof filters.maxSize === 'number' ? filters.maxSize : undefined,
-      path: typeof filters.path === 'string' ? filters.path : undefined,
-    };
-  };
-
   const handleRun = async (item: SavedSearch) => {
     try {
       await dispatch(executeSavedSearch(item.id)).unwrap();
-      dispatch(setLastSearchCriteria(buildSearchCriteria(item)));
+      dispatch(setLastSearchCriteria(buildSearchCriteriaFromSavedSearch(item)));
       navigate('/search-results');
     } catch {
       toast.error('Failed to execute saved search');
     }
+  };
+
+  const handleTogglePin = (item: SavedSearch) => {
+    const next = togglePinnedSavedSearchId(pinnedIds, item.id);
+    setPinnedIds(next);
+    toast.success(next.includes(item.id) ? 'Pinned saved search' : 'Unpinned saved search');
   };
 
   const handleDelete = async (item: SavedSearch) => {
@@ -111,6 +105,27 @@ const SavedSearchesPage: React.FC = () => {
   };
 
   const columns: GridColDef[] = [
+    {
+      field: 'pinned',
+      headerName: '',
+      width: 60,
+      sortable: false,
+      renderCell: (params) => {
+        const item = params.row as SavedSearch;
+        const isPinned = pinnedIds.includes(item.id);
+        return (
+          <Tooltip title={isPinned ? 'Unpin' : 'Pin'}>
+            <IconButton
+              size="small"
+              aria-label={`${isPinned ? 'Unpin' : 'Pin'} saved search ${String(item.name)}`}
+              onClick={() => handleTogglePin(item)}
+            >
+              {isPinned ? <Star fontSize="small" color="warning" /> : <StarBorder fontSize="small" />}
+            </IconButton>
+          </Tooltip>
+        );
+      },
+    },
     { field: 'name', headerName: 'Name', flex: 2 },
     {
       field: 'createdAt',
