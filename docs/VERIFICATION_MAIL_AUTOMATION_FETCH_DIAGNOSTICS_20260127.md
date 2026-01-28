@@ -10,6 +10,9 @@
 - Mail automation diagnostics security test:
   - Command: `cd ecm-core && mvn -q -Dtest=MailAutomationControllerSecurityTest test`
   - Result: ✅ Passed
+- Mail automation diagnostics sample response test:
+  - Command: `cd ecm-core && mvn -q -Dtest=MailAutomationControllerDiagnosticsTest test`
+  - Result: ✅ Passed
 
 ## Frontend Lint
 - Command: `cd ecm-frontend && npm run lint`
