@@ -251,9 +251,13 @@ public class MailFetcherService {
     }
 
     public MailDiagnosticsResult getDiagnostics(Integer limit) {
+        return getDiagnostics(limit, null, null);
+    }
+
+    public MailDiagnosticsResult getDiagnostics(Integer limit, UUID accountId, UUID ruleId) {
         int effectiveLimit = Math.max(1, Math.min(limit != null ? limit : 25, 200));
         try {
-            return runWithSystemAuthenticationWithResult(() -> buildDiagnostics(effectiveLimit));
+            return runWithSystemAuthenticationWithResult(() -> buildDiagnostics(effectiveLimit, accountId, ruleId));
         } catch (Exception e) {
             String message = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             throw new IllegalArgumentException("Failed to build mail diagnostics: " + message, e);
@@ -630,14 +634,14 @@ public class MailFetcherService {
             .collect(Collectors.toList());
     }
 
-    private MailDiagnosticsResult buildDiagnostics(int limit) {
+    private MailDiagnosticsResult buildDiagnostics(int limit, UUID accountId, UUID ruleId) {
         Map<UUID, String> accountNames = accountRepository.findAll().stream()
             .collect(Collectors.toMap(MailAccount::getId, MailAccount::getName));
         Map<UUID, String> ruleNames = ruleRepository.findAllByOrderByPriorityAsc().stream()
             .collect(Collectors.toMap(MailRule::getId, MailRule::getName));
 
         List<ProcessedMailDiagnosticItem> recentProcessed = processedMailRepository
-            .findAllByOrderByProcessedAtDesc(PageRequest.of(0, limit))
+            .findRecentByFilters(accountId, ruleId, PageRequest.of(0, limit))
             .stream()
             .map(mail -> new ProcessedMailDiagnosticItem(
                 mail.getId(),
@@ -654,7 +658,10 @@ public class MailFetcherService {
             ))
             .toList();
 
-        List<MailDocumentDiagnosticItem> recentDocuments = documentRepository.findRecentMailDocuments(limit)
+        String accountFilter = accountId != null ? accountId.toString() : null;
+        String ruleFilter = ruleId != null ? ruleId.toString() : null;
+        List<MailDocumentDiagnosticItem> recentDocuments = documentRepository
+            .findRecentMailDocumentsWithFilters(limit, accountFilter, ruleFilter)
             .stream()
             .map(doc -> toMailDocumentDiagnosticItem(doc, accountNames, ruleNames))
             .toList();

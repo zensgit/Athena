@@ -74,6 +74,24 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
     )
     List<Document> findRecentMailDocuments(@Param("limit") int limit);
 
+    @Query(
+        value = "SELECT n.*, d.* FROM documents d " +
+            "JOIN nodes n ON d.id = n.id " +
+            "WHERE n.is_deleted = false " +
+            "AND n.node_type = 'DOCUMENT' " +
+            "AND n.properties ->> 'mail:source' = 'true' " +
+            "AND (:accountId IS NULL OR n.properties ->> 'mail:accountId' = :accountId) " +
+            "AND (:ruleId IS NULL OR n.properties ->> 'mail:ruleId' = :ruleId) " +
+            "ORDER BY n.created_date DESC " +
+            "LIMIT :limit",
+        nativeQuery = true
+    )
+    List<Document> findRecentMailDocumentsWithFilters(
+        @Param("limit") int limit,
+        @Param("accountId") String accountId,
+        @Param("ruleId") String ruleId
+    );
+
     /**
      * Find documents modified since a given date (for scheduled rules)
      */

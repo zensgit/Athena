@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.core.env.Environment;
 import org.springframework.data.domain.Pageable;
@@ -123,11 +124,15 @@ class MailFetcherServiceDiagnosticsTest {
 
         when(accountRepository.findAll()).thenReturn(List.of(account));
         when(ruleRepository.findAllByOrderByPriorityAsc()).thenReturn(List.of(rule));
-        when(processedMailRepository.findAllByOrderByProcessedAtDesc(any(Pageable.class)))
+        when(processedMailRepository.findRecentByFilters(
+            Mockito.eq(accountId),
+            Mockito.eq(ruleId),
+            any(Pageable.class)))
             .thenReturn(List.of(processed));
-        when(documentRepository.findRecentMailDocuments(25)).thenReturn(List.of(document));
+        when(documentRepository.findRecentMailDocumentsWithFilters(25, accountId.toString(), ruleId.toString()))
+            .thenReturn(List.of(document));
 
-        var result = service.getDiagnostics(null);
+        var result = service.getDiagnostics(null, accountId, ruleId);
 
         assertEquals(25, result.limit());
         assertEquals(1, result.recentProcessed().size());
@@ -143,17 +148,17 @@ class MailFetcherServiceDiagnosticsTest {
     void diagnosticsClampsLimit() {
         when(accountRepository.findAll()).thenReturn(List.of());
         when(ruleRepository.findAllByOrderByPriorityAsc()).thenReturn(List.of());
-        when(processedMailRepository.findAllByOrderByProcessedAtDesc(any(Pageable.class)))
+        when(processedMailRepository.findRecentByFilters(Mockito.isNull(), Mockito.isNull(), any(Pageable.class)))
             .thenReturn(List.of());
-        when(documentRepository.findRecentMailDocuments(200)).thenReturn(List.of());
+        when(documentRepository.findRecentMailDocumentsWithFilters(200, null, null)).thenReturn(List.of());
 
-        var result = service.getDiagnostics(999);
+        var result = service.getDiagnostics(999, null, null);
 
         assertEquals(200, result.limit());
 
         ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
-        verify(processedMailRepository).findAllByOrderByProcessedAtDesc(pageableCaptor.capture());
+        verify(processedMailRepository).findRecentByFilters(Mockito.isNull(), Mockito.isNull(), pageableCaptor.capture());
         assertEquals(200, pageableCaptor.getValue().getPageSize());
-        verify(documentRepository).findRecentMailDocuments(200);
+        verify(documentRepository).findRecentMailDocumentsWithFilters(200, null, null);
     }
 }

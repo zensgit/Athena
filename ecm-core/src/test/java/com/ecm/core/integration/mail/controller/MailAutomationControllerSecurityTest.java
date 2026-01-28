@@ -82,7 +82,7 @@ class MailAutomationControllerSecurityTest {
     @WithMockUser(roles = "ADMIN")
     @DisplayName("Admin can access mail diagnostics")
     void diagnosticsAllowsAdmin() throws Exception {
-        Mockito.when(fetcherService.getDiagnostics(5))
+        Mockito.when(fetcherService.getDiagnostics(5, null, null))
             .thenReturn(new MailFetcherService.MailDiagnosticsResult(5, List.of(), List.of()));
 
         mockMvc.perform(get("/api/v1/integration/mail/diagnostics").param("limit", "5"))
@@ -91,14 +91,14 @@ class MailAutomationControllerSecurityTest {
             .andExpect(jsonPath("$.recentProcessed").isArray())
             .andExpect(jsonPath("$.recentDocuments").isArray());
 
-        Mockito.verify(fetcherService).getDiagnostics(5);
+        Mockito.verify(fetcherService).getDiagnostics(5, null, null);
     }
 
     @Test
     @WithMockUser(roles = "ADMIN")
     @DisplayName("Mail diagnostics uses default limit when not provided")
     void diagnosticsUsesDefaultLimit() throws Exception {
-        Mockito.when(fetcherService.getDiagnostics(null))
+        Mockito.when(fetcherService.getDiagnostics(null, null, null))
             .thenReturn(new MailFetcherService.MailDiagnosticsResult(25, List.of(), List.of()));
 
         mockMvc.perform(get("/api/v1/integration/mail/diagnostics"))
@@ -107,6 +107,6 @@ class MailAutomationControllerSecurityTest {
             .andExpect(jsonPath("$.recentProcessed").isArray())
             .andExpect(jsonPath("$.recentDocuments").isArray());
 
-        Mockito.verify(fetcherService).getDiagnostics(null);
+        Mockito.verify(fetcherService).getDiagnostics(null, null, null);
     }
 }

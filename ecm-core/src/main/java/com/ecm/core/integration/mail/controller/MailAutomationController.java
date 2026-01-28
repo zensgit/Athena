@@ -263,9 +263,11 @@ public class MailAutomationController {
     @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Mail diagnostics", description = "Recent processed messages and mail-ingested documents")
     public ResponseEntity<MailFetcherService.MailDiagnosticsResult> getDiagnostics(
-        @RequestParam(required = false) Integer limit
+        @RequestParam(required = false) Integer limit,
+        @RequestParam(required = false) UUID accountId,
+        @RequestParam(required = false) UUID ruleId
     ) {
-        return ResponseEntity.ok(fetcherService.getDiagnostics(limit));
+        return ResponseEntity.ok(fetcherService.getDiagnostics(limit, accountId, ruleId));
     }
 
     // === Rules ===

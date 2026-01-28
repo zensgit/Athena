@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Box,
   Button,
@@ -120,6 +120,8 @@ const MailAutomationPage: React.FC = () => {
   const [availableFolders, setAvailableFolders] = useState<string[]>([]);
   const [diagnostics, setDiagnostics] = useState<MailDiagnosticsResult | null>(null);
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
+  const [diagnosticsAccountId, setDiagnosticsAccountId] = useState('');
+  const [diagnosticsRuleId, setDiagnosticsRuleId] = useState('');
   const [testingAccountId, setTestingAccountId] = useState<string | null>(null);
 
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
@@ -215,13 +217,16 @@ const MailAutomationPage: React.FC = () => {
     return ok;
   };
 
-  const loadDiagnostics = async (options?: { silent?: boolean }) => {
+  const loadDiagnostics = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent === true;
     if (!silent) {
       setDiagnosticsLoading(true);
     }
     try {
-      const result = await mailAutomationService.getDiagnostics(diagnosticsLimit);
+      const result = await mailAutomationService.getDiagnostics(diagnosticsLimit, {
+        accountId: diagnosticsAccountId || undefined,
+        ruleId: diagnosticsRuleId || undefined,
+      });
       setDiagnostics(result);
     } catch {
       if (!silent) {
@@ -230,12 +235,15 @@ const MailAutomationPage: React.FC = () => {
     } finally {
       setDiagnosticsLoading(false);
     }
-  };
+  }, [diagnosticsAccountId, diagnosticsRuleId]);
 
   useEffect(() => {
     loadAll();
-    loadDiagnostics();
   }, []);
+
+  useEffect(() => {
+    loadDiagnostics({ silent: true });
+  }, [diagnosticsAccountId, diagnosticsRuleId, loadDiagnostics]);
 
   useEffect(() => {
     if (!folderAccountId && accounts.length > 0) {
@@ -804,6 +812,44 @@ const MailAutomationPage: React.FC = () => {
                 </Box>
               ) : (
                 <Stack spacing={2}>
+                  <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+                    <FormControl size="small" sx={{ minWidth: 220 }}>
+                      <InputLabel id="diagnostics-account-label">Account</InputLabel>
+                      <Select
+                        labelId="diagnostics-account-label"
+                        label="Account"
+                        value={diagnosticsAccountId}
+                        onChange={(event) => setDiagnosticsAccountId(event.target.value)}
+                      >
+                        <MenuItem value="">
+                          <em>All Accounts</em>
+                        </MenuItem>
+                        {accounts.map((account) => (
+                          <MenuItem key={account.id} value={account.id}>
+                            {account.name}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                    <FormControl size="small" sx={{ minWidth: 220 }}>
+                      <InputLabel id="diagnostics-rule-label">Rule</InputLabel>
+                      <Select
+                        labelId="diagnostics-rule-label"
+                        label="Rule"
+                        value={diagnosticsRuleId}
+                        onChange={(event) => setDiagnosticsRuleId(event.target.value)}
+                      >
+                        <MenuItem value="">
+                          <em>All Rules</em>
+                        </MenuItem>
+                        {rules.map((rule) => (
+                          <MenuItem key={rule.id} value={rule.id}>
+                            {rule.name}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Stack>
                   <Typography variant="caption" color="text.secondary">
                     Showing last {diagnostics?.limit ?? diagnosticsLimit} items tagged by mail ingestion.
                   </Typography>

@@ -37,13 +37,15 @@
     - `force` (default `true`)
     - `maxMessagesPerFolder` (optional limit)
 - New recent-activity diagnostics endpoint:
-  - `GET /api/v1/integration/mail/diagnostics?limit=25`
+  - `GET /api/v1/integration/mail/diagnostics?limit=25&accountId=<uuid>&ruleId=<uuid>`
   - Returns:
     - Recent processed mail records (from `processed_mail`)
     - Recent ingested mail documents (from `nodes`/`documents`)
   - Guardrails:
     - Admin-only
     - Uses system auth context internally for consistent visibility
+  - Filters:
+    - Optional `accountId` and `ruleId` narrow the recent lists
 - New folder discovery endpoint:
   - `GET /api/v1/integration/mail/accounts/{id}/folders`
   - Purpose: list available IMAP folders to avoid misconfigured folder names.
@@ -66,6 +68,7 @@
   - New "Recent Mail Activity" card under diagnostics.
   - Admin can set "Max messages / folder" and run diagnostics.
   - Admin can select an account and list available folders.
+  - Admin can filter recent activity by account and rule.
   - Results show:
     - Summary chips (attempted/found/matched/processable/skipped/errors)
     - Top global skip reasons

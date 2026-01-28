@@ -25,7 +25,7 @@
 - Mail automation targeted:
   - Command:
     - `cd ecm-frontend && ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 npx playwright test e2e/mail-automation.spec.ts`
-  - Result: ✅ 2 passed (~28s)
+  - Result: ✅ 2 passed (~33s)
 - UI smoke (mail automation actions):
   - Command:
     - `cd ecm-frontend && ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 npx playwright test e2e/ui-smoke.spec.ts -g "Mail automation actions"`
@@ -46,6 +46,7 @@
   - Shows recent processed messages (from processed-mail records).
   - Shows recent ingested documents tagged with mail provenance.
   - Refreshes after `Trigger Fetch` and `Run Diagnostics`.
+  - Supports filtering by account and rule.
 
 ## Recent Activity Diagnostics API (2026-01-27)
 - Command:

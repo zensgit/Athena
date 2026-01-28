@@ -176,6 +176,11 @@ export interface MailDiagnosticsResult {
   recentDocuments: MailDocumentDiagnosticItem[];
 }
 
+export interface MailDiagnosticsFilters {
+  accountId?: string | null;
+  ruleId?: string | null;
+}
+
 class MailAutomationService {
   async listAccounts(): Promise<MailAccount[]> {
     return api.get<MailAccount[]>('/integration/mail/accounts');
@@ -217,9 +222,13 @@ class MailAutomationService {
     return api.get<string[]>(`/integration/mail/accounts/${accountId}/folders`);
   }
 
-  async getDiagnostics(limit = 25): Promise<MailDiagnosticsResult> {
+  async getDiagnostics(limit = 25, filters?: MailDiagnosticsFilters): Promise<MailDiagnosticsResult> {
     return api.get<MailDiagnosticsResult>('/integration/mail/diagnostics', {
-      params: { limit },
+      params: {
+        limit,
+        accountId: filters?.accountId || undefined,
+        ruleId: filters?.ruleId || undefined,
+      },
     });
   }
 
