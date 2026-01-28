@@ -29,7 +29,7 @@
 - UI smoke (mail automation actions):
   - Command:
     - `cd ecm-frontend && ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 npx playwright test e2e/ui-smoke.spec.ts -g "Mail automation actions"`
-  - Result: ✅ 1 passed (~17s)
+  - Result: ✅ 1 passed (~16s)
 - Full regression:
   - Command:
     - `cd ecm-frontend && ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 npx playwright test`
@@ -37,6 +37,7 @@
 - New coverage:
   - Mail automation folder discovery UI (`List Folders`) and rule dialog helper text.
   - Recent activity tables no longer interfere with rule editing row selection.
+  - CSV export button triggers download and includes both "Processed Messages" and "Mail Documents" sections.
 
 ## Manual Notes
 - Mail Automation now has a "Fetch Diagnostics (Dry Run)" card that:
