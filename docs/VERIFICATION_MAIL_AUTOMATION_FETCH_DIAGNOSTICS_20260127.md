@@ -17,6 +17,10 @@
   - Command:
     - `cd ecm-frontend && ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 npx playwright test e2e/mail-automation.spec.ts`
   - Result: ✅ 2 passed (~28s)
+- UI smoke (mail automation actions):
+  - Command:
+    - `cd ecm-frontend && ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 npx playwright test e2e/ui-smoke.spec.ts -g "Mail automation actions"`
+  - Result: ✅ 1 passed (~13s)
 - Full regression:
   - Command:
     - `cd ecm-frontend && ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 npx playwright test`

@@ -998,6 +998,35 @@ test('Mail automation actions', async ({ page, request }) => {
 
   const fetchToast = page.locator('.Toastify__toast').last();
   await expect(fetchToast).toContainText(/Processed|Failed to trigger mail fetch/i, { timeout: 60_000 });
+
+  const recentCard = page
+    .getByRole('heading', { name: /recent mail activity/i })
+    .locator('xpath=ancestor::div[contains(@class,"MuiCardContent-root")]');
+  await expect(recentCard).toBeVisible({ timeout: 60_000 });
+
+  const refreshButton = recentCard.getByRole('button', { name: /refresh/i });
+  await expect(refreshButton).toBeEnabled({ timeout: 30_000 });
+  await refreshButton.click();
+
+  const processedSection = recentCard
+    .getByRole('heading', { name: /processed messages/i })
+    .locator('xpath=ancestor::div[contains(@class,"MuiBox-root")][1]');
+  await expect(processedSection).toBeVisible({ timeout: 30_000 });
+  if ((await processedSection.getByRole('table').count()) > 0) {
+    await expect(processedSection.getByRole('table').first()).toBeVisible({ timeout: 30_000 });
+  } else {
+    await expect(processedSection.getByText(/No processed messages recorded yet/i)).toBeVisible({ timeout: 30_000 });
+  }
+
+  const documentsSection = recentCard
+    .getByRole('heading', { name: /mail documents/i })
+    .locator('xpath=ancestor::div[contains(@class,"MuiBox-root")][1]');
+  await expect(documentsSection).toBeVisible({ timeout: 30_000 });
+  if ((await documentsSection.getByRole('table').count()) > 0) {
+    await expect(documentsSection.getByRole('table').first()).toBeVisible({ timeout: 30_000 });
+  } else {
+    await expect(documentsSection.getByText(/No mail documents found yet/i)).toBeVisible({ timeout: 30_000 });
+  }
 });
 
 test('RBAC smoke: editor can access rules but not admin endpoints', async ({ page, request }) => {
