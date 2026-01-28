@@ -4,6 +4,11 @@
 - Command: `cd ecm-frontend && npm run lint`
 - Result: ✅ Passed
 
+## Playwright (Search subset)
+- Command:
+  - `cd ecm-frontend && ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 npx playwright test e2e/ui-smoke.spec.ts -g "Search"`
+- Result: ✅ 3 passed (~1.4m)
+
 ## Manual UI Check
 - Run a search and open `Search Results`.
 - For a document card, click **More like this**.

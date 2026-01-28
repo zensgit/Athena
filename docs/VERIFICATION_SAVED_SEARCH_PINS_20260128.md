@@ -4,6 +4,10 @@
 - Command: `cd ecm-frontend && npm run lint`
 - Result: ✅ Passed
 
+## Automation Note
+- The existing UI smoke suite covers search flows but does not pin saved searches.
+- Manual verification is required for pin/unpin and dashboard visibility.
+
 ## Manual UI Check
 - Go to `Saved Searches`.
 - Pin a saved search (star icon).

@@ -249,18 +249,19 @@ const SearchResults: React.FC = () => {
 
   useEffect(() => {
     const state = location.state as { similarSourceId?: string; similarSourceName?: string } | null;
-    if (!state?.similarSourceId) {
+    const sourceId = state?.similarSourceId;
+    if (!sourceId) {
       return;
     }
 
     let active = true;
-    setSimilarLoadingId(state.similarSourceId);
+    setSimilarLoadingId(sourceId);
     setSimilarError(null);
-    nodeService.findSimilar(state.similarSourceId, pageSize)
+    nodeService.findSimilar(sourceId, pageSize)
       .then((results) => {
         if (!active) return;
         setSimilarResults(results);
-        setSimilarSource({ id: state.similarSourceId, name: state.similarSourceName });
+        setSimilarSource({ id: sourceId, name: state.similarSourceName });
         setPage(1);
         if (!results || results.length === 0) {
           toast.info('No similar documents found');
