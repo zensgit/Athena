@@ -9,6 +9,7 @@ import {
   Box,
   Grid,
   Autocomplete,
+  CircularProgress,
   FormControl,
   InputLabel,
   Select,
@@ -83,6 +84,8 @@ const SearchDialog: React.FC = () => {
   const [pathPrefix, setPathPrefix] = useState<string>('');
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [saveName, setSaveName] = useState('');
+  const [nameSuggestions, setNameSuggestions] = useState<string[]>([]);
+  const [nameSuggestionsLoading, setNameSuggestionsLoading] = useState(false);
   const [facetOptions, setFacetOptions] = useState<{
     tags: string[];
     categories: string[];
@@ -120,6 +123,44 @@ const SearchDialog: React.FC = () => {
       loadFacets();
     }
   }, [searchOpen]);
+
+  React.useEffect(() => {
+    if (!searchOpen) {
+      return;
+    }
+    const prefix = (searchCriteria.name || '').trim();
+    if (prefix.length < 2) {
+      setNameSuggestions([]);
+      setNameSuggestionsLoading(false);
+      return;
+    }
+
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      setNameSuggestionsLoading(true);
+      try {
+        const suggestions = await apiService.get<string[]>('/search/suggestions', {
+          params: { prefix, limit: 8 },
+        });
+        if (active) {
+          setNameSuggestions(Array.isArray(suggestions) ? suggestions : []);
+        }
+      } catch {
+        if (active) {
+          setNameSuggestions([]);
+        }
+      } finally {
+        if (active) {
+          setNameSuggestionsLoading(false);
+        }
+      }
+    }, 250);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [searchCriteria.name, searchOpen]);
 
   React.useEffect(() => {
     if (!searchOpen || !searchPrefill) {
@@ -179,6 +220,8 @@ const SearchDialog: React.FC = () => {
     setPathPrefix('');
     setSaveDialogOpen(false);
     setSaveName('');
+    setNameSuggestions([]);
+    setNameSuggestionsLoading(false);
   };
 
   const buildSavedSearchQueryParams = () => {
@@ -354,14 +397,37 @@ const SearchDialog: React.FC = () => {
               <AccordionDetails>
                 <Grid container spacing={2}>
                   <Grid item xs={12}>
-                    <TextField
-                      fullWidth
-                      label="Name contains"
-                      value={searchCriteria.name}
-                      onChange={(e) =>
-                        setSearchCriteria({ ...searchCriteria, name: e.target.value })
-                      }
-                      placeholder="Enter partial or full name"
+                    <Autocomplete
+                      freeSolo
+                      options={nameSuggestions}
+                      value={searchCriteria.name || ''}
+                      inputValue={searchCriteria.name || ''}
+                      onChange={(_, value) => {
+                        setSearchCriteria({ ...searchCriteria, name: value || '' });
+                      }}
+                      onInputChange={(_, value) => {
+                        setSearchCriteria({ ...searchCriteria, name: value });
+                      }}
+                      loading={nameSuggestionsLoading}
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          fullWidth
+                          label="Name contains"
+                          placeholder="Enter partial or full name"
+                          InputProps={{
+                            ...params.InputProps,
+                            endAdornment: (
+                              <>
+                                {nameSuggestionsLoading ? (
+                                  <CircularProgress color="inherit" size={18} />
+                                ) : null}
+                                {params.InputProps.endAdornment}
+                              </>
+                            ),
+                          }}
+                        />
+                      )}
                     />
                   </Grid>
                 <Grid item xs={12}>
