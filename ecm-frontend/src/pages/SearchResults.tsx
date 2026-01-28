@@ -90,6 +90,11 @@ const SearchResults: React.FC = () => {
   const [similarSource, setSimilarSource] = useState<Node | null>(null);
   const [similarLoadingId, setSimilarLoadingId] = useState<string | null>(null);
   const [similarError, setSimilarError] = useState<string | null>(null);
+  const [suggestedFilters, setSuggestedFilters] = useState<
+    Array<{ field: string; label: string; value: string; count?: number }>
+  >([]);
+  const [suggestedFiltersLoading, setSuggestedFiltersLoading] = useState(false);
+  const [suggestedFiltersError, setSuggestedFiltersError] = useState<string | null>(null);
   const previewOpen = Boolean(previewNode);
   const canWrite = Boolean(user?.roles?.includes('ROLE_ADMIN') || user?.roles?.includes('ROLE_EDITOR'));
   const suppressFacetSearch = useRef(false);
@@ -202,6 +207,38 @@ const SearchResults: React.FC = () => {
     const query = (lastSearchCriteria?.name || '').trim();
     dispatch(fetchSearchFacets(query));
   }, [lastSearchCriteria, dispatch]);
+
+  useEffect(() => {
+    const query = (lastSearchCriteria?.name || '').trim();
+    if (!query || isSimilarMode) {
+      setSuggestedFilters([]);
+      setSuggestedFiltersError(null);
+      return;
+    }
+
+    let active = true;
+    setSuggestedFiltersLoading(true);
+    nodeService.getSuggestedFilters(query)
+      .then((filters) => {
+        if (!active) return;
+        setSuggestedFilters(Array.isArray(filters) ? filters : []);
+        setSuggestedFiltersError(null);
+      })
+      .catch(() => {
+        if (!active) return;
+        setSuggestedFilters([]);
+        setSuggestedFiltersError('Failed to load suggested filters');
+      })
+      .finally(() => {
+        if (active) {
+          setSuggestedFiltersLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [lastSearchCriteria, isSimilarMode]);
 
   useEffect(() => {
     if (lastSearchCriteria?.name !== undefined) {
@@ -474,6 +511,62 @@ const SearchResults: React.FC = () => {
     const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(1024));
     return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
+  };
+
+  const applySuggestedFilter = (filter: { field: string; value: string }) => {
+    if (!lastSearchCriteria) {
+      return;
+    }
+    if (isSimilarMode) {
+      clearSimilarResults();
+    }
+    const sortParams = getSortParams(sortBy);
+    const baseCriteria: SearchCriteria = {
+      ...lastSearchCriteria,
+      page: 0,
+      size: pageSize,
+      ...sortParams,
+    };
+
+    if (filter.field === 'mimeType') {
+      const nextMimeTypes = Array.from(
+        new Set([...(baseCriteria.mimeTypes || []), filter.value])
+      );
+      runSearch({
+        ...baseCriteria,
+        mimeTypes: nextMimeTypes,
+        contentType: undefined,
+      });
+      return;
+    }
+
+    if (filter.field === 'createdBy') {
+      const nextCreators = Array.from(
+        new Set([...(baseCriteria.createdByList || []), filter.value])
+      );
+      runSearch({
+        ...baseCriteria,
+        createdByList: nextCreators,
+        createdBy: undefined,
+      });
+      return;
+    }
+
+    if (filter.field === 'dateRange') {
+      const now = new Date();
+      let fromDate: Date | null = null;
+      if (filter.value === '7d') {
+        fromDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      } else if (filter.value === '30d') {
+        fromDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      } else if (filter.value === '1y') {
+        fromDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+      }
+      runSearch({
+        ...baseCriteria,
+        createdFrom: fromDate ? fromDate.toISOString() : baseCriteria.createdFrom,
+      });
+    }
   };
 
   const getVisualLength = (value?: string) => {
@@ -878,6 +971,34 @@ const SearchResults: React.FC = () => {
                 ? `Search results may still be indexing. Showing previous results for "${fallbackLabel}".`
                 : 'Search results may still be indexing. Showing previous results.'}
             </Alert>
+          )}
+          {suggestedFiltersError && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              {suggestedFiltersError}
+            </Alert>
+          )}
+          {suggestedFiltersLoading && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Loading suggested filters…
+            </Alert>
+          )}
+          {!suggestedFiltersLoading && suggestedFilters.length > 0 && (
+            <Paper sx={{ p: 1.5, mb: 2 }}>
+              <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
+                <Typography variant="subtitle2" color="text.secondary">
+                  Suggested:
+                </Typography>
+                {suggestedFilters.map((filter, index) => (
+                  <Chip
+                    key={`${filter.field}-${filter.value}-${index}`}
+                    label={filter.count !== undefined ? `${filter.label} (${filter.count})` : filter.label}
+                    size="small"
+                    onClick={() => applySuggestedFilter(filter)}
+                    variant="outlined"
+                  />
+                ))}
+              </Box>
+            </Paper>
           )}
           <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
             <Typography variant="h6">

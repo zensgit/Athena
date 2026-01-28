@@ -435,6 +435,15 @@ class NodeService {
     });
   }
 
+  async getSuggestedFilters(
+    query = ''
+  ): Promise<Array<{ field: string; label: string; value: string; count?: number }>> {
+    return api.get<Array<{ field: string; label: string; value: string; count?: number }>>(
+      '/search/filters/suggested',
+      { params: { q: query } }
+    );
+  }
+
   private mapSearchItemToNode(item: any): Node {
     const inferredNodeType = item.mimeType || item.fileSize
       ? 'DOCUMENT'
