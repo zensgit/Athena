@@ -64,7 +64,6 @@ import { useAppDispatch } from 'store';
 import { executeSavedSearch, setLastSearchCriteria } from 'store/slices/nodeSlice';
 import { User } from 'types';
 import { buildSearchCriteriaFromSavedSearch } from 'utils/savedSearchUtils';
-import { loadPinnedSavedSearchIds, togglePinnedSavedSearchId } from 'utils/savedSearchPins';
 
 // Types matching backend Analytics DTOs
 interface SystemSummary {
@@ -165,7 +164,6 @@ const AdminDashboard: React.FC = () => {
   const [pinnedSearches, setPinnedSearches] = useState<SavedSearch[]>([]);
   const [pinnedLoading, setPinnedLoading] = useState(false);
   const [pinnedError, setPinnedError] = useState<string | null>(null);
-  const [pinnedIds, setPinnedIds] = useState<string[]>(() => loadPinnedSavedSearchIds());
 
   // Users state
   const [users, setUsers] = useState<User[]>([]);
@@ -256,18 +254,10 @@ const AdminDashboard: React.FC = () => {
   };
 
   const loadPinnedSearches = async () => {
-    const ids = loadPinnedSavedSearchIds();
-    setPinnedIds(ids);
-    if (ids.length === 0) {
-      setPinnedSearches([]);
-      setPinnedError(null);
-      return;
-    }
     setPinnedLoading(true);
     try {
       const searches = await savedSearchService.list();
-      const byId = new Map(searches.map((item) => [item.id, item]));
-      setPinnedSearches(ids.map((id) => byId.get(id)).filter(Boolean) as SavedSearch[]);
+      setPinnedSearches(searches.filter((item) => item.pinned));
       setPinnedError(null);
     } catch {
       setPinnedError('Failed to load pinned saved searches');
@@ -288,9 +278,10 @@ const AdminDashboard: React.FC = () => {
   };
 
   const handleTogglePinnedSearch = (item: SavedSearch) => {
-    const next = togglePinnedSavedSearchId(pinnedIds, item.id);
-    setPinnedIds(next);
-    loadPinnedSearches();
+    savedSearchService
+      .setPinned(item.id, !item.pinned)
+      .then(() => loadPinnedSearches())
+      .catch(() => toast.error('Failed to update pin'));
   };
 
   const handleExportAuditLogs = async () => {

@@ -37,6 +37,10 @@ public class SavedSearch {
     @Column(name = "query_params", columnDefinition = "jsonb", nullable = false)
     private Map<String, Object> queryParams;
 
+    @Builder.Default
+    @Column(name = "pinned", nullable = false)
+    private boolean pinned = false;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 

@@ -3,27 +3,38 @@
 ## Goals
 - Let users pin favorite saved searches for quick access.
 - Surface pinned searches on the Admin dashboard.
+- Persist pins per user and sync across devices.
 
 ## Scope
-- Frontend-only persistence using localStorage.
-- No backend changes.
+- Backend persistence for pinned state.
+- Frontend reads/writes pinned state via API.
+
+## Backend Design
+- Add `pinned` boolean column to `saved_searches` (default false).
+- Expose pin toggle endpoint:
+  - `PATCH /api/v1/search/saved/{id}/pin` with `{ "pinned": true|false }`
+- Return pinned state in saved search list.
 
 ## Frontend Design
-- Store pinned saved search IDs in `localStorage` under `ecm_saved_search_pins`.
 - Saved Searches page:
   - Add pin/unpin action per row.
-  - Persist changes immediately.
+  - Call pin toggle API and update UI state.
 - Admin Dashboard:
   - Add "Pinned Saved Searches" panel.
-  - Load saved searches, filter by pinned IDs, show in pin order.
+  - Load saved searches, filter by `pinned`, show pinned first.
   - Actions: run search, unpin, and link to manage pins.
 
 ## Trade-offs
-- Pinned list is per-browser (localStorage), not synced across devices.
+- Pinned list syncs across devices but depends on backend availability.
 - Admin dashboard is admin-only; non-admin users rely on Saved Searches page.
 
 ## Files
+- `ecm-core/src/main/java/com/ecm/core/entity/SavedSearch.java`
+- `ecm-core/src/main/java/com/ecm/core/service/SavedSearchService.java`
+- `ecm-core/src/main/java/com/ecm/core/controller/SavedSearchController.java`
+- `ecm-core/src/main/java/com/ecm/core/repository/SavedSearchRepository.java`
+- `ecm-core/src/main/resources/db/changelog/changes/020-add-saved-searches-table.xml`
+- `ecm-frontend/src/services/savedSearchService.ts`
 - `ecm-frontend/src/pages/SavedSearchesPage.tsx`
 - `ecm-frontend/src/pages/AdminDashboard.tsx`
-- `ecm-frontend/src/utils/savedSearchPins.ts`
 - `ecm-frontend/src/utils/savedSearchUtils.ts`

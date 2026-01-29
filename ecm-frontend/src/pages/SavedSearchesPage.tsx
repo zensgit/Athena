@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Box, Paper, Typography, IconButton, CircularProgress, Button, Tooltip } from '@mui/material';
 import { DataGrid, GridColDef } from '@mui/x-data-grid';
 import {
@@ -18,33 +18,41 @@ import { useAppDispatch } from 'store';
 import { executeSavedSearch, setLastSearchCriteria } from 'store/slices/nodeSlice';
 import { setSearchOpen, setSearchPrefill } from 'store/slices/uiSlice';
 import { buildSearchCriteriaFromSavedSearch } from 'utils/savedSearchUtils';
-import {
-  loadPinnedSavedSearchIds,
-  togglePinnedSavedSearchId,
-} from 'utils/savedSearchPins';
 
 const SavedSearchesPage: React.FC = () => {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const [items, setItems] = useState<SavedSearch[]>([]);
   const [loading, setLoading] = useState(false);
-  const [pinnedIds, setPinnedIds] = useState<string[]>(() => loadPinnedSavedSearchIds());
 
-  const loadSavedSearches = async () => {
+  const sortSavedSearches = useCallback((data: SavedSearch[]) => {
+    const toTime = (value?: string) => {
+      if (!value) return 0;
+      const time = new Date(value).getTime();
+      return Number.isNaN(time) ? 0 : time;
+    };
+    return [...data].sort((a, b) => {
+      const pinDiff = Number(Boolean(b.pinned)) - Number(Boolean(a.pinned));
+      if (pinDiff !== 0) return pinDiff;
+      return toTime(b.createdAt) - toTime(a.createdAt);
+    });
+  }, []);
+
+  const loadSavedSearches = useCallback(async () => {
     setLoading(true);
     try {
       const data = await savedSearchService.list();
-      setItems(data);
+      setItems(sortSavedSearches(data));
     } catch {
       toast.error('Failed to load saved searches');
     } finally {
       setLoading(false);
     }
-  };
+  }, [sortSavedSearches]);
 
   useEffect(() => {
     loadSavedSearches();
-  }, []);
+  }, [loadSavedSearches]);
 
   const normalizeList = (input: unknown) =>
     Array.isArray(input)
@@ -62,9 +70,16 @@ const SavedSearchesPage: React.FC = () => {
   };
 
   const handleTogglePin = (item: SavedSearch) => {
-    const next = togglePinnedSavedSearchId(pinnedIds, item.id);
-    setPinnedIds(next);
-    toast.success(next.includes(item.id) ? 'Pinned saved search' : 'Unpinned saved search');
+    const nextPinned = !item.pinned;
+    savedSearchService
+      .setPinned(item.id, nextPinned)
+      .then((updated) => {
+        setItems((prev) => sortSavedSearches(
+          prev.map((current) => (current.id === updated.id ? updated : current))
+        ));
+        toast.success(updated.pinned ? 'Pinned saved search' : 'Unpinned saved search');
+      })
+      .catch(() => toast.error('Failed to update pin'));
   };
 
   const handleDelete = async (item: SavedSearch) => {
@@ -112,7 +127,7 @@ const SavedSearchesPage: React.FC = () => {
       sortable: false,
       renderCell: (params) => {
         const item = params.row as SavedSearch;
-        const isPinned = pinnedIds.includes(item.id);
+        const isPinned = Boolean(item.pinned);
         return (
           <Tooltip title={isPinned ? 'Unpin' : 'Pin'}>
             <IconButton

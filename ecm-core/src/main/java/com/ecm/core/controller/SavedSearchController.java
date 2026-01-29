@@ -47,5 +47,13 @@ public class SavedSearchController {
         return ResponseEntity.ok(savedSearchService.executeSavedSearch(id));
     }
 
+    @PatchMapping("/{id}/pin")
+    @Operation(summary = "Pin saved search", description = "Pin or unpin a saved search")
+    public ResponseEntity<SavedSearch> updatePinned(@PathVariable UUID id, @RequestBody UpdatePinRequest request) {
+        return ResponseEntity.ok(savedSearchService.updatePinned(id, request.pinned()));
+    }
+
     public record SaveSearchRequest(String name, Map<String, Object> queryParams) {}
+
+    public record UpdatePinRequest(boolean pinned) {}
 }

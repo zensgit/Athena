@@ -52,7 +52,25 @@ public class SavedSearchService {
     @Transactional(readOnly = true)
     public List<SavedSearch> getMySavedSearches() {
         String userId = securityService.getCurrentUser();
-        return savedSearchRepository.findByUserIdOrderByCreatedAtDesc(userId);
+        return savedSearchRepository.findByUserIdOrderByPinnedDescCreatedAtDesc(userId);
+    }
+
+    /**
+     * Update pin status for a saved search.
+     */
+    @Transactional
+    public SavedSearch updatePinned(UUID id, boolean pinned) {
+        String userId = securityService.getCurrentUser();
+        SavedSearch search = savedSearchRepository.findById(id)
+            .orElseThrow(() -> new IllegalArgumentException("Saved search not found"));
+
+        if (!search.getUserId().equals(userId)) {
+            throw new SecurityException("Not authorized to update this saved search");
+        }
+
+        search.setPinned(pinned);
+        log.info("User {} updated pin for saved search {} -> {}", userId, id, pinned);
+        return savedSearchRepository.save(search);
     }
 
     /**

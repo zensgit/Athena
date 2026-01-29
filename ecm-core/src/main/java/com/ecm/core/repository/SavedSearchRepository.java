@@ -10,7 +10,7 @@ import java.util.UUID;
 @Repository
 public interface SavedSearchRepository extends JpaRepository<SavedSearch, UUID> {
     
-    List<SavedSearch> findByUserIdOrderByCreatedAtDesc(String userId);
+    List<SavedSearch> findByUserIdOrderByPinnedDescCreatedAtDesc(String userId);
     
     boolean existsByUserIdAndName(String userId, String name);
 }

@@ -5,6 +5,7 @@ export interface SavedSearch {
   userId: string;
   name: string;
   queryParams: Record<string, any>;
+  pinned?: boolean;
   createdAt: string;
 }
 
@@ -53,6 +54,10 @@ class SavedSearchService {
     await api.delete<void>(`/search/saved/${id}`);
   }
 
+  async setPinned(id: string, pinned: boolean): Promise<SavedSearch> {
+    return api.patch<SavedSearch>(`/search/saved/${id}/pin`, { pinned });
+  }
+
   async execute(id: string): Promise<FacetedSearchResponse> {
     return api.get<FacetedSearchResponse>(`/search/saved/${id}/execute`);
   }
@@ -60,4 +65,3 @@ class SavedSearchService {
 
 const savedSearchService = new SavedSearchService();
 export default savedSearchService;
-
