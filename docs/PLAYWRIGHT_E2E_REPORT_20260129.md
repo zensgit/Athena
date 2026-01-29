@@ -1,6 +1,6 @@
 # Playwright E2E Report (2026-01-29)
 
-## Full Run
+## Full Run (Initial)
 Command:
 ```
 cd ecm-frontend
@@ -21,6 +21,20 @@ Result:
 - Use JPA Specification for processed mail filters (avoid null param SQL issues).
 - Add Liquibase migration to normalize subject column when needed.
 - Tighten Playwright selectors in `ui-smoke` mail automation test.
+
+## Full Run (After Fixes)
+Command:
+```
+cd ecm-frontend
+ECM_UI_URL=http://localhost:3000 \
+ECM_API_URL=http://localhost:7700 \
+KEYCLOAK_URL=http://localhost:8180 \
+ECM_E2E_USERNAME=admin \
+ECM_E2E_PASSWORD=admin \
+npx playwright test
+```
+Result:
+- 23 passed, 0 failed (from Playwright report `stats.expected=23`, `stats.unexpected=0`).
 
 ## Targeted Re-runs
 Commands:
@@ -45,4 +59,4 @@ Result:
 - `ui-smoke.spec.ts -g "Mail automation actions"`: ✅ 1 passed
 
 ## Notes
-- Full suite was not re-run after fixes; only the failing mail automation tests were re-run.
+- Full suite re-run after fixes: ✅ passed.
