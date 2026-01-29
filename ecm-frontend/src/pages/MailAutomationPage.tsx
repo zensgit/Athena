@@ -28,8 +28,9 @@ import {
   IconButton,
   Tooltip,
 } from '@mui/material';
-import { Add, Delete, Edit, Link, Refresh } from '@mui/icons-material';
+import { Add, Delete, Edit, Link, Login, Refresh } from '@mui/icons-material';
 import { toast } from 'react-toastify';
+import { useLocation, useNavigate } from 'react-router-dom';
 import mailAutomationService, {
   MailAccount,
   MailAccountRequest,
@@ -106,6 +107,8 @@ const DEFAULT_RULE_FORM: MailRuleRequest & { folderPath: string; folderIdOverrid
 };
 
 const MailAutomationPage: React.FC = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [accounts, setAccounts] = useState<MailAccount[]>([]);
   const [rules, setRules] = useState<MailRule[]>([]);
   const [tags, setTags] = useState<TagOption[]>([]);
@@ -122,6 +125,7 @@ const MailAutomationPage: React.FC = () => {
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
   const [diagnosticsAccountId, setDiagnosticsAccountId] = useState('');
   const [diagnosticsRuleId, setDiagnosticsRuleId] = useState('');
+  const [connectingAccountId, setConnectingAccountId] = useState<string | null>(null);
   const [exportOptions, setExportOptions] = useState(() => {
     const fallback = {
       includeProcessed: true,
@@ -165,6 +169,13 @@ const MailAutomationPage: React.FC = () => {
   const normalizedCredentialKey = accountForm.oauthCredentialKey
     ? normalizeCredentialKey(accountForm.oauthCredentialKey)
     : '';
+  const hasCredentialKey = Boolean(normalizedCredentialKey);
+  const providerEnvPrefix = accountForm.oauthProvider === 'GOOGLE'
+    ? 'ECM_MAIL_OAUTH_GOOGLE_'
+    : accountForm.oauthProvider === 'MICROSOFT'
+      ? 'ECM_MAIL_OAUTH_MICROSOFT_'
+      : '';
+  const usesProviderEnv = isOauthAccount && !hasCredentialKey && accountForm.oauthProvider !== 'CUSTOM';
   const oauthEnvPrefix = normalizedCredentialKey
     ? `ECM_MAIL_OAUTH_${normalizedCredentialKey}_`
     : 'ECM_MAIL_OAUTH_<KEY>_';
@@ -215,7 +226,7 @@ const MailAutomationPage: React.FC = () => {
 
   const formatReason = (reason: string) => reason.replace(/_/g, ' ');
 
-  const loadAll = async (options?: { silent?: boolean }) => {
+  const loadAll = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent === true;
     if (!silent) {
       setLoading(true);
@@ -239,7 +250,7 @@ const MailAutomationPage: React.FC = () => {
       }
     }
     return ok;
-  };
+  }, []);
 
   const loadDiagnostics = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent === true;
@@ -263,7 +274,22 @@ const MailAutomationPage: React.FC = () => {
 
   useEffect(() => {
     loadAll();
-  }, []);
+  }, [loadAll]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const oauthSuccess = params.get('oauth_success');
+    if (!oauthSuccess) {
+      return;
+    }
+    if (oauthSuccess === '1') {
+      toast.success('OAuth connected');
+    } else {
+      toast.error('OAuth connection failed');
+    }
+    navigate('/admin/mail', { replace: true });
+    loadAll({ silent: true });
+  }, [location.search, navigate, loadAll]);
 
   useEffect(() => {
     loadDiagnostics({ silent: true });
@@ -412,6 +438,35 @@ const MailAutomationPage: React.FC = () => {
     }
   };
 
+  const handleConnectOAuth = async (account: MailAccount) => {
+    if (!account.id) {
+      return;
+    }
+    try {
+      setConnectingAccountId(account.id);
+      const redirectUrl = `${window.location.origin}/admin/mail`;
+      const result = await mailAutomationService.getOAuthAuthorizeUrl(account.id, redirectUrl);
+      window.location.assign(result.url);
+    } catch {
+      toast.error('Failed to start OAuth connect');
+      setConnectingAccountId(null);
+    }
+  };
+
+  const handleOauthProviderChange = (provider: MailOAuthProvider) => {
+    const next = { ...accountForm, oauthProvider: provider };
+    if (accountForm.security === 'OAUTH2') {
+      if (provider === 'GOOGLE') {
+        next.host = 'imap.gmail.com';
+        next.port = 993;
+      } else if (provider === 'MICROSOFT') {
+        next.host = 'outlook.office365.com';
+        next.port = 993;
+      }
+    }
+    setAccountForm(next);
+  };
+
   const openCreateAccount = () => {
     setEditingAccount(null);
     setAccountForm(DEFAULT_ACCOUNT_FORM);
@@ -451,12 +506,12 @@ const MailAutomationPage: React.FC = () => {
       }
 
       if (isOauthAccount) {
-        if (!accountForm.oauthCredentialKey) {
-          toast.warn('OAuth credential key is required');
-          return;
-        }
         if (accountForm.oauthProvider === 'CUSTOM' && !accountForm.oauthTokenEndpoint) {
           toast.warn('OAuth token endpoint is required for custom providers');
+          return;
+        }
+        if (accountForm.oauthProvider === 'CUSTOM' && !accountForm.oauthCredentialKey) {
+          toast.warn('OAuth credential key is required for custom providers');
           return;
         }
       }
@@ -1198,6 +1253,14 @@ const MailAutomationPage: React.FC = () => {
                                 />
                               </Tooltip>
                             )}
+                            {account.security === 'OAUTH2' && account.oauthConnected != null && (
+                              <Chip
+                                size="small"
+                                variant="outlined"
+                                color={account.oauthConnected ? 'success' : 'warning'}
+                                label={account.oauthConnected ? 'OAuth connected' : 'OAuth not connected'}
+                              />
+                            )}
                             {account.lastFetchStatus === 'ERROR' && account.lastFetchError && (
                               <Typography variant="caption" color="error.main">
                                 {summarizeError(account.lastFetchError)}
@@ -1224,6 +1287,29 @@ const MailAutomationPage: React.FC = () => {
                           />
                         </TableCell>
                         <TableCell align="right">
+                          {account.security === 'OAUTH2'
+                            && account.oauthProvider
+                            && account.oauthProvider !== 'CUSTOM'
+                            && account.oauthConnected !== true && (
+                              <Tooltip title="Connect OAuth">
+                                <span>
+                                  <IconButton
+                                    size="small"
+                                    onClick={() => handleConnectOAuth(account)}
+                                    disabled={
+                                      connectingAccountId === account.id
+                                      || account.oauthEnvConfigured === false
+                                    }
+                                  >
+                                    {connectingAccountId === account.id ? (
+                                      <CircularProgress size={16} />
+                                    ) : (
+                                      <Login fontSize="small" />
+                                    )}
+                                  </IconButton>
+                                </span>
+                              </Tooltip>
+                          )}
                           <Tooltip title="Test connection">
                             <span>
                               <IconButton
@@ -1417,10 +1503,7 @@ const MailAutomationPage: React.FC = () => {
                     labelId="oauth-provider-label"
                     value={accountForm.oauthProvider || 'CUSTOM'}
                     label="OAuth provider"
-                    onChange={(event) => setAccountForm({
-                      ...accountForm,
-                      oauthProvider: event.target.value as MailOAuthProvider,
-                    })}
+                    onChange={(event) => handleOauthProviderChange(event.target.value as MailOAuthProvider)}
                   >
                     {oauthProviderOptions.map((option) => (
                       <MenuItem key={option} value={option}>{option}</MenuItem>
@@ -1428,27 +1511,37 @@ const MailAutomationPage: React.FC = () => {
                   </Select>
                 </FormControl>
                 <TextField
-                  label="OAuth credential key"
+                  label={accountForm.oauthProvider === 'CUSTOM'
+                    ? 'OAuth credential key'
+                    : 'OAuth credential key (optional)'}
                   value={accountForm.oauthCredentialKey}
                   onChange={(event) => setAccountForm({ ...accountForm, oauthCredentialKey: event.target.value })}
                   size="small"
-                  helperText={`Server env prefix: ${oauthEnvPrefix}`}
+                  helperText={hasCredentialKey
+                    ? `Server env prefix: ${oauthEnvPrefix}`
+                    : usesProviderEnv
+                      ? `Using OAuth app env: ${providerEnvPrefix}CLIENT_ID / ${providerEnvPrefix}CLIENT_SECRET`
+                      : `Server env prefix: ${oauthEnvPrefix}`}
                   fullWidth
                 />
-                <TextField
-                  label="OAuth token endpoint (custom)"
-                  value={accountForm.oauthTokenEndpoint}
-                  onChange={(event) => setAccountForm({ ...accountForm, oauthTokenEndpoint: event.target.value })}
-                  size="small"
-                  fullWidth
-                />
-                <TextField
-                  label="OAuth tenant ID (Microsoft)"
-                  value={accountForm.oauthTenantId}
-                  onChange={(event) => setAccountForm({ ...accountForm, oauthTenantId: event.target.value })}
-                  size="small"
-                  fullWidth
-                />
+                {accountForm.oauthProvider === 'CUSTOM' && (
+                  <TextField
+                    label="OAuth token endpoint (custom)"
+                    value={accountForm.oauthTokenEndpoint}
+                    onChange={(event) => setAccountForm({ ...accountForm, oauthTokenEndpoint: event.target.value })}
+                    size="small"
+                    fullWidth
+                  />
+                )}
+                {accountForm.oauthProvider === 'MICROSOFT' && (
+                  <TextField
+                    label="OAuth tenant ID (Microsoft)"
+                    value={accountForm.oauthTenantId}
+                    onChange={(event) => setAccountForm({ ...accountForm, oauthTenantId: event.target.value })}
+                    size="small"
+                    fullWidth
+                  />
+                )}
                 <TextField
                   label="OAuth scope"
                   value={accountForm.oauthScope}
@@ -1456,36 +1549,66 @@ const MailAutomationPage: React.FC = () => {
                   size="small"
                   fullWidth
                 />
-                <Typography variant="caption" color="text.secondary">
-                  OAuth credentials are loaded from server environment variables:
-                  {' '}
-                  {oauthEnvPrefix}CLIENT_ID,
-                  {' '}
-                  {oauthEnvPrefix}CLIENT_SECRET,
-                  {' '}
-                  {oauthEnvPrefix}REFRESH_TOKEN
-                </Typography>
-                <TextField
-                  label="OAuth client ID (from env)"
-                  value="********"
-                  size="small"
-                  fullWidth
-                  disabled
-                />
-                <TextField
-                  label="OAuth client secret (from env)"
-                  value="********"
-                  size="small"
-                  fullWidth
-                  disabled
-                />
-                <TextField
-                  label="OAuth refresh token (from env)"
-                  value="********"
-                  size="small"
-                  fullWidth
-                  disabled
-                />
+                {hasCredentialKey && (
+                  <>
+                    <Typography variant="caption" color="text.secondary">
+                      OAuth credentials are loaded from server environment variables:
+                      {' '}
+                      {oauthEnvPrefix}CLIENT_ID,
+                      {' '}
+                      {oauthEnvPrefix}CLIENT_SECRET,
+                      {' '}
+                      {oauthEnvPrefix}REFRESH_TOKEN
+                    </Typography>
+                    <TextField
+                      label="OAuth client ID (from env)"
+                      value="********"
+                      size="small"
+                      fullWidth
+                      disabled
+                    />
+                    <TextField
+                      label="OAuth client secret (from env)"
+                      value="********"
+                      size="small"
+                      fullWidth
+                      disabled
+                    />
+                    <TextField
+                      label="OAuth refresh token (from env)"
+                      value="********"
+                      size="small"
+                      fullWidth
+                      disabled
+                    />
+                  </>
+                )}
+                {usesProviderEnv && (
+                  <>
+                    <Typography variant="caption" color="text.secondary">
+                      OAuth app credentials are loaded from server environment variables:
+                      {' '}
+                      {providerEnvPrefix}CLIENT_ID,
+                      {' '}
+                      {providerEnvPrefix}CLIENT_SECRET.
+                      Refresh tokens are stored after connecting.
+                    </Typography>
+                    <TextField
+                      label="OAuth client ID (from env)"
+                      value="********"
+                      size="small"
+                      fullWidth
+                      disabled
+                    />
+                    <TextField
+                      label="OAuth client secret (from env)"
+                      value="********"
+                      size="small"
+                      fullWidth
+                      disabled
+                    />
+                  </>
+                )}
               </>
             )}
             <FormControl size="small" fullWidth>

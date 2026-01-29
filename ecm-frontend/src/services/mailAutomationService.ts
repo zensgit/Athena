@@ -21,6 +21,7 @@ export interface MailAccount {
   oauthCredentialKey?: string | null;
   oauthEnvConfigured?: boolean;
   oauthMissingEnvKeys?: string[];
+  oauthConnected?: boolean | null;
   lastFetchAt?: string | null;
   lastFetchStatus?: string | null;
   lastFetchError?: string | null;
@@ -226,6 +227,15 @@ class MailAutomationService {
 
   async testConnection(accountId: string): Promise<MailConnectionTestResult> {
     return api.post<MailConnectionTestResult>(`/integration/mail/accounts/${accountId}/test`);
+  }
+
+  async getOAuthAuthorizeUrl(accountId: string, redirectUrl?: string): Promise<{ url: string; state?: string }> {
+    return api.get<{ url: string; state?: string }>('/integration/mail/oauth/authorize', {
+      params: {
+        accountId,
+        redirectUrl,
+      },
+    });
   }
 
   async listFolders(accountId: string): Promise<string[]> {

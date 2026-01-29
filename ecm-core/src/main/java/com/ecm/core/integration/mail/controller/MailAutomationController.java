@@ -5,16 +5,19 @@ import com.ecm.core.integration.mail.model.MailRule;
 import com.ecm.core.integration.mail.repository.MailAccountRepository;
 import com.ecm.core.integration.mail.repository.MailRuleRepository;
 import com.ecm.core.integration.mail.service.MailFetcherService;
+import com.ecm.core.integration.mail.service.MailOAuthService;
 import com.ecm.core.service.AuditService;
 import com.ecm.core.service.SecurityService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.time.LocalDateTime;
 import java.time.LocalDate;
@@ -25,11 +28,13 @@ import java.util.UUID;
 @RequestMapping("/api/v1/integration/mail")
 @RequiredArgsConstructor
 @Tag(name = "Integration: Mail Automation", description = "Manage mail accounts and rules")
+@Slf4j
 public class MailAutomationController {
 
     private final MailAccountRepository accountRepository;
     private final MailRuleRepository ruleRepository;
     private final MailFetcherService fetcherService;
+    private final MailOAuthService oauthService;
     private final AuditService auditService;
     private final SecurityService securityService;
 
@@ -67,6 +72,7 @@ public class MailAutomationController {
         String oauthCredentialKey,
         boolean oauthEnvConfigured,
         List<String> oauthMissingEnvKeys,
+        Boolean oauthConnected,
         LocalDateTime lastFetchAt,
         String lastFetchStatus,
         String lastFetchError
@@ -75,6 +81,14 @@ public class MailAutomationController {
             MailAccount account,
             MailFetcherService.OAuthEnvCheckResult envCheck
         ) {
+            Boolean connected = null;
+            if (account.getSecurity() == MailAccount.SecurityType.OAUTH2) {
+                boolean hasStoredToken = account.getOauthRefreshToken() != null
+                    && !account.getOauthRefreshToken().isBlank();
+                connected = account.getOauthCredentialKey() != null && !account.getOauthCredentialKey().isBlank()
+                    ? envCheck.configured()
+                    : hasStoredToken;
+            }
             return new MailAccountResponse(
                 account.getId(),
                 account.getName(),
@@ -91,6 +105,7 @@ public class MailAutomationController {
                 account.getOauthCredentialKey(),
                 envCheck.configured(),
                 envCheck.missingEnvKeys(),
+                connected,
                 account.getLastFetchAt(),
                 account.getLastFetchStatus(),
                 account.getLastFetchError()
@@ -222,10 +237,17 @@ public class MailAutomationController {
 
     private void applyOAuthSettings(MailAccount account) {
         if (account.getSecurity() == MailAccount.SecurityType.OAUTH2) {
-            if (account.getOauthCredentialKey() == null || account.getOauthCredentialKey().isBlank()) {
-                throw new IllegalArgumentException("OAuth credential key is required for OAuth2 accounts");
+            boolean hasCredentialKey = account.getOauthCredentialKey() != null
+                && !account.getOauthCredentialKey().isBlank();
+            if (!hasCredentialKey) {
+                if (account.getOauthProvider() == null || account.getOauthProvider() == MailAccount.OAuthProvider.CUSTOM) {
+                    throw new IllegalArgumentException("OAuth provider is required when no credential key is set");
+                }
             }
             account.setPassword(null);
+            if (hasCredentialKey) {
+                clearOAuthSecrets(account);
+            }
         } else {
             account.setOauthProvider(null);
             account.setOauthTokenEndpoint(null);
@@ -243,6 +265,52 @@ public class MailAutomationController {
         account.setOauthAccessToken(null);
         account.setOauthRefreshToken(null);
         account.setOauthTokenExpiresAt(null);
+    }
+
+    @GetMapping("/oauth/authorize")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Start OAuth connect", description = "Generate OAuth authorization URL for an account")
+    public ResponseEntity<MailOAuthService.OAuthAuthorizeResponse> authorizeOAuth(
+        @RequestParam UUID accountId,
+        @RequestParam(required = false) String redirectUrl,
+        @RequestHeader(value = "X-Forwarded-Proto", required = false) String forwardedProto,
+        @RequestHeader(value = "X-Forwarded-Host", required = false) String forwardedHost
+    ) {
+        String callbackUrl = resolveCallbackUrl(forwardedProto, forwardedHost);
+        return ResponseEntity.ok(oauthService.buildAuthorizeUrl(accountId, callbackUrl, redirectUrl));
+    }
+
+    @GetMapping("/oauth/callback")
+    @Operation(summary = "OAuth callback", description = "Handle OAuth callback and persist refresh token")
+    public ResponseEntity<Void> oauthCallback(
+        @RequestParam(required = false) String code,
+        @RequestParam(required = false) String state
+    ) {
+        try {
+            MailOAuthService.OAuthCallbackResult result = oauthService.handleCallback(code, state);
+            String redirect = buildRedirect(result.redirectUrl(), true, result.accountId());
+            return ResponseEntity.status(302).header(HttpHeaders.LOCATION, redirect).build();
+        } catch (Exception ex) {
+            log.warn("OAuth callback failed", ex);
+            String redirect = buildRedirect(null, false, null);
+            return ResponseEntity.status(302).header(HttpHeaders.LOCATION, redirect).build();
+        }
+    }
+
+    private String resolveCallbackUrl(String forwardedProto, String forwardedHost) {
+        if (forwardedProto != null && forwardedHost != null) {
+            return forwardedProto + "://" + forwardedHost + "/api/v1/integration/mail/oauth/callback";
+        }
+        return ServletUriComponentsBuilder.fromCurrentContextPath()
+            .path("/api/v1/integration/mail/oauth/callback")
+            .toUriString();
+    }
+
+    private String buildRedirect(String redirectUrl, boolean success, UUID accountId) {
+        String base = redirectUrl != null && !redirectUrl.isBlank() ? redirectUrl : "/admin/mail";
+        String suffix = base.contains("?") ? "&" : "?";
+        String accountPart = accountId != null ? "&account_id=" + accountId : "";
+        return base + suffix + "oauth_success=" + (success ? "1" : "0") + accountPart;
     }
 
     @DeleteMapping("/accounts/{id}")
