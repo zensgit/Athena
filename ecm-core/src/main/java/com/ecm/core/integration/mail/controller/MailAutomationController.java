@@ -117,6 +117,7 @@ public class MailAutomationController {
         String name,
         UUID accountId,
         Integer priority,
+        Boolean enabled,
         String folder,
         String subjectFilter,
         String fromFilter,
@@ -138,6 +139,7 @@ public class MailAutomationController {
         String name,
         UUID accountId,
         Integer priority,
+        Boolean enabled,
         String folder,
         String subjectFilter,
         String fromFilter,
@@ -159,6 +161,7 @@ public class MailAutomationController {
                 rule.getName(),
                 rule.getAccountId(),
                 rule.getPriority(),
+                rule.getEnabled(),
                 rule.getFolder(),
                 rule.getSubjectFilter(),
                 rule.getFromFilter(),
@@ -482,6 +485,7 @@ public class MailAutomationController {
         rule.setName(request.name());
         rule.setAccountId(request.accountId());
         rule.setPriority(request.priority() != null ? request.priority() : 100);
+        rule.setEnabled(request.enabled() == null || request.enabled());
         rule.setFolder(request.folder() != null && !request.folder().isBlank() ? request.folder() : "INBOX");
         rule.setSubjectFilter(request.subjectFilter());
         rule.setFromFilter(request.fromFilter());
@@ -508,6 +512,7 @@ public class MailAutomationController {
         if (request.name() != null) rule.setName(request.name());
         if (request.accountId() != null) rule.setAccountId(request.accountId());
         if (request.priority() != null) rule.setPriority(request.priority());
+        if (request.enabled() != null) rule.setEnabled(request.enabled());
         if (request.folder() != null) {
             rule.setFolder(request.folder().isBlank() ? "INBOX" : request.folder());
         }

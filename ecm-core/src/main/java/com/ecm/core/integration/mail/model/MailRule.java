@@ -26,6 +26,9 @@ public class MailRule extends BaseEntity {
     @Column(nullable = false)
     private Integer priority = 100;
 
+    @Column(name = "enabled")
+    private Boolean enabled = true;
+
     @Column(name = "folder")
     private String folder = "INBOX";
 

@@ -10,4 +10,6 @@ import java.util.UUID;
 @Repository
 public interface MailRuleRepository extends JpaRepository<MailRule, UUID> {
     List<MailRule> findAllByOrderByPriorityAsc();
+
+    List<MailRule> findAllByEnabledTrueOrderByPriorityAsc();
 }

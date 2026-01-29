@@ -48,6 +48,7 @@ export interface MailRule {
   name: string;
   accountId?: string | null;
   priority: number;
+  enabled?: boolean | null;
   folder?: string | null;
   subjectFilter?: string | null;
   fromFilter?: string | null;
@@ -68,6 +69,7 @@ export interface MailRuleRequest {
   name: string;
   accountId?: string | null;
   priority?: number;
+  enabled?: boolean | null;
   folder?: string | null;
   subjectFilter?: string | null;
   fromFilter?: string | null;

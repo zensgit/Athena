@@ -88,6 +88,7 @@ const DEFAULT_RULE_FORM: MailRuleRequest & { folderPath: string; folderIdOverrid
   name: '',
   accountId: '',
   priority: 100,
+  enabled: true,
   folder: 'INBOX',
   subjectFilter: '',
   fromFilter: '',
@@ -567,6 +568,7 @@ const MailAutomationPage: React.FC = () => {
       name: rule.name,
       accountId: rule.accountId || '',
       priority: rule.priority,
+      enabled: rule.enabled ?? true,
       folder: rule.folder || 'INBOX',
       subjectFilter: rule.subjectFilter || '',
       fromFilter: rule.fromFilter || '',
@@ -616,6 +618,7 @@ const MailAutomationPage: React.FC = () => {
         name: ruleForm.name,
         accountId: ruleForm.accountId || null,
         priority: ruleForm.priority,
+        enabled: ruleForm.enabled ?? true,
         folder: ruleForm.folder || 'INBOX',
         subjectFilter: ruleForm.subjectFilter || null,
         fromFilter: ruleForm.fromFilter || null,
@@ -657,6 +660,16 @@ const MailAutomationPage: React.FC = () => {
       await loadAll();
     } catch {
       toast.error('Failed to delete mail rule');
+    }
+  };
+
+  const handleToggleRuleEnabled = async (rule: MailRule) => {
+    try {
+      await mailAutomationService.updateRule(rule.id, { enabled: !(rule.enabled ?? true) });
+      toast.success(rule.enabled ? 'Rule disabled' : 'Rule enabled');
+      await loadAll({ silent: true });
+    } catch {
+      toast.error('Failed to update rule status');
     }
   };
 
@@ -1359,6 +1372,7 @@ const MailAutomationPage: React.FC = () => {
                       <TableCell>Name</TableCell>
                       <TableCell>Account</TableCell>
                       <TableCell>Priority</TableCell>
+                      <TableCell>Status</TableCell>
                       <TableCell>Filters</TableCell>
                       <TableCell>Processing</TableCell>
                       <TableCell>Tag</TableCell>
@@ -1369,19 +1383,27 @@ const MailAutomationPage: React.FC = () => {
                   <TableBody>
                     {rules.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={8} align="center">
-                          No mail rules configured
-                        </TableCell>
-                      </TableRow>
+                      <TableCell colSpan={9} align="center">
+                        No mail rules configured
+                      </TableCell>
+                    </TableRow>
                     )}
                     {rules.map((rule) => (
                       <TableRow key={rule.id} hover>
-                        <TableCell>{rule.name}</TableCell>
-                        <TableCell>{rule.accountId ? accountNameById.get(rule.accountId) : 'All accounts'}</TableCell>
-                        <TableCell>{rule.priority}</TableCell>
+                      <TableCell>{rule.name}</TableCell>
+                      <TableCell>{rule.accountId ? accountNameById.get(rule.accountId) : 'All accounts'}</TableCell>
+                      <TableCell>{rule.priority}</TableCell>
                         <TableCell>
-                          <Box display="flex" flexDirection="column" gap={0.5}>
-                            <Typography variant="caption">Mailbox: {rule.folder || 'INBOX'}</Typography>
+                          <Chip
+                            size="small"
+                            label={(rule.enabled ?? true) ? 'Enabled' : 'Disabled'}
+                            color={(rule.enabled ?? true) ? 'success' : 'default'}
+                            variant="outlined"
+                          />
+                        </TableCell>
+                      <TableCell>
+                        <Box display="flex" flexDirection="column" gap={0.5}>
+                          <Typography variant="caption">Mailbox: {rule.folder || 'INBOX'}</Typography>
                             {rule.subjectFilter && <Typography variant="caption">Subject: {rule.subjectFilter}</Typography>}
                             {rule.fromFilter && <Typography variant="caption">From: {rule.fromFilter}</Typography>}
                             {rule.toFilter && <Typography variant="caption">To: {rule.toFilter}</Typography>}
@@ -1415,6 +1437,15 @@ const MailAutomationPage: React.FC = () => {
                           align="right"
                           sx={{ position: 'sticky', right: 0, backgroundColor: 'background.paper', zIndex: 1 }}
                         >
+                          <Tooltip title={(rule.enabled ?? true) ? 'Disable' : 'Enable'}>
+                            <span>
+                              <Checkbox
+                                size="small"
+                                checked={rule.enabled ?? true}
+                                onChange={() => handleToggleRuleEnabled(rule)}
+                              />
+                            </span>
+                          </Tooltip>
                           <Tooltip title="Edit">
                             <IconButton size="small" onClick={() => openEditRule(rule)}>
                               <Edit fontSize="small" />
@@ -1679,6 +1710,15 @@ const MailAutomationPage: React.FC = () => {
               onChange={(event) => setRuleForm({ ...ruleForm, priority: Number(event.target.value) })}
               size="small"
               fullWidth
+            />
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={ruleForm.enabled ?? true}
+                  onChange={(event) => setRuleForm({ ...ruleForm, enabled: event.target.checked })}
+                />
+              }
+              label="Enabled"
             />
             <TextField
               label="Mailbox folder"

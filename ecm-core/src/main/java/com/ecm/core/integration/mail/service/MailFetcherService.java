@@ -300,7 +300,7 @@ public class MailFetcherService {
     private void processAccount(MailAccount account, MailFetchRunStats stats) throws Exception {
         Store store = connect(account);
 
-        List<MailRule> rules = ruleRepository.findAllByOrderByPriorityAsc().stream()
+        List<MailRule> rules = ruleRepository.findAllByEnabledTrueOrderByPriorityAsc().stream()
             .filter(rule -> rule.getAccountId() == null || Objects.equals(rule.getAccountId(), account.getId()))
             .collect(Collectors.toList());
 
@@ -662,7 +662,7 @@ public class MailFetcherService {
     }
 
     private List<MailRule> findRulesForAccount(MailAccount account) {
-        return ruleRepository.findAllByOrderByPriorityAsc().stream()
+        return ruleRepository.findAllByEnabledTrueOrderByPriorityAsc().stream()
             .filter(rule -> rule.getAccountId() == null || Objects.equals(rule.getAccountId(), account.getId()))
             .collect(Collectors.toList());
     }
