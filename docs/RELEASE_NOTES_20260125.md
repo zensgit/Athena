@@ -27,3 +27,8 @@
 ## Documentation
 - Added storage permission fix guide and updated handover/installation notes.
 - Added Mail Automation design + verification docs.
+
+## 2026-01-29 Addendum
+- Processed mail retention policy + cleanup (scheduled/manual) with UI controls.
+- New retention configuration: `ECM_MAIL_PROCESSED_RETENTION_DAYS` (default 90).
+- Mail Automation Playwright verification pass recorded.
