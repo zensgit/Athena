@@ -89,6 +89,10 @@ ecm:
   audit:
     retention-days: ${ECM_AUDIT_RETENTION_DAYS:365}
 
+  mail:
+    processed:
+      retention-days: ${ECM_MAIL_PROCESSED_RETENTION_DAYS:90}
+
   identity:
     provider: ${ECM_IDENTITY_PROVIDER:local}
 

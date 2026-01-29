@@ -43,4 +43,8 @@ public interface ProcessedMailRepository extends JpaRepository<ProcessedMail, UU
         @Param("processedTo") java.time.LocalDateTime processedTo,
         Pageable pageable
     );
+
+    long countByProcessedAtBefore(java.time.LocalDateTime threshold);
+
+    void deleteByProcessedAtBefore(java.time.LocalDateTime threshold);
 }

@@ -3,7 +3,10 @@ package com.ecm.core.integration.mail.controller;
 import com.ecm.core.integration.mail.model.ProcessedMail;
 import com.ecm.core.integration.mail.repository.MailAccountRepository;
 import com.ecm.core.integration.mail.repository.MailRuleRepository;
+import com.ecm.core.integration.mail.repository.ProcessedMailRepository;
 import com.ecm.core.integration.mail.service.MailFetcherService;
+import com.ecm.core.integration.mail.service.MailOAuthService;
+import com.ecm.core.integration.mail.service.MailProcessedRetentionService;
 import com.ecm.core.service.AuditService;
 import com.ecm.core.service.SecurityService;
 import org.junit.jupiter.api.DisplayName;
@@ -48,6 +51,15 @@ class MailAutomationControllerDiagnosticsTest {
 
     @MockBean
     private MailFetcherService fetcherService;
+
+    @MockBean
+    private MailOAuthService oauthService;
+
+    @MockBean
+    private MailProcessedRetentionService retentionService;
+
+    @MockBean
+    private ProcessedMailRepository processedMailRepository;
 
     @MockBean
     private AuditService auditService;
@@ -111,7 +123,7 @@ class MailAutomationControllerDiagnosticsTest {
             "12345"
         );
 
-        Mockito.when(fetcherService.getDiagnostics(2, null, null))
+        Mockito.when(fetcherService.getDiagnostics(2, null, null, null, null, null, null))
             .thenReturn(new MailFetcherService.MailDiagnosticsResult(2, List.of(processed), List.of(document)));
 
         mockMvc.perform(get("/api/v1/integration/mail/diagnostics").param("limit", "2"))
@@ -125,6 +137,6 @@ class MailAutomationControllerDiagnosticsTest {
             .andExpect(jsonPath("$.recentDocuments[0].accountName").value("gmail-imap"))
             .andExpect(jsonPath("$.recentDocuments[0].ruleName").value("gmail-attachments"));
 
-        Mockito.verify(fetcherService).getDiagnostics(2, null, null);
+        Mockito.verify(fetcherService).getDiagnostics(2, null, null, null, null, null, null);
     }
 }

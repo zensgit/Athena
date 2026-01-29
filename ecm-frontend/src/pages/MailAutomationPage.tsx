@@ -46,6 +46,7 @@ import mailAutomationService, {
   MailPostAction,
   MailDocumentDiagnosticItem,
   ProcessedMailDiagnosticItem,
+  ProcessedMailRetentionStatus,
 } from 'services/mailAutomationService';
 import tagService from 'services/tagService';
 import nodeService from 'services/nodeService';
@@ -128,6 +129,9 @@ const MailAutomationPage: React.FC = () => {
   const [diagnosticsRuleId, setDiagnosticsRuleId] = useState('');
   const [diagnosticsStatus, setDiagnosticsStatus] = useState('');
   const [diagnosticsSubject, setDiagnosticsSubject] = useState('');
+  const [processedRetention, setProcessedRetention] = useState<ProcessedMailRetentionStatus | null>(null);
+  const [retentionLoading, setRetentionLoading] = useState(false);
+  const [retentionCleaning, setRetentionCleaning] = useState(false);
   const [selectedProcessedIds, setSelectedProcessedIds] = useState<string[]>([]);
   const [connectingAccountId, setConnectingAccountId] = useState<string | null>(null);
   const [exportOptions, setExportOptions] = useState(() => {
@@ -230,6 +234,23 @@ const MailAutomationPage: React.FC = () => {
 
   const formatReason = (reason: string) => reason.replace(/_/g, ' ');
 
+  const loadRetention = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true;
+    if (!silent) {
+      setRetentionLoading(true);
+    }
+    try {
+      const status = await mailAutomationService.getProcessedRetention();
+      setProcessedRetention(status);
+    } catch {
+      if (!silent) {
+        toast.error('Failed to load processed mail retention status');
+      }
+    } finally {
+      setRetentionLoading(false);
+    }
+  }, []);
+
   const loadAll = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent === true;
     if (!silent) {
@@ -246,6 +267,7 @@ const MailAutomationPage: React.FC = () => {
       setRules(ruleList);
       setTags(tagList.map((tag) => ({ id: tag.id, name: tag.name })));
       ok = true;
+      loadRetention({ silent: true });
     } catch {
       toast.error('Failed to load mail automation data');
     } finally {
@@ -254,7 +276,7 @@ const MailAutomationPage: React.FC = () => {
       }
     }
     return ok;
-  }, []);
+  }, [loadRetention]);
 
   const loadDiagnostics = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent === true;
@@ -327,6 +349,9 @@ const MailAutomationPage: React.FC = () => {
   const recentProcessed: ProcessedMailDiagnosticItem[] = diagnostics?.recentProcessed ?? [];
   const recentDocuments: MailDocumentDiagnosticItem[] = diagnostics?.recentDocuments ?? [];
   const exportDisabled = !exportOptions.includeProcessed && !exportOptions.includeDocuments;
+  const retentionEnabled = processedRetention?.enabled ?? false;
+  const retentionDays = processedRetention?.retentionDays ?? 0;
+  const retentionExpiredCount = processedRetention?.expiredCount ?? 0;
   const allProcessedSelected = recentProcessed.length > 0
     && recentProcessed.every((item) => selectedProcessedIds.includes(item.id));
   const someProcessedSelected = selectedProcessedIds.length > 0 && !allProcessedSelected;
@@ -388,8 +413,34 @@ const MailAutomationPage: React.FC = () => {
       toast.success(`Deleted ${result.deleted} processed record(s)`);
       setSelectedProcessedIds([]);
       await loadDiagnostics();
+      await loadRetention({ silent: true });
     } catch {
       toast.error('Failed to delete processed records');
+    }
+  };
+
+  const handleRetentionCleanup = async () => {
+    if (!retentionEnabled) {
+      toast.info('Processed mail retention is disabled');
+      return;
+    }
+    if (retentionExpiredCount === 0) {
+      toast.info('No expired processed mail to clean up');
+      return;
+    }
+    if (!window.confirm(`Delete ${retentionExpiredCount} expired processed record(s)?`)) {
+      return;
+    }
+    setRetentionCleaning(true);
+    try {
+      const result = await mailAutomationService.cleanupProcessedRetention();
+      toast.success(`Deleted ${result.deleted} expired processed record(s)`);
+      await loadDiagnostics({ silent: true });
+      await loadRetention({ silent: true });
+    } catch {
+      toast.error('Failed to clean up processed mail');
+    } finally {
+      setRetentionCleaning(false);
     }
   };
 
@@ -1165,16 +1216,64 @@ const MailAutomationPage: React.FC = () => {
                   </Typography>
 
                   <Box>
-                    <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
-                      <Typography variant="subtitle2">Processed Messages</Typography>
-                      <Button
-                        variant="outlined"
-                        size="small"
-                        onClick={handleBulkDeleteProcessed}
-                        disabled={selectedProcessedIds.length === 0}
-                      >
-                        Delete Selected
-                      </Button>
+                    <Box
+                      display="flex"
+                      alignItems="center"
+                      justifyContent="space-between"
+                      mb={1}
+                      flexWrap="wrap"
+                      gap={1}
+                    >
+                      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" gap={1}>
+                        <Typography variant="subtitle2">Processed Messages</Typography>
+                        {processedRetention ? (
+                          <>
+                            <Chip
+                              size="small"
+                              color={retentionEnabled ? 'default' : 'warning'}
+                              label={
+                                retentionEnabled
+                                  ? `Retention ${retentionDays}d`
+                                  : 'Retention disabled'
+                              }
+                            />
+                            <Chip
+                              size="small"
+                              variant="outlined"
+                              label={`Expired ${retentionExpiredCount}`}
+                            />
+                          </>
+                        ) : (
+                          <Chip size="small" variant="outlined" label="Retention unknown" />
+                        )}
+                      </Stack>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          startIcon={retentionLoading ? <CircularProgress size={16} /> : <Refresh />}
+                          onClick={() => loadRetention()}
+                          disabled={retentionLoading}
+                        >
+                          {retentionLoading ? 'Refreshing...' : 'Refresh Retention'}
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          onClick={handleRetentionCleanup}
+                          disabled={!retentionEnabled || retentionExpiredCount === 0 || retentionCleaning}
+                        >
+                          {retentionCleaning ? 'Cleaning...' : 'Clean up expired'}
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          onClick={handleBulkDeleteProcessed}
+                          disabled={selectedProcessedIds.length === 0}
+                        >
+                          Delete Selected
+                        </Button>
+                      </Stack>
                     </Box>
                     {recentProcessed.length === 0 ? (
                       <Typography variant="body2" color="text.secondary">

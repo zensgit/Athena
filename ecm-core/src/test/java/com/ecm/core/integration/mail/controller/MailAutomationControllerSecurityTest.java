@@ -2,7 +2,10 @@ package com.ecm.core.integration.mail.controller;
 
 import com.ecm.core.integration.mail.repository.MailAccountRepository;
 import com.ecm.core.integration.mail.repository.MailRuleRepository;
+import com.ecm.core.integration.mail.repository.ProcessedMailRepository;
 import com.ecm.core.integration.mail.service.MailFetcherService;
+import com.ecm.core.integration.mail.service.MailOAuthService;
+import com.ecm.core.integration.mail.service.MailProcessedRetentionService;
 import com.ecm.core.service.AuditService;
 import com.ecm.core.service.SecurityService;
 import org.hamcrest.Matchers;
@@ -26,6 +29,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.List;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -49,6 +53,15 @@ class MailAutomationControllerSecurityTest {
 
     @MockBean
     private MailFetcherService fetcherService;
+
+    @MockBean
+    private MailOAuthService oauthService;
+
+    @MockBean
+    private MailProcessedRetentionService retentionService;
+
+    @MockBean
+    private ProcessedMailRepository processedMailRepository;
 
     @MockBean
     private AuditService auditService;
@@ -101,10 +114,30 @@ class MailAutomationControllerSecurityTest {
     }
 
     @Test
+    @WithMockUser(roles = "USER")
+    @DisplayName("Processed retention requires admin role")
+    void processedRetentionRequiresAdminRole() throws Exception {
+        mockMvc.perform(get("/api/v1/integration/mail/processed/retention"))
+            .andExpect(status().isForbidden());
+
+        Mockito.verifyNoInteractions(retentionService);
+    }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    @DisplayName("Processed cleanup requires admin role")
+    void processedCleanupRequiresAdminRole() throws Exception {
+        mockMvc.perform(post("/api/v1/integration/mail/processed/cleanup"))
+            .andExpect(status().isForbidden());
+
+        Mockito.verifyNoInteractions(retentionService);
+    }
+
+    @Test
     @WithMockUser(roles = "ADMIN")
     @DisplayName("Admin can access mail diagnostics")
     void diagnosticsAllowsAdmin() throws Exception {
-        Mockito.when(fetcherService.getDiagnostics(5, null, null))
+        Mockito.when(fetcherService.getDiagnostics(5, null, null, null, null, null, null))
             .thenReturn(new MailFetcherService.MailDiagnosticsResult(5, List.of(), List.of()));
 
         mockMvc.perform(get("/api/v1/integration/mail/diagnostics").param("limit", "5"))
@@ -113,14 +146,46 @@ class MailAutomationControllerSecurityTest {
             .andExpect(jsonPath("$.recentProcessed").isArray())
             .andExpect(jsonPath("$.recentDocuments").isArray());
 
-        Mockito.verify(fetcherService).getDiagnostics(5, null, null);
+        Mockito.verify(fetcherService).getDiagnostics(5, null, null, null, null, null, null);
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("Admin can access processed retention info")
+    void processedRetentionAllowsAdmin() throws Exception {
+        Mockito.when(retentionService.getRetentionDays()).thenReturn(90);
+        Mockito.when(retentionService.isRetentionEnabled()).thenReturn(true);
+        Mockito.when(retentionService.getExpiredCount()).thenReturn(4L);
+
+        mockMvc.perform(get("/api/v1/integration/mail/processed/retention"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.retentionDays").value(90))
+            .andExpect(jsonPath("$.enabled").value(true))
+            .andExpect(jsonPath("$.expiredCount").value(4));
+
+        Mockito.verify(retentionService).getRetentionDays();
+        Mockito.verify(retentionService).isRetentionEnabled();
+        Mockito.verify(retentionService).getExpiredCount();
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("Admin can trigger processed cleanup")
+    void processedCleanupAllowsAdmin() throws Exception {
+        Mockito.when(retentionService.manualCleanupExpiredProcessedMail()).thenReturn(3L);
+
+        mockMvc.perform(post("/api/v1/integration/mail/processed/cleanup"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.deleted").value(3));
+
+        Mockito.verify(retentionService).manualCleanupExpiredProcessedMail();
     }
 
     @Test
     @WithMockUser(roles = "ADMIN")
     @DisplayName("Mail diagnostics uses default limit when not provided")
     void diagnosticsUsesDefaultLimit() throws Exception {
-        Mockito.when(fetcherService.getDiagnostics(null, null, null))
+        Mockito.when(fetcherService.getDiagnostics(null, null, null, null, null, null, null))
             .thenReturn(new MailFetcherService.MailDiagnosticsResult(25, List.of(), List.of()));
 
         mockMvc.perform(get("/api/v1/integration/mail/diagnostics"))
@@ -129,7 +194,7 @@ class MailAutomationControllerSecurityTest {
             .andExpect(jsonPath("$.recentProcessed").isArray())
             .andExpect(jsonPath("$.recentDocuments").isArray());
 
-        Mockito.verify(fetcherService).getDiagnostics(null, null, null);
+        Mockito.verify(fetcherService).getDiagnostics(null, null, null, null, null, null, null);
     }
 
     @Test
@@ -139,6 +204,10 @@ class MailAutomationControllerSecurityTest {
         Mockito.when(securityService.getCurrentUser()).thenReturn("admin");
         Mockito.when(fetcherService.exportDiagnosticsCsv(
             5,
+            null,
+            null,
+            null,
+            null,
             null,
             null,
             null,
@@ -158,6 +227,10 @@ class MailAutomationControllerSecurityTest {
 
         Mockito.verify(fetcherService).exportDiagnosticsCsv(
             5,
+            null,
+            null,
+            null,
+            null,
             null,
             null,
             null,

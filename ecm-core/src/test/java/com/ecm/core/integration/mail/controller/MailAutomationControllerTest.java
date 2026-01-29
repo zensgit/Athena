@@ -6,6 +6,7 @@ import com.ecm.core.integration.mail.repository.MailRuleRepository;
 import com.ecm.core.integration.mail.repository.ProcessedMailRepository;
 import com.ecm.core.integration.mail.service.MailFetcherService;
 import com.ecm.core.integration.mail.service.MailOAuthService;
+import com.ecm.core.integration.mail.service.MailProcessedRetentionService;
 import com.ecm.core.service.AuditService;
 import com.ecm.core.service.SecurityService;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,6 +45,9 @@ class MailAutomationControllerTest {
     private MailOAuthService oauthService;
 
     @Mock
+    private MailProcessedRetentionService retentionService;
+
+    @Mock
     private ProcessedMailRepository processedMailRepository;
 
     @Mock
@@ -62,6 +66,7 @@ class MailAutomationControllerTest {
             ruleRepository,
             fetcherService,
             oauthService,
+            retentionService,
             processedMailRepository,
             auditService,
             securityService

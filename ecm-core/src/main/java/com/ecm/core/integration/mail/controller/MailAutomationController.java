@@ -8,6 +8,7 @@ import com.ecm.core.integration.mail.repository.MailRuleRepository;
 import com.ecm.core.integration.mail.repository.ProcessedMailRepository;
 import com.ecm.core.integration.mail.service.MailFetcherService;
 import com.ecm.core.integration.mail.service.MailOAuthService;
+import com.ecm.core.integration.mail.service.MailProcessedRetentionService;
 import com.ecm.core.service.AuditService;
 import com.ecm.core.service.SecurityService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -38,6 +39,7 @@ public class MailAutomationController {
     private final MailRuleRepository ruleRepository;
     private final MailFetcherService fetcherService;
     private final MailOAuthService oauthService;
+    private final MailProcessedRetentionService retentionService;
     private final ProcessedMailRepository processedMailRepository;
     private final AuditService auditService;
     private final SecurityService securityService;
@@ -427,6 +429,24 @@ public class MailAutomationController {
         return ResponseEntity.ok(new ProcessedMailBulkDeleteResult(request.ids().size()));
     }
 
+    @GetMapping("/processed/retention")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Processed mail retention", description = "Get retention policy for processed mail")
+    public ResponseEntity<ProcessedMailRetentionStatus> getProcessedRetention() {
+        int retentionDays = retentionService.getRetentionDays();
+        boolean enabled = retentionService.isRetentionEnabled();
+        long expiredCount = retentionService.getExpiredCount();
+        return ResponseEntity.ok(new ProcessedMailRetentionStatus(retentionDays, enabled, expiredCount));
+    }
+
+    @PostMapping("/processed/cleanup")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Cleanup processed mail", description = "Delete expired processed mail based on retention")
+    public ResponseEntity<ProcessedMailCleanupResult> cleanupProcessedMail() {
+        long deleted = retentionService.manualCleanupExpiredProcessedMail();
+        return ResponseEntity.ok(new ProcessedMailCleanupResult(deleted));
+    }
+
     private void auditDiagnosticsExport(
         Integer limit,
         UUID accountId,
@@ -505,6 +525,10 @@ public class MailAutomationController {
     public record ProcessedMailBulkDeleteRequest(List<UUID> ids) {}
 
     public record ProcessedMailBulkDeleteResult(int deleted) {}
+
+    public record ProcessedMailRetentionStatus(int retentionDays, boolean enabled, long expiredCount) {}
+
+    public record ProcessedMailCleanupResult(long deleted) {}
 
     // === Rules ===
 

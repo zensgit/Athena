@@ -198,6 +198,12 @@ export interface MailDiagnosticsExportOptions {
   includeFileSize?: boolean;
 }
 
+export interface ProcessedMailRetentionStatus {
+  retentionDays: number;
+  enabled: boolean;
+  expiredCount: number;
+}
+
 class MailAutomationService {
   async listAccounts(): Promise<MailAccount[]> {
     return api.get<MailAccount[]>('/integration/mail/accounts');
@@ -223,7 +229,7 @@ class MailAutomationService {
     return api.post<MailRule>('/integration/mail/rules', data);
   }
 
-  async updateRule(ruleId: string, data: MailRuleRequest): Promise<MailRule> {
+  async updateRule(ruleId: string, data: Partial<MailRuleRequest>): Promise<MailRule> {
     return api.put<MailRule>(`/integration/mail/rules/${ruleId}`, data);
   }
 
@@ -289,6 +295,14 @@ class MailAutomationService {
 
   async bulkDeleteProcessedMail(ids: string[]): Promise<{ deleted: number }> {
     return api.post<{ deleted: number }>('/integration/mail/processed/bulk-delete', { ids });
+  }
+
+  async getProcessedRetention(): Promise<ProcessedMailRetentionStatus> {
+    return api.get<ProcessedMailRetentionStatus>('/integration/mail/processed/retention');
+  }
+
+  async cleanupProcessedRetention(): Promise<{ deleted: number }> {
+    return api.post<{ deleted: number }>('/integration/mail/processed/cleanup');
   }
 
   async triggerFetch(): Promise<MailFetchSummary> {
