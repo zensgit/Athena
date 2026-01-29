@@ -892,6 +892,19 @@ test('UI smoke: PDF upload + search + version history + preview', async ({ page 
     );
     await searchResultCard.getByRole('button', { name: 'Download' }).click();
     await downloadPromise;
+
+    await searchResultCard.getByRole('button', { name: 'More like this' }).click();
+    await expect(page.getByText('Back to results')).toBeVisible({ timeout: 60_000 });
+    await page.getByRole('button', { name: 'Back to results' }).click();
+    await expect(page.getByText(pdfName, { exact: true }).first()).toBeVisible({ timeout: 60_000 });
+
+    await searchResultCard.getByRole('button', { name: 'View', exact: true }).click();
+    const previewMenuDialog = page.getByRole('dialog').filter({ hasText: pdfName });
+    await expect(previewMenuDialog).toBeVisible({ timeout: 60_000 });
+    await previewMenuDialog.getByRole('button', { name: 'More actions' }).click();
+    await page.getByRole('menuitem', { name: 'More like this' }).click();
+    await expect(page.getByText('Back to results')).toBeVisible({ timeout: 60_000 });
+    await page.getByRole('button', { name: 'Back to results' }).click();
   } else {
     test.info().annotations.push({
       type: 'info',

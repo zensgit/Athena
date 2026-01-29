@@ -9,6 +9,11 @@
   - `cd ecm-frontend && ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 npx playwright test e2e/ui-smoke.spec.ts -g "Search"`
 - Result: ✅ 3 passed (~1.4m)
 
+## Playwright (Preview + Similar)
+- Command:
+  - `cd ecm-frontend && ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 npx playwright test e2e/ui-smoke.spec.ts -g "PDF upload \\+ search \\+ version history \\+ preview"`
+- Result: ✅ 1 passed (~14.1s)
+
 ## Manual UI Check
 - Run a search and open `Search Results`.
 - For a document card, click **More like this**.

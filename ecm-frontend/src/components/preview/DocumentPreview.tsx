@@ -1365,7 +1365,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
           </IconButton>
 
           {/* Action menu */}
-          <IconButton color="inherit" onClick={handleMenuOpen}>
+          <IconButton color="inherit" onClick={handleMenuOpen} aria-label="More actions">
             <MoreVert />
           </IconButton>
           <Menu
