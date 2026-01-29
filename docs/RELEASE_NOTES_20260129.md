@@ -12,6 +12,7 @@
 
 ## Fixes
 - Allow partial rule update payloads for enabled toggles.
+- Mail diagnostics filtering now uses dynamic specs to avoid JDBC type errors.
 
 ## Configuration
 - `ECM_MAIL_PROCESSED_RETENTION_DAYS` (default 90; set to 0 to disable).

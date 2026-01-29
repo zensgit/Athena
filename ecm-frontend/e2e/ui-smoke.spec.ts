@@ -1033,28 +1033,22 @@ test('Mail automation actions', async ({ page, request }) => {
     .locator('xpath=ancestor::div[contains(@class,"MuiCardContent-root")]');
   await expect(recentCard).toBeVisible({ timeout: 60_000 });
 
-  const refreshButton = recentCard.getByRole('button', { name: /refresh/i });
+  const refreshButton = recentCard.getByRole('button', { name: /^refresh$/i });
   await expect(refreshButton).toBeEnabled({ timeout: 30_000 });
   await refreshButton.click();
 
-  const processedSection = recentCard
-    .getByRole('heading', { name: /processed messages/i })
-    .locator('xpath=ancestor::div[contains(@class,"MuiBox-root")][1]');
-  await expect(processedSection).toBeVisible({ timeout: 30_000 });
-  if ((await processedSection.getByRole('table').count()) > 0) {
-    await expect(processedSection.getByRole('table').first()).toBeVisible({ timeout: 30_000 });
+  const processedColumnHeader = recentCard.getByRole('columnheader', { name: /^processed$/i });
+  if ((await processedColumnHeader.count()) > 0) {
+    await expect(processedColumnHeader.first()).toBeVisible({ timeout: 30_000 });
   } else {
-    await expect(processedSection.getByText(/No processed messages recorded yet/i)).toBeVisible({ timeout: 30_000 });
+    await expect(recentCard.getByText(/No processed messages recorded yet/i)).toBeVisible({ timeout: 30_000 });
   }
 
-  const documentsSection = recentCard
-    .getByRole('heading', { name: /mail documents/i })
-    .locator('xpath=ancestor::div[contains(@class,"MuiBox-root")][1]');
-  await expect(documentsSection).toBeVisible({ timeout: 30_000 });
-  if ((await documentsSection.getByRole('table').count()) > 0) {
-    await expect(documentsSection.getByRole('table').first()).toBeVisible({ timeout: 30_000 });
+  const documentsColumnHeader = recentCard.getByRole('columnheader', { name: /^created$/i });
+  if ((await documentsColumnHeader.count()) > 0) {
+    await expect(documentsColumnHeader.first()).toBeVisible({ timeout: 30_000 });
   } else {
-    await expect(documentsSection.getByText(/No mail documents found yet/i)).toBeVisible({ timeout: 30_000 });
+    await expect(recentCard.getByText(/No mail documents found yet/i)).toBeVisible({ timeout: 30_000 });
   }
 
   const accountSelect = recentCard.getByLabel('Account');
@@ -1062,10 +1056,10 @@ test('Mail automation actions', async ({ page, request }) => {
   await page.getByRole('option', { name: accounts[0].name }).click();
   await refreshButton.click();
 
-  if ((await processedSection.getByRole('table').count()) > 0) {
-    await expect(processedSection.getByRole('table').first()).toBeVisible({ timeout: 30_000 });
+  if ((await processedColumnHeader.count()) > 0) {
+    await expect(processedColumnHeader.first()).toBeVisible({ timeout: 30_000 });
   } else {
-    await expect(processedSection.getByText(/No processed messages recorded yet/i)).toBeVisible({ timeout: 30_000 });
+    await expect(recentCard.getByText(/No processed messages recorded yet/i)).toBeVisible({ timeout: 30_000 });
   }
 
   const rulesRes = await request.get(`${apiUrl}/api/v1/integration/mail/rules`, {
@@ -1079,19 +1073,19 @@ test('Mail automation actions', async ({ page, request }) => {
     await page.getByRole('option', { name: rules[0].name }).click();
     await refreshButton.click();
 
-    if ((await documentsSection.getByRole('table').count()) > 0) {
-      await expect(documentsSection.getByRole('table').first()).toBeVisible({ timeout: 30_000 });
+    if ((await documentsColumnHeader.count()) > 0) {
+      await expect(documentsColumnHeader.first()).toBeVisible({ timeout: 30_000 });
     } else {
-      await expect(documentsSection.getByText(/No mail documents found yet/i)).toBeVisible({ timeout: 30_000 });
+      await expect(recentCard.getByText(/No mail documents found yet/i)).toBeVisible({ timeout: 30_000 });
     }
   }
 
   const exportButton = recentCard.getByRole('button', { name: /export csv/i });
   await expect(exportButton).toBeVisible({ timeout: 30_000 });
 
-  const subjectCheckbox = recentCard.getByLabel('Subject');
+  const subjectCheckbox = recentCard.getByRole('checkbox', { name: 'Subject' });
   await subjectCheckbox.uncheck();
-  const pathCheckbox = recentCard.getByLabel('Path');
+  const pathCheckbox = recentCard.getByRole('checkbox', { name: 'Path' });
   await pathCheckbox.uncheck();
 
   const exportRequestPromise = page.waitForRequest((request) =>

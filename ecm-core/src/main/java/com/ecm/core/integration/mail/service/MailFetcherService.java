@@ -29,6 +29,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.IOUtils;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.http.HttpEntity;
@@ -708,16 +710,16 @@ public class MailFetcherService {
         Map<UUID, String> ruleNames = ruleRepository.findAllByOrderByPriorityAsc().stream()
             .collect(Collectors.toMap(MailRule::getId, MailRule::getName));
 
-        PageRequest pageable = PageRequest.of(0, limit);
-        List<ProcessedMail> processedMails = processedMailRepository.findRecentByFilters(
+        Specification<ProcessedMail> spec = buildProcessedMailSpec(
             accountId,
             ruleId,
             status,
             subject,
             processedFrom,
-            processedTo,
-            pageable
+            processedTo
         );
+        PageRequest sortedPageable = PageRequest.of(0, limit, Sort.by(Sort.Direction.DESC, "processedAt"));
+        List<ProcessedMail> processedMails = processedMailRepository.findAll(spec, sortedPageable).getContent();
 
         List<ProcessedMailDiagnosticItem> recentProcessed = processedMails.stream()
             .map(mail -> new ProcessedMailDiagnosticItem(
@@ -873,6 +875,38 @@ public class MailFetcherService {
             }
         }
         return csv.toString();
+    }
+
+    private Specification<ProcessedMail> buildProcessedMailSpec(
+        UUID accountId,
+        UUID ruleId,
+        ProcessedMail.Status status,
+        String subject,
+        LocalDateTime processedFrom,
+        LocalDateTime processedTo
+    ) {
+        return (root, query, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            if (accountId != null) {
+                predicates.add(cb.equal(root.get("accountId"), accountId));
+            }
+            if (ruleId != null) {
+                predicates.add(cb.equal(root.get("ruleId"), ruleId));
+            }
+            if (status != null) {
+                predicates.add(cb.equal(root.get("status"), status));
+            }
+            if (subject != null && !subject.isBlank()) {
+                predicates.add(cb.like(cb.lower(root.get("subject")), "%" + subject.toLowerCase() + "%"));
+            }
+            if (processedFrom != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("processedAt"), processedFrom));
+            }
+            if (processedTo != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get("processedAt"), processedTo));
+            }
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
     }
 
     private MailDiagnosticsExportOptions resolveExportOptions(

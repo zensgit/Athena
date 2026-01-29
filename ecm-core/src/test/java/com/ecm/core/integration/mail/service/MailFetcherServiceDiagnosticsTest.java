@@ -22,7 +22,9 @@ import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.core.env.Environment;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -125,15 +127,8 @@ class MailFetcherServiceDiagnosticsTest {
 
         when(accountRepository.findAll()).thenReturn(List.of(account));
         when(ruleRepository.findAllByOrderByPriorityAsc()).thenReturn(List.of(rule));
-        when(processedMailRepository.findRecentByFilters(
-            Mockito.eq(accountId),
-            Mockito.eq(ruleId),
-            Mockito.isNull(),
-            Mockito.isNull(),
-            Mockito.isNull(),
-            Mockito.isNull(),
-            any(Pageable.class)))
-            .thenReturn(List.of(processed));
+        when(processedMailRepository.findAll(any(Specification.class), any(Pageable.class)))
+            .thenReturn(new PageImpl<>(List.of(processed)));
         when(documentRepository.findRecentMailDocumentsWithFilters(25, accountId.toString(), ruleId.toString()))
             .thenReturn(List.of(document));
 
@@ -153,15 +148,8 @@ class MailFetcherServiceDiagnosticsTest {
     void diagnosticsClampsLimit() {
         when(accountRepository.findAll()).thenReturn(List.of());
         when(ruleRepository.findAllByOrderByPriorityAsc()).thenReturn(List.of());
-        when(processedMailRepository.findRecentByFilters(
-            Mockito.isNull(),
-            Mockito.isNull(),
-            Mockito.isNull(),
-            Mockito.isNull(),
-            Mockito.isNull(),
-            Mockito.isNull(),
-            any(Pageable.class)))
-            .thenReturn(List.of());
+        when(processedMailRepository.findAll(any(Specification.class), any(Pageable.class)))
+            .thenReturn(new PageImpl<>(List.of()));
         when(documentRepository.findRecentMailDocuments(200)).thenReturn(List.of());
 
         var result = service.getDiagnostics(999, null, null);
@@ -169,15 +157,7 @@ class MailFetcherServiceDiagnosticsTest {
         assertEquals(200, result.limit());
 
         ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
-        verify(processedMailRepository).findRecentByFilters(
-            Mockito.isNull(),
-            Mockito.isNull(),
-            Mockito.isNull(),
-            Mockito.isNull(),
-            Mockito.isNull(),
-            Mockito.isNull(),
-            pageableCaptor.capture()
-        );
+        verify(processedMailRepository).findAll(any(Specification.class), pageableCaptor.capture());
         assertEquals(200, pageableCaptor.getValue().getPageSize());
         verify(documentRepository).findRecentMailDocuments(200);
     }
@@ -222,15 +202,8 @@ class MailFetcherServiceDiagnosticsTest {
 
         when(accountRepository.findAll()).thenReturn(List.of(account));
         when(ruleRepository.findAllByOrderByPriorityAsc()).thenReturn(List.of(rule));
-        when(processedMailRepository.findRecentByFilters(
-            Mockito.eq(accountId),
-            Mockito.eq(ruleId),
-            Mockito.isNull(),
-            Mockito.isNull(),
-            Mockito.isNull(),
-            Mockito.isNull(),
-            any(Pageable.class)))
-            .thenReturn(List.of(processed));
+        when(processedMailRepository.findAll(any(Specification.class), any(Pageable.class)))
+            .thenReturn(new PageImpl<>(List.of(processed)));
         when(documentRepository.findRecentMailDocumentsWithFilters(10, accountId.toString(), ruleId.toString()))
             .thenReturn(List.of(document));
 

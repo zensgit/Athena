@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.8.xsd">
+
+    <changeSet id="022-fix-mail-processed-subject-type" author="codex">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <sqlCheck expectedResult="bytea">
+                SELECT data_type
+                FROM information_schema.columns
+                WHERE table_name = 'mail_processed_messages'
+                  AND column_name = 'subject'
+            </sqlCheck>
+        </preConditions>
+        <comment>Ensure mail_processed_messages.subject is text for case-insensitive filters</comment>
+        <sql>
+            ALTER TABLE mail_processed_messages
+            ALTER COLUMN subject TYPE TEXT
+            USING convert_from(subject, 'UTF8');
+        </sql>
+    </changeSet>
+
+</databaseChangeLog>

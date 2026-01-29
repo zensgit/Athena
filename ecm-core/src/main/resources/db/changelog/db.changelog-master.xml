@@ -32,6 +32,7 @@
     <include file="db/changelog/changes/019-add-scheduled-rule-manual-backfill-minutes.xml"/>
     <include file="db/changelog/changes/020-add-saved-searches-table.xml"/>
     <include file="db/changelog/changes/021-add-mail-rule-enabled.xml"/>
+    <include file="db/changelog/changes/022-fix-mail-processed-subject-type.xml"/>
     <include file="db/changelog/changes/007-insert-initial-data.xml"/>
 
 </databaseChangeLog>
