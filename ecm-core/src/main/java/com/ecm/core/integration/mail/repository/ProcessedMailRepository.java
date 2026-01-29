@@ -29,10 +29,18 @@ public interface ProcessedMailRepository extends JpaRepository<ProcessedMail, UU
     @Query("SELECT p FROM ProcessedMail p " +
            "WHERE (:accountId IS NULL OR p.accountId = :accountId) " +
            "AND (:ruleId IS NULL OR p.ruleId = :ruleId) " +
+           "AND (:status IS NULL OR p.status = :status) " +
+           "AND (:subject IS NULL OR LOWER(p.subject) LIKE LOWER(CONCAT('%', :subject, '%'))) " +
+           "AND (:processedFrom IS NULL OR p.processedAt >= :processedFrom) " +
+           "AND (:processedTo IS NULL OR p.processedAt <= :processedTo) " +
            "ORDER BY p.processedAt DESC")
     List<ProcessedMail> findRecentByFilters(
         @Param("accountId") UUID accountId,
         @Param("ruleId") UUID ruleId,
+        @Param("status") ProcessedMail.Status status,
+        @Param("subject") String subject,
+        @Param("processedFrom") java.time.LocalDateTime processedFrom,
+        @Param("processedTo") java.time.LocalDateTime processedTo,
         Pageable pageable
     );
 }

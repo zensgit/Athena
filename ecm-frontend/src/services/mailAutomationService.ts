@@ -182,6 +182,10 @@ export interface MailDiagnosticsResult {
 export interface MailDiagnosticsFilters {
   accountId?: string | null;
   ruleId?: string | null;
+  status?: 'PROCESSED' | 'ERROR' | string | null;
+  subject?: string | null;
+  processedFrom?: string | null;
+  processedTo?: string | null;
 }
 
 export interface MailDiagnosticsExportOptions {
@@ -250,6 +254,10 @@ class MailAutomationService {
         limit,
         accountId: filters?.accountId || undefined,
         ruleId: filters?.ruleId || undefined,
+        status: filters?.status || undefined,
+        subject: filters?.subject || undefined,
+        processedFrom: filters?.processedFrom || undefined,
+        processedTo: filters?.processedTo || undefined,
       },
     });
   }
@@ -264,6 +272,10 @@ class MailAutomationService {
         limit,
         accountId: filters?.accountId || undefined,
         ruleId: filters?.ruleId || undefined,
+        status: filters?.status || undefined,
+        subject: filters?.subject || undefined,
+        processedFrom: filters?.processedFrom || undefined,
+        processedTo: filters?.processedTo || undefined,
         includeProcessed: options?.includeProcessed ?? undefined,
         includeDocuments: options?.includeDocuments ?? undefined,
         includeSubject: options?.includeSubject ?? undefined,
@@ -273,6 +285,10 @@ class MailAutomationService {
         includeFileSize: options?.includeFileSize ?? undefined,
       },
     });
+  }
+
+  async bulkDeleteProcessedMail(ids: string[]): Promise<{ deleted: number }> {
+    return api.post<{ deleted: number }>('/integration/mail/processed/bulk-delete', { ids });
   }
 
   async triggerFetch(): Promise<MailFetchSummary> {

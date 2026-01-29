@@ -3,6 +3,7 @@ package com.ecm.core.integration.mail.controller;
 import com.ecm.core.integration.mail.model.MailAccount;
 import com.ecm.core.integration.mail.repository.MailAccountRepository;
 import com.ecm.core.integration.mail.repository.MailRuleRepository;
+import com.ecm.core.integration.mail.repository.ProcessedMailRepository;
 import com.ecm.core.integration.mail.service.MailFetcherService;
 import com.ecm.core.integration.mail.service.MailOAuthService;
 import com.ecm.core.service.AuditService;
@@ -43,6 +44,9 @@ class MailAutomationControllerTest {
     private MailOAuthService oauthService;
 
     @Mock
+    private ProcessedMailRepository processedMailRepository;
+
+    @Mock
     private AuditService auditService;
 
     @Mock
@@ -58,6 +62,7 @@ class MailAutomationControllerTest {
             ruleRepository,
             fetcherService,
             oauthService,
+            processedMailRepository,
             auditService,
             securityService
         );

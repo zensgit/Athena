@@ -126,6 +126,9 @@ const MailAutomationPage: React.FC = () => {
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
   const [diagnosticsAccountId, setDiagnosticsAccountId] = useState('');
   const [diagnosticsRuleId, setDiagnosticsRuleId] = useState('');
+  const [diagnosticsStatus, setDiagnosticsStatus] = useState('');
+  const [diagnosticsSubject, setDiagnosticsSubject] = useState('');
+  const [selectedProcessedIds, setSelectedProcessedIds] = useState<string[]>([]);
   const [connectingAccountId, setConnectingAccountId] = useState<string | null>(null);
   const [exportOptions, setExportOptions] = useState(() => {
     const fallback = {
@@ -262,8 +265,11 @@ const MailAutomationPage: React.FC = () => {
       const result = await mailAutomationService.getDiagnostics(diagnosticsLimit, {
         accountId: diagnosticsAccountId || undefined,
         ruleId: diagnosticsRuleId || undefined,
+        status: diagnosticsStatus || undefined,
+        subject: diagnosticsSubject || undefined,
       });
       setDiagnostics(result);
+      setSelectedProcessedIds([]);
     } catch {
       if (!silent) {
         toast.error('Failed to load mail diagnostics');
@@ -271,7 +277,7 @@ const MailAutomationPage: React.FC = () => {
     } finally {
       setDiagnosticsLoading(false);
     }
-  }, [diagnosticsAccountId, diagnosticsRuleId]);
+  }, [diagnosticsAccountId, diagnosticsRuleId, diagnosticsStatus, diagnosticsSubject]);
 
   useEffect(() => {
     loadAll();
@@ -294,7 +300,7 @@ const MailAutomationPage: React.FC = () => {
 
   useEffect(() => {
     loadDiagnostics({ silent: true });
-  }, [diagnosticsAccountId, diagnosticsRuleId, loadDiagnostics]);
+  }, [diagnosticsAccountId, diagnosticsRuleId, diagnosticsStatus, diagnosticsSubject, loadDiagnostics]);
 
   useEffect(() => {
     if (!folderAccountId && accounts.length > 0) {
@@ -321,6 +327,9 @@ const MailAutomationPage: React.FC = () => {
   const recentProcessed: ProcessedMailDiagnosticItem[] = diagnostics?.recentProcessed ?? [];
   const recentDocuments: MailDocumentDiagnosticItem[] = diagnostics?.recentDocuments ?? [];
   const exportDisabled = !exportOptions.includeProcessed && !exportOptions.includeDocuments;
+  const allProcessedSelected = recentProcessed.length > 0
+    && recentProcessed.every((item) => selectedProcessedIds.includes(item.id));
+  const someProcessedSelected = selectedProcessedIds.length > 0 && !allProcessedSelected;
 
   const exportDiagnosticsCsv = async () => {
     if (exportDisabled) {
@@ -331,6 +340,8 @@ const MailAutomationPage: React.FC = () => {
       const blob = await mailAutomationService.exportDiagnosticsCsv(diagnosticsLimit, {
         accountId: diagnosticsAccountId || undefined,
         ruleId: diagnosticsRuleId || undefined,
+        status: diagnosticsStatus || undefined,
+        subject: diagnosticsSubject || undefined,
       }, exportOptions);
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
@@ -344,6 +355,41 @@ const MailAutomationPage: React.FC = () => {
       URL.revokeObjectURL(url);
     } catch {
       toast.error('Failed to export mail diagnostics');
+    }
+  };
+
+  const toggleProcessedSelection = (id: string) => {
+    setSelectedProcessedIds((prev) =>
+      prev.includes(id) ? prev.filter((existing) => existing !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAllProcessed = () => {
+    if (recentProcessed.length === 0) {
+      return;
+    }
+    const allSelected = recentProcessed.every((item) => selectedProcessedIds.includes(item.id));
+    if (allSelected) {
+      setSelectedProcessedIds([]);
+    } else {
+      setSelectedProcessedIds(recentProcessed.map((item) => item.id));
+    }
+  };
+
+  const handleBulkDeleteProcessed = async () => {
+    if (selectedProcessedIds.length === 0) {
+      return;
+    }
+    if (!window.confirm(`Delete ${selectedProcessedIds.length} processed message record(s)?`)) {
+      return;
+    }
+    try {
+      const result = await mailAutomationService.bulkDeleteProcessedMail(selectedProcessedIds);
+      toast.success(`Deleted ${result.deleted} processed record(s)`);
+      setSelectedProcessedIds([]);
+      await loadDiagnostics();
+    } catch {
+      toast.error('Failed to delete processed records');
     }
   };
 
@@ -980,6 +1026,28 @@ const MailAutomationPage: React.FC = () => {
                         ))}
                       </Select>
                     </FormControl>
+                    <FormControl size="small" sx={{ minWidth: 200 }}>
+                      <InputLabel id="diagnostics-status-label">Status</InputLabel>
+                      <Select
+                        labelId="diagnostics-status-label"
+                        label="Status"
+                        value={diagnosticsStatus}
+                        onChange={(event) => setDiagnosticsStatus(event.target.value)}
+                      >
+                        <MenuItem value="">
+                          <em>All Statuses</em>
+                        </MenuItem>
+                        <MenuItem value="PROCESSED">Processed</MenuItem>
+                        <MenuItem value="ERROR">Error</MenuItem>
+                      </Select>
+                    </FormControl>
+                    <TextField
+                      size="small"
+                      label="Subject contains"
+                      value={diagnosticsSubject}
+                      onChange={(event) => setDiagnosticsSubject(event.target.value)}
+                      sx={{ minWidth: 220 }}
+                    />
                   </Stack>
                   <Stack spacing={1}>
                     <Typography variant="subtitle2">Export Fields</Typography>
@@ -1097,9 +1165,17 @@ const MailAutomationPage: React.FC = () => {
                   </Typography>
 
                   <Box>
-                    <Typography variant="subtitle2" gutterBottom>
-                      Processed Messages
-                    </Typography>
+                    <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+                      <Typography variant="subtitle2">Processed Messages</Typography>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={handleBulkDeleteProcessed}
+                        disabled={selectedProcessedIds.length === 0}
+                      >
+                        Delete Selected
+                      </Button>
+                    </Box>
                     {recentProcessed.length === 0 ? (
                       <Typography variant="body2" color="text.secondary">
                         No processed messages recorded yet.
@@ -1109,6 +1185,13 @@ const MailAutomationPage: React.FC = () => {
                         <Table size="small">
                           <TableHead>
                             <TableRow>
+                              <TableCell padding="checkbox">
+                                <Checkbox
+                                  checked={allProcessedSelected}
+                                  indeterminate={someProcessedSelected}
+                                  onChange={toggleSelectAllProcessed}
+                                />
+                              </TableCell>
                               <TableCell>Processed</TableCell>
                               <TableCell>Status</TableCell>
                               <TableCell>Account</TableCell>
@@ -1121,6 +1204,12 @@ const MailAutomationPage: React.FC = () => {
                           <TableBody>
                             {recentProcessed.map((item) => (
                               <TableRow key={item.id} hover>
+                                <TableCell padding="checkbox">
+                                  <Checkbox
+                                    checked={selectedProcessedIds.includes(item.id)}
+                                    onChange={() => toggleProcessedSelection(item.id)}
+                                  />
+                                </TableCell>
                                 <TableCell>{formatDateTime(item.processedAt)}</TableCell>
                                 <TableCell>
                                   <Chip size="small" color={statusColor(item.status)} label={item.status} />

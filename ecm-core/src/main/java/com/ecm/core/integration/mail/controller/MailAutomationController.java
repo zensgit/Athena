@@ -2,8 +2,10 @@ package com.ecm.core.integration.mail.controller;
 
 import com.ecm.core.integration.mail.model.MailAccount;
 import com.ecm.core.integration.mail.model.MailRule;
+import com.ecm.core.integration.mail.model.ProcessedMail;
 import com.ecm.core.integration.mail.repository.MailAccountRepository;
 import com.ecm.core.integration.mail.repository.MailRuleRepository;
+import com.ecm.core.integration.mail.repository.ProcessedMailRepository;
 import com.ecm.core.integration.mail.service.MailFetcherService;
 import com.ecm.core.integration.mail.service.MailOAuthService;
 import com.ecm.core.service.AuditService;
@@ -18,6 +20,7 @@ import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
+import org.springframework.format.annotation.DateTimeFormat;
 
 import java.time.LocalDateTime;
 import java.time.LocalDate;
@@ -35,6 +38,7 @@ public class MailAutomationController {
     private final MailRuleRepository ruleRepository;
     private final MailFetcherService fetcherService;
     private final MailOAuthService oauthService;
+    private final ProcessedMailRepository processedMailRepository;
     private final AuditService auditService;
     private final SecurityService securityService;
 
@@ -343,9 +347,17 @@ public class MailAutomationController {
     public ResponseEntity<MailFetcherService.MailDiagnosticsResult> getDiagnostics(
         @RequestParam(required = false) Integer limit,
         @RequestParam(required = false) UUID accountId,
-        @RequestParam(required = false) UUID ruleId
+        @RequestParam(required = false) UUID ruleId,
+        @RequestParam(required = false) ProcessedMail.Status status,
+        @RequestParam(required = false) String subject,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+            LocalDateTime processedFrom,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+            LocalDateTime processedTo
     ) {
-        return ResponseEntity.ok(fetcherService.getDiagnostics(limit, accountId, ruleId));
+        return ResponseEntity.ok(
+            fetcherService.getDiagnostics(limit, accountId, ruleId, status, subject, processedFrom, processedTo)
+        );
     }
 
     @GetMapping("/diagnostics/export")
@@ -355,6 +367,12 @@ public class MailAutomationController {
         @RequestParam(required = false) Integer limit,
         @RequestParam(required = false) UUID accountId,
         @RequestParam(required = false) UUID ruleId,
+        @RequestParam(required = false) ProcessedMail.Status status,
+        @RequestParam(required = false) String subject,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+            LocalDateTime processedFrom,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+            LocalDateTime processedTo,
         @RequestParam(required = false) Boolean includeProcessed,
         @RequestParam(required = false) Boolean includeDocuments,
         @RequestParam(required = false) Boolean includeSubject,
@@ -376,6 +394,10 @@ public class MailAutomationController {
             limit,
             accountId,
             ruleId,
+            status,
+            subject,
+            processedFrom,
+            processedTo,
             includeProcessed,
             includeDocuments,
             includeSubject,
@@ -390,6 +412,19 @@ public class MailAutomationController {
             .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
             .contentType(MediaType.valueOf("text/csv"))
             .body(csv);
+    }
+
+    @PostMapping("/processed/bulk-delete")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Bulk delete processed mail", description = "Delete processed mail records by id")
+    public ResponseEntity<ProcessedMailBulkDeleteResult> bulkDeleteProcessed(
+        @RequestBody ProcessedMailBulkDeleteRequest request
+    ) {
+        if (request == null || request.ids() == null || request.ids().isEmpty()) {
+            return ResponseEntity.ok(new ProcessedMailBulkDeleteResult(0));
+        }
+        processedMailRepository.deleteAllById(request.ids());
+        return ResponseEntity.ok(new ProcessedMailBulkDeleteResult(request.ids().size()));
     }
 
     private void auditDiagnosticsExport(
@@ -466,6 +501,10 @@ public class MailAutomationController {
         boolean includeFileSize
     ) {
     }
+
+    public record ProcessedMailBulkDeleteRequest(List<UUID> ids) {}
+
+    public record ProcessedMailBulkDeleteResult(int deleted) {}
 
     // === Rules ===
 

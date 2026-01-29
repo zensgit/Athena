@@ -256,9 +256,23 @@ public class MailFetcherService {
     }
 
     public MailDiagnosticsResult getDiagnostics(Integer limit, UUID accountId, UUID ruleId) {
+        return getDiagnostics(limit, accountId, ruleId, null, null, null, null);
+    }
+
+    public MailDiagnosticsResult getDiagnostics(
+        Integer limit,
+        UUID accountId,
+        UUID ruleId,
+        ProcessedMail.Status status,
+        String subject,
+        LocalDateTime processedFrom,
+        LocalDateTime processedTo
+    ) {
         int effectiveLimit = Math.max(1, Math.min(limit != null ? limit : 25, 200));
         try {
-            return runWithSystemAuthenticationWithResult(() -> buildDiagnostics(effectiveLimit, accountId, ruleId));
+            return runWithSystemAuthenticationWithResult(
+                () -> buildDiagnostics(effectiveLimit, accountId, ruleId, status, subject, processedFrom, processedTo)
+            );
         } catch (Exception e) {
             String message = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             throw new IllegalArgumentException("Failed to build mail diagnostics: " + message, e);
@@ -269,6 +283,10 @@ public class MailFetcherService {
         Integer limit,
         UUID accountId,
         UUID ruleId,
+        ProcessedMail.Status status,
+        String subject,
+        LocalDateTime processedFrom,
+        LocalDateTime processedTo,
         Boolean includeProcessed,
         Boolean includeDocuments,
         Boolean includeSubject,
@@ -289,7 +307,16 @@ public class MailFetcherService {
         );
         try {
             return runWithSystemAuthenticationWithResult(
-                () -> buildDiagnosticsCsv(effectiveLimit, accountId, ruleId, exportOptions)
+                () -> buildDiagnosticsCsv(
+                    effectiveLimit,
+                    accountId,
+                    ruleId,
+                    status,
+                    subject,
+                    processedFrom,
+                    processedTo,
+                    exportOptions
+                )
             );
         } catch (Exception e) {
             String message = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
@@ -667,27 +694,30 @@ public class MailFetcherService {
             .collect(Collectors.toList());
     }
 
-    private MailDiagnosticsResult buildDiagnostics(int limit, UUID accountId, UUID ruleId) {
+    private MailDiagnosticsResult buildDiagnostics(
+        int limit,
+        UUID accountId,
+        UUID ruleId,
+        ProcessedMail.Status status,
+        String subject,
+        LocalDateTime processedFrom,
+        LocalDateTime processedTo
+    ) {
         Map<UUID, String> accountNames = accountRepository.findAll().stream()
             .collect(Collectors.toMap(MailAccount::getId, MailAccount::getName));
         Map<UUID, String> ruleNames = ruleRepository.findAllByOrderByPriorityAsc().stream()
             .collect(Collectors.toMap(MailRule::getId, MailRule::getName));
 
         PageRequest pageable = PageRequest.of(0, limit);
-        List<ProcessedMail> processedMails;
-        if (accountId == null && ruleId == null) {
-            processedMails = processedMailRepository.findAllByOrderByProcessedAtDesc(pageable);
-        } else if (accountId != null && ruleId != null) {
-            processedMails = processedMailRepository.findAllByAccountIdAndRuleIdOrderByProcessedAtDesc(
-                accountId,
-                ruleId,
-                pageable
-            );
-        } else if (accountId != null) {
-            processedMails = processedMailRepository.findAllByAccountIdOrderByProcessedAtDesc(accountId, pageable);
-        } else {
-            processedMails = processedMailRepository.findAllByRuleIdOrderByProcessedAtDesc(ruleId, pageable);
-        }
+        List<ProcessedMail> processedMails = processedMailRepository.findRecentByFilters(
+            accountId,
+            ruleId,
+            status,
+            subject,
+            processedFrom,
+            processedTo,
+            pageable
+        );
 
         List<ProcessedMailDiagnosticItem> recentProcessed = processedMails.stream()
             .map(mail -> new ProcessedMailDiagnosticItem(
@@ -724,11 +754,27 @@ public class MailFetcherService {
         int limit,
         UUID accountId,
         UUID ruleId,
+        ProcessedMail.Status status,
+        String subject,
+        LocalDateTime processedFrom,
+        LocalDateTime processedTo,
         MailDiagnosticsExportOptions exportOptions
     ) {
-        MailDiagnosticsResult diagnostics = buildDiagnostics(limit, accountId, ruleId);
+        MailDiagnosticsResult diagnostics = buildDiagnostics(
+            limit,
+            accountId,
+            ruleId,
+            status,
+            subject,
+            processedFrom,
+            processedTo
+        );
         String accountLabel = resolveAccountLabel(accountId);
         String ruleLabel = resolveRuleLabel(ruleId);
+        String statusLabel = status != null ? status.name() : "ALL";
+        String subjectLabel = subject != null && !subject.isBlank() ? subject : "ALL";
+        String processedFromLabel = processedFrom != null ? processedFrom.toString() : "ALL";
+        String processedToLabel = processedTo != null ? processedTo.toString() : "ALL";
 
         StringBuilder csv = new StringBuilder();
         appendCsvRow(csv, "Mail Diagnostics Export");
@@ -736,6 +782,10 @@ public class MailFetcherService {
         appendCsvRow(csv, "Limit", diagnostics.limit());
         appendCsvRow(csv, "AccountFilter", accountLabel);
         appendCsvRow(csv, "RuleFilter", ruleLabel);
+        appendCsvRow(csv, "StatusFilter", statusLabel);
+        appendCsvRow(csv, "SubjectFilter", subjectLabel);
+        appendCsvRow(csv, "ProcessedFrom", processedFromLabel);
+        appendCsvRow(csv, "ProcessedTo", processedToLabel);
         appendCsvRow(csv, "IncludeProcessed", exportOptions.includeProcessed());
         appendCsvRow(csv, "IncludeDocuments", exportOptions.includeDocuments());
         appendCsvRow(csv, "IncludeSubject", exportOptions.includeSubject());
