@@ -15,7 +15,7 @@
   - `GET /api/v1/integration/mail/rules` includes `enabled` flag.
   - Result: ✅ Endpoint reachable; no rules returned in current environment.
 - Create/update rule via API:
-  - Result: ⚠️ Subsequent create attempt returned 401 (token expired). Re-run with fresh admin token if needed.
+  - Result: ✅ Created rule, toggled enabled=false, and verified via list.
 
 ## Frontend Lint
 - Command: `cd ecm-frontend && npm run lint`
