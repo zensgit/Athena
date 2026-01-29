@@ -4,6 +4,7 @@ import com.ecm.core.integration.mail.model.MailAccount;
 import com.ecm.core.integration.mail.repository.MailAccountRepository;
 import com.ecm.core.integration.mail.repository.MailRuleRepository;
 import com.ecm.core.integration.mail.service.MailFetcherService;
+import com.ecm.core.integration.mail.service.MailOAuthService;
 import com.ecm.core.service.AuditService;
 import com.ecm.core.service.SecurityService;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,6 +40,9 @@ class MailAutomationControllerTest {
     private MailFetcherService fetcherService;
 
     @Mock
+    private MailOAuthService oauthService;
+
+    @Mock
     private AuditService auditService;
 
     @Mock
@@ -53,6 +57,7 @@ class MailAutomationControllerTest {
             accountRepository,
             ruleRepository,
             fetcherService,
+            oauthService,
             auditService,
             securityService
         );
@@ -66,7 +71,7 @@ class MailAutomationControllerTest {
     }
 
     @Test
-    @DisplayName("OAuth2 accounts require oauthCredentialKey")
+    @DisplayName("Custom OAuth accounts require oauthCredentialKey")
     void createOauthAccountRequiresCredentialKey() {
         var request = new MailAutomationController.MailAccountRequest(
             "gmail",
@@ -77,7 +82,7 @@ class MailAutomationControllerTest {
             MailAccount.SecurityType.OAUTH2,
             true,
             10,
-            MailAccount.OAuthProvider.GOOGLE,
+            MailAccount.OAuthProvider.CUSTOM,
             null,
             null,
             "https://mail.google.com/",

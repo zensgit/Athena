@@ -13,6 +13,7 @@
 ## Backend Sanity
 - Verify `enabled` persisted:
   - `GET /api/v1/integration/mail/rules` includes `enabled` flag.
+  - Result: ✅ Endpoint reachable; no rules returned in current environment.
 
 ## Frontend Lint
 - Command: `cd ecm-frontend && npm run lint`
