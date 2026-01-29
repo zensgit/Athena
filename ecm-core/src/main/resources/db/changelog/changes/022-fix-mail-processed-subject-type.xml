@@ -16,9 +16,21 @@
         </preConditions>
         <comment>Ensure mail_processed_messages.subject is text for case-insensitive filters</comment>
         <sql>
+            CREATE OR REPLACE FUNCTION safe_convert_utf8(data bytea) RETURNS text AS $$
+            BEGIN
+                BEGIN
+                    RETURN convert_from(data, 'UTF8');
+                EXCEPTION WHEN OTHERS THEN
+                    RETURN encode(data, 'escape');
+                END;
+            END;
+            $$ LANGUAGE plpgsql IMMUTABLE;
+
             ALTER TABLE mail_processed_messages
             ALTER COLUMN subject TYPE TEXT
-            USING convert_from(subject, 'UTF8');
+            USING safe_convert_utf8(subject);
+
+            DROP FUNCTION safe_convert_utf8(bytea);
         </sql>
     </changeSet>
 

@@ -62,6 +62,7 @@ import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
@@ -897,7 +898,7 @@ public class MailFetcherService {
                 predicates.add(cb.equal(root.get("status"), status));
             }
             if (subject != null && !subject.isBlank()) {
-                predicates.add(cb.like(cb.lower(root.get("subject")), "%" + subject.toLowerCase() + "%"));
+                predicates.add(cb.like(cb.lower(root.get("subject")), "%" + subject.toLowerCase(Locale.ROOT) + "%"));
             }
             if (processedFrom != null) {
                 predicates.add(cb.greaterThanOrEqualTo(root.get("processedAt"), processedFrom));
