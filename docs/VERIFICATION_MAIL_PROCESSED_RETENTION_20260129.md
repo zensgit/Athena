@@ -17,3 +17,7 @@
 - `cd ecm-core && mvn test` ✅
 - `cd ecm-frontend && npm run lint` ✅
 - `cd ecm-frontend && ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 KEYCLOAK_URL=http://localhost:8180 ECM_E2E_USERNAME=admin ECM_E2E_PASSWORD=admin npx playwright test e2e/mail-automation.spec.ts` ✅ (2 passed)
+
+## Playwright Retention Check
+- Script: ad-hoc Playwright login + retention chip check (headless).
+- Result: `Retention 90d`, `Expired 0`, cleanup not triggered.
