@@ -513,6 +513,22 @@ test('UI smoke: browse + upload + search + copy/move + facets + delete + rules',
       await expect(page.getByText(filename, { exact: true }).first()).toBeVisible({ timeout: 60_000 });
 
       await page.goto('/saved-searches', { waitUntil: 'domcontentloaded' });
+      await page.getByRole('button', { name: `Pin saved search ${savedSearchName}` }).click();
+      await expect(page.getByText('Pinned saved search')).toBeVisible({ timeout: 60_000 });
+
+      await page.goto('/admin', { waitUntil: 'domcontentloaded' });
+      await expect(page.getByText('System Dashboard')).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByText('Pinned Saved Searches')).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByText(savedSearchName)).toBeVisible({ timeout: 60_000 });
+      await page.getByRole('button', { name: `Run saved search ${savedSearchName}` }).click();
+      await expect(page.getByText(filename, { exact: true }).first()).toBeVisible({ timeout: 60_000 });
+
+      await page.goto('/admin', { waitUntil: 'domcontentloaded' });
+      await expect(page.getByText(savedSearchName)).toBeVisible({ timeout: 60_000 });
+      await page.getByRole('button', { name: `Unpin saved search ${savedSearchName}` }).click();
+      await expect(page.getByText(savedSearchName)).toHaveCount(0, { timeout: 60_000 });
+
+      await page.goto('/saved-searches', { waitUntil: 'domcontentloaded' });
       await page.getByRole('button', { name: `Delete saved search ${savedSearchName}` }).click();
       await expect(page.getByText('Saved search deleted')).toBeVisible({ timeout: 60_000 });
 

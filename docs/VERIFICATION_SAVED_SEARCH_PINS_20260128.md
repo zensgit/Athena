@@ -4,9 +4,10 @@
 - Command: `cd ecm-frontend && npm run lint`
 - Result: ✅ Passed
 
-## Automation Note
-- The existing UI smoke suite covers search flows but does not pin saved searches.
-- Manual verification is required for pin/unpin and dashboard visibility.
+## Playwright (Search flow)
+- Command:
+  - `cd ecm-frontend && ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 npx playwright test e2e/ui-smoke.spec.ts -g "browse \\+ upload \\+ search"`
+- Result: ✅ 1 passed (~1.2m)
 
 ## Manual UI Check
 - Go to `Saved Searches`.
