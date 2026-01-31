@@ -35,7 +35,10 @@ public record NodeDto(
     String createdBy,
     LocalDateTime createdDate,
     String lastModifiedBy,
-    LocalDateTime lastModifiedDate
+    LocalDateTime lastModifiedDate,
+    String previewStatus,
+    String previewFailureReason,
+    LocalDateTime previewLastUpdated
 ) {
     public static NodeDto from(Node node) {
         if (node == null) {
@@ -66,6 +69,9 @@ public record NodeDto(
 
         String contentType = null;
         String currentVersionLabel = null;
+        String previewStatus = null;
+        String previewFailureReason = null;
+        LocalDateTime previewLastUpdated = null;
         List<String> aspects = new ArrayList<>();
         if (node instanceof Document document) {
             contentType = document.getMimeType();
@@ -82,6 +88,11 @@ public record NodeDto(
             if (document.isVersioned()) {
                 aspects.add("cm:versionable");
             }
+            if (document.getPreviewStatus() != null) {
+                previewStatus = document.getPreviewStatus().name();
+            }
+            previewFailureReason = document.getPreviewFailureReason();
+            previewLastUpdated = document.getPreviewLastUpdated();
         }
 
         UUID correspondentId = null;
@@ -114,7 +125,10 @@ public record NodeDto(
             node.getCreatedBy(),
             node.getCreatedDate(),
             node.getLastModifiedBy(),
-            node.getLastModifiedDate()
+            node.getLastModifiedDate(),
+            previewStatus,
+            previewFailureReason,
+            previewLastUpdated
         );
     }
 }

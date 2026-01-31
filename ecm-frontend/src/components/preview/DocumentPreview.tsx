@@ -18,6 +18,7 @@ import {
   ListItemText,
   Tooltip,
   Skeleton,
+  Chip,
 } from '@mui/material';
 import {
   Close,
@@ -35,6 +36,7 @@ import {
   Edit,
   Visibility,
   AutoAwesome,
+  Refresh,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { Node, PdfAnnotation, PdfAnnotationState } from 'types';
@@ -91,6 +93,14 @@ type PreviewResult = {
   failureReason?: string;
   pages?: PreviewPage[];
   pageCount?: number;
+};
+
+type PreviewQueueStatus = {
+  documentId?: string;
+  previewStatus?: string;
+  queued?: boolean;
+  attempts?: number;
+  nextAttemptAt?: string;
 };
 
 const OFFICE_MIME_TYPES = new Set([
@@ -221,6 +231,10 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   const [serverPreview, setServerPreview] = useState<PreviewResult | null>(null);
   const [serverPreviewLoading, setServerPreviewLoading] = useState(false);
   const [serverPreviewError, setServerPreviewError] = useState<string | null>(null);
+  const [previewQueueStatus, setPreviewQueueStatus] = useState<PreviewQueueStatus | null>(null);
+  const [previewStatusOverride, setPreviewStatusOverride] = useState<string | null>(null);
+  const [previewFailureOverride, setPreviewFailureOverride] = useState<string | null>(null);
+  const [queueingPreview, setQueueingPreview] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [pageSize, setPageSize] = useState<{ width: number; height: number } | null>(null);
   const [annotations, setAnnotations] = useState<PdfAnnotation[]>([]);
@@ -251,6 +265,30 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   const canAnnotate = canWrite && !annotationsDisabledForRotation;
   const fitModeLabel = fitModeLabels[fitMode];
   const fitScaleLabel = fitScale ? ` (${Math.round(fitScale * 100)}%)` : '';
+  const resolvedPreviewStatus = previewStatusOverride
+    || previewQueueStatus?.previewStatus
+    || node?.previewStatus
+    || serverPreview?.status
+    || null;
+  const resolvedPreviewFailure = previewFailureOverride
+    || node?.previewFailureReason
+    || serverPreview?.failureReason
+    || null;
+  const previewStatusLabel = resolvedPreviewStatus
+    ? `Preview: ${resolvedPreviewStatus.charAt(0).toUpperCase()}${resolvedPreviewStatus.slice(1).toLowerCase()}`
+    : null;
+  const previewStatusColor = (() => {
+    switch (resolvedPreviewStatus) {
+      case 'READY':
+        return 'success';
+      case 'FAILED':
+        return 'error';
+      case 'PROCESSING':
+        return 'warning';
+      default:
+        return 'default';
+    }
+  })();
 
   useEffect(() => {
     if (!open) {
@@ -272,6 +310,12 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     try {
       const preview = await apiService.get<PreviewResult>(`/documents/${nodeId}/preview`);
       setServerPreview(preview);
+      if (preview?.status) {
+        setPreviewStatusOverride(preview.status);
+      }
+      if (preview?.failureReason) {
+        setPreviewFailureOverride(preview.failureReason);
+      }
       if (preview?.pageCount) {
         setNumPages(preview.pageCount);
       } else if (preview?.pages?.length) {
@@ -283,6 +327,26 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
       setServerPreview({ supported: false, message });
     } finally {
       setServerPreviewLoading(false);
+    }
+  }, [nodeId]);
+
+  const handleQueuePreview = useCallback(async (force = false) => {
+    if (!nodeId) {
+      return;
+    }
+    setQueueingPreview(true);
+    try {
+      const status = await apiService.post<PreviewQueueStatus>(
+        `/documents/${nodeId}/preview/queue?force=${force}`
+      );
+      setPreviewQueueStatus(status);
+      setPreviewStatusOverride('PROCESSING');
+      setPreviewFailureOverride(null);
+      toast.success(status?.queued ? 'Preview queued' : 'Preview already up to date');
+    } catch {
+      toast.error('Failed to queue preview generation');
+    } finally {
+      setQueueingPreview(false);
     }
   }, [nodeId]);
 
@@ -306,6 +370,10 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     setServerPreview(null);
     setServerPreviewLoading(false);
     setServerPreviewError(null);
+    setPreviewQueueStatus(null);
+    setPreviewStatusOverride(null);
+    setPreviewFailureOverride(null);
+    setQueueingPreview(false);
     setAnnotations([]);
     setAnnotationsUpdatedBy(null);
     setAnnotationsUpdatedAt(null);
@@ -1252,6 +1320,27 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
               PDF preview is read-only{canWrite ? ', annotations available' : ''}
             </Typography>
           )}
+          {previewStatusLabel && (
+            resolvedPreviewFailure ? (
+              <Tooltip title={resolvedPreviewFailure}>
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  label={previewStatusLabel}
+                  color={previewStatusColor}
+                  sx={{ mr: 2 }}
+                />
+              </Tooltip>
+            ) : (
+              <Chip
+                size="small"
+                variant="outlined"
+                label={previewStatusLabel}
+                color={previewStatusColor}
+                sx={{ mr: 2 }}
+              />
+            )
+          )}
 
           {pdfDocument && (
             <Tooltip
@@ -1400,6 +1489,34 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                   {canWrite ? <Edit fontSize="small" /> : <Visibility fontSize="small" />}
                 </ListItemIcon>
                 <ListItemText>{canWrite ? 'Edit Online' : 'View Online'}</ListItemText>
+              </MenuItem>
+            )}
+            {node?.nodeType === 'DOCUMENT' && (
+              <MenuItem
+                onClick={() => {
+                  handleQueuePreview(false);
+                  handleMenuClose();
+                }}
+                disabled={queueingPreview}
+              >
+                <ListItemIcon>
+                  <Refresh fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>Queue Preview</ListItemText>
+              </MenuItem>
+            )}
+            {node?.nodeType === 'DOCUMENT' && (
+              <MenuItem
+                onClick={() => {
+                  handleQueuePreview(true);
+                  handleMenuClose();
+                }}
+                disabled={queueingPreview}
+              >
+                <ListItemIcon>
+                  <Refresh fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>Force Preview Rebuild</ListItemText>
               </MenuItem>
             )}
             <MenuItem onClick={() => { handleDownload(); handleMenuClose(); }}>
