@@ -123,9 +123,7 @@ public class FacetedSearchService {
                 ? request.getPageable().toPageable()
                 : PageRequest.of(0, 20);
 
-            long totalHits = securityService.hasRole("ROLE_ADMIN")
-                ? searchHits.getTotalHits()
-                : results.size();
+            long totalHits = searchHits.getTotalHits();
             Page<SearchResult> resultPage = new PageImpl<>(results, pageable, totalHits);
 
             List<String> suggestions = request.isIncludeSuggestions() && request.getQuery() != null
@@ -444,12 +442,35 @@ public class FacetedSearchService {
                 applyFilters(b, filters);
             }
 
+            applyReadPermissionFilter(b);
+
             return b;
         }));
 
         applyAggregations(builder, resolveFacetFields(request));
 
         return builder.build();
+    }
+
+    private void applyReadPermissionFilter(BoolQuery.Builder bool) {
+        if (securityService.hasRole("ROLE_ADMIN")) {
+            return;
+        }
+
+        String username = securityService.getCurrentUser();
+        var authorities = securityService.getUserAuthorities(username);
+        if (authorities == null || authorities.isEmpty()) {
+            bool.filter(f -> f.term(t -> t.field("permissions").value("__none__")));
+            return;
+        }
+
+        bool.filter(f -> f.bool(b -> {
+            for (String authority : authorities) {
+                b.should(s -> s.term(t -> t.field("permissions").value(authority)));
+            }
+            b.minimumShouldMatch("1");
+            return b;
+        }));
     }
 
     private void applyFilters(BoolQuery.Builder bool, SearchFilters filters) {

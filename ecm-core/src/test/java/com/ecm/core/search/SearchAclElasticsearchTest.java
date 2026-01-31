@@ -79,6 +79,10 @@ class SearchAclElasticsearchTest {
             indexOps.create();
             indexOps.putMapping();
             indexOps.refresh();
+
+            Mockito.lenient().when(securityService.getCurrentUser()).thenReturn("alice");
+            Mockito.lenient().when(securityService.getUserAuthorities("alice"))
+                .thenReturn(Set.of("alice", "EVERYONE"));
         } catch (Exception ex) {
             Assumptions.assumeTrue(false, "Elasticsearch not available: " + ex.getMessage());
         }
@@ -94,11 +98,13 @@ class SearchAclElasticsearchTest {
             .id(allowedId.toString())
             .name("allowed doc")
             .deleted(false)
+            .permissions(Set.of("alice"))
             .build();
         NodeDocument deniedDoc = NodeDocument.builder()
             .id(deniedId.toString())
             .name("denied doc")
             .deleted(false)
+            .permissions(Set.of("bob"))
             .build();
 
         indexDocuments(allowedDoc, deniedDoc);
@@ -133,6 +139,7 @@ class SearchAclElasticsearchTest {
             .createdBy("alice")
             .tags(Set.of("confidential"))
             .deleted(false)
+            .permissions(Set.of("alice"))
             .build();
         NodeDocument deniedDoc = NodeDocument.builder()
             .id(deniedId.toString())
@@ -141,6 +148,7 @@ class SearchAclElasticsearchTest {
             .createdBy("bob")
             .tags(Set.of("public"))
             .deleted(false)
+            .permissions(Set.of("bob"))
             .build();
 
         indexDocuments(allowedDoc, deniedDoc);
@@ -213,6 +221,9 @@ class SearchAclElasticsearchTest {
 
     private void indexDocuments(NodeDocument... docs) {
         for (NodeDocument doc : docs) {
+            if (doc.getPermissions() == null || doc.getPermissions().isEmpty()) {
+                doc.setPermissions(Set.of("alice"));
+            }
             elasticsearchOperations.save(doc);
         }
         elasticsearchOperations.indexOps(NodeDocument.class).refresh();
