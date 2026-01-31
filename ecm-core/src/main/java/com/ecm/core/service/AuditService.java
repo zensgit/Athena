@@ -8,11 +8,17 @@ import com.ecm.core.entity.Version;
 import com.ecm.core.repository.AuditLogRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import jakarta.annotation.PostConstruct;
 import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.EnumSet;
+import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -21,10 +27,35 @@ import java.util.UUID;
 public class AuditService {
     
     private final AuditLogRepository auditLogRepository;
+
+    @Value("${ecm.audit.disabled-categories:}")
+    private String disabledCategoriesRaw;
+
+    private final Set<AuditCategory> disabledCategories = EnumSet.noneOf(AuditCategory.class);
+
+    @PostConstruct
+    public void init() {
+        if (disabledCategoriesRaw == null || disabledCategoriesRaw.isBlank()) {
+            return;
+        }
+        Arrays.stream(disabledCategoriesRaw.split("[,\\s]+"))
+            .map(String::trim)
+            .filter(value -> !value.isBlank())
+            .forEach(value -> {
+                try {
+                    disabledCategories.add(AuditCategory.valueOf(value.toUpperCase(Locale.ROOT)));
+                } catch (IllegalArgumentException ex) {
+                    log.warn("Unknown audit category '{}'", value);
+                }
+            });
+    }
     
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void logEvent(String eventType, UUID nodeId, String nodeName, String username, String details) {
         try {
+            if (!isCategoryEnabled(eventType)) {
+                return;
+            }
             AuditLog logEntry = AuditLog.builder()
                 .eventType(eventType)
                 .nodeId(nodeId)
@@ -38,6 +69,55 @@ public class AuditService {
         } catch (Exception e) {
             log.error("Failed to save audit log", e);
         }
+    }
+
+    private boolean isCategoryEnabled(String eventType) {
+        AuditCategory category = resolveCategory(eventType);
+        return !disabledCategories.contains(category);
+    }
+
+    private AuditCategory resolveCategory(String eventType) {
+        if (eventType == null) {
+            return AuditCategory.OTHER;
+        }
+        String upper = eventType.toUpperCase(Locale.ROOT);
+        if (upper.startsWith("NODE_")) {
+            return AuditCategory.NODE;
+        }
+        if (upper.startsWith("VERSION_")) {
+            return AuditCategory.VERSION;
+        }
+        if (upper.startsWith("RULE_") || upper.startsWith("SCHEDULED_RULE")) {
+            return AuditCategory.RULE;
+        }
+        if (upper.startsWith("WORKFLOW_") || upper.startsWith("STATUS_")) {
+            return AuditCategory.WORKFLOW;
+        }
+        if (upper.startsWith("MAIL_")) {
+            return AuditCategory.MAIL;
+        }
+        if (upper.startsWith("WOPI_")) {
+            return AuditCategory.INTEGRATION;
+        }
+        if (upper.startsWith("SECURITY_")) {
+            return AuditCategory.SECURITY;
+        }
+        if (upper.startsWith("PDF_")) {
+            return AuditCategory.PDF;
+        }
+        return AuditCategory.OTHER;
+    }
+
+    private enum AuditCategory {
+        NODE,
+        VERSION,
+        RULE,
+        WORKFLOW,
+        MAIL,
+        INTEGRATION,
+        SECURITY,
+        PDF,
+        OTHER
     }
     
     public void logNodeCreated(Node node, String username) {

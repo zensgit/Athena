@@ -30,6 +30,10 @@ import {
   DialogContent,
   DialogActions,
   TextField,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Select,
   Switch,
   Autocomplete,
 } from '@mui/material';
@@ -59,6 +63,7 @@ import apiService from '../services/api';
 import { toast } from 'react-toastify';
 import userGroupService, { Group } from 'services/userGroupService';
 import savedSearchService, { SavedSearch } from 'services/savedSearchService';
+import authService from 'services/authService';
 import { useNavigate } from 'react-router-dom';
 import { useAppDispatch } from 'store';
 import { executeSavedSearch, setLastSearchCriteria } from 'store/slices/nodeSlice';
@@ -96,6 +101,21 @@ interface AuditLog {
   username: string;
   eventTime: string;
   details: string;
+}
+
+interface PageResponse<T> {
+  content: T[];
+  totalElements: number;
+  totalPages: number;
+  number: number;
+  size: number;
+}
+
+interface AuditPreset {
+  id: string;
+  label: string;
+  requiresUser: boolean;
+  requiresEventType: boolean;
 }
 
 interface DashboardData {
@@ -161,6 +181,11 @@ const AdminDashboard: React.FC = () => {
   const [retentionInfo, setRetentionInfo] = useState<AuditRetentionInfo | null>(null);
   const [exportingAudit, setExportingAudit] = useState(false);
   const [cleaningAudit, setCleaningAudit] = useState(false);
+  const [auditPresets, setAuditPresets] = useState<AuditPreset[]>([]);
+  const [auditExportPreset, setAuditExportPreset] = useState('custom');
+  const [auditFilterUser, setAuditFilterUser] = useState('');
+  const [auditFilterEventType, setAuditFilterEventType] = useState('');
+  const [filteringAudit, setFilteringAudit] = useState(false);
   const [pinnedSearches, setPinnedSearches] = useState<SavedSearch[]>([]);
   const [pinnedLoading, setPinnedLoading] = useState(false);
   const [pinnedError, setPinnedError] = useState<string | null>(null);
@@ -225,20 +250,28 @@ const AdminDashboard: React.FC = () => {
   };
 
   const { fromInput: previewFrom, toInput: previewTo } = resolveAuditExportRange();
-  const auditExportRangeError = getAuditExportRangeError(previewFrom, previewTo);
-  const auditExportHelperText = auditExportRangeError
-    ?? (maxExportRangeDays > 0 ? `Max range: ${maxExportRangeDays} days` : 'No max range limit');
+  const isCustomExport = auditExportPreset === 'custom';
+  const auditExportRangeError = isCustomExport ? getAuditExportRangeError(previewFrom, previewTo) : null;
+  const auditExportHelperText = isCustomExport
+    ? (auditExportRangeError
+        ?? (maxExportRangeDays > 0 ? `Max range: ${maxExportRangeDays} days` : 'No max range limit'))
+    : 'Preset selected';
+  const exportPresetNeedsUser = auditExportPreset === 'user';
+  const exportPresetNeedsEvent = auditExportPreset === 'event';
+  const exportPresetError = (exportPresetNeedsUser && !auditFilterUser.trim())
+    || (exportPresetNeedsEvent && !auditFilterEventType.trim());
 
   const fetchDashboard = async () => {
     try {
       setLoadingDashboard(true);
-      const [dashboardRes, logsRes, licenseRes, retentionRes, ruleSummaryRes, ruleEventsRes] = await Promise.all([
+      const [dashboardRes, logsRes, licenseRes, retentionRes, ruleSummaryRes, ruleEventsRes, presetsRes] = await Promise.all([
         apiService.get<DashboardData>('/analytics/dashboard'),
         apiService.get<AuditLog[]>('/analytics/audit/recent?limit=10'),
         apiService.get<LicenseInfo>('/system/license').catch(() => null),
         apiService.get<AuditRetentionInfo>('/analytics/audit/retention').catch(() => null),
         apiService.get<RuleExecutionSummary>('/analytics/rules/summary?days=7').catch(() => null),
         apiService.get<AuditLog[]>('/analytics/rules/recent?limit=20').catch(() => []),
+        apiService.get<AuditPreset[]>('/analytics/audit/presets').catch(() => []),
       ]);
       setData(dashboardRes);
       setLogs(logsRes);
@@ -246,6 +279,7 @@ const AdminDashboard: React.FC = () => {
       setRetentionInfo(retentionRes);
       setRuleSummary(ruleSummaryRes);
       setRuleEvents(ruleEventsRes || []);
+      setAuditPresets(presetsRes || []);
     } catch {
       toast.error('Failed to load dashboard data');
     } finally {
@@ -285,27 +319,55 @@ const AdminDashboard: React.FC = () => {
   };
 
   const handleExportAuditLogs = async () => {
-    const { fromInput, toInput } = resolveAuditExportRange();
-    const rangeError = getAuditExportRangeError(fromInput, toInput);
-    if (rangeError) {
-      toast.error(rangeError);
-      return;
-    }
-
     try {
       setExportingAudit(true);
+      let downloadLabel = format(new Date(), 'yyyyMMdd');
 
-      const fromStr = encodeURIComponent(formatDateTimeOffset(fromInput));
-      const toStr = encodeURIComponent(formatDateTimeOffset(toInput));
+      const params = new URLSearchParams();
+      if (auditExportPreset && auditExportPreset !== 'custom') {
+        params.append('preset', auditExportPreset);
+        const presetDays = Math.min(maxExportRangeDays || 30, 30);
+        if (auditExportPreset === 'user' && auditFilterUser.trim()) {
+          params.append('username', auditFilterUser.trim());
+          params.append('days', String(presetDays));
+        }
+        if (auditExportPreset === 'event' && auditFilterEventType.trim()) {
+          params.append('eventType', auditFilterEventType.trim());
+          params.append('days', String(presetDays));
+        }
+      } else {
+        const { fromInput, toInput } = resolveAuditExportRange();
+        const rangeError = getAuditExportRangeError(fromInput, toInput);
+        if (rangeError) {
+          toast.error(rangeError);
+          return;
+        }
+        downloadLabel = `${format(fromInput, 'yyyyMMdd')}_to_${format(toInput, 'yyyyMMdd')}`;
+        params.append('from', formatDateTimeOffset(fromInput));
+        params.append('to', formatDateTimeOffset(toInput));
+        if (auditFilterUser.trim()) {
+          params.append('username', auditFilterUser.trim());
+        }
+        if (auditFilterEventType.trim()) {
+          params.append('eventType', auditFilterEventType.trim());
+        }
+      }
 
       const apiBaseUrl = process.env.REACT_APP_API_URL
         || process.env.REACT_APP_API_BASE_URL
         || '/api/v1';
+      const refreshedToken = await authService.refreshToken().catch(() => undefined);
+      const accessToken = refreshedToken
+        || authService.getToken()
+        || localStorage.getItem('token')
+        || localStorage.getItem('access_token')
+        || '';
+
       const response = await fetch(
-        `${apiBaseUrl}/analytics/audit/export?from=${fromStr}&to=${toStr}`,
+        `${apiBaseUrl}/analytics/audit/export?${params.toString()}`,
         {
           headers: {
-            Authorization: `Bearer ${localStorage.getItem('access_token') || ''}`,
+            Authorization: accessToken ? `Bearer ${accessToken}` : '',
           },
         }
       );
@@ -334,7 +396,7 @@ const AdminDashboard: React.FC = () => {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `audit_logs_${format(fromInput, 'yyyyMMdd')}_to_${format(toInput, 'yyyyMMdd')}.csv`;
+      a.download = `audit_logs_${downloadLabel}.csv`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -353,6 +415,46 @@ const AdminDashboard: React.FC = () => {
       toast.error(message);
     } finally {
       setExportingAudit(false);
+    }
+  };
+
+  const handleFilterAuditLogs = async () => {
+    try {
+      setFilteringAudit(true);
+      const { fromInput, toInput } = resolveAuditExportRange();
+      const params = new URLSearchParams();
+      if (auditFilterUser.trim()) {
+        params.append('username', auditFilterUser.trim());
+      }
+      if (auditFilterEventType.trim()) {
+        params.append('eventType', auditFilterEventType.trim());
+      }
+      if (isCustomExport) {
+        if (auditExportFrom?.trim()) {
+          params.append('from', formatDateTimeOffset(fromInput));
+        }
+        if (auditExportTo?.trim()) {
+          params.append('to', formatDateTimeOffset(toInput));
+        }
+      }
+      const query = params.toString();
+      const response = await apiService.get<PageResponse<AuditLog>>(
+        `/analytics/audit/search${query ? `?${query}` : ''}`
+      );
+      setLogs(response.content || []);
+    } catch {
+      toast.error('Failed to filter audit logs');
+    } finally {
+      setFilteringAudit(false);
+    }
+  };
+
+  const handleResetAuditLogs = async () => {
+    try {
+      const logsRes = await apiService.get<AuditLog[]>('/analytics/audit/recent?limit=10');
+      setLogs(logsRes);
+    } catch {
+      toast.error('Failed to reload recent audit logs');
     }
   };
 
@@ -790,6 +892,35 @@ const AdminDashboard: React.FC = () => {
                       variant="outlined"
                     />
                   )}
+                  <FormControl size="small" sx={{ minWidth: 180 }}>
+                    <InputLabel>Export Preset</InputLabel>
+                    <Select
+                      label="Export Preset"
+                      value={auditExportPreset}
+                      onChange={(event) => setAuditExportPreset(String(event.target.value))}
+                    >
+                      <MenuItem value="custom">Custom range</MenuItem>
+                      {auditPresets.map((preset) => (
+                        <MenuItem key={preset.id} value={preset.id}>
+                          {preset.label}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <TextField
+                    label="User"
+                    size="small"
+                    value={auditFilterUser}
+                    onChange={(event) => setAuditFilterUser(event.target.value)}
+                    sx={{ minWidth: 160 }}
+                  />
+                  <TextField
+                    label="Event Type"
+                    size="small"
+                    value={auditFilterEventType}
+                    onChange={(event) => setAuditFilterEventType(event.target.value)}
+                    sx={{ minWidth: 180 }}
+                  />
                   <TextField
                     label="From"
                     type="datetime-local"
@@ -798,6 +929,7 @@ const AdminDashboard: React.FC = () => {
                     onChange={(event) => setAuditExportFrom(event.target.value)}
                     InputLabelProps={{ shrink: true }}
                     error={Boolean(auditExportRangeError)}
+                    disabled={!isCustomExport}
                     sx={{ minWidth: 210 }}
                   />
                   <TextField
@@ -809,14 +941,30 @@ const AdminDashboard: React.FC = () => {
                     InputLabelProps={{ shrink: true }}
                     error={Boolean(auditExportRangeError)}
                     helperText={auditExportHelperText}
+                    disabled={!isCustomExport}
                     sx={{ minWidth: 210 }}
                   />
                   <Button
                     size="small"
                     variant="outlined"
+                    onClick={handleFilterAuditLogs}
+                    disabled={filteringAudit}
+                  >
+                    {filteringAudit ? 'Filtering...' : 'Filter Logs'}
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="text"
+                    onClick={handleResetAuditLogs}
+                  >
+                    Reset
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
                     startIcon={<DownloadIcon />}
                     onClick={handleExportAuditLogs}
-                    disabled={exportingAudit || Boolean(auditExportRangeError)}
+                    disabled={exportingAudit || Boolean(auditExportRangeError) || exportPresetError}
                   >
                     {exportingAudit ? 'Exporting...' : 'Export CSV'}
                   </Button>

@@ -96,6 +96,9 @@ const SearchResults: React.FC = () => {
   >([]);
   const [suggestedFiltersLoading, setSuggestedFiltersLoading] = useState(false);
   const [suggestedFiltersError, setSuggestedFiltersError] = useState<string | null>(null);
+  const [spellcheckSuggestions, setSpellcheckSuggestions] = useState<string[]>([]);
+  const [spellcheckLoading, setSpellcheckLoading] = useState(false);
+  const [spellcheckError, setSpellcheckError] = useState<string | null>(null);
   const previewOpen = Boolean(previewNode);
   const canWrite = Boolean(user?.roles?.includes('ROLE_ADMIN') || user?.roles?.includes('ROLE_EDITOR'));
   const suppressFacetSearch = useRef(false);
@@ -163,6 +166,17 @@ const SearchResults: React.FC = () => {
     }
     const sortParams = getSortParams(sortBy);
     runSearch({ ...lastSearchCriteria, page: 0, size: pageSize, ...sortParams });
+  };
+
+  const handleSpellcheckSuggestion = (suggestion: string) => {
+    const nextQuery = suggestion.trim();
+    if (!nextQuery) {
+      return;
+    }
+    setQuickSearch(nextQuery);
+    setPage(1);
+    const sortParams = getSortParams(sortBy);
+    runSearch({ name: nextQuery, page: 0, size: pageSize, ...sortParams });
   };
 
   const clearFacetFilters = () => {
@@ -240,6 +254,38 @@ const SearchResults: React.FC = () => {
       active = false;
     };
   }, [lastSearchCriteria, isSimilarMode]);
+
+  useEffect(() => {
+    const query = (lastSearchCriteria?.name || '').trim();
+    if (!query || isSimilarMode || nodesTotal > 0) {
+      setSpellcheckSuggestions([]);
+      setSpellcheckError(null);
+      return;
+    }
+
+    let active = true;
+    setSpellcheckLoading(true);
+    nodeService.getSpellcheckSuggestions(query)
+      .then((suggestions) => {
+        if (!active) return;
+        setSpellcheckSuggestions(Array.isArray(suggestions) ? suggestions : []);
+        setSpellcheckError(null);
+      })
+      .catch(() => {
+        if (!active) return;
+        setSpellcheckSuggestions([]);
+        setSpellcheckError('Failed to load spellcheck suggestions');
+      })
+      .finally(() => {
+        if (active) {
+          setSpellcheckLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [lastSearchCriteria, isSimilarMode, nodesTotal]);
 
   useEffect(() => {
     if (lastSearchCriteria?.name !== undefined) {
@@ -797,6 +843,32 @@ const SearchResults: React.FC = () => {
           </Box>
         </form>
       </Paper>
+
+      {spellcheckLoading && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          Checking spelling suggestions…
+        </Alert>
+      )}
+      {spellcheckError && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          {spellcheckError}
+        </Alert>
+      )}
+      {!spellcheckLoading && spellcheckSuggestions.length > 0 && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          Did you mean:{' '}
+          {spellcheckSuggestions.map((suggestion) => (
+            <Button
+              key={suggestion}
+              size="small"
+              onClick={() => handleSpellcheckSuggestion(suggestion)}
+              sx={{ textTransform: 'none', ml: 0.5 }}
+            >
+              {suggestion}
+            </Button>
+          ))}
+        </Alert>
+      )}
 
       <Grid container spacing={2}>
         <Grid item xs={12} md={3}>

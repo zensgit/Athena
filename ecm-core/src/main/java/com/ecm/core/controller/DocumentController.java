@@ -12,6 +12,7 @@ import com.ecm.core.service.VersionService;
 import com.ecm.core.service.ContentService;
 import com.ecm.core.preview.PreviewService;
 import com.ecm.core.preview.PreviewResult;
+import com.ecm.core.preview.PreviewQueueService;
 import com.ecm.core.conversion.ConversionService;
 import com.ecm.core.conversion.ConversionResult;
 import io.swagger.v3.oas.annotations.Operation;
@@ -43,6 +44,7 @@ public class DocumentController {
     private final VersionService versionService;
     private final ContentService contentService;
     private final PreviewService previewService;
+    private final PreviewQueueService previewQueueService;
     private final ConversionService conversionService;
     private final PdfAnnotationService pdfAnnotationService;
     
@@ -106,9 +108,22 @@ public class DocumentController {
     @GetMapping("/{documentId}/versions")
     @Operation(summary = "Get version history", description = "Retrieve version history of a document")
     public ResponseEntity<List<VersionDto>> getVersionHistory(
-            @Parameter(description = "Document ID") @PathVariable UUID documentId) {
-        List<Version> versions = versionService.getVersionHistory(documentId);
+            @Parameter(description = "Document ID") @PathVariable UUID documentId,
+            @RequestParam(defaultValue = "false") boolean majorOnly) {
+        List<Version> versions = versionService.getVersionHistory(documentId, majorOnly);
         return ResponseEntity.ok(versions.stream().map(VersionDto::from).toList());
+    }
+
+    @GetMapping("/{documentId}/versions/paged")
+    @Operation(summary = "Get paged version history", description = "Retrieve paged version history of a document")
+    public ResponseEntity<org.springframework.data.domain.Page<VersionDto>> getVersionHistoryPaged(
+            @Parameter(description = "Document ID") @PathVariable UUID documentId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "false") boolean majorOnly) {
+        var pageable = org.springframework.data.domain.PageRequest.of(page, size);
+        var versions = versionService.getVersionHistory(documentId, pageable, majorOnly);
+        return ResponseEntity.ok(versions.map(VersionDto::from));
     }
     
     @GetMapping("/{documentId}/versions/{versionId}/download")
@@ -191,6 +206,14 @@ public class DocumentController {
         Document document = (Document) nodeService.getNode(documentId);
         PreviewResult preview = previewService.generatePreview(document);
         return ResponseEntity.ok(preview);
+    }
+
+    @PostMapping("/{documentId}/preview/queue")
+    @Operation(summary = "Queue preview generation", description = "Enqueue document preview generation in the background")
+    public ResponseEntity<PreviewQueueService.PreviewQueueStatus> queuePreview(
+            @Parameter(description = "Document ID") @PathVariable UUID documentId,
+            @RequestParam(defaultValue = "false") boolean force) {
+        return ResponseEntity.ok(previewQueueService.enqueue(documentId, force));
     }
 
     @GetMapping("/{documentId}/annotations")

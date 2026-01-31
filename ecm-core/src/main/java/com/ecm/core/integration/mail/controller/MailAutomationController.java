@@ -140,6 +140,11 @@ public class MailAutomationController {
         UUID assignFolderId
     ) {}
 
+    public record MailRulePreviewRequest(
+        UUID accountId,
+        Integer maxMessagesPerFolder
+    ) {}
+
     public record MailRuleResponse(
         UUID id,
         String name,
@@ -625,5 +630,21 @@ public class MailAutomationController {
         @RequestParam(name = "maxMessagesPerFolder", required = false) Integer maxMessagesPerFolder
     ) {
         return ResponseEntity.ok(fetcherService.fetchAllAccountsDebug(force, maxMessagesPerFolder));
+    }
+
+    @PostMapping("/rules/{id}/preview")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(
+        summary = "Preview rule (dry run)",
+        description = "Dry-run a single mail rule match without ingesting content"
+    )
+    public ResponseEntity<MailFetcherService.MailRulePreviewResult> previewRule(
+        @PathVariable UUID id,
+        @RequestBody MailRulePreviewRequest request
+    ) {
+        if (request == null || request.accountId() == null) {
+            throw new IllegalArgumentException("accountId is required to preview a rule");
+        }
+        return ResponseEntity.ok(fetcherService.previewRule(request.accountId(), id, request.maxMessagesPerFolder()));
     }
 }

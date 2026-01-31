@@ -108,11 +108,25 @@ public class AnalyticsController {
     @GetMapping("/audit/export")
     @Operation(summary = "Export Audit Logs", description = "Export audit logs as CSV within a time range")
     public ResponseEntity<byte[]> exportAuditLogs(
-            @RequestParam String from,
-            @RequestParam String to) {
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to,
+            @RequestParam(required = false) String preset,
+            @RequestParam(required = false) String username,
+            @RequestParam(required = false) String eventType,
+            @RequestParam(defaultValue = "30") int days) {
 
-        LocalDateTime fromTime = parseAuditExportDateTime(from, "from");
-        LocalDateTime toTime = parseAuditExportDateTime(to, "to");
+        if (preset != null) {
+            if ("user".equalsIgnoreCase(preset) && (username == null || username.isBlank())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "username is required for user preset");
+            }
+            if ("event".equalsIgnoreCase(preset) && (eventType == null || eventType.isBlank())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "eventType is required for event preset");
+            }
+        }
+
+        AuditExportRange range = resolveAuditExportRange(from, to, preset, days);
+        LocalDateTime fromTime = range.from();
+        LocalDateTime toTime = range.to();
         if (!fromTime.isBefore(toTime)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "from must be before to");
         }
@@ -124,7 +138,7 @@ public class AnalyticsController {
             );
         }
 
-        AnalyticsService.AuditExportResult exportResult = analyticsService.exportAuditLogsCsv(fromTime, toTime);
+        AnalyticsService.AuditExportResult exportResult = analyticsService.exportAuditLogsCsv(fromTime, toTime, username, eventType);
         String filename = String.format("audit_logs_%s_to_%s.csv",
             fromTime.format(DateTimeFormatter.ofPattern("yyyyMMdd")),
             toTime.format(DateTimeFormatter.ofPattern("yyyyMMdd")));
@@ -139,6 +153,33 @@ public class AnalyticsController {
         return ResponseEntity.ok()
             .headers(headers)
             .body(exportResult.csvContent().getBytes(StandardCharsets.UTF_8));
+    }
+
+    @GetMapping("/audit/search")
+    @Operation(summary = "Search Audit Logs", description = "Search audit logs with optional filters")
+    public ResponseEntity<org.springframework.data.domain.Page<AuditLog>> searchAuditLogs(
+            @RequestParam(required = false) String username,
+            @RequestParam(required = false) String eventType,
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+        LocalDateTime fromTime = parseOptionalAuditDateTime(from, "from");
+        LocalDateTime toTime = parseOptionalAuditDateTime(to, "to");
+        var pageable = org.springframework.data.domain.PageRequest.of(page, size);
+        return ResponseEntity.ok(analyticsService.searchAuditLogs(username, eventType, fromTime, toTime, pageable));
+    }
+
+    @GetMapping("/audit/presets")
+    @Operation(summary = "Audit Export Presets", description = "List available audit export presets")
+    public ResponseEntity<List<Map<String, Object>>> getAuditExportPresets() {
+        return ResponseEntity.ok(List.of(
+            Map.of("id", "last24h", "label", "Last 24 hours", "requiresUser", false, "requiresEventType", false),
+            Map.of("id", "last7d", "label", "Last 7 days", "requiresUser", false, "requiresEventType", false),
+            Map.of("id", "last30d", "label", "Last 30 days", "requiresUser", false, "requiresEventType", false),
+            Map.of("id", "user", "label", "User activity (last N days)", "requiresUser", true, "requiresEventType", false),
+            Map.of("id", "event", "label", "Event type (last N days)", "requiresUser", false, "requiresEventType", true)
+        ));
     }
 
     private LocalDateTime parseAuditExportDateTime(String value, String paramName) {
@@ -159,6 +200,41 @@ public class AnalyticsController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid " + paramName + " datetime");
         }
     }
+
+    private LocalDateTime parseOptionalAuditDateTime(String value, String paramName) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return parseAuditExportDateTime(value, paramName);
+    }
+
+    private AuditExportRange resolveAuditExportRange(String from, String to, String preset, int days) {
+        if (preset == null || preset.isBlank()) {
+            LocalDateTime fromTime = parseAuditExportDateTime(from, "from");
+            LocalDateTime toTime = parseAuditExportDateTime(to, "to");
+            return new AuditExportRange(fromTime, toTime);
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        switch (preset.toLowerCase()) {
+            case "last24h" -> {
+                return new AuditExportRange(now.minusHours(24), now);
+            }
+            case "last7d" -> {
+                return new AuditExportRange(now.minusDays(7), now);
+            }
+            case "last30d" -> {
+                return new AuditExportRange(now.minusDays(30), now);
+            }
+            case "user", "event" -> {
+                int safeDays = Math.max(1, days);
+                return new AuditExportRange(now.minusDays(safeDays), now);
+            }
+            default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown preset: " + preset);
+        }
+    }
+
+    private record AuditExportRange(LocalDateTime from, LocalDateTime to) {}
 
     @GetMapping("/audit/retention")
     @Operation(summary = "Audit Retention Info", description = "Get audit log retention policy information")

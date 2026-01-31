@@ -28,7 +28,7 @@ import {
   IconButton,
   Tooltip,
 } from '@mui/material';
-import { Add, Delete, Edit, Link, Login, Refresh } from '@mui/icons-material';
+import { Add, Delete, Edit, Link, Login, Refresh, Visibility } from '@mui/icons-material';
 import { toast } from 'react-toastify';
 import { useLocation, useNavigate } from 'react-router-dom';
 import mailAutomationService, {
@@ -47,6 +47,7 @@ import mailAutomationService, {
   MailDocumentDiagnosticItem,
   ProcessedMailDiagnosticItem,
   ProcessedMailRetentionStatus,
+  MailRulePreviewResult,
 } from 'services/mailAutomationService';
 import tagService from 'services/tagService';
 import nodeService from 'services/nodeService';
@@ -167,6 +168,14 @@ const MailAutomationPage: React.FC = () => {
   const [ruleDialogOpen, setRuleDialogOpen] = useState(false);
   const [ruleForm, setRuleForm] = useState(DEFAULT_RULE_FORM);
   const [editingRule, setEditingRule] = useState<MailRule | null>(null);
+
+  const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
+  const [previewRule, setPreviewRule] = useState<MailRule | null>(null);
+  const [previewAccountId, setPreviewAccountId] = useState('');
+  const [previewMaxMessages, setPreviewMaxMessages] = useState(25);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewResult, setPreviewResult] = useState<MailRulePreviewResult | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   const securityOptions: MailSecurityType[] = ['SSL', 'STARTTLS', 'NONE', 'OAUTH2'];
   const oauthProviderOptions: MailOAuthProvider[] = ['MICROSOFT', 'GOOGLE', 'CUSTOM'];
@@ -684,6 +693,48 @@ const MailAutomationPage: React.FC = () => {
       folderIdOverride: rule.assignFolderId || '',
     });
     setRuleDialogOpen(true);
+  };
+
+  const openPreviewRule = (rule: MailRule) => {
+    setPreviewRule(rule);
+    setPreviewAccountId(rule.accountId || accounts[0]?.id || '');
+    setPreviewMaxMessages(25);
+    setPreviewResult(null);
+    setPreviewError(null);
+    setPreviewDialogOpen(true);
+  };
+
+  const closePreviewDialog = () => {
+    setPreviewDialogOpen(false);
+    setPreviewRule(null);
+    setPreviewResult(null);
+    setPreviewError(null);
+  };
+
+  const handleRunRulePreview = async () => {
+    if (!previewRule) {
+      return;
+    }
+    const accountId = previewRule.accountId || previewAccountId;
+    if (!accountId) {
+      toast.warn('Select a mail account to preview this rule');
+      return;
+    }
+    try {
+      setPreviewLoading(true);
+      const result = await mailAutomationService.previewRule(
+        previewRule.id,
+        accountId,
+        previewMaxMessages > 0 ? previewMaxMessages : undefined,
+      );
+      setPreviewResult(result);
+      setPreviewError(null);
+    } catch {
+      setPreviewResult(null);
+      setPreviewError('Failed to preview mail rule');
+    } finally {
+      setPreviewLoading(false);
+    }
   };
 
   const resolveFolderId = async () => {
@@ -1634,6 +1685,17 @@ const MailAutomationPage: React.FC = () => {
                               />
                             </span>
                           </Tooltip>
+                          <Tooltip title="Preview">
+                            <span>
+                              <IconButton
+                                size="small"
+                                aria-label={`Preview rule ${rule.name}`}
+                                onClick={() => openPreviewRule(rule)}
+                              >
+                                <Visibility fontSize="small" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
                           <Tooltip title="Edit">
                             <IconButton size="small" onClick={() => openEditRule(rule)}>
                               <Edit fontSize="small" />
@@ -2064,6 +2126,129 @@ const MailAutomationPage: React.FC = () => {
         <DialogActions>
           <Button onClick={() => setRuleDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={handleSaveRule}>Save</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={previewDialogOpen} onClose={closePreviewDialog} maxWidth="md" fullWidth>
+        <DialogTitle>Preview Mail Rule</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} mt={1}>
+            <Typography variant="subtitle2">
+              Rule: {previewRule?.name || '—'}
+            </Typography>
+            {previewRule?.accountId ? (
+              <TextField
+                label="Account"
+                value={accountNameById.get(previewRule.accountId) || previewRule.accountId}
+                size="small"
+                fullWidth
+                disabled
+              />
+            ) : (
+              <FormControl size="small" fullWidth>
+                <InputLabel id="preview-account-label">Account</InputLabel>
+                <Select
+                  labelId="preview-account-label"
+                  value={previewAccountId}
+                  label="Account"
+                  onChange={(event) => setPreviewAccountId(event.target.value)}
+                >
+                  {accounts.map((account) => (
+                    <MenuItem key={account.id} value={account.id}>{account.name}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+            <TextField
+              label="Max messages per folder"
+              type="number"
+              value={previewMaxMessages}
+              onChange={(event) => setPreviewMaxMessages(Number(event.target.value))}
+              size="small"
+              fullWidth
+            />
+            <Box display="flex" alignItems="center" gap={1}>
+              <Button variant="outlined" onClick={handleRunRulePreview} disabled={previewLoading}>
+                {previewLoading ? 'Running...' : 'Run Preview'}
+              </Button>
+              {previewError && (
+                <Typography variant="caption" color="error">
+                  {previewError}
+                </Typography>
+              )}
+            </Box>
+
+            {previewResult && (
+              <Stack spacing={2}>
+                <Box>
+                  <Typography variant="subtitle2">Summary</Typography>
+                  <Box display="flex" flexWrap="wrap" gap={1} mt={1}>
+                    <Chip size="small" label={`Found ${previewResult.foundMessages}`} />
+                    <Chip size="small" label={`Scanned ${previewResult.scannedMessages}`} />
+                    <Chip size="small" label={`Matched ${previewResult.matchedMessages}`} color="success" />
+                    <Chip size="small" label={`Processable ${previewResult.processableMessages}`} />
+                    <Chip size="small" label={`Skipped ${previewResult.skippedMessages}`} />
+                    <Chip size="small" label={`Errors ${previewResult.errorMessages}`} color="warning" />
+                  </Box>
+                </Box>
+                {previewResult.skipReasons && Object.keys(previewResult.skipReasons).length > 0 && (
+                  <Box>
+                    <Typography variant="subtitle2">Skip reasons</Typography>
+                    <Box display="flex" flexWrap="wrap" gap={1} mt={1}>
+                      {Object.entries(previewResult.skipReasons).map(([reason, count]) => (
+                        <Chip key={reason} size="small" label={`${reason}: ${count}`} />
+                      ))}
+                    </Box>
+                  </Box>
+                )}
+                <Box>
+                  <Typography variant="subtitle2">Matched messages</Typography>
+                  {previewResult.matches.length === 0 ? (
+                    <Typography variant="body2" color="text.secondary" mt={1}>
+                      No messages matched this rule in the scanned sample.
+                    </Typography>
+                  ) : (
+                    <TableContainer sx={{ mt: 1 }}>
+                      <Table size="small">
+                        <TableHead>
+                          <TableRow>
+                            <TableCell>Folder</TableCell>
+                            <TableCell>Subject</TableCell>
+                            <TableCell>From</TableCell>
+                            <TableCell>Received</TableCell>
+                            <TableCell align="right">Attachments</TableCell>
+                            <TableCell align="right">Processable</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {previewResult.matches.map((item) => (
+                            <TableRow key={`${item.folder}-${item.uid}`} hover>
+                              <TableCell>{item.folder}</TableCell>
+                              <TableCell>{item.subject || '-'}</TableCell>
+                              <TableCell>{item.from || '-'}</TableCell>
+                              <TableCell>{item.receivedAt ? new Date(item.receivedAt).toLocaleString() : '-'}</TableCell>
+                              <TableCell align="right">{item.attachmentCount}</TableCell>
+                              <TableCell align="right">
+                                <Chip
+                                  size="small"
+                                  label={item.processable ? 'Yes' : 'No'}
+                                  color={item.processable ? 'success' : 'default'}
+                                  variant="outlined"
+                                />
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                  )}
+                </Box>
+              </Stack>
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closePreviewDialog}>Close</Button>
         </DialogActions>
       </Dialog>
     </Box>

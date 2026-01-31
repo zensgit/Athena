@@ -1,6 +1,8 @@
 package com.ecm.core.preview;
 
 import com.ecm.core.entity.Document;
+import com.ecm.core.entity.PreviewStatus;
+import com.ecm.core.repository.DocumentRepository;
 import com.ecm.core.service.ContentService;
 import com.ecm.core.service.SecurityService;
 import com.ecm.core.entity.Permission.PermissionType;
@@ -32,6 +34,7 @@ import java.awt.*;
 import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
 import java.io.*;
+import java.time.LocalDateTime;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -47,6 +50,7 @@ public class PreviewService {
     private final ContentService contentService;
     private final SecurityService securityService;
     private final MeterRegistry meterRegistry;
+    private final DocumentRepository documentRepository;
     
     @Value("${ecm.preview.cache.enabled:true}")
     private boolean cacheEnabled;
@@ -81,6 +85,8 @@ public class PreviewService {
         if (!securityService.hasPermission(document, PermissionType.READ)) {
             throw new SecurityException("No permission to preview document");
         }
+
+        updatePreviewStatus(document, PreviewStatus.PROCESSING, null);
         
         String mimeType = normalizeMimeType(document.getMimeType(), document.getName());
         PreviewResult result = new PreviewResult();
@@ -110,6 +116,7 @@ public class PreviewService {
         
         result.setDocumentId(document.getId());
         result.setMimeType(mimeType);
+        applyPreviewOutcome(document, result);
         return result;
     }
     
@@ -593,6 +600,41 @@ public class PreviewService {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         ImageIO.write(image, format, baos);
         return baos.toByteArray();
+    }
+
+    private void updatePreviewStatus(Document document, PreviewStatus status, String failureReason) {
+        if (document == null || status == null) {
+            return;
+        }
+        try {
+            document.setPreviewStatus(status);
+            document.setPreviewFailureReason(failureReason);
+            document.setPreviewLastUpdated(LocalDateTime.now());
+            document.setPreviewAvailable(status == PreviewStatus.READY);
+            documentRepository.save(document);
+        } catch (Exception e) {
+            log.warn("Failed to persist preview status for {}: {}", document.getId(), e.getMessage());
+        }
+    }
+
+    private void applyPreviewOutcome(Document document, PreviewResult result) {
+        if (result == null) {
+            return;
+        }
+        PreviewStatus status = result.isSupported() ? PreviewStatus.READY : PreviewStatus.FAILED;
+        String failureReason = result.isSupported() ? null : result.getMessage();
+
+        if (document != null) {
+            if (result.getPageCount() > 0) {
+                document.setPageCount(result.getPageCount());
+            } else if (result.getPages() != null && !result.getPages().isEmpty()) {
+                document.setPageCount(result.getPages().size());
+            }
+            updatePreviewStatus(document, status, failureReason);
+        }
+
+        result.setStatus(status.name());
+        result.setFailureReason(failureReason);
     }
 
     private record CadRenderResult(byte[] pngBytes, int width, int height) {}

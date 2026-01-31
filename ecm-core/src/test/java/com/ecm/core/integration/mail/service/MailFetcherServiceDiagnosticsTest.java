@@ -9,6 +9,7 @@ import com.ecm.core.integration.mail.repository.MailAccountRepository;
 import com.ecm.core.integration.mail.repository.MailRuleRepository;
 import com.ecm.core.integration.mail.repository.ProcessedMailRepository;
 import com.ecm.core.repository.DocumentRepository;
+import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.service.DocumentUploadService;
 import com.ecm.core.service.NodeService;
 import com.ecm.core.service.TagService;
@@ -52,6 +53,9 @@ class MailFetcherServiceDiagnosticsTest {
     private DocumentRepository documentRepository;
 
     @Mock
+    private NodeRepository nodeRepository;
+
+    @Mock
     private DocumentUploadService uploadService;
 
     @Mock
@@ -78,6 +82,7 @@ class MailFetcherServiceDiagnosticsTest {
             ruleRepository,
             processedMailRepository,
             documentRepository,
+            nodeRepository,
             uploadService,
             nodeService,
             tagService,

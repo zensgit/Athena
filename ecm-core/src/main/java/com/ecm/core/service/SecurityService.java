@@ -2,6 +2,7 @@ package com.ecm.core.service;
 
 import com.ecm.core.entity.*;
 import com.ecm.core.entity.Permission.PermissionType;
+import com.ecm.core.entity.PermissionSet;
 import com.ecm.core.entity.Permission.AuthorityType;
 import com.ecm.core.entity.Role.Privilege;
 import com.ecm.core.entity.Group.GroupType;
@@ -123,6 +124,26 @@ public class SecurityService {
         Set<String> authorities = getUserAuthorities(username);
         return checkNodePermissions(node, permissionType, authorities);
     }
+
+    public Map<String, Set<PermissionType>> getPermissionSets() {
+        Map<String, Set<PermissionType>> sets = new LinkedHashMap<>();
+        for (PermissionSet set : PermissionSet.values()) {
+            sets.put(set.name(), EnumSet.copyOf(set.getPermissions()));
+        }
+        return sets;
+    }
+
+    public Optional<PermissionSet> resolvePermissionSet(String name) {
+        if (name == null || name.isBlank()) {
+            return Optional.empty();
+        }
+        for (PermissionSet set : PermissionSet.values()) {
+            if (set.name().equalsIgnoreCase(name)) {
+                return Optional.of(set);
+            }
+        }
+        return Optional.empty();
+    }
     
     public boolean hasRole(String roleName) {
         return hasRole(roleName, getCurrentUser());
@@ -220,6 +241,35 @@ public class SecurityService {
             permissionRepository.save(permission);
         }
     }
+
+    @Transactional
+    @CacheEvict(value = "permissions", allEntries = true)
+    public void applyPermissionSet(Node node,
+                                   String authority,
+                                   AuthorityType authorityType,
+                                   PermissionSet permissionSet,
+                                   boolean replace) {
+        if (permissionSet == null) {
+            return;
+        }
+
+        if (!hasPermission(node, PermissionType.CHANGE_PERMISSIONS)) {
+            throw new SecurityException("No permission to change permissions on node: " + node.getName());
+        }
+
+        List<Permission> existing = permissionRepository.findByNodeIdAndAuthority(node.getId(), authority);
+        if (replace) {
+            for (Permission permission : existing) {
+                if (!permissionSet.getPermissions().contains(permission.getPermission())) {
+                    permissionRepository.delete(permission);
+                }
+            }
+        }
+
+        for (PermissionType permissionType : permissionSet.getPermissions()) {
+            setPermission(node, authority, authorityType, permissionType, true);
+        }
+    }
     
     @Transactional
     @CacheEvict(value = "permissions", key = "#node.id + '*'")
@@ -276,12 +326,28 @@ public class SecurityService {
         List<Permission> allPermissions = getNodePermissions(node);
         
         Map<String, Set<PermissionType>> effectivePermissions = new HashMap<>();
+        Map<String, Set<PermissionType>> deniedPermissions = new HashMap<>();
         
         for (Permission permission : allPermissions) {
-            if (permission.isAllowed() && !permission.isExpired()) {
+            if (permission.isExpired()) {
+                continue;
+            }
+            if (permission.isAllowed()) {
                 effectivePermissions
                     .computeIfAbsent(permission.getAuthority(), k -> new HashSet<>())
                     .add(permission.getPermission());
+            } else {
+                deniedPermissions
+                    .computeIfAbsent(permission.getAuthority(), k -> new HashSet<>())
+                    .add(permission.getPermission());
+            }
+        }
+
+        // Apply deny precedence
+        for (Map.Entry<String, Set<PermissionType>> entry : deniedPermissions.entrySet()) {
+            Set<PermissionType> allowed = effectivePermissions.get(entry.getKey());
+            if (allowed != null) {
+                allowed.removeAll(entry.getValue());
             }
         }
         
@@ -368,7 +434,8 @@ public class SecurityService {
     private boolean checkNodePermissions(Node node, PermissionType permissionType, 
                                          Set<String> authorities) {
         Node current = node;
-        
+        boolean allowed = false;
+        boolean denied = false;
         while (current != null) {
             // Check direct permissions on current node
             List<Permission> permissions = permissionRepository.findByNodeId(current.getId());
@@ -379,10 +446,10 @@ public class SecurityService {
                     !permission.isExpired()) {
                     
                     if (permission.isAllowed()) {
-                        return true;
+                        allowed = true;
                     } else {
-                        // Explicit deny
-                        return false;
+                        // Explicit deny (deny takes precedence across inheritance chain)
+                        denied = true;
                     }
                 }
             }
@@ -394,8 +461,10 @@ public class SecurityService {
                 break;
             }
         }
-        
-        return false;
+        if (denied) {
+            return false;
+        }
+        return allowed;
     }
     
     private List<Permission> getInheritedPermissions(Node node) {

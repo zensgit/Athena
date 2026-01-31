@@ -13,6 +13,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -35,6 +37,7 @@ public class VersionService {
     private final ContentService contentService;
     private final SecurityService securityService;
     private final ApplicationEventPublisher eventPublisher;
+    private final VersionLabelService versionLabelService;
 
     @Autowired
     @Lazy
@@ -91,7 +94,8 @@ public class VersionService {
         version.setMajorVersion(document.getMajorVersion());
         version.setMinorVersion(document.getMinorVersion());
         version.setVersionNumber(isFirstVersion ? 1 : currentMaxVersion + 1);
-        version.setVersionLabel(document.getVersionString());
+        String versionLabel = versionLabelService.generateLabel(document, version.getVersionNumber());
+        version.setVersionLabel(versionLabel);
         
         // Record changes
         if (document.getCurrentVersion() != null) {
@@ -132,6 +136,10 @@ public class VersionService {
     }
     
     public List<Version> getVersionHistory(UUID documentId) {
+        return getVersionHistory(documentId, false);
+    }
+
+    public List<Version> getVersionHistory(UUID documentId, boolean majorOnly) {
         Document document = documentRepository.findById(documentId)
             .orElseThrow(() -> new NoSuchElementException("Document not found: " + documentId));
         
@@ -139,8 +147,27 @@ public class VersionService {
         if (!securityService.hasPermission(document, PermissionType.READ)) {
             throw new SecurityException("No permission to view version history");
         }
-        
+
+        if (majorOnly) {
+            return versionRepository.findMajorVersions(documentId);
+        }
+
         return versionRepository.findByDocumentIdOrderByVersionNumberDesc(documentId);
+    }
+
+    public Page<Version> getVersionHistory(UUID documentId, Pageable pageable, boolean majorOnly) {
+        Document document = documentRepository.findById(documentId)
+            .orElseThrow(() -> new NoSuchElementException("Document not found: " + documentId));
+
+        if (!securityService.hasPermission(document, PermissionType.READ)) {
+            throw new SecurityException("No permission to view version history");
+        }
+
+        if (majorOnly) {
+            return versionRepository.findMajorVersions(documentId, pageable);
+        }
+
+        return versionRepository.findByDocumentIdOrderByVersionNumberDesc(documentId, pageable);
     }
     
     public Version getVersion(UUID versionId) {

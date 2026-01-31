@@ -6,6 +6,7 @@ import com.ecm.core.entity.Node;
 import com.ecm.core.entity.Permission;
 import com.ecm.core.entity.Permission.AuthorityType;
 import com.ecm.core.entity.Permission.PermissionType;
+import com.ecm.core.entity.PermissionSet;
 import com.ecm.core.entity.Role;
 import com.ecm.core.entity.User;
 import com.ecm.core.service.SecurityService;
@@ -39,6 +40,12 @@ public class SecurityController {
         List<Permission> permissions = securityService.getNodePermissions(node);
         return ResponseEntity.ok(permissions.stream().map(PermissionDto::from).toList());
     }
+
+    @GetMapping("/permission-sets")
+    @Operation(summary = "Get permission sets", description = "Get predefined permission sets")
+    public ResponseEntity<Map<String, Set<PermissionType>>> getPermissionSets() {
+        return ResponseEntity.ok(securityService.getPermissionSets());
+    }
     
     @GetMapping("/nodes/{nodeId}/effective-permissions")
     @Operation(summary = "Get effective permissions", description = "Get effective permissions for all authorities")
@@ -60,6 +67,20 @@ public class SecurityController {
         
         Node node = nodeService.getNode(nodeId);
         securityService.setPermission(node, authority, authorityType, permissionType, allowed);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/nodes/{nodeId}/permission-sets")
+    @Operation(summary = "Apply permission set", description = "Apply a predefined permission set to a node")
+    public ResponseEntity<Void> applyPermissionSet(
+            @Parameter(description = "Node ID") @PathVariable UUID nodeId,
+            @Parameter(description = "Authority (user/group/role)") @RequestParam String authority,
+            @Parameter(description = "Authority type") @RequestParam AuthorityType authorityType,
+            @Parameter(description = "Permission set") @RequestParam PermissionSet permissionSet,
+            @Parameter(description = "Replace existing permissions") @RequestParam(defaultValue = "false") boolean replace) {
+
+        Node node = nodeService.getNode(nodeId);
+        securityService.applyPermissionSet(node, authority, authorityType, permissionSet, replace);
         return ResponseEntity.ok().build();
     }
     

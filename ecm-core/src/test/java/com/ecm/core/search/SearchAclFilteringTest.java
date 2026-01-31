@@ -63,7 +63,6 @@ class SearchAclFilteringTest {
         );
         facetedSearchService = new FacetedSearchService(
             elasticsearchOperations,
-            documentRepository,
             nodeRepository,
             securityService
         );

@@ -8,7 +8,9 @@ import com.ecm.core.repository.NodeRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -176,11 +178,27 @@ public class AnalyticsService {
         return new AuditExportResult(generateCsv(logs), logs.size());
     }
 
+    public AuditExportResult exportAuditLogsCsv(LocalDateTime from,
+                                                LocalDateTime to,
+                                                String username,
+                                                String eventType) {
+        List<AuditLog> logs = auditLogRepository.findByFiltersForExport(username, eventType, from, to);
+        return new AuditExportResult(generateCsv(logs), logs.size());
+    }
+
     /**
      * Get audit logs within a time range
      */
     public List<AuditLog> getAuditLogsInRange(LocalDateTime from, LocalDateTime to) {
         return auditLogRepository.findByTimeRangeForExport(from, to);
+    }
+
+    public Page<AuditLog> searchAuditLogs(String username,
+                                          String eventType,
+                                          LocalDateTime from,
+                                          LocalDateTime to,
+                                          Pageable pageable) {
+        return auditLogRepository.findByFilters(username, eventType, from, to, pageable);
     }
 
     /**

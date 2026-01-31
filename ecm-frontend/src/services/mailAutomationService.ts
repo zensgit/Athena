@@ -143,6 +143,33 @@ export interface MailFetchDebugResult {
   accounts: MailFetchDebugAccountResult[];
 }
 
+export interface MailRulePreviewMessage {
+  folder: string;
+  uid: string;
+  subject?: string | null;
+  from?: string | null;
+  recipients?: string | null;
+  receivedAt?: string | null;
+  attachmentCount: number;
+  processable: boolean;
+}
+
+export interface MailRulePreviewResult {
+  accountId: string;
+  accountName: string;
+  ruleId: string;
+  ruleName: string;
+  maxMessagesPerFolder: number;
+  foundMessages: number;
+  scannedMessages: number;
+  matchedMessages: number;
+  processableMessages: number;
+  skippedMessages: number;
+  errorMessages: number;
+  skipReasons: Record<string, number>;
+  matches: MailRulePreviewMessage[];
+}
+
 export interface ProcessedMailDiagnosticItem {
   id: string;
   processedAt: string;
@@ -320,6 +347,17 @@ class MailAutomationService {
         force,
         maxMessagesPerFolder,
       },
+    });
+  }
+
+  async previewRule(
+    ruleId: string,
+    accountId: string,
+    maxMessagesPerFolder?: number,
+  ): Promise<MailRulePreviewResult> {
+    return api.post<MailRulePreviewResult>(`/integration/mail/rules/${ruleId}/preview`, {
+      accountId,
+      maxMessagesPerFolder,
     });
   }
 }

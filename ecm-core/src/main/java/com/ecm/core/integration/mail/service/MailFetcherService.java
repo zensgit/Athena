@@ -1,6 +1,7 @@
 package com.ecm.core.integration.mail.service;
 
 import com.ecm.core.entity.Document;
+import com.ecm.core.entity.Node;
 import com.ecm.core.integration.email.EmailIngestionService;
 import com.ecm.core.integration.mail.model.MailAccount;
 import com.ecm.core.integration.mail.model.MailRule;
@@ -9,6 +10,7 @@ import com.ecm.core.integration.mail.repository.MailAccountRepository;
 import com.ecm.core.integration.mail.repository.MailRuleRepository;
 import com.ecm.core.integration.mail.repository.ProcessedMailRepository;
 import com.ecm.core.repository.DocumentRepository;
+import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.service.DocumentUploadService;
 import com.ecm.core.service.NodeService;
 import com.ecm.core.service.TagService;
@@ -24,6 +26,8 @@ import jakarta.mail.Part;
 import jakarta.mail.Session;
 import jakarta.mail.Store;
 import jakarta.mail.UIDFolder;
+import jakarta.mail.Address;
+import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.search.FlagTerm;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -69,6 +73,7 @@ import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
+import java.util.regex.Pattern;
 
 /**
  * Service to fetch emails via IMAP and process them according to rules.
@@ -82,11 +87,15 @@ public class MailFetcherService {
     private static final int DEFAULT_DEBUG_MAX_MESSAGES_PER_FOLDER = 200;
     private static final int MAX_ERROR_LENGTH = 500;
     private static final String OAUTH_ENV_PREFIX = "ECM_MAIL_OAUTH_";
+    private static final Pattern UUID_PATTERN = Pattern.compile(
+        "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+    );
 
     private final MailAccountRepository accountRepository;
     private final MailRuleRepository ruleRepository;
     private final ProcessedMailRepository processedMailRepository;
     private final DocumentRepository documentRepository;
+    private final NodeRepository nodeRepository;
     private final DocumentUploadService uploadService;
     private final NodeService nodeService;
     private final TagService tagService;
@@ -100,6 +109,12 @@ public class MailFetcherService {
 
     @Value("${ecm.mail.fetcher.debug.max-messages-per-folder:200}")
     private int debugMaxMessagesPerFolder;
+
+    @Value("${ecm.mail.routing.alias-property:mailAlias}")
+    private String mailAliasProperty;
+
+    @Value("${ecm.mail.routing.allowed-domain:}")
+    private String routingAllowedDomain;
 
     private final Map<UUID, Instant> lastPollByAccount = new ConcurrentHashMap<>();
     private final Map<UUID, OAuthSession> oauthSessionByAccount = new ConcurrentHashMap<>();
@@ -241,6 +256,165 @@ public class MailFetcherService {
             log.info("Mail fetch debug top skip reasons: {}", topReasons);
         }
         return new MailFetchDebugResult(summary, effectiveMaxMessages, stats.skipReasons, stats.accountResults);
+    }
+
+    public MailRulePreviewResult previewRule(UUID accountId, UUID ruleId, Integer maxMessagesPerFolder) {
+        MailAccount account = accountRepository.findById(accountId)
+            .orElseThrow(() -> new IllegalArgumentException("Mail account not found: " + accountId));
+        MailRule rule = ruleRepository.findById(ruleId)
+            .orElseThrow(() -> new IllegalArgumentException("Mail rule not found: " + ruleId));
+
+        if (rule.getAccountId() != null && !rule.getAccountId().equals(accountId)) {
+            throw new IllegalArgumentException("Mail rule does not belong to account: " + accountId);
+        }
+
+        int effectiveMaxMessages = resolveDebugMaxMessages(maxMessagesPerFolder);
+        List<String> folders = normalizeFolders(rule.getFolder());
+        Map<String, Integer> skipReasons = new HashMap<>();
+        List<MailRulePreviewMessage> matchedMessages = new ArrayList<>();
+
+        int foundMessages = 0;
+        int scannedMessages = 0;
+        int matchedCount = 0;
+        int processableCount = 0;
+        int skippedMessages = 0;
+        int errorMessages = 0;
+
+        Store store = null;
+        try {
+            store = connect(account);
+            for (String folderName : folders) {
+                Folder folder = null;
+                try {
+                    folder = store.getFolder(folderName);
+                    if (!folder.exists()) {
+                        incrementReason(skipReasons, "folder_missing", 1);
+                        continue;
+                    }
+                    folder.open(Folder.READ_ONLY);
+                    Message[] messages = folder.search(new FlagTerm(new Flags(Flags.Flag.SEEN), false));
+                    int folderFound = messages.length;
+                    foundMessages += folderFound;
+
+                    int folderScanned = folderFound;
+                    if (effectiveMaxMessages > 0 && folderFound > effectiveMaxMessages) {
+                        folderScanned = effectiveMaxMessages;
+                        incrementReason(skipReasons, "limit_not_scanned", folderFound - folderScanned);
+                    }
+                    scannedMessages += folderScanned;
+
+                    for (int i = 0; i < folderScanned; i++) {
+                        Message message = messages[i];
+                        try {
+                            String uid = resolveMessageUid(folder, message);
+                            if (processedMailRepository.existsByAccountIdAndFolderAndUid(account.getId(), folderName, uid)) {
+                                skippedMessages++;
+                                incrementReason(skipReasons, "already_processed", 1);
+                                continue;
+                            }
+
+                            List<AttachmentPart> attachments;
+                            try {
+                                attachments = collectAttachmentParts(message);
+                            } catch (Exception e) {
+                                log.debug("Mail preview attachment collection failed: {}", e.getMessage());
+                                attachments = new ArrayList<>();
+                            }
+
+                            String bodyText;
+                            try {
+                                bodyText = extractBodyText(message);
+                            } catch (Exception e) {
+                                log.debug("Mail preview body extraction failed: {}", e.getMessage());
+                                bodyText = "";
+                            }
+
+                            List<String> attachmentNames = attachments.stream()
+                                .map(AttachmentPart::fileName)
+                                .filter(name -> name != null && !name.isBlank())
+                                .collect(Collectors.toList());
+
+                            MailRuleMatcher.MailMessageData messageData = new MailRuleMatcher.MailMessageData(
+                                safeSubject(message),
+                                safeFrom(message),
+                                safeRecipients(message),
+                                bodyText,
+                                attachmentNames,
+                                toLocalDateTime(message.getReceivedDate(), message.getSentDate())
+                            );
+
+                            if (!MailRuleMatcher.matches(rule, messageData)) {
+                                skippedMessages++;
+                                incrementReason(skipReasons, "no_match", 1);
+                                continue;
+                            }
+
+                            matchedCount++;
+                            boolean processable = wouldProcessContent(rule, attachments);
+                            if (processable) {
+                                processableCount++;
+                            } else {
+                                incrementReason(skipReasons, "no_content", 1);
+                            }
+
+                            matchedMessages.add(new MailRulePreviewMessage(
+                                folderName,
+                                uid,
+                                safeSubject(message),
+                                safeFrom(message),
+                                safeRecipients(message),
+                                toLocalDateTime(message.getReceivedDate(), message.getSentDate()),
+                                attachmentNames.size(),
+                                processable
+                            ));
+                        } catch (Exception e) {
+                            errorMessages++;
+                            incrementReason(skipReasons, "message_error", 1);
+                            log.debug("Mail preview message processing failed: {}", e.getMessage());
+                        }
+                    }
+                } catch (Exception e) {
+                    errorMessages++;
+                    incrementReason(skipReasons, "folder_error", 1);
+                    log.warn("Mail preview failed for account {} folder {}: {}", account.getName(), folderName, e.getMessage());
+                } finally {
+                    if (folder != null && folder.isOpen()) {
+                        try {
+                            folder.close(false);
+                        } catch (Exception ignored) {
+                            // best effort
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Mail preview failed for account {}: {}", account.getName(), e.getMessage());
+            throw new RuntimeException("Mail preview failed: " + e.getMessage(), e);
+        } finally {
+            if (store != null) {
+                try {
+                    store.close();
+                } catch (Exception ignored) {
+                    // best effort
+                }
+            }
+        }
+
+        return new MailRulePreviewResult(
+            account.getId(),
+            account.getName(),
+            rule.getId(),
+            rule.getName(),
+            effectiveMaxMessages,
+            foundMessages,
+            scannedMessages,
+            matchedCount,
+            processableCount,
+            skippedMessages,
+            errorMessages,
+            skipReasons,
+            matchedMessages
+        );
     }
 
     public List<String> listFolders(UUID accountId) {
@@ -425,21 +599,28 @@ public class MailFetcherService {
             toLocalDateTime(message.getReceivedDate(), message.getSentDate())
         );
 
+        MailRoutingTarget routingTarget = resolveRoutingTarget(message);
         MailRule matchedRule = findMatchingRule(rules, messageData);
-        if (matchedRule == null) {
+        if (matchedRule == null && routingTarget == null) {
             log.debug("No rule matched for email in {}", folderName);
             incrementMessageMetric("skipped", "no_rule");
             stats.skippedMessages++;
             return false;
         }
 
+        if (matchedRule == null) {
+            matchedRule = buildDirectRoutingRule(routingTarget);
+            log.info("Email routed by address to folder {}", routingTarget.folderId());
+        }
+
         log.info("Email matched rule: {}", matchedRule.getName());
         stats.matchedMessages++;
 
-        Map<String, Object> mailProperties = buildMailProperties(account, folderName, uid, matchedRule);
+        UUID targetFolderId = routingTarget != null ? routingTarget.folderId() : matchedRule.getAssignFolderId();
+        Map<String, Object> mailProperties = buildMailProperties(account, folderName, uid, matchedRule, routingTarget);
         boolean processed = false;
         try {
-            processed = processContent(message, matchedRule, attachments, mailProperties);
+            processed = processContent(message, matchedRule, attachments, mailProperties, targetFolderId);
             if (!processed) {
                 log.debug("Rule matched but no content processed for UID {}", uid);
                 incrementMessageMetric("skipped", "no_content");
@@ -491,6 +672,9 @@ public class MailFetcherService {
     }
 
     public record MailConnectionTestResult(boolean success, String message, long durationMs) {
+    }
+
+    private record MailRoutingTarget(UUID folderId, String reason, String address) {
     }
 
     public record MailFetchSummary(
@@ -545,6 +729,35 @@ public class MailFetcherService {
         int maxMessagesPerFolder,
         Map<String, Integer> skipReasons,
         List<MailFetchDebugAccountResult> accounts
+    ) {
+    }
+
+    public record MailRulePreviewMessage(
+        String folder,
+        String uid,
+        String subject,
+        String from,
+        String recipients,
+        LocalDateTime receivedAt,
+        int attachmentCount,
+        boolean processable
+    ) {
+    }
+
+    public record MailRulePreviewResult(
+        UUID accountId,
+        String accountName,
+        UUID ruleId,
+        String ruleName,
+        int maxMessagesPerFolder,
+        int foundMessages,
+        int scannedMessages,
+        int matchedMessages,
+        int processableMessages,
+        int skippedMessages,
+        int errorMessages,
+        Map<String, Integer> skipReasons,
+        List<MailRulePreviewMessage> matches
     ) {
     }
 
@@ -1350,9 +1563,14 @@ public class MailFetcherService {
                 toLocalDateTime(message.getReceivedDate(), message.getSentDate())
             );
 
+            MailRoutingTarget routingTarget = resolveRoutingTarget(message);
             MailRule matchedRule = findMatchingRule(rules, messageData);
-            if (matchedRule == null) {
+            if (matchedRule == null && routingTarget == null) {
                 return new MessageDebugResult(false, false, false, "no_rule");
+            }
+
+            if (matchedRule == null) {
+                matchedRule = buildDirectRoutingRule(routingTarget);
             }
 
             ruleMatches.merge(matchedRule.getName(), 1, Integer::sum);
@@ -1422,11 +1640,23 @@ public class MailFetcherService {
         return null;
     }
 
+    private MailRule buildDirectRoutingRule(MailRoutingTarget routingTarget) {
+        MailRule rule = new MailRule();
+        rule.setName("Direct Routing");
+        rule.setActionType(MailRule.MailActionType.EVERYTHING);
+        rule.setMailAction(MailRule.MailPostAction.MARK_READ);
+        if (routingTarget != null) {
+            rule.setAssignFolderId(routingTarget.folderId());
+        }
+        return rule;
+    }
+
     private boolean processContent(
         Message message,
         MailRule rule,
         List<AttachmentPart> attachments,
-        Map<String, Object> mailProperties
+        Map<String, Object> mailProperties,
+        UUID targetFolderId
     ) throws Exception {
         boolean processed = false;
         MailRule.MailActionType actionType = rule.getActionType() != null
@@ -1435,20 +1665,26 @@ public class MailFetcherService {
 
         if (actionType == MailRule.MailActionType.METADATA_ONLY
             || actionType == MailRule.MailActionType.EVERYTHING) {
-            processed |= ingestEmailMessage(message, rule, mailProperties);
+            processed |= ingestEmailMessage(message, rule, mailProperties, targetFolderId);
         }
 
         if (actionType == MailRule.MailActionType.ATTACHMENTS_ONLY
             || actionType == MailRule.MailActionType.EVERYTHING) {
-            processed |= ingestAttachments(attachments, rule, mailProperties);
+            processed |= ingestAttachments(attachments, rule, mailProperties, targetFolderId);
         }
 
         return processed;
     }
 
-    private boolean ingestEmailMessage(Message message, MailRule rule, Map<String, Object> mailProperties) throws Exception {
+    private boolean ingestEmailMessage(
+        Message message,
+        MailRule rule,
+        Map<String, Object> mailProperties,
+        UUID targetFolderId
+    ) throws Exception {
         MultipartFile file = buildEmlFile(message);
-        var document = emailIngestionService.ingestEmail(file, rule.getAssignFolderId(), mailProperties);
+        UUID folderId = targetFolderId != null ? targetFolderId : rule.getAssignFolderId();
+        var document = emailIngestionService.ingestEmail(file, folderId, mailProperties);
         if (document != null && rule.getAssignTagId() != null) {
             tagService.addTagToNodeById(document.getId().toString(), rule.getAssignTagId());
         }
@@ -1458,7 +1694,8 @@ public class MailFetcherService {
     private boolean ingestAttachments(
         List<AttachmentPart> attachments,
         MailRule rule,
-        Map<String, Object> mailProperties
+        Map<String, Object> mailProperties,
+        UUID targetFolderId
     ) throws Exception {
         boolean includeInline = Boolean.TRUE.equals(rule.getIncludeInlineAttachments());
         boolean processed = false;
@@ -1479,7 +1716,8 @@ public class MailFetcherService {
                 IOUtils.toByteArray(attachment.part().getInputStream())
             );
 
-            var result = uploadService.uploadDocument(file, rule.getAssignFolderId(), null);
+            UUID folderId = targetFolderId != null ? targetFolderId : rule.getAssignFolderId();
+            var result = uploadService.uploadDocument(file, folderId, null);
             if (result.isSuccess()) {
                 processed = true;
                 updateMailDocumentProperties(result.getDocumentId(), mailProperties);
@@ -1507,7 +1745,8 @@ public class MailFetcherService {
         MailAccount account,
         String folderName,
         String uid,
-        MailRule rule
+        MailRule rule,
+        MailRoutingTarget routingTarget
     ) {
         Map<String, Object> props = new HashMap<>();
         props.put("mail:source", true);
@@ -1519,6 +1758,13 @@ public class MailFetcherService {
         if (rule != null && rule.getId() != null) {
             props.put("mail:ruleId", rule.getId().toString());
             props.put("mail:ruleName", rule.getName());
+        }
+        if (routingTarget != null && routingTarget.folderId() != null) {
+            props.put("mail:routeTargetId", routingTarget.folderId().toString());
+            props.put("mail:routeReason", routingTarget.reason());
+            if (routingTarget.address() != null) {
+                props.put("mail:routeAddress", routingTarget.address());
+            }
         }
         return props;
     }
@@ -1728,6 +1974,171 @@ public class MailFetcherService {
 
     private String stripHtml(String input) {
         return input.replaceAll("<[^>]*>", " ").replaceAll("\\s+", " ").trim();
+    }
+
+    private MailRoutingTarget resolveRoutingTarget(Message message) {
+        List<String> recipients = extractRecipientEmails(message);
+        if (recipients.isEmpty()) {
+            return null;
+        }
+
+        for (String recipient : recipients) {
+            if (recipient == null || recipient.isBlank()) {
+                continue;
+            }
+            String normalized = recipient.trim();
+            String domain = extractDomain(normalized);
+            if (!isAllowedRoutingDomain(domain)) {
+                continue;
+            }
+
+            String localPart = extractLocalPart(normalized);
+            if (localPart == null || localPart.isBlank()) {
+                continue;
+            }
+
+            UUID nodeId = extractUuidFromLocalPart(localPart);
+            if (nodeId != null) {
+                Node node = nodeRepository.findByIdAndDeletedFalse(nodeId).orElse(null);
+                if (node != null) {
+                    UUID folderId = resolveFolderTarget(node);
+                    if (folderId != null) {
+                        return new MailRoutingTarget(folderId, "node_id", normalized);
+                    }
+                }
+            }
+
+            Node aliasNode = findNodeByAlias(localPart);
+            if (aliasNode != null) {
+                UUID folderId = resolveFolderTarget(aliasNode);
+                if (folderId != null) {
+                    return new MailRoutingTarget(folderId, "alias", normalized);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private UUID resolveFolderTarget(Node node) {
+        if (node == null) {
+            return null;
+        }
+        if (node.getNodeType() == Node.NodeType.FOLDER) {
+            return node.getId();
+        }
+        if (node.getParent() != null && node.getParent().getNodeType() == Node.NodeType.FOLDER) {
+            return node.getParent().getId();
+        }
+        return null;
+    }
+
+    private Node findNodeByAlias(String alias) {
+        if (alias == null || alias.isBlank() || mailAliasProperty == null || mailAliasProperty.isBlank()) {
+            return null;
+        }
+        String escaped = alias.replace("\"", "\\\"");
+        String json = "{\"" + mailAliasProperty + "\":\"" + escaped + "\"}";
+        List<Node> matches = nodeRepository.findByProperties(json);
+        if (matches == null || matches.isEmpty()) {
+            return null;
+        }
+        return matches.get(0);
+    }
+
+    private boolean isAllowedRoutingDomain(String domain) {
+        if (routingAllowedDomain == null || routingAllowedDomain.isBlank()) {
+            return true;
+        }
+        if (domain == null || domain.isBlank()) {
+            return false;
+        }
+        for (String allowed : routingAllowedDomain.split(",")) {
+            if (domain.equalsIgnoreCase(allowed.trim())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String extractLocalPart(String email) {
+        if (email == null) {
+            return null;
+        }
+        int at = email.indexOf('@');
+        if (at <= 0) {
+            return null;
+        }
+        return email.substring(0, at);
+    }
+
+    private String extractDomain(String email) {
+        if (email == null) {
+            return null;
+        }
+        int at = email.indexOf('@');
+        if (at < 0 || at + 1 >= email.length()) {
+            return null;
+        }
+        return email.substring(at + 1);
+    }
+
+    private UUID extractUuidFromLocalPart(String localPart) {
+        if (localPart == null) {
+            return null;
+        }
+        var matcher = UUID_PATTERN.matcher(localPart);
+        if (matcher.find()) {
+            try {
+                return UUID.fromString(matcher.group());
+            } catch (IllegalArgumentException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private List<String> extractRecipientEmails(Message message) {
+        List<String> emails = new ArrayList<>();
+        try {
+            Address[] addresses = message.getAllRecipients();
+            if (addresses == null) {
+                return emails;
+            }
+            for (Address address : addresses) {
+                if (address instanceof InternetAddress internetAddress) {
+                    String email = internetAddress.getAddress();
+                    if (email != null && !email.isBlank()) {
+                        emails.add(email.trim());
+                    }
+                    continue;
+                }
+                String raw = address.toString();
+                String email = extractEmailAddress(raw);
+                if (email != null && !email.isBlank()) {
+                    emails.add(email.trim());
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Failed to extract recipient emails: {}", e.getMessage());
+        }
+        return emails;
+    }
+
+    private String extractEmailAddress(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String candidate = raw.trim();
+        int lt = candidate.indexOf('<');
+        int gt = candidate.indexOf('>');
+        if (lt >= 0 && gt > lt) {
+            candidate = candidate.substring(lt + 1, gt);
+        }
+        if (candidate.startsWith("mailto:")) {
+            candidate = candidate.substring("mailto:".length());
+        }
+        return candidate.contains("@") ? candidate : null;
     }
 
     private String safeSubject(Message message) {

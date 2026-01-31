@@ -209,6 +209,17 @@ public class SearchController {
         return ResponseEntity.ok(response);
     }
 
+    @GetMapping("/spellcheck")
+    @Operation(summary = "Spellcheck suggestions",
+               description = "Return \"Did you mean\" suggestions for a query")
+    public ResponseEntity<List<String>> spellcheck(
+            @Parameter(description = "Search query")
+            @RequestParam String q,
+            @Parameter(description = "Maximum suggestions")
+            @RequestParam(defaultValue = "5") int limit) {
+        return ResponseEntity.ok(facetedSearchService.getSpellcheckSuggestions(q, limit));
+    }
+
     @GetMapping("/folder/{folderPath}")
     @Operation(summary = "Search in folder",
                description = "Search within a specific folder and its subfolders")

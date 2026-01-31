@@ -299,8 +299,20 @@ test('Search sorting and pagination are consistent', async ({ page, request }) =
   expect(uiPage0).toEqual(apiPage0Names);
 
   if (apiPage0Json.totalElements > 20) {
-    await page.getByRole('button', { name: '2' }).first().click();
+    const pagination = page.locator('nav[aria-label*="pagination"]').first();
+    if (await pagination.count()) {
+      await pagination.scrollIntoViewIfNeeded();
+      const page2Button = pagination.getByRole('button', { name: '2' }).first();
+      await page2Button.click();
+    } else {
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.getByRole('button', { name: '2' }).first().click();
+    }
     await waitForResults(page);
+    await expect.poll(async () => {
+      const text = await page.locator('.MuiCard-root h6').first().textContent();
+      return text?.trim() ?? '';
+    }, { timeout: 60_000 }).toContain(`${pagePrefix}-021.txt`);
 
     const uiPage1 = (await page.locator('.MuiCard-root h6').allTextContents())
       .map((name) => name.trim())

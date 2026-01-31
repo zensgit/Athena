@@ -444,6 +444,10 @@ class NodeService {
     );
   }
 
+  async getSpellcheckSuggestions(query = '', limit = 5): Promise<string[]> {
+    return api.get<string[]>('/search/spellcheck', { params: { q: query, limit } });
+  }
+
   private mapSearchItemToNode(item: any): Node {
     const inferredNodeType = item.mimeType || item.fileSize
       ? 'DOCUMENT'
@@ -546,6 +550,10 @@ class NodeService {
     }, {});
   }
 
+  async getPermissionSets(): Promise<Record<string, PermissionType[]>> {
+    return api.get<Record<string, PermissionType[]>>('/security/permission-sets');
+  }
+
   async setPermission(
     nodeId: string,
     authority: string,
@@ -555,6 +563,18 @@ class NodeService {
   ): Promise<void> {
     return api.post(`/security/nodes/${nodeId}/permissions`, null, {
       params: { authority, authorityType, permissionType, allowed },
+    });
+  }
+
+  async applyPermissionSet(
+    nodeId: string,
+    authority: string,
+    authorityType: Permission['authorityType'],
+    permissionSet: string,
+    replace = false
+  ): Promise<void> {
+    return api.post(`/security/nodes/${nodeId}/permission-sets`, null, {
+      params: { authority, authorityType, permissionSet, replace },
     });
   }
 

@@ -1,11 +1,19 @@
 package com.ecm.core.search;
 
-import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Node;
 import com.ecm.core.entity.Permission.PermissionType;
-import com.ecm.core.repository.DocumentRepository;
 import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.service.SecurityService;
+import co.elastic.clients.elasticsearch._types.SuggestMode;
+import co.elastic.clients.elasticsearch._types.aggregations.Aggregate;
+import co.elastic.clients.elasticsearch._types.aggregations.Aggregation;
+import co.elastic.clients.elasticsearch._types.aggregations.AggregationRange;
+import co.elastic.clients.elasticsearch._types.aggregations.DateRangeExpression;
+import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery;
+import co.elastic.clients.elasticsearch._types.query_dsl.Operator;
+import co.elastic.clients.elasticsearch._types.query_dsl.TextQueryType;
+import co.elastic.clients.json.JsonData;
+import co.elastic.clients.elasticsearch.core.search.Suggester;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -13,18 +21,20 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.elasticsearch.client.elc.ElasticsearchAggregations;
+import org.springframework.data.elasticsearch.client.elc.NativeQuery;
+import org.springframework.data.elasticsearch.client.elc.NativeQueryBuilder;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.data.elasticsearch.core.SearchHit;
 import org.springframework.data.elasticsearch.core.SearchHits;
 import org.springframework.data.elasticsearch.core.mapping.IndexCoordinates;
 import org.springframework.data.elasticsearch.core.query.Criteria;
 import org.springframework.data.elasticsearch.core.query.CriteriaQuery;
-import org.springframework.data.elasticsearch.core.query.Query;
+import org.springframework.data.elasticsearch.core.suggest.response.Suggest;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -33,7 +43,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import java.util.stream.Collectors;
 
 /**
@@ -53,7 +62,6 @@ import java.util.stream.Collectors;
 public class FacetedSearchService {
 
     private final ElasticsearchOperations elasticsearchOperations;
-    private final DocumentRepository documentRepository;
     private final NodeRepository nodeRepository;
     private final SecurityService securityService;
 
@@ -61,6 +69,19 @@ public class FacetedSearchService {
     private boolean searchEnabled;
 
     private static final String INDEX_NAME = "ecm_documents";
+    private static final int DEFAULT_FACET_SIZE = 20;
+    private static final int DEFAULT_SUGGESTION_LIMIT = 6;
+    private static final int DEFAULT_SPELLCHECK_LIMIT = 5;
+    private static final long ONE_MB = 1_048_576L;
+    private static final DateTimeFormatter ES_DATE_TIME_FORMAT = DateTimeFormatter.ISO_DATE_TIME;
+    private static final List<String> DEFAULT_FACET_FIELDS = List.of(
+        "mimeType",
+        "createdBy",
+        "tags",
+        "categories",
+        "correspondent",
+        "nodeType"
+    );
 
     /**
      * Perform faceted search with aggregations
@@ -73,7 +94,7 @@ public class FacetedSearchService {
 
         try {
             // Build the search query
-            Query query = buildFacetedQuery(request);
+            NativeQuery query = buildFacetedQuery(request);
 
             // Execute search
             SearchHits<NodeDocument> searchHits = elasticsearchOperations.search(
@@ -86,19 +107,36 @@ public class FacetedSearchService {
                 .map(this::toSearchResult)
                 .collect(Collectors.toList());
 
-            // Build facets from results (simplified aggregation)
-            Map<String, List<FacetValue>> facets = buildFacets(authorizedHits);
+            // Build facets from aggregations when available (admin), otherwise from authorized hits
+            List<String> facetFields = resolveFacetFields(request);
+            Map<String, List<FacetValue>> facets;
+            if (securityService.hasRole("ROLE_ADMIN")) {
+                facets = buildFacetsFromAggregations(searchHits, facetFields);
+                if (facets.isEmpty()) {
+                    facets = buildFacets(authorizedHits);
+                }
+            } else {
+                facets = buildFacets(authorizedHits);
+            }
 
             Pageable pageable = request.getPageable() != null
                 ? request.getPageable().toPageable()
                 : PageRequest.of(0, 20);
 
-            Page<SearchResult> resultPage = new PageImpl<>(results, pageable, results.size());
+            long totalHits = securityService.hasRole("ROLE_ADMIN")
+                ? searchHits.getTotalHits()
+                : results.size();
+            Page<SearchResult> resultPage = new PageImpl<>(results, pageable, totalHits);
+
+            List<String> suggestions = request.isIncludeSuggestions() && request.getQuery() != null
+                ? getSuggestions(request.getQuery(), DEFAULT_SUGGESTION_LIMIT)
+                : List.of();
 
             return FacetedSearchResponse.builder()
                 .results(resultPage)
                 .facets(facets)
-                .totalHits(results.size())
+                .totalHits(totalHits)
+                .suggestions(suggestions)
                 .queryTime(System.currentTimeMillis())
                 .build();
 
@@ -124,14 +162,22 @@ public class FacetedSearchService {
             request.setQuery(query);
             SimplePageRequest pageable = new SimplePageRequest();
             pageable.setPage(0);
-            pageable.setSize(1000); // Fetch more for accurate facet counts
+            pageable.setSize(1); // Aggregations will provide facet counts
             request.setPageable(pageable);
 
-            Query esQuery = buildFacetedQuery(request);
+            NativeQuery esQuery = buildFacetedQuery(request);
             SearchHits<NodeDocument> searchHits = elasticsearchOperations.search(
                 esQuery, NodeDocument.class, IndexCoordinates.of(INDEX_NAME));
 
-            return buildFacets(filterAuthorizedHits(searchHits));
+            if (!securityService.hasRole("ROLE_ADMIN")) {
+                return buildFacets(filterAuthorizedHits(searchHits));
+            }
+
+            Map<String, List<FacetValue>> facets = buildFacetsFromAggregations(searchHits, resolveFacetFields(request));
+            if (facets.isEmpty()) {
+                return buildFacets(filterAuthorizedHits(searchHits));
+            }
+            return facets;
 
         } catch (LinkageError e) {
             log.error("Failed to get facets due to missing/invalid Elasticsearch client dependency", e);
@@ -293,125 +339,358 @@ public class FacetedSearchService {
         }
     }
 
-    // === Private helper methods ===
-
-    private Query buildFacetedQuery(FacetedSearchRequest request) {
-        Criteria criteria = new Criteria();
-
-        // Text search with optional boosting
-        if (request.getQuery() != null && !request.getQuery().trim().isEmpty()) {
-            String searchTerm = request.getQuery().trim();
-            criteria = criteria.or("name").matches(searchTerm)
-                .or("content").matches(searchTerm)
-                .or("textContent").matches(searchTerm)
-                .or("title").matches(searchTerm)
-                .or("description").matches(searchTerm);
+    /**
+     * Get spellcheck / "Did you mean?" suggestions for a query.
+     */
+    public List<String> getSpellcheckSuggestions(String query, Integer limit) {
+        if (!searchEnabled || query == null) {
+            return Collections.emptyList();
+        }
+        String trimmed = query.trim();
+        if (trimmed.length() < 2) {
+            return Collections.emptyList();
         }
 
-        // Path prefix filter
-        if (request.getPathPrefix() != null && !request.getPathPrefix().isEmpty()) {
-            criteria = criteria.and("path").startsWith(request.getPathPrefix());
+        int maxSuggestions = limit != null && limit > 0 ? limit : DEFAULT_SPELLCHECK_LIMIT;
+
+        try {
+            Suggester suggester = Suggester.of(s -> s
+                .text(trimmed)
+                .suggesters("did_you_mean", fs -> fs.term(ts -> ts
+                    .field("name")
+                    .suggestMode(SuggestMode.Always)
+                    .size(maxSuggestions)
+                ))
+            );
+
+            NativeQuery queryBuilder = NativeQuery.builder()
+                .withQuery(q -> q.matchAll(m -> m))
+                .withSuggester(suggester)
+                .build();
+
+            SearchHits<NodeDocument> hits = elasticsearchOperations.search(
+                queryBuilder, NodeDocument.class, IndexCoordinates.of(INDEX_NAME));
+
+            if (!hits.hasSuggest()) {
+                return Collections.emptyList();
+            }
+            Suggest suggest = hits.getSuggest();
+            if (suggest == null) {
+                return Collections.emptyList();
+            }
+            Suggest.Suggestion<?> suggestion = suggest.getSuggestion("did_you_mean");
+            if (suggestion == null) {
+                return Collections.emptyList();
+            }
+
+            List<String> options = new ArrayList<>();
+            for (Suggest.Suggestion.Entry<?> entry : suggestion.getEntries()) {
+                for (Suggest.Suggestion.Entry.Option option : entry.getOptions()) {
+                    if (option.getText() != null && !option.getText().isBlank()) {
+                        options.add(option.getText());
+                    }
+                }
+            }
+
+            if (options.isEmpty()) {
+                return Collections.emptyList();
+            }
+
+            return options.stream()
+                .filter(option -> !option.equalsIgnoreCase(trimmed))
+                .distinct()
+                .limit(maxSuggestions)
+                .collect(Collectors.toList());
+        } catch (Exception e) {
+            log.error("Get spellcheck suggestions failed for query: {}", query, e);
+            return Collections.emptyList();
         }
-
-        // Apply filters
-        if (request.getFilters() != null) {
-            criteria = applyFilters(criteria, request.getFilters());
-        }
-
-        // Exclude deleted by default
-        if (request.getFilters() == null || !request.getFilters().isIncludeDeleted()) {
-            criteria = criteria.and("deleted").is(false);
-        }
-
-        CriteriaQuery query = new CriteriaQuery(criteria);
-
-        if (request.getPageable() != null) {
-            query.setPageable(request.getPageable().toPageable());
-        }
-
-        return query;
     }
 
-    private Criteria applyFilters(Criteria criteria, SearchFilters filters) {
-        if (filters.getMimeTypes() != null && !filters.getMimeTypes().isEmpty()) {
-            criteria = criteria.and(
-                new Criteria("mimeType.keyword").in(filters.getMimeTypes())
-                    .or(new Criteria("mimeType").in(filters.getMimeTypes()))
-            );
-        }
+    // === Private helper methods ===
 
-        if (filters.getNodeTypes() != null && !filters.getNodeTypes().isEmpty()) {
-            criteria = criteria.and(
-                new Criteria("nodeType.keyword").in(filters.getNodeTypes())
-                    .or(new Criteria("nodeType").in(filters.getNodeTypes()))
-            );
-        }
+    private NativeQuery buildFacetedQuery(FacetedSearchRequest request) {
+        Pageable pageable = request.getPageable() != null
+            ? request.getPageable().toPageable()
+            : PageRequest.of(0, 20);
+
+        String searchTerm = request.getQuery() != null ? request.getQuery().trim() : "";
+        List<String> searchFields = resolveSearchFields(request);
+        SearchFilters filters = request.getFilters();
+
+        NativeQueryBuilder builder = NativeQuery.builder().withPageable(pageable);
+
+        builder.withQuery(q -> q.bool(b -> {
+            if (searchTerm.isBlank()) {
+                b.must(m -> m.matchAll(ma -> ma));
+            } else {
+                b.must(m -> m.multiMatch(mq -> mq
+                    .query(searchTerm)
+                    .fields(searchFields)
+                    .type(TextQueryType.BestFields)
+                    .operator(Operator.Or)
+                ));
+            }
+
+            if (request.getPathPrefix() != null && !request.getPathPrefix().isBlank()) {
+                b.filter(f -> f.prefix(p -> p.field("path").value(request.getPathPrefix())));
+            }
+
+            if (filters == null || !filters.isIncludeDeleted()) {
+                b.filter(f -> f.term(t -> t.field("deleted").value(false)));
+            }
+
+            if (filters != null) {
+                applyFilters(b, filters);
+            }
+
+            return b;
+        }));
+
+        applyAggregations(builder, resolveFacetFields(request));
+
+        return builder.build();
+    }
+
+    private void applyFilters(BoolQuery.Builder bool, SearchFilters filters) {
+        addAnyOfTermsFilter(bool, List.of("mimeType"), filters.getMimeTypes());
+        addAnyOfTermsFilter(bool, List.of("nodeType"), filters.getNodeTypes());
+        addAnyOfTermsFilter(bool, List.of("tags"), filters.getTags());
+        addAnyOfTermsFilter(bool, List.of("categories"), filters.getCategories());
+        addAnyOfTermsFilter(bool, List.of("correspondent"), filters.getCorrespondents());
 
         if (filters.getCreatedByList() != null && !filters.getCreatedByList().isEmpty()) {
-            criteria = criteria.and(
-                new Criteria("createdBy.keyword").in(filters.getCreatedByList())
-                    .or(new Criteria("createdBy").in(filters.getCreatedByList()))
-            );
-        } else if (filters.getCreatedBy() != null && !filters.getCreatedBy().isEmpty()) {
-            criteria = criteria.and(
-                new Criteria("createdBy.keyword").is(filters.getCreatedBy())
-                    .or(new Criteria("createdBy").is(filters.getCreatedBy()))
-            );
+            addAnyOfTermsFilter(bool, List.of("createdBy"), filters.getCreatedByList());
+        } else if (filters.getCreatedBy() != null && !filters.getCreatedBy().isBlank()) {
+            addAnyOfTermsFilter(bool, List.of("createdBy"), List.of(filters.getCreatedBy()));
         }
 
-        if (filters.getDateFrom() != null) {
-            criteria = criteria.and("createdDate").greaterThanEqual(filters.getDateFrom());
+        addDateRangeFilter(bool, "createdDate", filters.getDateFrom(), filters.getDateTo());
+        addDateRangeFilter(bool, "lastModifiedDate", filters.getModifiedFrom(), filters.getModifiedTo());
+        addNumberRangeFilter(bool, "fileSize", filters.getMinSize(), filters.getMaxSize());
+        addAnyPrefixFilter(bool, List.of("path"), filters.getPath());
+    }
+
+    private static void addAnyOfTermsFilter(BoolQuery.Builder bool, List<String> fields, List<String> values) {
+        if (fields == null || fields.isEmpty() || values == null || values.isEmpty()) {
+            return;
         }
 
-        if (filters.getDateTo() != null) {
-            criteria = criteria.and("createdDate").lessThanEqual(filters.getDateTo());
+        List<String> normalizedValues = values.stream()
+            .filter(v -> v != null && !v.isBlank())
+            .toList();
+        if (normalizedValues.isEmpty()) {
+            return;
         }
 
-        if (filters.getModifiedFrom() != null) {
-            criteria = criteria.and("lastModifiedDate").greaterThanEqual(filters.getModifiedFrom());
+        bool.filter(f -> f.bool(b -> {
+            for (String value : normalizedValues) {
+                for (String field : fields) {
+                    b.should(s -> s.term(t -> t.field(field).value(value)));
+                }
+            }
+            b.minimumShouldMatch("1");
+            return b;
+        }));
+    }
+
+    private static void addAnyPrefixFilter(BoolQuery.Builder bool, List<String> fields, String prefix) {
+        if (fields == null || fields.isEmpty() || prefix == null || prefix.isBlank()) {
+            return;
+        }
+        bool.filter(f -> f.bool(b -> {
+            for (String field : fields) {
+                b.should(s -> s.prefix(p -> p.field(field).value(prefix)));
+            }
+            b.minimumShouldMatch("1");
+            return b;
+        }));
+    }
+
+    private static void addDateRangeFilter(BoolQuery.Builder bool, String field, LocalDateTime from, LocalDateTime to) {
+        if (from == null && to == null) {
+            return;
+        }
+        bool.filter(f -> f.range(r -> {
+            r.field(field);
+            if (from != null) {
+                r.gte(JsonData.of(from.format(ES_DATE_TIME_FORMAT)));
+            }
+            if (to != null) {
+                r.lte(JsonData.of(to.format(ES_DATE_TIME_FORMAT)));
+            }
+            return r;
+        }));
+    }
+
+    private static void addNumberRangeFilter(BoolQuery.Builder bool, String field, Long min, Long max) {
+        if (min == null && max == null) {
+            return;
+        }
+        bool.filter(f -> f.range(r -> {
+            r.field(field);
+            if (min != null) {
+                r.gte(JsonData.of(min));
+            }
+            if (max != null) {
+                r.lte(JsonData.of(max));
+            }
+            return r;
+        }));
+    }
+
+    private List<String> resolveFacetFields(FacetedSearchRequest request) {
+        if (request.getFacetFields() != null && !request.getFacetFields().isEmpty()) {
+            return request.getFacetFields();
+        }
+        return DEFAULT_FACET_FIELDS;
+    }
+
+    private List<String> resolveSearchFields(FacetedSearchRequest request) {
+        if (request.getBoostFields() != null && !request.getBoostFields().isEmpty()) {
+            return request.getBoostFields();
+        }
+        return List.of("name^2", "title^2", "content", "textContent", "description", "extractedText");
+    }
+
+    private void applyAggregations(NativeQueryBuilder builder, List<String> facetFields) {
+        List<String> fields = facetFields != null && !facetFields.isEmpty()
+            ? facetFields
+            : DEFAULT_FACET_FIELDS;
+
+        for (String field : fields) {
+            if (field == null || field.isBlank()) {
+                continue;
+            }
+            if ("fileSizeRange".equalsIgnoreCase(field) || "createdDateRange".equalsIgnoreCase(field)) {
+                continue;
+            }
+            builder.withAggregation(field, Aggregation.of(a -> a.terms(t -> t
+                .field(field)
+                .size(DEFAULT_FACET_SIZE)
+            )));
         }
 
-        if (filters.getModifiedTo() != null) {
-            criteria = criteria.and("lastModifiedDate").lessThanEqual(filters.getModifiedTo());
+        builder.withAggregation("fileSizeRange", Aggregation.of(a -> a.range(r -> r
+            .field("fileSize")
+            .ranges(List.of(
+                AggregationRange.of(range -> range.key("0-1MB").to(String.valueOf(ONE_MB))),
+                AggregationRange.of(range -> range.key("1-10MB")
+                    .from(String.valueOf(ONE_MB))
+                    .to(String.valueOf(10 * ONE_MB))),
+                AggregationRange.of(range -> range.key("10-100MB")
+                    .from(String.valueOf(10 * ONE_MB))
+                    .to(String.valueOf(100 * ONE_MB))),
+                AggregationRange.of(range -> range.key("100MB+")
+                    .from(String.valueOf(100 * ONE_MB)))
+            ))
+        )));
+
+        builder.withAggregation("createdDateRange", Aggregation.of(a -> a.dateRange(dr -> dr
+            .field("createdDate")
+            .ranges(List.of(
+                DateRangeExpression.of(range -> range.key("last24h")
+                    .from(f -> f.expr("now-24h"))
+                    .to(f -> f.expr("now"))),
+                DateRangeExpression.of(range -> range.key("last7d")
+                    .from(f -> f.expr("now-7d"))
+                    .to(f -> f.expr("now"))),
+                DateRangeExpression.of(range -> range.key("last30d")
+                    .from(f -> f.expr("now-30d"))
+                    .to(f -> f.expr("now"))),
+                DateRangeExpression.of(range -> range.key("last365d")
+                    .from(f -> f.expr("now-365d"))
+                    .to(f -> f.expr("now")))
+            ))
+        )));
+    }
+
+    private Map<String, List<FacetValue>> buildFacetsFromAggregations(
+        SearchHits<NodeDocument> searchHits,
+        List<String> facetFields
+    ) {
+        if (searchHits == null || searchHits.getAggregations() == null) {
+            return Collections.emptyMap();
         }
 
-        if (filters.getMinSize() != null) {
-            criteria = criteria.and("fileSize").greaterThanEqual(filters.getMinSize());
+        ElasticsearchAggregations aggregations;
+        try {
+            aggregations = (ElasticsearchAggregations) searchHits.getAggregations();
+        } catch (ClassCastException ex) {
+            return Collections.emptyMap();
         }
 
-        if (filters.getMaxSize() != null) {
-            criteria = criteria.and("fileSize").lessThanEqual(filters.getMaxSize());
+        Map<String, List<FacetValue>> facets = new HashMap<>();
+        List<String> resolvedFields = facetFields != null && !facetFields.isEmpty()
+            ? facetFields
+            : DEFAULT_FACET_FIELDS;
+
+        var aggregationsMap = aggregations.aggregationsAsMap();
+        for (String field : resolvedFields) {
+            Aggregate agg = extractAggregate(aggregationsMap, field);
+            List<FacetValue> values = extractTermsFacet(agg);
+            if (!values.isEmpty()) {
+                facets.put(field, values);
+            }
         }
 
-        if (filters.getTags() != null && !filters.getTags().isEmpty()) {
-            criteria = criteria.and(
-                new Criteria("tags.keyword").in(filters.getTags())
-                    .or(new Criteria("tags").in(filters.getTags()))
-            );
+        Aggregate fileSizeAgg = extractAggregate(aggregationsMap, "fileSizeRange");
+        List<FacetValue> fileSizeRanges = extractRangeFacet(fileSizeAgg);
+        if (!fileSizeRanges.isEmpty()) {
+            facets.put("fileSizeRange", fileSizeRanges);
         }
 
-        if (filters.getCategories() != null && !filters.getCategories().isEmpty()) {
-            criteria = criteria.and(
-                new Criteria("categories.keyword").in(filters.getCategories())
-                    .or(new Criteria("categories").in(filters.getCategories()))
-            );
+        Aggregate dateRangeAgg = extractAggregate(aggregationsMap, "createdDateRange");
+        List<FacetValue> dateRanges = extractRangeFacet(dateRangeAgg);
+        if (!dateRanges.isEmpty()) {
+            facets.put("createdDateRange", dateRanges);
         }
 
-        if (filters.getCorrespondents() != null && !filters.getCorrespondents().isEmpty()) {
-            criteria = criteria.and(
-                new Criteria("correspondent.keyword").in(filters.getCorrespondents())
-                    .or(new Criteria("correspondent").in(filters.getCorrespondents()))
-            );
-        }
+        return facets;
+    }
 
-        if (filters.getPath() != null && !filters.getPath().isEmpty()) {
-            criteria = criteria.and(
-                new Criteria("path.keyword").startsWith(filters.getPath())
-                    .or(new Criteria("path").startsWith(filters.getPath()))
-            );
+    private Aggregate extractAggregate(
+        Map<String, org.springframework.data.elasticsearch.client.elc.ElasticsearchAggregation> aggregationsMap,
+        String name
+    ) {
+        if (aggregationsMap == null || name == null) {
+            return null;
         }
+        var aggregation = aggregationsMap.get(name);
+        if (aggregation == null || aggregation.aggregation() == null) {
+            return null;
+        }
+        return aggregation.aggregation().getAggregate();
+    }
 
-        return criteria;
+    private List<FacetValue> extractTermsFacet(Aggregate aggregate) {
+        if (aggregate == null || !aggregate.isSterms()) {
+            return List.of();
+        }
+        return aggregate.sterms().buckets().array().stream()
+            .map(bucket -> new FacetValue(bucket.key().stringValue(), toFacetCount(bucket.docCount())))
+            .collect(Collectors.toList());
+    }
+
+    private List<FacetValue> extractRangeFacet(Aggregate aggregate) {
+        if (aggregate == null) {
+            return List.of();
+        }
+        if (aggregate.isRange()) {
+            return aggregate.range().buckets().array().stream()
+                .map(bucket -> new FacetValue(bucket.key(), toFacetCount(bucket.docCount())))
+                .collect(Collectors.toList());
+        }
+        if (aggregate.isDateRange()) {
+            return aggregate.dateRange().buckets().array().stream()
+                .map(bucket -> new FacetValue(bucket.key(), toFacetCount(bucket.docCount())))
+                .collect(Collectors.toList());
+        }
+        return List.of();
+    }
+
+    private int toFacetCount(long count) {
+        return count > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) count;
     }
 
     private Map<String, List<FacetValue>> buildFacets(Iterable<SearchHit<NodeDocument>> searchHits) {
@@ -567,6 +846,7 @@ public class FacetedSearchService {
         private SearchFilters filters;
         private SimplePageRequest pageable;
         private boolean highlightEnabled = true;
+        private boolean includeSuggestions = false;
         private List<String> facetFields;
         private List<String> boostFields;
         private String pathPrefix;
@@ -581,12 +861,14 @@ public class FacetedSearchService {
         private Map<String, List<FacetValue>> facets;
         private long totalHits;
         private long queryTime;
+        private List<String> suggestions;
 
         public static FacetedSearchResponse empty() {
             return FacetedSearchResponse.builder()
                 .results(Page.empty())
                 .facets(Collections.emptyMap())
                 .totalHits(0)
+                .suggestions(List.of())
                 .queryTime(0)
                 .build();
         }

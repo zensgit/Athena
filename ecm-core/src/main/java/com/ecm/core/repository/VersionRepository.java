@@ -6,6 +6,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import java.util.List;
 import java.util.Optional;
@@ -15,6 +17,8 @@ import java.util.UUID;
 public interface VersionRepository extends JpaRepository<Version, UUID> {
     
     List<Version> findByDocumentIdOrderByVersionNumberDesc(UUID documentId);
+
+    Page<Version> findByDocumentIdOrderByVersionNumberDesc(UUID documentId, Pageable pageable);
     
     Optional<Version> findByDocumentIdAndVersionNumber(UUID documentId, Integer versionNumber);
     
@@ -28,6 +32,9 @@ public interface VersionRepository extends JpaRepository<Version, UUID> {
     
     @Query("SELECT v FROM Version v WHERE v.document.id = :documentId AND v.majorVersionFlag = true ORDER BY v.versionNumber DESC")
     List<Version> findMajorVersions(@Param("documentId") UUID documentId);
+
+    @Query("SELECT v FROM Version v WHERE v.document.id = :documentId AND v.majorVersionFlag = true ORDER BY v.versionNumber DESC")
+    Page<Version> findMajorVersions(@Param("documentId") UUID documentId, Pageable pageable);
     
     @Query("SELECT v FROM Version v WHERE v.contentHash = :contentHash")
     List<Version> findByContentHash(@Param("contentHash") String contentHash);

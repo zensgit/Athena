@@ -8,6 +8,7 @@ import com.ecm.core.pipeline.DocumentProcessor;
 import com.ecm.core.pipeline.ProcessingResult;
 import com.ecm.core.repository.DocumentRepository;
 import com.ecm.core.repository.VersionRepository;
+import com.ecm.core.service.VersionLabelService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -29,6 +30,7 @@ public class InitialVersionProcessor implements DocumentProcessor {
     private final VersionRepository versionRepository;
     private final DocumentRepository documentRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final VersionLabelService versionLabelService;
 
     @Override
     public int getOrder() {
@@ -72,7 +74,7 @@ public class InitialVersionProcessor implements DocumentProcessor {
         try {
             int major = document.getMajorVersion() != null ? document.getMajorVersion() : 1;
             int minor = document.getMinorVersion() != null ? document.getMinorVersion() : 0;
-            String versionLabel = major + "." + minor;
+            String versionLabel = versionLabelService.generateLabel(document, 1);
 
             Version version = new Version();
             version.setDocument(document);
@@ -116,4 +118,3 @@ public class InitialVersionProcessor implements DocumentProcessor {
         }
     }
 }
-

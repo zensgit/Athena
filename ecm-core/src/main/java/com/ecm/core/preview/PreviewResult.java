@@ -9,7 +9,9 @@ public class PreviewResult {
     private UUID documentId;
     private String mimeType;
     private boolean supported;
+    private String status;
     private String message;
+    private String failureReason;
     private List<PreviewPage> pages;
     private int pageCount;
 }

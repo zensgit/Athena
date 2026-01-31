@@ -105,7 +105,10 @@ public class FullTextSearchService {
 
             List<SearchResult> results = filterAuthorizedResults(searchHits);
 
-            return new PageImpl<>(results, pageable, results.size());
+            long totalHits = securityService.hasRole("ROLE_ADMIN")
+                ? searchHits.getTotalHits()
+                : results.size();
+            return new PageImpl<>(results, pageable, totalHits);
 
         } catch (LinkageError e) {
             log.error("Search failed due to missing/invalid Elasticsearch client dependency", e);
@@ -135,7 +138,10 @@ public class FullTextSearchService {
 
             List<SearchResult> results = filterAuthorizedResults(searchHits);
 
-            return new PageImpl<>(results, pageable, results.size());
+            long totalHits = securityService.hasRole("ROLE_ADMIN")
+                ? searchHits.getTotalHits()
+                : results.size();
+            return new PageImpl<>(results, pageable, totalHits);
 
         } catch (LinkageError e) {
             Pageable pageable = request.getPageable() != null

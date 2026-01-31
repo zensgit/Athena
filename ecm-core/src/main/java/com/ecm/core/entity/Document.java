@@ -69,6 +69,16 @@ public class Document extends Node {
     
     @Column(name = "preview_available")
     private boolean previewAvailable = false;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "preview_status")
+    private PreviewStatus previewStatus;
+
+    @Column(name = "preview_failure_reason", columnDefinition = "TEXT")
+    private String previewFailureReason;
+
+    @Column(name = "preview_last_updated")
+    private LocalDateTime previewLastUpdated;
     
     @Column(name = "text_content", columnDefinition = "TEXT")
     private String textContent;

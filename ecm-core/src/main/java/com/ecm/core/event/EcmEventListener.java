@@ -3,6 +3,7 @@ package com.ecm.core.event;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Node;
 import com.ecm.core.entity.Version;
+import com.ecm.core.preview.PreviewQueueService;
 import com.ecm.core.search.SearchIndexService;
 import com.ecm.core.service.AuditService;
 import com.ecm.core.service.NotificationService;
@@ -21,6 +22,7 @@ public class EcmEventListener {
     private final AuditService auditService;
     private final SearchIndexService searchIndexService;
     private final NotificationService notificationService;
+    private final PreviewQueueService previewQueueService;
     
     @Async
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -145,8 +147,7 @@ public class EcmEventListener {
         
         // Generate preview for new version
         try {
-            // This would trigger preview generation
-            log.debug("Triggering preview generation for version {}", version.getId());
+            previewQueueService.enqueue(document.getId(), false);
         } catch (Exception e) {
             log.error("Failed to generate preview for version {}", version.getId(), e);
         }

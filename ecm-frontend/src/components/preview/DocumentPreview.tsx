@@ -86,7 +86,9 @@ type PreviewResult = {
   documentId?: string;
   mimeType?: string;
   supported?: boolean;
+  status?: string;
   message?: string;
+  failureReason?: string;
   pages?: PreviewPage[];
   pageCount?: number;
 };

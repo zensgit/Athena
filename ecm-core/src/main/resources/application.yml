@@ -79,8 +79,8 @@ flowable:
   
 jodconverter:
   local:
-    enabled: true
-    office-home: /usr/lib/libreoffice
+    enabled: ${JODCONVERTER_LOCAL_ENABLED:false}
+    office-home: ${JODCONVERTER_LOCAL_OFFICE_HOME:/usr/lib/libreoffice}
     port-numbers: 2002
     max-tasks-per-process: 10
     process-timeout: 120000
@@ -88,6 +88,7 @@ jodconverter:
 ecm:
   audit:
     retention-days: ${ECM_AUDIT_RETENTION_DAYS:365}
+    disabled-categories: ${ECM_AUDIT_DISABLED_CATEGORIES:}
 
   mail:
     processed:
@@ -138,6 +139,20 @@ ecm:
       render-url: ${ECM_PREVIEW_CAD_RENDER_URL:}
       auth-token: ${ECM_PREVIEW_CAD_AUTH_TOKEN:}
       timeout-ms: ${ECM_PREVIEW_CAD_TIMEOUT_MS:30000}
+    queue:
+      enabled: ${ECM_PREVIEW_QUEUE_ENABLED:true}
+      poll-interval-ms: ${ECM_PREVIEW_QUEUE_POLL_INTERVAL_MS:2000}
+      batch-size: ${ECM_PREVIEW_QUEUE_BATCH_SIZE:2}
+      max-attempts: ${ECM_PREVIEW_QUEUE_MAX_ATTEMPTS:3}
+      retry-delay-ms: ${ECM_PREVIEW_QUEUE_RETRY_DELAY_MS:60000}
+      run-as-user: ${ECM_PREVIEW_QUEUE_RUN_AS_USER:admin}
+
+  versioning:
+    label-policy: ${ECM_VERSION_LABEL_POLICY:semantic}
+    calendar:
+      format: ${ECM_VERSION_CALENDAR_FORMAT:yyyy.MM.dd}
+      include-sequence: ${ECM_VERSION_CALENDAR_INCLUDE_SEQUENCE:true}
+      sequence-separator: ${ECM_VERSION_CALENDAR_SEQUENCE_SEPARATOR:.}
   
   conversion:
     output-formats:

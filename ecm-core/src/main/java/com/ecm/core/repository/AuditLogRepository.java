@@ -45,6 +45,33 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
     @Query("SELECT a FROM AuditLog a WHERE a.eventTime >= :from AND a.eventTime <= :to ORDER BY a.eventTime DESC")
     List<AuditLog> findByTimeRangeForExport(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 
+    @Query("""
+        SELECT a FROM AuditLog a
+        WHERE (:username IS NULL OR :username = '' OR a.username = :username)
+          AND (:eventType IS NULL OR :eventType = '' OR a.eventType = :eventType)
+          AND a.eventTime >= COALESCE(:from, a.eventTime)
+          AND a.eventTime <= COALESCE(:to, a.eventTime)
+        ORDER BY a.eventTime DESC
+        """)
+    Page<AuditLog> findByFilters(@Param("username") String username,
+                                 @Param("eventType") String eventType,
+                                 @Param("from") LocalDateTime from,
+                                 @Param("to") LocalDateTime to,
+                                 Pageable pageable);
+
+    @Query("""
+        SELECT a FROM AuditLog a
+        WHERE (:username IS NULL OR :username = '' OR a.username = :username)
+          AND (:eventType IS NULL OR :eventType = '' OR a.eventType = :eventType)
+          AND a.eventTime >= COALESCE(:from, a.eventTime)
+          AND a.eventTime <= COALESCE(:to, a.eventTime)
+        ORDER BY a.eventTime DESC
+        """)
+    List<AuditLog> findByFiltersForExport(@Param("username") String username,
+                                          @Param("eventType") String eventType,
+                                          @Param("from") LocalDateTime from,
+                                          @Param("to") LocalDateTime to);
+
     /**
      * Delete audit logs older than the specified date (for retention policy)
      */

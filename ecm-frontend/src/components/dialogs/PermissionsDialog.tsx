@@ -18,7 +18,11 @@ import {
   Paper,
   TextField,
   Autocomplete,
+  FormControl,
   FormControlLabel,
+  InputLabel,
+  MenuItem,
+  Select,
   CircularProgress,
   Tabs,
   Tab,
@@ -92,6 +96,7 @@ const PermissionsDialog: React.FC = () => {
   const [tabValue, setTabValue] = useState(0);
   const [inheritPermissions, setInheritPermissions] = useState(true);
   const [permissions, setPermissions] = useState<PermissionEntry[]>([]);
+  const [permissionSets, setPermissionSets] = useState<Record<string, PermissionType[]>>({});
   const [newPrincipal, setNewPrincipal] = useState('');
   const [availableUsers, setAvailableUsers] = useState<string[]>([]);
   const [availableGroups, setAvailableGroups] = useState<string[]>([]);
@@ -133,6 +138,15 @@ const PermissionsDialog: React.FC = () => {
     }
   }, [selectedNodeId]);
 
+  const loadPermissionSets = useCallback(async () => {
+    try {
+      const sets = await nodeService.getPermissionSets();
+      setPermissionSets(sets ?? {});
+    } catch {
+      setPermissionSets({});
+    }
+  }, []);
+
   const loadPrincipals = useCallback(async () => {
     try {
       const [users, groups] = await Promise.all([
@@ -150,8 +164,9 @@ const PermissionsDialog: React.FC = () => {
     if (permissionsDialogOpen && selectedNodeId) {
       loadPermissions();
       loadPrincipals();
+      loadPermissionSets();
     }
-  }, [permissionsDialogOpen, selectedNodeId, loadPermissions, loadPrincipals]);
+  }, [permissionsDialogOpen, selectedNodeId, loadPermissions, loadPrincipals, loadPermissionSets]);
 
   const handleClose = () => {
     dispatch(setPermissionsDialogOpen(false));
@@ -214,6 +229,38 @@ const PermissionsDialog: React.FC = () => {
     }
   };
 
+  const handleApplyPermissionSet = async (principal: string, permissionSet: string) => {
+    if (!selectedNodeId || !canWrite || !permissionSet) {
+      return;
+    }
+
+    try {
+      const authorityType = principal.startsWith('GROUP_') ? 'GROUP' : 'USER';
+      const authority = principal.replace('GROUP_', '');
+      await nodeService.applyPermissionSet(selectedNodeId, authority, authorityType, permissionSet, true);
+
+      const nextPermissions = (permissionSets[permissionSet] || []).reduce<PermissionEntry['permissions']>(
+        (acc, perm) => {
+          acc[perm] = true;
+          return acc;
+        },
+        {}
+      );
+
+      setPermissions((prev) =>
+        prev.map((entry) =>
+          entry.principal === principal
+            ? { ...entry, permissions: nextPermissions }
+            : entry
+        )
+      );
+
+      toast.success(`Applied ${permissionSet} permissions`);
+    } catch {
+      toast.error('Failed to apply permission set');
+    }
+  };
+
   const handleAddPrincipal = () => {
     if (!canWrite) {
       return;
@@ -270,6 +317,8 @@ const PermissionsDialog: React.FC = () => {
     }
   };
 
+  const permissionSetOptions = Object.keys(permissionSets).sort();
+
   const renderPermissionsTable = (entries: PermissionEntry[]) => (
     <TableContainer component={Paper} variant="outlined">
       <Table size="small">
@@ -281,6 +330,9 @@ const PermissionsDialog: React.FC = () => {
                 {PERMISSION_LABELS[perm as PermissionType]}
               </TableCell>
             ))}
+            <TableCell align="center" sx={{ minWidth: 140 }}>
+              Preset
+            </TableCell>
             <TableCell align="center">Actions</TableCell>
           </TableRow>
         </TableHead>
@@ -315,6 +367,27 @@ const PermissionsDialog: React.FC = () => {
                   />
                 </TableCell>
               ))}
+              <TableCell align="center">
+                <FormControl size="small" sx={{ minWidth: 120 }}>
+                  <InputLabel id={`permission-set-${entry.principal}`}>Preset</InputLabel>
+                  <Select
+                    labelId={`permission-set-${entry.principal}`}
+                    label="Preset"
+                    value=""
+                    onChange={(event) => handleApplyPermissionSet(entry.principal, String(event.target.value))}
+                    disabled={!canWrite || permissionSetOptions.length === 0}
+                  >
+                    <MenuItem value="" disabled>
+                      Select
+                    </MenuItem>
+                    {permissionSetOptions.map((setName) => (
+                      <MenuItem key={setName} value={setName}>
+                        {setName.charAt(0) + setName.slice(1).toLowerCase()}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </TableCell>
               <TableCell align="center">
                 <IconButton
                   size="small"
