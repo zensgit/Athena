@@ -31,6 +31,7 @@ import {
   DialogActions,
   TextField,
   FormControl,
+  FormControlLabel,
   InputLabel,
   MenuItem,
   Select,
@@ -141,6 +142,11 @@ interface AuditRetentionInfo {
   exportMaxRangeDays?: number;
 }
 
+interface AuditCategorySetting {
+  category: string;
+  enabled: boolean;
+}
+
 interface RuleExecutionSummary {
   windowDays: number;
   executions: number;
@@ -182,6 +188,9 @@ const AdminDashboard: React.FC = () => {
   const [exportingAudit, setExportingAudit] = useState(false);
   const [cleaningAudit, setCleaningAudit] = useState(false);
   const [auditPresets, setAuditPresets] = useState<AuditPreset[]>([]);
+  const [auditCategories, setAuditCategories] = useState<AuditCategorySetting[]>([]);
+  const [auditCategoriesLoading, setAuditCategoriesLoading] = useState(false);
+  const [auditCategoriesUpdating, setAuditCategoriesUpdating] = useState(false);
   const [auditExportPreset, setAuditExportPreset] = useState('custom');
   const [auditFilterUser, setAuditFilterUser] = useState('');
   const [auditFilterEventType, setAuditFilterEventType] = useState('');
@@ -261,10 +270,31 @@ const AdminDashboard: React.FC = () => {
   const exportPresetError = (exportPresetNeedsUser && !auditFilterUser.trim())
     || (exportPresetNeedsEvent && !auditFilterEventType.trim());
 
+  const auditCategoryLabels: Record<string, string> = {
+    NODE: 'Nodes',
+    VERSION: 'Versions',
+    RULE: 'Rules',
+    WORKFLOW: 'Workflows',
+    MAIL: 'Mail',
+    INTEGRATION: 'Integrations',
+    SECURITY: 'Security',
+    PDF: 'PDF',
+    OTHER: 'Other',
+  };
+
+  const formatAuditCategoryLabel = (category: string) => {
+    return auditCategoryLabels[category]
+      || category
+        .toLowerCase()
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, (ch) => ch.toUpperCase());
+  };
+
   const fetchDashboard = async () => {
     try {
       setLoadingDashboard(true);
-      const [dashboardRes, logsRes, licenseRes, retentionRes, ruleSummaryRes, ruleEventsRes, presetsRes] = await Promise.all([
+      setAuditCategoriesLoading(true);
+      const [dashboardRes, logsRes, licenseRes, retentionRes, ruleSummaryRes, ruleEventsRes, presetsRes, categoriesRes] = await Promise.all([
         apiService.get<DashboardData>('/analytics/dashboard'),
         apiService.get<AuditLog[]>('/analytics/audit/recent?limit=10'),
         apiService.get<LicenseInfo>('/system/license').catch(() => null),
@@ -272,6 +302,7 @@ const AdminDashboard: React.FC = () => {
         apiService.get<RuleExecutionSummary>('/analytics/rules/summary?days=7').catch(() => null),
         apiService.get<AuditLog[]>('/analytics/rules/recent?limit=20').catch(() => []),
         apiService.get<AuditPreset[]>('/analytics/audit/presets').catch(() => []),
+        apiService.get<AuditCategorySetting[]>('/analytics/audit/categories').catch(() => []),
       ]);
       setData(dashboardRes);
       setLogs(logsRes);
@@ -280,10 +311,34 @@ const AdminDashboard: React.FC = () => {
       setRuleSummary(ruleSummaryRes);
       setRuleEvents(ruleEventsRes || []);
       setAuditPresets(presetsRes || []);
+      setAuditCategories(categoriesRes || []);
     } catch {
       toast.error('Failed to load dashboard data');
     } finally {
       setLoadingDashboard(false);
+      setAuditCategoriesLoading(false);
+    }
+  };
+
+  const handleToggleAuditCategory = async (category: string) => {
+    if (auditCategoriesUpdating) {
+      return;
+    }
+    const previous = auditCategories;
+    const next = auditCategories.map((item) => (
+      item.category === category ? { ...item, enabled: !item.enabled } : item
+    ));
+    setAuditCategories(next);
+    setAuditCategoriesUpdating(true);
+    try {
+      const updated = await apiService.put<AuditCategorySetting[]>('/analytics/audit/categories', next);
+      setAuditCategories(updated || next);
+      toast.success('Audit categories updated');
+    } catch {
+      setAuditCategories(previous);
+      toast.error('Failed to update audit categories');
+    } finally {
+      setAuditCategoriesUpdating(false);
     }
   };
 
@@ -981,6 +1036,35 @@ const AdminDashboard: React.FC = () => {
                     </Button>
                   )}
                 </Box>
+              </Box>
+              <Box display="flex" alignItems="center" gap={1} flexWrap="wrap" mb={1}>
+                <Typography variant="subtitle2" color="text.secondary">
+                  Audit Categories
+                </Typography>
+                {(auditCategoriesLoading || auditCategoriesUpdating) && (
+                  <CircularProgress size={16} />
+                )}
+              </Box>
+              <Box display="flex" flexWrap="wrap" gap={2} mb={2}>
+                {auditCategories.map((category) => (
+                  <FormControlLabel
+                    key={category.category}
+                    control={
+                      <Switch
+                        size="small"
+                        checked={category.enabled}
+                        onChange={() => handleToggleAuditCategory(category.category)}
+                        disabled={auditCategoriesUpdating}
+                      />
+                    }
+                    label={formatAuditCategoryLabel(category.category)}
+                  />
+                ))}
+                {!auditCategoriesLoading && auditCategories.length === 0 && (
+                  <Typography variant="body2" color="text.secondary">
+                    No audit categories available.
+                  </Typography>
+                )}
               </Box>
               <List>
                 {logs.map((log, index) => (
