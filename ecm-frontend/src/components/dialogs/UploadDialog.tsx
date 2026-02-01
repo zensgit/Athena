@@ -98,10 +98,33 @@ const UploadDialog: React.FC = () => {
   };
 
   const getUploadErrorMessage = (error: any) => {
-    const responseMessage = error?.response?.data?.message;
+    const responseData = error?.response?.data;
+    const responseMessage = responseData?.message;
     if (typeof responseMessage === 'string' && responseMessage.trim()) {
       return responseMessage;
     }
+
+    const errorsMap = responseData?.errors;
+    if (errorsMap && typeof errorsMap === 'object') {
+      const entries = Array.isArray(errorsMap)
+        ? errorsMap.map((value, index) => [String(index), value])
+        : Object.entries(errorsMap as Record<string, unknown>);
+      const messages = entries
+        .map(([key, value]) => {
+          if (typeof value === 'string' && value.trim()) {
+            return value;
+          }
+          if (value !== null && value !== undefined) {
+            return `${key}: ${String(value)}`;
+          }
+          return key;
+        })
+        .filter((value) => value && value.trim());
+      if (messages.length > 0) {
+        return messages.join(' • ');
+      }
+    }
+
     if (typeof error?.message === 'string' && error.message.trim()) {
       return error.message;
     }
