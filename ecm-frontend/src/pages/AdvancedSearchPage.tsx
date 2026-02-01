@@ -21,6 +21,8 @@ import { format } from 'date-fns';
 import apiService from '../services/api';
 import { toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
+import { useAppDispatch, useAppSelector } from 'store';
+import { setSidebarOpen } from 'store/slices/uiSlice';
 
 interface SearchResult {
   id: string;
@@ -59,6 +61,8 @@ interface SearchResponse {
 
 const AdvancedSearchPage: React.FC = () => {
   const navigate = useNavigate();
+  const dispatch = useAppDispatch();
+  const { sidebarAutoCollapse } = useAppSelector((state) => state.ui);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [facets, setFacets] = useState<Facets | null>(null);
@@ -357,6 +361,9 @@ const AdvancedSearchPage: React.FC = () => {
                         navigate(`/browse/${result.id}`);
                       } else {
                         navigate(`/browse/${result.parentId || 'root'}`);
+                      }
+                      if (sidebarAutoCollapse) {
+                        dispatch(setSidebarOpen(false));
                       }
                     }}
                   >

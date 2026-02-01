@@ -18,7 +18,7 @@ import {
 } from '@mui/icons-material';
 import { useAppDispatch, useAppSelector } from 'store';
 import { fetchNode, fetchChildren, deleteNodes } from 'store/slices/nodeSlice';
-import { setViewMode } from 'store/slices/uiSlice';
+import { setSidebarOpen, setViewMode } from 'store/slices/uiSlice';
 import FileBreadcrumb from 'components/browser/FileBreadcrumb';
 import FileList from 'components/browser/FileList';
 import BulkMetadataDialog from 'components/dialogs/BulkMetadataDialog';
@@ -35,7 +35,7 @@ const FileBrowser: React.FC = () => {
   
   const { currentNode, nodes, nodesTotal, loading, selectedNodes } = useAppSelector((state) => state.node);
   const { user } = useAppSelector((state) => state.auth);
-  const { viewMode, sortBy, sortAscending, compactMode } = useAppSelector((state) => state.ui);
+  const { viewMode, sortBy, sortAscending, compactMode, sidebarAutoCollapse } = useAppSelector((state) => state.ui);
   const canWrite = Boolean(user?.roles?.includes('ROLE_ADMIN') || user?.roles?.includes('ROLE_EDITOR'));
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(50);
@@ -78,6 +78,9 @@ const FileBrowser: React.FC = () => {
   const handleNodeDoubleClick = (node: Node) => {
     if (node.nodeType === 'FOLDER') {
       navigate(`/browse/${node.id}`);
+      if (sidebarAutoCollapse) {
+        dispatch(setSidebarOpen(false));
+      }
       return;
     }
     if (isDocumentNode(node)) {
@@ -101,6 +104,9 @@ const FileBrowser: React.FC = () => {
   const handleNavigate = (path: string) => {
     if (path === '/') {
       navigate('/browse/root');
+      if (sidebarAutoCollapse) {
+        dispatch(setSidebarOpen(false));
+      }
       return;
     }
 
@@ -108,6 +114,9 @@ const FileBrowser: React.FC = () => {
       try {
         const targetFolder = await nodeService.getFolderByPath(path);
         navigate(`/browse/${targetFolder.id}`);
+        if (sidebarAutoCollapse) {
+          dispatch(setSidebarOpen(false));
+        }
       } catch (error) {
         console.error('Failed to navigate by path:', error);
         toast.error('Failed to navigate to folder');

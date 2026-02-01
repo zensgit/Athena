@@ -39,7 +39,7 @@ import { format } from 'date-fns';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppSelector, useAppDispatch } from 'store';
 import { fetchSearchFacets, searchNodes } from 'store/slices/nodeSlice';
-import { setSearchOpen } from 'store/slices/uiSlice';
+import { setSearchOpen, setSidebarOpen } from 'store/slices/uiSlice';
 import nodeService from 'services/nodeService';
 import { Node, SearchCriteria } from 'types';
 import { toast } from 'react-toastify';
@@ -72,6 +72,7 @@ const SearchResults: React.FC = () => {
   const dispatch = useAppDispatch();
   const { nodes, nodesTotal, loading, error, searchFacets, lastSearchCriteria } = useAppSelector((state) => state.node);
   const { user } = useAppSelector((state) => state.auth);
+  const { sidebarAutoCollapse } = useAppSelector((state) => state.ui);
   const [quickSearch, setQuickSearch] = useState('');
   const [sortBy, setSortBy] = useState('relevance');
   const [page, setPage] = useState(1);
@@ -546,6 +547,9 @@ const SearchResults: React.FC = () => {
       const freshNode = await nodeService.getNode(node.id);
       if (isFolderNode(freshNode)) {
         navigate(`/browse/${freshNode.id}`);
+        if (sidebarAutoCollapse) {
+          dispatch(setSidebarOpen(false));
+        }
       } else {
         setPreviewNode(freshNode);
       }
