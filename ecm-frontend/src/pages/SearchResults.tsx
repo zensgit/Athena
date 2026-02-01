@@ -99,6 +99,7 @@ const SearchResults: React.FC = () => {
   const [spellcheckSuggestions, setSpellcheckSuggestions] = useState<string[]>([]);
   const [spellcheckLoading, setSpellcheckLoading] = useState(false);
   const [spellcheckError, setSpellcheckError] = useState<string | null>(null);
+  const lastSpellcheckQueryRef = useRef('');
   const previewOpen = Boolean(previewNode);
   const canWrite = Boolean(user?.roles?.includes('ROLE_ADMIN') || user?.roles?.includes('ROLE_EDITOR'));
   const suppressFacetSearch = useRef(false);
@@ -257,12 +258,19 @@ const SearchResults: React.FC = () => {
 
   useEffect(() => {
     const query = (lastSearchCriteria?.name || '').trim();
-    if (!query || isSimilarMode || nodesTotal > 0) {
+    if (!query || isSimilarMode) {
+      lastSpellcheckQueryRef.current = '';
       setSpellcheckSuggestions([]);
       setSpellcheckError(null);
+      setSpellcheckLoading(false);
       return;
     }
 
+    if (lastSpellcheckQueryRef.current === query) {
+      return;
+    }
+
+    lastSpellcheckQueryRef.current = query;
     let active = true;
     setSpellcheckLoading(true);
     nodeService.getSpellcheckSuggestions(query)
@@ -285,7 +293,7 @@ const SearchResults: React.FC = () => {
     return () => {
       active = false;
     };
-  }, [lastSearchCriteria, isSimilarMode, nodesTotal]);
+  }, [lastSearchCriteria, isSimilarMode]);
 
   useEffect(() => {
     if (lastSearchCriteria?.name !== undefined) {
@@ -806,6 +814,23 @@ const SearchResults: React.FC = () => {
   const paginatedNodes = displayNodes.filter((node) => !hiddenNodeIds.includes(node.id));
   const displayTotal = isSimilarMode ? paginatedNodes.length : nodesTotal;
   const totalPages = Math.max(1, Math.ceil(displayTotal / pageSize));
+  const spellcheckQuery = (lastSearchCriteria?.name || '').trim();
+  const normalizedSpellcheckQuery = spellcheckQuery.toLowerCase();
+  const filteredSpellcheckSuggestions = useMemo(() => {
+    const unique = new Set<string>();
+    for (const suggestion of spellcheckSuggestions) {
+      const trimmed = suggestion.trim();
+      if (!trimmed) continue;
+      if (trimmed.toLowerCase() === normalizedSpellcheckQuery) continue;
+      if (!unique.has(trimmed)) {
+        unique.add(trimmed);
+      }
+    }
+    return Array.from(unique);
+  }, [spellcheckSuggestions, normalizedSpellcheckQuery]);
+  const primarySpellcheckSuggestion = filteredSpellcheckSuggestions[0];
+  const secondarySpellcheckSuggestions = filteredSpellcheckSuggestions.slice(1);
+  const showSpellcheckSuggestions = !spellcheckLoading && filteredSpellcheckSuggestions.length > 0;
 
   return (
     <Box>
@@ -854,19 +879,46 @@ const SearchResults: React.FC = () => {
           {spellcheckError}
         </Alert>
       )}
-      {!spellcheckLoading && spellcheckSuggestions.length > 0 && (
+      {showSpellcheckSuggestions && (
         <Alert severity="info" sx={{ mb: 2 }}>
-          Did you mean:{' '}
-          {spellcheckSuggestions.map((suggestion) => (
-            <Button
-              key={suggestion}
-              size="small"
-              onClick={() => handleSpellcheckSuggestion(suggestion)}
-              sx={{ textTransform: 'none', ml: 0.5 }}
-            >
-              {suggestion}
-            </Button>
-          ))}
+          <Box display="flex" alignItems="center" flexWrap="wrap" gap={0.5}>
+            {spellcheckQuery && (
+              <Typography variant="body2" color="text.secondary">
+                {displayTotal > 0
+                  ? `Showing results for "${spellcheckQuery}".`
+                  : `No results for "${spellcheckQuery}".`}
+              </Typography>
+            )}
+            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+              Did you mean
+            </Typography>
+            {primarySpellcheckSuggestion && (
+              <Button
+                size="small"
+                onClick={() => handleSpellcheckSuggestion(primarySpellcheckSuggestion)}
+                sx={{ textTransform: 'none', ml: 0.5 }}
+              >
+                {primarySpellcheckSuggestion}
+              </Button>
+            )}
+            {secondarySpellcheckSuggestions.length > 0 && (
+              <>
+                <Typography variant="body2" color="text.secondary">
+                  or
+                </Typography>
+                {secondarySpellcheckSuggestions.map((suggestion) => (
+                  <Button
+                    key={suggestion}
+                    size="small"
+                    onClick={() => handleSpellcheckSuggestion(suggestion)}
+                    sx={{ textTransform: 'none', ml: 0.5 }}
+                  >
+                    {suggestion}
+                  </Button>
+                ))}
+              </>
+            )}
+          </Box>
         </Alert>
       )}
 
