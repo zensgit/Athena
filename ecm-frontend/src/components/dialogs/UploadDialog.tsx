@@ -254,6 +254,12 @@ const UploadDialog: React.FC = () => {
           </Typography>
         </Box>
 
+        <Box mb={2}>
+          <Typography variant="caption" color="text.secondary" display="block">
+            After upload, indexing and preview generation may take a few moments. New files might not appear in search immediately.
+          </Typography>
+        </Box>
+
         {files.length > 0 && (
           <List>
             {files.map((uploadFile, index) => (
