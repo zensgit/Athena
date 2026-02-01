@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -15,6 +15,8 @@ import {
   IconButton,
   Chip,
   Alert,
+  Switch,
+  FormControlLabel,
 } from '@mui/material';
 import { useDropzone } from 'react-dropzone';
 import {
@@ -23,6 +25,8 @@ import {
   Close,
   CheckCircle,
   Error,
+  Refresh,
+  DeleteSweep,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from 'store';
@@ -30,6 +34,9 @@ import { setUploadDialogOpen } from 'store/slices/uiSlice';
 import { uploadDocument } from 'store/slices/nodeSlice';
 import { toast } from 'react-toastify';
 import authService from 'services/authService';
+import nodeService from 'services/nodeService';
+import apiService from 'services/api';
+import { Node } from 'types';
 
 interface UploadFile {
   file: File;
@@ -37,6 +44,15 @@ interface UploadFile {
   status: 'pending' | 'uploading' | 'success' | 'error';
   error?: string;
 }
+
+interface PreviewQueueStatus {
+  queued?: boolean;
+  previewStatus?: string;
+  message?: string;
+}
+
+const uploadAutoRefreshKey = 'ecmUploadAutoRefresh';
+const uploadAutoRefreshIntervalMs = 15000;
 
 const UploadDialog: React.FC = () => {
   const dispatch = useAppDispatch();
@@ -53,11 +69,27 @@ const UploadDialog: React.FC = () => {
   const [uploading, setUploading] = useState(false);
   const hasUploadableFiles = files.some((file) => file.status !== 'success');
   const [uploadSummary, setUploadSummary] = useState<{ success: number; failed: number } | null>(null);
+  const [uploadedItems, setUploadedItems] = useState<Node[]>([]);
+  const [refreshingUploads, setRefreshingUploads] = useState(false);
+  const [queueingPreviewIds, setQueueingPreviewIds] = useState<string[]>([]);
+  const [lastStatusRefreshAt, setLastStatusRefreshAt] = useState<Date | null>(null);
+  const [autoRefreshUploads, setAutoRefreshUploads] = useState(() => {
+    if (typeof window === 'undefined') {
+      return true;
+    }
+    const saved = window.localStorage.getItem(uploadAutoRefreshKey);
+    if (saved === null) {
+      return true;
+    }
+    return saved === 'true';
+  });
 
   const resetDialog = () => {
     dispatch(setUploadDialogOpen(false));
     setFiles([]);
     setUploadSummary(null);
+    setUploadedItems([]);
+    setRefreshingUploads(false);
   };
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
@@ -105,6 +137,97 @@ const UploadDialog: React.FC = () => {
       )
     );
   };
+
+  const upsertUploadedItem = useCallback((node: Node) => {
+    setUploadedItems((prev) => {
+      const existingIndex = prev.findIndex((item) => item.id === node.id);
+      if (existingIndex === -1) {
+        return [node, ...prev];
+      }
+      const next = [...prev];
+      next[existingIndex] = { ...prev[existingIndex], ...node };
+      return next;
+    });
+    setLastStatusRefreshAt(new Date());
+  }, []);
+
+  const handleRefreshUploadedItems = useCallback(async () => {
+    if (uploadedItems.length === 0 || refreshingUploads) {
+      return;
+    }
+    setRefreshingUploads(true);
+    try {
+      const refreshed = await Promise.all(
+        uploadedItems.map(async (item) => {
+          try {
+            return await nodeService.getNode(item.id);
+          } catch (err) {
+            return item;
+          }
+        })
+      );
+      setUploadedItems(refreshed);
+    } finally {
+      setRefreshingUploads(false);
+      setLastStatusRefreshAt(new Date());
+    }
+  }, [refreshingUploads, uploadedItems]);
+
+  const handleToggleAutoRefresh = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const nextValue = event.target.checked;
+    setAutoRefreshUploads(nextValue);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(uploadAutoRefreshKey, String(nextValue));
+    }
+  };
+
+  useEffect(() => {
+    if (!uploadDialogOpen || !autoRefreshUploads || uploadedItems.length === 0) {
+      return undefined;
+    }
+    const interval = window.setInterval(() => {
+      void handleRefreshUploadedItems();
+    }, uploadAutoRefreshIntervalMs);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [autoRefreshUploads, handleRefreshUploadedItems, uploadDialogOpen, uploadedItems.length]);
+
+  const handleDismissUploadedItem = (nodeId: string) => {
+    setUploadedItems((prev) => prev.filter((item) => item.id !== nodeId));
+  };
+
+  const handleClearUploadedItems = () => {
+    setUploadedItems([]);
+    setQueueingPreviewIds([]);
+    setLastStatusRefreshAt(null);
+  };
+
+  const handleQueuePreview = useCallback(async (nodeId: string, force: boolean) => {
+    if (queueingPreviewIds.includes(nodeId)) {
+      return;
+    }
+    setQueueingPreviewIds((prev) => [...prev, nodeId]);
+    try {
+      const status = await apiService.post<PreviewQueueStatus>(
+        `/documents/${nodeId}/preview/queue`,
+        { force }
+      );
+      const nextStatus = status?.previewStatus || (status?.queued ? 'PROCESSING' : undefined);
+      if (nextStatus) {
+        setUploadedItems((prev) =>
+          prev.map((item) => (item.id === nodeId ? { ...item, previewStatus: nextStatus } : item))
+        );
+      }
+      toast.success(status?.queued ? 'Preview queued' : 'Preview already up to date');
+      void handleRefreshUploadedItems();
+    } catch (error) {
+      toast.error('Failed to queue preview');
+    } finally {
+      setQueueingPreviewIds((prev) => prev.filter((id) => id !== nodeId));
+    }
+  }, [handleRefreshUploadedItems, queueingPreviewIds]);
 
   const getUploadErrorMessage = (error: any) => {
     const responseData = error?.response?.data;
@@ -166,7 +289,7 @@ const UploadDialog: React.FC = () => {
       );
 
       try {
-        await dispatch(
+        const uploadedNode = await dispatch(
           uploadDocument({
             parentId,
             file: uploadFile.file,
@@ -177,6 +300,8 @@ const UploadDialog: React.FC = () => {
             },
           })
         ).unwrap();
+
+        upsertUploadedItem(uploadedNode);
 
         successCount += 1;
         setFiles((prev) =>
@@ -228,6 +353,63 @@ const UploadDialog: React.FC = () => {
     const i = Math.floor(Math.log(bytes) / Math.log(1024));
     return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
   };
+
+  const getPreviewStatusMeta = (node: Node) => {
+    const status = node.previewStatus?.toUpperCase();
+    if (!status) {
+      return { label: 'Preview pending', color: 'default' as const };
+    }
+    if (status === 'READY') {
+      return { label: 'Preview ready', color: 'success' as const };
+    }
+    if (status === 'FAILED') {
+      return { label: 'Preview failed', color: 'error' as const };
+    }
+    if (status === 'PROCESSING') {
+      return { label: 'Preview processing', color: 'warning' as const };
+    }
+    if (status === 'QUEUED') {
+      return { label: 'Preview queued', color: 'info' as const };
+    }
+    return { label: `Preview ${status.toLowerCase()}`, color: 'default' as const };
+  };
+
+  const showUploadedItems = Boolean(uploadSummary || uploadedItems.length > 0);
+  const statusSummary = uploadedItems.reduce(
+    (acc, item) => {
+      const status = item.previewStatus?.toUpperCase();
+      if (!status) {
+        acc.pending += 1;
+        return acc;
+      }
+      if (status === 'READY') {
+        acc.ready += 1;
+        return acc;
+      }
+      if (status === 'FAILED') {
+        acc.failed += 1;
+        return acc;
+      }
+      if (status === 'PROCESSING') {
+        acc.processing += 1;
+        return acc;
+      }
+      if (status === 'QUEUED') {
+        acc.queued += 1;
+        return acc;
+      }
+      acc.other += 1;
+      return acc;
+    },
+    {
+      ready: 0,
+      pending: 0,
+      processing: 0,
+      queued: 0,
+      failed: 0,
+      other: 0,
+    }
+  );
 
   return (
     <Dialog
@@ -304,6 +486,117 @@ const UploadDialog: React.FC = () => {
                 ? `${uploadSummary.success} file(s) uploaded, ${uploadSummary.failed} failed. Indexing and previews may take a moment.`
                 : `Upload failed for ${uploadSummary.failed} file(s).`}
           </Alert>
+        )}
+
+        {showUploadedItems && (
+            <Box mb={2}>
+              <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+                <Typography variant="subtitle2">Uploaded items</Typography>
+              <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
+                <FormControlLabel
+                  control={
+                    <Switch
+                      size="small"
+                      checked={autoRefreshUploads}
+                      onChange={handleToggleAutoRefresh}
+                    />
+                  }
+                  label="Auto refresh"
+                />
+                <Button
+                  size="small"
+                  startIcon={<Refresh />}
+                  onClick={handleRefreshUploadedItems}
+                  disabled={uploadedItems.length === 0 || refreshingUploads}
+                >
+                  Refresh status
+                </Button>
+                <Button
+                  size="small"
+                  startIcon={<DeleteSweep />}
+                  onClick={handleClearUploadedItems}
+                  disabled={uploadedItems.length === 0}
+                >
+                  Clear list
+                </Button>
+              </Box>
+            </Box>
+              {uploadedItems.length > 0 && (
+                <Box mb={1} display="flex" flexWrap="wrap" gap={1}>
+                  <Chip label={`Total ${uploadedItems.length}`} size="small" />
+                  <Chip label={`Ready ${statusSummary.ready}`} size="small" color="success" />
+                  <Chip label={`Pending ${statusSummary.pending}`} size="small" />
+                  <Chip label={`Processing ${statusSummary.processing}`} size="small" color="warning" />
+                  <Chip label={`Queued ${statusSummary.queued}`} size="small" color="info" />
+                  <Chip label={`Failed ${statusSummary.failed}`} size="small" color="error" />
+                </Box>
+              )}
+              <Typography variant="caption" color="text.secondary" display="block" mb={1}>
+                Last updated: {lastStatusRefreshAt ? lastStatusRefreshAt.toLocaleTimeString() : 'Not yet'}
+              </Typography>
+              {uploadedItems.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">
+                Uploaded files will appear here once processing begins.
+              </Typography>
+            ) : (
+              <List dense>
+                {uploadedItems.map((item) => {
+                  const previewMeta = getPreviewStatusMeta(item);
+                  const previewStatus = item.previewStatus?.toUpperCase();
+                  const showQueueActions = item.nodeType === 'DOCUMENT' && previewStatus !== 'READY';
+                  const isQueueing = queueingPreviewIds.includes(item.id);
+                  return (
+                    <ListItem
+                      key={item.id}
+                      secondaryAction={
+                        <Box display="flex" alignItems="center" gap={1}>
+                          <Chip
+                            label={previewMeta.label}
+                            size="small"
+                            color={previewMeta.color}
+                          />
+                          {showQueueActions && (
+                            <>
+                              <Button
+                                size="small"
+                                onClick={() => handleQueuePreview(item.id, false)}
+                                disabled={isQueueing}
+                              >
+                                Queue preview
+                              </Button>
+                              <Button
+                                size="small"
+                                onClick={() => handleQueuePreview(item.id, true)}
+                                disabled={isQueueing}
+                              >
+                                Force rebuild
+                              </Button>
+                            </>
+                          )}
+                          <IconButton
+                            edge="end"
+                            size="small"
+                            onClick={() => handleDismissUploadedItem(item.id)}
+                            aria-label={`Dismiss ${item.name}`}
+                          >
+                            <Close fontSize="small" />
+                          </IconButton>
+                        </Box>
+                      }
+                    >
+                      <ListItemIcon>
+                        <InsertDriveFile />
+                      </ListItemIcon>
+                      <ListItemText
+                        primary={item.name}
+                        secondary={item.previewFailureReason || item.previewStatus || 'Preview pending'}
+                      />
+                    </ListItem>
+                  );
+                })}
+              </List>
+            )}
+          </Box>
         )}
 
         {files.length > 0 && (
