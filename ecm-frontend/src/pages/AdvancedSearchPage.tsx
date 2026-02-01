@@ -15,6 +15,7 @@ import {
   Pagination,
   Stack,
   Divider,
+  Tooltip,
 } from '@mui/material';
 import { Search as SearchIcon, FilterList as FilterIcon } from '@mui/icons-material';
 import { format } from 'date-fns';
@@ -35,6 +36,8 @@ interface SearchResult {
   path: string;
   nodeType?: 'FOLDER' | 'DOCUMENT';
   parentId?: string;
+  previewStatus?: string;
+  previewFailureReason?: string;
 }
 
 
@@ -79,6 +82,23 @@ const AdvancedSearchPage: React.FC = () => {
   const [dateRange, setDateRange] = useState<'all' | 'today' | 'week' | 'month'>('all');
   const [minSize, setMinSize] = useState<number | undefined>();
   const [maxSize, setMaxSize] = useState<number | undefined>();
+
+  const getPreviewStatusMeta = (status?: string) => {
+    const normalized = status?.toUpperCase();
+    if (!normalized || normalized === 'READY') {
+      return null;
+    }
+    if (normalized === 'FAILED') {
+      return { label: 'Preview failed', color: 'error' as const };
+    }
+    if (normalized === 'PROCESSING') {
+      return { label: 'Preview processing', color: 'warning' as const };
+    }
+    if (normalized === 'QUEUED') {
+      return { label: 'Preview queued', color: 'info' as const };
+    }
+    return { label: `Preview ${normalized.toLowerCase()}`, color: 'default' as const };
+  };
 
   const handleSearch = async (newPage = 1) => {
     try {
@@ -393,6 +413,21 @@ const AdvancedSearchPage: React.FC = () => {
                           size="small"
                           variant="outlined"
                         />
+                        {result.nodeType !== 'FOLDER' && getPreviewStatusMeta(result.previewStatus) && (
+                          <Tooltip
+                            title={result.previewFailureReason || ''}
+                            placement="top-start"
+                            arrow
+                            disableHoverListener={!result.previewFailureReason}
+                          >
+                            <Chip
+                              label={getPreviewStatusMeta(result.previewStatus)?.label}
+                              color={getPreviewStatusMeta(result.previewStatus)?.color}
+                              size="small"
+                              variant="outlined"
+                            />
+                          </Tooltip>
+                        )}
                     </Box>
                   </Paper>
                 ))}

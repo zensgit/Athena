@@ -45,6 +45,7 @@ const UploadDialog: React.FC = () => {
   const { currentNode } = useAppSelector((state) => state.node);
   const { user } = useAppSelector((state) => state.auth);
   const effectiveUser = user ?? authService.getCurrentUser();
+  const isAdmin = Boolean(effectiveUser?.roles?.includes('ROLE_ADMIN'));
   const canWrite = Boolean(
     effectiveUser?.roles?.includes('ROLE_ADMIN') || effectiveUser?.roles?.includes('ROLE_EDITOR')
   );
@@ -217,6 +218,11 @@ const UploadDialog: React.FC = () => {
     resetDialog();
   };
 
+  const handleOpenStatus = () => {
+    navigate('/status');
+    resetDialog();
+  };
+
   const formatFileSize = (bytes: number): string => {
     const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(1024));
@@ -279,9 +285,16 @@ const UploadDialog: React.FC = () => {
             sx={{ mb: 2 }}
             action={
               uploadSummary.success > 0 ? (
-                <Button color="inherit" size="small" onClick={handleOpenFolder}>
-                  Open folder
-                </Button>
+                <Box display="flex" alignItems="center" gap={1}>
+                  <Button color="inherit" size="small" onClick={handleOpenFolder}>
+                    Open folder
+                  </Button>
+                  {isAdmin && (
+                    <Button color="inherit" size="small" onClick={handleOpenStatus}>
+                      System status
+                    </Button>
+                  )}
+                </Box>
               ) : undefined
             }
           >
