@@ -726,6 +726,40 @@ const SearchResults: React.FC = () => {
     return <Chip label="File" size="small" />;
   };
 
+  const getPreviewStatusChip = (node: Node) => {
+    if (node.nodeType === 'FOLDER') {
+      return null;
+    }
+    const status = node.previewStatus?.toUpperCase();
+    if (!status || status === 'READY') {
+      return null;
+    }
+    const label = status === 'FAILED'
+      ? 'Preview failed'
+      : status === 'PROCESSING'
+        ? 'Preview processing'
+        : status === 'QUEUED'
+          ? 'Preview queued'
+          : `Preview ${status.toLowerCase()}`;
+    const color = status === 'FAILED'
+      ? 'error'
+      : status === 'PROCESSING'
+        ? 'warning'
+        : status === 'QUEUED'
+          ? 'info'
+          : 'default';
+    return (
+      <Tooltip
+        title={node.previewFailureReason || ''}
+        placement="top-start"
+        arrow
+        disableHoverListener={!node.previewFailureReason}
+      >
+        <Chip label={label} size="small" variant="outlined" color={color} />
+      </Tooltip>
+    );
+  };
+
   const renderTagsCategories = (node: Node) => {
     return (
       <Box display="flex" gap={1} flexWrap="wrap" mt={1}>
@@ -1284,6 +1318,7 @@ const SearchResults: React.FC = () => {
                               {node.currentVersionLabel && (
                                 <Chip label={`v${node.currentVersionLabel}`} size="small" variant="outlined" />
                               )}
+                              {getPreviewStatusChip(node)}
                             </Box>
                           </Box>
                         </Box>

@@ -155,6 +155,23 @@ const FileList: React.FC<FileListProps> = ({
     return 'File';
   };
 
+  const getPreviewStatusMeta = (node: Node) => {
+    const status = node.previewStatus?.toUpperCase();
+    if (!status || status === 'READY') {
+      return null;
+    }
+    if (status === 'FAILED') {
+      return { label: 'Preview failed', color: 'error' as const };
+    }
+    if (status === 'PROCESSING') {
+      return { label: 'Preview processing', color: 'warning' as const };
+    }
+    if (status === 'QUEUED') {
+      return { label: 'Preview queued', color: 'info' as const };
+    }
+    return { label: `Preview ${status.toLowerCase()}`, color: 'default' as const };
+  };
+
   const isDocumentNode = (node: Node) => {
     if (node.nodeType === 'DOCUMENT') {
       return true;
@@ -488,8 +505,10 @@ const FileList: React.FC<FileListProps> = ({
       field: 'name',
       headerName: 'Name',
       flex: 2,
-      renderCell: (params: GridRenderCellParams<Node>) => (
-        <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+      renderCell: (params: GridRenderCellParams<Node>) => {
+        const previewMeta = params.row.nodeType !== 'FOLDER' ? getPreviewStatusMeta(params.row) : null;
+        return (
+          <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
           {params.row.nodeType === 'FOLDER' ? (
             <Folder sx={{ mr: 1, color: 'primary.main' }} />
           ) : (
@@ -507,8 +526,25 @@ const FileList: React.FC<FileListProps> = ({
               sx={{ ml: 1 }}
             />
           )}
+          {previewMeta && (
+            <Tooltip
+              title={params.row.previewFailureReason || ''}
+              placement="top-start"
+              arrow
+              disableHoverListener={!params.row.previewFailureReason}
+            >
+              <Chip
+                label={previewMeta.label}
+                color={previewMeta.color}
+                size="small"
+                variant="outlined"
+                sx={{ ml: 1 }}
+              />
+            </Tooltip>
+          )}
         </Box>
-      ),
+        );
+      },
     },
     {
       field: 'modified',
@@ -583,6 +619,7 @@ const FileList: React.FC<FileListProps> = ({
         {nodes.map((node) => {
           const isSelected = selectedNodes.includes(node.id);
           const fileTypeLabel = getFileTypeLabel(node);
+          const previewMeta = node.nodeType !== 'FOLDER' ? getPreviewStatusMeta(node) : null;
           return (
             <Card
               key={node.id}
@@ -630,6 +667,21 @@ const FileList: React.FC<FileListProps> = ({
                     {fileTypeLabel && (
                       <Box display="flex" gap={0.5} flexWrap="wrap" mt={0.5}>
                         <Chip label={fileTypeLabel} size="small" variant="outlined" />
+                        {previewMeta && (
+                          <Tooltip
+                            title={node.previewFailureReason || ''}
+                            placement="top-start"
+                            arrow
+                            disableHoverListener={!node.previewFailureReason}
+                          >
+                            <Chip
+                              label={previewMeta.label}
+                              color={previewMeta.color}
+                              size="small"
+                              variant="outlined"
+                            />
+                          </Tooltip>
+                        )}
                       </Box>
                     )}
                   </Box>
