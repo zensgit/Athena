@@ -252,10 +252,14 @@ const FileList: React.FC<FileListProps> = ({
     if (variant === 'list') {
       return {
         ...base,
+        display: '-webkit-box',
         flex: 1,
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: 'vertical',
         overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
+        wordBreak: 'break-word',
+        overflowWrap: 'anywhere',
+        whiteSpace: 'normal',
       };
     }
 
@@ -706,7 +710,7 @@ const FileList: React.FC<FileListProps> = ({
           rows={nodes}
           columns={columns}
           density={compactMode ? 'compact' : 'standard'}
-          getRowHeight={() => (compactMode ? 52 : 'auto')}
+          getRowHeight={() => 'auto'}
           paginationMode="server"
           pagination
           rowCount={totalCount}
@@ -731,9 +735,10 @@ const FileList: React.FC<FileListProps> = ({
               cursor: 'pointer',
             },
             '& .MuiDataGrid-cell[data-field="name"]': {
-              whiteSpace: 'nowrap',
-              alignItems: 'center',
-              overflow: 'hidden',
+              whiteSpace: 'normal',
+              alignItems: 'flex-start',
+              lineHeight: 1.3,
+              py: 1,
             },
           }}
         />
