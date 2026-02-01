@@ -511,7 +511,8 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         sx={{
           flexGrow: 1,
           minWidth: 0,
-          p: compactMode ? 1.5 : 2,
+          px: compactMode ? 1.5 : { xs: 2, md: 2.5, xl: 3 },
+          py: compactMode ? 1.5 : 2,
         }}
       >
         <Toolbar />
