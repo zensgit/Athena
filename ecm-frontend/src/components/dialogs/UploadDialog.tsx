@@ -14,6 +14,7 @@ import {
   ListItemText,
   IconButton,
   Chip,
+  Alert,
 } from '@mui/material';
 import { useDropzone } from 'react-dropzone';
 import {
@@ -23,6 +24,7 @@ import {
   CheckCircle,
   Error,
 } from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from 'store';
 import { setUploadDialogOpen } from 'store/slices/uiSlice';
 import { uploadDocument } from 'store/slices/nodeSlice';
@@ -38,6 +40,7 @@ interface UploadFile {
 
 const UploadDialog: React.FC = () => {
   const dispatch = useAppDispatch();
+  const navigate = useNavigate();
   const { uploadDialogOpen } = useAppSelector((state) => state.ui);
   const { currentNode } = useAppSelector((state) => state.node);
   const { user } = useAppSelector((state) => state.auth);
@@ -48,16 +51,19 @@ const UploadDialog: React.FC = () => {
   const [files, setFiles] = useState<UploadFile[]>([]);
   const [uploading, setUploading] = useState(false);
   const hasUploadableFiles = files.some((file) => file.status !== 'success');
+  const [uploadSummary, setUploadSummary] = useState<{ success: number; failed: number } | null>(null);
 
   const resetDialog = () => {
     dispatch(setUploadDialogOpen(false));
     setFiles([]);
+    setUploadSummary(null);
   };
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (!canWrite) {
       return;
     }
+    setUploadSummary(null);
     const newFiles = acceptedFiles.map((file) => ({
       file,
       progress: 0,
@@ -80,9 +86,11 @@ const UploadDialog: React.FC = () => {
 
   const handleRemoveFile = (index: number) => {
     setFiles((prev) => prev.filter((_, i) => i !== index));
+    setUploadSummary(null);
   };
 
   const handleRetryFile = (index: number) => {
+    setUploadSummary(null);
     setFiles((prev) =>
       prev.map((file, idx) =>
         idx === index
@@ -137,6 +145,7 @@ const UploadDialog: React.FC = () => {
       toast.error('Requires write permission');
       return;
     }
+    setUploadSummary(null);
     const parentId = currentNode?.id || 'root';
 
     setUploading(true);
@@ -192,16 +201,20 @@ const UploadDialog: React.FC = () => {
     }
 
     setUploading(false);
+    setUploadSummary({ success: successCount, failed: errorCount });
     if (errorCount === 0) {
       toast.success(`${successCount} file(s) uploaded successfully`);
-      setTimeout(() => {
-        resetDialog();
-      }, 1000);
     } else if (successCount > 0) {
       toast.warn(`Uploaded ${successCount} file(s); ${errorCount} failed`);
     } else {
       toast.error('All uploads failed');
     }
+  };
+
+  const handleOpenFolder = () => {
+    const targetId = currentNode?.id || 'root';
+    navigate(`/browse/${targetId}`);
+    resetDialog();
   };
 
   const formatFileSize = (bytes: number): string => {
@@ -259,6 +272,26 @@ const UploadDialog: React.FC = () => {
             After upload, indexing and preview generation may take a few moments. New files might not appear in search immediately.
           </Typography>
         </Box>
+
+        {uploadSummary && (
+          <Alert
+            severity={uploadSummary.failed === 0 ? 'success' : uploadSummary.success > 0 ? 'warning' : 'error'}
+            sx={{ mb: 2 }}
+            action={
+              uploadSummary.success > 0 ? (
+                <Button color="inherit" size="small" onClick={handleOpenFolder}>
+                  Open folder
+                </Button>
+              ) : undefined
+            }
+          >
+            {uploadSummary.failed === 0
+              ? `${uploadSummary.success} file(s) uploaded. Indexing and previews may take a moment.`
+              : uploadSummary.success > 0
+                ? `${uploadSummary.success} file(s) uploaded, ${uploadSummary.failed} failed. Indexing and previews may take a moment.`
+                : `Upload failed for ${uploadSummary.failed} file(s).`}
+          </Alert>
+        )}
 
         {files.length > 0 && (
           <List>
