@@ -51,8 +51,18 @@ export const createFolder = createAsyncThunk(
 
 export const uploadDocument = createAsyncThunk(
   'node/uploadDocument',
-  async ({ parentId, file, properties }: { parentId: string; file: File; properties?: Record<string, any> }) => {
-    const document = await nodeService.uploadDocument(parentId, file, properties);
+  async ({
+    parentId,
+    file,
+    properties,
+    onProgress,
+  }: {
+    parentId: string;
+    file: File;
+    properties?: Record<string, any>;
+    onProgress?: (progress: number) => void;
+  }) => {
+    const document = await nodeService.uploadDocument(parentId, file, properties, onProgress);
     return document;
   }
 );

@@ -47,6 +47,7 @@ const UploadDialog: React.FC = () => {
   );
   const [files, setFiles] = useState<UploadFile[]>([]);
   const [uploading, setUploading] = useState(false);
+  const hasUploadableFiles = files.some((file) => file.status !== 'success');
 
   const resetDialog = () => {
     dispatch(setUploadDialogOpen(false));
@@ -81,8 +82,34 @@ const UploadDialog: React.FC = () => {
     setFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const handleRetryFile = (index: number) => {
+    setFiles((prev) =>
+      prev.map((file, idx) =>
+        idx === index
+          ? {
+              ...file,
+              status: 'pending' as const,
+              progress: 0,
+              error: undefined,
+            }
+          : file
+      )
+    );
+  };
+
+  const getUploadErrorMessage = (error: any) => {
+    const responseMessage = error?.response?.data?.message;
+    if (typeof responseMessage === 'string' && responseMessage.trim()) {
+      return responseMessage;
+    }
+    if (typeof error?.message === 'string' && error.message.trim()) {
+      return error.message;
+    }
+    return 'Upload failed';
+  };
+
   const handleUpload = async () => {
-    if (files.length === 0) return;
+    if (files.length === 0 || !hasUploadableFiles) return;
     if (!canWrite) {
       toast.error('Requires write permission');
       return;
@@ -95,10 +122,13 @@ const UploadDialog: React.FC = () => {
 
     for (let i = 0; i < files.length; i++) {
       const uploadFile = files[i];
-      
+      if (uploadFile.status === 'success') {
+        continue;
+      }
+
       setFiles((prev) =>
         prev.map((f, idx) =>
-          idx === i ? { ...f, status: 'uploading' as const } : f
+          idx === i ? { ...f, status: 'uploading' as const, progress: 0, error: undefined } : f
         )
       );
 
@@ -107,6 +137,11 @@ const UploadDialog: React.FC = () => {
           uploadDocument({
             parentId,
             file: uploadFile.file,
+            onProgress: (progress) => {
+              setFiles((prev) =>
+                prev.map((f, idx) => (idx === i ? { ...f, progress } : f))
+              );
+            },
           })
         ).unwrap();
 
@@ -118,13 +153,14 @@ const UploadDialog: React.FC = () => {
         );
       } catch (error) {
         errorCount += 1;
+        const message = getUploadErrorMessage(error);
         setFiles((prev) =>
           prev.map((f, idx) =>
             idx === i
               ? {
                   ...f,
                   status: 'error' as const,
-                  error: 'Upload failed',
+                  error: message,
                 }
               : f
           )
@@ -201,13 +237,19 @@ const UploadDialog: React.FC = () => {
               <ListItem
                 key={index}
                 secondaryAction={
-                  !uploading && uploadFile.status === 'pending' ? (
-                    <IconButton
-                      edge="end"
-                      onClick={() => handleRemoveFile(index)}
-                    >
-                      <Close />
-                    </IconButton>
+                  !uploading ? (
+                    <Box display="flex" alignItems="center" gap={1}>
+                      {uploadFile.status === 'error' && (
+                        <Button size="small" onClick={() => handleRetryFile(index)}>
+                          Retry
+                        </Button>
+                      )}
+                      {(uploadFile.status === 'pending' || uploadFile.status === 'error') && (
+                        <IconButton edge="end" onClick={() => handleRemoveFile(index)}>
+                          <Close />
+                        </IconButton>
+                      )}
+                    </Box>
                   ) : null
                 }
               >
@@ -267,7 +309,7 @@ const UploadDialog: React.FC = () => {
         <Button
           onClick={handleUpload}
           variant="contained"
-          disabled={files.length === 0 || uploading || !canWrite}
+          disabled={files.length === 0 || uploading || !canWrite || !hasUploadableFiles}
         >
           Upload {files.length > 0 && `(${files.length})`}
         </Button>
