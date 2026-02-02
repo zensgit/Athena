@@ -14,7 +14,25 @@ const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
 const viewerUsername = process.env.ECM_E2E_VIEWER_USERNAME || 'viewer';
 const viewerPassword = process.env.ECM_E2E_VIEWER_PASSWORD || 'viewer';
 
-async function loginWithCredentials(page: Page, username: string, password: string) {
+async function loginWithCredentials(page: Page, username: string, password: string, token?: string) {
+  if (process.env.ECM_E2E_SKIP_LOGIN === '1' && token) {
+    await page.addInitScript(
+      ({ authToken, authUser }) => {
+        window.localStorage.setItem('token', authToken);
+        window.localStorage.setItem('user', JSON.stringify(authUser));
+      },
+      {
+        authToken: token,
+        authUser: {
+          id: `e2e-${username}`,
+          username,
+          email: `${username}@example.com`,
+          roles: username === 'admin' ? ['ROLE_ADMIN'] : ['ROLE_VIEWER'],
+        },
+      }
+    );
+    return;
+  }
   const authPattern = /\/protocol\/openid-connect\/auth/;
   const browsePattern = /\/browse\//;
 
@@ -196,10 +214,12 @@ test('Search results view opens preview for documents', async ({ page, request }
   if (!indexed) {
     console.log(`Index status not ready for ${documentId}; falling back to search polling`);
   }
-  await waitForSearchIndex(request, filename, apiToken, { apiUrl: baseApiUrl });
+  await waitForSearchIndex(request, filename, apiToken, { apiUrl: baseApiUrl, maxAttempts: 60 });
 
-  await loginWithCredentials(page, defaultUsername, defaultPassword);
+  await loginWithCredentials(page, defaultUsername, defaultPassword, apiToken);
   await page.goto(`${baseUiUrl}/search-results`, { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByText(/Access scope/i)).toBeVisible({ timeout: 60_000 });
 
   const quickSearchInput = page.getByPlaceholder('Quick search by name...');
   await quickSearchInput.fill(filename);
@@ -238,7 +258,7 @@ test('Search results hide unauthorized documents for viewer', async ({ page, req
   if (!indexed) {
     console.log(`Index status not ready for ${documentId}; falling back to search polling`);
   }
-  await waitForSearchIndex(request, filename, apiToken, { apiUrl: baseApiUrl });
+  await waitForSearchIndex(request, filename, apiToken, { apiUrl: baseApiUrl, maxAttempts: 60 });
 
   await setPermission(request, documentId, apiToken, {
     authority: 'EVERYONE',
@@ -247,7 +267,8 @@ test('Search results hide unauthorized documents for viewer', async ({ page, req
     allowed: false,
   });
 
-  await loginWithCredentials(page, viewerUsername, viewerPassword);
+  const viewerToken = await fetchAccessToken(request, viewerUsername, viewerPassword);
+  await loginWithCredentials(page, viewerUsername, viewerPassword, viewerToken);
   await page.goto(`${baseUiUrl}/search-results`, { waitUntil: 'domcontentloaded' });
 
   const quickSearchInput = page.getByPlaceholder('Quick search by name...');

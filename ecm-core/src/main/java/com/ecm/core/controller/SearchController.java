@@ -2,6 +2,7 @@ package com.ecm.core.controller;
 
 import com.ecm.core.search.*;
 import com.ecm.core.search.FacetedSearchService.*;
+import com.ecm.core.service.SecurityService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Search API Controller
@@ -32,6 +34,7 @@ public class SearchController {
     private final FullTextSearchService fullTextSearchService;
     private final SearchIndexService searchIndexService;
     private final FacetedSearchService facetedSearchService;
+    private final SecurityService securityService;
 
     // ==================== Search Endpoints ====================
 
@@ -52,6 +55,34 @@ public class SearchController {
 
         Page<SearchResult> results = fullTextSearchService.search(q, page, size, sortBy, sortDirection);
         return ResponseEntity.ok(results);
+    }
+
+    @GetMapping("/diagnostics")
+    @Operation(summary = "Search diagnostics",
+               description = "Return applied ACL filter context for the current user")
+    public ResponseEntity<SearchDiagnosticsResponse> searchDiagnostics() {
+        String username = securityService.getCurrentUser();
+        boolean isAdmin = securityService.hasRole("ROLE_ADMIN");
+        Set<String> authorities = securityService.getUserAuthorities(username);
+        int authorityCount = authorities == null ? 0 : authorities.size();
+        List<String> sampleAuthorities = authorities == null
+            ? List.of()
+            : authorities.stream().sorted().limit(8).toList();
+        String note = isAdmin
+            ? "Admin role bypasses read filter."
+            : (authorityCount == 0
+                ? "No authorities resolved; search results may be empty."
+                : "Read filter applied to search results.");
+
+        return ResponseEntity.ok(new SearchDiagnosticsResponse(
+            username,
+            isAdmin,
+            !isAdmin,
+            authorityCount,
+            sampleAuthorities,
+            note,
+            java.time.Instant.now().toString()
+        ));
     }
 
     @PostMapping("/advanced")
@@ -80,6 +111,16 @@ public class SearchController {
         Page<SearchResult> results = fullTextSearchService.search(q, 0, limit);
         return ResponseEntity.ok(results);
     }
+
+    public record SearchDiagnosticsResponse(
+        String username,
+        boolean admin,
+        boolean readFilterApplied,
+        int authorityCount,
+        List<String> authoritySample,
+        String note,
+        String generatedAt
+    ) {}
 
     // ==================== Index Management Endpoints ====================
 

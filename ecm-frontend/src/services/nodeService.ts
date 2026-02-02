@@ -96,6 +96,16 @@ interface UploadResponse {
   errors?: Record<string, string>;
 }
 
+export interface SearchDiagnostics {
+  username: string | null;
+  admin: boolean;
+  readFilterApplied: boolean;
+  authorityCount: number;
+  authoritySample: string[];
+  note?: string | null;
+  generatedAt?: string | null;
+}
+
 class NodeService {
   private pickPrimaryRoot(roots: FolderResponse[]): FolderResponse {
     if (!roots || roots.length === 0) {
@@ -446,6 +456,10 @@ class NodeService {
 
   async getSpellcheckSuggestions(query = '', limit = 5): Promise<string[]> {
     return api.get<string[]>('/search/spellcheck', { params: { q: query, limit } });
+  }
+
+  async getSearchDiagnostics(): Promise<SearchDiagnostics> {
+    return api.get<SearchDiagnostics>('/search/diagnostics');
   }
 
   private mapSearchItemToNode(item: any): Node {
