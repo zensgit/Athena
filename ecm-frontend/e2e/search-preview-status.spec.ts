@@ -133,6 +133,7 @@ test('Search preview status filters are visible and selectable', async ({ page, 
   await expect(page.getByText('Preview Status')).toBeVisible();
   const pendingChip = page.getByText(/Pending \(\d+\)/);
   await pendingChip.click();
+  await expect(page.getByText(/Preview status filters apply to the current page only/i)).toBeVisible();
   await expect(page.getByText(/Preview: pending/)).toBeVisible();
 
   await request.delete(`${baseApiUrl}/api/v1/nodes/${folderId}`,
