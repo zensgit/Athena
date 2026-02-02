@@ -1,8 +1,12 @@
 # Phase 10 – Verification
 
 ## Automated Tests
-- `cd ecm-frontend && npx playwright test e2e/search-preview-status.spec.ts e2e/search-sort-pagination.spec.ts e2e/search-view.spec.ts`
+- Targeted search suites:
+  - `cd ecm-frontend && npx playwright test e2e/search-preview-status.spec.ts e2e/search-sort-pagination.spec.ts e2e/search-view.spec.ts`
   - Result: **4 passed**
+- Full UI suite:
+  - `cd ecm-frontend && npx playwright test`
+  - Result: **27 passed**
 
 ## Notes
 - UI server running at `http://localhost:5500` during tests.
