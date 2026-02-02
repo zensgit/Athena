@@ -1,7 +1,10 @@
 package com.ecm.core.controller;
 
+import com.ecm.core.entity.AuditCategory;
+import com.ecm.core.entity.AuditCategorySetting;
 import com.ecm.core.entity.AuditLog;
 import com.ecm.core.service.AnalyticsService;
+import com.ecm.core.service.AuditService;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,6 +30,7 @@ import java.util.TimeZone;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -39,6 +43,9 @@ class AnalyticsControllerTest {
 
     @Mock
     private AnalyticsService analyticsService;
+
+    @Mock
+    private AuditService auditService;
 
     @InjectMocks
     private AnalyticsController analyticsController;
@@ -77,6 +84,38 @@ class AnalyticsControllerTest {
 
         assertEquals(LocalDateTime.of(2026, 1, 5, 2, 15, 30), fromCaptor.getValue());
         assertEquals(LocalDateTime.of(2026, 1, 5, 4, 15, 30), toCaptor.getValue());
+    }
+
+    @Test
+    @DisplayName("Audit categories endpoint returns toggles")
+    void auditCategoriesList() throws Exception {
+        Mockito.when(auditService.getCategorySettings())
+            .thenReturn(List.of(AuditCategorySetting.builder()
+                .category(AuditCategory.NODE)
+                .enabled(true)
+                .build()));
+
+        mockMvc.perform(get("/api/v1/analytics/audit/categories"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].category").value("NODE"))
+            .andExpect(jsonPath("$[0].enabled").value(true));
+    }
+
+    @Test
+    @DisplayName("Audit categories endpoint updates toggles")
+    void auditCategoriesUpdate() throws Exception {
+        Mockito.when(auditService.updateCategorySettings(Mockito.any()))
+            .thenReturn(List.of(AuditCategorySetting.builder()
+                .category(AuditCategory.MAIL)
+                .enabled(false)
+                .build()));
+
+        mockMvc.perform(put("/api/v1/analytics/audit/categories")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("[{\"category\":\"MAIL\",\"enabled\":false}]"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].category").value("MAIL"))
+            .andExpect(jsonPath("$[0].enabled").value(false));
     }
 
     @Test

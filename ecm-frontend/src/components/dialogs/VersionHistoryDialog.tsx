@@ -22,6 +22,7 @@ import {
   CircularProgress,
   Box,
   Tooltip,
+  Alert,
 } from '@mui/material';
 import {
   Close,
@@ -45,6 +46,10 @@ const VersionHistoryDialog: React.FC = () => {
   const [contextMenu, setContextMenu] = useState<{
     mouseX: number;
     mouseY: number;
+    version: Version;
+  } | null>(null);
+  const [pendingAction, setPendingAction] = useState<{
+    type: 'download' | 'restore';
     version: Version;
   } | null>(null);
 
@@ -95,28 +100,50 @@ const VersionHistoryDialog: React.FC = () => {
     } catch (error) {
       toast.error('Failed to download version');
     }
-    handleCloseContextMenu();
   };
 
   const handleRestoreVersion = async (version: Version) => {
     if (!selectedNodeId) return;
 
-    if (window.confirm(`Restore document to version ${version.versionLabel}?`)) {
-      try {
-        await nodeService.revertToVersion(selectedNodeId, version.id);
-        toast.success('Document restored successfully');
-        handleClose();
-      } catch (error) {
-        toast.error('Failed to restore version');
-      }
+    try {
+      await nodeService.revertToVersion(selectedNodeId, version.id);
+      toast.success('Document restored successfully');
+      handleClose();
+    } catch (error) {
+      toast.error('Failed to restore version');
     }
-    handleCloseContextMenu();
+  };
+
+  const handleConfirmAction = async () => {
+    if (!pendingAction) {
+      return;
+    }
+    const { type, version } = pendingAction;
+    if (type === 'download') {
+      await handleDownloadVersion(version);
+    } else {
+      await handleRestoreVersion(version);
+    }
+    setPendingAction(null);
   };
 
   const formatFileSize = (bytes: number): string => {
     const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(1024));
     return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
+  };
+
+  const formatSizeDelta = (current: Version, previous?: Version | null) => {
+    if (!previous) {
+      return 'Baseline';
+    }
+    const delta = current.size - previous.size;
+    if (delta === 0) {
+      return 'No change';
+    }
+    const sign = delta > 0 ? '+' : '−';
+    const absDelta = Math.abs(delta);
+    return `${sign}${formatFileSize(absDelta)}`;
   };
 
   const renderVersionLabel = (version: Version, index: number) => {
@@ -171,6 +198,9 @@ const VersionHistoryDialog: React.FC = () => {
         </IconButton>
       </DialogTitle>
       <DialogContent>
+        <Alert severity="info" sx={{ mb: 2 }}>
+          Download and restore actions are recorded in the audit log.
+        </Alert>
         {loading ? (
           <Box display="flex" justifyContent="center" p={4}>
             <CircularProgress />
@@ -188,6 +218,11 @@ const VersionHistoryDialog: React.FC = () => {
                   <TableCell>Date</TableCell>
                   <TableCell>Created By</TableCell>
                   <TableCell>Size</TableCell>
+                  <TableCell>
+                    <Tooltip title="Delta shows the size change vs the previous version." placement="top" arrow>
+                      <Box component="span">Delta</Box>
+                    </Tooltip>
+                  </TableCell>
                   <TableCell>Comment</TableCell>
                   <TableCell align="right">Actions</TableCell>
                 </TableRow>
@@ -203,6 +238,11 @@ const VersionHistoryDialog: React.FC = () => {
                     </TableCell>
                     <TableCell>{version.creator}</TableCell>
                     <TableCell>{formatFileSize(version.size)}</TableCell>
+                    <TableCell>
+                      <Typography variant="body2">
+                        {formatSizeDelta(version, versions[index + 1])}
+                      </Typography>
+                    </TableCell>
                     <TableCell>
                       <Typography variant="body2" noWrap sx={{ maxWidth: 200 }}>
                         {version.comment || '-'}
@@ -233,13 +273,27 @@ const VersionHistoryDialog: React.FC = () => {
               : undefined
           }
         >
-          <MenuItem onClick={() => contextMenu && handleDownloadVersion(contextMenu.version)}>
+          <MenuItem
+            onClick={() => {
+              if (contextMenu) {
+                setPendingAction({ type: 'download', version: contextMenu.version });
+                handleCloseContextMenu();
+              }
+            }}
+          >
             <ListItemIcon>
               <Download fontSize="small" />
             </ListItemIcon>
             <ListItemText>Download this version</ListItemText>
           </MenuItem>
-          <MenuItem onClick={() => contextMenu && handleRestoreVersion(contextMenu.version)}>
+          <MenuItem
+            onClick={() => {
+              if (contextMenu) {
+                setPendingAction({ type: 'restore', version: contextMenu.version });
+                handleCloseContextMenu();
+              }
+            }}
+          >
             <ListItemIcon>
               <Restore fontSize="small" />
             </ListItemIcon>
@@ -256,6 +310,29 @@ const VersionHistoryDialog: React.FC = () => {
       <DialogActions>
         <Button onClick={handleClose}>Close</Button>
       </DialogActions>
+
+      <Dialog open={pendingAction !== null} onClose={() => setPendingAction(null)}>
+        <DialogTitle>
+          {pendingAction?.type === 'download' ? 'Download version' : 'Restore version'}
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" gutterBottom>
+            Version: {pendingAction?.version.versionLabel}
+          </Typography>
+          <Typography variant="body2" gutterBottom>
+            Created: {pendingAction?.version.created ? format(new Date(pendingAction.version.created), 'PPp') : '—'}
+          </Typography>
+          <Typography variant="body2">
+            Size: {pendingAction?.version.size !== undefined ? formatFileSize(pendingAction.version.size) : '—'}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPendingAction(null)}>Cancel</Button>
+          <Button variant="contained" onClick={handleConfirmAction}>
+            Confirm
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Dialog>
   );
 };

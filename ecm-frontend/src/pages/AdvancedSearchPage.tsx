@@ -15,12 +15,15 @@ import {
   Pagination,
   Stack,
   Divider,
+  Tooltip,
 } from '@mui/material';
 import { Search as SearchIcon, FilterList as FilterIcon } from '@mui/icons-material';
 import { format } from 'date-fns';
 import apiService from '../services/api';
 import { toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
+import { useAppDispatch, useAppSelector } from 'store';
+import { setSidebarOpen } from 'store/slices/uiSlice';
 
 interface SearchResult {
   id: string;
@@ -33,6 +36,8 @@ interface SearchResult {
   path: string;
   nodeType?: 'FOLDER' | 'DOCUMENT';
   parentId?: string;
+  previewStatus?: string;
+  previewFailureReason?: string;
 }
 
 
@@ -59,6 +64,8 @@ interface SearchResponse {
 
 const AdvancedSearchPage: React.FC = () => {
   const navigate = useNavigate();
+  const dispatch = useAppDispatch();
+  const { sidebarAutoCollapse } = useAppSelector((state) => state.ui);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [facets, setFacets] = useState<Facets | null>(null);
@@ -75,6 +82,23 @@ const AdvancedSearchPage: React.FC = () => {
   const [dateRange, setDateRange] = useState<'all' | 'today' | 'week' | 'month'>('all');
   const [minSize, setMinSize] = useState<number | undefined>();
   const [maxSize, setMaxSize] = useState<number | undefined>();
+
+  const getPreviewStatusMeta = (status?: string) => {
+    const normalized = status?.toUpperCase();
+    if (!normalized || normalized === 'READY') {
+      return null;
+    }
+    if (normalized === 'FAILED') {
+      return { label: 'Preview failed', color: 'error' as const };
+    }
+    if (normalized === 'PROCESSING') {
+      return { label: 'Preview processing', color: 'warning' as const };
+    }
+    if (normalized === 'QUEUED') {
+      return { label: 'Preview queued', color: 'info' as const };
+    }
+    return { label: `Preview ${normalized.toLowerCase()}`, color: 'default' as const };
+  };
 
   const handleSearch = async (newPage = 1) => {
     try {
@@ -358,6 +382,9 @@ const AdvancedSearchPage: React.FC = () => {
                       } else {
                         navigate(`/browse/${result.parentId || 'root'}`);
                       }
+                      if (sidebarAutoCollapse) {
+                        dispatch(setSidebarOpen(false));
+                      }
                     }}
                   >
                     <Box display="flex" justifyContent="space-between">
@@ -386,6 +413,21 @@ const AdvancedSearchPage: React.FC = () => {
                           size="small"
                           variant="outlined"
                         />
+                        {result.nodeType !== 'FOLDER' && getPreviewStatusMeta(result.previewStatus) && (
+                          <Tooltip
+                            title={result.previewFailureReason || ''}
+                            placement="top-start"
+                            arrow
+                            disableHoverListener={!result.previewFailureReason}
+                          >
+                            <Chip
+                              label={getPreviewStatusMeta(result.previewStatus)?.label}
+                              color={getPreviewStatusMeta(result.previewStatus)?.color}
+                              size="small"
+                              variant="outlined"
+                            />
+                          </Tooltip>
+                        )}
                     </Box>
                   </Paper>
                 ))}

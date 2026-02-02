@@ -5,6 +5,7 @@ import com.ecm.core.pipeline.DocumentContext;
 import com.ecm.core.pipeline.DocumentProcessor;
 import com.ecm.core.pipeline.ProcessingResult;
 import com.ecm.core.search.NodeDocument;
+import com.ecm.core.service.SecurityService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -23,6 +24,7 @@ import org.springframework.stereotype.Component;
 public class SearchIndexProcessor implements DocumentProcessor {
 
     private final ElasticsearchOperations elasticsearchOperations;
+    private final SecurityService securityService;
 
     @Value("${ecm.search.enabled:true}")
     private boolean searchEnabled;
@@ -110,6 +112,10 @@ public class SearchIndexProcessor implements DocumentProcessor {
                 .createdBy(context.getUserId())
                 .deleted(false)
                 .build();
+
+        if (context.getDocumentId() != null) {
+            doc.setPermissions(securityService.resolveReadAuthorities(context.getDocumentId()));
+        }
 
         // Keep extracted text in the standard fields used by search.
         if (context.getExtractedText() != null) {

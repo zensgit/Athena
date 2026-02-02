@@ -39,7 +39,7 @@ import { format } from 'date-fns';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppSelector, useAppDispatch } from 'store';
 import { fetchSearchFacets, searchNodes } from 'store/slices/nodeSlice';
-import { setSearchOpen } from 'store/slices/uiSlice';
+import { setSearchOpen, setSidebarOpen } from 'store/slices/uiSlice';
 import nodeService from 'services/nodeService';
 import { Node, SearchCriteria } from 'types';
 import { toast } from 'react-toastify';
@@ -72,6 +72,7 @@ const SearchResults: React.FC = () => {
   const dispatch = useAppDispatch();
   const { nodes, nodesTotal, loading, error, searchFacets, lastSearchCriteria } = useAppSelector((state) => state.node);
   const { user } = useAppSelector((state) => state.auth);
+  const { sidebarAutoCollapse } = useAppSelector((state) => state.ui);
   const [quickSearch, setQuickSearch] = useState('');
   const [sortBy, setSortBy] = useState('relevance');
   const [page, setPage] = useState(1);
@@ -82,6 +83,7 @@ const SearchResults: React.FC = () => {
   const [selectedCorrespondents, setSelectedCorrespondents] = useState<string[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [selectedPreviewStatuses, setSelectedPreviewStatuses] = useState<string[]>([]);
   const [previewNode, setPreviewNode] = useState<Node | null>(null);
   const [previewAnnotate, setPreviewAnnotate] = useState(false);
   const [hiddenNodeIds, setHiddenNodeIds] = useState<string[]>([]);
@@ -99,6 +101,7 @@ const SearchResults: React.FC = () => {
   const [spellcheckSuggestions, setSpellcheckSuggestions] = useState<string[]>([]);
   const [spellcheckLoading, setSpellcheckLoading] = useState(false);
   const [spellcheckError, setSpellcheckError] = useState<string | null>(null);
+  const lastSpellcheckQueryRef = useRef('');
   const previewOpen = Boolean(previewNode);
   const canWrite = Boolean(user?.roles?.includes('ROLE_ADMIN') || user?.roles?.includes('ROLE_EDITOR'));
   const suppressFacetSearch = useRef(false);
@@ -185,6 +188,7 @@ const SearchResults: React.FC = () => {
     setSelectedCorrespondents([]);
     setSelectedTags([]);
     setSelectedCategories([]);
+    setSelectedPreviewStatuses([]);
   };
 
   const removeFacetValue = (
@@ -192,6 +196,12 @@ const SearchResults: React.FC = () => {
     value: string
   ) => {
     setter((prev) => prev.filter((item) => item !== value));
+  };
+
+  const togglePreviewStatus = (status: string) => {
+    setSelectedPreviewStatuses((prev) =>
+      prev.includes(status) ? prev.filter((item) => item !== status) : [...prev, status]
+    );
   };
 
   useEffect(() => {
@@ -257,12 +267,19 @@ const SearchResults: React.FC = () => {
 
   useEffect(() => {
     const query = (lastSearchCriteria?.name || '').trim();
-    if (!query || isSimilarMode || nodesTotal > 0) {
+    if (!query || isSimilarMode) {
+      lastSpellcheckQueryRef.current = '';
       setSpellcheckSuggestions([]);
       setSpellcheckError(null);
+      setSpellcheckLoading(false);
       return;
     }
 
+    if (lastSpellcheckQueryRef.current === query) {
+      return;
+    }
+
+    lastSpellcheckQueryRef.current = query;
     let active = true;
     setSpellcheckLoading(true);
     nodeService.getSpellcheckSuggestions(query)
@@ -285,7 +302,7 @@ const SearchResults: React.FC = () => {
     return () => {
       active = false;
     };
-  }, [lastSearchCriteria, isSimilarMode, nodesTotal]);
+  }, [lastSearchCriteria, isSimilarMode]);
 
   useEffect(() => {
     if (lastSearchCriteria?.name !== undefined) {
@@ -538,6 +555,9 @@ const SearchResults: React.FC = () => {
       const freshNode = await nodeService.getNode(node.id);
       if (isFolderNode(freshNode)) {
         navigate(`/browse/${freshNode.id}`);
+        if (sidebarAutoCollapse) {
+          dispatch(setSidebarOpen(false));
+        }
       } else {
         setPreviewNode(freshNode);
       }
@@ -714,6 +734,42 @@ const SearchResults: React.FC = () => {
     return <Chip label="File" size="small" />;
   };
 
+  const getPreviewStatusChip = (node: Node) => {
+    if (node.nodeType === 'FOLDER') {
+      return null;
+    }
+    const status = node.previewStatus?.toUpperCase();
+    const normalized = status || 'PENDING';
+    const label = normalized === 'READY'
+      ? 'Preview ready'
+      : normalized === 'FAILED'
+        ? 'Preview failed'
+        : normalized === 'PROCESSING'
+          ? 'Preview processing'
+          : normalized === 'QUEUED'
+            ? 'Preview queued'
+            : 'Preview pending';
+    const color = normalized === 'READY'
+      ? 'success'
+      : normalized === 'FAILED'
+        ? 'error'
+        : normalized === 'PROCESSING'
+          ? 'warning'
+          : normalized === 'QUEUED'
+            ? 'info'
+            : 'default';
+    return (
+      <Tooltip
+        title={node.previewFailureReason || ''}
+        placement="top-start"
+        arrow
+        disableHoverListener={!node.previewFailureReason}
+      >
+        <Chip label={label} size="small" variant="outlined" color={color} />
+      </Tooltip>
+    );
+  };
+
   const renderTagsCategories = (node: Node) => {
     return (
       <Box display="flex" gap={1} flexWrap="wrap" mt={1}>
@@ -796,16 +852,72 @@ const SearchResults: React.FC = () => {
     selectedCreators.length > 0 ||
     selectedCorrespondents.length > 0 ||
     selectedTags.length > 0 ||
-    selectedCategories.length > 0;
+    selectedCategories.length > 0 ||
+    selectedPreviewStatuses.length > 0;
 
   const hasActiveCriteria = isSimilarMode
     || Boolean((lastSearchCriteria?.name || '').trim())
     || filtersApplied;
   const shouldShowFallback = !isSimilarMode && !loading && nodes.length === 0 && fallbackNodes.length > 0 && hasActiveCriteria;
   const displayNodes = isSimilarMode ? (similarResults || []) : (shouldShowFallback ? fallbackNodes : nodes);
-  const paginatedNodes = displayNodes.filter((node) => !hiddenNodeIds.includes(node.id));
-  const displayTotal = isSimilarMode ? paginatedNodes.length : nodesTotal;
+  const previewStatusCounts = displayNodes.reduce(
+    (acc, node) => {
+      if (node.nodeType === 'FOLDER') {
+        acc.folders += 1;
+        return acc;
+      }
+      const status = node.previewStatus?.toUpperCase() || 'PENDING';
+      if (status in acc) {
+        acc[status as keyof typeof acc] += 1;
+      } else {
+        acc.other += 1;
+      }
+      return acc;
+    },
+    {
+      READY: 0,
+      PROCESSING: 0,
+      QUEUED: 0,
+      FAILED: 0,
+      PENDING: 0,
+      other: 0,
+      folders: 0,
+    }
+  );
+  const previewStatusFilterApplied = selectedPreviewStatuses.length > 0;
+  const statusFilteredNodes = previewStatusFilterApplied
+    ? displayNodes.filter((node) => {
+        if (node.nodeType === 'FOLDER') {
+          return false;
+        }
+        const status = node.previewStatus?.toUpperCase() || 'PENDING';
+        return selectedPreviewStatuses.includes(status);
+      })
+    : displayNodes;
+  const paginatedNodes = statusFilteredNodes.filter((node) => !hiddenNodeIds.includes(node.id));
+  const displayTotal = isSimilarMode
+    ? paginatedNodes.length
+    : previewStatusFilterApplied
+      ? statusFilteredNodes.length
+      : nodesTotal;
   const totalPages = Math.max(1, Math.ceil(displayTotal / pageSize));
+  const spellcheckQuery = (lastSearchCriteria?.name || '').trim();
+  const normalizedSpellcheckQuery = spellcheckQuery.toLowerCase();
+  const filteredSpellcheckSuggestions = useMemo(() => {
+    const unique = new Set<string>();
+    for (const suggestion of spellcheckSuggestions) {
+      const trimmed = suggestion.trim();
+      if (!trimmed) continue;
+      if (trimmed.toLowerCase() === normalizedSpellcheckQuery) continue;
+      if (!unique.has(trimmed)) {
+        unique.add(trimmed);
+      }
+    }
+    return Array.from(unique);
+  }, [spellcheckSuggestions, normalizedSpellcheckQuery]);
+  const primarySpellcheckSuggestion = filteredSpellcheckSuggestions[0];
+  const secondarySpellcheckSuggestions = filteredSpellcheckSuggestions.slice(1);
+  const showSpellcheckSuggestions = !spellcheckLoading && filteredSpellcheckSuggestions.length > 0;
 
   return (
     <Box>
@@ -854,19 +966,46 @@ const SearchResults: React.FC = () => {
           {spellcheckError}
         </Alert>
       )}
-      {!spellcheckLoading && spellcheckSuggestions.length > 0 && (
+      {showSpellcheckSuggestions && (
         <Alert severity="info" sx={{ mb: 2 }}>
-          Did you mean:{' '}
-          {spellcheckSuggestions.map((suggestion) => (
-            <Button
-              key={suggestion}
-              size="small"
-              onClick={() => handleSpellcheckSuggestion(suggestion)}
-              sx={{ textTransform: 'none', ml: 0.5 }}
-            >
-              {suggestion}
-            </Button>
-          ))}
+          <Box display="flex" alignItems="center" flexWrap="wrap" gap={0.5}>
+            {spellcheckQuery && (
+              <Typography variant="body2" color="text.secondary">
+                {displayTotal > 0
+                  ? `Showing results for "${spellcheckQuery}".`
+                  : `No results for "${spellcheckQuery}".`}
+              </Typography>
+            )}
+            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+              Did you mean
+            </Typography>
+            {primarySpellcheckSuggestion && (
+              <Button
+                size="small"
+                onClick={() => handleSpellcheckSuggestion(primarySpellcheckSuggestion)}
+                sx={{ textTransform: 'none', ml: 0.5 }}
+              >
+                {primarySpellcheckSuggestion}
+              </Button>
+            )}
+            {secondarySpellcheckSuggestions.length > 0 && (
+              <>
+                <Typography variant="body2" color="text.secondary">
+                  or
+                </Typography>
+                {secondarySpellcheckSuggestions.map((suggestion) => (
+                  <Button
+                    key={suggestion}
+                    size="small"
+                    onClick={() => handleSpellcheckSuggestion(suggestion)}
+                    sx={{ textTransform: 'none', ml: 0.5 }}
+                  >
+                    {suggestion}
+                  </Button>
+                ))}
+              </>
+            )}
+          </Box>
         </Alert>
       )}
 
@@ -910,6 +1049,34 @@ const SearchResults: React.FC = () => {
                 ))}
               </Select>
             </FormControl>
+
+            <Typography variant="subtitle2" gutterBottom>
+              Preview Status
+            </Typography>
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+              Filter results by preview generation state.
+            </Typography>
+            <Box display="flex" flexWrap="wrap" gap={1} mb={2}>
+              {[
+                { value: 'READY', label: 'Ready', color: 'success' as const, count: previewStatusCounts.READY },
+                { value: 'PROCESSING', label: 'Processing', color: 'warning' as const, count: previewStatusCounts.PROCESSING },
+                { value: 'QUEUED', label: 'Queued', color: 'info' as const, count: previewStatusCounts.QUEUED },
+                { value: 'FAILED', label: 'Failed', color: 'error' as const, count: previewStatusCounts.FAILED },
+                { value: 'PENDING', label: 'Pending', color: 'default' as const, count: previewStatusCounts.PENDING },
+              ].map((status) => (
+                <Chip
+                  key={status.value}
+                  label={`${status.label} (${status.count})`}
+                  size="small"
+                  color={selectedPreviewStatuses.includes(status.value) ? status.color : 'default'}
+                  variant={selectedPreviewStatuses.includes(status.value) ? 'filled' : 'outlined'}
+                  onClick={() => togglePreviewStatus(status.value)}
+                />
+              ))}
+              <Button size="small" disabled={selectedPreviewStatuses.length === 0} onClick={() => setSelectedPreviewStatuses([])}>
+                Clear
+              </Button>
+            </Box>
 
             <Typography variant="subtitle2" gutterBottom>
               Created By
@@ -1178,6 +1345,14 @@ const SearchResults: React.FC = () => {
                   onDelete={() => removeFacetValue(setSelectedCategories, value)}
                 />
               ))}
+              {selectedPreviewStatuses.map((value) => (
+                <Chip
+                  key={`preview-${value}`}
+                  label={`Preview: ${value.toLowerCase()}`}
+                  size="small"
+                  onDelete={() => removeFacetValue(setSelectedPreviewStatuses, value)}
+                />
+              ))}
               <Button size="small" onClick={clearFacetFilters}>
                 Clear all
               </Button>
@@ -1228,6 +1403,7 @@ const SearchResults: React.FC = () => {
                               {node.currentVersionLabel && (
                                 <Chip label={`v${node.currentVersionLabel}`} size="small" variant="outlined" />
                               )}
+                              {getPreviewStatusChip(node)}
                             </Box>
                           </Box>
                         </Box>

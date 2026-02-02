@@ -1,11 +1,14 @@
 package com.ecm.core.controller;
 
+import com.ecm.core.entity.AuditCategory;
+import com.ecm.core.entity.AuditCategorySetting;
 import com.ecm.core.entity.AuditLog;
 import com.ecm.core.service.AnalyticsService;
 import com.ecm.core.service.AnalyticsService.DailyActivityStats;
 import com.ecm.core.service.AnalyticsService.MimeTypeStats;
 import com.ecm.core.service.AnalyticsService.SystemSummaryStats;
 import com.ecm.core.service.AnalyticsService.UserActivityStats;
+import com.ecm.core.service.AuditService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -26,8 +29,11 @@ import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Analytics and Monitoring Controller
@@ -43,6 +49,7 @@ import java.util.Map;
 public class AnalyticsController {
 
     private final AnalyticsService analyticsService;
+    private final AuditService auditService;
 
     @Value("${ecm.audit.export.max-range-days:90}")
     private int auditExportMaxRangeDays;
@@ -246,6 +253,31 @@ public class AnalyticsController {
         ));
     }
 
+    @GetMapping("/audit/categories")
+    @Operation(summary = "Audit Categories", description = "List audit category toggles")
+    public ResponseEntity<List<AuditCategoryResponse>> getAuditCategories() {
+        return ResponseEntity.ok(toAuditCategoryResponse(auditService.getCategorySettings()));
+    }
+
+    @PutMapping("/audit/categories")
+    @Operation(summary = "Update Audit Categories", description = "Enable or disable audit categories")
+    public ResponseEntity<List<AuditCategoryResponse>> updateAuditCategories(
+            @RequestBody List<AuditCategoryRequest> updates) {
+        Map<AuditCategory, Boolean> updateMap = new java.util.EnumMap<>(AuditCategory.class);
+        if (updates != null) {
+            for (AuditCategoryRequest update : updates) {
+                AuditCategory category = AuditCategory.fromString(update.category());
+                if (category == null) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Unknown audit category: " + update.category());
+                }
+                updateMap.put(category, update.enabled());
+            }
+        }
+        List<AuditCategorySetting> updated = auditService.updateCategorySettings(updateMap);
+        return ResponseEntity.ok(toAuditCategoryResponse(updated));
+    }
+
     @PostMapping("/audit/cleanup")
     @Operation(summary = "Trigger Audit Cleanup", description = "Manually trigger audit log cleanup based on retention policy")
     public ResponseEntity<Map<String, Object>> triggerAuditCleanup() {
@@ -258,4 +290,18 @@ public class AnalyticsController {
                 : "No expired audit logs to delete"
         ));
     }
+
+    private static List<AuditCategoryResponse> toAuditCategoryResponse(List<AuditCategorySetting> settings) {
+        if (settings == null) {
+            return List.of();
+        }
+        return settings.stream()
+            .sorted(Comparator.comparingInt(setting -> setting.getCategory().ordinal()))
+            .map(setting -> new AuditCategoryResponse(setting.getCategory().name(), setting.isEnabled()))
+            .collect(Collectors.toCollection(ArrayList::new));
+    }
+
+    private record AuditCategoryRequest(String category, boolean enabled) {}
+
+    private record AuditCategoryResponse(String category, boolean enabled) {}
 }

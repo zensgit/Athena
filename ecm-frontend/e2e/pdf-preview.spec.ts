@@ -193,7 +193,8 @@ test('PDF preview shows dialog and controls', async ({ page, request }) => {
   await expect(resultCard).toBeVisible({ timeout: 60_000 });
   await resultCard.getByRole('button', { name: 'View', exact: true }).click();
 
-  await expect(page.getByLabel('close')).toBeVisible({ timeout: 60_000 });
+  const previewDialog = page.getByRole('dialog');
+  await expect(previewDialog.getByLabel('close')).toBeVisible({ timeout: 60_000 });
   await page.waitForSelector('.react-pdf__Page__canvas, [data-testid="pdf-preview-fallback"]', { timeout: 60000 });
   await expect(page.locator('[data-testid=ZoomInIcon]')).toBeVisible();
   await expect(page.locator('[data-testid=ZoomOutIcon]')).toBeVisible();
@@ -201,7 +202,16 @@ test('PDF preview shows dialog and controls', async ({ page, request }) => {
   await expect(page.locator('[data-testid=RotateRightIcon]')).toBeVisible();
   await expect(page.getByRole('button', { name: /annotate/i })).toBeVisible();
 
-  await page.getByLabel('close').click();
+  const queueResponse = page.waitForResponse((response) =>
+    response.url().includes(`/api/v1/documents/${documentId}/preview/queue`)
+      && response.status() < 500,
+  );
+  await page.getByRole('button', { name: 'More actions' }).click();
+  await page.getByRole('menuitem', { name: 'Queue Preview' }).click();
+  await queueResponse;
+  await expect(page.getByText(/Preview generation is in progress/i)).toBeVisible({ timeout: 60_000 });
+
+  await previewDialog.getByLabel('close').click();
 
   await request.delete(`${baseApiUrl}/api/v1/nodes/${folderId}`, {
     headers: { Authorization: `Bearer ${apiToken}` },
@@ -244,7 +254,8 @@ test('PDF preview falls back to server render when client PDF fails', async ({ p
     await expect(resultCard).toBeVisible({ timeout: 60_000 });
     await resultCard.getByRole('button', { name: 'View', exact: true }).click();
 
-    await expect(page.getByLabel('close')).toBeVisible({ timeout: 60_000 });
+    const fallbackDialog = page.getByRole('dialog');
+    await expect(fallbackDialog.getByLabel('close')).toBeVisible({ timeout: 60_000 });
     const fallbackPreview = page.getByTestId('pdf-preview-fallback');
     await expect(fallbackPreview).toBeVisible({ timeout: 60_000 });
     await expect(fallbackPreview.getByTestId('pdf-preview-fallback-banner')).toBeVisible();
@@ -255,7 +266,7 @@ test('PDF preview falls back to server render when client PDF fails', async ({ p
     await page.unroute(workerRoute).catch(() => null);
   }
 
-  await page.getByLabel('close').click();
+  await page.getByRole('dialog').getByLabel('close').click();
 
   await request.delete(`${baseApiUrl}/api/v1/nodes/${folderId}`, {
     headers: { Authorization: `Bearer ${apiToken}` },
@@ -293,7 +304,8 @@ test('File browser view action opens preview', async ({ page, request }) => {
   await expect(viewItem).toBeVisible();
   await viewItem.click();
 
-  await expect(page.getByLabel('close')).toBeVisible({ timeout: 60_000 });
+  const browserDialog = page.getByRole('dialog');
+  await expect(browserDialog.getByLabel('close')).toBeVisible({ timeout: 60_000 });
   await page.waitForSelector('.react-pdf__Page__canvas, [data-testid="pdf-preview-fallback"]', { timeout: 60_000 });
 
   await page.getByLabel('close').click();

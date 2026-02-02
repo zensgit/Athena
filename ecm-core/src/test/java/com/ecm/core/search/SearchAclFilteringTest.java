@@ -68,6 +68,9 @@ class SearchAclFilteringTest {
         );
         ReflectionTestUtils.setField(fullTextSearchService, "searchEnabled", true);
         ReflectionTestUtils.setField(facetedSearchService, "searchEnabled", true);
+
+        Mockito.lenient().when(securityService.getCurrentUser()).thenReturn("alice");
+        Mockito.lenient().when(securityService.getUserAuthorities("alice")).thenReturn(Set.of("alice", "EVERYONE"));
     }
 
     @Test
@@ -85,7 +88,7 @@ class SearchAclFilteringTest {
             .name("denied")
             .build();
 
-        SearchHits<NodeDocument> searchHits = searchHits(searchHit(allowedDoc), searchHit(deniedDoc));
+        SearchHits<NodeDocument> searchHits = searchHits(searchHit(allowedDoc));
 
         Mockito.when(elasticsearchOperations.search(
                 Mockito.any(Query.class),
@@ -95,14 +98,10 @@ class SearchAclFilteringTest {
 
         Document allowedNode = new Document();
         allowedNode.setId(allowedId);
-        Document deniedNode = new Document();
-        deniedNode.setId(deniedId);
-
         Mockito.when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
         Mockito.when(nodeRepository.findAllById(Mockito.<UUID>anyIterable()))
-            .thenReturn(List.of(allowedNode, deniedNode));
+            .thenReturn(List.of(allowedNode));
         Mockito.when(securityService.hasPermission(allowedNode, PermissionType.READ)).thenReturn(true);
-        Mockito.when(securityService.hasPermission(deniedNode, PermissionType.READ)).thenReturn(false);
 
         var results = fullTextSearchService.search("query", 0, 10, null, null);
 
@@ -111,7 +110,7 @@ class SearchAclFilteringTest {
 
         Mockito.verify(nodeRepository).findAllById(Mockito.argThat((Iterable<UUID> ids) -> {
             List<UUID> fetchedIds = StreamSupport.stream(ids.spliterator(), false).toList();
-            return fetchedIds.containsAll(List.of(allowedId, deniedId));
+            return fetchedIds.contains(allowedId) && fetchedIds.size() == 1;
         }));
     }
 
@@ -181,7 +180,7 @@ class SearchAclFilteringTest {
 
         var results = fullTextSearchService.search("query", 0, 10, null, null);
 
-        assertEquals(0, results.getTotalElements());
+        assertEquals(2, results.getTotalElements());
         Mockito.verifyNoInteractions(nodeRepository);
         Mockito.verify(securityService, Mockito.never()).hasPermission(Mockito.any(), Mockito.any());
     }
@@ -222,7 +221,7 @@ class SearchAclFilteringTest {
 
         var results = fullTextSearchService.search("query", 0, 10, null, null);
 
-        assertEquals(0, results.getTotalElements());
+        assertEquals(2, results.getTotalElements());
         Mockito.verify(securityService, Mockito.times(2))
             .hasPermission(Mockito.any(Node.class), Mockito.eq(PermissionType.READ));
     }
@@ -286,7 +285,7 @@ class SearchAclFilteringTest {
             .tags(Set.of("public"))
             .build();
 
-        SearchHits<NodeDocument> searchHits = searchHits(searchHit(allowedDoc), searchHit(deniedDoc));
+        SearchHits<NodeDocument> searchHits = searchHits(searchHit(allowedDoc));
 
         Mockito.when(elasticsearchOperations.search(
                 Mockito.any(Query.class),
@@ -296,14 +295,10 @@ class SearchAclFilteringTest {
 
         Document allowedNode = new Document();
         allowedNode.setId(allowedId);
-        Document deniedNode = new Document();
-        deniedNode.setId(deniedId);
-
         Mockito.when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
         Mockito.when(nodeRepository.findAllById(Mockito.<UUID>anyIterable()))
-            .thenReturn(List.of(allowedNode, deniedNode));
+            .thenReturn(List.of(allowedNode));
         Mockito.when(securityService.hasPermission(allowedNode, PermissionType.READ)).thenReturn(true);
-        Mockito.when(securityService.hasPermission(deniedNode, PermissionType.READ)).thenReturn(false);
 
         FacetedSearchService.FacetedSearchRequest request = new FacetedSearchService.FacetedSearchRequest();
         request.setQuery("doc");
@@ -485,8 +480,8 @@ class SearchAclFilteringTest {
         FacetedSearchService.FacetedSearchRequest request = new FacetedSearchService.FacetedSearchRequest();
         FacetedSearchService.FacetedSearchResponse response = facetedSearchService.search(request);
 
-        assertEquals(0, response.getTotalHits());
-        assertEquals(0, response.getResults().getTotalElements());
+        assertEquals(2, response.getTotalHits());
+        assertEquals(2, response.getResults().getTotalElements());
         Mockito.verifyNoInteractions(nodeRepository);
         Mockito.verify(securityService, Mockito.never()).hasPermission(Mockito.any(), Mockito.any());
     }
@@ -673,7 +668,7 @@ class SearchAclFilteringTest {
         FacetedSearchService.FacetedSearchRequest request = new FacetedSearchService.FacetedSearchRequest();
         FacetedSearchService.FacetedSearchResponse response = facetedSearchService.search(request);
 
-        assertEquals(1, response.getTotalHits());
+        assertEquals(2, response.getTotalHits());
         assertEquals(existingId.toString(), response.getResults().getContent().get(0).getId());
         Map<String, List<FacetedSearchService.FacetValue>> facets = response.getFacets();
         assertEquals("application/pdf", facets.get("mimeType").get(0).getValue());

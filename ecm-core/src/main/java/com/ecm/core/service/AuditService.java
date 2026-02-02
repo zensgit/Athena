@@ -1,10 +1,13 @@
 package com.ecm.core.service;
 
+import com.ecm.core.entity.AuditCategory;
+import com.ecm.core.entity.AuditCategorySetting;
 import com.ecm.core.entity.AuditLog;
 import com.ecm.core.entity.AutomationRule;
 import com.ecm.core.entity.Node;
 import com.ecm.core.entity.RuleExecutionResult;
 import com.ecm.core.entity.Version;
+import com.ecm.core.repository.AuditCategorySettingRepository;
 import com.ecm.core.repository.AuditLogRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,8 +19,13 @@ import org.springframework.transaction.annotation.Transactional;
 import jakarta.annotation.PostConstruct;
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -27,15 +35,19 @@ import java.util.UUID;
 public class AuditService {
     
     private final AuditLogRepository auditLogRepository;
+    private final AuditCategorySettingRepository auditCategorySettingRepository;
 
     @Value("${ecm.audit.disabled-categories:}")
     private String disabledCategoriesRaw;
 
     private final Set<AuditCategory> disabledCategories = EnumSet.noneOf(AuditCategory.class);
+    private final EnumMap<AuditCategory, Boolean> categoryEnabledCache = new EnumMap<>(AuditCategory.class);
 
     @PostConstruct
     public void init() {
         if (disabledCategoriesRaw == null || disabledCategoriesRaw.isBlank()) {
+            ensureCategorySettings();
+            refreshCategoryCache();
             return;
         }
         Arrays.stream(disabledCategoriesRaw.split("[,\\s]+"))
@@ -43,11 +55,15 @@ public class AuditService {
             .filter(value -> !value.isBlank())
             .forEach(value -> {
                 try {
-                    disabledCategories.add(AuditCategory.valueOf(value.toUpperCase(Locale.ROOT)));
+                    AuditCategory category = AuditCategory.valueOf(value.toUpperCase(Locale.ROOT));
+                    disabledCategories.add(category);
                 } catch (IllegalArgumentException ex) {
                     log.warn("Unknown audit category '{}'", value);
                 }
             });
+
+        ensureCategorySettings();
+        refreshCategoryCache();
     }
     
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -73,6 +89,10 @@ public class AuditService {
 
     private boolean isCategoryEnabled(String eventType) {
         AuditCategory category = resolveCategory(eventType);
+        Boolean enabled = categoryEnabledCache.get(category);
+        if (enabled != null) {
+            return enabled;
+        }
         return !disabledCategories.contains(category);
     }
 
@@ -108,16 +128,63 @@ public class AuditService {
         return AuditCategory.OTHER;
     }
 
-    private enum AuditCategory {
-        NODE,
-        VERSION,
-        RULE,
-        WORKFLOW,
-        MAIL,
-        INTEGRATION,
-        SECURITY,
-        PDF,
-        OTHER
+    @Transactional(readOnly = true)
+    public List<AuditCategorySetting> getCategorySettings() {
+        ensureCategorySettings();
+        return auditCategorySettingRepository.findAll().stream()
+            .sorted(Comparator.comparingInt(setting -> setting.getCategory().ordinal()))
+            .toList();
+    }
+
+    @Transactional
+    public List<AuditCategorySetting> updateCategorySettings(Map<AuditCategory, Boolean> updates) {
+        ensureCategorySettings();
+        if (updates == null || updates.isEmpty()) {
+            return getCategorySettings();
+        }
+        List<AuditCategorySetting> toSave = new ArrayList<>();
+        for (Map.Entry<AuditCategory, Boolean> entry : updates.entrySet()) {
+            AuditCategory category = entry.getKey();
+            boolean enabled = Boolean.TRUE.equals(entry.getValue());
+            AuditCategorySetting setting = auditCategorySettingRepository.findById(category)
+                .orElseGet(() -> AuditCategorySetting.builder()
+                    .category(category)
+                    .enabled(enabled)
+                    .build());
+            setting.setEnabled(enabled);
+            toSave.add(setting);
+        }
+        auditCategorySettingRepository.saveAll(toSave);
+        refreshCategoryCache();
+        return getCategorySettings();
+    }
+
+    private void ensureCategorySettings() {
+        List<AuditCategorySetting> existing = auditCategorySettingRepository.findAll();
+        EnumMap<AuditCategory, AuditCategorySetting> existingMap = new EnumMap<>(AuditCategory.class);
+        for (AuditCategorySetting setting : existing) {
+            existingMap.put(setting.getCategory(), setting);
+        }
+
+        List<AuditCategorySetting> missing = new ArrayList<>();
+        for (AuditCategory category : AuditCategory.values()) {
+            if (!existingMap.containsKey(category)) {
+                boolean enabled = !disabledCategories.contains(category);
+                missing.add(AuditCategorySetting.builder()
+                    .category(category)
+                    .enabled(enabled)
+                    .build());
+            }
+        }
+        if (!missing.isEmpty()) {
+            auditCategorySettingRepository.saveAll(missing);
+        }
+    }
+
+    private void refreshCategoryCache() {
+        categoryEnabledCache.clear();
+        auditCategorySettingRepository.findAll().forEach(setting ->
+            categoryEnabledCache.put(setting.getCategory(), setting.isEnabled()));
     }
     
     public void logNodeCreated(Node node, String username) {

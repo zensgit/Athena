@@ -33,6 +33,9 @@ export interface Node {
   correspondentId?: string;
   score?: number;
   inheritPermissions?: boolean;
+  previewStatus?: string;
+  previewFailureReason?: string;
+  previewLastUpdated?: string;
 }
 
 export interface PdfAnnotation {

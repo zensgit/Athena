@@ -105,9 +105,7 @@ public class FullTextSearchService {
 
             List<SearchResult> results = filterAuthorizedResults(searchHits);
 
-            long totalHits = securityService.hasRole("ROLE_ADMIN")
-                ? searchHits.getTotalHits()
-                : results.size();
+            long totalHits = searchHits.getTotalHits();
             return new PageImpl<>(results, pageable, totalHits);
 
         } catch (LinkageError e) {
@@ -138,9 +136,7 @@ public class FullTextSearchService {
 
             List<SearchResult> results = filterAuthorizedResults(searchHits);
 
-            long totalHits = securityService.hasRole("ROLE_ADMIN")
-                ? searchHits.getTotalHits()
-                : results.size();
+            long totalHits = searchHits.getTotalHits();
             return new PageImpl<>(results, pageable, totalHits);
 
         } catch (LinkageError e) {
@@ -200,6 +196,7 @@ public class FullTextSearchService {
                 for (Document doc : documents) {
                     try {
                         NodeDocument nodeDoc = NodeDocument.fromNode(doc);
+                        nodeDoc.setPermissions(securityService.resolveReadAuthorities(doc));
                         elasticsearchOperations.save(nodeDoc, IndexCoordinates.of(INDEX_NAME));
                         totalIndexed++;
                         rebuildProgress.incrementAndGet();
@@ -318,20 +315,24 @@ public class FullTextSearchService {
     private Query buildFullTextQuery(String queryText, Pageable pageable, String sortBy, String sortDirection) {
         String searchTerm = queryText != null ? queryText.trim() : "";
 
-        NativeQueryBuilder builder = NativeQuery.builder()
-            .withPageable(pageable)
-            .withFilter(f -> f.term(t -> t.field("deleted").value(false)));
+        NativeQueryBuilder builder = NativeQuery.builder().withPageable(pageable);
 
-        if (searchTerm.isEmpty()) {
-            builder.withQuery(q -> q.matchAll(ma -> ma));
-        } else {
-            builder.withQuery(q -> q.multiMatch(m -> m
-                .query(searchTerm)
-                .fields(SEARCH_FIELDS)
-                .type(TextQueryType.BestFields)
-                .operator(Operator.Or)
-            ));
-        }
+        builder.withQuery(q -> q.bool(b -> {
+            if (searchTerm.isEmpty()) {
+                b.must(m -> m.matchAll(ma -> ma));
+            } else {
+                b.must(m -> m.multiMatch(mm -> mm
+                    .query(searchTerm)
+                    .fields(SEARCH_FIELDS)
+                    .type(TextQueryType.BestFields)
+                    .operator(Operator.Or)
+                ));
+            }
+
+            b.filter(f -> f.term(t -> t.field("deleted").value(false)));
+            applyReadPermissionFilter(b);
+            return b;
+        }));
 
         applySort(builder, sortBy, sortDirection);
 
@@ -383,12 +384,35 @@ public class FullTextSearchService {
                 addAnyPrefixFilter(b, List.of("path.keyword", "path"), filters.getPath());
             }
 
+            applyReadPermissionFilter(b);
+
             return b;
         }));
 
         applySort(builder, request.getSortBy(), request.getSortDirection());
 
         return builder.build();
+    }
+
+    private void applyReadPermissionFilter(BoolQuery.Builder bool) {
+        if (securityService.hasRole("ROLE_ADMIN")) {
+            return;
+        }
+
+        String username = securityService.getCurrentUser();
+        var authorities = securityService.getUserAuthorities(username);
+        if (authorities == null || authorities.isEmpty()) {
+            bool.filter(f -> f.term(t -> t.field("permissions").value("__none__")));
+            return;
+        }
+
+        bool.filter(f -> f.bool(b -> {
+            for (String authority : authorities) {
+                b.should(s -> s.term(t -> t.field("permissions").value(authority)));
+            }
+            b.minimumShouldMatch("1");
+            return b;
+        }));
     }
 
     private void applySort(NativeQueryBuilder builder, String sortBy, String sortDirection) {
@@ -524,6 +548,8 @@ public class FullTextSearchService {
 
     private NodeDocument createNodeDocument(Document doc) {
         // Keep legacy helper for compatibility; delegate to central builder to ensure fields stay in sync
-        return NodeDocument.fromNode(doc);
+        NodeDocument nodeDoc = NodeDocument.fromNode(doc);
+        nodeDoc.setPermissions(securityService.resolveReadAuthorities(doc));
+        return nodeDoc;
     }
 }

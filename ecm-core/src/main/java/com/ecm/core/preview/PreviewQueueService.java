@@ -15,6 +15,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -69,6 +70,7 @@ public class PreviewQueueService {
         PreviewJob job = new PreviewJob(documentId, 0, Instant.now());
         queuedJobs.put(documentId, job);
         queue.add(job);
+        markProcessing(document);
 
         log.info("Queued preview generation for document {}", documentId);
         return new PreviewQueueStatus(documentId, status, true, 0, job.nextAttemptAt());
@@ -133,6 +135,18 @@ public class PreviewQueueService {
         queuedJobs.put(job.documentId(), nextJob);
         queue.add(nextJob);
         log.info("Scheduled preview retry {} for document {} at {}", nextAttempts, job.documentId(), nextRunAt);
+    }
+
+    private void markProcessing(Document document) {
+        try {
+            document.setPreviewStatus(PreviewStatus.PROCESSING);
+            document.setPreviewFailureReason(null);
+            document.setPreviewLastUpdated(LocalDateTime.now());
+            document.setPreviewAvailable(false);
+            documentRepository.save(document);
+        } catch (Exception e) {
+            log.warn("Failed to mark preview as processing for {}: {}", document.getId(), e.getMessage());
+        }
     }
 
     private boolean shouldRetry(PreviewResult result) {

@@ -18,6 +18,8 @@ import {
   ListItemText,
   Tooltip,
   Skeleton,
+  Chip,
+  Alert,
 } from '@mui/material';
 import {
   Close,
@@ -35,6 +37,7 @@ import {
   Edit,
   Visibility,
   AutoAwesome,
+  Refresh,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { Node, PdfAnnotation, PdfAnnotationState } from 'types';
@@ -91,6 +94,14 @@ type PreviewResult = {
   failureReason?: string;
   pages?: PreviewPage[];
   pageCount?: number;
+};
+
+type PreviewQueueStatus = {
+  documentId?: string;
+  previewStatus?: string;
+  queued?: boolean;
+  attempts?: number;
+  nextAttemptAt?: string;
 };
 
 const OFFICE_MIME_TYPES = new Set([
@@ -221,6 +232,10 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   const [serverPreview, setServerPreview] = useState<PreviewResult | null>(null);
   const [serverPreviewLoading, setServerPreviewLoading] = useState(false);
   const [serverPreviewError, setServerPreviewError] = useState<string | null>(null);
+  const [previewQueueStatus, setPreviewQueueStatus] = useState<PreviewQueueStatus | null>(null);
+  const [previewStatusOverride, setPreviewStatusOverride] = useState<string | null>(null);
+  const [previewFailureOverride, setPreviewFailureOverride] = useState<string | null>(null);
+  const [queueingPreview, setQueueingPreview] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [pageSize, setPageSize] = useState<{ width: number; height: number } | null>(null);
   const [annotations, setAnnotations] = useState<PdfAnnotation[]>([]);
@@ -251,6 +266,37 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   const canAnnotate = canWrite && !annotationsDisabledForRotation;
   const fitModeLabel = fitModeLabels[fitMode];
   const fitScaleLabel = fitScale ? ` (${Math.round(fitScale * 100)}%)` : '';
+  const resolvedPreviewStatus = previewStatusOverride
+    || previewQueueStatus?.previewStatus
+    || node?.previewStatus
+    || serverPreview?.status
+    || null;
+  const resolvedPreviewFailure = previewFailureOverride
+    || node?.previewFailureReason
+    || serverPreview?.failureReason
+    || null;
+  const previewStatusLabel = resolvedPreviewStatus
+    ? `Preview: ${resolvedPreviewStatus.charAt(0).toUpperCase()}${resolvedPreviewStatus.slice(1).toLowerCase()}`
+    : null;
+  const previewPollIntervalMs = 15000;
+  const shouldPollPreview = resolvedPreviewStatus === 'PROCESSING' || resolvedPreviewStatus === 'QUEUED';
+  const previewStatusTooltip = resolvedPreviewFailure
+    ? resolvedPreviewFailure
+    : shouldPollPreview
+      ? `Status refreshes every ${previewPollIntervalMs / 1000}s while queued or processing.`
+      : 'Preview status reflects the latest generation state.';
+  const previewStatusColor = (() => {
+    switch (resolvedPreviewStatus) {
+      case 'READY':
+        return 'success';
+      case 'FAILED':
+        return 'error';
+      case 'PROCESSING':
+        return 'warning';
+      default:
+        return 'default';
+    }
+  })();
 
   useEffect(() => {
     if (!open) {
@@ -272,6 +318,12 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     try {
       const preview = await apiService.get<PreviewResult>(`/documents/${nodeId}/preview`);
       setServerPreview(preview);
+      if (preview?.status) {
+        setPreviewStatusOverride(preview.status);
+      }
+      if (preview?.failureReason) {
+        setPreviewFailureOverride(preview.failureReason);
+      }
       if (preview?.pageCount) {
         setNumPages(preview.pageCount);
       } else if (preview?.pages?.length) {
@@ -285,6 +337,36 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
       setServerPreviewLoading(false);
     }
   }, [nodeId]);
+
+  const handleQueuePreview = useCallback(async (force = false) => {
+    if (!nodeId) {
+      return;
+    }
+    setQueueingPreview(true);
+    try {
+      const status = await apiService.post<PreviewQueueStatus>(
+        `/documents/${nodeId}/preview/queue?force=${force}`
+      );
+      setPreviewQueueStatus(status);
+      setPreviewStatusOverride('PROCESSING');
+      setPreviewFailureOverride(null);
+      toast.success(status?.queued ? 'Preview queued' : 'Preview already up to date');
+    } catch {
+      toast.error('Failed to queue preview generation');
+    } finally {
+      setQueueingPreview(false);
+    }
+  }, [nodeId]);
+
+  useEffect(() => {
+    if (!open || !nodeId || !shouldPollPreview) {
+      return undefined;
+    }
+    const interval = window.setInterval(() => {
+      void loadServerPreview();
+    }, previewPollIntervalMs);
+    return () => window.clearInterval(interval);
+  }, [loadServerPreview, nodeId, open, shouldPollPreview]);
 
   useEffect(() => {
     if (!open || !nodeId) {
@@ -306,6 +388,10 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     setServerPreview(null);
     setServerPreviewLoading(false);
     setServerPreviewError(null);
+    setPreviewQueueStatus(null);
+    setPreviewStatusOverride(null);
+    setPreviewFailureOverride(null);
+    setQueueingPreview(false);
     setAnnotations([]);
     setAnnotationsUpdatedBy(null);
     setAnnotationsUpdatedAt(null);
@@ -1252,6 +1338,17 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
               PDF preview is read-only{canWrite ? ', annotations available' : ''}
             </Typography>
           )}
+          {previewStatusLabel && (
+            <Tooltip title={previewStatusTooltip} arrow>
+              <Chip
+                size="small"
+                variant="outlined"
+                label={previewStatusLabel}
+                color={previewStatusColor}
+                sx={{ mr: 2 }}
+              />
+            </Tooltip>
+          )}
 
           {pdfDocument && (
             <Tooltip
@@ -1402,6 +1499,34 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                 <ListItemText>{canWrite ? 'Edit Online' : 'View Online'}</ListItemText>
               </MenuItem>
             )}
+            {node?.nodeType === 'DOCUMENT' && (
+              <MenuItem
+                onClick={() => {
+                  handleQueuePreview(false);
+                  handleMenuClose();
+                }}
+                disabled={queueingPreview}
+              >
+                <ListItemIcon>
+                  <Refresh fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>Queue Preview</ListItemText>
+              </MenuItem>
+            )}
+            {node?.nodeType === 'DOCUMENT' && (
+              <MenuItem
+                onClick={() => {
+                  handleQueuePreview(true);
+                  handleMenuClose();
+                }}
+                disabled={queueingPreview}
+              >
+                <ListItemIcon>
+                  <Refresh fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>Force Preview Rebuild</ListItemText>
+              </MenuItem>
+            )}
             <MenuItem onClick={() => { handleDownload(); handleMenuClose(); }}>
               <ListItemIcon>
                 <Download fontSize="small" />
@@ -1435,6 +1560,42 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
           flexDirection: 'column',
         }}
       >
+        {(shouldPollPreview || resolvedPreviewStatus === 'FAILED') && (
+          <Box sx={{ p: 2, bgcolor: 'background.paper', borderBottom: '1px solid', borderColor: 'divider' }}>
+            {shouldPollPreview && (
+              <Alert severity="info" sx={{ mb: 1 }}>
+                Preview generation is in progress. Status updates every {previewPollIntervalMs / 1000}s.
+              </Alert>
+            )}
+            {resolvedPreviewStatus === 'FAILED' && (
+              <Alert
+                severity="warning"
+                action={(
+                  <Box display="flex" gap={1} flexWrap="wrap">
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => handleQueuePreview(false)}
+                      disabled={queueingPreview}
+                    >
+                      Retry preview
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => handleQueuePreview(true)}
+                      disabled={queueingPreview}
+                    >
+                      Force rebuild
+                    </Button>
+                  </Box>
+                )}
+              >
+                Preview failed. Retry generation or force a rebuild if the file recently changed.
+              </Alert>
+            )}
+          </Box>
+        )}
         {renderPreview()}
       </DialogContent>
 

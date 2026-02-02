@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Box,
   Button,
+  ButtonGroup,
   Card,
   CardContent,
   Chip,
@@ -28,7 +29,7 @@ import {
   IconButton,
   Tooltip,
 } from '@mui/material';
-import { Add, Delete, Edit, Link, Login, Refresh, Visibility } from '@mui/icons-material';
+import { Add, Delete, Edit, Link, Login, Refresh, Visibility, ContentCopy } from '@mui/icons-material';
 import { toast } from 'react-toastify';
 import { useLocation, useNavigate } from 'react-router-dom';
 import mailAutomationService, {
@@ -124,6 +125,7 @@ const MailAutomationPage: React.FC = () => {
   const [folderAccountId, setFolderAccountId] = useState('');
   const [listingFolders, setListingFolders] = useState(false);
   const [availableFolders, setAvailableFolders] = useState<string[]>([]);
+  const [hasListedFolders, setHasListedFolders] = useState(false);
   const [diagnostics, setDiagnostics] = useState<MailDiagnosticsResult | null>(null);
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
   const [diagnosticsAccountId, setDiagnosticsAccountId] = useState('');
@@ -135,6 +137,8 @@ const MailAutomationPage: React.FC = () => {
   const [retentionCleaning, setRetentionCleaning] = useState(false);
   const [selectedProcessedIds, setSelectedProcessedIds] = useState<string[]>([]);
   const [connectingAccountId, setConnectingAccountId] = useState<string | null>(null);
+  const [lastFetchSummary, setLastFetchSummary] = useState<MailFetchSummary | null>(null);
+  const [lastFetchAt, setLastFetchAt] = useState<string | null>(null);
   const [exportOptions, setExportOptions] = useState(() => {
     const fallback = {
       includeProcessed: true,
@@ -176,6 +180,7 @@ const MailAutomationPage: React.FC = () => {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewResult, setPreviewResult] = useState<MailRulePreviewResult | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewProcessableFilter, setPreviewProcessableFilter] = useState<'ALL' | 'PROCESSABLE' | 'UNPROCESSABLE'>('ALL');
 
   const securityOptions: MailSecurityType[] = ['SSL', 'STARTTLS', 'NONE', 'OAUTH2'];
   const oauthProviderOptions: MailOAuthProvider[] = ['MICROSOFT', 'GOOGLE', 'CUSTOM'];
@@ -340,6 +345,11 @@ const MailAutomationPage: React.FC = () => {
   }, [accounts, folderAccountId]);
 
   useEffect(() => {
+    setAvailableFolders([]);
+    setHasListedFolders(false);
+  }, [folderAccountId]);
+
+  useEffect(() => {
     try {
       window.localStorage.setItem('mailDiagnosticsExportOptions', JSON.stringify(exportOptions));
     } catch {
@@ -354,6 +364,64 @@ const MailAutomationPage: React.FC = () => {
   const tagNameById = useMemo(() => {
     return new Map(tags.map((tag) => [tag.id, tag.name]));
   }, [tags]);
+
+  const accountHealth = useMemo(() => {
+    const now = Date.now();
+    const total = accounts.length;
+    const enabled = accounts.filter((account) => account.enabled).length;
+    const disabled = total - enabled;
+    const oauthAccounts = accounts.filter((account) => account.security === 'OAUTH2');
+    const oauthConnected = oauthAccounts.filter((account) => account.oauthConnected === true).length;
+    const oauthNotConnected = oauthAccounts.filter((account) => account.oauthConnected === false).length;
+    const oauthMissingEnv = oauthAccounts.filter((account) => account.oauthEnvConfigured === false).length;
+    const fetchSuccess = accounts.filter((account) => account.lastFetchStatus === 'SUCCESS').length;
+    const fetchError = accounts.filter((account) => account.lastFetchStatus === 'ERROR').length;
+    const fetchOther = accounts.filter(
+      (account) => account.lastFetchStatus && !['SUCCESS', 'ERROR'].includes(account.lastFetchStatus)
+    ).length;
+    const neverFetched = accounts.filter((account) => !account.lastFetchAt).length;
+    const staleFetches = accounts.filter((account) => {
+      if (!account.lastFetchAt) {
+        return false;
+      }
+      const lastFetch = new Date(account.lastFetchAt).getTime();
+      if (Number.isNaN(lastFetch)) {
+        return false;
+      }
+      const intervalMs = (account.pollIntervalMinutes || 10) * 60 * 1000 * 2;
+      return now - lastFetch > intervalMs;
+    }).length;
+    const latestFetchAt = accounts.reduce<string | null>((latest, account) => {
+      if (!account.lastFetchAt) {
+        return latest;
+      }
+      if (!latest) {
+        return account.lastFetchAt;
+      }
+      const nextTime = new Date(account.lastFetchAt).getTime();
+      const prevTime = new Date(latest).getTime();
+      if (Number.isNaN(nextTime) || Number.isNaN(prevTime)) {
+        return latest;
+      }
+      return nextTime > prevTime ? account.lastFetchAt : latest;
+    }, null);
+
+    return {
+      total,
+      enabled,
+      disabled,
+      oauthAccounts: oauthAccounts.length,
+      oauthConnected,
+      oauthNotConnected,
+      oauthMissingEnv,
+      fetchSuccess,
+      fetchError,
+      fetchOther,
+      neverFetched,
+      staleFetches,
+      latestFetchAt,
+    };
+  }, [accounts]);
 
   const recentProcessed: ProcessedMailDiagnosticItem[] = diagnostics?.recentProcessed ?? [];
   const recentDocuments: MailDocumentDiagnosticItem[] = diagnostics?.recentDocuments ?? [];
@@ -457,6 +525,8 @@ const MailAutomationPage: React.FC = () => {
     setFetching(true);
     try {
       const summary: MailFetchSummary = await mailAutomationService.triggerFetch();
+      setLastFetchSummary(summary);
+      setLastFetchAt(new Date().toISOString());
       const durationSeconds = (summary.durationMs / 1000).toFixed(1);
       const message =
         `Processed ${summary.processedMessages} of ${summary.matchedMessages} matched ` +
@@ -507,8 +577,10 @@ const MailAutomationPage: React.FC = () => {
     try {
       const folders = await mailAutomationService.listFolders(folderAccountId);
       setAvailableFolders(folders);
+      setHasListedFolders(true);
       toast.success(`Found ${folders.length} folders`);
     } catch {
+      setHasListedFolders(false);
       toast.error('Failed to list folders');
     } finally {
       setListingFolders(false);
@@ -701,6 +773,7 @@ const MailAutomationPage: React.FC = () => {
     setPreviewMaxMessages(25);
     setPreviewResult(null);
     setPreviewError(null);
+    setPreviewProcessableFilter('ALL');
     setPreviewDialogOpen(true);
   };
 
@@ -734,6 +807,18 @@ const MailAutomationPage: React.FC = () => {
       setPreviewError('Failed to preview mail rule');
     } finally {
       setPreviewLoading(false);
+    }
+  };
+
+  const handleCopyPreviewJson = async () => {
+    if (!previewResult) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(previewResult, null, 2));
+      toast.success('Preview JSON copied');
+    } catch {
+      toast.error('Failed to copy preview JSON');
     }
   };
 
@@ -821,6 +906,16 @@ const MailAutomationPage: React.FC = () => {
     }
   };
 
+  const handleOpenMailDocument = async (documentId: string) => {
+    try {
+      const node = await nodeService.getNode(documentId);
+      const parentId = node.parentId || 'root';
+      navigate(`/browse/${parentId}`);
+    } catch {
+      toast.error('Failed to open mail document');
+    }
+  };
+
   const selectedTag = tags.find((tag) => tag.id === ruleForm.assignTagId) || null;
   const mailActionHelper =
     ruleForm.mailAction === 'MOVE'
@@ -828,6 +923,18 @@ const MailAutomationPage: React.FC = () => {
       : ruleForm.mailAction === 'TAG'
       ? 'IMAP keyword/label to apply'
       : 'Optional';
+  const filteredPreviewMatches = useMemo(() => {
+    if (!previewResult) {
+      return [];
+    }
+    if (previewProcessableFilter === 'PROCESSABLE') {
+      return previewResult.matches.filter((item) => item.processable);
+    }
+    if (previewProcessableFilter === 'UNPROCESSABLE') {
+      return previewResult.matches.filter((item) => !item.processable);
+    }
+    return previewResult.matches;
+  }, [previewProcessableFilter, previewResult]);
 
   return (
     <Box maxWidth={1100}>
@@ -902,16 +1009,63 @@ const MailAutomationPage: React.FC = () => {
                 </Stack>
               </Box>
 
-              {availableFolders.length > 0 && (
+              <Box mb={2}>
+                <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+                  <Typography variant="subtitle2">Last fetch summary</Typography>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={refreshing ? <CircularProgress size={16} /> : <Refresh />}
+                    onClick={handleRefreshStatus}
+                    disabled={refreshing}
+                  >
+                    Refresh status
+                  </Button>
+                </Box>
+                {lastFetchSummary ? (
+                  <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
+                    <Chip size="small" label={`Accounts ${lastFetchSummary.accounts}`} />
+                    <Chip size="small" label={`Attempted ${lastFetchSummary.attemptedAccounts}`} />
+                    {lastFetchSummary.accountErrors > 0 && (
+                      <Chip size="small" color="error" label={`Account errors ${lastFetchSummary.accountErrors}`} />
+                    )}
+                    <Chip size="small" label={`Found ${lastFetchSummary.foundMessages}`} />
+                    <Chip size="small" label={`Matched ${lastFetchSummary.matchedMessages}`} />
+                    <Chip size="small" color="success" label={`Processed ${lastFetchSummary.processedMessages}`} />
+                    {lastFetchSummary.skippedMessages > 0 && (
+                      <Chip size="small" label={`Skipped ${lastFetchSummary.skippedMessages}`} />
+                    )}
+                    {lastFetchSummary.errorMessages > 0 && (
+                      <Chip size="small" color="error" label={`Errors ${lastFetchSummary.errorMessages}`} />
+                    )}
+                    <Chip size="small" label={`Duration ${(lastFetchSummary.durationMs / 1000).toFixed(1)}s`} />
+                  </Stack>
+                ) : (
+                  <Typography variant="body2" color="text.secondary">
+                    No fetch summary yet. Use Trigger Fetch to capture the latest run.
+                  </Typography>
+                )}
+                <Typography variant="caption" color="text.secondary" display="block" mt={1}>
+                  Last trigger: {lastFetchAt ? formatDateTime(lastFetchAt) : 'N/A'}
+                </Typography>
+              </Box>
+
+              {(availableFolders.length > 0 || hasListedFolders) && (
                 <Box sx={{ mb: 2 }}>
                   <Typography variant="caption" color="text.secondary">
                     Available folders ({availableFolders.length})
                   </Typography>
-                  <Stack direction="row" spacing={1} sx={{ mt: 0.5, flexWrap: 'wrap', gap: 1 }}>
-                    {availableFolders.slice(0, 40).map((folder) => (
-                      <Chip key={`folder-${folder}`} size="small" variant="outlined" label={folder} />
-                    ))}
-                  </Stack>
+                  {availableFolders.length > 0 ? (
+                    <Stack direction="row" spacing={1} sx={{ mt: 0.5, flexWrap: 'wrap', gap: 1 }}>
+                      {availableFolders.slice(0, 40).map((folder) => (
+                        <Chip key={`folder-${folder}`} size="small" variant="outlined" label={folder} />
+                      ))}
+                    </Stack>
+                  ) : (
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                      No folders returned for this account. Try again or verify the mailbox permissions.
+                    </Typography>
+                  )}
                 </Box>
               )}
 
@@ -1267,16 +1421,67 @@ const MailAutomationPage: React.FC = () => {
                   </Typography>
 
                   <Box>
-                    <Box
-                      display="flex"
-                      alignItems="center"
-                      justifyContent="space-between"
-                      mb={1}
-                      flexWrap="wrap"
-                      gap={1}
-                    >
+                    <Box mb={1} display="flex" flexDirection="column" gap={1}>
+                      <Box
+                        display="flex"
+                        alignItems="center"
+                        justifyContent="space-between"
+                        flexWrap="wrap"
+                        gap={1}
+                      >
+                        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" gap={1}>
+                          <Typography variant="subtitle2">Processed Messages</Typography>
+                          <Chip
+                            size="small"
+                            label="All"
+                            color={diagnosticsStatus === '' ? 'primary' : 'default'}
+                            onClick={() => setDiagnosticsStatus('')}
+                          />
+                          <Chip
+                            size="small"
+                            label="Processed"
+                            color={diagnosticsStatus === 'PROCESSED' ? 'primary' : 'default'}
+                            onClick={() => setDiagnosticsStatus('PROCESSED')}
+                          />
+                          <Chip
+                            size="small"
+                            label="Error"
+                            color={diagnosticsStatus === 'ERROR' ? 'primary' : 'default'}
+                            onClick={() => setDiagnosticsStatus('ERROR')}
+                          />
+                        </Stack>
+                        <Stack direction="row" spacing={1} alignItems="center">
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            startIcon={retentionLoading ? <CircularProgress size={16} /> : <Refresh />}
+                            onClick={() => loadRetention()}
+                            disabled={retentionLoading}
+                          >
+                            {retentionLoading ? 'Refreshing...' : 'Refresh Retention'}
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            onClick={handleRetentionCleanup}
+                            disabled={!retentionEnabled || retentionExpiredCount === 0 || retentionCleaning}
+                          >
+                            {retentionCleaning ? 'Cleaning...' : 'Clean up expired'}
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            onClick={handleBulkDeleteProcessed}
+                            disabled={selectedProcessedIds.length === 0}
+                          >
+                            Delete Selected
+                          </Button>
+                        </Stack>
+                      </Box>
                       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" gap={1}>
-                        <Typography variant="subtitle2">Processed Messages</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Retention:
+                        </Typography>
                         {processedRetention ? (
                           <>
                             <Chip
@@ -1297,33 +1502,6 @@ const MailAutomationPage: React.FC = () => {
                         ) : (
                           <Chip size="small" variant="outlined" label="Retention unknown" />
                         )}
-                      </Stack>
-                      <Stack direction="row" spacing={1} alignItems="center">
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          startIcon={retentionLoading ? <CircularProgress size={16} /> : <Refresh />}
-                          onClick={() => loadRetention()}
-                          disabled={retentionLoading}
-                        >
-                          {retentionLoading ? 'Refreshing...' : 'Refresh Retention'}
-                        </Button>
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          onClick={handleRetentionCleanup}
-                          disabled={!retentionEnabled || retentionExpiredCount === 0 || retentionCleaning}
-                        >
-                          {retentionCleaning ? 'Cleaning...' : 'Clean up expired'}
-                        </Button>
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          onClick={handleBulkDeleteProcessed}
-                          disabled={selectedProcessedIds.length === 0}
-                        >
-                          Delete Selected
-                        </Button>
                       </Stack>
                     </Box>
                     {recentProcessed.length === 0 ? (
@@ -1401,6 +1579,7 @@ const MailAutomationPage: React.FC = () => {
                               <TableCell>Rule</TableCell>
                               <TableCell>Folder</TableCell>
                               <TableCell>UID</TableCell>
+                              <TableCell align="right">Open</TableCell>
                             </TableRow>
                           </TableHead>
                           <TableBody>
@@ -1417,6 +1596,13 @@ const MailAutomationPage: React.FC = () => {
                                 <TableCell>{doc.ruleName || doc.ruleId || '-'}</TableCell>
                                 <TableCell>{doc.folder || '-'}</TableCell>
                                 <TableCell>{doc.uid || '-'}</TableCell>
+                                <TableCell align="right">
+                                  <Tooltip title="Open in folder">
+                                    <IconButton size="small" onClick={() => handleOpenMailDocument(doc.documentId)}>
+                                      <Visibility fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                </TableCell>
                               </TableRow>
                             ))}
                           </TableBody>
@@ -1447,6 +1633,50 @@ const MailAutomationPage: React.FC = () => {
                   </Button>
                 </Stack>
               </Box>
+              {accountHealth.total > 0 && (
+                <Box mb={2}>
+                  <Typography variant="subtitle2" gutterBottom>
+                    Account health
+                  </Typography>
+                  <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
+                    <Chip size="small" label={`Total ${accountHealth.total}`} />
+                    <Chip size="small" color="success" label={`Enabled ${accountHealth.enabled}`} />
+                    {accountHealth.disabled > 0 && (
+                      <Chip size="small" label={`Disabled ${accountHealth.disabled}`} />
+                    )}
+                    <Chip size="small" label={`Fetch OK ${accountHealth.fetchSuccess}`} color="success" />
+                    {accountHealth.fetchError > 0 && (
+                      <Chip size="small" label={`Fetch errors ${accountHealth.fetchError}`} color="error" />
+                    )}
+                    {accountHealth.fetchOther > 0 && (
+                      <Chip size="small" label={`Fetch other ${accountHealth.fetchOther}`} />
+                    )}
+                    {accountHealth.neverFetched > 0 && (
+                      <Chip size="small" label={`Never fetched ${accountHealth.neverFetched}`} />
+                    )}
+                    {accountHealth.staleFetches > 0 && (
+                      <Tooltip title="Last fetch is older than 2x the poll interval.">
+                        <Chip size="small" label={`Stale ${accountHealth.staleFetches}`} color="warning" />
+                      </Tooltip>
+                    )}
+                    {accountHealth.oauthAccounts > 0 && (
+                      <Chip size="small" label={`OAuth ${accountHealth.oauthAccounts}`} />
+                    )}
+                    {accountHealth.oauthConnected > 0 && (
+                      <Chip size="small" label={`OAuth connected ${accountHealth.oauthConnected}`} color="success" />
+                    )}
+                    {accountHealth.oauthNotConnected > 0 && (
+                      <Chip size="small" label={`OAuth not connected ${accountHealth.oauthNotConnected}`} color="warning" />
+                    )}
+                    {accountHealth.oauthMissingEnv > 0 && (
+                      <Chip size="small" label={`OAuth env missing ${accountHealth.oauthMissingEnv}`} color="warning" />
+                    )}
+                  </Stack>
+                  <Typography variant="caption" color="text.secondary" display="block" mt={1}>
+                    Latest fetch: {accountHealth.latestFetchAt ? formatDateTime(accountHealth.latestFetchAt) : 'N/A'}
+                  </Typography>
+                </Box>
+              )}
               <TableContainer>
                 <Table size="small">
                   <TableHead>
@@ -2195,15 +2425,39 @@ const MailAutomationPage: React.FC = () => {
                   <Box>
                     <Typography variant="subtitle2">Skip reasons</Typography>
                     <Box display="flex" flexWrap="wrap" gap={1} mt={1}>
-                      {Object.entries(previewResult.skipReasons).map(([reason, count]) => (
-                        <Chip key={reason} size="small" label={`${reason}: ${count}`} />
+                      {toSortedEntries(previewResult.skipReasons).map(([reason, count]) => (
+                        <Chip key={reason} size="small" label={`${formatReason(reason)}: ${count}`} />
                       ))}
                     </Box>
                   </Box>
                 )}
                 <Box>
-                  <Typography variant="subtitle2">Matched messages</Typography>
-                  {previewResult.matches.length === 0 ? (
+                  <Box display="flex" alignItems="center" justifyContent="space-between">
+                    <Typography variant="subtitle2">Matched messages</Typography>
+                    <Box display="flex" alignItems="center" gap={1}>
+                      <FormControl size="small" sx={{ minWidth: 170 }}>
+                        <InputLabel id="preview-processable-label">Processable</InputLabel>
+                        <Select
+                          labelId="preview-processable-label"
+                          label="Processable"
+                          value={previewProcessableFilter}
+                          onChange={(event) =>
+                            setPreviewProcessableFilter(event.target.value as typeof previewProcessableFilter)
+                          }
+                        >
+                          <MenuItem value="ALL">All</MenuItem>
+                          <MenuItem value="PROCESSABLE">Processable only</MenuItem>
+                          <MenuItem value="UNPROCESSABLE">Not processable</MenuItem>
+                        </Select>
+                      </FormControl>
+                      <ButtonGroup variant="outlined" size="small">
+                        <Button startIcon={<ContentCopy />} onClick={handleCopyPreviewJson}>
+                          Copy JSON
+                        </Button>
+                      </ButtonGroup>
+                    </Box>
+                  </Box>
+                  {filteredPreviewMatches.length === 0 ? (
                     <Typography variant="body2" color="text.secondary" mt={1}>
                       No messages matched this rule in the scanned sample.
                     </Typography>
@@ -2221,7 +2475,7 @@ const MailAutomationPage: React.FC = () => {
                           </TableRow>
                         </TableHead>
                         <TableBody>
-                          {previewResult.matches.map((item) => (
+                          {filteredPreviewMatches.map((item) => (
                             <TableRow key={`${item.folder}-${item.uid}`} hover>
                               <TableCell>{item.folder}</TableCell>
                               <TableCell>{item.subject || '-'}</TableCell>

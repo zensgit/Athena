@@ -324,10 +324,51 @@ public class SecurityService {
     
     public Map<String, Set<PermissionType>> getEffectivePermissions(Node node) {
         List<Permission> allPermissions = getNodePermissions(node);
-        
+        return resolveEffectivePermissions(allPermissions);
+    }
+
+    public Set<String> resolveReadAuthorities(Node node) {
+        if (node == null) {
+            return Collections.emptySet();
+        }
+
+        List<Permission> allPermissions = collectPermissionsForNode(node);
+        Map<String, Set<PermissionType>> effectivePermissions = resolveEffectivePermissions(allPermissions);
+        Set<String> readableAuthorities = effectivePermissions.entrySet().stream()
+            .filter(entry -> entry.getValue().contains(PermissionType.READ))
+            .map(Map.Entry::getKey)
+            .collect(Collectors.toSet());
+
+        if (node.getCreatedBy() != null && !node.getCreatedBy().isBlank()) {
+            readableAuthorities.add(node.getCreatedBy());
+        }
+
+        return readableAuthorities;
+    }
+
+    public Set<String> resolveReadAuthorities(UUID nodeId) {
+        if (nodeId == null) {
+            return Collections.emptySet();
+        }
+        return resolveReadAuthorities(nodeRepository.findById(nodeId).orElse(null));
+    }
+
+    private List<Permission> collectPermissionsForNode(Node node) {
+        if (node == null) {
+            return List.of();
+        }
+
+        List<Permission> permissions = new ArrayList<>(permissionRepository.findByNodeId(node.getId()));
+        if (node.isInheritPermissions() && node.getParent() != null) {
+            permissions.addAll(getInheritedPermissions(node.getParent()));
+        }
+        return permissions;
+    }
+
+    private Map<String, Set<PermissionType>> resolveEffectivePermissions(List<Permission> allPermissions) {
         Map<String, Set<PermissionType>> effectivePermissions = new HashMap<>();
         Map<String, Set<PermissionType>> deniedPermissions = new HashMap<>();
-        
+
         for (Permission permission : allPermissions) {
             if (permission.isExpired()) {
                 continue;
@@ -350,7 +391,7 @@ public class SecurityService {
                 allowed.removeAll(entry.getValue());
             }
         }
-        
+
         return effectivePermissions;
     }
     

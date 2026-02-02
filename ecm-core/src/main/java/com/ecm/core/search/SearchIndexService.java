@@ -27,6 +27,7 @@ public class SearchIndexService {
     
     private final DocumentRepository documentRepository;
     private final NodeRepository nodeRepository;
+    private final com.ecm.core.service.SecurityService securityService;
     private final ElasticsearchOperations elasticsearchOperations;
     private static final String INDEX_NAME = "ecm_documents";
 
@@ -81,6 +82,7 @@ public class SearchIndexService {
                 return;
             }
             NodeDocument nodeDoc = NodeDocument.fromNode(hydrated);
+            applyReadPermissions(hydrated, nodeDoc);
             elasticsearchOperations.save(nodeDoc, IndexCoordinates.of(INDEX_NAME));
             log.debug("Indexed node: {}", hydrated.getId());
         } catch (Exception e) {
@@ -97,6 +99,7 @@ public class SearchIndexService {
                 return;
             }
             NodeDocument nodeDoc = NodeDocument.fromNode(hydrated);
+            applyReadPermissions(hydrated, nodeDoc);
             elasticsearchOperations.save(nodeDoc, IndexCoordinates.of(INDEX_NAME));
             log.debug("Updated node in index: {}", hydrated.getId());
         } catch (Exception e) {
@@ -126,6 +129,7 @@ public class SearchIndexService {
             nodeDoc.setFileSize(hydrated.getFileSize());
             nodeDoc.setTextContent(hydrated.getTextContent());
             nodeDoc.setVersionLabel(hydrated.getVersionLabel());
+            applyReadPermissions(hydrated, nodeDoc);
             
             elasticsearchOperations.save(nodeDoc, IndexCoordinates.of(INDEX_NAME));
             log.debug("Updated document in index: {}", hydrated.getId());
@@ -174,6 +178,7 @@ public class SearchIndexService {
                 }
 
                 NodeDocument refreshed = NodeDocument.fromNode(child);
+                applyReadPermissions(child, refreshed);
                 elasticsearchOperations.save(refreshed, IndexCoordinates.of(INDEX_NAME));
                 updated++;
             }
@@ -287,5 +292,16 @@ public class SearchIndexService {
 
     private Document fetchDocument(UUID id) {
         return documentRepository.findById(id).orElse(null);
+    }
+
+    private void applyReadPermissions(Node node, NodeDocument nodeDoc) {
+        if (node == null || nodeDoc == null) {
+            return;
+        }
+        try {
+            nodeDoc.setPermissions(securityService.resolveReadAuthorities(node));
+        } catch (Exception e) {
+            log.warn("Failed to resolve read authorities for {}: {}", node.getId(), e.getMessage());
+        }
     }
 }

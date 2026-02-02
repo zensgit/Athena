@@ -137,7 +137,14 @@ async function uploadViaDialog(page: Page, file: UploadFile, maxAttempts = 3) {
     const uploadResponse = await uploadResponsePromise;
     if (uploadResponse.ok()) {
       if (await uploadDialog.isVisible()) {
-        await page.keyboard.press('Escape');
+        const closeButton = uploadDialog.getByRole('button', { name: 'close' });
+        try {
+          await closeButton.waitFor({ state: 'visible', timeout: 10_000 });
+          await expect(closeButton).toBeEnabled({ timeout: 10_000 });
+          await closeButton.click();
+        } catch {
+          await page.keyboard.press('Escape');
+        }
       }
       await expect(uploadDialog).toBeHidden({ timeout: 60_000 });
       return;
@@ -837,7 +844,7 @@ test('UI smoke: PDF upload + search + version history + preview', async ({ page 
   const versionsDialog = page.getByRole('dialog').filter({ hasText: 'Version History' });
   await expect(versionsDialog).toBeVisible({ timeout: 60_000 });
   await expect(versionsDialog.getByRole('columnheader', { name: 'Created By' })).toBeVisible({ timeout: 60_000 });
-  await expect(versionsDialog.getByRole('columnheader', { name: 'Size' })).toBeVisible({ timeout: 60_000 });
+  await expect(versionsDialog.getByRole('columnheader', { name: /^Size$/ })).toBeVisible({ timeout: 60_000 });
   const firstVersionRow = versionsDialog.getByRole('row').nth(1);
   await expect(firstVersionRow.getByRole('cell').nth(1)).toContainText(/\d{4}/);
   await expect(firstVersionRow.getByRole('cell').nth(2)).not.toHaveText('-');
