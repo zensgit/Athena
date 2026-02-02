@@ -5,6 +5,23 @@ type KeycloakInitOptionsWithPkce = KeycloakInitOptions & { pkceMethod?: string }
 
 let keycloakInstance: KeycloakInstance | null = null;
 let keycloakLoadPromise: Promise<KeycloakInstance> | null = null;
+const bypassAuth = process.env.REACT_APP_E2E_BYPASS_AUTH === '1';
+
+const getBypassToken = (): string | undefined => {
+  if (!bypassAuth) return undefined;
+  return localStorage.getItem('token') || undefined;
+};
+
+const getBypassUser = (): User | null => {
+  if (!bypassAuth) return null;
+  const raw = localStorage.getItem('user');
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as User;
+  } catch {
+    return null;
+  }
+};
 
 const loadKeycloak = async (): Promise<KeycloakInstance> => {
   if (keycloakInstance) {
@@ -21,6 +38,9 @@ const loadKeycloak = async (): Promise<KeycloakInstance> => {
 
 class AuthService {
   async init(options: KeycloakInitOptionsWithPkce): Promise<boolean> {
+    if (bypassAuth) {
+      return Boolean(getBypassToken());
+    }
     const keycloak = await loadKeycloak();
     const authenticated = await keycloak.init(options as any);
     return Boolean(authenticated);
@@ -39,14 +59,18 @@ class AuthService {
   }
 
   getToken(): string | undefined {
-    return keycloakInstance?.token || undefined;
+    return getBypassToken() || keycloakInstance?.token || undefined;
   }
 
   getTokenParsed(): Record<string, any> | null {
+    if (bypassAuth) {
+      return null;
+    }
     return (keycloakInstance?.tokenParsed as Record<string, any> | undefined) || null;
   }
 
   async refreshToken(): Promise<string | undefined> {
+    if (bypassAuth) return getBypassToken();
     if (!keycloakInstance || !keycloakInstance.authenticated) return undefined;
     try {
       await keycloakInstance.updateToken(30);
@@ -58,6 +82,8 @@ class AuthService {
   }
 
   getCurrentUser(): User | null {
+    const bypassUser = getBypassUser();
+    if (bypassUser) return bypassUser;
     if (!keycloakInstance?.tokenParsed) return null;
     const tokenParsed = keycloakInstance.tokenParsed as Record<string, any>;
     const preferredUsername = tokenParsed.preferred_username as string | undefined;
@@ -87,10 +113,11 @@ class AuthService {
   }
 
   isAuthenticated(): boolean {
-    return !!keycloakInstance?.authenticated;
+    return Boolean(getBypassToken() || keycloakInstance?.authenticated);
   }
 
   startTokenRefresh(intervalMs = 20000) {
+    if (bypassAuth) return;
     if (!keycloakInstance) return;
     window.setInterval(() => {
       if (!keycloakInstance?.authenticated) return;
