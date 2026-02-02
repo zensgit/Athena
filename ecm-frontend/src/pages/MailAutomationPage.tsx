@@ -281,6 +281,20 @@ const MailAutomationPage: React.FC = () => {
     return `${value.slice(0, Math.max(0, maxLength - 3))}...`;
   };
 
+  const normalizeErrorReason = (value?: string | null) => {
+    if (!value) {
+      return 'Unknown error';
+    }
+    const firstLine = value.split('\n')[0]?.trim();
+    if (!firstLine) {
+      return 'Unknown error';
+    }
+    if (firstLine.length <= 120) {
+      return firstLine;
+    }
+    return `${firstLine.slice(0, 117)}...`;
+  };
+
   const statusColor = (status?: string | null): 'default' | 'success' | 'error' => {
     if (status === 'ERROR') {
       return 'error';
@@ -512,8 +526,14 @@ const MailAutomationPage: React.FC = () => {
     };
   }, [accounts]);
 
-  const recentProcessed: ProcessedMailDiagnosticItem[] = diagnostics?.recentProcessed ?? [];
-  const recentDocuments: MailDocumentDiagnosticItem[] = diagnostics?.recentDocuments ?? [];
+  const recentProcessed = useMemo<ProcessedMailDiagnosticItem[]>(
+    () => diagnostics?.recentProcessed ?? [],
+    [diagnostics?.recentProcessed]
+  );
+  const recentDocuments = useMemo<MailDocumentDiagnosticItem[]>(
+    () => diagnostics?.recentDocuments ?? [],
+    [diagnostics?.recentDocuments]
+  );
   const exportDisabled = !exportOptions.includeProcessed && !exportOptions.includeDocuments;
   const retentionEnabled = processedRetention?.enabled ?? false;
   const retentionDays = processedRetention?.retentionDays ?? 0;
@@ -521,6 +541,57 @@ const MailAutomationPage: React.FC = () => {
   const allProcessedSelected = recentProcessed.length > 0
     && recentProcessed.every((item) => selectedProcessedIds.includes(item.id));
   const someProcessedSelected = selectedProcessedIds.length > 0 && !allProcessedSelected;
+  const failureInsights = useMemo(() => {
+    const now = Date.now();
+    const windowMs = 24 * 60 * 60 * 1000;
+    const windowStart = now - windowMs;
+    const buckets = Array.from({ length: 24 }, (_, idx) => ({
+      start: windowStart + idx * 60 * 60 * 1000,
+      count: 0,
+    }));
+    let processedInWindow = 0;
+    let errorsInWindow = 0;
+    const reasonCounts = new Map<string, number>();
+    const accountSet = new Set<string>();
+
+    recentProcessed.forEach((item) => {
+      const timestamp = new Date(item.processedAt).getTime();
+      if (Number.isNaN(timestamp) || timestamp < windowStart || timestamp > now) {
+        return;
+      }
+      processedInWindow += 1;
+      if (item.status === 'ERROR') {
+        errorsInWindow += 1;
+        const bucketIndex = Math.min(23, Math.max(0, Math.floor((timestamp - windowStart) / (60 * 60 * 1000))));
+        buckets[bucketIndex].count += 1;
+        const reason = normalizeErrorReason(item.errorMessage);
+        reasonCounts.set(reason, (reasonCounts.get(reason) || 0) + 1);
+        const accountLabel = item.accountName || item.accountId;
+        if (accountLabel) {
+          accountSet.add(accountLabel);
+        }
+      }
+    });
+
+    const topReasons = Array.from(reasonCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([reason, count]) => ({ reason, count }));
+    const maxBucket = Math.max(1, ...buckets.map((bucket) => bucket.count));
+    const errorRate = processedInWindow ? errorsInWindow / processedInWindow : 0;
+
+    return {
+      windowStart,
+      windowEnd: now,
+      processedInWindow,
+      errorsInWindow,
+      errorRate,
+      buckets,
+      maxBucket,
+      topReasons,
+      accountsImpacted: Array.from(accountSet),
+    };
+  }, [recentProcessed]);
 
   const exportDiagnosticsCsv = async () => {
     if (exportDisabled) {
@@ -1453,6 +1524,79 @@ const MailAutomationPage: React.FC = () => {
                       </Button>
                     </Stack>
                   )}
+                  <Stack spacing={1}>
+                    <Typography variant="subtitle2">Failure Insights (last 24h)</Typography>
+                    <Stack direction="row" spacing={1} flexWrap="wrap">
+                      <Chip size="small" color="error" label={`Errors ${failureInsights.errorsInWindow}`} />
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        label={`Processed ${failureInsights.processedInWindow}`}
+                      />
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        label={`Error rate ${(failureInsights.errorRate * 100).toFixed(1)}%`}
+                      />
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        label={`Accounts ${failureInsights.accountsImpacted.length}`}
+                      />
+                    </Stack>
+                    {failureInsights.errorsInWindow === 0 ? (
+                      <Typography variant="body2" color="text.secondary">
+                        No errors recorded in the last 24 hours.
+                      </Typography>
+                    ) : (
+                      <Stack spacing={1}>
+                        {failureInsights.topReasons.length > 0 && (
+                          <Stack direction="row" spacing={1} flexWrap="wrap" gap={1}>
+                            {failureInsights.topReasons.map((reason) => (
+                              <Chip
+                                key={reason.reason}
+                                size="small"
+                                variant="outlined"
+                                label={`${reason.reason} (${reason.count})`}
+                              />
+                            ))}
+                          </Stack>
+                        )}
+                        <Box display="flex" alignItems="flex-end" gap={0.5} sx={{ height: 56 }}>
+                          {failureInsights.buckets.map((bucket) => {
+                            const label = new Date(bucket.start).toLocaleTimeString([], {
+                              hour: '2-digit',
+                            });
+                            const height = bucket.count
+                              ? Math.max(6, Math.round((bucket.count / failureInsights.maxBucket) * 48))
+                              : 4;
+                            return (
+                              <Tooltip key={bucket.start} title={`${label}: ${bucket.count} errors`}>
+                                <Box
+                                  sx={{
+                                    width: 8,
+                                    height,
+                                    borderRadius: 1,
+                                    bgcolor: bucket.count ? 'error.main' : 'divider',
+                                  }}
+                                />
+                              </Tooltip>
+                            );
+                          })}
+                        </Box>
+                        {failureInsights.accountsImpacted.length > 0 && (
+                          <Stack direction="row" spacing={1} flexWrap="wrap" gap={1}>
+                            {failureInsights.accountsImpacted.map((account) => (
+                              <Chip key={account} size="small" label={account} />
+                            ))}
+                          </Stack>
+                        )}
+                      </Stack>
+                    )}
+                    <Typography variant="caption" color="text.secondary">
+                      Based on the last {diagnostics?.limit ?? diagnosticsLimit} processed messages.
+                    </Typography>
+                  </Stack>
                   <Stack spacing={1}>
                     <Typography variant="subtitle2">Export Fields</Typography>
                     <Stack direction="row" spacing={2} flexWrap="wrap">
