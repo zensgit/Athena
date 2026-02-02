@@ -7,6 +7,7 @@ import {
   InputAdornment,
   IconButton,
   Chip,
+  Stack,
   Grid,
   Card,
   CardContent,
@@ -34,13 +35,14 @@ import {
   Edit,
   AutoAwesome,
   FilterList,
+  Refresh,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppSelector, useAppDispatch } from 'store';
 import { fetchSearchFacets, searchNodes } from 'store/slices/nodeSlice';
 import { setSearchOpen, setSidebarOpen } from 'store/slices/uiSlice';
-import nodeService from 'services/nodeService';
+import nodeService, { SearchDiagnostics } from 'services/nodeService';
 import { Node, SearchCriteria } from 'types';
 import { toast } from 'react-toastify';
 import Highlight from 'components/search/Highlight';
@@ -101,6 +103,9 @@ const SearchResults: React.FC = () => {
   const [spellcheckSuggestions, setSpellcheckSuggestions] = useState<string[]>([]);
   const [spellcheckLoading, setSpellcheckLoading] = useState(false);
   const [spellcheckError, setSpellcheckError] = useState<string | null>(null);
+  const [searchDiagnostics, setSearchDiagnostics] = useState<SearchDiagnostics | null>(null);
+  const [searchDiagnosticsLoading, setSearchDiagnosticsLoading] = useState(false);
+  const [searchDiagnosticsError, setSearchDiagnosticsError] = useState<string | null>(null);
   const lastSpellcheckQueryRef = useRef('');
   const previewOpen = Boolean(previewNode);
   const canWrite = Boolean(user?.roles?.includes('ROLE_ADMIN') || user?.roles?.includes('ROLE_EDITOR'));
@@ -122,6 +127,22 @@ const SearchResults: React.FC = () => {
     },
     [clearSimilarResults, dispatch]
   );
+
+  const loadSearchDiagnostics = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true;
+    if (!silent) {
+      setSearchDiagnosticsLoading(true);
+    }
+    try {
+      const diagnostics = await nodeService.getSearchDiagnostics();
+      setSearchDiagnostics(diagnostics);
+      setSearchDiagnosticsError(null);
+    } catch {
+      setSearchDiagnosticsError('Failed to load search diagnostics');
+    } finally {
+      setSearchDiagnosticsLoading(false);
+    }
+  }, []);
 
   const getSortParams = (value: string) => {
     switch (value) {
@@ -235,6 +256,10 @@ const SearchResults: React.FC = () => {
 
     return () => window.clearTimeout(timer);
   }, [lastSearchCriteria]);
+
+  useEffect(() => {
+    loadSearchDiagnostics({ silent: true });
+  }, [loadSearchDiagnostics]);
 
   useEffect(() => {
     const query = (lastSearchCriteria?.name || '').trim();
@@ -1291,6 +1316,64 @@ const SearchResults: React.FC = () => {
                   />
                 ))}
               </Box>
+            </Paper>
+          )}
+          {searchDiagnosticsError && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              {searchDiagnosticsError}
+            </Alert>
+          )}
+          {searchDiagnosticsLoading && !searchDiagnostics && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Loading access scope…
+            </Alert>
+          )}
+          {searchDiagnostics && (
+            <Paper sx={{ p: 1.5, mb: 2 }}>
+              <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+                <Typography variant="subtitle2">Access scope</Typography>
+                <Button
+                  size="small"
+                  startIcon={<Refresh fontSize="small" />}
+                  onClick={() => loadSearchDiagnostics()}
+                  disabled={searchDiagnosticsLoading}
+                >
+                  Refresh
+                </Button>
+              </Box>
+              <Stack direction="row" spacing={1} flexWrap="wrap" sx={{ mb: 1 }}>
+                <Chip
+                  size="small"
+                  color={searchDiagnostics.admin ? 'success' : 'warning'}
+                  label={searchDiagnostics.admin ? 'Admin (ACL bypass)' : 'Restricted'}
+                />
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  label={searchDiagnostics.readFilterApplied ? 'ACL filter active' : 'ACL filter off'}
+                />
+                <Chip size="small" variant="outlined" label={`Authorities ${searchDiagnostics.authorityCount}`} />
+                {searchDiagnostics.username && (
+                  <Chip size="small" variant="outlined" label={`User ${searchDiagnostics.username}`} />
+                )}
+              </Stack>
+              {searchDiagnostics.authoritySample?.length > 0 && (
+                <Box display="flex" flexWrap="wrap" gap={1} sx={{ mb: 1 }}>
+                  {searchDiagnostics.authoritySample.map((authority) => (
+                    <Chip key={authority} size="small" variant="outlined" label={authority} />
+                  ))}
+                </Box>
+              )}
+              {searchDiagnostics.note && (
+                <Typography variant="caption" color="text.secondary" display="block">
+                  {searchDiagnostics.note}
+                </Typography>
+              )}
+              {searchDiagnostics.generatedAt && (
+                <Typography variant="caption" color="text.secondary" display="block">
+                  Updated {format(new Date(searchDiagnostics.generatedAt), 'PPp')}
+                </Typography>
+              )}
             </Paper>
           )}
           <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
