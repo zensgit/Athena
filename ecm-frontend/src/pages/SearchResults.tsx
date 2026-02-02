@@ -203,6 +203,14 @@ const SearchResults: React.FC = () => {
       prev.includes(status) ? prev.filter((item) => item !== status) : [...prev, status]
     );
   };
+  const nonPreviewFiltersApplied =
+    selectedMimeTypes.length > 0 ||
+    selectedCreators.length > 0 ||
+    selectedCorrespondents.length > 0 ||
+    selectedTags.length > 0 ||
+    selectedCategories.length > 0;
+  const previewStatusFilterApplied = selectedPreviewStatuses.length > 0;
+  const filtersApplied = nonPreviewFiltersApplied || previewStatusFilterApplied;
 
   useEffect(() => {
     if (!lastSearchCriteria) {
@@ -230,8 +238,11 @@ const SearchResults: React.FC = () => {
 
   useEffect(() => {
     const query = (lastSearchCriteria?.name || '').trim();
+    if (!query || nonPreviewFiltersApplied) {
+      return;
+    }
     dispatch(fetchSearchFacets(query));
-  }, [lastSearchCriteria, dispatch]);
+  }, [lastSearchCriteria, dispatch, nonPreviewFiltersApplied]);
 
   useEffect(() => {
     const query = (lastSearchCriteria?.name || '').trim();
@@ -786,8 +797,57 @@ const SearchResults: React.FC = () => {
     );
   };
 
+ 
+  const hasActiveCriteria = isSimilarMode
+    || Boolean((lastSearchCriteria?.name || '').trim())
+    || filtersApplied;
+  const shouldShowFallback = !isSimilarMode && !loading && nodes.length === 0 && fallbackNodes.length > 0 && hasActiveCriteria;
+  const displayNodes = isSimilarMode ? (similarResults || []) : (shouldShowFallback ? fallbackNodes : nodes);
+  const previewStatusCounts = displayNodes.reduce(
+    (acc, node) => {
+      if (node.nodeType === 'FOLDER') {
+        acc.folders += 1;
+        return acc;
+      }
+      const status = node.previewStatus?.toUpperCase() || 'PENDING';
+      if (status in acc) {
+        acc[status as keyof typeof acc] += 1;
+      } else {
+        acc.other += 1;
+      }
+      return acc;
+    },
+    {
+      READY: 0,
+      PROCESSING: 0,
+      QUEUED: 0,
+      FAILED: 0,
+      PENDING: 0,
+      other: 0,
+      folders: 0,
+    }
+  );
+  const statusFilteredNodes = previewStatusFilterApplied
+    ? displayNodes.filter((node) => {
+        if (node.nodeType === 'FOLDER') {
+          return false;
+        }
+        const status = node.previewStatus?.toUpperCase() || 'PENDING';
+        return selectedPreviewStatuses.includes(status);
+      })
+    : displayNodes;
+  const paginatedNodes = statusFilteredNodes.filter((node) => !hiddenNodeIds.includes(node.id));
+  const displayTotal = isSimilarMode
+    ? paginatedNodes.length
+    : previewStatusFilterApplied
+      ? statusFilteredNodes.length
+      : nodesTotal;
+  const totalPages = Math.max(1, Math.ceil(displayTotal / pageSize));
+  const spellcheckQuery = (lastSearchCriteria?.name || '').trim();
+  const normalizedSpellcheckQuery = spellcheckQuery.toLowerCase();
+  const shouldUseSearchFacets = !nonPreviewFiltersApplied && searchFacets && Object.keys(searchFacets).length > 0;
   const facets = useMemo(() => {
-    if (searchFacets && Object.keys(searchFacets).length > 0) {
+    if (shouldUseSearchFacets) {
       const toSorted = (values?: FacetValue[]) =>
         (values || []).slice().sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
 
@@ -810,7 +870,7 @@ const SearchResults: React.FC = () => {
       map.set(key, (map.get(key) || 0) + 1);
     };
 
-    for (const node of nodes) {
+    for (const node of statusFilteredNodes) {
       if (node.contentType) {
         inc(mimeTypeCounts, node.contentType);
       }
@@ -845,64 +905,10 @@ const SearchResults: React.FC = () => {
       tags: mapToSortedArray(tagCounts),
       categories: mapToSortedArray(categoryCounts),
     };
-  }, [nodes, searchFacets]);
-
-  const filtersApplied =
-    selectedMimeTypes.length > 0 ||
-    selectedCreators.length > 0 ||
-    selectedCorrespondents.length > 0 ||
-    selectedTags.length > 0 ||
-    selectedCategories.length > 0 ||
-    selectedPreviewStatuses.length > 0;
-
-  const hasActiveCriteria = isSimilarMode
-    || Boolean((lastSearchCriteria?.name || '').trim())
-    || filtersApplied;
-  const shouldShowFallback = !isSimilarMode && !loading && nodes.length === 0 && fallbackNodes.length > 0 && hasActiveCriteria;
-  const displayNodes = isSimilarMode ? (similarResults || []) : (shouldShowFallback ? fallbackNodes : nodes);
-  const previewStatusCounts = displayNodes.reduce(
-    (acc, node) => {
-      if (node.nodeType === 'FOLDER') {
-        acc.folders += 1;
-        return acc;
-      }
-      const status = node.previewStatus?.toUpperCase() || 'PENDING';
-      if (status in acc) {
-        acc[status as keyof typeof acc] += 1;
-      } else {
-        acc.other += 1;
-      }
-      return acc;
-    },
-    {
-      READY: 0,
-      PROCESSING: 0,
-      QUEUED: 0,
-      FAILED: 0,
-      PENDING: 0,
-      other: 0,
-      folders: 0,
-    }
-  );
-  const previewStatusFilterApplied = selectedPreviewStatuses.length > 0;
-  const statusFilteredNodes = previewStatusFilterApplied
-    ? displayNodes.filter((node) => {
-        if (node.nodeType === 'FOLDER') {
-          return false;
-        }
-        const status = node.previewStatus?.toUpperCase() || 'PENDING';
-        return selectedPreviewStatuses.includes(status);
-      })
-    : displayNodes;
-  const paginatedNodes = statusFilteredNodes.filter((node) => !hiddenNodeIds.includes(node.id));
-  const displayTotal = isSimilarMode
-    ? paginatedNodes.length
-    : previewStatusFilterApplied
-      ? statusFilteredNodes.length
-      : nodesTotal;
-  const totalPages = Math.max(1, Math.ceil(displayTotal / pageSize));
-  const spellcheckQuery = (lastSearchCriteria?.name || '').trim();
-  const normalizedSpellcheckQuery = spellcheckQuery.toLowerCase();
+  }, [shouldUseSearchFacets, searchFacets, statusFilteredNodes]);
+  const facetScopeLabel = shouldUseSearchFacets
+    ? 'Facet counts reflect the full result set for this query.'
+    : 'Facet counts reflect the current page after filters are applied.';
   const filteredSpellcheckSuggestions = useMemo(() => {
     const unique = new Set<string>();
     for (const suggestion of spellcheckSuggestions) {
@@ -1019,6 +1025,9 @@ const SearchResults: React.FC = () => {
               </Button>
             </Box>
             <Divider sx={{ mb: 2 }} />
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
+              {facetScopeLabel}
+            </Typography>
 
             <Typography variant="subtitle2" gutterBottom>
               File Type
@@ -1056,6 +1065,11 @@ const SearchResults: React.FC = () => {
             <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
               Filter results by preview generation state.
             </Typography>
+            {previewStatusFilterApplied && (
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                Preview status filters apply to the current page only.
+              </Typography>
+            )}
             <Box display="flex" flexWrap="wrap" gap={1} mb={2}>
               {[
                 { value: 'READY', label: 'Ready', color: 'success' as const, count: previewStatusCounts.READY },
@@ -1290,9 +1304,16 @@ const SearchResults: React.FC = () => {
                   : shouldShowFallback
                     ? `Showing previous results (${paginatedNodes.length}) while the index refreshes`
                     : displayTotal > 0
-                      ? `Showing ${paginatedNodes.length} of ${displayTotal} results`
+                      ? previewStatusFilterApplied
+                        ? `Showing ${paginatedNodes.length} result${paginatedNodes.length === 1 ? '' : 's'} on this page`
+                        : `Showing ${paginatedNodes.length} of ${displayTotal} results`
                       : '0 results found'}
             </Typography>
+            {previewStatusFilterApplied && displayTotal > 0 && !loading && !isSimilarMode && !shouldShowFallback && (
+              <Typography variant="caption" color="text.secondary">
+                Preview status filters apply per page. Clear the filter to page through all results.
+              </Typography>
+            )}
             <FormControl size="small" sx={{ minWidth: 150 }}>
               <InputLabel>Sort by</InputLabel>
               <Select value={sortBy} onChange={(e) => setSortBy(e.target.value)} label="Sort by">

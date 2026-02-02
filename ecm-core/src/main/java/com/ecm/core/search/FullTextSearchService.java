@@ -417,6 +417,8 @@ public class FullTextSearchService {
 
     private void applySort(NativeQueryBuilder builder, String sortBy, String sortDirection) {
         if (sortBy == null || sortBy.isBlank() || "relevance".equalsIgnoreCase(sortBy)) {
+            builder.withSort(s -> s.score(sc -> sc.order(SortOrder.Desc)));
+            builder.withSort(s -> s.field(f -> f.field("_id").order(SortOrder.Asc)));
             return;
         }
 
@@ -436,6 +438,7 @@ public class FullTextSearchService {
             : SortOrder.Desc;
 
         builder.withSort(s -> s.field(f -> f.field(field).order(order)));
+        builder.withSort(s -> s.field(f -> f.field("_id").order(SortOrder.Asc)));
     }
 
     private static void addAnyOfTermsFilter(BoolQuery.Builder bool, List<String> fields, List<String> values) {
