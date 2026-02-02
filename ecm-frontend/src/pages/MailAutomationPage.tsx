@@ -126,6 +126,8 @@ const MailAutomationPage: React.FC = () => {
   const [listingFolders, setListingFolders] = useState(false);
   const [availableFolders, setAvailableFolders] = useState<string[]>([]);
   const [hasListedFolders, setHasListedFolders] = useState(false);
+  const [lastListedFoldersAt, setLastListedFoldersAt] = useState<string | null>(null);
+  const [folderLookup, setFolderLookup] = useState<Record<string, { name?: string; path?: string; error?: boolean }>>({});
   const [diagnostics, setDiagnostics] = useState<MailDiagnosticsResult | null>(null);
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
   const [diagnosticsAccountId, setDiagnosticsAccountId] = useState('');
@@ -211,6 +213,52 @@ const MailAutomationPage: React.FC = () => {
       return value;
     }
     return date.toLocaleString();
+  };
+
+  const formatRelativeDuration = (ms: number) => {
+    const absMinutes = Math.max(1, Math.round(Math.abs(ms) / 60000));
+    if (absMinutes < 60) {
+      return `${absMinutes}m`;
+    }
+    const absHours = Math.round(absMinutes / 60);
+    if (absHours < 48) {
+      return `${absHours}h`;
+    }
+    const absDays = Math.round(absHours / 24);
+    return `${absDays}d`;
+  };
+
+  const getNextPollInfo = (account: MailAccount) => {
+    const intervalMinutes = account.pollIntervalMinutes ?? 10;
+    if (!account.lastFetchAt) {
+      return { label: 'Next poll: N/A', overdue: false };
+    }
+    const lastTime = new Date(account.lastFetchAt).getTime();
+    if (Number.isNaN(lastTime)) {
+      return { label: 'Next poll: N/A', overdue: false };
+    }
+    const nextTime = lastTime + intervalMinutes * 60 * 1000;
+    const diffMs = nextTime - Date.now();
+    if (diffMs <= 0) {
+      return { label: `Overdue by ${formatRelativeDuration(diffMs)}`, overdue: true };
+    }
+    return { label: `Next poll in ${formatRelativeDuration(diffMs)}`, overdue: false };
+  };
+
+  const resolveOAuthEnvPrefix = (account: MailAccount) => {
+    if (account.security !== 'OAUTH2') {
+      return '';
+    }
+    if (account.oauthCredentialKey) {
+      return `ECM_MAIL_OAUTH_${normalizeCredentialKey(account.oauthCredentialKey)}_`;
+    }
+    if (account.oauthProvider === 'GOOGLE') {
+      return 'ECM_MAIL_OAUTH_GOOGLE_';
+    }
+    if (account.oauthProvider === 'MICROSOFT') {
+      return 'ECM_MAIL_OAUTH_MICROSOFT_';
+    }
+    return '';
   };
 
   const summarizeError = (value?: string | null, maxLength = 160) => {
@@ -347,7 +395,46 @@ const MailAutomationPage: React.FC = () => {
   useEffect(() => {
     setAvailableFolders([]);
     setHasListedFolders(false);
+    setLastListedFoldersAt(null);
   }, [folderAccountId]);
+
+  useEffect(() => {
+    let active = true;
+    const folderIds = Array.from(
+      new Set(rules.map((rule) => rule.assignFolderId).filter((id): id is string => Boolean(id)))
+    );
+    if (folderIds.length === 0) {
+      setFolderLookup({});
+      return () => {
+        active = false;
+      };
+    }
+
+    Promise.all(
+      folderIds.map(async (id) => {
+        try {
+          const node = await nodeService.getNode(id);
+          return { id, name: node.name, path: node.path, error: false };
+        } catch {
+          return { id, error: true };
+        }
+      })
+    ).then((results) => {
+      if (!active) {
+        return;
+      }
+      const next: Record<string, { name?: string; path?: string; error?: boolean }> = {};
+      results.forEach((result) => {
+        if (!result) return;
+        next[result.id] = { name: result.name, path: result.path, error: result.error };
+      });
+      setFolderLookup(next);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [rules]);
 
   useEffect(() => {
     try {
@@ -360,6 +447,8 @@ const MailAutomationPage: React.FC = () => {
   const accountNameById = useMemo(() => {
     return new Map(accounts.map((account) => [account.id, account.name]));
   }, [accounts]);
+
+  const folderAccountName = folderAccountId ? accountNameById.get(folderAccountId) : '';
 
   const tagNameById = useMemo(() => {
     return new Map(tags.map((tag) => [tag.id, tag.name]));
@@ -455,6 +544,7 @@ const MailAutomationPage: React.FC = () => {
       anchor.click();
       document.body.removeChild(anchor);
       URL.revokeObjectURL(url);
+      toast.success(`Exported ${anchor.download}`);
     } catch {
       toast.error('Failed to export mail diagnostics');
     }
@@ -578,6 +668,7 @@ const MailAutomationPage: React.FC = () => {
       const folders = await mailAutomationService.listFolders(folderAccountId);
       setAvailableFolders(folders);
       setHasListedFolders(true);
+      setLastListedFoldersAt(new Date().toISOString());
       toast.success(`Found ${folders.length} folders`);
     } catch {
       setHasListedFolders(false);
@@ -936,6 +1027,37 @@ const MailAutomationPage: React.FC = () => {
     return previewResult.matches;
   }, [previewProcessableFilter, previewResult]);
 
+  const activeDiagnosticsFilters = useMemo(() => {
+    const filters: Array<{ label: string; onClear: () => void }> = [];
+    if (diagnosticsAccountId) {
+      filters.push({
+        label: `Account: ${accountNameById.get(diagnosticsAccountId) || diagnosticsAccountId}`,
+        onClear: () => setDiagnosticsAccountId(''),
+      });
+    }
+    if (diagnosticsRuleId) {
+      const ruleName = rules.find((rule) => rule.id === diagnosticsRuleId)?.name;
+      filters.push({
+        label: `Rule: ${ruleName || diagnosticsRuleId}`,
+        onClear: () => setDiagnosticsRuleId(''),
+      });
+    }
+    if (diagnosticsStatus) {
+      filters.push({ label: `Status: ${diagnosticsStatus}`, onClear: () => setDiagnosticsStatus('') });
+    }
+    if (diagnosticsSubject) {
+      filters.push({ label: `Subject: ${diagnosticsSubject}`, onClear: () => setDiagnosticsSubject('') });
+    }
+    return filters;
+  }, [diagnosticsAccountId, diagnosticsRuleId, diagnosticsStatus, diagnosticsSubject, accountNameById, rules]);
+
+  const clearDiagnosticsFilters = () => {
+    setDiagnosticsAccountId('');
+    setDiagnosticsRuleId('');
+    setDiagnosticsStatus('');
+    setDiagnosticsSubject('');
+  };
+
   return (
     <Box maxWidth={1100}>
       <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
@@ -1055,6 +1177,14 @@ const MailAutomationPage: React.FC = () => {
                   <Typography variant="caption" color="text.secondary">
                     Available folders ({availableFolders.length})
                   </Typography>
+                  {folderAccountName && (
+                    <Typography variant="caption" color="text.secondary" display="block">
+                      Account: {folderAccountName}
+                      {hasListedFolders && lastListedFoldersAt
+                        ? ` · Last listed ${formatDateTime(lastListedFoldersAt)}`
+                        : ''}
+                    </Typography>
+                  )}
                   {availableFolders.length > 0 ? (
                     <Stack direction="row" spacing={1} sx={{ mt: 0.5, flexWrap: 'wrap', gap: 1 }}>
                       {availableFolders.slice(0, 40).map((folder) => (
@@ -1305,6 +1435,24 @@ const MailAutomationPage: React.FC = () => {
                       sx={{ minWidth: 220 }}
                     />
                   </Stack>
+                  {activeDiagnosticsFilters.length > 0 && (
+                    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" gap={1}>
+                      <Typography variant="caption" color="text.secondary">
+                        Active filters:
+                      </Typography>
+                      {activeDiagnosticsFilters.map((filter) => (
+                        <Chip
+                          key={filter.label}
+                          size="small"
+                          label={filter.label}
+                          onDelete={filter.onClear}
+                        />
+                      ))}
+                      <Button size="small" variant="text" onClick={clearDiagnosticsFilters}>
+                        Clear all
+                      </Button>
+                    </Stack>
+                  )}
                   <Stack spacing={1}>
                     <Typography variant="subtitle2">Export Fields</Typography>
                     <Stack direction="row" spacing={2} flexWrap="wrap">
@@ -1704,8 +1852,12 @@ const MailAutomationPage: React.FC = () => {
                         </TableCell>
                       </TableRow>
                     )}
-                    {accounts.map((account) => (
-                      <TableRow key={account.id} hover>
+                    {accounts.map((account) => {
+                      const nextPoll = getNextPollInfo(account);
+                      const oauthEnvPrefix = resolveOAuthEnvPrefix(account);
+                      const retrySuggested = account.lastFetchStatus === 'ERROR';
+                      return (
+                        <TableRow key={account.id} hover>
                         <TableCell>{account.name}</TableCell>
                         <TableCell>{account.host}:{account.port}</TableCell>
                         <TableCell>{account.username}</TableCell>
@@ -1715,6 +1867,12 @@ const MailAutomationPage: React.FC = () => {
                           <Stack spacing={0.5}>
                             <Typography variant="caption">
                               {formatDateTime(account.lastFetchAt)}
+                            </Typography>
+                            <Typography
+                              variant="caption"
+                              color={nextPoll.overdue ? 'error.main' : 'text.secondary'}
+                            >
+                              {nextPoll.label}
                             </Typography>
                             {account.lastFetchStatus && (
                               <Tooltip
@@ -1734,6 +1892,9 @@ const MailAutomationPage: React.FC = () => {
                                   }
                                 />
                               </Tooltip>
+                            )}
+                            {retrySuggested && (
+                              <Chip size="small" variant="outlined" color="warning" label="Retry suggested" />
                             )}
                             {account.security === 'OAUTH2' && account.oauthConnected != null && (
                               <Chip
@@ -1757,6 +1918,30 @@ const MailAutomationPage: React.FC = () => {
                                   label="OAuth env missing"
                                 />
                               </Tooltip>
+                            )}
+                            {oauthEnvPrefix && (
+                              <Stack direction="row" spacing={0.5} alignItems="center">
+                                <Typography variant="caption" color="text.secondary">
+                                  OAuth env: {oauthEnvPrefix}
+                                </Typography>
+                                <Tooltip title="Copy env prefix">
+                                  <IconButton
+                                    size="small"
+                                    onClick={() => {
+                                      if (!navigator.clipboard?.writeText) {
+                                        toast.error('Clipboard unavailable');
+                                        return;
+                                      }
+                                      navigator.clipboard
+                                        .writeText(oauthEnvPrefix)
+                                        .then(() => toast.info('Copied OAuth env prefix'))
+                                        .catch(() => toast.error('Failed to copy OAuth env prefix'));
+                                    }}
+                                  >
+                                    <ContentCopy fontSize="inherit" />
+                                  </IconButton>
+                                </Tooltip>
+                              </Stack>
                             )}
                           </Stack>
                         </TableCell>
@@ -1818,8 +2003,9 @@ const MailAutomationPage: React.FC = () => {
                             </IconButton>
                           </Tooltip>
                         </TableCell>
-                      </TableRow>
-                    ))}
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </TableContainer>
@@ -1852,93 +2038,122 @@ const MailAutomationPage: React.FC = () => {
                   <TableBody>
                     {rules.length === 0 && (
                       <TableRow>
-                      <TableCell colSpan={9} align="center">
-                        No mail rules configured
-                      </TableCell>
-                    </TableRow>
-                    )}
-                    {rules.map((rule) => (
-                      <TableRow key={rule.id} hover>
-                      <TableCell>{rule.name}</TableCell>
-                      <TableCell>{rule.accountId ? accountNameById.get(rule.accountId) : 'All accounts'}</TableCell>
-                      <TableCell>{rule.priority}</TableCell>
-                        <TableCell>
-                          <Chip
-                            size="small"
-                            label={(rule.enabled ?? true) ? 'Enabled' : 'Disabled'}
-                            color={(rule.enabled ?? true) ? 'success' : 'default'}
-                            variant="outlined"
-                          />
-                        </TableCell>
-                      <TableCell>
-                        <Box display="flex" flexDirection="column" gap={0.5}>
-                          <Typography variant="caption">Mailbox: {rule.folder || 'INBOX'}</Typography>
-                            {rule.subjectFilter && <Typography variant="caption">Subject: {rule.subjectFilter}</Typography>}
-                            {rule.fromFilter && <Typography variant="caption">From: {rule.fromFilter}</Typography>}
-                            {rule.toFilter && <Typography variant="caption">To: {rule.toFilter}</Typography>}
-                            {rule.bodyFilter && <Typography variant="caption">Body: {rule.bodyFilter}</Typography>}
-                            {rule.attachmentFilenameInclude && (
-                              <Typography variant="caption">Attach: {rule.attachmentFilenameInclude}</Typography>
-                            )}
-                            {rule.attachmentFilenameExclude && (
-                              <Typography variant="caption">Exclude: {rule.attachmentFilenameExclude}</Typography>
-                            )}
-                            {rule.maxAgeDays && rule.maxAgeDays > 0 && (
-                              <Typography variant="caption">Max age: {rule.maxAgeDays}d</Typography>
-                            )}
-                            {rule.includeInlineAttachments && (
-                              <Typography variant="caption">Inline: yes</Typography>
-                            )}
-                          </Box>
-                        </TableCell>
-                        <TableCell>
-                          <Box display="flex" flexDirection="column" gap={0.5}>
-                            <Typography variant="caption">Process: {rule.actionType}</Typography>
-                            <Typography variant="caption">
-                              Mail: {rule.mailAction || 'MARK_READ'}
-                              {rule.mailActionParam ? ` (${rule.mailActionParam})` : ''}
-                            </Typography>
-                          </Box>
-                        </TableCell>
-                        <TableCell>{rule.assignTagId ? tagNameById.get(rule.assignTagId) : '-'}</TableCell>
-                        <TableCell>{rule.assignFolderId || '-'}</TableCell>
-                        <TableCell
-                          align="right"
-                          sx={{ position: 'sticky', right: 0, backgroundColor: 'background.paper', zIndex: 1 }}
-                        >
-                          <Tooltip title={(rule.enabled ?? true) ? 'Disable' : 'Enable'}>
-                            <span>
-                              <Checkbox
-                                size="small"
-                                checked={rule.enabled ?? true}
-                                onChange={() => handleToggleRuleEnabled(rule)}
-                              />
-                            </span>
-                          </Tooltip>
-                          <Tooltip title="Preview">
-                            <span>
-                              <IconButton
-                                size="small"
-                                aria-label={`Preview rule ${rule.name}`}
-                                onClick={() => openPreviewRule(rule)}
-                              >
-                                <Visibility fontSize="small" />
-                              </IconButton>
-                            </span>
-                          </Tooltip>
-                          <Tooltip title="Edit">
-                            <IconButton size="small" onClick={() => openEditRule(rule)}>
-                              <Edit fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="Delete">
-                            <IconButton size="small" color="error" onClick={() => handleDeleteRule(rule.id)}>
-                              <Delete fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
+                        <TableCell colSpan={9} align="center">
+                          No mail rules configured
                         </TableCell>
                       </TableRow>
-                    ))}
+                    )}
+                    {rules.map((rule) => {
+                      const folderInfo = rule.assignFolderId ? folderLookup[rule.assignFolderId] : null;
+                      const folderDisplay = rule.assignFolderId
+                        ? folderInfo?.path
+                          || folderInfo?.name
+                          || (folderInfo?.error
+                            ? `Unknown (${rule.assignFolderId.slice(0, 8)}...)`
+                            : rule.assignFolderId)
+                        : '';
+                      const folderTooltip = rule.assignFolderId
+                        ? folderInfo?.path || rule.assignFolderId
+                        : '';
+                      return (
+                        <TableRow key={rule.id} hover>
+                          <TableCell>{rule.name}</TableCell>
+                          <TableCell>
+                            {rule.accountId ? accountNameById.get(rule.accountId) : 'All accounts'}
+                          </TableCell>
+                          <TableCell>{rule.priority}</TableCell>
+                          <TableCell>
+                            <Chip
+                              size="small"
+                              label={(rule.enabled ?? true) ? 'Enabled' : 'Disabled'}
+                              color={(rule.enabled ?? true) ? 'success' : 'default'}
+                              variant="outlined"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Box display="flex" flexDirection="column" gap={0.5}>
+                              <Typography variant="caption">Mailbox: {rule.folder || 'INBOX'}</Typography>
+                              {rule.subjectFilter && (
+                                <Typography variant="caption">Subject: {rule.subjectFilter}</Typography>
+                              )}
+                              {rule.fromFilter && (
+                                <Typography variant="caption">From: {rule.fromFilter}</Typography>
+                              )}
+                              {rule.toFilter && <Typography variant="caption">To: {rule.toFilter}</Typography>}
+                              {rule.bodyFilter && <Typography variant="caption">Body: {rule.bodyFilter}</Typography>}
+                              {rule.attachmentFilenameInclude && (
+                                <Typography variant="caption">Attach: {rule.attachmentFilenameInclude}</Typography>
+                              )}
+                              {rule.attachmentFilenameExclude && (
+                                <Typography variant="caption">Exclude: {rule.attachmentFilenameExclude}</Typography>
+                              )}
+                              {rule.maxAgeDays && rule.maxAgeDays > 0 && (
+                                <Typography variant="caption">Max age: {rule.maxAgeDays}d</Typography>
+                              )}
+                              {rule.includeInlineAttachments && (
+                                <Typography variant="caption">Inline: yes</Typography>
+                              )}
+                            </Box>
+                          </TableCell>
+                          <TableCell>
+                            <Box display="flex" flexDirection="column" gap={0.5}>
+                              <Typography variant="caption">Process: {rule.actionType}</Typography>
+                              <Typography variant="caption">
+                                Mail: {rule.mailAction || 'MARK_READ'}
+                                {rule.mailActionParam ? ` (${rule.mailActionParam})` : ''}
+                              </Typography>
+                            </Box>
+                          </TableCell>
+                          <TableCell>{rule.assignTagId ? tagNameById.get(rule.assignTagId) : '-'}</TableCell>
+                          <TableCell>
+                            {rule.assignFolderId ? (
+                              <Tooltip title={folderTooltip}>
+                                <Typography variant="caption">
+                                  {summarizeText(folderDisplay || rule.assignFolderId, 48)}
+                                </Typography>
+                              </Tooltip>
+                            ) : (
+                              '-'
+                            )}
+                          </TableCell>
+                          <TableCell
+                            align="right"
+                            sx={{ position: 'sticky', right: 0, backgroundColor: 'background.paper', zIndex: 1 }}
+                          >
+                            <Tooltip title={(rule.enabled ?? true) ? 'Disable' : 'Enable'}>
+                              <span>
+                                <Checkbox
+                                  size="small"
+                                  checked={rule.enabled ?? true}
+                                  onChange={() => handleToggleRuleEnabled(rule)}
+                                />
+                              </span>
+                            </Tooltip>
+                            <Tooltip title="Preview">
+                              <span>
+                                <IconButton
+                                  size="small"
+                                  aria-label={`Preview rule ${rule.name}`}
+                                  onClick={() => openPreviewRule(rule)}
+                                >
+                                  <Visibility fontSize="small" />
+                                </IconButton>
+                              </span>
+                            </Tooltip>
+                            <Tooltip title="Edit">
+                              <IconButton size="small" onClick={() => openEditRule(rule)}>
+                                <Edit fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Delete">
+                              <IconButton size="small" color="error" onClick={() => handleDeleteRule(rule.id)}>
+                                <Delete fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </TableContainer>

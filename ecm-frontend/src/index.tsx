@@ -50,6 +50,26 @@ const renderApp = () => {
 
 const initAuth = async () => {
   try {
+    if (process.env.REACT_APP_E2E_BYPASS_AUTH === '1') {
+      let user = null;
+      let token = null;
+      try {
+        token = localStorage.getItem('token');
+        const rawUser = localStorage.getItem('user');
+        user = rawUser ? JSON.parse(rawUser) : null;
+      } catch {
+        user = null;
+      }
+      store.dispatch(
+        setSession({
+          user,
+          token,
+          isAuthenticated: Boolean(token),
+        })
+      );
+      renderApp();
+      return;
+    }
     const canUsePkce = !!(window.crypto && window.crypto.subtle);
     if (!canUsePkce) {
       console.warn('PKCE disabled: Web Crypto API is unavailable in this context.');
