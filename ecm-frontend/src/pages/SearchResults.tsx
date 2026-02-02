@@ -1053,6 +1053,9 @@ const SearchResults: React.FC = () => {
             <Typography variant="subtitle2" gutterBottom>
               Preview Status
             </Typography>
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+              Filter results by preview generation state.
+            </Typography>
             <Box display="flex" flexWrap="wrap" gap={1} mb={2}>
               {[
                 { value: 'READY', label: 'Ready', color: 'success' as const, count: previewStatusCounts.READY },

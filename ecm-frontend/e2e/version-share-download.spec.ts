@@ -179,7 +179,6 @@ async function loginWithCredentials(page: Page, username: string, password: stri
 }
 
 test('Version history actions: download + restore', async ({ page, request }) => {
-  page.on('dialog', (dialog) => dialog.accept());
   test.setTimeout(240_000);
 
   await waitForApiReady(request, { apiUrl: baseApiUrl });
@@ -247,6 +246,9 @@ test('Version history actions: download + restore', async ({ page, request }) =>
   );
   await latestRow.getByRole('button').click();
   await page.getByRole('menuitem', { name: 'Download this version' }).click();
+  const downloadDialog = page.getByRole('dialog').filter({ hasText: 'Download version' });
+  await expect(downloadDialog).toBeVisible({ timeout: 60_000 });
+  await downloadDialog.getByRole('button', { name: 'Confirm' }).click();
   await downloadResponse;
   await expect(page.getByText('Version downloaded successfully')).toBeVisible({ timeout: 60_000 });
 
@@ -254,6 +256,9 @@ test('Version history actions: download + restore', async ({ page, request }) =>
   await expect(previousRow).toBeVisible({ timeout: 60_000 });
   await previousRow.getByRole('button').click();
   await page.getByRole('menuitem', { name: 'Restore to this version' }).click();
+  const restoreDialog = page.getByRole('dialog').filter({ hasText: 'Restore version' });
+  await expect(restoreDialog).toBeVisible({ timeout: 60_000 });
+  await restoreDialog.getByRole('button', { name: 'Confirm' }).click();
 
   await expect(page.getByText('Document restored successfully')).toBeVisible({ timeout: 60_000 });
   await expect(versionsDialog).toBeHidden({ timeout: 60_000 });

@@ -468,6 +468,9 @@ const PermissionsDialog: React.FC = () => {
                 ))}
               </Box>
             )}
+            <Typography variant="caption" color="text.secondary" display="block" mt={0.5}>
+              Permissions inherit from the root to this node unless disabled below.
+            </Typography>
           </Box>
           <Button
             variant="outlined"

@@ -280,6 +280,11 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     : null;
   const previewPollIntervalMs = 15000;
   const shouldPollPreview = resolvedPreviewStatus === 'PROCESSING' || resolvedPreviewStatus === 'QUEUED';
+  const previewStatusTooltip = resolvedPreviewFailure
+    ? resolvedPreviewFailure
+    : shouldPollPreview
+      ? `Status refreshes every ${previewPollIntervalMs / 1000}s while queued or processing.`
+      : 'Preview status reflects the latest generation state.';
   const previewStatusColor = (() => {
     switch (resolvedPreviewStatus) {
       case 'READY':
@@ -1334,17 +1339,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
             </Typography>
           )}
           {previewStatusLabel && (
-            resolvedPreviewFailure ? (
-              <Tooltip title={resolvedPreviewFailure}>
-                <Chip
-                  size="small"
-                  variant="outlined"
-                  label={previewStatusLabel}
-                  color={previewStatusColor}
-                  sx={{ mr: 2 }}
-                />
-              </Tooltip>
-            ) : (
+            <Tooltip title={previewStatusTooltip} arrow>
               <Chip
                 size="small"
                 variant="outlined"
@@ -1352,7 +1347,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                 color={previewStatusColor}
                 sx={{ mr: 2 }}
               />
-            )
+            </Tooltip>
           )}
 
           {pdfDocument && (

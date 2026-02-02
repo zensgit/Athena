@@ -218,7 +218,11 @@ const VersionHistoryDialog: React.FC = () => {
                   <TableCell>Date</TableCell>
                   <TableCell>Created By</TableCell>
                   <TableCell>Size</TableCell>
-                  <TableCell>Delta</TableCell>
+                  <TableCell>
+                    <Tooltip title="Delta shows the size change vs the previous version." placement="top" arrow>
+                      <Box component="span">Delta</Box>
+                    </Tooltip>
+                  </TableCell>
                   <TableCell>Comment</TableCell>
                   <TableCell align="right">Actions</TableCell>
                 </TableRow>
