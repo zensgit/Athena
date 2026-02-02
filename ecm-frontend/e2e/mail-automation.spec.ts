@@ -101,6 +101,7 @@ test('Mail automation test connection and fetch summary', async ({ page, request
 
   const heading = page.getByRole('heading', { name: /mail automation/i });
   await expect(heading).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(/Failure Insights/i)).toBeVisible({ timeout: 30_000 });
   const accountName = accounts[0]?.name;
   if (accountName) {
     const escaped = accountName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
