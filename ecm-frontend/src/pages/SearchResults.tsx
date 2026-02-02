@@ -83,6 +83,7 @@ const SearchResults: React.FC = () => {
   const [selectedCorrespondents, setSelectedCorrespondents] = useState<string[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [selectedPreviewStatuses, setSelectedPreviewStatuses] = useState<string[]>([]);
   const [previewNode, setPreviewNode] = useState<Node | null>(null);
   const [previewAnnotate, setPreviewAnnotate] = useState(false);
   const [hiddenNodeIds, setHiddenNodeIds] = useState<string[]>([]);
@@ -187,6 +188,7 @@ const SearchResults: React.FC = () => {
     setSelectedCorrespondents([]);
     setSelectedTags([]);
     setSelectedCategories([]);
+    setSelectedPreviewStatuses([]);
   };
 
   const removeFacetValue = (
@@ -194,6 +196,12 @@ const SearchResults: React.FC = () => {
     value: string
   ) => {
     setter((prev) => prev.filter((item) => item !== value));
+  };
+
+  const togglePreviewStatus = (status: string) => {
+    setSelectedPreviewStatuses((prev) =>
+      prev.includes(status) ? prev.filter((item) => item !== status) : [...prev, status]
+    );
   };
 
   useEffect(() => {
@@ -731,23 +739,25 @@ const SearchResults: React.FC = () => {
       return null;
     }
     const status = node.previewStatus?.toUpperCase();
-    if (!status || status === 'READY') {
-      return null;
-    }
-    const label = status === 'FAILED'
-      ? 'Preview failed'
-      : status === 'PROCESSING'
-        ? 'Preview processing'
-        : status === 'QUEUED'
-          ? 'Preview queued'
-          : `Preview ${status.toLowerCase()}`;
-    const color = status === 'FAILED'
-      ? 'error'
-      : status === 'PROCESSING'
-        ? 'warning'
-        : status === 'QUEUED'
-          ? 'info'
-          : 'default';
+    const normalized = status || 'PENDING';
+    const label = normalized === 'READY'
+      ? 'Preview ready'
+      : normalized === 'FAILED'
+        ? 'Preview failed'
+        : normalized === 'PROCESSING'
+          ? 'Preview processing'
+          : normalized === 'QUEUED'
+            ? 'Preview queued'
+            : 'Preview pending';
+    const color = normalized === 'READY'
+      ? 'success'
+      : normalized === 'FAILED'
+        ? 'error'
+        : normalized === 'PROCESSING'
+          ? 'warning'
+          : normalized === 'QUEUED'
+            ? 'info'
+            : 'default';
     return (
       <Tooltip
         title={node.previewFailureReason || ''}
@@ -842,15 +852,54 @@ const SearchResults: React.FC = () => {
     selectedCreators.length > 0 ||
     selectedCorrespondents.length > 0 ||
     selectedTags.length > 0 ||
-    selectedCategories.length > 0;
+    selectedCategories.length > 0 ||
+    selectedPreviewStatuses.length > 0;
 
   const hasActiveCriteria = isSimilarMode
     || Boolean((lastSearchCriteria?.name || '').trim())
     || filtersApplied;
   const shouldShowFallback = !isSimilarMode && !loading && nodes.length === 0 && fallbackNodes.length > 0 && hasActiveCriteria;
   const displayNodes = isSimilarMode ? (similarResults || []) : (shouldShowFallback ? fallbackNodes : nodes);
-  const paginatedNodes = displayNodes.filter((node) => !hiddenNodeIds.includes(node.id));
-  const displayTotal = isSimilarMode ? paginatedNodes.length : nodesTotal;
+  const previewStatusCounts = displayNodes.reduce(
+    (acc, node) => {
+      if (node.nodeType === 'FOLDER') {
+        acc.folders += 1;
+        return acc;
+      }
+      const status = node.previewStatus?.toUpperCase() || 'PENDING';
+      if (status in acc) {
+        acc[status as keyof typeof acc] += 1;
+      } else {
+        acc.other += 1;
+      }
+      return acc;
+    },
+    {
+      READY: 0,
+      PROCESSING: 0,
+      QUEUED: 0,
+      FAILED: 0,
+      PENDING: 0,
+      other: 0,
+      folders: 0,
+    }
+  );
+  const previewStatusFilterApplied = selectedPreviewStatuses.length > 0;
+  const statusFilteredNodes = previewStatusFilterApplied
+    ? displayNodes.filter((node) => {
+        if (node.nodeType === 'FOLDER') {
+          return false;
+        }
+        const status = node.previewStatus?.toUpperCase() || 'PENDING';
+        return selectedPreviewStatuses.includes(status);
+      })
+    : displayNodes;
+  const paginatedNodes = statusFilteredNodes.filter((node) => !hiddenNodeIds.includes(node.id));
+  const displayTotal = isSimilarMode
+    ? paginatedNodes.length
+    : previewStatusFilterApplied
+      ? statusFilteredNodes.length
+      : nodesTotal;
   const totalPages = Math.max(1, Math.ceil(displayTotal / pageSize));
   const spellcheckQuery = (lastSearchCriteria?.name || '').trim();
   const normalizedSpellcheckQuery = spellcheckQuery.toLowerCase();
@@ -1000,6 +1049,31 @@ const SearchResults: React.FC = () => {
                 ))}
               </Select>
             </FormControl>
+
+            <Typography variant="subtitle2" gutterBottom>
+              Preview Status
+            </Typography>
+            <Box display="flex" flexWrap="wrap" gap={1} mb={2}>
+              {[
+                { value: 'READY', label: 'Ready', color: 'success' as const, count: previewStatusCounts.READY },
+                { value: 'PROCESSING', label: 'Processing', color: 'warning' as const, count: previewStatusCounts.PROCESSING },
+                { value: 'QUEUED', label: 'Queued', color: 'info' as const, count: previewStatusCounts.QUEUED },
+                { value: 'FAILED', label: 'Failed', color: 'error' as const, count: previewStatusCounts.FAILED },
+                { value: 'PENDING', label: 'Pending', color: 'default' as const, count: previewStatusCounts.PENDING },
+              ].map((status) => (
+                <Chip
+                  key={status.value}
+                  label={`${status.label} (${status.count})`}
+                  size="small"
+                  color={selectedPreviewStatuses.includes(status.value) ? status.color : 'default'}
+                  variant={selectedPreviewStatuses.includes(status.value) ? 'filled' : 'outlined'}
+                  onClick={() => togglePreviewStatus(status.value)}
+                />
+              ))}
+              <Button size="small" disabled={selectedPreviewStatuses.length === 0} onClick={() => setSelectedPreviewStatuses([])}>
+                Clear
+              </Button>
+            </Box>
 
             <Typography variant="subtitle2" gutterBottom>
               Created By
@@ -1266,6 +1340,14 @@ const SearchResults: React.FC = () => {
                   label={`Category: ${value}`}
                   size="small"
                   onDelete={() => removeFacetValue(setSelectedCategories, value)}
+                />
+              ))}
+              {selectedPreviewStatuses.map((value) => (
+                <Chip
+                  key={`preview-${value}`}
+                  label={`Preview: ${value.toLowerCase()}`}
+                  size="small"
+                  onDelete={() => removeFacetValue(setSelectedPreviewStatuses, value)}
                 />
               ))}
               <Button size="small" onClick={clearFacetFilters}>

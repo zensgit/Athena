@@ -26,6 +26,8 @@ import {
   CircularProgress,
   Tabs,
   Tab,
+  Divider,
+  Chip,
 } from '@mui/material';
 import {
   Close,
@@ -33,6 +35,7 @@ import {
   Group,
   Add,
   Delete,
+  ContentCopy,
 } from '@mui/icons-material';
 import { PermissionType } from 'types';
 import { useAppDispatch, useAppSelector } from 'store';
@@ -100,6 +103,7 @@ const PermissionsDialog: React.FC = () => {
   const [newPrincipal, setNewPrincipal] = useState('');
   const [availableUsers, setAvailableUsers] = useState<string[]>([]);
   const [availableGroups, setAvailableGroups] = useState<string[]>([]);
+  const [nodePath, setNodePath] = useState<string>('');
 
   const loadPermissions = useCallback(async () => {
     if (!selectedNodeId) return;
@@ -131,6 +135,7 @@ const PermissionsDialog: React.FC = () => {
       // Load current inherit flag from node
       const node = await nodeService.getNode(selectedNodeId);
       setInheritPermissions(node.inheritPermissions ?? true);
+      setNodePath(node.path || '');
     } catch (error) {
       toast.error('Failed to load permissions');
     } finally {
@@ -173,6 +178,25 @@ const PermissionsDialog: React.FC = () => {
     setTabValue(0);
     setPermissions([]);
     setNewPrincipal('');
+    setNodePath('');
+  };
+
+  const handleCopyAcl = async () => {
+    const lines = permissions.map((entry) => {
+      const principal = entry.principal.replace('GROUP_', '');
+      const type = entry.principalType.toUpperCase();
+      const granted = Object.keys(entry.permissions)
+        .filter((perm) => entry.permissions[perm as PermissionType])
+        .join(', ');
+      return `${principal}\t${type}\t${granted || '-'}`;
+    });
+    const header = `Inherit: ${inheritPermissions ? 'true' : 'false'}`;
+    try {
+      await navigator.clipboard.writeText([header, ...lines].join('\n'));
+      toast.success('ACL copied to clipboard');
+    } catch {
+      toast.error('Failed to copy ACL');
+    }
   };
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
@@ -318,6 +342,7 @@ const PermissionsDialog: React.FC = () => {
   };
 
   const permissionSetOptions = Object.keys(permissionSets).sort();
+  const inheritanceChain = nodePath.split('/').filter(Boolean);
 
   const renderPermissionsTable = (entries: PermissionEntry[]) => (
     <TableContainer component={Paper} variant="outlined">
@@ -422,6 +447,38 @@ const PermissionsDialog: React.FC = () => {
         </IconButton>
       </DialogTitle>
       <DialogContent>
+        <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
+          <Box>
+            <Typography variant="subtitle2">Inheritance path</Typography>
+            {inheritanceChain.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">
+                Path unavailable
+              </Typography>
+            ) : (
+              <Box display="flex" flexWrap="wrap" gap={0.5} mt={0.5}>
+                {inheritanceChain.map((segment, index) => (
+                  <Box key={`${segment}-${index}`} display="flex" alignItems="center" gap={0.5}>
+                    <Chip label={segment} size="small" variant="outlined" />
+                    {index < inheritanceChain.length - 1 && (
+                      <Typography variant="caption" color="text.secondary">
+                        /
+                      </Typography>
+                    )}
+                  </Box>
+                ))}
+              </Box>
+            )}
+          </Box>
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<ContentCopy />}
+            onClick={handleCopyAcl}
+          >
+            Copy ACL
+          </Button>
+        </Box>
+        <Divider sx={{ mb: 2 }} />
         <FormControlLabel
           control={
             <Switch

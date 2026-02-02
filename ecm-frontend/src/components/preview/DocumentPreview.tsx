@@ -19,6 +19,7 @@ import {
   Tooltip,
   Skeleton,
   Chip,
+  Alert,
 } from '@mui/material';
 import {
   Close,
@@ -277,6 +278,8 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   const previewStatusLabel = resolvedPreviewStatus
     ? `Preview: ${resolvedPreviewStatus.charAt(0).toUpperCase()}${resolvedPreviewStatus.slice(1).toLowerCase()}`
     : null;
+  const previewPollIntervalMs = 15000;
+  const shouldPollPreview = resolvedPreviewStatus === 'PROCESSING' || resolvedPreviewStatus === 'QUEUED';
   const previewStatusColor = (() => {
     switch (resolvedPreviewStatus) {
       case 'READY':
@@ -349,6 +352,16 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
       setQueueingPreview(false);
     }
   }, [nodeId]);
+
+  useEffect(() => {
+    if (!open || !nodeId || !shouldPollPreview) {
+      return undefined;
+    }
+    const interval = window.setInterval(() => {
+      void loadServerPreview();
+    }, previewPollIntervalMs);
+    return () => window.clearInterval(interval);
+  }, [loadServerPreview, nodeId, open, shouldPollPreview]);
 
   useEffect(() => {
     if (!open || !nodeId) {
@@ -1552,6 +1565,42 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
           flexDirection: 'column',
         }}
       >
+        {(shouldPollPreview || resolvedPreviewStatus === 'FAILED') && (
+          <Box sx={{ p: 2, bgcolor: 'background.paper', borderBottom: '1px solid', borderColor: 'divider' }}>
+            {shouldPollPreview && (
+              <Alert severity="info" sx={{ mb: 1 }}>
+                Preview generation is in progress. Status updates every {previewPollIntervalMs / 1000}s.
+              </Alert>
+            )}
+            {resolvedPreviewStatus === 'FAILED' && (
+              <Alert
+                severity="warning"
+                action={(
+                  <Box display="flex" gap={1} flexWrap="wrap">
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => handleQueuePreview(false)}
+                      disabled={queueingPreview}
+                    >
+                      Retry preview
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => handleQueuePreview(true)}
+                      disabled={queueingPreview}
+                    >
+                      Force rebuild
+                    </Button>
+                  </Box>
+                )}
+              >
+                Preview failed. Retry generation or force a rebuild if the file recently changed.
+              </Alert>
+            )}
+          </Box>
+        )}
         {renderPreview()}
       </DialogContent>
 
