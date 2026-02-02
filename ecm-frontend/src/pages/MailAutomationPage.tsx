@@ -125,6 +125,7 @@ const MailAutomationPage: React.FC = () => {
   const [folderAccountId, setFolderAccountId] = useState('');
   const [listingFolders, setListingFolders] = useState(false);
   const [availableFolders, setAvailableFolders] = useState<string[]>([]);
+  const [hasListedFolders, setHasListedFolders] = useState(false);
   const [diagnostics, setDiagnostics] = useState<MailDiagnosticsResult | null>(null);
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
   const [diagnosticsAccountId, setDiagnosticsAccountId] = useState('');
@@ -342,6 +343,11 @@ const MailAutomationPage: React.FC = () => {
       setFolderAccountId(accounts[0].id);
     }
   }, [accounts, folderAccountId]);
+
+  useEffect(() => {
+    setAvailableFolders([]);
+    setHasListedFolders(false);
+  }, [folderAccountId]);
 
   useEffect(() => {
     try {
@@ -571,8 +577,10 @@ const MailAutomationPage: React.FC = () => {
     try {
       const folders = await mailAutomationService.listFolders(folderAccountId);
       setAvailableFolders(folders);
+      setHasListedFolders(true);
       toast.success(`Found ${folders.length} folders`);
     } catch {
+      setHasListedFolders(false);
       toast.error('Failed to list folders');
     } finally {
       setListingFolders(false);
@@ -1042,16 +1050,22 @@ const MailAutomationPage: React.FC = () => {
                 </Typography>
               </Box>
 
-              {availableFolders.length > 0 && (
+              {(availableFolders.length > 0 || hasListedFolders) && (
                 <Box sx={{ mb: 2 }}>
                   <Typography variant="caption" color="text.secondary">
                     Available folders ({availableFolders.length})
                   </Typography>
-                  <Stack direction="row" spacing={1} sx={{ mt: 0.5, flexWrap: 'wrap', gap: 1 }}>
-                    {availableFolders.slice(0, 40).map((folder) => (
-                      <Chip key={`folder-${folder}`} size="small" variant="outlined" label={folder} />
-                    ))}
-                  </Stack>
+                  {availableFolders.length > 0 ? (
+                    <Stack direction="row" spacing={1} sx={{ mt: 0.5, flexWrap: 'wrap', gap: 1 }}>
+                      {availableFolders.slice(0, 40).map((folder) => (
+                        <Chip key={`folder-${folder}`} size="small" variant="outlined" label={folder} />
+                      ))}
+                    </Stack>
+                  ) : (
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                      No folders returned for this account. Try again or verify the mailbox permissions.
+                    </Typography>
+                  )}
                 </Box>
               )}
 
