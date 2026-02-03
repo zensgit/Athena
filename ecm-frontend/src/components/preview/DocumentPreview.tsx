@@ -40,6 +40,7 @@ import {
   Refresh,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
+import { format } from 'date-fns';
 import { Node, PdfAnnotation, PdfAnnotationState } from 'types';
 import { useAppSelector } from 'store';
 import apiService from 'services/api';
@@ -1643,8 +1644,31 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                   </Box>
                 )}
               >
-                Preview failed. Retry generation or force a rebuild if the file recently changed.
+                {resolvedPreviewFailure
+                  ? `Preview failed: ${resolvedPreviewFailure}`
+                  : 'Preview failed. Retry generation or force a rebuild if the file recently changed.'}
               </Alert>
+            )}
+            {(previewQueueStatus?.attempts
+              || previewQueueStatus?.nextAttemptAt
+              || serverPreviewError) && (
+              <Box mt={1}>
+                {previewQueueStatus?.attempts !== undefined && (
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    Attempts: {previewQueueStatus.attempts}
+                  </Typography>
+                )}
+                {previewQueueStatus?.nextAttemptAt && (
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    Next retry: {format(new Date(previewQueueStatus.nextAttemptAt), 'PPp')}
+                  </Typography>
+                )}
+                {serverPreviewError && (
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    Server preview error: {serverPreviewError}
+                  </Typography>
+                )}
+              </Box>
             )}
           </Box>
         )}
