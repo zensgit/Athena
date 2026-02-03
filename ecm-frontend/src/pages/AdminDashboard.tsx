@@ -813,10 +813,13 @@ const AdminDashboard: React.FC = () => {
           ) : mailFetchSummary?.summary ? (
             <>
               {(mailFetchSummary.summary.accountErrors > 0 || mailFetchSummary.summary.errorMessages > 0) && (
-                <Box mb={1}>
+                <Box mb={1} display="flex" alignItems="center" gap={1} flexWrap="wrap">
                   <Typography variant="body2" color="error">
                     Attention: errors detected in the last mail fetch run.
                   </Typography>
+                  <Button variant="outlined" size="small" onClick={() => navigate('/admin/mail')}>
+                    Open diagnostics
+                  </Button>
                 </Box>
               )}
               <Box display="flex" gap={1} flexWrap="wrap" mb={1}>
