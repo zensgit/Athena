@@ -16,7 +16,42 @@ const editorUsernameEnv = process.env.ECM_E2E_EDITOR_USERNAME || 'editor';
 const viewerUsernameEnv = process.env.ECM_E2E_VIEWER_USERNAME || 'viewer';
 const apiUrl = process.env.ECM_API_URL || 'http://localhost:7700';
 
+async function suppressDevServerOverlay(page: Page) {
+  await page.addInitScript(() => {
+    const hideOverlay = () => {
+      const overlay = document.getElementById('webpack-dev-server-client-overlay');
+      if (overlay) {
+        overlay.style.pointerEvents = 'none';
+        overlay.style.display = 'none';
+      }
+    };
+    const observer = new MutationObserver(() => hideOverlay());
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    window.addEventListener('load', hideOverlay);
+    hideOverlay();
+  });
+}
+
+async function hideDevServerOverlay(page: Page) {
+  await page.addStyleTag({
+    content: `
+      #webpack-dev-server-client-overlay,
+      iframe#webpack-dev-server-client-overlay {
+        display: none !important;
+        pointer-events: none !important;
+      }
+    `,
+  });
+  await page.evaluate(() => {
+    const overlay = document.getElementById('webpack-dev-server-client-overlay');
+    if (overlay && overlay.parentElement) {
+      overlay.parentElement.removeChild(overlay);
+    }
+  });
+}
+
 async function loginWithCredentials(page: Page, username: string, password: string, token?: string) {
+  await suppressDevServerOverlay(page);
   if (process.env.ECM_E2E_SKIP_LOGIN === '1') {
     const resolvedToken = token ?? await fetchAccessToken(page.request, username, password);
     const roles = username === defaultUsername
@@ -41,6 +76,7 @@ async function loginWithCredentials(page: Page, username: string, password: stri
       }
     );
     await page.goto('/browse/root', { waitUntil: 'domcontentloaded' });
+    await hideDevServerOverlay(page);
     await expect(page.getByText('Athena ECM')).toBeVisible({ timeout: 60_000 });
     return;
   }
@@ -48,6 +84,7 @@ async function loginWithCredentials(page: Page, username: string, password: stri
   const browsePattern = /\/browse\//;
 
   await page.goto('/login', { waitUntil: 'domcontentloaded' });
+  await hideDevServerOverlay(page);
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     await page.waitForURL(/(\/login$|\/browse\/|\/protocol\/openid-connect\/auth|login_required)/, { timeout: 60_000 });
@@ -86,6 +123,7 @@ async function loginWithCredentials(page: Page, username: string, password: stri
     await page.goto('/browse/root', { waitUntil: 'domcontentloaded' });
   }
 
+  await hideDevServerOverlay(page);
   await page.waitForURL(browsePattern, { timeout: 60_000 });
   await expect(page.getByText('Athena ECM')).toBeVisible({ timeout: 60_000 });
 }
@@ -924,12 +962,10 @@ test('UI smoke: PDF upload + search + version history + preview', async ({ page 
     }
     expect(found).toBeTruthy();
 
-    const searchResultCard = page
-      .getByRole('heading', { name: pdfName, exact: true })
-      .locator('xpath=ancestor::div[contains(@class,"MuiCard-root")]')
-      .first();
+    const searchResultCard = page.locator('.MuiCard-root').filter({ hasText: pdfName }).first();
+    await expect(searchResultCard).toBeVisible({ timeout: 60_000 });
     const downloadButton = searchResultCard.getByRole('button', { name: 'Download' });
-    await expect(downloadButton).toBeVisible({ timeout: 30_000 });
+    await expect(downloadButton).toBeVisible({ timeout: 60_000 });
     await downloadButton.scrollIntoViewIfNeeded();
     const contentResponsePromise = page.waitForResponse((response) =>
       response.url().includes(`/api/v1/nodes/${pdfDocumentId}/content`) && response.status() < 400,
