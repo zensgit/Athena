@@ -194,6 +194,7 @@ const AdminDashboard: React.FC = () => {
   const [mailFetchSummary, setMailFetchSummary] = useState<MailFetchSummaryStatus | null>(null);
   const [mailFetchSummaryLoading, setMailFetchSummaryLoading] = useState(false);
   const [mailFetchSummaryError, setMailFetchSummaryError] = useState<string | null>(null);
+  const [mailFetchTriggering, setMailFetchTriggering] = useState(false);
   const [retentionInfo, setRetentionInfo] = useState<AuditRetentionInfo | null>(null);
   const [exportingAudit, setExportingAudit] = useState(false);
   const [cleaningAudit, setCleaningAudit] = useState(false);
@@ -393,6 +394,22 @@ const AdminDashboard: React.FC = () => {
       setMailFetchSummaryError('Failed to load mail fetch summary');
     } finally {
       setMailFetchSummaryLoading(false);
+    }
+  };
+
+  const handleTriggerMailFetch = async () => {
+    if (mailFetchTriggering) {
+      return;
+    }
+    setMailFetchTriggering(true);
+    try {
+      await mailAutomationService.triggerFetch();
+      toast.success('Mail fetch triggered');
+      await fetchMailFetchSummary();
+    } catch {
+      toast.error('Failed to trigger mail fetch');
+    } finally {
+      setMailFetchTriggering(false);
     }
   };
 
@@ -786,8 +803,17 @@ const AdminDashboard: React.FC = () => {
               </Typography>
             </Box>
             <Box display="flex" alignItems="center" gap={1}>
-              <Button variant="outlined" size="small" onClick={() => navigate('/admin/mail')}>
+              <Button variant="outlined" size="small" onClick={() => navigate('/admin/mail#diagnostics')}>
                 Open
+              </Button>
+              <Button
+                variant="contained"
+                size="small"
+                startIcon={mailFetchTriggering ? <CircularProgress size={14} /> : <PlayArrow fontSize="small" />}
+                onClick={handleTriggerMailFetch}
+                disabled={mailFetchTriggering}
+              >
+                Trigger Fetch
               </Button>
               <IconButton
                 size="small"
@@ -817,7 +843,7 @@ const AdminDashboard: React.FC = () => {
                   <Typography variant="body2" color="error">
                     Attention: errors detected in the last mail fetch run.
                   </Typography>
-                  <Button variant="outlined" size="small" onClick={() => navigate('/admin/mail')}>
+                  <Button variant="outlined" size="small" onClick={() => navigate('/admin/mail#diagnostics')}>
                     Open diagnostics
                   </Button>
                 </Box>

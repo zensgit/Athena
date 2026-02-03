@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Box,
   Button,
@@ -141,6 +141,7 @@ const MailAutomationPage: React.FC = () => {
   const [connectingAccountId, setConnectingAccountId] = useState<string | null>(null);
   const [lastFetchSummary, setLastFetchSummary] = useState<MailFetchSummary | null>(null);
   const [lastFetchAt, setLastFetchAt] = useState<string | null>(null);
+  const diagnosticsRef = useRef<HTMLDivElement | null>(null);
   const [exportOptions, setExportOptions] = useState(() => {
     const fallback = {
       includeProcessed: true,
@@ -343,6 +344,18 @@ const MailAutomationPage: React.FC = () => {
     navigate('/admin/mail', { replace: true });
     loadAll({ silent: true });
   }, [location.search, navigate, loadAll]);
+
+  useEffect(() => {
+    if (loading) {
+      return;
+    }
+    if (location.hash === '#diagnostics') {
+      const target = diagnosticsRef.current;
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+  }, [location.hash, loading]);
 
   useEffect(() => {
     loadDiagnostics({ silent: true });
@@ -998,8 +1011,9 @@ const MailAutomationPage: React.FC = () => {
         </Box>
       ) : (
         <Stack spacing={3}>
-          <Card variant="outlined">
-            <CardContent>
+          <Box ref={diagnosticsRef} id="diagnostics">
+            <Card variant="outlined">
+              <CardContent>
               <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
                 <Typography variant="h6">Fetch Diagnostics (Dry Run)</Typography>
                 <Stack direction="row" spacing={1}>
@@ -1259,8 +1273,9 @@ const MailAutomationPage: React.FC = () => {
                   Run a dry-run diagnostics pass to see skip reasons and match coverage without ingesting mail.
                 </Typography>
               )}
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </Box>
 
           <Card variant="outlined">
             <CardContent>
