@@ -168,13 +168,15 @@ public class SearchController {
     @Operation(summary = "Index single document",
                description = "Add or update a single document in the search index")
     public ResponseEntity<Map<String, Object>> indexDocument(
-            @PathVariable String documentId) {
+            @PathVariable String documentId,
+            @RequestParam(defaultValue = "false") boolean refresh) {
 
         try {
-            searchIndexService.indexDocument(documentId);
+            searchIndexService.indexDocument(documentId, refresh);
             return ResponseEntity.ok(Map.of(
                 "status", "success",
                 "documentId", documentId,
+                "refreshed", refresh,
                 "message", "Document indexed successfully"
             ));
         } catch (Exception e) {
@@ -184,6 +186,23 @@ public class SearchController {
                 "message", e.getMessage()
             ));
         }
+    }
+
+    @PostMapping("/index/query")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('EDITOR')")
+    @Operation(summary = "Index documents by name",
+               description = "Re-index documents whose names contain the provided query text")
+    public ResponseEntity<Map<String, Object>> indexByQuery(
+            @RequestParam String q,
+            @RequestParam(defaultValue = "50") int limit,
+            @RequestParam(defaultValue = "false") boolean refresh) {
+        int indexed = searchIndexService.indexDocumentsByName(q, limit, refresh);
+        return ResponseEntity.ok(Map.of(
+            "status", "success",
+            "query", q,
+            "indexed", indexed,
+            "refreshed", refresh
+        ));
     }
 
     @GetMapping("/index/{documentId}/status")

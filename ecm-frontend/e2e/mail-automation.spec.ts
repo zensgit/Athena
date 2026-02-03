@@ -5,7 +5,25 @@ const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
 const apiUrl = process.env.ECM_API_URL || 'http://localhost:7700';
 
-async function loginWithCredentials(page: Page, username: string, password: string) {
+async function loginWithCredentials(page: Page, username: string, password: string, token?: string) {
+  if (process.env.ECM_E2E_SKIP_LOGIN === '1' && token) {
+    await page.addInitScript(
+      ({ authToken, authUser }) => {
+        window.localStorage.setItem('token', authToken);
+        window.localStorage.setItem('user', JSON.stringify(authUser));
+      },
+      {
+        authToken: token,
+        authUser: {
+          id: `e2e-${username}`,
+          username,
+          email: `${username}@example.com`,
+          roles: username === 'admin' ? ['ROLE_ADMIN'] : ['ROLE_VIEWER'],
+        },
+      }
+    );
+    return;
+  }
   const authPattern = /\/protocol\/openid-connect\/auth/;
   const browsePattern = /\/browse\//;
 
@@ -69,12 +87,18 @@ test('Mail automation test connection and fetch summary', async ({ page, request
     (account) => account.security === 'OAUTH2' && account.oauthEnvConfigured === false,
   );
 
-  await loginWithCredentials(page, defaultUsername, defaultPassword);
+  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
   await page.goto('/admin/mail', { waitUntil: 'domcontentloaded' });
   await page.waitForURL(/\/admin\/mail/, { timeout: 60_000 });
 
   const heading = page.getByRole('heading', { name: /mail automation/i });
   await expect(heading).toBeVisible({ timeout: 60_000 });
+
+  const summarySection = page
+    .getByRole('heading', { name: /connection summary/i })
+    .locator('xpath=ancestor::div[contains(@class,"MuiCardContent-root")]');
+  await expect(summarySection).toBeVisible({ timeout: 60_000 });
+  await expect(summarySection.getByRole('button', { name: /test connection/i })).toBeVisible({ timeout: 30_000 });
 
   const oauthMissingChip = page.getByText(/OAuth env missing/i);
   if (hasOauthMissing) {
@@ -124,7 +148,7 @@ test('Mail automation lists folders and shows folder helper text', async ({ page
   test.skip(!rules.length, 'No mail rules configured');
   const ruleName = rules[0].name;
 
-  await loginWithCredentials(page, defaultUsername, defaultPassword);
+  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
   await page.goto('/admin/mail', { waitUntil: 'domcontentloaded' });
   await page.waitForURL(/\/admin\/mail/, { timeout: 60_000 });
 

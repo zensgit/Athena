@@ -4,6 +4,7 @@ import com.ecm.core.search.FacetedSearchService;
 import com.ecm.core.search.FullTextSearchService;
 import com.ecm.core.search.SearchIndexService;
 import com.ecm.core.search.SearchResult;
+import com.ecm.core.service.SecurityService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -47,6 +48,9 @@ class SearchControllerSecurityTest {
 
     @MockBean
     private FacetedSearchService facetedSearchService;
+
+    @MockBean
+    private SecurityService securityService;
 
     @Configuration
     @EnableWebSecurity

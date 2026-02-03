@@ -6,7 +6,26 @@ const baseUiUrl = process.env.ECM_UI_URL || 'http://localhost:5500';
 const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
 
-async function loginWithCredentials(page: Page, username: string, password: string) {
+async function loginWithCredentials(page: Page, username: string, password: string, token?: string) {
+  if (process.env.ECM_E2E_SKIP_LOGIN === '1') {
+    const resolvedToken = token ?? await fetchAccessToken(page.request, username, password);
+    await page.addInitScript(
+      ({ authToken, authUser }) => {
+        window.localStorage.setItem('token', authToken);
+        window.localStorage.setItem('user', JSON.stringify(authUser));
+      },
+      {
+        authToken: resolvedToken,
+        authUser: {
+          id: `e2e-${username}`,
+          username,
+          email: `${username}@example.com`,
+          roles: ['ROLE_ADMIN'],
+        },
+      }
+    );
+    return;
+  }
   const authPattern = /\/protocol\/openid-connect\/auth/;
   const browsePattern = /\/browse\//;
 
@@ -81,7 +100,7 @@ test('Permissions dialog shows inheritance path and copy ACL action', async ({ p
   const folderName = `e2e-permissions-${Date.now()}`;
   const folderId = await createFolder(request, documentsId, folderName, token);
 
-  await loginWithCredentials(page, defaultUsername, defaultPassword);
+  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
   await page.goto(`${baseUiUrl}/browse/${documentsId}`, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'list view' }).click();
 

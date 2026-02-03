@@ -3,6 +3,7 @@ import {
   fetchAccessToken,
   findChildFolderId,
   getRootFolderId,
+  reindexByQuery,
   waitForApiReady,
   waitForSearchIndex,
 } from './helpers/api';
@@ -149,6 +150,7 @@ async function uploadDocument(
   }
 
   const indexRes = await request.post(`${baseApiUrl}/api/v1/search/index/${documentId}`, {
+    params: { refresh: true },
     headers: { Authorization: `Bearer ${token}` },
   });
   expect(indexRes.ok()).toBeTruthy();
@@ -214,6 +216,7 @@ test('Search results view opens preview for documents', async ({ page, request }
   if (!indexed) {
     console.log(`Index status not ready for ${documentId}; falling back to search polling`);
   }
+  await reindexByQuery(request, filename, apiToken, { apiUrl: baseApiUrl, limit: 5, refresh: true });
   await waitForSearchIndex(request, filename, apiToken, { apiUrl: baseApiUrl, maxAttempts: 60 });
 
   await loginWithCredentials(page, defaultUsername, defaultPassword, apiToken);
@@ -266,6 +269,7 @@ test('Search results hide unauthorized documents for viewer', async ({ page, req
     permissionType: 'READ',
     allowed: false,
   });
+  await reindexByQuery(request, filename, apiToken, { apiUrl: baseApiUrl, limit: 5, refresh: true });
 
   const viewerToken = await fetchAccessToken(request, viewerUsername, viewerPassword);
   await loginWithCredentials(page, viewerUsername, viewerPassword, viewerToken);

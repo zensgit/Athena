@@ -297,6 +297,48 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         return 'default';
     }
   })();
+  const previewSource = (() => {
+    if (officeDocument) {
+      return canWrite ? 'Online editor' : 'Online viewer';
+    }
+    if (effectiveContentType === 'application/pdf') {
+      return serverPreview ? 'Server preview' : 'PDF viewer';
+    }
+    if (effectiveContentType?.startsWith('image/')) {
+      return 'Image preview';
+    }
+    if (effectiveContentType?.startsWith('text/')) {
+      return 'Text preview';
+    }
+    if (fileUrl) {
+      return 'File preview';
+    }
+    return 'Preview';
+  })();
+  const previewSourceDetail = (() => {
+    if (officeDocument) {
+      return canWrite ? 'WOPI edit session' : 'WOPI view session';
+    }
+    if (effectiveContentType === 'application/pdf' && serverPreview) {
+      if (emptyPdf) {
+        return 'Fallback: empty PDF';
+      }
+      if (pdfLoadFailed) {
+        return 'Fallback: client PDF failed';
+      }
+      if (serverPreview.failureReason) {
+        return `Fallback: ${serverPreview.failureReason}`;
+      }
+      if (serverPreview.message) {
+        return `Fallback: ${serverPreview.message}`;
+      }
+      return 'Server-rendered preview';
+    }
+    if (effectiveContentType === 'application/pdf') {
+      return 'Client-side PDF viewer';
+    }
+    return null;
+  })();
 
   useEffect(() => {
     if (!open) {
@@ -1345,6 +1387,16 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                 variant="outlined"
                 label={previewStatusLabel}
                 color={previewStatusColor}
+                sx={{ mr: 2 }}
+              />
+            </Tooltip>
+          )}
+          {previewSource && (
+            <Tooltip title={previewSourceDetail ?? ''} arrow disableHoverListener={!previewSourceDetail}>
+              <Chip
+                size="small"
+                variant="outlined"
+                label={`Source: ${previewSource}`}
                 sx={{ mr: 2 }}
               />
             </Tooltip>

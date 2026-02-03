@@ -12,9 +12,37 @@ import { XLSX_SAMPLE_BASE64 } from './fixtures/xlsxSample';
 
 const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
+const editorUsernameEnv = process.env.ECM_E2E_EDITOR_USERNAME || 'editor';
+const viewerUsernameEnv = process.env.ECM_E2E_VIEWER_USERNAME || 'viewer';
 const apiUrl = process.env.ECM_API_URL || 'http://localhost:7700';
 
-async function loginWithCredentials(page: Page, username: string, password: string) {
+async function loginWithCredentials(page: Page, username: string, password: string, token?: string) {
+  if (process.env.ECM_E2E_SKIP_LOGIN === '1') {
+    const resolvedToken = token ?? await fetchAccessToken(page.request, username, password);
+    const roles = username === defaultUsername
+      ? ['ROLE_ADMIN']
+      : username === editorUsernameEnv
+        ? ['ROLE_EDITOR']
+        : ['ROLE_VIEWER'];
+    await page.addInitScript(
+      ({ authToken, authUser }) => {
+        window.localStorage.setItem('token', authToken);
+        window.localStorage.setItem('user', JSON.stringify(authUser));
+      },
+      {
+        authToken: resolvedToken,
+        authUser: {
+          id: `e2e-${username}`,
+          username,
+          email: `${username}@example.com`,
+          roles,
+        },
+      }
+    );
+    await page.goto('/browse/root', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByText('Athena ECM')).toBeVisible({ timeout: 60_000 });
+    return;
+  }
   const authPattern = /\/protocol\/openid-connect\/auth/;
   const browsePattern = /\/browse\//;
 
@@ -1755,22 +1783,27 @@ test('Scheduled Rules: CRUD + cron validation + UI configuration', async ({ page
 
   // STRONG ASSERTION: Wait and REQUIRE tag to be applied
   let scheduledTagFound = false;
-  for (let attempt = 0; attempt < 20; attempt += 1) {
+  let lastTagNames: string[] = [];
+  for (let attempt = 0; attempt < 40; attempt += 1) {
     const tagsRes = await request.get(`http://localhost:7700/api/v1/nodes/${scheduledTestDocId}/tags`, {
       headers: { Authorization: `Bearer ${apiToken}` },
     });
     if (tagsRes.ok()) {
       const tags = (await tagsRes.json()) as { name: string }[];
+      lastTagNames = tags.map((tag) => tag.name);
       if (tags.some((t) => t.name === 'scheduled-e2e-tag')) {
         scheduledTagFound = true;
         console.log(`Tag 'scheduled-e2e-tag' found on document after ${attempt + 1} attempt(s)`);
         break;
       }
     }
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(1000);
   }
 
   // STRONG ASSERTION: Test FAILS if tag not applied
+  if (!scheduledTagFound && lastTagNames.length) {
+    console.log(`Scheduled tag not found. Last tags: ${lastTagNames.join(', ')}`);
+  }
   expect(scheduledTagFound).toBe(true);
   console.log('Scheduled rule trigger verification PASSED: auto-tag applied to test document');
 

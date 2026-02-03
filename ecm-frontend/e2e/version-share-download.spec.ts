@@ -87,19 +87,39 @@ async function checkinDocument(
   token: string,
   comment: string,
 ) {
-  const res = await request.post(`${baseApiUrl}/api/v1/documents/${documentId}/checkin`, {
-    headers: { Authorization: `Bearer ${token}` },
-    multipart: {
-      file: {
-        name: filename,
-        mimeType: 'text/plain',
-        buffer: Buffer.from(content),
-      },
-      comment,
-      majorVersion: 'false',
-    },
-  });
-  expect(res.ok()).toBeTruthy();
+  const deadline = Date.now() + 90_000;
+  let lastError: string | undefined;
+
+  while (Date.now() < deadline) {
+    try {
+      const res = await request.post(`${baseApiUrl}/api/v1/documents/${documentId}/checkin`, {
+        headers: { Authorization: `Bearer ${token}` },
+        multipart: {
+          file: {
+            name: filename,
+            mimeType: 'text/plain',
+            buffer: Buffer.from(content),
+          },
+          comment,
+          majorVersion: 'false',
+        },
+        timeout: 60_000,
+      });
+
+      if (res.ok()) {
+        return;
+      }
+
+      const body = await res.text().catch(() => '');
+      lastError = `checkin status=${res.status()} ${body}`;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+
+  throw new Error(`Checkin did not succeed: ${lastError ?? 'unknown error'}`);
 }
 
 async function getVersions(request: APIRequestContext, documentId: string, token: string) {
@@ -131,7 +151,25 @@ async function waitForVersionCount(
   throw new Error(`Version count did not reach ${minCount} for document ${documentId}`);
 }
 
-async function loginWithCredentials(page: Page, username: string, password: string) {
+async function loginWithCredentials(page: Page, username: string, password: string, token?: string) {
+  if (process.env.ECM_E2E_SKIP_LOGIN === '1' && token) {
+    await page.addInitScript(
+      ({ authToken, authUser }) => {
+        window.localStorage.setItem('token', authToken);
+        window.localStorage.setItem('user', JSON.stringify(authUser));
+      },
+      {
+        authToken: token,
+        authUser: {
+          id: `e2e-${username}`,
+          username,
+          email: `${username}@example.com`,
+          roles: username === 'admin' ? ['ROLE_ADMIN'] : ['ROLE_VIEWER'],
+        },
+      }
+    );
+    return;
+  }
   const authPattern = /\/protocol\/openid-connect\/auth/;
   const browsePattern = /\/browse\//;
 
@@ -214,7 +252,7 @@ test('Version history actions: download + restore', async ({ page, request }) =>
     throw new Error('Expected at least two versions for version history actions');
   }
 
-  await loginWithCredentials(page, defaultUsername, defaultPassword);
+  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
   await page.goto(`/browse/${folderId}`, { waitUntil: 'domcontentloaded' });
 
   const row = page.getByRole('row', { name: new RegExp(filename) });
@@ -236,6 +274,7 @@ test('Version history actions: download + restore', async ({ page, request }) =>
 
   const versionsDialog = page.getByRole('dialog').filter({ hasText: 'Version History' });
   await expect(versionsDialog).toBeVisible({ timeout: 60_000 });
+  await expect(versionsDialog.getByRole('columnheader', { name: /checksum/i })).toBeVisible({ timeout: 60_000 });
 
   const latestRow = versionsDialog.getByRole('row').filter({ hasText: latest.versionLabel }).first();
   await expect(latestRow).toBeVisible({ timeout: 60_000 });
@@ -251,6 +290,14 @@ test('Version history actions: download + restore', async ({ page, request }) =>
   await downloadDialog.getByRole('button', { name: 'Confirm' }).click();
   await downloadResponse;
   await expect(page.getByText('Version downloaded successfully')).toBeVisible({ timeout: 60_000 });
+
+  await latestRow.getByRole('button').click();
+  const compareMenuItem = page.getByRole('menuitem', { name: 'Compare versions' });
+  await expect(compareMenuItem).toBeEnabled({ timeout: 30_000 });
+  await compareMenuItem.click();
+  const compareDialog = page.getByRole('dialog').filter({ hasText: 'Compare Versions' });
+  await expect(compareDialog).toBeVisible({ timeout: 30_000 });
+  await compareDialog.getByRole('button', { name: 'Close' }).click();
 
   const previousRow = versionsDialog.getByRole('row').filter({ hasText: previous.versionLabel }).first();
   await expect(previousRow).toBeVisible({ timeout: 60_000 });

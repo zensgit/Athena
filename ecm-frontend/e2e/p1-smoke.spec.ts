@@ -10,7 +10,25 @@ const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
 const apiUrl = process.env.ECM_API_URL || 'http://localhost:7700';
 
-async function loginWithCredentials(page: Page, username: string, password: string) {
+async function loginWithCredentials(page: Page, username: string, password: string, token?: string) {
+  if (process.env.ECM_E2E_SKIP_LOGIN === '1' && token) {
+    await page.addInitScript(
+      ({ authToken, authUser }) => {
+        window.localStorage.setItem('token', authToken);
+        window.localStorage.setItem('user', JSON.stringify(authUser));
+      },
+      {
+        authToken: token,
+        authUser: {
+          id: `e2e-${username}`,
+          username,
+          email: `${username}@example.com`,
+          roles: ['ROLE_ADMIN'],
+        },
+      }
+    );
+    return;
+  }
   const authPattern = /\/protocol\/openid-connect\/auth/;
   const browsePattern = /\/browse\//;
 
@@ -106,7 +124,7 @@ test('P1 smoke: spellcheck suggests corrected term', async ({ page, request }) =
 
   await waitForSearchIndex(request, filename, token, { apiUrl, maxAttempts: 20, delayMs: 2000 });
 
-  await loginWithCredentials(page, defaultUsername, defaultPassword);
+  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
   await page.goto('/search-results', { waitUntil: 'domcontentloaded' });
 
   const input = page.getByPlaceholder('Quick search by name...');
@@ -137,7 +155,7 @@ test('P1 smoke: mail rule preview dialog runs', async ({ page, request }) => {
   test.skip(!accounts.length || !rules.length, 'No mail accounts or rules configured');
 
   const rule = rules[0];
-  await loginWithCredentials(page, defaultUsername, defaultPassword);
+  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
   await page.goto('/admin/mail', { waitUntil: 'domcontentloaded' });
   await page.waitForURL(/\/admin\/mail/, { timeout: 60_000 });
 

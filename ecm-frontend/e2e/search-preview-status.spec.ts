@@ -12,7 +12,26 @@ const baseUiUrl = process.env.ECM_UI_URL || 'http://localhost:5500';
 const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
 
-async function loginWithCredentials(page: Page, username: string, password: string) {
+async function loginWithCredentials(page: Page, username: string, password: string, token?: string) {
+  if (process.env.ECM_E2E_SKIP_LOGIN === '1') {
+    const resolvedToken = token ?? await fetchAccessToken(page.request, username, password);
+    await page.addInitScript(
+      ({ authToken, authUser }) => {
+        window.localStorage.setItem('token', authToken);
+        window.localStorage.setItem('user', JSON.stringify(authUser));
+      },
+      {
+        authToken: resolvedToken,
+        authUser: {
+          id: `e2e-${username}`,
+          username,
+          email: `${username}@example.com`,
+          roles: ['ROLE_ADMIN'],
+        },
+      }
+    );
+    return;
+  }
   const authPattern = /\/protocol\/openid-connect\/auth/;
   const browsePattern = /\/browse\//;
 
@@ -119,7 +138,7 @@ test('Search preview status filters are visible and selectable', async ({ page, 
   expect(indexRes.ok()).toBeTruthy();
   await waitForSearchIndex(request, filename, token, { apiUrl: baseApiUrl, maxAttempts: 40 });
 
-  await loginWithCredentials(page, defaultUsername, defaultPassword);
+  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
   await page.goto(`${baseUiUrl}/search-results`, { waitUntil: 'domcontentloaded' });
 
   const quickSearchInput = page.getByPlaceholder('Quick search by name...');

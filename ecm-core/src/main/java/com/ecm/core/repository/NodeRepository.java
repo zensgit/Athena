@@ -143,4 +143,6 @@ public interface NodeRepository extends JpaRepository<Node, UUID>, JpaSpecificat
     // Folder helpers
     @Query("SELECT f FROM Folder f WHERE f.parent IS NULL AND f.deleted = false")
     List<Folder> findRootFolders();
+
+    Page<Node> findByNameContainingIgnoreCaseAndDeletedFalse(String name, Pageable pageable);
 }

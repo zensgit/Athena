@@ -52,6 +52,10 @@ const VersionHistoryDialog: React.FC = () => {
     type: 'download' | 'restore';
     version: Version;
   } | null>(null);
+  const [comparePair, setComparePair] = useState<{
+    current: Version;
+    previous: Version;
+  } | null>(null);
 
   const loadVersionHistory = useCallback(async () => {
     if (!selectedNodeId) return;
@@ -89,6 +93,14 @@ const VersionHistoryDialog: React.FC = () => {
 
   const handleCloseContextMenu = () => {
     setContextMenu(null);
+  };
+
+  const getPreviousVersion = (version: Version) => {
+    const index = versions.findIndex((item) => item.id === version.id);
+    if (index === -1) {
+      return null;
+    }
+    return versions[index + 1] ?? null;
   };
 
   const handleDownloadVersion = async (version: Version) => {
@@ -146,6 +158,16 @@ const VersionHistoryDialog: React.FC = () => {
     return `${sign}${formatFileSize(absDelta)}`;
   };
 
+  const formatHash = (hash?: string | null) => {
+    if (!hash) {
+      return '-';
+    }
+    if (hash.length <= 16) {
+      return hash;
+    }
+    return `${hash.slice(0, 12)}…${hash.slice(-4)}`;
+  };
+
   const renderVersionLabel = (version: Version, index: number) => {
     const hasDetails = Boolean(version.mimeType || version.contentHash || version.contentId || version.status);
     const label = (
@@ -179,6 +201,8 @@ const VersionHistoryDialog: React.FC = () => {
       </Tooltip>
     );
   };
+
+  const contextPrevious = contextMenu ? getPreviousVersion(contextMenu.version) : null;
 
   return (
     <Dialog
@@ -218,6 +242,7 @@ const VersionHistoryDialog: React.FC = () => {
                   <TableCell>Date</TableCell>
                   <TableCell>Created By</TableCell>
                   <TableCell>Size</TableCell>
+                  <TableCell>Checksum</TableCell>
                   <TableCell>
                     <Tooltip title="Delta shows the size change vs the previous version." placement="top" arrow>
                       <Box component="span">Delta</Box>
@@ -238,6 +263,15 @@ const VersionHistoryDialog: React.FC = () => {
                     </TableCell>
                     <TableCell>{version.creator}</TableCell>
                     <TableCell>{formatFileSize(version.size)}</TableCell>
+                    <TableCell>
+                      {version.contentHash ? (
+                        <Tooltip title={version.contentHash}>
+                          <Typography variant="body2">{formatHash(version.contentHash)}</Typography>
+                        </Tooltip>
+                      ) : (
+                        '-'
+                      )}
+                    </TableCell>
                     <TableCell>
                       <Typography variant="body2">
                         {formatSizeDelta(version, versions[index + 1])}
@@ -299,7 +333,15 @@ const VersionHistoryDialog: React.FC = () => {
             </ListItemIcon>
             <ListItemText>Restore to this version</ListItemText>
           </MenuItem>
-          <MenuItem disabled>
+          <MenuItem
+            disabled={!contextPrevious}
+            onClick={() => {
+              if (contextMenu && contextPrevious) {
+                setComparePair({ current: contextMenu.version, previous: contextPrevious });
+                handleCloseContextMenu();
+              }
+            }}
+          >
             <ListItemIcon>
               <Compare fontSize="small" />
             </ListItemIcon>
@@ -331,6 +373,70 @@ const VersionHistoryDialog: React.FC = () => {
           <Button variant="contained" onClick={handleConfirmAction}>
             Confirm
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={comparePair !== null} onClose={() => setComparePair(null)} maxWidth="sm" fullWidth>
+        <DialogTitle>Compare Versions</DialogTitle>
+        <DialogContent>
+          {comparePair && (
+            <TableContainer component={Paper} variant="outlined">
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Field</TableCell>
+                    <TableCell>Current</TableCell>
+                    <TableCell>Previous</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  <TableRow>
+                    <TableCell>Version</TableCell>
+                    <TableCell>{comparePair.current.versionLabel}</TableCell>
+                    <TableCell>{comparePair.previous.versionLabel}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>Created</TableCell>
+                    <TableCell>{format(new Date(comparePair.current.created), 'PPp')}</TableCell>
+                    <TableCell>{format(new Date(comparePair.previous.created), 'PPp')}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>Creator</TableCell>
+                    <TableCell>{comparePair.current.creator}</TableCell>
+                    <TableCell>{comparePair.previous.creator}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>Size</TableCell>
+                    <TableCell>{formatFileSize(comparePair.current.size)}</TableCell>
+                    <TableCell>{formatFileSize(comparePair.previous.size)}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>Mime Type</TableCell>
+                    <TableCell>{comparePair.current.mimeType || '-'}</TableCell>
+                    <TableCell>{comparePair.previous.mimeType || '-'}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>Checksum</TableCell>
+                    <TableCell>{comparePair.current.contentHash || '-'}</TableCell>
+                    <TableCell>{comparePair.previous.contentHash || '-'}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>Content ID</TableCell>
+                    <TableCell>{comparePair.current.contentId || '-'}</TableCell>
+                    <TableCell>{comparePair.previous.contentId || '-'}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>Comment</TableCell>
+                    <TableCell>{comparePair.current.comment || '-'}</TableCell>
+                    <TableCell>{comparePair.previous.comment || '-'}</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setComparePair(null)}>Close</Button>
         </DialogActions>
       </Dialog>
     </Dialog>

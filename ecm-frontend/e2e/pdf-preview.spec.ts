@@ -3,6 +3,7 @@ import {
   fetchAccessToken,
   findChildFolderId,
   getRootFolderId,
+  reindexByQuery,
   waitForApiReady,
   waitForSearchIndex,
 } from './helpers/api';
@@ -13,7 +14,25 @@ const baseUiUrl = process.env.ECM_UI_URL || 'http://localhost:5500';
 const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
 
-async function loginWithCredentials(page: Page, username: string, password: string) {
+async function loginWithCredentials(page: Page, username: string, password: string, token?: string) {
+  if (process.env.ECM_E2E_SKIP_LOGIN === '1' && token) {
+    await page.addInitScript(
+      ({ authToken, authUser }) => {
+        window.localStorage.setItem('token', authToken);
+        window.localStorage.setItem('user', JSON.stringify(authUser));
+      },
+      {
+        authToken: token,
+        authUser: {
+          id: `e2e-${username}`,
+          username,
+          email: `${username}@example.com`,
+          roles: username === 'admin' ? ['ROLE_ADMIN'] : ['ROLE_VIEWER'],
+        },
+      }
+    );
+    return;
+  }
   const authPattern = /\/protocol\/openid-connect\/auth/;
   const browsePattern = /\/browse\//;
 
@@ -131,12 +150,14 @@ async function uploadPdf(
   }
 
   const indexRes = await request.post(`${baseApiUrl}/api/v1/search/index/${documentId}`, {
+    params: { refresh: true },
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!indexRes.ok()) {
     const body = await indexRes.text().catch(() => '');
     throw new Error(`Search index trigger failed (${indexRes.status()}): ${body}`);
   }
+  await reindexByQuery(request, filename, token, { apiUrl: baseApiUrl, limit: 5, refresh: true });
   return documentId;
 }
 
@@ -180,7 +201,7 @@ test('PDF preview shows dialog and controls', async ({ page, request }) => {
   }
   await waitForSearchIndex(request, filename, apiToken, { apiUrl: baseApiUrl, maxAttempts: 40 });
 
-  await loginWithCredentials(page, defaultUsername, defaultPassword);
+  await loginWithCredentials(page, defaultUsername, defaultPassword, apiToken);
   await waitForSearchIndex(request, filename, apiToken, { apiUrl: baseApiUrl, maxAttempts: 40 });
 
   await page.goto(`${baseUiUrl}/search-results`, { waitUntil: 'domcontentloaded' });
@@ -196,6 +217,7 @@ test('PDF preview shows dialog and controls', async ({ page, request }) => {
   const previewDialog = page.getByRole('dialog');
   await expect(previewDialog.getByLabel('close')).toBeVisible({ timeout: 60_000 });
   await page.waitForSelector('.react-pdf__Page__canvas, [data-testid="pdf-preview-fallback"]', { timeout: 60000 });
+  await expect(previewDialog.getByText(/Source:/i)).toBeVisible({ timeout: 60_000 });
   await expect(page.locator('[data-testid=ZoomInIcon]')).toBeVisible();
   await expect(page.locator('[data-testid=ZoomOutIcon]')).toBeVisible();
   await expect(page.locator('[data-testid=RotateLeftIcon]')).toBeVisible();
@@ -237,7 +259,7 @@ test('PDF preview falls back to server render when client PDF fails', async ({ p
   }
   await waitForSearchIndex(request, filename, apiToken, { apiUrl: baseApiUrl, maxAttempts: 40 });
 
-  await loginWithCredentials(page, defaultUsername, defaultPassword);
+  await loginWithCredentials(page, defaultUsername, defaultPassword, apiToken);
   await waitForSearchIndex(request, filename, apiToken, { apiUrl: baseApiUrl, maxAttempts: 40 });
 
   const workerRoute = /pdf\.worker(\.min)?\.(mjs|js)(\?.*)?$/;
@@ -287,7 +309,7 @@ test('File browser view action opens preview', async ({ page, request }) => {
   const filename = `e2e-file-browser-view-${Date.now()}.pdf`;
   await uploadPdf(request, folderId, filename, apiToken);
 
-  await loginWithCredentials(page, defaultUsername, defaultPassword);
+  await loginWithCredentials(page, defaultUsername, defaultPassword, apiToken);
 
   await page.goto(`${baseUiUrl}/browse/${folderId}`, { waitUntil: 'domcontentloaded' });
 
