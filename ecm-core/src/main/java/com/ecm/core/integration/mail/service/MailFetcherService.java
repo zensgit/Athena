@@ -118,6 +118,8 @@ public class MailFetcherService {
 
     private final Map<UUID, Instant> lastPollByAccount = new ConcurrentHashMap<>();
     private final Map<UUID, OAuthSession> oauthSessionByAccount = new ConcurrentHashMap<>();
+    private volatile MailFetchSummary lastFetchSummary;
+    private volatile Instant lastFetchAt;
 
     @Scheduled(fixedDelayString = "${ecm.mail.fetcher.poll-interval-ms:60000}")
     public void fetchAllAccounts() {
@@ -166,7 +168,14 @@ public class MailFetcherService {
         log.info("Mail fetch completed: accounts={}, attempted={}, skipped={}, force={}",
             accounts.size(), stats.attemptedAccounts, stats.skippedAccounts, force);
 
-        return stats.toSummary(durationMs);
+        MailFetchSummary summary = stats.toSummary(durationMs);
+        lastFetchSummary = summary;
+        lastFetchAt = Instant.now();
+        return summary;
+    }
+
+    public MailFetchSummaryStatus getLastFetchSummary() {
+        return new MailFetchSummaryStatus(lastFetchSummary, lastFetchAt);
     }
 
     public MailFetchDebugResult fetchAllAccountsDebug(boolean force, Integer maxMessagesPerFolder) {
@@ -688,6 +697,12 @@ public class MailFetcherService {
         int skippedMessages,
         int errorMessages,
         long durationMs
+    ) {
+    }
+
+    public record MailFetchSummaryStatus(
+        MailFetchSummary summary,
+        Instant fetchedAt
     ) {
     }
 

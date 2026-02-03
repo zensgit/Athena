@@ -39,6 +39,7 @@ import mailAutomationService, {
   MailDiagnosticsResult,
   MailFetchDebugResult,
   MailFetchSummary,
+  MailFetchSummaryStatus,
   MailRule,
   MailRuleRequest,
   MailActionType,
@@ -273,14 +274,22 @@ const MailAutomationPage: React.FC = () => {
     }
     let ok = false;
     try {
-      const [accountList, ruleList, tagList] = await Promise.all([
+      const [accountList, ruleList, tagList, fetchStatus] = await Promise.all([
         mailAutomationService.listAccounts(),
         mailAutomationService.listRules(),
         tagService.getAllTags(),
+        mailAutomationService.getFetchSummary().catch(() => null),
       ]);
       setAccounts(accountList);
       setRules(ruleList);
       setTags(tagList.map((tag) => ({ id: tag.id, name: tag.name })));
+      if (fetchStatus) {
+        const typedStatus = fetchStatus as MailFetchSummaryStatus;
+        setLastFetchSummary(typedStatus.summary ?? null);
+        if (typedStatus.fetchedAt) {
+          setLastFetchAt(typedStatus.fetchedAt);
+        }
+      }
       ok = true;
       loadRetention({ silent: true });
     } catch {

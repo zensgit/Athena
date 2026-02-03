@@ -105,6 +105,11 @@ export interface MailFetchSummary {
   durationMs: number;
 }
 
+export interface MailFetchSummaryStatus {
+  summary: MailFetchSummary | null;
+  fetchedAt?: string | null;
+}
+
 export interface MailFetchDebugFolderResult {
   folder: string;
   rules: number;
@@ -334,6 +339,10 @@ class MailAutomationService {
 
   async triggerFetch(): Promise<MailFetchSummary> {
     return api.post<MailFetchSummary>('/integration/mail/fetch');
+  }
+
+  async getFetchSummary(): Promise<MailFetchSummaryStatus> {
+    return api.get<MailFetchSummaryStatus>('/integration/mail/fetch/summary');
   }
 
   async triggerFetchDebug(options?: {

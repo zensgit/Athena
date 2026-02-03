@@ -619,6 +619,13 @@ public class MailAutomationController {
         return ResponseEntity.ok(fetcherService.fetchAllAccounts(true));
     }
 
+    @GetMapping("/fetch/summary")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Fetch summary", description = "Return the latest mail fetch summary if available")
+    public ResponseEntity<MailFetcherService.MailFetchSummaryStatus> getFetchSummary() {
+        return ResponseEntity.ok(fetcherService.getLastFetchSummary());
+    }
+
     @PostMapping("/fetch/debug")
     @PreAuthorize("hasRole('ADMIN')")
     @Operation(
