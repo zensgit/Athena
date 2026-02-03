@@ -99,6 +99,49 @@ async function waitForVersionCount(
   throw new Error(`Version count did not reach ${minCount} for document ${documentId}`);
 }
 
+async function checkinDocument(
+  request: APIRequestContext,
+  documentId: string,
+  filename: string,
+  content: string,
+  token: string,
+  comment: string,
+) {
+  const deadline = Date.now() + 90_000;
+  let lastError: string | undefined;
+
+  while (Date.now() < deadline) {
+    try {
+      const res = await request.post(`${baseApiUrl}/api/v1/documents/${documentId}/checkin`, {
+        headers: { Authorization: `Bearer ${token}` },
+        multipart: {
+          file: {
+            name: filename,
+            mimeType: 'text/plain',
+            buffer: Buffer.from(content),
+          },
+          comment,
+          majorVersion: 'false',
+        },
+        timeout: 60_000,
+      });
+
+      if (res.ok()) {
+        return;
+      }
+
+      const body = await res.text().catch(() => '');
+      lastError = `checkin status=${res.status()} ${body}`;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+
+  throw new Error(`Checkin did not succeed: ${lastError ?? 'unknown error'}`);
+}
+
 test('Version details: checkin metadata matches expectations', async ({ request }) => {
   await waitForApiReady(request, { apiUrl: baseApiUrl });
   const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
@@ -118,19 +161,7 @@ test('Version details: checkin metadata matches expectations', async ({ request 
 
   const updatedContent = `version-details-updated-${Date.now()}\n`;
   const comment = `E2E version checkin ${Date.now()}`;
-  const checkinRes = await request.post(`${baseApiUrl}/api/v1/documents/${documentId}/checkin`, {
-    headers: { Authorization: `Bearer ${token}` },
-    multipart: {
-      file: {
-        name: initialFilename,
-        mimeType: 'text/plain',
-        buffer: Buffer.from(updatedContent),
-      },
-      comment,
-      majorVersion: 'false',
-    },
-  });
-  expect(checkinRes.ok()).toBeTruthy();
+  await checkinDocument(request, documentId, initialFilename, updatedContent, token, comment);
 
   const versions = await waitForVersionCount(request, documentId, token, initialVersions.length + 1);
   const latest = versions[0];

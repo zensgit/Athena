@@ -87,6 +87,14 @@ interface ApiVersionResponse {
   status?: string;
 }
 
+interface PageResponse<T> {
+  content: T[];
+  totalElements: number;
+  totalPages: number;
+  number: number;
+  size: number;
+}
+
 interface UploadResponse {
   success: boolean;
   documentId?: string;
@@ -514,6 +522,45 @@ class NodeService {
       contentId: version.contentId,
       status: version.status,
     }));
+  }
+
+  async getVersionHistoryPage(
+    nodeId: string,
+    page = 0,
+    size = 20,
+    majorOnly = false
+  ): Promise<{
+    versions: Version[];
+    page: number;
+    size: number;
+    totalElements: number;
+    totalPages: number;
+  }> {
+    const response = await api.get<PageResponse<ApiVersionResponse>>(
+      `/documents/${nodeId}/versions/paged`,
+      { params: { page, size, majorOnly } }
+    );
+    const versions = response.content.map((version) => ({
+      id: version.id,
+      documentId: version.documentId || nodeId,
+      versionLabel: version.versionLabel,
+      comment: version.comment,
+      created: version.createdDate,
+      creator: version.creator,
+      size: version.size,
+      isMajor: version.major,
+      mimeType: version.mimeType,
+      contentHash: version.contentHash,
+      contentId: version.contentId,
+      status: version.status,
+    }));
+    return {
+      versions,
+      page: response.number,
+      size: response.size,
+      totalElements: response.totalElements,
+      totalPages: response.totalPages,
+    };
   }
 
   async createVersion(nodeId: string, file: File, comment?: string, major = false): Promise<Version> {
