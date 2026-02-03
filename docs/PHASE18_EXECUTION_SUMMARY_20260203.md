@@ -28,6 +28,9 @@
   - `cd ecm-core && mvn test`
   - Result: BUILD SUCCESS (Tests run: 136, Failures: 0, Errors: 0)
 
+## Screenshots
+- `docs/screenshots/phase18-admin-audit-filter.png`
+
 ## Related Docs
 - `docs/PHASE18_AUDIT_CATEGORY_FILTER_DEV_20260203.md`
 - `docs/PHASE18_AUDIT_CATEGORY_FILTER_VERIFICATION_20260203.md`
