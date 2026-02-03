@@ -502,6 +502,8 @@ class NodeService {
       tags: item.tags,
       categories: item.categories,
       correspondent: item.correspondent,
+      previewStatus: item.previewStatus,
+      previewFailureReason: item.previewFailureReason,
       score: item.score,
     } as Node);
   }

@@ -201,6 +201,7 @@ const AdminDashboard: React.FC = () => {
   const [auditExportPreset, setAuditExportPreset] = useState('custom');
   const [auditFilterUser, setAuditFilterUser] = useState('');
   const [auditFilterEventType, setAuditFilterEventType] = useState('');
+  const [auditFilterCategory, setAuditFilterCategory] = useState('');
   const [filteringAudit, setFilteringAudit] = useState(false);
   const [pinnedSearches, setPinnedSearches] = useState<SavedSearch[]>([]);
   const [pinnedLoading, setPinnedLoading] = useState(false);
@@ -296,6 +297,14 @@ const AdminDashboard: React.FC = () => {
         .replace(/_/g, ' ')
         .replace(/\b\w/g, (ch) => ch.toUpperCase());
   };
+
+  const auditCategoryOptions = (auditCategories.length > 0
+    ? auditCategories.map((category) => category.category)
+    : Object.keys(auditCategoryLabels)
+  ).map((category) => ({
+    value: category,
+    label: formatAuditCategoryLabel(category),
+  }));
 
   const fetchDashboard = async () => {
     try {
@@ -400,6 +409,9 @@ const AdminDashboard: React.FC = () => {
           params.append('eventType', auditFilterEventType.trim());
           params.append('days', String(presetDays));
         }
+        if (auditFilterCategory.trim()) {
+          params.append('category', auditFilterCategory.trim());
+        }
       } else {
         const { fromInput, toInput } = resolveAuditExportRange();
         const rangeError = getAuditExportRangeError(fromInput, toInput);
@@ -415,6 +427,9 @@ const AdminDashboard: React.FC = () => {
         }
         if (auditFilterEventType.trim()) {
           params.append('eventType', auditFilterEventType.trim());
+        }
+        if (auditFilterCategory.trim()) {
+          params.append('category', auditFilterCategory.trim());
         }
       }
 
@@ -494,6 +509,9 @@ const AdminDashboard: React.FC = () => {
       if (auditFilterEventType.trim()) {
         params.append('eventType', auditFilterEventType.trim());
       }
+      if (auditFilterCategory.trim()) {
+        params.append('category', auditFilterCategory.trim());
+      }
       if (isCustomExport) {
         if (auditExportFrom?.trim()) {
           params.append('from', formatDateTimeOffset(fromInput));
@@ -516,6 +534,9 @@ const AdminDashboard: React.FC = () => {
 
   const handleResetAuditLogs = async () => {
     try {
+      setAuditFilterUser('');
+      setAuditFilterEventType('');
+      setAuditFilterCategory('');
       const logsRes = await apiService.get<AuditLog[]>('/analytics/audit/recent?limit=10');
       setLogs(logsRes);
     } catch {
@@ -1000,6 +1021,21 @@ const AdminDashboard: React.FC = () => {
                       />
                     )}
                   />
+                  <FormControl size="small" sx={{ minWidth: 160 }}>
+                    <InputLabel>Category</InputLabel>
+                    <Select
+                      label="Category"
+                      value={auditFilterCategory}
+                      onChange={(event) => setAuditFilterCategory(String(event.target.value))}
+                    >
+                      <MenuItem value="">All</MenuItem>
+                      {auditCategoryOptions.map((option) => (
+                        <MenuItem key={option.value} value={option.value}>
+                          {option.label}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
                   <TextField
                     label="From"
                     type="datetime-local"

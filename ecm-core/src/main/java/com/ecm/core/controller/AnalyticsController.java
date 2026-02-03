@@ -120,6 +120,7 @@ public class AnalyticsController {
             @RequestParam(required = false) String preset,
             @RequestParam(required = false) String username,
             @RequestParam(required = false) String eventType,
+            @RequestParam(required = false) String category,
             @RequestParam(defaultValue = "30") int days) {
 
         if (preset != null) {
@@ -145,7 +146,14 @@ public class AnalyticsController {
             );
         }
 
-        AnalyticsService.AuditExportResult exportResult = analyticsService.exportAuditLogsCsv(fromTime, toTime, username, eventType);
+        AuditCategory categoryFilter = AuditCategory.fromString(category);
+        AnalyticsService.AuditExportResult exportResult = analyticsService.exportAuditLogsCsv(
+            fromTime,
+            toTime,
+            username,
+            eventType,
+            categoryFilter
+        );
         String filename = String.format("audit_logs_%s_to_%s.csv",
             fromTime.format(DateTimeFormatter.ofPattern("yyyyMMdd")),
             toTime.format(DateTimeFormatter.ofPattern("yyyyMMdd")));
@@ -167,6 +175,7 @@ public class AnalyticsController {
     public ResponseEntity<org.springframework.data.domain.Page<AuditLog>> searchAuditLogs(
             @RequestParam(required = false) String username,
             @RequestParam(required = false) String eventType,
+            @RequestParam(required = false) String category,
             @RequestParam(required = false) String from,
             @RequestParam(required = false) String to,
             @RequestParam(defaultValue = "0") int page,
@@ -174,7 +183,8 @@ public class AnalyticsController {
         LocalDateTime fromTime = parseOptionalAuditDateTime(from, "from");
         LocalDateTime toTime = parseOptionalAuditDateTime(to, "to");
         var pageable = org.springframework.data.domain.PageRequest.of(page, size);
-        return ResponseEntity.ok(analyticsService.searchAuditLogs(username, eventType, fromTime, toTime, pageable));
+        AuditCategory categoryFilter = AuditCategory.fromString(category);
+        return ResponseEntity.ok(analyticsService.searchAuditLogs(username, eventType, categoryFilter, fromTime, toTime, pageable));
     }
 
     @GetMapping("/audit/presets")

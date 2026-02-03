@@ -3,6 +3,7 @@ package com.ecm.core.preview;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.PreviewStatus;
 import com.ecm.core.repository.DocumentRepository;
+import com.ecm.core.search.SearchIndexService;
 import com.ecm.core.service.ContentService;
 import com.ecm.core.service.SecurityService;
 import com.ecm.core.entity.Permission.PermissionType;
@@ -19,6 +20,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.core.io.ByteArrayResource;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -51,6 +53,7 @@ public class PreviewService {
     private final SecurityService securityService;
     private final MeterRegistry meterRegistry;
     private final DocumentRepository documentRepository;
+    private final SearchIndexService searchIndexService;
     
     @Value("${ecm.preview.cache.enabled:true}")
     private boolean cacheEnabled;
@@ -606,14 +609,30 @@ public class PreviewService {
         if (document == null || status == null) {
             return;
         }
-        try {
-            document.setPreviewStatus(status);
-            document.setPreviewFailureReason(failureReason);
-            document.setPreviewLastUpdated(LocalDateTime.now());
-            document.setPreviewAvailable(status == PreviewStatus.READY);
-            documentRepository.save(document);
-        } catch (Exception e) {
-            log.warn("Failed to persist preview status for {}: {}", document.getId(), e.getMessage());
+        for (int attempt = 0; attempt < 2; attempt++) {
+            try {
+                Document target = documentRepository.findById(document.getId()).orElse(document);
+                target.setPreviewStatus(status);
+                target.setPreviewFailureReason(failureReason);
+                target.setPreviewLastUpdated(LocalDateTime.now());
+                target.setPreviewAvailable(status == PreviewStatus.READY);
+                documentRepository.save(target);
+                try {
+                    searchIndexService.updateDocument(target);
+                } catch (Exception indexError) {
+                    log.warn("Failed to reindex preview status for {}: {}", target.getId(), indexError.getMessage());
+                }
+                return;
+            } catch (OptimisticLockingFailureException e) {
+                if (attempt == 0) {
+                    log.warn("Preview status update raced for {}. Retrying.", document.getId());
+                    continue;
+                }
+                log.warn("Failed to persist preview status for {} after retry: {}", document.getId(), e.getMessage());
+            } catch (Exception e) {
+                log.warn("Failed to persist preview status for {}: {}", document.getId(), e.getMessage());
+            }
+            return;
         }
     }
 

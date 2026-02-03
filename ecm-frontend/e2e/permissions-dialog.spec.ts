@@ -113,6 +113,7 @@ test('Permissions dialog shows inheritance path and copy ACL action', async ({ p
   const dialog = page.getByRole('dialog').filter({ hasText: 'Manage Permissions' });
   await expect(dialog).toBeVisible({ timeout: 60_000 });
   await expect(dialog.getByText('Inheritance path')).toBeVisible();
+  await expect(dialog.getByText(/Explicit denies override/i)).toBeVisible();
   await expect(dialog.getByRole('button', { name: 'Copy ACL' })).toBeVisible();
 
   await dialog.getByRole('button', { name: /^Close$/ }).click();

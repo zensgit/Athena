@@ -1,6 +1,7 @@
 package com.ecm.core.service;
 
 import com.ecm.core.entity.AuditLog;
+import com.ecm.core.entity.AuditCategory;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Node;
 import com.ecm.core.repository.AuditLogRepository;
@@ -182,7 +183,18 @@ public class AnalyticsService {
                                                 LocalDateTime to,
                                                 String username,
                                                 String eventType) {
-        List<AuditLog> logs = auditLogRepository.findByFiltersForExport(username, eventType, from, to);
+        return exportAuditLogsCsv(from, to, username, eventType, null);
+    }
+
+    public AuditExportResult exportAuditLogsCsv(LocalDateTime from,
+                                                LocalDateTime to,
+                                                String username,
+                                                String eventType,
+                                                AuditCategory category) {
+        String categoryName = category != null ? category.name() : null;
+        List<AuditLog> logs = categoryName == null
+            ? auditLogRepository.findByFiltersForExport(username, eventType, from, to)
+            : auditLogRepository.findByFiltersForExportAndCategory(username, eventType, categoryName, from, to);
         return new AuditExportResult(generateCsv(logs), logs.size());
     }
 
@@ -198,7 +210,17 @@ public class AnalyticsService {
                                           LocalDateTime from,
                                           LocalDateTime to,
                                           Pageable pageable) {
-        return auditLogRepository.findByFilters(username, eventType, from, to, pageable);
+        return searchAuditLogs(username, eventType, null, from, to, pageable);
+    }
+
+    public Page<AuditLog> searchAuditLogs(String username,
+                                          String eventType,
+                                          AuditCategory category,
+                                          LocalDateTime from,
+                                          LocalDateTime to,
+                                          Pageable pageable) {
+        String categoryName = category != null ? category.name() : null;
+        return auditLogRepository.findByFiltersAndCategory(username, eventType, categoryName, from, to, pageable);
     }
 
     public List<AuditEventTypeCount> getAuditEventTypes(int limit) {

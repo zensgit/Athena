@@ -28,6 +28,8 @@ import {
   Tab,
   Divider,
   Chip,
+  Checkbox,
+  Alert,
 } from '@mui/material';
 import {
   Close,
@@ -70,7 +72,7 @@ interface PermissionEntry {
   principal: string;
   principalType: 'user' | 'group';
   permissions: {
-    [key in PermissionType]?: boolean;
+    [key in PermissionType]?: 'ALLOW' | 'DENY';
   };
 }
 
@@ -123,8 +125,14 @@ const PermissionsDialog: React.FC = () => {
         };
         
         perms.forEach((perm) => {
+          const key = perm.permission as PermissionType;
+          const current = entry.permissions[key];
           if (perm.allowed) {
-            entry.permissions[perm.permission as PermissionType] = true;
+            if (current !== 'DENY') {
+              entry.permissions[key] = 'ALLOW';
+            }
+          } else {
+            entry.permissions[key] = 'DENY';
           }
         });
         
@@ -191,10 +199,17 @@ const PermissionsDialog: React.FC = () => {
     const lines = permissions.map((entry) => {
       const principal = entry.principal.replace('GROUP_', '');
       const type = entry.principalType.toUpperCase();
-      const granted = Object.keys(entry.permissions)
-        .filter((perm) => entry.permissions[perm as PermissionType])
+      const allowed = Object.keys(entry.permissions)
+        .filter((perm) => entry.permissions[perm as PermissionType] === 'ALLOW')
         .join(', ');
-      return `${principal}\t${type}\t${granted || '-'}`;
+      const denied = Object.keys(entry.permissions)
+        .filter((perm) => entry.permissions[perm as PermissionType] === 'DENY')
+        .join(', ');
+      const summary = [
+        allowed ? `ALLOW: ${allowed}` : null,
+        denied ? `DENY: ${denied}` : null,
+      ].filter(Boolean).join(' | ');
+      return `${principal}\t${type}\t${summary || '-'}`;
     });
     const header = `Inherit: ${inheritPermissions ? 'true' : 'false'}`;
     try {
@@ -226,10 +241,10 @@ const PermissionsDialog: React.FC = () => {
     }
   };
 
-  const handlePermissionChange = async (
+  const handlePermissionToggle = async (
     principal: string,
     permission: PermissionType,
-    allowed: boolean
+    currentState?: 'ALLOW' | 'DENY'
   ) => {
     if (!selectedNodeId) return;
     if (!canWrite) return;
@@ -237,23 +252,45 @@ const PermissionsDialog: React.FC = () => {
     try {
       const authorityType = principal.startsWith('GROUP_') ? 'GROUP' : 'USER';
       const authority = principal.replace('GROUP_', '');
-      await nodeService.setPermission(selectedNodeId, authority, authorityType, permission, allowed);
-      
+      let nextState: 'ALLOW' | 'DENY' | undefined;
+
+      if (!currentState) {
+        await nodeService.setPermission(selectedNodeId, authority, authorityType, permission, true);
+        nextState = 'ALLOW';
+      } else if (currentState === 'ALLOW') {
+        await nodeService.setPermission(selectedNodeId, authority, authorityType, permission, false);
+        nextState = 'DENY';
+      } else {
+        await nodeService.removePermission(selectedNodeId, authority, permission);
+        nextState = undefined;
+      }
+
       setPermissions((prev) =>
         prev.map((entry) =>
           entry.principal === principal
-            ? {
-                ...entry,
-                permissions: {
-                  ...entry.permissions,
-                  [permission]: allowed,
-                },
-              }
+            ? (() => {
+                const nextPermissions = { ...entry.permissions };
+                if (nextState) {
+                  nextPermissions[permission] = nextState;
+                } else {
+                  delete nextPermissions[permission];
+                }
+                return {
+                  ...entry,
+                  permissions: nextPermissions,
+                };
+              })()
             : entry
         )
       );
       
-      toast.success('Permission updated');
+      if (!currentState) {
+        toast.success('Permission allowed');
+      } else if (currentState === 'ALLOW') {
+        toast.success('Permission denied');
+      } else {
+        toast.success('Permission cleared');
+      }
     } catch (error) {
       toast.error('Failed to update permission');
     }
@@ -273,7 +310,7 @@ const PermissionsDialog: React.FC = () => {
         || permissionSetMetadata.find((set) => set.name === permissionSet)?.permissions
         || [];
       const nextPermissions = fallbackPermissions.reduce<PermissionEntry['permissions']>((acc, perm) => {
-        acc[perm] = true;
+        acc[perm] = 'ALLOW';
         return acc;
       }, {});
 
@@ -308,7 +345,7 @@ const PermissionsDialog: React.FC = () => {
     const newEntry: PermissionEntry = {
       principal,
       principalType,
-      permissions: { READ: true },
+      permissions: { READ: 'ALLOW' },
     };
 
     setPermissions([...permissions, newEntry]);
@@ -398,15 +435,17 @@ const PermissionsDialog: React.FC = () => {
               </TableCell>
               {Object.keys(PERMISSION_LABELS).map((perm) => (
                 <TableCell key={perm} align="center">
-                  <Switch
+                  <Checkbox
                     size="small"
-                    checked={entry.permissions[perm as PermissionType] || false}
+                    checked={entry.permissions[perm as PermissionType] === 'ALLOW'}
+                    indeterminate={entry.permissions[perm as PermissionType] === 'DENY'}
+                    color={entry.permissions[perm as PermissionType] === 'DENY' ? 'error' : 'primary'}
                     disabled={!canWrite}
-                    onChange={(e) =>
-                      handlePermissionChange(
+                    onClick={() =>
+                      handlePermissionToggle(
                         entry.principal,
                         perm as PermissionType,
-                        e.target.checked
+                        entry.permissions[perm as PermissionType]
                       )
                     }
                   />
@@ -520,6 +559,9 @@ const PermissionsDialog: React.FC = () => {
           label="Inherit permissions from parent"
           sx={{ mb: 2 }}
         />
+        <Alert severity="info" sx={{ mb: 2 }}>
+          Click a permission to cycle Allow → Deny → Clear. Explicit denies override allows across inheritance.
+        </Alert>
 
         {loading ? (
           <Box display="flex" justifyContent="center" p={4}>
