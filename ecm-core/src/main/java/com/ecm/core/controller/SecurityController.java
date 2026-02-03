@@ -154,6 +154,20 @@ public class SecurityController {
         boolean hasPermission = securityService.hasPermission(node, permissionType);
         return ResponseEntity.ok(hasPermission);
     }
+
+    @GetMapping("/nodes/{nodeId}/permission-diagnostics")
+    @Operation(summary = "Permission diagnostics", description = "Explain why the current user can or cannot perform a permission")
+    public ResponseEntity<SecurityService.PermissionDecision> getPermissionDiagnostics(
+            @Parameter(description = "Node ID") @PathVariable UUID nodeId,
+            @Parameter(description = "Permission type") @RequestParam PermissionType permissionType) {
+
+        Node node = nodeService.getNode(nodeId);
+        if (!securityService.hasPermission(node, PermissionType.READ)) {
+            throw new SecurityException("No permission to view permissions");
+        }
+        String username = securityService.getCurrentUser();
+        return ResponseEntity.ok(securityService.explainPermission(node, permissionType, username));
+    }
     
     @PostMapping("/permissions/cleanup-expired")
     @Operation(summary = "Cleanup expired permissions", description = "Remove all expired permissions")

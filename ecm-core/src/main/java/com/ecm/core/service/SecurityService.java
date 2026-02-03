@@ -125,6 +125,81 @@ public class SecurityService {
         return checkNodePermissions(node, permissionType, authorities);
     }
 
+    public PermissionDecision explainPermission(Node node, PermissionType permissionType, String username) {
+        if (node == null) {
+            return new PermissionDecision(null, username, permissionType, false, "NODE_MISSING", null, List.of(), List.of());
+        }
+
+        if (hasAuthority("ROLE_ADMIN") || hasRole("ROLE_ADMIN", username)) {
+            return new PermissionDecision(node.getId(), username, permissionType, true, "ADMIN", null, List.of(), List.of());
+        }
+
+        if (username != null && username.equals(node.getCreatedBy())) {
+            return new PermissionDecision(node.getId(), username, permissionType, true, "OWNER", null, List.of(), List.of());
+        }
+
+        PermissionContext context = PermissionContext.builder()
+            .nodeId(node.getId())
+            .node(node)
+            .username(username)
+            .requestedPermission(permissionType)
+            .build();
+
+        for (DynamicAuthority dynamicAuthority : dynamicAuthorities) {
+            Boolean grant = dynamicAuthority.grantPermission(context);
+            if (grant != null) {
+                return new PermissionDecision(
+                    node.getId(),
+                    username,
+                    permissionType,
+                    grant,
+                    "DYNAMIC_AUTHORITY",
+                    dynamicAuthority.getAuthorityName(),
+                    List.of(),
+                    List.of()
+                );
+            }
+        }
+
+        Set<String> authorities = getUserAuthorities(username);
+        PermissionAuthorityMatches matches = resolvePermissionAuthorityMatches(node, permissionType, authorities);
+        if (!matches.deniedAuthorities().isEmpty()) {
+            return new PermissionDecision(
+                node.getId(),
+                username,
+                permissionType,
+                false,
+                "ACL_DENY",
+                null,
+                matches.allowedAuthorities(),
+                matches.deniedAuthorities()
+            );
+        }
+        if (!matches.allowedAuthorities().isEmpty()) {
+            return new PermissionDecision(
+                node.getId(),
+                username,
+                permissionType,
+                true,
+                "ACL_ALLOW",
+                null,
+                matches.allowedAuthorities(),
+                matches.deniedAuthorities()
+            );
+        }
+
+        return new PermissionDecision(
+            node.getId(),
+            username,
+            permissionType,
+            false,
+            "NO_MATCH",
+            null,
+            List.of(),
+            List.of()
+        );
+    }
+
     public Map<String, Set<PermissionType>> getPermissionSets() {
         Map<String, Set<PermissionType>> sets = new LinkedHashMap<>();
         for (PermissionSet set : PermissionSet.values()) {
@@ -506,6 +581,57 @@ public class SecurityService {
             return false;
         }
         return allowed;
+    }
+
+    private PermissionAuthorityMatches resolvePermissionAuthorityMatches(
+        Node node,
+        PermissionType permissionType,
+        Set<String> authorities
+    ) {
+        if (node == null) {
+            return new PermissionAuthorityMatches(List.of(), List.of());
+        }
+        Set<String> allowed = new LinkedHashSet<>();
+        Set<String> denied = new LinkedHashSet<>();
+        Node current = node;
+        while (current != null) {
+            List<Permission> permissions = permissionRepository.findByNodeId(current.getId());
+            for (Permission permission : permissions) {
+                if (permission.getPermission() == permissionType
+                    && authorities.contains(permission.getAuthority())
+                    && !permission.isExpired()) {
+                    if (permission.isAllowed()) {
+                        allowed.add(permission.getAuthority());
+                    } else {
+                        denied.add(permission.getAuthority());
+                    }
+                }
+            }
+            if (current.isInheritPermissions() && current.getParent() != null) {
+                current = current.getParent();
+            } else {
+                break;
+            }
+        }
+        return new PermissionAuthorityMatches(new ArrayList<>(allowed), new ArrayList<>(denied));
+    }
+
+    public record PermissionDecision(
+        UUID nodeId,
+        String username,
+        PermissionType permission,
+        boolean allowed,
+        String reason,
+        String dynamicAuthority,
+        List<String> allowedAuthorities,
+        List<String> deniedAuthorities
+    ) {
+    }
+
+    private record PermissionAuthorityMatches(
+        List<String> allowedAuthorities,
+        List<String> deniedAuthorities
+    ) {
     }
     
     private List<Permission> getInheritedPermissions(Node node) {
