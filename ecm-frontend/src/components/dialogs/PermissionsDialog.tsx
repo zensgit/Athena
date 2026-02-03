@@ -42,7 +42,7 @@ import {
 import { PermissionType } from 'types';
 import { useAppDispatch, useAppSelector } from 'store';
 import { setPermissionsDialogOpen } from 'store/slices/uiSlice';
-import nodeService, { PermissionSetMetadata } from 'services/nodeService';
+import nodeService, { PermissionDecision, PermissionSetMetadata } from 'services/nodeService';
 import userGroupService from 'services/userGroupService';
 import { toast } from 'react-toastify';
 
@@ -103,6 +103,10 @@ const PermissionsDialog: React.FC = () => {
   const [permissions, setPermissions] = useState<PermissionEntry[]>([]);
   const [permissionSets, setPermissionSets] = useState<Record<string, PermissionType[]>>({});
   const [permissionSetMetadata, setPermissionSetMetadata] = useState<PermissionSetMetadata[]>([]);
+  const [permissionDiagnostics, setPermissionDiagnostics] = useState<PermissionDecision | null>(null);
+  const [permissionDiagnosticsLoading, setPermissionDiagnosticsLoading] = useState(false);
+  const [permissionDiagnosticsError, setPermissionDiagnosticsError] = useState<string | null>(null);
+  const [diagnosticPermissionType, setDiagnosticPermissionType] = useState<PermissionType>('READ');
   const [newPrincipal, setNewPrincipal] = useState('');
   const [availableUsers, setAvailableUsers] = useState<string[]>([]);
   const [availableGroups, setAvailableGroups] = useState<string[]>([]);
@@ -152,6 +156,23 @@ const PermissionsDialog: React.FC = () => {
     }
   }, [selectedNodeId]);
 
+  const loadPermissionDiagnostics = useCallback(async (options?: { silent?: boolean }) => {
+    if (!selectedNodeId) return;
+    const silent = options?.silent === true;
+    if (!silent) {
+      setPermissionDiagnosticsLoading(true);
+    }
+    try {
+      const decision = await nodeService.getPermissionDiagnostics(selectedNodeId, diagnosticPermissionType);
+      setPermissionDiagnostics(decision);
+      setPermissionDiagnosticsError(null);
+    } catch {
+      setPermissionDiagnosticsError('Failed to load permission diagnostics');
+    } finally {
+      setPermissionDiagnosticsLoading(false);
+    }
+  }, [selectedNodeId, diagnosticPermissionType]);
+
   const loadPermissionSets = useCallback(async () => {
     try {
       const [sets, metadata] = await Promise.all([
@@ -187,12 +208,26 @@ const PermissionsDialog: React.FC = () => {
     }
   }, [permissionsDialogOpen, selectedNodeId, loadPermissions, loadPrincipals, loadPermissionSets]);
 
+  useEffect(() => {
+    if (permissionsDialogOpen && selectedNodeId) {
+      loadPermissionDiagnostics();
+    } else {
+      setPermissionDiagnostics(null);
+      setPermissionDiagnosticsError(null);
+      setPermissionDiagnosticsLoading(false);
+    }
+  }, [permissionsDialogOpen, selectedNodeId, diagnosticPermissionType, loadPermissionDiagnostics]);
+
   const handleClose = () => {
     dispatch(setPermissionsDialogOpen(false));
     setTabValue(0);
     setPermissions([]);
     setNewPrincipal('');
     setNodePath('');
+    setPermissionDiagnostics(null);
+    setPermissionDiagnosticsError(null);
+    setPermissionDiagnosticsLoading(false);
+    setDiagnosticPermissionType('READ');
   };
 
   const handleCopyAcl = async () => {
@@ -562,6 +597,93 @@ const PermissionsDialog: React.FC = () => {
         <Alert severity="info" sx={{ mb: 2 }}>
           Click a permission to cycle Allow → Deny → Clear. Explicit denies override allows across inheritance.
         </Alert>
+        <Box sx={{ mb: 2 }}>
+          <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+            <Typography variant="subtitle2">Permission diagnostics</Typography>
+            <Button
+              size="small"
+              onClick={() => loadPermissionDiagnostics()}
+              disabled={permissionDiagnosticsLoading || !selectedNodeId}
+            >
+              Refresh
+            </Button>
+          </Box>
+          <Box display="flex" gap={1} alignItems="center" flexWrap="wrap" sx={{ mb: 1 }}>
+            <FormControl size="small" sx={{ minWidth: 220 }}>
+              <InputLabel id="permission-diagnostic-type-label">Permission</InputLabel>
+              <Select
+                labelId="permission-diagnostic-type-label"
+                label="Permission"
+                value={diagnosticPermissionType}
+                onChange={(event) => setDiagnosticPermissionType(event.target.value as PermissionType)}
+              >
+                {Object.entries(PERMISSION_LABELS).map(([key, label]) => (
+                  <MenuItem key={key} value={key}>
+                    {label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            {permissionDiagnosticsLoading && <CircularProgress size={18} />}
+          </Box>
+          {permissionDiagnosticsError && (
+            <Typography variant="caption" color="error" display="block" sx={{ mb: 1 }}>
+              {permissionDiagnosticsError}
+            </Typography>
+          )}
+          {permissionDiagnostics && !permissionDiagnosticsError ? (
+            <>
+              <Box display="flex" flexWrap="wrap" gap={1} sx={{ mb: 1 }}>
+                <Chip
+                  size="small"
+                  color={permissionDiagnostics.allowed ? 'success' : 'warning'}
+                  label={permissionDiagnostics.allowed ? 'Allowed' : 'Denied'}
+                />
+                <Chip size="small" variant="outlined" label={`Reason ${permissionDiagnostics.reason}`} />
+                {permissionDiagnostics.dynamicAuthority && (
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    label={`Dynamic ${permissionDiagnostics.dynamicAuthority}`}
+                  />
+                )}
+                {permissionDiagnostics.username && (
+                  <Chip size="small" variant="outlined" label={`User ${permissionDiagnostics.username}`} />
+                )}
+              </Box>
+              {permissionDiagnostics.allowedAuthorities?.length > 0 && (
+                <Box sx={{ mb: 1 }}>
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    Allowed authorities
+                  </Typography>
+                  <Box display="flex" flexWrap="wrap" gap={1} mt={0.5}>
+                    {permissionDiagnostics.allowedAuthorities.map((authority) => (
+                      <Chip key={`allow-${authority}`} size="small" variant="outlined" label={authority} />
+                    ))}
+                  </Box>
+                </Box>
+              )}
+              {permissionDiagnostics.deniedAuthorities?.length > 0 && (
+                <Box>
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    Denied authorities
+                  </Typography>
+                  <Box display="flex" flexWrap="wrap" gap={1} mt={0.5}>
+                    {permissionDiagnostics.deniedAuthorities.map((authority) => (
+                      <Chip key={`deny-${authority}`} size="small" variant="outlined" label={authority} />
+                    ))}
+                  </Box>
+                </Box>
+              )}
+            </>
+          ) : (
+            !permissionDiagnosticsError && !permissionDiagnosticsLoading && (
+              <Typography variant="caption" color="text.secondary" display="block">
+                Diagnostics unavailable.
+              </Typography>
+            )
+          )}
+        </Box>
 
         {loading ? (
           <Box display="flex" justifyContent="center" p={4}>

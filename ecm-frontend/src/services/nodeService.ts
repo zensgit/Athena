@@ -114,6 +114,24 @@ export interface SearchDiagnostics {
   generatedAt?: string | null;
 }
 
+export interface SearchIndexStats {
+  indexName: string;
+  documentCount?: number;
+  searchEnabled: boolean;
+  error?: string;
+}
+
+export interface PermissionDecision {
+  nodeId: string | null;
+  username: string | null;
+  permission: PermissionType;
+  allowed: boolean;
+  reason: string;
+  dynamicAuthority?: string | null;
+  allowedAuthorities: string[];
+  deniedAuthorities: string[];
+}
+
 export interface PermissionSetMetadata {
   name: string;
   label: string;
@@ -478,6 +496,10 @@ class NodeService {
     return api.get<SearchDiagnostics>('/search/diagnostics');
   }
 
+  async getSearchIndexStats(): Promise<SearchIndexStats> {
+    return api.get<SearchIndexStats>('/search/index/stats');
+  }
+
   private mapSearchItemToNode(item: any): Node {
     const inferredNodeType = item.mimeType || item.fileSize
       ? 'DOCUMENT'
@@ -619,6 +641,12 @@ class NodeService {
       acc[key].push(perm);
       return acc;
     }, {});
+  }
+
+  async getPermissionDiagnostics(nodeId: string, permissionType: PermissionType): Promise<PermissionDecision> {
+    return api.get<PermissionDecision>(`/security/nodes/${nodeId}/permission-diagnostics`, {
+      params: { permissionType },
+    });
   }
 
   async getPermissionSets(): Promise<Record<string, PermissionType[]>> {

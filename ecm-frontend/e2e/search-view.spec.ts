@@ -224,6 +224,8 @@ test('Search results view opens preview for documents', async ({ page, request }
   await page.goto(`${baseUiUrl}/search-results`, { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByText(/Access scope/i)).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(/Index stats/i)).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(/Search enabled/i)).toBeVisible({ timeout: 60_000 });
 
   const quickSearchInput = page.getByPlaceholder('Quick search by name...');
   await quickSearchInput.fill(filename);

@@ -43,7 +43,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppSelector, useAppDispatch } from 'store';
 import { fetchSearchFacets, searchNodes } from 'store/slices/nodeSlice';
 import { setSearchOpen, setSidebarOpen } from 'store/slices/uiSlice';
-import nodeService, { SearchDiagnostics } from 'services/nodeService';
+import nodeService, { SearchDiagnostics, SearchIndexStats } from 'services/nodeService';
 import { Node, SearchCriteria } from 'types';
 import { toast } from 'react-toastify';
 import Highlight from 'components/search/Highlight';
@@ -107,8 +107,12 @@ const SearchResults: React.FC = () => {
   const [searchDiagnostics, setSearchDiagnostics] = useState<SearchDiagnostics | null>(null);
   const [searchDiagnosticsLoading, setSearchDiagnosticsLoading] = useState(false);
   const [searchDiagnosticsError, setSearchDiagnosticsError] = useState<string | null>(null);
+  const [searchIndexStats, setSearchIndexStats] = useState<SearchIndexStats | null>(null);
+  const [searchIndexStatsLoading, setSearchIndexStatsLoading] = useState(false);
+  const [searchIndexStatsError, setSearchIndexStatsError] = useState<string | null>(null);
   const lastSpellcheckQueryRef = useRef('');
   const previewOpen = Boolean(previewNode);
+  const isAdmin = Boolean(user?.roles?.includes('ROLE_ADMIN'));
   const canWrite = Boolean(user?.roles?.includes('ROLE_ADMIN') || user?.roles?.includes('ROLE_EDITOR'));
   const suppressFacetSearch = useRef(false);
   const quickSearchDebounceRef = useRef<number | null>(null);
@@ -144,6 +148,33 @@ const SearchResults: React.FC = () => {
       setSearchDiagnosticsLoading(false);
     }
   }, []);
+
+  const loadSearchIndexStats = useCallback(async (options?: { silent?: boolean }) => {
+    if (!isAdmin) {
+      setSearchIndexStats(null);
+      setSearchIndexStatsError(null);
+      setSearchIndexStatsLoading(false);
+      return;
+    }
+    const silent = options?.silent === true;
+    if (!silent) {
+      setSearchIndexStatsLoading(true);
+    }
+    try {
+      const stats = await nodeService.getSearchIndexStats();
+      setSearchIndexStats(stats);
+      setSearchIndexStatsError(stats.error ?? null);
+    } catch {
+      setSearchIndexStatsError('Failed to load index stats');
+    } finally {
+      setSearchIndexStatsLoading(false);
+    }
+  }, [isAdmin]);
+
+  const handleRefreshDiagnostics = () => {
+    loadSearchDiagnostics();
+    loadSearchIndexStats();
+  };
 
   const getSortParams = (value: string) => {
     switch (value) {
@@ -260,7 +291,8 @@ const SearchResults: React.FC = () => {
 
   useEffect(() => {
     loadSearchDiagnostics({ silent: true });
-  }, [loadSearchDiagnostics]);
+    loadSearchIndexStats({ silent: true });
+  }, [loadSearchDiagnostics, loadSearchIndexStats]);
 
   useEffect(() => {
     const query = (lastSearchCriteria?.name || '').trim();
@@ -1346,8 +1378,8 @@ const SearchResults: React.FC = () => {
                 <Button
                   size="small"
                   startIcon={<Refresh fontSize="small" />}
-                  onClick={() => loadSearchDiagnostics()}
-                  disabled={searchDiagnosticsLoading}
+                  onClick={handleRefreshDiagnostics}
+                  disabled={searchDiagnosticsLoading || searchIndexStatsLoading}
                 >
                   Refresh
                 </Button>
@@ -1384,6 +1416,39 @@ const SearchResults: React.FC = () => {
                 <Typography variant="caption" color="text.secondary" display="block">
                   Updated {format(new Date(searchDiagnostics.generatedAt), 'PPp')}
                 </Typography>
+              )}
+              {isAdmin && (
+                <>
+                  <Divider sx={{ my: 1 }} />
+                  <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+                    <Typography variant="subtitle2">Index stats</Typography>
+                    {searchIndexStatsLoading && <CircularProgress size={16} />}
+                  </Box>
+                  {searchIndexStatsError && (
+                    <Typography variant="caption" color="error" display="block" sx={{ mb: 1 }}>
+                      {searchIndexStatsError}
+                    </Typography>
+                  )}
+                  {searchIndexStats && !searchIndexStatsError ? (
+                    <Stack direction="row" spacing={1} flexWrap="wrap">
+                      <Chip size="small" variant="outlined" label={`Index ${searchIndexStats.indexName}`} />
+                      {typeof searchIndexStats.documentCount === 'number' && (
+                        <Chip size="small" variant="outlined" label={`Documents ${searchIndexStats.documentCount}`} />
+                      )}
+                      <Chip
+                        size="small"
+                        color={searchIndexStats.searchEnabled ? 'success' : 'warning'}
+                        label={searchIndexStats.searchEnabled ? 'Search enabled' : 'Search disabled'}
+                      />
+                    </Stack>
+                  ) : (
+                    !searchIndexStatsError && (
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        Index stats unavailable
+                      </Typography>
+                    )
+                  )}
+                </>
               )}
             </Paper>
           )}
