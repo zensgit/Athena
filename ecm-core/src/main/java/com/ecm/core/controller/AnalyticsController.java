@@ -189,6 +189,13 @@ public class AnalyticsController {
         ));
     }
 
+    @GetMapping("/audit/event-types")
+    @Operation(summary = "Audit Event Types", description = "List event types with counts for filtering")
+    public ResponseEntity<List<AnalyticsService.AuditEventTypeCount>> getAuditEventTypes(
+            @RequestParam(defaultValue = "50") int limit) {
+        return ResponseEntity.ok(analyticsService.getAuditEventTypes(limit));
+    }
+
     private LocalDateTime parseAuditExportDateTime(String value, String paramName) {
         if (value == null || value.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, paramName + " is required");

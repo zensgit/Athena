@@ -114,6 +114,14 @@ export interface SearchDiagnostics {
   generatedAt?: string | null;
 }
 
+export interface PermissionSetMetadata {
+  name: string;
+  label: string;
+  description?: string | null;
+  order?: number | null;
+  permissions: PermissionType[];
+}
+
 class NodeService {
   private pickPrimaryRoot(roots: FolderResponse[]): FolderResponse {
     if (!roots || roots.length === 0) {
@@ -613,6 +621,10 @@ class NodeService {
 
   async getPermissionSets(): Promise<Record<string, PermissionType[]>> {
     return api.get<Record<string, PermissionType[]>>('/security/permission-sets');
+  }
+
+  async getPermissionSetMetadata(): Promise<PermissionSetMetadata[]> {
+    return api.get<PermissionSetMetadata[]>('/security/permission-sets/metadata');
   }
 
   async setPermission(

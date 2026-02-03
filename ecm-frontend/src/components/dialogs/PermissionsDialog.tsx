@@ -40,7 +40,7 @@ import {
 import { PermissionType } from 'types';
 import { useAppDispatch, useAppSelector } from 'store';
 import { setPermissionsDialogOpen } from 'store/slices/uiSlice';
-import nodeService from 'services/nodeService';
+import nodeService, { PermissionSetMetadata } from 'services/nodeService';
 import userGroupService from 'services/userGroupService';
 import { toast } from 'react-toastify';
 
@@ -100,6 +100,7 @@ const PermissionsDialog: React.FC = () => {
   const [inheritPermissions, setInheritPermissions] = useState(true);
   const [permissions, setPermissions] = useState<PermissionEntry[]>([]);
   const [permissionSets, setPermissionSets] = useState<Record<string, PermissionType[]>>({});
+  const [permissionSetMetadata, setPermissionSetMetadata] = useState<PermissionSetMetadata[]>([]);
   const [newPrincipal, setNewPrincipal] = useState('');
   const [availableUsers, setAvailableUsers] = useState<string[]>([]);
   const [availableGroups, setAvailableGroups] = useState<string[]>([]);
@@ -145,10 +146,15 @@ const PermissionsDialog: React.FC = () => {
 
   const loadPermissionSets = useCallback(async () => {
     try {
-      const sets = await nodeService.getPermissionSets();
+      const [sets, metadata] = await Promise.all([
+        nodeService.getPermissionSets().catch(() => ({})),
+        nodeService.getPermissionSetMetadata().catch(() => []),
+      ]);
       setPermissionSets(sets ?? {});
+      setPermissionSetMetadata(metadata ?? []);
     } catch {
       setPermissionSets({});
+      setPermissionSetMetadata([]);
     }
   }, []);
 
@@ -263,13 +269,13 @@ const PermissionsDialog: React.FC = () => {
       const authority = principal.replace('GROUP_', '');
       await nodeService.applyPermissionSet(selectedNodeId, authority, authorityType, permissionSet, true);
 
-      const nextPermissions = (permissionSets[permissionSet] || []).reduce<PermissionEntry['permissions']>(
-        (acc, perm) => {
-          acc[perm] = true;
-          return acc;
-        },
-        {}
-      );
+      const fallbackPermissions = permissionSets[permissionSet]
+        || permissionSetMetadata.find((set) => set.name === permissionSet)?.permissions
+        || [];
+      const nextPermissions = fallbackPermissions.reduce<PermissionEntry['permissions']>((acc, perm) => {
+        acc[perm] = true;
+        return acc;
+      }, {});
 
       setPermissions((prev) =>
         prev.map((entry) =>
@@ -341,7 +347,21 @@ const PermissionsDialog: React.FC = () => {
     }
   };
 
-  const permissionSetOptions = Object.keys(permissionSets).sort();
+  const permissionSetOptions = permissionSetMetadata.length > 0
+    ? [...permissionSetMetadata].sort((a, b) => {
+      const left = a.order ?? 0;
+      const right = b.order ?? 0;
+      if (left !== right) {
+        return left - right;
+      }
+      return a.name.localeCompare(b.name);
+    })
+    : Object.keys(permissionSets).sort().map((name) => ({
+      name,
+      label: name,
+      description: '',
+      permissions: permissionSets[name] || [],
+    }));
   const inheritanceChain = nodePath.split('/').filter(Boolean);
 
   const renderPermissionsTable = (entries: PermissionEntry[]) => (
@@ -405,9 +425,16 @@ const PermissionsDialog: React.FC = () => {
                     <MenuItem value="" disabled>
                       Select
                     </MenuItem>
-                    {permissionSetOptions.map((setName) => (
-                      <MenuItem key={setName} value={setName}>
-                        {setName.charAt(0) + setName.slice(1).toLowerCase()}
+                    {permissionSetOptions.map((option) => (
+                      <MenuItem key={option.name} value={option.name}>
+                        <Box display="flex" flexDirection="column">
+                          <Typography variant="body2">{option.label || option.name}</Typography>
+                          {option.description && (
+                            <Typography variant="caption" color="text.secondary">
+                              {option.description}
+                            </Typography>
+                          )}
+                        </Box>
                       </MenuItem>
                     ))}
                   </Select>

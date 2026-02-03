@@ -201,6 +201,20 @@ public class AnalyticsService {
         return auditLogRepository.findByFilters(username, eventType, from, to, pageable);
     }
 
+    public List<AuditEventTypeCount> getAuditEventTypes(int limit) {
+        List<Object[]> counts = auditLogRepository.countByEventType();
+        int safeLimit = Math.max(1, limit);
+        return counts.stream()
+            .filter(item -> item != null && item.length >= 2 && item[0] != null)
+            .map(item -> new AuditEventTypeCount(String.valueOf(item[0]), ((Number) item[1]).longValue()))
+            .sorted(java.util.Comparator
+                .comparingLong(AuditEventTypeCount::count)
+                .reversed()
+                .thenComparing(AuditEventTypeCount::eventType))
+            .limit(safeLimit)
+            .toList();
+    }
+
     /**
      * Generate CSV content from audit logs
      */
@@ -346,5 +360,10 @@ public class AnalyticsService {
     public record AuditExportResult(
         String csvContent,
         long rowCount
+    ) {}
+
+    public record AuditEventTypeCount(
+        String eventType,
+        long count
     ) {}
 }

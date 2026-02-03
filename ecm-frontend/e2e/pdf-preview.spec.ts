@@ -232,6 +232,7 @@ test('PDF preview shows dialog and controls', async ({ page, request }) => {
   await page.getByRole('menuitem', { name: 'Queue Preview' }).click();
   await queueResponse;
   await expect(page.getByText(/Preview generation is in progress/i)).toBeVisible({ timeout: 60_000 });
+  await expect(previewDialog.getByText(/Preview: Processing/i)).toBeVisible({ timeout: 60_000 });
 
   await previewDialog.getByLabel('close').click();
 

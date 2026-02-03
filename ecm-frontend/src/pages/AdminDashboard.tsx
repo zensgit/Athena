@@ -119,6 +119,11 @@ interface AuditPreset {
   requiresEventType: boolean;
 }
 
+interface AuditEventTypeOption {
+  eventType: string;
+  count: number;
+}
+
 interface DashboardData {
   summary: SystemSummary;
   storage: MimeTypeStats[];
@@ -188,6 +193,8 @@ const AdminDashboard: React.FC = () => {
   const [exportingAudit, setExportingAudit] = useState(false);
   const [cleaningAudit, setCleaningAudit] = useState(false);
   const [auditPresets, setAuditPresets] = useState<AuditPreset[]>([]);
+  const [auditEventTypes, setAuditEventTypes] = useState<AuditEventTypeOption[]>([]);
+  const [auditUserSuggestions, setAuditUserSuggestions] = useState<string[]>([]);
   const [auditCategories, setAuditCategories] = useState<AuditCategorySetting[]>([]);
   const [auditCategoriesLoading, setAuditCategoriesLoading] = useState(false);
   const [auditCategoriesUpdating, setAuditCategoriesUpdating] = useState(false);
@@ -294,7 +301,7 @@ const AdminDashboard: React.FC = () => {
     try {
       setLoadingDashboard(true);
       setAuditCategoriesLoading(true);
-      const [dashboardRes, logsRes, licenseRes, retentionRes, ruleSummaryRes, ruleEventsRes, presetsRes, categoriesRes] = await Promise.all([
+      const [dashboardRes, logsRes, licenseRes, retentionRes, ruleSummaryRes, ruleEventsRes, presetsRes, categoriesRes, eventTypesRes] = await Promise.all([
         apiService.get<DashboardData>('/analytics/dashboard'),
         apiService.get<AuditLog[]>('/analytics/audit/recent?limit=10'),
         apiService.get<LicenseInfo>('/system/license').catch(() => null),
@@ -303,6 +310,7 @@ const AdminDashboard: React.FC = () => {
         apiService.get<AuditLog[]>('/analytics/rules/recent?limit=20').catch(() => []),
         apiService.get<AuditPreset[]>('/analytics/audit/presets').catch(() => []),
         apiService.get<AuditCategorySetting[]>('/analytics/audit/categories').catch(() => []),
+        apiService.get<AuditEventTypeOption[]>('/analytics/audit/event-types?limit=50').catch(() => []),
       ]);
       setData(dashboardRes);
       setLogs(logsRes);
@@ -312,6 +320,8 @@ const AdminDashboard: React.FC = () => {
       setRuleEvents(ruleEventsRes || []);
       setAuditPresets(presetsRes || []);
       setAuditCategories(categoriesRes || []);
+      setAuditEventTypes(eventTypesRes || []);
+      setAuditUserSuggestions((dashboardRes?.topUsers || []).map((user) => user.username));
     } catch {
       toast.error('Failed to load dashboard data');
     } finally {
@@ -962,19 +972,33 @@ const AdminDashboard: React.FC = () => {
                       ))}
                     </Select>
                   </FormControl>
-                  <TextField
-                    label="User"
-                    size="small"
+                  <Autocomplete
+                    freeSolo
+                    options={auditUserSuggestions}
                     value={auditFilterUser}
-                    onChange={(event) => setAuditFilterUser(event.target.value)}
-                    sx={{ minWidth: 160 }}
+                    onInputChange={(_, value) => setAuditFilterUser(value)}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        label="User"
+                        size="small"
+                        sx={{ minWidth: 160 }}
+                      />
+                    )}
                   />
-                  <TextField
-                    label="Event Type"
-                    size="small"
+                  <Autocomplete
+                    freeSolo
+                    options={auditEventTypes.map((item) => item.eventType)}
                     value={auditFilterEventType}
-                    onChange={(event) => setAuditFilterEventType(event.target.value)}
-                    sx={{ minWidth: 180 }}
+                    onInputChange={(_, value) => setAuditFilterEventType(value)}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        label="Event Type"
+                        size="small"
+                        sx={{ minWidth: 180 }}
+                      />
+                    )}
                   />
                   <TextField
                     label="From"

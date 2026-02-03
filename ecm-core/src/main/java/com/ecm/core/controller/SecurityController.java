@@ -1,6 +1,7 @@
 package com.ecm.core.controller;
 
 import com.ecm.core.dto.PermissionDto;
+import com.ecm.core.dto.PermissionSetDto;
 import com.ecm.core.dto.UserDto;
 import com.ecm.core.entity.Node;
 import com.ecm.core.entity.Permission;
@@ -45,6 +46,17 @@ public class SecurityController {
     @Operation(summary = "Get permission sets", description = "Get predefined permission sets")
     public ResponseEntity<Map<String, Set<PermissionType>>> getPermissionSets() {
         return ResponseEntity.ok(securityService.getPermissionSets());
+    }
+
+    @GetMapping("/permission-sets/metadata")
+    @Operation(summary = "Get permission set metadata", description = "Get predefined permission sets with labels and descriptions")
+    public ResponseEntity<List<PermissionSetDto>> getPermissionSetMetadata() {
+        return ResponseEntity.ok(
+            java.util.Arrays.stream(PermissionSet.values())
+                .sorted(java.util.Comparator.comparingInt(PermissionSet::getOrder))
+                .map(PermissionSetDto::from)
+                .toList()
+        );
     }
     
     @GetMapping("/nodes/{nodeId}/effective-permissions")
