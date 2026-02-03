@@ -73,6 +73,13 @@ ECM_UI_URL=http://localhost:5500 ECM_API_URL=http://localhost:7700 \
 Result: **failed** (login did not navigate from `/login` to Keycloak in time, `page.waitForURL` timeout).\
 Artifacts: `ecm-frontend/test-results/mail-automation-*/test-failed-1.png` and `trace.zip`.
 
+### Headless stable login (automation bypass)
+```bash
+ECM_E2E_SKIP_LOGIN=1 ECM_UI_URL=http://localhost:5500 ECM_API_URL=http://localhost:7700 \
+  npx playwright test e2e/mail-automation.spec.ts
+```
+Result: `2 passed (25.2s)`.
+
 ## Outcome
 - ✅ Mail fetch summary persists across reload via API.
 - ✅ Mail diagnostics, export, and audit logging validated.

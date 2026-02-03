@@ -5,10 +5,21 @@ type KeycloakInitOptionsWithPkce = KeycloakInitOptions & { pkceMethod?: string }
 
 let keycloakInstance: KeycloakInstance | null = null;
 let keycloakLoadPromise: Promise<KeycloakInstance> | null = null;
-const bypassAuth = process.env.REACT_APP_E2E_BYPASS_AUTH === '1';
+
+const getBypassMode = () => {
+  if (process.env.REACT_APP_E2E_BYPASS_AUTH === '1') {
+    return true;
+  }
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  const isE2E = window.navigator?.webdriver === true;
+  const flag = window.localStorage.getItem('ecm_e2e_bypass');
+  return isE2E && flag === '1';
+};
 
 const loadBypassSession = () => {
-  if (!bypassAuth) {
+  if (!getBypassMode()) {
     return null;
   }
   try {
@@ -39,7 +50,7 @@ const loadKeycloak = async (): Promise<KeycloakInstance> => {
 
 class AuthService {
   async init(options: KeycloakInitOptionsWithPkce): Promise<boolean> {
-    if (bypassAuth) {
+    if (getBypassMode()) {
       return Boolean(loadBypassSession()?.token);
     }
     const keycloak = await loadKeycloak();
@@ -60,7 +71,7 @@ class AuthService {
   }
 
   getToken(): string | undefined {
-    if (bypassAuth) {
+    if (getBypassMode()) {
       return loadBypassSession()?.token;
     }
     return keycloakInstance?.token || undefined;
@@ -71,7 +82,7 @@ class AuthService {
   }
 
   async refreshToken(): Promise<string | undefined> {
-    if (bypassAuth) {
+    if (getBypassMode()) {
       return loadBypassSession()?.token;
     }
     if (!keycloakInstance || !keycloakInstance.authenticated) return undefined;
@@ -85,7 +96,7 @@ class AuthService {
   }
 
   getCurrentUser(): User | null {
-    if (bypassAuth) {
+    if (getBypassMode()) {
       return loadBypassSession()?.user ?? null;
     }
     if (!keycloakInstance?.tokenParsed) return null;
@@ -117,7 +128,7 @@ class AuthService {
   }
 
   isAuthenticated(): boolean {
-    if (bypassAuth) {
+    if (getBypassMode()) {
       return Boolean(loadBypassSession()?.token);
     }
     return !!keycloakInstance?.authenticated;
@@ -140,6 +151,7 @@ class AuthService {
   clearSession() {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    localStorage.removeItem('ecm_e2e_bypass');
   }
 }
 

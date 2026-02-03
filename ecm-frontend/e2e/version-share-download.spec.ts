@@ -156,6 +156,7 @@ async function loginWithCredentials(page: Page, username: string, password: stri
     await page.addInitScript(
       ({ authToken, authUser }) => {
         window.localStorage.setItem('token', authToken);
+        window.localStorage.setItem('ecm_e2e_bypass', '1');
         window.localStorage.setItem('user', JSON.stringify(authUser));
       },
       {
