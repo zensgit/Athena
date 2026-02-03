@@ -58,12 +58,14 @@ import {
   CleaningServices as CleanupIcon,
   PlayArrow,
   Star,
+  MailOutline,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import apiService from '../services/api';
 import { toast } from 'react-toastify';
 import userGroupService, { Group } from 'services/userGroupService';
 import savedSearchService, { SavedSearch } from 'services/savedSearchService';
+import mailAutomationService, { MailFetchSummaryStatus } from 'services/mailAutomationService';
 import authService from 'services/authService';
 import { useNavigate } from 'react-router-dom';
 import { useAppDispatch } from 'store';
@@ -189,6 +191,9 @@ const AdminDashboard: React.FC = () => {
   const [ruleEventFilter, setRuleEventFilter] = useState<string[]>(RULE_EVENT_TYPES);
   const [licenseInfo, setLicenseInfo] = useState<LicenseInfo | null>(null);
   const [loadingDashboard, setLoadingDashboard] = useState(true);
+  const [mailFetchSummary, setMailFetchSummary] = useState<MailFetchSummaryStatus | null>(null);
+  const [mailFetchSummaryLoading, setMailFetchSummaryLoading] = useState(false);
+  const [mailFetchSummaryError, setMailFetchSummaryError] = useState<string | null>(null);
   const [retentionInfo, setRetentionInfo] = useState<AuditRetentionInfo | null>(null);
   const [exportingAudit, setExportingAudit] = useState(false);
   const [cleaningAudit, setCleaningAudit] = useState(false);
@@ -372,6 +377,22 @@ const AdminDashboard: React.FC = () => {
       setPinnedSearches([]);
     } finally {
       setPinnedLoading(false);
+    }
+  };
+
+  const fetchMailFetchSummary = async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true;
+    if (!silent) {
+      setMailFetchSummaryLoading(true);
+    }
+    setMailFetchSummaryError(null);
+    try {
+      const summary = await mailAutomationService.getFetchSummary();
+      setMailFetchSummary(summary);
+    } catch {
+      setMailFetchSummaryError('Failed to load mail fetch summary');
+    } finally {
+      setMailFetchSummaryLoading(false);
     }
   };
 
@@ -590,6 +611,7 @@ const AdminDashboard: React.FC = () => {
   useEffect(() => {
     fetchDashboard();
     loadPinnedSearches();
+    fetchMailFetchSummary({ silent: true });
   }, []);
 
   useEffect(() => {
@@ -623,6 +645,13 @@ const AdminDashboard: React.FC = () => {
     return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
   };
 
+  const formatDuration = (durationMs?: number | null) => {
+    if (durationMs === null || durationMs === undefined) return '—';
+    if (durationMs < 1000) return `${durationMs} ms`;
+    if (durationMs < 60000) return `${(durationMs / 1000).toFixed(1)} s`;
+    return `${(durationMs / 60000).toFixed(1)} min`;
+  };
+
   const OverviewPanel = () => {
     if (loadingDashboard && !data) {
       return (
@@ -642,7 +671,14 @@ const AdminDashboard: React.FC = () => {
           <Typography variant="h4" component="h1">
             System Dashboard
           </Typography>
-          <IconButton onClick={fetchDashboard} color="primary">
+          <IconButton
+            onClick={() => {
+              fetchDashboard();
+              loadPinnedSearches();
+              fetchMailFetchSummary();
+            }}
+            color="primary"
+          >
             <Refresh />
           </IconButton>
         </Box>
@@ -738,6 +774,88 @@ const AdminDashboard: React.FC = () => {
                 </React.Fragment>
               ))}
             </List>
+          )}
+        </Paper>
+
+        <Paper sx={{ p: 2, mb: 3 }}>
+          <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+            <Box display="flex" alignItems="center" gap={1}>
+              <MailOutline fontSize="small" color="primary" />
+              <Typography component="h2" variant="h6" color="primary">
+                Mail Automation
+              </Typography>
+            </Box>
+            <Box display="flex" alignItems="center" gap={1}>
+              <Button variant="outlined" size="small" onClick={() => navigate('/admin/mail')}>
+                Open
+              </Button>
+              <IconButton
+                size="small"
+                onClick={() => fetchMailFetchSummary()}
+                aria-label="Refresh mail fetch summary"
+              >
+                <Refresh fontSize="small" />
+              </IconButton>
+            </Box>
+          </Box>
+
+          {mailFetchSummaryLoading ? (
+            <Box display="flex" alignItems="center" gap={2} py={1}>
+              <CircularProgress size={20} />
+              <Typography variant="body2" color="text.secondary">
+                Loading mail fetch summary…
+              </Typography>
+            </Box>
+          ) : mailFetchSummaryError ? (
+            <Typography variant="body2" color="error">
+              {mailFetchSummaryError}
+            </Typography>
+          ) : mailFetchSummary?.summary ? (
+            <>
+              <Box display="flex" gap={1} flexWrap="wrap" mb={1}>
+                <Chip
+                  size="small"
+                  label={`Accounts ${mailFetchSummary.summary.attemptedAccounts}/${mailFetchSummary.summary.accounts}`}
+                  variant="outlined"
+                />
+                <Chip
+                  size="small"
+                  label={`Skipped ${mailFetchSummary.summary.skippedAccounts}`}
+                  variant="outlined"
+                />
+                <Chip
+                  size="small"
+                  label={`Account errors ${mailFetchSummary.summary.accountErrors}`}
+                  color={mailFetchSummary.summary.accountErrors > 0 ? 'warning' : 'default'}
+                  variant="outlined"
+                />
+                <Chip
+                  size="small"
+                  label={`Duration ${formatDuration(mailFetchSummary.summary.durationMs)}`}
+                  variant="outlined"
+                />
+              </Box>
+              <Box display="flex" gap={1} flexWrap="wrap" mb={1}>
+                <Chip size="small" label={`Found ${mailFetchSummary.summary.foundMessages}`} />
+                <Chip size="small" label={`Matched ${mailFetchSummary.summary.matchedMessages}`} />
+                <Chip size="small" label={`Processed ${mailFetchSummary.summary.processedMessages}`} color="success" />
+                <Chip size="small" label={`Skipped ${mailFetchSummary.summary.skippedMessages}`} />
+                <Chip
+                  size="small"
+                  label={`Errors ${mailFetchSummary.summary.errorMessages}`}
+                  color={mailFetchSummary.summary.errorMessages > 0 ? 'warning' : 'default'}
+                />
+              </Box>
+              {mailFetchSummary.fetchedAt && (
+                <Typography variant="caption" color="text.secondary" display="block">
+                  Last fetched {format(new Date(mailFetchSummary.fetchedAt), 'PPp')}
+                </Typography>
+              )}
+            </>
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              No mail fetch summary yet. Trigger a fetch from Mail Automation to populate this card.
+            </Typography>
           )}
         </Paper>
 
