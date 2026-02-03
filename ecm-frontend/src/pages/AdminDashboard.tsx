@@ -812,6 +812,13 @@ const AdminDashboard: React.FC = () => {
             </Typography>
           ) : mailFetchSummary?.summary ? (
             <>
+              {(mailFetchSummary.summary.accountErrors > 0 || mailFetchSummary.summary.errorMessages > 0) && (
+                <Box mb={1}>
+                  <Typography variant="body2" color="error">
+                    Attention: errors detected in the last mail fetch run.
+                  </Typography>
+                </Box>
+              )}
               <Box display="flex" gap={1} flexWrap="wrap" mb={1}>
                 <Chip
                   size="small"
