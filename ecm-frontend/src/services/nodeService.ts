@@ -652,9 +652,13 @@ class NodeService {
     }, {});
   }
 
-  async getPermissionDiagnostics(nodeId: string, permissionType: PermissionType): Promise<PermissionDecision> {
+  async getPermissionDiagnostics(
+    nodeId: string,
+    permissionType: PermissionType,
+    username?: string
+  ): Promise<PermissionDecision> {
     return api.get<PermissionDecision>(`/security/nodes/${nodeId}/permission-diagnostics`, {
-      params: { permissionType },
+      params: { permissionType, username: username || undefined },
     });
   }
 

@@ -16,6 +16,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -159,14 +160,19 @@ public class SecurityController {
     @Operation(summary = "Permission diagnostics", description = "Explain why the current user can or cannot perform a permission")
     public ResponseEntity<SecurityService.PermissionDecision> getPermissionDiagnostics(
             @Parameter(description = "Node ID") @PathVariable UUID nodeId,
-            @Parameter(description = "Permission type") @RequestParam PermissionType permissionType) {
+            @Parameter(description = "Permission type") @RequestParam PermissionType permissionType,
+            @Parameter(description = "Optional username override (admin only)") @RequestParam(required = false) String username) {
 
         Node node = nodeService.getNode(nodeId);
         if (!securityService.hasPermission(node, PermissionType.READ)) {
             throw new SecurityException("No permission to view permissions");
         }
-        String username = securityService.getCurrentUser();
-        return ResponseEntity.ok(securityService.explainPermission(node, permissionType, username));
+        String requester = securityService.getCurrentUser();
+        String target = (username != null && !username.isBlank()) ? username : requester;
+        if (!target.equals(requester) && !securityService.isAdmin(requester)) {
+            throw new AccessDeniedException("Admin role required to diagnose permissions for other users");
+        }
+        return ResponseEntity.ok(securityService.explainPermission(node, permissionType, target));
     }
     
     @PostMapping("/permissions/cleanup-expired")

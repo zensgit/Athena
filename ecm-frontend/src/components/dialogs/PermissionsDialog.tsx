@@ -107,6 +107,7 @@ const PermissionsDialog: React.FC = () => {
   const [permissionDiagnosticsLoading, setPermissionDiagnosticsLoading] = useState(false);
   const [permissionDiagnosticsError, setPermissionDiagnosticsError] = useState<string | null>(null);
   const [diagnosticPermissionType, setDiagnosticPermissionType] = useState<PermissionType>('READ');
+  const [diagnosticUsername, setDiagnosticUsername] = useState('');
   const [newPrincipal, setNewPrincipal] = useState('');
   const [availableUsers, setAvailableUsers] = useState<string[]>([]);
   const [availableGroups, setAvailableGroups] = useState<string[]>([]);
@@ -163,7 +164,12 @@ const PermissionsDialog: React.FC = () => {
       setPermissionDiagnosticsLoading(true);
     }
     try {
-      const decision = await nodeService.getPermissionDiagnostics(selectedNodeId, diagnosticPermissionType);
+      const targetUsername = diagnosticUsername.trim();
+      const decision = await nodeService.getPermissionDiagnostics(
+        selectedNodeId,
+        diagnosticPermissionType,
+        targetUsername.length > 0 ? targetUsername : undefined
+      );
       setPermissionDiagnostics(decision);
       setPermissionDiagnosticsError(null);
     } catch {
@@ -171,7 +177,7 @@ const PermissionsDialog: React.FC = () => {
     } finally {
       setPermissionDiagnosticsLoading(false);
     }
-  }, [selectedNodeId, diagnosticPermissionType]);
+  }, [selectedNodeId, diagnosticPermissionType, diagnosticUsername]);
 
   const loadPermissionSets = useCallback(async () => {
     try {
@@ -216,7 +222,13 @@ const PermissionsDialog: React.FC = () => {
       setPermissionDiagnosticsError(null);
       setPermissionDiagnosticsLoading(false);
     }
-  }, [permissionsDialogOpen, selectedNodeId, diagnosticPermissionType, loadPermissionDiagnostics]);
+  }, [permissionsDialogOpen, selectedNodeId, diagnosticPermissionType, diagnosticUsername, loadPermissionDiagnostics]);
+
+  useEffect(() => {
+    if (permissionsDialogOpen) {
+      setDiagnosticUsername(user?.username ?? '');
+    }
+  }, [permissionsDialogOpen, user?.username]);
 
   const handleClose = () => {
     dispatch(setPermissionsDialogOpen(false));
@@ -228,6 +240,7 @@ const PermissionsDialog: React.FC = () => {
     setPermissionDiagnosticsError(null);
     setPermissionDiagnosticsLoading(false);
     setDiagnosticPermissionType('READ');
+    setDiagnosticUsername('');
   };
 
   const handleCopyAcl = async () => {
@@ -624,6 +637,24 @@ const PermissionsDialog: React.FC = () => {
                 ))}
               </Select>
             </FormControl>
+            <Autocomplete
+              size="small"
+              freeSolo
+              disabled={!user?.roles?.includes('ROLE_ADMIN')}
+              value={diagnosticUsername}
+              onChange={(_, value) => setDiagnosticUsername(value ?? '')}
+              onInputChange={(_, value) => setDiagnosticUsername(value)}
+              options={availableUsers}
+              sx={{ minWidth: 240 }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Diagnose as"
+                  size="small"
+                  helperText={!user?.roles?.includes('ROLE_ADMIN') ? 'Admin only' : 'Optional username'}
+                />
+              )}
+            />
             {permissionDiagnosticsLoading && <CircularProgress size={18} />}
           </Box>
           {permissionDiagnosticsError && (
