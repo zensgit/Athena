@@ -225,6 +225,7 @@ const VersionHistoryDialog: React.FC = () => {
   };
 
   const contextPrevious = contextMenu ? getPreviousVersion(contextMenu.version) : null;
+  const currentVersion = versions[0] ?? null;
   const hasMore = versions.length < totalElements;
 
   return (
@@ -400,6 +401,20 @@ const VersionHistoryDialog: React.FC = () => {
             </ListItemIcon>
             <ListItemText>Compare versions</ListItemText>
           </MenuItem>
+          <MenuItem
+            disabled={!currentVersion || !contextMenu || contextMenu.version.id === currentVersion.id}
+            onClick={() => {
+              if (contextMenu && currentVersion && contextMenu.version.id !== currentVersion.id) {
+                setComparePair({ current: currentVersion, previous: contextMenu.version });
+                handleCloseContextMenu();
+              }
+            }}
+          >
+            <ListItemIcon>
+              <Compare fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Compare with current</ListItemText>
+          </MenuItem>
         </Menu>
       </DialogContent>
       <DialogActions>
@@ -449,6 +464,11 @@ const VersionHistoryDialog: React.FC = () => {
                     <TableCell>{comparePair.previous.versionLabel}</TableCell>
                   </TableRow>
                   <TableRow>
+                    <TableCell>Major</TableCell>
+                    <TableCell>{comparePair.current.isMajor ? 'Yes' : 'No'}</TableCell>
+                    <TableCell>{comparePair.previous.isMajor ? 'Yes' : 'No'}</TableCell>
+                  </TableRow>
+                  <TableRow>
                     <TableCell>Created</TableCell>
                     <TableCell>{format(new Date(comparePair.current.created), 'PPp')}</TableCell>
                     <TableCell>{format(new Date(comparePair.previous.created), 'PPp')}</TableCell>
@@ -464,6 +484,11 @@ const VersionHistoryDialog: React.FC = () => {
                     <TableCell>{formatFileSize(comparePair.previous.size)}</TableCell>
                   </TableRow>
                   <TableRow>
+                    <TableCell>Size delta</TableCell>
+                    <TableCell>{formatSizeDelta(comparePair.current, comparePair.previous)}</TableCell>
+                    <TableCell>—</TableCell>
+                  </TableRow>
+                  <TableRow>
                     <TableCell>Mime Type</TableCell>
                     <TableCell>{comparePair.current.mimeType || '-'}</TableCell>
                     <TableCell>{comparePair.previous.mimeType || '-'}</TableCell>
@@ -474,9 +499,23 @@ const VersionHistoryDialog: React.FC = () => {
                     <TableCell>{comparePair.previous.contentHash || '-'}</TableCell>
                   </TableRow>
                   <TableRow>
+                    <TableCell>Hash changed</TableCell>
+                    <TableCell>
+                      {comparePair.current.contentHash && comparePair.previous.contentHash
+                        ? (comparePair.current.contentHash === comparePair.previous.contentHash ? 'No' : 'Yes')
+                        : '—'}
+                    </TableCell>
+                    <TableCell>—</TableCell>
+                  </TableRow>
+                  <TableRow>
                     <TableCell>Content ID</TableCell>
                     <TableCell>{comparePair.current.contentId || '-'}</TableCell>
                     <TableCell>{comparePair.previous.contentId || '-'}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>Status</TableCell>
+                    <TableCell>{comparePair.current.status || '-'}</TableCell>
+                    <TableCell>{comparePair.previous.status || '-'}</TableCell>
                   </TableRow>
                   <TableRow>
                     <TableCell>Comment</TableCell>
