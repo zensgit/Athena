@@ -121,6 +121,11 @@ export interface SearchIndexStats {
   error?: string;
 }
 
+export interface SearchRebuildStatus {
+  inProgress: boolean;
+  documentsIndexed: number;
+}
+
 export interface PermissionDecision {
   nodeId: string | null;
   username: string | null;
@@ -498,6 +503,10 @@ class NodeService {
 
   async getSearchIndexStats(): Promise<SearchIndexStats> {
     return api.get<SearchIndexStats>('/search/index/stats');
+  }
+
+  async getSearchRebuildStatus(): Promise<SearchRebuildStatus> {
+    return api.get<SearchRebuildStatus>('/search/index/rebuild/status');
   }
 
   private mapSearchItemToNode(item: any): Node {

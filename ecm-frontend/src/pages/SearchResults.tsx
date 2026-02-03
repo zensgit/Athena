@@ -43,7 +43,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppSelector, useAppDispatch } from 'store';
 import { fetchSearchFacets, searchNodes } from 'store/slices/nodeSlice';
 import { setSearchOpen, setSidebarOpen } from 'store/slices/uiSlice';
-import nodeService, { SearchDiagnostics, SearchIndexStats } from 'services/nodeService';
+import nodeService, { SearchDiagnostics, SearchIndexStats, SearchRebuildStatus } from 'services/nodeService';
 import { Node, SearchCriteria } from 'types';
 import { toast } from 'react-toastify';
 import Highlight from 'components/search/Highlight';
@@ -110,6 +110,9 @@ const SearchResults: React.FC = () => {
   const [searchIndexStats, setSearchIndexStats] = useState<SearchIndexStats | null>(null);
   const [searchIndexStatsLoading, setSearchIndexStatsLoading] = useState(false);
   const [searchIndexStatsError, setSearchIndexStatsError] = useState<string | null>(null);
+  const [searchRebuildStatus, setSearchRebuildStatus] = useState<SearchRebuildStatus | null>(null);
+  const [searchRebuildStatusLoading, setSearchRebuildStatusLoading] = useState(false);
+  const [searchRebuildStatusError, setSearchRebuildStatusError] = useState<string | null>(null);
   const lastSpellcheckQueryRef = useRef('');
   const previewOpen = Boolean(previewNode);
   const isAdmin = Boolean(user?.roles?.includes('ROLE_ADMIN'));
@@ -171,9 +174,32 @@ const SearchResults: React.FC = () => {
     }
   }, [isAdmin]);
 
+  const loadSearchRebuildStatus = useCallback(async (options?: { silent?: boolean }) => {
+    if (!isAdmin) {
+      setSearchRebuildStatus(null);
+      setSearchRebuildStatusError(null);
+      setSearchRebuildStatusLoading(false);
+      return;
+    }
+    const silent = options?.silent === true;
+    if (!silent) {
+      setSearchRebuildStatusLoading(true);
+    }
+    try {
+      const status = await nodeService.getSearchRebuildStatus();
+      setSearchRebuildStatus(status);
+      setSearchRebuildStatusError(null);
+    } catch {
+      setSearchRebuildStatusError('Failed to load rebuild status');
+    } finally {
+      setSearchRebuildStatusLoading(false);
+    }
+  }, [isAdmin]);
+
   const handleRefreshDiagnostics = () => {
     loadSearchDiagnostics();
     loadSearchIndexStats();
+    loadSearchRebuildStatus();
   };
 
   const getSortParams = (value: string) => {
@@ -292,7 +318,8 @@ const SearchResults: React.FC = () => {
   useEffect(() => {
     loadSearchDiagnostics({ silent: true });
     loadSearchIndexStats({ silent: true });
-  }, [loadSearchDiagnostics, loadSearchIndexStats]);
+    loadSearchRebuildStatus({ silent: true });
+  }, [loadSearchDiagnostics, loadSearchIndexStats, loadSearchRebuildStatus]);
 
   useEffect(() => {
     const query = (lastSearchCriteria?.name || '').trim();
@@ -1445,6 +1472,36 @@ const SearchResults: React.FC = () => {
                     !searchIndexStatsError && (
                       <Typography variant="caption" color="text.secondary" display="block">
                         Index stats unavailable
+                      </Typography>
+                    )
+                  )}
+                  <Divider sx={{ my: 1 }} />
+                  <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+                    <Typography variant="subtitle2">Rebuild status</Typography>
+                    {searchRebuildStatusLoading && <CircularProgress size={16} />}
+                  </Box>
+                  {searchRebuildStatusError && (
+                    <Typography variant="caption" color="error" display="block" sx={{ mb: 1 }}>
+                      {searchRebuildStatusError}
+                    </Typography>
+                  )}
+                  {searchRebuildStatus && !searchRebuildStatusError ? (
+                    <Stack direction="row" spacing={1} flexWrap="wrap">
+                      <Chip
+                        size="small"
+                        color={searchRebuildStatus.inProgress ? 'warning' : 'success'}
+                        label={searchRebuildStatus.inProgress ? 'Rebuild in progress' : 'Rebuild idle'}
+                      />
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        label={`Indexed ${searchRebuildStatus.documentsIndexed}`}
+                      />
+                    </Stack>
+                  ) : (
+                    !searchRebuildStatusError && (
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        Rebuild status unavailable
                       </Typography>
                     )
                   )}
