@@ -5,6 +5,24 @@ type KeycloakInitOptionsWithPkce = KeycloakInitOptions & { pkceMethod?: string }
 
 let keycloakInstance: KeycloakInstance | null = null;
 let keycloakLoadPromise: Promise<KeycloakInstance> | null = null;
+const bypassAuth = process.env.REACT_APP_E2E_BYPASS_AUTH === '1';
+
+const loadBypassSession = () => {
+  if (!bypassAuth) {
+    return null;
+  }
+  try {
+    const token = localStorage.getItem('token');
+    const userRaw = localStorage.getItem('user');
+    if (!token || !userRaw) {
+      return null;
+    }
+    const user = JSON.parse(userRaw) as User;
+    return { token, user };
+  } catch {
+    return null;
+  }
+};
 
 const loadKeycloak = async (): Promise<KeycloakInstance> => {
   if (keycloakInstance) {
@@ -21,6 +39,9 @@ const loadKeycloak = async (): Promise<KeycloakInstance> => {
 
 class AuthService {
   async init(options: KeycloakInitOptionsWithPkce): Promise<boolean> {
+    if (bypassAuth) {
+      return Boolean(loadBypassSession()?.token);
+    }
     const keycloak = await loadKeycloak();
     const authenticated = await keycloak.init(options as any);
     return Boolean(authenticated);
@@ -39,6 +60,9 @@ class AuthService {
   }
 
   getToken(): string | undefined {
+    if (bypassAuth) {
+      return loadBypassSession()?.token;
+    }
     return keycloakInstance?.token || undefined;
   }
 
@@ -47,6 +71,9 @@ class AuthService {
   }
 
   async refreshToken(): Promise<string | undefined> {
+    if (bypassAuth) {
+      return loadBypassSession()?.token;
+    }
     if (!keycloakInstance || !keycloakInstance.authenticated) return undefined;
     try {
       await keycloakInstance.updateToken(30);
@@ -58,6 +85,9 @@ class AuthService {
   }
 
   getCurrentUser(): User | null {
+    if (bypassAuth) {
+      return loadBypassSession()?.user ?? null;
+    }
     if (!keycloakInstance?.tokenParsed) return null;
     const tokenParsed = keycloakInstance.tokenParsed as Record<string, any>;
     const preferredUsername = tokenParsed.preferred_username as string | undefined;
@@ -87,6 +117,9 @@ class AuthService {
   }
 
   isAuthenticated(): boolean {
+    if (bypassAuth) {
+      return Boolean(loadBypassSession()?.token);
+    }
     return !!keycloakInstance?.authenticated;
   }
 

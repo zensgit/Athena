@@ -44,6 +44,7 @@ import {
   Category as CategoryIcon,
   Share as ShareIcon,
   AutoAwesome,
+  InfoOutlined,
   Star,
   StarBorder,
 } from '@mui/icons-material';
@@ -527,20 +528,28 @@ const FileList: React.FC<FileListProps> = ({
             />
           )}
           {previewMeta && (
-            <Tooltip
-              title={params.row.previewFailureReason || ''}
-              placement="top-start"
-              arrow
-              disableHoverListener={!params.row.previewFailureReason}
-            >
-              <Chip
-                label={previewMeta.label}
-                color={previewMeta.color}
-                size="small"
-                variant="outlined"
-                sx={{ ml: 1 }}
-              />
-            </Tooltip>
+            <Box display="flex" alignItems="center" gap={0.5} ml={1}>
+              <Tooltip
+                title={params.row.previewFailureReason || ''}
+                placement="top-start"
+                arrow
+                disableHoverListener={!params.row.previewFailureReason}
+              >
+                <Chip
+                  label={previewMeta.label}
+                  color={previewMeta.color}
+                  size="small"
+                  variant="outlined"
+                />
+              </Tooltip>
+              {params.row.previewStatus?.toUpperCase() === 'FAILED' && params.row.previewFailureReason && (
+                <Tooltip title={params.row.previewFailureReason} placement="top-start" arrow>
+                  <IconButton size="small" aria-label="Preview failure reason">
+                    <InfoOutlined fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              )}
+            </Box>
           )}
         </Box>
         );
@@ -668,19 +677,28 @@ const FileList: React.FC<FileListProps> = ({
                       <Box display="flex" gap={0.5} flexWrap="wrap" mt={0.5}>
                         <Chip label={fileTypeLabel} size="small" variant="outlined" />
                         {previewMeta && (
-                          <Tooltip
-                            title={node.previewFailureReason || ''}
-                            placement="top-start"
-                            arrow
-                            disableHoverListener={!node.previewFailureReason}
-                          >
-                            <Chip
-                              label={previewMeta.label}
-                              color={previewMeta.color}
-                              size="small"
-                              variant="outlined"
-                            />
-                          </Tooltip>
+                          <Box display="flex" alignItems="center" gap={0.5}>
+                            <Tooltip
+                              title={node.previewFailureReason || ''}
+                              placement="top-start"
+                              arrow
+                              disableHoverListener={!node.previewFailureReason}
+                            >
+                              <Chip
+                                label={previewMeta.label}
+                                color={previewMeta.color}
+                                size="small"
+                                variant="outlined"
+                              />
+                            </Tooltip>
+                            {node.previewStatus?.toUpperCase() === 'FAILED' && node.previewFailureReason && (
+                              <Tooltip title={node.previewFailureReason} placement="top-start" arrow>
+                                <IconButton size="small" aria-label="Preview failure reason">
+                                  <InfoOutlined fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            )}
+                          </Box>
                         )}
                       </Box>
                     )}

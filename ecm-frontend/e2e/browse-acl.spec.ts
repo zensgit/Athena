@@ -8,7 +8,25 @@ const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
 const viewerUsername = process.env.ECM_E2E_VIEWER_USERNAME || 'viewer';
 const viewerPassword = process.env.ECM_E2E_VIEWER_PASSWORD || 'viewer';
 
-async function loginWithCredentials(page: Page, username: string, password: string) {
+async function loginWithCredentials(page: Page, username: string, password: string, token?: string) {
+  if (process.env.ECM_E2E_SKIP_LOGIN === '1' && token) {
+    await page.addInitScript(
+      ({ authToken, authUser }) => {
+        window.localStorage.setItem('token', authToken);
+        window.localStorage.setItem('user', JSON.stringify(authUser));
+      },
+      {
+        authToken: token,
+        authUser: {
+          id: `e2e-${username}`,
+          username,
+          email: `${username}@example.com`,
+          roles: username === defaultUsername ? ['ROLE_ADMIN'] : ['ROLE_VIEWER'],
+        },
+      }
+    );
+    return;
+  }
   const authPattern = /\/protocol\/openid-connect\/auth/;
   const browsePattern = /\/browse\//;
 
@@ -154,7 +172,8 @@ test('Browse view hides unauthorized documents for viewer', async ({ page, reque
     allowed: false,
   });
 
-  await loginWithCredentials(page, viewerUsername, viewerPassword);
+  const viewerToken = await fetchAccessToken(request, viewerUsername, viewerPassword);
+  await loginWithCredentials(page, viewerUsername, viewerPassword, viewerToken);
   await page.goto(`${baseUiUrl}/browse/${folderId}`, { waitUntil: 'domcontentloaded' });
 
   await page.getByRole('button', { name: 'list view' }).click();

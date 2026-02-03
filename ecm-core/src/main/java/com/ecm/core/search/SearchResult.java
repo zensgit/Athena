@@ -35,6 +35,8 @@ public class SearchResult {
     private List<String> tags;
     private List<String> categories;
     private String correspondent;
+    private String previewStatus;
+    private String previewFailureReason;
 
     /**
      * Get human-readable file size.

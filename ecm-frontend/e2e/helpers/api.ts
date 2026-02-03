@@ -149,6 +149,31 @@ export async function waitForSearchIndex(
   throw new Error(`Search index did not include '${query}' (${lastError})`);
 }
 
+type ReindexOptions = {
+  apiUrl?: string;
+  limit?: number;
+  refresh?: boolean;
+};
+
+export async function reindexByQuery(
+  request: APIRequestContext,
+  query: string,
+  token: string,
+  options: ReindexOptions = {},
+) {
+  const apiUrl = options.apiUrl ?? DEFAULT_API_URL;
+  const res = await request.post(`${apiUrl}/api/v1/search/index/query`, {
+    params: {
+      q: query,
+      limit: options.limit ?? 50,
+      refresh: options.refresh ?? true,
+    },
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(res.ok()).toBeTruthy();
+  return res.json();
+}
+
 type ListResponse<T> = {
   content?: T[];
 };

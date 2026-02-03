@@ -418,7 +418,7 @@ public class FullTextSearchService {
     private void applySort(NativeQueryBuilder builder, String sortBy, String sortDirection) {
         if (sortBy == null || sortBy.isBlank() || "relevance".equalsIgnoreCase(sortBy)) {
             builder.withSort(s -> s.score(sc -> sc.order(SortOrder.Desc)));
-            builder.withSort(s -> s.field(f -> f.field("_id").order(SortOrder.Asc)));
+            builder.withSort(s -> s.field(f -> f.field("nameSort").order(SortOrder.Asc)));
             return;
         }
 
@@ -438,7 +438,9 @@ public class FullTextSearchService {
             : SortOrder.Desc;
 
         builder.withSort(s -> s.field(f -> f.field(field).order(order)));
-        builder.withSort(s -> s.field(f -> f.field("_id").order(SortOrder.Asc)));
+        if (!"nameSort".equals(field)) {
+            builder.withSort(s -> s.field(f -> f.field("nameSort").order(SortOrder.Asc)));
+        }
     }
 
     private static void addAnyOfTermsFilter(BoolQuery.Builder bool, List<String> fields, List<String> values) {
@@ -546,6 +548,8 @@ public class FullTextSearchService {
             .tags(doc.getTags() != null ? List.copyOf(doc.getTags()) : List.of())
             .categories(doc.getCategories() != null ? List.copyOf(doc.getCategories()) : List.of())
             .correspondent(doc.getCorrespondent())
+            .previewStatus(doc.getPreviewStatus())
+            .previewFailureReason(doc.getPreviewFailureReason())
             .build();
     }
 

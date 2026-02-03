@@ -6,6 +6,9 @@ import com.ecm.core.repository.DocumentRepository;
 import com.ecm.core.repository.NodeRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.data.elasticsearch.core.SearchHit;
 import org.springframework.data.elasticsearch.core.SearchHits;
@@ -31,6 +34,9 @@ public class SearchIndexService {
     private final ElasticsearchOperations elasticsearchOperations;
     private static final String INDEX_NAME = "ecm_documents";
 
+    @Value("${ecm.search.refresh-after-write:false}")
+    private boolean refreshAfterWrite;
+
     public boolean isDocumentIndexed(String documentId) {
         try {
             NodeDocument document = elasticsearchOperations.get(
@@ -49,11 +55,18 @@ public class SearchIndexService {
      * Re-index a single document by id.
      */
     public void indexDocument(String documentId) {
+        indexDocument(documentId, false);
+    }
+
+    public void indexDocument(String documentId, boolean refresh) {
         try {
             UUID id = UUID.fromString(documentId);
             Document document = documentRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Document not found: " + documentId));
-            updateDocument(document);
+            saveDocumentToIndex(document, true);
+            if (refresh || refreshAfterWrite) {
+                refreshIndex();
+            }
         } catch (IllegalArgumentException ex) {
             log.error("Failed to index document {}: {}", documentId, ex.getMessage());
             throw ex;
@@ -119,22 +132,63 @@ public class SearchIndexService {
     @Transactional(readOnly = true)
     public void updateDocument(Document document) {
         try {
-            Document hydrated = fetchDocument(document.getId());
-            if (hydrated == null) {
-                log.warn("Skipping document index update; document not found: {}", document.getId());
-                return;
-            }
-            NodeDocument nodeDoc = NodeDocument.fromNode(hydrated);
-            nodeDoc.setMimeType(hydrated.getMimeType());
-            nodeDoc.setFileSize(hydrated.getFileSize());
-            nodeDoc.setTextContent(hydrated.getTextContent());
-            nodeDoc.setVersionLabel(hydrated.getVersionLabel());
-            applyReadPermissions(hydrated, nodeDoc);
-            
-            elasticsearchOperations.save(nodeDoc, IndexCoordinates.of(INDEX_NAME));
-            log.debug("Updated document in index: {}", hydrated.getId());
+            saveDocumentToIndex(document, false);
         } catch (Exception e) {
             log.error("Failed to update document in index: {}", document.getId(), e);
+        }
+    }
+
+    public int indexDocumentsByName(String nameQuery, int limit, boolean refresh) {
+        if (nameQuery == null || nameQuery.isBlank()) {
+            return 0;
+        }
+        int pageSize = Math.min(Math.max(limit, 1), 200);
+        Page<Node> page = nodeRepository.findByNameContainingIgnoreCaseAndDeletedFalse(
+            nameQuery,
+            PageRequest.of(0, pageSize)
+        );
+        int indexed = 0;
+        for (Node node : page.getContent()) {
+            if (node instanceof Document document) {
+                try {
+                    saveDocumentToIndex(document, true);
+                    indexed++;
+                } catch (Exception ex) {
+                    log.warn("Failed to reindex document {}: {}", document.getId(), ex.getMessage());
+                }
+            }
+        }
+        if (indexed > 0 && (refresh || refreshAfterWrite)) {
+            refreshIndex();
+        }
+        return indexed;
+    }
+
+    private void saveDocumentToIndex(Document document, boolean strict) {
+        Document hydrated = fetchDocument(document.getId());
+        if (hydrated == null) {
+            if (strict) {
+                throw new IllegalStateException("Document not found: " + document.getId());
+            }
+            log.warn("Skipping document index update; document not found: {}", document.getId());
+            return;
+        }
+        NodeDocument nodeDoc = NodeDocument.fromNode(hydrated);
+        nodeDoc.setMimeType(hydrated.getMimeType());
+        nodeDoc.setFileSize(hydrated.getFileSize());
+        nodeDoc.setTextContent(hydrated.getTextContent());
+        nodeDoc.setVersionLabel(hydrated.getVersionLabel());
+        applyReadPermissions(hydrated, nodeDoc);
+
+        elasticsearchOperations.save(nodeDoc, IndexCoordinates.of(INDEX_NAME));
+        log.debug("Updated document in index: {}", hydrated.getId());
+    }
+
+    public void refreshIndex() {
+        try {
+            elasticsearchOperations.indexOps(NodeDocument.class).refresh();
+        } catch (Exception e) {
+            log.debug("Failed to refresh search index: {}", e.getMessage());
         }
     }
     

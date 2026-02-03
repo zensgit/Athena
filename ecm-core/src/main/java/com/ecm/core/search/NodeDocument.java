@@ -106,6 +106,12 @@ public class NodeDocument {
     
     @Field(type = FieldType.Keyword)
     private String status;
+
+    @Field(type = FieldType.Keyword)
+    private String previewStatus;
+
+    @Field(type = FieldType.Text, analyzer = "standard")
+    private String previewFailureReason;
     
     @Field(type = FieldType.Keyword)
     private Set<String> permissions;
@@ -138,6 +144,10 @@ public class NodeDocument {
             doc.setTextContent(document.getTextContent());
             doc.setContent(document.getTextContent());
             doc.setExtractedText(document.getTextContent());
+            if (document.getPreviewStatus() != null) {
+                doc.setPreviewStatus(document.getPreviewStatus().name());
+            }
+            doc.setPreviewFailureReason(document.getPreviewFailureReason());
         }
         
         // Set tags and categories

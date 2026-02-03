@@ -238,7 +238,18 @@ public class RuleController {
             return ResponseEntity.badRequest()
                 .body(Map.of("error", "Rule is not a scheduled rule"));
         }
-        scheduledRuleRunner.triggerRule(rule);
+        try {
+            scheduledRuleRunner.triggerRule(rule);
+        } catch (org.springframework.orm.ObjectOptimisticLockingFailureException | org.hibernate.StaleObjectStateException ex) {
+            // Scheduled rules can race with async preview/status updates; treat as non-fatal for manual trigger.
+            log.warn("Scheduled rule trigger hit concurrent update for rule {}: {}", ruleId, ex.getMessage());
+            return ResponseEntity.ok(Map.of(
+                "message", "Scheduled rule triggered with concurrent update warning",
+                "ruleId", ruleId.toString(),
+                "ruleName", rule.getName(),
+                "warning", "optimistic_lock"
+            ));
+        }
         return ResponseEntity.ok(Map.of(
             "message", "Scheduled rule triggered successfully",
             "ruleId", ruleId.toString(),

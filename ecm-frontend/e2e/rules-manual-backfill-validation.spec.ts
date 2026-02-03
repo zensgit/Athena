@@ -1,12 +1,31 @@
 import { expect, Page, test } from '@playwright/test';
-import { waitForApiReady } from './helpers/api';
+import { fetchAccessToken, waitForApiReady } from './helpers/api';
 
 const baseApiUrl = process.env.ECM_API_URL || 'http://localhost:7700';
 const baseUiUrl = process.env.ECM_UI_URL || 'http://localhost:5500';
 const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
 
-async function loginWithCredentials(page: Page, username: string, password: string) {
+async function loginWithCredentials(page: Page, username: string, password: string, token?: string) {
+  if (process.env.ECM_E2E_SKIP_LOGIN === '1') {
+    const resolvedToken = token ?? await fetchAccessToken(page.request, username, password);
+    await page.addInitScript(
+      ({ authToken, authUser }) => {
+        window.localStorage.setItem('token', authToken);
+        window.localStorage.setItem('user', JSON.stringify(authUser));
+      },
+      {
+        authToken: resolvedToken,
+        authUser: {
+          id: `e2e-${username}`,
+          username,
+          email: `${username}@example.com`,
+          roles: ['ROLE_ADMIN'],
+        },
+      }
+    );
+    return;
+  }
   const authPattern = /\/protocol\/openid-connect\/auth/;
   const browsePattern = /\/browse\//;
 
@@ -57,10 +76,11 @@ test.beforeEach(async ({ request }) => {
   await waitForApiReady(request, { apiUrl: baseApiUrl });
 });
 
-test('rules: manual backfill blocks out-of-range values before POST', async ({ page }) => {
+test('rules: manual backfill blocks out-of-range values before POST', async ({ page, request }) => {
   test.setTimeout(180_000);
 
-  await loginWithCredentials(page, defaultUsername, defaultPassword);
+  const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
   await page.goto(`${baseUiUrl}/rules`, { waitUntil: 'domcontentloaded' });
 
   await page.getByRole('button', { name: 'New Rule' }).click();
@@ -99,4 +119,3 @@ test('rules: manual backfill blocks out-of-range values before POST', async ({ p
   const requestSent = await createRuleRequest;
   expect(requestSent).toBeFalsy();
 });
-

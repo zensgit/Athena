@@ -12,7 +12,26 @@ const baseUiUrl = process.env.ECM_UI_URL || 'http://localhost:5500';
 const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
 
-async function loginWithCredentials(page: Page, username: string, password: string) {
+async function loginWithCredentials(page: Page, username: string, password: string, token?: string) {
+  if (process.env.ECM_E2E_SKIP_LOGIN === '1') {
+    const resolvedToken = token ?? await fetchAccessToken(page.request, username, password);
+    await page.addInitScript(
+      ({ authToken, authUser }) => {
+        window.localStorage.setItem('token', authToken);
+        window.localStorage.setItem('user', JSON.stringify(authUser));
+      },
+      {
+        authToken: resolvedToken,
+        authUser: {
+          id: `e2e-${username}`,
+          username,
+          email: `${username}@example.com`,
+          roles: ['ROLE_ADMIN'],
+        },
+      }
+    );
+    return;
+  }
   const authPattern = /\/protocol\/openid-connect\/auth/;
   const browsePattern = /\/browse\//;
 
@@ -102,6 +121,32 @@ async function uploadTextFile(
   return documentId;
 }
 
+async function uploadBinaryFile(
+  request: APIRequestContext,
+  folderId: string,
+  filename: string,
+  token: string,
+) {
+  const uploadRes = await request.post(`${baseApiUrl}/api/v1/documents/upload?folderId=${folderId}`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+      multipart: {
+        file: {
+          name: filename,
+          mimeType: 'application/octet-stream',
+          buffer: Buffer.from([1, 2, 3, 4, 5]),
+        },
+      },
+    });
+  expect(uploadRes.ok()).toBeTruthy();
+  const uploadJson = (await uploadRes.json()) as { documentId?: string; id?: string };
+  const documentId = uploadJson.documentId ?? uploadJson.id;
+  if (!documentId) {
+    throw new Error('Upload did not return document id');
+  }
+  return documentId;
+}
+
 test('Search preview status filters are visible and selectable', async ({ page, request }) => {
   test.setTimeout(240_000);
   await waitForApiReady(request, { apiUrl: baseApiUrl });
@@ -119,7 +164,7 @@ test('Search preview status filters are visible and selectable', async ({ page, 
   expect(indexRes.ok()).toBeTruthy();
   await waitForSearchIndex(request, filename, token, { apiUrl: baseApiUrl, maxAttempts: 40 });
 
-  await loginWithCredentials(page, defaultUsername, defaultPassword);
+  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
   await page.goto(`${baseUiUrl}/search-results`, { waitUntil: 'domcontentloaded' });
 
   const quickSearchInput = page.getByPlaceholder('Quick search by name...');
@@ -135,6 +180,44 @@ test('Search preview status filters are visible and selectable', async ({ page, 
   await pendingChip.click();
   await expect(page.getByText(/Preview status filters apply to the current page only/i)).toBeVisible();
   await expect(page.getByText(/Preview: pending/)).toBeVisible();
+
+  await request.delete(`${baseApiUrl}/api/v1/nodes/${folderId}`,
+    { headers: { Authorization: `Bearer ${token}` } }).catch(() => null);
+});
+
+test('Preview failure shows info hint in search results', async ({ page, request }) => {
+  test.setTimeout(240_000);
+  await waitForApiReady(request, { apiUrl: baseApiUrl });
+  const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+  const rootId = await getRootFolderId(request, token, { apiUrl: baseApiUrl });
+  const documentsId = await findChildFolderId(request, rootId, 'Documents', token, { apiUrl: baseApiUrl });
+
+  const folderName = `e2e-preview-failure-${Date.now()}`;
+  const folderId = await createFolder(request, documentsId, folderName, token);
+  const filename = `e2e-preview-failure-${Date.now()}.bin`;
+  const documentId = await uploadBinaryFile(request, folderId, filename, token);
+
+  const previewRes = await request.get(`${baseApiUrl}/api/v1/documents/${documentId}/preview`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(previewRes.ok()).toBeTruthy();
+
+  const indexRes = await request.post(`${baseApiUrl}/api/v1/search/index/${documentId}`,
+    { headers: { Authorization: `Bearer ${token}` } });
+  expect(indexRes.ok()).toBeTruthy();
+  await waitForSearchIndex(request, filename, token, { apiUrl: baseApiUrl, maxAttempts: 40 });
+
+  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
+  await page.goto(`${baseUiUrl}/search-results`, { waitUntil: 'domcontentloaded' });
+
+  const quickSearchInput = page.getByPlaceholder('Quick search by name...');
+  await quickSearchInput.fill(filename);
+  await quickSearchInput.press('Enter');
+
+  const resultCard = page.locator('.MuiCard-root').filter({ hasText: filename }).first();
+  await expect(resultCard).toBeVisible({ timeout: 60_000 });
+  await expect(resultCard.getByText(/Preview failed/i)).toBeVisible();
+  await expect(resultCard.getByRole('button', { name: /Preview failure reason/i })).toBeVisible();
 
   await request.delete(`${baseApiUrl}/api/v1/nodes/${folderId}`,
     { headers: { Authorization: `Bearer ${token}` } }).catch(() => null);

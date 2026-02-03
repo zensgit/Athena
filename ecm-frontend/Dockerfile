@@ -11,6 +11,8 @@ COPY package.json package-lock.json ./
 # Playwright is only needed for local/CI E2E tests; skip browser downloads in the image build.
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 ENV NODE_OPTIONS=--max_old_space_size=4096
+ARG REACT_APP_E2E_BYPASS_AUTH
+ENV REACT_APP_E2E_BYPASS_AUTH=$REACT_APP_E2E_BYPASS_AUTH
 RUN npm ci --legacy-peer-deps --no-audit --no-fund
 
 # Copy source code

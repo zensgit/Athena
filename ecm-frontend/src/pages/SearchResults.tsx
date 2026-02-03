@@ -36,6 +36,7 @@ import {
   AutoAwesome,
   FilterList,
   Refresh,
+  InfoOutlined,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -776,6 +777,7 @@ const SearchResults: React.FC = () => {
     }
     const status = node.previewStatus?.toUpperCase();
     const normalized = status || 'PENDING';
+    const failureReason = node.previewFailureReason || '';
     const label = normalized === 'READY'
       ? 'Preview ready'
       : normalized === 'FAILED'
@@ -795,14 +797,23 @@ const SearchResults: React.FC = () => {
             ? 'info'
             : 'default';
     return (
-      <Tooltip
-        title={node.previewFailureReason || ''}
-        placement="top-start"
-        arrow
-        disableHoverListener={!node.previewFailureReason}
-      >
-        <Chip label={label} size="small" variant="outlined" color={color} />
-      </Tooltip>
+      <Box display="flex" alignItems="center" gap={0.5}>
+        <Tooltip
+          title={failureReason}
+          placement="top-start"
+          arrow
+          disableHoverListener={!failureReason}
+        >
+          <Chip label={label} size="small" variant="outlined" color={color} />
+        </Tooltip>
+        {normalized === 'FAILED' && failureReason && (
+          <Tooltip title={failureReason} placement="top-start" arrow>
+            <IconButton size="small" aria-label="Preview failure reason">
+              <InfoOutlined fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        )}
+      </Box>
     );
   };
 

@@ -114,14 +114,20 @@ public class PreviewQueueService {
             PreviewResult result = runAsSystem(() -> previewService.generatePreview(document));
             boolean retry = shouldRetry(result);
             if (retry && job.attempts() + 1 < maxAttempts) {
+                markRetrying(document, result != null ? result.getMessage() : "Preview retry scheduled");
                 scheduleRetry(job);
                 return;
+            }
+            if (retry) {
+                markFailed(document, result != null ? result.getMessage() : "Preview failed after retries");
             }
         } catch (Exception e) {
             if (job.attempts() + 1 < maxAttempts) {
+                markRetrying(document, e.getMessage());
                 scheduleRetry(job);
                 return;
             }
+            markFailed(document, e.getMessage());
             log.warn("Preview generation failed for {} after {} attempts: {}", documentId, job.attempts() + 1, e.getMessage());
         }
 
@@ -146,6 +152,30 @@ public class PreviewQueueService {
             documentRepository.save(document);
         } catch (Exception e) {
             log.warn("Failed to mark preview as processing for {}: {}", document.getId(), e.getMessage());
+        }
+    }
+
+    private void markRetrying(Document document, String failureReason) {
+        try {
+            document.setPreviewStatus(PreviewStatus.PROCESSING);
+            document.setPreviewFailureReason(failureReason);
+            document.setPreviewLastUpdated(LocalDateTime.now());
+            document.setPreviewAvailable(false);
+            documentRepository.save(document);
+        } catch (Exception e) {
+            log.warn("Failed to mark preview retry for {}: {}", document.getId(), e.getMessage());
+        }
+    }
+
+    private void markFailed(Document document, String failureReason) {
+        try {
+            document.setPreviewStatus(PreviewStatus.FAILED);
+            document.setPreviewFailureReason(failureReason);
+            document.setPreviewLastUpdated(LocalDateTime.now());
+            document.setPreviewAvailable(false);
+            documentRepository.save(document);
+        } catch (Exception e) {
+            log.warn("Failed to mark preview failed for {}: {}", document.getId(), e.getMessage());
         }
     }
 

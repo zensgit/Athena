@@ -123,6 +123,7 @@ const MailAutomationPage: React.FC = () => {
   const [debugResult, setDebugResult] = useState<MailFetchDebugResult | null>(null);
   const [debugMaxMessages, setDebugMaxMessages] = useState(200);
   const [folderAccountId, setFolderAccountId] = useState('');
+  const [summaryAccountId, setSummaryAccountId] = useState('');
   const [listingFolders, setListingFolders] = useState(false);
   const [availableFolders, setAvailableFolders] = useState<string[]>([]);
   const [hasListedFolders, setHasListedFolders] = useState(false);
@@ -345,6 +346,12 @@ const MailAutomationPage: React.FC = () => {
   }, [accounts, folderAccountId]);
 
   useEffect(() => {
+    if (!summaryAccountId && accounts.length > 0) {
+      setSummaryAccountId(accounts[0].id);
+    }
+  }, [accounts, summaryAccountId]);
+
+  useEffect(() => {
     setAvailableFolders([]);
     setHasListedFolders(false);
   }, [folderAccountId]);
@@ -364,6 +371,32 @@ const MailAutomationPage: React.FC = () => {
   const tagNameById = useMemo(() => {
     return new Map(tags.map((tag) => [tag.id, tag.name]));
   }, [tags]);
+
+  const summaryAccount = useMemo(() => {
+    if (accounts.length === 0) {
+      return null;
+    }
+    return accounts.find((account) => account.id === summaryAccountId) ?? accounts[0];
+  }, [accounts, summaryAccountId]);
+
+  const latestSuccessAt = useMemo(() => {
+    let latest: string | null = null;
+    accounts.forEach((account) => {
+      if (account.lastFetchStatus !== 'SUCCESS' || !account.lastFetchAt) {
+        return;
+      }
+      if (!latest) {
+        latest = account.lastFetchAt;
+        return;
+      }
+      const nextTime = new Date(account.lastFetchAt).getTime();
+      const prevTime = new Date(latest).getTime();
+      if (!Number.isNaN(nextTime) && !Number.isNaN(prevTime) && nextTime > prevTime) {
+        latest = account.lastFetchAt;
+      }
+    });
+    return latest;
+  }, [accounts]);
 
   const accountHealth = useMemo(() => {
     const now = Date.now();
@@ -1215,6 +1248,101 @@ const MailAutomationPage: React.FC = () => {
               ) : (
                 <Typography variant="body2" color="text.secondary">
                   Run a dry-run diagnostics pass to see skip reasons and match coverage without ingesting mail.
+                </Typography>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card variant="outlined">
+            <CardContent>
+              <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
+                <Typography variant="h6">Connection Summary</Typography>
+                <Stack direction="row" spacing={1}>
+                  <Button
+                    variant="outlined"
+                    startIcon={refreshing ? <CircularProgress size={16} /> : <Refresh />}
+                    onClick={handleRefreshStatus}
+                    disabled={refreshing}
+                  >
+                    Refresh status
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    startIcon={testingAccountId ? <CircularProgress size={16} /> : <Link />}
+                    onClick={() => summaryAccount && handleTestConnection(summaryAccount.id)}
+                    disabled={!summaryAccount || testingAccountId === summaryAccount?.id}
+                  >
+                    Test Connection
+                  </Button>
+                </Stack>
+              </Box>
+
+              {summaryAccount ? (
+                <Stack spacing={1.5}>
+                  <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ md: 'center' }}>
+                    <FormControl size="small" sx={{ minWidth: 240 }}>
+                      <InputLabel id="summary-account-label">Account</InputLabel>
+                      <Select
+                        labelId="summary-account-label"
+                        label="Account"
+                        value={summaryAccountId}
+                        onChange={(event) => setSummaryAccountId(event.target.value)}
+                      >
+                        {accounts.map((account) => (
+                          <MenuItem key={account.id} value={account.id}>
+                            {account.name}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                    <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
+                      <Chip
+                        size="small"
+                        label={`Status ${summaryAccount.lastFetchStatus || 'N/A'}`}
+                        color={
+                          summaryAccount.lastFetchStatus === 'SUCCESS'
+                            ? 'success'
+                            : summaryAccount.lastFetchStatus === 'ERROR'
+                            ? 'error'
+                            : 'default'
+                        }
+                      />
+                      <Chip size="small" label={`Poll ${summaryAccount.pollIntervalMinutes} min`} />
+                      {summaryAccount.security === 'OAUTH2' && summaryAccount.oauthConnected != null && (
+                        <Chip
+                          size="small"
+                          color={summaryAccount.oauthConnected ? 'success' : 'warning'}
+                          label={summaryAccount.oauthConnected ? 'OAuth connected' : 'OAuth not connected'}
+                        />
+                      )}
+                      {summaryAccount.security === 'OAUTH2' && summaryAccount.oauthEnvConfigured === false && (
+                        <Chip size="small" color="warning" label="OAuth env missing" />
+                      )}
+                    </Stack>
+                  </Stack>
+
+                  <Typography variant="caption" color="text.secondary">
+                    Last fetch: {summaryAccount.lastFetchAt ? formatDateTime(summaryAccount.lastFetchAt) : 'N/A'}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Last success (this account):{' '}
+                    {summaryAccount.lastFetchStatus === 'SUCCESS' && summaryAccount.lastFetchAt
+                      ? formatDateTime(summaryAccount.lastFetchAt)
+                      : 'N/A'}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Latest success (any account): {latestSuccessAt ? formatDateTime(latestSuccessAt) : 'N/A'}
+                  </Typography>
+
+                  {summaryAccount.lastFetchError && (
+                    <Typography variant="body2" color="error.main">
+                      Last failure: {summarizeError(summaryAccount.lastFetchError, 200)}
+                    </Typography>
+                  )}
+                </Stack>
+              ) : (
+                <Typography variant="body2" color="text.secondary">
+                  No accounts available. Add a mail account to test connectivity.
                 </Typography>
               )}
             </CardContent>
