@@ -1124,6 +1124,13 @@ const AdminDashboard: React.FC = () => {
                       variant="outlined"
                     />
                   )}
+                  {retentionInfo?.exportMaxRangeDays && (
+                    <Chip
+                      size="small"
+                      label={`Export max: ${retentionInfo.exportMaxRangeDays} days`}
+                      variant="outlined"
+                    />
+                  )}
                   {retentionInfo && retentionInfo.expiredLogCount > 0 && (
                     <Chip
                       size="small"
@@ -1251,6 +1258,13 @@ const AdminDashboard: React.FC = () => {
                   )}
                 </Box>
               </Box>
+              {exportPresetError && (
+                <Alert severity="warning" sx={{ mb: 1 }}>
+                  {exportPresetNeedsUser && !auditFilterUser.trim()
+                    ? 'Selected preset requires a user.'
+                    : 'Selected preset requires an event type.'}
+                </Alert>
+              )}
               <Box display="flex" alignItems="center" gap={1} flexWrap="wrap" mb={1}>
                 <Typography variant="subtitle2" color="text.secondary">
                   Audit Categories
