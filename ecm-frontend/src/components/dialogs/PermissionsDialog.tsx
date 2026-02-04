@@ -44,6 +44,7 @@ import { useAppDispatch, useAppSelector } from 'store';
 import { setPermissionsDialogOpen } from 'store/slices/uiSlice';
 import nodeService, { PermissionDecision, PermissionSetMetadata } from 'services/nodeService';
 import userGroupService from 'services/userGroupService';
+import permissionTemplateService, { PermissionTemplate } from 'services/permissionTemplateService';
 import { toast } from 'react-toastify';
 
 interface TabPanelProps {
@@ -103,6 +104,11 @@ const PermissionsDialog: React.FC = () => {
   const [permissions, setPermissions] = useState<PermissionEntry[]>([]);
   const [permissionSets, setPermissionSets] = useState<Record<string, PermissionType[]>>({});
   const [permissionSetMetadata, setPermissionSetMetadata] = useState<PermissionSetMetadata[]>([]);
+  const [permissionTemplates, setPermissionTemplates] = useState<PermissionTemplate[]>([]);
+  const [permissionTemplatesLoading, setPermissionTemplatesLoading] = useState(false);
+  const [permissionTemplatesError, setPermissionTemplatesError] = useState<string | null>(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [replaceTemplate, setReplaceTemplate] = useState(false);
   const [permissionDiagnostics, setPermissionDiagnostics] = useState<PermissionDecision | null>(null);
   const [permissionDiagnosticsLoading, setPermissionDiagnosticsLoading] = useState(false);
   const [permissionDiagnosticsError, setPermissionDiagnosticsError] = useState<string | null>(null);
@@ -193,6 +199,26 @@ const PermissionsDialog: React.FC = () => {
     }
   }, []);
 
+  const loadPermissionTemplates = useCallback(async () => {
+    if (!user?.roles?.includes('ROLE_ADMIN')) {
+      setPermissionTemplates([]);
+      setPermissionTemplatesError(null);
+      setPermissionTemplatesLoading(false);
+      return;
+    }
+    setPermissionTemplatesLoading(true);
+    try {
+      const templates = await permissionTemplateService.list();
+      setPermissionTemplates(templates ?? []);
+      setPermissionTemplatesError(null);
+    } catch {
+      setPermissionTemplates([]);
+      setPermissionTemplatesError('Failed to load permission templates');
+    } finally {
+      setPermissionTemplatesLoading(false);
+    }
+  }, [user?.roles]);
+
   const loadPrincipals = useCallback(async () => {
     try {
       const [users, groups] = await Promise.all([
@@ -211,8 +237,9 @@ const PermissionsDialog: React.FC = () => {
       loadPermissions();
       loadPrincipals();
       loadPermissionSets();
+      loadPermissionTemplates();
     }
-  }, [permissionsDialogOpen, selectedNodeId, loadPermissions, loadPrincipals, loadPermissionSets]);
+  }, [permissionsDialogOpen, selectedNodeId, loadPermissions, loadPrincipals, loadPermissionSets, loadPermissionTemplates]);
 
   useEffect(() => {
     if (permissionsDialogOpen && selectedNodeId) {
@@ -241,6 +268,9 @@ const PermissionsDialog: React.FC = () => {
     setPermissionDiagnosticsLoading(false);
     setDiagnosticPermissionType('READ');
     setDiagnosticUsername('');
+    setSelectedTemplateId('');
+    setReplaceTemplate(false);
+    setPermissionTemplatesError(null);
   };
 
   const handleCopyAcl = async () => {
@@ -373,6 +403,19 @@ const PermissionsDialog: React.FC = () => {
       toast.success(`Applied ${permissionSet} permissions`);
     } catch {
       toast.error('Failed to apply permission set');
+    }
+  };
+
+  const handleApplyTemplate = async () => {
+    if (!selectedNodeId || !selectedTemplateId || !canWrite) {
+      return;
+    }
+    try {
+      await permissionTemplateService.apply(selectedTemplateId, selectedNodeId, replaceTemplate);
+      await loadPermissions();
+      toast.success('Permission template applied');
+    } catch {
+      toast.error('Failed to apply permission template');
     }
   };
 
@@ -610,6 +653,75 @@ const PermissionsDialog: React.FC = () => {
         <Alert severity="info" sx={{ mb: 2 }}>
           Click a permission to cycle Allow → Deny → Clear. Explicit denies override allows across inheritance.
         </Alert>
+        <Box sx={{ mb: 2 }}>
+          <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+            <Typography variant="subtitle2">Permission templates</Typography>
+            <Button
+              size="small"
+              onClick={() => loadPermissionTemplates()}
+              disabled={permissionTemplatesLoading}
+            >
+              Refresh
+            </Button>
+          </Box>
+          {permissionTemplatesError && (
+            <Typography variant="caption" color="error" display="block" sx={{ mb: 1 }}>
+              {permissionTemplatesError}
+            </Typography>
+          )}
+          <Box display="flex" gap={1} alignItems="center" flexWrap="wrap">
+            <FormControl size="small" sx={{ minWidth: 240 }}>
+              <InputLabel id="permission-template-select-label">Template</InputLabel>
+              <Select
+                labelId="permission-template-select-label"
+                label="Template"
+                value={selectedTemplateId}
+                onChange={(event) => setSelectedTemplateId(String(event.target.value))}
+                disabled={!canWrite || permissionTemplates.length === 0}
+              >
+                <MenuItem value="" disabled>
+                  Select
+                </MenuItem>
+                {permissionTemplates.map((template) => (
+                  <MenuItem key={template.id} value={template.id}>
+                    <Box display="flex" flexDirection="column">
+                      <Typography variant="body2">{template.name}</Typography>
+                      {template.description && (
+                        <Typography variant="caption" color="text.secondary">
+                          {template.description}
+                        </Typography>
+                      )}
+                    </Box>
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={replaceTemplate}
+                  onChange={(event) => setReplaceTemplate(event.target.checked)}
+                  disabled={!canWrite}
+                />
+              }
+              label="Replace permissions for listed principals"
+            />
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={handleApplyTemplate}
+              disabled={!canWrite || !selectedTemplateId}
+            >
+              Apply Template
+            </Button>
+            {permissionTemplatesLoading && <CircularProgress size={18} />}
+          </Box>
+          {!user?.roles?.includes('ROLE_ADMIN') && (
+            <Typography variant="caption" color="text.secondary" display="block" mt={0.5}>
+              Templates are available to admins only.
+            </Typography>
+          )}
+        </Box>
         <Box sx={{ mb: 2 }}>
           <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
             <Typography variant="subtitle2">Permission diagnostics</Typography>

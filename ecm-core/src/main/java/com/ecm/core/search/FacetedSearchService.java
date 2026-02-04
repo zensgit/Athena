@@ -28,6 +28,10 @@ import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.data.elasticsearch.core.SearchHit;
 import org.springframework.data.elasticsearch.core.SearchHits;
 import org.springframework.data.elasticsearch.core.mapping.IndexCoordinates;
+import org.springframework.data.elasticsearch.core.query.HighlightQuery;
+import org.springframework.data.elasticsearch.core.query.highlight.Highlight;
+import org.springframework.data.elasticsearch.core.query.highlight.HighlightField;
+import org.springframework.data.elasticsearch.core.query.highlight.HighlightParameters;
 import org.springframework.data.elasticsearch.core.query.Criteria;
 import org.springframework.data.elasticsearch.core.query.CriteriaQuery;
 import org.springframework.data.elasticsearch.core.suggest.response.Suggest;
@@ -449,6 +453,10 @@ public class FacetedSearchService {
 
         applyAggregations(builder, resolveFacetFields(request));
 
+        if (request.isHighlightEnabled() && !searchTerm.isBlank()) {
+            applyHighlight(builder, searchFields);
+        }
+
         return builder.build();
     }
 
@@ -471,6 +479,31 @@ public class FacetedSearchService {
             b.minimumShouldMatch("1");
             return b;
         }));
+    }
+
+    private void applyHighlight(NativeQueryBuilder builder, List<String> fields) {
+        if (fields == null || fields.isEmpty()) {
+            return;
+        }
+
+        HighlightParameters parameters = HighlightParameters.builder()
+            .withPreTags("<em>")
+            .withPostTags("</em>")
+            .withFragmentSize(160)
+            .withNumberOfFragments(3)
+            .withRequireFieldMatch(false)
+            .build();
+
+        List<HighlightField> highlightFields = fields.stream()
+            .filter(field -> field != null && !field.isBlank())
+            .map(field -> field.contains("^") ? field.substring(0, field.indexOf('^')) : field)
+            .distinct()
+            .map(HighlightField::new)
+            .toList();
+
+        Highlight highlight = new Highlight(parameters, highlightFields);
+        HighlightQuery highlightQuery = new HighlightQuery(highlight, NodeDocument.class);
+        builder.withHighlightQuery(highlightQuery);
     }
 
     private void applyFilters(BoolQuery.Builder bool, SearchFilters filters) {

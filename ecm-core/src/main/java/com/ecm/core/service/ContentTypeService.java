@@ -109,10 +109,22 @@ public class ContentTypeService {
 
                 // Check type (Basic implementation)
                 try {
-                    switch (prop.getType().toLowerCase()) {
+                    String propertyType = prop.getType() != null ? prop.getType().toLowerCase() : "text";
+                    switch (propertyType) {
+                        case "integer":
+                            Integer.parseInt(value.toString());
+                            break;
                         case "number":
+                        case "float":
                             Double.parseDouble(value.toString());
                             break;
+                        case "monetary": {
+                            var amount = new java.math.BigDecimal(value.toString());
+                            if (amount.scale() > 2) {
+                                errors.add("Property " + prop.getTitle() + " must have at most 2 decimal places");
+                            }
+                            break;
+                        }
                         case "date":
                             // Simple ISO date check
                             LocalDate.parse(value.toString(), DateTimeFormatter.ISO_DATE);
@@ -122,10 +134,37 @@ public class ContentTypeService {
                                 throw new Exception();
                             }
                             break;
-                        // text is always valid
+                        case "url": {
+                            var uri = java.net.URI.create(value.toString());
+                            if (uri.getScheme() == null || uri.getHost() == null) {
+                                errors.add("Property " + prop.getTitle() + " must be a valid URL");
+                            }
+                            break;
+                        }
+                        case "documentlink": {
+                            String text = value.toString();
+                            if (text.isBlank()) {
+                                break;
+                            }
+                            try {
+                                java.util.UUID.fromString(text);
+                            } catch (Exception ex) {
+                                if (!text.startsWith("/")) {
+                                    errors.add("Property " + prop.getTitle() + " must be a document ID or path");
+                                }
+                            }
+                            break;
+                        }
+                        case "long_text":
+                        case "text":
+                        default:
+                            // no-op validation for free text
+                            break;
                     }
                 } catch (Exception e) {
-                    errors.add("Property " + prop.getTitle() + " must be of type " + prop.getType());
+                    if (!errors.contains("Property " + prop.getTitle() + " must be of type " + prop.getType())) {
+                        errors.add("Property " + prop.getTitle() + " must be of type " + prop.getType());
+                    }
                 }
                 
                 // Check options

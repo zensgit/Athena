@@ -397,14 +397,25 @@ const AdvancedSearchPage: React.FC = () => {
                     </Box>
                     
                     {/* Snippets / Highlights */}
-                    {result.highlights?.content && (
-                        <Typography 
-                            variant="body2" 
-                            color="textSecondary" 
-                            sx={{ mt: 1 }}
-                            dangerouslySetInnerHTML={{ __html: '...' + result.highlights.content[0] + '...' }} 
+                    {(() => {
+                      const snippet = result.highlights?.description?.[0]
+                        || result.highlights?.content?.[0]
+                        || result.highlights?.textContent?.[0]
+                        || result.highlights?.extractedText?.[0]
+                        || result.highlights?.title?.[0]
+                        || result.highlights?.name?.[0];
+                      if (!snippet) {
+                        return null;
+                      }
+                      return (
+                        <Typography
+                          variant="body2"
+                          color="textSecondary"
+                          sx={{ mt: 1 }}
+                          dangerouslySetInnerHTML={{ __html: `...${snippet}...` }}
                         />
-                    )}
+                      );
+                    })()}
                     
                     <Box mt={1} display="flex" gap={1}>
                         <Chip label={result.mimeType} size="small" variant="outlined" />

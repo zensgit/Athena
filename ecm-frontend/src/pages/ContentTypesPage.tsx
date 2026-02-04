@@ -31,7 +31,35 @@ import contentTypeService, {
   ContentTypePropertyType,
 } from 'services/contentTypeService';
 
-const PROPERTY_TYPES: ContentTypePropertyType[] = ['text', 'number', 'date', 'boolean', 'list'];
+const PROPERTY_TYPES: ContentTypePropertyType[] = [
+  'text',
+  'long_text',
+  'url',
+  'integer',
+  'float',
+  'monetary',
+  'number',
+  'date',
+  'boolean',
+  'list',
+  'select',
+  'documentlink',
+];
+
+const PROPERTY_TYPE_LABELS: Record<ContentTypePropertyType, string> = {
+  text: 'Text',
+  long_text: 'Long Text',
+  url: 'URL',
+  integer: 'Integer',
+  float: 'Float',
+  monetary: 'Monetary',
+  number: 'Number',
+  date: 'Date',
+  boolean: 'Boolean',
+  list: 'List',
+  select: 'Select',
+  documentlink: 'Document Link',
+};
 
 const emptyProperty = (): ContentTypePropertyDefinition => ({
   name: '',
@@ -332,7 +360,9 @@ const ContentTypesPage: React.FC = () => {
                         onChange={(event) => updateProperty(index, { type: event.target.value as ContentTypePropertyType })}
                       >
                         {PROPERTY_TYPES.map((type) => (
-                          <MenuItem key={type} value={type}>{type}</MenuItem>
+                          <MenuItem key={type} value={type}>
+                            {PROPERTY_TYPE_LABELS[type] ?? type}
+                          </MenuItem>
                         ))}
                       </Select>
                     </Grid>

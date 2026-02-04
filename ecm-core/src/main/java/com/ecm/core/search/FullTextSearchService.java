@@ -27,6 +27,10 @@ import org.springframework.data.elasticsearch.core.SearchHits;
 import org.springframework.data.elasticsearch.core.mapping.IndexCoordinates;
 import org.springframework.data.elasticsearch.core.query.Criteria;
 import org.springframework.data.elasticsearch.core.query.CriteriaQuery;
+import org.springframework.data.elasticsearch.core.query.HighlightQuery;
+import org.springframework.data.elasticsearch.core.query.highlight.Highlight;
+import org.springframework.data.elasticsearch.core.query.highlight.HighlightField;
+import org.springframework.data.elasticsearch.core.query.highlight.HighlightParameters;
 import org.springframework.data.elasticsearch.core.query.Query;
 import org.springframework.stereotype.Service;
 
@@ -61,6 +65,16 @@ public class FullTextSearchService {
 
     private static final List<String> SEARCH_FIELDS = List.of(
         "name^2",
+        "description",
+        "content",
+        "textContent",
+        "extractedText",
+        "metadata.extractedText",
+        "title"
+    );
+
+    private static final List<String> HIGHLIGHT_FIELDS = List.of(
+        "name",
         "description",
         "content",
         "textContent",
@@ -334,6 +348,10 @@ public class FullTextSearchService {
             return b;
         }));
 
+        if (!searchTerm.isBlank()) {
+            applyHighlight(builder, HIGHLIGHT_FIELDS);
+        }
+
         applySort(builder, sortBy, sortDirection);
 
         return builder.build();
@@ -389,6 +407,10 @@ public class FullTextSearchService {
             return b;
         }));
 
+        if (request.isHighlightEnabled() && !searchTerm.isBlank()) {
+            applyHighlight(builder, HIGHLIGHT_FIELDS);
+        }
+
         applySort(builder, request.getSortBy(), request.getSortDirection());
 
         return builder.build();
@@ -441,6 +463,30 @@ public class FullTextSearchService {
         if (!"nameSort".equals(field)) {
             builder.withSort(s -> s.field(f -> f.field("nameSort").order(SortOrder.Asc)));
         }
+    }
+
+    private void applyHighlight(NativeQueryBuilder builder, List<String> fields) {
+        if (fields == null || fields.isEmpty()) {
+            return;
+        }
+
+        HighlightParameters parameters = HighlightParameters.builder()
+            .withPreTags("<em>")
+            .withPostTags("</em>")
+            .withFragmentSize(160)
+            .withNumberOfFragments(3)
+            .withRequireFieldMatch(false)
+            .build();
+
+        List<HighlightField> highlightFields = fields.stream()
+            .filter(field -> field != null && !field.isBlank())
+            .distinct()
+            .map(HighlightField::new)
+            .toList();
+
+        Highlight highlight = new Highlight(parameters, highlightFields);
+        HighlightQuery highlightQuery = new HighlightQuery(highlight, NodeDocument.class);
+        builder.withHighlightQuery(highlightQuery);
     }
 
     private static void addAnyOfTermsFilter(BoolQuery.Builder bool, List<String> fields, List<String> values) {

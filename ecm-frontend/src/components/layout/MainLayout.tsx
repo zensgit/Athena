@@ -35,6 +35,7 @@ import {
   MailOutline,
   Description,
   Link as LinkIcon,
+  AdminPanelSettings,
   PushPin,
   PushPinOutlined,
 } from '@mui/icons-material';
@@ -358,6 +359,12 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                     <Description fontSize="small" />
                   </ListItemIcon>
                   <ListItemText>Content Types</ListItemText>
+                </MenuItem>
+                <MenuItem onClick={() => navigate('/admin/permission-templates')}>
+                  <ListItemIcon>
+                    <AdminPanelSettings fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Permission Templates</ListItemText>
                 </MenuItem>
                 <MenuItem onClick={() => navigate('/admin/webhooks')}>
                   <ListItemIcon>

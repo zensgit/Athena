@@ -342,7 +342,7 @@ const PropertiesDialog: React.FC = () => {
       );
     }
 
-    if (prop.type === 'list' && prop.options && prop.options.length > 0) {
+    if ((prop.type === 'list' || prop.type === 'select') && prop.options && prop.options.length > 0) {
       return (
         <FormControl size="small" fullWidth disabled={disabled}>
           <InputLabel id={selectLabelId}>{label}</InputLabel>
@@ -368,8 +368,18 @@ const PropertiesDialog: React.FC = () => {
     }
 
     const resolvedValue = prop.type === 'date' ? normalizeDateValue(value) : value;
-    const inputType =
-      prop.type === 'number' ? 'number' : prop.type === 'date' ? 'date' : 'text';
+    const isNumber =
+      prop.type === 'number' || prop.type === 'integer' || prop.type === 'float' || prop.type === 'monetary';
+    const inputType = prop.type === 'date'
+      ? 'date'
+      : prop.type === 'url'
+        ? 'url'
+        : isNumber
+          ? 'number'
+          : 'text';
+    const step = prop.type === 'integer' ? 1 : prop.type === 'monetary' ? 0.01 : isNumber ? 'any' : undefined;
+    const multiline = prop.type === 'long_text';
+    const placeholder = prop.type === 'documentlink' ? 'Document ID or path' : undefined;
 
     return (
       <TextField
@@ -380,6 +390,10 @@ const PropertiesDialog: React.FC = () => {
         fullWidth
         disabled={disabled}
         type={inputType}
+        inputProps={step ? { step } : undefined}
+        multiline={multiline}
+        minRows={multiline ? 3 : undefined}
+        placeholder={placeholder}
         InputLabelProps={prop.type === 'date' ? { shrink: true } : undefined}
         required={prop.required}
       />

@@ -1649,7 +1649,14 @@ const SearchResults: React.FC = () => {
                         </Typography>
                         <Highlight
                           text={node.description}
-                          highlights={node.highlights?.description || node.highlights?.content}
+                          highlights={
+                            node.highlights?.description
+                            || node.highlights?.content
+                            || node.highlights?.textContent
+                            || node.highlights?.extractedText
+                            || node.highlights?.title
+                            || node.highlights?.name
+                          }
                         />
                         {renderTagsCategories(node)}
                         <Box mt={2}>

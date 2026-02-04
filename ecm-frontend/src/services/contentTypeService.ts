@@ -1,6 +1,18 @@
 import api from './api';
 
-export type ContentTypePropertyType = 'text' | 'number' | 'date' | 'boolean' | 'list';
+export type ContentTypePropertyType =
+  | 'text'
+  | 'long_text'
+  | 'number'
+  | 'integer'
+  | 'float'
+  | 'monetary'
+  | 'date'
+  | 'boolean'
+  | 'list'
+  | 'select'
+  | 'url'
+  | 'documentlink';
 
 export interface ContentTypePropertyDefinition {
   name: string;
