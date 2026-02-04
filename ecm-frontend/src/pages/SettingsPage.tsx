@@ -6,9 +6,14 @@ import {
   CardContent,
   Chip,
   Divider,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   FormControlLabel,
   Stack,
   Switch,
+  TextField,
   Typography,
   Alert,
 } from '@mui/material';
@@ -49,6 +54,33 @@ type WopiHealthResponse = {
   capabilities?: CollaboraCapabilities;
 };
 
+type MfaStatus = {
+  username: string;
+  configured: boolean;
+  enabled: boolean;
+  lastVerifiedAt?: string | null;
+  recoveryCodesGeneratedAt?: string | null;
+};
+
+type MfaEnrollment = {
+  username: string;
+  secret: string;
+  otpauthUri: string;
+  recoveryCodes: string[];
+};
+
+type MfaVerification = {
+  verified: boolean;
+  enabled: boolean;
+  lastVerifiedAt?: string | null;
+};
+
+type MfaDisableResult = {
+  disabled: boolean;
+  enabled: boolean;
+  remainingRecoveryCodes: number;
+};
+
 const SettingsPage: React.FC = () => {
   const dispatch = useAppDispatch();
   const user = useAppSelector((state) => state.auth.user);
@@ -57,6 +89,13 @@ const SettingsPage: React.FC = () => {
   const [sessionVersion, setSessionVersion] = useState(0);
   const [wopiHealth, setWopiHealth] = useState<WopiHealthResponse | null>(null);
   const [wopiHealthLoading, setWopiHealthLoading] = useState(false);
+  const [mfaStatus, setMfaStatus] = useState<MfaStatus | null>(null);
+  const [mfaLoading, setMfaLoading] = useState(false);
+  const [mfaEnrollment, setMfaEnrollment] = useState<MfaEnrollment | null>(null);
+  const [mfaDialogOpen, setMfaDialogOpen] = useState(false);
+  const [mfaDisableDialogOpen, setMfaDisableDialogOpen] = useState(false);
+  const [mfaCodeInput, setMfaCodeInput] = useState('');
+  const [mfaDisableCode, setMfaDisableCode] = useState('');
 
   const env = useMemo(() => {
     return {
@@ -165,6 +204,82 @@ const SettingsPage: React.FC = () => {
     }
   };
 
+  const loadMfaStatus = async () => {
+    if (!authService.isAuthenticated()) {
+      setMfaStatus(null);
+      return;
+    }
+    try {
+      setMfaLoading(true);
+      const resp = await apiService.get<MfaStatus>('/mfa/status');
+      setMfaStatus(resp);
+    } catch {
+      setMfaStatus(null);
+    } finally {
+      setMfaLoading(false);
+    }
+  };
+
+  const handleStartMfaEnrollment = async () => {
+    try {
+      setMfaLoading(true);
+      const resp = await apiService.post<MfaEnrollment>('/mfa/enroll', {});
+      setMfaEnrollment(resp);
+      setMfaCodeInput('');
+      setMfaDialogOpen(true);
+      toast.success('MFA enrollment started');
+    } catch {
+      toast.error('Failed to start MFA enrollment');
+    } finally {
+      setMfaLoading(false);
+    }
+  };
+
+  const handleVerifyMfa = async () => {
+    if (!mfaCodeInput.trim()) {
+      toast.error('Enter a verification code');
+      return;
+    }
+    try {
+      setMfaLoading(true);
+      const resp = await apiService.post<MfaVerification>('/mfa/verify', { code: mfaCodeInput.trim() });
+      if (!resp.verified) {
+        toast.error('Invalid verification code');
+        return;
+      }
+      toast.success('MFA enabled');
+      setMfaDialogOpen(false);
+      await loadMfaStatus();
+    } catch {
+      toast.error('Failed to verify MFA');
+    } finally {
+      setMfaLoading(false);
+    }
+  };
+
+  const handleDisableMfa = async () => {
+    if (!mfaDisableCode.trim()) {
+      toast.error('Enter a verification or recovery code');
+      return;
+    }
+    try {
+      setMfaLoading(true);
+      const resp = await apiService.post<MfaDisableResult>('/mfa/disable', { code: mfaDisableCode.trim() });
+      if (!resp.disabled) {
+        toast.error('Failed to disable MFA');
+        return;
+      }
+      toast.success('MFA disabled');
+      setMfaDisableDialogOpen(false);
+      setMfaDisableCode('');
+      await loadMfaStatus();
+    } catch {
+      toast.error('Failed to disable MFA');
+    } finally {
+      setMfaLoading(false);
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
 
@@ -195,6 +310,10 @@ const SettingsPage: React.FC = () => {
     return () => {
       cancelled = true;
     };
+  }, [sessionVersion]);
+
+  useEffect(() => {
+    loadMfaStatus();
   }, [sessionVersion]);
 
   const discoveryStatus = wopiHealth?.discovery;
@@ -332,6 +451,48 @@ const SettingsPage: React.FC = () => {
                 </Typography>
               </Alert>
 
+              <Divider />
+
+              <Typography variant="subtitle2">Local MFA (TOTP)</Typography>
+              <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
+                <Typography variant="body2">
+                  <strong>Local MFA:</strong>
+                </Typography>
+                <Chip
+                  size="small"
+                  label={mfaStatus?.enabled ? 'Enabled' : 'Not Enabled'}
+                  color={mfaStatus?.enabled ? 'success' : 'warning'}
+                  variant="outlined"
+                />
+                {mfaStatus?.lastVerifiedAt && (
+                  <Typography variant="caption" color="text.secondary">
+                    Last verified {new Date(mfaStatus.lastVerifiedAt).toLocaleString()}
+                  </Typography>
+                )}
+              </Box>
+
+              <Box display="flex" gap={1} flexWrap="wrap">
+                <Button
+                  variant="outlined"
+                  onClick={handleStartMfaEnrollment}
+                  disabled={mfaLoading}
+                >
+                  Set up Local MFA
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="warning"
+                  onClick={() => setMfaDisableDialogOpen(true)}
+                  disabled={!mfaStatus?.enabled || mfaLoading}
+                >
+                  Disable Local MFA
+                </Button>
+              </Box>
+
+              <Typography variant="caption" color="text.secondary">
+                Local MFA protects sensitive actions within Athena. For organization-wide MFA, use Keycloak.
+              </Typography>
+
               <Box display="flex" gap={1} flexWrap="wrap">
                 <Button
                   variant="outlined"
@@ -468,6 +629,113 @@ const SettingsPage: React.FC = () => {
           </CardContent>
         </Card>
       </Stack>
+
+      <Dialog
+        open={mfaDialogOpen}
+        onClose={() => setMfaDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Set up Local MFA</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            {mfaEnrollment ? (
+              <>
+                <Alert severity="info">
+                  Scan the QR code URL in your authenticator app, then enter the verification code below.
+                </Alert>
+                <TextField
+                  label="TOTP Secret"
+                  value={mfaEnrollment.secret}
+                  fullWidth
+                  InputProps={{ readOnly: true }}
+                />
+                <Button
+                  variant="outlined"
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(mfaEnrollment.secret);
+                    toast.success('Secret copied');
+                  }}
+                >
+                  Copy Secret
+                </Button>
+                <TextField
+                  label="OTPAuth URI"
+                  value={mfaEnrollment.otpauthUri}
+                  fullWidth
+                  multiline
+                  minRows={2}
+                  InputProps={{ readOnly: true }}
+                />
+                <Button
+                  variant="outlined"
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(mfaEnrollment.otpauthUri);
+                    toast.success('OTPAuth URI copied');
+                  }}
+                >
+                  Copy OTPAuth URI
+                </Button>
+                <Box>
+                  <Typography variant="subtitle2">Recovery Codes</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Store these codes somewhere safe. Each code can be used once.
+                  </Typography>
+                  <Box mt={1} display="flex" flexWrap="wrap" gap={1}>
+                    {mfaEnrollment.recoveryCodes.map((code) => (
+                      <Chip key={code} label={code} size="small" variant="outlined" />
+                    ))}
+                  </Box>
+                </Box>
+              </>
+            ) : (
+              <Typography variant="body2">Generating MFA enrollment...</Typography>
+            )}
+
+            <TextField
+              label="Verification code"
+              value={mfaCodeInput}
+              onChange={(event) => setMfaCodeInput(event.target.value)}
+              fullWidth
+              placeholder="123456"
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setMfaDialogOpen(false)}>Cancel</Button>
+          <Button onClick={handleVerifyMfa} disabled={mfaLoading}>
+            Verify & Enable
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={mfaDisableDialogOpen}
+        onClose={() => setMfaDisableDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Disable Local MFA</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Alert severity="warning">
+              Disabling MFA will remove local protection for sensitive actions.
+            </Alert>
+            <TextField
+              label="Verification or recovery code"
+              value={mfaDisableCode}
+              onChange={(event) => setMfaDisableCode(event.target.value)}
+              fullWidth
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setMfaDisableDialogOpen(false)}>Cancel</Button>
+          <Button color="warning" onClick={handleDisableMfa} disabled={mfaLoading}>
+            Disable
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

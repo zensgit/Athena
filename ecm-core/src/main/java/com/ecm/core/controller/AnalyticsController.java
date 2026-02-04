@@ -206,6 +206,21 @@ public class AnalyticsController {
         return ResponseEntity.ok(analyticsService.getAuditEventTypes(limit));
     }
 
+    @GetMapping("/audit/report")
+    @Operation(summary = "Audit Report Summary", description = "Get audit summary counts grouped by category")
+    public ResponseEntity<Map<String, Object>> getAuditReportSummary(
+            @RequestParam(name = "days", defaultValue = "30") int days) {
+        AnalyticsService.AuditReportSummary summary = analyticsService.getAuditReportSummary(days);
+        Map<String, Long> categoryCounts = new java.util.LinkedHashMap<>();
+        summary.countsByCategory().forEach((category, count) ->
+            categoryCounts.put(category.name(), count));
+        return ResponseEntity.ok(Map.of(
+            "windowDays", summary.windowDays(),
+            "totalEvents", summary.totalEvents(),
+            "countsByCategory", categoryCounts
+        ));
+    }
+
     private LocalDateTime parseAuditExportDateTime(String value, String paramName) {
         if (value == null || value.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, paramName + " is required");

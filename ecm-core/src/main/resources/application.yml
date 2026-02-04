@@ -90,6 +90,9 @@ ecm:
     retention-days: ${ECM_AUDIT_RETENTION_DAYS:365}
     disabled-categories: ${ECM_AUDIT_DISABLED_CATEGORIES:}
 
+  mfa:
+    issuer: ${ECM_MFA_ISSUER:Athena ECM}
+
   mail:
     processed:
       retention-days: ${ECM_MAIL_PROCESSED_RETENTION_DAYS:90}

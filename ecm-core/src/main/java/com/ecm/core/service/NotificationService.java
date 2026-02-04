@@ -2,6 +2,7 @@ package com.ecm.core.service;
 
 import com.ecm.core.entity.Node;
 import com.ecm.core.entity.Version;
+import com.ecm.core.integration.webhook.WebhookNotificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -16,6 +17,7 @@ import java.util.Map;
 public class NotificationService {
     
     private final RabbitTemplate rabbitTemplate;
+    private final WebhookNotificationService webhookNotificationService;
     
     public void notifyNodeCreated(Node node) {
         Map<String, Object> notification = new HashMap<>();
@@ -105,6 +107,12 @@ public class NotificationService {
             log.debug("Sent notification: {}", notification);
         } catch (Exception e) {
             log.error("Failed to send notification", e);
+        }
+
+        try {
+            webhookNotificationService.dispatchNotification(notification);
+        } catch (Exception e) {
+            log.warn("Failed to dispatch webhook notification: {}", e.getMessage());
         }
     }
 }

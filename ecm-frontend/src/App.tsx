@@ -14,6 +14,7 @@ import SearchResults from './pages/SearchResults';
 import AdminDashboard from './pages/AdminDashboard';
 import MailAutomationPage from './pages/MailAutomationPage';
 import ContentTypesPage from './pages/ContentTypesPage';
+import WebhookSubscriptionsPage from './pages/WebhookSubscriptionsPage';
 import EditorPage from './pages/EditorPage';
 import TasksPage from './pages/TasksPage';
 import AdvancedSearchPage from './pages/AdvancedSearchPage';
@@ -197,6 +198,16 @@ const App: React.FC = () => {
                 <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
                   <MainLayout>
                     <ContentTypesPage />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/admin/webhooks"
+              element={
+                <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
+                  <MainLayout>
+                    <WebhookSubscriptionsPage />
                   </MainLayout>
                 </PrivateRoute>
               }

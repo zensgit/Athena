@@ -238,6 +238,30 @@ public class AnalyticsService {
     }
 
     /**
+     * Get audit report summary for a time window.
+     */
+    public AuditReportSummary getAuditReportSummary(int days) {
+        int safeDays = Math.max(1, days);
+        LocalDateTime startTime = LocalDateTime.now().minusDays(safeDays);
+        List<Object[]> counts = auditLogRepository.countByEventTypeSince(startTime);
+        EnumMap<AuditCategory, Long> categoryCounts = new EnumMap<>(AuditCategory.class);
+        long total = 0L;
+        if (counts != null) {
+            for (Object[] row : counts) {
+                if (row == null || row.length < 2 || row[0] == null) {
+                    continue;
+                }
+                String eventType = String.valueOf(row[0]);
+                long count = ((Number) row[1]).longValue();
+                AuditCategory category = resolveCategory(eventType);
+                categoryCounts.merge(category, count, Long::sum);
+                total += count;
+            }
+        }
+        return new AuditReportSummary(safeDays, total, categoryCounts);
+    }
+
+    /**
      * Generate CSV content from audit logs
      */
     private String generateCsv(List<AuditLog> logs) {
@@ -275,6 +299,38 @@ public class AnalyticsService {
             return "\"" + value.replace("\"", "\"\"") + "\"";
         }
         return value;
+    }
+
+    private AuditCategory resolveCategory(String eventType) {
+        if (eventType == null) {
+            return AuditCategory.OTHER;
+        }
+        String upper = eventType.toUpperCase(Locale.ROOT);
+        if (upper.startsWith("NODE_")) {
+            return AuditCategory.NODE;
+        }
+        if (upper.startsWith("VERSION_")) {
+            return AuditCategory.VERSION;
+        }
+        if (upper.startsWith("RULE_") || upper.startsWith("SCHEDULED_RULE")) {
+            return AuditCategory.RULE;
+        }
+        if (upper.startsWith("WORKFLOW_") || upper.startsWith("STATUS_")) {
+            return AuditCategory.WORKFLOW;
+        }
+        if (upper.startsWith("MAIL_")) {
+            return AuditCategory.MAIL;
+        }
+        if (upper.startsWith("WOPI_")) {
+            return AuditCategory.INTEGRATION;
+        }
+        if (upper.startsWith("SECURITY_")) {
+            return AuditCategory.SECURITY;
+        }
+        if (upper.startsWith("PDF_")) {
+            return AuditCategory.PDF;
+        }
+        return AuditCategory.OTHER;
     }
 
     /**
@@ -387,5 +443,11 @@ public class AnalyticsService {
     public record AuditEventTypeCount(
         String eventType,
         long count
+    ) {}
+
+    public record AuditReportSummary(
+        int windowDays,
+        long totalEvents,
+        Map<AuditCategory, Long> countsByCategory
     ) {}
 }

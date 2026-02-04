@@ -35,6 +35,8 @@
     <include file="db/changelog/changes/022-fix-mail-processed-subject-type.xml"/>
     <include file="db/changelog/changes/023-add-preview-status-columns.xml"/>
     <include file="db/changelog/changes/024-add-audit-category-settings.xml"/>
+    <include file="db/changelog/changes/025-add-user-mfa-settings.xml"/>
+    <include file="db/changelog/changes/026-add-webhook-subscriptions.xml"/>
     <include file="db/changelog/changes/007-insert-initial-data.xml"/>
 
 </databaseChangeLog>

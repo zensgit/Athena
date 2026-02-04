@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="026-add-webhook-subscriptions" author="codex">
+        <createTable tableName="webhook_subscriptions">
+            <column name="id" type="${uuid_type}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="name" type="varchar(200)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="url" type="varchar(500)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="secret" type="varchar(255)"/>
+            <column name="enabled" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_success_at" type="timestamp"/>
+            <column name="last_failure_at" type="timestamp"/>
+            <column name="last_status_code" type="int"/>
+            <column name="last_error_message" type="varchar(1000)"/>
+            <column name="created_date" type="timestamp" defaultValueComputed="${now}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_date" type="timestamp"/>
+            <column name="created_by" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_by" type="varchar(255)"/>
+            <column name="version" type="bigint"/>
+            <column name="is_deleted" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="deleted_at" type="timestamp"/>
+            <column name="deleted_by" type="varchar(255)"/>
+        </createTable>
+
+        <createTable tableName="webhook_subscription_event_types">
+            <column name="subscription_id" type="${uuid_type}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="event_type" type="varchar(100)">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <addPrimaryKey tableName="webhook_subscription_event_types"
+                       columnNames="subscription_id,event_type"
+                       constraintName="pk_webhook_subscription_event_types"/>
+
+        <createIndex indexName="idx_webhook_subscription_enabled" tableName="webhook_subscriptions">
+            <column name="enabled"/>
+        </createIndex>
+        <createIndex indexName="idx_webhook_subscription_event" tableName="webhook_subscription_event_types">
+            <column name="event_type"/>
+        </createIndex>
+
+        <addForeignKeyConstraint
+            baseTableName="webhook_subscription_event_types"
+            baseColumnNames="subscription_id"
+            constraintName="fk_webhook_event_subscription"
+            referencedTableName="webhook_subscriptions"
+            referencedColumnNames="id"
+            onDelete="CASCADE"/>
+    </changeSet>
+</databaseChangeLog>

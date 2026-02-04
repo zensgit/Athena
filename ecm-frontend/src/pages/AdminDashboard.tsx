@@ -150,6 +150,12 @@ interface AuditRetentionInfo {
   exportMaxRangeDays?: number;
 }
 
+interface AuditReportSummary {
+  windowDays: number;
+  totalEvents: number;
+  countsByCategory: Record<string, number>;
+}
+
 interface AuditCategorySetting {
   category: string;
   enabled: boolean;
@@ -197,6 +203,7 @@ const AdminDashboard: React.FC = () => {
   const [mailFetchSummaryError, setMailFetchSummaryError] = useState<string | null>(null);
   const [mailFetchTriggering, setMailFetchTriggering] = useState(false);
   const [retentionInfo, setRetentionInfo] = useState<AuditRetentionInfo | null>(null);
+  const [auditReport, setAuditReport] = useState<AuditReportSummary | null>(null);
   const [exportingAudit, setExportingAudit] = useState(false);
   const [cleaningAudit, setCleaningAudit] = useState(false);
   const [auditPresets, setAuditPresets] = useState<AuditPreset[]>([]);
@@ -317,11 +324,12 @@ const AdminDashboard: React.FC = () => {
     try {
       setLoadingDashboard(true);
       setAuditCategoriesLoading(true);
-      const [dashboardRes, logsRes, licenseRes, retentionRes, ruleSummaryRes, ruleEventsRes, presetsRes, categoriesRes, eventTypesRes] = await Promise.all([
+      const [dashboardRes, logsRes, licenseRes, retentionRes, auditReportRes, ruleSummaryRes, ruleEventsRes, presetsRes, categoriesRes, eventTypesRes] = await Promise.all([
         apiService.get<DashboardData>('/analytics/dashboard'),
         apiService.get<AuditLog[]>('/analytics/audit/recent?limit=10'),
         apiService.get<LicenseInfo>('/system/license').catch(() => null),
         apiService.get<AuditRetentionInfo>('/analytics/audit/retention').catch(() => null),
+        apiService.get<AuditReportSummary>('/analytics/audit/report?days=30').catch(() => null),
         apiService.get<RuleExecutionSummary>('/analytics/rules/summary?days=7').catch(() => null),
         apiService.get<AuditLog[]>('/analytics/rules/recent?limit=20').catch(() => []),
         apiService.get<AuditPreset[]>('/analytics/audit/presets').catch(() => []),
@@ -332,6 +340,7 @@ const AdminDashboard: React.FC = () => {
       setLogs(logsRes);
       setLicenseInfo(licenseRes);
       setRetentionInfo(retentionRes);
+      setAuditReport(auditReportRes);
       setRuleSummary(ruleSummaryRes);
       setRuleEvents(ruleEventsRes || []);
       setAuditPresets(presetsRes || []);
@@ -1140,6 +1149,13 @@ const AdminDashboard: React.FC = () => {
                       variant="outlined"
                     />
                   )}
+                  {auditReport && (
+                    <Chip
+                      size="small"
+                      label={`Audit last ${auditReport.windowDays}d: ${auditReport.totalEvents}`}
+                      variant="outlined"
+                    />
+                  )}
                   <FormControl size="small" sx={{ minWidth: 180 }}>
                     <InputLabel>Export Preset</InputLabel>
                     <Select
@@ -1295,6 +1311,18 @@ const AdminDashboard: React.FC = () => {
                   </Typography>
                 )}
               </Box>
+              {auditReport && Object.keys(auditReport.countsByCategory || {}).length > 0 && (
+                <Box display="flex" flexWrap="wrap" gap={1} mb={2}>
+                  {Object.entries(auditReport.countsByCategory).map(([category, count]) => (
+                    <Chip
+                      key={category}
+                      size="small"
+                      variant="outlined"
+                      label={`${formatAuditCategoryLabel(category)}: ${count}`}
+                    />
+                  ))}
+                </Box>
+              )}
               <List>
                 {logs.map((log, index) => (
                   <React.Fragment key={log.id}>

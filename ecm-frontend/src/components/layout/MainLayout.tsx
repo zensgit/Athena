@@ -34,6 +34,7 @@ import {
   SavedSearch as SavedSearchIcon,
   MailOutline,
   Description,
+  Link as LinkIcon,
   PushPin,
   PushPinOutlined,
 } from '@mui/icons-material';
@@ -357,6 +358,12 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                     <Description fontSize="small" />
                   </ListItemIcon>
                   <ListItemText>Content Types</ListItemText>
+                </MenuItem>
+                <MenuItem onClick={() => navigate('/admin/webhooks')}>
+                  <ListItemIcon>
+                    <LinkIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Webhooks</ListItemText>
                 </MenuItem>
               </>
             )}
