@@ -108,12 +108,17 @@ test('Mail automation test connection and fetch summary', async ({ page, request
     await expect(oauthMissingChip).toHaveCount(0);
   }
 
-  const linkIcon = page.locator('svg[data-testid="LinkIcon"]').first();
-  await expect(linkIcon).toBeVisible({ timeout: 30_000 });
-  await linkIcon.locator('xpath=ancestor::button[1]').click();
-
-  const connectionToast = page.locator('.Toastify__toast').last();
-  await expect(connectionToast).toContainText(/Connection (OK|failed)|Failed to test connection/i, { timeout: 60_000 });
+  const testButton = page.getByRole('button', { name: /test connection/i }).first();
+  await expect(testButton).toBeVisible({ timeout: 30_000 });
+  if (hasOauthMissing) {
+    await expect(testButton).toBeDisabled();
+    await expect(page.getByText(/OAuth env missing — test connection disabled/i)).toBeVisible({ timeout: 30_000 });
+  } else {
+    await expect(testButton).toBeEnabled();
+    await testButton.click();
+    const connectionToast = page.locator('.Toastify__toast').last();
+    await expect(connectionToast).toContainText(/Connection (OK|failed)|Failed to test connection/i, { timeout: 60_000 });
+  }
 
   const triggerButton = page.getByRole('button', { name: /trigger fetch/i });
   await expect(triggerButton).toBeEnabled({ timeout: 30_000 });

@@ -119,6 +119,9 @@ test('Permissions dialog shows inheritance path and copy ACL action', async ({ p
   await expect(dialog.getByLabel(/Diagnose as/i)).toBeVisible();
   await expect(dialog.getByText(/Reason ADMIN/i)).toBeVisible();
   await expect(dialog.getByRole('button', { name: 'Copy ACL' })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Copy ACL' }).click();
+  const toast = page.locator('.Toastify__toast').last();
+  await expect(toast).toContainText(/copied|copy/i, { timeout: 30_000 });
 
   await dialog.getByRole('button', { name: /^Close$/ }).click();
 

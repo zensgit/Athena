@@ -300,6 +300,7 @@ test('Version history actions: download + restore', async ({ page, request }) =>
   await expect(compareDialog).toBeVisible({ timeout: 30_000 });
   await expect(compareDialog.getByText(/Size delta/i)).toBeVisible({ timeout: 30_000 });
   await expect(compareDialog.getByText(/Hash changed/i)).toBeVisible({ timeout: 30_000 });
+  await expect(compareDialog.getByText(/Major version|Status/i)).toBeVisible({ timeout: 30_000 });
   await compareDialog.getByRole('button', { name: 'Close' }).click();
 
   const previousRow = versionsDialog.getByRole('row').filter({ hasText: previous.versionLabel }).first();

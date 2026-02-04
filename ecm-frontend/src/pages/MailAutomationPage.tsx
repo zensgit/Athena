@@ -1967,7 +1967,10 @@ const MailAutomationPage: React.FC = () => {
                               <IconButton
                                 size="small"
                                 onClick={() => handleTestConnection(account.id)}
-                                disabled={testingAccountId === account.id}
+                                disabled={
+                                  testingAccountId === account.id
+                                  || (account.security === 'OAUTH2' && account.oauthEnvConfigured === false)
+                                }
                               >
                                 {testingAccountId === account.id ? (
                                   <CircularProgress size={16} />
@@ -1977,6 +1980,11 @@ const MailAutomationPage: React.FC = () => {
                               </IconButton>
                             </span>
                           </Tooltip>
+                          {account.security === 'OAUTH2' && account.oauthEnvConfigured === false && (
+                            <Typography variant="caption" color="warning.main" display="block">
+                              OAuth env missing — test connection disabled
+                            </Typography>
+                          )}
                           <Tooltip title="Edit">
                             <IconButton size="small" onClick={() => openEditAccount(account)}>
                               <Edit fontSize="small" />

@@ -234,12 +234,42 @@ test('Search results view opens preview for documents', async ({ page, request }
 
   const resultCard = page.locator('.MuiCard-root').filter({ hasText: filename }).first();
   await expect(resultCard).toBeVisible({ timeout: 60_000 });
-  await resultCard.getByRole('button', { name: 'View', exact: true }).click();
+  await resultCard.getByRole('button', { name: 'More like this' }).click();
+
+  const backButton = page.getByRole('button', { name: 'Back to results' });
+  const similarErrorAlert = page.getByText(/Failed to load similar documents|No similar documents found/i);
+  let outcome: 'back' | 'error' | null = null;
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    if (await backButton.isVisible().catch(() => false)) {
+      outcome = 'back';
+      break;
+    }
+    if (await similarErrorAlert.isVisible().catch(() => false)) {
+      outcome = 'error';
+      break;
+    }
+    await page.waitForTimeout(1000);
+  }
+  if (outcome === 'back') {
+    await backButton.click();
+    await expect(page.locator('.MuiCard-root').filter({ hasText: filename }).first()).toBeVisible({ timeout: 60_000 });
+  } else if (outcome === 'error') {
+    await quickSearchInput.fill(filename);
+    await quickSearchInput.press('Enter');
+    await expect(page.locator('.MuiCard-root').filter({ hasText: filename }).first()).toBeVisible({ timeout: 60_000 });
+  } else {
+    await quickSearchInput.fill(filename);
+    await quickSearchInput.press('Enter');
+    await expect(page.locator('.MuiCard-root').filter({ hasText: filename }).first()).toBeVisible({ timeout: 60_000 });
+  }
+
+  const viewCard = page.locator('.MuiCard-root').filter({ hasText: filename }).first();
+  await viewCard.getByRole('button', { name: 'View', exact: true }).click();
 
   await expect(page).toHaveURL(/\/search-results/);
-  await expect(page.getByLabel('close')).toBeVisible({ timeout: 60_000 });
-
-  await page.getByLabel('close').click();
+  const previewCloseButton = page.locator('button[aria-label="close"]:not(.Toastify__close-button)').first();
+  await expect(previewCloseButton).toBeVisible({ timeout: 60_000 });
+  await previewCloseButton.click();
 
   await request.delete(`${baseApiUrl}/api/v1/nodes/${folderId}`, {
     headers: { Authorization: `Bearer ${apiToken}` },
