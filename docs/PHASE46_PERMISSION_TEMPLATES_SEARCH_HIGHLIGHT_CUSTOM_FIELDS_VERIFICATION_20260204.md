@@ -5,8 +5,8 @@
 - `docker compose up -d --build ecm-core ecm-frontend`
 
 ## Automated verification (Playwright CLI)
-- `ECM_UI_URL=http://localhost:5500 ECM_API_URL=http://localhost:7700 ECM_E2E_SKIP_LOGIN=1 npx playwright test e2e/permission-templates.spec.ts`
-- `ECM_UI_URL=http://localhost:5500 ECM_API_URL=http://localhost:7700 ECM_E2E_SKIP_LOGIN=1 npx playwright test e2e/search-highlight.spec.ts`
+- `ECM_E2E_SKIP_LOGIN=1 ECM_UI_URL=http://localhost:5500 ECM_API_URL=http://localhost:7700 npx playwright test e2e/permission-templates.spec.ts`
+- `ECM_E2E_SKIP_LOGIN=1 ECM_UI_URL=http://localhost:5500 ECM_API_URL=http://localhost:7700 npx playwright test e2e/search-highlight.spec.ts`
 
 ## Results
 - ✅ Permission template apply flow verified.
