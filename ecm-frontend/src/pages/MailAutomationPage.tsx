@@ -134,6 +134,9 @@ const MailAutomationPage: React.FC = () => {
   const [diagnosticsRuleId, setDiagnosticsRuleId] = useState('');
   const [diagnosticsStatus, setDiagnosticsStatus] = useState('');
   const [diagnosticsSubject, setDiagnosticsSubject] = useState('');
+  const diagnosticsFiltersActive = Boolean(
+    diagnosticsAccountId || diagnosticsRuleId || diagnosticsStatus || diagnosticsSubject,
+  );
   const [processedRetention, setProcessedRetention] = useState<ProcessedMailRetentionStatus | null>(null);
   const [retentionLoading, setRetentionLoading] = useState(false);
   const [retentionCleaning, setRetentionCleaning] = useState(false);
@@ -372,6 +375,13 @@ const MailAutomationPage: React.FC = () => {
       setSummaryAccountId(accounts[0].id);
     }
   }, [accounts, summaryAccountId]);
+
+  const handleClearDiagnosticsFilters = () => {
+    setDiagnosticsAccountId('');
+    setDiagnosticsRuleId('');
+    setDiagnosticsStatus('');
+    setDiagnosticsSubject('');
+  };
 
   useEffect(() => {
     setAvailableFolders([]);
@@ -1379,6 +1389,14 @@ const MailAutomationPage: React.FC = () => {
                 <Stack direction="row" spacing={1}>
                   <Button variant="outlined" onClick={exportDiagnosticsCsv} disabled={!diagnostics || exportDisabled}>
                     Export CSV
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    onClick={handleClearDiagnosticsFilters}
+                    disabled={!diagnosticsFiltersActive}
+                    data-testid="diagnostics-clear-filters"
+                  >
+                    Clear filters
                   </Button>
                   <Button
                     variant="outlined"

@@ -173,3 +173,40 @@ test('Mail automation lists folders and shows folder helper text', async ({ page
 
   await page.getByRole('button', { name: /cancel/i }).click();
 });
+
+test('Mail automation diagnostics filters can be cleared', async ({ page, request }) => {
+  await waitForApiReady(request);
+  const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+  const accountsRes = await request.get(`${apiUrl}/api/v1/integration/mail/accounts`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(accountsRes.ok()).toBeTruthy();
+  const accounts = (await accountsRes.json()) as Array<{ id: string; name: string }>;
+  test.skip(!accounts.length, 'No mail accounts configured');
+
+  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
+  await page.goto('/admin/mail#diagnostics', { waitUntil: 'domcontentloaded' });
+  await page.waitForURL(/\/admin\/mail/, { timeout: 60_000 });
+
+  const statusSelect = page.getByRole('combobox', { name: 'Status' });
+  await statusSelect.click();
+  const errorOption = page.getByRole('option', { name: 'Error' });
+  await errorOption.click();
+  await statusSelect.click();
+  await expect(errorOption).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('Escape');
+
+  const subjectInput = page.getByLabel('Subject contains');
+  await subjectInput.fill('e2e');
+  await expect(subjectInput).toHaveValue('e2e');
+
+  const clearButton = page.getByTestId('diagnostics-clear-filters');
+  await expect(clearButton).toBeEnabled({ timeout: 30_000 });
+  await clearButton.click();
+
+  await expect(subjectInput).toHaveValue('');
+  await statusSelect.click();
+  const allOption = page.getByRole('option', { name: 'All Statuses' });
+  await expect(allOption).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('Escape');
+});
