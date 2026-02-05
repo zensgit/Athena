@@ -11,6 +11,7 @@
 ## Tests
 - Backend: `mvn test` (138 tests, BUILD SUCCESS)
 - Frontend: `npx playwright test` (36 passed)
+- CI: https://github.com/zensgit/Athena/actions/runs/21713803976
 
 ## Release Artifacts
 - Tag: `v2026.02.05`

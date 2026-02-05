@@ -7,6 +7,7 @@
 - 验证：后端 mvn test 通过；前端 Playwright 全量通过
 - 文档：Phase47–53 与 Rollup 文档已齐备
 Release: https://github.com/zensgit/Athena/releases/tag/v2026.02.05
+CI: https://github.com/zensgit/Athena/actions/runs/21713803976
 验收清单: docs/ROLLUP_ACCEPTANCE_CHECKLIST_20260205.md
 回滚评估: docs/ROLLUP_ROLLBACK_IMPACT_20260205.md
 上线核对: docs/ROLLUP_GO_LIVE_CHECKLIST_20260205.md
@@ -19,6 +20,7 @@ Release: https://github.com/zensgit/Athena/releases/tag/v2026.02.05
 - Verification: backend mvn test passed; full Playwright E2E passed
 - Docs: Phase47–53 and rollup artifacts available
 Release: https://github.com/zensgit/Athena/releases/tag/v2026.02.05
+CI: https://github.com/zensgit/Athena/actions/runs/21713803976
 Acceptance: docs/ROLLUP_ACCEPTANCE_CHECKLIST_20260205.md
 Rollback: docs/ROLLUP_ROLLBACK_IMPACT_20260205.md
 Go‑live: docs/ROLLUP_GO_LIVE_CHECKLIST_20260205.md

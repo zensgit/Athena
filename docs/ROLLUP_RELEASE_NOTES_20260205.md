@@ -24,3 +24,4 @@
 ## Verification
 - Backend: `mvn test` (138 tests, BUILD SUCCESS)
 - Frontend: Playwright E2E full suite (36 passed)
+- CI: https://github.com/zensgit/Athena/actions/runs/21713803976

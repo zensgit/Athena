@@ -32,6 +32,7 @@
 ## Tests Executed
 - [x] Backend: `cd ecm-core && mvn test` (BUILD SUCCESS, 138 tests)
 - [x] Frontend: `npx playwright test` (36 passed)
+- [x] CI: https://github.com/zensgit/Athena/actions/runs/21713803976
 
 ## Notes
 - WOPI health requires authentication (401 without auth; 200 with auth token).
