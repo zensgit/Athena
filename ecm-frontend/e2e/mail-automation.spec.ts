@@ -215,3 +215,24 @@ test('Mail automation diagnostics filters can be cleared', async ({ page, reques
   await expect(allOption).toHaveAttribute('aria-selected', 'true');
   await page.keyboard.press('Escape');
 });
+
+test('Mail automation reporting panel renders', async ({ page, request }) => {
+  await waitForApiReady(request);
+  const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+
+  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
+  await page.goto('/admin/mail', { waitUntil: 'domcontentloaded' });
+  await page.waitForURL(/\/admin\/mail/, { timeout: 60_000 });
+
+  const reportHeading = page.getByRole('heading', { name: /mail reporting/i });
+  await expect(reportHeading).toBeVisible({ timeout: 60_000 });
+
+  const reportCard = reportHeading.locator('xpath=ancestor::div[contains(@class,\"MuiCardContent-root\")]');
+  await expect(reportCard).toContainText(/No report data available yet|Processed/i, { timeout: 60_000 });
+
+  const refreshButton = reportCard.getByRole('button', { name: /refresh/i }).first();
+  await expect(refreshButton).toBeEnabled({ timeout: 30_000 });
+  await refreshButton.click();
+
+  await expect(reportCard).toContainText(/No report data available yet|Daily trend/i, { timeout: 60_000 });
+});

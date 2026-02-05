@@ -211,6 +211,61 @@ export interface MailDiagnosticsResult {
   recentDocuments: MailDocumentDiagnosticItem[];
 }
 
+export interface MailReportTotals {
+  processed: number;
+  errors: number;
+  total: number;
+}
+
+export interface MailReportAccountRow {
+  accountId: string;
+  accountName?: string | null;
+  processed: number;
+  errors: number;
+  total: number;
+  lastProcessedAt?: string | null;
+  lastErrorAt?: string | null;
+}
+
+export interface MailReportRuleRow {
+  ruleId: string;
+  ruleName?: string | null;
+  accountId?: string | null;
+  accountName?: string | null;
+  processed: number;
+  errors: number;
+  total: number;
+  lastProcessedAt?: string | null;
+  lastErrorAt?: string | null;
+}
+
+export interface MailReportTrendRow {
+  date: string;
+  processed: number;
+  errors: number;
+  total: number;
+}
+
+export interface MailReportResponse {
+  accountId?: string | null;
+  ruleId?: string | null;
+  startDate: string;
+  endDate: string;
+  days: number;
+  totals: MailReportTotals;
+  accounts: MailReportAccountRow[];
+  rules: MailReportRuleRow[];
+  trend: MailReportTrendRow[];
+}
+
+export interface MailReportFilters {
+  accountId?: string | null;
+  ruleId?: string | null;
+  from?: string | null;
+  to?: string | null;
+  days?: number | null;
+}
+
 export interface MailDiagnosticsFilters {
   accountId?: string | null;
   ruleId?: string | null;
@@ -296,6 +351,30 @@ class MailAutomationService {
         subject: filters?.subject || undefined,
         processedFrom: filters?.processedFrom || undefined,
         processedTo: filters?.processedTo || undefined,
+      },
+    });
+  }
+
+  async getReport(filters?: MailReportFilters): Promise<MailReportResponse> {
+    return api.get<MailReportResponse>('/integration/mail/report', {
+      params: {
+        accountId: filters?.accountId || undefined,
+        ruleId: filters?.ruleId || undefined,
+        from: filters?.from || undefined,
+        to: filters?.to || undefined,
+        days: filters?.days ?? undefined,
+      },
+    });
+  }
+
+  async exportReportCsv(filters?: MailReportFilters): Promise<Blob> {
+    return api.getBlob('/integration/mail/report/export', {
+      params: {
+        accountId: filters?.accountId || undefined,
+        ruleId: filters?.ruleId || undefined,
+        from: filters?.from || undefined,
+        to: filters?.to || undefined,
+        days: filters?.days ?? undefined,
       },
     });
   }

@@ -50,6 +50,10 @@ import mailAutomationService, {
   ProcessedMailDiagnosticItem,
   ProcessedMailRetentionStatus,
   MailRulePreviewResult,
+  MailReportResponse,
+  MailReportAccountRow,
+  MailReportRuleRow,
+  MailReportTrendRow,
 } from 'services/mailAutomationService';
 import tagService from 'services/tagService';
 import nodeService from 'services/nodeService';
@@ -125,6 +129,11 @@ const MailAutomationPage: React.FC = () => {
   const [debugMaxMessages, setDebugMaxMessages] = useState(200);
   const [folderAccountId, setFolderAccountId] = useState('');
   const [summaryAccountId, setSummaryAccountId] = useState('');
+  const [report, setReport] = useState<MailReportResponse | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportAccountId, setReportAccountId] = useState('');
+  const [reportRuleId, setReportRuleId] = useState('');
+  const [reportDays, setReportDays] = useState(7);
   const [listingFolders, setListingFolders] = useState(false);
   const [availableFolders, setAvailableFolders] = useState<string[]>([]);
   const [hasListedFolders, setHasListedFolders] = useState(false);
@@ -218,6 +227,22 @@ const MailAutomationPage: React.FC = () => {
     }
     return date.toLocaleString();
   };
+
+  const formatDate = (value?: string | null) => {
+    if (!value) {
+      return 'N/A';
+    }
+    if (/^\\d{4}-\\d{2}-\\d{2}$/.test(value)) {
+      return value;
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return value;
+    }
+    return date.toLocaleDateString();
+  };
+
+  const formatCount = (value?: number | null) => new Intl.NumberFormat().format(value ?? 0);
 
   const summarizeError = (value?: string | null, maxLength = 160) => {
     if (!value) {
@@ -329,9 +354,34 @@ const MailAutomationPage: React.FC = () => {
     }
   }, [diagnosticsAccountId, diagnosticsRuleId, diagnosticsStatus, diagnosticsSubject]);
 
+  const loadReport = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true;
+    if (!silent) {
+      setReportLoading(true);
+    }
+    try {
+      const result = await mailAutomationService.getReport({
+        accountId: reportAccountId || undefined,
+        ruleId: reportRuleId || undefined,
+        days: reportDays,
+      });
+      setReport(result);
+    } catch {
+      if (!silent) {
+        toast.error('Failed to load mail reporting');
+      }
+    } finally {
+      setReportLoading(false);
+    }
+  }, [reportAccountId, reportRuleId, reportDays]);
+
   useEffect(() => {
     loadAll();
   }, [loadAll]);
+
+  useEffect(() => {
+    loadReport();
+  }, [loadReport]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -490,6 +540,11 @@ const MailAutomationPage: React.FC = () => {
 
   const recentProcessed: ProcessedMailDiagnosticItem[] = diagnostics?.recentProcessed ?? [];
   const recentDocuments: MailDocumentDiagnosticItem[] = diagnostics?.recentDocuments ?? [];
+  const reportAccounts: MailReportAccountRow[] = report?.accounts ?? [];
+  const reportRules: MailReportRuleRow[] = report?.rules ?? [];
+  const reportTrend: MailReportTrendRow[] = report?.trend ?? [];
+  const reportTotals = report?.totals;
+  const maxTrendTotal = Math.max(1, ...reportTrend.map((row) => row.total));
   const exportDisabled = !exportOptions.includeProcessed && !exportOptions.includeDocuments;
   const retentionEnabled = processedRetention?.enabled ?? false;
   const retentionDays = processedRetention?.retentionDays ?? 0;
@@ -497,6 +552,29 @@ const MailAutomationPage: React.FC = () => {
   const allProcessedSelected = recentProcessed.length > 0
     && recentProcessed.every((item) => selectedProcessedIds.includes(item.id));
   const someProcessedSelected = selectedProcessedIds.length > 0 && !allProcessedSelected;
+
+  const exportReportCsv = async () => {
+    if (!report) {
+      toast.info('Run a report first');
+      return;
+    }
+    try {
+      const blob = await mailAutomationService.exportReportCsv({
+        accountId: reportAccountId || undefined,
+        ruleId: reportRuleId || undefined,
+        days: reportDays,
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+      anchor.href = url;
+      anchor.download = `mail-report-${timestamp}.csv`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Failed to export mail report');
+    }
+  };
 
   const exportDiagnosticsCsv = async () => {
     if (exportDisabled) {
@@ -1021,6 +1099,237 @@ const MailAutomationPage: React.FC = () => {
         </Box>
       ) : (
         <Stack spacing={3}>
+          <Card variant="outlined">
+            <CardContent>
+              <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
+                <Typography variant="h6">Mail Reporting</Typography>
+                <Stack direction="row" spacing={1}>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={reportLoading ? <CircularProgress size={16} /> : <Refresh />}
+                    onClick={() => loadReport()}
+                    disabled={reportLoading}
+                  >
+                    {reportLoading ? 'Refreshing...' : 'Refresh'}
+                  </Button>
+                  <Button variant="outlined" size="small" onClick={exportReportCsv} disabled={!report}>
+                    Export CSV
+                  </Button>
+                </Stack>
+              </Box>
+
+              <Stack direction="row" spacing={2} sx={{ flexWrap: 'wrap', gap: 2 }} mb={2}>
+                <FormControl size="small" sx={{ minWidth: 220 }}>
+                  <InputLabel id="report-account-label">Account</InputLabel>
+                  <Select
+                    labelId="report-account-label"
+                    label="Account"
+                    value={reportAccountId}
+                    onChange={(event) => setReportAccountId(event.target.value)}
+                  >
+                    <MenuItem value="">All accounts</MenuItem>
+                    {accounts.map((account) => (
+                      <MenuItem key={account.id} value={account.id}>
+                        {account.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <FormControl size="small" sx={{ minWidth: 220 }}>
+                  <InputLabel id="report-rule-label">Rule</InputLabel>
+                  <Select
+                    labelId="report-rule-label"
+                    label="Rule"
+                    value={reportRuleId}
+                    onChange={(event) => setReportRuleId(event.target.value)}
+                  >
+                    <MenuItem value="">All rules</MenuItem>
+                    {rules.map((rule) => (
+                      <MenuItem key={rule.id} value={rule.id}>
+                        {rule.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <FormControl size="small" sx={{ minWidth: 160 }}>
+                  <InputLabel id="report-days-label">Days</InputLabel>
+                  <Select
+                    labelId="report-days-label"
+                    label="Days"
+                    value={reportDays}
+                    onChange={(event) => setReportDays(Number(event.target.value))}
+                  >
+                    {[7, 14, 30, 60, 90].map((days) => (
+                      <MenuItem key={`report-days-${days}`} value={days}>
+                        Last {days} days
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Stack>
+
+              {reportLoading && !report ? (
+                <Box display="flex" justifyContent="center" py={2}>
+                  <CircularProgress />
+                </Box>
+              ) : report ? (
+                <Stack spacing={2}>
+                  <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
+                    <Chip size="small" label={`Processed ${formatCount(reportTotals?.processed)}`} />
+                    <Chip
+                      size="small"
+                      color={reportTotals && reportTotals.errors > 0 ? 'error' : 'default'}
+                      label={`Errors ${formatCount(reportTotals?.errors)}`}
+                    />
+                    <Chip size="small" label={`Total ${formatCount(reportTotals?.total)}`} />
+                    <Chip
+                      size="small"
+                      variant="outlined"
+                      label={`Range ${formatDate(report.startDate)} → ${formatDate(report.endDate)}`}
+                    />
+                  </Stack>
+
+                  <Box>
+                    <Typography variant="subtitle2" gutterBottom>
+                      Account summary
+                    </Typography>
+                    {reportAccounts.length === 0 ? (
+                      <Typography variant="body2" color="text.secondary">
+                        No mail activity recorded for the selected range.
+                      </Typography>
+                    ) : (
+                      <TableContainer sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+                        <Table size="small">
+                          <TableHead>
+                            <TableRow>
+                              <TableCell>Account</TableCell>
+                              <TableCell>Processed</TableCell>
+                              <TableCell>Errors</TableCell>
+                              <TableCell>Total</TableCell>
+                              <TableCell>Last processed</TableCell>
+                              <TableCell>Last error</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {reportAccounts.map((row) => (
+                              <TableRow key={`report-account-${row.accountId}`} hover>
+                                <TableCell>{row.accountName || row.accountId}</TableCell>
+                                <TableCell>{formatCount(row.processed)}</TableCell>
+                                <TableCell>{formatCount(row.errors)}</TableCell>
+                                <TableCell>{formatCount(row.total)}</TableCell>
+                                <TableCell>{formatDateTime(row.lastProcessedAt)}</TableCell>
+                                <TableCell>{formatDateTime(row.lastErrorAt)}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </TableContainer>
+                    )}
+                  </Box>
+
+                  <Box>
+                    <Typography variant="subtitle2" gutterBottom>
+                      Rule summary
+                    </Typography>
+                    {reportRules.length === 0 ? (
+                      <Typography variant="body2" color="text.secondary">
+                        No rule activity recorded for the selected range.
+                      </Typography>
+                    ) : (
+                      <TableContainer sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+                        <Table size="small">
+                          <TableHead>
+                            <TableRow>
+                              <TableCell>Rule</TableCell>
+                              <TableCell>Account</TableCell>
+                              <TableCell>Processed</TableCell>
+                              <TableCell>Errors</TableCell>
+                              <TableCell>Total</TableCell>
+                              <TableCell>Last processed</TableCell>
+                              <TableCell>Last error</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {reportRules.map((row) => (
+                              <TableRow key={`report-rule-${row.ruleId}`} hover>
+                                <TableCell>{row.ruleName || row.ruleId}</TableCell>
+                                <TableCell>{row.accountName || row.accountId || 'All accounts'}</TableCell>
+                                <TableCell>{formatCount(row.processed)}</TableCell>
+                                <TableCell>{formatCount(row.errors)}</TableCell>
+                                <TableCell>{formatCount(row.total)}</TableCell>
+                                <TableCell>{formatDateTime(row.lastProcessedAt)}</TableCell>
+                                <TableCell>{formatDateTime(row.lastErrorAt)}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </TableContainer>
+                    )}
+                  </Box>
+
+                  <Box>
+                    <Typography variant="subtitle2" gutterBottom>
+                      Daily trend
+                    </Typography>
+                    <Stack spacing={1}>
+                      {reportTrend.map((row) => {
+                        const totalRatio = row.total > 0 ? (row.total / maxTrendTotal) * 100 : 0;
+                        const errorRatio = row.total > 0 ? (row.errors / row.total) * 100 : 0;
+                        return (
+                          <Stack
+                            key={`report-trend-${row.date}`}
+                            direction="row"
+                            spacing={2}
+                            alignItems="center"
+                          >
+                            <Typography variant="caption" sx={{ width: 90 }}>
+                              {formatDate(row.date)}
+                            </Typography>
+                            <Box
+                              sx={{
+                                flexGrow: 1,
+                                height: 8,
+                                bgcolor: 'grey.200',
+                                borderRadius: 1,
+                                overflow: 'hidden',
+                              }}
+                            >
+                              <Box
+                                sx={{
+                                  width: `${totalRatio}%`,
+                                  height: '100%',
+                                  bgcolor: 'primary.light',
+                                }}
+                              >
+                                {row.errors > 0 && (
+                                  <Box
+                                    sx={{
+                                      width: `${errorRatio}%`,
+                                      height: '100%',
+                                      bgcolor: 'error.main',
+                                    }}
+                                  />
+                                )}
+                              </Box>
+                            </Box>
+                            <Typography variant="caption" sx={{ width: 140, textAlign: 'right' }}>
+                              {formatCount(row.processed)} / {formatCount(row.errors)}
+                            </Typography>
+                          </Stack>
+                        );
+                      })}
+                    </Stack>
+                  </Box>
+                </Stack>
+              ) : (
+                <Typography variant="body2" color="text.secondary">
+                  No report data available yet.
+                </Typography>
+              )}
+            </CardContent>
+          </Card>
+
           <Box ref={diagnosticsRef} id="diagnostics">
             <Card variant="outlined">
               <CardContent>
