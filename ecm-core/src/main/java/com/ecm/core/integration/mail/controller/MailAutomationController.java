@@ -9,6 +9,7 @@ import com.ecm.core.integration.mail.repository.ProcessedMailRepository;
 import com.ecm.core.integration.mail.service.MailFetcherService;
 import com.ecm.core.integration.mail.service.MailOAuthService;
 import com.ecm.core.integration.mail.service.MailProcessedRetentionService;
+import com.ecm.core.integration.mail.service.MailReportingService;
 import com.ecm.core.service.AuditService;
 import com.ecm.core.service.SecurityService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -40,6 +41,7 @@ public class MailAutomationController {
     private final MailFetcherService fetcherService;
     private final MailOAuthService oauthService;
     private final MailProcessedRetentionService retentionService;
+    private final MailReportingService reportingService;
     private final ProcessedMailRepository processedMailRepository;
     private final AuditService auditService;
     private final SecurityService securityService;
@@ -421,6 +423,43 @@ public class MailAutomationController {
             .body(csv);
     }
 
+    @GetMapping("/report")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Mail reporting", description = "Aggregated mail automation reporting with trends")
+    public ResponseEntity<MailReportingService.MailReportResponse> getReport(
+        @RequestParam(required = false) UUID accountId,
+        @RequestParam(required = false) UUID ruleId,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+            LocalDate from,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+            LocalDate to,
+        @RequestParam(required = false) Integer days
+    ) {
+        return ResponseEntity.ok(reportingService.getReport(accountId, ruleId, from, to, days));
+    }
+
+    @GetMapping("/report/export")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Export mail report", description = "Export mail automation reporting as CSV")
+    public ResponseEntity<String> exportReport(
+        @RequestParam(required = false) UUID accountId,
+        @RequestParam(required = false) UUID ruleId,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+            LocalDate from,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+            LocalDate to,
+        @RequestParam(required = false) Integer days
+    ) {
+        MailReportingService.MailReportResponse report = reportingService.getReport(accountId, ruleId, from, to, days);
+        String csv = reportingService.exportReportCsv(report);
+        auditReportExport(report);
+        String filename = "mail-report-" + LocalDate.now() + ".csv";
+        return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+            .contentType(MediaType.valueOf("text/csv"))
+            .body(csv);
+    }
+
     @PostMapping("/processed/bulk-delete")
     @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Bulk delete processed mail", description = "Delete processed mail records by id")
@@ -480,6 +519,30 @@ public class MailAutomationController {
         );
         auditService.logEvent(
             "MAIL_DIAGNOSTICS_EXPORTED",
+            auditNodeId,
+            auditNodeName,
+            resolveAuditUsername(),
+            details
+        );
+    }
+
+    private void auditReportExport(MailReportingService.MailReportResponse report) {
+        UUID auditNodeId = report.accountId() != null ? report.accountId() : report.ruleId();
+        String auditNodeName = report.accountId() != null
+            ? "MAIL_ACCOUNT"
+            : (report.ruleId() != null ? "MAIL_RULE" : "MAIL_REPORT");
+        String details = String.format(
+            "Exported mail report (accountId=%s, ruleId=%s, start=%s, end=%s, days=%d, total=%d, errors=%d)",
+            report.accountId() != null ? report.accountId() : "ALL",
+            report.ruleId() != null ? report.ruleId() : "ALL",
+            report.startDate(),
+            report.endDate(),
+            report.days(),
+            report.totals().total(),
+            report.totals().errors()
+        );
+        auditService.logEvent(
+            "MAIL_REPORT_EXPORTED",
             auditNodeId,
             auditNodeName,
             resolveAuditUsername(),
