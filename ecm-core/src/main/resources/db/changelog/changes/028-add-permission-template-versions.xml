@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="028-add-permission-template-versions" author="codex">
+        <createTable tableName="permission_template_versions">
+            <column name="id" type="${uuid_type}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="template_id" type="${uuid_type}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="version_number" type="int">
+                <constraints nullable="false"/>
+            </column>
+            <column name="name" type="varchar(200)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="description" type="varchar(1000)"/>
+            <column name="entries" type="jsonb"/>
+            <column name="created_date" type="timestamp" defaultValueComputed="${now}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_date" type="timestamp"/>
+            <column name="created_by" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_by" type="varchar(255)"/>
+            <column name="version" type="bigint"/>
+            <column name="is_deleted" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="deleted_at" type="timestamp"/>
+            <column name="deleted_by" type="varchar(255)"/>
+        </createTable>
+
+        <addForeignKeyConstraint
+            baseTableName="permission_template_versions"
+            baseColumnNames="template_id"
+            referencedTableName="permission_templates"
+            referencedColumnNames="id"
+            onDelete="CASCADE"
+            constraintName="fk_permission_template_versions_template"/>
+
+        <createIndex indexName="idx_permission_template_versions_template" tableName="permission_template_versions">
+            <column name="template_id"/>
+        </createIndex>
+
+        <createIndex indexName="idx_permission_template_versions_number" tableName="permission_template_versions" unique="true">
+            <column name="template_id"/>
+            <column name="version_number"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

@@ -1,5 +1,7 @@
 package com.ecm.core.controller;
 
+import com.ecm.core.dto.PermissionTemplateVersionDetailDto;
+import com.ecm.core.dto.PermissionTemplateVersionDto;
 import com.ecm.core.entity.PermissionTemplate;
 import com.ecm.core.service.PermissionTemplateService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -63,5 +65,35 @@ public class PermissionTemplateController {
         @RequestParam(defaultValue = "false") boolean replace) {
         permissionTemplateService.apply(id, nodeId, replace);
         return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/{id}/versions")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "List permission template versions")
+    public ResponseEntity<List<PermissionTemplateVersionDto>> listVersions(
+        @Parameter(description = "Template ID") @PathVariable UUID id) {
+        return ResponseEntity.ok(permissionTemplateService.listVersions(id).stream()
+            .map(PermissionTemplateVersionDto::from)
+            .toList());
+    }
+
+    @GetMapping("/{id}/versions/{versionId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Get permission template version details")
+    public ResponseEntity<PermissionTemplateVersionDetailDto> getVersion(
+        @Parameter(description = "Template ID") @PathVariable UUID id,
+        @Parameter(description = "Version ID") @PathVariable UUID versionId) {
+        return ResponseEntity.ok(PermissionTemplateVersionDetailDto.from(
+            permissionTemplateService.getVersion(id, versionId)
+        ));
+    }
+
+    @PostMapping("/{id}/versions/{versionId}/rollback")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Rollback permission template to a version")
+    public ResponseEntity<PermissionTemplate> rollbackTemplate(
+        @Parameter(description = "Template ID") @PathVariable UUID id,
+        @Parameter(description = "Version ID") @PathVariable UUID versionId) {
+        return ResponseEntity.ok(permissionTemplateService.rollback(id, versionId));
     }
 }
