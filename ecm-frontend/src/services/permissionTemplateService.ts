@@ -27,6 +27,28 @@ export interface PermissionTemplateUpdateRequest {
   entries?: PermissionTemplateEntry[];
 }
 
+export interface PermissionTemplateVersion {
+  id: string;
+  templateId: string;
+  versionNumber: number;
+  name: string;
+  description?: string;
+  entryCount: number;
+  createdBy?: string;
+  createdDate?: string;
+}
+
+export interface PermissionTemplateVersionDetail {
+  id: string;
+  templateId: string;
+  versionNumber: number;
+  name: string;
+  description?: string;
+  entries: PermissionTemplateEntry[];
+  createdBy?: string;
+  createdDate?: string;
+}
+
 class PermissionTemplateService {
   async list(): Promise<PermissionTemplate[]> {
     return api.get<PermissionTemplate[]>('/security/permission-templates');
@@ -48,6 +70,22 @@ class PermissionTemplateService {
     return api.post(`/security/permission-templates/${id}/apply`, null, {
       params: { nodeId, replace },
     });
+  }
+
+  async listVersions(id: string): Promise<PermissionTemplateVersion[]> {
+    return api.get<PermissionTemplateVersion[]>(`/security/permission-templates/${id}/versions`);
+  }
+
+  async rollbackVersion(templateId: string, versionId: string): Promise<PermissionTemplate> {
+    return api.post<PermissionTemplate>(
+      `/security/permission-templates/${templateId}/versions/${versionId}/rollback`,
+    );
+  }
+
+  async getVersionDetail(templateId: string, versionId: string): Promise<PermissionTemplateVersionDetail> {
+    return api.get<PermissionTemplateVersionDetail>(
+      `/security/permission-templates/${templateId}/versions/${versionId}`,
+    );
   }
 }
 

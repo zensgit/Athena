@@ -24,12 +24,14 @@ import {
   Autocomplete,
   Chip,
 } from '@mui/material';
-import { Add, Delete, Edit } from '@mui/icons-material';
+import { Add, Delete, Edit, History } from '@mui/icons-material';
 import { toast } from 'react-toastify';
 import nodeService, { PermissionSetMetadata } from 'services/nodeService';
 import permissionTemplateService, {
   PermissionTemplate,
   PermissionTemplateEntry,
+  PermissionTemplateVersion,
+  PermissionTemplateVersionDetail,
 } from 'services/permissionTemplateService';
 import userGroupService from 'services/userGroupService';
 
@@ -50,6 +52,15 @@ const PermissionTemplatesPage: React.FC = () => {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [entries, setEntries] = useState<PermissionTemplateEntry[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyTemplate, setHistoryTemplate] = useState<PermissionTemplate | null>(null);
+  const [versions, setVersions] = useState<PermissionTemplateVersion[]>([]);
+  const [loadingVersions, setLoadingVersions] = useState(false);
+  const [restoringVersionId, setRestoringVersionId] = useState<string | null>(null);
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [compareCurrent, setCompareCurrent] = useState<PermissionTemplateVersionDetail | null>(null);
+  const [comparePrevious, setComparePrevious] = useState<PermissionTemplateVersionDetail | null>(null);
+  const [compareLoading, setCompareLoading] = useState(false);
 
   const permissionSetOptions = useMemo(() => {
     return [...permissionSets].sort((a, b) => {
@@ -109,6 +120,62 @@ const PermissionTemplatesPage: React.FC = () => {
     setDescription(template.description ?? '');
     setEntries(template.entries ?? []);
     setDialogOpen(true);
+  };
+
+  const openHistoryDialog = async (template: PermissionTemplate) => {
+    setHistoryTemplate(template);
+    setHistoryOpen(true);
+    setVersions([]);
+    try {
+      setLoadingVersions(true);
+      const data = await permissionTemplateService.listVersions(template.id);
+      setVersions(data ?? []);
+    } catch {
+      toast.error('Failed to load template history');
+    } finally {
+      setLoadingVersions(false);
+    }
+  };
+
+  const handleRollback = async (version: PermissionTemplateVersion) => {
+    if (!historyTemplate) {
+      return;
+    }
+    if (!window.confirm(`Restore "${historyTemplate.name}" to version ${version.versionNumber}?`)) {
+      return;
+    }
+    try {
+      setRestoringVersionId(version.id);
+      await permissionTemplateService.rollbackVersion(historyTemplate.id, version.id);
+      toast.success('Permission template restored');
+      await loadTemplates();
+      const data = await permissionTemplateService.listVersions(historyTemplate.id);
+      setVersions(data ?? []);
+    } catch {
+      toast.error('Failed to restore template');
+    } finally {
+      setRestoringVersionId(null);
+    }
+  };
+
+  const handleCompare = async (current: PermissionTemplateVersion, previous: PermissionTemplateVersion) => {
+    if (!historyTemplate) {
+      return;
+    }
+    try {
+      setCompareLoading(true);
+      const [currentDetail, previousDetail] = await Promise.all([
+        permissionTemplateService.getVersionDetail(historyTemplate.id, current.id),
+        permissionTemplateService.getVersionDetail(historyTemplate.id, previous.id),
+      ]);
+      setCompareCurrent(currentDetail);
+      setComparePrevious(previousDetail);
+      setCompareOpen(true);
+    } catch {
+      toast.error('Failed to load version comparison');
+    } finally {
+      setCompareLoading(false);
+    }
   };
 
   const handleSave = async () => {
@@ -178,6 +245,106 @@ const PermissionTemplatesPage: React.FC = () => {
     setEntries((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const formatDate = (value?: string) => {
+    if (!value) {
+      return '—';
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return value;
+    }
+    return date.toLocaleString();
+  };
+
+  const buildEntryKey = (entry: PermissionTemplateEntry) => (
+    `${entry.authorityType}:${entry.authority}:${entry.permissionSet}`
+  );
+
+  const buildIdentityKey = (entry: PermissionTemplateEntry) => (
+    `${entry.authorityType}:${entry.authority}`
+  );
+
+  const computeEntryDiff = (
+    current: PermissionTemplateEntry[],
+    previous: PermissionTemplateEntry[],
+  ) => {
+    const currentByIdentity = new Map<string, PermissionTemplateEntry>();
+    const previousByIdentity = new Map<string, PermissionTemplateEntry>();
+    current.forEach((entry) => currentByIdentity.set(buildIdentityKey(entry), entry));
+    previous.forEach((entry) => previousByIdentity.set(buildIdentityKey(entry), entry));
+
+    const identities = new Set<string>([
+      ...Array.from(currentByIdentity.keys()),
+      ...Array.from(previousByIdentity.keys()),
+    ]);
+
+    const added: PermissionTemplateEntry[] = [];
+    const removed: PermissionTemplateEntry[] = [];
+    const changed: Array<{ before: PermissionTemplateEntry; after: PermissionTemplateEntry }> = [];
+
+    identities.forEach((key) => {
+      const currentEntry = currentByIdentity.get(key);
+      const previousEntry = previousByIdentity.get(key);
+      if (currentEntry && !previousEntry) {
+        added.push(currentEntry);
+      } else if (!currentEntry && previousEntry) {
+        removed.push(previousEntry);
+      } else if (currentEntry && previousEntry && currentEntry.permissionSet !== previousEntry.permissionSet) {
+        changed.push({ before: previousEntry, after: currentEntry });
+      }
+    });
+
+    const unchanged = current
+      .filter((entry) => previous.some((prev) => buildEntryKey(prev) === buildEntryKey(entry)));
+
+    return { added, removed, changed, unchanged };
+  };
+
+  const exportCompareCsv = () => {
+    if (!compareCurrent || !comparePrevious) {
+      toast.info('Select versions to compare');
+      return;
+    }
+    const diff = computeEntryDiff(compareCurrent.entries ?? [], comparePrevious.entries ?? []);
+    const rows: Array<[string, string, string, string, string]> = [];
+    diff.added.forEach((entry) => {
+      rows.push(['ADDED', entry.authority, entry.authorityType, '', entry.permissionSet]);
+    });
+    diff.removed.forEach((entry) => {
+      rows.push(['REMOVED', entry.authority, entry.authorityType, entry.permissionSet, '']);
+    });
+    diff.changed.forEach((change) => {
+      rows.push([
+        'CHANGED',
+        change.after.authority,
+        change.after.authorityType,
+        change.before.permissionSet,
+        change.after.permissionSet,
+      ]);
+    });
+    if (rows.length === 0) {
+      toast.info('No differences to export');
+      return;
+    }
+    const escapeCsv = (value: string) => {
+      const safe = value ?? '';
+      if (/[",\n]/.test(safe)) {
+        return `"${safe.replace(/"/g, '""')}"`;
+      }
+      return safe;
+    };
+    const header = ['status', 'authority', 'authorityType', 'previousPermissionSet', 'currentPermissionSet'];
+    const csv = [header, ...rows].map((row) => row.map(escapeCsv).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    const baseName = historyTemplate?.name ? historyTemplate.name.replace(/\s+/g, '-') : 'template';
+    anchor.href = url;
+    anchor.download = `${baseName}-diff-${comparePrevious.versionNumber}-to-${compareCurrent.versionNumber}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <Box maxWidth={1100}>
       <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
@@ -225,6 +392,14 @@ const PermissionTemplatesPage: React.FC = () => {
                 <TableCell align="right">
                   <IconButton size="small" onClick={() => openEditDialog(template)}>
                     <Edit fontSize="small" />
+                  </IconButton>
+                  <IconButton
+                    size="small"
+                    aria-label={`View history for ${template.name}`}
+                    data-testid={`permission-template-history-${template.id}`}
+                    onClick={() => openHistoryDialog(template)}
+                  >
+                    <History fontSize="small" />
                   </IconButton>
                   <IconButton size="small" color="error" onClick={() => handleDelete(template)}>
                     <Delete fontSize="small" />
@@ -321,6 +496,190 @@ const PermissionTemplatesPage: React.FC = () => {
           <Button variant="contained" onClick={handleSave}>
             {editingTemplate ? 'Save Changes' : 'Create Template'}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={historyOpen} onClose={() => setHistoryOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>Template History</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Typography variant="subtitle2">
+              {historyTemplate?.name ?? 'Template'} history
+            </Typography>
+            <Paper variant="outlined">
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Version</TableCell>
+                    <TableCell>Entries</TableCell>
+                    <TableCell>Name</TableCell>
+                    <TableCell>Description</TableCell>
+                    <TableCell>Created By</TableCell>
+                    <TableCell>Created At</TableCell>
+                    <TableCell align="right">Action</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {versions.map((version, index) => {
+                    const previous = versions[index + 1];
+                    return (
+                    <TableRow key={version.id} hover>
+                      <TableCell>{version.versionNumber}</TableCell>
+                      <TableCell>{version.entryCount}</TableCell>
+                      <TableCell>{version.name}</TableCell>
+                      <TableCell>{version.description || '—'}</TableCell>
+                      <TableCell>{version.createdBy || '—'}</TableCell>
+                      <TableCell>{formatDate(version.createdDate)}</TableCell>
+                      <TableCell align="right">
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          sx={{ mr: 1, mb: { xs: 1, md: 0 } }}
+                          onClick={() => previous && handleCompare(version, previous)}
+                          data-testid={`permission-template-compare-${version.id}`}
+                          disabled={!previous || compareLoading}
+                        >
+                          Compare
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() => handleRollback(version)}
+                          disabled={restoringVersionId === version.id}
+                        >
+                          Restore
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                  })}
+                  {!loadingVersions && versions.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={7}>
+                        <Typography variant="body2" color="text.secondary">
+                          No versions available yet.
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </Paper>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setHistoryOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={compareOpen}
+        onClose={() => setCompareOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>Template Version Comparison</DialogTitle>
+        <DialogContent>
+          {compareCurrent && comparePrevious ? (
+            (() => {
+              const currentEntries = compareCurrent.entries ?? [];
+              const previousEntries = comparePrevious.entries ?? [];
+              const diff = computeEntryDiff(currentEntries, previousEntries);
+              const summaryItems = [
+                diff.added.length > 0 ? `Added ${diff.added.length}` : null,
+                diff.removed.length > 0 ? `Removed ${diff.removed.length}` : null,
+                diff.changed.length > 0 ? `Changed ${diff.changed.length}` : null,
+              ].filter(Boolean) as string[];
+
+              return (
+                <Stack spacing={2} sx={{ mt: 1 }}>
+                  <Typography variant="subtitle2">
+                    Version {comparePrevious.versionNumber} → {compareCurrent.versionNumber}
+                  </Typography>
+                  <Box>
+                    <Typography variant="subtitle2">Change Summary</Typography>
+                    <Box display="flex" gap={1} flexWrap="wrap" mt={1}>
+                      {(summaryItems.length > 0 ? summaryItems : ['No entry changes']).map((label) => (
+                        <Chip key={label} label={label} size="small" variant="outlined" />
+                      ))}
+                    </Box>
+                  </Box>
+
+                  <Paper variant="outlined">
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Status</TableCell>
+                          <TableCell>Authority</TableCell>
+                          <TableCell>Type</TableCell>
+                          <TableCell>Previous Set</TableCell>
+                          <TableCell>Current Set</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {diff.added.map((entry) => (
+                          <TableRow key={`added-${buildEntryKey(entry)}`}>
+                            <TableCell>
+                              <Chip label="Added" size="small" color="success" variant="outlined" />
+                            </TableCell>
+                            <TableCell>{entry.authority}</TableCell>
+                            <TableCell>{entry.authorityType}</TableCell>
+                            <TableCell>—</TableCell>
+                            <TableCell>{entry.permissionSet}</TableCell>
+                          </TableRow>
+                        ))}
+                        {diff.removed.map((entry) => (
+                          <TableRow key={`removed-${buildEntryKey(entry)}`}>
+                            <TableCell>
+                              <Chip label="Removed" size="small" color="error" variant="outlined" />
+                            </TableCell>
+                            <TableCell>{entry.authority}</TableCell>
+                            <TableCell>{entry.authorityType}</TableCell>
+                            <TableCell>{entry.permissionSet}</TableCell>
+                            <TableCell>—</TableCell>
+                          </TableRow>
+                        ))}
+                        {diff.changed.map((change) => (
+                          <TableRow key={`changed-${buildIdentityKey(change.after)}`}>
+                            <TableCell>
+                              <Chip label="Changed" size="small" color="warning" variant="outlined" />
+                            </TableCell>
+                            <TableCell>{change.after.authority}</TableCell>
+                            <TableCell>{change.after.authorityType}</TableCell>
+                            <TableCell>{change.before.permissionSet}</TableCell>
+                            <TableCell>{change.after.permissionSet}</TableCell>
+                          </TableRow>
+                        ))}
+                        {diff.added.length === 0 && diff.removed.length === 0 && diff.changed.length === 0 && (
+                          <TableRow>
+                            <TableCell colSpan={5}>
+                              <Typography variant="body2" color="text.secondary">
+                                No permission entry differences.
+                              </Typography>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </Paper>
+                </Stack>
+              );
+            })()
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              Select a version to compare.
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button
+            variant="outlined"
+            onClick={exportCompareCsv}
+            disabled={!compareCurrent || !comparePrevious}
+          >
+            Export CSV
+          </Button>
+          <Button onClick={() => setCompareOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
     </Box>

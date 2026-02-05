@@ -118,6 +118,30 @@ async function createPermissionTemplate(
   return payload.id;
 }
 
+async function updatePermissionTemplate(
+  request: APIRequestContext,
+  token: string,
+  templateId: string,
+  description: string,
+  authority: string,
+  permissionSet: string,
+) {
+  const res = await request.put(`${baseApiUrl}/api/v1/security/permission-templates/${templateId}`, {
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    data: {
+      description,
+      entries: [
+        {
+          authority,
+          authorityType: 'USER',
+          permissionSet,
+        },
+      ],
+    },
+  });
+  expect(res.ok()).toBeTruthy();
+}
+
 test('Admin can apply permission template from permissions dialog', async ({ page, request }) => {
   test.setTimeout(240_000);
 
@@ -160,6 +184,54 @@ test('Admin can apply permission template from permissions dialog', async ({ pag
   }).catch(() => null);
 
   await request.delete(`${baseApiUrl}/api/v1/nodes/${parentId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  }).catch(() => null);
+});
+
+test('Admin can view permission template history', async ({ page, request }) => {
+  test.setTimeout(180_000);
+
+  await waitForApiReady(request, { apiUrl: baseApiUrl });
+
+  const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+  const templateName = `e2e-template-history-${Date.now()}`;
+  const templateId = await createPermissionTemplate(request, token, templateName, defaultUsername);
+  await updatePermissionTemplate(request, token, templateId, 'Updated description', viewerUsername, 'EDITOR');
+  const versionRes = await request.get(`${baseApiUrl}/api/v1/security/permission-templates/${templateId}/versions`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(versionRes.ok()).toBeTruthy();
+  const versions = (await versionRes.json()) as Array<{ id: string }>;
+  const latestVersionId = versions[0]?.id;
+  if (!latestVersionId) {
+    throw new Error('No permission template versions returned');
+  }
+
+  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
+  await page.goto(`${baseUiUrl}/admin/permission-templates`, { waitUntil: 'domcontentloaded' });
+
+  const row = page.getByRole('row', { name: new RegExp(templateName) });
+  await expect(row).toBeVisible({ timeout: 60_000 });
+  await page.getByTestId(`permission-template-history-${templateId}`).click();
+
+  const dialog = page.getByRole('dialog').filter({ hasText: 'Template History' });
+  await expect(dialog).toBeVisible({ timeout: 30_000 });
+
+  const historyRows = dialog.locator('tbody tr');
+  await expect(historyRows).toHaveCount(2, { timeout: 30_000 });
+
+  await dialog.getByTestId(`permission-template-compare-${latestVersionId}`).click();
+  const compareDialog = page.getByRole('dialog').filter({ hasText: 'Template Version Comparison' });
+  await expect(compareDialog).toBeVisible({ timeout: 30_000 });
+  await expect(compareDialog.getByText(/Change Summary/i)).toBeVisible();
+  const [download] = await Promise.all([
+    page.waitForEvent('download', { timeout: 30_000 }),
+    compareDialog.getByRole('button', { name: 'Export CSV' }).click(),
+  ]);
+  expect(download.suggestedFilename()).toMatch(/-diff-.*\.csv$/);
+  await compareDialog.getByRole('button', { name: 'Close' }).click();
+
+  await request.delete(`${baseApiUrl}/api/v1/security/permission-templates/${templateId}`, {
     headers: { Authorization: `Bearer ${token}` },
   }).catch(() => null);
 });
