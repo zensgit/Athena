@@ -27,6 +27,8 @@ export interface Node {
   currentVersionLabel?: string;
   description?: string;
   highlights?: Record<string, string[]>;
+  matchFields?: string[];
+  highlightSummary?: string;
   tags?: string[];
   categories?: string[];
   correspondent?: string;

@@ -25,12 +25,26 @@ import { useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from 'store';
 import { setSidebarOpen } from 'store/slices/uiSlice';
 
+const MATCH_FIELD_LABELS: Record<string, string> = {
+  name: 'Name',
+  title: 'Title',
+  description: 'Description',
+  content: 'Content',
+  textContent: 'Text',
+  extractedText: 'Extracted text',
+  tags: 'Tags',
+  categories: 'Categories',
+  correspondent: 'Correspondent',
+};
+
 interface SearchResult {
   id: string;
   name: string;
   mimeType: string;
   fileSize: number;
   highlights?: Record<string, string[]>;
+  matchFields?: string[];
+  highlightSummary?: string;
   score: number;
   createdDate: string;
   path: string;
@@ -398,7 +412,8 @@ const AdvancedSearchPage: React.FC = () => {
                     
                     {/* Snippets / Highlights */}
                     {(() => {
-                      const snippet = result.highlights?.description?.[0]
+                      const snippet = result.highlightSummary
+                        || result.highlights?.description?.[0]
                         || result.highlights?.content?.[0]
                         || result.highlights?.textContent?.[0]
                         || result.highlights?.extractedText?.[0]
@@ -414,6 +429,33 @@ const AdvancedSearchPage: React.FC = () => {
                           sx={{ mt: 1 }}
                           dangerouslySetInnerHTML={{ __html: `...${snippet}...` }}
                         />
+                      );
+                    })()}
+
+                    {(() => {
+                      const matchFields = (result.matchFields && result.matchFields.length > 0)
+                        ? result.matchFields
+                        : Object.entries(result.highlights || {})
+                            .filter(([, values]) => Array.isArray(values) && values.length > 0)
+                            .map(([key]) => key);
+                      if (matchFields.length === 0) {
+                        return null;
+                      }
+                      const displayFields = matchFields.slice(0, 4);
+                      const remaining = matchFields.length - displayFields.length;
+                      const formatField = (field: string) =>
+                        MATCH_FIELD_LABELS[field]
+                        || field.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ');
+                      return (
+                        <Box mt={1} display="flex" gap={1} flexWrap="wrap">
+                          <Chip label="Matched in" size="small" variant="outlined" />
+                          {displayFields.map((field) => (
+                            <Chip key={`${result.id}-match-${field}`} label={formatField(field)} size="small" />
+                          ))}
+                          {remaining > 0 && (
+                            <Chip label={`+${remaining}`} size="small" variant="outlined" />
+                          )}
+                        </Box>
                       );
                     })()}
                     

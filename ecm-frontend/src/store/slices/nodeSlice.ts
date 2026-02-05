@@ -157,6 +157,8 @@ export const executeSavedSearch = createAsyncThunk(
         contentType: item.mimeType,
         description: item.description,
         highlights: item.highlights,
+        matchFields: item.matchFields,
+        highlightSummary: item.highlightSummary,
         tags: item.tags,
         categories: item.categories,
         correspondent: item.correspondent,

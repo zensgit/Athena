@@ -29,6 +29,8 @@ export interface SearchResultItem {
   lastModifiedDate?: string;
   score?: number;
   highlights?: Record<string, string[]>;
+  matchFields?: string[];
+  highlightSummary?: string;
   tags?: string[];
   categories?: string[];
   correspondent?: string;

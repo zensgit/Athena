@@ -184,6 +184,7 @@ test('Search results include highlight snippets', async ({ page, request }) => {
   const resultCard = page.locator('.MuiCard-root').filter({ hasText: filename }).first();
   await expect(resultCard).toBeVisible({ timeout: 60_000 });
   await expect(resultCard.locator('em').first()).toBeVisible({ timeout: 60_000 });
+  await expect(resultCard.getByText(/Matched in/i)).toBeVisible({ timeout: 60_000 });
 
   await request.delete(`${baseApiUrl}/api/v1/nodes/${folderId}`, {
     headers: { Authorization: `Bearer ${token}` },
