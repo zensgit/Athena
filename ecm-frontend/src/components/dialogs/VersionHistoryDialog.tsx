@@ -25,6 +25,7 @@ import {
   Box,
   Tooltip,
   Alert,
+  Stack,
 } from '@mui/material';
 import {
   Close,
@@ -188,6 +189,34 @@ const VersionHistoryDialog: React.FC = () => {
       return hash;
     }
     return `${hash.slice(0, 12)}…${hash.slice(-4)}`;
+  };
+
+  const buildCompareSummary = (current: Version, previous: Version) => {
+    const items: Array<{ label: string; color?: 'default' | 'primary' | 'info' | 'warning' }> = [];
+    const sizeDelta = current.size - previous.size;
+    if (sizeDelta !== 0) {
+      const sign = sizeDelta > 0 ? '+' : '−';
+      const sizeLabel = `${sign}${formatFileSize(Math.abs(sizeDelta))}`;
+      items.push({ label: `Size ${sizeLabel}`, color: sizeDelta > 0 ? 'warning' : 'info' });
+    }
+    if (current.isMajor !== previous.isMajor) {
+      items.push({ label: `Major: ${current.isMajor ? 'Yes' : 'No'}`, color: 'primary' });
+    }
+    const hashChanged = current.contentHash && previous.contentHash
+      ? current.contentHash !== previous.contentHash
+      : Boolean(current.contentHash || previous.contentHash);
+    if (hashChanged) {
+      items.push({ label: 'Checksum changed', color: 'warning' });
+    }
+    if (current.mimeType !== previous.mimeType) {
+      items.push({
+        label: `Type: ${previous.mimeType || '—'} → ${current.mimeType || '—'}`,
+      });
+    }
+    if ((current.comment || '') !== (previous.comment || '')) {
+      items.push({ label: 'Comment updated' });
+    }
+    return items;
   };
 
   const renderVersionLabel = (version: Version, index: number) => {
@@ -448,83 +477,113 @@ const VersionHistoryDialog: React.FC = () => {
         <DialogTitle>Compare Versions</DialogTitle>
         <DialogContent>
           {comparePair && (
-            <TableContainer component={Paper} variant="outlined">
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Field</TableCell>
-                    <TableCell>Current</TableCell>
-                    <TableCell>Previous</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  <TableRow>
-                    <TableCell>Version</TableCell>
-                    <TableCell>{comparePair.current.versionLabel}</TableCell>
-                    <TableCell>{comparePair.previous.versionLabel}</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell>Major</TableCell>
-                    <TableCell>{comparePair.current.isMajor ? 'Yes' : 'No'}</TableCell>
-                    <TableCell>{comparePair.previous.isMajor ? 'Yes' : 'No'}</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell>Created</TableCell>
-                    <TableCell>{format(new Date(comparePair.current.created), 'PPp')}</TableCell>
-                    <TableCell>{format(new Date(comparePair.previous.created), 'PPp')}</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell>Creator</TableCell>
-                    <TableCell>{comparePair.current.creator}</TableCell>
-                    <TableCell>{comparePair.previous.creator}</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell>Size</TableCell>
-                    <TableCell>{formatFileSize(comparePair.current.size)}</TableCell>
-                    <TableCell>{formatFileSize(comparePair.previous.size)}</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell>Size delta</TableCell>
-                    <TableCell>{formatSizeDelta(comparePair.current, comparePair.previous)}</TableCell>
-                    <TableCell>—</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell>Mime Type</TableCell>
-                    <TableCell>{comparePair.current.mimeType || '-'}</TableCell>
-                    <TableCell>{comparePair.previous.mimeType || '-'}</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell>Checksum</TableCell>
-                    <TableCell>{comparePair.current.contentHash || '-'}</TableCell>
-                    <TableCell>{comparePair.previous.contentHash || '-'}</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell>Hash changed</TableCell>
-                    <TableCell>
-                      {comparePair.current.contentHash && comparePair.previous.contentHash
-                        ? (comparePair.current.contentHash === comparePair.previous.contentHash ? 'No' : 'Yes')
-                        : '—'}
-                    </TableCell>
-                    <TableCell>—</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell>Content ID</TableCell>
-                    <TableCell>{comparePair.current.contentId || '-'}</TableCell>
-                    <TableCell>{comparePair.previous.contentId || '-'}</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell>Status</TableCell>
-                    <TableCell>{comparePair.current.status || '-'}</TableCell>
-                    <TableCell>{comparePair.previous.status || '-'}</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell>Comment</TableCell>
-                    <TableCell>{comparePair.current.comment || '-'}</TableCell>
-                    <TableCell>{comparePair.previous.comment || '-'}</TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
-            </TableContainer>
+            <>
+              <Box mb={2}>
+                <Typography variant="subtitle2" gutterBottom>
+                  Change Summary
+                </Typography>
+                {(() => {
+                  const summary = buildCompareSummary(comparePair.current, comparePair.previous);
+                  if (summary.length === 0) {
+                    return (
+                      <Typography variant="body2" color="text.secondary">
+                        No differences detected.
+                      </Typography>
+                    );
+                  }
+                  return (
+                    <Stack direction="row" gap={1} flexWrap="wrap">
+                      {summary.map((item, index) => (
+                        <Chip
+                          key={`${item.label}-${index}`}
+                          size="small"
+                          label={item.label}
+                          color={item.color ?? 'default'}
+                          variant="outlined"
+                        />
+                      ))}
+                    </Stack>
+                  );
+                })()}
+              </Box>
+              <TableContainer component={Paper} variant="outlined">
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Field</TableCell>
+                      <TableCell>Current</TableCell>
+                      <TableCell>Previous</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    <TableRow>
+                      <TableCell>Version</TableCell>
+                      <TableCell>{comparePair.current.versionLabel}</TableCell>
+                      <TableCell>{comparePair.previous.versionLabel}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>Major</TableCell>
+                      <TableCell>{comparePair.current.isMajor ? 'Yes' : 'No'}</TableCell>
+                      <TableCell>{comparePair.previous.isMajor ? 'Yes' : 'No'}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>Created</TableCell>
+                      <TableCell>{format(new Date(comparePair.current.created), 'PPp')}</TableCell>
+                      <TableCell>{format(new Date(comparePair.previous.created), 'PPp')}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>Creator</TableCell>
+                      <TableCell>{comparePair.current.creator}</TableCell>
+                      <TableCell>{comparePair.previous.creator}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>Size</TableCell>
+                      <TableCell>{formatFileSize(comparePair.current.size)}</TableCell>
+                      <TableCell>{formatFileSize(comparePair.previous.size)}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>Size delta</TableCell>
+                      <TableCell>{formatSizeDelta(comparePair.current, comparePair.previous)}</TableCell>
+                      <TableCell>—</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>Mime Type</TableCell>
+                      <TableCell>{comparePair.current.mimeType || '-'}</TableCell>
+                      <TableCell>{comparePair.previous.mimeType || '-'}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>Checksum</TableCell>
+                      <TableCell>{comparePair.current.contentHash || '-'}</TableCell>
+                      <TableCell>{comparePair.previous.contentHash || '-'}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>Hash changed</TableCell>
+                      <TableCell>
+                        {comparePair.current.contentHash && comparePair.previous.contentHash
+                          ? (comparePair.current.contentHash === comparePair.previous.contentHash ? 'No' : 'Yes')
+                          : '—'}
+                      </TableCell>
+                      <TableCell>—</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>Content ID</TableCell>
+                      <TableCell>{comparePair.current.contentId || '-'}</TableCell>
+                      <TableCell>{comparePair.previous.contentId || '-'}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>Status</TableCell>
+                      <TableCell>{comparePair.current.status || '-'}</TableCell>
+                      <TableCell>{comparePair.previous.status || '-'}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>Comment</TableCell>
+                      <TableCell>{comparePair.current.comment || '-'}</TableCell>
+                      <TableCell>{comparePair.previous.comment || '-'}</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </>
           )}
         </DialogContent>
         <DialogActions>
