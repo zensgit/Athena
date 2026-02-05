@@ -219,6 +219,9 @@ test('Preview failure shows info hint in search results', async ({ page, request
   await expect(resultCard).toBeVisible({ timeout: 60_000 });
   await expect(resultCard.getByText(/Preview failed/i)).toBeVisible();
   await expect(resultCard.getByRole('button', { name: /Preview failure reason/i })).toBeVisible();
+  await expect(resultCard.getByRole('button', { name: /Retry preview/i })).toBeVisible();
+  await page.getByRole('button', { name: /Retry failed previews/i }).click();
+  await expect(resultCard.getByText(/Attempts:/i)).toBeVisible({ timeout: 30_000 });
 
   await request.delete(`${baseApiUrl}/api/v1/nodes/${folderId}`,
     { headers: { Authorization: `Bearer ${token}` } }).catch(() => null);

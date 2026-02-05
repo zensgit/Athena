@@ -69,6 +69,18 @@ const FILE_EXTENSIONS = [
   '.webp',
 ];
 
+const MATCH_FIELD_LABELS: Record<string, string> = {
+  name: 'Name',
+  title: 'Title',
+  description: 'Description',
+  content: 'Content',
+  textContent: 'Text',
+  extractedText: 'Extracted text',
+  tags: 'Tags',
+  categories: 'Categories',
+  correspondent: 'Correspondent',
+};
+
 const SearchResults: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -92,6 +104,12 @@ const SearchResults: React.FC = () => {
   const [hiddenNodeIds, setHiddenNodeIds] = useState<string[]>([]);
   const [fallbackNodes, setFallbackNodes] = useState<Node[]>([]);
   const [fallbackLabel, setFallbackLabel] = useState('');
+  const [queueingPreviewId, setQueueingPreviewId] = useState<string | null>(null);
+  const [previewQueueStatusById, setPreviewQueueStatusById] = useState<Record<string, {
+    attempts?: number;
+    nextAttemptAt?: string;
+  }>>({});
+  const [batchRetrying, setBatchRetrying] = useState(false);
   const [similarResults, setSimilarResults] = useState<Node[] | null>(null);
   const [similarSource, setSimilarSource] = useState<{ id: string; name?: string } | null>(null);
   const [similarLoadingId, setSimilarLoadingId] = useState<string | null>(null);
@@ -715,6 +733,23 @@ const SearchResults: React.FC = () => {
     return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
   };
 
+  const resolveMatchFields = (node: Node) => {
+    if (node.matchFields && node.matchFields.length > 0) {
+      return node.matchFields;
+    }
+    return Object.entries(node.highlights || {})
+      .filter(([, values]) => Array.isArray(values) && values.length > 0)
+      .map(([key]) => key);
+  };
+
+  const formatMatchField = (field: string) => {
+    const known = MATCH_FIELD_LABELS[field];
+    if (known) {
+      return known;
+    }
+    return field.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ');
+  };
+
   const applySuggestedFilter = (filter: { field: string; value: string }) => {
     if (!lastSearchCriteria) {
       return;
@@ -855,22 +890,62 @@ const SearchResults: React.FC = () => {
           : normalized === 'QUEUED'
             ? 'info'
             : 'default';
+    const queueStatus = previewQueueStatusById[node.id];
+    const queueDetail = (() => {
+      if (!queueStatus) {
+        return null;
+      }
+      const attemptsLabel = queueStatus.attempts !== undefined
+        ? `Attempts: ${queueStatus.attempts}`
+        : null;
+      const nextLabel = queueStatus.nextAttemptAt
+        ? `Next retry: ${format(new Date(queueStatus.nextAttemptAt), 'PPp')}`
+        : null;
+      if (!attemptsLabel && !nextLabel) {
+        return null;
+      }
+      return [attemptsLabel, nextLabel].filter(Boolean).join(' • ');
+    })();
     return (
-      <Box display="flex" alignItems="center" gap={0.5}>
-        <Tooltip
-          title={failureReason}
-          placement="top-start"
-          arrow
-          disableHoverListener={!failureReason}
-        >
-          <Chip label={label} size="small" variant="outlined" color={color} />
-        </Tooltip>
-        {normalized === 'FAILED' && failureReason && (
-          <Tooltip title={failureReason} placement="top-start" arrow>
-            <IconButton size="small" aria-label="Preview failure reason">
-              <InfoOutlined fontSize="small" />
-            </IconButton>
+      <Box display="flex" flexDirection="column" alignItems="flex-start" gap={0.5}>
+        <Box display="flex" alignItems="center" gap={0.5}>
+          <Tooltip
+            title={failureReason}
+            placement="top-start"
+            arrow
+            disableHoverListener={!failureReason}
+          >
+            <Chip label={label} size="small" variant="outlined" color={color} />
           </Tooltip>
+          {normalized === 'FAILED' && failureReason && (
+            <Tooltip title={failureReason} placement="top-start" arrow>
+              <IconButton size="small" aria-label="Preview failure reason">
+                <InfoOutlined fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
+          {normalized === 'FAILED' && (
+            <Tooltip title="Retry preview" placement="top-start" arrow>
+              <span>
+                <IconButton
+                  size="small"
+                  aria-label="Retry preview"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleRetryPreview(node);
+                  }}
+                  disabled={queueingPreviewId === node.id}
+                >
+                  <Refresh fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+          )}
+        </Box>
+        {queueDetail && (
+          <Typography variant="caption" color="text.secondary">
+            {queueDetail}
+          </Typography>
         )}
       </Box>
     );
@@ -898,6 +973,8 @@ const SearchResults: React.FC = () => {
     || filtersApplied;
   const shouldShowFallback = !isSimilarMode && !loading && nodes.length === 0 && fallbackNodes.length > 0 && hasActiveCriteria;
   const displayNodes = isSimilarMode ? (similarResults || []) : (shouldShowFallback ? fallbackNodes : nodes);
+  const failedPreviewNodes = displayNodes.filter((node) => node.nodeType === 'DOCUMENT'
+    && (node.previewStatus || '').toUpperCase() === 'FAILED');
   const previewStatusCounts = displayNodes.reduce(
     (acc, node) => {
       if (node.nodeType === 'FOLDER') {
@@ -922,6 +999,66 @@ const SearchResults: React.FC = () => {
       folders: 0,
     }
   );
+
+  const handleRetryPreview = useCallback(async (node: Node, force = false) => {
+    if (!node?.id || node.nodeType !== 'DOCUMENT') {
+      return;
+    }
+    setQueueingPreviewId(node.id);
+    try {
+      const status = await nodeService.queuePreview(node.id, force);
+      setPreviewQueueStatusById((prev) => ({
+        ...prev,
+        [node.id]: {
+          attempts: status?.attempts,
+          nextAttemptAt: status?.nextAttemptAt,
+        },
+      }));
+      if (status?.queued) {
+        toast.success('Preview queued');
+      } else {
+        toast.info('Preview already up to date');
+      }
+    } catch {
+      toast.error('Failed to queue preview');
+    } finally {
+      setQueueingPreviewId(null);
+    }
+  }, []);
+
+  const handleRetryFailedPreviews = async () => {
+    if (failedPreviewNodes.length === 0) {
+      return;
+    }
+    setBatchRetrying(true);
+    let queued = 0;
+    let skipped = 0;
+    let failed = 0;
+    for (const node of failedPreviewNodes) {
+      try {
+        const status = await nodeService.queuePreview(node.id, false);
+        setPreviewQueueStatusById((prev) => ({
+          ...prev,
+          [node.id]: {
+            attempts: status?.attempts,
+            nextAttemptAt: status?.nextAttemptAt,
+          },
+        }));
+        if (status?.queued) {
+          queued += 1;
+        } else {
+          skipped += 1;
+        }
+      } catch {
+        failed += 1;
+      }
+    }
+    const parts = [`queued ${queued}`];
+    if (skipped > 0) parts.push(`skipped ${skipped}`);
+    if (failed > 0) parts.push(`failed ${failed}`);
+    toast.success(`Preview retries: ${parts.join(', ')}`);
+    setBatchRetrying(false);
+  };
   const statusFilteredNodes = previewStatusFilterApplied
     ? displayNodes.filter((node) => {
         if (node.nodeType === 'FOLDER') {
@@ -1185,6 +1322,22 @@ const SearchResults: React.FC = () => {
               <Button size="small" disabled={selectedPreviewStatuses.length === 0} onClick={() => setSelectedPreviewStatuses([])}>
                 Clear
               </Button>
+            </Box>
+            <Box display="flex" alignItems="center" gap={1} mb={2}>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<Refresh />}
+                onClick={handleRetryFailedPreviews}
+                disabled={failedPreviewNodes.length === 0 || batchRetrying}
+              >
+                Retry failed previews
+              </Button>
+              {batchRetrying && (
+                <Typography variant="caption" color="text.secondary">
+                  Queueing {failedPreviewNodes.length} item(s)…
+                </Typography>
+              )}
             </Box>
 
             <Typography variant="subtitle2" gutterBottom>
@@ -1650,14 +1803,35 @@ const SearchResults: React.FC = () => {
                         <Highlight
                           text={node.description}
                           highlights={
-                            node.highlights?.description
-                            || node.highlights?.content
-                            || node.highlights?.textContent
-                            || node.highlights?.extractedText
-                            || node.highlights?.title
-                            || node.highlights?.name
+                            node.highlightSummary
+                              ? [node.highlightSummary]
+                              : node.highlights?.description
+                                || node.highlights?.content
+                                || node.highlights?.textContent
+                                || node.highlights?.extractedText
+                                || node.highlights?.title
+                                || node.highlights?.name
                           }
                         />
+                        {(() => {
+                          const matchFields = resolveMatchFields(node);
+                          if (matchFields.length === 0) {
+                            return null;
+                          }
+                          const displayFields = matchFields.slice(0, 4);
+                          const remaining = matchFields.length - displayFields.length;
+                          return (
+                            <Stack direction="row" spacing={0.5} sx={{ mt: 1, flexWrap: 'wrap', gap: 0.5 }}>
+                              <Chip size="small" label="Matched in" variant="outlined" />
+                              {displayFields.map((field) => (
+                                <Chip key={`${node.id}-match-${field}`} size="small" label={formatMatchField(field)} />
+                              ))}
+                              {remaining > 0 && (
+                                <Chip size="small" label={`+${remaining}`} variant="outlined" />
+                              )}
+                            </Stack>
+                          );
+                        })()}
                         {renderTagsCategories(node)}
                         <Box mt={2}>
                           <Typography variant="caption" color="text.secondary">

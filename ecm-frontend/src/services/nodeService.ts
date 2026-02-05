@@ -126,6 +126,14 @@ export interface SearchRebuildStatus {
   documentsIndexed: number;
 }
 
+export interface PreviewQueueStatus {
+  documentId: string;
+  previewStatus: string;
+  queued: boolean;
+  attempts?: number;
+  nextAttemptAt?: string;
+}
+
 export interface PermissionDecision {
   nodeId: string | null;
   username: string | null;
@@ -509,6 +517,12 @@ class NodeService {
     return api.get<SearchRebuildStatus>('/search/index/rebuild/status');
   }
 
+  async queuePreview(nodeId: string, force = false): Promise<PreviewQueueStatus> {
+    return api.post<PreviewQueueStatus>(`/documents/${nodeId}/preview/queue`, null, {
+      params: { force },
+    });
+  }
+
   private mapSearchItemToNode(item: any): Node {
     const inferredNodeType = item.mimeType || item.fileSize
       ? 'DOCUMENT'
@@ -530,6 +544,8 @@ class NodeService {
       contentType: item.mimeType,
       description: item.description,
       highlights: item.highlights,
+      matchFields: item.matchFields,
+      highlightSummary: item.highlightSummary,
       tags: item.tags,
       categories: item.categories,
       correspondent: item.correspondent,
