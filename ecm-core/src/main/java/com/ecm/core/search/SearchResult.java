@@ -32,6 +32,8 @@ public class SearchResult {
     private LocalDateTime lastModifiedDate;
     private float score;
     private Map<String, List<String>> highlights;
+    private List<String> matchFields;
+    private String highlightSummary;
     private List<String> tags;
     private List<String> categories;
     private String correspondent;

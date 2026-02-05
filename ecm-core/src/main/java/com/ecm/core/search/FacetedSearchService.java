@@ -854,6 +854,7 @@ public class FacetedSearchService {
 
     private SearchResult toSearchResult(SearchHit<NodeDocument> hit) {
         NodeDocument doc = hit.getContent();
+        Map<String, List<String>> highlights = hit.getHighlightFields();
         return SearchResult.builder()
             .id(doc.getId())
             .name(doc.getName())
@@ -868,7 +869,9 @@ public class FacetedSearchService {
             .lastModifiedBy(doc.getLastModifiedBy())
             .lastModifiedDate(doc.getLastModifiedDate())
             .score(hit.getScore())
-            .highlights(hit.getHighlightFields())
+            .highlights(highlights)
+            .matchFields(SearchHighlightHelper.resolveMatchFields(highlights))
+            .highlightSummary(SearchHighlightHelper.resolveHighlightSummary(highlights))
             .tags(doc.getTags() != null ? List.copyOf(doc.getTags()) : List.of())
             .categories(doc.getCategories() != null ? List.copyOf(doc.getCategories()) : List.of())
             .correspondent(doc.getCorrespondent())
