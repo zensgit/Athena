@@ -30,6 +30,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from 'store';
 import { setSidebarOpen } from 'store/slices/uiSlice';
 import nodeService from 'services/nodeService';
+import { getFailedPreviewMeta, isUnsupportedPreviewMimeType } from 'utils/previewStatusUtils';
 
 const MATCH_FIELD_LABELS: Record<string, string> = {
   name: 'Name',
@@ -199,21 +200,21 @@ const AdvancedSearchPage: React.FC = () => {
     );
   }, [location.pathname, navigate]);
 
-  const getPreviewStatusMeta = (status?: string) => {
+  const getPreviewStatusMeta = (status?: string, mimeType?: string) => {
     const normalized = status?.toUpperCase();
     if (!normalized || normalized === 'READY') {
       return null;
     }
     if (normalized === 'FAILED') {
-      return { label: 'Preview failed', color: 'error' as const };
+      return getFailedPreviewMeta(mimeType);
     }
     if (normalized === 'PROCESSING') {
-      return { label: 'Preview processing', color: 'warning' as const };
+      return { label: 'Preview processing', color: 'warning' as const, unsupported: false };
     }
     if (normalized === 'QUEUED') {
-      return { label: 'Preview queued', color: 'info' as const };
+      return { label: 'Preview queued', color: 'info' as const, unsupported: false };
     }
-    return { label: `Preview ${normalized.toLowerCase()}`, color: 'default' as const };
+    return { label: `Preview ${normalized.toLowerCase()}`, color: 'default' as const, unsupported: false };
   };
 
   const formatScore = (score?: number) => {
@@ -421,7 +422,8 @@ const AdvancedSearchPage: React.FC = () => {
 
   const failedPreviewResults = useMemo(
     () => results.filter((result) => result.nodeType !== 'FOLDER'
-      && (result.previewStatus || '').toUpperCase() === 'FAILED'),
+      && (result.previewStatus || '').toUpperCase() === 'FAILED'
+      && !isUnsupportedPreviewMimeType(result.mimeType)),
     [results]
   );
 
@@ -1007,14 +1009,15 @@ const AdvancedSearchPage: React.FC = () => {
                         {formatScore(result.score) && (
                           <Chip label={formatScore(result.score)} size="small" variant="outlined" />
                         )}
-                        {result.nodeType !== 'FOLDER' && getPreviewStatusMeta(result.previewStatus) && (() => {
-                          const previewMeta = getPreviewStatusMeta(result.previewStatus);
+                        {result.nodeType !== 'FOLDER' && getPreviewStatusMeta(result.previewStatus, result.mimeType) && (() => {
+                          const previewMeta = getPreviewStatusMeta(result.previewStatus, result.mimeType);
                           if (!previewMeta) {
                             return null;
                           }
                           const queueDetail = getQueueDetail(result.id);
                           const tooltipTitle = [result.previewFailureReason || '', queueDetail].filter(Boolean).join(' • ');
                           const isFailed = (result.previewStatus || '').toUpperCase() === 'FAILED';
+                          const canRetry = isFailed && !previewMeta.unsupported;
                           return (
                             <Box display="flex" flexDirection="column" alignItems="flex-start" gap={0.5}>
                               <Box display="flex" alignItems="center" gap={0.5}>
@@ -1031,7 +1034,7 @@ const AdvancedSearchPage: React.FC = () => {
                                     variant="outlined"
                                   />
                                 </Tooltip>
-                                {isFailed && (
+                                {canRetry && (
                                   <Tooltip title="Retry preview" placement="top-start" arrow>
                                     <span>
                                       <IconButton

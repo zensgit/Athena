@@ -46,6 +46,7 @@ import { useAppSelector } from 'store';
 import apiService from 'services/api';
 import nodeService from 'services/nodeService';
 import { toast } from 'react-toastify';
+import { getFailedPreviewMeta } from 'utils/previewStatusUtils';
 
 interface DocumentPreviewProps {
   open: boolean;
@@ -276,8 +277,11 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     || node?.previewFailureReason
     || serverPreview?.failureReason
     || null;
+  const failedPreviewMeta = getFailedPreviewMeta(effectiveContentType);
   const previewStatusLabel = resolvedPreviewStatus
-    ? `Preview: ${resolvedPreviewStatus.charAt(0).toUpperCase()}${resolvedPreviewStatus.slice(1).toLowerCase()}`
+    ? resolvedPreviewStatus === 'FAILED'
+      ? failedPreviewMeta.label
+      : `Preview: ${resolvedPreviewStatus.charAt(0).toUpperCase()}${resolvedPreviewStatus.slice(1).toLowerCase()}`
     : null;
   const previewPollIntervalMs = 15000;
   const shouldPollPreview = resolvedPreviewStatus === 'PROCESSING' || resolvedPreviewStatus === 'QUEUED';
@@ -291,7 +295,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
       case 'READY':
         return 'success';
       case 'FAILED':
-        return 'error';
+        return failedPreviewMeta.color;
       case 'PROCESSING':
         return 'warning';
       default:

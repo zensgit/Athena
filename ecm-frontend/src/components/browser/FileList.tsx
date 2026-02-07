@@ -67,6 +67,7 @@ import nodeService from 'services/nodeService';
 import favoriteService from 'services/favoriteService';
 import { toast } from 'react-toastify';
 import MoveCopyDialog from 'components/dialogs/MoveCopyDialog';
+import { getFailedPreviewMeta } from 'utils/previewStatusUtils';
 
 interface FileListProps {
   nodes: Node[];
@@ -162,7 +163,8 @@ const FileList: React.FC<FileListProps> = ({
       return null;
     }
     if (status === 'FAILED') {
-      return { label: 'Preview failed', color: 'error' as const };
+      const mimeType = node.contentType || node.properties?.mimeType || node.properties?.contentType;
+      return getFailedPreviewMeta(mimeType);
     }
     if (status === 'PROCESSING') {
       return { label: 'Preview processing', color: 'warning' as const };

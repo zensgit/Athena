@@ -47,6 +47,7 @@ import nodeService, { SearchDiagnostics, SearchIndexStats, SearchRebuildStatus }
 import { Node, SearchCriteria } from 'types';
 import { toast } from 'react-toastify';
 import Highlight from 'components/search/Highlight';
+import { getFailedPreviewMeta, isUnsupportedPreviewMimeType } from 'utils/previewStatusUtils';
 const DocumentPreview = React.lazy(() => import('components/preview/DocumentPreview'));
 
 type FacetValue = { value: string; count: number };
@@ -910,11 +911,13 @@ const SearchResults: React.FC = () => {
     }
     const status = node.previewStatus?.toUpperCase();
     const normalized = status || 'PENDING';
+    const nodeMimeType = node.contentType || node.properties?.mimeType || node.properties?.contentType;
+    const failedPreviewMeta = getFailedPreviewMeta(nodeMimeType);
     const failureReason = node.previewFailureReason || '';
     const label = normalized === 'READY'
       ? 'Preview ready'
       : normalized === 'FAILED'
-        ? 'Preview failed'
+        ? failedPreviewMeta.label
         : normalized === 'PROCESSING'
           ? 'Preview processing'
           : normalized === 'QUEUED'
@@ -923,12 +926,13 @@ const SearchResults: React.FC = () => {
     const color = normalized === 'READY'
       ? 'success'
       : normalized === 'FAILED'
-        ? 'error'
+        ? failedPreviewMeta.color
         : normalized === 'PROCESSING'
           ? 'warning'
           : normalized === 'QUEUED'
             ? 'info'
             : 'default';
+    const failedPreviewUnsupported = normalized === 'FAILED' && failedPreviewMeta.unsupported;
     const queueStatus = previewQueueStatusById[node.id];
     const queueDetail = (() => {
       if (!queueStatus) {
@@ -957,14 +961,14 @@ const SearchResults: React.FC = () => {
           >
             <Chip label={label} size="small" variant="outlined" color={color} />
           </Tooltip>
-          {normalized === 'FAILED' && failureReason && (
+          {normalized === 'FAILED' && failureReason && !failedPreviewUnsupported && (
             <Tooltip title={failureReason} placement="top-start" arrow>
               <IconButton size="small" aria-label="Preview failure reason">
                 <InfoOutlined fontSize="small" />
               </IconButton>
             </Tooltip>
           )}
-          {normalized === 'FAILED' && (
+          {normalized === 'FAILED' && !failedPreviewUnsupported && (
             <Tooltip title="Retry preview" placement="top-start" arrow>
               <span>
                 <IconButton
@@ -1022,7 +1026,8 @@ const SearchResults: React.FC = () => {
   const shouldShowFallback = !isSimilarMode && !loading && nodes.length === 0 && fallbackNodes.length > 0 && hasActiveCriteria;
   const displayNodes = isSimilarMode ? (similarResults || []) : (shouldShowFallback ? fallbackNodes : nodes);
   const failedPreviewNodes = displayNodes.filter((node) => node.nodeType === 'DOCUMENT'
-    && (node.previewStatus || '').toUpperCase() === 'FAILED');
+    && (node.previewStatus || '').toUpperCase() === 'FAILED'
+    && !isUnsupportedPreviewMimeType(node.contentType || node.properties?.mimeType || node.properties?.contentType));
   const failedPreviewReasonSummary = useMemo(() => {
     const buckets = new Map<string, Node[]>();
     failedPreviewNodes.forEach((node) => {

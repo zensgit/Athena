@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import AppErrorBoundary from './AppErrorBoundary';
 
 const ThrowingComponent: React.FC = () => {
@@ -34,10 +34,8 @@ describe('AppErrorBoundary', () => {
 
     window.dispatchEvent(new ErrorEvent('error', { error: new Error('runtime-window-error'), message: 'runtime-window-error' }));
 
-    await waitFor(() => {
-      expect(screen.getByText('Athena ECM')).toBeTruthy();
-      expect(screen.getByText(/runtime-window-error/i)).toBeTruthy();
-    });
+    expect(await screen.findByText('Athena ECM')).toBeTruthy();
+    expect(screen.getByText(/runtime-window-error/i)).toBeTruthy();
     errorSpy.mockRestore();
   });
 
@@ -56,10 +54,8 @@ describe('AppErrorBoundary', () => {
     });
     window.dispatchEvent(rejectionEvent);
 
-    await waitFor(() => {
-      expect(screen.getByText('Athena ECM')).toBeTruthy();
-      expect(screen.getByText(/runtime-unhandled-rejection/i)).toBeTruthy();
-    });
+    expect(await screen.findByText('Athena ECM')).toBeTruthy();
+    expect(screen.getByText(/runtime-unhandled-rejection/i)).toBeTruthy();
     errorSpy.mockRestore();
   });
 });

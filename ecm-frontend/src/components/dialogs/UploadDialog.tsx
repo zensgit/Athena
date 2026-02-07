@@ -37,6 +37,7 @@ import authService from 'services/authService';
 import nodeService from 'services/nodeService';
 import apiService from 'services/api';
 import { Node } from 'types';
+import { getFailedPreviewMeta } from 'utils/previewStatusUtils';
 
 interface UploadFile {
   file: File;
@@ -363,7 +364,8 @@ const UploadDialog: React.FC = () => {
       return { label: 'Preview ready', color: 'success' as const };
     }
     if (status === 'FAILED') {
-      return { label: 'Preview failed', color: 'error' as const };
+      const mimeType = node.contentType || node.properties?.mimeType || node.properties?.contentType;
+      return getFailedPreviewMeta(mimeType);
     }
     if (status === 'PROCESSING') {
       return { label: 'Preview processing', color: 'warning' as const };
