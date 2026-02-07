@@ -1,10 +1,27 @@
-import React from 'react';
-import { Box, Card, CardContent, Button, Typography } from '@mui/material';
+import React, { useEffect, useState } from 'react';
+import { Alert, Box, Card, CardContent, Button, Typography } from '@mui/material';
 import authService from 'services/authService';
+import { LOGIN_IN_PROGRESS_KEY, LOGIN_IN_PROGRESS_STARTED_AT_KEY } from 'constants/auth';
 
 const Login: React.FC = () => {
-  const handleLogin = () => {
-    authService.login({ redirectUri: window.location.origin + '/' });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    sessionStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
+    sessionStorage.removeItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY);
+  }, []);
+
+  const handleLogin = async () => {
+    setSubmitting(true);
+    setError(null);
+    try {
+      await authService.login({ redirectUri: window.location.origin + '/' });
+    } catch (loginError) {
+      setError(loginError instanceof Error ? loginError.message : 'Unable to start sign-in.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -25,7 +42,12 @@ const Login: React.FC = () => {
           <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
             Sign in with your organization account
           </Typography>
-          <Button variant="contained" fullWidth onClick={handleLogin}>
+          {error && (
+            <Alert severity="error" sx={{ mb: 2, textAlign: 'left' }}>
+              Sign-in failed. {error}
+            </Alert>
+          )}
+          <Button variant="contained" fullWidth onClick={handleLogin} disabled={submitting}>
             Sign in with Keycloak
           </Button>
         </CardContent>

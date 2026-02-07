@@ -3,13 +3,17 @@ import { Box, CircularProgress, Typography } from '@mui/material';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAppSelector } from 'store';
 import authService from 'services/authService';
+import {
+  LOGIN_IN_PROGRESS_KEY,
+  LOGIN_IN_PROGRESS_STARTED_AT_KEY,
+  LOGIN_IN_PROGRESS_TIMEOUT_MS,
+} from 'constants/auth';
 
 interface PrivateRouteProps {
   children: React.ReactNode;
   requiredRoles?: string[];
 }
 
-const LOGIN_IN_PROGRESS_KEY = 'ecm_kc_login_in_progress';
 const KEYCLOAK_CALLBACK_KEYS = ['code', 'state', 'session_state', 'iss'] as const;
 
 const hasKeycloakCallbackParams = () => {
@@ -45,20 +49,47 @@ const PrivateRoute: React.FC<PrivateRouteProps> = ({ children, requiredRoles }) 
   const { isAuthenticated, user } = useAppSelector((state) => state.auth);
   const keycloakAuthenticated = authService.isAuthenticated();
   const loginInProgress = sessionStorage.getItem(LOGIN_IN_PROGRESS_KEY) === '1';
+  const loginStartedAt = Number(sessionStorage.getItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY) || '0');
+  const loginStale = loginInProgress && loginStartedAt > 0 && Date.now() - loginStartedAt > LOGIN_IN_PROGRESS_TIMEOUT_MS;
+  const effectiveLoginInProgress = loginInProgress && !loginStale;
   const hasCallbackParams = hasKeycloakCallbackParams();
 
   useEffect(() => {
-    if (isAuthenticated || keycloakAuthenticated) return;
+    if (loginStale) {
+      sessionStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
+      sessionStorage.removeItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY);
+      return;
+    }
+    if (isAuthenticated || keycloakAuthenticated) {
+      sessionStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
+      sessionStorage.removeItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY);
+      return;
+    }
     if (hasCallbackParams) return;
-    if (loginInProgress) return;
+    if (effectiveLoginInProgress) return;
 
     sessionStorage.setItem(LOGIN_IN_PROGRESS_KEY, '1');
+    sessionStorage.setItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY, String(Date.now()));
     const redirectUri = buildSafeRedirectUri(location.pathname, location.search, location.hash);
-    authService.login({ redirectUri });
-  }, [isAuthenticated, keycloakAuthenticated, location.hash, location.pathname, location.search, hasCallbackParams, loginInProgress]);
+    const loginRequest = authService.login({ redirectUri });
+    void Promise.resolve(loginRequest).catch((error) => {
+      console.error('Automatic login redirect failed', error);
+      sessionStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
+      sessionStorage.removeItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY);
+    });
+  }, [
+    isAuthenticated,
+    keycloakAuthenticated,
+    location.hash,
+    location.pathname,
+    location.search,
+    hasCallbackParams,
+    effectiveLoginInProgress,
+    loginStale,
+  ]);
 
   if (!isAuthenticated && !keycloakAuthenticated) {
-    if (hasCallbackParams || loginInProgress) {
+    if (hasCallbackParams || effectiveLoginInProgress) {
       return (
         <Box
           sx={{

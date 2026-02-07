@@ -6,21 +6,45 @@ import authService from 'services/authService';
 import AppErrorBoundary from 'components/layout/AppErrorBoundary';
 import { store } from './store';
 import { setSession } from 'store/slices/authSlice';
+import { LOGIN_IN_PROGRESS_KEY } from 'constants/auth';
 
 const allowInsecureCrypto = process.env.REACT_APP_INSECURE_CRYPTO_OK === 'true';
-if (allowInsecureCrypto && (!window.crypto || !window.crypto.getRandomValues)) {
+const installInsecureCryptoFallback = () => {
+  if (!allowInsecureCrypto) {
+    return;
+  }
+  if (window.crypto?.getRandomValues) {
+    return;
+  }
+
   const insecureGetRandomValues = (arr: Uint8Array) => {
     for (let i = 0; i < arr.length; i += 1) {
       arr[i] = Math.floor(Math.random() * 256);
     }
     return arr;
   };
-  window.crypto = { ...(window.crypto || {}), getRandomValues: insecureGetRandomValues } as Crypto;
-  console.warn('Using insecure crypto fallback for Keycloak dev login.');
-}
+
+  try {
+    if (window.crypto && !window.crypto.getRandomValues) {
+      Object.defineProperty(window.crypto, 'getRandomValues', {
+        value: insecureGetRandomValues,
+        configurable: true,
+      });
+    } else if (!window.crypto) {
+      Object.defineProperty(window, 'crypto', {
+        value: { getRandomValues: insecureGetRandomValues },
+        configurable: true,
+      });
+    }
+    console.warn('Using insecure crypto fallback for Keycloak dev login.');
+  } catch (error) {
+    console.warn('Failed to install insecure crypto fallback.', error);
+  }
+};
+
+installInsecureCryptoFallback();
 
 const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
-const LOGIN_IN_PROGRESS_KEY = 'ecm_kc_login_in_progress';
 const KEYCLOAK_CALLBACK_KEYS = ['code', 'state', 'session_state', 'iss'] as const;
 
 const stripKeycloakCallbackParams = () => {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { Provider } from 'react-redux';
 import { configureStore } from '@reduxjs/toolkit';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -131,8 +131,32 @@ test('shows spinner when Keycloak callback params are present', async () => {
 
 test('shows spinner when login is already in progress', async () => {
   sessionStorage.setItem('ecm_kc_login_in_progress', '1');
+  sessionStorage.setItem('ecm_kc_login_in_progress_started_at', String(Date.now()));
 
   renderPrivateRoute({ isAuthenticated: false });
 
   expect(await screen.findByText('Signing you in...')).toBeTruthy();
+});
+
+test('clears stale in-progress marker and redirects to login', async () => {
+  sessionStorage.setItem('ecm_kc_login_in_progress', '1');
+  sessionStorage.setItem('ecm_kc_login_in_progress_started_at', String(Date.now() - 120_000));
+
+  renderPrivateRoute({ isAuthenticated: false });
+
+  expect(await screen.findByText('Login Page')).toBeTruthy();
+  expect(sessionStorage.getItem('ecm_kc_login_in_progress')).toBeNull();
+  expect(sessionStorage.getItem('ecm_kc_login_in_progress_started_at')).toBeNull();
+});
+
+test('clears markers when auto login request fails', async () => {
+  authServiceMock.login.mockRejectedValueOnce(new Error('login failed'));
+
+  renderPrivateRoute({ isAuthenticated: false });
+
+  expect(await screen.findByText('Login Page')).toBeTruthy();
+  await waitFor(() => {
+    expect(sessionStorage.getItem('ecm_kc_login_in_progress')).toBeNull();
+    expect(sessionStorage.getItem('ecm_kc_login_in_progress_started_at')).toBeNull();
+  });
 });
