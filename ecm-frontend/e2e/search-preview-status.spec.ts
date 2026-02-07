@@ -6,76 +6,34 @@ import {
   waitForApiReady,
   waitForSearchIndex,
 } from './helpers/api';
+import { loginWithCredentialsE2E } from './helpers/login';
 
 const baseApiUrl = process.env.ECM_API_URL || 'http://localhost:7700';
 const baseUiUrl = process.env.ECM_UI_URL || 'http://localhost:5500';
 const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
 
-async function loginWithCredentials(page: Page, username: string, password: string, token?: string) {
-  if (process.env.ECM_E2E_SKIP_LOGIN === '1') {
-    const resolvedToken = token ?? await fetchAccessToken(page.request, username, password);
-    await page.addInitScript(
-      ({ authToken, authUser }) => {
-        window.localStorage.setItem('token', authToken);
-        window.localStorage.setItem('ecm_e2e_bypass', '1');
-        window.localStorage.setItem('user', JSON.stringify(authUser));
+async function seedBypassSession(page: Page, username: string, token: string) {
+  await page.addInitScript(
+    ({ authToken, authUser }) => {
+      window.localStorage.setItem('token', authToken);
+      window.localStorage.setItem('ecm_e2e_bypass', '1');
+      window.localStorage.setItem('user', JSON.stringify(authUser));
+    },
+    {
+      authToken: token,
+      authUser: {
+        id: `e2e-${username}`,
+        username,
+        email: `${username}@example.com`,
+        roles: ['ROLE_ADMIN'],
       },
-      {
-        authToken: resolvedToken,
-        authUser: {
-          id: `e2e-${username}`,
-          username,
-          email: `${username}@example.com`,
-          roles: ['ROLE_ADMIN'],
-        },
-      }
-    );
-    return;
-  }
-  const authPattern = /\/protocol\/openid-connect\/auth/;
-  const browsePattern = /\/browse\//;
-
-  await page.goto(`${baseUiUrl}/login`, { waitUntil: 'domcontentloaded' });
-
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    await page.waitForURL(/(\/login$|\/browse\/|\/protocol\/openid-connect\/auth|login_required)/, { timeout: 60_000 });
-
-    if (page.url().endsWith('/login')) {
-      const keycloakButton = page.getByRole('button', { name: /sign in with keycloak/i });
-      try {
-        await keycloakButton.waitFor({ state: 'visible', timeout: 30_000 });
-        await keycloakButton.click();
-      } catch {
-        // Retry loop if login screen is not ready yet.
-      }
-      continue;
     }
+  );
+}
 
-    if (page.url().includes('login_required')) {
-      await page.goto(`${baseUiUrl}/login`, { waitUntil: 'domcontentloaded' });
-      continue;
-    }
-
-    if (authPattern.test(page.url())) {
-      await page.locator('#username').fill(username);
-      await page.locator('#password').fill(password);
-      await Promise.all([
-        page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
-        page.locator('#kc-login').click(),
-      ]);
-    }
-
-    if (browsePattern.test(page.url())) {
-      break;
-    }
-  }
-
-  if (!browsePattern.test(page.url())) {
-    await page.goto(`${baseUiUrl}/browse/root`, { waitUntil: 'domcontentloaded' });
-  }
-
-  await page.waitForURL(browsePattern, { timeout: 60_000 });
+async function loginWithCredentials(page: Page, username: string, password: string, token?: string) {
+  await loginWithCredentialsE2E(page, username, password, { token });
 }
 
 async function createFolder(
@@ -165,7 +123,7 @@ test('Search preview status filters are visible and selectable', async ({ page, 
   expect(indexRes.ok()).toBeTruthy();
   await waitForSearchIndex(request, filename, token, { apiUrl: baseApiUrl, maxAttempts: 40 });
 
-  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
+  await seedBypassSession(page, defaultUsername, token);
   await page.goto(`${baseUiUrl}/search-results`, { waitUntil: 'domcontentloaded' });
 
   const quickSearchInput = page.getByPlaceholder('Quick search by name...');
@@ -208,7 +166,7 @@ test('Preview failure shows info hint in search results', async ({ page, request
   expect(indexRes.ok()).toBeTruthy();
   await waitForSearchIndex(request, filename, token, { apiUrl: baseApiUrl, maxAttempts: 40 });
 
-  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
+  await seedBypassSession(page, defaultUsername, token);
   await page.goto(`${baseUiUrl}/search-results`, { waitUntil: 'domcontentloaded' });
 
   const quickSearchInput = page.getByPlaceholder('Quick search by name...');
@@ -220,6 +178,77 @@ test('Preview failure shows info hint in search results', async ({ page, request
   await expect(resultCard.getByText(/Preview failed/i)).toBeVisible();
   await expect(resultCard.getByRole('button', { name: /Preview failure reason/i })).toBeVisible();
   await expect(resultCard.getByRole('button', { name: /Retry preview/i })).toBeVisible();
+  await page.getByRole('button', { name: /Retry failed previews/i }).click();
+  await expect(resultCard.getByText(/Attempts:/i)).toBeVisible({ timeout: 30_000 });
+
+  await request.delete(`${baseApiUrl}/api/v1/nodes/${folderId}`,
+    { headers: { Authorization: `Bearer ${token}` } }).catch(() => null);
+});
+
+test('Advanced search supports preview retry actions for failed previews', async ({ page, request }) => {
+  test.setTimeout(240_000);
+  await waitForApiReady(request, { apiUrl: baseApiUrl });
+  const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+  const rootId = await getRootFolderId(request, token, { apiUrl: baseApiUrl });
+  const documentsId = await findChildFolderId(request, rootId, 'Documents', token, { apiUrl: baseApiUrl });
+
+  const folderName = `e2e-advanced-preview-failure-${Date.now()}`;
+  const folderId = await createFolder(request, documentsId, folderName, token);
+  const filename = `e2e-advanced-preview-failure-${Date.now()}.bin`;
+  const documentId = await uploadBinaryFile(request, folderId, filename, token);
+
+  const previewRes = await request.get(`${baseApiUrl}/api/v1/documents/${documentId}/preview`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(previewRes.ok()).toBeTruthy();
+
+  const indexRes = await request.post(`${baseApiUrl}/api/v1/search/index/${documentId}`,
+    { headers: { Authorization: `Bearer ${token}` } });
+  expect(indexRes.ok()).toBeTruthy();
+  await waitForSearchIndex(request, filename, token, { apiUrl: baseApiUrl, maxAttempts: 40 });
+
+  await seedBypassSession(page, defaultUsername, token);
+  await page.goto(
+    `${baseUiUrl}/search?q=${encodeURIComponent(filename)}&dateRange=week&minSize=1&previewStatus=FAILED`,
+    { waitUntil: 'domcontentloaded' }
+  );
+
+  const advancedSearchInput = page.getByLabel('Search query');
+  await expect(advancedSearchInput).toHaveValue(filename, { timeout: 60_000 });
+  await expect(page.getByLabel('Min size')).toHaveValue('1');
+  await expect.poll(() => new URL(page.url()).searchParams.get('dateRange')).toBe('week');
+  await expect.poll(() => new URL(page.url()).searchParams.get('minSize')).toBe('1');
+  await expect.poll(() => new URL(page.url()).searchParams.get('previewStatus')).toBe('FAILED');
+
+  const resultCard = page.locator('.MuiPaper-root').filter({ hasText: filename }).first();
+  await expect(resultCard).toBeVisible({ timeout: 60_000 });
+  await expect(resultCard.getByText(/Preview failed/i)).toBeVisible();
+  const previewStatusPanel = page.locator('.MuiPaper-root').filter({ hasText: 'Preview Status' }).first();
+  await expect(previewStatusPanel).toBeVisible();
+  const failedStatusChip = previewStatusPanel.getByRole('button', { name: /Failed \(\d+\)/i }).first();
+  await expect(failedStatusChip).toBeVisible();
+  await expect(failedStatusChip).toHaveClass(/MuiChip-filled/);
+  await expect(previewStatusPanel.getByText(/Preview status filters apply to the current page only/i)).toBeVisible();
+  await expect.poll(() => new URL(page.url()).searchParams.get('previewStatus')).toBe('FAILED');
+  await expect.poll(() => new URL(page.url()).searchParams.get('q')).toBe(filename);
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.getByLabel('Search query')).toHaveValue(filename, { timeout: 30_000 });
+  await expect(page.getByLabel('Min size')).toHaveValue('1');
+  await expect.poll(() => new URL(page.url()).searchParams.get('previewStatus')).toBe('FAILED');
+  await expect.poll(() => new URL(page.url()).searchParams.get('dateRange')).toBe('week');
+  await expect.poll(() => new URL(page.url()).searchParams.get('minSize')).toBe('1');
+  const reloadedPreviewStatusPanel = page.locator('.MuiPaper-root').filter({ hasText: 'Preview Status' }).first();
+  const reloadedFailedChip = reloadedPreviewStatusPanel.getByRole('button', { name: /Failed \(\d+\)/i }).first();
+  await expect(reloadedFailedChip).toHaveClass(/MuiChip-filled/);
+
+  await expect(page.getByRole('button', { name: /Retry failed previews/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Retry \".+\" \(\d+\)/i }).first()).toBeVisible();
+
+  await resultCard.getByRole('button', { name: /Retry preview/i }).click();
+  await expect(page).toHaveURL(/\/search/, { timeout: 10_000 });
+  await expect(resultCard.getByText(/Attempts:/i)).toBeVisible({ timeout: 30_000 });
+
   await page.getByRole('button', { name: /Retry failed previews/i }).click();
   await expect(resultCard.getByText(/Attempts:/i)).toBeVisible({ timeout: 30_000 });
 

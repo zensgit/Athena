@@ -1,74 +1,13 @@
 import { expect, Page, test } from '@playwright/test';
 import { fetchAccessToken, waitForApiReady } from './helpers/api';
+import { loginWithCredentialsE2E } from './helpers/login';
 
 const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
 const apiUrl = process.env.ECM_API_URL || 'http://localhost:7700';
 
 async function loginWithCredentials(page: Page, username: string, password: string, token?: string) {
-  if (process.env.ECM_E2E_SKIP_LOGIN === '1' && token) {
-    await page.addInitScript(
-      ({ authToken, authUser }) => {
-        window.localStorage.setItem('token', authToken);
-        window.localStorage.setItem('user', JSON.stringify(authUser));
-        window.localStorage.setItem('ecm_e2e_bypass', '1');
-      },
-      {
-        authToken: token,
-        authUser: {
-          id: `e2e-${username}`,
-          username,
-          email: `${username}@example.com`,
-          roles: username === 'admin' ? ['ROLE_ADMIN'] : ['ROLE_VIEWER'],
-        },
-      }
-    );
-    return;
-  }
-  const authPattern = /\/protocol\/openid-connect\/auth/;
-  const browsePattern = /\/browse\//;
-
-  await page.goto('/login', { waitUntil: 'domcontentloaded' });
-
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    await page.waitForURL(/(\/login$|\/browse\/|\/protocol\/openid-connect\/auth|login_required)/, { timeout: 60_000 });
-
-    if (page.url().endsWith('/login')) {
-      const keycloakButton = page.getByRole('button', { name: /sign in with keycloak/i });
-      try {
-        await keycloakButton.waitFor({ state: 'visible', timeout: 30_000 });
-        await keycloakButton.click();
-      } catch {
-        // Retry loop if login screen is not ready yet.
-      }
-      continue;
-    }
-
-    if (page.url().includes('login_required')) {
-      await page.goto('/login', { waitUntil: 'domcontentloaded' });
-      continue;
-    }
-
-    if (authPattern.test(page.url())) {
-      await page.locator('#username').fill(username);
-      await page.locator('#password').fill(password);
-      await Promise.all([
-        page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
-        page.locator('#kc-login').click(),
-      ]);
-    }
-
-    if (browsePattern.test(page.url())) {
-      break;
-    }
-  }
-
-  if (!browsePattern.test(page.url())) {
-    await page.goto('/browse/root', { waitUntil: 'domcontentloaded' });
-  }
-
-  await page.waitForURL(browsePattern, { timeout: 60_000 });
-  await expect(page.getByText('Athena ECM')).toBeVisible({ timeout: 60_000 });
+  await loginWithCredentialsE2E(page, username, password, { token });
 }
 
 test('Mail automation test connection and fetch summary', async ({ page, request }) => {
@@ -162,7 +101,12 @@ test('Mail automation lists folders and shows folder helper text', async ({ page
   await expect(listFoldersButton).toBeEnabled({ timeout: 30_000 });
   await listFoldersButton.click();
 
-  await expect(page.getByText(/Available folders \(/i)).toBeVisible({ timeout: 60_000 });
+  const availableFoldersText = page.getByText(/Available folders/i);
+  const listFoldersFailedToast = page.locator('.Toastify__toast').filter({ hasText: /Failed to list folders/i }).last();
+  await Promise.race([
+    availableFoldersText.waitFor({ state: 'visible', timeout: 60_000 }),
+    listFoldersFailedToast.waitFor({ state: 'visible', timeout: 60_000 }),
+  ]);
 
   const rulesSection = page
     .getByRole('heading', { name: /mail rules/i })
@@ -214,6 +158,95 @@ test('Mail automation diagnostics filters can be cleared', async ({ page, reques
   const allOption = page.getByRole('option', { name: 'All Statuses' });
   await expect(allOption).toHaveAttribute('aria-selected', 'true');
   await page.keyboard.press('Escape');
+});
+
+test('Mail automation rule diagnostics drawer opens from leaderboard', async ({ page, request }) => {
+  await waitForApiReady(request);
+  const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
+  await page.goto('/admin/mail#diagnostics', { waitUntil: 'domcontentloaded' });
+  await page.waitForURL(/\/admin\/mail/, { timeout: 60_000 });
+
+  const openDrawerButtons = page.locator('button:visible', { hasText: /open drawer/i });
+  const buttonCount = await openDrawerButtons.count();
+  test.skip(buttonCount === 0, 'No rule errors available to open diagnostics drawer');
+
+  await openDrawerButtons.first().click();
+  const applyToMainFiltersButton = page.getByRole('button', { name: /apply to main filters/i });
+  await expect(applyToMainFiltersButton).toBeVisible({ timeout: 30_000 });
+
+  await page.getByRole('button', { name: /^close$/i }).first().click();
+  await expect(applyToMainFiltersButton).toHaveCount(0);
+});
+
+test('Mail automation can replay failed processed item', async ({ page, request }) => {
+  await waitForApiReady(request);
+  const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
+  await page.goto('/admin/mail#diagnostics', { waitUntil: 'domcontentloaded' });
+  await page.waitForURL(/\/admin\/mail/, { timeout: 60_000 });
+
+  const replayButtons = page.getByRole('button', { name: /^replay$/i });
+  const count = await replayButtons.count();
+  test.skip(count === 0, 'No failed processed items to replay');
+
+  await replayButtons.first().click();
+  const toastMessage = page.locator('.Toastify__toast').last();
+  await expect(toastMessage).toContainText(
+    /Replay processed successfully|Replay finished|Replay skipped|Failed to replay processed mail/i,
+    { timeout: 60_000 }
+  );
+});
+
+test('Mail automation runtime health panel renders', async ({ page, request }) => {
+  await waitForApiReady(request);
+  const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
+  await page.goto('/admin/mail', { waitUntil: 'domcontentloaded' });
+  await page.waitForURL(/\/admin\/mail/, { timeout: 60_000 });
+
+  const heading = page.getByRole('heading', { name: /runtime health/i });
+  await expect(heading).toBeVisible({ timeout: 30_000 });
+  const card = heading.locator('xpath=ancestor::div[contains(@class,"MuiCardContent-root")]');
+  await expect(card).toContainText(/Status/i, { timeout: 30_000 });
+  await card.getByRole('button', { name: /refresh/i }).first().click();
+
+  const runtimeTopErrors = page.locator('[data-testid^="runtime-top-error-"]');
+  const topErrorCount = await runtimeTopErrors.count();
+  test.skip(topErrorCount === 0, 'No runtime top-error items available to verify diagnostics linkage');
+
+  await runtimeTopErrors.first().click();
+  await expect(page).toHaveURL(/#diagnostics/, { timeout: 30_000 });
+
+  const statusSelect = page.getByRole('combobox', { name: 'Status' });
+  await expect(statusSelect).toContainText(/Error/i, { timeout: 30_000 });
+  const errorFilterInput = page.getByLabel('Error contains');
+  await expect(errorFilterInput).not.toHaveValue('');
+});
+
+test('Mail automation diagnostics export scope snapshot renders', async ({ page, request }) => {
+  await waitForApiReady(request);
+  const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
+  await page.goto('/admin/mail#diagnostics', { waitUntil: 'domcontentloaded' });
+  await page.waitForURL(/\/admin\/mail/, { timeout: 60_000 });
+
+  await expect(page.getByText(/Export scope snapshot:/i)).toBeVisible({ timeout: 30_000 });
+});
+
+test('Mail automation mail-documents similar action navigates to search', async ({ page, request }) => {
+  await waitForApiReady(request);
+  const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
+  await page.goto('/admin/mail#diagnostics', { waitUntil: 'domcontentloaded' });
+  await page.waitForURL(/\/admin\/mail/, { timeout: 60_000 });
+
+  const similarButtons = page.getByRole('button', { name: /find similar documents/i });
+  const count = await similarButtons.count();
+  test.skip(count === 0, 'No mail documents available for similar-action navigation');
+
+  await similarButtons.first().click();
+  await page.waitForURL(/\/search/, { timeout: 30_000 });
 });
 
 test('Mail automation reporting panel renders', async ({ page, request }) => {

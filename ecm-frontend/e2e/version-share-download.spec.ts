@@ -1,5 +1,6 @@
 import { APIRequestContext, Page, expect, test } from '@playwright/test';
 import { fetchAccessToken, waitForApiReady } from './helpers/api';
+import { loginWithCredentialsE2E } from './helpers/login';
 
 const baseApiUrl = process.env.ECM_API_URL || 'http://localhost:7700';
 const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
@@ -152,69 +153,7 @@ async function waitForVersionCount(
 }
 
 async function loginWithCredentials(page: Page, username: string, password: string, token?: string) {
-  if (process.env.ECM_E2E_SKIP_LOGIN === '1' && token) {
-    await page.addInitScript(
-      ({ authToken, authUser }) => {
-        window.localStorage.setItem('token', authToken);
-        window.localStorage.setItem('ecm_e2e_bypass', '1');
-        window.localStorage.setItem('user', JSON.stringify(authUser));
-      },
-      {
-        authToken: token,
-        authUser: {
-          id: `e2e-${username}`,
-          username,
-          email: `${username}@example.com`,
-          roles: username === 'admin' ? ['ROLE_ADMIN'] : ['ROLE_VIEWER'],
-        },
-      }
-    );
-    return;
-  }
-  const authPattern = /\/protocol\/openid-connect\/auth/;
-  const browsePattern = /\/browse\//;
-
-  await page.goto('/login', { waitUntil: 'domcontentloaded' });
-
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    await page.waitForURL(/(\/login$|\/browse\/|\/protocol\/openid-connect\/auth|login_required)/, { timeout: 60_000 });
-
-    if (page.url().endsWith('/login')) {
-      const keycloakButton = page.getByRole('button', { name: /sign in with keycloak/i });
-      try {
-        await keycloakButton.waitFor({ state: 'visible', timeout: 30_000 });
-        await keycloakButton.click();
-      } catch {
-        // Retry loop if login screen is not ready yet.
-      }
-      continue;
-    }
-
-    if (page.url().includes('login_required')) {
-      await page.goto('/login', { waitUntil: 'domcontentloaded' });
-      continue;
-    }
-
-    if (authPattern.test(page.url())) {
-      await page.locator('#username').fill(username);
-      await page.locator('#password').fill(password);
-      await Promise.all([
-        page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
-        page.locator('#kc-login').click(),
-      ]);
-    }
-
-    if (browsePattern.test(page.url())) {
-      break;
-    }
-  }
-
-  if (!browsePattern.test(page.url())) {
-    await page.goto('/browse/root', { waitUntil: 'domcontentloaded' });
-  }
-
-  await page.waitForURL(browsePattern, { timeout: 60_000 });
-  await expect(page.getByText('Athena ECM')).toBeVisible({ timeout: 60_000 });
+  await loginWithCredentialsE2E(page, username, password, { token });
 }
 
 test('Version history actions: download + restore', async ({ page, request }) => {
