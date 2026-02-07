@@ -47,10 +47,25 @@ test('shows generic init warning when auth bootstrap failed', async () => {
 
 test('shows redirect warning when automatic sign-in redirect fails', async () => {
   sessionStorage.setItem('ecm_auth_init_status', 'redirect_failed');
+  sessionStorage.setItem('ecm_auth_redirect_last_failure_at', String(Date.now()));
 
   render(<Login />);
 
   expect(await screen.findByText(/automatic sign-in redirect failed/i)).toBeTruthy();
+});
+
+test('manual sign-in clears redirect failure cooldown markers', async () => {
+  sessionStorage.setItem('ecm_auth_init_status', 'redirect_failed');
+  sessionStorage.setItem('ecm_auth_redirect_failure_count', '2');
+  sessionStorage.setItem('ecm_auth_redirect_last_failure_at', String(Date.now()));
+
+  render(<Login />);
+  fireEvent.click(screen.getByRole('button', { name: /sign in with keycloak/i }));
+
+  await waitFor(() => {
+    expect(sessionStorage.getItem('ecm_auth_redirect_failure_count')).toBeNull();
+    expect(sessionStorage.getItem('ecm_auth_redirect_last_failure_at')).toBeNull();
+  });
 });
 
 test('shows error when login fails', async () => {

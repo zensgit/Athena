@@ -4,6 +4,9 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAppSelector } from 'store';
 import authService from 'services/authService';
 import {
+  AUTH_REDIRECT_FAILURE_COOLDOWN_MS,
+  AUTH_REDIRECT_FAILURE_COUNT_KEY,
+  AUTH_REDIRECT_LAST_FAILURE_AT_KEY,
   AUTH_INIT_STATUS_KEY,
   AUTH_INIT_STATUS_REDIRECT_FAILED,
   LOGIN_IN_PROGRESS_KEY,
@@ -52,6 +55,12 @@ const PrivateRoute: React.FC<PrivateRouteProps> = ({ children, requiredRoles }) 
   const keycloakAuthenticated = authService.isAuthenticated();
   const loginInProgress = sessionStorage.getItem(LOGIN_IN_PROGRESS_KEY) === '1';
   const loginStartedAt = Number(sessionStorage.getItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY) || '0');
+  const redirectFailureCount = Number(sessionStorage.getItem(AUTH_REDIRECT_FAILURE_COUNT_KEY) || '0');
+  const redirectLastFailureAt = Number(sessionStorage.getItem(AUTH_REDIRECT_LAST_FAILURE_AT_KEY) || '0');
+  const hasRecentRedirectFailure =
+    redirectFailureCount > 0
+    && redirectLastFailureAt > 0
+    && Date.now() - redirectLastFailureAt < AUTH_REDIRECT_FAILURE_COOLDOWN_MS;
   const loginStale = loginInProgress && loginStartedAt > 0 && Date.now() - loginStartedAt > LOGIN_IN_PROGRESS_TIMEOUT_MS;
   const effectiveLoginInProgress = loginInProgress && !loginStale;
   const hasCallbackParams = hasKeycloakCallbackParams();
@@ -65,10 +74,16 @@ const PrivateRoute: React.FC<PrivateRouteProps> = ({ children, requiredRoles }) 
     if (isAuthenticated || keycloakAuthenticated) {
       sessionStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
       sessionStorage.removeItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY);
+      sessionStorage.removeItem(AUTH_REDIRECT_FAILURE_COUNT_KEY);
+      sessionStorage.removeItem(AUTH_REDIRECT_LAST_FAILURE_AT_KEY);
       return;
     }
     if (hasCallbackParams) return;
     if (effectiveLoginInProgress) return;
+    if (hasRecentRedirectFailure) {
+      sessionStorage.setItem(AUTH_INIT_STATUS_KEY, AUTH_INIT_STATUS_REDIRECT_FAILED);
+      return;
+    }
 
     sessionStorage.setItem(LOGIN_IN_PROGRESS_KEY, '1');
     sessionStorage.setItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY, String(Date.now()));
@@ -77,10 +92,13 @@ const PrivateRoute: React.FC<PrivateRouteProps> = ({ children, requiredRoles }) 
     void Promise.resolve(loginRequest).catch((error) => {
       console.error('Automatic login redirect failed', error);
       sessionStorage.setItem(AUTH_INIT_STATUS_KEY, AUTH_INIT_STATUS_REDIRECT_FAILED);
+      sessionStorage.setItem(AUTH_REDIRECT_LAST_FAILURE_AT_KEY, String(Date.now()));
+      sessionStorage.setItem(AUTH_REDIRECT_FAILURE_COUNT_KEY, String(redirectFailureCount + 1));
       sessionStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
       sessionStorage.removeItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY);
     });
   }, [
+    redirectFailureCount,
     isAuthenticated,
     keycloakAuthenticated,
     location.hash,
@@ -88,6 +106,7 @@ const PrivateRoute: React.FC<PrivateRouteProps> = ({ children, requiredRoles }) 
     location.search,
     hasCallbackParams,
     effectiveLoginInProgress,
+    hasRecentRedirectFailure,
     loginStale,
   ]);
 

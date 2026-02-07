@@ -2,6 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { Alert, Box, Card, CardContent, Button, Typography } from '@mui/material';
 import authService from 'services/authService';
 import {
+  AUTH_REDIRECT_FAILURE_COOLDOWN_MS,
+  AUTH_REDIRECT_FAILURE_COUNT_KEY,
+  AUTH_REDIRECT_LAST_FAILURE_AT_KEY,
   AUTH_INIT_STATUS_ERROR,
   AUTH_INIT_STATUS_KEY,
   AUTH_INIT_STATUS_REDIRECT_FAILED,
@@ -22,7 +25,17 @@ const Login: React.FC = () => {
     } else if (initStatus === AUTH_INIT_STATUS_ERROR) {
       setAuthInitMessage('Sign-in initialization failed. Please retry.');
     } else if (initStatus === AUTH_INIT_STATUS_REDIRECT_FAILED) {
-      setAuthInitMessage('Automatic sign-in redirect failed. Click Sign in with Keycloak to retry.');
+      const lastFailureAt = Number(sessionStorage.getItem(AUTH_REDIRECT_LAST_FAILURE_AT_KEY) || '0');
+      const elapsed = lastFailureAt > 0 ? Date.now() - lastFailureAt : AUTH_REDIRECT_FAILURE_COOLDOWN_MS;
+      const remainingMs = Math.max(0, AUTH_REDIRECT_FAILURE_COOLDOWN_MS - elapsed);
+      const remainingSeconds = Math.ceil(remainingMs / 1000);
+      if (remainingSeconds > 0) {
+        setAuthInitMessage(
+          `Automatic sign-in redirect failed. Auto retry is paused for ~${remainingSeconds}s. Click Sign in with Keycloak to retry now.`
+        );
+      } else {
+        setAuthInitMessage('Automatic sign-in redirect failed. Click Sign in with Keycloak to retry.');
+      }
     }
     sessionStorage.removeItem(AUTH_INIT_STATUS_KEY);
     sessionStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
@@ -34,6 +47,8 @@ const Login: React.FC = () => {
     setError(null);
     setAuthInitMessage(null);
     sessionStorage.removeItem(AUTH_INIT_STATUS_KEY);
+    sessionStorage.removeItem(AUTH_REDIRECT_FAILURE_COUNT_KEY);
+    sessionStorage.removeItem(AUTH_REDIRECT_LAST_FAILURE_AT_KEY);
     try {
       await authService.login({ redirectUri: window.location.origin + '/' });
     } catch (loginError) {

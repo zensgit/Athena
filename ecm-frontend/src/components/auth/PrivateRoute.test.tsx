@@ -159,5 +159,29 @@ test('clears markers when auto login request fails', async () => {
     expect(sessionStorage.getItem('ecm_kc_login_in_progress')).toBeNull();
     expect(sessionStorage.getItem('ecm_kc_login_in_progress_started_at')).toBeNull();
     expect(sessionStorage.getItem('ecm_auth_init_status')).toBe('redirect_failed');
+    expect(sessionStorage.getItem('ecm_auth_redirect_failure_count')).toBe('1');
+    expect(Number(sessionStorage.getItem('ecm_auth_redirect_last_failure_at') || '0')).toBeGreaterThan(0);
   });
+});
+
+test('skips auto redirect while redirect-failure cooldown is active', async () => {
+  sessionStorage.setItem('ecm_auth_redirect_failure_count', '1');
+  sessionStorage.setItem('ecm_auth_redirect_last_failure_at', String(Date.now()));
+
+  renderPrivateRoute({ isAuthenticated: false });
+
+  expect(await screen.findByText('Login Page')).toBeTruthy();
+  expect(authServiceMock.login).not.toHaveBeenCalled();
+  expect(sessionStorage.getItem('ecm_auth_init_status')).toBe('redirect_failed');
+});
+
+test('clears redirect-failure cooldown markers after authentication', async () => {
+  sessionStorage.setItem('ecm_auth_redirect_failure_count', '2');
+  sessionStorage.setItem('ecm_auth_redirect_last_failure_at', String(Date.now()));
+
+  renderPrivateRoute({ isAuthenticated: true, roles: ['ROLE_VIEWER'] });
+
+  expect(screen.getByText('Protected Content')).toBeTruthy();
+  expect(sessionStorage.getItem('ecm_auth_redirect_failure_count')).toBeNull();
+  expect(sessionStorage.getItem('ecm_auth_redirect_last_failure_at')).toBeNull();
 });
