@@ -175,6 +175,17 @@ test('skips auto redirect while redirect-failure cooldown is active', async () =
   expect(sessionStorage.getItem('ecm_auth_init_status')).toBe('redirect_failed');
 });
 
+test('skips auto redirect when redirect failure count reaches cap', async () => {
+  sessionStorage.setItem('ecm_auth_redirect_failure_count', '2');
+  sessionStorage.setItem('ecm_auth_redirect_last_failure_at', String(Date.now() - 60_000));
+
+  renderPrivateRoute({ isAuthenticated: false });
+
+  expect(await screen.findByText('Login Page')).toBeTruthy();
+  expect(authServiceMock.login).not.toHaveBeenCalled();
+  expect(sessionStorage.getItem('ecm_auth_init_status')).toBe('redirect_failed');
+});
+
 test('clears redirect-failure cooldown markers after authentication', async () => {
   sessionStorage.setItem('ecm_auth_redirect_failure_count', '2');
   sessionStorage.setItem('ecm_auth_redirect_last_failure_at', String(Date.now()));

@@ -7,6 +7,7 @@ import {
   AUTH_REDIRECT_FAILURE_COOLDOWN_MS,
   AUTH_REDIRECT_FAILURE_COUNT_KEY,
   AUTH_REDIRECT_LAST_FAILURE_AT_KEY,
+  AUTH_REDIRECT_MAX_AUTO_ATTEMPTS,
   AUTH_INIT_STATUS_KEY,
   AUTH_INIT_STATUS_REDIRECT_FAILED,
   LOGIN_IN_PROGRESS_KEY,
@@ -57,10 +58,12 @@ const PrivateRoute: React.FC<PrivateRouteProps> = ({ children, requiredRoles }) 
   const loginStartedAt = Number(sessionStorage.getItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY) || '0');
   const redirectFailureCount = Number(sessionStorage.getItem(AUTH_REDIRECT_FAILURE_COUNT_KEY) || '0');
   const redirectLastFailureAt = Number(sessionStorage.getItem(AUTH_REDIRECT_LAST_FAILURE_AT_KEY) || '0');
+  const hasReachedAutoRedirectLimit = redirectFailureCount >= AUTH_REDIRECT_MAX_AUTO_ATTEMPTS;
   const hasRecentRedirectFailure =
     redirectFailureCount > 0
     && redirectLastFailureAt > 0
     && Date.now() - redirectLastFailureAt < AUTH_REDIRECT_FAILURE_COOLDOWN_MS;
+  const shouldPauseAutoRedirect = hasReachedAutoRedirectLimit || hasRecentRedirectFailure;
   const loginStale = loginInProgress && loginStartedAt > 0 && Date.now() - loginStartedAt > LOGIN_IN_PROGRESS_TIMEOUT_MS;
   const effectiveLoginInProgress = loginInProgress && !loginStale;
   const hasCallbackParams = hasKeycloakCallbackParams();
@@ -80,7 +83,7 @@ const PrivateRoute: React.FC<PrivateRouteProps> = ({ children, requiredRoles }) 
     }
     if (hasCallbackParams) return;
     if (effectiveLoginInProgress) return;
-    if (hasRecentRedirectFailure) {
+    if (shouldPauseAutoRedirect) {
       sessionStorage.setItem(AUTH_INIT_STATUS_KEY, AUTH_INIT_STATUS_REDIRECT_FAILED);
       return;
     }
@@ -106,7 +109,7 @@ const PrivateRoute: React.FC<PrivateRouteProps> = ({ children, requiredRoles }) 
     location.search,
     hasCallbackParams,
     effectiveLoginInProgress,
-    hasRecentRedirectFailure,
+    shouldPauseAutoRedirect,
     loginStale,
   ]);
 

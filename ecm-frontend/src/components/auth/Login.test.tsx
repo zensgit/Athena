@@ -54,6 +54,15 @@ test('shows redirect warning when automatic sign-in redirect fails', async () =>
   expect(await screen.findByText(/automatic sign-in redirect failed/i)).toBeTruthy();
 });
 
+test('shows paused message when auto redirect failure count reaches cap', async () => {
+  sessionStorage.setItem('ecm_auth_init_status', 'redirect_failed');
+  sessionStorage.setItem('ecm_auth_redirect_failure_count', '2');
+
+  render(<Login />);
+
+  expect(await screen.findByText(/automatic sign-in is paused after repeated failures/i)).toBeTruthy();
+});
+
 test('manual sign-in clears redirect failure cooldown markers', async () => {
   sessionStorage.setItem('ecm_auth_init_status', 'redirect_failed');
   sessionStorage.setItem('ecm_auth_redirect_failure_count', '2');
