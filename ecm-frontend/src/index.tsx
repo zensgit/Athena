@@ -7,7 +7,13 @@ import { AuthInitTimeoutError, withAuthInitTimeout } from 'services/authBootstra
 import AppErrorBoundary from 'components/layout/AppErrorBoundary';
 import { store } from './store';
 import { setSession } from 'store/slices/authSlice';
-import { LOGIN_IN_PROGRESS_KEY, LOGIN_IN_PROGRESS_STARTED_AT_KEY } from 'constants/auth';
+import {
+  AUTH_INIT_STATUS_ERROR,
+  AUTH_INIT_STATUS_KEY,
+  AUTH_INIT_STATUS_TIMEOUT,
+  LOGIN_IN_PROGRESS_KEY,
+  LOGIN_IN_PROGRESS_STARTED_AT_KEY,
+} from 'constants/auth';
 
 const allowInsecureCrypto = process.env.REACT_APP_INSECURE_CRYPTO_OK === 'true';
 const installInsecureCryptoFallback = () => {
@@ -122,8 +128,17 @@ const clearLoginProgress = () => {
   sessionStorage.removeItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY);
 };
 
+const clearAuthInitStatus = () => {
+  sessionStorage.removeItem(AUTH_INIT_STATUS_KEY);
+};
+
+const setAuthInitStatus = (status: string) => {
+  sessionStorage.setItem(AUTH_INIT_STATUS_KEY, status);
+};
+
 const initAuth = async () => {
   renderAuthBooting();
+  clearAuthInitStatus();
   try {
     const canUsePkce = !!(window.crypto && window.crypto.subtle);
     if (!canUsePkce) {
@@ -160,8 +175,10 @@ const initAuth = async () => {
       })
     );
     if (error instanceof AuthInitTimeoutError) {
+      setAuthInitStatus(AUTH_INIT_STATUS_TIMEOUT);
       console.error('Keycloak init timeout:', error.message);
     } else {
+      setAuthInitStatus(AUTH_INIT_STATUS_ERROR);
       console.error('Keycloak init error:', error);
     }
     renderApp();
