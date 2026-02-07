@@ -19,6 +19,7 @@ export interface MailAccount {
   oauthTenantId?: string | null;
   oauthScope?: string | null;
   oauthCredentialKey?: string | null;
+  passwordConfigured?: boolean;
   oauthEnvConfigured?: boolean;
   oauthMissingEnvKeys?: string[];
   oauthConnected?: boolean | null;
@@ -271,9 +272,15 @@ export interface MailDiagnosticsFilters {
   ruleId?: string | null;
   status?: 'PROCESSED' | 'ERROR' | string | null;
   subject?: string | null;
+  errorContains?: string | null;
   processedFrom?: string | null;
   processedTo?: string | null;
+  sort?: MailDiagnosticsSortField | string | null;
+  order?: MailDiagnosticsSortOrder | string | null;
 }
+
+export type MailDiagnosticsSortField = 'processedAt' | 'status' | 'rule' | 'account';
+export type MailDiagnosticsSortOrder = 'asc' | 'desc';
 
 export interface MailDiagnosticsExportOptions {
   includeProcessed?: boolean;
@@ -289,6 +296,45 @@ export interface ProcessedMailRetentionStatus {
   retentionDays: number;
   enabled: boolean;
   expiredCount: number;
+}
+
+export interface MailReplayResult {
+  processedMailId: string;
+  attempted: boolean;
+  processed: boolean;
+  message: string;
+  replayStatus?: string | null;
+}
+
+export interface MailRuntimeErrorStat {
+  errorMessage: string;
+  count: number;
+  lastSeenAt?: string | null;
+}
+
+export interface MailRuntimeTrend {
+  direction: 'IMPROVING' | 'STABLE' | 'WORSENING' | string;
+  currentTotal: number;
+  previousTotal: number;
+  deltaTotal: number;
+  currentErrorRate: number;
+  previousErrorRate: number;
+  deltaErrorRate: number;
+  summary?: string | null;
+}
+
+export interface MailRuntimeMetrics {
+  windowMinutes: number;
+  attempts: number;
+  successes: number;
+  errors: number;
+  errorRate: number;
+  avgDurationMs?: number | null;
+  lastSuccessAt?: string | null;
+  lastErrorAt?: string | null;
+  status: 'HEALTHY' | 'DEGRADED' | 'DOWN' | 'UNKNOWN' | string;
+  topErrors?: MailRuntimeErrorStat[];
+  trend?: MailRuntimeTrend | null;
 }
 
 class MailAutomationService {
@@ -349,8 +395,11 @@ class MailAutomationService {
         ruleId: filters?.ruleId || undefined,
         status: filters?.status || undefined,
         subject: filters?.subject || undefined,
+        errorContains: filters?.errorContains || undefined,
         processedFrom: filters?.processedFrom || undefined,
         processedTo: filters?.processedTo || undefined,
+        sort: filters?.sort || undefined,
+        order: filters?.order || undefined,
       },
     });
   }
@@ -391,8 +440,11 @@ class MailAutomationService {
         ruleId: filters?.ruleId || undefined,
         status: filters?.status || undefined,
         subject: filters?.subject || undefined,
+        errorContains: filters?.errorContains || undefined,
         processedFrom: filters?.processedFrom || undefined,
         processedTo: filters?.processedTo || undefined,
+        sort: filters?.sort || undefined,
+        order: filters?.order || undefined,
         includeProcessed: options?.includeProcessed ?? undefined,
         includeDocuments: options?.includeDocuments ?? undefined,
         includeSubject: options?.includeSubject ?? undefined,
@@ -408,12 +460,24 @@ class MailAutomationService {
     return api.post<{ deleted: number }>('/integration/mail/processed/bulk-delete', { ids });
   }
 
+  async replayProcessedMail(id: string): Promise<MailReplayResult> {
+    return api.post<MailReplayResult>(`/integration/mail/processed/${id}/replay`);
+  }
+
   async getProcessedRetention(): Promise<ProcessedMailRetentionStatus> {
     return api.get<ProcessedMailRetentionStatus>('/integration/mail/processed/retention');
   }
 
   async cleanupProcessedRetention(): Promise<{ deleted: number }> {
     return api.post<{ deleted: number }>('/integration/mail/processed/cleanup');
+  }
+
+  async getRuntimeMetrics(windowMinutes?: number): Promise<MailRuntimeMetrics> {
+    return api.get<MailRuntimeMetrics>('/integration/mail/runtime-metrics', {
+      params: {
+        windowMinutes: windowMinutes ?? undefined,
+      },
+    });
   }
 
   async triggerFetch(): Promise<MailFetchSummary> {

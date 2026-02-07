@@ -30,6 +30,7 @@ import {
   Chip,
   Checkbox,
   Alert,
+  Tooltip,
 } from '@mui/material';
 import {
   Close,
@@ -74,6 +75,9 @@ interface PermissionEntry {
   principalType: 'user' | 'group';
   permissions: {
     [key in PermissionType]?: 'ALLOW' | 'DENY';
+  };
+  inheritance?: {
+    [key in PermissionType]?: 'INHERITED' | 'EXPLICIT' | 'MIXED';
   };
 }
 
@@ -133,11 +137,19 @@ const PermissionsDialog: React.FC = () => {
           principal,
           principalType: principal.startsWith('GROUP_') ? 'group' : 'user',
           permissions: {},
+          inheritance: {},
         };
         
         perms.forEach((perm) => {
           const key = perm.permission as PermissionType;
           const current = entry.permissions[key];
+          const origin = perm.inherited ? 'INHERITED' : 'EXPLICIT';
+          const currentOrigin = entry.inheritance?.[key];
+          if (!currentOrigin) {
+            entry.inheritance![key] = origin;
+          } else if (currentOrigin !== origin) {
+            entry.inheritance![key] = 'MIXED';
+          }
           if (perm.allowed) {
             if (current !== 'DENY') {
               entry.permissions[key] = 'ALLOW';
@@ -526,20 +538,40 @@ const PermissionsDialog: React.FC = () => {
               </TableCell>
               {Object.keys(PERMISSION_LABELS).map((perm) => (
                 <TableCell key={perm} align="center">
-                  <Checkbox
-                    size="small"
-                    checked={entry.permissions[perm as PermissionType] === 'ALLOW'}
-                    indeterminate={entry.permissions[perm as PermissionType] === 'DENY'}
-                    color={entry.permissions[perm as PermissionType] === 'DENY' ? 'error' : 'primary'}
-                    disabled={!canWrite}
-                    onClick={() =>
-                      handlePermissionToggle(
-                        entry.principal,
-                        perm as PermissionType,
-                        entry.permissions[perm as PermissionType]
-                      )
+                  {(() => {
+                    const permissionKey = perm as PermissionType;
+                    const origin = entry.inheritance?.[permissionKey];
+                    const tooltipLabel = origin === 'INHERITED'
+                      ? 'Inherited'
+                      : origin === 'MIXED'
+                        ? 'Mixed explicit/inherited'
+                        : '';
+                    const checkbox = (
+                      <Checkbox
+                        size="small"
+                        checked={entry.permissions[permissionKey] === 'ALLOW'}
+                        indeterminate={entry.permissions[permissionKey] === 'DENY'}
+                        color={entry.permissions[permissionKey] === 'DENY' ? 'error' : 'primary'}
+                        disabled={!canWrite}
+                        onClick={() =>
+                          handlePermissionToggle(
+                            entry.principal,
+                            permissionKey,
+                            entry.permissions[permissionKey]
+                          )
+                        }
+                        sx={origin === 'INHERITED' ? { opacity: 0.6 } : undefined}
+                      />
+                    );
+                    if (!tooltipLabel) {
+                      return checkbox;
                     }
-                  />
+                    return (
+                      <Tooltip title={tooltipLabel} arrow>
+                        <span>{checkbox}</span>
+                      </Tooltip>
+                    );
+                  })()}
                 </TableCell>
               ))}
               <TableCell align="center">

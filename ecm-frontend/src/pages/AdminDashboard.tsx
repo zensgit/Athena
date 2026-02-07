@@ -216,6 +216,7 @@ const AdminDashboard: React.FC = () => {
   const [auditFilterUser, setAuditFilterUser] = useState('');
   const [auditFilterEventType, setAuditFilterEventType] = useState('');
   const [auditFilterCategory, setAuditFilterCategory] = useState('');
+  const [auditQuickRange, setAuditQuickRange] = useState<'24h' | '7d' | '30d' | 'custom'>('30d');
   const [filteringAudit, setFilteringAudit] = useState(false);
   const [pinnedSearches, setPinnedSearches] = useState<SavedSearch[]>([]);
   const [pinnedLoading, setPinnedLoading] = useState(false);
@@ -310,6 +311,16 @@ const AdminDashboard: React.FC = () => {
         .toLowerCase()
         .replace(/_/g, ' ')
         .replace(/\b\w/g, (ch) => ch.toUpperCase());
+  };
+
+  const formatAuditEventTypeLabel = (eventType: string) => {
+    if (!eventType) {
+      return '';
+    }
+    return eventType
+      .toLowerCase()
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (ch) => ch.toUpperCase());
   };
 
   const auditCategoryOptions = (auditCategories.length > 0
@@ -590,6 +601,22 @@ const AdminDashboard: React.FC = () => {
     } catch {
       toast.error('Failed to reload recent audit logs');
     }
+  };
+
+  const applyAuditQuickRange = (range: '24h' | '7d' | '30d') => {
+    const to = new Date();
+    const from = new Date(to);
+    if (range === '24h') {
+      from.setHours(from.getHours() - 24);
+    } else if (range === '7d') {
+      from.setDate(from.getDate() - 7);
+    } else {
+      from.setDate(from.getDate() - 30);
+    }
+    setAuditExportPreset('custom');
+    setAuditExportFrom(formatDateTimeInput(from));
+    setAuditExportTo(formatDateTimeInput(to));
+    setAuditQuickRange(range);
   };
 
   const handleCleanupAuditLogs = async () => {
@@ -1161,7 +1188,13 @@ const AdminDashboard: React.FC = () => {
                     <Select
                       label="Export Preset"
                       value={auditExportPreset}
-                      onChange={(event) => setAuditExportPreset(String(event.target.value))}
+                      onChange={(event) => {
+                        const value = String(event.target.value);
+                        setAuditExportPreset(value);
+                        if (value !== 'custom') {
+                          setAuditQuickRange('custom');
+                        }
+                      }}
                     >
                       <MenuItem value="custom">Custom range</MenuItem>
                       {auditPresets.map((preset) => (
@@ -1190,6 +1223,10 @@ const AdminDashboard: React.FC = () => {
                     options={auditEventTypes.map((item) => item.eventType)}
                     value={auditFilterEventType}
                     onInputChange={(_, value) => setAuditFilterEventType(value)}
+                    getOptionLabel={(option) => formatAuditEventTypeLabel(String(option))}
+                    renderOption={(props, option) => (
+                      <li {...props}>{formatAuditEventTypeLabel(String(option))}</li>
+                    )}
                     renderInput={(params) => (
                       <TextField
                         {...params}
@@ -1214,12 +1251,41 @@ const AdminDashboard: React.FC = () => {
                       ))}
                     </Select>
                   </FormControl>
+                  <Box display="flex" alignItems="center" gap={0.5}>
+                    <Typography variant="caption" color="text.secondary">
+                      Quick range
+                    </Typography>
+                    <Button
+                      size="small"
+                      variant={auditQuickRange === '24h' ? 'contained' : 'outlined'}
+                      onClick={() => applyAuditQuickRange('24h')}
+                    >
+                      24h
+                    </Button>
+                    <Button
+                      size="small"
+                      variant={auditQuickRange === '7d' ? 'contained' : 'outlined'}
+                      onClick={() => applyAuditQuickRange('7d')}
+                    >
+                      7d
+                    </Button>
+                    <Button
+                      size="small"
+                      variant={auditQuickRange === '30d' ? 'contained' : 'outlined'}
+                      onClick={() => applyAuditQuickRange('30d')}
+                    >
+                      30d
+                    </Button>
+                  </Box>
                   <TextField
                     label="From"
                     type="datetime-local"
                     size="small"
                     value={auditExportFrom}
-                    onChange={(event) => setAuditExportFrom(event.target.value)}
+                    onChange={(event) => {
+                      setAuditExportFrom(event.target.value);
+                      setAuditQuickRange('custom');
+                    }}
                     InputLabelProps={{ shrink: true }}
                     error={Boolean(auditExportRangeError)}
                     disabled={!isCustomExport}
@@ -1230,7 +1296,10 @@ const AdminDashboard: React.FC = () => {
                     type="datetime-local"
                     size="small"
                     value={auditExportTo}
-                    onChange={(event) => setAuditExportTo(event.target.value)}
+                    onChange={(event) => {
+                      setAuditExportTo(event.target.value);
+                      setAuditQuickRange('custom');
+                    }}
                     InputLabelProps={{ shrink: true }}
                     error={Boolean(auditExportRangeError)}
                     helperText={auditExportHelperText}
@@ -1334,7 +1403,7 @@ const AdminDashboard: React.FC = () => {
                         primary={
                           <Box display="flex" justifyContent="space-between">
                             <Typography variant="subtitle2">
-                              {log.username} - {log.eventType}
+                              {log.username} - {formatAuditEventTypeLabel(log.eventType)}
                             </Typography>
                             <Typography variant="caption" color="text.secondary">
                               {format(new Date(log.eventTime), 'PPpp')}

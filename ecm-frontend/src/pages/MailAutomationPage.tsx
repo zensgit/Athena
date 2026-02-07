@@ -12,8 +12,10 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Drawer,
   FormControl,
   FormControlLabel,
+  FormHelperText,
   InputLabel,
   MenuItem,
   Select,
@@ -29,7 +31,19 @@ import {
   IconButton,
   Tooltip,
 } from '@mui/material';
-import { Add, Delete, Edit, Link, Login, Refresh, Visibility, ContentCopy } from '@mui/icons-material';
+import {
+  Add,
+  Delete,
+  Edit,
+  Link,
+  Login,
+  Refresh,
+  Search,
+  Visibility,
+  ContentCopy,
+  ArrowUpward,
+  ArrowDownward,
+} from '@mui/icons-material';
 import { toast } from 'react-toastify';
 import { useLocation, useNavigate } from 'react-router-dom';
 import mailAutomationService, {
@@ -54,6 +68,9 @@ import mailAutomationService, {
   MailReportAccountRow,
   MailReportRuleRow,
   MailReportTrendRow,
+  MailDiagnosticsSortField,
+  MailDiagnosticsSortOrder,
+  MailRuntimeMetrics,
 } from 'services/mailAutomationService';
 import tagService from 'services/tagService';
 import nodeService from 'services/nodeService';
@@ -92,6 +109,8 @@ const DEFAULT_ACCOUNT_FORM: MailAccountRequest = {
   oauthCredentialKey: '',
 };
 
+const PASSWORD_MASK = '********';
+
 const DEFAULT_RULE_FORM: MailRuleRequest & { folderPath: string; folderIdOverride: string } = {
   name: '',
   accountId: '',
@@ -114,6 +133,27 @@ const DEFAULT_RULE_FORM: MailRuleRequest & { folderPath: string; folderIdOverrid
   folderPath: '',
   folderIdOverride: '',
 };
+const DIAGNOSTICS_FILTERS_STORAGE_KEY = 'mailDiagnosticsFilters';
+const DIAGNOSTICS_QUERY_PARAMS = {
+  accountId: 'dAccount',
+  ruleId: 'dRule',
+  status: 'dStatus',
+  subject: 'dSubject',
+  errorContains: 'dError',
+  processedFrom: 'dFrom',
+  processedTo: 'dTo',
+  sort: 'dSort',
+  order: 'dOrder',
+} as const;
+const DIAGNOSTICS_SORT_FIELDS: MailDiagnosticsSortField[] = ['processedAt', 'status', 'rule', 'account'];
+const DIAGNOSTICS_SORT_ORDERS: MailDiagnosticsSortOrder[] = ['desc', 'asc'];
+type RuleDiagnosticsTimeRange = 'ALL' | '24H' | '7D' | '30D';
+const RULE_DIAGNOSTICS_TIME_RANGES: Array<{ value: RuleDiagnosticsTimeRange; label: string }> = [
+  { value: 'ALL', label: 'All time' },
+  { value: '24H', label: 'Last 24 hours' },
+  { value: '7D', label: 'Last 7 days' },
+  { value: '30D', label: 'Last 30 days' },
+];
 
 const MailAutomationPage: React.FC = () => {
   const location = useLocation();
@@ -134,6 +174,9 @@ const MailAutomationPage: React.FC = () => {
   const [reportAccountId, setReportAccountId] = useState('');
   const [reportRuleId, setReportRuleId] = useState('');
   const [reportDays, setReportDays] = useState(7);
+  const [runtimeMetrics, setRuntimeMetrics] = useState<MailRuntimeMetrics | null>(null);
+  const [runtimeMetricsLoading, setRuntimeMetricsLoading] = useState(false);
+  const [runtimeWindowMinutes, setRuntimeWindowMinutes] = useState(60);
   const [listingFolders, setListingFolders] = useState(false);
   const [availableFolders, setAvailableFolders] = useState<string[]>([]);
   const [hasListedFolders, setHasListedFolders] = useState(false);
@@ -143,17 +186,39 @@ const MailAutomationPage: React.FC = () => {
   const [diagnosticsRuleId, setDiagnosticsRuleId] = useState('');
   const [diagnosticsStatus, setDiagnosticsStatus] = useState('');
   const [diagnosticsSubject, setDiagnosticsSubject] = useState('');
+  const [diagnosticsErrorContains, setDiagnosticsErrorContains] = useState('');
+  const [diagnosticsProcessedFrom, setDiagnosticsProcessedFrom] = useState('');
+  const [diagnosticsProcessedTo, setDiagnosticsProcessedTo] = useState('');
+  const [diagnosticsSort, setDiagnosticsSort] = useState<MailDiagnosticsSortField>('processedAt');
+  const [diagnosticsOrder, setDiagnosticsOrder] = useState<MailDiagnosticsSortOrder>('desc');
+  const [diagnosticsFiltersLoaded, setDiagnosticsFiltersLoaded] = useState(false);
   const diagnosticsFiltersActive = Boolean(
-    diagnosticsAccountId || diagnosticsRuleId || diagnosticsStatus || diagnosticsSubject,
+    diagnosticsAccountId
+      || diagnosticsRuleId
+      || diagnosticsStatus
+      || diagnosticsSubject
+      || diagnosticsErrorContains
+      || diagnosticsProcessedFrom
+      || diagnosticsProcessedTo
+      || diagnosticsSort !== 'processedAt'
+      || diagnosticsOrder !== 'desc',
   );
   const [processedRetention, setProcessedRetention] = useState<ProcessedMailRetentionStatus | null>(null);
   const [retentionLoading, setRetentionLoading] = useState(false);
   const [retentionCleaning, setRetentionCleaning] = useState(false);
   const [selectedProcessedIds, setSelectedProcessedIds] = useState<string[]>([]);
+  const [replayingProcessedId, setReplayingProcessedId] = useState<string | null>(null);
+  const [expandedRuleErrorRuleId, setExpandedRuleErrorRuleId] = useState('');
+  const [ruleDiagnosticsDrawerOpen, setRuleDiagnosticsDrawerOpen] = useState(false);
+  const [ruleDiagnosticsFocusRuleId, setRuleDiagnosticsFocusRuleId] = useState('');
+  const [ruleDiagnosticsAccountId, setRuleDiagnosticsAccountId] = useState('');
+  const [ruleDiagnosticsStatus, setRuleDiagnosticsStatus] = useState<'ALL' | 'ERROR' | 'PROCESSED'>('ALL');
+  const [ruleDiagnosticsTimeRange, setRuleDiagnosticsTimeRange] = useState<RuleDiagnosticsTimeRange>('7D');
   const [connectingAccountId, setConnectingAccountId] = useState<string | null>(null);
   const [lastFetchSummary, setLastFetchSummary] = useState<MailFetchSummary | null>(null);
   const [lastFetchAt, setLastFetchAt] = useState<string | null>(null);
   const diagnosticsRef = useRef<HTMLDivElement | null>(null);
+  const initialDiagnosticsSearchRef = useRef(location.search);
   const [exportOptions, setExportOptions] = useState(() => {
     const fallback = {
       includeProcessed: true,
@@ -187,6 +252,13 @@ const MailAutomationPage: React.FC = () => {
   const [ruleDialogOpen, setRuleDialogOpen] = useState(false);
   const [ruleForm, setRuleForm] = useState(DEFAULT_RULE_FORM);
   const [editingRule, setEditingRule] = useState<MailRule | null>(null);
+  const [ruleFilterText, setRuleFilterText] = useState('');
+  const [ruleFilterAccountId, setRuleFilterAccountId] = useState('');
+  const [ruleFilterStatus, setRuleFilterStatus] = useState<'ALL' | 'ENABLED' | 'DISABLED'>('ALL');
+  const [selectedRuleIds, setSelectedRuleIds] = useState<string[]>([]);
+  const [ruleBulkUpdating, setRuleBulkUpdating] = useState(false);
+  const [ruleBulkDeleting, setRuleBulkDeleting] = useState(false);
+  const [ruleBulkReindexing, setRuleBulkReindexing] = useState(false);
 
   const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
   const [previewRule, setPreviewRule] = useState<MailRule | null>(null);
@@ -200,6 +272,16 @@ const MailAutomationPage: React.FC = () => {
   const securityOptions: MailSecurityType[] = ['SSL', 'STARTTLS', 'NONE', 'OAUTH2'];
   const oauthProviderOptions: MailOAuthProvider[] = ['MICROSOFT', 'GOOGLE', 'CUSTOM'];
   const actionOptions: MailActionType[] = ['ATTACHMENTS_ONLY', 'METADATA_ONLY', 'EVERYTHING'];
+  const actionTypeLabels: Record<MailActionType, string> = {
+    ATTACHMENTS_ONLY: 'Attachments only',
+    METADATA_ONLY: 'Email (.eml) only',
+    EVERYTHING: 'Email (.eml) + attachments',
+  };
+  const actionTypeDescriptions: Record<MailActionType, string> = {
+    ATTACHMENTS_ONLY: 'Store only attachments that match the rule.',
+    METADATA_ONLY: 'Store the full email as a single .eml document.',
+    EVERYTHING: 'Store the full .eml and each attachment as separate documents.',
+  };
   const postActionOptions: MailPostAction[] = ['MARK_READ', 'MOVE', 'DELETE', 'FLAG', 'TAG', 'NONE'];
   const diagnosticsLimit = 25;
   const isOauthAccount = accountForm.security === 'OAUTH2';
@@ -264,6 +346,30 @@ const MailAutomationPage: React.FC = () => {
     return `${value.slice(0, Math.max(0, maxLength - 3))}...`;
   };
 
+  const extractSkipReason = (errorMessage?: string | null) => {
+    const raw = (errorMessage || '').trim();
+    if (!raw) {
+      return 'unknown';
+    }
+    const firstLine = raw.split(/\r?\n/, 1)[0] || raw;
+    const token = firstLine.split(':', 1)[0]?.trim() || firstLine;
+    return token.toLowerCase().replace(/\s+/g, '_');
+  };
+
+  const timeRangeStart = (range: RuleDiagnosticsTimeRange): Date | null => {
+    const now = Date.now();
+    if (range === '24H') {
+      return new Date(now - 24 * 60 * 60 * 1000);
+    }
+    if (range === '7D') {
+      return new Date(now - 7 * 24 * 60 * 60 * 1000);
+    }
+    if (range === '30D') {
+      return new Date(now - 30 * 24 * 60 * 60 * 1000);
+    }
+    return null;
+  };
+
   const statusColor = (status?: string | null): 'default' | 'success' | 'error' => {
     if (status === 'ERROR') {
       return 'error';
@@ -274,10 +380,37 @@ const MailAutomationPage: React.FC = () => {
     return 'default';
   };
 
+  const runtimeStatusColor = (status?: string | null): 'default' | 'success' | 'warning' | 'error' => {
+    if (status === 'HEALTHY') {
+      return 'success';
+    }
+    if (status === 'DEGRADED') {
+      return 'warning';
+    }
+    if (status === 'DOWN') {
+      return 'error';
+    }
+    return 'default';
+  };
+  const runtimeTrendColor = (direction?: string | null): 'default' | 'success' | 'warning' => {
+    if (direction === 'IMPROVING') {
+      return 'success';
+    }
+    if (direction === 'WORSENING') {
+      return 'warning';
+    }
+    return 'default';
+  };
+
   const toSortedEntries = (map?: Record<string, number> | null) =>
     Object.entries(map || {}).sort((a, b) => b[1] - a[1]);
 
   const formatReason = (reason: string) => reason.replace(/_/g, ' ');
+  const toDateTimeInputValue = (value: Date) => {
+    const local = new Date(value.getTime() - value.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 16);
+  };
+  const processedKey = (accountId?: string | null, uid?: string | null) => `${accountId || ''}::${uid || ''}`;
 
   const loadRetention = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent === true;
@@ -342,6 +475,11 @@ const MailAutomationPage: React.FC = () => {
         ruleId: diagnosticsRuleId || undefined,
         status: diagnosticsStatus || undefined,
         subject: diagnosticsSubject || undefined,
+        errorContains: diagnosticsErrorContains || undefined,
+        processedFrom: diagnosticsProcessedFrom || undefined,
+        processedTo: diagnosticsProcessedTo || undefined,
+        sort: diagnosticsSort,
+        order: diagnosticsOrder,
       });
       setDiagnostics(result);
       setSelectedProcessedIds([]);
@@ -352,7 +490,17 @@ const MailAutomationPage: React.FC = () => {
     } finally {
       setDiagnosticsLoading(false);
     }
-  }, [diagnosticsAccountId, diagnosticsRuleId, diagnosticsStatus, diagnosticsSubject]);
+  }, [
+    diagnosticsAccountId,
+    diagnosticsRuleId,
+    diagnosticsStatus,
+    diagnosticsSubject,
+    diagnosticsErrorContains,
+    diagnosticsProcessedFrom,
+    diagnosticsProcessedTo,
+    diagnosticsSort,
+    diagnosticsOrder,
+  ]);
 
   const loadReport = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent === true;
@@ -375,6 +523,28 @@ const MailAutomationPage: React.FC = () => {
     }
   }, [reportAccountId, reportRuleId, reportDays]);
 
+  const loadRuntimeMetrics = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true;
+    if (!silent) {
+      setRuntimeMetricsLoading(true);
+    }
+    try {
+      const result = await mailAutomationService.getRuntimeMetrics(runtimeWindowMinutes);
+      setRuntimeMetrics(result);
+    } catch (error: unknown) {
+      if (!silent) {
+        const status = (error as { response?: { status?: number } })?.response?.status;
+        if (status === 403) {
+          toast.error('Permission denied: runtime metrics require admin role');
+        } else {
+          toast.error('Failed to load mail runtime metrics');
+        }
+      }
+    } finally {
+      setRuntimeMetricsLoading(false);
+    }
+  }, [runtimeWindowMinutes]);
+
   useEffect(() => {
     loadAll();
   }, [loadAll]);
@@ -382,6 +552,10 @@ const MailAutomationPage: React.FC = () => {
   useEffect(() => {
     loadReport();
   }, [loadReport]);
+
+  useEffect(() => {
+    loadRuntimeMetrics();
+  }, [loadRuntimeMetrics]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -411,8 +585,23 @@ const MailAutomationPage: React.FC = () => {
   }, [location.hash, loading]);
 
   useEffect(() => {
+    if (!diagnosticsFiltersLoaded) {
+      return;
+    }
     loadDiagnostics({ silent: true });
-  }, [diagnosticsAccountId, diagnosticsRuleId, diagnosticsStatus, diagnosticsSubject, loadDiagnostics]);
+  }, [
+    diagnosticsFiltersLoaded,
+    diagnosticsAccountId,
+    diagnosticsRuleId,
+    diagnosticsStatus,
+    diagnosticsSubject,
+    diagnosticsErrorContains,
+    diagnosticsProcessedFrom,
+    diagnosticsProcessedTo,
+    diagnosticsSort,
+    diagnosticsOrder,
+    loadDiagnostics,
+  ]);
 
   useEffect(() => {
     if (!folderAccountId && accounts.length > 0) {
@@ -431,12 +620,184 @@ const MailAutomationPage: React.FC = () => {
     setDiagnosticsRuleId('');
     setDiagnosticsStatus('');
     setDiagnosticsSubject('');
+    setDiagnosticsErrorContains('');
+    setDiagnosticsProcessedFrom('');
+    setDiagnosticsProcessedTo('');
+    setDiagnosticsSort('processedAt');
+    setDiagnosticsOrder('desc');
   };
 
   useEffect(() => {
     setAvailableFolders([]);
     setHasListedFolders(false);
   }, [folderAccountId]);
+
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(initialDiagnosticsSearchRef.current);
+      const queryFilters = {
+        accountId: params.get(DIAGNOSTICS_QUERY_PARAMS.accountId) || '',
+        ruleId: params.get(DIAGNOSTICS_QUERY_PARAMS.ruleId) || '',
+        status: params.get(DIAGNOSTICS_QUERY_PARAMS.status) || '',
+        subject: params.get(DIAGNOSTICS_QUERY_PARAMS.subject) || '',
+        errorContains: params.get(DIAGNOSTICS_QUERY_PARAMS.errorContains) || '',
+        processedFrom: params.get(DIAGNOSTICS_QUERY_PARAMS.processedFrom) || '',
+        processedTo: params.get(DIAGNOSTICS_QUERY_PARAMS.processedTo) || '',
+        sort: params.get(DIAGNOSTICS_QUERY_PARAMS.sort) || '',
+        order: params.get(DIAGNOSTICS_QUERY_PARAMS.order) || '',
+      };
+      const resolvedQuerySort = DIAGNOSTICS_SORT_FIELDS.includes(queryFilters.sort as MailDiagnosticsSortField)
+        ? (queryFilters.sort as MailDiagnosticsSortField)
+        : 'processedAt';
+      const resolvedQueryOrder = DIAGNOSTICS_SORT_ORDERS.includes(queryFilters.order as MailDiagnosticsSortOrder)
+        ? (queryFilters.order as MailDiagnosticsSortOrder)
+        : 'desc';
+      const hasQueryFilters = Boolean(
+        queryFilters.accountId
+          || queryFilters.ruleId
+          || queryFilters.status
+          || queryFilters.subject
+          || queryFilters.errorContains
+          || queryFilters.processedFrom
+          || queryFilters.processedTo
+          || queryFilters.sort
+          || queryFilters.order
+      );
+      if (hasQueryFilters) {
+        setDiagnosticsAccountId(queryFilters.accountId);
+        setDiagnosticsRuleId(queryFilters.ruleId);
+        setDiagnosticsStatus(queryFilters.status);
+        setDiagnosticsSubject(queryFilters.subject);
+        setDiagnosticsErrorContains(queryFilters.errorContains);
+        setDiagnosticsProcessedFrom(queryFilters.processedFrom);
+        setDiagnosticsProcessedTo(queryFilters.processedTo);
+        setDiagnosticsSort(resolvedQuerySort);
+        setDiagnosticsOrder(resolvedQueryOrder);
+        setDiagnosticsFiltersLoaded(true);
+        return;
+      }
+
+      const raw = window.localStorage.getItem(DIAGNOSTICS_FILTERS_STORAGE_KEY);
+      if (!raw) {
+        setDiagnosticsFiltersLoaded(true);
+        return;
+      }
+      const parsed = JSON.parse(raw) as {
+        accountId?: string;
+        ruleId?: string;
+        status?: string;
+        subject?: string;
+        errorContains?: string;
+        processedFrom?: string;
+        processedTo?: string;
+        sort?: string;
+        order?: string;
+      };
+      const resolvedStorageSort = DIAGNOSTICS_SORT_FIELDS.includes(parsed.sort as MailDiagnosticsSortField)
+        ? (parsed.sort as MailDiagnosticsSortField)
+        : 'processedAt';
+      const resolvedStorageOrder = DIAGNOSTICS_SORT_ORDERS.includes(parsed.order as MailDiagnosticsSortOrder)
+        ? (parsed.order as MailDiagnosticsSortOrder)
+        : 'desc';
+      setDiagnosticsAccountId(parsed.accountId || '');
+      setDiagnosticsRuleId(parsed.ruleId || '');
+      setDiagnosticsStatus(parsed.status || '');
+      setDiagnosticsSubject(parsed.subject || '');
+      setDiagnosticsErrorContains(parsed.errorContains || '');
+      setDiagnosticsProcessedFrom(parsed.processedFrom || '');
+      setDiagnosticsProcessedTo(parsed.processedTo || '');
+      setDiagnosticsSort(resolvedStorageSort);
+      setDiagnosticsOrder(resolvedStorageOrder);
+    } catch {
+      // Ignore invalid local storage payloads.
+    } finally {
+      setDiagnosticsFiltersLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!diagnosticsFiltersLoaded) {
+      return;
+    }
+    const params = new URLSearchParams(location.search);
+    const setOrDelete = (key: string, value: string) => {
+      if (value) {
+        params.set(key, value);
+      } else {
+        params.delete(key);
+      }
+    };
+    setOrDelete(DIAGNOSTICS_QUERY_PARAMS.accountId, diagnosticsAccountId);
+    setOrDelete(DIAGNOSTICS_QUERY_PARAMS.ruleId, diagnosticsRuleId);
+    setOrDelete(DIAGNOSTICS_QUERY_PARAMS.status, diagnosticsStatus);
+    setOrDelete(DIAGNOSTICS_QUERY_PARAMS.subject, diagnosticsSubject);
+    setOrDelete(DIAGNOSTICS_QUERY_PARAMS.errorContains, diagnosticsErrorContains);
+    setOrDelete(DIAGNOSTICS_QUERY_PARAMS.processedFrom, diagnosticsProcessedFrom);
+    setOrDelete(DIAGNOSTICS_QUERY_PARAMS.processedTo, diagnosticsProcessedTo);
+    setOrDelete(DIAGNOSTICS_QUERY_PARAMS.sort, diagnosticsSort !== 'processedAt' ? diagnosticsSort : '');
+    setOrDelete(DIAGNOSTICS_QUERY_PARAMS.order, diagnosticsOrder !== 'desc' ? diagnosticsOrder : '');
+
+    const currentSearch = location.search.startsWith('?') ? location.search.slice(1) : location.search;
+    const nextSearch = params.toString();
+    if (nextSearch === currentSearch) {
+      return;
+    }
+    navigate(
+      {
+        pathname: location.pathname,
+        search: nextSearch ? `?${nextSearch}` : '',
+        hash: location.hash,
+      },
+      { replace: true }
+    );
+  }, [
+    diagnosticsFiltersLoaded,
+    diagnosticsAccountId,
+    diagnosticsRuleId,
+    diagnosticsStatus,
+    diagnosticsSubject,
+    diagnosticsErrorContains,
+    diagnosticsProcessedFrom,
+    diagnosticsProcessedTo,
+    diagnosticsSort,
+    diagnosticsOrder,
+    location.pathname,
+    location.search,
+    location.hash,
+    navigate,
+  ]);
+
+  useEffect(() => {
+    if (!diagnosticsFiltersLoaded) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(DIAGNOSTICS_FILTERS_STORAGE_KEY, JSON.stringify({
+        accountId: diagnosticsAccountId,
+        ruleId: diagnosticsRuleId,
+        status: diagnosticsStatus,
+        subject: diagnosticsSubject,
+        errorContains: diagnosticsErrorContains,
+        processedFrom: diagnosticsProcessedFrom,
+        processedTo: diagnosticsProcessedTo,
+        sort: diagnosticsSort,
+        order: diagnosticsOrder,
+      }));
+    } catch {
+      // Ignore storage failures (private mode, disabled storage).
+    }
+  }, [
+    diagnosticsFiltersLoaded,
+    diagnosticsAccountId,
+    diagnosticsRuleId,
+    diagnosticsStatus,
+    diagnosticsSubject,
+    diagnosticsErrorContains,
+    diagnosticsProcessedFrom,
+    diagnosticsProcessedTo,
+    diagnosticsSort,
+    diagnosticsOrder,
+  ]);
 
   useEffect(() => {
     try {
@@ -538,20 +899,227 @@ const MailAutomationPage: React.FC = () => {
     };
   }, [accounts]);
 
-  const recentProcessed: ProcessedMailDiagnosticItem[] = diagnostics?.recentProcessed ?? [];
-  const recentDocuments: MailDocumentDiagnosticItem[] = diagnostics?.recentDocuments ?? [];
+  const recentProcessed = useMemo<ProcessedMailDiagnosticItem[]>(
+    () => diagnostics?.recentProcessed ?? [],
+    [diagnostics]
+  );
+  const recentDocuments = useMemo<MailDocumentDiagnosticItem[]>(
+    () => diagnostics?.recentDocuments ?? [],
+    [diagnostics]
+  );
+  const recentDocumentByProcessedKey = useMemo(() => {
+    const map = new Map<string, MailDocumentDiagnosticItem>();
+    recentDocuments.forEach((doc) => {
+      const key = processedKey(doc.accountId, doc.uid);
+      if (!key.endsWith('::')) {
+        map.set(key, doc);
+      }
+    });
+    return map;
+  }, [recentDocuments]);
   const reportAccounts: MailReportAccountRow[] = report?.accounts ?? [];
   const reportRules: MailReportRuleRow[] = report?.rules ?? [];
   const reportTrend: MailReportTrendRow[] = report?.trend ?? [];
+  const diagnosticsRuleNameById = useMemo(() => {
+    return new Map(rules.map((rule) => [rule.id, rule.name]));
+  }, [rules]);
   const reportTotals = report?.totals;
   const maxTrendTotal = Math.max(1, ...reportTrend.map((row) => row.total));
   const exportDisabled = !exportOptions.includeProcessed && !exportOptions.includeDocuments;
+  const diagnosticsExportScopeSummary = useMemo(() => {
+    const segments: string[] = [];
+    if (diagnosticsAccountId) {
+      segments.push(`Account=${accountNameById.get(diagnosticsAccountId) || diagnosticsAccountId}`);
+    }
+    if (diagnosticsRuleId) {
+      segments.push(`Rule=${diagnosticsRuleNameById.get(diagnosticsRuleId) || diagnosticsRuleId}`);
+    }
+    if (diagnosticsStatus) {
+      segments.push(`Status=${diagnosticsStatus}`);
+    }
+    if (diagnosticsSubject) {
+      segments.push(`Subject~${summarizeText(diagnosticsSubject, 30)}`);
+    }
+    if (diagnosticsErrorContains) {
+      segments.push(`Error~${summarizeText(diagnosticsErrorContains, 30)}`);
+    }
+    if (diagnosticsProcessedFrom) {
+      segments.push(`From=${diagnosticsProcessedFrom}`);
+    }
+    if (diagnosticsProcessedTo) {
+      segments.push(`To=${diagnosticsProcessedTo}`);
+    }
+    segments.push(`Sort=${diagnosticsSort}:${diagnosticsOrder}`);
+    return segments.join(' | ');
+  }, [
+    diagnosticsAccountId,
+    diagnosticsRuleId,
+    diagnosticsStatus,
+    diagnosticsSubject,
+    diagnosticsErrorContains,
+    diagnosticsProcessedFrom,
+    diagnosticsProcessedTo,
+    diagnosticsSort,
+    diagnosticsOrder,
+    accountNameById,
+    diagnosticsRuleNameById,
+  ]);
   const retentionEnabled = processedRetention?.enabled ?? false;
   const retentionDays = processedRetention?.retentionDays ?? 0;
   const retentionExpiredCount = processedRetention?.expiredCount ?? 0;
   const allProcessedSelected = recentProcessed.length > 0
     && recentProcessed.every((item) => selectedProcessedIds.includes(item.id));
   const someProcessedSelected = selectedProcessedIds.length > 0 && !allProcessedSelected;
+  const diagnosticsRuleErrorLeaders = useMemo(() => {
+    const grouped = new Map<
+      string,
+      { ruleId: string; ruleName: string; errorCount: number; latestProcessedAt: string | null }
+    >();
+    recentProcessed.forEach((item) => {
+      if (item.status !== 'ERROR' || !item.ruleId) {
+        return;
+      }
+      const ruleId = item.ruleId;
+      const ruleName = item.ruleName?.trim() || ruleId;
+      const existing = grouped.get(ruleId);
+      if (!existing) {
+        grouped.set(ruleId, {
+          ruleId,
+          ruleName,
+          errorCount: 1,
+          latestProcessedAt: item.processedAt || null,
+        });
+        return;
+      }
+      existing.errorCount += 1;
+      const existingTime = new Date(existing.latestProcessedAt || '').getTime();
+      const nextTime = new Date(item.processedAt).getTime();
+      if (!Number.isNaN(nextTime) && (Number.isNaN(existingTime) || nextTime > existingTime)) {
+        existing.latestProcessedAt = item.processedAt;
+      }
+    });
+    return Array.from(grouped.values())
+      .sort((left, right) => {
+        if (right.errorCount !== left.errorCount) {
+          return right.errorCount - left.errorCount;
+        }
+        const leftTime = new Date(left.latestProcessedAt || '').getTime();
+        const rightTime = new Date(right.latestProcessedAt || '').getTime();
+        if (!Number.isNaN(leftTime) && !Number.isNaN(rightTime)) {
+          return rightTime - leftTime;
+        }
+        return left.ruleName.localeCompare(right.ruleName);
+      })
+      .slice(0, 8);
+  }, [recentProcessed]);
+  const diagnosticsRuleErrorSamples = useMemo(() => {
+    const grouped = new Map<string, ProcessedMailDiagnosticItem[]>();
+    recentProcessed.forEach((item) => {
+      if (item.status !== 'ERROR' || !item.ruleId) {
+        return;
+      }
+      const samples = grouped.get(item.ruleId) || [];
+      samples.push(item);
+      grouped.set(item.ruleId, samples);
+    });
+    grouped.forEach((samples, ruleId) => {
+      samples.sort((left, right) => {
+        const leftTime = new Date(left.processedAt || '').getTime();
+        const rightTime = new Date(right.processedAt || '').getTime();
+        if (!Number.isNaN(leftTime) && !Number.isNaN(rightTime)) {
+          return rightTime - leftTime;
+        }
+        return right.id.localeCompare(left.id);
+      });
+      grouped.set(ruleId, samples.slice(0, 3));
+    });
+    return grouped;
+  }, [recentProcessed]);
+  const ruleDiagnosticsFocusRule = useMemo(
+    () => rules.find((rule) => rule.id === ruleDiagnosticsFocusRuleId) || null,
+    [rules, ruleDiagnosticsFocusRuleId]
+  );
+  const ruleDiagnosticsItems = useMemo(() => {
+    if (!ruleDiagnosticsFocusRuleId) {
+      return [] as ProcessedMailDiagnosticItem[];
+    }
+    return recentProcessed.filter((item) => item.ruleId === ruleDiagnosticsFocusRuleId);
+  }, [recentProcessed, ruleDiagnosticsFocusRuleId]);
+  const ruleDiagnosticsFilteredItems = useMemo(() => {
+    const rangeStart = timeRangeStart(ruleDiagnosticsTimeRange);
+    return ruleDiagnosticsItems.filter((item) => {
+      if (ruleDiagnosticsAccountId && item.accountId !== ruleDiagnosticsAccountId) {
+        return false;
+      }
+      if (ruleDiagnosticsStatus !== 'ALL' && item.status !== ruleDiagnosticsStatus) {
+        return false;
+      }
+      if (rangeStart) {
+        const itemTime = new Date(item.processedAt).getTime();
+        if (!Number.isNaN(itemTime) && itemTime < rangeStart.getTime()) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [
+    ruleDiagnosticsItems,
+    ruleDiagnosticsAccountId,
+    ruleDiagnosticsStatus,
+    ruleDiagnosticsTimeRange,
+  ]);
+  const ruleDiagnosticsSkipReasons = useMemo(() => {
+    const grouped = new Map<string, number>();
+    ruleDiagnosticsFilteredItems.forEach((item) => {
+      if (item.status !== 'ERROR') {
+        return;
+      }
+      const reason = extractSkipReason(item.errorMessage);
+      grouped.set(reason, (grouped.get(reason) || 0) + 1);
+    });
+    return Array.from(grouped.entries())
+      .sort((left, right) => right[1] - left[1])
+      .slice(0, 10);
+  }, [ruleDiagnosticsFilteredItems]);
+  const ruleDiagnosticsRecentFailures = useMemo(() => {
+    return ruleDiagnosticsFilteredItems
+      .filter((item) => item.status === 'ERROR')
+      .sort((left, right) => {
+        const leftTime = new Date(left.processedAt || '').getTime();
+        const rightTime = new Date(right.processedAt || '').getTime();
+        if (!Number.isNaN(leftTime) && !Number.isNaN(rightTime)) {
+          return rightTime - leftTime;
+        }
+        return right.id.localeCompare(left.id);
+      })
+      .slice(0, 8);
+  }, [ruleDiagnosticsFilteredItems]);
+  const ruleDiagnosticsProcessedCount = useMemo(
+    () => ruleDiagnosticsFilteredItems.filter((item) => item.status === 'PROCESSED').length,
+    [ruleDiagnosticsFilteredItems]
+  );
+  const ruleDiagnosticsErrorCount = useMemo(
+    () => ruleDiagnosticsFilteredItems.filter((item) => item.status === 'ERROR').length,
+    [ruleDiagnosticsFilteredItems]
+  );
+  useEffect(() => {
+    if (!expandedRuleErrorRuleId) {
+      return;
+    }
+    const stillVisible = diagnosticsRuleErrorLeaders.some((item) => item.ruleId === expandedRuleErrorRuleId);
+    if (!stillVisible) {
+      setExpandedRuleErrorRuleId('');
+    }
+  }, [expandedRuleErrorRuleId, diagnosticsRuleErrorLeaders]);
+  useEffect(() => {
+    if (!ruleDiagnosticsDrawerOpen || !ruleDiagnosticsFocusRuleId) {
+      return;
+    }
+    const stillVisible = diagnosticsRuleErrorLeaders.some((item) => item.ruleId === ruleDiagnosticsFocusRuleId);
+    if (!stillVisible) {
+      setRuleDiagnosticsDrawerOpen(false);
+    }
+  }, [ruleDiagnosticsDrawerOpen, ruleDiagnosticsFocusRuleId, diagnosticsRuleErrorLeaders]);
 
   const exportReportCsv = async () => {
     if (!report) {
@@ -587,6 +1155,11 @@ const MailAutomationPage: React.FC = () => {
         ruleId: diagnosticsRuleId || undefined,
         status: diagnosticsStatus || undefined,
         subject: diagnosticsSubject || undefined,
+        errorContains: diagnosticsErrorContains || undefined,
+        processedFrom: diagnosticsProcessedFrom || undefined,
+        processedTo: diagnosticsProcessedTo || undefined,
+        sort: diagnosticsSort,
+        order: diagnosticsOrder,
       }, exportOptions);
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
@@ -621,6 +1194,85 @@ const MailAutomationPage: React.FC = () => {
     }
   };
 
+  const focusDiagnosticsSection = () => {
+    const target = diagnosticsRef.current;
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    navigate(
+      {
+        pathname: location.pathname,
+        search: location.search,
+        hash: 'diagnostics',
+      },
+      { replace: true }
+    );
+  };
+  const applyDiagnosticsRuleErrorFilter = (ruleId: string) => {
+    setDiagnosticsStatus('ERROR');
+    setDiagnosticsRuleId(ruleId);
+    setDiagnosticsErrorContains('');
+  };
+  const applyRuntimeDiagnosticsErrorFilter = (errorMessage?: string | null) => {
+    const normalized = (errorMessage || '').trim();
+    setDiagnosticsStatus('ERROR');
+    setDiagnosticsRuleId('');
+    setDiagnosticsSubject('');
+    setDiagnosticsErrorContains(normalized);
+    focusDiagnosticsSection();
+  };
+  const openRuleDiagnosticsDrawer = (ruleId: string) => {
+    setRuleDiagnosticsFocusRuleId(ruleId);
+    setRuleDiagnosticsAccountId('');
+    setRuleDiagnosticsStatus('ALL');
+    setRuleDiagnosticsTimeRange('7D');
+    setRuleDiagnosticsDrawerOpen(true);
+  };
+  const closeRuleDiagnosticsDrawer = () => {
+    setRuleDiagnosticsDrawerOpen(false);
+  };
+  const applyRuleDiagnosticsToTableFilters = () => {
+    if (!ruleDiagnosticsFocusRuleId) {
+      return;
+    }
+    setDiagnosticsRuleId(ruleDiagnosticsFocusRuleId);
+    setDiagnosticsAccountId(ruleDiagnosticsAccountId);
+    setDiagnosticsStatus(ruleDiagnosticsStatus === 'ALL' ? '' : ruleDiagnosticsStatus);
+    setDiagnosticsErrorContains('');
+    const rangeStart = timeRangeStart(ruleDiagnosticsTimeRange);
+    setDiagnosticsProcessedFrom(rangeStart ? toDateTimeInputValue(rangeStart) : '');
+    setDiagnosticsProcessedTo('');
+    setRuleDiagnosticsDrawerOpen(false);
+  };
+  const toggleDiagnosticsRuleErrorDetails = (ruleId: string) => {
+    setExpandedRuleErrorRuleId((prev) => (prev === ruleId ? '' : ruleId));
+  };
+  const copyDiagnosticsRuleErrorMessage = async (item: ProcessedMailDiagnosticItem) => {
+    const payload = item.errorMessage?.trim() || '(empty error message)';
+    try {
+      await navigator.clipboard.writeText(payload);
+      toast.success('Error message copied');
+    } catch {
+      toast.error('Failed to copy error message');
+    }
+  };
+  const handleCopyDiagnosticsLink = async () => {
+    try {
+      const shareUrl = `${window.location.origin}${location.pathname}${location.search}#diagnostics`;
+      await navigator.clipboard.writeText(shareUrl);
+      toast.success('Diagnostics link copied');
+    } catch {
+      toast.error('Failed to copy diagnostics link');
+    }
+  };
+
+  const applyDiagnosticsQuickWindow = (hours: number) => {
+    const now = new Date();
+    const from = new Date(now.getTime() - hours * 60 * 60 * 1000);
+    setDiagnosticsProcessedFrom(toDateTimeInputValue(from));
+    setDiagnosticsProcessedTo(toDateTimeInputValue(now));
+  };
+
   const handleBulkDeleteProcessed = async () => {
     if (selectedProcessedIds.length === 0) {
       return;
@@ -636,6 +1288,34 @@ const MailAutomationPage: React.FC = () => {
       await loadRetention({ silent: true });
     } catch {
       toast.error('Failed to delete processed records');
+    }
+  };
+
+  const handleReplayProcessedMail = async (item: ProcessedMailDiagnosticItem) => {
+    if (replayingProcessedId) {
+      return;
+    }
+    setReplayingProcessedId(item.id);
+    try {
+      const result = await mailAutomationService.replayProcessedMail(item.id);
+      if (result.processed) {
+        toast.success('Replay processed successfully');
+      } else if (result.attempted) {
+        toast.info(result.message || 'Replay finished without processing content');
+      } else {
+        toast.warn(result.message || 'Replay skipped');
+      }
+      await loadDiagnostics({ silent: true });
+      await loadRetention({ silent: true });
+    } catch (error: unknown) {
+      const status = (error as { response?: { status?: number } })?.response?.status;
+      if (status === 403) {
+        toast.error('Permission denied: replay requires admin role');
+      } else {
+        toast.error('Failed to replay processed mail');
+      }
+    } finally {
+      setReplayingProcessedId(null);
     }
   };
 
@@ -736,6 +1416,7 @@ const MailAutomationPage: React.FC = () => {
       const ok = await loadAll({ silent: true });
       if (ok) {
         await loadDiagnostics({ silent: true });
+        await loadRuntimeMetrics({ silent: true });
         toast.success('Mail status refreshed');
       }
     } finally {
@@ -802,7 +1483,7 @@ const MailAutomationPage: React.FC = () => {
       host: account.host,
       port: account.port,
       username: account.username,
-      password: '',
+      password: account.passwordConfigured ? PASSWORD_MASK : '',
       security: account.security,
       enabled: account.enabled,
       pollIntervalMinutes: account.pollIntervalMinutes,
@@ -847,6 +1528,10 @@ const MailAutomationPage: React.FC = () => {
         payload.oauthTenantId = undefined;
         payload.oauthScope = undefined;
         payload.oauthCredentialKey = undefined;
+        const trimmedPassword = accountForm.password?.trim() ?? '';
+        if (editingAccount && (!trimmedPassword || trimmedPassword === PASSWORD_MASK)) {
+          payload.password = undefined;
+        }
       }
 
       if (editingAccount) {
@@ -1059,6 +1744,15 @@ const MailAutomationPage: React.FC = () => {
     }
   };
 
+  const handleFindSimilarFromMailDocument = (doc: MailDocumentDiagnosticItem) => {
+    navigate('/search', {
+      state: {
+        similarSourceId: doc.documentId,
+        similarSourceName: doc.name,
+      },
+    });
+  };
+
   const selectedTag = tags.find((tag) => tag.id === ruleForm.assignTagId) || null;
   const mailActionHelper =
     ruleForm.mailAction === 'MOVE'
@@ -1078,6 +1772,235 @@ const MailAutomationPage: React.FC = () => {
     }
     return previewResult.matches;
   }, [previewProcessableFilter, previewResult]);
+  const sortedRules = useMemo(() => {
+    return [...rules].sort((left, right) => {
+      const leftPriority = left.priority ?? 0;
+      const rightPriority = right.priority ?? 0;
+      if (leftPriority !== rightPriority) {
+        return leftPriority - rightPriority;
+      }
+      return left.name.localeCompare(right.name);
+    });
+  }, [rules]);
+  const filteredRules = useMemo(() => {
+    const query = ruleFilterText.trim().toLowerCase();
+    return sortedRules.filter((rule) => {
+      if (ruleFilterAccountId && (rule.accountId || '') !== ruleFilterAccountId) {
+        return false;
+      }
+      if (ruleFilterStatus !== 'ALL') {
+        const enabled = rule.enabled ?? true;
+        if (ruleFilterStatus === 'ENABLED' && !enabled) {
+          return false;
+        }
+        if (ruleFilterStatus === 'DISABLED' && enabled) {
+          return false;
+        }
+      }
+      if (!query) {
+        return true;
+      }
+      const accountName = rule.accountId ? accountNameById.get(rule.accountId) || '' : 'all accounts';
+      const haystack = [
+        rule.name,
+        accountName,
+        rule.folder || '',
+        rule.subjectFilter || '',
+        rule.fromFilter || '',
+        rule.toFilter || '',
+        rule.bodyFilter || '',
+        rule.attachmentFilenameInclude || '',
+        rule.attachmentFilenameExclude || '',
+      ]
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [sortedRules, ruleFilterText, ruleFilterAccountId, ruleFilterStatus, accountNameById]);
+
+  const filteredRuleIds = useMemo(() => filteredRules.map((rule) => rule.id), [filteredRules]);
+  const selectedFilteredCount = useMemo(
+    () => filteredRuleIds.filter((id) => selectedRuleIds.includes(id)).length,
+    [filteredRuleIds, selectedRuleIds]
+  );
+  const allFilteredSelected = filteredRuleIds.length > 0 && selectedFilteredCount === filteredRuleIds.length;
+  const ruleBulkBusy = ruleBulkUpdating || ruleBulkDeleting || ruleBulkReindexing;
+
+  useEffect(() => {
+    setSelectedRuleIds((prev) => prev.filter((id) => rules.some((rule) => rule.id === id)));
+  }, [rules]);
+
+  const handleToggleRuleSelection = (ruleId: string) => {
+    setSelectedRuleIds((prev) => (
+      prev.includes(ruleId)
+        ? prev.filter((id) => id !== ruleId)
+        : [...prev, ruleId]
+    ));
+  };
+
+  const handleToggleSelectAllFilteredRules = (checked: boolean) => {
+    if (checked) {
+      setSelectedRuleIds((prev) => Array.from(new Set([...prev, ...filteredRuleIds])));
+      return;
+    }
+    setSelectedRuleIds((prev) => prev.filter((id) => !filteredRuleIds.includes(id)));
+  };
+
+  const handleBulkSetRuleEnabled = async (enabled: boolean) => {
+    if (selectedRuleIds.length === 0) {
+      toast.info('Select at least one rule');
+      return;
+    }
+    setRuleBulkUpdating(true);
+    const selectedSet = new Set(selectedRuleIds);
+    const targets = sortedRules.filter((rule) => selectedSet.has(rule.id));
+    const results = await Promise.allSettled(
+      targets.map((rule) => mailAutomationService.updateRule(rule.id, { enabled }))
+    );
+    const updatedById = new Map<string, MailRule>();
+    let failed = 0;
+    results.forEach((result) => {
+      if (result.status === 'fulfilled') {
+        updatedById.set(result.value.id, result.value);
+      } else {
+        failed += 1;
+      }
+    });
+    if (updatedById.size > 0) {
+      setRules((prev) => prev.map((rule) => updatedById.get(rule.id) || rule));
+    }
+    if (failed === 0) {
+      toast.success(`Updated ${updatedById.size} rule(s)`);
+    } else if (updatedById.size > 0) {
+      toast.warning(`Updated ${updatedById.size} rule(s), failed ${failed}`);
+    } else {
+      toast.error('Failed to update selected rules');
+    }
+    setRuleBulkUpdating(false);
+  };
+
+  const handleBulkDeleteRules = async () => {
+    if (selectedRuleIds.length === 0) {
+      toast.info('Select at least one rule');
+      return;
+    }
+    const confirmed = window.confirm(`Delete ${selectedRuleIds.length} selected rule(s)? This action cannot be undone.`);
+    if (!confirmed) {
+      return;
+    }
+    setRuleBulkDeleting(true);
+    const selectedSet = new Set(selectedRuleIds);
+    const targets = sortedRules.filter((rule) => selectedSet.has(rule.id));
+    const results = await Promise.allSettled(targets.map((rule) => mailAutomationService.deleteRule(rule.id)));
+    const deletedIds = new Set<string>();
+    const failedNames: string[] = [];
+    results.forEach((result, index) => {
+      const rule = targets[index];
+      if (result.status === 'fulfilled') {
+        deletedIds.add(rule.id);
+      } else {
+        failedNames.push(rule.name);
+      }
+    });
+    if (deletedIds.size > 0) {
+      setRules((prev) => prev.filter((rule) => !deletedIds.has(rule.id)));
+      setSelectedRuleIds((prev) => prev.filter((id) => !deletedIds.has(id)));
+    }
+    const failedPreview = failedNames.slice(0, 3).join(', ');
+    const failedSuffix = failedNames.length > 3 ? ', ...' : '';
+    if (failedNames.length === 0) {
+      toast.success(`Deleted ${deletedIds.size} rule(s)`);
+    } else if (deletedIds.size > 0) {
+      toast.warning(`Deleted ${deletedIds.size} rule(s), failed ${failedNames.length}: ${failedPreview}${failedSuffix}`);
+    } else {
+      toast.error(`Failed to delete selected rules: ${failedPreview}${failedSuffix}`);
+    }
+    setRuleBulkDeleting(false);
+  };
+
+  const handleBulkReindexRules = async () => {
+    if (selectedRuleIds.length === 0) {
+      toast.info('Select at least one rule');
+      return;
+    }
+    setRuleBulkReindexing(true);
+    const selectedSet = new Set(selectedRuleIds);
+    const targets = sortedRules.filter((rule) => selectedSet.has(rule.id));
+    if (targets.length === 0) {
+      setRuleBulkReindexing(false);
+      return;
+    }
+
+    const firstPriority = targets[0].priority ?? 100;
+    const basePriority = Math.max(1, firstPriority);
+    const updates = targets.map((rule, index) => ({
+      rule,
+      nextPriority: basePriority + index * 10,
+    }));
+    const results = await Promise.allSettled(
+      updates.map((item) => mailAutomationService.updateRule(item.rule.id, { priority: item.nextPriority }))
+    );
+    const updatedById = new Map<string, MailRule>();
+    let failed = 0;
+    results.forEach((result) => {
+      if (result.status === 'fulfilled') {
+        updatedById.set(result.value.id, result.value);
+      } else {
+        failed += 1;
+      }
+    });
+    if (updatedById.size > 0) {
+      setRules((prev) => prev.map((rule) => updatedById.get(rule.id) || rule));
+    }
+    if (failed === 0) {
+      toast.success(`Reindexed ${updatedById.size} rule(s)`);
+    } else if (updatedById.size > 0) {
+      toast.warning(`Reindexed ${updatedById.size} rule(s), failed ${failed}`);
+    } else {
+      toast.error('Failed to reindex selected rules');
+    }
+    setRuleBulkReindexing(false);
+  };
+
+  const handleMoveRule = async (rule: MailRule, direction: 'up' | 'down') => {
+    const currentIndex = sortedRules.findIndex((item) => item.id === rule.id);
+    if (currentIndex < 0) {
+      return;
+    }
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= sortedRules.length) {
+      return;
+    }
+    const targetRule = sortedRules[targetIndex];
+    const currentPriority = rule.priority ?? 0;
+    const targetPriority = targetRule.priority ?? 0;
+    let newCurrentPriority = targetPriority;
+    let newTargetPriority = currentPriority;
+    if (newCurrentPriority === newTargetPriority) {
+      newCurrentPriority = direction === 'up'
+        ? Math.max(0, targetPriority - 1)
+        : targetPriority + 1;
+    }
+
+    try {
+      const [updatedCurrent, updatedTarget] = await Promise.all([
+        mailAutomationService.updateRule(rule.id, { priority: newCurrentPriority }),
+        mailAutomationService.updateRule(targetRule.id, { priority: newTargetPriority }),
+      ]);
+      setRules((prev) => prev.map((item) => {
+        if (item.id === updatedCurrent.id) {
+          return updatedCurrent;
+        }
+        if (item.id === updatedTarget.id) {
+          return updatedTarget;
+        }
+        return item;
+      }));
+      toast.success('Rule priority updated');
+    } catch {
+      toast.error('Failed to update rule priority');
+    }
+  };
 
   return (
     <Box maxWidth={1100}>
@@ -1694,10 +2617,116 @@ const MailAutomationPage: React.FC = () => {
           <Card variant="outlined">
             <CardContent>
               <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
+                <Typography variant="h6">Runtime Health</Typography>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <FormControl size="small" sx={{ minWidth: 140 }}>
+                    <InputLabel id="runtime-window-label">Window</InputLabel>
+                    <Select
+                      labelId="runtime-window-label"
+                      label="Window"
+                      value={String(runtimeWindowMinutes)}
+                      onChange={(event) => setRuntimeWindowMinutes(Number(event.target.value))}
+                    >
+                      <MenuItem value="60">Last 60 min</MenuItem>
+                      <MenuItem value="180">Last 3 hours</MenuItem>
+                      <MenuItem value="720">Last 12 hours</MenuItem>
+                      <MenuItem value="1440">Last 24 hours</MenuItem>
+                    </Select>
+                  </FormControl>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={runtimeMetricsLoading ? <CircularProgress size={16} /> : <Refresh />}
+                    onClick={() => loadRuntimeMetrics()}
+                    disabled={runtimeMetricsLoading}
+                  >
+                    {runtimeMetricsLoading ? 'Refreshing...' : 'Refresh'}
+                  </Button>
+                </Stack>
+              </Box>
+              {runtimeMetrics ? (
+                <Stack spacing={1.5}>
+                  <Stack direction="row" spacing={1} flexWrap="wrap" gap={1}>
+                    <Chip
+                      size="small"
+                      color={runtimeStatusColor(runtimeMetrics.status)}
+                      label={`Status ${runtimeMetrics.status}`}
+                    />
+                    <Chip size="small" label={`Attempts ${formatCount(runtimeMetrics.attempts)}`} />
+                    <Chip size="small" color="success" label={`Success ${formatCount(runtimeMetrics.successes)}`} />
+                    <Chip size="small" color={runtimeMetrics.errors > 0 ? 'error' : 'default'} label={`Errors ${formatCount(runtimeMetrics.errors)}`} />
+                    <Chip
+                      size="small"
+                      label={`Error rate ${(runtimeMetrics.errorRate * 100).toFixed(1)}%`}
+                    />
+                    <Chip
+                      size="small"
+                      label={`Avg duration ${runtimeMetrics.avgDurationMs != null ? `${runtimeMetrics.avgDurationMs} ms` : 'N/A'}`}
+                    />
+                    {runtimeMetrics.trend && (
+                      <Tooltip
+                        title={runtimeMetrics.trend.summary || 'Runtime trend compared with previous window'}
+                      >
+                        <Chip
+                          size="small"
+                          color={runtimeTrendColor(runtimeMetrics.trend.direction)}
+                          label={`Trend ${runtimeMetrics.trend.direction}`}
+                        />
+                      </Tooltip>
+                    )}
+                  </Stack>
+                  <Typography variant="caption" color="text.secondary">
+                    Last success: {runtimeMetrics.lastSuccessAt ? formatDateTime(runtimeMetrics.lastSuccessAt) : 'N/A'}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Last error: {runtimeMetrics.lastErrorAt ? formatDateTime(runtimeMetrics.lastErrorAt) : 'N/A'}
+                  </Typography>
+                  {runtimeMetrics.topErrors && runtimeMetrics.topErrors.length > 0 && (
+                    <Box>
+                      <Typography variant="caption" color="text.secondary">
+                        Top error reasons
+                      </Typography>
+                      <Stack direction="row" spacing={1} sx={{ mt: 0.75, flexWrap: 'wrap', gap: 1 }}>
+                        {runtimeMetrics.topErrors.slice(0, 5).map((item, index) => (
+                          <Tooltip
+                            key={`${item.errorMessage}-${index}`}
+                            title={item.lastSeenAt ? `Last seen: ${formatDateTime(item.lastSeenAt)}` : 'Last seen: N/A'}
+                          >
+                            <Chip
+                              size="small"
+                              color="warning"
+                              label={`${summarizeError(item.errorMessage, 80)} (${formatCount(item.count)})`}
+                              onClick={() => applyRuntimeDiagnosticsErrorFilter(item.errorMessage)}
+                              data-testid={`runtime-top-error-${index}`}
+                            />
+                          </Tooltip>
+                        ))}
+                      </Stack>
+                    </Box>
+                  )}
+                </Stack>
+              ) : (
+                <Typography variant="body2" color="text.secondary">
+                  Runtime metrics unavailable.
+                </Typography>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card variant="outlined">
+            <CardContent>
+              <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
                 <Typography variant="h6">Recent Mail Activity</Typography>
                 <Stack direction="row" spacing={1}>
                   <Button variant="outlined" onClick={exportDiagnosticsCsv} disabled={!diagnostics || exportDisabled}>
                     Export CSV
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    startIcon={<ContentCopy />}
+                    onClick={handleCopyDiagnosticsLink}
+                  >
+                    Copy link
                   </Button>
                   <Button
                     variant="outlined"
@@ -1776,6 +2805,32 @@ const MailAutomationPage: React.FC = () => {
                         <MenuItem value="ERROR">Error</MenuItem>
                       </Select>
                     </FormControl>
+                    <FormControl size="small" sx={{ minWidth: 180 }}>
+                      <InputLabel id="diagnostics-sort-label">Sort by</InputLabel>
+                      <Select
+                        labelId="diagnostics-sort-label"
+                        label="Sort by"
+                        value={diagnosticsSort}
+                        onChange={(event) => setDiagnosticsSort(event.target.value as MailDiagnosticsSortField)}
+                      >
+                        <MenuItem value="processedAt">Processed time</MenuItem>
+                        <MenuItem value="status">Status</MenuItem>
+                        <MenuItem value="rule">Rule</MenuItem>
+                        <MenuItem value="account">Account</MenuItem>
+                      </Select>
+                    </FormControl>
+                    <FormControl size="small" sx={{ minWidth: 180 }}>
+                      <InputLabel id="diagnostics-order-label">Order</InputLabel>
+                      <Select
+                        labelId="diagnostics-order-label"
+                        label="Order"
+                        value={diagnosticsOrder}
+                        onChange={(event) => setDiagnosticsOrder(event.target.value as MailDiagnosticsSortOrder)}
+                      >
+                        <MenuItem value="desc">Descending</MenuItem>
+                        <MenuItem value="asc">Ascending</MenuItem>
+                      </Select>
+                    </FormControl>
                     <TextField
                       size="small"
                       label="Subject contains"
@@ -1783,7 +2838,127 @@ const MailAutomationPage: React.FC = () => {
                       onChange={(event) => setDiagnosticsSubject(event.target.value)}
                       sx={{ minWidth: 220 }}
                     />
+                    <TextField
+                      size="small"
+                      label="Error contains"
+                      value={diagnosticsErrorContains}
+                      onChange={(event) => setDiagnosticsErrorContains(event.target.value)}
+                      sx={{ minWidth: 220 }}
+                    />
+                    <TextField
+                      size="small"
+                      type="datetime-local"
+                      label="Processed from"
+                      value={diagnosticsProcessedFrom}
+                      onChange={(event) => setDiagnosticsProcessedFrom(event.target.value)}
+                      sx={{ minWidth: 220 }}
+                      InputLabelProps={{ shrink: true }}
+                    />
+                    <TextField
+                      size="small"
+                      type="datetime-local"
+                      label="Processed to"
+                      value={diagnosticsProcessedTo}
+                      onChange={(event) => setDiagnosticsProcessedTo(event.target.value)}
+                      sx={{ minWidth: 220 }}
+                      InputLabelProps={{ shrink: true }}
+                    />
                   </Stack>
+                  <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" gap={1}>
+                    <Typography variant="caption" color="text.secondary">
+                      Quick range:
+                    </Typography>
+                    <Button size="small" variant="outlined" onClick={() => applyDiagnosticsQuickWindow(24)}>
+                      Last 24h
+                    </Button>
+                    <Button size="small" variant="outlined" onClick={() => applyDiagnosticsQuickWindow(24 * 7)}>
+                      Last 7d
+                    </Button>
+                    <Button size="small" variant="outlined" onClick={() => applyDiagnosticsQuickWindow(24 * 30)}>
+                      Last 30d
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="text"
+                      onClick={() => {
+                        setDiagnosticsProcessedFrom('');
+                        setDiagnosticsProcessedTo('');
+                      }}
+                      disabled={!diagnosticsProcessedFrom && !diagnosticsProcessedTo}
+                    >
+                      Clear time
+                    </Button>
+                  </Stack>
+                  {diagnosticsFiltersActive && (
+                    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" gap={1}>
+                      <Typography variant="caption" color="text.secondary">
+                        Active filters:
+                      </Typography>
+                      {diagnosticsAccountId && (
+                        <Chip
+                          size="small"
+                          label={`Account: ${accountNameById.get(diagnosticsAccountId) || diagnosticsAccountId}`}
+                          onDelete={() => setDiagnosticsAccountId('')}
+                        />
+                      )}
+                      {diagnosticsRuleId && (
+                        <Chip
+                          size="small"
+                          label={`Rule: ${diagnosticsRuleNameById.get(diagnosticsRuleId) || diagnosticsRuleId}`}
+                          onDelete={() => setDiagnosticsRuleId('')}
+                        />
+                      )}
+                      {diagnosticsStatus && (
+                        <Chip
+                          size="small"
+                          label={`Status: ${diagnosticsStatus}`}
+                          onDelete={() => setDiagnosticsStatus('')}
+                        />
+                      )}
+                      {diagnosticsSort !== 'processedAt' && (
+                        <Chip
+                          size="small"
+                          label={`Sort: ${diagnosticsSort}`}
+                          onDelete={() => setDiagnosticsSort('processedAt')}
+                        />
+                      )}
+                      {diagnosticsOrder !== 'desc' && (
+                        <Chip
+                          size="small"
+                          label={`Order: ${diagnosticsOrder}`}
+                          onDelete={() => setDiagnosticsOrder('desc')}
+                        />
+                      )}
+                      {diagnosticsSubject && (
+                        <Chip
+                          size="small"
+                          label={`Subject: ${summarizeText(diagnosticsSubject, 40)}`}
+                          onDelete={() => setDiagnosticsSubject('')}
+                        />
+                      )}
+                      {diagnosticsErrorContains && (
+                        <Chip
+                          size="small"
+                          label={`Error: ${summarizeText(diagnosticsErrorContains, 40)}`}
+                          onDelete={() => setDiagnosticsErrorContains('')}
+                        />
+                      )}
+                      {diagnosticsProcessedFrom && (
+                        <Chip
+                          size="small"
+                          label={`From: ${diagnosticsProcessedFrom.replace('T', ' ')}`}
+                          onDelete={() => setDiagnosticsProcessedFrom('')}
+                        />
+                      )}
+                      {diagnosticsProcessedTo && (
+                        <Chip
+                          size="small"
+                          label={`To: ${diagnosticsProcessedTo.replace('T', ' ')}`}
+                          onDelete={() => setDiagnosticsProcessedTo('')}
+                        />
+                      )}
+                    </Stack>
+                  )}
                   <Stack spacing={1}>
                     <Typography variant="subtitle2">Export Fields</Typography>
                     <Stack direction="row" spacing={2} flexWrap="wrap">
@@ -1891,6 +3066,9 @@ const MailAutomationPage: React.FC = () => {
                         label="File Size"
                       />
                     </Stack>
+                    <Typography variant="caption" color="text.secondary">
+                      Export scope snapshot: {diagnosticsExportScopeSummary}
+                    </Typography>
                   </Stack>
                   <Typography variant="caption" color="text.secondary">
                     Showing last {diagnostics?.limit ?? diagnosticsLimit} items tagged by mail ingestion.
@@ -1982,6 +3160,90 @@ const MailAutomationPage: React.FC = () => {
                           <Chip size="small" variant="outlined" label="Retention unknown" />
                         )}
                       </Stack>
+                      <Stack spacing={1}>
+                        <Box display="flex" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={1}>
+                          <Typography variant="caption" color="text.secondary">
+                            Rule error leaderboard (current diagnostics window):
+                          </Typography>
+                          <Button
+                            variant="text"
+                            size="small"
+                            onClick={() => applyDiagnosticsRuleErrorFilter('')}
+                            disabled={diagnosticsRuleErrorLeaders.length === 0}
+                          >
+                            View all errors
+                          </Button>
+                        </Box>
+                        {diagnosticsRuleErrorLeaders.length === 0 ? (
+                          <Typography variant="caption" color="text.secondary">
+                            No rule-level errors found.
+                          </Typography>
+                        ) : (
+                          <Stack spacing={1}>
+                            {diagnosticsRuleErrorLeaders.map((item) => (
+                              <Stack key={item.ruleId} spacing={0.5}>
+                                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" gap={1}>
+                                  <Button
+                                    variant={
+                                      diagnosticsStatus === 'ERROR' && diagnosticsRuleId === item.ruleId
+                                        ? 'contained'
+                                        : 'outlined'
+                                    }
+                                    size="small"
+                                    onClick={() => applyDiagnosticsRuleErrorFilter(item.ruleId)}
+                                  >
+                                    {item.ruleName} ({item.errorCount})
+                                  </Button>
+                                  <Button
+                                    variant="text"
+                                    size="small"
+                                    onClick={() => toggleDiagnosticsRuleErrorDetails(item.ruleId)}
+                                    disabled={(diagnosticsRuleErrorSamples.get(item.ruleId) || []).length === 0}
+                                  >
+                                    {expandedRuleErrorRuleId === item.ruleId ? 'Hide details' : 'Show details'}
+                                  </Button>
+                                  <Button
+                                    variant="text"
+                                    size="small"
+                                    onClick={() => openRuleDiagnosticsDrawer(item.ruleId)}
+                                  >
+                                    Open drawer
+                                  </Button>
+                                </Stack>
+                                {expandedRuleErrorRuleId === item.ruleId && (
+                                  <Stack spacing={0.5} sx={{ pl: 1 }}>
+                                    {(diagnosticsRuleErrorSamples.get(item.ruleId) || []).map((sample) => (
+                                      <Stack
+                                        key={sample.id}
+                                        direction="row"
+                                        spacing={1}
+                                        alignItems="center"
+                                        flexWrap="wrap"
+                                        gap={1}
+                                      >
+                                        <Typography variant="caption" color="text.secondary">
+                                          {formatDateTime(sample.processedAt)}
+                                        </Typography>
+                                        <Typography variant="caption" title={sample.errorMessage || ''}>
+                                          {summarizeError(sample.errorMessage, 160) || 'No error message'}
+                                        </Typography>
+                                        <Tooltip title="Copy error message">
+                                          <IconButton
+                                            size="small"
+                                            onClick={() => copyDiagnosticsRuleErrorMessage(sample)}
+                                          >
+                                            <ContentCopy fontSize="inherit" />
+                                          </IconButton>
+                                        </Tooltip>
+                                      </Stack>
+                                    ))}
+                                  </Stack>
+                                )}
+                              </Stack>
+                            ))}
+                          </Stack>
+                        )}
+                      </Stack>
                     </Box>
                     {recentProcessed.length === 0 ? (
                       <Typography variant="body2" color="text.secondary">
@@ -2005,7 +3267,9 @@ const MailAutomationPage: React.FC = () => {
                               <TableCell>Rule</TableCell>
                               <TableCell>Folder</TableCell>
                               <TableCell>UID</TableCell>
+                              <TableCell>Linked Doc</TableCell>
                               <TableCell>Subject</TableCell>
+                              <TableCell>Error Message</TableCell>
                             </TableRow>
                           </TableHead>
                           <TableBody>
@@ -2026,9 +3290,75 @@ const MailAutomationPage: React.FC = () => {
                                 <TableCell>{item.folder}</TableCell>
                                 <TableCell>{item.uid}</TableCell>
                                 <TableCell>
+                                  {(() => {
+                                    const linkedDoc = recentDocumentByProcessedKey.get(
+                                      processedKey(item.accountId, item.uid)
+                                    );
+                                    if (!linkedDoc) {
+                                      return (
+                                        <Typography variant="caption" color="text.secondary">
+                                          -
+                                        </Typography>
+                                      );
+                                    }
+                                    return (
+                                      <Stack direction="row" spacing={0.5} alignItems="center">
+                                        <Tooltip title="Open linked document">
+                                          <IconButton
+                                            size="small"
+                                            aria-label="open linked document"
+                                            onClick={() => handleOpenMailDocument(linkedDoc.documentId)}
+                                          >
+                                            <Visibility fontSize="inherit" />
+                                          </IconButton>
+                                        </Tooltip>
+                                        <Tooltip title="Find similar documents">
+                                          <IconButton
+                                            size="small"
+                                            aria-label="find similar linked document"
+                                            onClick={() => handleFindSimilarFromMailDocument(linkedDoc)}
+                                          >
+                                            <Search fontSize="inherit" />
+                                          </IconButton>
+                                        </Tooltip>
+                                      </Stack>
+                                    );
+                                  })()}
+                                </TableCell>
+                                <TableCell>
                                   <Typography variant="caption" title={item.subject || ''}>
                                     {summarizeText(item.subject) || '-'}
                                   </Typography>
+                                </TableCell>
+                                <TableCell>
+                                  {item.status === 'ERROR' ? (
+                                    <Stack direction="row" spacing={0.5} alignItems="center">
+                                      <Typography variant="caption" title={item.errorMessage || ''}>
+                                        {summarizeError(item.errorMessage, 120) || 'No error message'}
+                                      </Typography>
+                                      <Tooltip title="Replay failed item">
+                                        <span>
+                                          <Button
+                                            size="small"
+                                            variant="text"
+                                            onClick={() => handleReplayProcessedMail(item)}
+                                            disabled={replayingProcessedId === item.id}
+                                          >
+                                            {replayingProcessedId === item.id ? 'Replaying...' : 'Replay'}
+                                          </Button>
+                                        </span>
+                                      </Tooltip>
+                                      <Tooltip title="Copy error message">
+                                        <IconButton size="small" onClick={() => copyDiagnosticsRuleErrorMessage(item)}>
+                                          <ContentCopy fontSize="inherit" />
+                                        </IconButton>
+                                      </Tooltip>
+                                    </Stack>
+                                  ) : (
+                                    <Typography variant="caption" color="text.secondary">
+                                      -
+                                    </Typography>
+                                  )}
                                 </TableCell>
                               </TableRow>
                             ))}
@@ -2058,6 +3388,7 @@ const MailAutomationPage: React.FC = () => {
                               <TableCell>Rule</TableCell>
                               <TableCell>Folder</TableCell>
                               <TableCell>UID</TableCell>
+                              <TableCell align="right">Search</TableCell>
                               <TableCell align="right">Open</TableCell>
                             </TableRow>
                           </TableHead>
@@ -2076,8 +3407,23 @@ const MailAutomationPage: React.FC = () => {
                                 <TableCell>{doc.folder || '-'}</TableCell>
                                 <TableCell>{doc.uid || '-'}</TableCell>
                                 <TableCell align="right">
+                                  <Tooltip title="Find similar documents">
+                                    <IconButton
+                                      size="small"
+                                      aria-label="find similar documents"
+                                      onClick={() => handleFindSimilarFromMailDocument(doc)}
+                                    >
+                                      <Search fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                </TableCell>
+                                <TableCell align="right">
                                   <Tooltip title="Open in folder">
-                                    <IconButton size="small" onClick={() => handleOpenMailDocument(doc.documentId)}>
+                                    <IconButton
+                                      size="small"
+                                      aria-label="open mail document"
+                                      onClick={() => handleOpenMailDocument(doc.documentId)}
+                                    >
                                       <Visibility fontSize="small" />
                                     </IconButton>
                                   </Tooltip>
@@ -2321,10 +3667,104 @@ const MailAutomationPage: React.FC = () => {
                   New Rule
                 </Button>
               </Box>
+              <Stack direction="row" spacing={1} flexWrap="wrap" sx={{ mb: 2 }}>
+                <TextField
+                  label="Search rules"
+                  size="small"
+                  value={ruleFilterText}
+                  onChange={(event) => setRuleFilterText(event.target.value)}
+                  sx={{ minWidth: 220 }}
+                />
+                <FormControl size="small" sx={{ minWidth: 180 }}>
+                  <InputLabel>Account</InputLabel>
+                  <Select
+                    label="Account"
+                    value={ruleFilterAccountId}
+                    onChange={(event) => setRuleFilterAccountId(String(event.target.value))}
+                  >
+                    <MenuItem value="">All accounts</MenuItem>
+                    {accounts.map((account) => (
+                      <MenuItem key={account.id} value={account.id}>
+                        {account.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <FormControl size="small" sx={{ minWidth: 140 }}>
+                  <InputLabel>Status</InputLabel>
+                  <Select
+                    label="Status"
+                    value={ruleFilterStatus}
+                    onChange={(event) => setRuleFilterStatus(event.target.value as 'ALL' | 'ENABLED' | 'DISABLED')}
+                  >
+                    <MenuItem value="ALL">All</MenuItem>
+                    <MenuItem value="ENABLED">Enabled</MenuItem>
+                    <MenuItem value="DISABLED">Disabled</MenuItem>
+                  </Select>
+                </FormControl>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  onClick={() => {
+                    setRuleFilterText('');
+                    setRuleFilterAccountId('');
+                    setRuleFilterStatus('ALL');
+                  }}
+                >
+                  Clear filters
+                </Button>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  disabled={selectedRuleIds.length === 0 || ruleBulkBusy}
+                  onClick={() => handleBulkSetRuleEnabled(true)}
+                >
+                  {ruleBulkUpdating ? 'Updating...' : 'Enable selected'}
+                </Button>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  disabled={selectedRuleIds.length === 0 || ruleBulkBusy}
+                  onClick={() => handleBulkSetRuleEnabled(false)}
+                >
+                  Disable selected
+                </Button>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  disabled={selectedRuleIds.length === 0 || ruleBulkBusy}
+                  onClick={handleBulkReindexRules}
+                >
+                  {ruleBulkReindexing ? 'Reindexing...' : 'Reindex selected'}
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="error"
+                  size="small"
+                  disabled={selectedRuleIds.length === 0 || ruleBulkBusy}
+                  onClick={handleBulkDeleteRules}
+                >
+                  {ruleBulkDeleting ? 'Deleting...' : 'Delete selected'}
+                </Button>
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  label={`Selected ${selectedRuleIds.length}`}
+                />
+              </Stack>
               <TableContainer>
                 <Table size="small">
                   <TableHead>
                     <TableRow>
+                      <TableCell padding="checkbox">
+                        <Checkbox
+                          size="small"
+                          checked={allFilteredSelected}
+                          indeterminate={selectedFilteredCount > 0 && !allFilteredSelected}
+                          onChange={(event) => handleToggleSelectAllFilteredRules(event.target.checked)}
+                          inputProps={{ 'aria-label': 'select all filtered rules' }}
+                        />
+                      </TableCell>
                       <TableCell>Name</TableCell>
                       <TableCell>Account</TableCell>
                       <TableCell>Priority</TableCell>
@@ -2339,13 +3779,27 @@ const MailAutomationPage: React.FC = () => {
                   <TableBody>
                     {rules.length === 0 && (
                       <TableRow>
-                      <TableCell colSpan={9} align="center">
+                      <TableCell colSpan={10} align="center">
                         No mail rules configured
                       </TableCell>
                     </TableRow>
                     )}
-                    {rules.map((rule) => (
+                    {rules.length > 0 && filteredRules.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={10} align="center">
+                          No rules match current filters
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {filteredRules.map((rule) => (
                       <TableRow key={rule.id} hover>
+                      <TableCell padding="checkbox">
+                        <Checkbox
+                          size="small"
+                          checked={selectedRuleIds.includes(rule.id)}
+                          onChange={() => handleToggleRuleSelection(rule.id)}
+                        />
+                      </TableCell>
                       <TableCell>{rule.name}</TableCell>
                       <TableCell>{rule.accountId ? accountNameById.get(rule.accountId) : 'All accounts'}</TableCell>
                       <TableCell>{rule.priority}</TableCell>
@@ -2380,7 +3834,9 @@ const MailAutomationPage: React.FC = () => {
                         </TableCell>
                         <TableCell>
                           <Box display="flex" flexDirection="column" gap={0.5}>
-                            <Typography variant="caption">Process: {rule.actionType}</Typography>
+                            <Typography variant="caption">
+                              Process: {actionTypeLabels[rule.actionType] ?? rule.actionType}
+                            </Typography>
                             <Typography variant="caption">
                               Mail: {rule.mailAction || 'MARK_READ'}
                               {rule.mailActionParam ? ` (${rule.mailActionParam})` : ''}
@@ -2393,6 +3849,28 @@ const MailAutomationPage: React.FC = () => {
                           align="right"
                           sx={{ position: 'sticky', right: 0, backgroundColor: 'background.paper', zIndex: 1 }}
                         >
+                          <Tooltip title="Move up">
+                            <span>
+                              <IconButton
+                                size="small"
+                                disabled={sortedRules.findIndex((item) => item.id === rule.id) === 0}
+                                onClick={() => handleMoveRule(rule, 'up')}
+                              >
+                                <ArrowUpward fontSize="small" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                          <Tooltip title="Move down">
+                            <span>
+                              <IconButton
+                                size="small"
+                                disabled={sortedRules.findIndex((item) => item.id === rule.id) === sortedRules.length - 1}
+                                onClick={() => handleMoveRule(rule, 'down')}
+                              >
+                                <ArrowDownward fontSize="small" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
                           <Tooltip title={(rule.enabled ?? true) ? 'Disable' : 'Enable'}>
                             <span>
                               <Checkbox
@@ -2434,6 +3912,166 @@ const MailAutomationPage: React.FC = () => {
         </Stack>
       )}
 
+      <Drawer
+        anchor="right"
+        open={ruleDiagnosticsDrawerOpen}
+        onClose={closeRuleDiagnosticsDrawer}
+      >
+        <Box sx={{ width: { xs: 360, sm: 480 }, p: 2 }} role="presentation">
+          <Stack spacing={2}>
+            <Box display="flex" alignItems="center" justifyContent="space-between" gap={1}>
+              <Typography variant="h6">
+                Rule Diagnostics
+              </Typography>
+              <Button size="small" variant="text" onClick={closeRuleDiagnosticsDrawer}>
+                Close
+              </Button>
+            </Box>
+            <Typography variant="body2" color="text.secondary">
+              {ruleDiagnosticsFocusRule
+                ? `${ruleDiagnosticsFocusRule.name} (${ruleDiagnosticsFocusRule.id})`
+                : ruleDiagnosticsFocusRuleId || 'No rule selected'}
+            </Typography>
+            <Stack direction="row" flexWrap="wrap" gap={1}>
+              <Chip size="small" label={`Matched ${ruleDiagnosticsFilteredItems.length}`} />
+              <Chip size="small" color="success" label={`Processed ${ruleDiagnosticsProcessedCount}`} />
+              <Chip size="small" color="error" label={`Errors ${ruleDiagnosticsErrorCount}`} />
+            </Stack>
+            <Stack spacing={1}>
+              <FormControl size="small" fullWidth>
+                <InputLabel id="rule-diagnostics-account-label">Account</InputLabel>
+                <Select
+                  labelId="rule-diagnostics-account-label"
+                  label="Account"
+                  value={ruleDiagnosticsAccountId}
+                  onChange={(event) => setRuleDiagnosticsAccountId(String(event.target.value))}
+                >
+                  <MenuItem value="">
+                    <em>All Accounts</em>
+                  </MenuItem>
+                  {accounts.map((account) => (
+                    <MenuItem key={account.id} value={account.id}>{account.name}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <FormControl size="small" fullWidth>
+                <InputLabel id="rule-diagnostics-status-label">Status</InputLabel>
+                <Select
+                  labelId="rule-diagnostics-status-label"
+                  label="Status"
+                  value={ruleDiagnosticsStatus}
+                  onChange={(event) => setRuleDiagnosticsStatus(event.target.value as 'ALL' | 'ERROR' | 'PROCESSED')}
+                >
+                  <MenuItem value="ALL">All</MenuItem>
+                  <MenuItem value="PROCESSED">Processed</MenuItem>
+                  <MenuItem value="ERROR">Error</MenuItem>
+                </Select>
+              </FormControl>
+              <FormControl size="small" fullWidth>
+                <InputLabel id="rule-diagnostics-range-label">Time range</InputLabel>
+                <Select
+                  labelId="rule-diagnostics-range-label"
+                  label="Time range"
+                  value={ruleDiagnosticsTimeRange}
+                  onChange={(event) => setRuleDiagnosticsTimeRange(event.target.value as RuleDiagnosticsTimeRange)}
+                >
+                  {RULE_DIAGNOSTICS_TIME_RANGES.map((option) => (
+                    <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Stack>
+            <Box display="flex" justifyContent="space-between" gap={1} flexWrap="wrap">
+              <Button size="small" variant="outlined" onClick={applyRuleDiagnosticsToTableFilters}>
+                Apply To Main Filters
+              </Button>
+              <Button
+                size="small"
+                variant="text"
+                onClick={() => {
+                  setRuleDiagnosticsAccountId('');
+                  setRuleDiagnosticsStatus('ALL');
+                  setRuleDiagnosticsTimeRange('7D');
+                }}
+              >
+                Reset
+              </Button>
+            </Box>
+            <Box>
+              <Typography variant="subtitle2" gutterBottom>
+                Skip Reasons
+              </Typography>
+              {ruleDiagnosticsSkipReasons.length === 0 ? (
+                <Typography variant="caption" color="text.secondary">
+                  No skip reasons in current filtered window.
+                </Typography>
+              ) : (
+                <Stack direction="row" flexWrap="wrap" gap={1}>
+                  {ruleDiagnosticsSkipReasons.map(([reason, count]) => (
+                    <Chip
+                      key={reason}
+                      size="small"
+                      variant="outlined"
+                      label={`${formatReason(reason)} (${count})`}
+                    />
+                  ))}
+                </Stack>
+              )}
+            </Box>
+            <Box>
+              <Typography variant="subtitle2" gutterBottom>
+                Recent Failure Samples
+              </Typography>
+              {ruleDiagnosticsRecentFailures.length === 0 ? (
+                <Typography variant="caption" color="text.secondary">
+                  No failure samples found for the selected filter set.
+                </Typography>
+              ) : (
+                <Stack spacing={1}>
+                  {ruleDiagnosticsRecentFailures.map((sample) => (
+                    <Box
+                      key={sample.id}
+                      sx={{
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        borderRadius: 1,
+                        p: 1,
+                      }}
+                    >
+                      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" gap={1}>
+                        <Chip size="small" color={statusColor(sample.status)} label={sample.status} />
+                        <Typography variant="caption" color="text.secondary">
+                          {formatDateTime(sample.processedAt)}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          UID {sample.uid}
+                        </Typography>
+                      </Stack>
+                      <Typography variant="body2" sx={{ mt: 0.5 }} title={sample.subject || ''}>
+                        {summarizeText(sample.subject, 100) || '-'}
+                      </Typography>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ mt: 0.5, display: 'block' }}
+                        title={sample.errorMessage || ''}
+                      >
+                        {summarizeError(sample.errorMessage, 180) || 'No error message'}
+                      </Typography>
+                      <Box mt={0.5}>
+                        <Button size="small" variant="text" onClick={() => copyDiagnosticsRuleErrorMessage(sample)}>
+                          Copy Error
+                        </Button>
+                      </Box>
+                    </Box>
+                  ))}
+                </Stack>
+              )}
+            </Box>
+          </Stack>
+        </Box>
+      </Drawer>
+
       <Dialog open={accountDialogOpen} onClose={() => setAccountDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{editingAccount ? 'Edit Mail Account' : 'New Mail Account'}</DialogTitle>
         <DialogContent>
@@ -2469,11 +4107,12 @@ const MailAutomationPage: React.FC = () => {
             />
             {!isOauthAccount && (
               <TextField
-                label={editingAccount ? 'Password (leave blank to keep)' : 'Password'}
+                label={editingAccount ? 'Password (leave masked or blank to keep)' : 'Password'}
                 type="password"
                 value={accountForm.password}
                 onChange={(event) => setAccountForm({ ...accountForm, password: event.target.value })}
                 size="small"
+                helperText={editingAccount ? 'Keep the masked value or clear the field to retain the current password.' : undefined}
                 fullWidth
               />
             )}
@@ -2764,7 +4403,7 @@ const MailAutomationPage: React.FC = () => {
               <InputLabel id="mail-action-label">Processing scope</InputLabel>
               <Select
                 labelId="mail-action-label"
-                value={ruleForm.actionType}
+                value={ruleForm.actionType || 'ATTACHMENTS_ONLY'}
                 label="Processing scope"
                 onChange={(event) => setRuleForm({
                   ...ruleForm,
@@ -2772,9 +4411,10 @@ const MailAutomationPage: React.FC = () => {
                 })}
               >
                 {actionOptions.map((option) => (
-                  <MenuItem key={option} value={option}>{option}</MenuItem>
+                  <MenuItem key={option} value={option}>{actionTypeLabels[option]}</MenuItem>
                 ))}
               </Select>
+              <FormHelperText>{actionTypeDescriptions[ruleForm.actionType || 'ATTACHMENTS_ONLY']}</FormHelperText>
             </FormControl>
             <FormControl size="small" fullWidth>
               <InputLabel id="mail-post-action-label">Mail action</InputLabel>
@@ -2956,6 +4596,7 @@ const MailAutomationPage: React.FC = () => {
                             <TableCell>Folder</TableCell>
                             <TableCell>Subject</TableCell>
                             <TableCell>From</TableCell>
+                            <TableCell>To</TableCell>
                             <TableCell>Received</TableCell>
                             <TableCell align="right">Attachments</TableCell>
                             <TableCell align="right">Processable</TableCell>
@@ -2967,6 +4608,7 @@ const MailAutomationPage: React.FC = () => {
                               <TableCell>{item.folder}</TableCell>
                               <TableCell>{item.subject || '-'}</TableCell>
                               <TableCell>{item.from || '-'}</TableCell>
+                              <TableCell>{item.recipients || '-'}</TableCell>
                               <TableCell>{item.receivedAt ? new Date(item.receivedAt).toLocaleString() : '-'}</TableCell>
                               <TableCell align="right">{item.attachmentCount}</TableCell>
                               <TableCell align="right">

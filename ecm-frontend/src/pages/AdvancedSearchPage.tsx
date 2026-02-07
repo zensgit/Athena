@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Box,
   TextField,
@@ -16,14 +16,20 @@ import {
   Stack,
   Divider,
   Tooltip,
+  IconButton,
 } from '@mui/material';
-import { Search as SearchIcon, FilterList as FilterIcon } from '@mui/icons-material';
+import {
+  Search as SearchIcon,
+  FilterList as FilterIcon,
+  Refresh as RefreshIcon,
+} from '@mui/icons-material';
 import { format } from 'date-fns';
 import apiService from '../services/api';
 import { toast } from 'react-toastify';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from 'store';
 import { setSidebarOpen } from 'store/slices/uiSlice';
+import nodeService from 'services/nodeService';
 
 const MATCH_FIELD_LABELS: Record<string, string> = {
   name: 'Name',
@@ -35,6 +41,61 @@ const MATCH_FIELD_LABELS: Record<string, string> = {
   tags: 'Tags',
   categories: 'Categories',
   correspondent: 'Correspondent',
+};
+
+const PREVIEW_STATUS_VALUES = ['READY', 'PROCESSING', 'QUEUED', 'FAILED', 'PENDING'] as const;
+const DATE_RANGE_VALUES = ['all', 'today', 'week', 'month'] as const;
+
+const parsePreviewStatuses = (rawValue: string | null): string[] => {
+  if (!rawValue) {
+    return [];
+  }
+  const allowed = new Set(PREVIEW_STATUS_VALUES);
+  const parsed = rawValue
+    .split(',')
+    .map((value) => value.trim().toUpperCase())
+    .filter((value) => value && allowed.has(value as (typeof PREVIEW_STATUS_VALUES)[number]));
+  return Array.from(new Set(parsed));
+};
+
+const parseCsvValues = (rawValue: string | null): string[] => {
+  if (!rawValue) {
+    return [];
+  }
+  return Array.from(new Set(rawValue.split(',').map((value) => value.trim()).filter(Boolean)));
+};
+
+const parseDateRange = (rawValue: string | null): 'all' | 'today' | 'week' | 'month' => {
+  if (!rawValue) {
+    return 'all';
+  }
+  return DATE_RANGE_VALUES.includes(rawValue as (typeof DATE_RANGE_VALUES)[number])
+    ? (rawValue as 'all' | 'today' | 'week' | 'month')
+    : 'all';
+};
+
+const parseOptionalNumber = (rawValue: string | null): number | undefined => {
+  if (!rawValue) {
+    return undefined;
+  }
+  const value = Number(rawValue);
+  if (!Number.isFinite(value) || value < 0) {
+    return undefined;
+  }
+  return value;
+};
+
+type AdvancedSearchUrlState = {
+  query: string;
+  page: number;
+  previewStatuses: string[];
+  dateRange: 'all' | 'today' | 'week' | 'month';
+  mimeTypes: string[];
+  creators: string[];
+  tags: string[];
+  categories: string[];
+  minSize?: number;
+  maxSize?: number;
 };
 
 interface SearchResult {
@@ -78,8 +139,10 @@ interface SearchResponse {
 
 const AdvancedSearchPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const dispatch = useAppDispatch();
   const { sidebarAutoCollapse } = useAppSelector((state) => state.ui);
+  const initializedFromUrlRef = useRef(false);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [facets, setFacets] = useState<Facets | null>(null);
@@ -96,6 +159,45 @@ const AdvancedSearchPage: React.FC = () => {
   const [dateRange, setDateRange] = useState<'all' | 'today' | 'week' | 'month'>('all');
   const [minSize, setMinSize] = useState<number | undefined>();
   const [maxSize, setMaxSize] = useState<number | undefined>();
+  const [selectedPreviewStatuses, setSelectedPreviewStatuses] = useState<string[]>([]);
+  const [queueingPreviewId, setQueueingPreviewId] = useState<string | null>(null);
+  const [batchRetrying, setBatchRetrying] = useState(false);
+  const [previewQueueStatusById, setPreviewQueueStatusById] = useState<Record<string, {
+    attempts?: number;
+    nextAttemptAt?: string;
+  }>>({});
+
+  const syncSearchStateToUrl = useCallback((state: AdvancedSearchUrlState) => {
+    const params = new URLSearchParams();
+    const normalizedQuery = state.query.trim();
+    if (normalizedQuery) {
+      params.set('q', normalizedQuery);
+    }
+    if (state.page > 1) {
+      params.set('page', String(state.page));
+    }
+    if (state.previewStatuses.length > 0) {
+      params.set('previewStatus', state.previewStatuses.join(','));
+    }
+    if (state.dateRange !== 'all') {
+      params.set('dateRange', state.dateRange);
+    }
+    if (state.mimeTypes.length > 0) params.set('mimeTypes', state.mimeTypes.join(','));
+    if (state.creators.length > 0) params.set('creators', state.creators.join(','));
+    if (state.tags.length > 0) params.set('tags', state.tags.join(','));
+    if (state.categories.length > 0) params.set('categories', state.categories.join(','));
+    if (state.minSize !== undefined) params.set('minSize', String(state.minSize));
+    if (state.maxSize !== undefined) params.set('maxSize', String(state.maxSize));
+
+    const nextSearch = params.toString();
+    navigate(
+      {
+        pathname: location.pathname,
+        search: nextSearch ? `?${nextSearch}` : '',
+      },
+      { replace: true }
+    );
+  }, [location.pathname, navigate]);
 
   const getPreviewStatusMeta = (status?: string) => {
     const normalized = status?.toUpperCase();
@@ -114,27 +216,57 @@ const AdvancedSearchPage: React.FC = () => {
     return { label: `Preview ${normalized.toLowerCase()}`, color: 'default' as const };
   };
 
-  const handleSearch = async (newPage = 1) => {
+  const formatScore = (score?: number) => {
+    if (score === undefined || score === null) {
+      return null;
+    }
+    const rounded = Math.round(score * 100) / 100;
+    return `Score ${rounded}`;
+  };
+
+  const handleSearch = useCallback(async (
+    newPage = 1,
+    options?: {
+      queryOverride?: string;
+      previewStatuses?: string[];
+      dateRangeOverride?: 'all' | 'today' | 'week' | 'month';
+      mimeTypesOverride?: string[];
+      creatorsOverride?: string[];
+      tagsOverride?: string[];
+      categoriesOverride?: string[];
+      minSizeOverride?: number;
+      maxSizeOverride?: number;
+    }
+  ) => {
     try {
       setLoading(true);
+      const effectiveQuery = options?.queryOverride ?? query;
+      const effectivePreviewStatuses = options?.previewStatuses ?? selectedPreviewStatuses;
+      const effectiveDateRange = options?.dateRangeOverride ?? dateRange;
+      const effectiveMimeTypes = options?.mimeTypesOverride ?? selectedMimeTypes;
+      const effectiveCreators = options?.creatorsOverride ?? selectedCreators;
+      const effectiveTags = options?.tagsOverride ?? selectedTags;
+      const effectiveCategories = options?.categoriesOverride ?? selectedCategories;
+      const effectiveMinSize = options?.minSizeOverride ?? minSize;
+      const effectiveMaxSize = options?.maxSizeOverride ?? maxSize;
       
       // Calculate date filters
       let dateFrom = null;
       const now = new Date();
-      if (dateRange === 'today') dateFrom = new Date(now.setHours(0,0,0,0)).toISOString();
-      if (dateRange === 'week') dateFrom = new Date(now.setDate(now.getDate() - 7)).toISOString();
-      if (dateRange === 'month') dateFrom = new Date(now.setMonth(now.getMonth() - 1)).toISOString();
+      if (effectiveDateRange === 'today') dateFrom = new Date(now.setHours(0,0,0,0)).toISOString();
+      if (effectiveDateRange === 'week') dateFrom = new Date(now.setDate(now.getDate() - 7)).toISOString();
+      if (effectiveDateRange === 'month') dateFrom = new Date(now.setMonth(now.getMonth() - 1)).toISOString();
 
       const payload = {
-        query: query,
+        query: effectiveQuery,
         filters: {
-          mimeTypes: selectedMimeTypes.length > 0 ? selectedMimeTypes : undefined,
-          createdBy: selectedCreators.length > 0 ? selectedCreators : undefined,
-          tags: selectedTags.length > 0 ? selectedTags : undefined,
-          categories: selectedCategories.length > 0 ? selectedCategories : undefined,
+          mimeTypes: effectiveMimeTypes.length > 0 ? effectiveMimeTypes : undefined,
+          createdBy: effectiveCreators.length > 0 ? effectiveCreators : undefined,
+          tags: effectiveTags.length > 0 ? effectiveTags : undefined,
+          categories: effectiveCategories.length > 0 ? effectiveCategories : undefined,
           modifiedFrom: dateFrom,
-          minSize,
-          maxSize,
+          minSize: effectiveMinSize,
+          maxSize: effectiveMaxSize,
         },
         pageable: {
           page: newPage - 1, // API is 0-based
@@ -150,17 +282,317 @@ const AdvancedSearchPage: React.FC = () => {
       setTotalPages(response.results.totalPages);
       setFacets(response.facets);
       setPage(newPage);
+      syncSearchStateToUrl({
+        query: effectiveQuery,
+        page: newPage,
+        previewStatuses: effectivePreviewStatuses,
+        dateRange: effectiveDateRange,
+        mimeTypes: effectiveMimeTypes,
+        creators: effectiveCreators,
+        tags: effectiveTags,
+        categories: effectiveCategories,
+        minSize: effectiveMinSize,
+        maxSize: effectiveMaxSize,
+      });
+      setPreviewQueueStatusById((prev) => {
+        const next: Record<string, { attempts?: number; nextAttemptAt?: string }> = {};
+        response.results.content.forEach((result) => {
+          if (prev[result.id]) {
+            next[result.id] = prev[result.id];
+          }
+        });
+        return next;
+      });
 
     } catch (error) {
       toast.error('Search failed');
     } finally {
       setLoading(false);
     }
-  };
+  }, [
+    dateRange,
+    maxSize,
+    minSize,
+    query,
+    selectedCategories,
+    selectedCreators,
+    selectedMimeTypes,
+    selectedPreviewStatuses,
+    selectedTags,
+    syncSearchStateToUrl,
+  ]);
+
+  useEffect(() => {
+    if (initializedFromUrlRef.current) {
+      return;
+    }
+    initializedFromUrlRef.current = true;
+    const params = new URLSearchParams(location.search);
+    const queryFromUrl = (params.get('q') || '').trim();
+    const parsedPage = Number(params.get('page') || '1');
+    const pageFromUrl = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1;
+    const previewStatusesFromUrl = parsePreviewStatuses(params.get('previewStatus'));
+    const dateRangeFromUrl = parseDateRange(params.get('dateRange'));
+    const mimeTypesFromUrl = parseCsvValues(params.get('mimeTypes'));
+    const creatorsFromUrl = parseCsvValues(params.get('creators'));
+    const tagsFromUrl = parseCsvValues(params.get('tags'));
+    const categoriesFromUrl = parseCsvValues(params.get('categories'));
+    const minSizeFromUrl = parseOptionalNumber(params.get('minSize'));
+    const maxSizeFromUrl = parseOptionalNumber(params.get('maxSize'));
+
+    const hasRestorableState = Boolean(
+      queryFromUrl
+      || previewStatusesFromUrl.length > 0
+      || dateRangeFromUrl !== 'all'
+      || mimeTypesFromUrl.length > 0
+      || creatorsFromUrl.length > 0
+      || tagsFromUrl.length > 0
+      || categoriesFromUrl.length > 0
+      || minSizeFromUrl !== undefined
+      || maxSizeFromUrl !== undefined
+      || pageFromUrl > 1
+    );
+
+    setQuery(queryFromUrl);
+    setSelectedPreviewStatuses(previewStatusesFromUrl);
+    setDateRange(dateRangeFromUrl);
+    setSelectedMimeTypes(mimeTypesFromUrl);
+    setSelectedCreators(creatorsFromUrl);
+    setSelectedTags(tagsFromUrl);
+    setSelectedCategories(categoriesFromUrl);
+    setMinSize(minSizeFromUrl);
+    setMaxSize(maxSizeFromUrl);
+
+    if (hasRestorableState) {
+      void handleSearch(pageFromUrl, {
+        queryOverride: queryFromUrl,
+        previewStatuses: previewStatusesFromUrl,
+        dateRangeOverride: dateRangeFromUrl,
+        mimeTypesOverride: mimeTypesFromUrl,
+        creatorsOverride: creatorsFromUrl,
+        tagsOverride: tagsFromUrl,
+        categoriesOverride: categoriesFromUrl,
+        minSizeOverride: minSizeFromUrl,
+        maxSizeOverride: maxSizeFromUrl,
+      });
+    }
+  }, [handleSearch, location.search]);
 
   const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => {
     handleSearch(value);
   };
+
+  const previewStatusFilterApplied = selectedPreviewStatuses.length > 0;
+
+  const previewStatusCounts = useMemo(() => results.reduce(
+    (acc, result) => {
+      if (result.nodeType === 'FOLDER') {
+        return acc;
+      }
+      const status = result.previewStatus?.toUpperCase() || 'PENDING';
+      if (status in acc) {
+        acc[status as keyof typeof acc] += 1;
+      } else {
+        acc.PENDING += 1;
+      }
+      return acc;
+    },
+    {
+      READY: 0,
+      PROCESSING: 0,
+      QUEUED: 0,
+      FAILED: 0,
+      PENDING: 0,
+    }
+  ), [results]);
+
+  const statusFilteredResults = useMemo(
+    () => (previewStatusFilterApplied
+      ? results.filter((result) => {
+          if (result.nodeType === 'FOLDER') {
+            return false;
+          }
+          const status = result.previewStatus?.toUpperCase() || 'PENDING';
+          return selectedPreviewStatuses.includes(status);
+        })
+      : results),
+    [previewStatusFilterApplied, results, selectedPreviewStatuses]
+  );
+
+  const failedPreviewResults = useMemo(
+    () => results.filter((result) => result.nodeType !== 'FOLDER'
+      && (result.previewStatus || '').toUpperCase() === 'FAILED'),
+    [results]
+  );
+
+  const failedPreviewReasonSummary = useMemo(() => {
+    const buckets = new Map<string, SearchResult[]>();
+    failedPreviewResults.forEach((result) => {
+      const reason = (result.previewFailureReason || '').trim() || 'UNSPECIFIED';
+      const existing = buckets.get(reason) || [];
+      existing.push(result);
+      buckets.set(reason, existing);
+    });
+    return Array.from(buckets.entries())
+      .map(([reason, items]) => ({ reason, count: items.length, items }))
+      .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason))
+      .slice(0, 4);
+  }, [failedPreviewResults]);
+
+  const previewRetrySummary = useMemo(() => {
+    const entries = Object.values(previewQueueStatusById);
+    if (entries.length === 0) {
+      return null;
+    }
+    const times = entries
+      .map((entry) => entry.nextAttemptAt)
+      .filter((value): value is string => Boolean(value))
+      .map((value) => new Date(value))
+      .filter((value) => !Number.isNaN(value.getTime()));
+    if (times.length === 0) {
+      return null;
+    }
+    const nextAt = times.sort((a, b) => a.getTime() - b.getTime())[0];
+    return {
+      count: entries.length,
+      nextAt,
+    };
+  }, [previewQueueStatusById]);
+
+  const getQueueDetail = useCallback((resultId: string) => {
+    const queueStatus = previewQueueStatusById[resultId];
+    if (!queueStatus) {
+      return null;
+    }
+    const attemptsLabel = queueStatus.attempts !== undefined
+      ? `Attempts: ${queueStatus.attempts}`
+      : null;
+    const nextLabel = queueStatus.nextAttemptAt
+      ? `Next retry: ${format(new Date(queueStatus.nextAttemptAt), 'PPp')}`
+      : null;
+    const labels = [attemptsLabel, nextLabel].filter(Boolean);
+    return labels.length > 0 ? labels.join(' • ') : null;
+  }, [previewQueueStatusById]);
+
+  const togglePreviewStatus = useCallback((status: string) => {
+    setSelectedPreviewStatuses((prev) => {
+      const next = prev.includes(status)
+        ? prev.filter((value) => value !== status)
+        : [...prev, status];
+      syncSearchStateToUrl({
+        query,
+        page,
+        previewStatuses: next,
+        dateRange,
+        mimeTypes: selectedMimeTypes,
+        creators: selectedCreators,
+        tags: selectedTags,
+        categories: selectedCategories,
+        minSize,
+        maxSize,
+      });
+      return next;
+    });
+  }, [dateRange, maxSize, minSize, page, query, selectedCategories, selectedCreators, selectedMimeTypes, selectedTags, syncSearchStateToUrl]);
+
+  const handleRetryPreview = useCallback(async (result: SearchResult, force = false) => {
+    if (!result?.id || result.nodeType === 'FOLDER') {
+      return;
+    }
+    setQueueingPreviewId(result.id);
+    try {
+      const status = await nodeService.queuePreview(result.id, force);
+      setPreviewQueueStatusById((prev) => ({
+        ...prev,
+        [result.id]: {
+          attempts: status?.attempts,
+          nextAttemptAt: status?.nextAttemptAt,
+        },
+      }));
+      if (status?.queued) {
+        toast.success('Preview queued');
+      } else {
+        toast.info('Preview already up to date');
+      }
+    } catch {
+      toast.error('Failed to queue preview');
+    } finally {
+      setQueueingPreviewId(null);
+    }
+  }, []);
+
+  const handleRetryFailedPreviews = useCallback(async (force = false) => {
+    if (failedPreviewResults.length === 0) {
+      return;
+    }
+    setBatchRetrying(true);
+    let queued = 0;
+    let skipped = 0;
+    let failed = 0;
+    for (const result of failedPreviewResults) {
+      try {
+        const status = await nodeService.queuePreview(result.id, force);
+        setPreviewQueueStatusById((prev) => ({
+          ...prev,
+          [result.id]: {
+            attempts: status?.attempts,
+            nextAttemptAt: status?.nextAttemptAt,
+          },
+        }));
+        if (status?.queued) {
+          queued += 1;
+        } else {
+          skipped += 1;
+        }
+      } catch {
+        failed += 1;
+      }
+    }
+    const parts = [`queued ${queued}`];
+    if (skipped > 0) parts.push(`skipped ${skipped}`);
+    if (failed > 0) parts.push(`failed ${failed}`);
+    toast.success(`Preview ${force ? 'rebuilds' : 'retries'}: ${parts.join(', ')}`);
+    setBatchRetrying(false);
+  }, [failedPreviewResults]);
+
+  const handleRetryFailedReason = useCallback(async (reason: string, force = false) => {
+    const targets = failedPreviewResults.filter((result) => {
+      const nodeReason = (result.previewFailureReason || '').trim() || 'UNSPECIFIED';
+      return nodeReason === reason;
+    });
+    if (targets.length === 0) {
+      return;
+    }
+    setBatchRetrying(true);
+    let queued = 0;
+    let skipped = 0;
+    let failed = 0;
+    for (const result of targets) {
+      try {
+        const status = await nodeService.queuePreview(result.id, force);
+        setPreviewQueueStatusById((prev) => ({
+          ...prev,
+          [result.id]: {
+            attempts: status?.attempts,
+            nextAttemptAt: status?.nextAttemptAt,
+          },
+        }));
+        if (status?.queued) {
+          queued += 1;
+        } else {
+          skipped += 1;
+        }
+      } catch {
+        failed += 1;
+      }
+    }
+    const reasonLabel = reason === 'UNSPECIFIED' ? 'unspecified' : reason;
+    const parts = [`queued ${queued}`];
+    if (skipped > 0) parts.push(`skipped ${skipped}`);
+    if (failed > 0) parts.push(`failed ${failed}`);
+    toast.success(`Preview ${force ? 'rebuilds' : 'retries'} (${reasonLabel}): ${parts.join(', ')}`);
+    setBatchRetrying(false);
+  }, [failedPreviewResults]);
 
   return (
     <Box p={3} sx={{ height: 'calc(100vh - 64px)', display: 'flex', flexDirection: 'column' }}>
@@ -385,8 +817,114 @@ const AdvancedSearchPage: React.FC = () => {
               <Stack spacing={2}>
                 <Typography variant="body2" color="textSecondary">
                   Found {totalResults} results
+                  {previewStatusFilterApplied
+                    ? ` • Showing ${statusFilteredResults.length} filtered result(s) on current page`
+                    : ''}
                 </Typography>
-                {results.map((result) => (
+                <Paper variant="outlined" sx={{ p: 1.5 }}>
+                  <Typography variant="subtitle2" gutterBottom>
+                    Preview Status
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                    Filter results by preview generation state.
+                  </Typography>
+                  {previewStatusFilterApplied && (
+                    <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                      Preview status filters apply to the current page only.
+                    </Typography>
+                  )}
+                  <Box display="flex" flexWrap="wrap" gap={1}>
+                    {[
+                      { value: 'READY', label: 'Ready', color: 'success' as const, count: previewStatusCounts.READY },
+                      { value: 'PROCESSING', label: 'Processing', color: 'warning' as const, count: previewStatusCounts.PROCESSING },
+                      { value: 'QUEUED', label: 'Queued', color: 'info' as const, count: previewStatusCounts.QUEUED },
+                      { value: 'FAILED', label: 'Failed', color: 'error' as const, count: previewStatusCounts.FAILED },
+                      { value: 'PENDING', label: 'Pending', color: 'default' as const, count: previewStatusCounts.PENDING },
+                    ].map((status) => (
+                      <Chip
+                        key={`advanced-preview-status-${status.value}`}
+                        label={`${status.label} (${status.count})`}
+                        size="small"
+                        color={selectedPreviewStatuses.includes(status.value) ? status.color : 'default'}
+                        variant={selectedPreviewStatuses.includes(status.value) ? 'filled' : 'outlined'}
+                        onClick={() => togglePreviewStatus(status.value)}
+                      />
+                    ))}
+                    <Button
+                      size="small"
+                      disabled={selectedPreviewStatuses.length === 0}
+                      onClick={() => {
+                        setSelectedPreviewStatuses([]);
+                        syncSearchStateToUrl({
+                          query,
+                          page,
+                          previewStatuses: [],
+                          dateRange,
+                          mimeTypes: selectedMimeTypes,
+                          creators: selectedCreators,
+                          tags: selectedTags,
+                          categories: selectedCategories,
+                          minSize,
+                          maxSize,
+                        });
+                      }}
+                    >
+                      Clear
+                    </Button>
+                  </Box>
+                </Paper>
+                {failedPreviewResults.length > 0 && (
+                  <Paper variant="outlined" sx={{ p: 1.5 }}>
+                    <Stack spacing={1}>
+                      <Box display="flex" flexWrap="wrap" gap={1}>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() => { void handleRetryFailedPreviews(false); }}
+                          disabled={batchRetrying}
+                        >
+                          Retry failed previews
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="text"
+                          onClick={() => { void handleRetryFailedPreviews(true); }}
+                          disabled={batchRetrying}
+                        >
+                          Force rebuild failed previews
+                        </Button>
+                      </Box>
+                      {failedPreviewReasonSummary.length > 0 && (
+                        <Box display="flex" flexWrap="wrap" gap={1}>
+                          {failedPreviewReasonSummary.map((item) => (
+                            <Button
+                              key={`retry-reason-${item.reason}`}
+                              size="small"
+                              variant="text"
+                              onClick={() => { void handleRetryFailedReason(item.reason); }}
+                              disabled={batchRetrying}
+                            >
+                              Retry "{item.reason}" ({item.count})
+                            </Button>
+                          ))}
+                        </Box>
+                      )}
+                      {previewRetrySummary && (
+                        <Typography variant="caption" color="text.secondary">
+                          Preview queue: {previewRetrySummary.count} item(s) • Next retry {format(previewRetrySummary.nextAt, 'PPp')}
+                        </Typography>
+                      )}
+                    </Stack>
+                  </Paper>
+                )}
+                {statusFilteredResults.length === 0 && previewStatusFilterApplied && (
+                  <Paper variant="outlined" sx={{ p: 2 }}>
+                    <Typography color="textSecondary">
+                      No results match the selected preview status filter on this page.
+                    </Typography>
+                  </Paper>
+                )}
+                {statusFilteredResults.map((result) => (
                   <Paper 
                     key={result.id} 
                     sx={{ p: 2, cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }}
@@ -466,21 +1004,59 @@ const AdvancedSearchPage: React.FC = () => {
                           size="small"
                           variant="outlined"
                         />
-                        {result.nodeType !== 'FOLDER' && getPreviewStatusMeta(result.previewStatus) && (
-                          <Tooltip
-                            title={result.previewFailureReason || ''}
-                            placement="top-start"
-                            arrow
-                            disableHoverListener={!result.previewFailureReason}
-                          >
-                            <Chip
-                              label={getPreviewStatusMeta(result.previewStatus)?.label}
-                              color={getPreviewStatusMeta(result.previewStatus)?.color}
-                              size="small"
-                              variant="outlined"
-                            />
-                          </Tooltip>
+                        {formatScore(result.score) && (
+                          <Chip label={formatScore(result.score)} size="small" variant="outlined" />
                         )}
+                        {result.nodeType !== 'FOLDER' && getPreviewStatusMeta(result.previewStatus) && (() => {
+                          const previewMeta = getPreviewStatusMeta(result.previewStatus);
+                          if (!previewMeta) {
+                            return null;
+                          }
+                          const queueDetail = getQueueDetail(result.id);
+                          const tooltipTitle = [result.previewFailureReason || '', queueDetail].filter(Boolean).join(' • ');
+                          const isFailed = (result.previewStatus || '').toUpperCase() === 'FAILED';
+                          return (
+                            <Box display="flex" flexDirection="column" alignItems="flex-start" gap={0.5}>
+                              <Box display="flex" alignItems="center" gap={0.5}>
+                                <Tooltip
+                                  title={tooltipTitle}
+                                  placement="top-start"
+                                  arrow
+                                  disableHoverListener={!tooltipTitle}
+                                >
+                                  <Chip
+                                    label={previewMeta.label}
+                                    color={previewMeta.color}
+                                    size="small"
+                                    variant="outlined"
+                                  />
+                                </Tooltip>
+                                {isFailed && (
+                                  <Tooltip title="Retry preview" placement="top-start" arrow>
+                                    <span>
+                                      <IconButton
+                                        size="small"
+                                        aria-label="Retry preview"
+                                        disabled={queueingPreviewId === result.id}
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          void handleRetryPreview(result);
+                                        }}
+                                      >
+                                        <RefreshIcon fontSize="small" />
+                                      </IconButton>
+                                    </span>
+                                  </Tooltip>
+                                )}
+                              </Box>
+                              {queueDetail && (
+                                <Typography variant="caption" color="text.secondary">
+                                  {queueDetail}
+                                </Typography>
+                              )}
+                            </Box>
+                          );
+                        })()}
                     </Box>
                   </Paper>
                 ))}

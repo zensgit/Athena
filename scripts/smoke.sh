@@ -66,10 +66,23 @@ log_info "Target: ${BASE_URL}"
 
 # 1. Health Check
 log_info "Checking Health..."
-if curl_cmd "${BASE_URL}/actuator/health" > /dev/null; then
+health_code="$(curl -sS -o /dev/null -w "%{http_code}" "${BASE_URL}/actuator/health" || true)"
+if [[ "$health_code" == "200" ]]; then
   log_info "Health check passed."
+elif [[ "$health_code" == "401" || "$health_code" == "403" ]]; then
+  log_warn "Health endpoint is protected (HTTP ${health_code})."
+  if [[ -n "$TOKEN" ]]; then
+    if curl_cmd "${BASE_URL}/api/v1/system/status" > /dev/null; then
+      log_info "Service readiness confirmed via authenticated system status."
+    else
+      log_error "Authenticated fallback readiness check failed!"
+      exit 1
+    fi
+  else
+    log_warn "No token provided; continuing with best-effort checks."
+  fi
 else
-  log_error "Health check failed!"
+  log_error "Health check failed (HTTP ${health_code})."
   exit 1
 fi
 

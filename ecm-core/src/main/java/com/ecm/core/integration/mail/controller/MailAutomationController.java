@@ -78,6 +78,7 @@ public class MailAutomationController {
         String oauthTenantId,
         String oauthScope,
         String oauthCredentialKey,
+        boolean passwordConfigured,
         boolean oauthEnvConfigured,
         List<String> oauthMissingEnvKeys,
         Boolean oauthConnected,
@@ -111,6 +112,7 @@ public class MailAutomationController {
                 account.getOauthTenantId(),
                 account.getOauthScope(),
                 account.getOauthCredentialKey(),
+                account.getPassword() != null && !account.getPassword().isBlank(),
                 envCheck.configured(),
                 envCheck.missingEnvKeys(),
                 connected,
@@ -236,7 +238,9 @@ public class MailAutomationController {
         if (request.host() != null) account.setHost(request.host());
         if (request.port() != null) account.setPort(request.port());
         if (request.username() != null) account.setUsername(request.username());
-        if (request.password() != null && !request.password().isBlank()) account.setPassword(request.password());
+        if (request.password() != null && !request.password().isBlank() && !isMaskedPassword(request.password())) {
+            account.setPassword(request.password());
+        }
         if (request.security() != null) account.setSecurity(request.security());
         if (request.enabled() != null) account.setEnabled(request.enabled());
         if (request.pollIntervalMinutes() != null) account.setPollIntervalMinutes(request.pollIntervalMinutes());
@@ -270,9 +274,8 @@ public class MailAutomationController {
             account.setOauthTenantId(null);
             account.setOauthScope(null);
             account.setOauthCredentialKey(null);
+            clearOAuthSecrets(account);
         }
-
-        clearOAuthSecrets(account);
     }
 
     private void clearOAuthSecrets(MailAccount account) {
@@ -281,6 +284,19 @@ public class MailAutomationController {
         account.setOauthAccessToken(null);
         account.setOauthRefreshToken(null);
         account.setOauthTokenExpiresAt(null);
+    }
+
+    private boolean isMaskedPassword(String value) {
+        String trimmed = value == null ? "" : value.trim();
+        if (trimmed.isEmpty()) {
+            return false;
+        }
+        for (int i = 0; i < trimmed.length(); i++) {
+            if (trimmed.charAt(i) != '*') {
+                return false;
+            }
+        }
+        return true;
     }
 
     @GetMapping("/oauth/authorize")
@@ -359,13 +375,27 @@ public class MailAutomationController {
         @RequestParam(required = false) UUID ruleId,
         @RequestParam(required = false) ProcessedMail.Status status,
         @RequestParam(required = false) String subject,
+        @RequestParam(required = false) String errorContains,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
             LocalDateTime processedFrom,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-            LocalDateTime processedTo
+            LocalDateTime processedTo,
+        @RequestParam(required = false) String sort,
+        @RequestParam(required = false) String order
     ) {
         return ResponseEntity.ok(
-            fetcherService.getDiagnostics(limit, accountId, ruleId, status, subject, processedFrom, processedTo)
+            fetcherService.getDiagnostics(
+                limit,
+                accountId,
+                ruleId,
+                status,
+                subject,
+                errorContains,
+                processedFrom,
+                processedTo,
+                sort,
+                order
+            )
         );
     }
 
@@ -378,10 +408,13 @@ public class MailAutomationController {
         @RequestParam(required = false) UUID ruleId,
         @RequestParam(required = false) ProcessedMail.Status status,
         @RequestParam(required = false) String subject,
+        @RequestParam(required = false) String errorContains,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
             LocalDateTime processedFrom,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
             LocalDateTime processedTo,
+        @RequestParam(required = false) String sort,
+        @RequestParam(required = false) String order,
         @RequestParam(required = false) Boolean includeProcessed,
         @RequestParam(required = false) Boolean includeDocuments,
         @RequestParam(required = false) Boolean includeSubject,
@@ -399,14 +432,21 @@ public class MailAutomationController {
             includeMimeType,
             includeFileSize
         );
+        String requestId = UUID.randomUUID().toString();
+        String actor = resolveAuditUsername();
         String csv = fetcherService.exportDiagnosticsCsv(
             limit,
             accountId,
             ruleId,
             status,
             subject,
+            errorContains,
             processedFrom,
             processedTo,
+            sort,
+            order,
+            requestId,
+            actor,
             includeProcessed,
             includeDocuments,
             includeSubject,
@@ -415,12 +455,23 @@ public class MailAutomationController {
             includeMimeType,
             includeFileSize
         );
-        auditDiagnosticsExport(limit, accountId, ruleId, auditOptions);
+        auditDiagnosticsExport(limit, accountId, ruleId, sort, order, requestId, auditOptions);
         String filename = "mail-diagnostics-" + LocalDate.now() + ".csv";
         return ResponseEntity.ok()
             .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
             .contentType(MediaType.valueOf("text/csv"))
             .body(csv);
+    }
+
+    @GetMapping("/runtime-metrics")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Mail runtime metrics", description = "Runtime health metrics for mail automation")
+    public ResponseEntity<MailFetcherService.MailRuntimeMetrics> getRuntimeMetrics(
+        @RequestParam(required = false) Integer windowMinutes
+    ) {
+        MailFetcherService.MailRuntimeMetrics metrics = fetcherService.getRuntimeMetrics(windowMinutes);
+        auditRuntimeMetricsViewed(metrics.windowMinutes());
+        return ResponseEntity.ok(metrics);
     }
 
     @GetMapping("/report")
@@ -473,6 +524,15 @@ public class MailAutomationController {
         return ResponseEntity.ok(new ProcessedMailBulkDeleteResult(request.ids().size()));
     }
 
+    @PostMapping("/processed/{id}/replay")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Replay processed mail", description = "Replay a processed mail record by id")
+    public ResponseEntity<MailFetcherService.MailReplayResult> replayProcessedMail(@PathVariable UUID id) {
+        MailFetcherService.MailReplayResult result = fetcherService.replayProcessedMail(id);
+        auditReplay(id, result);
+        return ResponseEntity.ok(result);
+    }
+
     @GetMapping("/processed/retention")
     @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Processed mail retention", description = "Get retention policy for processed mail")
@@ -495,6 +555,9 @@ public class MailAutomationController {
         Integer limit,
         UUID accountId,
         UUID ruleId,
+        String sort,
+        String order,
+        String requestId,
         MailDiagnosticsExportAuditOptions exportOptions
     ) {
         int effectiveLimit = resolveEffectiveLimit(limit);
@@ -503,12 +566,15 @@ public class MailAutomationController {
             ? "MAIL_ACCOUNT"
             : (ruleId != null ? "MAIL_RULE" : "MAIL_DIAGNOSTICS");
         String details = String.format(
-            "Exported mail diagnostics (limit=%d, accountId=%s, ruleId=%s, includeProcessed=%s, " +
-                "includeDocuments=%s, includeSubject=%s, includeError=%s, includePath=%s, " +
+            "Exported mail diagnostics (requestId=%s, limit=%d, accountId=%s, ruleId=%s, sort=%s, order=%s, " +
+                "includeProcessed=%s, includeDocuments=%s, includeSubject=%s, includeError=%s, includePath=%s, " +
                 "includeMimeType=%s, includeFileSize=%s)",
+            requestId,
             effectiveLimit,
             accountId != null ? accountId : "ALL",
             ruleId != null ? ruleId : "ALL",
+            sort != null && !sort.isBlank() ? sort : "processedAt",
+            order != null && !order.isBlank() ? order : "desc",
             exportOptions.includeProcessed(),
             exportOptions.includeDocuments(),
             exportOptions.includeSubject(),
@@ -523,6 +589,16 @@ public class MailAutomationController {
             auditNodeName,
             resolveAuditUsername(),
             details
+        );
+    }
+
+    private void auditRuntimeMetricsViewed(int windowMinutes) {
+        auditService.logEvent(
+            "MAIL_RUNTIME_METRICS_VIEWED",
+            null,
+            "MAIL_RUNTIME",
+            resolveAuditUsername(),
+            String.format("Viewed mail runtime metrics (windowMinutes=%d)", windowMinutes)
         );
     }
 
@@ -545,6 +621,24 @@ public class MailAutomationController {
             "MAIL_REPORT_EXPORTED",
             auditNodeId,
             auditNodeName,
+            resolveAuditUsername(),
+            details
+        );
+    }
+
+    private void auditReplay(UUID processedMailId, MailFetcherService.MailReplayResult result) {
+        String details = String.format(
+            "Replayed processed mail (id=%s, attempted=%s, processed=%s, replayStatus=%s, message=%s)",
+            processedMailId,
+            result.attempted(),
+            result.processed(),
+            result.replayStatus() != null ? result.replayStatus() : "UNKNOWN",
+            result.message()
+        );
+        auditService.logEvent(
+            "MAIL_PROCESSED_REPLAY",
+            processedMailId,
+            "MAIL_PROCESSED",
             resolveAuditUsername(),
             details
         );

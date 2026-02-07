@@ -141,7 +141,7 @@ class MailAutomationControllerSecurityTest {
     @WithMockUser(roles = "ADMIN")
     @DisplayName("Admin can access mail diagnostics")
     void diagnosticsAllowsAdmin() throws Exception {
-        Mockito.when(fetcherService.getDiagnostics(5, null, null, null, null, null, null))
+        Mockito.when(fetcherService.getDiagnostics(5, null, null, null, null, null, null, null, null, null))
             .thenReturn(new MailFetcherService.MailDiagnosticsResult(5, List.of(), List.of()));
 
         mockMvc.perform(get("/api/v1/integration/mail/diagnostics").param("limit", "5"))
@@ -150,7 +150,7 @@ class MailAutomationControllerSecurityTest {
             .andExpect(jsonPath("$.recentProcessed").isArray())
             .andExpect(jsonPath("$.recentDocuments").isArray());
 
-        Mockito.verify(fetcherService).getDiagnostics(5, null, null, null, null, null, null);
+        Mockito.verify(fetcherService).getDiagnostics(5, null, null, null, null, null, null, null, null, null);
     }
 
     @Test
@@ -189,7 +189,7 @@ class MailAutomationControllerSecurityTest {
     @WithMockUser(roles = "ADMIN")
     @DisplayName("Mail diagnostics uses default limit when not provided")
     void diagnosticsUsesDefaultLimit() throws Exception {
-        Mockito.when(fetcherService.getDiagnostics(null, null, null, null, null, null, null))
+        Mockito.when(fetcherService.getDiagnostics(null, null, null, null, null, null, null, null, null, null))
             .thenReturn(new MailFetcherService.MailDiagnosticsResult(25, List.of(), List.of()));
 
         mockMvc.perform(get("/api/v1/integration/mail/diagnostics"))
@@ -198,7 +198,7 @@ class MailAutomationControllerSecurityTest {
             .andExpect(jsonPath("$.recentProcessed").isArray())
             .andExpect(jsonPath("$.recentDocuments").isArray());
 
-        Mockito.verify(fetcherService).getDiagnostics(null, null, null, null, null, null, null);
+        Mockito.verify(fetcherService).getDiagnostics(null, null, null, null, null, null, null, null, null, null);
     }
 
     @Test
@@ -207,20 +207,25 @@ class MailAutomationControllerSecurityTest {
     void diagnosticsExportAllowsAdmin() throws Exception {
         Mockito.when(securityService.getCurrentUser()).thenReturn("admin");
         Mockito.when(fetcherService.exportDiagnosticsCsv(
-            5,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null
+            Mockito.eq(5),
+            Mockito.isNull(),
+            Mockito.isNull(),
+            Mockito.isNull(),
+            Mockito.isNull(),
+            Mockito.isNull(),
+            Mockito.isNull(),
+            Mockito.isNull(),
+            Mockito.isNull(),
+            Mockito.isNull(),
+            Mockito.anyString(),
+            Mockito.eq("admin"),
+            Mockito.isNull(),
+            Mockito.isNull(),
+            Mockito.isNull(),
+            Mockito.isNull(),
+            Mockito.isNull(),
+            Mockito.isNull(),
+            Mockito.isNull()
         ))
             .thenReturn("Mail Diagnostics Export\n");
 
@@ -230,20 +235,25 @@ class MailAutomationControllerSecurityTest {
             .andExpect(content().string(Matchers.containsString("Mail Diagnostics Export")));
 
         Mockito.verify(fetcherService).exportDiagnosticsCsv(
-            5,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null
+            Mockito.eq(5),
+            Mockito.isNull(),
+            Mockito.isNull(),
+            Mockito.isNull(),
+            Mockito.isNull(),
+            Mockito.isNull(),
+            Mockito.isNull(),
+            Mockito.isNull(),
+            Mockito.isNull(),
+            Mockito.isNull(),
+            Mockito.anyString(),
+            Mockito.eq("admin"),
+            Mockito.isNull(),
+            Mockito.isNull(),
+            Mockito.isNull(),
+            Mockito.isNull(),
+            Mockito.isNull(),
+            Mockito.isNull(),
+            Mockito.isNull()
         );
         Mockito.verify(auditService).logEvent(
             Mockito.eq("MAIL_DIAGNOSTICS_EXPORTED"),

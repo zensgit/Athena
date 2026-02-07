@@ -875,6 +875,8 @@ public class FacetedSearchService {
             .tags(doc.getTags() != null ? List.copyOf(doc.getTags()) : List.of())
             .categories(doc.getCategories() != null ? List.copyOf(doc.getCategories()) : List.of())
             .correspondent(doc.getCorrespondent())
+            .previewStatus(doc.getPreviewStatus())
+            .previewFailureReason(doc.getPreviewFailureReason())
             .build();
     }
 

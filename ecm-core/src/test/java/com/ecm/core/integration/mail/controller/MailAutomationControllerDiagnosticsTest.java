@@ -127,7 +127,7 @@ class MailAutomationControllerDiagnosticsTest {
             "12345"
         );
 
-        Mockito.when(fetcherService.getDiagnostics(2, null, null, null, null, null, null))
+        Mockito.when(fetcherService.getDiagnostics(2, null, null, null, null, null, null, null, null, null))
             .thenReturn(new MailFetcherService.MailDiagnosticsResult(2, List.of(processed), List.of(document)));
 
         mockMvc.perform(get("/api/v1/integration/mail/diagnostics").param("limit", "2"))
@@ -141,6 +141,6 @@ class MailAutomationControllerDiagnosticsTest {
             .andExpect(jsonPath("$.recentDocuments[0].accountName").value("gmail-imap"))
             .andExpect(jsonPath("$.recentDocuments[0].ruleName").value("gmail-attachments"));
 
-        Mockito.verify(fetcherService).getDiagnostics(2, null, null, null, null, null, null);
+        Mockito.verify(fetcherService).getDiagnostics(2, null, null, null, null, null, null, null, null, null);
     }
 }

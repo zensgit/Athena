@@ -138,6 +138,22 @@ const SearchResults: React.FC = () => {
   const suppressFacetSearch = useRef(false);
   const quickSearchDebounceRef = useRef<number | null>(null);
   const isSimilarMode = similarResults !== null;
+  const previewRetrySummary = useMemo(() => {
+    const entries = Object.values(previewQueueStatusById);
+    const nextTimes = entries
+      .map((entry) => entry.nextAttemptAt)
+      .filter((value): value is string => Boolean(value))
+      .map((value) => new Date(value).getTime())
+      .filter((value) => !Number.isNaN(value));
+    if (entries.length === 0 || nextTimes.length === 0) {
+      return null;
+    }
+    const nextAt = new Date(Math.min(...nextTimes));
+    return {
+      count: entries.length,
+      nextAt,
+    };
+  }, [previewQueueStatusById]);
 
   const clearSimilarResults = useCallback(() => {
     setSimilarResults(null);
@@ -750,6 +766,29 @@ const SearchResults: React.FC = () => {
     return field.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ');
   };
 
+  const resolveHighlightDetails = (node: Node) => {
+    const highlightMap = node.highlights || {};
+    const matched = resolveMatchFields(node);
+    const orderedFields = [
+      ...matched,
+      ...Object.keys(highlightMap).filter((field) => !matched.includes(field)),
+    ];
+    return orderedFields
+      .map((field) => {
+        const values = highlightMap[field];
+        if (!Array.isArray(values) || values.length === 0 || !values[0]) {
+          return null;
+        }
+        return {
+          field,
+          label: formatMatchField(field),
+          snippet: values[0],
+        };
+      })
+      .filter((item): item is { field: string; label: string; snippet: string } => Boolean(item))
+      .slice(0, 3);
+  };
+
   const applySuggestedFilter = (filter: { field: string; value: string }) => {
     if (!lastSearchCriteria) {
       return;
@@ -906,14 +945,15 @@ const SearchResults: React.FC = () => {
       }
       return [attemptsLabel, nextLabel].filter(Boolean).join(' • ');
     })();
+    const tooltipText = [failureReason, queueDetail].filter(Boolean).join(' • ');
     return (
       <Box display="flex" flexDirection="column" alignItems="flex-start" gap={0.5}>
         <Box display="flex" alignItems="center" gap={0.5}>
           <Tooltip
-            title={failureReason}
+            title={tooltipText}
             placement="top-start"
             arrow
-            disableHoverListener={!failureReason}
+            disableHoverListener={!tooltipText}
           >
             <Chip label={label} size="small" variant="outlined" color={color} />
           </Tooltip>
@@ -951,6 +991,14 @@ const SearchResults: React.FC = () => {
     );
   };
 
+  const formatScore = (score?: number) => {
+    if (score === undefined || score === null) {
+      return null;
+    }
+    const rounded = Math.round(score * 100) / 100;
+    return `Score ${rounded}`;
+  };
+
   const renderTagsCategories = (node: Node) => {
     return (
       <Box display="flex" gap={1} flexWrap="wrap" mt={1}>
@@ -975,6 +1023,23 @@ const SearchResults: React.FC = () => {
   const displayNodes = isSimilarMode ? (similarResults || []) : (shouldShowFallback ? fallbackNodes : nodes);
   const failedPreviewNodes = displayNodes.filter((node) => node.nodeType === 'DOCUMENT'
     && (node.previewStatus || '').toUpperCase() === 'FAILED');
+  const failedPreviewReasonSummary = useMemo(() => {
+    const buckets = new Map<string, Node[]>();
+    failedPreviewNodes.forEach((node) => {
+      const reason = (node.previewFailureReason || '').trim() || 'UNSPECIFIED';
+      const existing = buckets.get(reason) || [];
+      existing.push(node);
+      buckets.set(reason, existing);
+    });
+    return Array.from(buckets.entries())
+      .map(([reason, nodesForReason]) => ({
+        reason,
+        count: nodesForReason.length,
+        nodes: nodesForReason,
+      }))
+      .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason))
+      .slice(0, 6);
+  }, [failedPreviewNodes]);
   const previewStatusCounts = displayNodes.reduce(
     (acc, node) => {
       if (node.nodeType === 'FOLDER') {
@@ -1026,17 +1091,18 @@ const SearchResults: React.FC = () => {
     }
   }, []);
 
-  const handleRetryFailedPreviews = async () => {
-    if (failedPreviewNodes.length === 0) {
+  const handleRetryFailedPreviews = async (force = false) => {
+    const targets = failedPreviewNodes;
+    if (targets.length === 0) {
       return;
     }
     setBatchRetrying(true);
     let queued = 0;
     let skipped = 0;
     let failed = 0;
-    for (const node of failedPreviewNodes) {
+    for (const node of targets) {
       try {
-        const status = await nodeService.queuePreview(node.id, false);
+        const status = await nodeService.queuePreview(node.id, force);
         setPreviewQueueStatusById((prev) => ({
           ...prev,
           [node.id]: {
@@ -1056,7 +1122,46 @@ const SearchResults: React.FC = () => {
     const parts = [`queued ${queued}`];
     if (skipped > 0) parts.push(`skipped ${skipped}`);
     if (failed > 0) parts.push(`failed ${failed}`);
-    toast.success(`Preview retries: ${parts.join(', ')}`);
+    toast.success(`Preview ${force ? 'rebuilds' : 'retries'}: ${parts.join(', ')}`);
+    setBatchRetrying(false);
+  };
+
+  const handleRetryFailedReason = async (reason: string, force = false) => {
+    const targets = failedPreviewNodes.filter((node) => {
+      const nodeReason = (node.previewFailureReason || '').trim() || 'UNSPECIFIED';
+      return nodeReason === reason;
+    });
+    if (targets.length === 0) {
+      return;
+    }
+    setBatchRetrying(true);
+    let queued = 0;
+    let skipped = 0;
+    let failed = 0;
+    for (const node of targets) {
+      try {
+        const status = await nodeService.queuePreview(node.id, force);
+        setPreviewQueueStatusById((prev) => ({
+          ...prev,
+          [node.id]: {
+            attempts: status?.attempts,
+            nextAttemptAt: status?.nextAttemptAt,
+          },
+        }));
+        if (status?.queued) {
+          queued += 1;
+        } else {
+          skipped += 1;
+        }
+      } catch {
+        failed += 1;
+      }
+    }
+    const reasonLabel = reason === 'UNSPECIFIED' ? 'unspecified' : reason;
+    const parts = [`queued ${queued}`];
+    if (skipped > 0) parts.push(`skipped ${skipped}`);
+    if (failed > 0) parts.push(`failed ${failed}`);
+    toast.success(`Preview ${force ? 'rebuilds' : 'retries'} (${reasonLabel}): ${parts.join(', ')}`);
     setBatchRetrying(false);
   };
   const statusFilteredNodes = previewStatusFilterApplied
@@ -1069,6 +1174,29 @@ const SearchResults: React.FC = () => {
       })
     : displayNodes;
   const paginatedNodes = statusFilteredNodes.filter((node) => !hiddenNodeIds.includes(node.id));
+  const queuedPreviewDetails = useMemo(() => {
+    return paginatedNodes
+      .map((node) => {
+        const queueStatus = previewQueueStatusById[node.id];
+        if (!queueStatus) {
+          return null;
+        }
+        return {
+          id: node.id,
+          name: node.name,
+          status: node.previewStatus?.toUpperCase() || 'PENDING',
+          attempts: queueStatus.attempts,
+          nextAttemptAt: queueStatus.nextAttemptAt,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => Boolean(item))
+      .sort((a, b) => {
+        const left = a.nextAttemptAt ? new Date(a.nextAttemptAt).getTime() : 0;
+        const right = b.nextAttemptAt ? new Date(b.nextAttemptAt).getTime() : 0;
+        return left - right;
+      })
+      .slice(0, 5);
+  }, [paginatedNodes, previewQueueStatusById]);
   const displayTotal = isSimilarMode
     ? paginatedNodes.length
     : previewStatusFilterApplied
@@ -1328,10 +1456,21 @@ const SearchResults: React.FC = () => {
                 size="small"
                 variant="outlined"
                 startIcon={<Refresh />}
-                onClick={handleRetryFailedPreviews}
+                onClick={() => {
+                  void handleRetryFailedPreviews(false);
+                }}
                 disabled={failedPreviewNodes.length === 0 || batchRetrying}
               >
                 Retry failed previews
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<Refresh />}
+                onClick={() => handleRetryFailedPreviews(true)}
+                disabled={failedPreviewNodes.length === 0 || batchRetrying}
+              >
+                Force rebuild failed
               </Button>
               {batchRetrying && (
                 <Typography variant="caption" color="text.secondary">
@@ -1339,6 +1478,64 @@ const SearchResults: React.FC = () => {
                 </Typography>
               )}
             </Box>
+            {failedPreviewReasonSummary.length > 0 && (
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="caption" color="text.secondary" display="block">
+                  Failed reasons (current page)
+                </Typography>
+                <Stack spacing={0.5} sx={{ mt: 0.5 }}>
+                  {failedPreviewReasonSummary.map((item) => {
+                    const displayReason = item.reason === 'UNSPECIFIED' ? 'Unspecified' : item.reason;
+                    const reasonLabel = displayReason.length > 80
+                      ? `${displayReason.slice(0, 77)}...`
+                      : displayReason;
+                    return (
+                      <Box key={item.reason} display="flex" alignItems="center" gap={1} flexWrap="wrap">
+                        <Chip size="small" color="error" variant="outlined" label={`${reasonLabel} (${item.count})`} />
+                        <Button
+                          size="small"
+                          variant="text"
+                          onClick={() => handleRetryFailedReason(item.reason)}
+                          disabled={batchRetrying}
+                        >
+                          Retry this reason
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="text"
+                          onClick={() => handleRetryFailedReason(item.reason, true)}
+                          disabled={batchRetrying}
+                        >
+                          Force rebuild
+                        </Button>
+                      </Box>
+                    );
+                  })}
+                </Stack>
+              </Box>
+            )}
+            {previewRetrySummary && (
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
+                Preview queue: {previewRetrySummary.count} item(s) • Next retry{' '}
+                {format(previewRetrySummary.nextAt, 'PPp')}
+              </Typography>
+            )}
+            {queuedPreviewDetails.length > 0 && (
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="caption" color="text.secondary" display="block">
+                  Queued preview details (current page)
+                </Typography>
+                <Stack spacing={0.5} sx={{ mt: 0.5 }}>
+                  {queuedPreviewDetails.map((item) => (
+                    <Typography key={item.id} variant="caption" color="text.secondary">
+                      {item.name} • {item.status.toLowerCase()}
+                      {item.attempts !== undefined ? ` • attempts ${item.attempts}` : ''}
+                      {item.nextAttemptAt ? ` • next ${format(new Date(item.nextAttemptAt), 'PPp')}` : ''}
+                    </Typography>
+                  ))}
+                </Stack>
+              </Box>
+            )}
 
             <Typography variant="subtitle2" gutterBottom>
               Created By
@@ -1829,7 +2026,45 @@ const SearchResults: React.FC = () => {
                               {remaining > 0 && (
                                 <Chip size="small" label={`+${remaining}`} variant="outlined" />
                               )}
+                              {formatScore(node.score) && (
+                                <Chip size="small" variant="outlined" label={formatScore(node.score)} />
+                              )}
                             </Stack>
+                          );
+                        })()}
+                        {(() => {
+                          const details = resolveHighlightDetails(node);
+                          if (details.length === 0) {
+                            return null;
+                          }
+                          return (
+                            <Box sx={{ mt: 1 }}>
+                              <Typography variant="caption" color="text.secondary" display="block">
+                                Hit details
+                              </Typography>
+                              <Stack spacing={0.5} sx={{ mt: 0.5 }}>
+                                {details.map((detail) => (
+                                  <Box key={`${node.id}-detail-${detail.field}`} display="flex" alignItems="flex-start" gap={0.5}>
+                                    <Chip size="small" variant="outlined" label={detail.label} />
+                                    <Typography
+                                      variant="caption"
+                                      color="text.secondary"
+                                      sx={{
+                                        display: '-webkit-box',
+                                        WebkitLineClamp: 2,
+                                        WebkitBoxOrient: 'vertical',
+                                        overflow: 'hidden',
+                                        '& em': {
+                                          fontStyle: 'normal',
+                                          fontWeight: 700,
+                                        },
+                                      }}
+                                      dangerouslySetInnerHTML={{ __html: detail.snippet }}
+                                    />
+                                  </Box>
+                                ))}
+                              </Stack>
+                            </Box>
                           );
                         })()}
                         {renderTagsCategories(node)}

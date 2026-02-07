@@ -276,6 +276,8 @@ class SearchAclFilteringTest {
             .mimeType("application/pdf")
             .createdBy("alice")
             .tags(Set.of("confidential"))
+            .previewStatus("FAILED")
+            .previewFailureReason("UNSUPPORTED_MIME_TYPE")
             .build();
         NodeDocument deniedDoc = NodeDocument.builder()
             .id(deniedId.toString())
@@ -308,6 +310,8 @@ class SearchAclFilteringTest {
         assertEquals(1, response.getTotalHits());
         assertEquals(1, response.getResults().getTotalElements());
         assertEquals(allowedId.toString(), response.getResults().getContent().get(0).getId());
+        assertEquals("FAILED", response.getResults().getContent().get(0).getPreviewStatus());
+        assertEquals("UNSUPPORTED_MIME_TYPE", response.getResults().getContent().get(0).getPreviewFailureReason());
 
         Map<String, List<FacetedSearchService.FacetValue>> facets = response.getFacets();
         assertEquals("application/pdf", facets.get("mimeType").get(0).getValue());

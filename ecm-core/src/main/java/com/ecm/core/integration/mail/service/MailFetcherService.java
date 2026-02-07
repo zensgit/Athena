@@ -27,6 +27,7 @@ import jakarta.mail.Session;
 import jakarta.mail.Store;
 import jakarta.mail.UIDFolder;
 import jakarta.mail.Address;
+import jakarta.mail.AuthenticationFailedException;
 import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.search.FlagTerm;
 import lombok.RequiredArgsConstructor;
@@ -86,6 +87,8 @@ public class MailFetcherService {
     private static final int DEFAULT_POLL_INTERVAL_MINUTES = 10;
     private static final int DEFAULT_DEBUG_MAX_MESSAGES_PER_FOLDER = 200;
     private static final int MAX_ERROR_LENGTH = 500;
+    private static final int MAX_RUNTIME_ERROR_SUMMARY_LENGTH = 240;
+    private static final double RUNTIME_TREND_ERROR_RATE_THRESHOLD = 0.05d;
     private static final String OAUTH_ENV_PREFIX = "ECM_MAIL_OAUTH_";
     private static final Pattern UUID_PATTERN = Pattern.compile(
         "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
@@ -176,6 +179,78 @@ public class MailFetcherService {
 
     public MailFetchSummaryStatus getLastFetchSummary() {
         return new MailFetchSummaryStatus(lastFetchSummary, lastFetchAt);
+    }
+
+    public MailRuntimeMetrics getRuntimeMetrics(Integer windowMinutes) {
+        int effectiveWindowMinutes = Math.max(5, Math.min(windowMinutes != null ? windowMinutes : 60, 7 * 24 * 60));
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime threshold = now.minusMinutes(effectiveWindowMinutes);
+        List<MailAccount> accounts = accountRepository.findAll();
+        List<MailAccount> windowAccounts = accounts.stream()
+            .filter(account -> account.getLastFetchAt() != null && !account.getLastFetchAt().isBefore(threshold))
+            .toList();
+        long attempts = windowAccounts.size();
+        long successes = windowAccounts.stream()
+            .filter(account -> "SUCCESS".equalsIgnoreCase(account.getLastFetchStatus()))
+            .count();
+        long errors = windowAccounts.stream()
+            .filter(account -> "ERROR".equalsIgnoreCase(account.getLastFetchStatus()))
+            .count();
+        double errorRate = attempts > 0 ? (double) errors / attempts : 0.0d;
+        LocalDateTime lastSuccessAt = windowAccounts.stream()
+            .filter(account -> "SUCCESS".equalsIgnoreCase(account.getLastFetchStatus()))
+            .map(MailAccount::getLastFetchAt)
+            .filter(Objects::nonNull)
+            .max(LocalDateTime::compareTo)
+            .orElse(null);
+        LocalDateTime lastErrorAt = windowAccounts.stream()
+            .filter(account -> "ERROR".equalsIgnoreCase(account.getLastFetchStatus()))
+            .map(MailAccount::getLastFetchAt)
+            .filter(Objects::nonNull)
+            .max(LocalDateTime::compareTo)
+            .orElse(null);
+
+        Long avgDurationMs = null;
+        if (lastFetchSummary != null && lastFetchAt != null) {
+            LocalDateTime summaryAt = LocalDateTime.ofInstant(lastFetchAt, ZoneId.systemDefault());
+            if (!summaryAt.isBefore(threshold)) {
+                int denominator = Math.max(1, lastFetchSummary.attemptedAccounts());
+                avgDurationMs = Math.max(0L, lastFetchSummary.durationMs() / denominator);
+            }
+        }
+
+        String status = attempts == 0
+            ? "UNKNOWN"
+            : errors == 0
+                ? "HEALTHY"
+                : successes == 0
+                    ? "DOWN"
+                    : "DEGRADED";
+
+        List<MailRuntimeErrorStat> topErrors = processedMailRepository
+            .aggregateTopErrors(threshold, now, PageRequest.of(0, 5))
+            .stream()
+            .map((row) -> new MailRuntimeErrorStat(
+                summarizeRuntimeErrorMessage(row.getErrorMessage()),
+                row.getTotalCount() != null ? row.getTotalCount() : 0L,
+                row.getLastSeenAt()
+            ))
+            .toList();
+        MailRuntimeTrend trend = buildRuntimeTrend(threshold, now, effectiveWindowMinutes);
+
+        return new MailRuntimeMetrics(
+            effectiveWindowMinutes,
+            attempts,
+            successes,
+            errors,
+            errorRate,
+            avgDurationMs,
+            lastSuccessAt,
+            lastErrorAt,
+            status,
+            topErrors,
+            trend
+        );
     }
 
     public MailFetchDebugResult fetchAllAccountsDebug(boolean force, Integer maxMessagesPerFolder) {
@@ -442,7 +517,7 @@ public class MailFetcherService {
     }
 
     public MailDiagnosticsResult getDiagnostics(Integer limit, UUID accountId, UUID ruleId) {
-        return getDiagnostics(limit, accountId, ruleId, null, null, null, null);
+        return getDiagnostics(limit, accountId, ruleId, null, null, null, null, null);
     }
 
     public MailDiagnosticsResult getDiagnostics(
@@ -454,10 +529,60 @@ public class MailFetcherService {
         LocalDateTime processedFrom,
         LocalDateTime processedTo
     ) {
+        return getDiagnostics(limit, accountId, ruleId, status, subject, null, processedFrom, processedTo, null, null);
+    }
+
+    public MailDiagnosticsResult getDiagnostics(
+        Integer limit,
+        UUID accountId,
+        UUID ruleId,
+        ProcessedMail.Status status,
+        String subject,
+        String errorContains,
+        LocalDateTime processedFrom,
+        LocalDateTime processedTo
+    ) {
+        return getDiagnostics(
+            limit,
+            accountId,
+            ruleId,
+            status,
+            subject,
+            errorContains,
+            processedFrom,
+            processedTo,
+            null,
+            null
+        );
+    }
+
+    public MailDiagnosticsResult getDiagnostics(
+        Integer limit,
+        UUID accountId,
+        UUID ruleId,
+        ProcessedMail.Status status,
+        String subject,
+        String errorContains,
+        LocalDateTime processedFrom,
+        LocalDateTime processedTo,
+        String sort,
+        String order
+    ) {
         int effectiveLimit = Math.max(1, Math.min(limit != null ? limit : 25, 200));
         try {
             return runWithSystemAuthenticationWithResult(
-                () -> buildDiagnostics(effectiveLimit, accountId, ruleId, status, subject, processedFrom, processedTo)
+                () -> buildDiagnostics(
+                    effectiveLimit,
+                    accountId,
+                    ruleId,
+                    status,
+                    subject,
+                    errorContains,
+                    processedFrom,
+                    processedTo,
+                    sort,
+                    order
+                )
             );
         } catch (Exception e) {
             String message = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
@@ -471,8 +596,13 @@ public class MailFetcherService {
         UUID ruleId,
         ProcessedMail.Status status,
         String subject,
+        String errorContains,
         LocalDateTime processedFrom,
         LocalDateTime processedTo,
+        String sort,
+        String order,
+        String requestId,
+        String generatedBy,
         Boolean includeProcessed,
         Boolean includeDocuments,
         Boolean includeSubject,
@@ -499,8 +629,13 @@ public class MailFetcherService {
                     ruleId,
                     status,
                     subject,
+                    errorContains,
                     processedFrom,
                     processedTo,
+                    sort,
+                    order,
+                    requestId,
+                    generatedBy,
                     exportOptions
                 )
             );
@@ -571,8 +706,13 @@ public class MailFetcherService {
 
     private boolean processMessage(Message message, List<MailRule> rules, MailAccount account, String folderName,
             Folder folder, MailFetchRunStats stats) throws Exception {
+        return processMessage(message, rules, account, folderName, folder, stats, false);
+    }
+
+    private boolean processMessage(Message message, List<MailRule> rules, MailAccount account, String folderName,
+            Folder folder, MailFetchRunStats stats, boolean replay) throws Exception {
         String uid = resolveMessageUid(folder, message);
-        if (processedMailRepository.existsByAccountIdAndFolderAndUid(account.getId(), folderName, uid)) {
+        if (!replay && processedMailRepository.existsByAccountIdAndFolderAndUid(account.getId(), folderName, uid)) {
             log.debug("Skipping already processed mail UID {} in {}", uid, folderName);
             incrementMessageMetric("skipped", "already_processed");
             stats.skippedMessages++;
@@ -683,6 +823,99 @@ public class MailFetcherService {
     public record MailConnectionTestResult(boolean success, String message, long durationMs) {
     }
 
+    public MailReplayResult replayProcessedMail(UUID processedMailId) {
+        ProcessedMail processedMail = processedMailRepository.findById(processedMailId)
+            .orElseThrow(() -> new IllegalArgumentException("Processed mail not found: " + processedMailId));
+        MailAccount account = accountRepository.findById(processedMail.getAccountId())
+            .orElseThrow(() -> new IllegalArgumentException("Mail account not found: " + processedMail.getAccountId()));
+
+        Store store = null;
+        Folder folder = null;
+        try {
+            store = connect(account);
+            folder = store.getFolder(processedMail.getFolder());
+            if (!folder.exists()) {
+                return new MailReplayResult(
+                    processedMailId,
+                    false,
+                    false,
+                    "Mail folder does not exist: " + processedMail.getFolder(),
+                    null
+                );
+            }
+            folder.open(Folder.READ_WRITE);
+            Message message = findMessageByUid(folder, processedMail.getUid());
+            if (message == null) {
+                return new MailReplayResult(
+                    processedMailId,
+                    false,
+                    false,
+                    "Mail message not found for UID: " + processedMail.getUid(),
+                    null
+                );
+            }
+
+            List<MailRule> candidateRules = resolveReplayRules(account.getId(), processedMail.getRuleId());
+            if (candidateRules.isEmpty()) {
+                return new MailReplayResult(
+                    processedMailId,
+                    false,
+                    false,
+                    "No candidate rule available for replay",
+                    null
+                );
+            }
+
+            MailFetchRunStats stats = new MailFetchRunStats();
+            boolean expungeNeeded = processMessage(
+                message,
+                candidateRules,
+                account,
+                processedMail.getFolder(),
+                folder,
+                stats,
+                true
+            );
+            if (expungeNeeded) {
+                folder.expunge();
+            }
+            String replayStatus = stats.errorMessages > 0
+                ? "ERROR"
+                : (stats.processedMessages > 0 ? "PROCESSED" : "SKIPPED");
+            String detail = String.format(
+                "Replay finished (processed=%d, skipped=%d, errors=%d)",
+                stats.processedMessages,
+                stats.skippedMessages,
+                stats.errorMessages
+            );
+            return new MailReplayResult(
+                processedMailId,
+                true,
+                Objects.equals(replayStatus, "PROCESSED"),
+                detail,
+                replayStatus
+            );
+        } catch (Exception e) {
+            String message = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            return new MailReplayResult(processedMailId, false, false, "Replay failed: " + message, "ERROR");
+        } finally {
+            if (folder != null && folder.isOpen()) {
+                try {
+                    folder.close(false);
+                } catch (Exception ignored) {
+                    // best effort
+                }
+            }
+            if (store != null) {
+                try {
+                    store.close();
+                } catch (Exception ignored) {
+                    // best effort
+                }
+            }
+        }
+    }
+
     private record MailRoutingTarget(UUID folderId, String reason, String address) {
     }
 
@@ -704,6 +937,57 @@ public class MailFetcherService {
         MailFetchSummary summary,
         Instant fetchedAt
     ) {
+    }
+
+    public record MailRuntimeMetrics(
+        int windowMinutes,
+        long attempts,
+        long successes,
+        long errors,
+        double errorRate,
+        Long avgDurationMs,
+        LocalDateTime lastSuccessAt,
+        LocalDateTime lastErrorAt,
+        String status,
+        List<MailRuntimeErrorStat> topErrors,
+        MailRuntimeTrend trend
+    ) {
+    }
+
+    public record MailRuntimeErrorStat(
+        String errorMessage,
+        long count,
+        LocalDateTime lastSeenAt
+    ) {
+    }
+
+    public record MailRuntimeTrend(
+        String direction,
+        long currentTotal,
+        long previousTotal,
+        long deltaTotal,
+        double currentErrorRate,
+        double previousErrorRate,
+        double deltaErrorRate,
+        String summary
+    ) {
+    }
+
+    private record MailRuntimeWindowAggregate(
+        long processed,
+        long errors
+    ) {
+        long total() {
+            return processed + errors;
+        }
+
+        double errorRate() {
+            long total = total();
+            if (total <= 0) {
+                return 0.0d;
+            }
+            return (double) errors / (double) total;
+        }
     }
 
     public record MailFetchDebugFolderResult(
@@ -812,6 +1096,15 @@ public class MailFetcherService {
         int limit,
         List<ProcessedMailDiagnosticItem> recentProcessed,
         List<MailDocumentDiagnosticItem> recentDocuments
+    ) {
+    }
+
+    public record MailReplayResult(
+        UUID processedMailId,
+        boolean attempted,
+        boolean processed,
+        String message,
+        String replayStatus
     ) {
     }
 
@@ -931,8 +1224,11 @@ public class MailFetcherService {
         UUID ruleId,
         ProcessedMail.Status status,
         String subject,
+        String errorContains,
         LocalDateTime processedFrom,
-        LocalDateTime processedTo
+        LocalDateTime processedTo,
+        String sort,
+        String order
     ) {
         Map<UUID, String> accountNames = accountRepository.findAll().stream()
             .collect(Collectors.toMap(MailAccount::getId, MailAccount::getName));
@@ -944,10 +1240,11 @@ public class MailFetcherService {
             ruleId,
             status,
             subject,
+            errorContains,
             processedFrom,
             processedTo
         );
-        PageRequest sortedPageable = PageRequest.of(0, limit, Sort.by(Sort.Direction.DESC, "processedAt"));
+        PageRequest sortedPageable = PageRequest.of(0, limit, resolveDiagnosticsSort(sort, order));
         List<ProcessedMail> processedMails = processedMailRepository.findAll(spec, sortedPageable).getContent();
 
         List<ProcessedMailDiagnosticItem> recentProcessed = processedMails.stream()
@@ -987,8 +1284,13 @@ public class MailFetcherService {
         UUID ruleId,
         ProcessedMail.Status status,
         String subject,
+        String errorContains,
         LocalDateTime processedFrom,
         LocalDateTime processedTo,
+        String sort,
+        String order,
+        String requestId,
+        String generatedBy,
         MailDiagnosticsExportOptions exportOptions
     ) {
         MailDiagnosticsResult diagnostics = buildDiagnostics(
@@ -997,26 +1299,46 @@ public class MailFetcherService {
             ruleId,
             status,
             subject,
+            errorContains,
             processedFrom,
-            processedTo
+            processedTo,
+            sort,
+            order
         );
         String accountLabel = resolveAccountLabel(accountId);
         String ruleLabel = resolveRuleLabel(ruleId);
         String statusLabel = status != null ? status.name() : "ALL";
         String subjectLabel = subject != null && !subject.isBlank() ? subject : "ALL";
+        String errorContainsLabel = errorContains != null && !errorContains.isBlank() ? errorContains : "ALL";
         String processedFromLabel = processedFrom != null ? processedFrom.toString() : "ALL";
         String processedToLabel = processedTo != null ? processedTo.toString() : "ALL";
+        String sortLabel = sort != null && !sort.isBlank() ? sort : "processedAt";
+        String orderLabel = order != null && !order.isBlank() ? order : "desc";
+        String effectiveRequestId = requestId != null && !requestId.isBlank() ? requestId : UUID.randomUUID().toString();
+        String effectiveGeneratedBy = generatedBy != null && !generatedBy.isBlank() ? generatedBy : "unknown";
 
         StringBuilder csv = new StringBuilder();
         appendCsvRow(csv, "Mail Diagnostics Export");
+        appendCsvRow(csv, "RequestId", effectiveRequestId);
+        appendCsvRow(csv, "GeneratedBy", effectiveGeneratedBy);
         appendCsvRow(csv, "GeneratedAt", LocalDateTime.now());
         appendCsvRow(csv, "Limit", diagnostics.limit());
+        appendCsvRow(csv, "FilterAccountId", accountId != null ? accountId : "ALL");
+        appendCsvRow(csv, "FilterRuleId", ruleId != null ? ruleId : "ALL");
+        appendCsvRow(csv, "FilterStatus", statusLabel);
+        appendCsvRow(csv, "FilterSubject", subjectLabel);
+        appendCsvRow(csv, "FilterErrorContains", errorContainsLabel);
+        appendCsvRow(csv, "FilterProcessedFrom", processedFromLabel);
+        appendCsvRow(csv, "FilterProcessedTo", processedToLabel);
         appendCsvRow(csv, "AccountFilter", accountLabel);
         appendCsvRow(csv, "RuleFilter", ruleLabel);
         appendCsvRow(csv, "StatusFilter", statusLabel);
         appendCsvRow(csv, "SubjectFilter", subjectLabel);
+        appendCsvRow(csv, "ErrorFilter", errorContainsLabel);
         appendCsvRow(csv, "ProcessedFrom", processedFromLabel);
         appendCsvRow(csv, "ProcessedTo", processedToLabel);
+        appendCsvRow(csv, "SortBy", sortLabel);
+        appendCsvRow(csv, "SortOrder", orderLabel);
         appendCsvRow(csv, "IncludeProcessed", exportOptions.includeProcessed());
         appendCsvRow(csv, "IncludeDocuments", exportOptions.includeDocuments());
         appendCsvRow(csv, "IncludeSubject", exportOptions.includeSubject());
@@ -1106,11 +1428,32 @@ public class MailFetcherService {
         return csv.toString();
     }
 
+    private Sort resolveDiagnosticsSort(String sortFieldRaw, String sortOrderRaw) {
+        String sortField = sortFieldRaw != null ? sortFieldRaw.trim().toLowerCase(Locale.ROOT) : "processedat";
+        String property = switch (sortField) {
+            case "status" -> "status";
+            case "rule", "ruleid" -> "ruleId";
+            case "account", "accountid" -> "accountId";
+            case "processedat", "processed_at", "processed-time", "processedtime" -> "processedAt";
+            default -> "processedAt";
+        };
+        String sortOrder = sortOrderRaw != null ? sortOrderRaw.trim().toLowerCase(Locale.ROOT) : "desc";
+        Sort.Direction direction = "asc".equals(sortOrder) ? Sort.Direction.ASC : Sort.Direction.DESC;
+        Sort primary = Sort.by(direction, property);
+        if ("processedAt".equals(property)) {
+            return primary.and(Sort.by(Sort.Direction.DESC, "id"));
+        }
+        return primary
+            .and(Sort.by(Sort.Direction.DESC, "processedAt"))
+            .and(Sort.by(Sort.Direction.DESC, "id"));
+    }
+
     private Specification<ProcessedMail> buildProcessedMailSpec(
         UUID accountId,
         UUID ruleId,
         ProcessedMail.Status status,
         String subject,
+        String errorContains,
         LocalDateTime processedFrom,
         LocalDateTime processedTo
     ) {
@@ -1127,6 +1470,11 @@ public class MailFetcherService {
             }
             if (subject != null && !subject.isBlank()) {
                 predicates.add(cb.like(cb.lower(root.get("subject")), "%" + subject.toLowerCase(Locale.ROOT) + "%"));
+            }
+            if (errorContains != null && !errorContains.isBlank()) {
+                predicates.add(
+                    cb.like(cb.lower(root.get("errorMessage")), "%" + errorContains.toLowerCase(Locale.ROOT) + "%")
+                );
             }
             if (processedFrom != null) {
                 predicates.add(cb.greaterThanOrEqualTo(root.get("processedAt"), processedFrom));
@@ -1851,7 +2199,8 @@ public class MailFetcherService {
         ProcessedMail.Status status,
         String errorMessage
     ) {
-        ProcessedMail processed = new ProcessedMail();
+        ProcessedMail processed = processedMailRepository.findByAccountIdAndFolderAndUid(account.getId(), folderName, uid)
+            .orElseGet(ProcessedMail::new);
         processed.setAccountId(account.getId());
         processed.setRuleId(rule != null ? rule.getId() : null);
         processed.setFolder(folderName);
@@ -1862,6 +2211,49 @@ public class MailFetcherService {
         processed.setStatus(status);
         processed.setErrorMessage(errorMessage);
         processedMailRepository.save(processed);
+    }
+
+    private List<MailRule> resolveReplayRules(UUID accountId, UUID replayRuleId) {
+        List<MailRule> accountRules = ruleRepository.findAllByEnabledTrueOrderByPriorityAsc().stream()
+            .filter(rule -> rule.getAccountId() == null || Objects.equals(rule.getAccountId(), accountId))
+            .collect(Collectors.toList());
+        if (replayRuleId == null) {
+            return accountRules;
+        }
+        return accountRules.stream()
+            .filter(rule -> Objects.equals(rule.getId(), replayRuleId))
+            .collect(Collectors.toList());
+    }
+
+    private Message findMessageByUid(Folder folder, String targetUid) throws MessagingException {
+        if (targetUid == null || targetUid.isBlank()) {
+            return null;
+        }
+        if (folder instanceof UIDFolder uidFolder) {
+            try {
+                long parsedUid = Long.parseLong(targetUid);
+                Message byUid = uidFolder.getMessageByUID(parsedUid);
+                if (byUid != null) {
+                    return byUid;
+                }
+            } catch (NumberFormatException ignored) {
+                // fallback scan for non-numeric uid
+            }
+            Message[] all = folder.getMessages();
+            for (Message message : all) {
+                long currentUid = uidFolder.getUID(message);
+                if (Long.toString(currentUid).equals(targetUid)) {
+                    return message;
+                }
+            }
+        }
+        Message[] all = folder.getMessages();
+        for (Message message : all) {
+            if (targetUid.equals(resolveMessageUid(folder, message))) {
+                return message;
+            }
+        }
+        return null;
     }
 
     private MultipartFile buildEmlFile(Message message) throws Exception {
@@ -2303,6 +2695,76 @@ public class MailFetcherService {
         return trimmed.substring(0, MAX_ERROR_LENGTH);
     }
 
+    private String summarizeRuntimeErrorMessage(String errorMessage) {
+        if (errorMessage == null || errorMessage.isBlank()) {
+            return "Unknown error";
+        }
+        String compact = errorMessage.replaceAll("\\s+", " ").trim();
+        if (compact.length() <= MAX_RUNTIME_ERROR_SUMMARY_LENGTH) {
+            return compact;
+        }
+        return compact.substring(0, MAX_RUNTIME_ERROR_SUMMARY_LENGTH);
+    }
+
+    private MailRuntimeTrend buildRuntimeTrend(
+        LocalDateTime currentWindowStart,
+        LocalDateTime currentWindowEnd,
+        int windowMinutes
+    ) {
+        MailRuntimeWindowAggregate currentWindow = aggregateRuntimeWindow(currentWindowStart, currentWindowEnd);
+        LocalDateTime previousWindowStart = currentWindowStart.minusMinutes(windowMinutes);
+        MailRuntimeWindowAggregate previousWindow = aggregateRuntimeWindow(previousWindowStart, currentWindowStart);
+
+        long currentTotal = currentWindow.total();
+        long previousTotal = previousWindow.total();
+        long deltaTotal = currentTotal - previousTotal;
+        double currentErrorRate = currentWindow.errorRate();
+        double previousErrorRate = previousWindow.errorRate();
+        double deltaErrorRate = currentErrorRate - previousErrorRate;
+
+        String direction;
+        if (deltaErrorRate <= -RUNTIME_TREND_ERROR_RATE_THRESHOLD) {
+            direction = "IMPROVING";
+        } else if (deltaErrorRate >= RUNTIME_TREND_ERROR_RATE_THRESHOLD) {
+            direction = "WORSENING";
+        } else {
+            direction = "STABLE";
+        }
+
+        String summary;
+        if (currentTotal == 0 && previousTotal == 0) {
+            summary = "No processed mail activity in current and previous windows.";
+        } else if (deltaTotal > 0) {
+            summary = "Processed volume increased by " + deltaTotal + " compared with previous window.";
+        } else if (deltaTotal < 0) {
+            summary = "Processed volume decreased by " + Math.abs(deltaTotal) + " compared with previous window.";
+        } else {
+            summary = "Processed volume unchanged compared with previous window.";
+        }
+
+        return new MailRuntimeTrend(
+            direction,
+            currentTotal,
+            previousTotal,
+            deltaTotal,
+            currentErrorRate,
+            previousErrorRate,
+            deltaErrorRate,
+            summary
+        );
+    }
+
+    private MailRuntimeWindowAggregate aggregateRuntimeWindow(LocalDateTime start, LocalDateTime end) {
+        List<ProcessedMailRepository.MailAccountAggregateRow> rows = processedMailRepository.aggregateByAccount(start, end, null);
+        long processed = rows.stream().mapToLong((row) -> safeCount(row.getProcessedCount())).sum();
+        long errors = rows.stream().mapToLong((row) -> safeCount(row.getErrorCount())).sum();
+        return new MailRuntimeWindowAggregate(processed, errors);
+    }
+
+    private long safeCount(Long value) {
+        return value != null ? value : 0L;
+    }
+
     private void runWithSystemAuthenticationIfMissing(MailFetcherTask task) throws Exception {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth != null && auth.isAuthenticated()) {
@@ -2597,7 +3059,7 @@ public class MailFetcherService {
     private Store connect(MailAccount account) throws Exception {
         Properties props = new Properties();
         props.put("mail.store.protocol", "imap");
-        
+
         if (account.getSecurity() == MailAccount.SecurityType.SSL) {
             props.put("mail.imap.ssl.enable", "true");
         } else if (account.getSecurity() == MailAccount.SecurityType.STARTTLS) {
@@ -2615,9 +3077,31 @@ public class MailFetcherService {
         if (account.getSecurity() == MailAccount.SecurityType.OAUTH2) {
             String accessToken = resolveOAuthAccessToken(account);
             store.connect(account.getHost(), account.getPort(), account.getUsername(), accessToken);
-        } else {
-            store.connect(account.getHost(), account.getPort(), account.getUsername(), account.getPassword());
+            return store;
         }
-        return store;
+
+        String password = account.getPassword();
+        boolean hasNonAsciiPassword = password != null && !StandardCharsets.US_ASCII.newEncoder().canEncode(password);
+        try {
+            store.connect(account.getHost(), account.getPort(), account.getUsername(), password);
+            return store;
+        } catch (AuthenticationFailedException e) {
+            if (!hasNonAsciiPassword) {
+                throw e;
+            }
+            if (store.isConnected()) {
+                store.close();
+            }
+            log.warn("Retrying IMAP login using AUTH=PLAIN for account {} (non-ASCII password detected)", account.getName());
+            Properties retryProps = new Properties();
+            retryProps.putAll(props);
+            retryProps.put("mail.imap.allowutf8", "true");
+            retryProps.put("mail.mime.allowutf8", "true");
+            retryProps.put("mail.imap.auth.login.disable", "true");
+            Session retrySession = Session.getInstance(retryProps);
+            Store retryStore = retrySession.getStore("imap");
+            retryStore.connect(account.getHost(), account.getPort(), account.getUsername(), password);
+            return retryStore;
+        }
     }
 }

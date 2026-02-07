@@ -56,7 +56,24 @@ const theme = createTheme({
   },
 });
 
+const shouldForceE2ERenderCrash = () => {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  if (window.navigator?.webdriver !== true) {
+    return false;
+  }
+  try {
+    return window.localStorage.getItem('ecm_e2e_force_render_error') === '1';
+  } catch {
+    return false;
+  }
+};
+
 const App: React.FC = () => {
+  if (shouldForceE2ERenderCrash()) {
+    throw new Error('E2E forced render error');
+  }
   return (
     <Provider store={store}>
       <ThemeProvider theme={theme}>

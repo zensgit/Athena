@@ -7,15 +7,16 @@ let keycloakInstance: KeycloakInstance | null = null;
 let keycloakLoadPromise: Promise<KeycloakInstance> | null = null;
 
 const getBypassMode = () => {
-  if (process.env.REACT_APP_E2E_BYPASS_AUTH === '1') {
-    return true;
-  }
+  const bypassEnabledByEnv = process.env.REACT_APP_E2E_BYPASS_AUTH === '1';
   if (typeof window === 'undefined') {
-    return false;
+    return bypassEnabledByEnv;
   }
   const isE2E = window.navigator?.webdriver === true;
+  if (!isE2E) {
+    return false;
+  }
   const flag = window.localStorage.getItem('ecm_e2e_bypass');
-  return isE2E && flag === '1';
+  return bypassEnabledByEnv || flag === '1';
 };
 
 const loadBypassSession = () => {
@@ -48,6 +49,18 @@ const loadKeycloak = async (): Promise<KeycloakInstance> => {
   return keycloakLoadPromise;
 };
 
+const ensureKeycloakInitializedForLogin = async (keycloak: KeycloakInstance): Promise<void> => {
+  const withInitState = keycloak as KeycloakInstance & { didInitialize?: boolean };
+  if (withInitState.didInitialize) {
+    return;
+  }
+  const canUsePkce = typeof window !== 'undefined' && !!(window.crypto && window.crypto.subtle);
+  await keycloak.init({
+    pkceMethod: canUsePkce ? 'S256' : undefined,
+    checkLoginIframe: false,
+  } as any);
+};
+
 class AuthService {
   async init(options: KeycloakInitOptionsWithPkce): Promise<boolean> {
     if (getBypassMode()) {
@@ -60,6 +73,7 @@ class AuthService {
 
   async login(options?: KeycloakLoginOptions): Promise<void> {
     const keycloak = await loadKeycloak();
+    await ensureKeycloakInitializedForLogin(keycloak);
     await keycloak.login(options);
   }
 

@@ -3,6 +3,7 @@ package com.ecm.core.integration.mail.repository;
 import com.ecm.core.integration.mail.model.ProcessedMail;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -10,11 +11,13 @@ import org.springframework.stereotype.Repository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
 public interface ProcessedMailRepository extends JpaRepository<ProcessedMail, UUID>, JpaSpecificationExecutor<ProcessedMail> {
     boolean existsByAccountIdAndFolderAndUid(UUID accountId, String folder, String uid);
+    Optional<ProcessedMail> findByAccountIdAndFolderAndUid(UUID accountId, String folder, String uid);
 
     long countByProcessedAtBefore(java.time.LocalDateTime threshold);
 
@@ -90,6 +93,26 @@ public interface ProcessedMailRepository extends JpaRepository<ProcessedMail, UU
         @Param("ruleId") UUID ruleId
     );
 
+    @Query(
+        value = """
+            SELECT COALESCE(NULLIF(TRIM(error_message), ''), 'Unknown error') as errorMessage,
+                   COUNT(*) as totalCount,
+                   MAX(processed_at) as lastSeenAt
+            FROM mail_processed_messages
+            WHERE status = 'ERROR'
+              AND processed_at >= :start
+              AND processed_at < :end
+            GROUP BY COALESCE(NULLIF(TRIM(error_message), ''), 'Unknown error')
+            ORDER BY totalCount DESC, lastSeenAt DESC
+            """,
+        nativeQuery = true
+    )
+    List<MailRuntimeErrorAggregateRow> aggregateTopErrors(
+        @Param("start") LocalDateTime start,
+        @Param("end") LocalDateTime end,
+        Pageable pageable
+    );
+
     interface MailAccountAggregateRow {
         UUID getAccountId();
         Long getProcessedCount();
@@ -111,5 +134,11 @@ public interface ProcessedMailRepository extends JpaRepository<ProcessedMail, UU
         LocalDate getDay();
         Long getProcessedCount();
         Long getErrorCount();
+    }
+
+    interface MailRuntimeErrorAggregateRow {
+        String getErrorMessage();
+        Long getTotalCount();
+        LocalDateTime getLastSeenAt();
     }
 }

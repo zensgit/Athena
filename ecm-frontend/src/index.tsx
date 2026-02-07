@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 import App from './App';
 import authService from 'services/authService';
+import AppErrorBoundary from 'components/layout/AppErrorBoundary';
 import { store } from './store';
 import { setSession } from 'store/slices/authSlice';
 
@@ -43,7 +44,9 @@ const stripKeycloakCallbackParams = () => {
 const renderApp = () => {
   root.render(
     <React.StrictMode>
-      <App />
+      <AppErrorBoundary>
+        <App />
+      </AppErrorBoundary>
     </React.StrictMode>
   );
 };

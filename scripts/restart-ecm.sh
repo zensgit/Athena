@@ -32,6 +32,48 @@ docker_compose() {
   fi
 }
 
+repair_rabbitmq_plugins_expand() {
+  local rabbitmq_cid
+  local rabbitmq_volume
+
+  rabbitmq_cid="$(docker_compose ps -q rabbitmq 2>/dev/null || true)"
+  rabbitmq_volume=""
+
+  if [[ -n "${rabbitmq_cid}" ]]; then
+    rabbitmq_volume="$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/var/lib/rabbitmq"}}{{.Name}}{{end}}{{end}}' "${rabbitmq_cid}" 2>/dev/null || true)"
+    docker update --restart=no "${rabbitmq_cid}" >/dev/null 2>&1 || true
+    docker stop "${rabbitmq_cid}" >/dev/null 2>&1 || true
+  fi
+
+  if [[ -z "${rabbitmq_volume}" ]]; then
+    rabbitmq_volume="$(docker volume ls --format '{{.Name}}' | grep -E '(^|_)rabbitmq_data$' | head -n 1 || true)"
+  fi
+
+  if [[ -n "${rabbitmq_volume}" ]]; then
+    docker run --rm -v "${rabbitmq_volume}:/data" alpine sh -lc '
+      set -e
+      found=0
+      for d in /data/mnesia/*-plugins-expand; do
+        [ -d "$d" ] || continue
+        found=1
+        ts=$(date +%s)
+        mv "$d" "$d.stale.$ts"
+        echo "RabbitMQ stale plugins dir moved: $d -> $d.stale.$ts"
+      done
+      if [ "$found" -eq 0 ]; then
+        echo "RabbitMQ stale plugins dir not found."
+      fi
+    ' || true
+  fi
+
+  if [[ -n "${rabbitmq_cid}" ]]; then
+    docker update --restart=unless-stopped "${rabbitmq_cid}" >/dev/null 2>&1 || true
+    docker start "${rabbitmq_cid}" >/dev/null 2>&1 || true
+  fi
+}
+
+repair_rabbitmq_plugins_expand
+
 docker_compose build ecm-core ecm-frontend
 docker_compose up -d --no-deps --force-recreate ecm-core ecm-frontend
 

@@ -131,6 +131,7 @@ jacoco/
 *.exec
 playwright-report/
 test-results/
+.playwright-cli/
 
 # -------------------------------------------
 # Node.js (if any frontend)

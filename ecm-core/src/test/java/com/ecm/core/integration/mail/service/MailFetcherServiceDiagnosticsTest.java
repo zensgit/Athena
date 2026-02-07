@@ -24,6 +24,7 @@ import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.core.env.Environment;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 
@@ -34,6 +35,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -90,6 +92,42 @@ class MailFetcherServiceDiagnosticsTest {
             meterRegistry,
             environment
         );
+    }
+
+    @Test
+    @DisplayName("Runtime metrics include top error reasons")
+    void runtimeMetricsIncludeTopErrors() {
+        LocalDateTime now = LocalDateTime.now();
+        MailAccount success = new MailAccount();
+        success.setId(UUID.randomUUID());
+        success.setLastFetchAt(now.minusMinutes(5));
+        success.setLastFetchStatus("SUCCESS");
+
+        MailAccount error = new MailAccount();
+        error.setId(UUID.randomUUID());
+        error.setLastFetchAt(now.minusMinutes(2));
+        error.setLastFetchStatus("ERROR");
+
+        when(accountRepository.findAll()).thenReturn(List.of(success, error));
+        when(processedMailRepository.aggregateByAccount(any(LocalDateTime.class), any(LocalDateTime.class), eq(null)))
+            .thenReturn(List.of(new RuntimeAccountAggregate(success.getId(), 8L, 2L, now.minusMinutes(2), now.minusMinutes(1))));
+        when(processedMailRepository.aggregateTopErrors(any(LocalDateTime.class), any(LocalDateTime.class), eq(PageRequest.of(0, 5))))
+            .thenReturn(List.of(
+                new RuntimeErrorAggregate("Authentication failed for user admin@example.com", 3L, now.minusMinutes(2)),
+                new RuntimeErrorAggregate("Folder not found: ECM-TEST", 1L, now.minusMinutes(1))
+            ));
+
+        var metrics = service.getRuntimeMetrics(60);
+
+        assertEquals(2, metrics.attempts());
+        assertEquals(1, metrics.successes());
+        assertEquals(1, metrics.errors());
+        assertEquals("DEGRADED", metrics.status());
+        assertEquals(2, metrics.topErrors().size());
+        assertEquals("Authentication failed for user admin@example.com", metrics.topErrors().get(0).errorMessage());
+        assertEquals(3L, metrics.topErrors().get(0).count());
+        assertEquals("STABLE", metrics.trend().direction());
+        assertTrue(metrics.trend().summary().contains("unchanged") || metrics.trend().summary().contains("No processed"));
     }
 
     @Test
@@ -220,6 +258,11 @@ class MailFetcherServiceDiagnosticsTest {
             null,
             null,
             null,
+            null,
+            null,
+            null,
+            "req-test",
+            "admin",
             true,
             true,
             false,
@@ -245,5 +288,79 @@ class MailFetcherServiceDiagnosticsTest {
         assertTrue(!docHeader.contains("Path"));
         assertTrue(docHeader.contains("MimeType"));
         assertTrue(!docHeader.contains("FileSize"));
+    }
+
+    private static final class RuntimeErrorAggregate implements ProcessedMailRepository.MailRuntimeErrorAggregateRow {
+        private final String errorMessage;
+        private final Long totalCount;
+        private final LocalDateTime lastSeenAt;
+
+        private RuntimeErrorAggregate(String errorMessage, Long totalCount, LocalDateTime lastSeenAt) {
+            this.errorMessage = errorMessage;
+            this.totalCount = totalCount;
+            this.lastSeenAt = lastSeenAt;
+        }
+
+        @Override
+        public String getErrorMessage() {
+            return errorMessage;
+        }
+
+        @Override
+        public Long getTotalCount() {
+            return totalCount;
+        }
+
+        @Override
+        public LocalDateTime getLastSeenAt() {
+            return lastSeenAt;
+        }
+    }
+
+    private static final class RuntimeAccountAggregate implements ProcessedMailRepository.MailAccountAggregateRow {
+        private final UUID accountId;
+        private final Long processedCount;
+        private final Long errorCount;
+        private final LocalDateTime lastProcessedAt;
+        private final LocalDateTime lastErrorAt;
+
+        private RuntimeAccountAggregate(
+            UUID accountId,
+            Long processedCount,
+            Long errorCount,
+            LocalDateTime lastProcessedAt,
+            LocalDateTime lastErrorAt
+        ) {
+            this.accountId = accountId;
+            this.processedCount = processedCount;
+            this.errorCount = errorCount;
+            this.lastProcessedAt = lastProcessedAt;
+            this.lastErrorAt = lastErrorAt;
+        }
+
+        @Override
+        public UUID getAccountId() {
+            return accountId;
+        }
+
+        @Override
+        public Long getProcessedCount() {
+            return processedCount;
+        }
+
+        @Override
+        public Long getErrorCount() {
+            return errorCount;
+        }
+
+        @Override
+        public LocalDateTime getLastProcessedAt() {
+            return lastProcessedAt;
+        }
+
+        @Override
+        public LocalDateTime getLastErrorAt() {
+            return lastErrorAt;
+        }
     }
 }

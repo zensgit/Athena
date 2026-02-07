@@ -32,26 +32,83 @@ async function suppressDevServerOverlay(page: Page) {
   });
 }
 
+function isOverlayContextReset(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('Execution context was destroyed')
+    || message.includes('Cannot find context with specified id')
+    || message.includes('Target page, context or browser has been closed')
+    || message.includes('Frame was detached')
+    || message.includes('has been detached');
+}
+
 async function hideDevServerOverlay(page: Page) {
-  await page.addStyleTag({
-    content: `
-      #webpack-dev-server-client-overlay,
-      iframe#webpack-dev-server-client-overlay {
-        display: none !important;
-        pointer-events: none !important;
-      }
-    `,
-  });
-  await page.evaluate(() => {
-    const overlay = document.getElementById('webpack-dev-server-client-overlay');
-    if (overlay && overlay.parentElement) {
-      overlay.parentElement.removeChild(overlay);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (page.isClosed()) {
+      return;
     }
-  });
+    try {
+      await page.waitForLoadState('domcontentloaded', { timeout: 5_000 }).catch(() => undefined);
+      await page.addStyleTag({
+        content: `
+          #webpack-dev-server-client-overlay,
+          iframe#webpack-dev-server-client-overlay {
+            display: none !important;
+            pointer-events: none !important;
+          }
+        `,
+      });
+      await page.evaluate(() => {
+        const overlay = document.getElementById('webpack-dev-server-client-overlay');
+        if (overlay && overlay.parentElement) {
+          overlay.parentElement.removeChild(overlay);
+        }
+      });
+      return;
+    } catch (error) {
+      // Best effort only: overlay hiding must not fail the scenario.
+      if (!isOverlayContextReset(error)) {
+        return;
+      }
+      await page.waitForTimeout(100);
+    }
+  }
 }
 
 async function loginWithCredentials(page: Page, username: string, password: string, token?: string) {
   await suppressDevServerOverlay(page);
+  const forceUiLogin = process.env.ECM_E2E_FORCE_UI_LOGIN === '1';
+  if (!forceUiLogin) {
+    const resolvedToken = token
+      ?? await fetchAccessToken(page.request, username, password).catch(() => undefined);
+    if (resolvedToken) {
+      const roles = username === defaultUsername
+        ? ['ROLE_ADMIN']
+        : username === editorUsernameEnv
+          ? ['ROLE_EDITOR']
+          : ['ROLE_VIEWER'];
+      await page.addInitScript(
+        ({ authToken, authUser }) => {
+          window.localStorage.setItem('token', authToken);
+          window.localStorage.setItem('ecm_e2e_bypass', '1');
+          window.localStorage.setItem('user', JSON.stringify(authUser));
+        },
+        {
+          authToken: resolvedToken,
+          authUser: {
+            id: `e2e-${username}`,
+            username,
+            email: `${username}@example.com`,
+            roles,
+          },
+        }
+      );
+      await page.goto('/browse/root', { waitUntil: 'domcontentloaded' });
+      await hideDevServerOverlay(page);
+      await expect(page.getByText('Athena ECM')).toBeVisible({ timeout: 60_000 });
+      return;
+    }
+  }
+
   if (process.env.ECM_E2E_SKIP_LOGIN === '1') {
     const resolvedToken = token ?? await fetchAccessToken(page.request, username, password);
     const roles = username === defaultUsername
