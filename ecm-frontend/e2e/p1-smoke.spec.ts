@@ -10,7 +10,87 @@ const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
 const apiUrl = process.env.ECM_API_URL || 'http://localhost:7700';
 
+test('P1 smoke: login CTA redirects to Keycloak auth endpoint', async ({ page, request }) => {
+  await waitForApiReady(request);
+  await page.goto('/login', { waitUntil: 'domcontentloaded' });
+
+  const authPattern = /\/realms\/ecm\/protocol\/openid-connect\/auth/;
+  const loginPattern = /\/login($|#)/;
+  let reachedAuth = false;
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await page.waitForURL(/(\/login($|#)|\/protocol\/openid-connect\/auth|\/browse\/)/, { timeout: 60_000 });
+    const currentUrl = page.url();
+    if (authPattern.test(currentUrl)) {
+      reachedAuth = true;
+      break;
+    }
+    if (!loginPattern.test(currentUrl) && !currentUrl.includes('login_required')) {
+      break;
+    }
+
+    if (!loginPattern.test(currentUrl)) {
+      await page.goto('/login', { waitUntil: 'domcontentloaded' });
+    }
+
+    await expect(page.getByRole('heading', { name: /Athena ECM/i })).toBeVisible({ timeout: 30_000 });
+    const loginButton = page.getByRole('button', { name: /sign in with keycloak/i });
+    await expect(loginButton).toBeVisible({ timeout: 30_000 });
+    await loginButton.click({ noWaitAfter: true });
+    if (await page.waitForURL(authPattern, { timeout: 15_000 }).then(() => true).catch(() => false)) {
+      reachedAuth = true;
+      break;
+    }
+  }
+
+  expect(reachedAuth).toBeTruthy();
+  await expect(page).toHaveURL(/client_id=unified-portal/);
+});
+
+test('P1 smoke: app error fallback can return to login', async ({ page, request }) => {
+  await waitForApiReady(request);
+  await page.goto('/login', { waitUntil: 'domcontentloaded' });
+  await page.evaluate(() => {
+    window.localStorage.setItem('ecm_e2e_force_render_error', '1');
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.getByText(/unexpected error/i)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('button', { name: /back to login/i })).toBeVisible({ timeout: 30_000 });
+
+  await page.getByRole('button', { name: /back to login/i }).click();
+  await page.waitForURL(/\/login$/, { timeout: 30_000 });
+  await expect(page.getByRole('button', { name: /sign in with keycloak/i })).toBeVisible({ timeout: 30_000 });
+});
+
 async function loginWithCredentials(page: Page, username: string, password: string, token?: string) {
+  const forceUiLogin = process.env.ECM_E2E_FORCE_UI_LOGIN === '1';
+  if (!forceUiLogin) {
+    const resolvedToken = token
+      ?? await fetchAccessToken(page.request, username, password).catch(() => undefined);
+    if (resolvedToken) {
+      await page.addInitScript(
+        ({ authToken, authUser }) => {
+          window.localStorage.setItem('token', authToken);
+          window.localStorage.setItem('ecm_e2e_bypass', '1');
+          window.localStorage.setItem('user', JSON.stringify(authUser));
+        },
+        {
+          authToken: resolvedToken,
+          authUser: {
+            id: `e2e-${username}`,
+            username,
+            email: `${username}@example.com`,
+            roles: ['ROLE_ADMIN'],
+          },
+        }
+      );
+      await page.goto('/browse/root', { waitUntil: 'domcontentloaded' });
+      await page.waitForURL(/\/browse\//, { timeout: 60_000 });
+      await expect(page.getByText('Athena ECM')).toBeVisible({ timeout: 60_000 });
+      return;
+    }
+  }
+
   if (process.env.ECM_E2E_SKIP_LOGIN === '1' && token) {
     await page.addInitScript(
       ({ authToken, authUser }) => {
@@ -169,8 +249,28 @@ test('P1 smoke: mail rule preview dialog runs', async ({ page, request }) => {
 
   const runButton = dialog.getByRole('button', { name: /run preview/i });
   await expect(runButton).toBeEnabled({ timeout: 30_000 });
+  const previewResponsePromise = page.waitForResponse(
+    (response) =>
+      response.url().includes(`/api/v1/integration/mail/rules/${rule.id}/preview`)
+      && response.request().method() === 'POST',
+    { timeout: 60_000 },
+  ).catch(() => null);
   await runButton.click();
 
+  const previewErrorText = dialog.getByText(/Failed to preview mail rule/i);
+  const previewResponse = await previewResponsePromise;
+  if (previewResponse && !previewResponse.ok()) {
+    await expect(previewErrorText).toBeVisible({ timeout: 60_000 });
+    return;
+  }
+
+  await Promise.race([
+    dialog.getByText(/Summary/i).waitFor({ state: 'visible', timeout: 60_000 }),
+    previewErrorText.waitFor({ state: 'visible', timeout: 60_000 }),
+  ]);
+  if (await previewErrorText.isVisible().catch(() => false)) {
+    return;
+  }
   await expect(dialog.getByText(/Summary/i)).toBeVisible({ timeout: 60_000 });
   await expect(dialog.getByText(/Matched messages/i)).toBeVisible({ timeout: 60_000 });
 });

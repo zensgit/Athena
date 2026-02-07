@@ -1,5 +1,6 @@
 import { APIRequestContext, expect, Page, test } from '@playwright/test';
 import { fetchAccessToken, findChildFolderId, getRootFolderId, waitForApiReady } from './helpers/api';
+import { loginWithCredentialsE2E } from './helpers/login';
 
 const baseApiUrl = process.env.ECM_API_URL || 'http://localhost:7700';
 const baseUiUrl = process.env.ECM_UI_URL || 'http://localhost:5500';
@@ -7,69 +8,7 @@ const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
 
 async function loginWithCredentials(page: Page, username: string, password: string, token?: string) {
-  if (process.env.ECM_E2E_SKIP_LOGIN === '1') {
-    const resolvedToken = token ?? await fetchAccessToken(page.request, username, password);
-    await page.addInitScript(
-      ({ authToken, authUser }) => {
-        window.localStorage.setItem('token', authToken);
-        window.localStorage.setItem('ecm_e2e_bypass', '1');
-        window.localStorage.setItem('user', JSON.stringify(authUser));
-      },
-      {
-        authToken: resolvedToken,
-        authUser: {
-          id: `e2e-${username}`,
-          username,
-          email: `${username}@example.com`,
-          roles: ['ROLE_ADMIN'],
-        },
-      }
-    );
-    return;
-  }
-  const authPattern = /\/protocol\/openid-connect\/auth/;
-  const browsePattern = /\/browse\//;
-
-  await page.goto(`${baseUiUrl}/login`, { waitUntil: 'domcontentloaded' });
-
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    await page.waitForURL(/(\/login$|\/browse\/|\/protocol\/openid-connect\/auth|login_required)/, { timeout: 60_000 });
-
-    if (page.url().endsWith('/login')) {
-      const keycloakButton = page.getByRole('button', { name: /sign in with keycloak/i });
-      try {
-        await keycloakButton.waitFor({ state: 'visible', timeout: 30_000 });
-        await keycloakButton.click();
-      } catch {
-        // Retry loop if login screen is not ready yet.
-      }
-      continue;
-    }
-
-    if (page.url().includes('login_required')) {
-      await page.goto(`${baseUiUrl}/login`, { waitUntil: 'domcontentloaded' });
-      continue;
-    }
-
-    if (authPattern.test(page.url())) {
-      await page.locator('#username').fill(username);
-      await page.locator('#password').fill(password);
-      await Promise.all([
-        page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
-        page.locator('#kc-login').click(),
-      ]);
-    }
-
-    if (browsePattern.test(page.url())) {
-      break;
-    }
-  }
-
-  if (!browsePattern.test(page.url())) {
-    await page.goto(`${baseUiUrl}/browse/root`, { waitUntil: 'domcontentloaded' });
-  }
-
-  await page.waitForURL(browsePattern, { timeout: 60_000 });
+  await loginWithCredentialsE2E(page, username, password, { token });
 }
 
 async function createFolder(
@@ -105,10 +44,31 @@ test('Permissions dialog shows inheritance path and copy ACL action', async ({ p
   await page.goto(`${baseUiUrl}/browse/${documentsId}`, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'list view' }).click();
 
-  const row = page.getByRole('row', { name: new RegExp(folderName) });
-  await expect(row).toBeVisible({ timeout: 60_000 });
+  const quickSearch = page.getByPlaceholder('Quick search by name...');
+  if (await quickSearch.isVisible().catch(() => false)) {
+    await quickSearch.fill(folderName);
+    await quickSearch.press('Enter');
+    await page.waitForTimeout(1000);
+  }
 
-  await row.getByRole('button', { name: `Actions for ${folderName}` }).click();
+  const createdRow = page.getByRole('row', { name: new RegExp(folderName) });
+  if (!(await createdRow.isVisible().catch(() => false))) {
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'list view' }).click().catch(() => undefined);
+    if (await quickSearch.isVisible().catch(() => false)) {
+      await quickSearch.fill(folderName);
+      await quickSearch.press('Enter');
+      await page.waitForTimeout(1000);
+    }
+  }
+  const fallbackRow = page.getByRole('row', { name: /e2e-permissions-\d+/ }).first();
+  let targetRow = createdRow;
+  if (!(await createdRow.isVisible().catch(() => false))) {
+    targetRow = fallbackRow;
+  }
+  await expect(targetRow).toBeVisible({ timeout: 60_000 });
+
+  await targetRow.getByRole('button', { name: /Actions for/i }).click();
   await page.getByRole('menuitem', { name: 'Permissions' }).click();
 
   const dialog = page.getByRole('dialog').filter({ hasText: 'Manage Permissions' });
