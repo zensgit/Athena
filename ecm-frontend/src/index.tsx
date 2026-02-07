@@ -3,10 +3,11 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 import App from './App';
 import authService from 'services/authService';
+import { AuthInitTimeoutError, withAuthInitTimeout } from 'services/authBootstrap';
 import AppErrorBoundary from 'components/layout/AppErrorBoundary';
 import { store } from './store';
 import { setSession } from 'store/slices/authSlice';
-import { LOGIN_IN_PROGRESS_KEY } from 'constants/auth';
+import { LOGIN_IN_PROGRESS_KEY, LOGIN_IN_PROGRESS_STARTED_AT_KEY } from 'constants/auth';
 
 const allowInsecureCrypto = process.env.REACT_APP_INSECURE_CRYPTO_OK === 'true';
 const installInsecureCryptoFallback = () => {
@@ -46,6 +47,7 @@ installInsecureCryptoFallback();
 
 const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
 const KEYCLOAK_CALLBACK_KEYS = ['code', 'state', 'session_state', 'iss'] as const;
+const AUTH_INIT_TIMEOUT_MS = Number(process.env.REACT_APP_AUTH_INIT_TIMEOUT_MS || '15000');
 
 const stripKeycloakCallbackParams = () => {
   const url = new URL(window.location.href);
@@ -75,18 +77,67 @@ const renderApp = () => {
   );
 };
 
+const renderAuthBooting = () => {
+  root.render(
+    <React.StrictMode>
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '12px',
+          backgroundColor: '#f5f5f5',
+          color: '#333',
+          fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
+        }}
+      >
+        <div
+          style={{
+            width: '34px',
+            height: '34px',
+            borderRadius: '50%',
+            border: '4px solid #d9d9d9',
+            borderTopColor: '#1976d2',
+            animation: 'ecm-auth-spin 1s linear infinite',
+          }}
+        />
+        <div>Initializing sign-in...</div>
+        <style>
+          {`
+            @keyframes ecm-auth-spin {
+              from { transform: rotate(0deg); }
+              to { transform: rotate(360deg); }
+            }
+          `}
+        </style>
+      </div>
+    </React.StrictMode>
+  );
+};
+
+const clearLoginProgress = () => {
+  sessionStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
+  sessionStorage.removeItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY);
+};
+
 const initAuth = async () => {
+  renderAuthBooting();
   try {
     const canUsePkce = !!(window.crypto && window.crypto.subtle);
     if (!canUsePkce) {
       console.warn('PKCE disabled: Web Crypto API is unavailable in this context.');
     }
-    const authenticated = await authService.init({
-      onLoad: 'check-sso',
-      pkceMethod: canUsePkce ? 'S256' : undefined,
-      checkLoginIframe: false, // Disable iframe check to prevent CORS issues
-    });
-    sessionStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
+    const authenticated = await withAuthInitTimeout(
+      authService.init({
+        onLoad: 'check-sso',
+        pkceMethod: canUsePkce ? 'S256' : undefined,
+        checkLoginIframe: false, // Disable iframe check to prevent CORS issues
+      }),
+      AUTH_INIT_TIMEOUT_MS
+    );
+    clearLoginProgress();
     store.dispatch(
       setSession({
         user: authenticated ? authService.getCurrentUser() : null,
@@ -100,8 +151,19 @@ const initAuth = async () => {
       authService.startTokenRefresh();
     }
   } catch (error) {
-    sessionStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
-    console.error('Keycloak init error:', error);
+    clearLoginProgress();
+    store.dispatch(
+      setSession({
+        user: null,
+        token: null,
+        isAuthenticated: false,
+      })
+    );
+    if (error instanceof AuthInitTimeoutError) {
+      console.error('Keycloak init timeout:', error.message);
+    } else {
+      console.error('Keycloak init error:', error);
+    }
     renderApp();
   }
 };
