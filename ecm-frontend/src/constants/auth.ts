@@ -4,3 +4,4 @@ export const LOGIN_IN_PROGRESS_TIMEOUT_MS = 45_000;
 export const AUTH_INIT_STATUS_KEY = 'ecm_auth_init_status';
 export const AUTH_INIT_STATUS_TIMEOUT = 'timeout';
 export const AUTH_INIT_STATUS_ERROR = 'error';
+export const AUTH_INIT_STATUS_REDIRECT_FAILED = 'redirect_failed';

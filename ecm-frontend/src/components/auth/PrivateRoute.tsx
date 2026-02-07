@@ -4,6 +4,8 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAppSelector } from 'store';
 import authService from 'services/authService';
 import {
+  AUTH_INIT_STATUS_KEY,
+  AUTH_INIT_STATUS_REDIRECT_FAILED,
   LOGIN_IN_PROGRESS_KEY,
   LOGIN_IN_PROGRESS_STARTED_AT_KEY,
   LOGIN_IN_PROGRESS_TIMEOUT_MS,
@@ -74,6 +76,7 @@ const PrivateRoute: React.FC<PrivateRouteProps> = ({ children, requiredRoles }) 
     const loginRequest = authService.login({ redirectUri });
     void Promise.resolve(loginRequest).catch((error) => {
       console.error('Automatic login redirect failed', error);
+      sessionStorage.setItem(AUTH_INIT_STATUS_KEY, AUTH_INIT_STATUS_REDIRECT_FAILED);
       sessionStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
       sessionStorage.removeItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY);
     });

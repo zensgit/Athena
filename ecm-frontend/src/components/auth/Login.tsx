@@ -4,6 +4,7 @@ import authService from 'services/authService';
 import {
   AUTH_INIT_STATUS_ERROR,
   AUTH_INIT_STATUS_KEY,
+  AUTH_INIT_STATUS_REDIRECT_FAILED,
   AUTH_INIT_STATUS_TIMEOUT,
   LOGIN_IN_PROGRESS_KEY,
   LOGIN_IN_PROGRESS_STARTED_AT_KEY,
@@ -20,6 +21,8 @@ const Login: React.FC = () => {
       setAuthInitMessage('Sign-in initialization timed out. Please retry.');
     } else if (initStatus === AUTH_INIT_STATUS_ERROR) {
       setAuthInitMessage('Sign-in initialization failed. Please retry.');
+    } else if (initStatus === AUTH_INIT_STATUS_REDIRECT_FAILED) {
+      setAuthInitMessage('Automatic sign-in redirect failed. Click Sign in with Keycloak to retry.');
     }
     sessionStorage.removeItem(AUTH_INIT_STATUS_KEY);
     sessionStorage.removeItem(LOGIN_IN_PROGRESS_KEY);

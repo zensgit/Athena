@@ -45,6 +45,14 @@ test('shows generic init warning when auth bootstrap failed', async () => {
   expect(await screen.findByText(/sign-in initialization failed/i)).toBeTruthy();
 });
 
+test('shows redirect warning when automatic sign-in redirect fails', async () => {
+  sessionStorage.setItem('ecm_auth_init_status', 'redirect_failed');
+
+  render(<Login />);
+
+  expect(await screen.findByText(/automatic sign-in redirect failed/i)).toBeTruthy();
+});
+
 test('shows error when login fails', async () => {
   authServiceMock.login.mockRejectedValueOnce(new Error('Web Crypto API is not available.'));
 

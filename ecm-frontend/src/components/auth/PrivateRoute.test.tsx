@@ -158,5 +158,6 @@ test('clears markers when auto login request fails', async () => {
   await waitFor(() => {
     expect(sessionStorage.getItem('ecm_kc_login_in_progress')).toBeNull();
     expect(sessionStorage.getItem('ecm_kc_login_in_progress_started_at')).toBeNull();
+    expect(sessionStorage.getItem('ecm_auth_init_status')).toBe('redirect_failed');
   });
 });
