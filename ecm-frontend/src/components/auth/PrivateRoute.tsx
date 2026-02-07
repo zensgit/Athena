@@ -6,6 +6,7 @@ import authService from 'services/authService';
 import {
   AUTH_REDIRECT_FAILURE_COOLDOWN_MS,
   AUTH_REDIRECT_FAILURE_COUNT_KEY,
+  AUTH_REDIRECT_FAILURE_WINDOW_MS,
   AUTH_REDIRECT_LAST_FAILURE_AT_KEY,
   AUTH_REDIRECT_MAX_AUTO_ATTEMPTS,
   AUTH_INIT_STATUS_KEY,
@@ -58,11 +59,15 @@ const PrivateRoute: React.FC<PrivateRouteProps> = ({ children, requiredRoles }) 
   const loginStartedAt = Number(sessionStorage.getItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY) || '0');
   const redirectFailureCount = Number(sessionStorage.getItem(AUTH_REDIRECT_FAILURE_COUNT_KEY) || '0');
   const redirectLastFailureAt = Number(sessionStorage.getItem(AUTH_REDIRECT_LAST_FAILURE_AT_KEY) || '0');
-  const hasReachedAutoRedirectLimit = redirectFailureCount >= AUTH_REDIRECT_MAX_AUTO_ATTEMPTS;
+  const redirectFailureWindowExpired =
+    redirectLastFailureAt > 0 && Date.now() - redirectLastFailureAt > AUTH_REDIRECT_FAILURE_WINDOW_MS;
+  const effectiveRedirectFailureCount = redirectFailureWindowExpired ? 0 : redirectFailureCount;
+  const effectiveRedirectLastFailureAt = redirectFailureWindowExpired ? 0 : redirectLastFailureAt;
+  const hasReachedAutoRedirectLimit = effectiveRedirectFailureCount >= AUTH_REDIRECT_MAX_AUTO_ATTEMPTS;
   const hasRecentRedirectFailure =
-    redirectFailureCount > 0
-    && redirectLastFailureAt > 0
-    && Date.now() - redirectLastFailureAt < AUTH_REDIRECT_FAILURE_COOLDOWN_MS;
+    effectiveRedirectFailureCount > 0
+    && effectiveRedirectLastFailureAt > 0
+    && Date.now() - effectiveRedirectLastFailureAt < AUTH_REDIRECT_FAILURE_COOLDOWN_MS;
   const shouldPauseAutoRedirect = hasReachedAutoRedirectLimit || hasRecentRedirectFailure;
   const loginStale = loginInProgress && loginStartedAt > 0 && Date.now() - loginStartedAt > LOGIN_IN_PROGRESS_TIMEOUT_MS;
   const effectiveLoginInProgress = loginInProgress && !loginStale;
@@ -73,6 +78,10 @@ const PrivateRoute: React.FC<PrivateRouteProps> = ({ children, requiredRoles }) 
       sessionStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
       sessionStorage.removeItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY);
       return;
+    }
+    if (redirectFailureWindowExpired) {
+      sessionStorage.removeItem(AUTH_REDIRECT_FAILURE_COUNT_KEY);
+      sessionStorage.removeItem(AUTH_REDIRECT_LAST_FAILURE_AT_KEY);
     }
     if (isAuthenticated || keycloakAuthenticated) {
       sessionStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
@@ -96,12 +105,12 @@ const PrivateRoute: React.FC<PrivateRouteProps> = ({ children, requiredRoles }) 
       console.error('Automatic login redirect failed', error);
       sessionStorage.setItem(AUTH_INIT_STATUS_KEY, AUTH_INIT_STATUS_REDIRECT_FAILED);
       sessionStorage.setItem(AUTH_REDIRECT_LAST_FAILURE_AT_KEY, String(Date.now()));
-      sessionStorage.setItem(AUTH_REDIRECT_FAILURE_COUNT_KEY, String(redirectFailureCount + 1));
+      sessionStorage.setItem(AUTH_REDIRECT_FAILURE_COUNT_KEY, String(effectiveRedirectFailureCount + 1));
       sessionStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
       sessionStorage.removeItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY);
     });
   }, [
-    redirectFailureCount,
+    effectiveRedirectFailureCount,
     isAuthenticated,
     keycloakAuthenticated,
     location.hash,
@@ -109,6 +118,7 @@ const PrivateRoute: React.FC<PrivateRouteProps> = ({ children, requiredRoles }) 
     location.search,
     hasCallbackParams,
     effectiveLoginInProgress,
+    redirectFailureWindowExpired,
     shouldPauseAutoRedirect,
     loginStale,
   ]);

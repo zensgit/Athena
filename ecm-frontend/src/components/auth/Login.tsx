@@ -4,6 +4,7 @@ import authService from 'services/authService';
 import {
   AUTH_REDIRECT_FAILURE_COOLDOWN_MS,
   AUTH_REDIRECT_FAILURE_COUNT_KEY,
+  AUTH_REDIRECT_FAILURE_WINDOW_MS,
   AUTH_REDIRECT_LAST_FAILURE_AT_KEY,
   AUTH_REDIRECT_MAX_AUTO_ATTEMPTS,
   AUTH_INIT_STATUS_ERROR,
@@ -27,20 +28,29 @@ const Login: React.FC = () => {
       setAuthInitMessage('Sign-in initialization failed. Please retry.');
     } else if (initStatus === AUTH_INIT_STATUS_REDIRECT_FAILED) {
       const failureCount = Number(sessionStorage.getItem(AUTH_REDIRECT_FAILURE_COUNT_KEY) || '0');
-      if (failureCount >= AUTH_REDIRECT_MAX_AUTO_ATTEMPTS) {
-        setAuthInitMessage('Automatic sign-in is paused after repeated failures. Click Sign in with Keycloak to retry.');
-      } else {
       const lastFailureAt = Number(sessionStorage.getItem(AUTH_REDIRECT_LAST_FAILURE_AT_KEY) || '0');
-      const elapsed = lastFailureAt > 0 ? Date.now() - lastFailureAt : AUTH_REDIRECT_FAILURE_COOLDOWN_MS;
-      const remainingMs = Math.max(0, AUTH_REDIRECT_FAILURE_COOLDOWN_MS - elapsed);
-      const remainingSeconds = Math.ceil(remainingMs / 1000);
-      if (remainingSeconds > 0) {
-        setAuthInitMessage(
-          `Automatic sign-in redirect failed. Auto retry is paused for ~${remainingSeconds}s. Click Sign in with Keycloak to retry now.`
-        );
+      if (failureCount >= AUTH_REDIRECT_MAX_AUTO_ATTEMPTS) {
+        const elapsed = lastFailureAt > 0 ? Date.now() - lastFailureAt : AUTH_REDIRECT_FAILURE_WINDOW_MS;
+        const remainingMs = Math.max(0, AUTH_REDIRECT_FAILURE_WINDOW_MS - elapsed);
+        const remainingSeconds = Math.ceil(remainingMs / 1000);
+        if (remainingSeconds > 0) {
+          setAuthInitMessage(
+            `Automatic sign-in is paused after repeated failures. Auto retry resumes in ~${remainingSeconds}s. Click Sign in with Keycloak to retry now.`
+          );
+        } else {
+          setAuthInitMessage('Automatic sign-in is paused after repeated failures. Click Sign in with Keycloak to retry.');
+        }
       } else {
-        setAuthInitMessage('Automatic sign-in redirect failed. Click Sign in with Keycloak to retry.');
-      }
+        const elapsed = lastFailureAt > 0 ? Date.now() - lastFailureAt : AUTH_REDIRECT_FAILURE_COOLDOWN_MS;
+        const remainingMs = Math.max(0, AUTH_REDIRECT_FAILURE_COOLDOWN_MS - elapsed);
+        const remainingSeconds = Math.ceil(remainingMs / 1000);
+        if (remainingSeconds > 0) {
+          setAuthInitMessage(
+            `Automatic sign-in redirect failed. Auto retry is paused for ~${remainingSeconds}s. Click Sign in with Keycloak to retry now.`
+          );
+        } else {
+          setAuthInitMessage('Automatic sign-in redirect failed. Click Sign in with Keycloak to retry.');
+        }
       }
     }
     sessionStorage.removeItem(AUTH_INIT_STATUS_KEY);

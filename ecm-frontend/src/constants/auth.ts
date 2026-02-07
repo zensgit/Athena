@@ -9,3 +9,4 @@ export const AUTH_REDIRECT_FAILURE_COUNT_KEY = 'ecm_auth_redirect_failure_count'
 export const AUTH_REDIRECT_LAST_FAILURE_AT_KEY = 'ecm_auth_redirect_last_failure_at';
 export const AUTH_REDIRECT_FAILURE_COOLDOWN_MS = 30_000;
 export const AUTH_REDIRECT_MAX_AUTO_ATTEMPTS = 2;
+export const AUTH_REDIRECT_FAILURE_WINDOW_MS = 300_000;
