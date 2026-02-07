@@ -62,6 +62,7 @@ test('shows paused message when auto redirect failure count reaches cap', async 
   render(<Login />);
 
   expect(await screen.findByText(/automatic sign-in is paused after repeated failures/i)).toBeTruthy();
+  expect(screen.getByText(/2\/2/)).toBeTruthy();
   expect(screen.getByText(/auto retry resumes in/i)).toBeTruthy();
 });
 

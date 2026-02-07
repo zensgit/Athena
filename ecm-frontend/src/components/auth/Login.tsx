@@ -35,10 +35,12 @@ const Login: React.FC = () => {
         const remainingSeconds = Math.ceil(remainingMs / 1000);
         if (remainingSeconds > 0) {
           setAuthInitMessage(
-            `Automatic sign-in is paused after repeated failures. Auto retry resumes in ~${remainingSeconds}s. Click Sign in with Keycloak to retry now.`
+            `Automatic sign-in is paused after repeated failures (${failureCount}/${AUTH_REDIRECT_MAX_AUTO_ATTEMPTS}). Auto retry resumes in ~${remainingSeconds}s. Click Sign in with Keycloak to retry now.`
           );
         } else {
-          setAuthInitMessage('Automatic sign-in is paused after repeated failures. Click Sign in with Keycloak to retry.');
+          setAuthInitMessage(
+            `Automatic sign-in is paused after repeated failures (${failureCount}/${AUTH_REDIRECT_MAX_AUTO_ATTEMPTS}). Click Sign in with Keycloak to retry.`
+          );
         }
       } else {
         const elapsed = lastFailureAt > 0 ? Date.now() - lastFailureAt : AUTH_REDIRECT_FAILURE_COOLDOWN_MS;
