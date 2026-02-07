@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 import App from './App';
 import authService from 'services/authService';
-import { AuthInitTimeoutError, withAuthInitTimeout } from 'services/authBootstrap';
+import { AuthInitTimeoutError, runAuthInitWithRetry } from 'services/authBootstrap';
 import AppErrorBoundary from 'components/layout/AppErrorBoundary';
 import { store } from './store';
 import { setSession } from 'store/slices/authSlice';
@@ -54,6 +54,8 @@ installInsecureCryptoFallback();
 const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
 const KEYCLOAK_CALLBACK_KEYS = ['code', 'state', 'session_state', 'iss'] as const;
 const AUTH_INIT_TIMEOUT_MS = Number(process.env.REACT_APP_AUTH_INIT_TIMEOUT_MS || '15000');
+const AUTH_INIT_MAX_ATTEMPTS = Number(process.env.REACT_APP_AUTH_INIT_MAX_ATTEMPTS || '2');
+const AUTH_INIT_RETRY_DELAY_MS = Number(process.env.REACT_APP_AUTH_INIT_RETRY_DELAY_MS || '800');
 
 const stripKeycloakCallbackParams = () => {
   const url = new URL(window.location.href);
@@ -144,13 +146,22 @@ const initAuth = async () => {
     if (!canUsePkce) {
       console.warn('PKCE disabled: Web Crypto API is unavailable in this context.');
     }
-    const authenticated = await withAuthInitTimeout(
-      authService.init({
-        onLoad: 'check-sso',
-        pkceMethod: canUsePkce ? 'S256' : undefined,
-        checkLoginIframe: false, // Disable iframe check to prevent CORS issues
-      }),
-      AUTH_INIT_TIMEOUT_MS
+    const authenticated = await runAuthInitWithRetry(
+      () =>
+        authService.init({
+          onLoad: 'check-sso',
+          pkceMethod: canUsePkce ? 'S256' : undefined,
+          checkLoginIframe: false, // Disable iframe check to prevent CORS issues
+        }),
+      {
+        timeoutMs: AUTH_INIT_TIMEOUT_MS,
+        maxAttempts: AUTH_INIT_MAX_ATTEMPTS,
+        retryDelayMs: AUTH_INIT_RETRY_DELAY_MS,
+        onRetry: (attempt, error) => {
+          const retryAt = attempt + 1;
+          console.warn(`Keycloak init attempt ${attempt} failed, retrying attempt ${retryAt}.`, error);
+        },
+      }
     );
     clearLoginProgress();
     store.dispatch(
