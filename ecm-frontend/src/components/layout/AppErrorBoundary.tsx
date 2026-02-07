@@ -15,6 +15,16 @@ class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, AppErrorBo
     message: '',
   };
 
+  componentDidMount() {
+    window.addEventListener('error', this.handleWindowError);
+    window.addEventListener('unhandledrejection', this.handleUnhandledRejection as EventListener);
+  }
+
+  componentWillUnmount() {
+    window.removeEventListener('error', this.handleWindowError);
+    window.removeEventListener('unhandledrejection', this.handleUnhandledRejection as EventListener);
+  }
+
   static getDerivedStateFromError(error: unknown): AppErrorBoundaryState {
     return {
       hasError: true,
@@ -25,6 +35,24 @@ class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, AppErrorBo
   componentDidCatch(error: unknown, errorInfo: React.ErrorInfo) {
     console.error('AppErrorBoundary caught render failure', { error, componentStack: errorInfo.componentStack });
   }
+
+  private handleWindowError = (event: ErrorEvent) => {
+    const error = event.error;
+    const message = error instanceof Error ? error.message : event.message || 'Unexpected runtime error';
+    if (!this.state.hasError) {
+      this.setState({ hasError: true, message });
+    }
+    console.error('AppErrorBoundary caught global runtime error', { error, message });
+  };
+
+  private handleUnhandledRejection = (event: PromiseRejectionEvent | Event) => {
+    const reason = (event as PromiseRejectionEvent).reason;
+    const message = reason instanceof Error ? reason.message : typeof reason === 'string' ? reason : 'Unhandled promise rejection';
+    if (!this.state.hasError) {
+      this.setState({ hasError: true, message });
+    }
+    console.error('AppErrorBoundary caught unhandled promise rejection', { reason, message });
+  };
 
   private handleReload = () => {
     window.location.reload();
