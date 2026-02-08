@@ -30,7 +30,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from 'store';
 import { setSidebarOpen } from 'store/slices/uiSlice';
 import nodeService from 'services/nodeService';
-import { getFailedPreviewMeta, isUnsupportedPreviewMimeType } from 'utils/previewStatusUtils';
+import { getFailedPreviewMeta, isUnsupportedPreviewFailure } from 'utils/previewStatusUtils';
 
 const MATCH_FIELD_LABELS: Record<string, string> = {
   name: 'Name',
@@ -114,6 +114,7 @@ interface SearchResult {
   parentId?: string;
   previewStatus?: string;
   previewFailureReason?: string;
+  previewFailureCategory?: string;
 }
 
 
@@ -200,13 +201,18 @@ const AdvancedSearchPage: React.FC = () => {
     );
   }, [location.pathname, navigate]);
 
-  const getPreviewStatusMeta = (status?: string, mimeType?: string) => {
+  const getPreviewStatusMeta = (
+    status?: string,
+    mimeType?: string,
+    failureCategory?: string,
+    failureReason?: string
+  ) => {
     const normalized = status?.toUpperCase();
     if (!normalized || normalized === 'READY') {
       return null;
     }
     if (normalized === 'FAILED') {
-      return getFailedPreviewMeta(mimeType);
+      return getFailedPreviewMeta(mimeType, failureCategory, failureReason);
     }
     if (normalized === 'PROCESSING') {
       return { label: 'Preview processing', color: 'warning' as const, unsupported: false };
@@ -423,7 +429,7 @@ const AdvancedSearchPage: React.FC = () => {
   const failedPreviewResults = useMemo(
     () => results.filter((result) => result.nodeType !== 'FOLDER'
       && (result.previewStatus || '').toUpperCase() === 'FAILED'
-      && !isUnsupportedPreviewMimeType(result.mimeType)),
+      && !isUnsupportedPreviewFailure(result.previewFailureCategory, result.mimeType, result.previewFailureReason)),
     [results]
   );
 
@@ -1009,8 +1015,18 @@ const AdvancedSearchPage: React.FC = () => {
                         {formatScore(result.score) && (
                           <Chip label={formatScore(result.score)} size="small" variant="outlined" />
                         )}
-                        {result.nodeType !== 'FOLDER' && getPreviewStatusMeta(result.previewStatus, result.mimeType) && (() => {
-                          const previewMeta = getPreviewStatusMeta(result.previewStatus, result.mimeType);
+                        {result.nodeType !== 'FOLDER' && getPreviewStatusMeta(
+                          result.previewStatus,
+                          result.mimeType,
+                          result.previewFailureCategory,
+                          result.previewFailureReason
+                        ) && (() => {
+                          const previewMeta = getPreviewStatusMeta(
+                            result.previewStatus,
+                            result.mimeType,
+                            result.previewFailureCategory,
+                            result.previewFailureReason
+                          );
                           if (!previewMeta) {
                             return null;
                           }

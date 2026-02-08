@@ -37,6 +37,7 @@ export interface Node {
   inheritPermissions?: boolean;
   previewStatus?: string;
   previewFailureReason?: string;
+  previewFailureCategory?: 'UNSUPPORTED' | 'TEMPORARY' | 'PERMANENT' | string;
   previewLastUpdated?: string;
 }
 

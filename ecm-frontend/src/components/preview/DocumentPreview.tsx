@@ -277,7 +277,11 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     || node?.previewFailureReason
     || serverPreview?.failureReason
     || null;
-  const failedPreviewMeta = getFailedPreviewMeta(effectiveContentType);
+  const failedPreviewMeta = getFailedPreviewMeta(
+    effectiveContentType,
+    node?.previewFailureCategory,
+    node?.previewFailureReason
+  );
   const previewStatusLabel = resolvedPreviewStatus
     ? resolvedPreviewStatus === 'FAILED'
       ? failedPreviewMeta.label

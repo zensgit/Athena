@@ -365,7 +365,7 @@ const UploadDialog: React.FC = () => {
     }
     if (status === 'FAILED') {
       const mimeType = node.contentType || node.properties?.mimeType || node.properties?.contentType;
-      return getFailedPreviewMeta(mimeType);
+      return getFailedPreviewMeta(mimeType, node.previewFailureCategory, node.previewFailureReason);
     }
     if (status === 'PROCESSING') {
       return { label: 'Preview processing', color: 'warning' as const };

@@ -47,7 +47,7 @@ import nodeService, { SearchDiagnostics, SearchIndexStats, SearchRebuildStatus }
 import { Node, SearchCriteria } from 'types';
 import { toast } from 'react-toastify';
 import Highlight from 'components/search/Highlight';
-import { getFailedPreviewMeta, isUnsupportedPreviewMimeType } from 'utils/previewStatusUtils';
+import { getFailedPreviewMeta, isUnsupportedPreviewFailure } from 'utils/previewStatusUtils';
 const DocumentPreview = React.lazy(() => import('components/preview/DocumentPreview'));
 
 type FacetValue = { value: string; count: number };
@@ -912,7 +912,11 @@ const SearchResults: React.FC = () => {
     const status = node.previewStatus?.toUpperCase();
     const normalized = status || 'PENDING';
     const nodeMimeType = node.contentType || node.properties?.mimeType || node.properties?.contentType;
-    const failedPreviewMeta = getFailedPreviewMeta(nodeMimeType);
+    const failedPreviewMeta = getFailedPreviewMeta(
+      nodeMimeType,
+      node.previewFailureCategory,
+      node.previewFailureReason
+    );
     const failureReason = node.previewFailureReason || '';
     const label = normalized === 'READY'
       ? 'Preview ready'
@@ -1027,7 +1031,11 @@ const SearchResults: React.FC = () => {
   const displayNodes = isSimilarMode ? (similarResults || []) : (shouldShowFallback ? fallbackNodes : nodes);
   const failedPreviewNodes = displayNodes.filter((node) => node.nodeType === 'DOCUMENT'
     && (node.previewStatus || '').toUpperCase() === 'FAILED'
-    && !isUnsupportedPreviewMimeType(node.contentType || node.properties?.mimeType || node.properties?.contentType));
+    && !isUnsupportedPreviewFailure(
+      node.previewFailureCategory,
+      node.contentType || node.properties?.mimeType || node.properties?.contentType,
+      node.previewFailureReason
+    ));
   const failedPreviewReasonSummary = useMemo(() => {
     const buckets = new Map<string, Node[]>();
     failedPreviewNodes.forEach((node) => {

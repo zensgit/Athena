@@ -44,6 +44,9 @@ interface ApiNodeResponse {
   contentType?: string;
   correspondentId?: string;
   correspondentName?: string;
+  previewStatus?: string;
+  previewFailureReason?: string;
+  previewFailureCategory?: string;
 }
 
 interface ApiNodeDetailsResponse {
@@ -66,6 +69,9 @@ interface ApiNodeDetailsResponse {
   inheritPermissions?: boolean;
   locked?: boolean;
   lockedBy?: string;
+  previewStatus?: string;
+  previewFailureReason?: string;
+  previewFailureCategory?: string;
   createdBy: string;
   createdDate: string;
   lastModifiedBy?: string;
@@ -221,6 +227,9 @@ class NodeService {
       contentType: apiNode.contentType,
       correspondentId: apiNode.correspondentId,
       correspondent: apiNode.correspondentName,
+      previewStatus: apiNode.previewStatus,
+      previewFailureReason: apiNode.previewFailureReason,
+      previewFailureCategory: apiNode.previewFailureCategory,
     };
   }
 
@@ -249,6 +258,9 @@ class NodeService {
       correspondentId: apiNode.correspondentId,
       correspondent: apiNode.correspondentName,
       inheritPermissions: apiNode.inheritPermissions,
+      previewStatus: apiNode.previewStatus,
+      previewFailureReason: apiNode.previewFailureReason,
+      previewFailureCategory: apiNode.previewFailureCategory,
     };
   }
 
@@ -551,6 +563,7 @@ class NodeService {
       correspondent: item.correspondent,
       previewStatus: item.previewStatus,
       previewFailureReason: item.previewFailureReason,
+      previewFailureCategory: item.previewFailureCategory,
       score: item.score,
     } as Node);
   }
