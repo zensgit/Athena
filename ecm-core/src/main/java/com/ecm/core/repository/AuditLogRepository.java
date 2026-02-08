@@ -68,6 +68,7 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
           AND (:eventType IS NULL OR :eventType = '' OR a.eventType = :eventType)
           AND a.eventTime >= COALESCE(:from, a.eventTime)
           AND a.eventTime <= COALESCE(:to, a.eventTime)
+          AND (:nodeId IS NULL OR a.nodeId = :nodeId)
           AND (
             :category IS NULL OR :category = ''
             OR (:category = 'NODE' AND UPPER(a.eventType) LIKE 'NODE_%')
@@ -94,6 +95,7 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
     Page<AuditLog> findByFiltersAndCategory(@Param("username") String username,
                                             @Param("eventType") String eventType,
                                             @Param("category") String category,
+                                            @Param("nodeId") UUID nodeId,
                                             @Param("from") LocalDateTime from,
                                             @Param("to") LocalDateTime to,
                                             Pageable pageable);
@@ -102,12 +104,14 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
         SELECT a FROM AuditLog a
         WHERE (:username IS NULL OR :username = '' OR a.username = :username)
           AND (:eventType IS NULL OR :eventType = '' OR a.eventType = :eventType)
+          AND (:nodeId IS NULL OR a.nodeId = :nodeId)
           AND a.eventTime >= COALESCE(:from, a.eventTime)
           AND a.eventTime <= COALESCE(:to, a.eventTime)
         ORDER BY a.eventTime DESC
         """)
     List<AuditLog> findByFiltersForExport(@Param("username") String username,
                                           @Param("eventType") String eventType,
+                                          @Param("nodeId") UUID nodeId,
                                           @Param("from") LocalDateTime from,
                                           @Param("to") LocalDateTime to);
 
@@ -115,6 +119,7 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
         SELECT a FROM AuditLog a
         WHERE (:username IS NULL OR :username = '' OR a.username = :username)
           AND (:eventType IS NULL OR :eventType = '' OR a.eventType = :eventType)
+          AND (:nodeId IS NULL OR a.nodeId = :nodeId)
           AND a.eventTime >= COALESCE(:from, a.eventTime)
           AND a.eventTime <= COALESCE(:to, a.eventTime)
           AND (
@@ -143,6 +148,7 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
     List<AuditLog> findByFiltersForExportAndCategory(@Param("username") String username,
                                                      @Param("eventType") String eventType,
                                                      @Param("category") String category,
+                                                     @Param("nodeId") UUID nodeId,
                                                      @Param("from") LocalDateTime from,
                                                      @Param("to") LocalDateTime to);
 

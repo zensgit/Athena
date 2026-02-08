@@ -191,10 +191,19 @@ public class AnalyticsService {
                                                 String username,
                                                 String eventType,
                                                 AuditCategory category) {
+        return exportAuditLogsCsv(from, to, username, eventType, null, category);
+    }
+
+    public AuditExportResult exportAuditLogsCsv(LocalDateTime from,
+                                                LocalDateTime to,
+                                                String username,
+                                                String eventType,
+                                                UUID nodeId,
+                                                AuditCategory category) {
         String categoryName = category != null ? category.name() : null;
         List<AuditLog> logs = categoryName == null
-            ? auditLogRepository.findByFiltersForExport(username, eventType, from, to)
-            : auditLogRepository.findByFiltersForExportAndCategory(username, eventType, categoryName, from, to);
+            ? auditLogRepository.findByFiltersForExport(username, eventType, nodeId, from, to)
+            : auditLogRepository.findByFiltersForExportAndCategory(username, eventType, categoryName, nodeId, from, to);
         return new AuditExportResult(generateCsv(logs), logs.size());
     }
 
@@ -210,7 +219,7 @@ public class AnalyticsService {
                                           LocalDateTime from,
                                           LocalDateTime to,
                                           Pageable pageable) {
-        return searchAuditLogs(username, eventType, null, from, to, pageable);
+        return searchAuditLogs(username, eventType, null, null, from, to, pageable);
     }
 
     public Page<AuditLog> searchAuditLogs(String username,
@@ -219,8 +228,18 @@ public class AnalyticsService {
                                           LocalDateTime from,
                                           LocalDateTime to,
                                           Pageable pageable) {
+        return searchAuditLogs(username, eventType, category, null, from, to, pageable);
+    }
+
+    public Page<AuditLog> searchAuditLogs(String username,
+                                          String eventType,
+                                          AuditCategory category,
+                                          UUID nodeId,
+                                          LocalDateTime from,
+                                          LocalDateTime to,
+                                          Pageable pageable) {
         String categoryName = category != null ? category.name() : null;
-        return auditLogRepository.findByFiltersAndCategory(username, eventType, categoryName, from, to, pageable);
+        return auditLogRepository.findByFiltersAndCategory(username, eventType, categoryName, nodeId, from, to, pageable);
     }
 
     public List<AuditEventTypeCount> getAuditEventTypes(int limit) {
