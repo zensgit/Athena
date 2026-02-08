@@ -1,4 +1,4 @@
-import { APIRequestContext, expect, Page, test } from '@playwright/test';
+import { APIRequestContext, expect, test } from '@playwright/test';
 import {
   fetchAccessToken,
   findChildFolderId,
@@ -6,51 +6,11 @@ import {
   waitForApiReady,
   waitForSearchIndex,
 } from './helpers/api';
-import { loginWithCredentialsE2E } from './helpers/login';
+import { gotoWithAuthE2E } from './helpers/login';
 
 const baseApiUrl = process.env.ECM_API_URL || 'http://localhost:7700';
-const baseUiUrl = process.env.ECM_UI_URL || 'http://localhost:5500';
 const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
-
-async function seedBypassSession(page: Page, username: string, token: string) {
-  await page.addInitScript(
-    ({ authToken, authUser }) => {
-      window.localStorage.setItem('token', authToken);
-      window.localStorage.setItem('ecm_e2e_bypass', '1');
-      window.localStorage.setItem('user', JSON.stringify(authUser));
-    },
-    {
-      authToken: token,
-      authUser: {
-        id: `e2e-${username}`,
-        username,
-        email: `${username}@example.com`,
-        roles: ['ROLE_ADMIN'],
-      },
-    }
-  );
-}
-
-async function loginWithCredentials(page: Page, username: string, password: string, token?: string) {
-  await loginWithCredentialsE2E(page, username, password, { token });
-}
-
-async function gotoWithBypassOrLogin(
-  page: Page,
-  targetPath: string,
-  username: string,
-  password: string,
-  token: string,
-) {
-  await seedBypassSession(page, username, token);
-  await page.goto(`${baseUiUrl}${targetPath}`, { waitUntil: 'domcontentloaded' });
-  const redirectedToLogin = /\/login$|\/protocol\/openid-connect\/auth|login_required/.test(page.url());
-  if (redirectedToLogin) {
-    await loginWithCredentials(page, username, password, token);
-    await page.goto(`${baseUiUrl}${targetPath}`, { waitUntil: 'domcontentloaded' });
-  }
-}
 
 async function createFolder(
   request: APIRequestContext,
@@ -139,7 +99,7 @@ test('Search preview status filters are visible and selectable', async ({ page, 
   expect(indexRes.ok()).toBeTruthy();
   await waitForSearchIndex(request, filename, token, { apiUrl: baseApiUrl, maxAttempts: 40 });
 
-  await gotoWithBypassOrLogin(page, '/search-results', defaultUsername, defaultPassword, token);
+  await gotoWithAuthE2E(page, '/search-results', defaultUsername, defaultPassword, { token });
 
   const quickSearchInput = page.getByPlaceholder('Quick search by name...');
   await quickSearchInput.fill(filename);
@@ -179,7 +139,7 @@ test('Unsupported preview shows neutral status without retry in search results',
   expect(indexRes.ok()).toBeTruthy();
   await waitForSearchIndex(request, filename, token, { apiUrl: baseApiUrl, maxAttempts: 40 });
 
-  await gotoWithBypassOrLogin(page, '/search-results', defaultUsername, defaultPassword, token);
+  await gotoWithAuthE2E(page, '/search-results', defaultUsername, defaultPassword, { token });
 
   const quickSearchInput = page.getByPlaceholder('Quick search by name...');
   await quickSearchInput.fill(filename);
@@ -218,7 +178,7 @@ test('Advanced search keeps failed filter but hides retry actions for unsupporte
   await waitForSearchIndex(request, filename, token, { apiUrl: baseApiUrl, maxAttempts: 40 });
 
   const advancedSearchPath = `/search?q=${encodeURIComponent(filename)}&dateRange=week&minSize=1&previewStatus=FAILED`;
-  await gotoWithBypassOrLogin(page, advancedSearchPath, defaultUsername, defaultPassword, token);
+  await gotoWithAuthE2E(page, advancedSearchPath, defaultUsername, defaultPassword, { token });
 
   const advancedSearchInput = page.getByLabel('Search query');
   await expect(advancedSearchInput).toHaveValue(filename, { timeout: 60_000 });

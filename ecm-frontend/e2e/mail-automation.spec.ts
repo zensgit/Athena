@@ -1,14 +1,10 @@
-import { expect, Page, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { fetchAccessToken, waitForApiReady } from './helpers/api';
-import { loginWithCredentialsE2E } from './helpers/login';
+import { gotoWithAuthE2E } from './helpers/login';
 
 const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
 const apiUrl = process.env.ECM_API_URL || 'http://localhost:7700';
-
-async function loginWithCredentials(page: Page, username: string, password: string, token?: string) {
-  await loginWithCredentialsE2E(page, username, password, { token });
-}
 
 test('Mail automation test connection and fetch summary', async ({ page, request }) => {
   await waitForApiReady(request);
@@ -27,8 +23,7 @@ test('Mail automation test connection and fetch summary', async ({ page, request
     (account) => account.security === 'OAUTH2' && account.oauthEnvConfigured === false,
   );
 
-  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
-  await page.goto('/admin/mail', { waitUntil: 'domcontentloaded' });
+  await gotoWithAuthE2E(page, '/admin/mail', defaultUsername, defaultPassword, { token });
   await page.waitForURL(/\/admin\/mail/, { timeout: 60_000 });
 
   const heading = page.getByRole('heading', { name: /mail automation/i });
@@ -93,8 +88,7 @@ test('Mail automation lists folders and shows folder helper text', async ({ page
   test.skip(!rules.length, 'No mail rules configured');
   const ruleName = rules[0].name;
 
-  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
-  await page.goto('/admin/mail', { waitUntil: 'domcontentloaded' });
+  await gotoWithAuthE2E(page, '/admin/mail', defaultUsername, defaultPassword, { token });
   await page.waitForURL(/\/admin\/mail/, { timeout: 60_000 });
 
   const listFoldersButton = page.getByRole('button', { name: /list folders/i });
@@ -133,8 +127,7 @@ test('Mail automation diagnostics filters can be cleared', async ({ page, reques
   const accounts = (await accountsRes.json()) as Array<{ id: string; name: string }>;
   test.skip(!accounts.length, 'No mail accounts configured');
 
-  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
-  await page.goto('/admin/mail#diagnostics', { waitUntil: 'domcontentloaded' });
+  await gotoWithAuthE2E(page, '/admin/mail#diagnostics', defaultUsername, defaultPassword, { token });
   await page.waitForURL(/\/admin\/mail/, { timeout: 60_000 });
 
   const statusSelect = page.getByRole('combobox', { name: 'Status' });
@@ -163,8 +156,7 @@ test('Mail automation diagnostics filters can be cleared', async ({ page, reques
 test('Mail automation rule diagnostics drawer opens from leaderboard', async ({ page, request }) => {
   await waitForApiReady(request);
   const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
-  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
-  await page.goto('/admin/mail#diagnostics', { waitUntil: 'domcontentloaded' });
+  await gotoWithAuthE2E(page, '/admin/mail#diagnostics', defaultUsername, defaultPassword, { token });
   await page.waitForURL(/\/admin\/mail/, { timeout: 60_000 });
 
   const openDrawerButtons = page.locator('button:visible', { hasText: /open drawer/i });
@@ -182,8 +174,7 @@ test('Mail automation rule diagnostics drawer opens from leaderboard', async ({ 
 test('Mail automation can replay failed processed item', async ({ page, request }) => {
   await waitForApiReady(request);
   const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
-  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
-  await page.goto('/admin/mail#diagnostics', { waitUntil: 'domcontentloaded' });
+  await gotoWithAuthE2E(page, '/admin/mail#diagnostics', defaultUsername, defaultPassword, { token });
   await page.waitForURL(/\/admin\/mail/, { timeout: 60_000 });
 
   const replayButtons = page.getByRole('button', { name: /^replay$/i });
@@ -201,8 +192,7 @@ test('Mail automation can replay failed processed item', async ({ page, request 
 test('Mail automation runtime health panel renders', async ({ page, request }) => {
   await waitForApiReady(request);
   const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
-  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
-  await page.goto('/admin/mail', { waitUntil: 'domcontentloaded' });
+  await gotoWithAuthE2E(page, '/admin/mail', defaultUsername, defaultPassword, { token });
   await page.waitForURL(/\/admin\/mail/, { timeout: 60_000 });
 
   const heading = page.getByRole('heading', { name: /runtime health/i });
@@ -227,8 +217,7 @@ test('Mail automation runtime health panel renders', async ({ page, request }) =
 test('Mail automation diagnostics export scope snapshot renders', async ({ page, request }) => {
   await waitForApiReady(request);
   const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
-  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
-  await page.goto('/admin/mail#diagnostics', { waitUntil: 'domcontentloaded' });
+  await gotoWithAuthE2E(page, '/admin/mail#diagnostics', defaultUsername, defaultPassword, { token });
   await page.waitForURL(/\/admin\/mail/, { timeout: 60_000 });
 
   await expect(page.getByText(/Export scope snapshot:/i)).toBeVisible({ timeout: 30_000 });
@@ -237,8 +226,7 @@ test('Mail automation diagnostics export scope snapshot renders', async ({ page,
 test('Mail automation mail-documents similar action navigates to search', async ({ page, request }) => {
   await waitForApiReady(request);
   const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
-  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
-  await page.goto('/admin/mail#diagnostics', { waitUntil: 'domcontentloaded' });
+  await gotoWithAuthE2E(page, '/admin/mail#diagnostics', defaultUsername, defaultPassword, { token });
   await page.waitForURL(/\/admin\/mail/, { timeout: 60_000 });
 
   const similarButtons = page.getByRole('button', { name: /find similar documents/i });
@@ -253,8 +241,7 @@ test('Mail automation reporting panel renders', async ({ page, request }) => {
   await waitForApiReady(request);
   const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
 
-  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
-  await page.goto('/admin/mail', { waitUntil: 'domcontentloaded' });
+  await gotoWithAuthE2E(page, '/admin/mail', defaultUsername, defaultPassword, { token });
   await page.waitForURL(/\/admin\/mail/, { timeout: 60_000 });
 
   const reportHeading = page.getByRole('heading', { name: /mail reporting/i });

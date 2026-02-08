@@ -5,6 +5,8 @@ type LoginHelperOptions = {
   token?: string;
 };
 
+const AUTH_REDIRECT_PATTERN = /\/login$|\/protocol\/openid-connect\/auth|login_required/;
+
 const resolveRolesForUser = (username: string): string[] => {
   const adminUsername = process.env.ECM_E2E_USERNAME || 'admin';
   const editorUsername = process.env.ECM_E2E_EDITOR_USERNAME || 'editor';
@@ -22,7 +24,7 @@ const resolveRolesForUser = (username: string): string[] => {
   return ['ROLE_ADMIN'];
 };
 
-const seedBypassSession = async (page: Page, username: string, token: string) => {
+export const seedBypassSessionE2E = async (page: Page, username: string, token: string) => {
   const roles = resolveRolesForUser(username);
   await page.addInitScript(
     ({ authToken, authUser }) => {
@@ -53,7 +55,7 @@ export async function loginWithCredentialsE2E(
     const resolvedToken = options.token
       ?? await fetchAccessToken(page.request, username, password).catch(() => undefined);
     if (resolvedToken) {
-      await seedBypassSession(page, username, resolvedToken);
+      await seedBypassSessionE2E(page, username, resolvedToken);
       await page.goto('/browse/root', { waitUntil: 'domcontentloaded' });
       await page.waitForURL(/\/browse\//, { timeout: 60_000 });
       await expect(page.getByText('Athena ECM')).toBeVisible({ timeout: 60_000 });
@@ -65,7 +67,7 @@ export async function loginWithCredentialsE2E(
     const resolvedToken = options.token
       ?? await fetchAccessToken(page.request, username, password).catch(() => undefined);
     if (resolvedToken) {
-      await seedBypassSession(page, username, resolvedToken);
+      await seedBypassSessionE2E(page, username, resolvedToken);
       await page.goto('/browse/root', { waitUntil: 'domcontentloaded' });
       await page.waitForURL(/\/browse\//, { timeout: 60_000 });
       await expect(page.getByText('Athena ECM')).toBeVisible({ timeout: 60_000 });
@@ -119,4 +121,29 @@ export async function loginWithCredentialsE2E(
 
   await page.waitForURL(browsePattern, { timeout: 60_000 });
   await expect(page.getByText('Athena ECM')).toBeVisible({ timeout: 60_000 });
+}
+
+export async function gotoWithAuthE2E(
+  page: Page,
+  targetPath: string,
+  username: string,
+  password: string,
+  options: LoginHelperOptions = {}
+) {
+  const resolvedToken = options.token
+    ?? await fetchAccessToken(page.request, username, password).catch(() => undefined);
+
+  if (resolvedToken) {
+    await seedBypassSessionE2E(page, username, resolvedToken);
+  }
+
+  const targetUrl = /^https?:\/\//.test(targetPath)
+    ? targetPath
+    : (targetPath.startsWith('/') ? targetPath : `/${targetPath}`);
+
+  await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+  if (AUTH_REDIRECT_PATTERN.test(page.url())) {
+    await loginWithCredentialsE2E(page, username, password, { token: resolvedToken });
+    await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+  }
 }
