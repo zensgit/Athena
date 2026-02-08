@@ -157,9 +157,17 @@ test('clears markers when auto login request fails', async () => {
   expect(await screen.findByText('Login Page')).toBeTruthy();
   await waitFor(() => {
     expect(sessionStorage.getItem('ecm_kc_login_in_progress')).toBeNull();
+  });
+  await waitFor(() => {
     expect(sessionStorage.getItem('ecm_kc_login_in_progress_started_at')).toBeNull();
+  });
+  await waitFor(() => {
     expect(sessionStorage.getItem('ecm_auth_init_status')).toBe('redirect_failed');
+  });
+  await waitFor(() => {
     expect(sessionStorage.getItem('ecm_auth_redirect_failure_count')).toBe('1');
+  });
+  await waitFor(() => {
     expect(Number(sessionStorage.getItem('ecm_auth_redirect_last_failure_at') || '0')).toBeGreaterThan(0);
   });
 });

@@ -1,9 +1,12 @@
 import {
+  formatPreviewFailureReasonLabel,
   getFailedPreviewMeta,
   isUnsupportedPreviewFailure,
   isUnsupportedPreviewReason,
   isUnsupportedPreviewMimeType,
+  normalizePreviewFailureReason,
   normalizeMimeType,
+  summarizeFailedPreviews,
 } from './previewStatusUtils';
 
 describe('previewStatusUtils', () => {
@@ -68,5 +71,46 @@ describe('previewStatusUtils', () => {
   it('treats unsupported category variants as unsupported', () => {
     expect(isUnsupportedPreviewFailure('UNSUPPORTED_MEDIA_TYPE', 'application/pdf')).toBe(true);
     expect(isUnsupportedPreviewFailure('unsupported_media_type', 'application/pdf')).toBe(true);
+  });
+
+  it('normalizes and formats preview failure reason labels', () => {
+    expect(normalizePreviewFailureReason('  temporary   gateway timeout  ')).toBe('temporary gateway timeout');
+    expect(normalizePreviewFailureReason('')).toBe('UNSPECIFIED');
+    expect(formatPreviewFailureReasonLabel('')).toBe('Unspecified reason');
+    expect(formatPreviewFailureReasonLabel('mime converter timeout')).toBe('mime converter timeout');
+  });
+
+  it('summarizes failed previews into retryable and unsupported buckets', () => {
+    const summary = summarizeFailedPreviews([
+      {
+        previewStatus: 'FAILED',
+        previewFailureCategory: 'UNSUPPORTED',
+        previewFailureReason: 'unsupported media type',
+        mimeType: 'application/octet-stream',
+      },
+      {
+        previewStatus: 'FAILED',
+        previewFailureCategory: 'TEMPORARY',
+        previewFailureReason: 'timeout',
+        mimeType: 'application/pdf',
+      },
+      {
+        previewStatus: 'FAILED',
+        previewFailureCategory: 'TEMPORARY',
+        previewFailureReason: 'timeout',
+        mimeType: 'application/pdf',
+      },
+      {
+        previewStatus: 'READY',
+        previewFailureCategory: null,
+        previewFailureReason: null,
+        mimeType: 'application/pdf',
+      },
+    ]);
+
+    expect(summary.totalFailed).toBe(3);
+    expect(summary.unsupportedFailed).toBe(1);
+    expect(summary.retryableFailed).toBe(2);
+    expect(summary.retryableReasons).toEqual([{ reason: 'timeout', count: 2 }]);
   });
 });

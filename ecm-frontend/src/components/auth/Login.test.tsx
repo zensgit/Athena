@@ -76,8 +76,8 @@ test('manual sign-in clears redirect failure cooldown markers', async () => {
 
   await waitFor(() => {
     expect(sessionStorage.getItem('ecm_auth_redirect_failure_count')).toBeNull();
-    expect(sessionStorage.getItem('ecm_auth_redirect_last_failure_at')).toBeNull();
   });
+  expect(sessionStorage.getItem('ecm_auth_redirect_last_failure_at')).toBeNull();
 });
 
 test('shows error when login fails', async () => {

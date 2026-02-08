@@ -47,7 +47,13 @@ import nodeService, { SearchDiagnostics, SearchIndexStats, SearchRebuildStatus }
 import { Node, SearchCriteria } from 'types';
 import { toast } from 'react-toastify';
 import Highlight from 'components/search/Highlight';
-import { getFailedPreviewMeta, isUnsupportedPreviewFailure } from 'utils/previewStatusUtils';
+import {
+  formatPreviewFailureReasonLabel,
+  getFailedPreviewMeta,
+  isUnsupportedPreviewFailure,
+  normalizePreviewFailureReason,
+  summarizeFailedPreviews,
+} from 'utils/previewStatusUtils';
 const DocumentPreview = React.lazy(() => import('components/preview/DocumentPreview'));
 
 type FacetValue = { value: string; count: number };
@@ -1028,7 +1034,23 @@ const SearchResults: React.FC = () => {
     || Boolean((lastSearchCriteria?.name || '').trim())
     || filtersApplied;
   const shouldShowFallback = !isSimilarMode && !loading && nodes.length === 0 && fallbackNodes.length > 0 && hasActiveCriteria;
-  const displayNodes = isSimilarMode ? (similarResults || []) : (shouldShowFallback ? fallbackNodes : nodes);
+  const displayNodes = useMemo(
+    () => (isSimilarMode ? (similarResults || []) : (shouldShowFallback ? fallbackNodes : nodes)),
+    [isSimilarMode, similarResults, shouldShowFallback, fallbackNodes, nodes]
+  );
+  const failedPreviewSummary = useMemo(
+    () => summarizeFailedPreviews(
+      displayNodes
+        .filter((node) => node.nodeType === 'DOCUMENT')
+        .map((node) => ({
+          previewStatus: node.previewStatus,
+          previewFailureCategory: node.previewFailureCategory,
+          previewFailureReason: node.previewFailureReason,
+          mimeType: node.contentType || node.properties?.mimeType || node.properties?.contentType,
+        }))
+    ),
+    [displayNodes]
+  );
   const failedPreviewNodes = displayNodes.filter((node) => node.nodeType === 'DOCUMENT'
     && (node.previewStatus || '').toUpperCase() === 'FAILED'
     && !isUnsupportedPreviewFailure(
@@ -1037,22 +1059,8 @@ const SearchResults: React.FC = () => {
       node.previewFailureReason
     ));
   const failedPreviewReasonSummary = useMemo(() => {
-    const buckets = new Map<string, Node[]>();
-    failedPreviewNodes.forEach((node) => {
-      const reason = (node.previewFailureReason || '').trim() || 'UNSPECIFIED';
-      const existing = buckets.get(reason) || [];
-      existing.push(node);
-      buckets.set(reason, existing);
-    });
-    return Array.from(buckets.entries())
-      .map(([reason, nodesForReason]) => ({
-        reason,
-        count: nodesForReason.length,
-        nodes: nodesForReason,
-      }))
-      .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason))
-      .slice(0, 6);
-  }, [failedPreviewNodes]);
+    return failedPreviewSummary.retryableReasons.slice(0, 6);
+  }, [failedPreviewSummary]);
   const previewStatusCounts = displayNodes.reduce(
     (acc, node) => {
       if (node.nodeType === 'FOLDER') {
@@ -1141,7 +1149,7 @@ const SearchResults: React.FC = () => {
 
   const handleRetryFailedReason = async (reason: string, force = false) => {
     const targets = failedPreviewNodes.filter((node) => {
-      const nodeReason = (node.previewFailureReason || '').trim() || 'UNSPECIFIED';
+      const nodeReason = normalizePreviewFailureReason(node.previewFailureReason);
       return nodeReason === reason;
     });
     if (targets.length === 0) {
@@ -1170,7 +1178,7 @@ const SearchResults: React.FC = () => {
         failed += 1;
       }
     }
-    const reasonLabel = reason === 'UNSPECIFIED' ? 'unspecified' : reason;
+    const reasonLabel = formatPreviewFailureReasonLabel(reason);
     const parts = [`queued ${queued}`];
     if (skipped > 0) parts.push(`skipped ${skipped}`);
     if (failed > 0) parts.push(`failed ${failed}`);
@@ -1464,41 +1472,55 @@ const SearchResults: React.FC = () => {
                 Clear
               </Button>
             </Box>
-            <Box display="flex" alignItems="center" gap={1} mb={2}>
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<Refresh />}
-                onClick={() => {
-                  void handleRetryFailedPreviews(false);
-                }}
-                disabled={failedPreviewNodes.length === 0 || batchRetrying}
-              >
-                Retry failed previews
-              </Button>
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<Refresh />}
-                onClick={() => handleRetryFailedPreviews(true)}
-                disabled={failedPreviewNodes.length === 0 || batchRetrying}
-              >
-                Force rebuild failed
-              </Button>
-              {batchRetrying && (
-                <Typography variant="caption" color="text.secondary">
-                  Queueing {failedPreviewNodes.length} item(s)…
-                </Typography>
-              )}
-            </Box>
-            {failedPreviewReasonSummary.length > 0 && (
+            {failedPreviewSummary.retryableFailed > 0 && (
+              <Box display="flex" alignItems="center" gap={1} mb={2}>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<Refresh />}
+                  onClick={() => {
+                    void handleRetryFailedPreviews(false);
+                  }}
+                  disabled={batchRetrying}
+                >
+                  Retry failed previews
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<Refresh />}
+                  onClick={() => handleRetryFailedPreviews(true)}
+                  disabled={batchRetrying}
+                >
+                  Force rebuild failed
+                </Button>
+                {batchRetrying && (
+                  <Typography variant="caption" color="text.secondary">
+                    Queueing {failedPreviewSummary.retryableFailed} item(s)…
+                  </Typography>
+                )}
+              </Box>
+            )}
+            {failedPreviewSummary.totalFailed > 0 && (
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                Failed previews on current page: {failedPreviewSummary.totalFailed}
+                {' • '}Retryable {failedPreviewSummary.retryableFailed}
+                {' • '}Unsupported {failedPreviewSummary.unsupportedFailed}
+              </Typography>
+            )}
+            {failedPreviewSummary.totalFailed > 0 && failedPreviewSummary.retryableFailed === 0 && (
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                All failed previews on this page are unsupported; retry actions are hidden.
+              </Typography>
+            )}
+            {failedPreviewSummary.retryableFailed > 0 && failedPreviewReasonSummary.length > 0 && (
               <Box sx={{ mb: 2 }}>
                 <Typography variant="caption" color="text.secondary" display="block">
                   Failed reasons (current page)
                 </Typography>
                 <Stack spacing={0.5} sx={{ mt: 0.5 }}>
                   {failedPreviewReasonSummary.map((item) => {
-                    const displayReason = item.reason === 'UNSPECIFIED' ? 'Unspecified' : item.reason;
+                    const displayReason = formatPreviewFailureReasonLabel(item.reason);
                     const reasonLabel = displayReason.length > 80
                       ? `${displayReason.slice(0, 77)}...`
                       : displayReason;

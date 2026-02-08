@@ -1,5 +1,18 @@
 export type PreviewStatusChipColor = 'default' | 'success' | 'warning' | 'error' | 'info';
 export type PreviewFailureCategory = 'UNSUPPORTED' | 'TEMPORARY' | 'PERMANENT' | string | null | undefined;
+export type PreviewFailureLike = {
+  previewStatus?: string | null;
+  previewFailureCategory?: PreviewFailureCategory;
+  previewFailureReason?: string | null;
+  mimeType?: string | null;
+};
+
+export type PreviewFailureSummary = {
+  totalFailed: number;
+  retryableFailed: number;
+  unsupportedFailed: number;
+  retryableReasons: Array<{ reason: string; count: number }>;
+};
 
 const PREVIEW_UNSUPPORTED_MIME_TYPES = new Set([
   'application/octet-stream',
@@ -49,6 +62,59 @@ export const isUnsupportedPreviewFailure = (
     return true;
   }
   return isUnsupportedPreviewMimeType(mimeType);
+};
+
+export const normalizePreviewFailureReason = (failureReason?: string | null): string => {
+  const normalized = (failureReason || '').replace(/\s+/g, ' ').trim();
+  return normalized || 'UNSPECIFIED';
+};
+
+export const formatPreviewFailureReasonLabel = (failureReason?: string | null): string => {
+  const normalized = normalizePreviewFailureReason(failureReason);
+  if (normalized === 'UNSPECIFIED') {
+    return 'Unspecified reason';
+  }
+  return normalized;
+};
+
+export const summarizeFailedPreviews = (items: PreviewFailureLike[]): PreviewFailureSummary => {
+  let totalFailed = 0;
+  let retryableFailed = 0;
+  let unsupportedFailed = 0;
+  const retryableReasonBuckets = new Map<string, number>();
+
+  items.forEach((item) => {
+    const previewStatus = (item.previewStatus || '').toUpperCase();
+    if (previewStatus !== 'FAILED') {
+      return;
+    }
+
+    totalFailed += 1;
+    const unsupported = isUnsupportedPreviewFailure(
+      item.previewFailureCategory,
+      item.mimeType,
+      item.previewFailureReason
+    );
+    if (unsupported) {
+      unsupportedFailed += 1;
+      return;
+    }
+
+    retryableFailed += 1;
+    const reason = normalizePreviewFailureReason(item.previewFailureReason);
+    retryableReasonBuckets.set(reason, (retryableReasonBuckets.get(reason) || 0) + 1);
+  });
+
+  const retryableReasons = Array.from(retryableReasonBuckets.entries())
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason));
+
+  return {
+    totalFailed,
+    retryableFailed,
+    unsupportedFailed,
+    retryableReasons,
+  };
 };
 
 export const getFailedPreviewMeta = (
