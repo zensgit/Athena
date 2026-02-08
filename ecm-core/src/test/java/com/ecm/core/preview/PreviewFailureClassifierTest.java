@@ -43,4 +43,12 @@ class PreviewFailureClassifierTest {
             PreviewFailureClassifier.classify("FAILED", "application/pdf", "Corrupt document structure")
         );
     }
+
+    @Test
+    void treatsUnsupportedStatusAsUnsupportedCategory() {
+        assertEquals(
+            PreviewFailureClassifier.CATEGORY_UNSUPPORTED,
+            PreviewFailureClassifier.classify("UNSUPPORTED", "application/pdf", null)
+        );
+    }
 }

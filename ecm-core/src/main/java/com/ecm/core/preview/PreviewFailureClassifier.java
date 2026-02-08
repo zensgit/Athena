@@ -7,6 +7,7 @@ public final class PreviewFailureClassifier {
     public static final String CATEGORY_UNSUPPORTED = "UNSUPPORTED";
     public static final String CATEGORY_TEMPORARY = "TEMPORARY";
     public static final String CATEGORY_PERMANENT = "PERMANENT";
+    private static final String STATUS_UNSUPPORTED = "UNSUPPORTED";
 
     private static final Set<String> UNSUPPORTED_MIME_TYPES = Set.of(
         "application/octet-stream",
@@ -17,8 +18,12 @@ public final class PreviewFailureClassifier {
     private PreviewFailureClassifier() {}
 
     public static String classify(String previewStatus, String mimeType, String failureReason) {
-        if (!isFailedStatus(previewStatus)) {
+        if (!isFailureStatus(previewStatus)) {
             return null;
+        }
+
+        if (isUnsupportedStatus(previewStatus)) {
+            return CATEGORY_UNSUPPORTED;
         }
 
         if (isUnsupportedMimeType(mimeType) || isUnsupportedReason(failureReason)) {
@@ -37,8 +42,16 @@ public final class PreviewFailureClassifier {
         return normalized != null && UNSUPPORTED_MIME_TYPES.contains(normalized);
     }
 
-    private static boolean isFailedStatus(String previewStatus) {
-        return previewStatus != null && "FAILED".equalsIgnoreCase(previewStatus.trim());
+    private static boolean isFailureStatus(String previewStatus) {
+        if (previewStatus == null) {
+            return false;
+        }
+        String normalized = previewStatus.trim();
+        return "FAILED".equalsIgnoreCase(normalized) || STATUS_UNSUPPORTED.equalsIgnoreCase(normalized);
+    }
+
+    private static boolean isUnsupportedStatus(String previewStatus) {
+        return previewStatus != null && STATUS_UNSUPPORTED.equalsIgnoreCase(previewStatus.trim());
     }
 
     private static boolean isUnsupportedReason(String failureReason) {
