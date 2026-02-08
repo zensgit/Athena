@@ -68,7 +68,7 @@ import userGroupService, { Group } from 'services/userGroupService';
 import savedSearchService, { SavedSearch } from 'services/savedSearchService';
 import mailAutomationService, { MailFetchSummaryStatus } from 'services/mailAutomationService';
 import authService from 'services/authService';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppDispatch } from 'store';
 import { executeSavedSearch, setLastSearchCriteria } from 'store/slices/nodeSlice';
 import { User } from 'types';
@@ -185,8 +185,11 @@ const RULE_EVENT_LABELS: Record<string, string> = {
   SCHEDULED_RULE_BATCH_PARTIAL: 'Scheduled Batch Partial',
 };
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const dispatch = useAppDispatch();
   const [tab, setTab] = useState(0);
 
@@ -216,6 +219,7 @@ const AdminDashboard: React.FC = () => {
   const [auditFilterUser, setAuditFilterUser] = useState('');
   const [auditFilterEventType, setAuditFilterEventType] = useState('');
   const [auditFilterCategory, setAuditFilterCategory] = useState('');
+  const [auditFilterNodeId, setAuditFilterNodeId] = useState('');
   const [auditQuickRange, setAuditQuickRange] = useState<'24h' | '7d' | '30d' | 'custom'>('30d');
   const [filteringAudit, setFilteringAudit] = useState(false);
   const [pinnedSearches, setPinnedSearches] = useState<SavedSearch[]>([]);
@@ -455,6 +459,11 @@ const AdminDashboard: React.FC = () => {
     try {
       setExportingAudit(true);
       let downloadLabel = format(new Date(), 'yyyyMMdd');
+      const nodeId = auditFilterNodeId.trim();
+      if (nodeId && !UUID_PATTERN.test(nodeId)) {
+        toast.error('Invalid Node ID (expected UUID)');
+        return;
+      }
 
       const params = new URLSearchParams();
       if (auditExportPreset && auditExportPreset !== 'custom') {
@@ -470,6 +479,9 @@ const AdminDashboard: React.FC = () => {
         }
         if (auditFilterCategory.trim()) {
           params.append('category', auditFilterCategory.trim());
+        }
+        if (nodeId) {
+          params.append('nodeId', nodeId);
         }
       } else {
         const { fromInput, toInput } = resolveAuditExportRange();
@@ -489,6 +501,9 @@ const AdminDashboard: React.FC = () => {
         }
         if (auditFilterCategory.trim()) {
           params.append('category', auditFilterCategory.trim());
+        }
+        if (nodeId) {
+          params.append('nodeId', nodeId);
         }
       }
 
@@ -557,19 +572,38 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  const handleFilterAuditLogs = async () => {
+  const handleFilterAuditLogs = async (
+    overrides: Partial<{
+      username: string;
+      eventType: string;
+      category: string;
+      nodeId: string;
+    }> = {}
+  ) => {
+    const username = (overrides.username ?? auditFilterUser).trim();
+    const eventType = (overrides.eventType ?? auditFilterEventType).trim();
+    const category = (overrides.category ?? auditFilterCategory).trim();
+    const nodeId = (overrides.nodeId ?? auditFilterNodeId).trim();
+    if (nodeId && !UUID_PATTERN.test(nodeId)) {
+      toast.error('Invalid Node ID (expected UUID)');
+      return;
+    }
+
     try {
       setFilteringAudit(true);
       const { fromInput, toInput } = resolveAuditExportRange();
       const params = new URLSearchParams();
-      if (auditFilterUser.trim()) {
-        params.append('username', auditFilterUser.trim());
+      if (username) {
+        params.append('username', username);
       }
-      if (auditFilterEventType.trim()) {
-        params.append('eventType', auditFilterEventType.trim());
+      if (eventType) {
+        params.append('eventType', eventType);
       }
-      if (auditFilterCategory.trim()) {
-        params.append('category', auditFilterCategory.trim());
+      if (category) {
+        params.append('category', category);
+      }
+      if (nodeId) {
+        params.append('nodeId', nodeId);
       }
       if (isCustomExport) {
         if (auditExportFrom?.trim()) {
@@ -596,6 +630,7 @@ const AdminDashboard: React.FC = () => {
       setAuditFilterUser('');
       setAuditFilterEventType('');
       setAuditFilterCategory('');
+      setAuditFilterNodeId('');
       const logsRes = await apiService.get<AuditLog[]>('/analytics/audit/recent?limit=10');
       setLogs(logsRes);
     } catch {
@@ -667,6 +702,40 @@ const AdminDashboard: React.FC = () => {
     loadPinnedSearches();
     fetchMailFetchSummary({ silent: true });
   }, []);
+
+  useEffect(() => {
+    const auditNodeId = new URLSearchParams(location.search).get('auditNodeId')?.trim();
+    if (!auditNodeId) {
+      return;
+    }
+    if (!UUID_PATTERN.test(auditNodeId)) {
+      toast.error('Invalid auditNodeId in URL');
+      return;
+    }
+
+    setTab(0);
+    setAuditFilterUser('');
+    setAuditFilterEventType('');
+    setAuditFilterCategory('');
+    setAuditFilterNodeId(auditNodeId);
+
+    void (async () => {
+      try {
+        setFilteringAudit(true);
+        const params = new URLSearchParams();
+        params.append('nodeId', auditNodeId);
+        const query = params.toString();
+        const response = await apiService.get<PageResponse<AuditLog>>(
+          `/analytics/audit/search${query ? `?${query}` : ''}`
+        );
+        setLogs(response.content || []);
+      } catch {
+        toast.error('Failed to filter audit logs');
+      } finally {
+        setFilteringAudit(false);
+      }
+    })();
+  }, [location.search]);
 
   useEffect(() => {
     if (tab === 1) {
@@ -1251,6 +1320,13 @@ const AdminDashboard: React.FC = () => {
                       ))}
                     </Select>
                   </FormControl>
+                  <TextField
+                    label="Node ID"
+                    size="small"
+                    value={auditFilterNodeId}
+                    onChange={(event) => setAuditFilterNodeId(event.target.value)}
+                    sx={{ minWidth: 280 }}
+                  />
                   <Box display="flex" alignItems="center" gap={0.5}>
                     <Typography variant="caption" color="text.secondary">
                       Quick range
@@ -1309,7 +1385,7 @@ const AdminDashboard: React.FC = () => {
                   <Button
                     size="small"
                     variant="outlined"
-                    onClick={handleFilterAuditLogs}
+                    onClick={() => void handleFilterAuditLogs()}
                     disabled={filteringAudit}
                   >
                     {filteringAudit ? 'Filtering...' : 'Filter Logs'}
