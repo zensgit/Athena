@@ -32,37 +32,37 @@ test('Permissions dialog shows inheritance path and copy ACL action', async ({ p
   const rootId = await getRootFolderId(request, token, { apiUrl: baseApiUrl });
   const documentsId = await findChildFolderId(request, rootId, 'Documents', token, { apiUrl: baseApiUrl });
 
+  const parentName = `e2e-permissions-parent-${Date.now()}`;
+  const parentId = await createFolder(request, documentsId, parentName, token);
   const folderName = `e2e-permissions-${Date.now()}`;
-  const folderId = await createFolder(request, documentsId, folderName, token);
+  await createFolder(request, parentId, folderName, token);
 
-  await gotoWithAuthE2E(page, `/browse/${documentsId}`, defaultUsername, defaultPassword, { token });
-  await page.getByRole('button', { name: 'list view' }).click();
+  await gotoWithAuthE2E(page, `/browse/${parentId}`, defaultUsername, defaultPassword, { token });
+  const actionButton = page.getByLabel(`Actions for ${folderName}`).first();
 
-  const quickSearch = page.getByPlaceholder('Quick search by name...');
-  if (await quickSearch.isVisible().catch(() => false)) {
-    await quickSearch.fill(folderName);
-    await quickSearch.press('Enter');
-    await page.waitForTimeout(1000);
-  }
-
-  const createdRow = page.getByRole('row', { name: new RegExp(folderName) });
-  if (!(await createdRow.isVisible().catch(() => false))) {
-    await page.reload({ waitUntil: 'domcontentloaded' });
+  let actionButtonVisible = false;
+  for (let attempt = 0; attempt < 12; attempt += 1) {
     await page.getByRole('button', { name: 'list view' }).click().catch(() => undefined);
+
+    const quickSearch = page.getByPlaceholder('Quick search by name...');
     if (await quickSearch.isVisible().catch(() => false)) {
       await quickSearch.fill(folderName);
       await quickSearch.press('Enter');
-      await page.waitForTimeout(1000);
+    }
+
+    if (await actionButton.isVisible().catch(() => false)) {
+      actionButtonVisible = true;
+      break;
+    }
+
+    await page.waitForTimeout(1500);
+    if ((attempt + 1) % 3 === 0) {
+      await page.reload({ waitUntil: 'domcontentloaded' });
     }
   }
-  const fallbackRow = page.getByRole('row', { name: /e2e-permissions-\d+/ }).first();
-  let targetRow = createdRow;
-  if (!(await createdRow.isVisible().catch(() => false))) {
-    targetRow = fallbackRow;
-  }
-  await expect(targetRow).toBeVisible({ timeout: 60_000 });
+  expect(actionButtonVisible).toBeTruthy();
 
-  await targetRow.getByRole('button', { name: /Actions for/i }).click();
+  await actionButton.click();
   await page.getByRole('menuitem', { name: 'Permissions' }).click();
 
   const dialog = page.getByRole('dialog').filter({ hasText: 'Manage Permissions' });
@@ -79,6 +79,6 @@ test('Permissions dialog shows inheritance path and copy ACL action', async ({ p
 
   await dialog.getByRole('button', { name: /^Close$/ }).click();
 
-  await request.delete(`${baseApiUrl}/api/v1/nodes/${folderId}`,
+  await request.delete(`${baseApiUrl}/api/v1/nodes/${parentId}`,
     { headers: { Authorization: `Bearer ${token}` } }).catch(() => null);
 });

@@ -144,6 +144,7 @@ jobs:
               e2e/browse-acl.spec.ts \
               e2e/mfa-settings.spec.ts \
               e2e/pdf-preview.spec.ts \
+              e2e/permissions-dialog.spec.ts \
               e2e/permission-templates.spec.ts \
               e2e/rules-manual-backfill-validation.spec.ts \
               e2e/search-highlight.spec.ts \
@@ -152,6 +153,9 @@ jobs:
               e2e/search-view.spec.ts \
               e2e/version-details.spec.ts \
               e2e/version-share-download.spec.ts
+          ECM_UI_URL=http://localhost:5500 ECM_API_URL=http://localhost:7700 ECM_E2E_WORKERS=1 \
+            npx playwright test --workers=1 e2e/ui-smoke.spec.ts \
+              --grep 'UI smoke: PDF upload \+ search \+ version history \+ preview|UI search download failure shows error toast'
 
       - name: Capture docker logs (on failure)
         if: failure()
