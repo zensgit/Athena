@@ -20,7 +20,8 @@ const installInsecureCryptoFallback = () => {
   if (!allowInsecureCrypto) {
     return;
   }
-  if (window.crypto?.getRandomValues) {
+  const cryptoRef = (window as any).crypto as { getRandomValues?: (arr: Uint8Array) => Uint8Array } | undefined;
+  if (typeof cryptoRef?.getRandomValues === 'function') {
     return;
   }
 
@@ -32,12 +33,12 @@ const installInsecureCryptoFallback = () => {
   };
 
   try {
-    if (window.crypto && !window.crypto.getRandomValues) {
-      Object.defineProperty(window.crypto, 'getRandomValues', {
+    if (cryptoRef) {
+      Object.defineProperty(cryptoRef, 'getRandomValues', {
         value: insecureGetRandomValues,
         configurable: true,
       });
-    } else if (!window.crypto) {
+    } else {
       Object.defineProperty(window, 'crypto', {
         value: { getRandomValues: insecureGetRandomValues },
         configurable: true,

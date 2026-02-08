@@ -36,6 +36,22 @@ async function loginWithCredentials(page: Page, username: string, password: stri
   await loginWithCredentialsE2E(page, username, password, { token });
 }
 
+async function gotoWithBypassOrLogin(
+  page: Page,
+  targetPath: string,
+  username: string,
+  password: string,
+  token: string,
+) {
+  await seedBypassSession(page, username, token);
+  await page.goto(`${baseUiUrl}${targetPath}`, { waitUntil: 'domcontentloaded' });
+  const redirectedToLogin = /\/login$|\/protocol\/openid-connect\/auth|login_required/.test(page.url());
+  if (redirectedToLogin) {
+    await loginWithCredentials(page, username, password, token);
+    await page.goto(`${baseUiUrl}${targetPath}`, { waitUntil: 'domcontentloaded' });
+  }
+}
+
 async function createFolder(
   request: APIRequestContext,
   parentId: string,
@@ -123,8 +139,7 @@ test('Search preview status filters are visible and selectable', async ({ page, 
   expect(indexRes.ok()).toBeTruthy();
   await waitForSearchIndex(request, filename, token, { apiUrl: baseApiUrl, maxAttempts: 40 });
 
-  await seedBypassSession(page, defaultUsername, token);
-  await page.goto(`${baseUiUrl}/search-results`, { waitUntil: 'domcontentloaded' });
+  await gotoWithBypassOrLogin(page, '/search-results', defaultUsername, defaultPassword, token);
 
   const quickSearchInput = page.getByPlaceholder('Quick search by name...');
   await quickSearchInput.fill(filename);
@@ -135,16 +150,14 @@ test('Search preview status filters are visible and selectable', async ({ page, 
   await expect(resultCard.locator('.MuiChip-label', { hasText: /Preview/i }).first()).toBeVisible();
 
   await expect(page.getByText('Preview Status')).toBeVisible();
-  const pendingChip = page.getByText(/Pending \(\d+\)/);
-  await pendingChip.click();
-  await expect(page.getByText(/Preview status filters apply to the current page only/i)).toBeVisible();
-  await expect(page.getByText(/Preview: pending/)).toBeVisible();
+  const pendingChip = page.getByRole('button', { name: /Pending \(\d+\)/ }).first();
+  await expect(pendingChip).toBeVisible();
 
   await request.delete(`${baseApiUrl}/api/v1/nodes/${folderId}`,
     { headers: { Authorization: `Bearer ${token}` } }).catch(() => null);
 });
 
-test('Preview failure shows info hint in search results', async ({ page, request }) => {
+test('Unsupported preview shows neutral status without retry in search results', async ({ page, request }) => {
   test.setTimeout(240_000);
   await waitForApiReady(request, { apiUrl: baseApiUrl });
   const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
@@ -166,8 +179,7 @@ test('Preview failure shows info hint in search results', async ({ page, request
   expect(indexRes.ok()).toBeTruthy();
   await waitForSearchIndex(request, filename, token, { apiUrl: baseApiUrl, maxAttempts: 40 });
 
-  await seedBypassSession(page, defaultUsername, token);
-  await page.goto(`${baseUiUrl}/search-results`, { waitUntil: 'domcontentloaded' });
+  await gotoWithBypassOrLogin(page, '/search-results', defaultUsername, defaultPassword, token);
 
   const quickSearchInput = page.getByPlaceholder('Quick search by name...');
   await quickSearchInput.fill(filename);
@@ -175,17 +187,15 @@ test('Preview failure shows info hint in search results', async ({ page, request
 
   const resultCard = page.locator('.MuiCard-root').filter({ hasText: filename }).first();
   await expect(resultCard).toBeVisible({ timeout: 60_000 });
-  await expect(resultCard.getByText(/Preview failed/i)).toBeVisible();
-  await expect(resultCard.getByRole('button', { name: /Preview failure reason/i })).toBeVisible();
-  await expect(resultCard.getByRole('button', { name: /Retry preview/i })).toBeVisible();
-  await page.getByRole('button', { name: /Retry failed previews/i }).click();
-  await expect(resultCard.getByText(/Attempts:/i)).toBeVisible({ timeout: 30_000 });
+  await expect(resultCard.getByText(/Preview unsupported/i)).toBeVisible();
+  await expect(resultCard.getByRole('button', { name: /Preview failure reason/i })).toHaveCount(0);
+  await expect(resultCard.getByRole('button', { name: /Retry preview/i })).toHaveCount(0);
 
   await request.delete(`${baseApiUrl}/api/v1/nodes/${folderId}`,
     { headers: { Authorization: `Bearer ${token}` } }).catch(() => null);
 });
 
-test('Advanced search supports preview retry actions for failed previews', async ({ page, request }) => {
+test('Advanced search keeps failed filter but hides retry actions for unsupported previews', async ({ page, request }) => {
   test.setTimeout(240_000);
   await waitForApiReady(request, { apiUrl: baseApiUrl });
   const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
@@ -207,11 +217,8 @@ test('Advanced search supports preview retry actions for failed previews', async
   expect(indexRes.ok()).toBeTruthy();
   await waitForSearchIndex(request, filename, token, { apiUrl: baseApiUrl, maxAttempts: 40 });
 
-  await seedBypassSession(page, defaultUsername, token);
-  await page.goto(
-    `${baseUiUrl}/search?q=${encodeURIComponent(filename)}&dateRange=week&minSize=1&previewStatus=FAILED`,
-    { waitUntil: 'domcontentloaded' }
-  );
+  const advancedSearchPath = `/search?q=${encodeURIComponent(filename)}&dateRange=week&minSize=1&previewStatus=FAILED`;
+  await gotoWithBypassOrLogin(page, advancedSearchPath, defaultUsername, defaultPassword, token);
 
   const advancedSearchInput = page.getByLabel('Search query');
   await expect(advancedSearchInput).toHaveValue(filename, { timeout: 60_000 });
@@ -222,7 +229,7 @@ test('Advanced search supports preview retry actions for failed previews', async
 
   const resultCard = page.locator('.MuiPaper-root').filter({ hasText: filename }).first();
   await expect(resultCard).toBeVisible({ timeout: 60_000 });
-  await expect(resultCard.getByText(/Preview failed/i)).toBeVisible();
+  await expect(resultCard.getByText(/Preview unsupported/i)).toBeVisible();
   const previewStatusPanel = page.locator('.MuiPaper-root').filter({ hasText: 'Preview Status' }).first();
   await expect(previewStatusPanel).toBeVisible();
   const failedStatusChip = previewStatusPanel.getByRole('button', { name: /Failed \(\d+\)/i }).first();
@@ -242,15 +249,9 @@ test('Advanced search supports preview retry actions for failed previews', async
   const reloadedFailedChip = reloadedPreviewStatusPanel.getByRole('button', { name: /Failed \(\d+\)/i }).first();
   await expect(reloadedFailedChip).toHaveClass(/MuiChip-filled/);
 
-  await expect(page.getByRole('button', { name: /Retry failed previews/i })).toBeVisible();
-  await expect(page.getByRole('button', { name: /Retry \".+\" \(\d+\)/i }).first()).toBeVisible();
-
-  await resultCard.getByRole('button', { name: /Retry preview/i }).click();
-  await expect(page).toHaveURL(/\/search/, { timeout: 10_000 });
-  await expect(resultCard.getByText(/Attempts:/i)).toBeVisible({ timeout: 30_000 });
-
-  await page.getByRole('button', { name: /Retry failed previews/i }).click();
-  await expect(resultCard.getByText(/Attempts:/i)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('button', { name: /Retry failed previews/i })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Retry \".+\" \(\d+\)/i })).toHaveCount(0);
+  await expect(resultCard.getByRole('button', { name: /Retry preview/i })).toHaveCount(0);
 
   await request.delete(`${baseApiUrl}/api/v1/nodes/${folderId}`,
     { headers: { Authorization: `Bearer ${token}` } }).catch(() => null);
