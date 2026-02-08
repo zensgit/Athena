@@ -49,6 +49,7 @@ import { toast } from 'react-toastify';
 import Highlight from 'components/search/Highlight';
 import {
   formatPreviewFailureReasonLabel,
+  getEffectivePreviewStatus,
   getFailedPreviewMeta,
   isUnsupportedPreviewFailure,
   normalizePreviewFailureReason,
@@ -915,34 +916,38 @@ const SearchResults: React.FC = () => {
     if (node.nodeType === 'FOLDER') {
       return null;
     }
-    const status = node.previewStatus?.toUpperCase();
-    const normalized = status || 'PENDING';
     const nodeMimeType = node.contentType || node.properties?.mimeType || node.properties?.contentType;
+    const effectiveStatus = getEffectivePreviewStatus(
+      node.previewStatus,
+      node.previewFailureCategory,
+      nodeMimeType,
+      node.previewFailureReason
+    );
     const failedPreviewMeta = getFailedPreviewMeta(
       nodeMimeType,
       node.previewFailureCategory,
       node.previewFailureReason
     );
     const failureReason = node.previewFailureReason || '';
-    const label = normalized === 'READY'
+    const label = effectiveStatus === 'READY'
       ? 'Preview ready'
-      : normalized === 'FAILED'
+      : effectiveStatus === 'FAILED' || effectiveStatus === 'UNSUPPORTED'
         ? failedPreviewMeta.label
-        : normalized === 'PROCESSING'
+        : effectiveStatus === 'PROCESSING'
           ? 'Preview processing'
-          : normalized === 'QUEUED'
+          : effectiveStatus === 'QUEUED'
             ? 'Preview queued'
             : 'Preview pending';
-    const color = normalized === 'READY'
+    const color = effectiveStatus === 'READY'
       ? 'success'
-      : normalized === 'FAILED'
+      : effectiveStatus === 'FAILED' || effectiveStatus === 'UNSUPPORTED'
         ? failedPreviewMeta.color
-        : normalized === 'PROCESSING'
+        : effectiveStatus === 'PROCESSING'
           ? 'warning'
-          : normalized === 'QUEUED'
+          : effectiveStatus === 'QUEUED'
             ? 'info'
             : 'default';
-    const failedPreviewUnsupported = normalized === 'FAILED' && failedPreviewMeta.unsupported;
+    const failedPreviewUnsupported = (effectiveStatus === 'FAILED' || effectiveStatus === 'UNSUPPORTED') && failedPreviewMeta.unsupported;
     const queueStatus = previewQueueStatusById[node.id];
     const queueDetail = (() => {
       if (!queueStatus) {
@@ -971,14 +976,14 @@ const SearchResults: React.FC = () => {
           >
             <Chip label={label} size="small" variant="outlined" color={color} />
           </Tooltip>
-          {normalized === 'FAILED' && failureReason && !failedPreviewUnsupported && (
+          {effectiveStatus === 'FAILED' && failureReason && !failedPreviewUnsupported && (
             <Tooltip title={failureReason} placement="top-start" arrow>
               <IconButton size="small" aria-label="Preview failure reason">
                 <InfoOutlined fontSize="small" />
               </IconButton>
             </Tooltip>
           )}
-          {normalized === 'FAILED' && !failedPreviewUnsupported && (
+          {effectiveStatus === 'FAILED' && !failedPreviewUnsupported && (
             <Tooltip title="Retry preview" placement="top-start" arrow>
               <span>
                 <IconButton
@@ -1067,7 +1072,13 @@ const SearchResults: React.FC = () => {
         acc.folders += 1;
         return acc;
       }
-      const status = node.previewStatus?.toUpperCase() || 'PENDING';
+      const nodeMimeType = node.contentType || node.properties?.mimeType || node.properties?.contentType;
+      const status = getEffectivePreviewStatus(
+        node.previewStatus,
+        node.previewFailureCategory,
+        nodeMimeType,
+        node.previewFailureReason
+      ) || 'PENDING';
       if (status in acc) {
         acc[status as keyof typeof acc] += 1;
       } else {
@@ -1080,6 +1091,7 @@ const SearchResults: React.FC = () => {
       PROCESSING: 0,
       QUEUED: 0,
       FAILED: 0,
+      UNSUPPORTED: 0,
       PENDING: 0,
       other: 0,
       folders: 0,
@@ -1190,7 +1202,13 @@ const SearchResults: React.FC = () => {
         if (node.nodeType === 'FOLDER') {
           return false;
         }
-        const status = node.previewStatus?.toUpperCase() || 'PENDING';
+        const nodeMimeType = node.contentType || node.properties?.mimeType || node.properties?.contentType;
+        const status = getEffectivePreviewStatus(
+          node.previewStatus,
+          node.previewFailureCategory,
+          nodeMimeType,
+          node.previewFailureReason
+        ) || 'PENDING';
         return selectedPreviewStatuses.includes(status);
       })
     : displayNodes;
@@ -1205,7 +1223,12 @@ const SearchResults: React.FC = () => {
         return {
           id: node.id,
           name: node.name,
-          status: node.previewStatus?.toUpperCase() || 'PENDING',
+          status: getEffectivePreviewStatus(
+            node.previewStatus,
+            node.previewFailureCategory,
+            node.contentType || node.properties?.mimeType || node.properties?.contentType,
+            node.previewFailureReason
+          ),
           attempts: queueStatus.attempts,
           nextAttemptAt: queueStatus.nextAttemptAt,
         };
@@ -1457,6 +1480,7 @@ const SearchResults: React.FC = () => {
                 { value: 'PROCESSING', label: 'Processing', color: 'warning' as const, count: previewStatusCounts.PROCESSING },
                 { value: 'QUEUED', label: 'Queued', color: 'info' as const, count: previewStatusCounts.QUEUED },
                 { value: 'FAILED', label: 'Failed', color: 'error' as const, count: previewStatusCounts.FAILED },
+                { value: 'UNSUPPORTED', label: 'Unsupported', color: 'default' as const, count: previewStatusCounts.UNSUPPORTED },
                 { value: 'PENDING', label: 'Pending', color: 'default' as const, count: previewStatusCounts.PENDING },
               ].map((status) => (
                 <Chip
@@ -1503,14 +1527,14 @@ const SearchResults: React.FC = () => {
             )}
             {failedPreviewSummary.totalFailed > 0 && (
               <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-                Failed previews on current page: {failedPreviewSummary.totalFailed}
+                Preview issues on current page: {failedPreviewSummary.totalFailed}
                 {' • '}Retryable {failedPreviewSummary.retryableFailed}
                 {' • '}Unsupported {failedPreviewSummary.unsupportedFailed}
               </Typography>
             )}
             {failedPreviewSummary.totalFailed > 0 && failedPreviewSummary.retryableFailed === 0 && (
               <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-                All failed previews on this page are unsupported; retry actions are hidden.
+                All preview issues on this page are unsupported; retry actions are hidden.
               </Typography>
             )}
             {failedPreviewSummary.retryableFailed > 0 && failedPreviewReasonSummary.length > 0 && (

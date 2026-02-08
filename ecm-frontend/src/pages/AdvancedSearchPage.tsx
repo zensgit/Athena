@@ -32,6 +32,7 @@ import { setSidebarOpen } from 'store/slices/uiSlice';
 import nodeService from 'services/nodeService';
 import {
   formatPreviewFailureReasonLabel,
+  getEffectivePreviewStatus,
   getFailedPreviewMeta,
   isUnsupportedPreviewFailure,
   normalizePreviewFailureReason,
@@ -50,7 +51,7 @@ const MATCH_FIELD_LABELS: Record<string, string> = {
   correspondent: 'Correspondent',
 };
 
-const PREVIEW_STATUS_VALUES = ['READY', 'PROCESSING', 'QUEUED', 'FAILED', 'PENDING'] as const;
+const PREVIEW_STATUS_VALUES = ['READY', 'PROCESSING', 'QUEUED', 'FAILED', 'UNSUPPORTED', 'PENDING'] as const;
 const DATE_RANGE_VALUES = ['all', 'today', 'week', 'month'] as const;
 
 const parsePreviewStatuses = (rawValue: string | null): string[] => {
@@ -219,6 +220,9 @@ const AdvancedSearchPage: React.FC = () => {
     }
     if (normalized === 'FAILED') {
       return getFailedPreviewMeta(mimeType, failureCategory, failureReason);
+    }
+    if (normalized === 'UNSUPPORTED') {
+      return { label: 'Preview unsupported', color: 'default' as const, unsupported: true };
     }
     if (normalized === 'PROCESSING') {
       return { label: 'Preview processing', color: 'warning' as const, unsupported: false };
@@ -402,7 +406,12 @@ const AdvancedSearchPage: React.FC = () => {
       if (result.nodeType === 'FOLDER') {
         return acc;
       }
-      const status = result.previewStatus?.toUpperCase() || 'PENDING';
+      const status = getEffectivePreviewStatus(
+        result.previewStatus,
+        result.previewFailureCategory,
+        result.mimeType,
+        result.previewFailureReason
+      );
       if (status in acc) {
         acc[status as keyof typeof acc] += 1;
       } else {
@@ -415,6 +424,7 @@ const AdvancedSearchPage: React.FC = () => {
       PROCESSING: 0,
       QUEUED: 0,
       FAILED: 0,
+      UNSUPPORTED: 0,
       PENDING: 0,
     }
   ), [results]);
@@ -425,7 +435,12 @@ const AdvancedSearchPage: React.FC = () => {
           if (result.nodeType === 'FOLDER') {
             return false;
           }
-          const status = result.previewStatus?.toUpperCase() || 'PENDING';
+          const status = getEffectivePreviewStatus(
+            result.previewStatus,
+            result.previewFailureCategory,
+            result.mimeType,
+            result.previewFailureReason
+          );
           return selectedPreviewStatuses.includes(status);
         })
       : results),
@@ -856,6 +871,7 @@ const AdvancedSearchPage: React.FC = () => {
                       { value: 'PROCESSING', label: 'Processing', color: 'warning' as const, count: previewStatusCounts.PROCESSING },
                       { value: 'QUEUED', label: 'Queued', color: 'info' as const, count: previewStatusCounts.QUEUED },
                       { value: 'FAILED', label: 'Failed', color: 'error' as const, count: previewStatusCounts.FAILED },
+                      { value: 'UNSUPPORTED', label: 'Unsupported', color: 'default' as const, count: previewStatusCounts.UNSUPPORTED },
                       { value: 'PENDING', label: 'Pending', color: 'default' as const, count: previewStatusCounts.PENDING },
                     ].map((status) => (
                       <Chip
@@ -894,7 +910,7 @@ const AdvancedSearchPage: React.FC = () => {
                   <Paper variant="outlined" sx={{ p: 1.5 }}>
                     <Stack spacing={1}>
                       <Typography variant="caption" color="text.secondary">
-                        Failed previews on current page: {failedPreviewSummary.totalFailed}
+                        Preview issues on current page: {failedPreviewSummary.totalFailed}
                         {' • '}Retryable {failedPreviewSummary.retryableFailed}
                         {' • '}Unsupported {failedPreviewSummary.unsupportedFailed}
                       </Typography>
@@ -920,7 +936,7 @@ const AdvancedSearchPage: React.FC = () => {
                       )}
                       {failedPreviewSummary.totalFailed > 0 && failedPreviewSummary.retryableFailed === 0 && (
                         <Typography variant="caption" color="text.secondary">
-                          All failed previews on this page are unsupported; retry actions are hidden.
+                          All preview issues on this page are unsupported; retry actions are hidden.
                         </Typography>
                       )}
                       {failedPreviewSummary.retryableFailed > 0 && failedPreviewReasonSummary.length > 0 && (

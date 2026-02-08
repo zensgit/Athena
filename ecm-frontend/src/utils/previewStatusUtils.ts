@@ -64,6 +64,24 @@ export const isUnsupportedPreviewFailure = (
   return isUnsupportedPreviewMimeType(mimeType);
 };
 
+export const getEffectivePreviewStatus = (
+  previewStatus?: string | null,
+  failureCategory?: PreviewFailureCategory,
+  mimeType?: string | null,
+  failureReason?: string | null
+): string => {
+  const normalized = (previewStatus || '').toUpperCase().trim();
+  if (!normalized) {
+    return 'PENDING';
+  }
+  if (normalized === 'FAILED') {
+    return isUnsupportedPreviewFailure(failureCategory, mimeType, failureReason)
+      ? 'UNSUPPORTED'
+      : 'FAILED';
+  }
+  return normalized;
+};
+
 export const normalizePreviewFailureReason = (failureReason?: string | null): string => {
   const normalized = (failureReason || '').replace(/\s+/g, ' ').trim();
   return normalized || 'UNSPECIFIED';
@@ -84,18 +102,18 @@ export const summarizeFailedPreviews = (items: PreviewFailureLike[]): PreviewFai
   const retryableReasonBuckets = new Map<string, number>();
 
   items.forEach((item) => {
-    const previewStatus = (item.previewStatus || '').toUpperCase();
-    if (previewStatus !== 'FAILED') {
-      return;
-    }
-
-    totalFailed += 1;
-    const unsupported = isUnsupportedPreviewFailure(
+    const effectiveStatus = getEffectivePreviewStatus(
+      item.previewStatus,
       item.previewFailureCategory,
       item.mimeType,
       item.previewFailureReason
     );
-    if (unsupported) {
+    if (effectiveStatus !== 'FAILED' && effectiveStatus !== 'UNSUPPORTED') {
+      return;
+    }
+
+    totalFailed += 1;
+    if (effectiveStatus === 'UNSUPPORTED') {
       unsupportedFailed += 1;
       return;
     }
