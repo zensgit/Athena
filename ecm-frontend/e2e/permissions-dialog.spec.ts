@@ -1,15 +1,10 @@
-import { APIRequestContext, expect, Page, test } from '@playwright/test';
+import { APIRequestContext, expect, test } from '@playwright/test';
 import { fetchAccessToken, findChildFolderId, getRootFolderId, waitForApiReady } from './helpers/api';
-import { loginWithCredentialsE2E } from './helpers/login';
+import { gotoWithAuthE2E } from './helpers/login';
 
 const baseApiUrl = process.env.ECM_API_URL || 'http://localhost:7700';
-const baseUiUrl = process.env.ECM_UI_URL || 'http://localhost:5500';
 const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
-
-async function loginWithCredentials(page: Page, username: string, password: string, token?: string) {
-  await loginWithCredentialsE2E(page, username, password, { token });
-}
 
 async function createFolder(
   request: APIRequestContext,
@@ -40,8 +35,7 @@ test('Permissions dialog shows inheritance path and copy ACL action', async ({ p
   const folderName = `e2e-permissions-${Date.now()}`;
   const folderId = await createFolder(request, documentsId, folderName, token);
 
-  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
-  await page.goto(`${baseUiUrl}/browse/${documentsId}`, { waitUntil: 'domcontentloaded' });
+  await gotoWithAuthE2E(page, `/browse/${documentsId}`, defaultUsername, defaultPassword, { token });
   await page.getByRole('button', { name: 'list view' }).click();
 
   const quickSearch = page.getByPlaceholder('Quick search by name...');

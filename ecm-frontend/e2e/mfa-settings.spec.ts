@@ -1,16 +1,11 @@
-import { expect, Page, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { fetchAccessToken, waitForApiReady } from './helpers/api';
-import { loginWithCredentialsE2E } from './helpers/login';
+import { gotoWithAuthE2E } from './helpers/login';
 import crypto from 'crypto';
 
 const baseApiUrl = process.env.ECM_API_URL || 'http://localhost:7700';
-const baseUiUrl = process.env.ECM_UI_URL || 'http://localhost:5500';
 const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
-
-async function loginWithCredentials(page: Page, username: string, password: string, token?: string) {
-  await loginWithCredentialsE2E(page, username, password, { token });
-}
 
 function base32Decode(input: string) {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -70,8 +65,7 @@ test('Settings reflects local MFA enable/disable', async ({ page, request }) => 
   const verifyPayload = await verifyRes.json() as { verified: boolean };
   expect(verifyPayload.verified).toBeTruthy();
 
-  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
-  await page.goto(`${baseUiUrl}/settings`, { waitUntil: 'domcontentloaded' });
+  await gotoWithAuthE2E(page, '/settings', defaultUsername, defaultPassword, { token });
   await expect(page.getByRole('button', { name: 'Disable Local MFA' })).toBeEnabled({ timeout: 60_000 });
 
   const disableCode = generateTotp(enrollment.secret);
