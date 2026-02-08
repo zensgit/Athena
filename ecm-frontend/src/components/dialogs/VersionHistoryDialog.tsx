@@ -63,6 +63,13 @@ const VersionHistoryDialog: React.FC = () => {
     current: Version;
     previous: Version;
   } | null>(null);
+  const [textDiff, setTextDiff] = useState<{
+    available: boolean;
+    truncated: boolean;
+    reason?: string | null;
+    diff?: string | null;
+  } | null>(null);
+  const [loadingTextDiff, setLoadingTextDiff] = useState(false);
 
   const pageSize = 20;
 
@@ -219,6 +226,48 @@ const VersionHistoryDialog: React.FC = () => {
     return items;
   };
 
+  const normalizeMimeType = (mimeType?: string | null) => (mimeType || '').split(';')[0]?.trim().toLowerCase();
+  const isTextLikeMimeType = (mimeType?: string | null) => {
+    const normalized = normalizeMimeType(mimeType);
+    if (!normalized) {
+      return false;
+    }
+    if (normalized.startsWith('text/')) {
+      return true;
+    }
+    return normalized === 'application/json'
+      || normalized === 'application/xml'
+      || normalized === 'text/xml'
+      || normalized === 'application/x-yaml'
+      || normalized === 'application/yaml'
+      || normalized === 'text/yaml';
+  };
+
+  const handleLoadTextDiff = async (current: Version, previous: Version) => {
+    if (!selectedNodeId) return;
+    setLoadingTextDiff(true);
+    setTextDiff(null);
+    try {
+      const diff = await nodeService.getVersionTextDiff(selectedNodeId, previous.id, current.id);
+      setTextDiff(diff);
+    } catch {
+      setTextDiff({ available: false, truncated: false, reason: 'Failed to load diff', diff: null });
+    } finally {
+      setLoadingTextDiff(false);
+    }
+  };
+
+  const downloadTextDiff = (current: Version, previous: Version, diff: string) => {
+    const baseName = `version-diff-${previous.versionLabel}-to-${current.versionLabel}`;
+    const blob = new Blob([diff], { type: 'text/plain;charset=utf-8' });
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${baseName}.diff.txt`;
+    anchor.click();
+    window.URL.revokeObjectURL(url);
+  };
+
   const renderVersionLabel = (version: Version, index: number) => {
     const hasDetails = Boolean(version.mimeType || version.contentHash || version.contentId || version.status);
     const label = (
@@ -256,6 +305,12 @@ const VersionHistoryDialog: React.FC = () => {
   const contextPrevious = contextMenu ? getPreviousVersion(contextMenu.version) : null;
   const currentVersion = versions[0] ?? null;
   const hasMore = versions.length < totalElements;
+
+  useEffect(() => {
+    // Reset content diff state when selecting a new compare pair.
+    setTextDiff(null);
+    setLoadingTextDiff(false);
+  }, [comparePair?.current?.id, comparePair?.previous?.id]);
 
   return (
     <Dialog
@@ -583,6 +638,58 @@ const VersionHistoryDialog: React.FC = () => {
                   </TableBody>
                 </Table>
               </TableContainer>
+
+              <Box mt={2}>
+                <Typography variant="subtitle2" gutterBottom>
+                  Content Diff (Text)
+                </Typography>
+                {(!isTextLikeMimeType(comparePair.current.mimeType) || !isTextLikeMimeType(comparePair.previous.mimeType)) && (
+                  <Typography variant="body2" color="text.secondary">
+                    Text diff is available for text documents only. Download the two versions to compare externally.
+                  </Typography>
+                )}
+                {isTextLikeMimeType(comparePair.current.mimeType) && isTextLikeMimeType(comparePair.previous.mimeType) && (
+                  <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap" mb={1}>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => handleLoadTextDiff(comparePair.current, comparePair.previous)}
+                      disabled={loadingTextDiff}
+                    >
+                      Load text diff
+                    </Button>
+                    {textDiff?.available && textDiff.diff && (
+                      <Button
+                        size="small"
+                        variant="text"
+                        onClick={() => downloadTextDiff(comparePair.current, comparePair.previous, textDiff.diff || '')}
+                      >
+                        Download diff
+                      </Button>
+                    )}
+                    {loadingTextDiff && <CircularProgress size={16} />}
+                    {textDiff?.truncated && (
+                      <Chip size="small" label="Truncated" variant="outlined" />
+                    )}
+                  </Stack>
+                )}
+                {textDiff && !textDiff.available && (
+                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                    {textDiff.reason || 'Diff unavailable'}
+                  </Typography>
+                )}
+                {textDiff?.available && textDiff.diff && (
+                  <Paper variant="outlined" sx={{ p: 1, bgcolor: 'grey.50', maxHeight: 240, overflow: 'auto' }}>
+                    <Typography
+                      component="pre"
+                      variant="caption"
+                      sx={{ m: 0, whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}
+                    >
+                      {textDiff.diff}
+                    </Typography>
+                  </Paper>
+                )}
+              </Box>
             </>
           )}
         </DialogContent>

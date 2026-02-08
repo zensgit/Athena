@@ -658,6 +658,28 @@ class NodeService {
     return api.downloadFile(`/documents/${nodeId}/versions/${versionId}/download`, `${node.name}${suffix}`);
   }
 
+  async getVersionTextDiff(
+    nodeId: string,
+    fromVersionId: string,
+    toVersionId: string,
+    maxBytes = 200000,
+    maxLines = 2000
+  ): Promise<{ available: boolean; truncated: boolean; reason?: string | null; diff?: string | null }> {
+    const response = await api.get<{
+      textDiff?: { available: boolean; truncated: boolean; reason?: string | null; diff?: string | null } | null;
+    }>(`/documents/${nodeId}/versions/compare`, {
+      params: {
+        fromVersionId,
+        toVersionId,
+        includeTextDiff: true,
+        maxBytes,
+        maxLines,
+      },
+    });
+
+    return response.textDiff ?? { available: false, truncated: false, reason: 'No diff available', diff: null };
+  }
+
   async revertToVersion(nodeId: string, versionId: string): Promise<Node> {
     const node = await api.post<ApiNodeDetailsResponse>(`/documents/${nodeId}/versions/${versionId}/revert`);
     return this.apiNodeDetailsToNode(node);

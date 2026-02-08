@@ -3,6 +3,7 @@ package com.ecm.core.controller;
 import com.ecm.core.dto.NodeDto;
 import com.ecm.core.dto.PdfAnnotationSaveRequest;
 import com.ecm.core.dto.PdfAnnotationStateDto;
+import com.ecm.core.dto.VersionCompareResultDto;
 import com.ecm.core.dto.VersionDto;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Version;
@@ -33,6 +34,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
+import java.util.Objects;
 
 @RestController
 @RequestMapping({"/api/documents", "/api/v1/documents"})
@@ -124,6 +126,31 @@ public class DocumentController {
         var pageable = org.springframework.data.domain.PageRequest.of(page, size);
         var versions = versionService.getVersionHistory(documentId, pageable, majorOnly);
         return ResponseEntity.ok(versions.map(VersionDto::from));
+    }
+
+    @GetMapping("/{documentId}/versions/compare")
+    @Operation(summary = "Compare versions", description = "Compare two specific versions (optionally including a small text diff).")
+    public ResponseEntity<VersionCompareResultDto> compareVersions(
+        @Parameter(description = "Document ID") @PathVariable UUID documentId,
+        @Parameter(description = "From version id") @RequestParam UUID fromVersionId,
+        @Parameter(description = "To version id") @RequestParam UUID toVersionId,
+        @RequestParam(defaultValue = "false") boolean includeTextDiff,
+        @RequestParam(defaultValue = "200000") int maxBytes,
+        @RequestParam(defaultValue = "2000") int maxLines
+    ) throws IOException {
+        VersionCompareResultDto result = versionService.compareVersionsDetailed(
+            documentId,
+            fromVersionId,
+            toVersionId,
+            includeTextDiff,
+            maxBytes,
+            maxLines
+        );
+        // Defensive: ensure client isn't comparing across documents even if they pass mismatched ids.
+        if (result == null || result.from() == null || !Objects.equals(documentId, result.from().documentId())) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+        }
+        return ResponseEntity.ok(result);
     }
     
     @GetMapping("/{documentId}/versions/{versionId}/download")
