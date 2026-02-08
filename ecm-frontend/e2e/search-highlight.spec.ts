@@ -1,4 +1,4 @@
-import { APIRequestContext, expect, Page, test } from '@playwright/test';
+import { APIRequestContext, expect, test } from '@playwright/test';
 import {
   fetchAccessToken,
   findChildFolderId,
@@ -7,16 +7,11 @@ import {
   waitForApiReady,
   waitForSearchIndex,
 } from './helpers/api';
-import { loginWithCredentialsE2E } from './helpers/login';
+import { gotoWithAuthE2E } from './helpers/login';
 
 const baseApiUrl = process.env.ECM_API_URL || 'http://localhost:7700';
-const baseUiUrl = process.env.ECM_UI_URL || 'http://localhost:5500';
 const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
-
-async function loginWithCredentials(page: Page, username: string, password: string, token?: string) {
-  await loginWithCredentialsE2E(page, username, password, { token });
-}
 
 async function createFolder(
   request: APIRequestContext,
@@ -114,8 +109,7 @@ test('Search results include highlight snippets', async ({ page, request }) => {
   await reindexByQuery(request, filename, token, { apiUrl: baseApiUrl, limit: 5, refresh: true });
   await waitForSearchIndex(request, filename, token, { apiUrl: baseApiUrl, maxAttempts: 60 });
 
-  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
-  await page.goto(`${baseUiUrl}/search-results`, { waitUntil: 'domcontentloaded' });
+  await gotoWithAuthE2E(page, '/search-results', defaultUsername, defaultPassword, { token });
 
   const quickSearchInput = page.getByPlaceholder('Quick search by name...');
   await quickSearchInput.fill(highlightTerm);

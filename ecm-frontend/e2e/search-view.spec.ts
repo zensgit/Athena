@@ -1,4 +1,4 @@
-import { APIRequestContext, expect, Page, test } from '@playwright/test';
+import { APIRequestContext, expect, test } from '@playwright/test';
 import {
   fetchAccessToken,
   findChildFolderId,
@@ -7,18 +7,13 @@ import {
   waitForApiReady,
   waitForSearchIndex,
 } from './helpers/api';
-import { loginWithCredentialsE2E } from './helpers/login';
+import { gotoWithAuthE2E } from './helpers/login';
 
 const baseApiUrl = process.env.ECM_API_URL || 'http://localhost:7700';
-const baseUiUrl = process.env.ECM_UI_URL || 'http://localhost:5500';
 const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
 const viewerUsername = process.env.ECM_E2E_VIEWER_USERNAME || 'viewer';
 const viewerPassword = process.env.ECM_E2E_VIEWER_PASSWORD || 'viewer';
-
-async function loginWithCredentials(page: Page, username: string, password: string, token?: string) {
-  await loginWithCredentialsE2E(page, username, password, { token });
-}
 
 test.beforeEach(async ({ request }) => {
   await waitForApiReady(request, { apiUrl: baseApiUrl });
@@ -160,8 +155,7 @@ test('Search results view opens preview for documents', async ({ page, request }
   await reindexByQuery(request, filename, apiToken, { apiUrl: baseApiUrl, limit: 5, refresh: true });
   await waitForSearchIndex(request, filename, apiToken, { apiUrl: baseApiUrl, maxAttempts: 60 });
 
-  await loginWithCredentials(page, defaultUsername, defaultPassword, apiToken);
-  await page.goto(`${baseUiUrl}/search-results`, { waitUntil: 'domcontentloaded' });
+  await gotoWithAuthE2E(page, '/search-results', defaultUsername, defaultPassword, { token: apiToken });
 
   await expect(page.getByText(/Access scope/i)).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText(/Index stats/i)).toBeVisible({ timeout: 60_000 });
@@ -246,8 +240,7 @@ test('Search results hide unauthorized documents for viewer', async ({ page, req
   await reindexByQuery(request, filename, apiToken, { apiUrl: baseApiUrl, limit: 5, refresh: true });
 
   const viewerToken = await fetchAccessToken(request, viewerUsername, viewerPassword);
-  await loginWithCredentials(page, viewerUsername, viewerPassword, viewerToken);
-  await page.goto(`${baseUiUrl}/search-results`, { waitUntil: 'domcontentloaded' });
+  await gotoWithAuthE2E(page, '/search-results', viewerUsername, viewerPassword, { token: viewerToken });
 
   const quickSearchInput = page.getByPlaceholder('Quick search by name...');
   await quickSearchInput.fill(filename);
