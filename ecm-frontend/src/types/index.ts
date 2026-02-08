@@ -116,6 +116,8 @@ export interface SearchCriteria {
   minSize?: number;
   maxSize?: number;
   path?: string;
+  folderId?: string;
+  includeChildren?: boolean;
   page?: number;
   size?: number;
   sortBy?: string;

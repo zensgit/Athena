@@ -51,9 +51,13 @@ public class SearchController {
             @Parameter(description = "Sort field (relevance, name, modified, size)")
             @RequestParam(required = false) String sortBy,
             @Parameter(description = "Sort direction (asc, desc)")
-            @RequestParam(required = false) String sortDirection) {
+            @RequestParam(required = false) String sortDirection,
+            @Parameter(description = "Optional folder scope (UUID). When set, search is limited to this folder.")
+            @RequestParam(required = false) String folderId,
+            @Parameter(description = "When folderId is set, whether to include subfolders (default true).")
+            @RequestParam(defaultValue = "true") boolean includeChildren) {
 
-        Page<SearchResult> results = fullTextSearchService.search(q, page, size, sortBy, sortDirection);
+        Page<SearchResult> results = fullTextSearchService.search(q, page, size, sortBy, sortDirection, folderId, includeChildren);
         return ResponseEntity.ok(results);
     }
 

@@ -106,6 +106,18 @@ public class FullTextSearchService {
     }
 
     public Page<SearchResult> search(String queryText, int page, int size, String sortBy, String sortDirection) {
+        return search(queryText, page, size, sortBy, sortDirection, null, true);
+    }
+
+    public Page<SearchResult> search(
+        String queryText,
+        int page,
+        int size,
+        String sortBy,
+        String sortDirection,
+        String folderId,
+        boolean includeChildren
+    ) {
         if (!searchEnabled) {
             log.warn("Search is disabled");
             return Page.empty();
@@ -114,7 +126,7 @@ public class FullTextSearchService {
         Pageable pageable = PageRequest.of(page, size);
 
         try {
-            Query query = buildFullTextQuery(queryText, pageable, sortBy, sortDirection);
+            Query query = buildFullTextQuery(queryText, pageable, sortBy, sortDirection, folderId, includeChildren);
             SearchHits<NodeDocument> searchHits = elasticsearchOperations.search(
                 query, NodeDocument.class, IndexCoordinates.of(INDEX_NAME));
 
@@ -328,6 +340,17 @@ public class FullTextSearchService {
     }
 
     private Query buildFullTextQuery(String queryText, Pageable pageable, String sortBy, String sortDirection) {
+        return buildFullTextQuery(queryText, pageable, sortBy, sortDirection, null, true);
+    }
+
+    private Query buildFullTextQuery(
+        String queryText,
+        Pageable pageable,
+        String sortBy,
+        String sortDirection,
+        String folderId,
+        boolean includeChildren
+    ) {
         String searchTerm = queryText != null ? queryText.trim() : "";
 
         NativeQueryBuilder builder = NativeQuery.builder().withPageable(pageable);
@@ -345,6 +368,7 @@ public class FullTextSearchService {
             }
 
             b.filter(f -> f.term(t -> t.field("deleted").value(false)));
+            applyFolderScopeFilter(b, folderId, includeChildren);
             applyReadPermissionFilter(b);
             return b;
         }));
@@ -400,7 +424,11 @@ public class FullTextSearchService {
 
                 addNumberRangeFilter(b, "fileSize", filters.getMinSize(), filters.getMaxSize());
 
-                addAnyPrefixFilter(b, List.of("path.keyword", "path"), filters.getPath());
+                if (filters.getFolderId() != null && !filters.getFolderId().isBlank()) {
+                    applyFolderScopeFilter(b, filters.getFolderId(), filters.isIncludeChildren());
+                } else {
+                    addAnyPrefixFilter(b, List.of("path.keyword", "path"), filters.getPath());
+                }
             }
 
             applyReadPermissionFilter(b);
@@ -415,6 +443,31 @@ public class FullTextSearchService {
         applySort(builder, request.getSortBy(), request.getSortDirection());
 
         return builder.build();
+    }
+
+    private void applyFolderScopeFilter(BoolQuery.Builder bool, String folderId, boolean includeChildren) {
+        if (folderId == null || folderId.isBlank()) {
+            return;
+        }
+
+        UUID id = UUID.fromString(folderId.trim());
+        if (!includeChildren) {
+            bool.filter(f -> f.term(t -> t.field("parentId").value(id.toString())));
+            return;
+        }
+
+        Node folder = nodeRepository.findByIdAndDeletedFalse(id).orElse(null);
+        if (folder == null || folder.getPath() == null || folder.getPath().isBlank()) {
+            // Non-existent scope: return empty without leaking details.
+            bool.filter(f -> f.term(t -> t.field("parentId").value("__none__")));
+            return;
+        }
+
+        String prefix = folder.getPath();
+        if (!prefix.endsWith("/")) {
+            prefix += "/";
+        }
+        addAnyPrefixFilter(bool, List.of("path.keyword", "path"), prefix);
     }
 
     private void applyReadPermissionFilter(BoolQuery.Builder bool) {

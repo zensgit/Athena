@@ -435,7 +435,9 @@ public class FacetedSearchService {
                 ));
             }
 
-            if (request.getPathPrefix() != null && !request.getPathPrefix().isBlank()) {
+            if ((filters == null || filters.getFolderId() == null || filters.getFolderId().isBlank())
+                && request.getPathPrefix() != null
+                && !request.getPathPrefix().isBlank()) {
                 b.filter(f -> f.prefix(p -> p.field("path").value(request.getPathPrefix())));
             }
 
@@ -523,7 +525,35 @@ public class FacetedSearchService {
         addDateRangeFilter(bool, "createdDate", filters.getDateFrom(), filters.getDateTo());
         addDateRangeFilter(bool, "lastModifiedDate", filters.getModifiedFrom(), filters.getModifiedTo());
         addNumberRangeFilter(bool, "fileSize", filters.getMinSize(), filters.getMaxSize());
-        addAnyPrefixFilter(bool, List.of("path"), filters.getPath());
+        if (filters.getFolderId() != null && !filters.getFolderId().isBlank()) {
+            applyFolderScopeFilter(bool, filters.getFolderId(), filters.isIncludeChildren());
+        } else {
+            addAnyPrefixFilter(bool, List.of("path.keyword", "path"), filters.getPath());
+        }
+    }
+
+    private void applyFolderScopeFilter(BoolQuery.Builder bool, String folderId, boolean includeChildren) {
+        if (folderId == null || folderId.isBlank()) {
+            return;
+        }
+
+        UUID id = UUID.fromString(folderId.trim());
+        if (!includeChildren) {
+            bool.filter(f -> f.term(t -> t.field("parentId").value(id.toString())));
+            return;
+        }
+
+        Node folder = nodeRepository.findByIdAndDeletedFalse(id).orElse(null);
+        if (folder == null || folder.getPath() == null || folder.getPath().isBlank()) {
+            bool.filter(f -> f.term(t -> t.field("parentId").value("__none__")));
+            return;
+        }
+
+        String prefix = folder.getPath();
+        if (!prefix.endsWith("/")) {
+            prefix += "/";
+        }
+        addAnyPrefixFilter(bool, List.of("path.keyword", "path"), prefix);
     }
 
     private static void addAnyOfTermsFilter(BoolQuery.Builder bool, List<String> fields, List<String> values) {

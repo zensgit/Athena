@@ -273,7 +273,10 @@ const SearchResults: React.FC = () => {
     }
     setPage(1);
     const sortParams = getSortParams(sortBy);
-    await runSearch({ name: query, page: 0, size: pageSize, ...sortParams });
+    const scopeParams = lastSearchCriteria?.folderId
+      ? { folderId: lastSearchCriteria.folderId, includeChildren: lastSearchCriteria.includeChildren ?? true }
+      : {};
+    await runSearch({ name: query, page: 0, size: pageSize, ...scopeParams, ...sortParams });
   };
 
   const handleClearSearch = () => {
@@ -282,6 +285,25 @@ const SearchResults: React.FC = () => {
 
   const handleAdvancedSearch = () => {
     dispatch(setSearchOpen(true));
+  };
+
+  const folderScopeLabel = lastSearchCriteria?.includeChildren === false
+    ? 'Scope: This folder (no subfolders)'
+    : 'Scope: This folder';
+
+  const handleClearFolderScope = () => {
+    if (!lastSearchCriteria?.folderId) {
+      return;
+    }
+    const sortParams = getSortParams(sortBy);
+    runSearch({
+      ...lastSearchCriteria,
+      folderId: undefined,
+      includeChildren: undefined,
+      page: 0,
+      size: pageSize,
+      ...sortParams,
+    });
   };
 
   const handleRetrySearch = () => {
@@ -300,7 +322,10 @@ const SearchResults: React.FC = () => {
     setQuickSearch(nextQuery);
     setPage(1);
     const sortParams = getSortParams(sortBy);
-    runSearch({ name: nextQuery, page: 0, size: pageSize, ...sortParams });
+    const scopeParams = lastSearchCriteria?.folderId
+      ? { folderId: lastSearchCriteria.folderId, includeChildren: lastSearchCriteria.includeChildren ?? true }
+      : {};
+    runSearch({ name: nextQuery, page: 0, size: pageSize, ...scopeParams, ...sortParams });
   };
 
   const clearFacetFilters = () => {
@@ -1365,6 +1390,17 @@ const SearchResults: React.FC = () => {
           </Box>
         </form>
       </Paper>
+
+      {lastSearchCriteria?.folderId && (
+        <Box display="flex" flexWrap="wrap" gap={1} sx={{ mb: 2 }}>
+          <Chip
+            label={folderScopeLabel}
+            onDelete={handleClearFolderScope}
+            size="small"
+            variant="outlined"
+          />
+        </Box>
+      )}
 
       {spellcheckLoading && (
         <Alert severity="info" sx={{ mb: 2 }}>

@@ -54,6 +54,8 @@ export interface SearchPrefill {
   minSize?: number;
   maxSize?: number;
   pathPrefix?: string;
+  folderId?: string;
+  includeChildren?: boolean;
 }
 
 const initialState: UIState = {

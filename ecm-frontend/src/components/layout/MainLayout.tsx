@@ -47,6 +47,7 @@ import {
   setUploadDialogOpen,
   setCreateFolderDialogOpen,
   setSearchOpen,
+  setSearchPrefill,
   setSidebarOpen,
   setTagManagerOpen,
   setCategoryManagerOpen,
@@ -79,6 +80,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   const { nodeId } = useParams<{ nodeId: string }>();
   const dispatch = useAppDispatch();
   const { user } = useAppSelector((state) => state.auth);
+  const { currentNode } = useAppSelector((state) => state.node);
   const { sidebarOpen, sidebarAutoCollapse, compactMode, tagManagerOpen, categoryManagerOpen, shareLinkManagerOpen, selectedNodeId } =
     useAppSelector((state) => state.ui);
   const effectiveUser = user ?? authService.getCurrentUser();
@@ -122,6 +124,14 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   };
 
   const handleSearch = () => {
+    // When invoked from a folder page, default to "search within this folder".
+    // Avoid using the route param directly since "root" is an alias; currentNode.id is the real UUID.
+    if (nodeId && currentNode?.nodeType === 'FOLDER') {
+      dispatch(setSearchPrefill({
+        folderId: currentNode.id,
+        includeChildren: true,
+      }));
+    }
     dispatch(setSearchOpen(true));
   };
 

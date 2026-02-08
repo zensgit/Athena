@@ -82,6 +82,8 @@ const SearchDialog: React.FC = () => {
   const [minSize, setMinSize] = useState<number | undefined>();
   const [maxSize, setMaxSize] = useState<number | undefined>();
   const [pathPrefix, setPathPrefix] = useState<string>('');
+  const [scopeFolderId, setScopeFolderId] = useState<string>('');
+  const [scopeIncludeChildren, setScopeIncludeChildren] = useState(true);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [saveName, setSaveName] = useState('');
   const [nameSuggestions, setNameSuggestions] = useState<string[]>([]);
@@ -189,6 +191,8 @@ const SearchDialog: React.FC = () => {
     setMinSize(searchPrefill.minSize);
     setMaxSize(searchPrefill.maxSize);
     setPathPrefix(searchPrefill.pathPrefix || '');
+    setScopeFolderId(searchPrefill.folderId || '');
+    setScopeIncludeChildren(searchPrefill.includeChildren ?? true);
     setSaveDialogOpen(false);
     setSaveName('');
 
@@ -218,6 +222,8 @@ const SearchDialog: React.FC = () => {
     setMinSize(undefined);
     setMaxSize(undefined);
     setPathPrefix('');
+    setScopeFolderId('');
+    setScopeIncludeChildren(true);
     setSaveDialogOpen(false);
     setSaveName('');
     setNameSuggestions([]);
@@ -264,7 +270,10 @@ const SearchDialog: React.FC = () => {
     if (searchCriteria.modifiedTo) {
       filters.modifiedTo = searchCriteria.modifiedTo;
     }
-    if (pathPrefix.length > 0) {
+    if (scopeFolderId.trim()) {
+      filters.folderId = scopeFolderId.trim();
+      filters.includeChildren = scopeIncludeChildren;
+    } else if (pathPrefix.length > 0) {
       filters.path = pathPrefix;
     }
 
@@ -311,7 +320,9 @@ const SearchDialog: React.FC = () => {
       correspondents: normalizedCorrespondents,
       minSize,
       maxSize,
-      path: pathPrefix || undefined,
+      path: scopeFolderId.trim() ? undefined : (pathPrefix || undefined),
+      folderId: scopeFolderId.trim() || undefined,
+      includeChildren: scopeIncludeChildren,
       page: 0,
       size: 20,
     };
@@ -363,7 +374,8 @@ const SearchDialog: React.FC = () => {
       correspondents.length > 0 ||
       minSize !== undefined ||
       maxSize !== undefined ||
-      pathPrefix.length > 0
+      pathPrefix.length > 0 ||
+      scopeFolderId.trim().length > 0
     );
   };
 
@@ -430,53 +442,73 @@ const SearchDialog: React.FC = () => {
                       )}
                     />
                   </Grid>
-                <Grid item xs={12}>
-                  <FormControl fullWidth>
-                    <InputLabel>Content Type</InputLabel>
-                    <Select
-                      value={searchCriteria.contentType || ''}
-                      onChange={(e) => {
-                        setSearchCriteria({ ...searchCriteria, contentType: e.target.value as string });
-                      }}
-                      label="Content Type"
-                    >
-                      <MenuItem value="">All Types</MenuItem>
-                      {facetOptions.mimeTypes.length > 0
-                        ? facetOptions.mimeTypes.map((mt) => (
-                            <MenuItem key={mt} value={mt}>
-                              {mt}
-                            </MenuItem>
-                          ))
-                        : CONTENT_TYPES.map((type) => (
-                            <MenuItem key={type.value} value={type.value}>
-                              {type.label}
-                            </MenuItem>
-                          ))}
-                    </Select>
-                  </FormControl>
-                </Grid>
-                <Grid item xs={12}>
-                  <FormControl fullWidth>
-                    <InputLabel>Created By</InputLabel>
-                    <Select
-                      value={searchCriteria.createdBy || ''}
-                      label="Created By"
-                      onChange={(e) =>
-                        setSearchCriteria({
-                          ...searchCriteria,
-                          createdBy: e.target.value as string,
-                        })
-                      }
-                    >
-                      <MenuItem value="">Any creator</MenuItem>
-                      {facetOptions.createdBy.map((u) => (
-                        <MenuItem key={u} value={u}>
-                          {u}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Grid>
+                  {scopeFolderId.trim().length > 0 && (
+                    <Grid item xs={12}>
+                      <Box display="flex" flexWrap="wrap" alignItems="center" gap={1}>
+                        <Chip
+                          label="Scope: This folder"
+                          onDelete={() => setScopeFolderId('')}
+                          size="small"
+                        />
+                        <FormControlLabel
+                          control={(
+                            <Checkbox
+                              checked={scopeIncludeChildren}
+                              onChange={(event) => setScopeIncludeChildren(event.target.checked)}
+                            />
+                          )}
+                          label="Include subfolders"
+                        />
+                      </Box>
+                    </Grid>
+                  )}
+                  <Grid item xs={12}>
+                    <FormControl fullWidth>
+                      <InputLabel>Content Type</InputLabel>
+                      <Select
+                        value={searchCriteria.contentType || ''}
+                        onChange={(e) => {
+                          setSearchCriteria({ ...searchCriteria, contentType: e.target.value as string });
+                        }}
+                        label="Content Type"
+                      >
+                        <MenuItem value="">All Types</MenuItem>
+                        {facetOptions.mimeTypes.length > 0
+                          ? facetOptions.mimeTypes.map((mt) => (
+                              <MenuItem key={mt} value={mt}>
+                                {mt}
+                              </MenuItem>
+                            ))
+                          : CONTENT_TYPES.map((type) => (
+                              <MenuItem key={type.value} value={type.value}>
+                                {type.label}
+                              </MenuItem>
+                            ))}
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                  <Grid item xs={12}>
+                    <FormControl fullWidth>
+                      <InputLabel>Created By</InputLabel>
+                      <Select
+                        value={searchCriteria.createdBy || ''}
+                        label="Created By"
+                        onChange={(e) =>
+                          setSearchCriteria({
+                            ...searchCriteria,
+                            createdBy: e.target.value as string,
+                          })
+                        }
+                      >
+                        <MenuItem value="">Any creator</MenuItem>
+                        {facetOptions.createdBy.map((u) => (
+                          <MenuItem key={u} value={u}>
+                            {u}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Grid>
               </Grid>
             </AccordionDetails>
           </Accordion>
@@ -708,6 +740,7 @@ const SearchDialog: React.FC = () => {
                     value={pathPrefix}
                     onChange={(e) => setPathPrefix(e.target.value)}
                     placeholder="/Documents/Projects"
+                    disabled={scopeFolderId.trim().length > 0}
                   />
                 </Grid>
               </Grid>
