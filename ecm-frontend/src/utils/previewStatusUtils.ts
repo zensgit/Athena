@@ -21,13 +21,19 @@ export const isUnsupportedPreviewMimeType = (mimeType?: string | null): boolean 
 };
 
 export const isUnsupportedPreviewReason = (failureReason?: string | null): boolean => {
-  const normalized = (failureReason || '').trim().toLowerCase();
+  const normalized = (failureReason || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ');
   if (!normalized) {
     return false;
   }
   return normalized.includes('not supported')
     || normalized.includes('unsupported mime')
-    || normalized.includes('unsupported file type');
+    || normalized.includes('unsupported media type')
+    || normalized.includes('unsupported file type')
+    || normalized.includes('unsupported format');
 };
 
 export const isUnsupportedPreviewFailure = (
@@ -35,7 +41,8 @@ export const isUnsupportedPreviewFailure = (
   mimeType?: string | null,
   failureReason?: string | null
 ): boolean => {
-  if ((failureCategory || '').toUpperCase() === 'UNSUPPORTED') {
+  const normalizedCategory = (failureCategory || '').toUpperCase();
+  if (normalizedCategory === 'UNSUPPORTED' || normalizedCategory.includes('UNSUPPORTED')) {
     return true;
   }
   if (isUnsupportedPreviewReason(failureReason)) {

@@ -58,4 +58,15 @@ describe('previewStatusUtils', () => {
       unsupported: true,
     });
   });
+
+  it('detects unsupported reason with irregular separators', () => {
+    expect(isUnsupportedPreviewReason('Preview not-supported for mime type: application/octet-stream')).toBe(true);
+    expect(isUnsupportedPreviewReason('Preview not   supported for mime type: application/octet-stream')).toBe(true);
+    expect(isUnsupportedPreviewReason('Preview unsupported_media_type: application/octet-stream')).toBe(true);
+  });
+
+  it('treats unsupported category variants as unsupported', () => {
+    expect(isUnsupportedPreviewFailure('UNSUPPORTED_MEDIA_TYPE', 'application/pdf')).toBe(true);
+    expect(isUnsupportedPreviewFailure('unsupported_media_type', 'application/pdf')).toBe(true);
+  });
 });
