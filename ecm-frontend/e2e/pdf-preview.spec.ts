@@ -1,4 +1,4 @@
-import { APIRequestContext, expect, Page, test } from '@playwright/test';
+import { APIRequestContext, expect, test } from '@playwright/test';
 import {
   fetchAccessToken,
   findChildFolderId,
@@ -7,17 +7,12 @@ import {
   waitForApiReady,
   waitForSearchIndex,
 } from './helpers/api';
-import { loginWithCredentialsE2E } from './helpers/login';
+import { gotoWithAuthE2E } from './helpers/login';
 import { PDF_SAMPLE_BASE64 } from './fixtures/pdfSample';
 
 const baseApiUrl = process.env.ECM_API_URL || 'http://localhost:7700';
-const baseUiUrl = process.env.ECM_UI_URL || 'http://localhost:5500';
 const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
-
-async function loginWithCredentials(page: Page, username: string, password: string, token?: string) {
-  await loginWithCredentialsE2E(page, username, password, { token });
-}
 
 test.beforeEach(async ({ request }) => {
   await waitForApiReady(request, { apiUrl: baseApiUrl });
@@ -143,10 +138,8 @@ test('PDF preview shows dialog and controls', async ({ page, request }) => {
   }
   await waitForSearchIndex(request, filename, apiToken, { apiUrl: baseApiUrl, maxAttempts: 40 });
 
-  await loginWithCredentials(page, defaultUsername, defaultPassword, apiToken);
   await waitForSearchIndex(request, filename, apiToken, { apiUrl: baseApiUrl, maxAttempts: 40 });
-
-  await page.goto(`${baseUiUrl}/search-results`, { waitUntil: 'domcontentloaded' });
+  await gotoWithAuthE2E(page, '/search-results', defaultUsername, defaultPassword, { token: apiToken });
 
   const quickSearchInput = page.getByPlaceholder('Quick search by name...');
   await quickSearchInput.fill(filename);
@@ -202,14 +195,13 @@ test('PDF preview falls back to server render when client PDF fails', async ({ p
   }
   await waitForSearchIndex(request, filename, apiToken, { apiUrl: baseApiUrl, maxAttempts: 40 });
 
-  await loginWithCredentials(page, defaultUsername, defaultPassword, apiToken);
   await waitForSearchIndex(request, filename, apiToken, { apiUrl: baseApiUrl, maxAttempts: 40 });
 
   const workerRoute = /pdf\.worker(\.min)?\.(mjs|js)(\?.*)?$/;
   await page.route(workerRoute, (route) => route.abort());
 
   try {
-    await page.goto(`${baseUiUrl}/search-results`, { waitUntil: 'domcontentloaded' });
+    await gotoWithAuthE2E(page, '/search-results', defaultUsername, defaultPassword, { token: apiToken });
 
     const quickSearchInput = page.getByPlaceholder('Quick search by name...');
     await quickSearchInput.fill(filename);
@@ -252,9 +244,7 @@ test('File browser view action opens preview', async ({ page, request }) => {
   const filename = `e2e-file-browser-view-${Date.now()}.pdf`;
   await uploadPdf(request, folderId, filename, apiToken);
 
-  await loginWithCredentials(page, defaultUsername, defaultPassword, apiToken);
-
-  await page.goto(`${baseUiUrl}/browse/${folderId}`, { waitUntil: 'domcontentloaded' });
+  await gotoWithAuthE2E(page, `/browse/${folderId}`, defaultUsername, defaultPassword, { token: apiToken });
 
   const listToggle = page.getByLabel('list view');
   if (await listToggle.isVisible()) {

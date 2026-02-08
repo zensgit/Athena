@@ -1,16 +1,12 @@
-import { APIRequestContext, expect, Page, test } from '@playwright/test';
+import { APIRequestContext, expect, test } from '@playwright/test';
 import { fetchAccessToken, getRootFolderId, waitForApiReady } from './helpers/api';
-import { loginWithCredentialsE2E } from './helpers/login';
+import { gotoWithAuthE2E } from './helpers/login';
 import crypto from 'crypto';
 import http from 'http';
 
 const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
 const apiUrl = process.env.ECM_API_URL || 'http://localhost:7700';
-
-async function loginWithCredentials(page: Page, username: string, password: string, token?: string) {
-  await loginWithCredentialsE2E(page, username, password, { token });
-}
 
 async function createFolder(
   request: APIRequestContext,
@@ -42,7 +38,7 @@ test.beforeEach(async ({ request }) => {
 
 test('Webhook subscriptions can be created, tested, and deleted', async ({ page, request }) => {
   const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
-  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
+  await gotoWithAuthE2E(page, '/admin/webhooks', defaultUsername, defaultPassword, { token });
 
   const received: Array<{ headers: http.IncomingHttpHeaders; body: string }> = [];
   const server = http.createServer((req, res) => {
@@ -73,7 +69,6 @@ test('Webhook subscriptions can be created, tested, and deleted', async ({ page,
   const endpointUrl = `http://host.docker.internal:${port}/webhook`;
 
   try {
-    await page.goto('/admin/webhooks', { waitUntil: 'domcontentloaded' });
     await page.waitForURL(/\/admin\/webhooks/, { timeout: 60_000 });
     await expect(page.getByRole('heading', { name: /webhook subscriptions/i })).toBeVisible({ timeout: 60_000 });
 
@@ -133,7 +128,7 @@ test('Webhook subscriptions honor event type filters', async ({ page, request })
     'Required webhook event types missing',
   );
 
-  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
+  await gotoWithAuthE2E(page, '/admin/webhooks', defaultUsername, defaultPassword, { token });
 
   const receivedNode: Array<{ eventType?: string; signature?: string; body: string }> = [];
   const receivedOther: Array<{ eventType?: string; signature?: string; body: string }> = [];
@@ -179,7 +174,6 @@ test('Webhook subscriptions honor event type filters', async ({ page, request })
   let folderId: string | null = null;
 
   try {
-    await page.goto('/admin/webhooks', { waitUntil: 'domcontentloaded' });
     await page.waitForURL(/\/admin\/webhooks/, { timeout: 60_000 });
     await expect(page.getByRole('heading', { name: /webhook subscriptions/i })).toBeVisible({ timeout: 60_000 });
 

@@ -1,6 +1,6 @@
-import { APIRequestContext, Page, expect, test } from '@playwright/test';
+import { APIRequestContext, expect, test } from '@playwright/test';
 import { fetchAccessToken, waitForApiReady } from './helpers/api';
-import { loginWithCredentialsE2E } from './helpers/login';
+import { gotoWithAuthE2E } from './helpers/login';
 
 const baseApiUrl = process.env.ECM_API_URL || 'http://localhost:7700';
 const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
@@ -152,10 +152,6 @@ async function waitForVersionCount(
   throw new Error(`Version count did not reach ${minCount} for document ${documentId}`);
 }
 
-async function loginWithCredentials(page: Page, username: string, password: string, token?: string) {
-  await loginWithCredentialsE2E(page, username, password, { token });
-}
-
 test('Version history actions: download + restore', async ({ page, request }) => {
   test.setTimeout(240_000);
 
@@ -192,8 +188,7 @@ test('Version history actions: download + restore', async ({ page, request }) =>
     throw new Error('Expected at least two versions for version history actions');
   }
 
-  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
-  await page.goto(`/browse/${folderId}`, { waitUntil: 'domcontentloaded' });
+  await gotoWithAuthE2E(page, `/browse/${folderId}`, defaultUsername, defaultPassword, { token });
 
   const row = page.getByRole('row', { name: new RegExp(filename) });
   let rowVisible = false;

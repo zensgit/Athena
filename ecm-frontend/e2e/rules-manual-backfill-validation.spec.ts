@@ -1,15 +1,10 @@
-import { expect, Page, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { fetchAccessToken, waitForApiReady } from './helpers/api';
-import { loginWithCredentialsE2E } from './helpers/login';
+import { gotoWithAuthE2E } from './helpers/login';
 
 const baseApiUrl = process.env.ECM_API_URL || 'http://localhost:7700';
-const baseUiUrl = process.env.ECM_UI_URL || 'http://localhost:5500';
 const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
-
-async function loginWithCredentials(page: Page, username: string, password: string, token?: string) {
-  await loginWithCredentialsE2E(page, username, password, { token });
-}
 
 test.beforeEach(async ({ request }) => {
   await waitForApiReady(request, { apiUrl: baseApiUrl });
@@ -19,8 +14,7 @@ test('rules: manual backfill blocks out-of-range values before POST', async ({ p
   test.setTimeout(180_000);
 
   const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
-  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
-  await page.goto(`${baseUiUrl}/rules`, { waitUntil: 'domcontentloaded' });
+  await gotoWithAuthE2E(page, '/rules', defaultUsername, defaultPassword, { token });
 
   await page.getByRole('button', { name: 'New Rule' }).click();
   const dialog = page.getByRole('dialog').filter({ hasText: 'New Rule' });
