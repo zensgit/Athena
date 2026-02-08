@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -122,6 +122,34 @@ const PermissionsDialog: React.FC = () => {
   const [availableUsers, setAvailableUsers] = useState<string[]>([]);
   const [availableGroups, setAvailableGroups] = useState<string[]>([]);
   const [nodePath, setNodePath] = useState<string>('');
+
+  const diagnosticsMatchedGrants = useMemo(() => {
+    if (!permissionDiagnostics) {
+      return [];
+    }
+    const allowed = new Set(permissionDiagnostics.allowedAuthorities || []);
+    const denied = new Set(permissionDiagnostics.deniedAuthorities || []);
+    const combined = Array.from(new Set([...allowed, ...denied])).sort((a, b) => a.localeCompare(b));
+
+    return combined.map((authority) => {
+      const direct = permissions.find((entry) => entry.principal === authority);
+      const groupKey = `GROUP_${authority}`;
+      const group = direct ? null : permissions.find((entry) => entry.principal === groupKey);
+      const resolved = direct || group || null;
+      const resolvedKey = resolved?.principal || (allowed.has(authority) || denied.has(authority) ? authority : '');
+      const inheritance = resolved?.inheritance?.[diagnosticPermissionType] || 'EXPLICIT';
+      const permissionState = resolved?.permissions?.[diagnosticPermissionType] || null;
+
+      return {
+        authority,
+        resolvedKey,
+        hasAllow: allowed.has(authority),
+        hasDeny: denied.has(authority),
+        inheritance,
+        permissionState,
+      };
+    });
+  }, [diagnosticPermissionType, permissionDiagnostics, permissions]);
 
   const loadPermissions = useCallback(async () => {
     if (!selectedNodeId) return;
@@ -848,6 +876,73 @@ const PermissionsDialog: React.FC = () => {
                       <Chip key={`deny-${authority}`} size="small" variant="outlined" label={authority} />
                     ))}
                   </Box>
+                </Box>
+              )}
+              {(permissionDiagnostics.reason === 'ACL_ALLOW' || permissionDiagnostics.reason === 'ACL_DENY') && (
+                <Box sx={{ mt: 1 }}>
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    Matched grants (effective for selected permission)
+                  </Typography>
+                  {diagnosticsMatchedGrants.length === 0 ? (
+                    <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                      No matching permission grants were found on this node or its inheritance chain.
+                    </Typography>
+                  ) : (
+                    <TableContainer component={Paper} variant="outlined" sx={{ mt: 0.5 }}>
+                      <Table size="small" aria-label="Matched permission grants">
+                        <TableHead>
+                          <TableRow>
+                            <TableCell>Authority</TableCell>
+                            <TableCell>Match</TableCell>
+                            <TableCell>Source</TableCell>
+                            <TableCell>Effective</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {diagnosticsMatchedGrants.map((grant) => (
+                            <TableRow key={`diag-grant-${grant.authority}`}>
+                              <TableCell>
+                                <Typography variant="body2">{grant.resolvedKey || grant.authority}</Typography>
+                              </TableCell>
+                              <TableCell>
+                                <Box display="flex" flexWrap="wrap" gap={0.5}>
+                                  {grant.hasAllow && (
+                                    <Chip size="small" color="success" label="Allow" />
+                                  )}
+                                  {grant.hasDeny && (
+                                    <Chip size="small" color="warning" label="Deny" />
+                                  )}
+                                </Box>
+                              </TableCell>
+                              <TableCell>
+                                <Chip
+                                  size="small"
+                                  variant="outlined"
+                                  label={
+                                    grant.inheritance === 'INHERITED'
+                                      ? 'Inherited'
+                                      : grant.inheritance === 'MIXED'
+                                        ? 'Mixed'
+                                        : 'Explicit'
+                                  }
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <Chip
+                                  size="small"
+                                  variant="outlined"
+                                  label={grant.permissionState || 'Unknown'}
+                                />
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                  )}
+                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                    Explicit denies override allows across the inheritance chain.
+                  </Typography>
                 </Box>
               )}
             </>
