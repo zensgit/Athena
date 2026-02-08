@@ -8,6 +8,8 @@ import {
   ToggleButtonGroup,
   CircularProgress,
   Typography,
+  Alert,
+  Button,
 } from '@mui/material';
 import {
   ViewList,
@@ -33,7 +35,7 @@ const FileBrowser: React.FC = () => {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
   
-  const { currentNode, nodes, nodesTotal, loading, selectedNodes } = useAppSelector((state) => state.node);
+  const { currentNode, nodes, nodesTotal, loading, selectedNodes, error } = useAppSelector((state) => state.node);
   const { user } = useAppSelector((state) => state.auth);
   const { viewMode, sortBy, sortAscending, compactMode, sidebarAutoCollapse } = useAppSelector((state) => state.ui);
   const canWrite = Boolean(user?.roles?.includes('ROLE_ADMIN') || user?.roles?.includes('ROLE_EDITOR'));
@@ -226,6 +228,19 @@ const FileBrowser: React.FC = () => {
       </Paper>
 
       <Paper>
+        {error && !loading && (
+          <Alert
+            severity="warning"
+            action={(
+              <Button color="inherit" size="small" onClick={() => { void loadNodeData(); }}>
+                Retry
+              </Button>
+            )}
+            sx={{ m: 2 }}
+          >
+            {error}
+          </Alert>
+        )}
         {loading ? (
           <Box display="flex" justifyContent="center" p={4}>
             <CircularProgress />

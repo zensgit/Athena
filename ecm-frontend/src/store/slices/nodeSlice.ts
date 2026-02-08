@@ -218,6 +218,9 @@ const nodeSlice = createSlice({
       .addCase(fetchChildren.pending, (state) => {
         state.loading = true;
         state.error = null;
+        // Prevent stale children from previous folder while loading a new location.
+        state.nodes = [];
+        state.nodesTotal = 0;
       })
       .addCase(fetchChildren.fulfilled, (state, action) => {
         state.loading = false;
@@ -227,6 +230,7 @@ const nodeSlice = createSlice({
       .addCase(fetchChildren.rejected, (state, action) => {
         state.loading = false;
         state.error = action.error.message || 'Failed to fetch children';
+        state.nodes = [];
         state.nodesTotal = 0;
       })
       .addCase(createFolder.fulfilled, (state, action) => {
