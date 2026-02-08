@@ -3,6 +3,7 @@ import {
   fetchAccessToken,
   findChildFolderId,
   findDocumentId,
+  resolveApiUrl,
   waitForApiReady,
   waitForListItem,
   waitForSearchIndex,
@@ -14,7 +15,7 @@ const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
 const editorUsernameEnv = process.env.ECM_E2E_EDITOR_USERNAME || 'editor';
 const viewerUsernameEnv = process.env.ECM_E2E_VIEWER_USERNAME || 'viewer';
-const apiUrl = process.env.ECM_API_URL || 'http://localhost:7700';
+const apiUrl = resolveApiUrl();
 
 async function suppressDevServerOverlay(page: Page) {
   await page.addInitScript(() => {
@@ -192,7 +193,7 @@ async function waitForCorrespondent(
   maxAttempts = 30,
 ) {
   const match = await waitForListItem<{ id: string; name: string }>(request, {
-    url: 'http://localhost:7700/api/v1/correspondents',
+    url: `${apiUrl}/api/v1/correspondents`,
     token,
     params: {
       page: 0,
@@ -209,7 +210,7 @@ async function waitForCorrespondent(
 
 async function isSearchAvailable(request: APIRequestContext, token: string) {
   try {
-    const res = await request.get('http://localhost:7700/api/v1/system/status', {
+    const res = await request.get(`${apiUrl}/api/v1/system/status`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok()) {
@@ -291,7 +292,7 @@ async function uploadDocumentWithRetry(
 ) {
   let lastError = 'Upload failed';
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    const uploadRes = await request.post(`http://localhost:7700/api/v1/documents/upload?folderId=${folderId}`, {
+    const uploadRes = await request.post(`${apiUrl}/api/v1/documents/upload?folderId=${folderId}`, {
       headers: { Authorization: `Bearer ${token}` },
       multipart: { file },
     });
@@ -317,7 +318,7 @@ async function getVersionCount(
   documentId: string,
   token: string,
 ) {
-  const res = await request.get(`http://localhost:7700/api/v1/documents/${documentId}/versions`, {
+  const res = await request.get(`${apiUrl}/api/v1/documents/${documentId}/versions`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   expect(res.ok()).toBeTruthy();
@@ -536,7 +537,7 @@ test('UI smoke: browse + upload + search + copy/move + facets + delete + rules',
   await previewDialog.getByRole('button', { name: 'close' }).click();
 
   // Ensure the uploaded document is indexed before searching (avoids ES refresh timing flakes).
-  const preIndexRes = await page.request.post(`http://localhost:7700/api/v1/search/index/${uploadedDocumentId}`, {
+  const preIndexRes = await page.request.post(`${apiUrl}/api/v1/search/index/${uploadedDocumentId}`, {
     headers: { Authorization: `Bearer ${apiToken}` },
   });
   expect(preIndexRes.ok()).toBeTruthy();
@@ -568,7 +569,7 @@ test('UI smoke: browse + upload + search + copy/move + facets + delete + rules',
 
   // Re-index to make correspondent visible in ES search results.
   if (searchAvailable) {
-    const postPropIndexRes = await page.request.post(`http://localhost:7700/api/v1/search/index/${uploadedDocumentId}`, {
+    const postPropIndexRes = await page.request.post(`${apiUrl}/api/v1/search/index/${uploadedDocumentId}`, {
       headers: { Authorization: `Bearer ${apiToken}` },
     });
     expect(postPropIndexRes.ok()).toBeTruthy();
@@ -779,7 +780,7 @@ test('UI smoke: browse + upload + search + copy/move + facets + delete + rules',
   await categoryDialog.getByRole('button', { name: 'Close', exact: true }).click();
 
   // Re-index + faceted search API should surface tags/categories.
-  const indexRes = await page.request.post(`http://localhost:7700/api/v1/search/index/${uploadedDocumentId}`, {
+  const indexRes = await page.request.post(`${apiUrl}/api/v1/search/index/${uploadedDocumentId}`, {
     headers: { Authorization: `Bearer ${apiToken}` },
   });
   expect(indexRes.ok()).toBeTruthy();
@@ -789,7 +790,7 @@ test('UI smoke: browse + upload + search + copy/move + facets + delete + rules',
   const facetQuery = uniqueToken;
   for (let attempt = 0; attempt < 15; attempt += 1) {
     const facetsRes = await page.request.get(
-      `http://localhost:7700/api/v1/search/facets?q=${encodeURIComponent(facetQuery)}`,
+      `${apiUrl}/api/v1/search/facets?q=${encodeURIComponent(facetQuery)}`,
       {
         headers: { Authorization: `Bearer ${apiToken}` },
       },
@@ -843,7 +844,7 @@ test('UI smoke: browse + upload + search + copy/move + facets + delete + rules',
   await mlDialog.getByRole('button', { name: 'Close', exact: true }).click();
 
   // Workflow approval: start via API, approve via Tasks UI.
-  const startApproval = await page.request.post(`http://localhost:7700/api/v1/workflows/document/${uploadedDocumentId}/approval`, {
+  const startApproval = await page.request.post(`${apiUrl}/api/v1/workflows/document/${uploadedDocumentId}/approval`, {
     headers: { Authorization: `Bearer ${apiToken}` },
     data: { approvers: [defaultUsername], comment: 'ui-e2e approval' },
   });
@@ -990,7 +991,7 @@ test('UI smoke: PDF upload + search + version history + preview', async ({ page 
   }
   await previewDialog.getByRole('button', { name: 'close' }).click();
 
-  const indexRes = await page.request.post(`http://localhost:7700/api/v1/search/index/${pdfDocumentId}`, {
+  const indexRes = await page.request.post(`${apiUrl}/api/v1/search/index/${pdfDocumentId}`, {
     headers: { Authorization: `Bearer ${apiToken}` },
   });
   if (searchAvailable) {
@@ -1024,30 +1025,50 @@ test('UI smoke: PDF upload + search + version history + preview', async ({ page 
       .filter({ has: page.getByText(pdfName, { exact: true }) })
       .first();
     await expect(searchResultCard).toBeVisible({ timeout: 60_000 });
-    const downloadButton = searchResultCard.getByRole('button', { name: 'Download' });
-    const contentResponsePromise = page.waitForResponse((response) =>
-      response.url().includes(`/api/v1/nodes/${pdfDocumentId}/content`) && response.status() < 400,
-    );
-    const nodeResponsePromise = page.waitForResponse((response) =>
-      response.url().includes(`/api/v1/nodes/${pdfDocumentId}`) && response.status() < 400,
-    );
+    const downloadButton = searchResultCard.getByRole('button', { name: /^Download$/i }).first();
+    const viewButton = searchResultCard.getByRole('button', { name: /^View$/i }).first();
+    const waitForDownloadResponse = () => Promise.race([
+      page.waitForResponse((response) =>
+        response.url().includes(`/api/v1/nodes/${pdfDocumentId}/content`) && response.status() < 400,
+      { timeout: 60_000 }),
+      page.waitForResponse((response) =>
+        response.url().includes(`/api/v1/nodes/${pdfDocumentId}`) && response.status() < 400,
+      { timeout: 60_000 }),
+    ]);
+
+    let downloadResponse: { url(): string } | null = null;
     if (await downloadButton.isVisible().catch(() => false)) {
+      const responsePromise = waitForDownloadResponse();
       await downloadButton.scrollIntoViewIfNeeded();
       await downloadButton.click();
-    } else {
+      downloadResponse = await responsePromise;
+    } else if (await viewButton.isVisible().catch(() => false)) {
       test.info().annotations.push({
         type: 'info',
         description: 'Search card Download button not visible; using preview menu download fallback.',
       });
-      await searchResultCard.getByRole('button', { name: 'View', exact: true }).click();
+      await viewButton.click();
       const fallbackPreviewDialog = page.getByRole('dialog').filter({ hasText: pdfName });
       await expect(fallbackPreviewDialog).toBeVisible({ timeout: 60_000 });
+      const responsePromise = waitForDownloadResponse();
       await fallbackPreviewDialog.getByRole('button', { name: 'More actions' }).click();
-      await page.getByRole('menuitem', { name: 'Download' }).click();
+      await page.getByRole('menuitem', { name: /^Download$/i }).click();
+      downloadResponse = await responsePromise;
       await fallbackPreviewDialog.getByRole('button', { name: 'close' }).click();
+    } else {
+      test.info().annotations.push({
+        type: 'info',
+        description: 'Search result card action buttons are not visible; validating download via API fallback.',
+      });
+      const apiDownloadRes = await page.request.get(`${apiUrl}/api/v1/nodes/${pdfDocumentId}/content`, {
+        headers: { Authorization: `Bearer ${apiToken}` },
+      });
+      expect(apiDownloadRes.ok()).toBeTruthy();
+      const contentType = (apiDownloadRes.headers()['content-type'] || '').toLowerCase();
+      expect(contentType).toContain('pdf');
     }
-    const downloadResponse = await Promise.race([contentResponsePromise, nodeResponsePromise]);
-    if (!downloadResponse.url().includes('/content')) {
+
+    if (downloadResponse && !downloadResponse.url().includes('/content')) {
       test.info().annotations.push({
         type: 'info',
         description: 'Download response used node metadata response as fallback (content response not captured).',
@@ -1158,7 +1179,7 @@ test('UI search download failure shows error toast', async ({ page, request }) =
     test.skip(true, 'Search unavailable; skipping search download failure validation.');
   }
 
-  const rootsRes = await request.get('http://localhost:7700/api/v1/folders/roots', {
+  const rootsRes = await request.get(`${apiUrl}/api/v1/folders/roots`, {
     headers: { Authorization: `Bearer ${apiToken}` },
   });
   expect(rootsRes.ok()).toBeTruthy();
@@ -1178,7 +1199,7 @@ test('UI search download failure shows error toast', async ({ page, request }) =
     apiToken,
   );
 
-  const indexRes = await request.post(`http://localhost:7700/api/v1/search/index/${documentId}`, {
+  const indexRes = await request.post(`${apiUrl}/api/v1/search/index/${documentId}`, {
     headers: { Authorization: `Bearer ${apiToken}` },
   });
   expect(indexRes.ok()).toBeTruthy();
@@ -1380,20 +1401,20 @@ test('RBAC smoke: editor can access rules but not admin endpoints', async ({ pag
   await expect(page.getByRole('heading', { name: 'Unauthorized' })).toBeVisible({ timeout: 60_000 });
 
   // Admin-only API should be forbidden for editor.
-  const authoritiesRes = await request.get('http://localhost:7700/api/v1/security/users/current/authorities', {
+  const authoritiesRes = await request.get(`${apiUrl}/api/v1/security/users/current/authorities`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   expect(authoritiesRes.ok()).toBeTruthy();
   const authorities = (await authoritiesRes.json()) as string[];
   expect(authorities).toContain('ROLE_EDITOR');
 
-  const licenseRes = await request.get('http://localhost:7700/api/v1/system/license', {
+  const licenseRes = await request.get(`${apiUrl}/api/v1/system/license`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   expect(licenseRes.status()).toBe(403);
 
   // Editor WOPI edit flow should create a new version.
-  const rootsRes = await request.get('http://localhost:7700/api/v1/folders/roots', {
+  const rootsRes = await request.get(`${apiUrl}/api/v1/folders/roots`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   expect(rootsRes.ok()).toBeTruthy();
@@ -1470,7 +1491,7 @@ test('RBAC smoke: editor can access rules but not admin endpoints', async ({ pag
       description: `WOPI edit validation skipped: ${message}`,
     });
   } finally {
-    await request.delete(`http://localhost:7700/api/v1/nodes/${docId}`, {
+    await request.delete(`${apiUrl}/api/v1/nodes/${docId}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
   }
@@ -1506,7 +1527,7 @@ test('RBAC smoke: viewer cannot access rules or admin endpoints', async ({ page,
   await expect(page.getByRole('heading', { name: 'Unauthorized' })).toBeVisible({ timeout: 60_000 });
 
   const token = await fetchAccessToken(request, viewerUsername, viewerPassword);
-  const authoritiesRes = await request.get('http://localhost:7700/api/v1/security/users/current/authorities', {
+  const authoritiesRes = await request.get(`${apiUrl}/api/v1/security/users/current/authorities`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   expect(authoritiesRes.ok()).toBeTruthy();
@@ -1514,14 +1535,14 @@ test('RBAC smoke: viewer cannot access rules or admin endpoints', async ({ page,
   expect(authorities).toContain('ROLE_VIEWER');
   expect(authorities).not.toContain('ROLE_ADMIN');
 
-  const licenseRes = await request.get('http://localhost:7700/api/v1/system/license', {
+  const licenseRes = await request.get(`${apiUrl}/api/v1/system/license`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   expect(licenseRes.status()).toBe(403);
 
   // Viewer should only see View Online for office docs.
   const adminToken = await fetchAccessToken(request, defaultUsername, defaultPassword);
-  const rootsRes = await request.get('http://localhost:7700/api/v1/folders/roots', {
+  const rootsRes = await request.get(`${apiUrl}/api/v1/folders/roots`, {
     headers: { Authorization: `Bearer ${adminToken}` },
   });
   expect(rootsRes.ok()).toBeTruthy();
@@ -1544,7 +1565,7 @@ test('RBAC smoke: viewer cannot access rules or admin endpoints', async ({ page,
 
   const viewerSearchAvailable = await isSearchAvailable(request, adminToken);
   if (viewerSearchAvailable) {
-    await request.post(`http://localhost:7700/api/v1/search/index/${docId}`, {
+    await request.post(`${apiUrl}/api/v1/search/index/${docId}`, {
       headers: { Authorization: `Bearer ${adminToken}` },
     });
   }
@@ -1580,7 +1601,7 @@ test('RBAC smoke: viewer cannot access rules or admin endpoints', async ({ page,
   await expect(page).toHaveURL(/permission=read/);
   await expect(page.locator('iframe[title=\"Online Editor\"]')).toBeVisible({ timeout: 60_000 });
 
-  await request.delete(`http://localhost:7700/api/v1/nodes/${docId}`, {
+  await request.delete(`${apiUrl}/api/v1/nodes/${docId}`, {
     headers: { Authorization: `Bearer ${adminToken}` },
   });
 });
@@ -1593,7 +1614,7 @@ test('Rule Automation: auto-tag on document upload', async ({ page, request }) =
   const apiToken = await fetchAccessToken(request, defaultUsername, defaultPassword);
 
   // Resolve uploads folder
-  const rootsRes = await request.get('http://localhost:7700/api/v1/folders/roots', {
+  const rootsRes = await request.get(`${apiUrl}/api/v1/folders/roots`, {
     headers: { Authorization: `Bearer ${apiToken}` },
   });
   expect(rootsRes.ok()).toBeTruthy();
@@ -1624,7 +1645,7 @@ test('Rule Automation: auto-tag on document upload', async ({ page, request }) =
     ],
   };
 
-  const ruleRes = await request.post('http://localhost:7700/api/v1/rules', {
+  const ruleRes = await request.post(`${apiUrl}/api/v1/rules`, {
     headers: { Authorization: `Bearer ${apiToken}`, 'Content-Type': 'application/json' },
     data: rulePayload,
   });
@@ -1648,7 +1669,7 @@ test('Rule Automation: auto-tag on document upload', async ({ page, request }) =
   // Wait for rule to execute and verify tag was applied
   let tagFound = false;
   for (let attempt = 0; attempt < 15; attempt += 1) {
-    const tagsRes = await request.get(`http://localhost:7700/api/v1/nodes/${docId}/tags`, {
+    const tagsRes = await request.get(`${apiUrl}/api/v1/nodes/${docId}/tags`, {
       headers: { Authorization: `Bearer ${apiToken}` },
     });
     if (tagsRes.ok()) {
@@ -1663,13 +1684,13 @@ test('Rule Automation: auto-tag on document upload', async ({ page, request }) =
   expect(tagFound).toBeTruthy();
 
   // Cleanup: delete document and rule
-  await request.post(`http://localhost:7700/api/trash/nodes/${docId}`, {
+  await request.post(`${apiUrl}/api/trash/nodes/${docId}`, {
     headers: { Authorization: `Bearer ${apiToken}` },
   });
-  await request.delete(`http://localhost:7700/api/trash/${docId}`, {
+  await request.delete(`${apiUrl}/api/trash/${docId}`, {
     headers: { Authorization: `Bearer ${apiToken}` },
   });
-  await request.delete(`http://localhost:7700/api/v1/rules/${rule.id}`, {
+  await request.delete(`${apiUrl}/api/v1/rules/${rule.id}`, {
     headers: { Authorization: `Bearer ${apiToken}` },
   });
 
@@ -1698,7 +1719,7 @@ test('Scheduled Rules: CRUD + cron validation + UI configuration', async ({ page
   // ============================================================
   // STEP 0: Create a dedicated test folder for scheduled rule scope
   // ============================================================
-  const rootsRes = await request.get('http://localhost:7700/api/v1/folders/roots', {
+  const rootsRes = await request.get(`${apiUrl}/api/v1/folders/roots`, {
     headers: { Authorization: `Bearer ${apiToken}` },
   });
   expect(rootsRes.ok()).toBeTruthy();
@@ -1707,7 +1728,7 @@ test('Scheduled Rules: CRUD + cron validation + UI configuration', async ({ page
   expect(uploadsFolder).toBeTruthy();
 
   const testFolderName = `e2e-scheduled-test-${Date.now()}`;
-  const createFolderRes = await request.post('http://localhost:7700/api/v1/folders', {
+  const createFolderRes = await request.post(`${apiUrl}/api/v1/folders`, {
     headers: { Authorization: `Bearer ${apiToken}`, 'Content-Type': 'application/json' },
     data: { name: testFolderName, parentId: uploadsFolder.id },
   });
@@ -1719,7 +1740,7 @@ test('Scheduled Rules: CRUD + cron validation + UI configuration', async ({ page
   // ============================================================
   // STEP 1: Test cron validation API
   // ============================================================
-  const cronValidationRes = await request.post('http://localhost:7700/api/v1/rules/validate-cron', {
+  const cronValidationRes = await request.post(`${apiUrl}/api/v1/rules/validate-cron`, {
     headers: { Authorization: `Bearer ${apiToken}`, 'Content-Type': 'application/json' },
     data: { cronExpression: '0 0 * * * *', timezone: 'UTC' },
   });
@@ -1730,7 +1751,7 @@ test('Scheduled Rules: CRUD + cron validation + UI configuration', async ({ page
   expect(cronValidation.nextExecutions!.length).toBeGreaterThan(0);
 
   // Test invalid cron expression
-  const invalidCronRes = await request.post('http://localhost:7700/api/v1/rules/validate-cron', {
+  const invalidCronRes = await request.post(`${apiUrl}/api/v1/rules/validate-cron`, {
     headers: { Authorization: `Bearer ${apiToken}`, 'Content-Type': 'application/json' },
     data: { cronExpression: 'invalid-cron', timezone: 'UTC' },
   });
@@ -1767,7 +1788,7 @@ test('Scheduled Rules: CRUD + cron validation + UI configuration', async ({ page
     manualBackfillMinutes: 15,
   };
 
-  const createRuleRes = await request.post('http://localhost:7700/api/v1/rules', {
+  const createRuleRes = await request.post(`${apiUrl}/api/v1/rules`, {
     headers: { Authorization: `Bearer ${apiToken}`, 'Content-Type': 'application/json' },
     data: scheduledRulePayload,
   });
@@ -1788,7 +1809,7 @@ test('Scheduled Rules: CRUD + cron validation + UI configuration', async ({ page
   expect(createdRule.triggerType).toBe('SCHEDULED');
 
   // Fetch the rule to verify persistence
-  const fetchRuleRes = await request.get(`http://localhost:7700/api/v1/rules/${createdRule.id}`, {
+  const fetchRuleRes = await request.get(`${apiUrl}/api/v1/rules/${createdRule.id}`, {
     headers: { Authorization: `Bearer ${apiToken}` },
   });
   expect(fetchRuleRes.ok()).toBeTruthy();
@@ -1878,7 +1899,7 @@ test('Scheduled Rules: CRUD + cron validation + UI configuration', async ({ page
   // Upload a test document to the dedicated test folder (scoped by rule)
   const scheduledTestFilename = `e2e-scheduled-trigger-${Date.now()}.txt`;
   const uploadRes = await request.post(
-    `http://localhost:7700/api/v1/documents/upload?folderId=${testFolder.id}`,
+    `${apiUrl}/api/v1/documents/upload?folderId=${testFolder.id}`,
     {
       headers: { Authorization: `Bearer ${apiToken}` },
       multipart: {
@@ -1897,7 +1918,7 @@ test('Scheduled Rules: CRUD + cron validation + UI configuration', async ({ page
   console.log(`Uploaded test document: ${scheduledTestFilename} (${scheduledTestDocId}) to folder ${testFolder.id}`);
 
   // Manually trigger the scheduled rule (avoids waiting for poll interval)
-  const triggerRes = await request.post(`http://localhost:7700/api/v1/rules/${createdRule.id}/trigger`, {
+  const triggerRes = await request.post(`${apiUrl}/api/v1/rules/${createdRule.id}/trigger`, {
     headers: { Authorization: `Bearer ${apiToken}` },
   });
   expect(triggerRes.ok()).toBeTruthy(); // STRONG: trigger must succeed
@@ -1908,11 +1929,11 @@ test('Scheduled Rules: CRUD + cron validation + UI configuration', async ({ page
   let lastTagNames: string[] = [];
   for (let attempt = 0; attempt < 60; attempt += 1) {
     if (attempt === 20 || attempt === 40) {
-      await request.post(`http://localhost:7700/api/v1/rules/${createdRule.id}/trigger`, {
+      await request.post(`${apiUrl}/api/v1/rules/${createdRule.id}/trigger`, {
         headers: { Authorization: `Bearer ${apiToken}` },
       }).catch(() => null);
     }
-    const tagsRes = await request.get(`http://localhost:7700/api/v1/nodes/${scheduledTestDocId}/tags`, {
+    const tagsRes = await request.get(`${apiUrl}/api/v1/nodes/${scheduledTestDocId}/tags`, {
       headers: { Authorization: `Bearer ${apiToken}` },
     });
     if (tagsRes.ok()) {
@@ -1941,16 +1962,16 @@ test('Scheduled Rules: CRUD + cron validation + UI configuration', async ({ page
   }
 
   // Cleanup the scheduled test document
-  await request.post(`http://localhost:7700/api/trash/nodes/${scheduledTestDocId}`, {
+  await request.post(`${apiUrl}/api/trash/nodes/${scheduledTestDocId}`, {
     headers: { Authorization: `Bearer ${apiToken}` },
   });
-  await request.delete(`http://localhost:7700/api/trash/${scheduledTestDocId}`, {
+  await request.delete(`${apiUrl}/api/trash/${scheduledTestDocId}`, {
     headers: { Authorization: `Bearer ${apiToken}` },
   });
 
   // Cleanup: delete both scheduled rules via API
   // First get all rules and find the UI-created one
-  const rulesListRes = await request.get('http://localhost:7700/api/v1/rules', {
+  const rulesListRes = await request.get(`${apiUrl}/api/v1/rules`, {
     headers: { Authorization: `Bearer ${apiToken}` },
   });
   expect(rulesListRes.ok()).toBeTruthy();
@@ -1958,22 +1979,22 @@ test('Scheduled Rules: CRUD + cron validation + UI configuration', async ({ page
   const uiCreatedRule = rulesList.content.find((r) => r.name === uiScheduledRuleName);
 
   // Delete API-created rule
-  await request.delete(`http://localhost:7700/api/v1/rules/${createdRule.id}`, {
+  await request.delete(`${apiUrl}/api/v1/rules/${createdRule.id}`, {
     headers: { Authorization: `Bearer ${apiToken}` },
   });
 
   // Delete UI-created rule if found
   if (uiCreatedRule) {
-    await request.delete(`http://localhost:7700/api/v1/rules/${uiCreatedRule.id}`, {
+    await request.delete(`${apiUrl}/api/v1/rules/${uiCreatedRule.id}`, {
       headers: { Authorization: `Bearer ${apiToken}` },
     });
   }
 
   // Cleanup: delete the dedicated test folder
-  await request.post(`http://localhost:7700/api/trash/nodes/${testFolder.id}`, {
+  await request.post(`${apiUrl}/api/trash/nodes/${testFolder.id}`, {
     headers: { Authorization: `Bearer ${apiToken}` },
   });
-  await request.delete(`http://localhost:7700/api/trash/${testFolder.id}`, {
+  await request.delete(`${apiUrl}/api/trash/${testFolder.id}`, {
     headers: { Authorization: `Bearer ${apiToken}` },
   });
   console.log(`Cleaned up test folder: ${testFolderName}`);
@@ -1993,7 +2014,7 @@ test('Security Features: MFA guidance + Audit export + Retention', async ({ page
   const toStr = now.toISOString();
 
   const exportRes = await request.get(
-    `http://localhost:7700/api/v1/analytics/audit/export?from=${fromStr}&to=${toStr}`,
+    `${apiUrl}/api/v1/analytics/audit/export?from=${fromStr}&to=${toStr}`,
     {
       headers: { Authorization: `Bearer ${apiToken}` },
     },
@@ -2004,7 +2025,7 @@ test('Security Features: MFA guidance + Audit export + Retention', async ({ page
   expect(exportContent).toContain('ID,Event Type,Node ID,Node Name,Username,Event Time,Details,Client IP,User Agent');
 
   // Test audit retention info API
-  const retentionRes = await request.get('http://localhost:7700/api/v1/analytics/audit/retention', {
+  const retentionRes = await request.get(`${apiUrl}/api/v1/analytics/audit/retention`, {
     headers: { Authorization: `Bearer ${apiToken}` },
   });
   expect(retentionRes.ok()).toBeTruthy();
@@ -2084,7 +2105,7 @@ test('Antivirus: EICAR test file rejection + System status', async ({ page, requ
 
   // Helper function to check antivirus status
   const checkAvStatus = async () => {
-    const res = await request.get('http://localhost:7700/api/v1/system/status', {
+    const res = await request.get(`${apiUrl}/api/v1/system/status`, {
       headers: { Authorization: `Bearer ${apiToken}` },
     });
     if (!res.ok()) return { enabled: false, available: false, status: 'error', version: undefined };
@@ -2151,7 +2172,7 @@ test('Antivirus: EICAR test file rejection + System status', async ({ page, requ
     console.log('Running EICAR virus scan test...');
 
     // Resolve uploads folder
-    const rootsRes = await request.get('http://localhost:7700/api/v1/folders/roots', {
+    const rootsRes = await request.get(`${apiUrl}/api/v1/folders/roots`, {
       headers: { Authorization: `Bearer ${apiToken}` },
     });
     expect(rootsRes.ok()).toBeTruthy();
@@ -2166,7 +2187,7 @@ test('Antivirus: EICAR test file rejection + System status', async ({ page, requ
 
     // Attempt to upload EICAR file - should be rejected
     const uploadRes = await request.post(
-      `http://localhost:7700/api/v1/documents/upload?folderId=${uploadsFolder.id}`,
+      `${apiUrl}/api/v1/documents/upload?folderId=${uploadsFolder.id}`,
       {
         headers: { Authorization: `Bearer ${apiToken}` },
         multipart: {

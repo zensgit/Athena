@@ -1,7 +1,7 @@
 import { APIRequestContext, expect, test } from '@playwright/test';
-import { fetchAccessToken, waitForApiReady } from './helpers/api';
+import { fetchAccessToken, resolveApiUrl, waitForApiReady } from './helpers/api';
 
-const baseApiUrl = process.env.ECM_API_URL || 'http://localhost:7700';
+const baseApiUrl = resolveApiUrl();
 const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
 

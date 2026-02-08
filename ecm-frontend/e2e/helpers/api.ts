@@ -1,6 +1,30 @@
 import { APIRequestContext, expect } from '@playwright/test';
 
-const DEFAULT_API_URL = process.env.ECM_API_URL || 'http://localhost:7700';
+function normalizeLoopbackUrl(rawUrl: string): string {
+  try {
+    const url = new URL(rawUrl);
+    if (url.hostname === 'localhost') {
+      // Some runners resolve localhost to ::1 first. Force IPv4 to avoid EPERM/timeout flakes.
+      url.hostname = '127.0.0.1';
+    }
+
+    const isRoot = url.pathname === '/' && !url.search && !url.hash;
+    if (isRoot) {
+      return url.origin;
+    }
+
+    return url.toString().replace(/\/$/, '');
+  } catch {
+    return rawUrl;
+  }
+}
+
+export function resolveApiUrl(apiUrl?: string): string {
+  const rawDefault = process.env.ECM_API_URL || 'http://localhost:7700';
+  return normalizeLoopbackUrl(apiUrl ?? rawDefault);
+}
+
+const DEFAULT_API_URL = resolveApiUrl();
 const DEFAULT_KEYCLOAK_URL = process.env.KEYCLOAK_URL || 'http://localhost:8180';
 const DEFAULT_KEYCLOAK_REALM = process.env.KEYCLOAK_REALM || 'ecm';
 const DEFAULT_KEYCLOAK_CLIENT_ID = process.env.KEYCLOAK_CLIENT_ID || 'unified-portal';
@@ -66,7 +90,7 @@ export async function waitForApiReady(
   request: APIRequestContext,
   options: ApiReadyOptions = {},
 ) {
-  const apiUrl = options.apiUrl ?? DEFAULT_API_URL;
+  const apiUrl = resolveApiUrl(options.apiUrl);
   const timeoutMs = options.timeoutMs ?? 60_000;
   const delayMs = options.delayMs ?? 2000;
   const deadline = Date.now() + timeoutMs;
@@ -108,7 +132,7 @@ export async function waitForSearchIndex(
   token: string,
   options: SearchIndexOptions = {},
 ) {
-  const apiUrl = options.apiUrl ?? DEFAULT_API_URL;
+  const apiUrl = resolveApiUrl(options.apiUrl);
   const maxAttempts = options.maxAttempts ?? 30;
   const delayMs = options.delayMs ?? 2000;
   const minResults = options.minResults;
@@ -161,7 +185,7 @@ export async function reindexByQuery(
   token: string,
   options: ReindexOptions = {},
 ) {
-  const apiUrl = options.apiUrl ?? DEFAULT_API_URL;
+  const apiUrl = resolveApiUrl(options.apiUrl);
   const res = await request.post(`${apiUrl}/api/v1/search/index/query`, {
     params: {
       q: query,
@@ -233,7 +257,7 @@ export async function findChildFolderId(
   token: string,
   options: ListLookupOptions = {},
 ) {
-  const apiUrl = options.apiUrl ?? DEFAULT_API_URL;
+  const apiUrl = resolveApiUrl(options.apiUrl);
   const match = await waitForListItem<{ id: string; name: string; nodeType: string }>(request, {
     url: `${apiUrl}/api/v1/folders/${parentId}/contents`,
     token,
@@ -258,7 +282,7 @@ export async function findDocumentId(
   token: string,
   options: ListLookupOptions = {},
 ) {
-  const apiUrl = options.apiUrl ?? DEFAULT_API_URL;
+  const apiUrl = resolveApiUrl(options.apiUrl);
   const match = await waitForListItem<{ id: string; name: string; nodeType: string }>(request, {
     url: `${apiUrl}/api/v1/folders/${folderId}/contents`,
     token,
@@ -283,7 +307,7 @@ export async function getRootFolderId(
   token: string,
   options: { apiUrl?: string } = {},
 ) {
-  const apiUrl = options.apiUrl ?? DEFAULT_API_URL;
+  const apiUrl = resolveApiUrl(options.apiUrl);
   const res = await request.get(`${apiUrl}/api/v1/folders/roots`, {
     headers: { Authorization: `Bearer ${token}` },
   });
