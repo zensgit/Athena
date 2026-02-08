@@ -39,6 +39,7 @@ public class SearchResult {
     private String correspondent;
     private String previewStatus;
     private String previewFailureReason;
+    private String previewFailureCategory;
 
     /**
      * Get human-readable file size.

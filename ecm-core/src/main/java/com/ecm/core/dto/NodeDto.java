@@ -4,6 +4,7 @@ import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Node;
 import com.ecm.core.model.Category;
 import com.ecm.core.model.Tag;
+import com.ecm.core.preview.PreviewFailureClassifier;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -38,6 +39,7 @@ public record NodeDto(
     LocalDateTime lastModifiedDate,
     String previewStatus,
     String previewFailureReason,
+    String previewFailureCategory,
     LocalDateTime previewLastUpdated
 ) {
     public static NodeDto from(Node node) {
@@ -71,6 +73,7 @@ public record NodeDto(
         String currentVersionLabel = null;
         String previewStatus = null;
         String previewFailureReason = null;
+        String previewFailureCategory = null;
         LocalDateTime previewLastUpdated = null;
         List<String> aspects = new ArrayList<>();
         if (node instanceof Document document) {
@@ -92,6 +95,7 @@ public record NodeDto(
                 previewStatus = document.getPreviewStatus().name();
             }
             previewFailureReason = document.getPreviewFailureReason();
+            previewFailureCategory = PreviewFailureClassifier.classify(previewStatus, contentType, previewFailureReason);
             previewLastUpdated = document.getPreviewLastUpdated();
         }
 
@@ -128,6 +132,7 @@ public record NodeDto(
             node.getLastModifiedDate(),
             previewStatus,
             previewFailureReason,
+            previewFailureCategory,
             previewLastUpdated
         );
     }

@@ -3,6 +3,7 @@ package com.ecm.core.search;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Node;
 import com.ecm.core.entity.Permission.PermissionType;
+import com.ecm.core.preview.PreviewFailureClassifier;
 import com.ecm.core.repository.DocumentRepository;
 import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.service.SecurityService;
@@ -599,6 +600,11 @@ public class FullTextSearchService {
             .correspondent(doc.getCorrespondent())
             .previewStatus(doc.getPreviewStatus())
             .previewFailureReason(doc.getPreviewFailureReason())
+            .previewFailureCategory(PreviewFailureClassifier.classify(
+                doc.getPreviewStatus(),
+                doc.getMimeType(),
+                doc.getPreviewFailureReason()
+            ))
             .build();
     }
 

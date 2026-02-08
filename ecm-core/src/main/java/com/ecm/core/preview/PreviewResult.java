@@ -12,6 +12,7 @@ public class PreviewResult {
     private String status;
     private String message;
     private String failureReason;
+    private String failureCategory;
     private List<PreviewPage> pages;
     private int pageCount;
 }

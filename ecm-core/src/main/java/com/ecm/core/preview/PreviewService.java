@@ -642,6 +642,11 @@ public class PreviewService {
         }
         PreviewStatus status = result.isSupported() ? PreviewStatus.READY : PreviewStatus.FAILED;
         String failureReason = result.isSupported() ? null : result.getMessage();
+        String failureCategory = PreviewFailureClassifier.classify(
+            status.name(),
+            result.getMimeType(),
+            failureReason
+        );
 
         if (document != null) {
             if (result.getPageCount() > 0) {
@@ -654,6 +659,7 @@ public class PreviewService {
 
         result.setStatus(status.name());
         result.setFailureReason(failureReason);
+        result.setFailureCategory(failureCategory);
     }
 
     private record CadRenderResult(byte[] pngBytes, int width, int height) {}
