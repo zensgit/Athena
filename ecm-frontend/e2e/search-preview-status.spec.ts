@@ -134,6 +134,10 @@ test('Unsupported preview shows neutral status without retry in search results',
     headers: { Authorization: `Bearer ${token}` },
   });
   expect(previewRes.ok()).toBeTruthy();
+  const previewJson = (await previewRes.json()) as { supported?: boolean; status?: string; failureCategory?: string };
+  expect(previewJson.supported).toBe(false);
+  expect(previewJson.failureCategory).toBe('UNSUPPORTED');
+  expect(previewJson.status).toBe('UNSUPPORTED');
 
   const indexRes = await request.post(`${baseApiUrl}/api/v1/search/index/${documentId}`,
     { headers: { Authorization: `Bearer ${token}` } });
@@ -156,7 +160,7 @@ test('Unsupported preview shows neutral status without retry in search results',
     { headers: { Authorization: `Bearer ${token}` } }).catch(() => null);
 });
 
-test('Advanced search keeps failed filter but hides retry actions for unsupported previews', async ({ page, request }) => {
+test('Advanced search keeps unsupported filter and hides retry actions for unsupported previews', async ({ page, request }) => {
   test.setTimeout(240_000);
   await waitForApiReady(request, { apiUrl: baseApiUrl });
   const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
@@ -172,13 +176,17 @@ test('Advanced search keeps failed filter but hides retry actions for unsupporte
     headers: { Authorization: `Bearer ${token}` },
   });
   expect(previewRes.ok()).toBeTruthy();
+  const previewJson = (await previewRes.json()) as { supported?: boolean; status?: string; failureCategory?: string };
+  expect(previewJson.supported).toBe(false);
+  expect(previewJson.failureCategory).toBe('UNSUPPORTED');
+  expect(previewJson.status).toBe('UNSUPPORTED');
 
   const indexRes = await request.post(`${baseApiUrl}/api/v1/search/index/${documentId}`,
     { headers: { Authorization: `Bearer ${token}` } });
   expect(indexRes.ok()).toBeTruthy();
   await waitForSearchIndex(request, filename, token, { apiUrl: baseApiUrl, maxAttempts: 40 });
 
-  const advancedSearchPath = `/search?q=${encodeURIComponent(filename)}&dateRange=week&minSize=1&previewStatus=FAILED`;
+  const advancedSearchPath = `/search?q=${encodeURIComponent(filename)}&dateRange=week&minSize=1&previewStatus=UNSUPPORTED`;
   await gotoWithAuthE2E(page, advancedSearchPath, defaultUsername, defaultPassword, { token });
 
   const advancedSearchInput = page.getByLabel('Search query');
@@ -186,29 +194,29 @@ test('Advanced search keeps failed filter but hides retry actions for unsupporte
   await expect(page.getByLabel('Min size')).toHaveValue('1');
   await expect.poll(() => new URL(page.url()).searchParams.get('dateRange')).toBe('week');
   await expect.poll(() => new URL(page.url()).searchParams.get('minSize')).toBe('1');
-  await expect.poll(() => new URL(page.url()).searchParams.get('previewStatus')).toBe('FAILED');
+  await expect.poll(() => new URL(page.url()).searchParams.get('previewStatus')).toBe('UNSUPPORTED');
 
   const resultCard = page.locator('.MuiPaper-root').filter({ hasText: filename }).first();
   await expect(resultCard).toBeVisible({ timeout: 60_000 });
   await expect(resultCard.getByText(/Preview unsupported/i)).toBeVisible();
   const previewStatusPanel = page.locator('.MuiPaper-root').filter({ hasText: 'Preview Status' }).first();
   await expect(previewStatusPanel).toBeVisible();
-  const failedStatusChip = previewStatusPanel.getByRole('button', { name: /Failed \(\d+\)/i }).first();
-  await expect(failedStatusChip).toBeVisible();
-  await expect(failedStatusChip).toHaveClass(/MuiChip-filled/);
+  const unsupportedStatusChip = previewStatusPanel.getByRole('button', { name: /Unsupported \(\d+\)/i }).first();
+  await expect(unsupportedStatusChip).toBeVisible();
+  await expect(unsupportedStatusChip).toHaveClass(/MuiChip-filled/);
   await expect(previewStatusPanel.getByText(/Preview status filters apply to the current page only/i)).toBeVisible();
-  await expect.poll(() => new URL(page.url()).searchParams.get('previewStatus')).toBe('FAILED');
+  await expect.poll(() => new URL(page.url()).searchParams.get('previewStatus')).toBe('UNSUPPORTED');
   await expect.poll(() => new URL(page.url()).searchParams.get('q')).toBe(filename);
 
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.getByLabel('Search query')).toHaveValue(filename, { timeout: 30_000 });
   await expect(page.getByLabel('Min size')).toHaveValue('1');
-  await expect.poll(() => new URL(page.url()).searchParams.get('previewStatus')).toBe('FAILED');
+  await expect.poll(() => new URL(page.url()).searchParams.get('previewStatus')).toBe('UNSUPPORTED');
   await expect.poll(() => new URL(page.url()).searchParams.get('dateRange')).toBe('week');
   await expect.poll(() => new URL(page.url()).searchParams.get('minSize')).toBe('1');
   const reloadedPreviewStatusPanel = page.locator('.MuiPaper-root').filter({ hasText: 'Preview Status' }).first();
-  const reloadedFailedChip = reloadedPreviewStatusPanel.getByRole('button', { name: /Failed \(\d+\)/i }).first();
-  await expect(reloadedFailedChip).toHaveClass(/MuiChip-filled/);
+  const reloadedUnsupportedChip = reloadedPreviewStatusPanel.getByRole('button', { name: /Unsupported \(\d+\)/i }).first();
+  await expect(reloadedUnsupportedChip).toHaveClass(/MuiChip-filled/);
 
   await expect(page.getByRole('button', { name: /Retry failed previews/i })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /Retry \".+\" \(\d+\)/i })).toHaveCount(0);
