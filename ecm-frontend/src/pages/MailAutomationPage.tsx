@@ -174,7 +174,7 @@ const MailAutomationPage: React.FC = () => {
   const [reportLoading, setReportLoading] = useState(false);
   const [reportAccountId, setReportAccountId] = useState('');
   const [reportRuleId, setReportRuleId] = useState('');
-  const [reportDays, setReportDays] = useState(7);
+  const [reportDays, setReportDays] = useState(30);
   const [runtimeMetrics, setRuntimeMetrics] = useState<MailRuntimeMetrics | null>(null);
   const [runtimeMetricsLoading, setRuntimeMetricsLoading] = useState(false);
   const [runtimeWindowMinutes, setRuntimeWindowMinutes] = useState(60);
