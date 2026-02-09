@@ -85,6 +85,12 @@ Expected:
 - Test passes.
 - If there are no processed messages in the environment, the test is skipped with a clear reason.
 
+## Results
+
+- `bash scripts/restart-ecm.sh`: PASS (containers rebuilt and recreated)
+- Playwright:
+  - `e2e/mail-automation.spec.ts --grep "processed item can show ingested documents dialog"`: PASS (`1 passed`)
+
 ## Manual UI Spot-Check (Optional)
 
 1. Open `http://localhost:5500/admin/mail`
@@ -94,4 +100,3 @@ Expected:
    - a table of documents, or
    - "No mail documents found for this message.", or
    - an error message if the API fails.
-
