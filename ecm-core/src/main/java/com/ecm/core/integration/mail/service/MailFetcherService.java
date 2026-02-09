@@ -916,6 +916,27 @@ public class MailFetcherService {
         }
     }
 
+    public List<MailDocumentDiagnosticItem> listProcessedMailDocuments(UUID processedMailId, Integer limit) {
+        int effectiveLimit = limit != null && limit > 0 ? Math.min(limit, 200) : 50;
+        ProcessedMail processedMail = processedMailRepository.findById(processedMailId)
+            .orElseThrow(() -> new IllegalArgumentException("Processed mail not found: " + processedMailId));
+
+        Map<UUID, String> accountNames = accountRepository.findAll().stream()
+            .collect(Collectors.toMap(MailAccount::getId, MailAccount::getName));
+        Map<UUID, String> ruleNames = ruleRepository.findAllByOrderByPriorityAsc().stream()
+            .collect(Collectors.toMap(MailRule::getId, MailRule::getName));
+
+        List<Document> docs = documentRepository.findMailDocumentsForMessage(
+            effectiveLimit,
+            processedMail.getAccountId() != null ? processedMail.getAccountId().toString() : null,
+            processedMail.getFolder(),
+            processedMail.getUid()
+        );
+        return docs.stream()
+            .map(doc -> toMailDocumentDiagnosticItem(doc, accountNames, ruleNames))
+            .toList();
+    }
+
     private record MailRoutingTarget(UUID folderId, String reason, String address) {
     }
 

@@ -40,6 +40,7 @@ import {
   Refresh,
   Search,
   Visibility,
+  ListAlt,
   ContentCopy,
   ArrowUpward,
   ArrowDownward,
@@ -208,6 +209,11 @@ const MailAutomationPage: React.FC = () => {
   const [retentionCleaning, setRetentionCleaning] = useState(false);
   const [selectedProcessedIds, setSelectedProcessedIds] = useState<string[]>([]);
   const [replayingProcessedId, setReplayingProcessedId] = useState<string | null>(null);
+  const [processedDocsDialogOpen, setProcessedDocsDialogOpen] = useState(false);
+  const [processedDocsLoading, setProcessedDocsLoading] = useState(false);
+  const [processedDocsError, setProcessedDocsError] = useState('');
+  const [processedDocsContext, setProcessedDocsContext] = useState<ProcessedMailDiagnosticItem | null>(null);
+  const [processedDocsItems, setProcessedDocsItems] = useState<MailDocumentDiagnosticItem[]>([]);
   const [expandedRuleErrorRuleId, setExpandedRuleErrorRuleId] = useState('');
   const [ruleDiagnosticsDrawerOpen, setRuleDiagnosticsDrawerOpen] = useState(false);
   const [ruleDiagnosticsFocusRuleId, setRuleDiagnosticsFocusRuleId] = useState('');
@@ -410,7 +416,8 @@ const MailAutomationPage: React.FC = () => {
     const local = new Date(value.getTime() - value.getTimezoneOffset() * 60000);
     return local.toISOString().slice(0, 16);
   };
-  const processedKey = (accountId?: string | null, uid?: string | null) => `${accountId || ''}::${uid || ''}`;
+  const processedKey = (accountId?: string | null, folder?: string | null, uid?: string | null) =>
+    `${accountId || ''}::${folder || ''}::${uid || ''}`;
 
   const loadRetention = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent === true;
@@ -910,8 +917,8 @@ const MailAutomationPage: React.FC = () => {
   const recentDocumentByProcessedKey = useMemo(() => {
     const map = new Map<string, MailDocumentDiagnosticItem>();
     recentDocuments.forEach((doc) => {
-      const key = processedKey(doc.accountId, doc.uid);
-      if (!key.endsWith('::')) {
+      const key = processedKey(doc.accountId, doc.folder, doc.uid);
+      if (doc.accountId && doc.folder && doc.uid) {
         map.set(key, doc);
       }
     });
@@ -1751,6 +1758,31 @@ const MailAutomationPage: React.FC = () => {
         similarSourceName: doc.name,
       },
     });
+  };
+
+  const handleOpenProcessedDocuments = async (item: ProcessedMailDiagnosticItem) => {
+    setProcessedDocsContext(item);
+    setProcessedDocsDialogOpen(true);
+    setProcessedDocsLoading(true);
+    setProcessedDocsItems([]);
+    setProcessedDocsError('');
+    try {
+      const docs = await mailAutomationService.listProcessedMailDocuments(item.id, 200);
+      setProcessedDocsItems(docs);
+    } catch {
+      setProcessedDocsError('Failed to load ingested mail documents');
+      toast.error('Failed to load ingested mail documents');
+    } finally {
+      setProcessedDocsLoading(false);
+    }
+  };
+
+  const handleCloseProcessedDocuments = () => {
+    setProcessedDocsDialogOpen(false);
+    setProcessedDocsContext(null);
+    setProcessedDocsItems([]);
+    setProcessedDocsLoading(false);
+    setProcessedDocsError('');
   };
 
   const selectedTag = tags.find((tag) => tag.id === ruleForm.assignTagId) || null;
@@ -3292,35 +3324,41 @@ const MailAutomationPage: React.FC = () => {
                                 <TableCell>
                                   {(() => {
                                     const linkedDoc = recentDocumentByProcessedKey.get(
-                                      processedKey(item.accountId, item.uid)
+                                      processedKey(item.accountId, item.folder, item.uid)
                                     );
-                                    if (!linkedDoc) {
-                                      return (
-                                        <Typography variant="caption" color="text.secondary">
-                                          -
-                                        </Typography>
-                                      );
-                                    }
                                     return (
                                       <Stack direction="row" spacing={0.5} alignItems="center">
-                                        <Tooltip title="Open linked document">
+                                        <Tooltip title="View ingested documents">
                                           <IconButton
                                             size="small"
-                                            aria-label="open linked document"
-                                            onClick={() => handleOpenMailDocument(linkedDoc.documentId)}
+                                            aria-label="view ingested documents"
+                                            onClick={() => handleOpenProcessedDocuments(item)}
                                           >
-                                            <Visibility fontSize="inherit" />
+                                            <ListAlt fontSize="inherit" />
                                           </IconButton>
                                         </Tooltip>
-                                        <Tooltip title="Find similar documents">
-                                          <IconButton
-                                            size="small"
-                                            aria-label="find similar linked document"
-                                            onClick={() => handleFindSimilarFromMailDocument(linkedDoc)}
-                                          >
-                                            <Search fontSize="inherit" />
-                                          </IconButton>
-                                        </Tooltip>
+                                        {linkedDoc && (
+                                          <>
+                                            <Tooltip title="Open linked document">
+                                              <IconButton
+                                                size="small"
+                                                aria-label="open linked document"
+                                                onClick={() => handleOpenMailDocument(linkedDoc.documentId)}
+                                              >
+                                                <Visibility fontSize="inherit" />
+                                              </IconButton>
+                                            </Tooltip>
+                                            <Tooltip title="Find similar documents">
+                                              <IconButton
+                                                size="small"
+                                                aria-label="find similar linked document"
+                                                onClick={() => handleFindSimilarFromMailDocument(linkedDoc)}
+                                              >
+                                                <Search fontSize="inherit" />
+                                              </IconButton>
+                                            </Tooltip>
+                                          </>
+                                        )}
                                       </Stack>
                                     );
                                   })()}
@@ -4483,6 +4521,103 @@ const MailAutomationPage: React.FC = () => {
         <DialogActions>
           <Button onClick={() => setRuleDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={handleSaveRule}>Save</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={processedDocsDialogOpen}
+        onClose={handleCloseProcessedDocuments}
+        maxWidth="md"
+        fullWidth
+        data-testid="processed-mail-docs-dialog"
+      >
+        <DialogTitle>Ingested Documents</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} mt={1}>
+            {processedDocsContext ? (
+              <Stack spacing={0.5}>
+                <Typography variant="caption" color="text.secondary">
+                  {processedDocsContext.accountName || processedDocsContext.accountId || '-'} · {processedDocsContext.folder}{' '}
+                  · UID {processedDocsContext.uid}
+                </Typography>
+                {processedDocsContext.subject && (
+                  <Typography variant="caption" title={processedDocsContext.subject}>
+                    Subject: {summarizeText(processedDocsContext.subject, 120)}
+                  </Typography>
+                )}
+              </Stack>
+            ) : (
+              <Typography variant="caption" color="text.secondary">
+                No processed mail selected.
+              </Typography>
+            )}
+
+            {processedDocsLoading ? (
+              <Box display="flex" justifyContent="center" py={2}>
+                <CircularProgress size={24} />
+              </Box>
+            ) : processedDocsError ? (
+              <Typography variant="body2" color="error">
+                {processedDocsError}
+              </Typography>
+            ) : processedDocsItems.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">
+                No mail documents found for this message.
+              </Typography>
+            ) : (
+              <TableContainer sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Created</TableCell>
+                      <TableCell>Name</TableCell>
+                      <TableCell>Path</TableCell>
+                      <TableCell align="right">Search</TableCell>
+                      <TableCell align="right">Open</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {processedDocsItems.map((doc) => (
+                      <TableRow key={doc.documentId} hover>
+                        <TableCell>{formatDateTime(doc.createdDate)}</TableCell>
+                        <TableCell>{doc.name}</TableCell>
+                        <TableCell>
+                          <Typography variant="caption" title={doc.path}>
+                            {summarizeText(doc.path, 80)}
+                          </Typography>
+                        </TableCell>
+                        <TableCell align="right">
+                          <Tooltip title="Find similar documents">
+                            <IconButton
+                              size="small"
+                              aria-label="find similar documents"
+                              onClick={() => handleFindSimilarFromMailDocument(doc)}
+                            >
+                              <Search fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </TableCell>
+                        <TableCell align="right">
+                          <Tooltip title="Open in folder">
+                            <IconButton
+                              size="small"
+                              aria-label="open mail document"
+                              onClick={() => handleOpenMailDocument(doc.documentId)}
+                            >
+                              <Visibility fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseProcessedDocuments}>Close</Button>
         </DialogActions>
       </Dialog>
 

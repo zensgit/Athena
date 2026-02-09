@@ -533,6 +533,19 @@ public class MailAutomationController {
         return ResponseEntity.ok(result);
     }
 
+    @GetMapping("/processed/{id}/documents")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(
+        summary = "Processed mail documents",
+        description = "List documents ingested from a specific processed mail record"
+    )
+    public ResponseEntity<List<MailFetcherService.MailDocumentDiagnosticItem>> listProcessedMailDocuments(
+        @PathVariable UUID id,
+        @RequestParam(required = false) Integer limit
+    ) {
+        return ResponseEntity.ok(fetcherService.listProcessedMailDocuments(id, limit));
+    }
+
     @GetMapping("/processed/retention")
     @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Processed mail retention", description = "Get retention policy for processed mail")

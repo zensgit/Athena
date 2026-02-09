@@ -92,6 +92,26 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
         @Param("ruleId") String ruleId
     );
 
+    @Query(
+        value = "SELECT n.*, d.* FROM documents d " +
+            "JOIN nodes n ON d.id = n.id " +
+            "WHERE n.is_deleted = false " +
+            "AND n.node_type = 'DOCUMENT' " +
+            "AND n.properties ->> 'mail:source' = 'true' " +
+            "AND (:accountId IS NULL OR n.properties ->> 'mail:accountId' = :accountId) " +
+            "AND (:folder IS NULL OR n.properties ->> 'mail:folder' = :folder) " +
+            "AND (:uid IS NULL OR n.properties ->> 'mail:uid' = :uid) " +
+            "ORDER BY n.created_date DESC " +
+            "LIMIT :limit",
+        nativeQuery = true
+    )
+    List<Document> findMailDocumentsForMessage(
+        @Param("limit") int limit,
+        @Param("accountId") String accountId,
+        @Param("folder") String folder,
+        @Param("uid") String uid
+    );
+
     /**
      * Find documents modified since a given date (for scheduled rules)
      */

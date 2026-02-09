@@ -464,6 +464,14 @@ class MailAutomationService {
     return api.post<MailReplayResult>(`/integration/mail/processed/${id}/replay`);
   }
 
+  async listProcessedMailDocuments(id: string, limit?: number): Promise<MailDocumentDiagnosticItem[]> {
+    return api.get<MailDocumentDiagnosticItem[]>(`/integration/mail/processed/${id}/documents`, {
+      params: {
+        limit: limit ?? undefined,
+      },
+    });
+  }
+
   async getProcessedRetention(): Promise<ProcessedMailRetentionStatus> {
     return api.get<ProcessedMailRetentionStatus>('/integration/mail/processed/retention');
   }

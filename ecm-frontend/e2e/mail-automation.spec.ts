@@ -153,6 +153,42 @@ test('Mail automation diagnostics filters can be cleared', async ({ page, reques
   await page.keyboard.press('Escape');
 });
 
+test('Mail automation processed item can show ingested documents dialog', async ({ page, request }) => {
+  await waitForApiReady(request);
+  const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+
+  // Avoid flaky UI-based skipping by checking server state first.
+  const diagnosticsRes = await request.get(`${apiUrl}/api/v1/integration/mail/diagnostics?limit=1`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(diagnosticsRes.ok()).toBeTruthy();
+  const diagnostics = (await diagnosticsRes.json()) as { recentProcessed?: unknown[] };
+  test.skip(!diagnostics.recentProcessed?.length, 'No processed messages available to view ingested documents');
+
+  await gotoWithAuthE2E(page, '/admin/mail#diagnostics', defaultUsername, defaultPassword, { token });
+  await page.waitForURL(/\/admin\/mail/, { timeout: 60_000 });
+
+  const viewDocsButtons = page.getByRole('button', { name: /view ingested documents/i });
+  await expect(viewDocsButtons.first()).toBeVisible({ timeout: 30_000 });
+
+  await viewDocsButtons.first().click();
+
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText(/Ingested Documents/i, { timeout: 30_000 });
+
+  const noDocs = dialog.getByText(/No mail documents found for this message/i);
+  const docsTable = dialog.locator('table');
+  const loadError = dialog.getByText(/Failed to load ingested mail documents/i);
+  await Promise.race([
+    noDocs.waitFor({ state: 'visible', timeout: 60_000 }),
+    docsTable.waitFor({ state: 'visible', timeout: 60_000 }),
+    loadError.waitFor({ state: 'visible', timeout: 60_000 }),
+  ]);
+
+  await dialog.getByRole('button', { name: /^close$/i }).click();
+  await expect(dialog).toHaveCount(0);
+});
+
 test('Mail automation rule diagnostics drawer opens from leaderboard', async ({ page, request }) => {
   await waitForApiReady(request);
   const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
