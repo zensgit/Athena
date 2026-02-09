@@ -530,6 +530,8 @@ public class FacetedSearchService {
         } else {
             addAnyPrefixFilter(bool, List.of("path.keyword", "path"), filters.getPath());
         }
+
+        PreviewStatusFilterHelper.apply(bool, filters.getPreviewStatuses());
     }
 
     private void applyFolderScopeFilter(BoolQuery.Builder bool, String folderId, boolean includeChildren) {

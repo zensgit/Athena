@@ -118,6 +118,19 @@ public class FullTextSearchService {
         String folderId,
         boolean includeChildren
     ) {
+        return search(queryText, page, size, sortBy, sortDirection, folderId, includeChildren, null);
+    }
+
+    public Page<SearchResult> search(
+        String queryText,
+        int page,
+        int size,
+        String sortBy,
+        String sortDirection,
+        String folderId,
+        boolean includeChildren,
+        List<String> previewStatuses
+    ) {
         if (!searchEnabled) {
             log.warn("Search is disabled");
             return Page.empty();
@@ -126,7 +139,7 @@ public class FullTextSearchService {
         Pageable pageable = PageRequest.of(page, size);
 
         try {
-            Query query = buildFullTextQuery(queryText, pageable, sortBy, sortDirection, folderId, includeChildren);
+            Query query = buildFullTextQuery(queryText, pageable, sortBy, sortDirection, folderId, includeChildren, previewStatuses);
             SearchHits<NodeDocument> searchHits = elasticsearchOperations.search(
                 query, NodeDocument.class, IndexCoordinates.of(INDEX_NAME));
 
@@ -340,7 +353,7 @@ public class FullTextSearchService {
     }
 
     private Query buildFullTextQuery(String queryText, Pageable pageable, String sortBy, String sortDirection) {
-        return buildFullTextQuery(queryText, pageable, sortBy, sortDirection, null, true);
+        return buildFullTextQuery(queryText, pageable, sortBy, sortDirection, null, true, null);
     }
 
     private Query buildFullTextQuery(
@@ -350,6 +363,18 @@ public class FullTextSearchService {
         String sortDirection,
         String folderId,
         boolean includeChildren
+    ) {
+        return buildFullTextQuery(queryText, pageable, sortBy, sortDirection, folderId, includeChildren, null);
+    }
+
+    private Query buildFullTextQuery(
+        String queryText,
+        Pageable pageable,
+        String sortBy,
+        String sortDirection,
+        String folderId,
+        boolean includeChildren,
+        List<String> previewStatuses
     ) {
         String searchTerm = queryText != null ? queryText.trim() : "";
 
@@ -369,6 +394,7 @@ public class FullTextSearchService {
 
             b.filter(f -> f.term(t -> t.field("deleted").value(false)));
             applyFolderScopeFilter(b, folderId, includeChildren);
+            PreviewStatusFilterHelper.apply(b, previewStatuses);
             applyReadPermissionFilter(b);
             return b;
         }));
@@ -429,6 +455,8 @@ public class FullTextSearchService {
                 } else {
                     addAnyPrefixFilter(b, List.of("path.keyword", "path"), filters.getPath());
                 }
+
+                PreviewStatusFilterHelper.apply(b, filters.getPreviewStatuses());
             }
 
             applyReadPermissionFilter(b);

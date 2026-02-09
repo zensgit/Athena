@@ -104,6 +104,7 @@ export interface SearchCriteria {
   aspects?: string[];
   contentType?: string;
   mimeTypes?: string[];
+  previewStatuses?: string[];
   createdBy?: string;
   createdByList?: string[];
   createdFrom?: string;

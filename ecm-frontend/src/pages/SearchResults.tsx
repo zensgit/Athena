@@ -143,7 +143,9 @@ const SearchResults: React.FC = () => {
   const previewOpen = Boolean(previewNode);
   const isAdmin = Boolean(user?.roles?.includes('ROLE_ADMIN'));
   const canWrite = Boolean(user?.roles?.includes('ROLE_ADMIN') || user?.roles?.includes('ROLE_EDITOR'));
-  const suppressFacetSearch = useRef(false);
+  // During criteria -> UI state sync, facet-change effects can run with stale UI values and
+  // accidentally trigger an extra search. Use a state flag so effects re-run once the sync is done.
+  const [facetSyncSuppressed, setFacetSyncSuppressed] = useState(false);
   const quickSearchDebounceRef = useRef<number | null>(null);
   const isSimilarMode = similarResults !== null;
   const previewRetrySummary = useMemo(() => {
@@ -362,7 +364,7 @@ const SearchResults: React.FC = () => {
     if (!lastSearchCriteria) {
       return;
     }
-    suppressFacetSearch.current = true;
+    setFacetSyncSuppressed(true);
     const baseMimeTypes = lastSearchCriteria.mimeTypes
       ?? (lastSearchCriteria.contentType ? [lastSearchCriteria.contentType] : []);
     const baseCreators = lastSearchCriteria.createdByList
@@ -373,10 +375,11 @@ const SearchResults: React.FC = () => {
     setSelectedCorrespondents(lastSearchCriteria.correspondents || []);
     setSelectedTags(lastSearchCriteria.tags || []);
     setSelectedCategories(lastSearchCriteria.categories || []);
+    setSelectedPreviewStatuses(lastSearchCriteria.previewStatuses || []);
     setPage(1);
 
     const timer = window.setTimeout(() => {
-      suppressFacetSearch.current = false;
+      setFacetSyncSuppressed(false);
     }, 0);
 
     return () => window.clearTimeout(timer);
@@ -390,11 +393,11 @@ const SearchResults: React.FC = () => {
 
   useEffect(() => {
     const query = (lastSearchCriteria?.name || '').trim();
-    if (!query || nonPreviewFiltersApplied) {
+    if (!query || nonPreviewFiltersApplied || previewStatusFilterApplied) {
       return;
     }
     dispatch(fetchSearchFacets(query));
-  }, [lastSearchCriteria, dispatch, nonPreviewFiltersApplied]);
+  }, [lastSearchCriteria, dispatch, nonPreviewFiltersApplied, previewStatusFilterApplied]);
 
   useEffect(() => {
     const query = (lastSearchCriteria?.name || '').trim();
@@ -555,7 +558,7 @@ const SearchResults: React.FC = () => {
   }, [nodes, lastSearchCriteria]);
 
   useEffect(() => {
-    if (!lastSearchCriteria || suppressFacetSearch.current) {
+    if (!lastSearchCriteria || facetSyncSuppressed) {
       return;
     }
 
@@ -577,12 +580,14 @@ const SearchResults: React.FC = () => {
     const baseTags = normalize(lastSearchCriteria.tags || []);
     const baseCategories = normalize(lastSearchCriteria.categories || []);
     const baseCorrespondents = normalize(lastSearchCriteria.correspondents || []);
+    const basePreviewStatuses = normalize(lastSearchCriteria.previewStatuses || []);
 
     const nextMimeTypes = normalize(selectedMimeTypes);
     const nextCreators = normalize(selectedCreators);
     const nextTags = normalize(selectedTags);
     const nextCategories = normalize(selectedCategories);
     const nextCorrespondents = normalize(selectedCorrespondents);
+    const nextPreviewStatuses = normalize(selectedPreviewStatuses);
 
     if (
       arraysEqual(baseMimeTypes, nextMimeTypes)
@@ -590,6 +595,7 @@ const SearchResults: React.FC = () => {
       && arraysEqual(baseTags, nextTags)
       && arraysEqual(baseCategories, nextCategories)
       && arraysEqual(baseCorrespondents, nextCorrespondents)
+      && arraysEqual(basePreviewStatuses, nextPreviewStatuses)
     ) {
       return;
     }
@@ -604,6 +610,7 @@ const SearchResults: React.FC = () => {
       tags: nextTags.length ? nextTags : undefined,
       categories: nextCategories.length ? nextCategories : undefined,
       correspondents: nextCorrespondents.length ? nextCorrespondents : undefined,
+      previewStatuses: nextPreviewStatuses.length ? nextPreviewStatuses : undefined,
       page: 0,
       size: pageSize,
       ...sortParams,
@@ -614,7 +621,9 @@ const SearchResults: React.FC = () => {
     selectedCorrespondents,
     selectedTags,
     selectedCategories,
+    selectedPreviewStatuses,
     lastSearchCriteria,
+    facetSyncSuppressed,
     pageSize,
     runSearch,
     sortBy,
@@ -622,7 +631,7 @@ const SearchResults: React.FC = () => {
 
   useEffect(() => {
     setPage(1);
-  }, [selectedMimeTypes, selectedCreators, selectedCorrespondents, selectedTags, selectedCategories]);
+  }, [selectedMimeTypes, selectedCreators, selectedCorrespondents, selectedTags, selectedCategories, selectedPreviewStatuses]);
 
   useEffect(() => {
     if (!lastSearchCriteria) {
@@ -1222,22 +1231,7 @@ const SearchResults: React.FC = () => {
     toast.success(`Preview ${force ? 'rebuilds' : 'retries'} (${reasonLabel}): ${parts.join(', ')}`);
     setBatchRetrying(false);
   };
-  const statusFilteredNodes = previewStatusFilterApplied
-    ? displayNodes.filter((node) => {
-        if (node.nodeType === 'FOLDER') {
-          return false;
-        }
-        const nodeMimeType = node.contentType || node.properties?.mimeType || node.properties?.contentType;
-        const status = getEffectivePreviewStatus(
-          node.previewStatus,
-          node.previewFailureCategory,
-          nodeMimeType,
-          node.previewFailureReason
-        ) || 'PENDING';
-        return selectedPreviewStatuses.includes(status);
-      })
-    : displayNodes;
-  const paginatedNodes = statusFilteredNodes.filter((node) => !hiddenNodeIds.includes(node.id));
+  const paginatedNodes = displayNodes.filter((node) => !hiddenNodeIds.includes(node.id));
   const queuedPreviewDetails = useMemo(() => {
     return paginatedNodes
       .map((node) => {
@@ -1268,13 +1262,11 @@ const SearchResults: React.FC = () => {
   }, [paginatedNodes, previewQueueStatusById]);
   const displayTotal = isSimilarMode
     ? paginatedNodes.length
-    : previewStatusFilterApplied
-      ? statusFilteredNodes.length
-      : nodesTotal;
+    : nodesTotal;
   const totalPages = Math.max(1, Math.ceil(displayTotal / pageSize));
   const spellcheckQuery = (lastSearchCriteria?.name || '').trim();
   const normalizedSpellcheckQuery = spellcheckQuery.toLowerCase();
-  const shouldUseSearchFacets = !nonPreviewFiltersApplied && searchFacets && Object.keys(searchFacets).length > 0;
+  const shouldUseSearchFacets = !nonPreviewFiltersApplied && !previewStatusFilterApplied && searchFacets && Object.keys(searchFacets).length > 0;
   const facets = useMemo(() => {
     if (shouldUseSearchFacets) {
       const toSorted = (values?: FacetValue[]) =>
@@ -1299,7 +1291,7 @@ const SearchResults: React.FC = () => {
       map.set(key, (map.get(key) || 0) + 1);
     };
 
-    for (const node of statusFilteredNodes) {
+    for (const node of displayNodes) {
       if (node.contentType) {
         inc(mimeTypeCounts, node.contentType);
       }
@@ -1334,7 +1326,7 @@ const SearchResults: React.FC = () => {
       tags: mapToSortedArray(tagCounts),
       categories: mapToSortedArray(categoryCounts),
     };
-  }, [shouldUseSearchFacets, searchFacets, statusFilteredNodes]);
+  }, [shouldUseSearchFacets, searchFacets, displayNodes]);
   const facetScopeLabel = shouldUseSearchFacets
     ? 'Facet counts reflect the full result set for this query.'
     : 'Facet counts reflect the current page after filters are applied.';
@@ -1505,11 +1497,6 @@ const SearchResults: React.FC = () => {
             <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
               Filter results by preview generation state.
             </Typography>
-            {previewStatusFilterApplied && (
-              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-                Preview status filters apply to the current page only.
-              </Typography>
-            )}
             <Box display="flex" flexWrap="wrap" gap={1} mb={2}>
               {[
                 { value: 'READY', label: 'Ready', color: 'success' as const, count: previewStatusCounts.READY },
@@ -1955,7 +1942,7 @@ const SearchResults: React.FC = () => {
             </Paper>
           )}
           <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-            <Typography variant="h6">
+              <Typography variant="h6">
               {loading
                 ? 'Searching...'
                 : isSimilarMode
@@ -1965,16 +1952,9 @@ const SearchResults: React.FC = () => {
                   : shouldShowFallback
                     ? `Showing previous results (${paginatedNodes.length}) while the index refreshes`
                     : displayTotal > 0
-                      ? previewStatusFilterApplied
-                        ? `Showing ${paginatedNodes.length} result${paginatedNodes.length === 1 ? '' : 's'} on this page`
-                        : `Showing ${paginatedNodes.length} of ${displayTotal} results`
+                      ? `Showing ${paginatedNodes.length} of ${displayTotal} results`
                       : '0 results found'}
             </Typography>
-            {previewStatusFilterApplied && displayTotal > 0 && !loading && !isSimilarMode && !shouldShowFallback && (
-              <Typography variant="caption" color="text.secondary">
-                Preview status filters apply per page. Clear the filter to page through all results.
-              </Typography>
-            )}
             <FormControl size="small" sx={{ minWidth: 150 }}>
               <InputLabel>Sort by</InputLabel>
               <Select value={sortBy} onChange={(e) => setSortBy(e.target.value)} label="Sort by">

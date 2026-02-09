@@ -281,6 +281,7 @@ const AdvancedSearchPage: React.FC = () => {
           createdBy: effectiveCreators.length > 0 ? effectiveCreators : undefined,
           tags: effectiveTags.length > 0 ? effectiveTags : undefined,
           categories: effectiveCategories.length > 0 ? effectiveCategories : undefined,
+          previewStatuses: effectivePreviewStatuses.length > 0 ? effectivePreviewStatuses : undefined,
           modifiedFrom: dateFrom,
           minSize: effectiveMinSize,
           maxSize: effectiveMaxSize,
@@ -399,8 +400,6 @@ const AdvancedSearchPage: React.FC = () => {
     handleSearch(value);
   };
 
-  const previewStatusFilterApplied = selectedPreviewStatuses.length > 0;
-
   const previewStatusCounts = useMemo(() => results.reduce(
     (acc, result) => {
       if (result.nodeType === 'FOLDER') {
@@ -428,24 +427,6 @@ const AdvancedSearchPage: React.FC = () => {
       PENDING: 0,
     }
   ), [results]);
-
-  const statusFilteredResults = useMemo(
-    () => (previewStatusFilterApplied
-      ? results.filter((result) => {
-          if (result.nodeType === 'FOLDER') {
-            return false;
-          }
-          const status = getEffectivePreviewStatus(
-            result.previewStatus,
-            result.previewFailureCategory,
-            result.mimeType,
-            result.previewFailureReason
-          );
-          return selectedPreviewStatuses.includes(status);
-        })
-      : results),
-    [previewStatusFilterApplied, results, selectedPreviewStatuses]
-  );
 
   const failedPreviewResults = useMemo(
     () => results.filter((result) => result.nodeType !== 'FOLDER'
@@ -507,25 +488,24 @@ const AdvancedSearchPage: React.FC = () => {
   }, [previewQueueStatusById]);
 
   const togglePreviewStatus = useCallback((status: string) => {
-    setSelectedPreviewStatuses((prev) => {
-      const next = prev.includes(status)
-        ? prev.filter((value) => value !== status)
-        : [...prev, status];
-      syncSearchStateToUrl({
-        query,
-        page,
-        previewStatuses: next,
-        dateRange,
-        mimeTypes: selectedMimeTypes,
-        creators: selectedCreators,
-        tags: selectedTags,
-        categories: selectedCategories,
-        minSize,
-        maxSize,
-      });
-      return next;
+    const next = selectedPreviewStatuses.includes(status)
+      ? selectedPreviewStatuses.filter((value) => value !== status)
+      : [...selectedPreviewStatuses, status];
+    setSelectedPreviewStatuses(next);
+    syncSearchStateToUrl({
+      query,
+      page: 1,
+      previewStatuses: next,
+      dateRange,
+      mimeTypes: selectedMimeTypes,
+      creators: selectedCreators,
+      tags: selectedTags,
+      categories: selectedCategories,
+      minSize,
+      maxSize,
     });
-  }, [dateRange, maxSize, minSize, page, query, selectedCategories, selectedCreators, selectedMimeTypes, selectedTags, syncSearchStateToUrl]);
+    void handleSearch(1, { previewStatuses: next });
+  }, [dateRange, handleSearch, maxSize, minSize, query, selectedCategories, selectedCreators, selectedMimeTypes, selectedPreviewStatuses, selectedTags, syncSearchStateToUrl]);
 
   const handleRetryPreview = useCallback(async (result: SearchResult, force = false) => {
     if (!result?.id || result.nodeType === 'FOLDER') {
@@ -849,9 +829,6 @@ const AdvancedSearchPage: React.FC = () => {
               <Stack spacing={2}>
                 <Typography variant="body2" color="textSecondary">
                   Found {totalResults} results
-                  {previewStatusFilterApplied
-                    ? ` • Showing ${statusFilteredResults.length} filtered result(s) on current page`
-                    : ''}
                 </Typography>
                 <Paper variant="outlined" sx={{ p: 1.5 }}>
                   <Typography variant="subtitle2" gutterBottom>
@@ -860,11 +837,6 @@ const AdvancedSearchPage: React.FC = () => {
                   <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
                     Filter results by preview generation state.
                   </Typography>
-                  {previewStatusFilterApplied && (
-                    <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-                      Preview status filters apply to the current page only.
-                    </Typography>
-                  )}
                   <Box display="flex" flexWrap="wrap" gap={1}>
                     {[
                       { value: 'READY', label: 'Ready', color: 'success' as const, count: previewStatusCounts.READY },
@@ -890,7 +862,7 @@ const AdvancedSearchPage: React.FC = () => {
                         setSelectedPreviewStatuses([]);
                         syncSearchStateToUrl({
                           query,
-                          page,
+                          page: 1,
                           previewStatuses: [],
                           dateRange,
                           mimeTypes: selectedMimeTypes,
@@ -900,6 +872,7 @@ const AdvancedSearchPage: React.FC = () => {
                           minSize,
                           maxSize,
                         });
+                        void handleSearch(1, { previewStatuses: [] });
                       }}
                     >
                       Clear
@@ -962,14 +935,7 @@ const AdvancedSearchPage: React.FC = () => {
                     </Stack>
                   </Paper>
                 )}
-                {statusFilteredResults.length === 0 && previewStatusFilterApplied && (
-                  <Paper variant="outlined" sx={{ p: 2 }}>
-                    <Typography color="textSecondary">
-                      No results match the selected preview status filter on this page.
-                    </Typography>
-                  </Paper>
-                )}
-                {statusFilteredResults.map((result) => (
+                {results.map((result) => (
                   <Paper 
                     key={result.id} 
                     sx={{ p: 2, cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }}

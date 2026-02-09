@@ -467,16 +467,18 @@ class NodeService {
       filters.folderId = criteria.folderId;
       filters.includeChildren = criteria.includeChildren ?? true;
     }
+    if (criteria.previewStatuses?.length) {
+      filters.previewStatuses = criteria.previewStatuses;
+    }
 
-    const hasFilters = Object.keys(filters).length > 0;
     const hasNonScopeFilters = Object.keys(filters).some(
-      (key) => key !== 'folderId' && key !== 'includeChildren'
+      (key) => key !== 'folderId' && key !== 'includeChildren' && key !== 'previewStatuses'
     );
     const canUseFullTextEndpoint = Boolean(query) && !hasNonScopeFilters;
 
     // Fast path: for simple name-only searches, use the dedicated full-text endpoint.
     // It handles punctuation (e.g. hyphens) more reliably than the Criteria-based advanced endpoint.
-    const response = (!hasFilters && query) || (canUseFullTextEndpoint && criteria.folderId)
+    const response = canUseFullTextEndpoint
       ? await api.get<{ content: any[]; totalElements?: number }>('/search', {
           params: {
             q: query,
@@ -486,6 +488,7 @@ class NodeService {
             sortDirection: criteria.sortDirection,
             folderId: criteria.folderId,
             includeChildren: criteria.includeChildren ?? true,
+            previewStatus: criteria.previewStatuses?.length ? criteria.previewStatuses.join(',') : undefined,
           },
         })
       : await api.post<{ content: any[]; totalElements?: number }>('/search/advanced', {
