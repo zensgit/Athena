@@ -1,9 +1,24 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Box, Paper, Typography, IconButton, CircularProgress, Button, Tooltip } from '@mui/material';
+import {
+  Box,
+  Paper,
+  Typography,
+  IconButton,
+  CircularProgress,
+  Button,
+  Tooltip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+} from '@mui/material';
 import { DataGrid, GridColDef } from '@mui/x-data-grid';
 import {
   ContentPasteSearch,
+  ContentCopy,
   Delete,
+  Edit,
   Link,
   PlayArrow,
   Refresh,
@@ -25,6 +40,11 @@ const SavedSearchesPage: React.FC = () => {
   const navigate = useNavigate();
   const [items, setItems] = useState<SavedSearch[]>([]);
   const [loading, setLoading] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editDialogMode, setEditDialogMode] = useState<'rename' | 'duplicate'>('rename');
+  const [editDialogItem, setEditDialogItem] = useState<SavedSearch | null>(null);
+  const [editDialogName, setEditDialogName] = useState('');
+  const [editDialogSubmitting, setEditDialogSubmitting] = useState(false);
 
   const sortSavedSearches = useCallback((data: SavedSearch[]) => {
     const toTime = (value?: string) => {
@@ -130,6 +150,67 @@ const SavedSearchesPage: React.FC = () => {
     }
   };
 
+  const openRenameDialog = (item: SavedSearch) => {
+    setEditDialogMode('rename');
+    setEditDialogItem(item);
+    setEditDialogName(item.name || '');
+    setEditDialogOpen(true);
+  };
+
+  const openDuplicateDialog = (item: SavedSearch) => {
+    setEditDialogMode('duplicate');
+    setEditDialogItem(item);
+    setEditDialogName(`Copy of ${item.name || 'saved search'}`);
+    setEditDialogOpen(true);
+  };
+
+  const closeEditDialog = (options?: { force?: boolean }) => {
+    if (editDialogSubmitting && !options?.force) {
+      return;
+    }
+    setEditDialogOpen(false);
+    setEditDialogItem(null);
+    setEditDialogName('');
+    setEditDialogSubmitting(false);
+  };
+
+  const handleEditDialogClose = () => closeEditDialog();
+
+  const handleEditDialogSubmit = async () => {
+    const item = editDialogItem;
+    if (!item) {
+      closeEditDialog();
+      return;
+    }
+    const trimmed = editDialogName.trim();
+    if (!trimmed) {
+      toast.error('Please enter a name');
+      return;
+    }
+
+    setEditDialogSubmitting(true);
+    try {
+      if (editDialogMode === 'rename') {
+        const updated = await savedSearchService.update(item.id, { name: trimmed });
+        setItems((prev) => sortSavedSearches(
+          prev.map((current) => (current.id === updated.id ? updated : current))
+        ));
+        toast.success('Saved search renamed');
+      } else {
+        const clonedParams = item.queryParams
+          ? JSON.parse(JSON.stringify(item.queryParams))
+          : {};
+        await savedSearchService.save(trimmed, clonedParams);
+        toast.success('Saved search duplicated');
+        await loadSavedSearches();
+      }
+      closeEditDialog({ force: true });
+    } catch {
+      toast.error(editDialogMode === 'rename' ? 'Failed to rename saved search' : 'Failed to duplicate saved search');
+      setEditDialogSubmitting(false);
+    }
+  };
+
   const columns: GridColDef[] = [
     {
       field: 'pinned',
@@ -169,7 +250,7 @@ const SavedSearchesPage: React.FC = () => {
     {
       field: 'actions',
       headerName: '',
-      width: 210,
+      width: 300,
       sortable: false,
       renderCell: (params) => (
         <Box display="flex" gap={1}>
@@ -193,6 +274,20 @@ const SavedSearchesPage: React.FC = () => {
             onClick={() => handleCopyLink(params.row as SavedSearch)}
           >
             <Link fontSize="small" />
+          </IconButton>
+          <IconButton
+            size="small"
+            aria-label={`Rename saved search ${String((params.row as SavedSearch).name)}`}
+            onClick={() => openRenameDialog(params.row as SavedSearch)}
+          >
+            <Edit fontSize="small" />
+          </IconButton>
+          <IconButton
+            size="small"
+            aria-label={`Duplicate saved search ${String((params.row as SavedSearch).name)}`}
+            onClick={() => openDuplicateDialog(params.row as SavedSearch)}
+          >
+            <ContentCopy fontSize="small" />
           </IconButton>
           <IconButton
             size="small"
@@ -235,6 +330,33 @@ const SavedSearchesPage: React.FC = () => {
           />
         )}
       </Paper>
+
+      <Dialog open={editDialogOpen} onClose={handleEditDialogClose} maxWidth="sm" fullWidth>
+        <DialogTitle>{editDialogMode === 'rename' ? 'Rename Saved Search' : 'Duplicate Saved Search'}</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Name"
+            fullWidth
+            value={editDialogName}
+            onChange={(event) => setEditDialogName(event.target.value)}
+            disabled={editDialogSubmitting}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleEditDialogClose} disabled={editDialogSubmitting}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleEditDialogSubmit}
+            disabled={editDialogSubmitting}
+          >
+            {editDialogSubmitting ? 'Saving…' : 'Save'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

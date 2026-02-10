@@ -558,11 +558,7 @@ const SearchResults: React.FC = () => {
 
     (async () => {
       try {
-        const searches = await savedSearchService.list();
-        const savedSearch = (searches || []).find((item) => item.id === savedSearchId);
-        if (!savedSearch) {
-          throw new Error('saved_search_not_found');
-        }
+        const savedSearch = await savedSearchService.get(savedSearchId);
 
         await dispatch(executeSavedSearch(savedSearchId)).unwrap();
         if (!active) {
