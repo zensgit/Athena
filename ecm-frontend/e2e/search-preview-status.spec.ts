@@ -189,6 +189,17 @@ test('Preview status chips apply server-side filtering with correct totals', asy
   const textId = await uploadTextFile(request, folderId, textFilename, token);
   const binId = await uploadBinaryFile(request, folderId, binFilename, token);
 
+  // Ensure the binary upload is classified as UNSUPPORTED before validating server-side filtering.
+  // This avoids flakiness from the async preview queue leaving the document in PROCESSING.
+  const previewRes = await request.get(`${baseApiUrl}/api/v1/documents/${binId}/preview`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(previewRes.ok()).toBeTruthy();
+  const previewJson = (await previewRes.json()) as { supported?: boolean; status?: string; failureCategory?: string };
+  expect(previewJson.supported).toBe(false);
+  expect(previewJson.failureCategory).toBe('UNSUPPORTED');
+  expect(previewJson.status).toBe('UNSUPPORTED');
+
   for (const docId of [textId, binId]) {
     const indexRes = await request.post(`${baseApiUrl}/api/v1/search/index/${docId}`,
       { headers: { Authorization: `Bearer ${token}` } });
