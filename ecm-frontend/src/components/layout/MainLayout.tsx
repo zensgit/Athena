@@ -124,11 +124,19 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   };
 
   const handleSearch = () => {
+    const looksLikeUuid = (value: string) =>
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+
     // When invoked from a folder page, default to "search within this folder".
     // Avoid using the route param directly since "root" is an alias; currentNode.id is the real UUID.
-    if (nodeId && currentNode?.nodeType === 'FOLDER') {
+    const folderScopeId =
+      currentNode?.nodeType === 'FOLDER'
+        ? currentNode.id
+        : (nodeId && nodeId !== 'root' && looksLikeUuid(nodeId) ? nodeId : null);
+
+    if (folderScopeId) {
       dispatch(setSearchPrefill({
-        folderId: currentNode.id,
+        folderId: folderScopeId,
         includeChildren: true,
       }));
     }
