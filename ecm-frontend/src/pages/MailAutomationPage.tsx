@@ -332,9 +332,21 @@ const MailAutomationPage: React.FC = () => {
 
   const formatCount = (value?: number | null) => new Intl.NumberFormat().format(value ?? 0);
 
+  const isOauthReauthError = (value?: string | null) => {
+    const raw = (value || '').trim().toLowerCase();
+    if (!raw) {
+      return false;
+    }
+    return raw.includes('oauth_reauth_required') || raw.includes('invalid_grant');
+  };
+
   const summarizeError = (value?: string | null, maxLength = 160) => {
     if (!value) {
       return '';
+    }
+    if (isOauthReauthError(value)) {
+      // Keep this short: it's shown in chips/tooltips and should be actionable.
+      return 'OAuth reauth required (token revoked/expired). Reconnect OAuth.';
     }
     if (value.length <= maxLength) {
       return value;
@@ -2613,6 +2625,9 @@ const MailAutomationPage: React.FC = () => {
                           label={summaryAccount.oauthConnected ? 'OAuth connected' : 'OAuth not connected'}
                         />
                       )}
+                      {summaryAccount.security === 'OAUTH2' && isOauthReauthError(summaryAccount.lastFetchError) && (
+                        <Chip size="small" color="warning" label="OAuth reauth required" />
+                      )}
                       {summaryAccount.security === 'OAUTH2' && summaryAccount.oauthEnvConfigured === false && (
                         <Chip size="small" color="warning" label="OAuth env missing" />
                       )}
@@ -3606,6 +3621,14 @@ const MailAutomationPage: React.FC = () => {
                                 label={account.oauthConnected ? 'OAuth connected' : 'OAuth not connected'}
                               />
                             )}
+                            {account.security === 'OAUTH2' && isOauthReauthError(account.lastFetchError) && (
+                              <Chip
+                                size="small"
+                                variant="outlined"
+                                color="warning"
+                                label="OAuth reauth required"
+                              />
+                            )}
                             {account.lastFetchStatus === 'ERROR' && account.lastFetchError && (
                               <Typography variant="caption" color="error.main">
                                 {summarizeError(account.lastFetchError)}
@@ -3635,8 +3658,8 @@ const MailAutomationPage: React.FC = () => {
                           {account.security === 'OAUTH2'
                             && account.oauthProvider
                             && account.oauthProvider !== 'CUSTOM'
-                            && account.oauthConnected !== true && (
-                              <Tooltip title="Connect OAuth">
+                            && (account.oauthConnected !== true || isOauthReauthError(account.lastFetchError)) && (
+                              <Tooltip title={isOauthReauthError(account.lastFetchError) ? 'Reconnect OAuth' : 'Connect OAuth'}>
                                 <span>
                                   <IconButton
                                     size="small"

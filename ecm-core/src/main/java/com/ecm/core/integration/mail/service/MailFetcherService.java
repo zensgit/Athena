@@ -52,6 +52,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -153,6 +154,12 @@ public class MailFetcherService {
             try {
                 runWithSystemAuthenticationIfMissing(() -> processAccount(account, stats));
                 updateAccountFetchStatus(account, "SUCCESS", null);
+            } catch (MailOAuthReauthRequiredException e) {
+                status = "error";
+                reason = "oauth_reauth_required";
+                stats.accountErrors++;
+                log.warn("OAuth reauth required for mail account {}: {}", account.getName(), e.getMessage());
+                updateAccountFetchStatus(account, "ERROR", e.getMessage());
             } catch (Exception e) {
                 status = "error";
                 reason = "exception";
@@ -2880,8 +2887,34 @@ public class MailFetcherService {
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-        var response = restTemplate.postForEntity(tokenEndpoint, new HttpEntity<>(form, headers), Map.class);
-        Map<?, ?> body = response.getBody();
+        Map<?, ?> body;
+        try {
+            var response = restTemplate.postForEntity(tokenEndpoint, new HttpEntity<>(form, headers), Map.class);
+            body = response.getBody();
+        } catch (HttpStatusCodeException ex) {
+            // Detect non-retryable "invalid_grant" and force reconnect by clearing stored tokens.
+            var parsed = MailOAuthTokenErrorParser.parse(ex.getResponseBodyAsString()).orElse(null);
+            if (parsed != null) {
+                if ("invalid_grant".equalsIgnoreCase(parsed.error())) {
+                    clearStoredOAuthTokens(account);
+                    try {
+                        accountRepository.save(account);
+                    } catch (Exception saveError) {
+                        log.warn("Failed to persist OAuth token reset for account {}", account.getName(), saveError);
+                    }
+                    oauthSessionByAccount.remove(account.getId());
+                    throw new MailOAuthReauthRequiredException(account.getId(), parsed.error(), parsed.errorDescription());
+                }
+
+                String message = "OAuth token refresh failed: " + parsed.error();
+                if (parsed.errorDescription() != null && !parsed.errorDescription().isBlank()) {
+                    message += " - " + parsed.errorDescription().trim();
+                }
+                throw new IllegalStateException(message, ex);
+            }
+            throw ex;
+        }
+
         if (body == null || body.get("access_token") == null) {
             throw new IllegalStateException("OAuth token refresh failed for account " + account.getName());
         }
@@ -2891,6 +2924,12 @@ public class MailFetcherService {
         Long expiresIn = body.get("expires_in") instanceof Number number ? number.longValue() : null;
 
         return new OAuthTokenResponse(accessToken, refreshToken, expiresIn);
+    }
+
+    private void clearStoredOAuthTokens(MailAccount account) {
+        account.setOauthAccessToken(null);
+        account.setOauthRefreshToken(null);
+        account.setOauthTokenExpiresAt(null);
     }
 
     private String resolveOAuthTokenEndpoint(MailAccount account) {
