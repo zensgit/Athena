@@ -56,6 +56,63 @@ public class SavedSearchService {
     }
 
     /**
+     * Get a single saved search for the current user.
+     */
+    @Transactional(readOnly = true)
+    public SavedSearch getMySavedSearch(UUID id) {
+        String userId = securityService.getCurrentUser();
+        SavedSearch search = savedSearchRepository.findById(id)
+            .orElseThrow(() -> new IllegalArgumentException("Saved search not found"));
+
+        if (!search.getUserId().equals(userId)) {
+            throw new SecurityException("Not authorized to access this saved search");
+        }
+
+        return search;
+    }
+
+    /**
+     * Update name and/or query params for a saved search owned by the current user.
+     * Null fields are treated as "no change".
+     */
+    @Transactional
+    public SavedSearch updateSavedSearch(UUID id, String name, Map<String, Object> queryParams) {
+        String userId = securityService.getCurrentUser();
+        SavedSearch search = savedSearchRepository.findById(id)
+            .orElseThrow(() -> new IllegalArgumentException("Saved search not found"));
+
+        if (!search.getUserId().equals(userId)) {
+            throw new SecurityException("Not authorized to update this saved search");
+        }
+
+        boolean updated = false;
+
+        if (name != null) {
+            String trimmed = name.trim();
+            if (trimmed.isEmpty()) {
+                throw new IllegalArgumentException("Saved search name must not be blank");
+            }
+            if (!trimmed.equals(search.getName()) && savedSearchRepository.existsByUserIdAndName(userId, trimmed)) {
+                throw new IllegalArgumentException("A saved search with this name already exists");
+            }
+            search.setName(trimmed);
+            updated = true;
+        }
+
+        if (queryParams != null) {
+            search.setQueryParams(queryParams);
+            updated = true;
+        }
+
+        if (!updated) {
+            throw new IllegalArgumentException("Nothing to update");
+        }
+
+        log.info("User {} updated saved search {}", userId, id);
+        return savedSearchRepository.save(search);
+    }
+
+    /**
      * Update pin status for a saved search.
      */
     @Transactional
