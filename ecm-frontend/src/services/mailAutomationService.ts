@@ -354,6 +354,10 @@ class MailAutomationService {
     return api.delete(`/integration/mail/accounts/${accountId}`);
   }
 
+  async resetOAuth(accountId: string): Promise<MailAccount> {
+    return api.post<MailAccount>(`/integration/mail/accounts/${accountId}/oauth/reset`);
+  }
+
   async listRules(): Promise<MailRule[]> {
     return api.get<MailRule[]>('/integration/mail/rules');
   }

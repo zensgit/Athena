@@ -125,6 +125,9 @@ public class MailFetcherService {
     private volatile MailFetchSummary lastFetchSummary;
     private volatile Instant lastFetchAt;
 
+    private record AccountSkipDecision(String reason, boolean throttlePollInterval) {
+    }
+
     @Scheduled(fixedDelayString = "${ecm.mail.fetcher.poll-interval-ms:60000}")
     public void fetchAllAccounts() {
         fetchAllAccounts(false);
@@ -144,6 +147,16 @@ public class MailFetcherService {
             if (!force && !shouldProcessAccount(account, now)) {
                 stats.skippedAccounts++;
                 incrementAccountMetric("skipped", "poll_interval");
+                continue;
+            }
+
+            AccountSkipDecision skipDecision = resolveAccountSkipDecision(account);
+            if (skipDecision != null) {
+                stats.skippedAccounts++;
+                incrementAccountMetric("skipped", skipDecision.reason());
+                if (skipDecision.throttlePollInterval()) {
+                    lastPollByAccount.put(account.getId(), now);
+                }
                 continue;
             }
 
@@ -182,6 +195,28 @@ public class MailFetcherService {
         lastFetchSummary = summary;
         lastFetchAt = Instant.now();
         return summary;
+    }
+
+    private AccountSkipDecision resolveAccountSkipDecision(MailAccount account) {
+        if (account.getSecurity() != MailAccount.SecurityType.OAUTH2) {
+            return null;
+        }
+
+        OAuthEnvCheckResult envCheck = checkOAuthEnv(account);
+        if (!envCheck.configured()) {
+            // Environment/credential-key based secrets are missing; avoid noisy failures.
+            return new AccountSkipDecision("oauth_unconfigured", true);
+        }
+
+        if (!hasCredentialKey(account)) {
+            String refreshToken = account.getOauthRefreshToken();
+            if (refreshToken == null || refreshToken.isBlank()) {
+                // Account exists but has not been connected via OAuth callback yet.
+                return new AccountSkipDecision("oauth_not_connected", false);
+            }
+        }
+
+        return null;
     }
 
     public MailFetchSummaryStatus getLastFetchSummary() {
@@ -302,6 +337,31 @@ public class MailFetcherService {
                 continue;
             }
 
+            AccountSkipDecision skipDecision = resolveAccountSkipDecision(account);
+            if (skipDecision != null) {
+                stats.skippedAccounts++;
+                MailFetchDebugAccountResult result = new MailFetchDebugAccountResult(
+                    account.getId(),
+                    account.getName(),
+                    false,
+                    skipDecision.reason(),
+                    null,
+                    rules.size(),
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    Map.of(skipDecision.reason(), 1),
+                    Map.of(),
+                    List.of()
+                );
+                stats.addAccountResult(result);
+                continue;
+            }
+
             stats.attemptedAccounts++;
             try {
                 MailFetchDebugAccountResult result = runWithSystemAuthenticationWithResult(
@@ -347,6 +407,10 @@ public class MailFetcherService {
             log.info("Mail fetch debug top skip reasons: {}", topReasons);
         }
         return new MailFetchDebugResult(summary, effectiveMaxMessages, stats.skipReasons, stats.accountResults);
+    }
+
+    public void evictOAuthSession(UUID accountId) {
+        oauthSessionByAccount.remove(accountId);
     }
 
     public MailRulePreviewResult previewRule(UUID accountId, UUID ruleId, Integer maxMessagesPerFolder) {

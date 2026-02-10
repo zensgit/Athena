@@ -91,6 +91,54 @@ test('Mail automation test connection and fetch summary', async ({ page, request
   });
 });
 
+test('Mail automation can reset OAuth state (e2e safe)', async ({ page, request }) => {
+  await waitForApiReady(request);
+  const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+
+  const accountName = `e2e-oauth-reset-${Date.now()}`;
+  let accountId: string | null = null;
+  try {
+    const createRes = await request.post(`${apiUrl}/api/v1/integration/mail/accounts`, {
+      headers: { Authorization: `Bearer ${token}` },
+      data: {
+        name: accountName,
+        host: 'imap.gmail.com',
+        port: 993,
+        username: 'e2e@example.com',
+        security: 'OAUTH2',
+        enabled: false,
+        pollIntervalMinutes: 10,
+        oauthProvider: 'GOOGLE',
+      },
+    });
+    expect(createRes.ok()).toBeTruthy();
+    const created = (await createRes.json()) as { id: string };
+    accountId = created.id;
+
+    await gotoWithAuthE2E(page, '/admin/mail', defaultUsername, defaultPassword, { token });
+    await page.waitForURL(/\/admin\/mail/, { timeout: 60_000 });
+
+    const cell = page.getByRole('cell', { name: accountName });
+    await expect(cell).toBeVisible({ timeout: 60_000 });
+    const row = cell.locator('xpath=ancestor::tr');
+
+    const resetButton = row.getByRole('button', { name: /reset oauth/i });
+    await expect(resetButton).toBeVisible({ timeout: 30_000 });
+
+    page.once('dialog', (dialog) => dialog.accept());
+    await resetButton.click();
+
+    const toastMsg = page.locator('.Toastify__toast').last();
+    await expect(toastMsg).toContainText(/OAuth reset|Failed to reset OAuth/i, { timeout: 60_000 });
+  } finally {
+    if (accountId) {
+      await request.delete(`${apiUrl}/api/v1/integration/mail/accounts/${accountId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    }
+  }
+});
+
 test('Mail automation lists folders and shows folder helper text', async ({ page, request }) => {
   await waitForApiReady(request);
   const token = await fetchAccessToken(request, defaultUsername, defaultPassword);

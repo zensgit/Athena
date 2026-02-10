@@ -299,6 +299,10 @@ public class MailAutomationController {
         return true;
     }
 
+    private boolean isOauthReauthError(String value) {
+        return value != null && value.startsWith("OAUTH_REAUTH_REQUIRED:");
+    }
+
     @GetMapping("/oauth/authorize")
     @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Start OAuth connect", description = "Generate OAuth authorization URL for an account")
@@ -364,6 +368,31 @@ public class MailAutomationController {
     @Operation(summary = "List folders", description = "List available IMAP folders for a mail account")
     public ResponseEntity<List<String>> listAccountFolders(@PathVariable UUID id) {
         return ResponseEntity.ok(fetcherService.listFolders(id));
+    }
+
+    @PostMapping("/accounts/{id}/oauth/reset")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Reset OAuth state", description = "Clear stored OAuth tokens/cache so the account can reconnect")
+    public ResponseEntity<MailAccountResponse> resetOAuth(@PathVariable UUID id) {
+        MailAccount account = accountRepository.findById(id)
+            .orElseThrow(() -> new IllegalArgumentException("Mail account not found: " + id));
+        if (account.getSecurity() != MailAccount.SecurityType.OAUTH2) {
+            throw new IllegalArgumentException("Account is not configured for OAuth2: " + account.getName());
+        }
+
+        account.setOauthAccessToken(null);
+        account.setOauthRefreshToken(null);
+        account.setOauthTokenExpiresAt(null);
+
+        // If the last failure indicates OAuth must be reconnected, clear the sticky error/status so the UI can recover.
+        if (isOauthReauthError(account.getLastFetchError())) {
+            account.setLastFetchError(null);
+            account.setLastFetchStatus(null);
+        }
+
+        fetcherService.evictOAuthSession(account.getId());
+        MailAccount saved = accountRepository.save(account);
+        return ResponseEntity.ok(MailAccountResponse.from(saved, fetcherService.checkOAuthEnv(saved)));
     }
 
     @GetMapping("/diagnostics")

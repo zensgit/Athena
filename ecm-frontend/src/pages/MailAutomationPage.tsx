@@ -42,6 +42,7 @@ import {
   Visibility,
   ListAlt,
   ContentCopy,
+  RestartAlt,
   ArrowUpward,
   ArrowDownward,
 } from '@mui/icons-material';
@@ -250,6 +251,7 @@ const MailAutomationPage: React.FC = () => {
     }
   });
   const [testingAccountId, setTestingAccountId] = useState<string | null>(null);
+  const [resettingAccountId, setResettingAccountId] = useState<string | null>(null);
 
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
   const [accountForm, setAccountForm] = useState<MailAccountRequest>(DEFAULT_ACCOUNT_FORM);
@@ -1457,6 +1459,34 @@ const MailAutomationPage: React.FC = () => {
       toast.error('Failed to test connection');
     } finally {
       setTestingAccountId((current) => (current === accountId ? null : current));
+    }
+  };
+
+  const handleResetOAuth = async (account: MailAccount) => {
+    if (!account.id) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Reset OAuth state for "${account.name}"? You will need to reconnect OAuth to fetch mail again.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setResettingAccountId(account.id);
+    try {
+      await mailAutomationService.resetOAuth(account.id);
+      toast.success('OAuth reset. Reconnect required.');
+      const ok = await loadAll({ silent: true });
+      if (ok) {
+        await loadDiagnostics({ silent: true });
+        await loadRuntimeMetrics({ silent: true });
+      }
+    } catch {
+      toast.error('Failed to reset OAuth');
+    } finally {
+      setResettingAccountId((current) => (current === account.id ? null : current));
     }
   };
 
@@ -3677,6 +3707,24 @@ const MailAutomationPage: React.FC = () => {
                                   </IconButton>
                                 </span>
                               </Tooltip>
+                          )}
+                          {account.security === 'OAUTH2' && (
+                            <Tooltip title="Reset OAuth">
+                              <span>
+                                <IconButton
+                                  size="small"
+                                  aria-label="Reset OAuth"
+                                  onClick={() => handleResetOAuth(account)}
+                                  disabled={resettingAccountId === account.id}
+                                >
+                                  {resettingAccountId === account.id ? (
+                                    <CircularProgress size={16} />
+                                  ) : (
+                                    <RestartAlt fontSize="small" />
+                                  )}
+                                </IconButton>
+                              </span>
+                            </Tooltip>
                           )}
                           <Tooltip title="Test connection">
                             <span>
