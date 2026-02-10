@@ -113,6 +113,7 @@ const SearchResults: React.FC = () => {
   const [pinnedSavedSearchesError, setPinnedSavedSearchesError] = useState<string | null>(null);
   const [pinnedSavedSearchMenuAnchorEl, setPinnedSavedSearchMenuAnchorEl] = useState<null | HTMLElement>(null);
   const pinnedSavedSearchMenuOpen = Boolean(pinnedSavedSearchMenuAnchorEl);
+  const lastSavedSearchIdFromUrlRef = useRef<string>('');
   const [sortBy, setSortBy] = useState('relevance');
   const [page, setPage] = useState(1);
   const pageSize = 20;
@@ -540,6 +541,45 @@ const SearchResults: React.FC = () => {
       setQuickSearch(lastSearchCriteria.name || '');
     }
   }, [lastSearchCriteria]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const savedSearchId = (params.get('savedSearchId') || '').trim();
+    if (!savedSearchId) {
+      return;
+    }
+
+    if (savedSearchId === lastSavedSearchIdFromUrlRef.current) {
+      return;
+    }
+    lastSavedSearchIdFromUrlRef.current = savedSearchId;
+
+    let active = true;
+
+    (async () => {
+      try {
+        const searches = await savedSearchService.list();
+        const savedSearch = (searches || []).find((item) => item.id === savedSearchId);
+        if (!savedSearch) {
+          throw new Error('saved_search_not_found');
+        }
+
+        await dispatch(executeSavedSearch(savedSearchId)).unwrap();
+        if (!active) {
+          return;
+        }
+        dispatch(setLastSearchCriteria(buildSearchCriteriaFromSavedSearch(savedSearch)));
+      } catch {
+        if (active) {
+          toast.error('Failed to load saved search');
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [dispatch, location.search]);
 
   useEffect(() => {
     const prefix = quickSearch.trim();

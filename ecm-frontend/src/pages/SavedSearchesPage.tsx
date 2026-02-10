@@ -4,6 +4,7 @@ import { DataGrid, GridColDef } from '@mui/x-data-grid';
 import {
   ContentPasteSearch,
   Delete,
+  Link,
   PlayArrow,
   Refresh,
   SavedSearch as SavedSearchIcon,
@@ -119,6 +120,16 @@ const SavedSearchesPage: React.FC = () => {
     toast.success('Loaded saved search into Advanced Search');
   };
 
+  const handleCopyLink = async (item: SavedSearch) => {
+    const url = `${window.location.origin}/search-results?savedSearchId=${encodeURIComponent(item.id)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success('Saved search link copied');
+    } catch {
+      toast.error('Failed to copy link');
+    }
+  };
+
   const columns: GridColDef[] = [
     {
       field: 'pinned',
@@ -158,7 +169,7 @@ const SavedSearchesPage: React.FC = () => {
     {
       field: 'actions',
       headerName: '',
-      width: 170,
+      width: 210,
       sortable: false,
       renderCell: (params) => (
         <Box display="flex" gap={1}>
@@ -175,6 +186,13 @@ const SavedSearchesPage: React.FC = () => {
             onClick={() => handleRun(params.row as SavedSearch)}
           >
             <PlayArrow fontSize="small" />
+          </IconButton>
+          <IconButton
+            size="small"
+            aria-label={`Copy saved search link ${String((params.row as SavedSearch).name)}`}
+            onClick={() => handleCopyLink(params.row as SavedSearch)}
+          >
+            <Link fontSize="small" />
           </IconButton>
           <IconButton
             size="small"
