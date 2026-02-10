@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Autocomplete,
   Box,
   Paper,
   Typography,
@@ -97,6 +98,10 @@ const SearchResults: React.FC = () => {
   const { user } = useAppSelector((state) => state.auth);
   const { sidebarAutoCollapse } = useAppSelector((state) => state.ui);
   const [quickSearch, setQuickSearch] = useState('');
+  const [quickSearchSuggestions, setQuickSearchSuggestions] = useState<string[]>([]);
+  const [quickSearchSuggestionsLoading, setQuickSearchSuggestionsLoading] = useState(false);
+  const quickSearchSuggestDebounceRef = useRef<number | null>(null);
+  const lastQuickSearchSuggestQueryRef = useRef<string>('');
   const [sortBy, setSortBy] = useState('relevance');
   const [page, setPage] = useState(1);
   const pageSize = 20;
@@ -475,6 +480,56 @@ const SearchResults: React.FC = () => {
       setQuickSearch(lastSearchCriteria.name || '');
     }
   }, [lastSearchCriteria]);
+
+  useEffect(() => {
+    const prefix = quickSearch.trim();
+    if (prefix.length < 2) {
+      lastQuickSearchSuggestQueryRef.current = '';
+      setQuickSearchSuggestions([]);
+      setQuickSearchSuggestionsLoading(false);
+      if (quickSearchSuggestDebounceRef.current) {
+        window.clearTimeout(quickSearchSuggestDebounceRef.current);
+        quickSearchSuggestDebounceRef.current = null;
+      }
+      return;
+    }
+
+    if (prefix === lastQuickSearchSuggestQueryRef.current) {
+      return;
+    }
+
+    if (quickSearchSuggestDebounceRef.current) {
+      window.clearTimeout(quickSearchSuggestDebounceRef.current);
+    }
+
+    let active = true;
+    quickSearchSuggestDebounceRef.current = window.setTimeout(() => {
+      lastQuickSearchSuggestQueryRef.current = prefix;
+      setQuickSearchSuggestionsLoading(true);
+      nodeService.getSearchSuggestions(prefix, 10)
+        .then((suggestions) => {
+          if (!active) return;
+          setQuickSearchSuggestions(Array.isArray(suggestions) ? suggestions : []);
+        })
+        .catch(() => {
+          if (!active) return;
+          setQuickSearchSuggestions([]);
+        })
+        .finally(() => {
+          if (active) {
+            setQuickSearchSuggestionsLoading(false);
+          }
+        });
+    }, 250);
+
+    return () => {
+      active = false;
+      if (quickSearchSuggestDebounceRef.current) {
+        window.clearTimeout(quickSearchSuggestDebounceRef.current);
+        quickSearchSuggestDebounceRef.current = null;
+      }
+    };
+  }, [quickSearch]);
 
   useEffect(() => {
     const state = location.state as { similarSourceId?: string; similarSourceName?: string } | null;
@@ -1351,26 +1406,57 @@ const SearchResults: React.FC = () => {
       <Paper sx={{ p: 2, mb: 3 }}>
         <form onSubmit={handleQuickSearch}>
           <Box display="flex" alignItems="center" gap={2}>
-            <TextField
+            <Autocomplete
+              freeSolo
               fullWidth
-              placeholder="Quick search by name..."
-              name="quickSearch"
-              value={quickSearch}
-              onChange={(e) => setQuickSearch(e.target.value)}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <Search />
-                  </InputAdornment>
-                ),
-                endAdornment: quickSearch && (
-                  <InputAdornment position="end">
-                    <IconButton onClick={handleClearSearch} edge="end">
-                      <Clear />
-                    </IconButton>
-                  </InputAdornment>
-                ),
+              options={quickSearchSuggestions}
+              inputValue={quickSearch}
+              onInputChange={(_, value, reason) => {
+                if (reason === 'reset') {
+                  return;
+                }
+                setQuickSearch(value);
               }}
+              onChange={(_, value) => {
+                if (typeof value === 'string') {
+                  setQuickSearch(value);
+                }
+              }}
+              filterOptions={(options) => options}
+              loading={quickSearchSuggestionsLoading}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  placeholder="Quick search by name..."
+                  name="quickSearch"
+                  InputProps={{
+                    ...params.InputProps,
+                    startAdornment: (
+                      <>
+                        <InputAdornment position="start">
+                          <Search />
+                        </InputAdornment>
+                        {params.InputProps.startAdornment}
+                      </>
+                    ),
+                    endAdornment: (
+                      <>
+                        {quickSearchSuggestionsLoading ? (
+                          <CircularProgress color="inherit" size={18} />
+                        ) : null}
+                        {quickSearch ? (
+                          <InputAdornment position="end">
+                            <IconButton onClick={handleClearSearch} edge="end" size="small">
+                              <Clear />
+                            </IconButton>
+                          </InputAdornment>
+                        ) : null}
+                        {params.InputProps.endAdornment}
+                      </>
+                    ),
+                  }}
+                />
+              )}
             />
             <Button
               variant="outlined"

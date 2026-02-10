@@ -530,6 +530,10 @@ class NodeService {
     return api.get<string[]>('/search/spellcheck', { params: { q: query, limit } });
   }
 
+  async getSearchSuggestions(prefix: string, limit = 10): Promise<string[]> {
+    return api.get<string[]>('/search/suggestions', { params: { prefix, limit } });
+  }
+
   async getSearchDiagnostics(): Promise<SearchDiagnostics> {
     return api.get<SearchDiagnostics>('/search/diagnostics');
   }
