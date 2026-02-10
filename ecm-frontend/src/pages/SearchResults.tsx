@@ -14,15 +14,17 @@ import {
   CardContent,
   CardActions,
   Button,
+  Menu,
+  MenuItem,
   Pagination,
   CircularProgress,
   Alert,
   FormControl,
   InputLabel,
   Select,
-  MenuItem,
   Divider,
   Checkbox,
+  ListItemIcon,
   ListItemText,
   Tooltip,
 } from '@mui/material';
@@ -38,16 +40,20 @@ import {
   FilterList,
   Refresh,
   InfoOutlined,
+  Star,
+  StarBorder,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppSelector, useAppDispatch } from 'store';
-import { fetchSearchFacets, searchNodes } from 'store/slices/nodeSlice';
+import { executeSavedSearch, fetchSearchFacets, searchNodes, setLastSearchCriteria } from 'store/slices/nodeSlice';
 import { setSearchOpen, setSidebarOpen } from 'store/slices/uiSlice';
 import nodeService, { SearchDiagnostics, SearchIndexStats, SearchRebuildStatus } from 'services/nodeService';
+import savedSearchService, { SavedSearch } from 'services/savedSearchService';
 import { Node, SearchCriteria } from 'types';
 import { toast } from 'react-toastify';
 import Highlight from 'components/search/Highlight';
+import { buildSearchCriteriaFromSavedSearch } from 'utils/savedSearchUtils';
 import {
   formatPreviewFailureReasonLabel,
   getEffectivePreviewStatus,
@@ -102,6 +108,11 @@ const SearchResults: React.FC = () => {
   const [quickSearchSuggestionsLoading, setQuickSearchSuggestionsLoading] = useState(false);
   const quickSearchSuggestDebounceRef = useRef<number | null>(null);
   const lastQuickSearchSuggestQueryRef = useRef<string>('');
+  const [pinnedSavedSearches, setPinnedSavedSearches] = useState<SavedSearch[]>([]);
+  const [pinnedSavedSearchesLoading, setPinnedSavedSearchesLoading] = useState(false);
+  const [pinnedSavedSearchesError, setPinnedSavedSearchesError] = useState<string | null>(null);
+  const [pinnedSavedSearchMenuAnchorEl, setPinnedSavedSearchMenuAnchorEl] = useState<null | HTMLElement>(null);
+  const pinnedSavedSearchMenuOpen = Boolean(pinnedSavedSearchMenuAnchorEl);
   const [sortBy, setSortBy] = useState('relevance');
   const [page, setPage] = useState(1);
   const pageSize = 20;
@@ -176,6 +187,55 @@ const SearchResults: React.FC = () => {
     setSimilarLoadingId(null);
     setSimilarError(null);
   }, []);
+
+  const loadPinnedSavedSearches = useCallback(async () => {
+    setPinnedSavedSearchesLoading(true);
+    try {
+      const searches = await savedSearchService.list();
+      const pinned = (searches || []).filter((item) => item.pinned);
+      pinned.sort((a, b) => {
+        const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return bTime - aTime;
+      });
+      setPinnedSavedSearches(pinned);
+      setPinnedSavedSearchesError(null);
+    } catch {
+      setPinnedSavedSearches([]);
+      setPinnedSavedSearchesError('Failed to load pinned saved searches');
+    } finally {
+      setPinnedSavedSearchesLoading(false);
+    }
+  }, []);
+
+  const handleOpenPinnedSavedSearchMenu = (event: React.MouseEvent<HTMLElement>) => {
+    setPinnedSavedSearchMenuAnchorEl(event.currentTarget);
+    loadPinnedSavedSearches();
+  };
+
+  const handleClosePinnedSavedSearchMenu = () => {
+    setPinnedSavedSearchMenuAnchorEl(null);
+  };
+
+  const handleRunPinnedSavedSearch = async (item: SavedSearch) => {
+    handleClosePinnedSavedSearchMenu();
+    try {
+      await dispatch(executeSavedSearch(item.id)).unwrap();
+      dispatch(setLastSearchCriteria(buildSearchCriteriaFromSavedSearch(item)));
+    } catch {
+      toast.error('Failed to execute saved search');
+    }
+  };
+
+  const handleUnpinSavedSearch = async (item: SavedSearch) => {
+    try {
+      await savedSearchService.setPinned(item.id, false);
+      setPinnedSavedSearches((prev) => prev.filter((current) => current.id !== item.id));
+      toast.success('Unpinned saved search');
+    } catch {
+      toast.error('Failed to update pin');
+    }
+  };
 
   const runSearch = useCallback(
     (criteria: SearchCriteria) => {
@@ -1460,6 +1520,14 @@ const SearchResults: React.FC = () => {
             />
             <Button
               variant="outlined"
+              startIcon={<Star fontSize="small" color="warning" />}
+              onClick={handleOpenPinnedSavedSearchMenu}
+              aria-label="Pinned saved searches"
+            >
+              Saved
+            </Button>
+            <Button
+              variant="outlined"
               startIcon={<FilterList />}
               onClick={handleAdvancedSearch}
             >
@@ -1467,6 +1535,79 @@ const SearchResults: React.FC = () => {
             </Button>
           </Box>
         </form>
+        <Menu
+          anchorEl={pinnedSavedSearchMenuAnchorEl}
+          open={pinnedSavedSearchMenuOpen}
+          onClose={handleClosePinnedSavedSearchMenu}
+          keepMounted
+        >
+          <MenuItem disabled>
+            <ListItemText
+              primary="Pinned Saved Searches"
+              secondary="Quickly run your pinned searches"
+            />
+          </MenuItem>
+          <Divider />
+          {pinnedSavedSearchesLoading ? (
+            <MenuItem disabled>
+              <ListItemIcon>
+                <CircularProgress size={18} />
+              </ListItemIcon>
+              <ListItemText primary="Loading pinned searches…" />
+            </MenuItem>
+          ) : pinnedSavedSearchesError ? (
+            <MenuItem disabled>
+              <ListItemText primary={pinnedSavedSearchesError} />
+            </MenuItem>
+          ) : pinnedSavedSearches.length === 0 ? (
+            <MenuItem disabled>
+              <ListItemText primary="No pinned searches yet." secondary="Pin one in Saved Searches or Admin Dashboard." />
+            </MenuItem>
+          ) : (
+            pinnedSavedSearches.map((item) => (
+              <MenuItem
+                key={item.id}
+                onClick={() => handleRunPinnedSavedSearch(item)}
+                aria-label={`Run saved search ${item.name}`}
+              >
+                <ListItemIcon>
+                  <Star fontSize="small" color="warning" />
+                </ListItemIcon>
+                <ListItemText primary={item.name} />
+                <Tooltip title="Unpin">
+                  <IconButton
+                    size="small"
+                    aria-label={`Unpin saved search ${item.name}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleUnpinSavedSearch(item);
+                    }}
+                  >
+                    <StarBorder fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </MenuItem>
+            ))
+          )}
+          <Divider />
+          <MenuItem
+            onClick={() => {
+              handleClosePinnedSavedSearchMenu();
+              navigate('/saved-searches');
+            }}
+          >
+            <ListItemText primary="Manage saved searches" />
+          </MenuItem>
+          <MenuItem
+            onClick={() => loadPinnedSavedSearches()}
+            aria-label="Refresh pinned saved searches"
+          >
+            <ListItemIcon>
+              <Refresh fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="Refresh" />
+          </MenuItem>
+        </Menu>
       </Paper>
 
       {lastSearchCriteria?.folderId && (

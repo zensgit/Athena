@@ -28,5 +28,7 @@ export const buildSearchCriteriaFromSavedSearch = (item: SavedSearch): SearchCri
     minSize: typeof filters.minSize === 'number' ? filters.minSize : undefined,
     maxSize: typeof filters.maxSize === 'number' ? filters.maxSize : undefined,
     path: typeof filters.path === 'string' ? filters.path : undefined,
+    folderId: typeof filters.folderId === 'string' ? filters.folderId : undefined,
+    includeChildren: typeof filters.includeChildren === 'boolean' ? filters.includeChildren : undefined,
   };
 };
