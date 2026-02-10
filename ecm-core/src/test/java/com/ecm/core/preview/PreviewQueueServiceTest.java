@@ -43,4 +43,32 @@ class PreviewQueueServiceTest {
         verify(documentRepository, atLeastOnce()).save(document);
         verify(searchIndexService, atLeastOnce()).updateDocument(document);
     }
+
+    @Test
+    void skipsEnqueueForUnsupportedWhenNotForced() {
+        DocumentRepository documentRepository = mock(DocumentRepository.class);
+        PreviewService previewService = mock(PreviewService.class);
+        SearchIndexService searchIndexService = mock(SearchIndexService.class);
+        PreviewQueueService service = new PreviewQueueService(documentRepository, previewService, searchIndexService);
+
+        ReflectionTestUtils.setField(service, "queueEnabled", true);
+        ReflectionTestUtils.setField(service, "batchSize", 1);
+
+        UUID documentId = UUID.randomUUID();
+        Document document = new Document();
+        document.setId(documentId);
+        document.setPreviewStatus(PreviewStatus.UNSUPPORTED);
+
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+
+        PreviewQueueService.PreviewQueueStatus status = service.enqueue(documentId, false);
+
+        assertEquals(PreviewStatus.UNSUPPORTED, status.previewStatus());
+        assertEquals(false, status.queued());
+        verify(documentRepository, never()).save(any());
+        verifyNoInteractions(searchIndexService);
+
+        service.processQueue();
+        verifyNoInteractions(previewService);
+    }
 }

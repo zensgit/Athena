@@ -60,7 +60,7 @@ public class PreviewQueueService {
             .orElseThrow(() -> new IllegalArgumentException("Document not found: " + documentId));
 
         PreviewStatus status = document.getPreviewStatus();
-        if (!force && status == PreviewStatus.READY) {
+        if (!force && (status == PreviewStatus.READY || status == PreviewStatus.UNSUPPORTED)) {
             return new PreviewQueueStatus(documentId, status, false, 0, null);
         }
 
