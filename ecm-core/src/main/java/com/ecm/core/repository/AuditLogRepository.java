@@ -100,6 +100,48 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
                                             @Param("to") LocalDateTime to,
                                             Pageable pageable);
 
+    /**
+     * Variant of {@link #findByFiltersAndCategory} that omits the nodeId predicate entirely.
+     *
+     * PostgreSQL can fail to infer the SQL type for a NULL UUID parameter when using patterns
+     * like "(:nodeId IS NULL OR a.nodeId = :nodeId)" (SQLState 42P18). This variant avoids that.
+     */
+    @Query("""
+        SELECT a FROM AuditLog a
+        WHERE (:username IS NULL OR :username = '' OR a.username = :username)
+          AND (:eventType IS NULL OR :eventType = '' OR a.eventType = :eventType)
+          AND a.eventTime >= COALESCE(:from, a.eventTime)
+          AND a.eventTime <= COALESCE(:to, a.eventTime)
+          AND (
+            :category IS NULL OR :category = ''
+            OR (:category = 'NODE' AND UPPER(a.eventType) LIKE 'NODE_%')
+            OR (:category = 'VERSION' AND UPPER(a.eventType) LIKE 'VERSION_%')
+            OR (:category = 'RULE' AND (UPPER(a.eventType) LIKE 'RULE_%' OR UPPER(a.eventType) LIKE 'SCHEDULED_RULE%'))
+            OR (:category = 'WORKFLOW' AND (UPPER(a.eventType) LIKE 'WORKFLOW_%' OR UPPER(a.eventType) LIKE 'STATUS_%'))
+            OR (:category = 'MAIL' AND UPPER(a.eventType) LIKE 'MAIL_%')
+            OR (:category = 'INTEGRATION' AND UPPER(a.eventType) LIKE 'WOPI_%')
+            OR (:category = 'SECURITY' AND UPPER(a.eventType) LIKE 'SECURITY_%')
+            OR (:category = 'PDF' AND UPPER(a.eventType) LIKE 'PDF_%')
+            OR (:category = 'OTHER' AND UPPER(a.eventType) NOT LIKE 'NODE_%'
+                AND UPPER(a.eventType) NOT LIKE 'VERSION_%'
+                AND UPPER(a.eventType) NOT LIKE 'RULE_%'
+                AND UPPER(a.eventType) NOT LIKE 'SCHEDULED_RULE%'
+                AND UPPER(a.eventType) NOT LIKE 'WORKFLOW_%'
+                AND UPPER(a.eventType) NOT LIKE 'STATUS_%'
+                AND UPPER(a.eventType) NOT LIKE 'MAIL_%'
+                AND UPPER(a.eventType) NOT LIKE 'WOPI_%'
+                AND UPPER(a.eventType) NOT LIKE 'SECURITY_%'
+                AND UPPER(a.eventType) NOT LIKE 'PDF_%')
+          )
+        ORDER BY a.eventTime DESC
+        """)
+    Page<AuditLog> findByFiltersAndCategoryNoNodeId(@Param("username") String username,
+                                                    @Param("eventType") String eventType,
+                                                    @Param("category") String category,
+                                                    @Param("from") LocalDateTime from,
+                                                    @Param("to") LocalDateTime to,
+                                                    Pageable pageable);
+
     @Query("""
         SELECT a FROM AuditLog a
         WHERE (:username IS NULL OR :username = '' OR a.username = :username)
@@ -114,6 +156,22 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
                                           @Param("nodeId") UUID nodeId,
                                           @Param("from") LocalDateTime from,
                                           @Param("to") LocalDateTime to);
+
+    /**
+     * Export variant that omits nodeId filtering entirely. See note on {@link #findByFiltersAndCategoryNoNodeId}.
+     */
+    @Query("""
+        SELECT a FROM AuditLog a
+        WHERE (:username IS NULL OR :username = '' OR a.username = :username)
+          AND (:eventType IS NULL OR :eventType = '' OR a.eventType = :eventType)
+          AND a.eventTime >= COALESCE(:from, a.eventTime)
+          AND a.eventTime <= COALESCE(:to, a.eventTime)
+        ORDER BY a.eventTime DESC
+        """)
+    List<AuditLog> findByFiltersForExportNoNodeId(@Param("username") String username,
+                                                  @Param("eventType") String eventType,
+                                                  @Param("from") LocalDateTime from,
+                                                  @Param("to") LocalDateTime to);
 
     @Query("""
         SELECT a FROM AuditLog a
@@ -151,6 +209,44 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
                                                      @Param("nodeId") UUID nodeId,
                                                      @Param("from") LocalDateTime from,
                                                      @Param("to") LocalDateTime to);
+
+    /**
+     * Export variant that omits nodeId filtering entirely. See note on {@link #findByFiltersAndCategoryNoNodeId}.
+     */
+    @Query("""
+        SELECT a FROM AuditLog a
+        WHERE (:username IS NULL OR :username = '' OR a.username = :username)
+          AND (:eventType IS NULL OR :eventType = '' OR a.eventType = :eventType)
+          AND a.eventTime >= COALESCE(:from, a.eventTime)
+          AND a.eventTime <= COALESCE(:to, a.eventTime)
+          AND (
+            :category IS NULL OR :category = ''
+            OR (:category = 'NODE' AND UPPER(a.eventType) LIKE 'NODE_%')
+            OR (:category = 'VERSION' AND UPPER(a.eventType) LIKE 'VERSION_%')
+            OR (:category = 'RULE' AND (UPPER(a.eventType) LIKE 'RULE_%' OR UPPER(a.eventType) LIKE 'SCHEDULED_RULE%'))
+            OR (:category = 'WORKFLOW' AND (UPPER(a.eventType) LIKE 'WORKFLOW_%' OR UPPER(a.eventType) LIKE 'STATUS_%'))
+            OR (:category = 'MAIL' AND UPPER(a.eventType) LIKE 'MAIL_%')
+            OR (:category = 'INTEGRATION' AND UPPER(a.eventType) LIKE 'WOPI_%')
+            OR (:category = 'SECURITY' AND UPPER(a.eventType) LIKE 'SECURITY_%')
+            OR (:category = 'PDF' AND UPPER(a.eventType) LIKE 'PDF_%')
+            OR (:category = 'OTHER' AND UPPER(a.eventType) NOT LIKE 'NODE_%'
+                AND UPPER(a.eventType) NOT LIKE 'VERSION_%'
+                AND UPPER(a.eventType) NOT LIKE 'RULE_%'
+                AND UPPER(a.eventType) NOT LIKE 'SCHEDULED_RULE%'
+                AND UPPER(a.eventType) NOT LIKE 'WORKFLOW_%'
+                AND UPPER(a.eventType) NOT LIKE 'STATUS_%'
+                AND UPPER(a.eventType) NOT LIKE 'MAIL_%'
+                AND UPPER(a.eventType) NOT LIKE 'WOPI_%'
+                AND UPPER(a.eventType) NOT LIKE 'SECURITY_%'
+                AND UPPER(a.eventType) NOT LIKE 'PDF_%')
+          )
+        ORDER BY a.eventTime DESC
+        """)
+    List<AuditLog> findByFiltersForExportAndCategoryNoNodeId(@Param("username") String username,
+                                                             @Param("eventType") String eventType,
+                                                             @Param("category") String category,
+                                                             @Param("from") LocalDateTime from,
+                                                             @Param("to") LocalDateTime to);
 
     /**
      * Delete audit logs older than the specified date (for retention policy)

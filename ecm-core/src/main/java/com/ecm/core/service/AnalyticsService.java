@@ -201,9 +201,16 @@ public class AnalyticsService {
                                                 UUID nodeId,
                                                 AuditCategory category) {
         String categoryName = category != null ? category.name() : null;
-        List<AuditLog> logs = categoryName == null
-            ? auditLogRepository.findByFiltersForExport(username, eventType, nodeId, from, to)
-            : auditLogRepository.findByFiltersForExportAndCategory(username, eventType, categoryName, nodeId, from, to);
+        List<AuditLog> logs;
+        if (nodeId == null) {
+            logs = categoryName == null
+                ? auditLogRepository.findByFiltersForExportNoNodeId(username, eventType, from, to)
+                : auditLogRepository.findByFiltersForExportAndCategoryNoNodeId(username, eventType, categoryName, from, to);
+        } else {
+            logs = categoryName == null
+                ? auditLogRepository.findByFiltersForExport(username, eventType, nodeId, from, to)
+                : auditLogRepository.findByFiltersForExportAndCategory(username, eventType, categoryName, nodeId, from, to);
+        }
         return new AuditExportResult(generateCsv(logs), logs.size());
     }
 
@@ -239,6 +246,9 @@ public class AnalyticsService {
                                           LocalDateTime to,
                                           Pageable pageable) {
         String categoryName = category != null ? category.name() : null;
+        if (nodeId == null) {
+            return auditLogRepository.findByFiltersAndCategoryNoNodeId(username, eventType, categoryName, from, to, pageable);
+        }
         return auditLogRepository.findByFiltersAndCategory(username, eventType, categoryName, nodeId, from, to, pageable);
     }
 
