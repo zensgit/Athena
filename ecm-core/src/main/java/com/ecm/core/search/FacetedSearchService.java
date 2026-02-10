@@ -112,15 +112,11 @@ public class FacetedSearchService {
                 .map(this::toSearchResult)
                 .collect(Collectors.toList());
 
-            // Build facets from aggregations when available (admin), otherwise from authorized hits
+            // Build facets from aggregations when available (query already includes ACL filter),
+            // otherwise fall back to in-memory counting of the current page as best-effort.
             List<String> facetFields = resolveFacetFields(request);
-            Map<String, List<FacetValue>> facets;
-            if (securityService.hasRole("ROLE_ADMIN")) {
-                facets = buildFacetsFromAggregations(searchHits, facetFields);
-                if (facets.isEmpty()) {
-                    facets = buildFacets(authorizedHits);
-                }
-            } else {
+            Map<String, List<FacetValue>> facets = buildFacetsFromAggregations(searchHits, facetFields);
+            if (facets.isEmpty()) {
                 facets = buildFacets(authorizedHits);
             }
 
@@ -171,10 +167,6 @@ public class FacetedSearchService {
             NativeQuery esQuery = buildFacetedQuery(request);
             SearchHits<NodeDocument> searchHits = elasticsearchOperations.search(
                 esQuery, NodeDocument.class, IndexCoordinates.of(INDEX_NAME));
-
-            if (!securityService.hasRole("ROLE_ADMIN")) {
-                return buildFacets(filterAuthorizedHits(searchHits));
-            }
 
             Map<String, List<FacetValue>> facets = buildFacetsFromAggregations(searchHits, resolveFacetFields(request));
             if (facets.isEmpty()) {
@@ -421,7 +413,9 @@ public class FacetedSearchService {
         List<String> searchFields = resolveSearchFields(request);
         SearchFilters filters = request.getFilters();
 
-        NativeQueryBuilder builder = NativeQuery.builder().withPageable(pageable);
+        NativeQueryBuilder builder = NativeQuery.builder()
+            .withPageable(pageable)
+            .withTrackTotalHits(true);
 
         builder.withQuery(q -> q.bool(b -> {
             if (searchTerm.isBlank()) {

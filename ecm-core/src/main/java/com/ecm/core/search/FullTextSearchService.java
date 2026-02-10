@@ -378,7 +378,9 @@ public class FullTextSearchService {
     ) {
         String searchTerm = queryText != null ? queryText.trim() : "";
 
-        NativeQueryBuilder builder = NativeQuery.builder().withPageable(pageable);
+        NativeQueryBuilder builder = NativeQuery.builder()
+            .withPageable(pageable)
+            .withTrackTotalHits(true);
 
         builder.withQuery(q -> q.bool(b -> {
             if (searchTerm.isEmpty()) {
@@ -412,7 +414,9 @@ public class FullTextSearchService {
         String searchTerm = request.getQuery() != null ? request.getQuery().trim() : "";
         SearchFilters filters = request.getFilters();
 
-        NativeQueryBuilder builder = NativeQuery.builder().withPageable(pageable);
+        NativeQueryBuilder builder = NativeQuery.builder()
+            .withPageable(pageable)
+            .withTrackTotalHits(true);
 
         builder.withQuery(q -> q.bool(b -> {
             // Text search
