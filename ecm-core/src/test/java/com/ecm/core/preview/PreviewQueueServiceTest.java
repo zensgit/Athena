@@ -3,6 +3,7 @@ package com.ecm.core.preview;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.PreviewStatus;
 import com.ecm.core.repository.DocumentRepository;
+import com.ecm.core.search.SearchIndexService;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -18,7 +19,8 @@ class PreviewQueueServiceTest {
     void marksFailedWhenPreviewThrowsAndNoRetry() throws Exception {
         DocumentRepository documentRepository = mock(DocumentRepository.class);
         PreviewService previewService = mock(PreviewService.class);
-        PreviewQueueService service = new PreviewQueueService(documentRepository, previewService);
+        SearchIndexService searchIndexService = mock(SearchIndexService.class);
+        PreviewQueueService service = new PreviewQueueService(documentRepository, previewService, searchIndexService);
 
         ReflectionTestUtils.setField(service, "queueEnabled", true);
         ReflectionTestUtils.setField(service, "maxAttempts", 1);
@@ -39,5 +41,6 @@ class PreviewQueueServiceTest {
         assertEquals(PreviewStatus.FAILED, document.getPreviewStatus());
         assertEquals("boom", document.getPreviewFailureReason());
         verify(documentRepository, atLeastOnce()).save(document);
+        verify(searchIndexService, atLeastOnce()).updateDocument(document);
     }
 }

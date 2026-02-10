@@ -3,6 +3,7 @@ package com.ecm.core.preview;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.PreviewStatus;
 import com.ecm.core.repository.DocumentRepository;
+import com.ecm.core.search.SearchIndexService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -31,6 +32,7 @@ public class PreviewQueueService {
 
     private final DocumentRepository documentRepository;
     private final PreviewService previewService;
+    private final SearchIndexService searchIndexService;
 
     @Value("${ecm.preview.queue.enabled:true}")
     private boolean queueEnabled;
@@ -150,6 +152,11 @@ public class PreviewQueueService {
             document.setPreviewLastUpdated(LocalDateTime.now());
             document.setPreviewAvailable(false);
             documentRepository.save(document);
+            try {
+                searchIndexService.updateDocument(document);
+            } catch (Exception indexError) {
+                log.debug("Failed to index preview processing status for {}: {}", document.getId(), indexError.getMessage());
+            }
         } catch (Exception e) {
             log.warn("Failed to mark preview as processing for {}: {}", document.getId(), e.getMessage());
         }
@@ -162,6 +169,11 @@ public class PreviewQueueService {
             document.setPreviewLastUpdated(LocalDateTime.now());
             document.setPreviewAvailable(false);
             documentRepository.save(document);
+            try {
+                searchIndexService.updateDocument(document);
+            } catch (Exception indexError) {
+                log.debug("Failed to index preview retry status for {}: {}", document.getId(), indexError.getMessage());
+            }
         } catch (Exception e) {
             log.warn("Failed to mark preview retry for {}: {}", document.getId(), e.getMessage());
         }
@@ -174,6 +186,11 @@ public class PreviewQueueService {
             document.setPreviewLastUpdated(LocalDateTime.now());
             document.setPreviewAvailable(false);
             documentRepository.save(document);
+            try {
+                searchIndexService.updateDocument(document);
+            } catch (Exception indexError) {
+                log.debug("Failed to index preview failed status for {}: {}", document.getId(), indexError.getMessage());
+            }
         } catch (Exception e) {
             log.warn("Failed to mark preview failed for {}: {}", document.getId(), e.getMessage());
         }
