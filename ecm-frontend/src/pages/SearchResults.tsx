@@ -96,6 +96,49 @@ const MATCH_FIELD_LABELS: Record<string, string> = {
   correspondent: 'Correspondent',
 };
 
+const FALLBACK_AUTO_RETRY_MAX = 3;
+const FALLBACK_AUTO_RETRY_DELAY_MS = 1500;
+
+const normalizeCriteriaValues = (values?: string[]) =>
+  (values || [])
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
+    .sort();
+
+const buildFallbackCriteriaKey = (criteria?: SearchCriteria): string => {
+  if (!criteria) {
+    return '';
+  }
+
+  const mimeTypes = criteria.mimeTypes?.length
+    ? criteria.mimeTypes
+    : (criteria.contentType ? [criteria.contentType] : []);
+  const createdBy = criteria.createdByList?.length
+    ? criteria.createdByList
+    : (criteria.createdBy ? [criteria.createdBy] : []);
+
+  return JSON.stringify({
+    name: (criteria.name || '').trim(),
+    mimeTypes: normalizeCriteriaValues(mimeTypes),
+    createdBy: normalizeCriteriaValues(createdBy),
+    tags: normalizeCriteriaValues(criteria.tags),
+    categories: normalizeCriteriaValues(criteria.categories),
+    correspondents: normalizeCriteriaValues(criteria.correspondents),
+    previewStatuses: normalizeCriteriaValues(criteria.previewStatuses),
+    createdFrom: criteria.createdFrom || '',
+    createdTo: criteria.createdTo || '',
+    modifiedFrom: criteria.modifiedFrom || '',
+    modifiedTo: criteria.modifiedTo || '',
+    minSize: criteria.minSize ?? null,
+    maxSize: criteria.maxSize ?? null,
+    path: criteria.path || '',
+    folderId: criteria.folderId || '',
+    includeChildren: criteria.includeChildren ?? true,
+    sortBy: criteria.sortBy || '',
+    sortDirection: criteria.sortDirection || '',
+  });
+};
+
 const SearchResults: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -129,6 +172,9 @@ const SearchResults: React.FC = () => {
   const [hiddenNodeIds, setHiddenNodeIds] = useState<string[]>([]);
   const [fallbackNodes, setFallbackNodes] = useState<Node[]>([]);
   const [fallbackLabel, setFallbackLabel] = useState('');
+  const [fallbackCriteriaKey, setFallbackCriteriaKey] = useState('');
+  const [fallbackAutoRetryCount, setFallbackAutoRetryCount] = useState(0);
+  const fallbackAutoRetryTimerRef = useRef<number | null>(null);
   const [queueingPreviewId, setQueueingPreviewId] = useState<string | null>(null);
   const [previewQueueStatusById, setPreviewQueueStatusById] = useState<Record<string, {
     attempts?: number;
@@ -164,6 +210,7 @@ const SearchResults: React.FC = () => {
   // accidentally trigger an extra search. Use a state flag so effects re-run once the sync is done.
   const [facetSyncSuppressed, setFacetSyncSuppressed] = useState(false);
   const quickSearchDebounceRef = useRef<number | null>(null);
+  const lastSearchCriteriaRef = useRef<SearchCriteria | undefined>(lastSearchCriteria);
   const isSimilarMode = similarResults !== null;
   const previewRetrySummary = useMemo(() => {
     const entries = Object.values(previewQueueStatusById);
@@ -374,13 +421,13 @@ const SearchResults: React.FC = () => {
     });
   };
 
-  const handleRetrySearch = () => {
+  const handleRetrySearch = useCallback(() => {
     if (!lastSearchCriteria) {
       return;
     }
     const sortParams = getSortParams(sortBy);
     runSearch({ ...lastSearchCriteria, page: 0, size: pageSize, ...sortParams });
-  };
+  }, [lastSearchCriteria, sortBy, pageSize, runSearch]);
 
   const handleSpellcheckSuggestion = (suggestion: string) => {
     const nextQuery = suggestion.trim();
@@ -702,11 +749,26 @@ const SearchResults: React.FC = () => {
   }, [lastSearchCriteria]);
 
   useEffect(() => {
+    lastSearchCriteriaRef.current = lastSearchCriteria;
+  }, [lastSearchCriteria]);
+
+  useEffect(() => {
     if (nodes.length > 0) {
+      const criteria = lastSearchCriteriaRef.current;
       setFallbackNodes(nodes);
-      setFallbackLabel((lastSearchCriteria?.name || '').trim());
+      setFallbackLabel((criteria?.name || '').trim());
+      setFallbackCriteriaKey(buildFallbackCriteriaKey(criteria));
     }
-  }, [nodes, lastSearchCriteria]);
+  }, [nodes]);
+
+  const currentFallbackCriteriaKey = useMemo(
+    () => buildFallbackCriteriaKey(lastSearchCriteria),
+    [lastSearchCriteria]
+  );
+
+  useEffect(() => {
+    setFallbackAutoRetryCount(0);
+  }, [currentFallbackCriteriaKey]);
 
   useEffect(() => {
     if (!lastSearchCriteria || facetSyncSuppressed) {
@@ -1223,11 +1285,48 @@ const SearchResults: React.FC = () => {
   const hasActiveCriteria = isSimilarMode
     || Boolean((lastSearchCriteria?.name || '').trim())
     || filtersApplied;
-  const shouldShowFallback = !isSimilarMode && !loading && nodes.length === 0 && fallbackNodes.length > 0 && hasActiveCriteria;
+  const fallbackCriteriaMatches = Boolean(currentFallbackCriteriaKey) && currentFallbackCriteriaKey === fallbackCriteriaKey;
+  const shouldShowFallback = !isSimilarMode
+    && !loading
+    && nodes.length === 0
+    && fallbackNodes.length > 0
+    && hasActiveCriteria
+    && fallbackCriteriaMatches;
+  useEffect(() => {
+    if (!shouldShowFallback && fallbackAutoRetryCount !== 0) {
+      setFallbackAutoRetryCount(0);
+    }
+  }, [shouldShowFallback, fallbackAutoRetryCount]);
   const displayNodes = useMemo(
     () => (isSimilarMode ? (similarResults || []) : (shouldShowFallback ? fallbackNodes : nodes)),
     [isSimilarMode, similarResults, shouldShowFallback, fallbackNodes, nodes]
   );
+
+  useEffect(() => {
+    if (fallbackAutoRetryTimerRef.current !== null) {
+      window.clearTimeout(fallbackAutoRetryTimerRef.current);
+      fallbackAutoRetryTimerRef.current = null;
+    }
+    if (!shouldShowFallback || !lastSearchCriteria) {
+      return;
+    }
+    if (fallbackAutoRetryCount >= FALLBACK_AUTO_RETRY_MAX) {
+      return;
+    }
+
+    fallbackAutoRetryTimerRef.current = window.setTimeout(() => {
+      setFallbackAutoRetryCount((prev) => prev + 1);
+      handleRetrySearch();
+    }, FALLBACK_AUTO_RETRY_DELAY_MS);
+
+    return () => {
+      if (fallbackAutoRetryTimerRef.current !== null) {
+        window.clearTimeout(fallbackAutoRetryTimerRef.current);
+        fallbackAutoRetryTimerRef.current = null;
+      }
+    };
+  }, [shouldShowFallback, lastSearchCriteria, fallbackAutoRetryCount, handleRetrySearch]);
+
   const failedPreviewSummary = useMemo(
     () => summarizeFailedPreviews(
       displayNodes
@@ -2053,6 +2152,10 @@ const SearchResults: React.FC = () => {
               {fallbackLabel
                 ? `Search results may still be indexing. Showing previous results for "${fallbackLabel}".`
                 : 'Search results may still be indexing. Showing previous results.'}
+              {' '}
+              {fallbackAutoRetryCount < FALLBACK_AUTO_RETRY_MAX
+                ? `Auto-retry ${fallbackAutoRetryCount}/${FALLBACK_AUTO_RETRY_MAX}.`
+                : `Auto-retry stopped after ${FALLBACK_AUTO_RETRY_MAX} attempts.`}
             </Alert>
           )}
           {suggestedFiltersError && (
