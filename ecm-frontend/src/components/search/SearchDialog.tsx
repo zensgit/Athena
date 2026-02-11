@@ -58,6 +58,15 @@ const ASPECTS = [
   { value: 'cm:classifiable', label: 'Classifiable' },
 ];
 
+const PREVIEW_STATUS_OPTIONS = [
+  { value: 'READY', label: 'Ready' },
+  { value: 'PROCESSING', label: 'Processing' },
+  { value: 'QUEUED', label: 'Queued' },
+  { value: 'FAILED', label: 'Failed' },
+  { value: 'UNSUPPORTED', label: 'Unsupported' },
+  { value: 'PENDING', label: 'Pending' },
+];
+
 const SearchDialog: React.FC = () => {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
@@ -79,6 +88,7 @@ const SearchDialog: React.FC = () => {
   const [tags, setTags] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [correspondents, setCorrespondents] = useState<string[]>([]);
+  const [selectedPreviewStatuses, setSelectedPreviewStatuses] = useState<string[]>([]);
   const [minSize, setMinSize] = useState<number | undefined>();
   const [maxSize, setMaxSize] = useState<number | undefined>();
   const [pathPrefix, setPathPrefix] = useState<string>('');
@@ -193,6 +203,7 @@ const SearchDialog: React.FC = () => {
     setTags(searchPrefill.tags || []);
     setCategories(searchPrefill.categories || []);
     setCorrespondents(searchPrefill.correspondents || []);
+    setSelectedPreviewStatuses(searchPrefill.previewStatuses || []);
     setMinSize(searchPrefill.minSize);
     setMaxSize(searchPrefill.maxSize);
     setPathPrefix(searchPrefill.pathPrefix || '');
@@ -278,6 +289,7 @@ const SearchDialog: React.FC = () => {
     setTags([]);
     setCategories([]);
     setCorrespondents([]);
+    setSelectedPreviewStatuses([]);
     setMinSize(undefined);
     setMaxSize(undefined);
     setPathPrefix('');
@@ -309,6 +321,9 @@ const SearchDialog: React.FC = () => {
     }
     if (normalizedCorrespondents.length) {
       filters.correspondents = normalizedCorrespondents;
+    }
+    if (selectedPreviewStatuses.length > 0) {
+      filters.previewStatuses = selectedPreviewStatuses;
     }
     if (minSize !== undefined) {
       filters.minSize = minSize;
@@ -391,6 +406,7 @@ const SearchDialog: React.FC = () => {
       tags: normalizedTags,
       categories: normalizedCategories,
       correspondents: normalizedCorrespondents,
+      previewStatuses: selectedPreviewStatuses,
       minSize,
       maxSize,
       path: scopeFolderId.trim() ? undefined : (pathPrefix || undefined),
@@ -445,6 +461,7 @@ const SearchDialog: React.FC = () => {
       tags.length > 0 ||
       categories.length > 0 ||
       correspondents.length > 0 ||
+      selectedPreviewStatuses.length > 0 ||
       minSize !== undefined ||
       maxSize !== undefined ||
       pathPrefix.length > 0 ||
@@ -581,6 +598,38 @@ const SearchDialog: React.FC = () => {
                         {facetOptions.createdBy.map((u) => (
                           <MenuItem key={u} value={u}>
                             {u}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                  <Grid item xs={12}>
+                    <FormControl fullWidth>
+                      <InputLabel id="preview-status-label">Preview Status</InputLabel>
+                      <Select
+                        labelId="preview-status-label"
+                        multiple
+                        value={selectedPreviewStatuses}
+                        label="Preview Status"
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setSelectedPreviewStatuses(typeof value === 'string' ? value.split(',') : value);
+                        }}
+                        renderValue={(selected) => (
+                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                            {(selected as string[]).map((value) => (
+                              <Chip
+                                key={value}
+                                size="small"
+                                label={PREVIEW_STATUS_OPTIONS.find((item) => item.value === value)?.label || value}
+                              />
+                            ))}
+                          </Box>
+                        )}
+                      >
+                        {PREVIEW_STATUS_OPTIONS.map((status) => (
+                          <MenuItem key={status.value} value={status.value}>
+                            {status.label}
                           </MenuItem>
                         ))}
                       </Select>

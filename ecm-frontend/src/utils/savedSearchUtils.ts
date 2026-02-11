@@ -25,6 +25,7 @@ export const buildSearchCriteriaFromSavedSearch = (item: SavedSearch): SearchCri
     tags: normalizeList(filters.tags),
     categories: normalizeList(filters.categories),
     correspondents: normalizeList(filters.correspondents),
+    previewStatuses: normalizeList(filters.previewStatuses),
     minSize: typeof filters.minSize === 'number' ? filters.minSize : undefined,
     maxSize: typeof filters.maxSize === 'number' ? filters.maxSize : undefined,
     path: typeof filters.path === 'string' ? filters.path : undefined,
