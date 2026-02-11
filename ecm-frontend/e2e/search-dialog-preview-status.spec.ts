@@ -124,20 +124,30 @@ test.describe('Search dialog preview status filter', () => {
       await page.getByRole('button', { name: 'Search', exact: true }).click();
       const searchDialog = page.getByRole('dialog').filter({ hasText: 'Advanced Search' });
       await expect(searchDialog).toBeVisible({ timeout: 60_000 });
+      const searchButton = searchDialog.getByRole('button', { name: 'Search', exact: true });
+      const saveSearchButton = searchDialog.getByRole('button', { name: 'Save Search', exact: true });
+      const criteriaHint = searchDialog.getByText('Add at least one search criterion to enable Save Search and Search.');
+      await searchDialog.getByRole('button', { name: 'Clear All', exact: true }).click();
+      await expect(searchButton).toBeDisabled();
+      await expect(saveSearchButton).toBeDisabled();
+      await expect(criteriaHint).toBeVisible();
 
       await searchDialog.getByLabel('Name contains').fill(query);
       await searchDialog.getByLabel('Preview Status').click();
       await page.getByRole('option', { name: 'Failed', exact: true }).click();
       await page.keyboard.press('Escape');
+      await expect(searchButton).toBeEnabled();
+      await expect(saveSearchButton).toBeEnabled();
+      await expect(criteriaHint).toHaveCount(0);
 
-      await searchDialog.getByRole('button', { name: 'Save Search', exact: true }).click();
+      await saveSearchButton.click();
       const saveDialog = page.getByRole('dialog').filter({ hasText: 'Save Search' });
       await expect(saveDialog).toBeVisible({ timeout: 30_000 });
       await saveDialog.getByLabel('Name').fill(savedName);
       await saveDialog.getByRole('button', { name: 'Save', exact: true }).click();
       await expect.poll(() => capturedSavedPreviewStatuses, { timeout: 30_000 }).toEqual(['FAILED']);
 
-      await searchDialog.getByRole('button', { name: 'Search', exact: true }).click();
+      await searchButton.click();
       await expect(page).toHaveURL(/\/search-results/, { timeout: 60_000 });
       await expect.poll(() => capturedPreviewStatus, { timeout: 60_000 }).toBe('FAILED');
     } finally {

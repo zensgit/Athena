@@ -472,6 +472,7 @@ const SearchDialog: React.FC = () => {
   const canSubmitSaveDialog = saveName.trim().length > 0
     && (saveMode === 'create' || saveExistingId.length > 0)
     && !saveDialogSubmitting;
+  const canSubmitSearch = isSearchValid();
 
   return (
     <>
@@ -875,12 +876,17 @@ const SearchDialog: React.FC = () => {
           </Box>
         </DialogContent>
         <DialogActions>
+          {!canSubmitSearch && (
+            <Typography variant="caption" color="text.secondary" sx={{ mr: 'auto' }}>
+              Add at least one search criterion to enable Save Search and Search.
+            </Typography>
+          )}
           <Button onClick={resetForm}>Clear All</Button>
           <Button onClick={handleClose}>Cancel</Button>
           <Button
             onClick={openSaveDialog}
             startIcon={<Save />}
-            disabled={!isSearchValid()}
+            disabled={!canSubmitSearch}
           >
             Save Search
           </Button>
@@ -888,7 +894,7 @@ const SearchDialog: React.FC = () => {
             onClick={handleSearch}
             variant="contained"
             startIcon={<Search />}
-            disabled={!isSearchValid()}
+            disabled={!canSubmitSearch}
           >
             Search
           </Button>
