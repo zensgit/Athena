@@ -38,7 +38,7 @@ import { setSearchOpen, setSearchPrefill } from 'store/slices/uiSlice';
 import { searchNodes } from 'store/slices/nodeSlice';
 import { useNavigate } from 'react-router-dom';
 import apiService from 'services/api';
-import savedSearchService from 'services/savedSearchService';
+import savedSearchService, { SavedSearch } from 'services/savedSearchService';
 import { toast } from 'react-toastify';
 
 const CONTENT_TYPES = [
@@ -86,6 +86,11 @@ const SearchDialog: React.FC = () => {
   const [scopeIncludeChildren, setScopeIncludeChildren] = useState(true);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [saveName, setSaveName] = useState('');
+  const [saveMode, setSaveMode] = useState<'create' | 'update'>('create');
+  const [saveExistingId, setSaveExistingId] = useState('');
+  const [saveDialogLoading, setSaveDialogLoading] = useState(false);
+  const [saveDialogSubmitting, setSaveDialogSubmitting] = useState(false);
+  const [savedSearchOptions, setSavedSearchOptions] = useState<SavedSearch[]>([]);
   const [nameSuggestions, setNameSuggestions] = useState<string[]>([]);
   const [nameSuggestionsLoading, setNameSuggestionsLoading] = useState(false);
   const [facetOptions, setFacetOptions] = useState<{
@@ -204,6 +209,60 @@ const SearchDialog: React.FC = () => {
     resetForm();
   };
 
+  const closeSaveDialog = (options?: { force?: boolean }) => {
+    if (saveDialogSubmitting && !options?.force) {
+      return;
+    }
+    setSaveDialogOpen(false);
+    setSaveName('');
+    setSaveMode('create');
+    setSaveExistingId('');
+    setSaveDialogLoading(false);
+    setSaveDialogSubmitting(false);
+  };
+
+  const handleCloseSaveDialog = () => closeSaveDialog();
+
+  const openSaveDialog = async () => {
+    setSaveDialogOpen(true);
+    setSaveDialogLoading(true);
+    setSaveMode('create');
+    setSaveExistingId('');
+    try {
+      const searches = await savedSearchService.list();
+      setSavedSearchOptions(searches);
+    } catch {
+      setSavedSearchOptions([]);
+      toast.error('Failed to load saved searches');
+    } finally {
+      setSaveDialogLoading(false);
+    }
+  };
+
+  const handleSaveModeChange = (nextMode: 'create' | 'update') => {
+    setSaveMode(nextMode);
+    if (nextMode === 'update') {
+      const first = savedSearchOptions[0];
+      if (first) {
+        setSaveExistingId(first.id);
+        setSaveName(first.name || '');
+      } else {
+        setSaveExistingId('');
+      }
+      return;
+    }
+    setSaveExistingId('');
+    setSaveName('');
+  };
+
+  const handleUpdateTargetChange = (id: string) => {
+    setSaveExistingId(id);
+    const selected = savedSearchOptions.find((item) => item.id === id);
+    if (selected) {
+      setSaveName(selected.name || '');
+    }
+  };
+
   const resetForm = () => {
     setSearchCriteria({
       name: '',
@@ -224,8 +283,7 @@ const SearchDialog: React.FC = () => {
     setPathPrefix('');
     setScopeFolderId('');
     setScopeIncludeChildren(true);
-    setSaveDialogOpen(false);
-    setSaveName('');
+    closeSaveDialog({ force: true });
     setNameSuggestions([]);
     setNameSuggestionsLoading(false);
   };
@@ -292,15 +350,30 @@ const SearchDialog: React.FC = () => {
       toast.error('Please enter a saved search name');
       return;
     }
+    if (saveMode === 'update' && !saveExistingId) {
+      toast.error('Please choose a saved search to update');
+      return;
+    }
 
+    setSaveDialogSubmitting(true);
     try {
-      await savedSearchService.save(trimmed, buildSavedSearchQueryParams());
-      toast.success('Saved search created');
-      setSaveDialogOpen(false);
-      setSaveName('');
+      const queryParams = buildSavedSearchQueryParams();
+      if (saveMode === 'update') {
+        await savedSearchService.update(saveExistingId, {
+          name: trimmed,
+          queryParams,
+        });
+        toast.success('Saved search updated');
+      } else {
+        await savedSearchService.save(trimmed, queryParams);
+        toast.success('Saved search created');
+      }
+      closeSaveDialog({ force: true });
     } catch (err: any) {
       const message = err?.response?.data?.message || err?.message || 'Failed to save search';
       toast.error(message);
+    } finally {
+      setSaveDialogSubmitting(false);
     }
   };
 
@@ -378,6 +451,10 @@ const SearchDialog: React.FC = () => {
       scopeFolderId.trim().length > 0
     );
   };
+
+  const canSubmitSaveDialog = saveName.trim().length > 0
+    && (saveMode === 'create' || saveExistingId.length > 0)
+    && !saveDialogSubmitting;
 
   return (
     <>
@@ -752,7 +829,7 @@ const SearchDialog: React.FC = () => {
           <Button onClick={resetForm}>Clear All</Button>
           <Button onClick={handleClose}>Cancel</Button>
           <Button
-            onClick={() => setSaveDialogOpen(true)}
+            onClick={openSaveDialog}
             startIcon={<Save />}
             disabled={!isSearchValid()}
           >
@@ -768,23 +845,61 @@ const SearchDialog: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
-      <Dialog open={saveDialogOpen} onClose={() => setSaveDialogOpen(false)} maxWidth="xs" fullWidth>
+      <Dialog open={saveDialogOpen} onClose={handleCloseSaveDialog} maxWidth="xs" fullWidth>
         <DialogTitle>Save Search</DialogTitle>
         <DialogContent>
           <Box sx={{ mt: 1 }}>
+            <FormControl fullWidth sx={{ mb: 2 }}>
+              <InputLabel id="save-search-mode-label">Mode</InputLabel>
+              <Select
+                labelId="save-search-mode-label"
+                label="Mode"
+                value={saveMode}
+                disabled={saveDialogSubmitting || saveDialogLoading}
+                onChange={(e) => handleSaveModeChange(e.target.value as 'create' | 'update')}
+              >
+                <MenuItem value="create">Create new</MenuItem>
+                <MenuItem value="update">Update existing</MenuItem>
+              </Select>
+            </FormControl>
+            {saveMode === 'update' && (
+              <FormControl fullWidth sx={{ mb: 2 }}>
+                <InputLabel id="save-search-target-label">Saved Search</InputLabel>
+                <Select
+                  labelId="save-search-target-label"
+                  label="Saved Search"
+                  value={saveExistingId}
+                  disabled={saveDialogSubmitting || saveDialogLoading || savedSearchOptions.length === 0}
+                  onChange={(e) => handleUpdateTargetChange(e.target.value)}
+                >
+                  {savedSearchOptions.length === 0 ? (
+                    <MenuItem value="" disabled>
+                      No saved searches
+                    </MenuItem>
+                  ) : (
+                    savedSearchOptions.map((item) => (
+                      <MenuItem key={item.id} value={item.id}>
+                        {item.name}
+                      </MenuItem>
+                    ))
+                  )}
+                </Select>
+              </FormControl>
+            )}
             <TextField
               fullWidth
               label="Name"
               value={saveName}
               onChange={(e) => setSaveName(e.target.value)}
               placeholder="e.g. Recent PDFs"
+              disabled={saveDialogSubmitting || saveDialogLoading}
             />
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setSaveDialogOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={handleSaveSearch} disabled={!saveName.trim()}>
-            Save
+          <Button onClick={handleCloseSaveDialog} disabled={saveDialogSubmitting}>Cancel</Button>
+          <Button variant="contained" onClick={handleSaveSearch} disabled={!canSubmitSaveDialog}>
+            {saveDialogSubmitting ? 'Saving…' : (saveMode === 'update' ? 'Update' : 'Save')}
           </Button>
         </DialogActions>
       </Dialog>
