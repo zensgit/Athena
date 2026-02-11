@@ -97,7 +97,16 @@ const MATCH_FIELD_LABELS: Record<string, string> = {
 };
 
 const FALLBACK_AUTO_RETRY_MAX = 3;
-const FALLBACK_AUTO_RETRY_DELAY_MS = 1500;
+const FALLBACK_AUTO_RETRY_BASE_DELAY_MS = 1500;
+const FALLBACK_AUTO_RETRY_MAX_DELAY_MS = 10000;
+
+const getFallbackAutoRetryDelayMs = (attempt: number) => {
+  if (attempt < 0) {
+    return FALLBACK_AUTO_RETRY_BASE_DELAY_MS;
+  }
+  const scaled = FALLBACK_AUTO_RETRY_BASE_DELAY_MS * (2 ** attempt);
+  return Math.min(scaled, FALLBACK_AUTO_RETRY_MAX_DELAY_MS);
+};
 
 const normalizeCriteriaValues = (values?: string[]) =>
   (values || [])
@@ -173,6 +182,7 @@ const SearchResults: React.FC = () => {
   const [fallbackNodes, setFallbackNodes] = useState<Node[]>([]);
   const [fallbackLabel, setFallbackLabel] = useState('');
   const [fallbackCriteriaKey, setFallbackCriteriaKey] = useState('');
+  const [dismissedFallbackCriteriaKey, setDismissedFallbackCriteriaKey] = useState('');
   const [fallbackAutoRetryCount, setFallbackAutoRetryCount] = useState(0);
   const fallbackAutoRetryTimerRef = useRef<number | null>(null);
   const [queueingPreviewId, setQueueingPreviewId] = useState<string | null>(null);
@@ -428,6 +438,15 @@ const SearchResults: React.FC = () => {
     const sortParams = getSortParams(sortBy);
     runSearch({ ...lastSearchCriteria, page: 0, size: pageSize, ...sortParams });
   }, [lastSearchCriteria, sortBy, pageSize, runSearch]);
+
+  const handleHideFallbackResults = useCallback(() => {
+    const criteriaKey = buildFallbackCriteriaKey(lastSearchCriteria);
+    if (!criteriaKey) {
+      return;
+    }
+    setDismissedFallbackCriteriaKey(criteriaKey);
+    setFallbackAutoRetryCount(0);
+  }, [lastSearchCriteria]);
 
   const handleSpellcheckSuggestion = (suggestion: string) => {
     const nextQuery = suggestion.trim();
@@ -769,6 +788,15 @@ const SearchResults: React.FC = () => {
   useEffect(() => {
     setFallbackAutoRetryCount(0);
   }, [currentFallbackCriteriaKey]);
+
+  useEffect(() => {
+    if (!dismissedFallbackCriteriaKey) {
+      return;
+    }
+    if (!currentFallbackCriteriaKey || currentFallbackCriteriaKey !== dismissedFallbackCriteriaKey) {
+      setDismissedFallbackCriteriaKey('');
+    }
+  }, [currentFallbackCriteriaKey, dismissedFallbackCriteriaKey]);
 
   useEffect(() => {
     if (!lastSearchCriteria || facetSyncSuppressed) {
@@ -1286,12 +1314,15 @@ const SearchResults: React.FC = () => {
     || Boolean((lastSearchCriteria?.name || '').trim())
     || filtersApplied;
   const fallbackCriteriaMatches = Boolean(currentFallbackCriteriaKey) && currentFallbackCriteriaKey === fallbackCriteriaKey;
+  const fallbackHiddenForCriteria = Boolean(currentFallbackCriteriaKey)
+    && currentFallbackCriteriaKey === dismissedFallbackCriteriaKey;
   const shouldShowFallback = !isSimilarMode
     && !loading
     && nodes.length === 0
     && fallbackNodes.length > 0
     && hasActiveCriteria
-    && fallbackCriteriaMatches;
+    && fallbackCriteriaMatches
+    && !fallbackHiddenForCriteria;
   useEffect(() => {
     if (!shouldShowFallback && fallbackAutoRetryCount !== 0) {
       setFallbackAutoRetryCount(0);
@@ -1313,11 +1344,12 @@ const SearchResults: React.FC = () => {
     if (fallbackAutoRetryCount >= FALLBACK_AUTO_RETRY_MAX) {
       return;
     }
+    const nextDelayMs = getFallbackAutoRetryDelayMs(fallbackAutoRetryCount);
 
     fallbackAutoRetryTimerRef.current = window.setTimeout(() => {
       setFallbackAutoRetryCount((prev) => prev + 1);
       handleRetrySearch();
-    }, FALLBACK_AUTO_RETRY_DELAY_MS);
+    }, nextDelayMs);
 
     return () => {
       if (fallbackAutoRetryTimerRef.current !== null) {
@@ -1326,6 +1358,10 @@ const SearchResults: React.FC = () => {
       }
     };
   }, [shouldShowFallback, lastSearchCriteria, fallbackAutoRetryCount, handleRetrySearch]);
+
+  const fallbackAutoRetryNextDelayMs = shouldShowFallback && fallbackAutoRetryCount < FALLBACK_AUTO_RETRY_MAX
+    ? getFallbackAutoRetryDelayMs(fallbackAutoRetryCount)
+    : null;
 
   const failedPreviewSummary = useMemo(
     () => summarizeFailedPreviews(
@@ -2144,9 +2180,14 @@ const SearchResults: React.FC = () => {
               severity="info"
               sx={{ mb: 2 }}
               action={(
-                <Button color="inherit" size="small" onClick={handleRetrySearch}>
-                  Retry
-                </Button>
+                <Stack direction="row" spacing={1}>
+                  <Button color="inherit" size="small" onClick={handleRetrySearch}>
+                    Retry
+                  </Button>
+                  <Button color="inherit" size="small" onClick={handleHideFallbackResults}>
+                    Hide previous results
+                  </Button>
+                </Stack>
               )}
             >
               {fallbackLabel
@@ -2154,7 +2195,7 @@ const SearchResults: React.FC = () => {
                 : 'Search results may still be indexing. Showing previous results.'}
               {' '}
               {fallbackAutoRetryCount < FALLBACK_AUTO_RETRY_MAX
-                ? `Auto-retry ${fallbackAutoRetryCount}/${FALLBACK_AUTO_RETRY_MAX}.`
+                ? `Auto-retry ${fallbackAutoRetryCount}/${FALLBACK_AUTO_RETRY_MAX}${fallbackAutoRetryNextDelayMs ? ` (next in ${(fallbackAutoRetryNextDelayMs / 1000).toFixed(1)}s).` : '.'}`
                 : `Auto-retry stopped after ${FALLBACK_AUTO_RETRY_MAX} attempts.`}
             </Alert>
           )}
