@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Box,
   Paper,
@@ -19,6 +19,8 @@ import {
   ContentCopy,
   Delete,
   Edit,
+  FileDownload,
+  FileUpload,
   Link,
   PlayArrow,
   Refresh,
@@ -35,11 +37,49 @@ import { executeSavedSearch, setLastSearchCriteria } from 'store/slices/nodeSlic
 import { setSearchOpen, setSearchPrefill } from 'store/slices/uiSlice';
 import { buildSearchCriteriaFromSavedSearch } from 'utils/savedSearchUtils';
 
+interface SavedSearchImportExportItem {
+  name: string;
+  queryParams: Record<string, any>;
+  pinned?: boolean;
+}
+
+interface SavedSearchExportPayload {
+  version: number;
+  exportedAt: string;
+  savedSearches: SavedSearchImportExportItem[];
+}
+
+const isRecord = (value: unknown): value is Record<string, any> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const normalizeImportItems = (value: unknown): SavedSearchImportExportItem[] => {
+  const source = Array.isArray(value)
+    ? value
+    : isRecord(value) && Array.isArray(value.savedSearches)
+      ? value.savedSearches
+      : [];
+
+  return source
+    .map((entry): SavedSearchImportExportItem | null => {
+      if (!isRecord(entry)) return null;
+      const name = typeof entry.name === 'string' ? entry.name.trim() : '';
+      if (!name) return null;
+      return {
+        name,
+        queryParams: isRecord(entry.queryParams) ? entry.queryParams : {},
+        pinned: Boolean(entry.pinned),
+      };
+    })
+    .filter((entry): entry is SavedSearchImportExportItem => Boolean(entry));
+};
+
 const SavedSearchesPage: React.FC = () => {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
+  const importFileRef = useRef<HTMLInputElement | null>(null);
   const [items, setItems] = useState<SavedSearch[]>([]);
   const [loading, setLoading] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editDialogMode, setEditDialogMode] = useState<'rename' | 'duplicate'>('rename');
   const [editDialogItem, setEditDialogItem] = useState<SavedSearch | null>(null);
@@ -147,6 +187,100 @@ const SavedSearchesPage: React.FC = () => {
       toast.success('Saved search link copied');
     } catch {
       toast.error('Failed to copy link');
+    }
+  };
+
+  const handleExport = () => {
+    if (items.length === 0) {
+      toast.info('No saved searches to export');
+      return;
+    }
+
+    const payload: SavedSearchExportPayload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      savedSearches: items.map((item) => ({
+        name: item.name,
+        queryParams: isRecord(item.queryParams) ? item.queryParams : {},
+        pinned: Boolean(item.pinned),
+      })),
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `saved-searches-${Date.now()}.json`;
+    link.click();
+    window.URL.revokeObjectURL(url);
+    toast.success(`Exported ${payload.savedSearches.length} saved searches`);
+  };
+
+  const openImportPicker = () => {
+    importFileRef.current?.click();
+  };
+
+  const handleImportFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    setImporting(true);
+    try {
+      const rawText = await file.text();
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(rawText);
+      } catch {
+        toast.error('Invalid JSON file');
+        return;
+      }
+
+      const toImport = normalizeImportItems(parsed);
+      if (toImport.length === 0) {
+        toast.error('No valid saved searches found in file');
+        return;
+      }
+
+      const existingItems = await savedSearchService.list();
+      const existingNames = new Set(
+        existingItems
+          .map((item) => item.name?.trim().toLowerCase())
+          .filter((name): name is string => Boolean(name))
+      );
+
+      let imported = 0;
+      let skipped = 0;
+      let failed = 0;
+
+      for (const entry of toImport) {
+        const normalizedName = entry.name.trim();
+        if (!normalizedName) {
+          skipped += 1;
+          continue;
+        }
+        const dedupeKey = normalizedName.toLowerCase();
+        if (existingNames.has(dedupeKey)) {
+          skipped += 1;
+          continue;
+        }
+
+        try {
+          const created = await savedSearchService.save(normalizedName, entry.queryParams || {});
+          if (entry.pinned) {
+            await savedSearchService.setPinned(created.id, true);
+          }
+          existingNames.add(dedupeKey);
+          imported += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+
+      await loadSavedSearches();
+      toast.success(`Import complete: ${imported} imported, ${skipped} skipped, ${failed} failed`);
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -309,10 +443,36 @@ const SavedSearchesPage: React.FC = () => {
             <SavedSearchIcon fontSize="small" color="primary" />
             <Typography variant="h6">Saved Searches</Typography>
           </Box>
-          <Button variant="outlined" startIcon={<Refresh />} onClick={loadSavedSearches}>
-            Refresh
-          </Button>
+          <Box display="flex" gap={1}>
+            <Button
+              variant="outlined"
+              startIcon={<FileUpload />}
+              onClick={openImportPicker}
+              disabled={importing}
+            >
+              {importing ? 'Importing…' : 'Import JSON'}
+            </Button>
+            <Button
+              variant="outlined"
+              startIcon={<FileDownload />}
+              onClick={handleExport}
+              disabled={loading}
+            >
+              Export JSON
+            </Button>
+            <Button variant="outlined" startIcon={<Refresh />} onClick={loadSavedSearches}>
+              Refresh
+            </Button>
+          </Box>
         </Box>
+        <input
+          ref={importFileRef}
+          type="file"
+          accept="application/json,.json"
+          onChange={handleImportFile}
+          style={{ display: 'none' }}
+          data-testid="saved-search-import-input"
+        />
       </Paper>
 
       <Paper sx={{ height: 600 }}>
