@@ -63,6 +63,35 @@ test('Mail reporting defaults to last 30 days', async ({ page, request }) => {
   await page.keyboard.press('Escape');
 });
 
+test('Mail reporting days filter persists in URL', async ({ page, request }) => {
+  await waitForApiReady(request);
+  const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+  await gotoWithAuthE2E(page, '/admin/mail', defaultUsername, defaultPassword, { token });
+  await page.waitForURL(/\/admin\/mail/, { timeout: 60_000 });
+
+  const reportingSection = page
+    .getByRole('heading', { name: /mail reporting/i })
+    .locator('xpath=ancestor::div[contains(@class,"MuiCardContent-root")]');
+  await expect(reportingSection).toBeVisible({ timeout: 60_000 });
+
+  const daysSelect = reportingSection.getByRole('combobox', { name: 'Days' });
+  await daysSelect.click();
+  await page.getByRole('option', { name: /Last 7 days/i }).click();
+
+  await expect(page).toHaveURL(/(?:\?|&)rDays=7(?:&|$)/);
+
+  await page.reload();
+  await page.waitForURL(/\/admin\/mail/, { timeout: 60_000 });
+
+  const daysSelectReload = page
+    .getByRole('heading', { name: /mail reporting/i })
+    .locator('xpath=ancestor::div[contains(@class,"MuiCardContent-root")]')
+    .getByRole('combobox', { name: 'Days' });
+  await daysSelectReload.click();
+  await expect(page.getByRole('option', { name: /Last 7 days/i })).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('Escape');
+});
+
 test('Mail automation test connection and fetch summary', async ({ page, request }) => {
   await waitForApiReady(request);
   const token = await fetchAccessToken(request, defaultUsername, defaultPassword);

@@ -147,6 +147,11 @@ const DIAGNOSTICS_QUERY_PARAMS = {
   sort: 'dSort',
   order: 'dOrder',
 } as const;
+const REPORT_QUERY_PARAMS = {
+  accountId: 'rAccount',
+  ruleId: 'rRule',
+  days: 'rDays',
+} as const;
 const DIAGNOSTICS_SORT_FIELDS: MailDiagnosticsSortField[] = ['processedAt', 'status', 'rule', 'account'];
 const DIAGNOSTICS_SORT_ORDERS: MailDiagnosticsSortOrder[] = ['desc', 'asc'];
 type RuleDiagnosticsTimeRange = 'ALL' | '24H' | '7D' | '30D';
@@ -178,6 +183,7 @@ const MailAutomationPage: React.FC = () => {
   const [reportAccountTouched, setReportAccountTouched] = useState(false);
   const [reportRuleTouched, setReportRuleTouched] = useState(false);
   const [reportDays, setReportDays] = useState(30);
+  const [reportFiltersLoaded, setReportFiltersLoaded] = useState(false);
   const [runtimeMetrics, setRuntimeMetrics] = useState<MailRuntimeMetrics | null>(null);
   const [runtimeMetricsLoading, setRuntimeMetricsLoading] = useState(false);
   const [runtimeWindowMinutes, setRuntimeWindowMinutes] = useState(60);
@@ -573,8 +579,33 @@ const MailAutomationPage: React.FC = () => {
   }, [loadAll]);
 
   useEffect(() => {
+    try {
+      const params = new URLSearchParams(initialDiagnosticsSearchRef.current);
+      const accountId = params.get(REPORT_QUERY_PARAMS.accountId) || '';
+      const ruleId = params.get(REPORT_QUERY_PARAMS.ruleId) || '';
+      const daysRaw = params.get(REPORT_QUERY_PARAMS.days) || '';
+      const daysParsed = Number(daysRaw);
+      const days = [7, 14, 30, 60, 90].includes(daysParsed) ? daysParsed : 30;
+      if (accountId) {
+        setReportAccountId(accountId);
+      }
+      if (ruleId) {
+        setReportRuleId(ruleId);
+      }
+      if (days !== 30) {
+        setReportDays(days);
+      }
+    } finally {
+      setReportFiltersLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!reportFiltersLoaded) {
+      return;
+    }
     loadReport();
-  }, [loadReport]);
+  }, [reportFiltersLoaded, loadReport]);
 
   useEffect(() => {
     loadRuntimeMetrics();
@@ -826,6 +857,46 @@ const MailAutomationPage: React.FC = () => {
     diagnosticsProcessedTo,
     diagnosticsSort,
     diagnosticsOrder,
+    location.pathname,
+    location.search,
+    location.hash,
+    navigate,
+  ]);
+
+  useEffect(() => {
+    if (!reportFiltersLoaded) {
+      return;
+    }
+    const params = new URLSearchParams(location.search);
+    const setOrDelete = (key: string, value: string) => {
+      if (value) {
+        params.set(key, value);
+      } else {
+        params.delete(key);
+      }
+    };
+    setOrDelete(REPORT_QUERY_PARAMS.accountId, reportAccountId);
+    setOrDelete(REPORT_QUERY_PARAMS.ruleId, reportRuleId);
+    setOrDelete(REPORT_QUERY_PARAMS.days, reportDays !== 30 ? String(reportDays) : '');
+
+    const currentSearch = location.search.startsWith('?') ? location.search.slice(1) : location.search;
+    const nextSearch = params.toString();
+    if (nextSearch === currentSearch) {
+      return;
+    }
+    navigate(
+      {
+        pathname: location.pathname,
+        search: nextSearch ? `?${nextSearch}` : '',
+        hash: location.hash,
+      },
+      { replace: true }
+    );
+  }, [
+    reportFiltersLoaded,
+    reportAccountId,
+    reportRuleId,
+    reportDays,
     location.pathname,
     location.search,
     location.hash,
