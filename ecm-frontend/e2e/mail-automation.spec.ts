@@ -6,6 +6,43 @@ const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
 const apiUrl = process.env.ECM_API_URL || 'http://localhost:7700';
 
+test('Mail reporting auto-selects single account and rule', async ({ page, request }) => {
+  await waitForApiReady(request);
+  const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+  const accountsRes = await request.get(`${apiUrl}/api/v1/integration/mail/accounts`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(accountsRes.ok()).toBeTruthy();
+  const accounts = (await accountsRes.json()) as Array<{ id: string; name: string }>;
+  const rulesRes = await request.get(`${apiUrl}/api/v1/integration/mail/rules`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(rulesRes.ok()).toBeTruthy();
+  const rules = (await rulesRes.json()) as Array<{ id: string; name: string }>;
+  test.skip(
+    accounts.length !== 1 || rules.length !== 1,
+    'Requires exactly one account and one rule to verify auto-selection',
+  );
+
+  await gotoWithAuthE2E(page, '/admin/mail', defaultUsername, defaultPassword, { token });
+  await page.waitForURL(/\/admin\/mail/, { timeout: 60_000 });
+
+  const reportingSection = page
+    .getByRole('heading', { name: /mail reporting/i })
+    .locator('xpath=ancestor::div[contains(@class,"MuiCardContent-root")]');
+  await expect(reportingSection).toBeVisible({ timeout: 60_000 });
+
+  const accountSelect = reportingSection.getByRole('combobox', { name: 'Account' });
+  await accountSelect.click();
+  await expect(page.getByRole('option', { name: accounts[0].name })).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('Escape');
+
+  const ruleSelect = reportingSection.getByRole('combobox', { name: 'Rule' });
+  await ruleSelect.click();
+  await expect(page.getByRole('option', { name: rules[0].name })).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('Escape');
+});
+
 test('Mail reporting defaults to last 30 days', async ({ page, request }) => {
   await waitForApiReady(request);
   const token = await fetchAccessToken(request, defaultUsername, defaultPassword);

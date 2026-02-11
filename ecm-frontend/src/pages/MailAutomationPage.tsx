@@ -175,6 +175,8 @@ const MailAutomationPage: React.FC = () => {
   const [reportLoading, setReportLoading] = useState(false);
   const [reportAccountId, setReportAccountId] = useState('');
   const [reportRuleId, setReportRuleId] = useState('');
+  const [reportAccountTouched, setReportAccountTouched] = useState(false);
+  const [reportRuleTouched, setReportRuleTouched] = useState(false);
   const [reportDays, setReportDays] = useState(30);
   const [runtimeMetrics, setRuntimeMetrics] = useState<MailRuntimeMetrics | null>(null);
   const [runtimeMetricsLoading, setRuntimeMetricsLoading] = useState(false);
@@ -635,6 +637,48 @@ const MailAutomationPage: React.FC = () => {
       setSummaryAccountId(accounts[0].id);
     }
   }, [accounts, summaryAccountId]);
+
+  useEffect(() => {
+    if (accounts.length === 0) {
+      if (reportAccountId) {
+        setReportAccountId('');
+      }
+      if (reportAccountTouched) {
+        setReportAccountTouched(false);
+      }
+      return;
+    }
+    const stillExists = accounts.some((account) => account.id === reportAccountId);
+    if (reportAccountId && !stillExists) {
+      setReportAccountId('');
+      setReportAccountTouched(false);
+      return;
+    }
+    if (!reportAccountTouched && !reportAccountId && accounts.length === 1) {
+      setReportAccountId(accounts[0].id);
+    }
+  }, [accounts, reportAccountId, reportAccountTouched]);
+
+  useEffect(() => {
+    if (rules.length === 0) {
+      if (reportRuleId) {
+        setReportRuleId('');
+      }
+      if (reportRuleTouched) {
+        setReportRuleTouched(false);
+      }
+      return;
+    }
+    const stillExists = rules.some((rule) => rule.id === reportRuleId);
+    if (reportRuleId && !stillExists) {
+      setReportRuleId('');
+      setReportRuleTouched(false);
+      return;
+    }
+    if (!reportRuleTouched && !reportRuleId && rules.length === 1) {
+      setReportRuleId(rules[0].id);
+    }
+  }, [rules, reportRuleId, reportRuleTouched]);
 
   const handleClearDiagnosticsFilters = () => {
     setDiagnosticsAccountId('');
@@ -2123,7 +2167,10 @@ const MailAutomationPage: React.FC = () => {
                     labelId="report-account-label"
                     label="Account"
                     value={reportAccountId}
-                    onChange={(event) => setReportAccountId(event.target.value)}
+                    onChange={(event) => {
+                      setReportAccountTouched(true);
+                      setReportAccountId(event.target.value);
+                    }}
                   >
                     <MenuItem value="">All accounts</MenuItem>
                     {accounts.map((account) => (
@@ -2139,7 +2186,10 @@ const MailAutomationPage: React.FC = () => {
                     labelId="report-rule-label"
                     label="Rule"
                     value={reportRuleId}
-                    onChange={(event) => setReportRuleId(event.target.value)}
+                    onChange={(event) => {
+                      setReportRuleTouched(true);
+                      setReportRuleId(event.target.value);
+                    }}
                   >
                     <MenuItem value="">All rules</MenuItem>
                     {rules.map((rule) => (
