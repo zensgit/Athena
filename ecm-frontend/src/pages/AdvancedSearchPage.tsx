@@ -7,6 +7,7 @@ import {
   Paper,
   Typography,
   Chip,
+  Alert,
   FormControl,
   Select,
   MenuItem,
@@ -53,6 +54,9 @@ const MATCH_FIELD_LABELS: Record<string, string> = {
 
 const PREVIEW_STATUS_VALUES = ['READY', 'PROCESSING', 'QUEUED', 'FAILED', 'UNSUPPORTED', 'PENDING'] as const;
 const DATE_RANGE_VALUES = ['all', 'today', 'week', 'month'] as const;
+const FALLBACK_AUTO_RETRY_MAX = 3;
+const FALLBACK_AUTO_RETRY_BASE_DELAY_MS = 1500;
+const FALLBACK_AUTO_RETRY_MAX_DELAY_MS = 10000;
 
 const parsePreviewStatuses = (rawValue: string | null): string[] => {
   if (!rawValue) {
@@ -91,6 +95,66 @@ const parseOptionalNumber = (rawValue: string | null): number | undefined => {
     return undefined;
   }
   return value;
+};
+
+const normalizeCriteriaValues = (values?: string[]) =>
+  (values || [])
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
+    .sort();
+
+const buildFallbackCriteriaKey = (criteria: {
+  query: string;
+  previewStatuses: string[];
+  dateRange: 'all' | 'today' | 'week' | 'month';
+  mimeTypes: string[];
+  creators: string[];
+  tags: string[];
+  categories: string[];
+  minSize?: number;
+  maxSize?: number;
+}) =>
+  JSON.stringify({
+    query: criteria.query.trim(),
+    previewStatuses: normalizeCriteriaValues(criteria.previewStatuses),
+    dateRange: criteria.dateRange,
+    mimeTypes: normalizeCriteriaValues(criteria.mimeTypes),
+    creators: normalizeCriteriaValues(criteria.creators),
+    tags: normalizeCriteriaValues(criteria.tags),
+    categories: normalizeCriteriaValues(criteria.categories),
+    minSize: criteria.minSize ?? null,
+    maxSize: criteria.maxSize ?? null,
+  });
+
+const hasActiveCriteria = (criteria: {
+  query: string;
+  previewStatuses: string[];
+  dateRange: 'all' | 'today' | 'week' | 'month';
+  mimeTypes: string[];
+  creators: string[];
+  tags: string[];
+  categories: string[];
+  minSize?: number;
+  maxSize?: number;
+}) =>
+  Boolean(
+    criteria.query.trim()
+    || criteria.previewStatuses.length > 0
+    || criteria.dateRange !== 'all'
+    || criteria.mimeTypes.length > 0
+    || criteria.creators.length > 0
+    || criteria.tags.length > 0
+    || criteria.categories.length > 0
+    || criteria.minSize !== undefined
+    || criteria.maxSize !== undefined
+  );
+
+const getFallbackAutoRetryDelayMs = (attempt: number) => {
+  if (attempt < 0) {
+    return FALLBACK_AUTO_RETRY_BASE_DELAY_MS;
+  }
+  const scaled = FALLBACK_AUTO_RETRY_BASE_DELAY_MS * (2 ** attempt);
+  return Math.min(scaled, FALLBACK_AUTO_RETRY_MAX_DELAY_MS);
 };
 
 type AdvancedSearchUrlState = {
@@ -175,6 +239,14 @@ const AdvancedSearchPage: React.FC = () => {
     attempts?: number;
     nextAttemptAt?: string;
   }>>({});
+  const [fallbackResults, setFallbackResults] = useState<SearchResult[]>([]);
+  const [fallbackLabel, setFallbackLabel] = useState('');
+  const [fallbackCriteriaKey, setFallbackCriteriaKey] = useState('');
+  const [currentCriteriaKey, setCurrentCriteriaKey] = useState('');
+  const [currentCriteriaHasFilters, setCurrentCriteriaHasFilters] = useState(false);
+  const [dismissedFallbackCriteriaKey, setDismissedFallbackCriteriaKey] = useState('');
+  const [fallbackAutoRetryCount, setFallbackAutoRetryCount] = useState(0);
+  const fallbackAutoRetryTimerRef = useRef<number | null>(null);
 
   const syncSearchStateToUrl = useCallback((state: AdvancedSearchUrlState) => {
     const params = new URLSearchParams();
@@ -266,6 +338,21 @@ const AdvancedSearchPage: React.FC = () => {
       const effectiveCategories = options?.categoriesOverride ?? selectedCategories;
       const effectiveMinSize = options?.minSizeOverride ?? minSize;
       const effectiveMaxSize = options?.maxSizeOverride ?? maxSize;
+      const effectiveCriteria = {
+        query: effectiveQuery,
+        previewStatuses: effectivePreviewStatuses,
+        dateRange: effectiveDateRange,
+        mimeTypes: effectiveMimeTypes,
+        creators: effectiveCreators,
+        tags: effectiveTags,
+        categories: effectiveCategories,
+        minSize: effectiveMinSize,
+        maxSize: effectiveMaxSize,
+      };
+      const effectiveCriteriaKey = buildFallbackCriteriaKey(effectiveCriteria);
+      const effectiveHasCriteria = hasActiveCriteria(effectiveCriteria);
+      setCurrentCriteriaKey(effectiveCriteriaKey);
+      setCurrentCriteriaHasFilters(effectiveHasCriteria);
       
       // Calculate date filters
       let dateFrom = null;
@@ -296,6 +383,11 @@ const AdvancedSearchPage: React.FC = () => {
       const response = await apiService.post<SearchResponse>('/search/faceted', payload);
       
       setResults(response.results.content);
+      if (response.results.content.length > 0) {
+        setFallbackResults(response.results.content);
+        setFallbackLabel(effectiveQuery.trim());
+        setFallbackCriteriaKey(effectiveCriteriaKey);
+      }
       setTotalResults(response.results.totalElements);
       setTotalPages(response.results.totalPages);
       setFacets(response.facets);
@@ -339,6 +431,76 @@ const AdvancedSearchPage: React.FC = () => {
     selectedTags,
     syncSearchStateToUrl,
   ]);
+
+  const fallbackCriteriaMatches = Boolean(currentCriteriaKey) && currentCriteriaKey === fallbackCriteriaKey;
+  const fallbackHiddenForCriteria = Boolean(currentCriteriaKey) && currentCriteriaKey === dismissedFallbackCriteriaKey;
+  const shouldShowFallback = !loading
+    && results.length === 0
+    && fallbackResults.length > 0
+    && currentCriteriaHasFilters
+    && fallbackCriteriaMatches
+    && !fallbackHiddenForCriteria;
+  const displayResults = shouldShowFallback ? fallbackResults : results;
+
+  useEffect(() => {
+    if (loading) {
+      return;
+    }
+    if (!shouldShowFallback && fallbackAutoRetryCount !== 0) {
+      setFallbackAutoRetryCount(0);
+    }
+  }, [loading, shouldShowFallback, fallbackAutoRetryCount]);
+
+  useEffect(() => {
+    if (!dismissedFallbackCriteriaKey) {
+      return;
+    }
+    if (!currentCriteriaKey || currentCriteriaKey !== dismissedFallbackCriteriaKey) {
+      setDismissedFallbackCriteriaKey('');
+    }
+  }, [currentCriteriaKey, dismissedFallbackCriteriaKey]);
+
+  useEffect(() => {
+    if (fallbackAutoRetryTimerRef.current !== null) {
+      window.clearTimeout(fallbackAutoRetryTimerRef.current);
+      fallbackAutoRetryTimerRef.current = null;
+    }
+    if (!shouldShowFallback) {
+      return;
+    }
+    if (fallbackAutoRetryCount >= FALLBACK_AUTO_RETRY_MAX) {
+      return;
+    }
+
+    const nextDelayMs = getFallbackAutoRetryDelayMs(fallbackAutoRetryCount);
+    fallbackAutoRetryTimerRef.current = window.setTimeout(() => {
+      setFallbackAutoRetryCount((prev) => prev + 1);
+      void handleSearch(page);
+    }, nextDelayMs);
+
+    return () => {
+      if (fallbackAutoRetryTimerRef.current !== null) {
+        window.clearTimeout(fallbackAutoRetryTimerRef.current);
+        fallbackAutoRetryTimerRef.current = null;
+      }
+    };
+  }, [shouldShowFallback, fallbackAutoRetryCount, handleSearch, page]);
+
+  const fallbackAutoRetryNextDelayMs = shouldShowFallback && fallbackAutoRetryCount < FALLBACK_AUTO_RETRY_MAX
+    ? getFallbackAutoRetryDelayMs(fallbackAutoRetryCount)
+    : null;
+
+  const handleRetrySearch = useCallback(() => {
+    void handleSearch(page);
+  }, [handleSearch, page]);
+
+  const handleHideFallbackResults = useCallback(() => {
+    if (!currentCriteriaKey) {
+      return;
+    }
+    setDismissedFallbackCriteriaKey(currentCriteriaKey);
+    setFallbackAutoRetryCount(0);
+  }, [currentCriteriaKey]);
 
   useEffect(() => {
     if (initializedFromUrlRef.current) {
@@ -400,7 +562,7 @@ const AdvancedSearchPage: React.FC = () => {
     handleSearch(value);
   };
 
-  const previewStatusCounts = useMemo(() => results.reduce(
+  const previewStatusCounts = useMemo(() => displayResults.reduce(
     (acc, result) => {
       if (result.nodeType === 'FOLDER') {
         return acc;
@@ -426,17 +588,17 @@ const AdvancedSearchPage: React.FC = () => {
       UNSUPPORTED: 0,
       PENDING: 0,
     }
-  ), [results]);
+  ), [displayResults]);
 
   const failedPreviewResults = useMemo(
-    () => results.filter((result) => result.nodeType !== 'FOLDER'
+    () => displayResults.filter((result) => result.nodeType !== 'FOLDER'
       && (result.previewStatus || '').toUpperCase() === 'FAILED'
       && !isUnsupportedPreviewFailure(result.previewFailureCategory, result.mimeType, result.previewFailureReason)),
-    [results]
+    [displayResults]
   );
   const failedPreviewSummary = useMemo(
     () => summarizeFailedPreviews(
-      results
+      displayResults
         .filter((result) => result.nodeType !== 'FOLDER')
         .map((result) => ({
           previewStatus: result.previewStatus,
@@ -445,7 +607,7 @@ const AdvancedSearchPage: React.FC = () => {
           mimeType: result.mimeType,
         }))
     ),
-    [results]
+    [displayResults]
   );
 
   const failedPreviewReasonSummary = useMemo(() => {
@@ -825,11 +987,36 @@ const AdvancedSearchPage: React.FC = () => {
           <Box flex={1} overflow="auto">
             {loading ? (
                 <Typography sx={{ p: 2 }}>Searching...</Typography>
-            ) : results.length > 0 ? (
+            ) : displayResults.length > 0 ? (
               <Stack spacing={2}>
                 <Typography variant="body2" color="textSecondary">
-                  Found {totalResults} results
+                  {shouldShowFallback
+                    ? `Showing previous results (${displayResults.length}) while the index refreshes`
+                    : `Found ${totalResults} results`}
                 </Typography>
+                {shouldShowFallback && (
+                  <Alert
+                    severity="info"
+                    action={(
+                      <Stack direction="row" spacing={1}>
+                        <Button color="inherit" size="small" onClick={handleRetrySearch}>
+                          Retry
+                        </Button>
+                        <Button color="inherit" size="small" onClick={handleHideFallbackResults}>
+                          Hide previous results
+                        </Button>
+                      </Stack>
+                    )}
+                  >
+                    {fallbackLabel
+                      ? `Search results may still be indexing. Showing previous results for "${fallbackLabel}".`
+                      : 'Search results may still be indexing. Showing previous results.'}
+                    {' '}
+                    {fallbackAutoRetryCount < FALLBACK_AUTO_RETRY_MAX
+                      ? `Auto-retry ${fallbackAutoRetryCount}/${FALLBACK_AUTO_RETRY_MAX}${fallbackAutoRetryNextDelayMs ? ` (next in ${(fallbackAutoRetryNextDelayMs / 1000).toFixed(1)}s).` : '.'}`
+                      : `Auto-retry stopped after ${FALLBACK_AUTO_RETRY_MAX} attempts.`}
+                  </Alert>
+                )}
                 <Paper variant="outlined" sx={{ p: 1.5 }}>
                   <Typography variant="subtitle2" gutterBottom>
                     Preview Status
@@ -935,7 +1122,7 @@ const AdvancedSearchPage: React.FC = () => {
                     </Stack>
                   </Paper>
                 )}
-                {results.map((result) => (
+                {displayResults.map((result) => (
                   <Paper 
                     key={result.id} 
                     sx={{ p: 2, cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }}
@@ -1086,14 +1273,14 @@ const AdvancedSearchPage: React.FC = () => {
             ) : (
               <Box p={4} textAlign="center">
                 <Typography color="textSecondary">
-                    {totalResults === 0 && query ? 'No results found.' : 'Enter a query to start searching.'}
+                    {query ? 'No results found.' : 'Enter a query to start searching.'}
                 </Typography>
               </Box>
             )}
           </Box>
 
           {/* Pagination */}
-          {totalPages > 1 && (
+          {!shouldShowFallback && totalPages > 1 && (
             <Box py={2} display="flex" justifyContent="center">
               <Pagination
                 count={totalPages}

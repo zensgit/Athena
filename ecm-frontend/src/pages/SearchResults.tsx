@@ -1324,10 +1324,13 @@ const SearchResults: React.FC = () => {
     && fallbackCriteriaMatches
     && !fallbackHiddenForCriteria;
   useEffect(() => {
+    if (loading) {
+      return;
+    }
     if (!shouldShowFallback && fallbackAutoRetryCount !== 0) {
       setFallbackAutoRetryCount(0);
     }
-  }, [shouldShowFallback, fallbackAutoRetryCount]);
+  }, [loading, shouldShowFallback, fallbackAutoRetryCount]);
   const displayNodes = useMemo(
     () => (isSimilarMode ? (similarResults || []) : (shouldShowFallback ? fallbackNodes : nodes)),
     [isSimilarMode, similarResults, shouldShowFallback, fallbackNodes, nodes]
