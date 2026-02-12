@@ -501,6 +501,87 @@ const SearchDialog: React.FC = () => {
     }));
   };
 
+  const activeCriteriaChips = React.useMemo(() => {
+    const chips: Array<{ key: string; label: string }> = [];
+    const aspectLabelByValue = new Map(ASPECTS.map((item) => [item.value, item.label]));
+    const previewLabelByValue = new Map(PREVIEW_STATUS_OPTIONS.map((item) => [item.value, item.label]));
+    const asDateLabel = (value?: string) => (value ? value.slice(0, 10) : '');
+
+    if (searchCriteria.name?.trim()) {
+      chips.push({ key: 'name', label: `Name: ${searchCriteria.name.trim()}` });
+    }
+    if (searchCriteria.contentType?.trim()) {
+      chips.push({ key: 'contentType', label: `Type: ${searchCriteria.contentType.trim()}` });
+    }
+    if (searchCriteria.createdBy?.trim()) {
+      chips.push({ key: 'createdBy', label: `Creator: ${searchCriteria.createdBy.trim()}` });
+    }
+    if (searchCriteria.createdFrom || searchCriteria.createdTo) {
+      chips.push({
+        key: 'createdDate',
+        label: `Created: ${asDateLabel(searchCriteria.createdFrom) || '...'} -> ${asDateLabel(searchCriteria.createdTo) || '...'}`,
+      });
+    }
+    if (searchCriteria.modifiedFrom || searchCriteria.modifiedTo) {
+      chips.push({
+        key: 'modifiedDate',
+        label: `Modified: ${asDateLabel(searchCriteria.modifiedFrom) || '...'} -> ${asDateLabel(searchCriteria.modifiedTo) || '...'}`,
+      });
+    }
+    (searchCriteria.aspects || []).forEach((aspect) => {
+      chips.push({ key: `aspect-${aspect}`, label: `Aspect: ${aspectLabelByValue.get(aspect) || aspect}` });
+    });
+    customProperties.forEach((item, index) => {
+      chips.push({
+        key: `property-${index}`,
+        label: `Property: ${item.key}=${item.value}`,
+      });
+    });
+    tags.forEach((tag) => chips.push({ key: `tag-${tag}`, label: `Tag: ${tag}` }));
+    categories.forEach((category) => chips.push({ key: `category-${category}`, label: `Category: ${category}` }));
+    correspondents.forEach((correspondent) =>
+      chips.push({ key: `correspondent-${correspondent}`, label: `Correspondent: ${correspondent}` })
+    );
+    selectedPreviewStatuses.forEach((status) =>
+      chips.push({ key: `preview-${status}`, label: `Preview: ${previewLabelByValue.get(status) || status}` })
+    );
+    if (minSize !== undefined || maxSize !== undefined) {
+      chips.push({
+        key: 'sizeRange',
+        label: `Size: ${minSize !== undefined ? minSize : '...'} - ${maxSize !== undefined ? maxSize : '...'} bytes`,
+      });
+    }
+    if (scopeFolderId.trim().length > 0) {
+      chips.push({
+        key: 'scopeFolder',
+        label: `Scope: folder (${scopeIncludeChildren ? 'include children' : 'this folder only'})`,
+      });
+    } else if (pathPrefix.trim().length > 0) {
+      chips.push({ key: 'pathPrefix', label: `Path: ${pathPrefix.trim()}` });
+    }
+
+    return chips;
+  }, [
+    searchCriteria.name,
+    searchCriteria.contentType,
+    searchCriteria.createdBy,
+    searchCriteria.createdFrom,
+    searchCriteria.createdTo,
+    searchCriteria.modifiedFrom,
+    searchCriteria.modifiedTo,
+    searchCriteria.aspects,
+    customProperties,
+    tags,
+    categories,
+    correspondents,
+    selectedPreviewStatuses,
+    minSize,
+    maxSize,
+    scopeFolderId,
+    scopeIncludeChildren,
+    pathPrefix,
+  ]);
+
   const isSearchValid = () => {
     return (
       searchCriteria.name ||
@@ -927,6 +1008,30 @@ const SearchDialog: React.FC = () => {
               </Grid>
             </AccordionDetails>
           </Accordion>
+
+          {activeCriteriaChips.length > 0 && (
+            <Box
+              data-testid="active-criteria-summary"
+              aria-label="Active criteria summary"
+              sx={{
+                mt: 2,
+                p: 1.5,
+                border: '1px solid',
+                borderColor: 'divider',
+                borderRadius: 1,
+                backgroundColor: 'background.paper',
+              }}
+            >
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                Active Criteria ({activeCriteriaChips.length})
+              </Typography>
+              <Box display="flex" flexWrap="wrap" gap={0.75}>
+                {activeCriteriaChips.map((item) => (
+                  <Chip key={item.key} size="small" label={item.label} />
+                ))}
+              </Box>
+            </Box>
+          )}
           </Box>
         </DialogContent>
         <DialogActions>
