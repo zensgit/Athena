@@ -43,6 +43,7 @@ interface UIState {
 export interface SearchPrefill {
   name?: string;
   contentType?: string;
+  previewStatuses?: string[];
   createdBy?: string;
   createdFrom?: string;
   createdTo?: string;

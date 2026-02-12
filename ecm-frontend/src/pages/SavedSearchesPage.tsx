@@ -115,11 +115,6 @@ const SavedSearchesPage: React.FC = () => {
     loadSavedSearches();
   }, [loadSavedSearches]);
 
-  const normalizeList = (input: unknown) =>
-    Array.isArray(input)
-      ? input.map((value) => String(value).trim()).filter((value) => value.length > 0)
-      : [];
-
   const handleRun = async (item: SavedSearch) => {
     try {
       await dispatch(executeSavedSearch(item.id)).unwrap();
@@ -155,25 +150,26 @@ const SavedSearchesPage: React.FC = () => {
   };
 
   const handleLoadToSearch = (item: SavedSearch) => {
-    const queryParams = item.queryParams || {};
-    const filters = (queryParams.filters || {}) as Record<string, any>;
-    const mimeTypes = Array.isArray(filters.mimeTypes) ? filters.mimeTypes : [];
+    const criteria = buildSearchCriteriaFromSavedSearch(item);
 
     dispatch(
       setSearchPrefill({
-        name: typeof queryParams.query === 'string' ? queryParams.query : '',
-        contentType: typeof mimeTypes[0] === 'string' ? mimeTypes[0] : '',
-        createdBy: typeof filters.createdBy === 'string' ? filters.createdBy : '',
-        createdFrom: typeof filters.dateFrom === 'string' ? filters.dateFrom : undefined,
-        createdTo: typeof filters.dateTo === 'string' ? filters.dateTo : undefined,
-        modifiedFrom: typeof filters.modifiedFrom === 'string' ? filters.modifiedFrom : undefined,
-        modifiedTo: typeof filters.modifiedTo === 'string' ? filters.modifiedTo : undefined,
-        tags: normalizeList(filters.tags),
-        categories: normalizeList(filters.categories),
-        correspondents: normalizeList(filters.correspondents),
-        minSize: typeof filters.minSize === 'number' ? filters.minSize : undefined,
-        maxSize: typeof filters.maxSize === 'number' ? filters.maxSize : undefined,
-        pathPrefix: typeof filters.path === 'string' ? filters.path : '',
+        name: criteria.name || '',
+        contentType: criteria.contentType || '',
+        previewStatuses: criteria.previewStatuses || [],
+        createdBy: criteria.createdBy || '',
+        createdFrom: criteria.createdFrom,
+        createdTo: criteria.createdTo,
+        modifiedFrom: criteria.modifiedFrom,
+        modifiedTo: criteria.modifiedTo,
+        tags: criteria.tags || [],
+        categories: criteria.categories || [],
+        correspondents: criteria.correspondents || [],
+        minSize: criteria.minSize,
+        maxSize: criteria.maxSize,
+        pathPrefix: criteria.path || '',
+        folderId: criteria.folderId,
+        includeChildren: criteria.includeChildren,
       })
     );
     dispatch(setSearchOpen(true));
