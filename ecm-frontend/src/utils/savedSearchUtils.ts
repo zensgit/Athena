@@ -21,33 +21,58 @@ const normalizeProperties = (input: unknown) => {
   return Object.fromEntries(entries);
 };
 
+const asNumber = (input: unknown) => {
+  if (typeof input === 'number' && Number.isFinite(input)) {
+    return input;
+  }
+  if (typeof input === 'string') {
+    const parsed = Number(input);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+};
+
 export const buildSearchCriteriaFromSavedSearch = (item: SavedSearch): SearchCriteria => {
-  const queryParams = item.queryParams || {};
-  const filters = (queryParams.filters || {}) as Record<string, any>;
-  const mimeTypes = Array.isArray(filters.mimeTypes) ? filters.mimeTypes : [];
-  const createdByList = normalizeList(filters.createdByList);
-  const properties = normalizeProperties(filters.properties ?? (queryParams as Record<string, unknown>).properties);
+  const queryParams = (item.queryParams || {}) as Record<string, unknown>;
+  const filters = (queryParams.filters || {}) as Record<string, unknown>;
+
+  const getFilterValue = (key: string) =>
+    filters[key] !== undefined ? filters[key] : queryParams[key];
+
+  const mimeTypes = normalizeList(getFilterValue('mimeTypes'));
+  const createdByList = normalizeList(getFilterValue('createdByList'));
+  const properties = normalizeProperties(getFilterValue('properties'));
+  const createdBy = typeof getFilterValue('createdBy') === 'string'
+    ? (getFilterValue('createdBy') as string)
+    : (createdByList[0] || undefined);
+  const contentType = typeof getFilterValue('contentType') === 'string'
+    ? (getFilterValue('contentType') as string)
+    : (mimeTypes[0] || undefined);
 
   return {
-    name: typeof queryParams.query === 'string' ? queryParams.query : '',
-    contentType: typeof mimeTypes[0] === 'string' ? mimeTypes[0] : '',
-    mimeTypes: normalizeList(filters.mimeTypes),
-    aspects: normalizeList(filters.aspects),
+    name: typeof queryParams.query === 'string'
+      ? queryParams.query
+      : (typeof queryParams.q === 'string' ? queryParams.q : ''),
+    contentType,
+    mimeTypes,
+    aspects: normalizeList(getFilterValue('aspects')),
     properties,
-    createdBy: typeof filters.createdBy === 'string' ? filters.createdBy : '',
+    createdBy,
     createdByList: createdByList.length ? createdByList : undefined,
-    createdFrom: typeof filters.dateFrom === 'string' ? filters.dateFrom : undefined,
-    createdTo: typeof filters.dateTo === 'string' ? filters.dateTo : undefined,
-    modifiedFrom: typeof filters.modifiedFrom === 'string' ? filters.modifiedFrom : undefined,
-    modifiedTo: typeof filters.modifiedTo === 'string' ? filters.modifiedTo : undefined,
-    tags: normalizeList(filters.tags),
-    categories: normalizeList(filters.categories),
-    correspondents: normalizeList(filters.correspondents),
-    previewStatuses: normalizeList(filters.previewStatuses),
-    minSize: typeof filters.minSize === 'number' ? filters.minSize : undefined,
-    maxSize: typeof filters.maxSize === 'number' ? filters.maxSize : undefined,
-    path: typeof filters.path === 'string' ? filters.path : undefined,
-    folderId: typeof filters.folderId === 'string' ? filters.folderId : undefined,
-    includeChildren: typeof filters.includeChildren === 'boolean' ? filters.includeChildren : undefined,
+    createdFrom: typeof getFilterValue('dateFrom') === 'string' ? (getFilterValue('dateFrom') as string) : undefined,
+    createdTo: typeof getFilterValue('dateTo') === 'string' ? (getFilterValue('dateTo') as string) : undefined,
+    modifiedFrom: typeof getFilterValue('modifiedFrom') === 'string' ? (getFilterValue('modifiedFrom') as string) : undefined,
+    modifiedTo: typeof getFilterValue('modifiedTo') === 'string' ? (getFilterValue('modifiedTo') as string) : undefined,
+    tags: normalizeList(getFilterValue('tags')),
+    categories: normalizeList(getFilterValue('categories')),
+    correspondents: normalizeList(getFilterValue('correspondents')),
+    previewStatuses: normalizeList(getFilterValue('previewStatuses')),
+    minSize: asNumber(getFilterValue('minSize')),
+    maxSize: asNumber(getFilterValue('maxSize')),
+    path: typeof getFilterValue('path') === 'string' ? (getFilterValue('path') as string) : undefined,
+    folderId: typeof getFilterValue('folderId') === 'string' ? (getFilterValue('folderId') as string) : undefined,
+    includeChildren: typeof getFilterValue('includeChildren') === 'boolean'
+      ? (getFilterValue('includeChildren') as boolean)
+      : undefined,
   };
 };
