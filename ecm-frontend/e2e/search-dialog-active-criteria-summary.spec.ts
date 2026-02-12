@@ -83,4 +83,28 @@ test.describe('Search dialog active criteria summary', () => {
     await expect(dialog.getByLabel('Name contains')).toHaveValue(query);
     await expect(dialog.getByTestId('active-criteria-summary')).toContainText(`Name: ${query}`);
   });
+
+  test('maps advanced-search URL state into global advanced dialog prefill', async ({ page, request }) => {
+    test.setTimeout(180_000);
+
+    const apiUrl = resolveApiUrl();
+    await waitForApiReady(request, { apiUrl });
+    const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+
+    const query = `e2e-url-prefill-${Date.now()}`;
+    const advancedPath = `/search?q=${encodeURIComponent(query)}&previewStatus=FAILED&mimeTypes=${encodeURIComponent('application/pdf')}&creators=${encodeURIComponent('admin')}&minSize=1`;
+
+    await gotoWithAuthE2E(page, advancedPath, defaultUsername, defaultPassword, { token });
+
+    await page.locator('header button[aria-label="Search"]').click();
+    const dialog = page.getByRole('dialog').filter({ hasText: 'Advanced Search' });
+    await expect(dialog).toBeVisible({ timeout: 60_000 });
+
+    await expect(dialog.getByLabel('Name contains')).toHaveValue(query);
+    const summary = dialog.getByTestId('active-criteria-summary');
+    await expect(summary).toContainText(`Name: ${query}`);
+    await expect(summary).toContainText('Preview: Failed');
+    await expect(summary).toContainText('Type: application/pdf');
+    await expect(summary).toContainText('Creator: admin');
+  });
 });

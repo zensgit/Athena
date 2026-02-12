@@ -40,10 +40,11 @@ import {
   PushPinOutlined,
 } from '@mui/icons-material';
 import { alpha } from '@mui/material/styles';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from 'store';
 import { logout } from 'store/slices/authSlice';
 import {
+  SearchPrefill,
   setUploadDialogOpen,
   setCreateFolderDialogOpen,
   setSearchOpen,
@@ -77,6 +78,7 @@ interface MainLayoutProps {
 
 const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { nodeId } = useParams<{ nodeId: string }>();
   const dispatch = useAppDispatch();
   const { user } = useAppSelector((state) => state.auth);
@@ -126,6 +128,37 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   const handleSearch = () => {
     const looksLikeUuid = (value: string) =>
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+    const parseCsv = (value: string | null) =>
+      Array.from(new Set((value || '')
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean)));
+    const parseOptionalNumber = (value: string | null) => {
+      if (!value) {
+        return undefined;
+      }
+      const parsed = Number(value);
+      return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+    };
+    const resolveModifiedFromByRange = (raw: string | null) => {
+      const now = new Date();
+      if (raw === 'today') {
+        const today = new Date(now);
+        today.setHours(0, 0, 0, 0);
+        return today.toISOString();
+      }
+      if (raw === 'week') {
+        const week = new Date(now);
+        week.setDate(now.getDate() - 7);
+        return week.toISOString();
+      }
+      if (raw === 'month') {
+        const month = new Date(now);
+        month.setMonth(now.getMonth() - 1);
+        return month.toISOString();
+      }
+      return undefined;
+    };
 
     // When invoked from a folder page, default to "search within this folder".
     // Avoid using the route param directly since "root" is an alias; currentNode.id is the real UUID.
@@ -134,11 +167,37 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         ? currentNode.id
         : (nodeId && nodeId !== 'root' && looksLikeUuid(nodeId) ? nodeId : null);
 
+    const prefillPayload: Partial<SearchPrefill> = {};
+    if (location.pathname === '/search') {
+      const params = new URLSearchParams(location.search);
+      const query = (params.get('q') || '').trim();
+      const previewStatuses = parseCsv(params.get('previewStatus')).map((status) => status.toUpperCase());
+      const mimeTypes = parseCsv(params.get('mimeTypes'));
+      const creators = parseCsv(params.get('creators'));
+      const tags = parseCsv(params.get('tags'));
+      const categories = parseCsv(params.get('categories'));
+      const minSize = parseOptionalNumber(params.get('minSize'));
+      const maxSize = parseOptionalNumber(params.get('maxSize'));
+      const modifiedFrom = resolveModifiedFromByRange(params.get('dateRange'));
+
+      if (query) prefillPayload.name = query;
+      if (previewStatuses.length > 0) prefillPayload.previewStatuses = previewStatuses;
+      if (mimeTypes.length === 1) prefillPayload.contentType = mimeTypes[0];
+      if (creators.length === 1) prefillPayload.createdBy = creators[0];
+      if (tags.length > 0) prefillPayload.tags = tags;
+      if (categories.length > 0) prefillPayload.categories = categories;
+      if (minSize !== undefined) prefillPayload.minSize = minSize;
+      if (maxSize !== undefined) prefillPayload.maxSize = maxSize;
+      if (modifiedFrom) prefillPayload.modifiedFrom = modifiedFrom;
+    }
+
     if (folderScopeId) {
-      dispatch(setSearchPrefill({
-        folderId: folderScopeId,
-        includeChildren: true,
-      }));
+      prefillPayload.folderId = folderScopeId;
+      prefillPayload.includeChildren = true;
+    }
+
+    if (Object.keys(prefillPayload).length > 0) {
+      dispatch(setSearchPrefill(prefillPayload));
     }
     dispatch(setSearchOpen(true));
   };
