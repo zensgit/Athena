@@ -59,4 +59,28 @@ test.describe('Search dialog active criteria summary', () => {
     await expect(dialog.getByLabel('Name contains')).toHaveValue(query);
     await expect(dialog.getByTestId('active-criteria-summary')).toContainText(`Name: ${query}`);
   });
+
+  test('reuses last search criteria when opening app-bar search without explicit prefill', async ({ page, request }) => {
+    test.setTimeout(180_000);
+
+    const apiUrl = resolveApiUrl();
+    await waitForApiReady(request, { apiUrl });
+    const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+
+    const query = `e2e-global-search-prefill-${Date.now()}`;
+
+    await gotoWithAuthE2E(page, '/search-results', defaultUsername, defaultPassword, { token });
+
+    const quickSearchInput = page.getByPlaceholder('Quick search by name...');
+    await expect(quickSearchInput).toBeVisible({ timeout: 60_000 });
+    await quickSearchInput.fill(query);
+    await quickSearchInput.press('Enter');
+
+    await page.locator('header button[aria-label="Search"]').click();
+    const dialog = page.getByRole('dialog').filter({ hasText: 'Advanced Search' });
+    await expect(dialog).toBeVisible({ timeout: 60_000 });
+
+    await expect(dialog.getByLabel('Name contains')).toHaveValue(query);
+    await expect(dialog.getByTestId('active-criteria-summary')).toContainText(`Name: ${query}`);
+  });
 });

@@ -71,6 +71,8 @@ const SearchDialog: React.FC = () => {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const { searchOpen, searchPrefill } = useAppSelector((state) => state.ui);
+  const { lastSearchCriteria } = useAppSelector((state) => state.node);
+  const prefillInitializedRef = React.useRef(false);
   
   const [searchCriteria, setSearchCriteria] = useState<SearchCriteria>({
     name: '',
@@ -180,35 +182,62 @@ const SearchDialog: React.FC = () => {
   }, [searchCriteria.name, searchOpen]);
 
   React.useEffect(() => {
-    if (!searchOpen || !searchPrefill) {
+    if (!searchOpen || prefillInitializedRef.current) {
       return;
     }
 
-    const prefilledProperties = Object.entries(searchPrefill.properties || {})
+    const source = searchPrefill || (lastSearchCriteria
+      ? {
+          name: lastSearchCriteria.name || '',
+          contentType: lastSearchCriteria.contentType || lastSearchCriteria.mimeTypes?.[0] || '',
+          previewStatuses: lastSearchCriteria.previewStatuses || [],
+          aspects: lastSearchCriteria.aspects || [],
+          properties: lastSearchCriteria.properties || {},
+          createdBy: lastSearchCriteria.createdBy || lastSearchCriteria.createdByList?.[0] || '',
+          createdFrom: lastSearchCriteria.createdFrom,
+          createdTo: lastSearchCriteria.createdTo,
+          modifiedFrom: lastSearchCriteria.modifiedFrom,
+          modifiedTo: lastSearchCriteria.modifiedTo,
+          tags: lastSearchCriteria.tags || [],
+          categories: lastSearchCriteria.categories || [],
+          correspondents: lastSearchCriteria.correspondents || [],
+          minSize: lastSearchCriteria.minSize,
+          maxSize: lastSearchCriteria.maxSize,
+          pathPrefix: lastSearchCriteria.path || '',
+          folderId: lastSearchCriteria.folderId || '',
+          includeChildren: lastSearchCriteria.includeChildren,
+        }
+      : null);
+
+    if (!source) {
+      return;
+    }
+
+    const prefilledProperties = Object.entries(source.properties || {})
       .filter(([key, value]) => key.trim().length > 0 && value !== undefined && value !== null)
       .map(([key, value]) => ({ key, value: String(value) }));
     const hasBasicPrefill = Boolean(
-      searchPrefill.name
-      || searchPrefill.contentType
-      || searchPrefill.createdBy
-      || (searchPrefill.previewStatuses && searchPrefill.previewStatuses.length > 0)
-      || (searchPrefill.folderId && searchPrefill.folderId.trim().length > 0)
+      source.name
+      || source.contentType
+      || source.createdBy
+      || (source.previewStatuses && source.previewStatuses.length > 0)
+      || (source.folderId && source.folderId.trim().length > 0)
     );
     const hasDatePrefill = Boolean(
-      searchPrefill.createdFrom
-      || searchPrefill.createdTo
-      || searchPrefill.modifiedFrom
-      || searchPrefill.modifiedTo
+      source.createdFrom
+      || source.createdTo
+      || source.modifiedFrom
+      || source.modifiedTo
     );
-    const hasAspectsPrefill = Boolean(searchPrefill.aspects && searchPrefill.aspects.length > 0);
+    const hasAspectsPrefill = Boolean(source.aspects && source.aspects.length > 0);
     const hasPropertiesPrefill = prefilledProperties.length > 0;
     const hasMetaPrefill = Boolean(
-      (searchPrefill.tags && searchPrefill.tags.length > 0)
-      || (searchPrefill.categories && searchPrefill.categories.length > 0)
-      || (searchPrefill.correspondents && searchPrefill.correspondents.length > 0)
-      || searchPrefill.minSize !== undefined
-      || searchPrefill.maxSize !== undefined
-      || (searchPrefill.pathPrefix && searchPrefill.pathPrefix.length > 0)
+      (source.tags && source.tags.length > 0)
+      || (source.categories && source.categories.length > 0)
+      || (source.correspondents && source.correspondents.length > 0)
+      || source.minSize !== undefined
+      || source.maxSize !== undefined
+      || (source.pathPrefix && source.pathPrefix.length > 0)
     );
 
     let nextExpandedSection: string | false = 'basic';
@@ -226,34 +255,43 @@ const SearchDialog: React.FC = () => {
 
     // Start from a clean slate before applying prefill values.
     setSearchCriteria({
-      name: searchPrefill.name || '',
-      properties: searchPrefill.properties || {},
-      aspects: searchPrefill.aspects || [],
-      contentType: searchPrefill.contentType || '',
-      createdBy: searchPrefill.createdBy || '',
-      createdFrom: searchPrefill.createdFrom,
-      createdTo: searchPrefill.createdTo,
-      modifiedFrom: searchPrefill.modifiedFrom,
-      modifiedTo: searchPrefill.modifiedTo,
+      name: source.name || '',
+      properties: source.properties || {},
+      aspects: source.aspects || [],
+      contentType: source.contentType || '',
+      createdBy: source.createdBy || '',
+      createdFrom: source.createdFrom,
+      createdTo: source.createdTo,
+      modifiedFrom: source.modifiedFrom,
+      modifiedTo: source.modifiedTo,
     });
     setCustomProperties(prefilledProperties);
     setNewPropertyKey('');
     setNewPropertyValue('');
     setExpandedSection(nextExpandedSection);
-    setTags(searchPrefill.tags || []);
-    setCategories(searchPrefill.categories || []);
-    setCorrespondents(searchPrefill.correspondents || []);
-    setSelectedPreviewStatuses(searchPrefill.previewStatuses || []);
-    setMinSize(searchPrefill.minSize);
-    setMaxSize(searchPrefill.maxSize);
-    setPathPrefix(searchPrefill.pathPrefix || '');
-    setScopeFolderId(searchPrefill.folderId || '');
-    setScopeIncludeChildren(searchPrefill.includeChildren ?? true);
+    setTags(source.tags || []);
+    setCategories(source.categories || []);
+    setCorrespondents(source.correspondents || []);
+    setSelectedPreviewStatuses(source.previewStatuses || []);
+    setMinSize(source.minSize);
+    setMaxSize(source.maxSize);
+    setPathPrefix(source.pathPrefix || '');
+    setScopeFolderId(source.folderId || '');
+    setScopeIncludeChildren(source.includeChildren ?? true);
     setSaveDialogOpen(false);
     setSaveName('');
 
-    dispatch(setSearchPrefill(null));
-  }, [searchOpen, searchPrefill, dispatch]);
+    prefillInitializedRef.current = true;
+    if (searchPrefill) {
+      dispatch(setSearchPrefill(null));
+    }
+  }, [searchOpen, searchPrefill, lastSearchCriteria, dispatch]);
+
+  React.useEffect(() => {
+    if (!searchOpen) {
+      prefillInitializedRef.current = false;
+    }
+  }, [searchOpen]);
 
   const handleClose = () => {
     dispatch(setSearchOpen(false));
