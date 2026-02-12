@@ -125,4 +125,104 @@ test.describe('Search fallback governance', () => {
       headers: { Authorization: `Bearer ${token}` },
     }).catch(() => null);
   });
+
+  test('suppresses stale fallback by default for exact binary-like queries and supports opt-in reveal', async ({ page, request }) => {
+    test.setTimeout(180_000);
+    await waitForApiReady(request, { apiUrl });
+
+    const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+    await gotoWithAuthE2E(page, '/search-results', defaultUsername, defaultPassword, { token });
+
+    const seedQuery = `e2e-seed-${Date.now()}.txt`;
+    const exactQuery = `e2e-preview-failure-${Date.now()}.bin`;
+    const now = new Date().toISOString();
+
+    await page.route('**/api/v1/search**', async (route) => {
+      const requestUrl = route.request().url();
+      if (requestUrl.includes('/facets')) {
+        await route.continue();
+        return;
+      }
+      const parsed = new URL(requestUrl);
+      const q = parsed.searchParams.get('q') || '';
+      const size = Number(parsed.searchParams.get('size') || 20);
+      const pageIndex = Number(parsed.searchParams.get('page') || 0);
+
+      if (q === seedQuery) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            content: [
+              {
+                id: `seed-${Date.now()}`,
+                name: seedQuery,
+                nodeType: 'DOCUMENT',
+                parentId: 'root',
+                path: '/Root/Documents',
+                createdDate: now,
+                creator: 'admin',
+                contentType: 'text/plain',
+                size: 128,
+                score: 12.3,
+              },
+            ],
+            totalElements: 1,
+            totalPages: 1,
+            size,
+            number: pageIndex,
+            first: true,
+            last: true,
+            empty: false,
+          }),
+        });
+        return;
+      }
+
+      if (q === exactQuery) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            content: [],
+            totalElements: 0,
+            totalPages: 0,
+            size,
+            number: pageIndex,
+            first: true,
+            last: true,
+            empty: true,
+          }),
+        });
+        return;
+      }
+
+      await route.continue();
+    });
+
+    try {
+      const quickSearchInput = page.getByPlaceholder('Quick search by name...');
+
+      await quickSearchInput.fill(seedQuery);
+      await quickSearchInput.press('Enter');
+      await expect(page.locator('.MuiCard-root').filter({ hasText: seedQuery })).toHaveCount(1, { timeout: 60_000 });
+
+      await quickSearchInput.fill(exactQuery);
+      await quickSearchInput.press('Enter');
+
+      await expect(page.getByText(`Search results may still be indexing for exact query "${exactQuery}"`)).toBeVisible({
+        timeout: 60_000,
+      });
+      await expect(page.getByRole('button', { name: 'Show previous results' })).toBeVisible({ timeout: 60_000 });
+      await expect(page.locator('.MuiCard-root').filter({ hasText: seedQuery })).toHaveCount(0);
+
+      await page.getByRole('button', { name: 'Show previous results' }).click();
+      await expect(page.getByText('Search results may still be indexing. Showing previous results')).toBeVisible({
+        timeout: 60_000,
+      });
+      await expect(page.locator('.MuiCard-root').filter({ hasText: seedQuery })).toHaveCount(1, { timeout: 60_000 });
+    } finally {
+      await page.unroute('**/api/v1/search**').catch(() => null);
+    }
+  });
 });

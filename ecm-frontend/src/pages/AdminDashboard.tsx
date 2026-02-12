@@ -976,6 +976,13 @@ const AdminDashboard: React.FC = () => {
                   label={`Duration ${formatDuration(mailFetchSummary.summary.durationMs)}`}
                   variant="outlined"
                 />
+                {mailFetchSummary.summary.runId && (
+                  <Chip
+                    size="small"
+                    label={`Run ${mailFetchSummary.summary.runId.slice(0, 8)}`}
+                    variant="outlined"
+                  />
+                )}
               </Box>
               <Box display="flex" gap={1} flexWrap="wrap" mb={1}>
                 <Chip size="small" label={`Found ${mailFetchSummary.summary.foundMessages}`} />

@@ -96,6 +96,14 @@ ecm:
   mail:
     processed:
       retention-days: ${ECM_MAIL_PROCESSED_RETENTION_DAYS:90}
+    reporting:
+      export:
+        enabled: ${ECM_MAIL_REPORT_EXPORT_ENABLED:false}
+        cron: ${ECM_MAIL_REPORT_EXPORT_CRON:0 5 2 * * *}
+        folder-id: ${ECM_MAIL_REPORT_EXPORT_FOLDER_ID:}
+        days: ${ECM_MAIL_REPORT_EXPORT_DAYS:30}
+        account-id: ${ECM_MAIL_REPORT_EXPORT_ACCOUNT_ID:}
+        rule-id: ${ECM_MAIL_REPORT_EXPORT_RULE_ID:}
 
   identity:
     provider: ${ECM_IDENTITY_PROVIDER:local}

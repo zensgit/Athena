@@ -39,6 +39,7 @@ import {
   AutoAwesome,
   FilterList,
   Refresh,
+  Autorenew,
   InfoOutlined,
   Star,
   StarBorder,
@@ -54,6 +55,8 @@ import { Node, SearchCriteria } from 'types';
 import { toast } from 'react-toastify';
 import Highlight from 'components/search/Highlight';
 import { buildSearchCriteriaFromSavedSearch } from 'utils/savedSearchUtils';
+import { shouldSuppressStaleFallbackForQuery } from 'utils/searchFallbackUtils';
+import { formatBreadcrumbPath } from 'utils/pathDisplayUtils';
 import {
   formatPreviewFailureReasonLabel,
   getEffectivePreviewStatus,
@@ -127,7 +130,6 @@ const buildFallbackCriteriaKey = (criteria?: SearchCriteria): string => {
     : (criteria.createdBy ? [criteria.createdBy] : []);
 
   return JSON.stringify({
-    name: (criteria.name || '').trim(),
     mimeTypes: normalizeCriteriaValues(mimeTypes),
     createdBy: normalizeCriteriaValues(createdBy),
     tags: normalizeCriteriaValues(criteria.tags),
@@ -183,6 +185,7 @@ const SearchResults: React.FC = () => {
   const [fallbackLabel, setFallbackLabel] = useState('');
   const [fallbackCriteriaKey, setFallbackCriteriaKey] = useState('');
   const [dismissedFallbackCriteriaKey, setDismissedFallbackCriteriaKey] = useState('');
+  const [forcedFallbackCriteriaKey, setForcedFallbackCriteriaKey] = useState('');
   const [fallbackAutoRetryCount, setFallbackAutoRetryCount] = useState(0);
   const [fallbackLastRetryAt, setFallbackLastRetryAt] = useState<Date | null>(null);
   const fallbackAutoRetryTimerRef = useRef<number | null>(null);
@@ -482,8 +485,18 @@ const SearchResults: React.FC = () => {
       return;
     }
     setDismissedFallbackCriteriaKey(criteriaKey);
+    setForcedFallbackCriteriaKey('');
     setFallbackAutoRetryCount(0);
     setFallbackLastRetryAt(null);
+  }, [lastSearchCriteria]);
+
+  const handleShowFallbackResults = useCallback(() => {
+    const criteriaKey = buildFallbackCriteriaKey(lastSearchCriteria);
+    if (!criteriaKey) {
+      return;
+    }
+    setForcedFallbackCriteriaKey(criteriaKey);
+    setDismissedFallbackCriteriaKey('');
   }, [lastSearchCriteria]);
 
   const handleSpellcheckSuggestion = (suggestion: string) => {
@@ -835,6 +848,15 @@ const SearchResults: React.FC = () => {
       setDismissedFallbackCriteriaKey('');
     }
   }, [currentFallbackCriteriaKey, dismissedFallbackCriteriaKey]);
+
+  useEffect(() => {
+    if (!forcedFallbackCriteriaKey) {
+      return;
+    }
+    if (!currentFallbackCriteriaKey || currentFallbackCriteriaKey !== forcedFallbackCriteriaKey) {
+      setForcedFallbackCriteriaKey('');
+    }
+  }, [currentFallbackCriteriaKey, forcedFallbackCriteriaKey]);
 
   useEffect(() => {
     if (!lastSearchCriteria || facetSyncSuppressed) {
@@ -1313,6 +1335,23 @@ const SearchResults: React.FC = () => {
               </span>
             </Tooltip>
           )}
+          {effectiveStatus === 'FAILED' && !failedPreviewUnsupported && (
+            <Tooltip title="Force rebuild preview" placement="top-start" arrow>
+              <span>
+                <IconButton
+                  size="small"
+                  aria-label="Force rebuild preview"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleRetryPreview(node, true);
+                  }}
+                  disabled={queueingPreviewId === node.id}
+                >
+                  <Autorenew fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+          )}
         </Box>
         {queueDetail && (
           <Typography variant="caption" color="text.secondary">
@@ -1354,24 +1393,33 @@ const SearchResults: React.FC = () => {
   const fallbackCriteriaMatches = Boolean(currentFallbackCriteriaKey) && currentFallbackCriteriaKey === fallbackCriteriaKey;
   const fallbackHiddenForCriteria = Boolean(currentFallbackCriteriaKey)
     && currentFallbackCriteriaKey === dismissedFallbackCriteriaKey;
-  const shouldShowFallback = !isSimilarMode
+  const fallbackForcedForCriteria = Boolean(currentFallbackCriteriaKey)
+    && currentFallbackCriteriaKey === forcedFallbackCriteriaKey;
+  const fallbackSuppressionQueryLabel = (lastSearchCriteria?.name || '').trim() || fallbackLabel;
+  const shouldEvaluateFallback = !isSimilarMode
     && !loading
     && nodes.length === 0
     && fallbackNodes.length > 0
     && hasActiveCriteria
     && fallbackCriteriaMatches
     && !fallbackHiddenForCriteria;
+  const shouldSuppressFallbackForQuery = shouldEvaluateFallback
+    && !fallbackForcedForCriteria
+    && shouldSuppressStaleFallbackForQuery(fallbackSuppressionQueryLabel);
+  const shouldShowFallback = shouldEvaluateFallback && !shouldSuppressFallbackForQuery;
+  const shouldShowSuppressedFallbackNotice = shouldEvaluateFallback && shouldSuppressFallbackForQuery;
+  const shouldRunFallbackAutoRetry = shouldShowFallback || shouldShowSuppressedFallbackNotice;
   useEffect(() => {
     if (loading) {
       return;
     }
-    if (!shouldShowFallback && fallbackAutoRetryCount !== 0) {
+    if (!shouldRunFallbackAutoRetry && fallbackAutoRetryCount !== 0) {
       setFallbackAutoRetryCount(0);
     }
-    if (!shouldShowFallback && fallbackLastRetryAt) {
+    if (!shouldRunFallbackAutoRetry && fallbackLastRetryAt) {
       setFallbackLastRetryAt(null);
     }
-  }, [loading, shouldShowFallback, fallbackAutoRetryCount, fallbackLastRetryAt]);
+  }, [loading, shouldRunFallbackAutoRetry, fallbackAutoRetryCount, fallbackLastRetryAt]);
   const displayNodes = useMemo(
     () => (isSimilarMode ? (similarResults || []) : (shouldShowFallback ? fallbackNodes : nodes)),
     [isSimilarMode, similarResults, shouldShowFallback, fallbackNodes, nodes]
@@ -1382,7 +1430,7 @@ const SearchResults: React.FC = () => {
       window.clearTimeout(fallbackAutoRetryTimerRef.current);
       fallbackAutoRetryTimerRef.current = null;
     }
-    if (!shouldShowFallback || !lastSearchCriteria) {
+    if (!shouldRunFallbackAutoRetry || !lastSearchCriteria) {
       return;
     }
     if (fallbackAutoRetryCount >= FALLBACK_AUTO_RETRY_MAX) {
@@ -1401,9 +1449,9 @@ const SearchResults: React.FC = () => {
         fallbackAutoRetryTimerRef.current = null;
       }
     };
-  }, [shouldShowFallback, lastSearchCriteria, fallbackAutoRetryCount, handleRetrySearch]);
+  }, [shouldRunFallbackAutoRetry, lastSearchCriteria, fallbackAutoRetryCount, handleRetrySearch]);
 
-  const fallbackAutoRetryNextDelayMs = shouldShowFallback && fallbackAutoRetryCount < FALLBACK_AUTO_RETRY_MAX
+  const fallbackAutoRetryNextDelayMs = shouldRunFallbackAutoRetry && fallbackAutoRetryCount < FALLBACK_AUTO_RETRY_MAX
     ? getFallbackAutoRetryDelayMs(fallbackAutoRetryCount)
     : null;
 
@@ -1430,8 +1478,36 @@ const SearchResults: React.FC = () => {
   const failedPreviewReasonSummary = useMemo(() => {
     return failedPreviewSummary.retryableReasons.slice(0, 6);
   }, [failedPreviewSummary]);
-  const previewStatusCounts = displayNodes.reduce(
-    (acc, node) => {
+	  const previewStatusCounts = useMemo(() => {
+	    const base = {
+      READY: 0,
+      PROCESSING: 0,
+      QUEUED: 0,
+      FAILED: 0,
+      UNSUPPORTED: 0,
+      PENDING: 0,
+      other: 0,
+	      folders: 0,
+	    };
+
+	    const previewStatusFacets = searchFacets?.previewStatus;
+	    const canUseSearchFacetsForPreview =
+	      !nonPreviewFiltersApplied
+	      && !previewStatusFilterApplied
+	      && Array.isArray(previewStatusFacets)
+	      && previewStatusFacets.length > 0;
+
+	    if (canUseSearchFacetsForPreview) {
+	      for (const facet of previewStatusFacets) {
+	        const key = (facet.value || '').toUpperCase();
+	        if (key in base) {
+	          base[key as keyof typeof base] = facet.count;
+	        }
+	      }
+      return base;
+    }
+
+    return displayNodes.reduce((acc, node) => {
       if (node.nodeType === 'FOLDER') {
         acc.folders += 1;
         return acc;
@@ -1449,18 +1525,8 @@ const SearchResults: React.FC = () => {
         acc.other += 1;
       }
       return acc;
-    },
-    {
-      READY: 0,
-      PROCESSING: 0,
-      QUEUED: 0,
-      FAILED: 0,
-      UNSUPPORTED: 0,
-      PENDING: 0,
-      other: 0,
-      folders: 0,
-    }
-  );
+    }, base);
+  }, [displayNodes, nonPreviewFiltersApplied, previewStatusFilterApplied, searchFacets]);
 
   const handleRetryPreview = useCallback(async (node: Node, force = false) => {
     if (!node?.id || node.nodeType !== 'DOCUMENT') {
@@ -2244,6 +2310,31 @@ const SearchResults: React.FC = () => {
               {fallbackLastRetryAt ? ` Last retry: ${format(fallbackLastRetryAt, 'PPp')}.` : ''}
             </Alert>
           )}
+          {shouldShowSuppressedFallbackNotice && (
+            <Alert
+              severity="info"
+              sx={{ mb: 2 }}
+              action={(
+                <Stack direction="row" spacing={1}>
+                  <Button color="inherit" size="small" onClick={handleRetrySearch}>
+                    Retry
+                  </Button>
+                  <Button color="inherit" size="small" onClick={handleShowFallbackResults}>
+                    Show previous results
+                  </Button>
+                </Stack>
+              )}
+            >
+              {fallbackSuppressionQueryLabel
+                ? `Search results may still be indexing for exact query "${fallbackSuppressionQueryLabel}". Previous results are hidden to avoid stale mismatch.`
+                : 'Search results may still be indexing for an exact query. Previous results are hidden to avoid stale mismatch.'}
+              {' '}
+              {fallbackAutoRetryCount < FALLBACK_AUTO_RETRY_MAX
+                ? `Auto-retry ${fallbackAutoRetryCount}/${FALLBACK_AUTO_RETRY_MAX}${fallbackAutoRetryNextDelayMs ? ` (next in ${(fallbackAutoRetryNextDelayMs / 1000).toFixed(1)}s).` : '.'}`
+                : `Auto-retry stopped after ${FALLBACK_AUTO_RETRY_MAX} attempts.`}
+              {fallbackLastRetryAt ? ` Last retry: ${format(fallbackLastRetryAt, 'PPp')}.` : ''}
+            </Alert>
+          )}
           {suggestedFiltersError && (
             <Alert severity="warning" sx={{ mb: 2 }}>
               {suggestedFiltersError}
@@ -2521,9 +2612,21 @@ const SearchResults: React.FC = () => {
                             </Box>
                           </Box>
                         </Box>
-                        <Typography variant="body2" color="text.secondary" gutterBottom>
-                          {node.path}
-                        </Typography>
+                        {(() => {
+                          const breadcrumb = formatBreadcrumbPath(node.path, { nodeName: node.name, maxSegments: 4 });
+                          const creator = (node.creator || '').trim();
+                          const parts = [breadcrumb, creator ? `By ${creator}` : null].filter(Boolean) as string[];
+                          if (parts.length === 0) {
+                            return null;
+                          }
+                          return (
+                            <Tooltip title={node.path} placement="top-start" arrow disableHoverListener={!node.path}>
+                              <Typography variant="caption" color="text.secondary" gutterBottom noWrap>
+                                {parts.join(' | ')}
+                              </Typography>
+                            </Tooltip>
+                          );
+                        })()}
                         <Highlight
                           text={node.description}
                           highlights={

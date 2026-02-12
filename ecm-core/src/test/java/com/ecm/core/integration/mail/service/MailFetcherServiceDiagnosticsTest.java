@@ -14,6 +14,7 @@ import com.ecm.core.service.DocumentUploadService;
 import com.ecm.core.service.NodeService;
 import com.ecm.core.service.TagService;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -33,6 +34,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -129,6 +131,42 @@ class MailFetcherServiceDiagnosticsTest {
         assertEquals(3L, metrics.topErrors().get(0).count());
         assertEquals("STABLE", metrics.trend().direction());
         assertTrue(metrics.trend().summary().contains("unchanged") || metrics.trend().summary().contains("No processed"));
+    }
+
+    @Test
+    @DisplayName("Fetch run includes runId correlation value")
+    void fetchRunIncludesRunId() {
+        MailFetcherService localService = new MailFetcherService(
+            accountRepository,
+            ruleRepository,
+            processedMailRepository,
+            documentRepository,
+            nodeRepository,
+            uploadService,
+            nodeService,
+            tagService,
+            emailIngestionService,
+            new SimpleMeterRegistry(),
+            environment
+        );
+
+        when(accountRepository.findByEnabledTrue()).thenReturn(List.of());
+
+        var summary = localService.fetchAllAccounts(true);
+
+        assertTrue(summary.runId() != null && !summary.runId().isBlank());
+        assertDoesNotThrow(() -> UUID.fromString(summary.runId()));
+    }
+
+    @Test
+    @DisplayName("Debug diagnostics include runId correlation value")
+    void debugRunIncludesRunId() {
+        when(accountRepository.findByEnabledTrue()).thenReturn(List.of());
+
+        var result = service.fetchAllAccountsDebug(true, 25);
+
+        assertTrue(result.summary().runId() != null && !result.summary().runId().isBlank());
+        assertDoesNotThrow(() -> UUID.fromString(result.summary().runId()));
     }
 
     @Test

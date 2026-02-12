@@ -49,6 +49,8 @@ export interface PermissionTemplateVersionDetail {
   createdDate?: string;
 }
 
+export type PermissionTemplateVersionDiffExportFormat = 'csv' | 'json';
+
 class PermissionTemplateService {
   async list(): Promise<PermissionTemplate[]> {
     return api.get<PermissionTemplate[]>('/security/permission-templates');
@@ -86,6 +88,21 @@ class PermissionTemplateService {
     return api.get<PermissionTemplateVersionDetail>(
       `/security/permission-templates/${templateId}/versions/${versionId}`,
     );
+  }
+
+  async exportVersionDiff(
+    templateId: string,
+    fromVersionId: string,
+    toVersionId: string,
+    format: PermissionTemplateVersionDiffExportFormat,
+  ): Promise<Blob> {
+    return api.getBlob(`/security/permission-templates/${templateId}/versions/diff/export`, {
+      params: {
+        from: fromVersionId,
+        to: toVersionId,
+        format,
+      },
+    });
   }
 }
 

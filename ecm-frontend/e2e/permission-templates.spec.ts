@@ -1,4 +1,5 @@
 import { APIRequestContext, expect, test } from '@playwright/test';
+import { promises as fs } from 'fs';
 import { fetchAccessToken, getRootFolderId, resolveApiUrl, waitForApiReady } from './helpers/api';
 import { gotoWithAuthE2E } from './helpers/login';
 
@@ -162,6 +163,22 @@ test('Admin can view permission template history', async ({ page, request }) => 
     compareDialog.getByRole('button', { name: 'Export CSV' }).click(),
   ]);
   expect(download.suggestedFilename()).toMatch(/-diff-.*\.csv$/);
+
+  const [jsonDownload] = await Promise.all([
+    page.waitForEvent('download', { timeout: 30_000 }),
+    compareDialog.getByRole('button', { name: 'Export JSON' }).click(),
+  ]);
+  expect(jsonDownload.suggestedFilename()).toMatch(/-diff-.*\.json$/);
+  const jsonPath = await jsonDownload.path();
+  if (!jsonPath) {
+    throw new Error('JSON download path is unavailable');
+  }
+  const jsonRaw = await fs.readFile(jsonPath, 'utf-8');
+  const payload = JSON.parse(jsonRaw) as Record<string, unknown>;
+  expect(Array.isArray(payload.added)).toBeTruthy();
+  expect(Array.isArray(payload.removed)).toBeTruthy();
+  expect(Array.isArray(payload.changed)).toBeTruthy();
+
   await compareDialog.getByRole('button', { name: 'Close' }).click();
 
   await request.delete(`${baseApiUrl}/api/v1/security/permission-templates/${templateId}`, {

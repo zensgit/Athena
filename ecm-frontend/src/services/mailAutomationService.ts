@@ -104,6 +104,7 @@ export interface MailFetchSummary {
   skippedMessages: number;
   errorMessages: number;
   durationMs: number;
+  runId?: string | null;
 }
 
 export interface MailFetchSummaryStatus {
@@ -174,6 +175,7 @@ export interface MailRulePreviewResult {
   errorMessages: number;
   skipReasons: Record<string, number>;
   matches: MailRulePreviewMessage[];
+  runId?: string | null;
 }
 
 export interface ProcessedMailDiagnosticItem {
@@ -257,6 +259,31 @@ export interface MailReportResponse {
   accounts: MailReportAccountRow[];
   rules: MailReportRuleRow[];
   trend: MailReportTrendRow[];
+}
+
+export interface MailReportScheduledExportResult {
+  attempted: boolean;
+  success: boolean;
+  status: string;
+  message: string;
+  manual: boolean;
+  filename?: string | null;
+  folderId?: string | null;
+  documentId?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  durationMs?: number | null;
+  days?: number | null;
+}
+
+export interface MailReportScheduleStatus {
+  enabled: boolean;
+  cron?: string | null;
+  folderId?: string | null;
+  days: number;
+  accountId?: string | null;
+  ruleId?: string | null;
+  lastExport?: MailReportScheduledExportResult | null;
 }
 
 export interface MailReportFilters {
@@ -430,6 +457,14 @@ class MailAutomationService {
         days: filters?.days ?? undefined,
       },
     });
+  }
+
+  async getReportSchedule(): Promise<MailReportScheduleStatus> {
+    return api.get<MailReportScheduleStatus>('/integration/mail/report/schedule');
+  }
+
+  async runReportScheduleNow(): Promise<MailReportScheduledExportResult> {
+    return api.post<MailReportScheduledExportResult>('/integration/mail/report/schedule/run');
   }
 
   async exportDiagnosticsCsv(

@@ -63,6 +63,33 @@ test('Mail reporting defaults to last 30 days', async ({ page, request }) => {
   await page.keyboard.press('Escape');
 });
 
+test('Mail reporting empty state shows selected range context', async ({ page, request }) => {
+  await waitForApiReady(request);
+  const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+
+  await page.route('**/api/v1/integration/mail/report**', async (route) => {
+    await route.fulfill({
+      status: 500,
+      contentType: 'application/json',
+      body: JSON.stringify({ message: 'e2e forced report failure' }),
+    });
+  });
+
+  try {
+    await gotoWithAuthE2E(page, '/admin/mail', defaultUsername, defaultPassword, { token });
+    await page.waitForURL(/\/admin\/mail/, { timeout: 60_000 });
+
+    const reportingSection = page
+      .getByRole('heading', { name: /mail reporting/i })
+      .locator('xpath=ancestor::div[contains(@class,"MuiCardContent-root")]');
+    await expect(reportingSection).toBeVisible({ timeout: 60_000 });
+    await expect(reportingSection.getByText('No report data available for the selected filters.')).toBeVisible({ timeout: 60_000 });
+    await expect(reportingSection.getByText(/Selected window: last 30 days/i)).toBeVisible({ timeout: 60_000 });
+  } finally {
+    await page.unroute('**/api/v1/integration/mail/report**').catch(() => null);
+  }
+});
+
 test('Mail reporting days filter persists in URL', async ({ page, request }) => {
   await waitForApiReady(request);
   const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
@@ -155,6 +182,13 @@ test('Mail automation test connection and fetch summary', async ({ page, request
   await expect(diagnosticsToast).toContainText(/Diagnostics complete|Failed to run mail diagnostics/i, {
     timeout: 60_000,
   });
+
+  // Diagnostics/debug runs should expose a run id for log correlation.
+  const diagnosticsSection = page
+    .getByRole('heading', { name: /fetch diagnostics/i })
+    .locator('xpath=ancestor::div[contains(@class,\"MuiCardContent-root\")]');
+  // Multiple runId chips can appear (last fetch + debug run). We only need to assert at least one exists.
+  await expect(diagnosticsSection.getByText(/Run [0-9a-f]{8}/i).first()).toBeVisible({ timeout: 60_000 });
 });
 
 test('Mail automation can reset OAuth state (e2e safe)', async ({ page, request }) => {
@@ -416,6 +450,7 @@ test('Mail automation reporting panel renders', async ({ page, request }) => {
 
   const reportHeading = page.getByRole('heading', { name: /mail reporting/i });
   await expect(reportHeading).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByRole('heading', { name: /scheduled export/i })).toBeVisible({ timeout: 60_000 });
 
   const reportCard = reportHeading.locator('xpath=ancestor::div[contains(@class,\"MuiCardContent-root\")]');
   await expect(reportCard).toContainText(/No report data available yet|Processed/i, { timeout: 60_000 });

@@ -10,8 +10,10 @@ import co.elastic.clients.elasticsearch._types.aggregations.Aggregate;
 import co.elastic.clients.elasticsearch._types.aggregations.Aggregation;
 import co.elastic.clients.elasticsearch._types.aggregations.AggregationRange;
 import co.elastic.clients.elasticsearch._types.aggregations.DateRangeExpression;
+import co.elastic.clients.elasticsearch._types.aggregations.FiltersBucket;
 import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery;
 import co.elastic.clients.elasticsearch._types.query_dsl.Operator;
+import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 import co.elastic.clients.elasticsearch._types.query_dsl.TextQueryType;
 import co.elastic.clients.json.JsonData;
 import co.elastic.clients.elasticsearch.core.search.Suggester;
@@ -85,6 +87,7 @@ public class FacetedSearchService {
         "tags",
         "categories",
         "correspondent",
+        "previewStatus",
         "nodeType"
     );
 
@@ -646,6 +649,10 @@ public class FacetedSearchService {
             if ("fileSizeRange".equalsIgnoreCase(field) || "createdDateRange".equalsIgnoreCase(field)) {
                 continue;
             }
+            if ("previewStatus".equalsIgnoreCase(field)) {
+                builder.withAggregation("previewStatus", buildPreviewStatusFacetAggregation());
+                continue;
+            }
             builder.withAggregation(field, Aggregation.of(a -> a.terms(t -> t
                 .field(field)
                 .size(DEFAULT_FACET_SIZE)
@@ -686,6 +693,15 @@ public class FacetedSearchService {
         )));
     }
 
+    private Aggregation buildPreviewStatusFacetAggregation() {
+        Map<String, Query> keyedFilters = new LinkedHashMap<>();
+        for (String bucket : PreviewStatusFilterHelper.facetBucketKeys()) {
+            keyedFilters.put(bucket, PreviewStatusFilterHelper.buildFacetBucketQuery(bucket));
+        }
+
+        return Aggregation.of(a -> a.filters(f -> f.filters(b -> b.keyed(keyedFilters))));
+    }
+
     private Map<String, List<FacetValue>> buildFacetsFromAggregations(
         SearchHits<NodeDocument> searchHits,
         List<String> facetFields
@@ -709,7 +725,9 @@ public class FacetedSearchService {
         var aggregationsMap = aggregations.aggregationsAsMap();
         for (String field : resolvedFields) {
             Aggregate agg = extractAggregate(aggregationsMap, field);
-            List<FacetValue> values = extractTermsFacet(agg);
+            List<FacetValue> values = "previewStatus".equalsIgnoreCase(field)
+                ? extractPreviewStatusFacet(agg)
+                : extractTermsFacet(agg);
             if (!values.isEmpty()) {
                 facets.put(field, values);
             }
@@ -751,6 +769,25 @@ public class FacetedSearchService {
         return aggregate.sterms().buckets().array().stream()
             .map(bucket -> new FacetValue(bucket.key().stringValue(), toFacetCount(bucket.docCount())))
             .collect(Collectors.toList());
+    }
+
+    private List<FacetValue> extractPreviewStatusFacet(Aggregate aggregate) {
+        if (aggregate == null || !aggregate.isFilters()) {
+            return List.of();
+        }
+
+        Map<String, FiltersBucket> keyed = aggregate.filters().buckets().keyed();
+        if (keyed == null || keyed.isEmpty()) {
+            return List.of();
+        }
+
+        List<FacetValue> values = new ArrayList<>();
+        for (String bucket : PreviewStatusFilterHelper.facetBucketKeys()) {
+            FiltersBucket entry = keyed.get(bucket);
+            long count = entry != null ? entry.docCount() : 0L;
+            values.add(new FacetValue(bucket, toFacetCount(count)));
+        }
+        return values;
     }
 
     private List<FacetValue> extractRangeFacet(Aggregate aggregate) {

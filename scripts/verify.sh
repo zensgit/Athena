@@ -280,6 +280,23 @@ if [[ ${REPORT_LATEST} -eq 1 ]]; then
   exit 0
 fi
 
+# Guardrail: docker-compose.yml loads `.env.mail` via `env_file`; create a safe placeholder when missing.
+ENV_MAIL_WAS_MISSING=0
+ENV_MAIL_FILE="${REPO_ROOT}/.env.mail"
+ENV_MAIL_EXAMPLE_FILE="${REPO_ROOT}/.env.mail.example"
+if [[ ! -f "${ENV_MAIL_FILE}" ]]; then
+  ENV_MAIL_WAS_MISSING=1
+  if [[ -f "${ENV_MAIL_EXAMPLE_FILE}" ]]; then
+    cp "${ENV_MAIL_EXAMPLE_FILE}" "${ENV_MAIL_FILE}"
+  else
+    cat > "${ENV_MAIL_FILE}" <<'EOF'
+# Placeholder for mail automation OAuth/IMAP settings (gitignored).
+# If you need real mail automation, copy from .env.mail.example and fill values.
+EOF
+  fi
+  chmod 600 "${ENV_MAIL_FILE}" 2>/dev/null || true
+fi
+
 # If wopi-only is enabled, skip all other steps.
 if [[ ${WOPI_ONLY} -eq 1 ]]; then
   SKIP_RESTART=1
@@ -326,6 +343,10 @@ log_info() { echo -e "${BLUE}[INFO]${NC} $*"; }
 log_success() { echo -e "${GREEN}[OK]${NC} $*"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $*"; }
+
+if [[ "${ENV_MAIL_WAS_MISSING}" -eq 1 ]]; then
+  log_warn ".env.mail was missing; created a placeholder so docker-compose can run. Mail OAuth features may be disabled."
+fi
 
 # Track step results
 STEPS_PASSED=0

@@ -70,6 +70,7 @@ import mailAutomationService, {
   MailReportAccountRow,
   MailReportRuleRow,
   MailReportTrendRow,
+  MailReportScheduleStatus,
   MailDiagnosticsSortField,
   MailDiagnosticsSortOrder,
   MailRuntimeMetrics,
@@ -162,6 +163,14 @@ const RULE_DIAGNOSTICS_TIME_RANGES: Array<{ value: RuleDiagnosticsTimeRange; lab
   { value: '30D', label: 'Last 30 days' },
 ];
 
+const formatRunIdLabel = (runId?: string | null) => {
+  const trimmed = (runId || '').trim();
+  if (!trimmed) {
+    return '';
+  }
+  return trimmed.length > 8 ? `Run ${trimmed.slice(0, 8)}` : `Run ${trimmed}`;
+};
+
 const MailAutomationPage: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -178,6 +187,9 @@ const MailAutomationPage: React.FC = () => {
   const [summaryAccountId, setSummaryAccountId] = useState('');
   const [report, setReport] = useState<MailReportResponse | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
+  const [reportSchedule, setReportSchedule] = useState<MailReportScheduleStatus | null>(null);
+  const [reportScheduleLoading, setReportScheduleLoading] = useState(false);
+  const [reportScheduleFolderPath, setReportScheduleFolderPath] = useState('');
   const [reportAccountId, setReportAccountId] = useState('');
   const [reportRuleId, setReportRuleId] = useState('');
   const [reportAccountTouched, setReportAccountTouched] = useState(false);
@@ -408,6 +420,17 @@ const MailAutomationPage: React.FC = () => {
     return 'default';
   };
 
+  const scheduledExportColor = (status?: string | null): 'default' | 'success' | 'error' => {
+    const normalized = (status || '').trim().toUpperCase();
+    if (normalized === 'FAILED') {
+      return 'error';
+    }
+    if (normalized === 'SUCCESS') {
+      return 'success';
+    }
+    return 'default';
+  };
+
   const runtimeStatusColor = (status?: string | null): 'default' | 'success' | 'warning' | 'error' => {
     if (status === 'HEALTHY') {
       return 'success';
@@ -552,6 +575,30 @@ const MailAutomationPage: React.FC = () => {
     }
   }, [reportAccountId, reportRuleId, reportDays]);
 
+  const loadReportSchedule = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true;
+    if (!silent) {
+      setReportScheduleLoading(true);
+    }
+    try {
+      const status = await mailAutomationService.getReportSchedule();
+      setReportSchedule(status);
+      if (status.folderId) {
+        nodeService.getNode(status.folderId)
+          .then((node) => setReportScheduleFolderPath(node.path || node.name || ''))
+          .catch(() => setReportScheduleFolderPath(''));
+      } else {
+        setReportScheduleFolderPath('');
+      }
+    } catch {
+      if (!silent) {
+        toast.error('Failed to load report schedule status');
+      }
+    } finally {
+      setReportScheduleLoading(false);
+    }
+  }, []);
+
   const loadRuntimeMetrics = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent === true;
     if (!silent) {
@@ -606,6 +653,10 @@ const MailAutomationPage: React.FC = () => {
     }
     loadReport();
   }, [reportFiltersLoaded, loadReport]);
+
+  useEffect(() => {
+    loadReportSchedule({ silent: true });
+  }, [loadReportSchedule]);
 
   useEffect(() => {
     loadRuntimeMetrics();
@@ -1059,6 +1110,15 @@ const MailAutomationPage: React.FC = () => {
   const diagnosticsRuleNameById = useMemo(() => {
     return new Map(rules.map((rule) => [rule.id, rule.name]));
   }, [rules]);
+  const reportSelectionSummary = useMemo(() => {
+    const accountLabel = reportAccountId
+      ? (accountNameById.get(reportAccountId) || reportAccountId)
+      : 'All accounts';
+    const ruleLabel = reportRuleId
+      ? (diagnosticsRuleNameById.get(reportRuleId) || reportRuleId)
+      : 'All rules';
+    return `Selected window: last ${reportDays} days • Account: ${accountLabel} • Rule: ${ruleLabel}`;
+  }, [reportAccountId, reportRuleId, reportDays, accountNameById, diagnosticsRuleNameById]);
   const reportTotals = report?.totals;
   const maxTrendTotal = Math.max(1, ...reportTrend.map((row) => row.total));
   const exportDisabled = !exportOptions.includeProcessed && !exportOptions.includeDocuments;
@@ -1390,6 +1450,18 @@ const MailAutomationPage: React.FC = () => {
       toast.success('Error message copied');
     } catch {
       toast.error('Failed to copy error message');
+    }
+  };
+  const copyRunId = async (runId?: string | null) => {
+    const payload = (runId || '').trim();
+    if (!payload) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(payload);
+      toast.success('Run id copied');
+    } catch {
+      toast.error('Failed to copy run id');
     }
   };
   const handleCopyDiagnosticsLink = async () => {
@@ -2287,6 +2359,65 @@ const MailAutomationPage: React.FC = () => {
                 </FormControl>
               </Stack>
 
+              <Box
+                sx={{
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderRadius: 1,
+                  p: 1.5,
+                  mb: 2,
+                  bgcolor: 'grey.50',
+                }}
+              >
+                <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+                  <Typography variant="subtitle2" component="h3">
+                    Scheduled export
+                  </Typography>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={reportScheduleLoading ? <CircularProgress size={16} /> : <Refresh />}
+                    onClick={() => loadReportSchedule()}
+                    disabled={reportScheduleLoading}
+                  >
+                    {reportScheduleLoading ? 'Refreshing...' : 'Refresh status'}
+                  </Button>
+                </Box>
+                {reportSchedule ? (
+                  <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
+                    <Chip
+                      size="small"
+                      color={reportSchedule.enabled ? 'success' : 'default'}
+                      label={reportSchedule.enabled ? 'Enabled' : 'Disabled'}
+                    />
+                    <Tooltip title={reportSchedule.cron || 'N/A'}>
+                      <Chip size="small" variant="outlined" label={`Cron ${summarizeText(reportSchedule.cron || 'N/A', 32)}`} />
+                    </Tooltip>
+                    <Chip size="small" variant="outlined" label={`Days ${reportSchedule.days}`} />
+                    <Tooltip title={reportScheduleFolderPath || reportSchedule.folderId || 'N/A'}>
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        label={`Folder ${summarizeText(reportScheduleFolderPath || reportSchedule.folderId || 'N/A', 42)}`}
+                      />
+                    </Tooltip>
+                    {reportSchedule.lastExport && (
+                      <Tooltip title={reportSchedule.lastExport.message || ''}>
+                        <Chip
+                          size="small"
+                          color={scheduledExportColor(reportSchedule.lastExport.status)}
+                          label={`Last ${reportSchedule.lastExport.status}`}
+                        />
+                      </Tooltip>
+                    )}
+                  </Stack>
+                ) : (
+                  <Typography variant="body2" color="text.secondary">
+                    No scheduled export settings available.
+                  </Typography>
+                )}
+              </Box>
+
               {reportLoading && !report ? (
                 <Box display="flex" justifyContent="center" py={2}>
                   <CircularProgress />
@@ -2441,9 +2572,14 @@ const MailAutomationPage: React.FC = () => {
                   </Box>
                 </Stack>
               ) : (
-                <Typography variant="body2" color="text.secondary">
-                  No report data available yet.
-                </Typography>
+                <Stack spacing={0.5}>
+                  <Typography variant="body2" color="text.secondary">
+                    No report data available for the selected filters.
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {reportSelectionSummary}
+                  </Typography>
+                </Stack>
               )}
             </CardContent>
           </Card>
@@ -2532,6 +2668,17 @@ const MailAutomationPage: React.FC = () => {
                       <Chip size="small" color="error" label={`Errors ${lastFetchSummary.errorMessages}`} />
                     )}
                     <Chip size="small" label={`Duration ${(lastFetchSummary.durationMs / 1000).toFixed(1)}s`} />
+                    {lastFetchSummary.runId && (
+                      <Tooltip title={`Copy run id: ${lastFetchSummary.runId}`}>
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          icon={<ContentCopy fontSize="small" />}
+                          label={formatRunIdLabel(lastFetchSummary.runId)}
+                          onClick={() => copyRunId(lastFetchSummary.runId)}
+                        />
+                      </Tooltip>
+                    )}
                   </Stack>
                 ) : (
                   <Typography variant="body2" color="text.secondary">
@@ -2577,6 +2724,17 @@ const MailAutomationPage: React.FC = () => {
                       variant="outlined"
                       label={`Duration: ${(debugResult.summary.durationMs / 1000).toFixed(1)}s`}
                     />
+                    {debugResult.summary.runId && (
+                      <Tooltip title={`Copy run id: ${debugResult.summary.runId}`}>
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          icon={<ContentCopy fontSize="small" />}
+                          label={formatRunIdLabel(debugResult.summary.runId)}
+                          onClick={() => copyRunId(debugResult.summary.runId)}
+                        />
+                      </Tooltip>
+                    )}
                   </Stack>
 
                   {toSortedEntries(debugResult.skipReasons).length > 0 && (
@@ -4873,6 +5031,17 @@ const MailAutomationPage: React.FC = () => {
                     <Chip size="small" label={`Processable ${previewResult.processableMessages}`} />
                     <Chip size="small" label={`Skipped ${previewResult.skippedMessages}`} />
                     <Chip size="small" label={`Errors ${previewResult.errorMessages}`} color="warning" />
+                    {previewResult.runId && (
+                      <Tooltip title={`Copy run id: ${previewResult.runId}`}>
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          icon={<ContentCopy fontSize="small" />}
+                          label={formatRunIdLabel(previewResult.runId)}
+                          onClick={() => copyRunId(previewResult.runId)}
+                        />
+                      </Tooltip>
+                    )}
                   </Box>
                 </Box>
                 {previewResult.skipReasons && Object.keys(previewResult.skipReasons).length > 0 && (

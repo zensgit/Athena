@@ -135,7 +135,8 @@ public class MailFetcherService {
 
     public MailFetchSummary fetchAllAccounts(boolean force) {
         List<MailAccount> accounts = accountRepository.findByEnabledTrue();
-        log.info("Starting mail fetch for {} accounts (force={})", accounts.size(), force);
+        String runId = UUID.randomUUID().toString();
+        log.info("Starting mail fetch (runId={}) for {} accounts (force={})", runId, accounts.size(), force);
 
         MailFetchRunStats stats = new MailFetchRunStats();
         stats.accounts = accounts.size();
@@ -188,10 +189,10 @@ public class MailFetcherService {
 
         runSample.stop(meterRegistry.timer("mail_fetch_run_duration"));
         long durationMs = (System.nanoTime() - startNs) / 1_000_000L;
-        log.info("Mail fetch completed: accounts={}, attempted={}, skipped={}, force={}",
-            accounts.size(), stats.attemptedAccounts, stats.skippedAccounts, force);
+        log.info("Mail fetch completed (runId={}): accounts={}, attempted={}, skipped={}, force={}",
+            runId, accounts.size(), stats.attemptedAccounts, stats.skippedAccounts, force);
 
-        MailFetchSummary summary = stats.toSummary(durationMs);
+        MailFetchSummary summary = stats.toSummary(durationMs, runId);
         lastFetchSummary = summary;
         lastFetchAt = Instant.now();
         return summary;
@@ -298,8 +299,10 @@ public class MailFetcherService {
     public MailFetchDebugResult fetchAllAccountsDebug(boolean force, Integer maxMessagesPerFolder) {
         List<MailAccount> accounts = accountRepository.findByEnabledTrue();
         int effectiveMaxMessages = resolveDebugMaxMessages(maxMessagesPerFolder);
+        String runId = UUID.randomUUID().toString();
         log.info(
-            "Starting mail fetch debug run for {} accounts (force={}, maxMessagesPerFolder={})",
+            "Starting mail fetch debug run (runId={}) for {} accounts (force={}, maxMessagesPerFolder={})",
+            runId,
             accounts.size(),
             force,
             effectiveMaxMessages
@@ -394,9 +397,10 @@ public class MailFetcherService {
         }
 
         long durationMs = (System.nanoTime() - startNs) / 1_000_000L;
-        MailFetchSummary summary = stats.toSummary(durationMs);
+        MailFetchSummary summary = stats.toSummary(durationMs, runId);
         log.info(
-            "Mail fetch debug run completed: accounts={}, attempted={}, skipped={}, errors={}",
+            "Mail fetch debug run completed (runId={}): accounts={}, attempted={}, skipped={}, errors={}",
+            runId,
             summary.accounts(),
             summary.attemptedAccounts(),
             summary.skippedAccounts(),
@@ -423,7 +427,16 @@ public class MailFetcherService {
             throw new IllegalArgumentException("Mail rule does not belong to account: " + accountId);
         }
 
+        String runId = UUID.randomUUID().toString();
         int effectiveMaxMessages = resolveDebugMaxMessages(maxMessagesPerFolder);
+        long startNs = System.nanoTime();
+        log.info(
+            "Starting mail rule preview (runId={}): accountId={}, ruleId={}, maxMessagesPerFolder={}",
+            runId,
+            accountId,
+            ruleId,
+            effectiveMaxMessages
+        );
         List<String> folders = normalizeFolders(rule.getFolder());
         Map<String, Integer> skipReasons = new HashMap<>();
         List<MailRulePreviewMessage> matchedMessages = new ArrayList<>();
@@ -555,6 +568,19 @@ public class MailFetcherService {
             }
         }
 
+        long durationMs = (System.nanoTime() - startNs) / 1_000_000L;
+        log.info(
+            "Mail rule preview completed (runId={}): found={}, scanned={}, matched={}, processable={}, skipped={}, errors={}, durationMs={}",
+            runId,
+            foundMessages,
+            scannedMessages,
+            matchedCount,
+            processableCount,
+            skippedMessages,
+            errorMessages,
+            durationMs
+        );
+
         return new MailRulePreviewResult(
             account.getId(),
             account.getName(),
@@ -568,7 +594,8 @@ public class MailFetcherService {
             skippedMessages,
             errorMessages,
             skipReasons,
-            matchedMessages
+            matchedMessages,
+            runId
         );
     }
 
@@ -1021,7 +1048,8 @@ public class MailFetcherService {
         int processedMessages,
         int skippedMessages,
         int errorMessages,
-        long durationMs
+        long durationMs,
+        String runId
     ) {
     }
 
@@ -1148,7 +1176,8 @@ public class MailFetcherService {
         int skippedMessages,
         int errorMessages,
         Map<String, Integer> skipReasons,
-        List<MailRulePreviewMessage> matches
+        List<MailRulePreviewMessage> matches,
+        String runId
     ) {
     }
 
@@ -1211,7 +1240,7 @@ public class MailFetcherService {
         private int skippedMessages;
         private int errorMessages;
 
-        private MailFetchSummary toSummary(long durationMs) {
+        private MailFetchSummary toSummary(long durationMs, String runId) {
             return new MailFetchSummary(
                 accounts,
                 attemptedAccounts,
@@ -1222,7 +1251,8 @@ public class MailFetcherService {
                 processedMessages,
                 skippedMessages,
                 errorMessages,
-                durationMs
+                durationMs,
+                runId
             );
         }
     }
@@ -1266,7 +1296,7 @@ public class MailFetcherService {
             skipReasons.merge(reason, amount, Integer::sum);
         }
 
-        private MailFetchSummary toSummary(long durationMs) {
+        private MailFetchSummary toSummary(long durationMs, String runId) {
             return new MailFetchSummary(
                 accounts,
                 attemptedAccounts,
@@ -1277,7 +1307,8 @@ public class MailFetcherService {
                 processedMessages,
                 skippedMessages,
                 errorMessages,
-                durationMs
+                durationMs,
+                runId
             );
         }
     }

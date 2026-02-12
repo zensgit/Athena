@@ -7,6 +7,7 @@ import com.ecm.core.integration.mail.repository.ProcessedMailRepository;
 import com.ecm.core.integration.mail.service.MailFetcherService;
 import com.ecm.core.integration.mail.service.MailOAuthService;
 import com.ecm.core.integration.mail.service.MailProcessedRetentionService;
+import com.ecm.core.integration.mail.service.MailReportScheduledExportService;
 import com.ecm.core.integration.mail.service.MailReportingService;
 import com.ecm.core.service.AuditService;
 import com.ecm.core.service.SecurityService;
@@ -52,6 +53,9 @@ class MailAutomationControllerTest {
     private MailReportingService reportingService;
 
     @Mock
+    private MailReportScheduledExportService scheduledExportService;
+
+    @Mock
     private ProcessedMailRepository processedMailRepository;
 
     @Mock
@@ -72,6 +76,7 @@ class MailAutomationControllerTest {
             oauthService,
             retentionService,
             reportingService,
+            scheduledExportService,
             processedMailRepository,
             auditService,
             securityService

@@ -10,6 +10,7 @@ import com.ecm.core.integration.mail.service.MailFetcherService;
 import com.ecm.core.integration.mail.service.MailOAuthService;
 import com.ecm.core.integration.mail.service.MailProcessedRetentionService;
 import com.ecm.core.integration.mail.service.MailReportingService;
+import com.ecm.core.integration.mail.service.MailReportScheduledExportService;
 import com.ecm.core.service.AuditService;
 import com.ecm.core.service.SecurityService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -42,6 +43,7 @@ public class MailAutomationController {
     private final MailOAuthService oauthService;
     private final MailProcessedRetentionService retentionService;
     private final MailReportingService reportingService;
+    private final MailReportScheduledExportService reportScheduledExportService;
     private final ProcessedMailRepository processedMailRepository;
     private final AuditService auditService;
     private final SecurityService securityService;
@@ -538,6 +540,20 @@ public class MailAutomationController {
             .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
             .contentType(MediaType.valueOf("text/csv"))
             .body(csv);
+    }
+
+    @GetMapping("/report/schedule")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Mail report schedule", description = "Get the configured mail report scheduled export settings")
+    public ResponseEntity<MailReportScheduledExportService.MailReportScheduleStatus> getReportSchedule() {
+        return ResponseEntity.ok(reportScheduledExportService.getScheduleStatus());
+    }
+
+    @PostMapping("/report/schedule/run")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Run scheduled mail report export now", description = "Trigger the scheduled mail report export immediately")
+    public ResponseEntity<MailReportScheduledExportService.ScheduledExportResult> runReportScheduleNow() {
+        return ResponseEntity.ok(reportScheduledExportService.exportNow(true));
     }
 
     @PostMapping("/processed/bulk-delete")

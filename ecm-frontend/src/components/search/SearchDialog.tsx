@@ -36,10 +36,11 @@ import { SearchCriteria } from 'types';
 import { useAppDispatch, useAppSelector } from 'store';
 import { setSearchOpen, setSearchPrefill } from 'store/slices/uiSlice';
 import { searchNodes } from 'store/slices/nodeSlice';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import apiService from 'services/api';
 import savedSearchService, { SavedSearch } from 'services/savedSearchService';
 import { toast } from 'react-toastify';
+import { buildSearchPrefillFromAdvancedSearchUrl } from 'utils/searchPrefillUtils';
 
 const CONTENT_TYPES = [
   { value: 'application/pdf', label: 'PDF' },
@@ -70,6 +71,7 @@ const PREVIEW_STATUS_OPTIONS = [
 const SearchDialog: React.FC = () => {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
+  const location = useLocation();
   const { searchOpen, searchPrefill } = useAppSelector((state) => state.ui);
   const { lastSearchCriteria } = useAppSelector((state) => state.node);
   const prefillInitializedRef = React.useRef(false);
@@ -186,6 +188,7 @@ const SearchDialog: React.FC = () => {
       return;
     }
 
+    const urlPrefill = buildSearchPrefillFromAdvancedSearchUrl(location.pathname, location.search);
     const source = searchPrefill || (lastSearchCriteria
       ? {
           name: lastSearchCriteria.name || '',
@@ -207,7 +210,7 @@ const SearchDialog: React.FC = () => {
           folderId: lastSearchCriteria.folderId || '',
           includeChildren: lastSearchCriteria.includeChildren,
         }
-      : null);
+      : (Object.keys(urlPrefill).length > 0 ? urlPrefill : null));
 
     if (!source) {
       return;
@@ -285,7 +288,7 @@ const SearchDialog: React.FC = () => {
     if (searchPrefill) {
       dispatch(setSearchPrefill(null));
     }
-  }, [searchOpen, searchPrefill, lastSearchCriteria, dispatch]);
+  }, [searchOpen, searchPrefill, lastSearchCriteria, dispatch, location.pathname, location.search]);
 
   React.useEffect(() => {
     if (!searchOpen) {

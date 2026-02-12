@@ -92,6 +92,37 @@ async function uploadBinaryFile(
   return documentId;
 }
 
+async function uploadInvalidPdfFile(
+  request: APIRequestContext,
+  folderId: string,
+  filename: string,
+  token: string,
+) {
+  const uploadRes = await request.post(`${baseApiUrl}/api/v1/documents/upload?folderId=${folderId}`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+      multipart: {
+        file: {
+          name: filename,
+          mimeType: 'application/pdf',
+          buffer: Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d, 0x00, 0x01, 0x02, 0x03]), // looks like "%PDF-" then junk
+        },
+      },
+    });
+  // An invalid PDF can still create a document record but return 400 due to extraction errors.
+  // Accept both (2xx) and 400 as long as we get a document id back.
+  const status = uploadRes.status();
+  const uploadJson = (await uploadRes.json().catch(() => ({}))) as { documentId?: string; id?: string };
+  const documentId = uploadJson.documentId ?? uploadJson.id;
+  if (!documentId) {
+    throw new Error('Upload did not return document id');
+  }
+  if (!(uploadRes.ok() || status === 400)) {
+    throw new Error(`Upload failed: status=${status}`);
+  }
+  return documentId;
+}
+
 test('Search preview status filters are visible and selectable', async ({ page, request }) => {
   test.setTimeout(240_000);
   await waitForApiReady(request, { apiUrl: baseApiUrl });
@@ -164,6 +195,113 @@ test('Unsupported preview shows neutral status without retry in search results',
   await expect(resultCard.getByText(/Preview unsupported/i)).toBeVisible();
   await expect(resultCard.getByRole('button', { name: /Preview failure reason/i })).toHaveCount(0);
   await expect(resultCard.getByRole('button', { name: /Retry preview/i })).toHaveCount(0);
+  await expect(resultCard.getByRole('button', { name: /Force rebuild preview/i })).toHaveCount(0);
+
+  await request.delete(`${baseApiUrl}/api/v1/nodes/${folderId}`,
+    { headers: { Authorization: `Bearer ${token}` } }).catch(() => null);
+});
+
+test('Advanced search preview status facet counts reflect full result set', async ({ page, request }) => {
+  test.setTimeout(360_000);
+  await waitForApiReady(request, { apiUrl: baseApiUrl });
+  const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+  const rootId = await getRootFolderId(request, token, { apiUrl: baseApiUrl });
+  const documentsId = await findChildFolderId(request, rootId, 'Documents', token, { apiUrl: baseApiUrl });
+
+  const queryKey = randomLetters(12);
+  const folderName = `e2e-advanced-preview-facet-${Date.now()}`;
+  const folderId = await createFolder(request, documentsId, folderName, token);
+  const totalDocs = 12;
+
+  try {
+    const docIds: string[] = [];
+    for (let i = 0; i < totalDocs; i += 1) {
+      const filename = `${queryKey}-${String(i + 1).padStart(2, '0')}.bin`;
+      const documentId = await uploadBinaryFile(request, folderId, filename, token);
+      docIds.push(documentId);
+
+      const previewRes = await request.get(`${baseApiUrl}/api/v1/documents/${documentId}/preview`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(previewRes.ok()).toBeTruthy();
+      const previewJson = (await previewRes.json()) as { supported?: boolean; status?: string; failureCategory?: string };
+      expect(previewJson.supported).toBe(false);
+      expect(previewJson.failureCategory).toBe('UNSUPPORTED');
+      expect(previewJson.status).toBe('UNSUPPORTED');
+
+      const indexRes = await request.post(`${baseApiUrl}/api/v1/search/index/${documentId}`,
+        { headers: { Authorization: `Bearer ${token}` } });
+      expect(indexRes.ok()).toBeTruthy();
+    }
+
+    await waitForSearchIndex(request, queryKey, token, { apiUrl: baseApiUrl, maxAttempts: 60, minResults: totalDocs });
+
+    await gotoWithAuthE2E(page, '/search', defaultUsername, defaultPassword, { token });
+    await page.getByLabel('Search query').fill(queryKey);
+    await page.getByRole('button', { name: /^Search$/ }).filter({ hasText: /^Search$/ }).click();
+
+    await expect(page.getByText(`Found ${totalDocs} results`)).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByRole('button', { name: `Unsupported (${totalDocs})` }).first()).toBeVisible({ timeout: 60_000 });
+  } finally {
+    await request.delete(`${baseApiUrl}/api/v1/nodes/${folderId}`,
+      { headers: { Authorization: `Bearer ${token}` } }).catch(() => null);
+  }
+});
+
+test('Retryable preview failure shows retry and force rebuild actions in search results', async ({ page, request }) => {
+  test.setTimeout(240_000);
+  await waitForApiReady(request, { apiUrl: baseApiUrl });
+  const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+  const rootId = await getRootFolderId(request, token, { apiUrl: baseApiUrl });
+  const documentsId = await findChildFolderId(request, rootId, 'Documents', token, { apiUrl: baseApiUrl });
+
+  const folderName = `e2e-preview-failed-${Date.now()}`;
+  const folderId = await createFolder(request, documentsId, folderName, token);
+  const filename = `e2e-preview-failed-${Date.now()}.pdf`;
+  const documentId = await uploadInvalidPdfFile(request, folderId, filename, token);
+
+  const previewRes = await request.get(`${baseApiUrl}/api/v1/documents/${documentId}/preview`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(previewRes.ok()).toBeTruthy();
+  const previewJson = (await previewRes.json()) as { supported?: boolean; status?: string; failureCategory?: string };
+  expect(previewJson.supported).toBe(false);
+  expect((previewJson.status || '').toUpperCase()).toBe('FAILED');
+  expect((previewJson.failureCategory || '').toUpperCase()).not.toBe('UNSUPPORTED');
+
+  const indexRes = await request.post(`${baseApiUrl}/api/v1/search/index/${documentId}`,
+    { headers: { Authorization: `Bearer ${token}` } });
+  expect(indexRes.ok()).toBeTruthy();
+  await waitForSearchIndex(request, filename, token, { apiUrl: baseApiUrl, maxAttempts: 40 });
+
+  await gotoWithAuthE2E(page, '/search-results', defaultUsername, defaultPassword, { token });
+
+  const quickSearchInput = page.getByPlaceholder('Quick search by name...');
+  await quickSearchInput.fill(filename);
+  await quickSearchInput.press('Enter');
+
+  const resultCard = page.locator('.MuiCard-root').filter({ hasText: filename }).first();
+  await expect(resultCard).toBeVisible({ timeout: 60_000 });
+  await expect(resultCard.getByText(/Preview failed/i)).toBeVisible();
+
+  const retryButton = resultCard.getByRole('button', { name: /Retry preview/i }).first();
+  const forceButton = resultCard.getByRole('button', { name: /Force rebuild preview/i }).first();
+  await expect(retryButton).toBeVisible();
+  await expect(forceButton).toBeVisible();
+
+  await forceButton.click();
+  const toast = page.locator('.Toastify__toast').last();
+  await expect(toast).toContainText(/Preview queued|already up to date|Failed to queue preview/i, { timeout: 30_000 });
+
+  await gotoWithAuthE2E(page, '/search', defaultUsername, defaultPassword, { token });
+  await page.getByLabel('Search query').fill(filename);
+  // The page has both a top nav search icon and the primary submit button.
+  // Click the primary button (has visible text) to avoid strict mode ambiguity.
+  await page.getByRole('button', { name: /^Search$/ }).filter({ hasText: /^Search$/ }).click();
+  const advancedResult = page.locator('.MuiPaper-root').filter({ hasText: filename }).first();
+  await expect(advancedResult).toBeVisible({ timeout: 60_000 });
+  await expect(advancedResult.getByRole('button', { name: /Retry preview/i })).toBeVisible();
+  await expect(advancedResult.getByRole('button', { name: /Force rebuild preview/i })).toBeVisible();
 
   await request.delete(`${baseApiUrl}/api/v1/nodes/${folderId}`,
     { headers: { Authorization: `Bearer ${token}` } }).catch(() => null);

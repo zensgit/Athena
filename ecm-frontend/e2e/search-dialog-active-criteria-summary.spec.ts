@@ -107,4 +107,28 @@ test.describe('Search dialog active criteria summary', () => {
     await expect(summary).toContainText('Type: application/pdf');
     await expect(summary).toContainText('Creator: admin');
   });
+
+  test('normalizes legacy preview status aliases from /search URL state', async ({ page, request }) => {
+    test.setTimeout(180_000);
+
+    const apiUrl = resolveApiUrl();
+    await waitForApiReady(request, { apiUrl });
+    const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+
+    const query = `e2e-url-prefill-alias-${Date.now()}`;
+    const advancedPath = `/search?q=${encodeURIComponent(query)}&previewStatus=waiting,error,unsupported_media_type`;
+
+    await gotoWithAuthE2E(page, advancedPath, defaultUsername, defaultPassword, { token });
+
+    await page.locator('header button[aria-label="Search"]').click();
+    const dialog = page.getByRole('dialog').filter({ hasText: 'Advanced Search' });
+    await expect(dialog).toBeVisible({ timeout: 60_000 });
+
+    await expect(dialog.getByLabel('Name contains')).toHaveValue(query);
+    const summary = dialog.getByTestId('active-criteria-summary');
+    await expect(summary).toContainText(`Name: ${query}`);
+    await expect(summary).toContainText('Preview: Queued');
+    await expect(summary).toContainText('Preview: Failed');
+    await expect(summary).toContainText('Preview: Unsupported');
+  });
 });
