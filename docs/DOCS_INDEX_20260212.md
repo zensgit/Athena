@@ -19,6 +19,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Day 2: API-level OCR end-to-end smoke
   - Design: `docs/PHASE3_D2_OCR_E2E_SMOKE_DESIGN_20260212.md`
   - Verification: `docs/PHASE3_D2_OCR_E2E_SMOKE_VERIFICATION_20260212.md`
+- Day 3: OCR status chip + queue actions in preview UI
+  - Design: `docs/PHASE3_D3_OCR_UI_STATUS_DESIGN_20260212.md`
+  - Verification: `docs/PHASE3_D3_OCR_UI_STATUS_VERIFICATION_20260212.md`
 
 ## Mail Automation
 

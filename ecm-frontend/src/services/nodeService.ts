@@ -140,6 +140,15 @@ export interface PreviewQueueStatus {
   nextAttemptAt?: string;
 }
 
+export interface OcrQueueStatus {
+  documentId: string;
+  ocrStatus: string | null;
+  queued: boolean;
+  attempts?: number;
+  nextAttemptAt?: string | null;
+  message?: string | null;
+}
+
 export interface PermissionDecision {
   nodeId: string | null;
   username: string | null;
@@ -554,6 +563,12 @@ class NodeService {
 
   async queuePreview(nodeId: string, force = false): Promise<PreviewQueueStatus> {
     return api.post<PreviewQueueStatus>(`/documents/${nodeId}/preview/queue`, null, {
+      params: { force },
+    });
+  }
+
+  async queueOcr(nodeId: string, force = false): Promise<OcrQueueStatus> {
+    return api.post<OcrQueueStatus>(`/documents/${nodeId}/ocr/queue`, null, {
       params: { force },
     });
   }

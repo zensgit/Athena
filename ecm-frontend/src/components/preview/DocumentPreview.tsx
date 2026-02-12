@@ -44,7 +44,7 @@ import { format } from 'date-fns';
 import { Node, PdfAnnotation, PdfAnnotationState } from 'types';
 import { useAppSelector } from 'store';
 import apiService from 'services/api';
-import nodeService from 'services/nodeService';
+import nodeService, { OcrQueueStatus } from 'services/nodeService';
 import { toast } from 'react-toastify';
 import { getFailedPreviewMeta } from 'utils/previewStatusUtils';
 
@@ -238,6 +238,12 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   const [previewStatusOverride, setPreviewStatusOverride] = useState<string | null>(null);
   const [previewFailureOverride, setPreviewFailureOverride] = useState<string | null>(null);
   const [queueingPreview, setQueueingPreview] = useState(false);
+  const [nodeDetails, setNodeDetails] = useState<Node | null>(null);
+  const [nodeDetailsLoading, setNodeDetailsLoading] = useState(false);
+  const [ocrQueueStatus, setOcrQueueStatus] = useState<OcrQueueStatus | null>(null);
+  const [ocrStatusOverride, setOcrStatusOverride] = useState<string | null>(null);
+  const [ocrFailureOverride, setOcrFailureOverride] = useState<string | null>(null);
+  const [queueingOcr, setQueueingOcr] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [pageSize, setPageSize] = useState<{ width: number; height: number } | null>(null);
   const [annotations, setAnnotations] = useState<PdfAnnotation[]>([]);
@@ -300,6 +306,52 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         return 'success';
       case 'FAILED':
         return failedPreviewMeta.color;
+      case 'PROCESSING':
+        return 'warning';
+      default:
+        return 'default';
+    }
+  })();
+  const effectiveNodeMetadata = (nodeDetails?.metadata ?? node?.metadata ?? {}) as Record<string, any>;
+  const resolvedOcrStatus = ocrStatusOverride
+    || ocrQueueStatus?.ocrStatus
+    || (effectiveNodeMetadata?.ocrStatus as string | undefined)
+    || null;
+  const resolvedOcrFailure = ocrFailureOverride
+    || (effectiveNodeMetadata?.ocrFailureReason as string | undefined)
+    || null;
+  const ocrPollIntervalMs = 15000;
+  const shouldPollOcr = resolvedOcrStatus === 'PROCESSING';
+  const ocrStatusLabel = (() => {
+    if (resolvedOcrStatus) {
+      const normalized = String(resolvedOcrStatus).toUpperCase();
+      const pretty = `${normalized.charAt(0)}${normalized.slice(1).toLowerCase()}`;
+      return `OCR: ${pretty}`;
+    }
+    const message = ocrQueueStatus?.message?.trim();
+    if (!message) {
+      return null;
+    }
+    if (/disabled/i.test(message)) {
+      return 'OCR: Disabled';
+    }
+    if (/not eligible/i.test(message)) {
+      return 'OCR: Not eligible';
+    }
+    return 'OCR: Unavailable';
+  })();
+  const ocrStatusTooltip = resolvedOcrFailure
+    ? resolvedOcrFailure
+    : shouldPollOcr
+      ? `Status refreshes every ${ocrPollIntervalMs / 1000}s while processing.`
+      : ocrQueueStatus?.message
+        || 'OCR status reflects the latest extraction state.';
+  const ocrStatusColor = (() => {
+    switch (resolvedOcrStatus) {
+      case 'READY':
+        return 'success';
+      case 'FAILED':
+        return 'error';
       case 'PROCESSING':
         return 'warning';
       default:
@@ -389,6 +441,28 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     }
   }, [nodeId]);
 
+  const loadNodeDetails = useCallback(async () => {
+    if (!nodeId) {
+      return;
+    }
+    setNodeDetailsLoading(true);
+    try {
+      const details = await nodeService.getNode(nodeId);
+      setNodeDetails(details);
+    } catch {
+      // Best effort only: OCR metadata should not block preview rendering.
+    } finally {
+      setNodeDetailsLoading(false);
+    }
+  }, [nodeId]);
+
+  useEffect(() => {
+    if (!open || !nodeId) {
+      return;
+    }
+    void loadNodeDetails();
+  }, [loadNodeDetails, nodeId, open]);
+
   const handleQueuePreview = useCallback(async (force = false) => {
     if (!nodeId) {
       return;
@@ -409,6 +483,34 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     }
   }, [nodeId]);
 
+  const handleQueueOcr = useCallback(async (force = false) => {
+    if (!nodeId) {
+      return;
+    }
+    setQueueingOcr(true);
+    try {
+      const status = await nodeService.queueOcr(nodeId, force);
+      setOcrQueueStatus(status);
+      setOcrFailureOverride(null);
+
+      if (status?.queued) {
+        setOcrStatusOverride('PROCESSING');
+        toast.success('OCR queued');
+      } else {
+        if (status?.ocrStatus) {
+          setOcrStatusOverride(status.ocrStatus);
+        }
+        toast.info(status?.message || 'OCR already up to date');
+      }
+
+      void loadNodeDetails();
+    } catch {
+      toast.error('Failed to queue OCR');
+    } finally {
+      setQueueingOcr(false);
+    }
+  }, [loadNodeDetails, nodeId]);
+
   useEffect(() => {
     if (!open || !nodeId || !shouldPollPreview) {
       return undefined;
@@ -418,6 +520,16 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     }, previewPollIntervalMs);
     return () => window.clearInterval(interval);
   }, [loadServerPreview, nodeId, open, shouldPollPreview]);
+
+  useEffect(() => {
+    if (!open || !nodeId || !shouldPollOcr) {
+      return undefined;
+    }
+    const interval = window.setInterval(() => {
+      void loadNodeDetails();
+    }, ocrPollIntervalMs);
+    return () => window.clearInterval(interval);
+  }, [loadNodeDetails, nodeId, open, shouldPollOcr]);
 
   useEffect(() => {
     if (!open || !nodeId) {
@@ -443,6 +555,12 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     setPreviewStatusOverride(null);
     setPreviewFailureOverride(null);
     setQueueingPreview(false);
+    setNodeDetails(null);
+    setNodeDetailsLoading(false);
+    setOcrQueueStatus(null);
+    setOcrStatusOverride(null);
+    setOcrFailureOverride(null);
+    setQueueingOcr(false);
     setAnnotations([]);
     setAnnotationsUpdatedBy(null);
     setAnnotationsUpdatedAt(null);
@@ -1400,6 +1518,17 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
               />
             </Tooltip>
           )}
+          {ocrStatusLabel && (
+            <Tooltip title={ocrStatusTooltip} arrow>
+              <Chip
+                size="small"
+                variant="outlined"
+                label={ocrStatusLabel}
+                color={ocrStatusColor}
+                sx={{ mr: 2 }}
+              />
+            </Tooltip>
+          )}
           {previewSource && (
             <Tooltip title={previewSourceDetail ?? ''} arrow disableHoverListener={!previewSourceDetail}>
               <Chip
@@ -1588,6 +1717,34 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                 <ListItemText>Force Preview Rebuild</ListItemText>
               </MenuItem>
             )}
+            {node?.nodeType === 'DOCUMENT' && (
+              <MenuItem
+                onClick={() => {
+                  handleQueueOcr(false);
+                  handleMenuClose();
+                }}
+                disabled={queueingOcr}
+              >
+                <ListItemIcon>
+                  <Refresh fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>Queue OCR</ListItemText>
+              </MenuItem>
+            )}
+            {node?.nodeType === 'DOCUMENT' && (
+              <MenuItem
+                onClick={() => {
+                  handleQueueOcr(true);
+                  handleMenuClose();
+                }}
+                disabled={queueingOcr}
+              >
+                <ListItemIcon>
+                  <Refresh fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>Force OCR Rebuild</ListItemText>
+              </MenuItem>
+            )}
             <MenuItem onClick={() => { handleDownload(); handleMenuClose(); }}>
               <ListItemIcon>
                 <Download fontSize="small" />
@@ -1621,7 +1778,10 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
           flexDirection: 'column',
         }}
       >
-        {(shouldPollPreview || resolvedPreviewStatus === 'FAILED') && (
+        {(shouldPollPreview
+          || resolvedPreviewStatus === 'FAILED'
+          || shouldPollOcr
+          || resolvedOcrStatus === 'FAILED') && (
           <Box sx={{ p: 2, bgcolor: 'background.paper', borderBottom: '1px solid', borderColor: 'divider' }}>
             {shouldPollPreview && (
               <Alert severity="info" sx={{ mb: 1 }}>
@@ -1657,23 +1817,74 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                   : 'Preview failed. Retry generation or force a rebuild if the file recently changed.'}
               </Alert>
             )}
+            {shouldPollOcr && (
+              <Alert severity="info" sx={{ mt: shouldPollPreview || resolvedPreviewStatus === 'FAILED' ? 1 : 0, mb: 1 }}>
+                OCR extraction is in progress. Status updates every {ocrPollIntervalMs / 1000}s.
+              </Alert>
+            )}
+            {resolvedOcrStatus === 'FAILED' && (
+              <Alert
+                severity="warning"
+                action={(
+                  <Box display="flex" gap={1} flexWrap="wrap">
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => handleQueueOcr(false)}
+                      disabled={queueingOcr}
+                    >
+                      Retry OCR
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => handleQueueOcr(true)}
+                      disabled={queueingOcr}
+                    >
+                      Force OCR
+                    </Button>
+                  </Box>
+                )}
+              >
+                {resolvedOcrFailure
+                  ? `OCR failed: ${resolvedOcrFailure}`
+                  : 'OCR failed. Retry extraction or force a rebuild if the file recently changed.'}
+              </Alert>
+            )}
             {(previewQueueStatus?.attempts
               || previewQueueStatus?.nextAttemptAt
-              || serverPreviewError) && (
+              || serverPreviewError
+              || ocrQueueStatus?.attempts
+              || ocrQueueStatus?.nextAttemptAt) && (
               <Box mt={1}>
                 {previewQueueStatus?.attempts !== undefined && (
                   <Typography variant="caption" color="text.secondary" display="block">
-                    Attempts: {previewQueueStatus.attempts}
+                    Preview attempts: {previewQueueStatus.attempts}
                   </Typography>
                 )}
                 {previewQueueStatus?.nextAttemptAt && (
                   <Typography variant="caption" color="text.secondary" display="block">
-                    Next retry: {format(new Date(previewQueueStatus.nextAttemptAt), 'PPp')}
+                    Preview next retry: {format(new Date(previewQueueStatus.nextAttemptAt), 'PPp')}
                   </Typography>
                 )}
                 {serverPreviewError && (
                   <Typography variant="caption" color="text.secondary" display="block">
                     Server preview error: {serverPreviewError}
+                  </Typography>
+                )}
+                {ocrQueueStatus?.attempts !== undefined && (
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    OCR attempts: {ocrQueueStatus.attempts}
+                  </Typography>
+                )}
+                {ocrQueueStatus?.nextAttemptAt && (
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    OCR next retry: {format(new Date(ocrQueueStatus.nextAttemptAt), 'PPp')}
+                  </Typography>
+                )}
+                {nodeDetailsLoading && shouldPollOcr && (
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    Refreshing OCR status...
                   </Typography>
                 )}
               </Box>
