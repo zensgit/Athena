@@ -582,6 +582,29 @@ const SearchDialog: React.FC = () => {
     pathPrefix,
   ]);
 
+  const contentTypeOptions = React.useMemo(() => {
+    const baseValues = facetOptions.mimeTypes.length > 0
+      ? facetOptions.mimeTypes
+      : CONTENT_TYPES.map((item) => item.value);
+    const selected = (searchCriteria.contentType || '').trim();
+    return selected && !baseValues.includes(selected)
+      ? [...baseValues, selected]
+      : baseValues;
+  }, [facetOptions.mimeTypes, searchCriteria.contentType]);
+
+  const createdByOptions = React.useMemo(() => {
+    const baseValues = facetOptions.createdBy;
+    const selected = (searchCriteria.createdBy || '').trim();
+    return selected && !baseValues.includes(selected)
+      ? [selected, ...baseValues]
+      : baseValues;
+  }, [facetOptions.createdBy, searchCriteria.createdBy]);
+
+  const contentTypeLabelByValue = React.useMemo(
+    () => new Map(CONTENT_TYPES.map((item) => [item.value, item.label])),
+    []
+  );
+
   const isSearchValid = () => {
     return (
       searchCriteria.name ||
@@ -703,17 +726,13 @@ const SearchDialog: React.FC = () => {
                         label="Content Type"
                       >
                         <MenuItem value="">All Types</MenuItem>
-                        {facetOptions.mimeTypes.length > 0
-                          ? facetOptions.mimeTypes.map((mt) => (
-                              <MenuItem key={mt} value={mt}>
-                                {mt}
-                              </MenuItem>
-                            ))
-                          : CONTENT_TYPES.map((type) => (
-                              <MenuItem key={type.value} value={type.value}>
-                                {type.label}
-                              </MenuItem>
-                            ))}
+                        {contentTypeOptions.map((mimeType) => (
+                          <MenuItem key={mimeType} value={mimeType}>
+                            {facetOptions.mimeTypes.length > 0
+                              ? mimeType
+                              : (contentTypeLabelByValue.get(mimeType) || mimeType)}
+                          </MenuItem>
+                        ))}
                       </Select>
                     </FormControl>
                   </Grid>
@@ -731,7 +750,7 @@ const SearchDialog: React.FC = () => {
                         }
                       >
                         <MenuItem value="">Any creator</MenuItem>
-                        {facetOptions.createdBy.map((u) => (
+                        {createdByOptions.map((u) => (
                           <MenuItem key={u} value={u}>
                             {u}
                           </MenuItem>

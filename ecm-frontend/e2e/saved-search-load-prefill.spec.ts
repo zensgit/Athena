@@ -134,6 +134,8 @@ test.describe('Saved search load to advanced search prefill', () => {
       await expect(searchDialog.getByLabel('Name contains')).toHaveValue('legacy-query');
       await expect(searchDialog.getByText('Scope: This folder')).toBeVisible();
       await expect(searchDialog.getByRole('checkbox', { name: 'Include subfolders' })).not.toBeChecked();
+      await expect(searchDialog.getByTestId('active-criteria-summary')).toContainText('Type: application/pdf');
+      await expect(searchDialog.getByTestId('active-criteria-summary')).toContainText('Creator: legacy-user');
 
       await searchDialog.getByRole('button', { name: 'Aspects' }).click();
       await expect(searchDialog.getByRole('checkbox', { name: 'Auditable' })).toBeChecked();
