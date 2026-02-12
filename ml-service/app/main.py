@@ -1,10 +1,21 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from typing import List, Optional
 import pickle
 import os
 import re
 from collections import Counter
+import io
+
+try:
+    import pytesseract
+    from PIL import Image
+    from pdf2image import convert_from_bytes
+except Exception:
+    # Optional dependencies; OCR endpoints will return a clear error if missing.
+    pytesseract = None
+    Image = None
+    convert_from_bytes = None
 
 app = FastAPI(title="ECM ML Service", version="1.0.0")
 
@@ -35,6 +46,12 @@ class HealthResponse(BaseModel):
     status: str
     modelLoaded: bool
     modelVersion: Optional[str]
+
+class OcrResponse(BaseModel):
+    text: str
+    pages: int
+    language: str
+    truncated: bool
 
 DEFAULT_ENGLISH_STOPWORDS = {
     "the", "and", "for", "with", "from", "that", "this", "are", "was", "were", "have", "has", "had",
@@ -103,6 +120,13 @@ def _suggest_tags_simple(text: str, max_tags: int) -> List[str]:
         return []
 
     return [token for token, _ in counts.most_common(max_tags)]
+
+def _clamp_int(value: int, low: int, high: int) -> int:
+    try:
+        value = int(value)
+    except Exception:
+        return low
+    return max(low, min(high, value))
 
 @app.on_event("startup")
 async def load_model():
@@ -179,6 +203,67 @@ async def suggest_tags(request: TagSuggestRequest):
 
     tags = _suggest_tags_simple(request.text, request.maxTags)
     return TagSuggestResponse(tags=tags)
+
+@app.post("/api/ml/ocr", response_model=OcrResponse)
+async def ocr_extract_text(
+    file: UploadFile = File(...),
+    language: str = os.getenv("OCR_DEFAULT_LANG", "eng"),
+    maxPages: int = int(os.getenv("OCR_MAX_PAGES", "3")),
+    maxChars: int = int(os.getenv("OCR_MAX_CHARS", "200000")),
+):
+    """Extract text from images/PDF using OCR (Tesseract).
+
+    Notes:
+    - This endpoint is intended for server-side ingestion pipelines (Athena ECM core).
+    - It is not a general-purpose OCR API; we enforce conservative limits.
+    """
+    if pytesseract is None or Image is None or convert_from_bytes is None:
+        raise HTTPException(status_code=503, detail="OCR dependencies are not available in this build")
+
+    raw = await file.read()
+    max_upload_bytes = _clamp_int(os.getenv("OCR_MAX_UPLOAD_BYTES", "20000000"), 1_000_000, 100_000_000)
+    if len(raw) > max_upload_bytes:
+        raise HTTPException(status_code=413, detail=f"File too large for OCR (>{max_upload_bytes} bytes)")
+
+    max_pages = _clamp_int(maxPages, 1, 20)
+    max_chars = _clamp_int(maxChars, 1_000, 2_000_000)
+
+    filename = (file.filename or "").lower()
+    content_type = (file.content_type or "").lower()
+
+    is_pdf = content_type == "application/pdf" or filename.endswith(".pdf")
+    is_image = content_type.startswith("image/") or any(
+        filename.endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".gif"]
+    )
+
+    if not is_pdf and not is_image:
+        raise HTTPException(status_code=422, detail=f"Unsupported content type for OCR: {file.content_type or 'unknown'}")
+
+    truncated = False
+    text = ""
+    pages = 0
+
+    try:
+        if is_pdf:
+            # Convert first N pages to images and OCR each page.
+            images = convert_from_bytes(raw, first_page=1, last_page=max_pages)
+            pages = len(images)
+            parts: List[str] = []
+            for img in images:
+                parts.append(pytesseract.image_to_string(img, lang=language))
+            text = "\n\n".join([p.strip() for p in parts if p and p.strip()])
+        else:
+            img = Image.open(io.BytesIO(raw))
+            pages = 1
+            text = (pytesseract.image_to_string(img, lang=language) or "").strip()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"OCR failed: {e}")
+
+    if text and len(text) > max_chars:
+        text = text[:max_chars]
+        truncated = True
+
+    return OcrResponse(text=text or "", pages=pages, language=language, truncated=truncated)
 
 @app.post("/api/ml/train")
 async def train_model(request: TrainRequest):

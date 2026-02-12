@@ -5,11 +5,15 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.util.Collections;
 import java.util.List;
@@ -222,6 +226,77 @@ public class MLServiceClient {
     }
 
     /**
+     * Extract text content via OCR (Tesseract behind the ML service).
+     *
+     * This is optional and should typically be invoked by a background queue/job,
+     * since OCR can be slow for multi-page PDFs.
+     */
+    public OcrResult ocr(byte[] fileBytes, String filename, String contentType, String language, int maxPages, int maxChars) {
+        if (!mlEnabled) {
+            return OcrResult.empty();
+        }
+
+        if (fileBytes == null || fileBytes.length == 0) {
+            return OcrResult.failed("Empty file content");
+        }
+
+        if (!isAvailable()) {
+            return OcrResult.failed("ML service unavailable");
+        }
+
+        String safeLanguage = (language == null || language.isBlank()) ? "eng" : language.trim();
+        int safeMaxPages = Math.max(1, Math.min(maxPages > 0 ? maxPages : 3, 20));
+        int safeMaxChars = Math.max(1000, Math.min(maxChars > 0 ? maxChars : 200000, 2000000));
+
+        try {
+            String url = UriComponentsBuilder
+                .fromHttpUrl(mlServiceUrl + "/api/ml/ocr")
+                .queryParam("language", safeLanguage)
+                .queryParam("maxPages", safeMaxPages)
+                .queryParam("maxChars", safeMaxChars)
+                .toUriString();
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+
+            ByteArrayResource resource = new ByteArrayResource(fileBytes) {
+                @Override
+                public String getFilename() {
+                    return (filename == null || filename.isBlank()) ? "document" : filename;
+                }
+            };
+
+            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+            body.add("file", resource);
+
+            HttpEntity<MultiValueMap<String, Object>> entity = new HttpEntity<>(body, headers);
+
+            ResponseEntity<OcrResponse> response = restTemplate.postForEntity(
+                url,
+                entity,
+                OcrResponse.class
+            );
+
+            if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
+                OcrResponse ocr = response.getBody();
+                return OcrResult.builder()
+                    .success(true)
+                    .text(ocr.getText() != null ? ocr.getText() : "")
+                    .pages(ocr.getPages())
+                    .language(ocr.getLanguage())
+                    .truncated(Boolean.TRUE.equals(ocr.getTruncated()))
+                    .build();
+            }
+
+            return OcrResult.failed("Unexpected OCR response: " + response.getStatusCode());
+
+        } catch (RestClientException e) {
+            log.warn("ML OCR request failed: {}", e.getMessage());
+            return OcrResult.failed(e.getMessage());
+        }
+    }
+
+    /**
      * Trigger model training with labeled documents
      *
      * @param documents List of training documents with text and categories
@@ -263,6 +338,45 @@ public class MLServiceClient {
         } catch (RestClientException e) {
             log.error("ML training request failed", e);
             return TrainingResult.failed(e.getMessage());
+        }
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class OcrResponse {
+        private String text;
+        private Integer pages;
+        private String language;
+        private Boolean truncated;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class OcrResult {
+        private boolean success;
+        private String text;
+        private Integer pages;
+        private String language;
+        private boolean truncated;
+        private String errorMessage;
+
+        public static OcrResult empty() {
+            return OcrResult.builder()
+                .success(false)
+                .text("")
+                .errorMessage("OCR disabled")
+                .build();
+        }
+
+        public static OcrResult failed(String message) {
+            return OcrResult.builder()
+                .success(false)
+                .text("")
+                .errorMessage(message)
+                .build();
         }
     }
 

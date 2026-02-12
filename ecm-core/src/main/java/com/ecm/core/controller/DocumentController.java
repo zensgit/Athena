@@ -14,6 +14,7 @@ import com.ecm.core.service.ContentService;
 import com.ecm.core.preview.PreviewService;
 import com.ecm.core.preview.PreviewResult;
 import com.ecm.core.preview.PreviewQueueService;
+import com.ecm.core.ocr.OcrQueueService;
 import com.ecm.core.conversion.ConversionService;
 import com.ecm.core.conversion.ConversionResult;
 import io.swagger.v3.oas.annotations.Operation;
@@ -47,6 +48,7 @@ public class DocumentController {
     private final ContentService contentService;
     private final PreviewService previewService;
     private final PreviewQueueService previewQueueService;
+    private final OcrQueueService ocrQueueService;
     private final ConversionService conversionService;
     private final PdfAnnotationService pdfAnnotationService;
     
@@ -241,6 +243,14 @@ public class DocumentController {
             @Parameter(description = "Document ID") @PathVariable UUID documentId,
             @RequestParam(defaultValue = "false") boolean force) {
         return ResponseEntity.ok(previewQueueService.enqueue(documentId, force));
+    }
+
+    @PostMapping("/{documentId}/ocr/queue")
+    @Operation(summary = "Queue OCR extraction", description = "Enqueue OCR text extraction in the background (if enabled).")
+    public ResponseEntity<OcrQueueService.OcrQueueStatus> queueOcr(
+            @Parameter(description = "Document ID") @PathVariable UUID documentId,
+            @RequestParam(defaultValue = "false") boolean force) {
+        return ResponseEntity.ok(ocrQueueService.enqueue(documentId, force));
     }
 
     @GetMapping("/{documentId}/annotations")
