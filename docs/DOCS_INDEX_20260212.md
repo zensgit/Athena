@@ -7,8 +7,18 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 ## Plan + Progress
 
 - Plan: `docs/NEXT_7DAY_PLAN_20260212.md`
+- Phase 3 plan: `docs/NEXT_7DAY_PLAN_PHASE3_20260212.md`
 - Phase 1 progress: `docs/PHASE1_EXECUTION_PROGRESS_20260212.md`
 - Phase 2 progress: `docs/PHASE2_EXECUTION_PROGRESS_20260212.md`
+
+## OCR (Phase 3)
+
+- Day 1: `ml-service` OCR endpoint + core OCR queue
+  - Design: `docs/PHASE3_D1_OCR_ML_SERVICE_DESIGN_20260212.md`
+  - Verification: `docs/PHASE3_D1_OCR_ML_SERVICE_VERIFICATION_20260212.md`
+- Day 2: API-level OCR end-to-end smoke
+  - Design: `docs/PHASE3_D2_OCR_E2E_SMOKE_DESIGN_20260212.md`
+  - Verification: `docs/PHASE3_D2_OCR_E2E_SMOKE_VERIFICATION_20260212.md`
 
 ## Mail Automation
 

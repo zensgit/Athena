@@ -98,8 +98,9 @@ repair_rabbitmq_plugins_expand() {
 
 repair_rabbitmq_plugins_expand
 
-docker_compose build ecm-core ecm-frontend
-docker_compose up -d --no-deps --force-recreate ecm-core ecm-frontend
+# Keep ml-service in sync with repo changes (e.g., OCR deps/endpoints).
+docker_compose build ml-service ecm-core ecm-frontend
+docker_compose up -d --no-deps --force-recreate ml-service ecm-core ecm-frontend
 
 echo "OK"
 echo "Frontend: http://localhost:${ECM_FRONTEND_PORT:-3000}/"
