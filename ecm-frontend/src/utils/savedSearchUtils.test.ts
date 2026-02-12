@@ -90,4 +90,34 @@ describe('savedSearchUtils', () => {
     expect(criteria.previewStatuses).toEqual(['FAILED', 'PROCESSING']);
     expect(criteria.createdBy).toBe('legacy-auditor');
   });
+
+  it('normalizes string-based legacy list and boolean fields', () => {
+    const criteria = buildSearchCriteriaFromSavedSearch({
+      id: 'saved-legacy-string-shape',
+      userId: 'admin',
+      name: 'Legacy string fields',
+      createdAt: new Date().toISOString(),
+      queryParams: {
+        queryString: 'legacy-string-query',
+        filters: {
+          mimeTypes: 'application/pdf, image/png',
+          tags: 'alpha,beta',
+          categories: 'cat-a, cat-b',
+          correspondents: 'ops,qa',
+          creators: 'legacy-user',
+          includeChildren: 'false',
+        },
+      },
+    });
+
+    expect(criteria.name).toBe('legacy-string-query');
+    expect(criteria.contentType).toBe('application/pdf');
+    expect(criteria.mimeTypes).toEqual(['application/pdf', 'image/png']);
+    expect(criteria.tags).toEqual(['alpha', 'beta']);
+    expect(criteria.categories).toEqual(['cat-a', 'cat-b']);
+    expect(criteria.correspondents).toEqual(['ops', 'qa']);
+    expect(criteria.createdBy).toBe('legacy-user');
+    expect(criteria.createdByList).toEqual(['legacy-user']);
+    expect(criteria.includeChildren).toBe(false);
+  });
 });

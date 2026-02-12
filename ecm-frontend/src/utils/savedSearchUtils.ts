@@ -4,7 +4,12 @@ import { SearchCriteria } from 'types';
 const normalizeList = (input: unknown) =>
   Array.isArray(input)
     ? input.map((value) => String(value).trim()).filter((value) => value.length > 0)
-    : [];
+    : (typeof input === 'string'
+      ? input
+        .split(',')
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0)
+      : []);
 
 const normalizeProperties = (input: unknown) => {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
@@ -28,6 +33,18 @@ const asNumber = (input: unknown) => {
   if (typeof input === 'string') {
     const parsed = Number(input);
     return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+};
+
+const asBoolean = (input: unknown) => {
+  if (typeof input === 'boolean') {
+    return input;
+  }
+  if (typeof input === 'string') {
+    const normalized = input.trim().toLowerCase();
+    if (normalized === 'true') return true;
+    if (normalized === 'false') return false;
   }
   return undefined;
 };
@@ -80,11 +97,13 @@ export const buildSearchCriteriaFromSavedSearch = (item: SavedSearch): SearchCri
   const previewStatuses = normalizeStatusList(
     getFilterValue('previewStatuses', 'previewStatus')
   );
+  const name = asString(queryParams.query)
+    || asString(queryParams.q)
+    || asString(queryParams.queryString)
+    || '';
 
   return {
-    name: typeof queryParams.query === 'string'
-      ? queryParams.query
-      : (typeof queryParams.q === 'string' ? queryParams.q : ''),
+    name,
     contentType,
     mimeTypes,
     aspects: normalizeList(getFilterValue('aspects')),
@@ -103,8 +122,6 @@ export const buildSearchCriteriaFromSavedSearch = (item: SavedSearch): SearchCri
     maxSize: asNumber(getFilterValue('maxSize')),
     path: asString(getFilterValue('path', 'pathPrefix')),
     folderId: typeof getFilterValue('folderId') === 'string' ? (getFilterValue('folderId') as string) : undefined,
-    includeChildren: typeof getFilterValue('includeChildren') === 'boolean'
-      ? (getFilterValue('includeChildren') as boolean)
-      : undefined,
+    includeChildren: asBoolean(getFilterValue('includeChildren')),
   };
 };
