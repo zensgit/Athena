@@ -22,6 +22,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Day 3: OCR status chip + queue actions in preview UI
   - Design: `docs/PHASE3_D3_OCR_UI_STATUS_DESIGN_20260212.md`
   - Verification: `docs/PHASE3_D3_OCR_UI_STATUS_VERIFICATION_20260212.md`
+- Day 4: OCR-driven correspondent enrichment (feature-flagged)
+  - Design: `docs/PHASE3_D4_OCR_ENRICHMENT_CORRESPONDENT_DESIGN_20260212.md`
+  - Verification: `docs/PHASE3_D4_OCR_ENRICHMENT_CORRESPONDENT_VERIFICATION_20260212.md`
 
 ## Mail Automation
 

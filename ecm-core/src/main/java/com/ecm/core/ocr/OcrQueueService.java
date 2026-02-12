@@ -1,10 +1,12 @@
 package com.ecm.core.ocr;
 
 import com.ecm.core.entity.Document;
+import com.ecm.core.entity.Correspondent;
 import com.ecm.core.ml.MLServiceClient;
 import com.ecm.core.repository.DocumentRepository;
 import com.ecm.core.search.SearchIndexService;
 import com.ecm.core.service.ContentService;
+import com.ecm.core.service.CorrespondentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -42,6 +44,7 @@ public class OcrQueueService {
 
     private final DocumentRepository documentRepository;
     private final ContentService contentService;
+    private final CorrespondentService correspondentService;
     private final SearchIndexService searchIndexService;
     private final MLServiceClient mlServiceClient;
 
@@ -50,6 +53,9 @@ public class OcrQueueService {
 
     @Value("${ecm.ocr.language:eng}")
     private String ocrLanguage;
+
+    @Value("${ecm.ocr.enrich.correspondent.enabled:false}")
+    private boolean enrichCorrespondentEnabled;
 
     @Value("${ecm.ocr.max-pages:3}")
     private int maxPages;
@@ -188,6 +194,18 @@ public class OcrQueueService {
         } else if (force) {
             // Force runs may append; normal runs avoid duplicating existing text.
             document.setTextContent((document.getTextContent() + "\n\n[OCR]\n" + text).trim());
+        }
+
+        if (enrichCorrespondentEnabled && document.getCorrespondent() == null) {
+            try {
+                Correspondent match = correspondentService.matchCorrespondent(text);
+                if (match != null) {
+                    document.setCorrespondent(match);
+                    log.info("OCR enrichment: matched correspondent '{}' for document {}", match.getName(), document.getId());
+                }
+            } catch (Exception e) {
+                log.debug("OCR enrichment correspondent match failed for {}: {}", document.getId(), e.getMessage());
+            }
         }
 
         Map<String, Object> metadata = document.getMetadata();
