@@ -184,6 +184,7 @@ const SearchResults: React.FC = () => {
   const [fallbackCriteriaKey, setFallbackCriteriaKey] = useState('');
   const [dismissedFallbackCriteriaKey, setDismissedFallbackCriteriaKey] = useState('');
   const [fallbackAutoRetryCount, setFallbackAutoRetryCount] = useState(0);
+  const [fallbackLastRetryAt, setFallbackLastRetryAt] = useState<Date | null>(null);
   const fallbackAutoRetryTimerRef = useRef<number | null>(null);
   const [queueingPreviewId, setQueueingPreviewId] = useState<string | null>(null);
   const [previewQueueStatusById, setPreviewQueueStatusById] = useState<Record<string, {
@@ -435,6 +436,7 @@ const SearchResults: React.FC = () => {
     if (!lastSearchCriteria) {
       return;
     }
+    setFallbackLastRetryAt(new Date());
     const sortParams = getSortParams(sortBy);
     runSearch({ ...lastSearchCriteria, page: 0, size: pageSize, ...sortParams });
   }, [lastSearchCriteria, sortBy, pageSize, runSearch]);
@@ -446,6 +448,7 @@ const SearchResults: React.FC = () => {
     }
     setDismissedFallbackCriteriaKey(criteriaKey);
     setFallbackAutoRetryCount(0);
+    setFallbackLastRetryAt(null);
   }, [lastSearchCriteria]);
 
   const handleSpellcheckSuggestion = (suggestion: string) => {
@@ -1330,7 +1333,10 @@ const SearchResults: React.FC = () => {
     if (!shouldShowFallback && fallbackAutoRetryCount !== 0) {
       setFallbackAutoRetryCount(0);
     }
-  }, [loading, shouldShowFallback, fallbackAutoRetryCount]);
+    if (!shouldShowFallback && fallbackLastRetryAt) {
+      setFallbackLastRetryAt(null);
+    }
+  }, [loading, shouldShowFallback, fallbackAutoRetryCount, fallbackLastRetryAt]);
   const displayNodes = useMemo(
     () => (isSimilarMode ? (similarResults || []) : (shouldShowFallback ? fallbackNodes : nodes)),
     [isSimilarMode, similarResults, shouldShowFallback, fallbackNodes, nodes]
@@ -2200,6 +2206,7 @@ const SearchResults: React.FC = () => {
               {fallbackAutoRetryCount < FALLBACK_AUTO_RETRY_MAX
                 ? `Auto-retry ${fallbackAutoRetryCount}/${FALLBACK_AUTO_RETRY_MAX}${fallbackAutoRetryNextDelayMs ? ` (next in ${(fallbackAutoRetryNextDelayMs / 1000).toFixed(1)}s).` : '.'}`
                 : `Auto-retry stopped after ${FALLBACK_AUTO_RETRY_MAX} attempts.`}
+              {fallbackLastRetryAt ? ` Last retry: ${format(fallbackLastRetryAt, 'PPp')}.` : ''}
             </Alert>
           )}
           {suggestedFiltersError && (

@@ -246,6 +246,7 @@ const AdvancedSearchPage: React.FC = () => {
   const [currentCriteriaHasFilters, setCurrentCriteriaHasFilters] = useState(false);
   const [dismissedFallbackCriteriaKey, setDismissedFallbackCriteriaKey] = useState('');
   const [fallbackAutoRetryCount, setFallbackAutoRetryCount] = useState(0);
+  const [fallbackLastRetryAt, setFallbackLastRetryAt] = useState<Date | null>(null);
   const fallbackAutoRetryTimerRef = useRef<number | null>(null);
 
   const syncSearchStateToUrl = useCallback((state: AdvancedSearchUrlState) => {
@@ -449,7 +450,10 @@ const AdvancedSearchPage: React.FC = () => {
     if (!shouldShowFallback && fallbackAutoRetryCount !== 0) {
       setFallbackAutoRetryCount(0);
     }
-  }, [loading, shouldShowFallback, fallbackAutoRetryCount]);
+    if (!shouldShowFallback && fallbackLastRetryAt) {
+      setFallbackLastRetryAt(null);
+    }
+  }, [loading, shouldShowFallback, fallbackAutoRetryCount, fallbackLastRetryAt]);
 
   useEffect(() => {
     if (!dismissedFallbackCriteriaKey) {
@@ -475,6 +479,7 @@ const AdvancedSearchPage: React.FC = () => {
     const nextDelayMs = getFallbackAutoRetryDelayMs(fallbackAutoRetryCount);
     fallbackAutoRetryTimerRef.current = window.setTimeout(() => {
       setFallbackAutoRetryCount((prev) => prev + 1);
+      setFallbackLastRetryAt(new Date());
       void handleSearch(page);
     }, nextDelayMs);
 
@@ -491,6 +496,7 @@ const AdvancedSearchPage: React.FC = () => {
     : null;
 
   const handleRetrySearch = useCallback(() => {
+    setFallbackLastRetryAt(new Date());
     void handleSearch(page);
   }, [handleSearch, page]);
 
@@ -500,6 +506,7 @@ const AdvancedSearchPage: React.FC = () => {
     }
     setDismissedFallbackCriteriaKey(currentCriteriaKey);
     setFallbackAutoRetryCount(0);
+    setFallbackLastRetryAt(null);
   }, [currentCriteriaKey]);
 
   useEffect(() => {
@@ -1015,6 +1022,7 @@ const AdvancedSearchPage: React.FC = () => {
                     {fallbackAutoRetryCount < FALLBACK_AUTO_RETRY_MAX
                       ? `Auto-retry ${fallbackAutoRetryCount}/${FALLBACK_AUTO_RETRY_MAX}${fallbackAutoRetryNextDelayMs ? ` (next in ${(fallbackAutoRetryNextDelayMs / 1000).toFixed(1)}s).` : '.'}`
                       : `Auto-retry stopped after ${FALLBACK_AUTO_RETRY_MAX} attempts.`}
+                    {fallbackLastRetryAt ? ` Last retry: ${format(fallbackLastRetryAt, 'PPp')}.` : ''}
                   </Alert>
                 )}
                 <Paper variant="outlined" sx={{ p: 1.5 }}>

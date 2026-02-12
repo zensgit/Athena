@@ -119,6 +119,9 @@ test.describe('Advanced search fallback governance', () => {
     await expect
       .poll(async () => (await fallbackAlert.textContent()) || '', { timeout: 60_000 })
       .toMatch(/Auto-retry (1|2)\/3 \(next in (3\.0|6\.0)s\)\.|Auto-retry stopped after 3 attempts\./);
+    await expect
+      .poll(async () => (await fallbackAlert.textContent()) || '', { timeout: 60_000 })
+      .toContain('Last retry:');
 
     await page.getByRole('button', { name: 'Hide previous results' }).click();
     await expect(page.getByText('Search results may still be indexing')).toHaveCount(0);
