@@ -32,15 +32,44 @@ const asNumber = (input: unknown) => {
   return undefined;
 };
 
+const asString = (input: unknown) =>
+  typeof input === 'string' ? input : undefined;
+
+const normalizeStatusList = (input: unknown) => {
+  if (Array.isArray(input)) {
+    return input
+      .map((value) => String(value).trim().toUpperCase())
+      .filter((value) => value.length > 0);
+  }
+  if (typeof input === 'string') {
+    return input
+      .split(',')
+      .map((value) => value.trim().toUpperCase())
+      .filter((value) => value.length > 0);
+  }
+  return [];
+};
+
 export const buildSearchCriteriaFromSavedSearch = (item: SavedSearch): SearchCriteria => {
   const queryParams = (item.queryParams || {}) as Record<string, unknown>;
   const filters = (queryParams.filters || {}) as Record<string, unknown>;
 
-  const getFilterValue = (key: string) =>
-    filters[key] !== undefined ? filters[key] : queryParams[key];
+  const getFilterValue = (...keys: string[]) => {
+    for (const key of keys) {
+      if (filters[key] !== undefined) {
+        return filters[key];
+      }
+    }
+    for (const key of keys) {
+      if (queryParams[key] !== undefined) {
+        return queryParams[key];
+      }
+    }
+    return undefined;
+  };
 
   const mimeTypes = normalizeList(getFilterValue('mimeTypes'));
-  const createdByList = normalizeList(getFilterValue('createdByList'));
+  const createdByList = normalizeList(getFilterValue('createdByList', 'creators'));
   const properties = normalizeProperties(getFilterValue('properties'));
   const createdBy = typeof getFilterValue('createdBy') === 'string'
     ? (getFilterValue('createdBy') as string)
@@ -48,6 +77,9 @@ export const buildSearchCriteriaFromSavedSearch = (item: SavedSearch): SearchCri
   const contentType = typeof getFilterValue('contentType') === 'string'
     ? (getFilterValue('contentType') as string)
     : (mimeTypes[0] || undefined);
+  const previewStatuses = normalizeStatusList(
+    getFilterValue('previewStatuses', 'previewStatus')
+  );
 
   return {
     name: typeof queryParams.query === 'string'
@@ -59,17 +91,17 @@ export const buildSearchCriteriaFromSavedSearch = (item: SavedSearch): SearchCri
     properties,
     createdBy,
     createdByList: createdByList.length ? createdByList : undefined,
-    createdFrom: typeof getFilterValue('dateFrom') === 'string' ? (getFilterValue('dateFrom') as string) : undefined,
-    createdTo: typeof getFilterValue('dateTo') === 'string' ? (getFilterValue('dateTo') as string) : undefined,
+    createdFrom: asString(getFilterValue('createdFrom', 'dateFrom')),
+    createdTo: asString(getFilterValue('createdTo', 'dateTo')),
     modifiedFrom: typeof getFilterValue('modifiedFrom') === 'string' ? (getFilterValue('modifiedFrom') as string) : undefined,
     modifiedTo: typeof getFilterValue('modifiedTo') === 'string' ? (getFilterValue('modifiedTo') as string) : undefined,
     tags: normalizeList(getFilterValue('tags')),
     categories: normalizeList(getFilterValue('categories')),
     correspondents: normalizeList(getFilterValue('correspondents')),
-    previewStatuses: normalizeList(getFilterValue('previewStatuses')),
+    previewStatuses,
     minSize: asNumber(getFilterValue('minSize')),
     maxSize: asNumber(getFilterValue('maxSize')),
-    path: typeof getFilterValue('path') === 'string' ? (getFilterValue('path') as string) : undefined,
+    path: asString(getFilterValue('path', 'pathPrefix')),
     folderId: typeof getFilterValue('folderId') === 'string' ? (getFilterValue('folderId') as string) : undefined,
     includeChildren: typeof getFilterValue('includeChildren') === 'boolean'
       ? (getFilterValue('includeChildren') as boolean)

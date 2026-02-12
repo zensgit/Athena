@@ -147,6 +147,66 @@ test.describe('Saved search load to advanced search prefill', () => {
     }
   });
 
+  test('load action supports legacy alias fields for pathPrefix and previewStatus', async ({ page, request }) => {
+    test.setTimeout(180_000);
+
+    const apiUrl = resolveApiUrl();
+    await waitForApiReady(request, { apiUrl });
+    const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+
+    const savedSearchName = `e2e-load-legacy-alias-${Date.now()}`;
+
+    await page.route('**/api/v1/search/saved', async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: `saved-legacy-alias-${Date.now()}`,
+            userId: 'admin',
+            name: savedSearchName,
+            queryParams: {
+              q: 'legacy-alias-query',
+              filters: {
+                creators: ['legacy-auditor'],
+                previewStatus: 'failed, processing',
+                pathPrefix: '/Root/Documents/LegacyAlias',
+                createdFrom: '2026-02-05T00:00:00.000Z',
+                createdTo: '2026-02-10T23:59:59.000Z',
+              },
+            },
+            pinned: false,
+            createdAt: new Date().toISOString(),
+          },
+        ]),
+      });
+    });
+
+    try {
+      await gotoWithAuthE2E(page, '/saved-searches', defaultUsername, defaultPassword, { token });
+      await expect(page.getByText('Saved Searches')).toBeVisible({ timeout: 60_000 });
+
+      await page.getByRole('button', { name: `Load saved search ${savedSearchName}` }).click();
+      const searchDialog = page.getByRole('dialog').filter({ hasText: 'Advanced Search' });
+      await expect(searchDialog).toBeVisible({ timeout: 30_000 });
+      await expect(searchDialog.getByLabel('Name contains')).toHaveValue('legacy-alias-query');
+      await expect(searchDialog.getByLabel('Path starts with')).toHaveValue('/Root/Documents/LegacyAlias');
+      await expect(searchDialog.getByTestId('active-criteria-summary')).toContainText('Creator: legacy-auditor');
+      await expect(searchDialog.getByTestId('active-criteria-summary')).toContainText('Created:');
+
+      await searchDialog.getByLabel('Preview Status').click();
+      await expect(page.getByRole('option', { name: 'Failed', exact: true })).toHaveAttribute('aria-selected', 'true');
+      await expect(page.getByRole('option', { name: 'Processing', exact: true })).toHaveAttribute('aria-selected', 'true');
+      await page.keyboard.press('Escape');
+    } finally {
+      await page.unroute('**/api/v1/search/saved').catch(() => null);
+    }
+  });
+
   test('load action auto-expands non-basic section when only aspects are prefilled', async ({ page, request }) => {
     test.setTimeout(180_000);
 

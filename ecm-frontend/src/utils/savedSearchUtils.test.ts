@@ -64,4 +64,30 @@ describe('savedSearchUtils', () => {
     expect(criteria.folderId).toBe('00000000-0000-4000-8000-000000000999');
     expect(criteria.includeChildren).toBe(false);
   });
+
+  it('supports legacy aliases for pathPrefix, createdFrom/to, and previewStatus', () => {
+    const criteria = buildSearchCriteriaFromSavedSearch({
+      id: 'saved-legacy-alias',
+      userId: 'admin',
+      name: 'Legacy aliases',
+      createdAt: new Date().toISOString(),
+      queryParams: {
+        q: 'legacy-alias',
+        filters: {
+          createdFrom: '2026-02-05T00:00:00.000Z',
+          createdTo: '2026-02-10T23:59:59.000Z',
+          pathPrefix: '/Root/Documents/Legacy',
+          previewStatus: 'failed, processing',
+          creators: ['legacy-auditor'],
+        },
+      },
+    });
+
+    expect(criteria.name).toBe('legacy-alias');
+    expect(criteria.createdFrom).toBe('2026-02-05T00:00:00.000Z');
+    expect(criteria.createdTo).toBe('2026-02-10T23:59:59.000Z');
+    expect(criteria.path).toBe('/Root/Documents/Legacy');
+    expect(criteria.previewStatuses).toEqual(['FAILED', 'PROCESSING']);
+    expect(criteria.createdBy).toBe('legacy-auditor');
+  });
 });
