@@ -436,6 +436,12 @@ class NodeService {
     if (criteria.tags?.length) {
       filters.tags = criteria.tags;
     }
+    if (criteria.aspects?.length) {
+      filters.aspects = criteria.aspects;
+    }
+    if (criteria.properties && Object.keys(criteria.properties).length > 0) {
+      filters.properties = criteria.properties;
+    }
     if (criteria.categories?.length) {
       filters.categories = criteria.categories;
     }

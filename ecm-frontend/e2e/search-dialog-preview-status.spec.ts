@@ -155,4 +155,71 @@ test.describe('Search dialog preview status filter', () => {
       await page.unroute('**/api/v1/search/saved').catch(() => null);
     }
   });
+
+  test('advanced search save payload keeps aspects and custom properties', async ({ page, request }) => {
+    test.setTimeout(240_000);
+    await waitForApiReady(request, { apiUrl });
+    await suppressDevServerOverlay(page);
+
+    const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+    const savedName = `e2e-dialog-aspects-props-${Date.now()}`;
+    let capturedSavedAspects: string[] = [];
+    let capturedSavedProperties: Record<string, any> = {};
+
+    await page.route('**/api/v1/search/saved', async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.continue();
+        return;
+      }
+      const payload = route.request().postDataJSON() as {
+        queryParams?: { filters?: { aspects?: string[]; properties?: Record<string, any> } };
+      } | null;
+      capturedSavedAspects = payload?.queryParams?.filters?.aspects || [];
+      capturedSavedProperties = payload?.queryParams?.filters?.properties || {};
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: `e2e-saved-${Date.now()}`,
+          userId: 'admin',
+          name: savedName,
+          queryParams: payload?.queryParams || {},
+          createdAt: new Date().toISOString(),
+        }),
+      });
+    });
+
+    try {
+      await gotoWithAuthE2E(page, '/browse/root', defaultUsername, defaultPassword, { token });
+      await hideDevServerOverlay(page);
+
+      await page.getByRole('button', { name: 'Search', exact: true }).click();
+      const searchDialog = page.getByRole('dialog').filter({ hasText: 'Advanced Search' });
+      await expect(searchDialog).toBeVisible({ timeout: 60_000 });
+
+      await searchDialog.getByRole('button', { name: 'Aspects' }).click();
+      await searchDialog.getByRole('checkbox', { name: 'Versionable' }).check();
+
+      await searchDialog.getByRole('button', { name: 'Custom Properties' }).click();
+      await searchDialog.getByLabel('Property Key').fill('mail:subject');
+      await searchDialog.getByLabel('Property Value').fill('payload-test');
+      await searchDialog.getByRole('button', { name: 'Add', exact: true }).click();
+
+      const saveSearchButton = searchDialog.getByRole('button', { name: 'Save Search', exact: true });
+      await expect(saveSearchButton).toBeEnabled();
+      await saveSearchButton.click();
+
+      const saveDialog = page.getByRole('dialog').filter({ hasText: 'Save Search' });
+      await expect(saveDialog).toBeVisible({ timeout: 30_000 });
+      await saveDialog.getByLabel('Name').fill(savedName);
+      await saveDialog.getByRole('button', { name: 'Save', exact: true }).click();
+
+      await expect.poll(() => capturedSavedAspects, { timeout: 30_000 }).toEqual(['cm:versionable']);
+      await expect.poll(() => capturedSavedProperties, { timeout: 30_000 }).toEqual({
+        'mail:subject': 'payload-test',
+      });
+    } finally {
+      await page.unroute('**/api/v1/search/saved').catch(() => null);
+    }
+  });
 });

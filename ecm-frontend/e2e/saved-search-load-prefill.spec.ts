@@ -38,6 +38,11 @@ test.describe('Saved search load to advanced search prefill', () => {
                 folderId: scopeFolderId,
                 includeChildren: false,
                 path: '/Documents/ShouldNotApplyWhenScoped',
+                aspects: ['cm:versionable', 'cm:taggable'],
+                properties: {
+                  'mail:subject': 'e2e subject',
+                  'mail:uid': '12345',
+                },
               },
             },
             pinned: false,
@@ -67,6 +72,14 @@ test.describe('Saved search load to advanced search prefill', () => {
       await expect(page.getByRole('option', { name: 'Failed', exact: true })).toHaveAttribute('aria-selected', 'true');
       await expect(page.getByRole('option', { name: 'Processing', exact: true })).toHaveAttribute('aria-selected', 'true');
       await page.keyboard.press('Escape');
+
+      await searchDialog.getByRole('button', { name: 'Aspects' }).click();
+      await expect(searchDialog.getByRole('checkbox', { name: 'Versionable' })).toBeChecked();
+      await expect(searchDialog.getByRole('checkbox', { name: 'Taggable' })).toBeChecked();
+
+      await searchDialog.getByRole('button', { name: 'Custom Properties' }).click();
+      await expect(searchDialog.getByText('mail:subject: e2e subject')).toBeVisible();
+      await expect(searchDialog.getByText('mail:uid: 12345')).toBeVisible();
     } finally {
       await page.unroute('**/api/v1/search/saved').catch(() => null);
     }

@@ -44,6 +44,8 @@ export interface SearchPrefill {
   name?: string;
   contentType?: string;
   previewStatuses?: string[];
+  aspects?: string[];
+  properties?: Record<string, any>;
   createdBy?: string;
   createdFrom?: string;
   createdTo?: string;

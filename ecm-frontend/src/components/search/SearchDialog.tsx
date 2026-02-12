@@ -184,11 +184,15 @@ const SearchDialog: React.FC = () => {
       return;
     }
 
+    const prefilledProperties = Object.entries(searchPrefill.properties || {})
+      .filter(([key, value]) => key.trim().length > 0 && value !== undefined && value !== null)
+      .map(([key, value]) => ({ key, value: String(value) }));
+
     // Start from a clean slate before applying prefill values.
     setSearchCriteria({
       name: searchPrefill.name || '',
-      properties: {},
-      aspects: [],
+      properties: searchPrefill.properties || {},
+      aspects: searchPrefill.aspects || [],
       contentType: searchPrefill.contentType || '',
       createdBy: searchPrefill.createdBy || '',
       createdFrom: searchPrefill.createdFrom,
@@ -196,7 +200,7 @@ const SearchDialog: React.FC = () => {
       modifiedFrom: searchPrefill.modifiedFrom,
       modifiedTo: searchPrefill.modifiedTo,
     });
-    setCustomProperties([]);
+    setCustomProperties(prefilledProperties);
     setNewPropertyKey('');
     setNewPropertyValue('');
     setExpandedSection('basic');
@@ -306,12 +310,26 @@ const SearchDialog: React.FC = () => {
     const normalizedTags = normalizeList(tags);
     const normalizedCategories = normalizeList(categories);
     const normalizedCorrespondents = normalizeList(correspondents);
+    const normalizedProperties = customProperties.reduce((acc, prop) => {
+      const key = prop.key.trim();
+      if (!key || prop.value === undefined || prop.value === null || prop.value === '') {
+        return acc;
+      }
+      acc[key] = prop.value;
+      return acc;
+    }, {} as Record<string, string>);
 
     if (searchCriteria.contentType) {
       filters.mimeTypes = [searchCriteria.contentType];
     }
+    if (searchCriteria.aspects && searchCriteria.aspects.length > 0) {
+      filters.aspects = searchCriteria.aspects;
+    }
     if (searchCriteria.createdBy) {
       filters.createdBy = searchCriteria.createdBy;
+    }
+    if (Object.keys(normalizedProperties).length > 0) {
+      filters.properties = normalizedProperties;
     }
     if (normalizedTags.length) {
       filters.tags = normalizedTags;

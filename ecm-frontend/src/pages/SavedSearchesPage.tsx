@@ -157,6 +157,8 @@ const SavedSearchesPage: React.FC = () => {
         name: criteria.name || '',
         contentType: criteria.contentType || '',
         previewStatuses: criteria.previewStatuses || [],
+        aspects: criteria.aspects || [],
+        properties: criteria.properties || {},
         createdBy: criteria.createdBy || '',
         createdFrom: criteria.createdFrom,
         createdTo: criteria.createdTo,
