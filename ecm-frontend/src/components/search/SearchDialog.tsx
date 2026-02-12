@@ -187,6 +187,42 @@ const SearchDialog: React.FC = () => {
     const prefilledProperties = Object.entries(searchPrefill.properties || {})
       .filter(([key, value]) => key.trim().length > 0 && value !== undefined && value !== null)
       .map(([key, value]) => ({ key, value: String(value) }));
+    const hasBasicPrefill = Boolean(
+      searchPrefill.name
+      || searchPrefill.contentType
+      || searchPrefill.createdBy
+      || (searchPrefill.previewStatuses && searchPrefill.previewStatuses.length > 0)
+      || (searchPrefill.folderId && searchPrefill.folderId.trim().length > 0)
+    );
+    const hasDatePrefill = Boolean(
+      searchPrefill.createdFrom
+      || searchPrefill.createdTo
+      || searchPrefill.modifiedFrom
+      || searchPrefill.modifiedTo
+    );
+    const hasAspectsPrefill = Boolean(searchPrefill.aspects && searchPrefill.aspects.length > 0);
+    const hasPropertiesPrefill = prefilledProperties.length > 0;
+    const hasMetaPrefill = Boolean(
+      (searchPrefill.tags && searchPrefill.tags.length > 0)
+      || (searchPrefill.categories && searchPrefill.categories.length > 0)
+      || (searchPrefill.correspondents && searchPrefill.correspondents.length > 0)
+      || searchPrefill.minSize !== undefined
+      || searchPrefill.maxSize !== undefined
+      || (searchPrefill.pathPrefix && searchPrefill.pathPrefix.length > 0)
+    );
+
+    let nextExpandedSection: string | false = 'basic';
+    if (!hasBasicPrefill) {
+      if (hasDatePrefill) {
+        nextExpandedSection = 'dates';
+      } else if (hasAspectsPrefill) {
+        nextExpandedSection = 'aspects';
+      } else if (hasPropertiesPrefill) {
+        nextExpandedSection = 'properties';
+      } else if (hasMetaPrefill) {
+        nextExpandedSection = 'meta';
+      }
+    }
 
     // Start from a clean slate before applying prefill values.
     setSearchCriteria({
@@ -203,7 +239,7 @@ const SearchDialog: React.FC = () => {
     setCustomProperties(prefilledProperties);
     setNewPropertyKey('');
     setNewPropertyValue('');
-    setExpandedSection('basic');
+    setExpandedSection(nextExpandedSection);
     setTags(searchPrefill.tags || []);
     setCategories(searchPrefill.categories || []);
     setCorrespondents(searchPrefill.correspondents || []);

@@ -144,4 +144,55 @@ test.describe('Saved search load to advanced search prefill', () => {
       await page.unroute('**/api/v1/search/saved').catch(() => null);
     }
   });
+
+  test('load action auto-expands non-basic section when only aspects are prefilled', async ({ page, request }) => {
+    test.setTimeout(180_000);
+
+    const apiUrl = resolveApiUrl();
+    await waitForApiReady(request, { apiUrl });
+    const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+
+    const savedSearchName = `e2e-load-aspects-only-${Date.now()}`;
+
+    await page.route('**/api/v1/search/saved', async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: `saved-aspects-${Date.now()}`,
+            userId: 'admin',
+            name: savedSearchName,
+            queryParams: {
+              query: '',
+              filters: {
+                aspects: ['cm:versionable'],
+              },
+            },
+            pinned: false,
+            createdAt: new Date().toISOString(),
+          },
+        ]),
+      });
+    });
+
+    try {
+      await gotoWithAuthE2E(page, '/saved-searches', defaultUsername, defaultPassword, { token });
+      await expect(page.getByText('Saved Searches')).toBeVisible({ timeout: 60_000 });
+
+      await page.getByRole('button', { name: `Load saved search ${savedSearchName}` }).click();
+      const searchDialog = page.getByRole('dialog').filter({ hasText: 'Advanced Search' });
+      await expect(searchDialog).toBeVisible({ timeout: 30_000 });
+
+      // Aspects section should be auto-expanded when no basic criteria are present.
+      await expect(searchDialog.getByRole('checkbox', { name: 'Versionable' })).toBeVisible();
+      await expect(searchDialog.getByRole('checkbox', { name: 'Versionable' })).toBeChecked();
+    } finally {
+      await page.unroute('**/api/v1/search/saved').catch(() => null);
+    }
+  });
 });
