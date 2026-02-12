@@ -47,7 +47,7 @@ import { format } from 'date-fns';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppSelector, useAppDispatch } from 'store';
 import { executeSavedSearch, fetchSearchFacets, searchNodes, setLastSearchCriteria } from 'store/slices/nodeSlice';
-import { setSearchOpen, setSidebarOpen } from 'store/slices/uiSlice';
+import { setSearchOpen, setSearchPrefill, setSidebarOpen } from 'store/slices/uiSlice';
 import nodeService, { SearchDiagnostics, SearchIndexStats, SearchRebuildStatus } from 'services/nodeService';
 import savedSearchService, { SavedSearch } from 'services/savedSearchService';
 import { Node, SearchCriteria } from 'types';
@@ -410,6 +410,41 @@ const SearchResults: React.FC = () => {
   };
 
   const handleAdvancedSearch = () => {
+    const normalizedQuickSearch = quickSearch.trim();
+    const normalizedLastName = (lastSearchCriteria?.name || '').trim();
+    const contentType =
+      selectedMimeTypes.length === 1
+        ? selectedMimeTypes[0]
+        : (lastSearchCriteria?.contentType || '');
+    const createdBy =
+      selectedCreators.length === 1
+        ? selectedCreators[0]
+        : (lastSearchCriteria?.createdBy || '');
+
+    dispatch(setSearchPrefill({
+      name: normalizedQuickSearch || normalizedLastName,
+      contentType,
+      createdBy,
+      createdFrom: lastSearchCriteria?.createdFrom,
+      createdTo: lastSearchCriteria?.createdTo,
+      modifiedFrom: lastSearchCriteria?.modifiedFrom,
+      modifiedTo: lastSearchCriteria?.modifiedTo,
+      aspects: lastSearchCriteria?.aspects || [],
+      properties: lastSearchCriteria?.properties || {},
+      tags: selectedTags.length > 0 ? selectedTags : (lastSearchCriteria?.tags || []),
+      categories: selectedCategories.length > 0 ? selectedCategories : (lastSearchCriteria?.categories || []),
+      correspondents: selectedCorrespondents.length > 0
+        ? selectedCorrespondents
+        : (lastSearchCriteria?.correspondents || []),
+      previewStatuses: selectedPreviewStatuses.length > 0
+        ? selectedPreviewStatuses
+        : (lastSearchCriteria?.previewStatuses || []),
+      minSize: lastSearchCriteria?.minSize,
+      maxSize: lastSearchCriteria?.maxSize,
+      pathPrefix: lastSearchCriteria?.path || '',
+      folderId: lastSearchCriteria?.folderId || '',
+      includeChildren: lastSearchCriteria?.includeChildren ?? true,
+    }));
     dispatch(setSearchOpen(true));
   };
 

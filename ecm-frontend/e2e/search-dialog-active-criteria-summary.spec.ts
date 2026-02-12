@@ -35,5 +35,28 @@ test.describe('Search dialog active criteria summary', () => {
     await expect(summary).toContainText('Preview: Failed');
     await expect(summary).toContainText('Aspect: Versionable');
   });
-});
 
+  test('prefills current quick search when opening advanced from search results', async ({ page, request }) => {
+    test.setTimeout(180_000);
+
+    const apiUrl = resolveApiUrl();
+    await waitForApiReady(request, { apiUrl });
+    const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+
+    const query = `e2e-advanced-prefill-${Date.now()}`;
+
+    await gotoWithAuthE2E(page, '/search-results', defaultUsername, defaultPassword, { token });
+
+    const quickSearchInput = page.getByPlaceholder('Quick search by name...');
+    await expect(quickSearchInput).toBeVisible({ timeout: 60_000 });
+    await quickSearchInput.fill(query);
+    await quickSearchInput.press('Enter');
+
+    await page.getByRole('button', { name: 'Advanced' }).click();
+    const dialog = page.getByRole('dialog').filter({ hasText: 'Advanced Search' });
+    await expect(dialog).toBeVisible({ timeout: 60_000 });
+
+    await expect(dialog.getByLabel('Name contains')).toHaveValue(query);
+    await expect(dialog.getByTestId('active-criteria-summary')).toContainText(`Name: ${query}`);
+  });
+});
