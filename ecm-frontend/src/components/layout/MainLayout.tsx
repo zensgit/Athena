@@ -36,6 +36,7 @@ import {
   Description,
   Link as LinkIcon,
   AdminPanelSettings,
+  Visibility,
   PushPin,
   PushPinOutlined,
 } from '@mui/icons-material';
@@ -374,6 +375,12 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                     <Settings fontSize="small" />
                   </ListItemIcon>
                   <ListItemText>Admin Dashboard</ListItemText>
+                </MenuItem>
+                <MenuItem onClick={() => navigate('/admin/preview-diagnostics')}>
+                  <ListItemIcon>
+                    <Visibility fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Preview Diagnostics</ListItemText>
                 </MenuItem>
                 <MenuItem onClick={() => navigate('/admin/mail')}>
                   <ListItemIcon>

@@ -26,6 +26,7 @@ import SettingsPage from './pages/SettingsPage';
 import CorrespondentsPage from './pages/CorrespondentsPage';
 import FavoritesPage from './pages/FavoritesPage';
 import SavedSearchesPage from './pages/SavedSearchesPage';
+import PreviewDiagnosticsPage from './pages/PreviewDiagnosticsPage';
 import VersionHistoryDialog from './components/dialogs/VersionHistoryDialog';
 import PermissionsDialog from './components/dialogs/PermissionsDialog';
 import PropertiesDialog from './components/dialogs/PropertiesDialog';
@@ -236,6 +237,16 @@ const App: React.FC = () => {
                 <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
                   <MainLayout>
                     <WebhookSubscriptionsPage />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/admin/preview-diagnostics"
+              element={
+                <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
+                  <MainLayout>
+                    <PreviewDiagnosticsPage />
                   </MainLayout>
                 </PrivateRoute>
               }
