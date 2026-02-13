@@ -114,7 +114,7 @@ Verification:
 - `cd ecm-frontend && CI=true npm test -- --watchAll=false`
 - `cd ecm-frontend && npx playwright test e2e/ocr-queue-ui.spec.ts e2e/pdf-preview.spec.ts e2e/search-preview-status.spec.ts --project=chromium`
 
-## Day 5: Observability + Diagnostics
+## Day 5 (Done): Observability + Diagnostics
 
 Goal:
 
@@ -125,6 +125,24 @@ Scope:
 - Metrics: counters by category and mime type.
 - Logs: structured reason + category.
 - Optional: admin endpoint to sample recent failures with categories.
+
+Deliverables:
+
+- Design/verification report:
+  - `docs/PHASE4_D5_OBSERVABILITY_DIAGNOSTICS_20260213.md`
+
+Verification:
+
+- Backend: `cd ecm-core && mvn -q test`
+- Runtime smoke:
+  - `./scripts/get-token.sh admin admin`
+  - `curl -fsS -H "Authorization: Bearer $(cat tmp/admin.access_token)" "http://localhost:7700/api/v1/preview/diagnostics/failures?limit=5" | jq .`
+  - Trigger one preview to create the counter (Micrometer creates on first use):
+    - `curl -fsS -H "Authorization: Bearer $(cat tmp/admin.access_token)" "http://localhost:7700/api/v1/documents/<docId>/preview" | jq .`
+  - Metrics:
+    - `curl -fsS -H "Authorization: Bearer $(cat tmp/admin.access_token)" http://localhost:7700/actuator/prometheus | rg '^preview_generation_total' | head`
+  - Logs:
+    - `docker logs --tail 200 athena-ecm-core-1 | rg "Preview generation outcome" | tail`
 
 ## Day 6: Automation Coverage Expansion
 

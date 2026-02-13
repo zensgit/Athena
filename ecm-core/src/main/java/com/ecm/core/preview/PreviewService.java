@@ -42,6 +42,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 @Slf4j
@@ -657,6 +658,34 @@ public class PreviewService {
                 : PreviewStatus.FAILED;
         }
 
+        recordPreviewMetrics(result.getMimeType(), status, failureCategory);
+
+        if (status == PreviewStatus.UNSUPPORTED) {
+            String categoryTag = failureCategory == null || failureCategory.isBlank()
+                ? "NONE"
+                : failureCategory.trim().toUpperCase(Locale.ROOT);
+            log.info(
+                "Preview generation outcome: documentId={} status={} category={} mimeType={} reason={}",
+                document != null ? document.getId() : null,
+                status.name(),
+                categoryTag,
+                result.getMimeType(),
+                failureReason
+            );
+        } else if (status == PreviewStatus.FAILED) {
+            String categoryTag = failureCategory == null || failureCategory.isBlank()
+                ? "NONE"
+                : failureCategory.trim().toUpperCase(Locale.ROOT);
+            log.warn(
+                "Preview generation outcome: documentId={} status={} category={} mimeType={} reason={}",
+                document != null ? document.getId() : null,
+                status.name(),
+                categoryTag,
+                result.getMimeType(),
+                failureReason
+            );
+        }
+
         if (document != null) {
             if (result.getPageCount() > 0) {
                 document.setPageCount(result.getPageCount());
@@ -669,6 +698,25 @@ public class PreviewService {
         result.setStatus(status.name());
         result.setFailureReason(failureReason);
         result.setFailureCategory(failureCategory);
+    }
+
+    private void recordPreviewMetrics(String mimeType, PreviewStatus status, String failureCategory) {
+        String normalizedMime = mimeType == null || mimeType.isBlank()
+            ? "unknown"
+            : mimeType.split(";")[0].trim().toLowerCase(Locale.ROOT);
+        if (normalizedMime.isBlank()) {
+            normalizedMime = "unknown";
+        }
+        String categoryTag = failureCategory == null || failureCategory.isBlank()
+            ? "NONE"
+            : failureCategory.trim().toUpperCase(Locale.ROOT);
+
+        meterRegistry.counter(
+            "preview_generation_total",
+            "status", status.name(),
+            "category", categoryTag,
+            "mimeType", normalizedMime
+        ).increment();
     }
 
     private record CadRenderResult(byte[] pngBytes, int width, int height) {}
