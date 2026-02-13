@@ -81,7 +81,7 @@ Verification:
 - `cd ecm-frontend && CI=true npm test -- --watchAll=false`
 - `cd ecm-frontend && npx playwright test e2e/ocr-queue-ui.spec.ts e2e/pdf-preview.spec.ts e2e/search-preview-status.spec.ts --project=chromium`
 
-## Day 4: Bulk Actions Guardrails
+## Day 4 (Done): Bulk Actions Guardrails
 
 Goal:
 
@@ -96,6 +96,17 @@ Scope:
 Acceptance:
 
 - Clicking bulk retry does not re-queue PERMANENT failures.
+
+Deliverables:
+
+- Design/verification report:
+  - `docs/PHASE4_D4_BACKEND_PREVIEW_QUEUE_GUARDRAILS_20260213.md`
+
+Verification:
+
+- `cd ecm-core && mvn -q test`
+- `cd ecm-frontend && CI=true npm test -- --watchAll=false`
+- `cd ecm-frontend && npx playwright test e2e/ocr-queue-ui.spec.ts e2e/pdf-preview.spec.ts e2e/search-preview-status.spec.ts --project=chromium`
 
 ## Day 5: Observability + Diagnostics
 

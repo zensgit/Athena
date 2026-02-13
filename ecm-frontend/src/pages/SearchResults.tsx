@@ -1548,9 +1548,9 @@ const SearchResults: React.FC = () => {
         },
       }));
       if (status?.queued) {
-        toast.success('Preview queued');
+        toast.success(status?.message || 'Preview queued');
       } else {
-        toast.info('Preview already up to date');
+        toast.info(status?.message || 'Preview already up to date');
       }
     } catch {
       toast.error('Failed to queue preview');

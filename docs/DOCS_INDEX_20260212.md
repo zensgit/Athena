@@ -17,6 +17,7 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Phase 4 plan: `docs/NEXT_7DAY_PLAN_PHASE4_20260213.md`
 - Phase 4 D1: Preview retry classification hardening: `docs/PHASE4_D1_PREVIEW_RETRY_CLASSIFICATION_20260213.md`
 - Phase 4 D3: Preview failure taxonomy + UX messaging: `docs/PHASE4_D3_PREVIEW_FAILURE_TAXONOMY_UX_20260213.md`
+- Phase 4 D4: Backend preview queue guardrails: `docs/PHASE4_D4_BACKEND_PREVIEW_QUEUE_GUARDRAILS_20260213.md`
 
 ## OCR (Phase 3)
 
@@ -79,6 +80,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - D3: Per-item preview retry / force rebuild actions (Search + Advanced Search)
     - Design: `docs/PHASE2_D3_PREVIEW_RETRY_PER_ITEM_DESIGN_20260212.md`
     - Verification: `docs/PHASE2_D3_PREVIEW_RETRY_PER_ITEM_VERIFICATION_20260212.md`
+- Phase 4
+  - D4: Backend preview queue guardrails
+    - Design + verification: `docs/PHASE4_D4_BACKEND_PREVIEW_QUEUE_GUARDRAILS_20260213.md`
 
 ## Version Management
 

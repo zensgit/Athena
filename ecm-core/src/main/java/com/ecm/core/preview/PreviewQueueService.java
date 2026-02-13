@@ -71,8 +71,33 @@ public class PreviewQueueService {
             .orElseThrow(() -> new IllegalArgumentException("Document not found: " + documentId));
 
         PreviewStatus status = document.getPreviewStatus();
-        if (!force && (status == PreviewStatus.READY || status == PreviewStatus.UNSUPPORTED)) {
-            return new PreviewQueueStatus(documentId, status, false, 0, null);
+        if (!force) {
+            if (status == PreviewStatus.READY) {
+                return new PreviewQueueStatus(documentId, status, false, 0, null, "Preview already up to date");
+            }
+            if (status == PreviewStatus.UNSUPPORTED) {
+                return new PreviewQueueStatus(documentId, status, false, 0, null, "Preview unsupported");
+            }
+            if (status == PreviewStatus.FAILED) {
+                String category = PreviewFailureClassifier.classify(
+                    status.name(),
+                    document.getMimeType(),
+                    document.getPreviewFailureReason()
+                );
+                if (PreviewFailureClassifier.CATEGORY_UNSUPPORTED.equalsIgnoreCase(category)) {
+                    return new PreviewQueueStatus(documentId, status, false, 0, null, "Preview unsupported");
+                }
+                if (PreviewFailureClassifier.CATEGORY_PERMANENT.equalsIgnoreCase(category)) {
+                    return new PreviewQueueStatus(
+                        documentId,
+                        status,
+                        false,
+                        0,
+                        null,
+                        "Preview failed permanently; use force=true to rebuild"
+                    );
+                }
+            }
         }
 
         if (useRedisBackend()) {
@@ -81,7 +106,7 @@ public class PreviewQueueService {
 
         PreviewJob existing = queuedJobs.get(documentId);
         if (existing != null) {
-            return new PreviewQueueStatus(documentId, status, true, existing.attempts(), existing.nextAttemptAt());
+            return new PreviewQueueStatus(documentId, status, true, existing.attempts(), existing.nextAttemptAt(), "Preview already queued");
         }
 
         PreviewJob job = new PreviewJob(documentId, 0, Instant.now());
@@ -90,7 +115,7 @@ public class PreviewQueueService {
         markProcessing(document);
 
         log.info("Queued preview generation for document {}", documentId);
-        return new PreviewQueueStatus(documentId, status, true, 0, job.nextAttemptAt());
+        return new PreviewQueueStatus(documentId, status, true, 0, job.nextAttemptAt(), "Preview queued");
     }
 
     @Scheduled(fixedDelayString = "${ecm.preview.queue.poll-interval-ms:2000}")
@@ -163,13 +188,13 @@ public class PreviewQueueService {
         RedisScheduledQueueStore store = redisStore();
         RedisScheduledQueueStore.Entry existing = store.getOrNull(documentId);
         if (existing != null) {
-            return new PreviewQueueStatus(documentId, status, true, existing.attempts(), existing.nextAttemptAt());
+            return new PreviewQueueStatus(documentId, status, true, existing.attempts(), existing.nextAttemptAt(), "Preview already queued");
         }
 
         RedisScheduledQueueStore.Entry job = store.enqueueIfAbsent(documentId, Instant.now());
         markProcessing(document);
         log.info("Queued preview generation for document {} (redis)", documentId);
-        return new PreviewQueueStatus(documentId, status, true, job.attempts(), job.nextAttemptAt());
+        return new PreviewQueueStatus(documentId, status, true, job.attempts(), job.nextAttemptAt(), "Preview queued");
     }
 
     private void processRedisQueue() {
@@ -352,7 +377,8 @@ public class PreviewQueueService {
         PreviewStatus previewStatus,
         boolean queued,
         int attempts,
-        Instant nextAttemptAt
+        Instant nextAttemptAt,
+        String message
     ) {
     }
 

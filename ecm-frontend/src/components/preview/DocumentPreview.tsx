@@ -104,6 +104,7 @@ type PreviewQueueStatus = {
   queued?: boolean;
   attempts?: number;
   nextAttemptAt?: string;
+  message?: string;
 };
 
 const OFFICE_MIME_TYPES = new Set([
@@ -485,7 +486,11 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
       setPreviewQueueStatus(status);
       setPreviewStatusOverride('PROCESSING');
       setPreviewFailureOverride(null);
-      toast.success(status?.queued ? 'Preview queued' : 'Preview already up to date');
+      if (status?.queued) {
+        toast.success(status?.message || 'Preview queued');
+      } else {
+        toast.info(status?.message || 'Preview already up to date');
+      }
     } catch {
       toast.error('Failed to queue preview generation');
     } finally {

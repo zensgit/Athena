@@ -35,7 +35,6 @@ import { uploadDocument } from 'store/slices/nodeSlice';
 import { toast } from 'react-toastify';
 import authService from 'services/authService';
 import nodeService from 'services/nodeService';
-import apiService from 'services/api';
 import { Node } from 'types';
 import { getEffectivePreviewStatus, getFailedPreviewMeta, isRetryablePreviewFailure } from 'utils/previewStatusUtils';
 
@@ -44,12 +43,6 @@ interface UploadFile {
   progress: number;
   status: 'pending' | 'uploading' | 'success' | 'error';
   error?: string;
-}
-
-interface PreviewQueueStatus {
-  queued?: boolean;
-  previewStatus?: string;
-  message?: string;
 }
 
 const uploadAutoRefreshKey = 'ecmUploadAutoRefresh';
@@ -211,17 +204,18 @@ const UploadDialog: React.FC = () => {
     }
     setQueueingPreviewIds((prev) => [...prev, nodeId]);
     try {
-      const status = await apiService.post<PreviewQueueStatus>(
-        `/documents/${nodeId}/preview/queue`,
-        { force }
-      );
+      const status = await nodeService.queuePreview(nodeId, force);
       const nextStatus = status?.queued ? 'PROCESSING' : status?.previewStatus;
       if (nextStatus) {
         setUploadedItems((prev) =>
           prev.map((item) => (item.id === nodeId ? { ...item, previewStatus: nextStatus } : item))
         );
       }
-      toast.success(status?.queued ? 'Preview queued' : 'Preview already up to date');
+      if (status?.queued) {
+        toast.success(status?.message || 'Preview queued');
+      } else {
+        toast.info(status?.message || 'Preview already up to date');
+      }
       void handleRefreshUploadedItems();
     } catch (error) {
       toast.error('Failed to queue preview');
