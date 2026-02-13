@@ -7,6 +7,7 @@ import com.ecm.core.integration.mail.repository.ProcessedMailRepository;
 import com.ecm.core.integration.mail.service.MailFetcherService;
 import com.ecm.core.integration.mail.service.MailOAuthService;
 import com.ecm.core.integration.mail.service.MailProcessedRetentionService;
+import com.ecm.core.integration.mail.service.MailReportScheduledExportService;
 import com.ecm.core.integration.mail.service.MailReportingService;
 import com.ecm.core.service.AuditService;
 import com.ecm.core.service.SecurityService;
@@ -61,6 +62,9 @@ class MailAutomationControllerDiagnosticsTest {
 
     @MockBean
     private MailReportingService reportingService;
+
+    @MockBean
+    private MailReportScheduledExportService scheduledExportService;
 
     @MockBean
     private ProcessedMailRepository processedMailRepository;
