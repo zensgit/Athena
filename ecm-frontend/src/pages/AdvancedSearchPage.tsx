@@ -36,7 +36,7 @@ import {
   formatPreviewFailureReasonLabel,
   getEffectivePreviewStatus,
   getFailedPreviewMeta,
-  isUnsupportedPreviewFailure,
+  isRetryablePreviewFailure,
   normalizePreviewFailureReason,
   summarizeFailedPreviews,
 } from 'utils/previewStatusUtils';
@@ -663,7 +663,7 @@ const AdvancedSearchPage: React.FC = () => {
   const failedPreviewResults = useMemo(
     () => previewIssueScopeResults.filter((result) =>
       (result.previewStatus || '').toUpperCase() === 'FAILED'
-      && !isUnsupportedPreviewFailure(result.previewFailureCategory, result.mimeType, result.previewFailureReason)),
+      && isRetryablePreviewFailure(result.previewFailureCategory, result.mimeType, result.previewFailureReason)),
     [previewIssueScopeResults]
   );
 
@@ -1168,6 +1168,11 @@ const AdvancedSearchPage: React.FC = () => {
                         Preview issues on current page: {failedPreviewSummary.totalFailed}
                         {' • '}Retryable {failedPreviewSummary.retryableFailed}
                         {' • '}Unsupported {failedPreviewSummary.unsupportedFailed}
+                        {failedPreviewSummary.permanentFailed > 0 && (
+                          <>
+                            {' • '}Permanent {failedPreviewSummary.permanentFailed}
+                          </>
+                        )}
                       </Typography>
                       {failedPreviewSummary.retryableFailed > 0 && (
                         <Box display="flex" flexWrap="wrap" gap={1}>
@@ -1191,7 +1196,11 @@ const AdvancedSearchPage: React.FC = () => {
                       )}
                       {failedPreviewSummary.totalFailed > 0 && failedPreviewSummary.retryableFailed === 0 && (
                         <Typography variant="caption" color="text.secondary">
-                          All preview issues on this page are unsupported; retry actions are hidden.
+                          {failedPreviewSummary.permanentFailed > 0
+                            ? failedPreviewSummary.unsupportedFailed > 0
+                              ? 'All preview issues on this page are permanent or unsupported; retry actions are hidden.'
+                              : 'All preview issues on this page are permanent; retry actions are hidden.'
+                            : 'All preview issues on this page are unsupported; retry actions are hidden.'}
                         </Typography>
                       )}
                       {failedPreviewSummary.retryableFailed > 0 && failedPreviewReasonSummary.length > 0 && (
@@ -1334,7 +1343,11 @@ const AdvancedSearchPage: React.FC = () => {
                           const queueDetail = getQueueDetail(result.id);
                           const tooltipTitle = [result.previewFailureReason || '', queueDetail].filter(Boolean).join(' • ');
                           const isFailed = (result.previewStatus || '').toUpperCase() === 'FAILED';
-                          const canRetry = isFailed && !previewMeta.unsupported;
+                          const canRetry = isFailed && isRetryablePreviewFailure(
+                            result.previewFailureCategory,
+                            result.mimeType,
+                            result.previewFailureReason
+                          );
                           return (
                             <Box display="flex" flexDirection="column" alignItems="flex-start" gap={0.5}>
                               <Box display="flex" alignItems="center" gap={0.5}>

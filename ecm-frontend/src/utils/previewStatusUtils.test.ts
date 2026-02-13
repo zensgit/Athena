@@ -2,6 +2,8 @@ import {
   formatPreviewFailureReasonLabel,
   getFailedPreviewMeta,
   getEffectivePreviewStatus,
+  isRetryablePreviewFailure,
+  isTemporaryPreviewReason,
   isUnsupportedPreviewFailure,
   isUnsupportedPreviewReason,
   isUnsupportedPreviewMimeType,
@@ -53,6 +55,14 @@ describe('previewStatusUtils', () => {
     });
   });
 
+  it('returns permanent failed meta when backend category is permanent', () => {
+    expect(getFailedPreviewMeta('application/pdf', 'PERMANENT')).toEqual({
+      label: 'Preview failed (permanent)',
+      color: 'error',
+      unsupported: false,
+    });
+  });
+
   it('detects unsupported by failure reason when category is absent', () => {
     expect(isUnsupportedPreviewReason('Preview not supported for mime type: application/octet-stream')).toBe(true);
     expect(isUnsupportedPreviewFailure(undefined, undefined, 'Preview not supported for mime type: application/octet-stream')).toBe(true);
@@ -81,6 +91,19 @@ describe('previewStatusUtils', () => {
     expect(formatPreviewFailureReasonLabel('mime converter timeout')).toBe('mime converter timeout');
   });
 
+  it('classifies retryable preview failures using failure category or transient hint fallback', () => {
+    expect(isRetryablePreviewFailure('TEMPORARY', 'application/pdf', 'timeout')).toBe(true);
+    expect(isRetryablePreviewFailure('PERMANENT', 'application/pdf', 'Missing root object specification in trailer.')).toBe(false);
+    expect(isRetryablePreviewFailure(undefined, 'application/pdf', 'gateway timeout')).toBe(true);
+    expect(isRetryablePreviewFailure(undefined, 'application/pdf', 'some random error')).toBe(false);
+  });
+
+  it('detects temporary preview reasons', () => {
+    expect(isTemporaryPreviewReason('gateway timeout')).toBe(true);
+    expect(isTemporaryPreviewReason('Connection refused')).toBe(true);
+    expect(isTemporaryPreviewReason('Missing root object specification in trailer.')).toBe(false);
+  });
+
   it('summarizes failed previews into retryable and unsupported buckets', () => {
     const summary = summarizeFailedPreviews([
       {
@@ -102,6 +125,12 @@ describe('previewStatusUtils', () => {
         mimeType: 'application/pdf',
       },
       {
+        previewStatus: 'FAILED',
+        previewFailureCategory: 'PERMANENT',
+        previewFailureReason: 'Missing root object specification in trailer.',
+        mimeType: 'application/pdf',
+      },
+      {
         previewStatus: 'READY',
         previewFailureCategory: null,
         previewFailureReason: null,
@@ -109,9 +138,10 @@ describe('previewStatusUtils', () => {
       },
     ]);
 
-    expect(summary.totalFailed).toBe(3);
+    expect(summary.totalFailed).toBe(4);
     expect(summary.unsupportedFailed).toBe(1);
     expect(summary.retryableFailed).toBe(2);
+    expect(summary.permanentFailed).toBe(1);
     expect(summary.retryableReasons).toEqual([{ reason: 'timeout', count: 2 }]);
   });
 

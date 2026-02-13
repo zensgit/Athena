@@ -49,7 +49,7 @@ Verification:
 - Unit tests for MIME sniffing.
 - Playwright: upload mislabeled PDF and verify preview READY.
 
-## Day 3: Preview Failure Taxonomy + UX Messaging
+## Day 3 (Done): Preview Failure Taxonomy + UX Messaging
 
 Goal:
 
@@ -60,12 +60,26 @@ Goal:
 
 Scope:
 
-- Add/extend a small, curated set of "permanent" PDF parse error hints.
-- UI copy updates for PERMANENT failures.
+- UI action gating + copy updates for PERMANENT failures across:
+  - Search Results
+  - Advanced Search
+  - Document Preview dialog
+  - Upload dialog (post-upload status list)
+- Ensure bulk retry only targets retryable failures (TEMPORARY / transient-hint fallback).
 
 Acceptance:
 
 - Search/Advanced Search show consistent chips and consistent action availability.
+
+Deliverables:
+
+- Design/verification report:
+  - `docs/PHASE4_D3_PREVIEW_FAILURE_TAXONOMY_UX_20260213.md`
+
+Verification:
+
+- `cd ecm-frontend && CI=true npm test -- --watchAll=false`
+- `cd ecm-frontend && npx playwright test e2e/ocr-queue-ui.spec.ts e2e/pdf-preview.spec.ts e2e/search-preview-status.spec.ts --project=chromium`
 
 ## Day 4: Bulk Actions Guardrails
 
@@ -75,8 +89,9 @@ Goal:
 
 Scope:
 
-- Backend: optional endpoint or server-side filter for "retry eligible".
-- Frontend: bulk "Retry failed previews" only affects TEMPORARY items.
+- Frontend: bulk "Retry failed previews" only affects retryable items.
+- Optional hardening:
+  - Backend: server-side filter for "retry eligible" to protect API calls and future UIs.
 
 Acceptance:
 
@@ -118,4 +133,3 @@ Goal:
 Verification:
 
 - `cd ecm-frontend && npx playwright test --workers=1 e2e/ui-smoke.spec.ts e2e/search-view.spec.ts e2e/search-preview-status.spec.ts e2e/pdf-preview.spec.ts e2e/ocr-queue-ui.spec.ts --project=chromium`
-

@@ -248,7 +248,7 @@ test('Advanced search preview status facet counts reflect full result set', asyn
   }
 });
 
-test('Retryable preview failure shows retry and force rebuild actions in search results', async ({ page, request }) => {
+test('Permanent preview failure hides retry and force rebuild actions in search results', async ({ page, request }) => {
   test.setTimeout(240_000);
   await waitForApiReady(request, { apiUrl: baseApiUrl });
   const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
@@ -267,7 +267,7 @@ test('Retryable preview failure shows retry and force rebuild actions in search 
   const previewJson = (await previewRes.json()) as { supported?: boolean; status?: string; failureCategory?: string };
   expect(previewJson.supported).toBe(false);
   expect((previewJson.status || '').toUpperCase()).toBe('FAILED');
-  expect((previewJson.failureCategory || '').toUpperCase()).not.toBe('UNSUPPORTED');
+  expect((previewJson.failureCategory || '').toUpperCase()).toBe('PERMANENT');
 
   const indexRes = await request.post(`${baseApiUrl}/api/v1/search/index/${documentId}`,
     { headers: { Authorization: `Bearer ${token}` } });
@@ -284,14 +284,9 @@ test('Retryable preview failure shows retry and force rebuild actions in search 
   await expect(resultCard).toBeVisible({ timeout: 60_000 });
   await expect(resultCard.getByText(/Preview failed/i)).toBeVisible();
 
-  const retryButton = resultCard.getByRole('button', { name: /Retry preview/i }).first();
-  const forceButton = resultCard.getByRole('button', { name: /Force rebuild preview/i }).first();
-  await expect(retryButton).toBeVisible();
-  await expect(forceButton).toBeVisible();
-
-  await forceButton.click();
-  const toast = page.locator('.Toastify__toast').last();
-  await expect(toast).toContainText(/Preview queued|already up to date|Failed to queue preview/i, { timeout: 30_000 });
+  await expect(resultCard.getByRole('button', { name: /Retry preview/i })).toHaveCount(0);
+  await expect(resultCard.getByRole('button', { name: /Force rebuild preview/i })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Retry failed previews/i })).toHaveCount(0);
 
   await gotoWithAuthE2E(page, '/search', defaultUsername, defaultPassword, { token });
   await page.getByLabel('Search query').fill(filename);
@@ -300,8 +295,8 @@ test('Retryable preview failure shows retry and force rebuild actions in search 
   await page.getByRole('button', { name: /^Search$/ }).filter({ hasText: /^Search$/ }).click();
   const advancedResult = page.locator('.MuiPaper-root').filter({ hasText: filename }).first();
   await expect(advancedResult).toBeVisible({ timeout: 60_000 });
-  await expect(advancedResult.getByRole('button', { name: /Retry preview/i })).toBeVisible();
-  await expect(advancedResult.getByRole('button', { name: /Force rebuild preview/i })).toBeVisible();
+  await expect(advancedResult.getByRole('button', { name: /Retry preview/i })).toHaveCount(0);
+  await expect(advancedResult.getByRole('button', { name: /Force rebuild preview/i })).toHaveCount(0);
 
   await request.delete(`${baseApiUrl}/api/v1/nodes/${folderId}`,
     { headers: { Authorization: `Bearer ${token}` } }).catch(() => null);

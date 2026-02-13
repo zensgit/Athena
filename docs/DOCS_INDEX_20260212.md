@@ -16,6 +16,7 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Phase 3 delivery report (single file): `docs/PHASE3_DELIVERY_REPORT_20260213.md`
 - Phase 4 plan: `docs/NEXT_7DAY_PLAN_PHASE4_20260213.md`
 - Phase 4 D1: Preview retry classification hardening: `docs/PHASE4_D1_PREVIEW_RETRY_CLASSIFICATION_20260213.md`
+- Phase 4 D3: Preview failure taxonomy + UX messaging: `docs/PHASE4_D3_PREVIEW_FAILURE_TAXONOMY_UX_20260213.md`
 
 ## OCR (Phase 3)
 

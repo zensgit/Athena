@@ -37,7 +37,7 @@ import authService from 'services/authService';
 import nodeService from 'services/nodeService';
 import apiService from 'services/api';
 import { Node } from 'types';
-import { getEffectivePreviewStatus, getFailedPreviewMeta } from 'utils/previewStatusUtils';
+import { getEffectivePreviewStatus, getFailedPreviewMeta, isRetryablePreviewFailure } from 'utils/previewStatusUtils';
 
 interface UploadFile {
   file: File;
@@ -568,8 +568,17 @@ const UploadDialog: React.FC = () => {
                     mimeType,
                     item.previewFailureReason
                   );
-                  const showForceRebuild = item.nodeType === 'DOCUMENT' && effectiveStatus !== 'READY';
-                  const showQueuePreview = showForceRebuild && effectiveStatus !== 'UNSUPPORTED';
+                  const retryableFailure = effectiveStatus === 'FAILED' && isRetryablePreviewFailure(
+                    item.previewFailureCategory,
+                    mimeType,
+                    item.previewFailureReason
+                  );
+                  const showPreviewActions = item.nodeType === 'DOCUMENT'
+                    && effectiveStatus !== 'READY'
+                    && effectiveStatus !== 'UNSUPPORTED'
+                    && (effectiveStatus !== 'FAILED' || retryableFailure);
+                  const showQueuePreview = showPreviewActions;
+                  const showForceRebuild = showPreviewActions;
                   const isQueueing = queueingPreviewIds.includes(item.id);
                   return (
                     <ListItem
