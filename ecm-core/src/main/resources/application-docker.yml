@@ -1,5 +1,9 @@
 # Docker profile - 覆盖 application.yml 中的配置
 spring:
+  # Redis is used for queues, but we intentionally keep Spring Cache in-memory in Docker/CI.
+  # Otherwise @Cacheable on preview APIs can end up using Redis DefaultSerializer and fail on complex payloads.
+  cache:
+    type: simple
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://postgres:5432/ecm_db}
     username: ${SPRING_DATASOURCE_USERNAME:ecm_user}
