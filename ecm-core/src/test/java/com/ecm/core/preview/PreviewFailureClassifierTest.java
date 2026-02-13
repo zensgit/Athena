@@ -37,6 +37,30 @@ class PreviewFailureClassifierTest {
     }
 
     @Test
+    void treatsBadPdfParseAsPermanentFailure() {
+        assertEquals(
+            PreviewFailureClassifier.CATEGORY_PERMANENT,
+            PreviewFailureClassifier.classify("FAILED", "application/pdf", "Error generating preview: Missing root object specification in trailer.")
+        );
+    }
+
+    @Test
+    void classifiesCadPreviewDisabledAsUnsupported() {
+        assertEquals(
+            PreviewFailureClassifier.CATEGORY_UNSUPPORTED,
+            PreviewFailureClassifier.classify("FAILED", "application/acad", "CAD preview disabled")
+        );
+    }
+
+    @Test
+    void classifiesCadPreviewServiceNotConfiguredAsUnsupported() {
+        assertEquals(
+            PreviewFailureClassifier.CATEGORY_UNSUPPORTED,
+            PreviewFailureClassifier.classify("FAILED", "application/acad", "CAD preview service not configured")
+        );
+    }
+
+    @Test
     void classifiesPermanentFailureByDefault() {
         assertEquals(
             PreviewFailureClassifier.CATEGORY_PERMANENT,

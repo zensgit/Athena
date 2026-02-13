@@ -53,7 +53,9 @@ final class PreviewStatusFilterHelper {
     private static final List<String> UNSUPPORTED_REASON_PHRASES = List.of(
         "preview not supported",
         "not supported for mime type",
-        "not available for empty pdf content"
+        "not available for empty pdf content",
+        "cad preview disabled",
+        "cad preview service not configured"
     );
 
     private PreviewStatusFilterHelper() {}

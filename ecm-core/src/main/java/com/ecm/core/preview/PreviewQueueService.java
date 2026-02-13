@@ -21,7 +21,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Queue;
 import java.util.UUID;
@@ -298,11 +297,15 @@ public class PreviewQueueService {
             return false;
         }
         String message = result.getMessage();
-        if (message == null) {
+        if (message == null || message.isBlank()) {
             return false;
         }
-        String lower = message.toLowerCase(Locale.ROOT);
-        return lower.startsWith("error generating preview") || lower.startsWith("cad preview failed");
+        String category = PreviewFailureClassifier.classify(
+            PreviewStatus.FAILED.name(),
+            result.getMimeType(),
+            message
+        );
+        return PreviewFailureClassifier.CATEGORY_TEMPORARY.equalsIgnoreCase(category);
     }
 
     private <T> T runAsSystem(PreviewTask<T> task) throws Exception {
