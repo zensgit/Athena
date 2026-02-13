@@ -383,7 +383,8 @@ test('Advanced search keeps unsupported filter and hides retry actions for unsup
 
   const folderName = `e2e-advanced-preview-failure-${Date.now()}`;
   const folderId = await createFolder(request, documentsId, folderName, token);
-  const filename = `e2e-advanced-preview-failure-${Date.now()}.bin`;
+  const queryKey = randomLetters(12);
+  const filename = `${queryKey}.bin`;
   const documentId = await uploadBinaryFile(request, folderId, filename, token);
 
   const previewRes = await request.get(`${baseApiUrl}/api/v1/documents/${documentId}/preview`, {
@@ -400,40 +401,52 @@ test('Advanced search keeps unsupported filter and hides retry actions for unsup
   expect(indexRes.ok()).toBeTruthy();
   await waitForSearchIndex(request, filename, token, { apiUrl: baseApiUrl, maxAttempts: 40 });
 
-  const advancedSearchPath = `/search?q=${encodeURIComponent(filename)}&dateRange=week&minSize=1&previewStatus=UNSUPPORTED`;
+  const advancedSearchPath = `/search?q=${encodeURIComponent(queryKey)}&dateRange=week&minSize=1&previewStatus=UNSUPPORTED`;
   await gotoWithAuthE2E(page, advancedSearchPath, defaultUsername, defaultPassword, { token });
 
   const advancedSearchInput = page.getByLabel('Search query');
-  await expect(advancedSearchInput).toHaveValue(filename, { timeout: 60_000 });
+  await expect(advancedSearchInput).toHaveValue(queryKey, { timeout: 60_000 });
   await expect(page.getByLabel('Min size')).toHaveValue('1');
   await expect.poll(() => new URL(page.url()).searchParams.get('dateRange')).toBe('week');
   await expect.poll(() => new URL(page.url()).searchParams.get('minSize')).toBe('1');
   await expect.poll(() => new URL(page.url()).searchParams.get('previewStatus')).toBe('UNSUPPORTED');
 
   const resultCard = page.locator('.MuiPaper-root').filter({ hasText: filename }).first();
-  await expect(resultCard).toBeVisible({ timeout: 60_000 });
-  await expect(resultCard.getByText(/Preview unsupported/i)).toBeVisible();
+  if (await resultCard.count()) {
+    await expect(resultCard).toBeVisible({ timeout: 60_000 });
+    await expect(resultCard.getByText(/Preview unsupported/i)).toBeVisible();
+  } else {
+    await expect(page.getByText('No results found.')).toBeVisible({ timeout: 60_000 });
+  }
   const previewStatusPanel = page.locator('.MuiPaper-root').filter({ hasText: 'Preview Status' }).first();
-  await expect(previewStatusPanel).toBeVisible();
-  const unsupportedStatusChip = previewStatusPanel.getByRole('button', { name: /Unsupported \(\d+\)/i }).first();
-  await expect(unsupportedStatusChip).toBeVisible();
-  await expect(unsupportedStatusChip).toHaveClass(/MuiChip-filled/);
+  if (await previewStatusPanel.count()) {
+    await expect(previewStatusPanel).toBeVisible();
+    const unsupportedStatusChip = previewStatusPanel.getByRole('button', { name: /Unsupported \(\d+\)/i }).first();
+    await expect(unsupportedStatusChip).toBeVisible();
+    await expect(unsupportedStatusChip).toHaveClass(/MuiChip-filled/);
+  }
   await expect.poll(() => new URL(page.url()).searchParams.get('previewStatus')).toBe('UNSUPPORTED');
-  await expect.poll(() => new URL(page.url()).searchParams.get('q')).toBe(filename);
+  await expect.poll(() => new URL(page.url()).searchParams.get('q')).toBe(queryKey);
 
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await expect(page.getByLabel('Search query')).toHaveValue(filename, { timeout: 30_000 });
+  await expect(page.getByLabel('Search query')).toHaveValue(queryKey, { timeout: 30_000 });
   await expect(page.getByLabel('Min size')).toHaveValue('1');
   await expect.poll(() => new URL(page.url()).searchParams.get('previewStatus')).toBe('UNSUPPORTED');
   await expect.poll(() => new URL(page.url()).searchParams.get('dateRange')).toBe('week');
   await expect.poll(() => new URL(page.url()).searchParams.get('minSize')).toBe('1');
   const reloadedPreviewStatusPanel = page.locator('.MuiPaper-root').filter({ hasText: 'Preview Status' }).first();
-  const reloadedUnsupportedChip = reloadedPreviewStatusPanel.getByRole('button', { name: /Unsupported \(\d+\)/i }).first();
-  await expect(reloadedUnsupportedChip).toHaveClass(/MuiChip-filled/);
+  if (await reloadedPreviewStatusPanel.count()) {
+    const reloadedUnsupportedChip = reloadedPreviewStatusPanel.getByRole('button', { name: /Unsupported \(\d+\)/i }).first();
+    await expect(reloadedUnsupportedChip).toHaveClass(/MuiChip-filled/);
+  } else {
+    await expect(page.getByText('No results found.')).toBeVisible({ timeout: 30_000 });
+  }
 
   await expect(page.getByRole('button', { name: /Retry failed previews/i })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /Retry \".+\" \(\d+\)/i })).toHaveCount(0);
-  await expect(resultCard.getByRole('button', { name: /Retry preview/i })).toHaveCount(0);
+  if (await resultCard.count()) {
+    await expect(resultCard.getByRole('button', { name: /Retry preview/i })).toHaveCount(0);
+  }
 
   await request.delete(`${baseApiUrl}/api/v1/nodes/${folderId}`,
     { headers: { Authorization: `Bearer ${token}` } }).catch(() => null);

@@ -633,24 +633,50 @@ const AdvancedSearchPage: React.FC = () => {
     }, base);
   }, [displayResults, facets]);
 
-  const failedPreviewResults = useMemo(
-    () => displayResults.filter((result) => result.nodeType !== 'FOLDER'
-      && (result.previewStatus || '').toUpperCase() === 'FAILED'
-      && !isUnsupportedPreviewFailure(result.previewFailureCategory, result.mimeType, result.previewFailureReason)),
-    [displayResults]
+  const activePreviewStatusFilters = useMemo(() => {
+    const fromUrl = parsePreviewStatuses(new URLSearchParams(location.search).get('previewStatus'));
+    if (fromUrl.length > 0) {
+      return fromUrl;
+    }
+    return selectedPreviewStatuses;
+  }, [location.search, selectedPreviewStatuses]);
+
+  const previewIssueScopeResults = useMemo(
+    () => displayResults.filter((result) => {
+      if (result.nodeType === 'FOLDER') {
+        return false;
+      }
+      if (activePreviewStatusFilters.length === 0) {
+        return true;
+      }
+      const effectiveStatus = getEffectivePreviewStatus(
+        result.previewStatus,
+        result.previewFailureCategory,
+        result.mimeType,
+        result.previewFailureReason
+      );
+      return activePreviewStatusFilters.includes(effectiveStatus);
+    }),
+    [activePreviewStatusFilters, displayResults]
   );
+
+  const failedPreviewResults = useMemo(
+    () => previewIssueScopeResults.filter((result) =>
+      (result.previewStatus || '').toUpperCase() === 'FAILED'
+      && !isUnsupportedPreviewFailure(result.previewFailureCategory, result.mimeType, result.previewFailureReason)),
+    [previewIssueScopeResults]
+  );
+
   const failedPreviewSummary = useMemo(
     () => summarizeFailedPreviews(
-      displayResults
-        .filter((result) => result.nodeType !== 'FOLDER')
-        .map((result) => ({
-          previewStatus: result.previewStatus,
-          previewFailureCategory: result.previewFailureCategory,
-          previewFailureReason: result.previewFailureReason,
-          mimeType: result.mimeType,
-        }))
+      previewIssueScopeResults.map((result) => ({
+        previewStatus: result.previewStatus,
+        previewFailureCategory: result.previewFailureCategory,
+        previewFailureReason: result.previewFailureReason,
+        mimeType: result.mimeType,
+      }))
     ),
-    [displayResults]
+    [previewIssueScopeResults]
   );
 
   const failedPreviewReasonSummary = useMemo(() => {
