@@ -61,7 +61,9 @@ public final class PreviewFailureClassifier {
         }
         return normalized.startsWith("preview not supported")
             || normalized.contains("not supported for mime type")
-            || normalized.contains("not available for empty pdf content");
+            || normalized.contains("not available for empty pdf content")
+            || normalized.contains("cad preview disabled")
+            || normalized.contains("cad preview service not configured");
     }
 
     private static boolean isTemporaryReason(String failureReason) {
@@ -69,9 +71,11 @@ public final class PreviewFailureClassifier {
         if (normalized == null) {
             return false;
         }
-        return normalized.startsWith("error generating preview")
-            || normalized.startsWith("cad preview failed")
-            || normalized.contains("timeout")
+        return containsTransientHint(normalized);
+    }
+
+    private static boolean containsTransientHint(String normalized) {
+        return normalized.contains("timeout")
             || normalized.contains("timed out")
             || normalized.contains("temporar")
             || normalized.contains("connection reset")
