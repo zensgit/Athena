@@ -21,6 +21,7 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Phase 4 D4: Backend preview queue guardrails: `docs/PHASE4_D4_BACKEND_PREVIEW_QUEUE_GUARDRAILS_20260213.md`
 - Phase 4 D5: Preview observability + diagnostics: `docs/PHASE4_D5_OBSERVABILITY_DIAGNOSTICS_20260213.md`
 - Phase 4 D6: Automation coverage expansion: `docs/PHASE4_D6_AUTOMATION_COVERAGE_EXPANSION_20260213.md`
+- Phase 4 D7: Regression gate + release notes: `docs/PHASE4_D7_REGRESSION_GATE_RELEASE_NOTES_20260213.md`
 
 ## OCR (Phase 3)
 

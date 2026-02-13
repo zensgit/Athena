@@ -168,11 +168,16 @@ Verification:
 
 - `cd ecm-frontend && npx playwright test e2e/ocr-queue-ui.spec.ts e2e/pdf-preview.spec.ts e2e/search-preview-status.spec.ts --project=chromium`
 
-## Day 7: Regression Gate + Release Documentation
+## Day 7 (Done): Regression Gate + Release Documentation
 
 Goal:
 
 - Run weekly subset gate and produce a short release note / delivery note.
+
+Deliverables:
+
+- Release / delivery note:
+  - `docs/PHASE4_D7_REGRESSION_GATE_RELEASE_NOTES_20260213.md`
 
 Verification:
 
