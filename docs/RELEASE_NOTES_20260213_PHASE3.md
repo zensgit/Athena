@@ -43,6 +43,15 @@ Updated backend tests to current service method signatures and diagnostics expec
 - `ecm-core/src/test/java/com/ecm/core/integration/mail/controller/MailAutomationControllerDiagnosticsTest.java`
 - `ecm-core/src/test/java/com/ecm/core/integration/mail/controller/MailAutomationControllerSecurityTest.java`
 
+## 4) CI / Docker stability fixes
+
+- Docker profile forces in-memory Spring Cache so Redis can be used for queues without cache serializer failures:
+  - `ecm-core/src/main/resources/application-docker.yml` (`spring.cache.type: simple`)
+- Frontend container can start even when Collabora is not running (WOPI disabled in CI gates):
+  - `ecm-frontend/nginx.conf` (Collabora upstream via variable)
+- E2E core gate stack is kept minimal to reduce resource contention on CI runners:
+  - `.github/workflows/ci.yml`
+
 ## Verification Summary
 
 ## Backend
@@ -109,6 +118,10 @@ Result:
 ## Pull Request
 
 - PR: `https://github.com/zensgit/Athena/pull/15`
+
+## Consolidated Delivery Report
+
+- `docs/PHASE3_DELIVERY_REPORT_20260213.md`
 
 ## Known Notes
 
