@@ -21,6 +21,34 @@ If Docker is down, run the “mocked API” E2E specs to keep UI validation unbl
 Local note (as observed on 2026-02-13):
 - The mocked Preview Diagnostics E2E can be run against a static build server to avoid CRA dev-server rebuilds.
 
+## Day 0 (Prereqs) - Keep Dev + E2E Unblocked
+
+Why:
+- Phase 5 is UI-heavy; if local disk/Docker is unhealthy, verification stalls and regressions slip.
+
+Checklist:
+- Disk: ensure >= 25Gi free on `/System/Volumes/Data` (macOS tends to fail builds earlier when near-full).
+- Docker Desktop:
+  - `docker version` works
+  - `docker compose ps` works
+- Backend health:
+  - `curl -sS http://localhost:7700/actuator/health` returns 200
+- Keycloak reachable:
+  - `curl -sS http://localhost:8180/realms/ecm/.well-known/openid-configuration` returns 200
+- Frontend:
+  - dev server: `http://localhost:3000` (react-scripts)
+  - prebuilt server: `http://localhost:5500` (static `build/`)
+
+Fallback when Docker is unavailable:
+- Run mocked API E2E specs against a static build server:
+
+```bash
+cd ecm-frontend
+npm run build
+(cd build && python3 -m http.server 5500)
+ECM_UI_URL=http://localhost:5500 npx playwright test e2e/admin-preview-diagnostics.mock.spec.ts --project=chromium --workers=1
+```
+
 ## Day 1 (P0) - Phase 54: Admin Preview Diagnostics UI
 
 Goal:
@@ -57,9 +85,22 @@ Implementation:
 - Improve deep link to Advanced Search:
   - include `previewStatus` filter when the failure is UNSUPPORTED/FAILED
 
+Code touchpoints:
+- `ecm-frontend/src/pages/PreviewDiagnosticsPage.tsx`
+- `ecm-frontend/src/pages/SearchPage.tsx` (or search routing target)
+- `ecm-frontend/src/utils/searchPrefillUtils.ts` (if we extend URL prefill)
+
 Verification:
 - Extend `admin-preview-diagnostics.mock.spec.ts` to assert new actions.
 - Add/extend integration E2E if backend is available.
+
+Mocked E2E should cover:
+- Copy-to-clipboard for doc id (assert via `page.evaluate(() => navigator.clipboard.readText())` or by stubbing clipboard).
+- “Open node” navigates to browse/search view with the expected id in URL.
+- Advanced Search deep link includes preview-status filters for FAILED vs UNSUPPORTED.
+
+Integration E2E should cover:
+- Create a retryable sample (TEMPORARY) and a permanent sample, then assert gating remains correct.
 
 Docs:
 - `docs/PHASE55_PREVIEW_DIAGNOSTICS_HARDENING_DEV_20260214.md`
@@ -75,8 +116,15 @@ Implementation:
 - Permissions dialog: display permission-set mapping alongside raw permissions.
 - Add tooltip/help text describing what each set implies.
 
+Code touchpoints:
+- `ecm-frontend/src/components/dialogs/PermissionsDialog.tsx`
+- `ecm-frontend/src/utils/permissionUtils.ts` (or similar mapping helpers)
+
 Verification:
 - Playwright: open permissions dialog, assert permission sets render for admin.
+
+Mocked E2E option (preferred):
+- Add a mocked spec for permissions dialog rendering, to avoid needing backend ACL setup.
 
 Docs:
 - `docs/PHASE56_PERMISSION_SET_UX_PARITY_DEV_20260215.md`
@@ -91,6 +139,14 @@ Goal:
 
 Verification:
 - Playwright: filter + export (download).
+
+Code touchpoints:
+- `ecm-frontend/src/pages/AuditPage.tsx` (or existing admin audit page)
+- `ecm-core` audit endpoints (verify paging + filters match UI)
+
+Acceptance:
+- Filters persist in URL (shareable).
+- Export filenames are stable and include date range + filters summary.
 
 Docs:
 - `docs/PHASE57_AUDIT_FILTER_EXPORT_UX_DEV_20260216.md`
@@ -107,6 +163,10 @@ Implementation:
 Verification:
 - Playwright: check paging + major-only toggles change visible versions.
 
+Code touchpoints:
+- `ecm-frontend/src/components/dialogs/VersionHistoryDialog.tsx`
+- `ecm-core` versions endpoint(s) (ensure paging params align)
+
 Docs:
 - `docs/PHASE58_VERSION_HISTORY_PAGING_UX_DEV_20260217.md`
 - `docs/PHASE58_VERSION_HISTORY_PAGING_UX_VERIFICATION_20260217.md`
@@ -119,6 +179,11 @@ Goal:
 
 Verification:
 - Playwright: search misspelling shows suggestion chip; saving creates saved search.
+
+Code touchpoints:
+- `ecm-frontend/src/pages/SearchPage.tsx`
+- `ecm-frontend/src/components/search/AdvancedSearchDialog.tsx`
+- Search API spellcheck endpoint/response contract (ensure UI supports empty states)
 
 Docs:
 - `docs/PHASE59_SEARCH_SUGGESTIONS_SAVED_SEARCH_UX_DEV_20260218.md`
@@ -135,6 +200,11 @@ Implementation:
 
 Verification:
 - `bash scripts/phase5-regression.sh` passes on a clean environment.
+
+Regression gate contents (minimum):
+- `ecm-frontend/e2e/ui-smoke.spec.ts`
+- `ecm-frontend/e2e/admin-preview-diagnostics.mock.spec.ts`
+- `ecm-frontend/e2e/mail-automation.spec.ts` (if stable in this environment)
 
 Docs:
 - `docs/PHASE5_REGRESSION_GATE_ROLLUP_20260219.md`
