@@ -53,6 +53,9 @@ services:
       - ECM_PREVIEW_CAD_RENDER_URL=${ECM_PREVIEW_CAD_RENDER_URL:-}
       - ECM_PREVIEW_CAD_AUTH_TOKEN=${ECM_PREVIEW_CAD_AUTH_TOKEN:-}
       - ECM_PREVIEW_CAD_TIMEOUT_MS=${ECM_PREVIEW_CAD_TIMEOUT_MS:-30000}
+      # Queue backends (default to in-memory; set to "redis" for restart-safe queues)
+      - ECM_PREVIEW_QUEUE_BACKEND=${ECM_PREVIEW_QUEUE_BACKEND:-memory}
+      - ECM_OCR_QUEUE_BACKEND=${ECM_OCR_QUEUE_BACKEND:-memory}
       # ClamAV Antivirus Integration
       - ECM_ANTIVIRUS_ENABLED=${ECM_ANTIVIRUS_ENABLED:-true}
       - ECM_ANTIVIRUS_CLAMD_HOST=clamav
