@@ -10,6 +10,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Phase 3 plan: `docs/NEXT_7DAY_PLAN_PHASE3_20260212.md`
 - Phase 1 progress: `docs/PHASE1_EXECUTION_PROGRESS_20260212.md`
 - Phase 2 progress: `docs/PHASE2_EXECUTION_PROGRESS_20260212.md`
+- Phase 3 progress: `docs/PHASE3_EXECUTION_PROGRESS_20260213.md`
+- Phase 3 commit split: `docs/PHASE3_COMMIT_SPLIT_PLAN_20260213.md`
+- Phase 3 release notes: `docs/RELEASE_NOTES_20260213_PHASE3.md`
 
 ## OCR (Phase 3)
 
@@ -25,6 +28,15 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Day 4: OCR-driven correspondent enrichment (feature-flagged)
   - Design: `docs/PHASE3_D4_OCR_ENRICHMENT_CORRESPONDENT_DESIGN_20260212.md`
   - Verification: `docs/PHASE3_D4_OCR_ENRICHMENT_CORRESPONDENT_VERIFICATION_20260212.md`
+- Day 5: Redis-backed queue backend (preview + OCR)
+  - Design: `docs/PHASE3_D5_REDIS_QUEUE_BACKEND_DESIGN_20260212.md`
+  - Verification: `docs/PHASE3_D5_REDIS_QUEUE_BACKEND_VERIFICATION_20260212.md`
+- Day 6: Rule dry-run and manual backfill guardrails
+  - Design: `docs/PHASE3_D6_RULE_DRYRUN_BACKFILL_GUARDRAILS_DESIGN_20260213.md`
+  - Verification: `docs/PHASE3_D6_RULE_DRYRUN_BACKFILL_GUARDRAILS_VERIFICATION_20260213.md`
+- Day 7: Full regression gate and closeout
+  - Design: `docs/PHASE3_D7_FULL_REGRESSION_GATE_DESIGN_20260213.md`
+  - Verification: `docs/PHASE3_D7_FULL_REGRESSION_GATE_VERIFICATION_20260213.md`
 
 ## Mail Automation
 
