@@ -132,6 +132,7 @@ jacoco/
 playwright-report/
 test-results/
 .playwright-cli/
+ecm-frontend/output/
 
 # -------------------------------------------
 # Node.js (if any frontend)

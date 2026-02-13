@@ -33,6 +33,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -121,6 +122,7 @@ public class AnalyticsController {
             @RequestParam(required = false) String username,
             @RequestParam(required = false) String eventType,
             @RequestParam(required = false) String category,
+            @RequestParam(required = false) UUID nodeId,
             @RequestParam(defaultValue = "30") int days) {
 
         if (preset != null) {
@@ -152,6 +154,7 @@ public class AnalyticsController {
             toTime,
             username,
             eventType,
+            nodeId,
             categoryFilter
         );
         String filename = String.format("audit_logs_%s_to_%s.csv",
@@ -176,6 +179,7 @@ public class AnalyticsController {
             @RequestParam(required = false) String username,
             @RequestParam(required = false) String eventType,
             @RequestParam(required = false) String category,
+            @RequestParam(required = false) UUID nodeId,
             @RequestParam(required = false) String from,
             @RequestParam(required = false) String to,
             @RequestParam(defaultValue = "0") int page,
@@ -184,7 +188,7 @@ public class AnalyticsController {
         LocalDateTime toTime = parseOptionalAuditDateTime(to, "to");
         var pageable = org.springframework.data.domain.PageRequest.of(page, size);
         AuditCategory categoryFilter = AuditCategory.fromString(category);
-        return ResponseEntity.ok(analyticsService.searchAuditLogs(username, eventType, categoryFilter, fromTime, toTime, pageable));
+        return ResponseEntity.ok(analyticsService.searchAuditLogs(username, eventType, categoryFilter, nodeId, fromTime, toTime, pageable));
     }
 
     @GetMapping("/audit/presets")

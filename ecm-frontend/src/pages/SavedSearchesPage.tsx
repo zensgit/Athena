@@ -1,9 +1,27 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { Box, Paper, Typography, IconButton, CircularProgress, Button, Tooltip } from '@mui/material';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Box,
+  Paper,
+  Typography,
+  IconButton,
+  CircularProgress,
+  Button,
+  Tooltip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+} from '@mui/material';
 import { DataGrid, GridColDef } from '@mui/x-data-grid';
 import {
   ContentPasteSearch,
+  ContentCopy,
   Delete,
+  Edit,
+  FileDownload,
+  FileUpload,
+  Link,
   PlayArrow,
   Refresh,
   SavedSearch as SavedSearchIcon,
@@ -19,11 +37,54 @@ import { executeSavedSearch, setLastSearchCriteria } from 'store/slices/nodeSlic
 import { setSearchOpen, setSearchPrefill } from 'store/slices/uiSlice';
 import { buildSearchCriteriaFromSavedSearch } from 'utils/savedSearchUtils';
 
+interface SavedSearchImportExportItem {
+  name: string;
+  queryParams: Record<string, any>;
+  pinned?: boolean;
+}
+
+interface SavedSearchExportPayload {
+  version: number;
+  exportedAt: string;
+  savedSearches: SavedSearchImportExportItem[];
+}
+
+const isRecord = (value: unknown): value is Record<string, any> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const normalizeImportItems = (value: unknown): SavedSearchImportExportItem[] => {
+  const source = Array.isArray(value)
+    ? value
+    : isRecord(value) && Array.isArray(value.savedSearches)
+      ? value.savedSearches
+      : [];
+
+  return source
+    .map((entry): SavedSearchImportExportItem | null => {
+      if (!isRecord(entry)) return null;
+      const name = typeof entry.name === 'string' ? entry.name.trim() : '';
+      if (!name) return null;
+      return {
+        name,
+        queryParams: isRecord(entry.queryParams) ? entry.queryParams : {},
+        pinned: Boolean(entry.pinned),
+      };
+    })
+    .filter((entry): entry is SavedSearchImportExportItem => Boolean(entry));
+};
+
 const SavedSearchesPage: React.FC = () => {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
+  const importFileRef = useRef<HTMLInputElement | null>(null);
   const [items, setItems] = useState<SavedSearch[]>([]);
   const [loading, setLoading] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editDialogMode, setEditDialogMode] = useState<'rename' | 'duplicate'>('rename');
+  const [editDialogItem, setEditDialogItem] = useState<SavedSearch | null>(null);
+  const [editDialogName, setEditDialogName] = useState('');
+  const [editDialogSubmitting, setEditDialogSubmitting] = useState(false);
 
   const sortSavedSearches = useCallback((data: SavedSearch[]) => {
     const toTime = (value?: string) => {
@@ -53,11 +114,6 @@ const SavedSearchesPage: React.FC = () => {
   useEffect(() => {
     loadSavedSearches();
   }, [loadSavedSearches]);
-
-  const normalizeList = (input: unknown) =>
-    Array.isArray(input)
-      ? input.map((value) => String(value).trim()).filter((value) => value.length > 0)
-      : [];
 
   const handleRun = async (item: SavedSearch) => {
     try {
@@ -94,29 +150,197 @@ const SavedSearchesPage: React.FC = () => {
   };
 
   const handleLoadToSearch = (item: SavedSearch) => {
-    const queryParams = item.queryParams || {};
-    const filters = (queryParams.filters || {}) as Record<string, any>;
-    const mimeTypes = Array.isArray(filters.mimeTypes) ? filters.mimeTypes : [];
+    const criteria = buildSearchCriteriaFromSavedSearch(item);
 
     dispatch(
       setSearchPrefill({
-        name: typeof queryParams.query === 'string' ? queryParams.query : '',
-        contentType: typeof mimeTypes[0] === 'string' ? mimeTypes[0] : '',
-        createdBy: typeof filters.createdBy === 'string' ? filters.createdBy : '',
-        createdFrom: typeof filters.dateFrom === 'string' ? filters.dateFrom : undefined,
-        createdTo: typeof filters.dateTo === 'string' ? filters.dateTo : undefined,
-        modifiedFrom: typeof filters.modifiedFrom === 'string' ? filters.modifiedFrom : undefined,
-        modifiedTo: typeof filters.modifiedTo === 'string' ? filters.modifiedTo : undefined,
-        tags: normalizeList(filters.tags),
-        categories: normalizeList(filters.categories),
-        correspondents: normalizeList(filters.correspondents),
-        minSize: typeof filters.minSize === 'number' ? filters.minSize : undefined,
-        maxSize: typeof filters.maxSize === 'number' ? filters.maxSize : undefined,
-        pathPrefix: typeof filters.path === 'string' ? filters.path : '',
+        name: criteria.name || '',
+        contentType: criteria.contentType || '',
+        previewStatuses: criteria.previewStatuses || [],
+        aspects: criteria.aspects || [],
+        properties: criteria.properties || {},
+        createdBy: criteria.createdBy || '',
+        createdFrom: criteria.createdFrom,
+        createdTo: criteria.createdTo,
+        modifiedFrom: criteria.modifiedFrom,
+        modifiedTo: criteria.modifiedTo,
+        tags: criteria.tags || [],
+        categories: criteria.categories || [],
+        correspondents: criteria.correspondents || [],
+        minSize: criteria.minSize,
+        maxSize: criteria.maxSize,
+        pathPrefix: criteria.path || '',
+        folderId: criteria.folderId,
+        includeChildren: criteria.includeChildren,
       })
     );
     dispatch(setSearchOpen(true));
     toast.success('Loaded saved search into Advanced Search');
+  };
+
+  const handleCopyLink = async (item: SavedSearch) => {
+    const url = `${window.location.origin}/search-results?savedSearchId=${encodeURIComponent(item.id)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success('Saved search link copied');
+    } catch {
+      toast.error('Failed to copy link');
+    }
+  };
+
+  const handleExport = () => {
+    if (items.length === 0) {
+      toast.info('No saved searches to export');
+      return;
+    }
+
+    const payload: SavedSearchExportPayload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      savedSearches: items.map((item) => ({
+        name: item.name,
+        queryParams: isRecord(item.queryParams) ? item.queryParams : {},
+        pinned: Boolean(item.pinned),
+      })),
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `saved-searches-${Date.now()}.json`;
+    link.click();
+    window.URL.revokeObjectURL(url);
+    toast.success(`Exported ${payload.savedSearches.length} saved searches`);
+  };
+
+  const openImportPicker = () => {
+    importFileRef.current?.click();
+  };
+
+  const handleImportFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    setImporting(true);
+    try {
+      const rawText = await file.text();
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(rawText);
+      } catch {
+        toast.error('Invalid JSON file');
+        return;
+      }
+
+      const toImport = normalizeImportItems(parsed);
+      if (toImport.length === 0) {
+        toast.error('No valid saved searches found in file');
+        return;
+      }
+
+      const existingItems = await savedSearchService.list();
+      const existingNames = new Set(
+        existingItems
+          .map((item) => item.name?.trim().toLowerCase())
+          .filter((name): name is string => Boolean(name))
+      );
+
+      let imported = 0;
+      let skipped = 0;
+      let failed = 0;
+
+      for (const entry of toImport) {
+        const normalizedName = entry.name.trim();
+        if (!normalizedName) {
+          skipped += 1;
+          continue;
+        }
+        const dedupeKey = normalizedName.toLowerCase();
+        if (existingNames.has(dedupeKey)) {
+          skipped += 1;
+          continue;
+        }
+
+        try {
+          const created = await savedSearchService.save(normalizedName, entry.queryParams || {});
+          if (entry.pinned) {
+            await savedSearchService.setPinned(created.id, true);
+          }
+          existingNames.add(dedupeKey);
+          imported += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+
+      await loadSavedSearches();
+      toast.success(`Import complete: ${imported} imported, ${skipped} skipped, ${failed} failed`);
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const openRenameDialog = (item: SavedSearch) => {
+    setEditDialogMode('rename');
+    setEditDialogItem(item);
+    setEditDialogName(item.name || '');
+    setEditDialogOpen(true);
+  };
+
+  const openDuplicateDialog = (item: SavedSearch) => {
+    setEditDialogMode('duplicate');
+    setEditDialogItem(item);
+    setEditDialogName(`Copy of ${item.name || 'saved search'}`);
+    setEditDialogOpen(true);
+  };
+
+  const closeEditDialog = (options?: { force?: boolean }) => {
+    if (editDialogSubmitting && !options?.force) {
+      return;
+    }
+    setEditDialogOpen(false);
+    setEditDialogItem(null);
+    setEditDialogName('');
+    setEditDialogSubmitting(false);
+  };
+
+  const handleEditDialogClose = () => closeEditDialog();
+
+  const handleEditDialogSubmit = async () => {
+    const item = editDialogItem;
+    if (!item) {
+      closeEditDialog();
+      return;
+    }
+    const trimmed = editDialogName.trim();
+    if (!trimmed) {
+      toast.error('Please enter a name');
+      return;
+    }
+
+    setEditDialogSubmitting(true);
+    try {
+      if (editDialogMode === 'rename') {
+        const updated = await savedSearchService.update(item.id, { name: trimmed });
+        setItems((prev) => sortSavedSearches(
+          prev.map((current) => (current.id === updated.id ? updated : current))
+        ));
+        toast.success('Saved search renamed');
+      } else {
+        const clonedParams = item.queryParams
+          ? JSON.parse(JSON.stringify(item.queryParams))
+          : {};
+        await savedSearchService.save(trimmed, clonedParams);
+        toast.success('Saved search duplicated');
+        await loadSavedSearches();
+      }
+      closeEditDialog({ force: true });
+    } catch {
+      toast.error(editDialogMode === 'rename' ? 'Failed to rename saved search' : 'Failed to duplicate saved search');
+      setEditDialogSubmitting(false);
+    }
   };
 
   const columns: GridColDef[] = [
@@ -158,7 +382,7 @@ const SavedSearchesPage: React.FC = () => {
     {
       field: 'actions',
       headerName: '',
-      width: 170,
+      width: 300,
       sortable: false,
       renderCell: (params) => (
         <Box display="flex" gap={1}>
@@ -175,6 +399,27 @@ const SavedSearchesPage: React.FC = () => {
             onClick={() => handleRun(params.row as SavedSearch)}
           >
             <PlayArrow fontSize="small" />
+          </IconButton>
+          <IconButton
+            size="small"
+            aria-label={`Copy saved search link ${String((params.row as SavedSearch).name)}`}
+            onClick={() => handleCopyLink(params.row as SavedSearch)}
+          >
+            <Link fontSize="small" />
+          </IconButton>
+          <IconButton
+            size="small"
+            aria-label={`Rename saved search ${String((params.row as SavedSearch).name)}`}
+            onClick={() => openRenameDialog(params.row as SavedSearch)}
+          >
+            <Edit fontSize="small" />
+          </IconButton>
+          <IconButton
+            size="small"
+            aria-label={`Duplicate saved search ${String((params.row as SavedSearch).name)}`}
+            onClick={() => openDuplicateDialog(params.row as SavedSearch)}
+          >
+            <ContentCopy fontSize="small" />
           </IconButton>
           <IconButton
             size="small"
@@ -196,10 +441,36 @@ const SavedSearchesPage: React.FC = () => {
             <SavedSearchIcon fontSize="small" color="primary" />
             <Typography variant="h6">Saved Searches</Typography>
           </Box>
-          <Button variant="outlined" startIcon={<Refresh />} onClick={loadSavedSearches}>
-            Refresh
-          </Button>
+          <Box display="flex" gap={1}>
+            <Button
+              variant="outlined"
+              startIcon={<FileUpload />}
+              onClick={openImportPicker}
+              disabled={importing}
+            >
+              {importing ? 'Importing…' : 'Import JSON'}
+            </Button>
+            <Button
+              variant="outlined"
+              startIcon={<FileDownload />}
+              onClick={handleExport}
+              disabled={loading}
+            >
+              Export JSON
+            </Button>
+            <Button variant="outlined" startIcon={<Refresh />} onClick={loadSavedSearches}>
+              Refresh
+            </Button>
+          </Box>
         </Box>
+        <input
+          ref={importFileRef}
+          type="file"
+          accept="application/json,.json"
+          onChange={handleImportFile}
+          style={{ display: 'none' }}
+          data-testid="saved-search-import-input"
+        />
       </Paper>
 
       <Paper sx={{ height: 600 }}>
@@ -217,6 +488,33 @@ const SavedSearchesPage: React.FC = () => {
           />
         )}
       </Paper>
+
+      <Dialog open={editDialogOpen} onClose={handleEditDialogClose} maxWidth="sm" fullWidth>
+        <DialogTitle>{editDialogMode === 'rename' ? 'Rename Saved Search' : 'Duplicate Saved Search'}</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Name"
+            fullWidth
+            value={editDialogName}
+            onChange={(event) => setEditDialogName(event.target.value)}
+            disabled={editDialogSubmitting}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleEditDialogClose} disabled={editDialogSubmitting}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleEditDialogSubmit}
+            disabled={editDialogSubmitting}
+          >
+            {editDialogSubmitting ? 'Saving…' : 'Save'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

@@ -3,6 +3,7 @@ package com.ecm.core.event;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Node;
 import com.ecm.core.entity.Version;
+import com.ecm.core.ocr.OcrQueueService;
 import com.ecm.core.preview.PreviewQueueService;
 import com.ecm.core.search.SearchIndexService;
 import com.ecm.core.service.AuditService;
@@ -23,6 +24,7 @@ public class EcmEventListener {
     private final SearchIndexService searchIndexService;
     private final NotificationService notificationService;
     private final PreviewQueueService previewQueueService;
+    private final OcrQueueService ocrQueueService;
     
     @Async
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -150,6 +152,13 @@ public class EcmEventListener {
             previewQueueService.enqueue(document.getId(), false);
         } catch (Exception e) {
             log.error("Failed to generate preview for version {}", version.getId(), e);
+        }
+
+        // Enqueue OCR extraction (optional, guarded by feature flags inside service)
+        try {
+            ocrQueueService.enqueue(document.getId(), false);
+        } catch (Exception e) {
+            log.debug("OCR enqueue skipped/failed for document {}: {}", document.getId(), e.getMessage());
         }
         
         // Send notifications

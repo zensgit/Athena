@@ -10,6 +10,7 @@ import com.ecm.core.integration.mail.service.MailFetcherService;
 import com.ecm.core.integration.mail.service.MailOAuthService;
 import com.ecm.core.integration.mail.service.MailProcessedRetentionService;
 import com.ecm.core.integration.mail.service.MailReportingService;
+import com.ecm.core.integration.mail.service.MailReportScheduledExportService;
 import com.ecm.core.service.AuditService;
 import com.ecm.core.service.SecurityService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -42,6 +43,7 @@ public class MailAutomationController {
     private final MailOAuthService oauthService;
     private final MailProcessedRetentionService retentionService;
     private final MailReportingService reportingService;
+    private final MailReportScheduledExportService reportScheduledExportService;
     private final ProcessedMailRepository processedMailRepository;
     private final AuditService auditService;
     private final SecurityService securityService;
@@ -299,6 +301,10 @@ public class MailAutomationController {
         return true;
     }
 
+    private boolean isOauthReauthError(String value) {
+        return value != null && value.startsWith("OAUTH_REAUTH_REQUIRED:");
+    }
+
     @GetMapping("/oauth/authorize")
     @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Start OAuth connect", description = "Generate OAuth authorization URL for an account")
@@ -364,6 +370,31 @@ public class MailAutomationController {
     @Operation(summary = "List folders", description = "List available IMAP folders for a mail account")
     public ResponseEntity<List<String>> listAccountFolders(@PathVariable UUID id) {
         return ResponseEntity.ok(fetcherService.listFolders(id));
+    }
+
+    @PostMapping("/accounts/{id}/oauth/reset")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Reset OAuth state", description = "Clear stored OAuth tokens/cache so the account can reconnect")
+    public ResponseEntity<MailAccountResponse> resetOAuth(@PathVariable UUID id) {
+        MailAccount account = accountRepository.findById(id)
+            .orElseThrow(() -> new IllegalArgumentException("Mail account not found: " + id));
+        if (account.getSecurity() != MailAccount.SecurityType.OAUTH2) {
+            throw new IllegalArgumentException("Account is not configured for OAuth2: " + account.getName());
+        }
+
+        account.setOauthAccessToken(null);
+        account.setOauthRefreshToken(null);
+        account.setOauthTokenExpiresAt(null);
+
+        // If the last failure indicates OAuth must be reconnected, clear the sticky error/status so the UI can recover.
+        if (isOauthReauthError(account.getLastFetchError())) {
+            account.setLastFetchError(null);
+            account.setLastFetchStatus(null);
+        }
+
+        fetcherService.evictOAuthSession(account.getId());
+        MailAccount saved = accountRepository.save(account);
+        return ResponseEntity.ok(MailAccountResponse.from(saved, fetcherService.checkOAuthEnv(saved)));
     }
 
     @GetMapping("/diagnostics")
@@ -511,6 +542,20 @@ public class MailAutomationController {
             .body(csv);
     }
 
+    @GetMapping("/report/schedule")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Mail report schedule", description = "Get the configured mail report scheduled export settings")
+    public ResponseEntity<MailReportScheduledExportService.MailReportScheduleStatus> getReportSchedule() {
+        return ResponseEntity.ok(reportScheduledExportService.getScheduleStatus());
+    }
+
+    @PostMapping("/report/schedule/run")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Run scheduled mail report export now", description = "Trigger the scheduled mail report export immediately")
+    public ResponseEntity<MailReportScheduledExportService.ScheduledExportResult> runReportScheduleNow() {
+        return ResponseEntity.ok(reportScheduledExportService.exportNow(true));
+    }
+
     @PostMapping("/processed/bulk-delete")
     @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Bulk delete processed mail", description = "Delete processed mail records by id")
@@ -531,6 +576,19 @@ public class MailAutomationController {
         MailFetcherService.MailReplayResult result = fetcherService.replayProcessedMail(id);
         auditReplay(id, result);
         return ResponseEntity.ok(result);
+    }
+
+    @GetMapping("/processed/{id}/documents")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(
+        summary = "Processed mail documents",
+        description = "List documents ingested from a specific processed mail record"
+    )
+    public ResponseEntity<List<MailFetcherService.MailDocumentDiagnosticItem>> listProcessedMailDocuments(
+        @PathVariable UUID id,
+        @RequestParam(required = false) Integer limit
+    ) {
+        return ResponseEntity.ok(fetcherService.listProcessedMailDocuments(id, limit));
     }
 
     @GetMapping("/processed/retention")

@@ -34,6 +34,19 @@ public class SavedSearchController {
         return ResponseEntity.ok(savedSearchService.getMySavedSearches());
     }
 
+    @GetMapping("/{id}")
+    @Operation(summary = "Get saved search", description = "Get a saved search by id for the current user")
+    public ResponseEntity<SavedSearch> getSavedSearch(@PathVariable UUID id) {
+        return ResponseEntity.ok(savedSearchService.getMySavedSearch(id));
+    }
+
+    @PatchMapping("/{id}")
+    @Operation(summary = "Update saved search", description = "Update name and/or query params for an existing saved search")
+    public ResponseEntity<SavedSearch> updateSavedSearch(@PathVariable UUID id, @RequestBody UpdateSavedSearchRequest request) {
+        SavedSearch updated = savedSearchService.updateSavedSearch(id, request.name(), request.queryParams());
+        return ResponseEntity.ok(updated);
+    }
+
     @DeleteMapping("/{id}")
     @Operation(summary = "Delete saved search", description = "Delete a saved search configuration")
     public ResponseEntity<Void> deleteSavedSearch(@PathVariable UUID id) {
@@ -54,6 +67,8 @@ public class SavedSearchController {
     }
 
     public record SaveSearchRequest(String name, Map<String, Object> queryParams) {}
+
+    public record UpdateSavedSearchRequest(String name, Map<String, Object> queryParams) {}
 
     public record UpdatePinRequest(boolean pinned) {}
 }

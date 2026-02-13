@@ -81,7 +81,7 @@ class SearchControllerSecurityTest {
     @WithMockUser
     @DisplayName("Authenticated users can search")
     void searchAllowsAuthenticatedUser() throws Exception {
-        Mockito.when(fullTextSearchService.search("alpha", 0, 20, null, null))
+        Mockito.when(fullTextSearchService.search("alpha", 0, 20, null, null, null, true, List.of()))
             .thenReturn(new PageImpl<>(
                 List.of(SearchResult.builder().id("doc-1").build()),
                 PageRequest.of(0, 20),
@@ -92,7 +92,7 @@ class SearchControllerSecurityTest {
                 .param("q", "alpha"))
             .andExpect(status().isOk());
 
-        Mockito.verify(fullTextSearchService).search("alpha", 0, 20, null, null);
+        Mockito.verify(fullTextSearchService).search("alpha", 0, 20, null, null, null, true, List.of());
     }
 
     @Test

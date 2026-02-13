@@ -116,10 +116,12 @@ jobs:
             DC="docker compose"
           fi
 
+          # Keep the E2E gate stack minimal to reduce resource contention on CI runners.
+          # WOPI is disabled for this gate, so Collabora is unnecessary. Mail automation is also out of scope here.
           ECM_WOPI_ENABLED=false ECM_ANTIVIRUS_ENABLED=true ECM_PREVIEW_CAD_ENABLED=false \
-            ${DC} up -d postgres redis rabbitmq minio keycloak postgres-keycloak elasticsearch ml-service collabora clamav greenmail
+            ${DC} up -d postgres redis rabbitmq minio keycloak postgres-keycloak elasticsearch clamav
           ECM_WOPI_ENABLED=false ECM_ANTIVIRUS_ENABLED=true ECM_PREVIEW_CAD_ENABLED=false \
-            ${DC} up -d --build ecm-core ecm-frontend
+            ${DC} up -d --build --no-deps ecm-core ecm-frontend
 
       - name: Wait for stack readiness
         run: |
@@ -134,6 +136,9 @@ jobs:
             sleep 5
           done
           echo "E2E stack readiness timed out"
+          echo "actuator_health_body:"
+          curl -sS http://localhost:7700/actuator/health || true
+          echo
           exit 1
 
       - name: Run core E2E gate
@@ -165,6 +170,8 @@ jobs:
           docker compose logs --no-color ecm-frontend > tmp/ci-e2e-logs/ecm-frontend.log || true
           docker compose logs --no-color keycloak > tmp/ci-e2e-logs/keycloak.log || true
           docker compose logs --no-color postgres > tmp/ci-e2e-logs/postgres.log || true
+          docker compose logs --no-color elasticsearch > tmp/ci-e2e-logs/elasticsearch.log || true
+          docker compose logs --no-color redis > tmp/ci-e2e-logs/redis.log || true
 
       - name: Upload E2E artifacts (on failure)
         if: failure()

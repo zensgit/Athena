@@ -3,7 +3,9 @@ package com.ecm.core.preview;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.PreviewStatus;
 import com.ecm.core.repository.DocumentRepository;
+import com.ecm.core.search.SearchIndexService;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Optional;
@@ -18,7 +20,9 @@ class PreviewQueueServiceTest {
     void marksFailedWhenPreviewThrowsAndNoRetry() throws Exception {
         DocumentRepository documentRepository = mock(DocumentRepository.class);
         PreviewService previewService = mock(PreviewService.class);
-        PreviewQueueService service = new PreviewQueueService(documentRepository, previewService);
+        SearchIndexService searchIndexService = mock(SearchIndexService.class);
+        StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
+        PreviewQueueService service = new PreviewQueueService(documentRepository, previewService, searchIndexService, redisTemplate);
 
         ReflectionTestUtils.setField(service, "queueEnabled", true);
         ReflectionTestUtils.setField(service, "maxAttempts", 1);
@@ -39,5 +43,35 @@ class PreviewQueueServiceTest {
         assertEquals(PreviewStatus.FAILED, document.getPreviewStatus());
         assertEquals("boom", document.getPreviewFailureReason());
         verify(documentRepository, atLeastOnce()).save(document);
+        verify(searchIndexService, atLeastOnce()).updateDocument(document);
+    }
+
+    @Test
+    void skipsEnqueueForUnsupportedWhenNotForced() {
+        DocumentRepository documentRepository = mock(DocumentRepository.class);
+        PreviewService previewService = mock(PreviewService.class);
+        SearchIndexService searchIndexService = mock(SearchIndexService.class);
+        StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
+        PreviewQueueService service = new PreviewQueueService(documentRepository, previewService, searchIndexService, redisTemplate);
+
+        ReflectionTestUtils.setField(service, "queueEnabled", true);
+        ReflectionTestUtils.setField(service, "batchSize", 1);
+
+        UUID documentId = UUID.randomUUID();
+        Document document = new Document();
+        document.setId(documentId);
+        document.setPreviewStatus(PreviewStatus.UNSUPPORTED);
+
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+
+        PreviewQueueService.PreviewQueueStatus status = service.enqueue(documentId, false);
+
+        assertEquals(PreviewStatus.UNSUPPORTED, status.previewStatus());
+        assertEquals(false, status.queued());
+        verify(documentRepository, never()).save(any());
+        verifyNoInteractions(searchIndexService);
+
+        service.processQueue();
+        verifyNoInteractions(previewService);
     }
 }

@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -51,10 +52,36 @@ public class SearchController {
             @Parameter(description = "Sort field (relevance, name, modified, size)")
             @RequestParam(required = false) String sortBy,
             @Parameter(description = "Sort direction (asc, desc)")
-            @RequestParam(required = false) String sortDirection) {
+            @RequestParam(required = false) String sortDirection,
+            @Parameter(description = "Optional folder scope (UUID). When set, search is limited to this folder.")
+            @RequestParam(required = false) String folderId,
+            @Parameter(description = "When folderId is set, whether to include subfolders (default true).")
+            @RequestParam(defaultValue = "true") boolean includeChildren,
+            @Parameter(description = "Optional preview status filter (CSV). Example: READY,FAILED,UNSUPPORTED,PENDING")
+            @RequestParam(required = false, name = "previewStatus") String previewStatus) {
 
-        Page<SearchResult> results = fullTextSearchService.search(q, page, size, sortBy, sortDirection);
+        List<String> previewStatuses = parseCsvParam(previewStatus);
+        Page<SearchResult> results = fullTextSearchService.search(
+            q,
+            page,
+            size,
+            sortBy,
+            sortDirection,
+            folderId,
+            includeChildren,
+            previewStatuses
+        );
         return ResponseEntity.ok(results);
+    }
+
+    private static List<String> parseCsvParam(String csv) {
+        if (csv == null || csv.isBlank()) {
+            return List.of();
+        }
+        return Arrays.stream(csv.split(","))
+            .map(String::trim)
+            .filter(value -> !value.isBlank())
+            .toList();
     }
 
     @GetMapping("/diagnostics")

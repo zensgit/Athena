@@ -162,21 +162,23 @@ test('Version history actions: download + restore', async ({ page, request }) =>
   const folderId = await createFolder(request, uploadsId, folderName, token);
 
   const filename = `e2e-version-actions-${Date.now()}.txt`;
+  const initialMarker = `version-actions-initial-${Date.now()}`;
   const documentId = await uploadTextFile(
     request,
     folderId,
     filename,
-    `version-actions-initial-${Date.now()}\n`,
+    `${initialMarker}\n`,
     token,
   );
   await waitForVersionCount(request, documentId, token, 1);
 
   const checkinComment = `E2E version action ${Date.now()}`;
+  const updatedMarker = `version-actions-updated-${Date.now()}`;
   await checkinDocument(
     request,
     documentId,
     filename,
-    `version-actions-updated-${Date.now()}\n`,
+    `${updatedMarker}\n`,
     token,
     checkinComment,
   );
@@ -235,6 +237,11 @@ test('Version history actions: download + restore', async ({ page, request }) =>
   await expect(compareDialog.getByText(/Size delta/i)).toBeVisible({ timeout: 30_000 });
   await expect(compareDialog.getByText(/Hash changed/i)).toBeVisible({ timeout: 30_000 });
   await expect(compareDialog.getByText(/Major version|Status/i)).toBeVisible({ timeout: 30_000 });
+  await compareDialog.getByRole('button', { name: /Load text diff/i }).click();
+  const diffPre = compareDialog.locator('pre');
+  await expect(diffPre).toContainText('--- from', { timeout: 30_000 });
+  await expect(diffPre).toContainText(`- ${initialMarker}`, { timeout: 30_000 });
+  await expect(diffPre).toContainText(`+ ${updatedMarker}`, { timeout: 30_000 });
   await compareDialog.getByRole('button', { name: 'Close' }).click();
 
   const previousRow = versionsDialog.getByRole('row').filter({ hasText: previous.versionLabel }).first();

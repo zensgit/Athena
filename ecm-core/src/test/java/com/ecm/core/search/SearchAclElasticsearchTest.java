@@ -1,6 +1,7 @@
 package com.ecm.core.search;
 
 import com.ecm.core.entity.Document;
+import com.ecm.core.entity.Node.NodeType;
 import com.ecm.core.entity.Permission.PermissionType;
 import com.ecm.core.repository.DocumentRepository;
 import com.ecm.core.repository.NodeRepository;
@@ -217,6 +218,144 @@ class SearchAclElasticsearchTest {
         boolean hasDeleted = results.getContent().stream()
             .anyMatch(result -> result.getName().startsWith("zzz-deleted"));
         assertEquals(false, hasDeleted);
+    }
+
+    @Test
+    @DisplayName("Full-text search can filter by preview status (including UNSUPPORTED and synthetic PENDING)")
+    void fullTextSearchFiltersByPreviewStatus() {
+        Mockito.when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+
+        UUID pendingId = UUID.randomUUID();
+        UUID failedId = UUID.randomUUID();
+        UUID failedOctetId = UUID.randomUUID();
+        UUID unsupportedId = UUID.randomUUID();
+
+        NodeDocument pendingDoc = NodeDocument.builder()
+            .id(pendingId.toString())
+            .name("doc-pending")
+            .nameSort("doc-pending")
+            .nodeType(NodeType.DOCUMENT)
+            .mimeType("text/plain")
+            .deleted(false)
+            .build();
+
+        NodeDocument failedDoc = NodeDocument.builder()
+            .id(failedId.toString())
+            .name("doc-failed")
+            .nameSort("doc-failed")
+            .nodeType(NodeType.DOCUMENT)
+            .mimeType("application/pdf")
+            .previewStatus("FAILED")
+            .previewFailureReason("timeout")
+            .deleted(false)
+            .build();
+
+        // Simulate a stale/legacy unsupported failure that is still stored as FAILED in the index.
+        NodeDocument failedOctetDoc = NodeDocument.builder()
+            .id(failedOctetId.toString())
+            .name("doc-failed-octet")
+            .nameSort("doc-failed-octet")
+            .nodeType(NodeType.DOCUMENT)
+            .mimeType("application/octet-stream")
+            .previewStatus("FAILED")
+            .previewFailureReason("Preview not supported for mime type: application/octet-stream")
+            .deleted(false)
+            .build();
+
+        NodeDocument unsupportedDoc = NodeDocument.builder()
+            .id(unsupportedId.toString())
+            .name("doc-unsupported")
+            .nameSort("doc-unsupported")
+            .nodeType(NodeType.DOCUMENT)
+            .mimeType("application/octet-stream")
+            .previewStatus("UNSUPPORTED")
+            .previewFailureReason("Preview not supported for mime type: application/octet-stream")
+            .deleted(false)
+            .build();
+
+        indexDocuments(pendingDoc, failedDoc, failedOctetDoc, unsupportedDoc);
+
+        var pendingResults = fullTextSearchService.search(
+            "",
+            0,
+            10,
+            null,
+            null,
+            null,
+            true,
+            List.of("PENDING")
+        );
+        assertEquals(1, pendingResults.getTotalElements());
+        assertEquals(pendingId.toString(), pendingResults.getContent().get(0).getId());
+
+        var failedResults = fullTextSearchService.search(
+            "",
+            0,
+            10,
+            null,
+            null,
+            null,
+            true,
+            List.of("FAILED")
+        );
+        assertEquals(1, failedResults.getTotalElements());
+        assertEquals(failedId.toString(), failedResults.getContent().get(0).getId());
+
+        var unsupportedResults = fullTextSearchService.search(
+            "",
+            0,
+            10,
+            null,
+            null,
+            null,
+            true,
+            List.of("UNSUPPORTED")
+        );
+        assertEquals(2, unsupportedResults.getTotalElements());
+    }
+
+    @Test
+    @DisplayName("Faceted search supports preview status filtering")
+    void facetedSearchFiltersByPreviewStatus() {
+        Mockito.when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+
+        UUID readyId = UUID.randomUUID();
+        UUID unsupportedId = UUID.randomUUID();
+
+        NodeDocument readyDoc = NodeDocument.builder()
+            .id(readyId.toString())
+            .name("doc-ready")
+            .nameSort("doc-ready")
+            .nodeType(NodeType.DOCUMENT)
+            .mimeType("application/pdf")
+            .previewStatus("READY")
+            .deleted(false)
+            .build();
+
+        NodeDocument unsupportedDoc = NodeDocument.builder()
+            .id(unsupportedId.toString())
+            .name("doc-unsupported")
+            .nameSort("doc-unsupported")
+            .nodeType(NodeType.DOCUMENT)
+            .mimeType("application/octet-stream")
+            .previewStatus("UNSUPPORTED")
+            .previewFailureReason("Preview not supported for mime type: application/octet-stream")
+            .deleted(false)
+            .build();
+
+        indexDocuments(readyDoc, unsupportedDoc);
+
+        SearchFilters filters = new SearchFilters();
+        filters.setPreviewStatuses(List.of("UNSUPPORTED"));
+
+        FacetedSearchService.FacetedSearchRequest request = new FacetedSearchService.FacetedSearchRequest();
+        request.setFilters(filters);
+
+        FacetedSearchService.FacetedSearchResponse response = facetedSearchService.search(request);
+
+        assertEquals(1, response.getTotalHits());
+        assertEquals(1, response.getResults().getTotalElements());
+        assertEquals(unsupportedId.toString(), response.getResults().getContent().get(0).getId());
     }
 
     private void indexDocuments(NodeDocument... docs) {

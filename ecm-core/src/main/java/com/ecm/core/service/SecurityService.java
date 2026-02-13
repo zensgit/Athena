@@ -89,8 +89,9 @@ public class SecurityService {
     
     @Cacheable(value = "permissions", key = "#node.id + '_' + #permissionType + '_' + #username")
     public boolean hasPermission(Node node, PermissionType permissionType, String username) {
-        // Admin has all permissions
-        if (hasAuthority("ROLE_ADMIN") || hasRole("ROLE_ADMIN", username)) {
+        // Admin has all permissions for the evaluated user.
+        // Note: do not use the caller's authorities when evaluating another user.
+        if (hasRole("ROLE_ADMIN", username)) {
             return true;
         }
 
@@ -130,7 +131,9 @@ public class SecurityService {
             return new PermissionDecision(null, username, permissionType, false, "NODE_MISSING", null, List.of(), List.of());
         }
 
-        if (hasAuthority("ROLE_ADMIN") || hasRole("ROLE_ADMIN", username)) {
+        // Diagnostics should reflect the *target* user's authorities, not the caller's.
+        // Controller already enforces admin-only ability to diagnose other users.
+        if (hasRole("ROLE_ADMIN", username)) {
             return new PermissionDecision(node.getId(), username, permissionType, true, "ADMIN", null, List.of(), List.of());
         }
 
@@ -225,7 +228,12 @@ public class SecurityService {
     }
     
     public boolean hasRole(String roleName, String username) {
-        if (hasAuthority(roleName)) {
+        if (username == null || username.isBlank()) {
+            return false;
+        }
+
+        // Only short-circuit on the caller's JWT/authorities when checking the current user.
+        if (username.equals(getCurrentUser()) && hasAuthority(roleName)) {
             return true;
         }
 
@@ -253,7 +261,12 @@ public class SecurityService {
     }
     
     public boolean hasPrivilege(Privilege privilege, String username) {
-        if (hasAuthority("ROLE_ADMIN")) {
+        if (username == null || username.isBlank()) {
+            return false;
+        }
+
+        // Only short-circuit on the caller's JWT/authorities when checking the current user.
+        if (username.equals(getCurrentUser()) && hasAuthority("ROLE_ADMIN")) {
             return true;
         }
 

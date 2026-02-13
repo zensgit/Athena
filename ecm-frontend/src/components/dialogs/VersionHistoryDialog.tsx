@@ -26,6 +26,9 @@ import {
   Tooltip,
   Alert,
   Stack,
+  FormControl,
+  InputLabel,
+  Select,
 } from '@mui/material';
 import {
   Close,
@@ -60,9 +63,16 @@ const VersionHistoryDialog: React.FC = () => {
     version: Version;
   } | null>(null);
   const [comparePair, setComparePair] = useState<{
-    current: Version;
-    previous: Version;
+    to: Version;
+    from: Version;
   } | null>(null);
+  const [textDiff, setTextDiff] = useState<{
+    available: boolean;
+    truncated: boolean;
+    reason?: string | null;
+    diff?: string | null;
+  } | null>(null);
+  const [loadingTextDiff, setLoadingTextDiff] = useState(false);
 
   const pageSize = 20;
 
@@ -219,6 +229,48 @@ const VersionHistoryDialog: React.FC = () => {
     return items;
   };
 
+  const normalizeMimeType = (mimeType?: string | null) => (mimeType || '').split(';')[0]?.trim().toLowerCase();
+  const isTextLikeMimeType = (mimeType?: string | null) => {
+    const normalized = normalizeMimeType(mimeType);
+    if (!normalized) {
+      return false;
+    }
+    if (normalized.startsWith('text/')) {
+      return true;
+    }
+    return normalized === 'application/json'
+      || normalized === 'application/xml'
+      || normalized === 'text/xml'
+      || normalized === 'application/x-yaml'
+      || normalized === 'application/yaml'
+      || normalized === 'text/yaml';
+  };
+
+  const handleLoadTextDiff = async (toVersion: Version, fromVersion: Version) => {
+    if (!selectedNodeId) return;
+    setLoadingTextDiff(true);
+    setTextDiff(null);
+    try {
+      const diff = await nodeService.getVersionTextDiff(selectedNodeId, fromVersion.id, toVersion.id);
+      setTextDiff(diff);
+    } catch {
+      setTextDiff({ available: false, truncated: false, reason: 'Failed to load diff', diff: null });
+    } finally {
+      setLoadingTextDiff(false);
+    }
+  };
+
+  const downloadTextDiff = (toVersion: Version, fromVersion: Version, diff: string) => {
+    const baseName = `version-diff-${fromVersion.versionLabel}-to-${toVersion.versionLabel}`;
+    const blob = new Blob([diff], { type: 'text/plain;charset=utf-8' });
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${baseName}.diff.txt`;
+    anchor.click();
+    window.URL.revokeObjectURL(url);
+  };
+
   const renderVersionLabel = (version: Version, index: number) => {
     const hasDetails = Boolean(version.mimeType || version.contentHash || version.contentId || version.status);
     const label = (
@@ -256,6 +308,12 @@ const VersionHistoryDialog: React.FC = () => {
   const contextPrevious = contextMenu ? getPreviousVersion(contextMenu.version) : null;
   const currentVersion = versions[0] ?? null;
   const hasMore = versions.length < totalElements;
+
+  useEffect(() => {
+    // Reset content diff state when selecting a new compare pair.
+    setTextDiff(null);
+    setLoadingTextDiff(false);
+  }, [comparePair?.to?.id, comparePair?.from?.id]);
 
   return (
     <Dialog
@@ -420,7 +478,7 @@ const VersionHistoryDialog: React.FC = () => {
             disabled={!contextPrevious}
             onClick={() => {
               if (contextMenu && contextPrevious) {
-                setComparePair({ current: contextMenu.version, previous: contextPrevious });
+                setComparePair({ to: contextMenu.version, from: contextPrevious });
                 handleCloseContextMenu();
               }
             }}
@@ -434,7 +492,7 @@ const VersionHistoryDialog: React.FC = () => {
             disabled={!currentVersion || !contextMenu || contextMenu.version.id === currentVersion.id}
             onClick={() => {
               if (contextMenu && currentVersion && contextMenu.version.id !== currentVersion.id) {
-                setComparePair({ current: currentVersion, previous: contextMenu.version });
+                setComparePair({ to: currentVersion, from: contextMenu.version });
                 handleCloseContextMenu();
               }
             }}
@@ -480,10 +538,80 @@ const VersionHistoryDialog: React.FC = () => {
             <>
               <Box mb={2}>
                 <Typography variant="subtitle2" gutterBottom>
+                  Select Versions
+                </Typography>
+                <Box display="flex" gap={2} flexWrap="wrap" alignItems="center">
+                  <FormControl size="small" sx={{ minWidth: 200 }}>
+                    <InputLabel id="version-compare-from-label">From version</InputLabel>
+                    <Select
+                      labelId="version-compare-from-label"
+                      value={comparePair.from.id}
+                      label="From version"
+                      onChange={(event) => {
+                        const nextId = event.target.value as string;
+                        const next = versions.find((version) => version.id === nextId);
+                        if (!next) {
+                          return;
+                        }
+                        setComparePair((prev) => (prev ? { ...prev, from: next } : prev));
+                      }}
+                    >
+                      {versions.map((version, index) => (
+                        <MenuItem key={`from-${version.id}`} value={version.id}>
+                          {version.versionLabel}
+                          {index === 0 ? ' (Current)' : ''}
+                          {version.isMajor ? ' [Major]' : ''}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <FormControl size="small" sx={{ minWidth: 200 }}>
+                    <InputLabel id="version-compare-to-label">To version</InputLabel>
+                    <Select
+                      labelId="version-compare-to-label"
+                      value={comparePair.to.id}
+                      label="To version"
+                      onChange={(event) => {
+                        const nextId = event.target.value as string;
+                        const next = versions.find((version) => version.id === nextId);
+                        if (!next) {
+                          return;
+                        }
+                        setComparePair((prev) => (prev ? { ...prev, to: next } : prev));
+                      }}
+                    >
+                      {versions.map((version, index) => (
+                        <MenuItem key={`to-${version.id}`} value={version.id}>
+                          {version.versionLabel}
+                          {index === 0 ? ' (Current)' : ''}
+                          {version.isMajor ? ' [Major]' : ''}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <Typography variant="caption" color="text.secondary">
+                    Diff direction: From → To
+                  </Typography>
+                </Box>
+                {comparePair.from.id === comparePair.to.id && (
+                  <Alert severity="warning" sx={{ mt: 1 }}>
+                    Choose two different versions to compare.
+                  </Alert>
+                )}
+                {versions.length < totalElements && (
+                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+                    Only {versions.length} of {totalElements} versions are loaded. Use "Load more" in the history
+                    table to compare older versions.
+                  </Typography>
+                )}
+              </Box>
+
+              <Box mb={2}>
+                <Typography variant="subtitle2" gutterBottom>
                   Change Summary
                 </Typography>
                 {(() => {
-                  const summary = buildCompareSummary(comparePair.current, comparePair.previous);
+                  const summary = buildCompareSummary(comparePair.to, comparePair.from);
                   if (summary.length === 0) {
                     return (
                       <Typography variant="body2" color="text.secondary">
@@ -511,78 +639,138 @@ const VersionHistoryDialog: React.FC = () => {
                   <TableHead>
                     <TableRow>
                       <TableCell>Field</TableCell>
-                      <TableCell>Current</TableCell>
-                      <TableCell>Previous</TableCell>
+                      <TableCell>To</TableCell>
+                      <TableCell>From</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     <TableRow>
                       <TableCell>Version</TableCell>
-                      <TableCell>{comparePair.current.versionLabel}</TableCell>
-                      <TableCell>{comparePair.previous.versionLabel}</TableCell>
+                      <TableCell>{comparePair.to.versionLabel}</TableCell>
+                      <TableCell>{comparePair.from.versionLabel}</TableCell>
                     </TableRow>
                     <TableRow>
                       <TableCell>Major</TableCell>
-                      <TableCell>{comparePair.current.isMajor ? 'Yes' : 'No'}</TableCell>
-                      <TableCell>{comparePair.previous.isMajor ? 'Yes' : 'No'}</TableCell>
+                      <TableCell>{comparePair.to.isMajor ? 'Yes' : 'No'}</TableCell>
+                      <TableCell>{comparePair.from.isMajor ? 'Yes' : 'No'}</TableCell>
                     </TableRow>
                     <TableRow>
                       <TableCell>Created</TableCell>
-                      <TableCell>{format(new Date(comparePair.current.created), 'PPp')}</TableCell>
-                      <TableCell>{format(new Date(comparePair.previous.created), 'PPp')}</TableCell>
+                      <TableCell>{format(new Date(comparePair.to.created), 'PPp')}</TableCell>
+                      <TableCell>{format(new Date(comparePair.from.created), 'PPp')}</TableCell>
                     </TableRow>
                     <TableRow>
                       <TableCell>Creator</TableCell>
-                      <TableCell>{comparePair.current.creator}</TableCell>
-                      <TableCell>{comparePair.previous.creator}</TableCell>
+                      <TableCell>{comparePair.to.creator}</TableCell>
+                      <TableCell>{comparePair.from.creator}</TableCell>
                     </TableRow>
                     <TableRow>
                       <TableCell>Size</TableCell>
-                      <TableCell>{formatFileSize(comparePair.current.size)}</TableCell>
-                      <TableCell>{formatFileSize(comparePair.previous.size)}</TableCell>
+                      <TableCell>{formatFileSize(comparePair.to.size)}</TableCell>
+                      <TableCell>{formatFileSize(comparePair.from.size)}</TableCell>
                     </TableRow>
                     <TableRow>
                       <TableCell>Size delta</TableCell>
-                      <TableCell>{formatSizeDelta(comparePair.current, comparePair.previous)}</TableCell>
+                      <TableCell>{formatSizeDelta(comparePair.to, comparePair.from)}</TableCell>
                       <TableCell>—</TableCell>
                     </TableRow>
                     <TableRow>
                       <TableCell>Mime Type</TableCell>
-                      <TableCell>{comparePair.current.mimeType || '-'}</TableCell>
-                      <TableCell>{comparePair.previous.mimeType || '-'}</TableCell>
+                      <TableCell>{comparePair.to.mimeType || '-'}</TableCell>
+                      <TableCell>{comparePair.from.mimeType || '-'}</TableCell>
                     </TableRow>
                     <TableRow>
                       <TableCell>Checksum</TableCell>
-                      <TableCell>{comparePair.current.contentHash || '-'}</TableCell>
-                      <TableCell>{comparePair.previous.contentHash || '-'}</TableCell>
+                      <TableCell>{comparePair.to.contentHash || '-'}</TableCell>
+                      <TableCell>{comparePair.from.contentHash || '-'}</TableCell>
                     </TableRow>
                     <TableRow>
                       <TableCell>Hash changed</TableCell>
                       <TableCell>
-                        {comparePair.current.contentHash && comparePair.previous.contentHash
-                          ? (comparePair.current.contentHash === comparePair.previous.contentHash ? 'No' : 'Yes')
+                        {comparePair.to.contentHash && comparePair.from.contentHash
+                          ? (comparePair.to.contentHash === comparePair.from.contentHash ? 'No' : 'Yes')
                           : '—'}
                       </TableCell>
                       <TableCell>—</TableCell>
                     </TableRow>
                     <TableRow>
                       <TableCell>Content ID</TableCell>
-                      <TableCell>{comparePair.current.contentId || '-'}</TableCell>
-                      <TableCell>{comparePair.previous.contentId || '-'}</TableCell>
+                      <TableCell>{comparePair.to.contentId || '-'}</TableCell>
+                      <TableCell>{comparePair.from.contentId || '-'}</TableCell>
                     </TableRow>
                     <TableRow>
                       <TableCell>Status</TableCell>
-                      <TableCell>{comparePair.current.status || '-'}</TableCell>
-                      <TableCell>{comparePair.previous.status || '-'}</TableCell>
+                      <TableCell>{comparePair.to.status || '-'}</TableCell>
+                      <TableCell>{comparePair.from.status || '-'}</TableCell>
                     </TableRow>
                     <TableRow>
                       <TableCell>Comment</TableCell>
-                      <TableCell>{comparePair.current.comment || '-'}</TableCell>
-                      <TableCell>{comparePair.previous.comment || '-'}</TableCell>
+                      <TableCell>{comparePair.to.comment || '-'}</TableCell>
+                      <TableCell>{comparePair.from.comment || '-'}</TableCell>
                     </TableRow>
                   </TableBody>
                 </Table>
               </TableContainer>
+
+              <Box mt={2}>
+                <Typography variant="subtitle2" gutterBottom>
+                  Content Diff (Text)
+                </Typography>
+                {comparePair.to.id === comparePair.from.id && (
+                  <Typography variant="body2" color="text.secondary">
+                    Select two different versions to enable diff.
+                  </Typography>
+                )}
+                {comparePair.to.id !== comparePair.from.id
+                  && (!isTextLikeMimeType(comparePair.to.mimeType) || !isTextLikeMimeType(comparePair.from.mimeType)) && (
+                  <Typography variant="body2" color="text.secondary">
+                    Text diff is available for text documents only. Download the two versions to compare externally.
+                  </Typography>
+                )}
+                {comparePair.to.id !== comparePair.from.id
+                  && isTextLikeMimeType(comparePair.to.mimeType)
+                  && isTextLikeMimeType(comparePair.from.mimeType) && (
+                  <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap" mb={1}>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => handleLoadTextDiff(comparePair.to, comparePair.from)}
+                      disabled={loadingTextDiff}
+                    >
+                      Load text diff
+                    </Button>
+                    {textDiff?.available && textDiff.diff && (
+                      <Button
+                        size="small"
+                        variant="text"
+                        onClick={() => downloadTextDiff(comparePair.to, comparePair.from, textDiff.diff || '')}
+                      >
+                        Download diff
+                      </Button>
+                    )}
+                    {loadingTextDiff && <CircularProgress size={16} />}
+                    {textDiff?.truncated && (
+                      <Chip size="small" label="Truncated" variant="outlined" />
+                    )}
+                  </Stack>
+                )}
+                {textDiff && !textDiff.available && (
+                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                    {textDiff.reason || 'Diff unavailable'}
+                  </Typography>
+                )}
+                {textDiff?.available && textDiff.diff && (
+                  <Paper variant="outlined" sx={{ p: 1, bgcolor: 'grey.50', maxHeight: 240, overflow: 'auto' }}>
+                    <Typography
+                      component="pre"
+                      variant="caption"
+                      sx={{ m: 0, whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}
+                    >
+                      {textDiff.diff}
+                    </Typography>
+                  </Paper>
+                )}
+              </Box>
             </>
           )}
         </DialogContent>

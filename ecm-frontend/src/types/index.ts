@@ -104,6 +104,7 @@ export interface SearchCriteria {
   aspects?: string[];
   contentType?: string;
   mimeTypes?: string[];
+  previewStatuses?: string[];
   createdBy?: string;
   createdByList?: string[];
   createdFrom?: string;
@@ -116,6 +117,8 @@ export interface SearchCriteria {
   minSize?: number;
   maxSize?: number;
   path?: string;
+  folderId?: string;
+  includeChildren?: boolean;
   page?: number;
   size?: number;
   sortBy?: string;

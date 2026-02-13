@@ -2,10 +2,13 @@ package com.ecm.core.preview;
 
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.PreviewStatus;
+import com.ecm.core.queue.RedisScheduledQueueStore;
 import com.ecm.core.repository.DocumentRepository;
+import com.ecm.core.search.SearchIndexService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -14,6 +17,7 @@ import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -29,11 +33,21 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 @RequiredArgsConstructor
 public class PreviewQueueService {
 
+    private static final String REDIS_SCHEDULE_KEY = "ecm:queue:preview:schedule";
+    private static final String REDIS_ATTEMPTS_KEY = "ecm:queue:preview:attempts";
+    private static final String REDIS_LOCK_PREFIX = "ecm:queue:preview:lock:";
+    private static final Duration REDIS_LOCK_TTL = Duration.ofMinutes(10);
+
     private final DocumentRepository documentRepository;
     private final PreviewService previewService;
+    private final SearchIndexService searchIndexService;
+    private final StringRedisTemplate redisTemplate;
 
     @Value("${ecm.preview.queue.enabled:true}")
     private boolean queueEnabled;
+
+    @Value("${ecm.preview.queue.backend:memory}")
+    private String queueBackend;
 
     @Value("${ecm.preview.queue.max-attempts:3}")
     private int maxAttempts;
@@ -58,8 +72,12 @@ public class PreviewQueueService {
             .orElseThrow(() -> new IllegalArgumentException("Document not found: " + documentId));
 
         PreviewStatus status = document.getPreviewStatus();
-        if (!force && status == PreviewStatus.READY) {
+        if (!force && (status == PreviewStatus.READY || status == PreviewStatus.UNSUPPORTED)) {
             return new PreviewQueueStatus(documentId, status, false, 0, null);
+        }
+
+        if (useRedisBackend()) {
+            return enqueueRedis(document, force);
         }
 
         PreviewJob existing = queuedJobs.get(documentId);
@@ -78,6 +96,11 @@ public class PreviewQueueService {
 
     @Scheduled(fixedDelayString = "${ecm.preview.queue.poll-interval-ms:2000}")
     public void processQueue() {
+        if (useRedisBackend()) {
+            processRedisQueue();
+            return;
+        }
+
         if (!queueEnabled) {
             return;
         }
@@ -134,6 +157,79 @@ public class PreviewQueueService {
         queuedJobs.remove(documentId);
     }
 
+    private PreviewQueueStatus enqueueRedis(Document document, boolean force) {
+        UUID documentId = document.getId();
+        PreviewStatus status = document.getPreviewStatus();
+
+        RedisScheduledQueueStore store = redisStore();
+        RedisScheduledQueueStore.Entry existing = store.getOrNull(documentId);
+        if (existing != null) {
+            return new PreviewQueueStatus(documentId, status, true, existing.attempts(), existing.nextAttemptAt());
+        }
+
+        RedisScheduledQueueStore.Entry job = store.enqueueIfAbsent(documentId, Instant.now());
+        markProcessing(document);
+        log.info("Queued preview generation for document {} (redis)", documentId);
+        return new PreviewQueueStatus(documentId, status, true, job.attempts(), job.nextAttemptAt());
+    }
+
+    private void processRedisQueue() {
+        if (!queueEnabled) {
+            return;
+        }
+        int limit = Math.max(1, batchSize);
+        Instant now = Instant.now();
+
+        RedisScheduledQueueStore store = redisStore();
+        List<RedisScheduledQueueStore.Entry> due = store.claimDue(limit, now);
+        for (RedisScheduledQueueStore.Entry entry : due) {
+            try {
+                handleRedisJob(store, entry);
+            } finally {
+                // Release is idempotent; complete() also releases.
+                store.release(entry.documentId());
+            }
+        }
+    }
+
+    private void handleRedisJob(RedisScheduledQueueStore store, RedisScheduledQueueStore.Entry entry) {
+        UUID documentId = entry.documentId();
+        Document document = documentRepository.findById(documentId).orElse(null);
+        if (document == null) {
+            store.complete(documentId);
+            return;
+        }
+
+        try {
+            PreviewResult result = runAsSystem(() -> previewService.generatePreview(document));
+            boolean retry = shouldRetry(result);
+            if (retry && entry.attempts() + 1 < maxAttempts) {
+                markRetrying(document, result != null ? result.getMessage() : "Preview retry scheduled");
+                int nextAttempts = entry.attempts() + 1;
+                Instant nextRunAt = Instant.now().plusMillis(Math.max(1000, retryDelayMs));
+                store.scheduleRetry(documentId, nextAttempts, nextRunAt);
+                log.info("Scheduled preview retry {} for document {} at {} (redis)", nextAttempts, documentId, nextRunAt);
+                return;
+            }
+            if (retry) {
+                markFailed(document, result != null ? result.getMessage() : "Preview failed after retries");
+            }
+        } catch (Exception e) {
+            if (entry.attempts() + 1 < maxAttempts) {
+                markRetrying(document, e.getMessage());
+                int nextAttempts = entry.attempts() + 1;
+                Instant nextRunAt = Instant.now().plusMillis(Math.max(1000, retryDelayMs));
+                store.scheduleRetry(documentId, nextAttempts, nextRunAt);
+                log.info("Scheduled preview retry {} for document {} at {} (redis)", nextAttempts, documentId, nextRunAt);
+                return;
+            }
+            markFailed(document, e.getMessage());
+            log.warn("Preview generation failed for {} after {} attempts: {}", documentId, entry.attempts() + 1, e.getMessage());
+        }
+
+        store.complete(documentId);
+    }
+
     private void scheduleRetry(PreviewJob job) {
         int nextAttempts = job.attempts() + 1;
         Instant nextRunAt = Instant.now().plusMillis(Math.max(1000, retryDelayMs));
@@ -150,6 +246,11 @@ public class PreviewQueueService {
             document.setPreviewLastUpdated(LocalDateTime.now());
             document.setPreviewAvailable(false);
             documentRepository.save(document);
+            try {
+                searchIndexService.updateDocument(document);
+            } catch (Exception indexError) {
+                log.debug("Failed to index preview processing status for {}: {}", document.getId(), indexError.getMessage());
+            }
         } catch (Exception e) {
             log.warn("Failed to mark preview as processing for {}: {}", document.getId(), e.getMessage());
         }
@@ -162,6 +263,11 @@ public class PreviewQueueService {
             document.setPreviewLastUpdated(LocalDateTime.now());
             document.setPreviewAvailable(false);
             documentRepository.save(document);
+            try {
+                searchIndexService.updateDocument(document);
+            } catch (Exception indexError) {
+                log.debug("Failed to index preview retry status for {}: {}", document.getId(), indexError.getMessage());
+            }
         } catch (Exception e) {
             log.warn("Failed to mark preview retry for {}: {}", document.getId(), e.getMessage());
         }
@@ -174,6 +280,11 @@ public class PreviewQueueService {
             document.setPreviewLastUpdated(LocalDateTime.now());
             document.setPreviewAvailable(false);
             documentRepository.save(document);
+            try {
+                searchIndexService.updateDocument(document);
+            } catch (Exception indexError) {
+                log.debug("Failed to index preview failed status for {}: {}", document.getId(), indexError.getMessage());
+            }
         } catch (Exception e) {
             log.warn("Failed to mark preview failed for {}: {}", document.getId(), e.getMessage());
         }
@@ -217,6 +328,20 @@ public class PreviewQueueService {
     @FunctionalInterface
     private interface PreviewTask<T> {
         T run() throws Exception;
+    }
+
+    private boolean useRedisBackend() {
+        return "redis".equalsIgnoreCase(queueBackend);
+    }
+
+    private RedisScheduledQueueStore redisStore() {
+        return new RedisScheduledQueueStore(
+            redisTemplate,
+            REDIS_SCHEDULE_KEY,
+            REDIS_ATTEMPTS_KEY,
+            REDIS_LOCK_PREFIX,
+            REDIS_LOCK_TTL
+        );
     }
 
     public record PreviewQueueStatus(

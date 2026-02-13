@@ -14,6 +14,8 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ENV_MAIL_FILE="${REPO_ROOT}/.env.mail"
+ENV_MAIL_EXAMPLE_FILE="${REPO_ROOT}/.env.mail.example"
 DOCKER_HOME_DIR="${REPO_ROOT}/tmp/docker-home"
 DOCKER_CONFIG_DIR="${DOCKER_HOME_DIR}/.docker"
 mkdir -p "${DOCKER_CONFIG_DIR}"
@@ -31,6 +33,28 @@ docker_compose() {
     HOME="${DOCKER_HOME_DIR}" DOCKER_CONFIG="${DOCKER_CONFIG_DIR}" docker compose --project-directory "${REPO_ROOT}" -f "${REPO_ROOT}/docker-compose.yml" "$@"
   fi
 }
+
+ensure_env_mail() {
+  if [[ -f "${ENV_MAIL_FILE}" ]]; then
+    return 0
+  fi
+
+  if [[ -f "${ENV_MAIL_EXAMPLE_FILE}" ]]; then
+    cp "${ENV_MAIL_EXAMPLE_FILE}" "${ENV_MAIL_FILE}"
+    chmod 600 "${ENV_MAIL_FILE}" 2>/dev/null || true
+    echo "info: .env.mail was missing; created from .env.mail.example (placeholders only)."
+    return 0
+  fi
+
+  cat > "${ENV_MAIL_FILE}" <<'EOF'
+# Placeholder for mail automation OAuth/IMAP settings (gitignored).
+# If you need real mail automation, copy from .env.mail.example and fill values.
+EOF
+  chmod 600 "${ENV_MAIL_FILE}" 2>/dev/null || true
+  echo "info: .env.mail was missing; created a placeholder file."
+}
+
+ensure_env_mail
 
 repair_rabbitmq_plugins_expand() {
   local rabbitmq_cid
@@ -74,8 +98,9 @@ repair_rabbitmq_plugins_expand() {
 
 repair_rabbitmq_plugins_expand
 
-docker_compose build ecm-core ecm-frontend
-docker_compose up -d --no-deps --force-recreate ecm-core ecm-frontend
+# Keep ml-service in sync with repo changes (e.g., OCR deps/endpoints).
+docker_compose build ml-service ecm-core ecm-frontend
+docker_compose up -d --no-deps --force-recreate ml-service ecm-core ecm-frontend
 
 echo "OK"
 echo "Frontend: http://localhost:${ECM_FRONTEND_PORT:-3000}/"

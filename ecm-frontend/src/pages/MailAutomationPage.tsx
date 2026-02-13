@@ -40,7 +40,9 @@ import {
   Refresh,
   Search,
   Visibility,
+  ListAlt,
   ContentCopy,
+  RestartAlt,
   ArrowUpward,
   ArrowDownward,
 } from '@mui/icons-material';
@@ -68,6 +70,7 @@ import mailAutomationService, {
   MailReportAccountRow,
   MailReportRuleRow,
   MailReportTrendRow,
+  MailReportScheduleStatus,
   MailDiagnosticsSortField,
   MailDiagnosticsSortOrder,
   MailRuntimeMetrics,
@@ -145,6 +148,11 @@ const DIAGNOSTICS_QUERY_PARAMS = {
   sort: 'dSort',
   order: 'dOrder',
 } as const;
+const REPORT_QUERY_PARAMS = {
+  accountId: 'rAccount',
+  ruleId: 'rRule',
+  days: 'rDays',
+} as const;
 const DIAGNOSTICS_SORT_FIELDS: MailDiagnosticsSortField[] = ['processedAt', 'status', 'rule', 'account'];
 const DIAGNOSTICS_SORT_ORDERS: MailDiagnosticsSortOrder[] = ['desc', 'asc'];
 type RuleDiagnosticsTimeRange = 'ALL' | '24H' | '7D' | '30D';
@@ -154,6 +162,14 @@ const RULE_DIAGNOSTICS_TIME_RANGES: Array<{ value: RuleDiagnosticsTimeRange; lab
   { value: '7D', label: 'Last 7 days' },
   { value: '30D', label: 'Last 30 days' },
 ];
+
+const formatRunIdLabel = (runId?: string | null) => {
+  const trimmed = (runId || '').trim();
+  if (!trimmed) {
+    return '';
+  }
+  return trimmed.length > 8 ? `Run ${trimmed.slice(0, 8)}` : `Run ${trimmed}`;
+};
 
 const MailAutomationPage: React.FC = () => {
   const location = useLocation();
@@ -171,9 +187,15 @@ const MailAutomationPage: React.FC = () => {
   const [summaryAccountId, setSummaryAccountId] = useState('');
   const [report, setReport] = useState<MailReportResponse | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
+  const [reportSchedule, setReportSchedule] = useState<MailReportScheduleStatus | null>(null);
+  const [reportScheduleLoading, setReportScheduleLoading] = useState(false);
+  const [reportScheduleFolderPath, setReportScheduleFolderPath] = useState('');
   const [reportAccountId, setReportAccountId] = useState('');
   const [reportRuleId, setReportRuleId] = useState('');
-  const [reportDays, setReportDays] = useState(7);
+  const [reportAccountTouched, setReportAccountTouched] = useState(false);
+  const [reportRuleTouched, setReportRuleTouched] = useState(false);
+  const [reportDays, setReportDays] = useState(30);
+  const [reportFiltersLoaded, setReportFiltersLoaded] = useState(false);
   const [runtimeMetrics, setRuntimeMetrics] = useState<MailRuntimeMetrics | null>(null);
   const [runtimeMetricsLoading, setRuntimeMetricsLoading] = useState(false);
   const [runtimeWindowMinutes, setRuntimeWindowMinutes] = useState(60);
@@ -208,6 +230,11 @@ const MailAutomationPage: React.FC = () => {
   const [retentionCleaning, setRetentionCleaning] = useState(false);
   const [selectedProcessedIds, setSelectedProcessedIds] = useState<string[]>([]);
   const [replayingProcessedId, setReplayingProcessedId] = useState<string | null>(null);
+  const [processedDocsDialogOpen, setProcessedDocsDialogOpen] = useState(false);
+  const [processedDocsLoading, setProcessedDocsLoading] = useState(false);
+  const [processedDocsError, setProcessedDocsError] = useState('');
+  const [processedDocsContext, setProcessedDocsContext] = useState<ProcessedMailDiagnosticItem | null>(null);
+  const [processedDocsItems, setProcessedDocsItems] = useState<MailDocumentDiagnosticItem[]>([]);
   const [expandedRuleErrorRuleId, setExpandedRuleErrorRuleId] = useState('');
   const [ruleDiagnosticsDrawerOpen, setRuleDiagnosticsDrawerOpen] = useState(false);
   const [ruleDiagnosticsFocusRuleId, setRuleDiagnosticsFocusRuleId] = useState('');
@@ -244,6 +271,7 @@ const MailAutomationPage: React.FC = () => {
     }
   });
   const [testingAccountId, setTestingAccountId] = useState<string | null>(null);
+  const [resettingAccountId, setResettingAccountId] = useState<string | null>(null);
 
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
   const [accountForm, setAccountForm] = useState<MailAccountRequest>(DEFAULT_ACCOUNT_FORM);
@@ -326,9 +354,21 @@ const MailAutomationPage: React.FC = () => {
 
   const formatCount = (value?: number | null) => new Intl.NumberFormat().format(value ?? 0);
 
+  const isOauthReauthError = (value?: string | null) => {
+    const raw = (value || '').trim().toLowerCase();
+    if (!raw) {
+      return false;
+    }
+    return raw.includes('oauth_reauth_required') || raw.includes('invalid_grant');
+  };
+
   const summarizeError = (value?: string | null, maxLength = 160) => {
     if (!value) {
       return '';
+    }
+    if (isOauthReauthError(value)) {
+      // Keep this short: it's shown in chips/tooltips and should be actionable.
+      return 'OAuth reauth required (token revoked/expired). Reconnect OAuth.';
     }
     if (value.length <= maxLength) {
       return value;
@@ -380,6 +420,17 @@ const MailAutomationPage: React.FC = () => {
     return 'default';
   };
 
+  const scheduledExportColor = (status?: string | null): 'default' | 'success' | 'error' => {
+    const normalized = (status || '').trim().toUpperCase();
+    if (normalized === 'FAILED') {
+      return 'error';
+    }
+    if (normalized === 'SUCCESS') {
+      return 'success';
+    }
+    return 'default';
+  };
+
   const runtimeStatusColor = (status?: string | null): 'default' | 'success' | 'warning' | 'error' => {
     if (status === 'HEALTHY') {
       return 'success';
@@ -410,7 +461,8 @@ const MailAutomationPage: React.FC = () => {
     const local = new Date(value.getTime() - value.getTimezoneOffset() * 60000);
     return local.toISOString().slice(0, 16);
   };
-  const processedKey = (accountId?: string | null, uid?: string | null) => `${accountId || ''}::${uid || ''}`;
+  const processedKey = (accountId?: string | null, folder?: string | null, uid?: string | null) =>
+    `${accountId || ''}::${folder || ''}::${uid || ''}`;
 
   const loadRetention = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent === true;
@@ -523,6 +575,30 @@ const MailAutomationPage: React.FC = () => {
     }
   }, [reportAccountId, reportRuleId, reportDays]);
 
+  const loadReportSchedule = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true;
+    if (!silent) {
+      setReportScheduleLoading(true);
+    }
+    try {
+      const status = await mailAutomationService.getReportSchedule();
+      setReportSchedule(status);
+      if (status.folderId) {
+        nodeService.getNode(status.folderId)
+          .then((node) => setReportScheduleFolderPath(node.path || node.name || ''))
+          .catch(() => setReportScheduleFolderPath(''));
+      } else {
+        setReportScheduleFolderPath('');
+      }
+    } catch {
+      if (!silent) {
+        toast.error('Failed to load report schedule status');
+      }
+    } finally {
+      setReportScheduleLoading(false);
+    }
+  }, []);
+
   const loadRuntimeMetrics = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent === true;
     if (!silent) {
@@ -550,8 +626,37 @@ const MailAutomationPage: React.FC = () => {
   }, [loadAll]);
 
   useEffect(() => {
+    try {
+      const params = new URLSearchParams(initialDiagnosticsSearchRef.current);
+      const accountId = params.get(REPORT_QUERY_PARAMS.accountId) || '';
+      const ruleId = params.get(REPORT_QUERY_PARAMS.ruleId) || '';
+      const daysRaw = params.get(REPORT_QUERY_PARAMS.days) || '';
+      const daysParsed = Number(daysRaw);
+      const days = [7, 14, 30, 60, 90].includes(daysParsed) ? daysParsed : 30;
+      if (accountId) {
+        setReportAccountId(accountId);
+      }
+      if (ruleId) {
+        setReportRuleId(ruleId);
+      }
+      if (days !== 30) {
+        setReportDays(days);
+      }
+    } finally {
+      setReportFiltersLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!reportFiltersLoaded) {
+      return;
+    }
     loadReport();
-  }, [loadReport]);
+  }, [reportFiltersLoaded, loadReport]);
+
+  useEffect(() => {
+    loadReportSchedule({ silent: true });
+  }, [loadReportSchedule]);
 
   useEffect(() => {
     loadRuntimeMetrics();
@@ -614,6 +719,48 @@ const MailAutomationPage: React.FC = () => {
       setSummaryAccountId(accounts[0].id);
     }
   }, [accounts, summaryAccountId]);
+
+  useEffect(() => {
+    if (accounts.length === 0) {
+      if (reportAccountId) {
+        setReportAccountId('');
+      }
+      if (reportAccountTouched) {
+        setReportAccountTouched(false);
+      }
+      return;
+    }
+    const stillExists = accounts.some((account) => account.id === reportAccountId);
+    if (reportAccountId && !stillExists) {
+      setReportAccountId('');
+      setReportAccountTouched(false);
+      return;
+    }
+    if (!reportAccountTouched && !reportAccountId && accounts.length === 1) {
+      setReportAccountId(accounts[0].id);
+    }
+  }, [accounts, reportAccountId, reportAccountTouched]);
+
+  useEffect(() => {
+    if (rules.length === 0) {
+      if (reportRuleId) {
+        setReportRuleId('');
+      }
+      if (reportRuleTouched) {
+        setReportRuleTouched(false);
+      }
+      return;
+    }
+    const stillExists = rules.some((rule) => rule.id === reportRuleId);
+    if (reportRuleId && !stillExists) {
+      setReportRuleId('');
+      setReportRuleTouched(false);
+      return;
+    }
+    if (!reportRuleTouched && !reportRuleId && rules.length === 1) {
+      setReportRuleId(rules[0].id);
+    }
+  }, [rules, reportRuleId, reportRuleTouched]);
 
   const handleClearDiagnosticsFilters = () => {
     setDiagnosticsAccountId('');
@@ -768,6 +915,46 @@ const MailAutomationPage: React.FC = () => {
   ]);
 
   useEffect(() => {
+    if (!reportFiltersLoaded) {
+      return;
+    }
+    const params = new URLSearchParams(location.search);
+    const setOrDelete = (key: string, value: string) => {
+      if (value) {
+        params.set(key, value);
+      } else {
+        params.delete(key);
+      }
+    };
+    setOrDelete(REPORT_QUERY_PARAMS.accountId, reportAccountId);
+    setOrDelete(REPORT_QUERY_PARAMS.ruleId, reportRuleId);
+    setOrDelete(REPORT_QUERY_PARAMS.days, reportDays !== 30 ? String(reportDays) : '');
+
+    const currentSearch = location.search.startsWith('?') ? location.search.slice(1) : location.search;
+    const nextSearch = params.toString();
+    if (nextSearch === currentSearch) {
+      return;
+    }
+    navigate(
+      {
+        pathname: location.pathname,
+        search: nextSearch ? `?${nextSearch}` : '',
+        hash: location.hash,
+      },
+      { replace: true }
+    );
+  }, [
+    reportFiltersLoaded,
+    reportAccountId,
+    reportRuleId,
+    reportDays,
+    location.pathname,
+    location.search,
+    location.hash,
+    navigate,
+  ]);
+
+  useEffect(() => {
     if (!diagnosticsFiltersLoaded) {
       return;
     }
@@ -910,8 +1097,8 @@ const MailAutomationPage: React.FC = () => {
   const recentDocumentByProcessedKey = useMemo(() => {
     const map = new Map<string, MailDocumentDiagnosticItem>();
     recentDocuments.forEach((doc) => {
-      const key = processedKey(doc.accountId, doc.uid);
-      if (!key.endsWith('::')) {
+      const key = processedKey(doc.accountId, doc.folder, doc.uid);
+      if (doc.accountId && doc.folder && doc.uid) {
         map.set(key, doc);
       }
     });
@@ -923,6 +1110,15 @@ const MailAutomationPage: React.FC = () => {
   const diagnosticsRuleNameById = useMemo(() => {
     return new Map(rules.map((rule) => [rule.id, rule.name]));
   }, [rules]);
+  const reportSelectionSummary = useMemo(() => {
+    const accountLabel = reportAccountId
+      ? (accountNameById.get(reportAccountId) || reportAccountId)
+      : 'All accounts';
+    const ruleLabel = reportRuleId
+      ? (diagnosticsRuleNameById.get(reportRuleId) || reportRuleId)
+      : 'All rules';
+    return `Selected window: last ${reportDays} days • Account: ${accountLabel} • Rule: ${ruleLabel}`;
+  }, [reportAccountId, reportRuleId, reportDays, accountNameById, diagnosticsRuleNameById]);
   const reportTotals = report?.totals;
   const maxTrendTotal = Math.max(1, ...reportTrend.map((row) => row.total));
   const exportDisabled = !exportOptions.includeProcessed && !exportOptions.includeDocuments;
@@ -1256,6 +1452,18 @@ const MailAutomationPage: React.FC = () => {
       toast.error('Failed to copy error message');
     }
   };
+  const copyRunId = async (runId?: string | null) => {
+    const payload = (runId || '').trim();
+    if (!payload) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(payload);
+      toast.success('Run id copied');
+    } catch {
+      toast.error('Failed to copy run id');
+    }
+  };
   const handleCopyDiagnosticsLink = async () => {
     try {
       const shareUrl = `${window.location.origin}${location.pathname}${location.search}#diagnostics`;
@@ -1438,6 +1646,34 @@ const MailAutomationPage: React.FC = () => {
       toast.error('Failed to test connection');
     } finally {
       setTestingAccountId((current) => (current === accountId ? null : current));
+    }
+  };
+
+  const handleResetOAuth = async (account: MailAccount) => {
+    if (!account.id) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Reset OAuth state for "${account.name}"? You will need to reconnect OAuth to fetch mail again.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setResettingAccountId(account.id);
+    try {
+      await mailAutomationService.resetOAuth(account.id);
+      toast.success('OAuth reset. Reconnect required.');
+      const ok = await loadAll({ silent: true });
+      if (ok) {
+        await loadDiagnostics({ silent: true });
+        await loadRuntimeMetrics({ silent: true });
+      }
+    } catch {
+      toast.error('Failed to reset OAuth');
+    } finally {
+      setResettingAccountId((current) => (current === account.id ? null : current));
     }
   };
 
@@ -1753,6 +1989,31 @@ const MailAutomationPage: React.FC = () => {
     });
   };
 
+  const handleOpenProcessedDocuments = async (item: ProcessedMailDiagnosticItem) => {
+    setProcessedDocsContext(item);
+    setProcessedDocsDialogOpen(true);
+    setProcessedDocsLoading(true);
+    setProcessedDocsItems([]);
+    setProcessedDocsError('');
+    try {
+      const docs = await mailAutomationService.listProcessedMailDocuments(item.id, 200);
+      setProcessedDocsItems(docs);
+    } catch {
+      setProcessedDocsError('Failed to load ingested mail documents');
+      toast.error('Failed to load ingested mail documents');
+    } finally {
+      setProcessedDocsLoading(false);
+    }
+  };
+
+  const handleCloseProcessedDocuments = () => {
+    setProcessedDocsDialogOpen(false);
+    setProcessedDocsContext(null);
+    setProcessedDocsItems([]);
+    setProcessedDocsLoading(false);
+    setProcessedDocsError('');
+  };
+
   const selectedTag = tags.find((tag) => tag.id === ruleForm.assignTagId) || null;
   const mailActionHelper =
     ruleForm.mailAction === 'MOVE'
@@ -2049,7 +2310,10 @@ const MailAutomationPage: React.FC = () => {
                     labelId="report-account-label"
                     label="Account"
                     value={reportAccountId}
-                    onChange={(event) => setReportAccountId(event.target.value)}
+                    onChange={(event) => {
+                      setReportAccountTouched(true);
+                      setReportAccountId(event.target.value);
+                    }}
                   >
                     <MenuItem value="">All accounts</MenuItem>
                     {accounts.map((account) => (
@@ -2065,7 +2329,10 @@ const MailAutomationPage: React.FC = () => {
                     labelId="report-rule-label"
                     label="Rule"
                     value={reportRuleId}
-                    onChange={(event) => setReportRuleId(event.target.value)}
+                    onChange={(event) => {
+                      setReportRuleTouched(true);
+                      setReportRuleId(event.target.value);
+                    }}
                   >
                     <MenuItem value="">All rules</MenuItem>
                     {rules.map((rule) => (
@@ -2091,6 +2358,65 @@ const MailAutomationPage: React.FC = () => {
                   </Select>
                 </FormControl>
               </Stack>
+
+              <Box
+                sx={{
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderRadius: 1,
+                  p: 1.5,
+                  mb: 2,
+                  bgcolor: 'grey.50',
+                }}
+              >
+                <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+                  <Typography variant="subtitle2" component="h3">
+                    Scheduled export
+                  </Typography>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={reportScheduleLoading ? <CircularProgress size={16} /> : <Refresh />}
+                    onClick={() => loadReportSchedule()}
+                    disabled={reportScheduleLoading}
+                  >
+                    {reportScheduleLoading ? 'Refreshing...' : 'Refresh status'}
+                  </Button>
+                </Box>
+                {reportSchedule ? (
+                  <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
+                    <Chip
+                      size="small"
+                      color={reportSchedule.enabled ? 'success' : 'default'}
+                      label={reportSchedule.enabled ? 'Enabled' : 'Disabled'}
+                    />
+                    <Tooltip title={reportSchedule.cron || 'N/A'}>
+                      <Chip size="small" variant="outlined" label={`Cron ${summarizeText(reportSchedule.cron || 'N/A', 32)}`} />
+                    </Tooltip>
+                    <Chip size="small" variant="outlined" label={`Days ${reportSchedule.days}`} />
+                    <Tooltip title={reportScheduleFolderPath || reportSchedule.folderId || 'N/A'}>
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        label={`Folder ${summarizeText(reportScheduleFolderPath || reportSchedule.folderId || 'N/A', 42)}`}
+                      />
+                    </Tooltip>
+                    {reportSchedule.lastExport && (
+                      <Tooltip title={reportSchedule.lastExport.message || ''}>
+                        <Chip
+                          size="small"
+                          color={scheduledExportColor(reportSchedule.lastExport.status)}
+                          label={`Last ${reportSchedule.lastExport.status}`}
+                        />
+                      </Tooltip>
+                    )}
+                  </Stack>
+                ) : (
+                  <Typography variant="body2" color="text.secondary">
+                    No scheduled export settings available.
+                  </Typography>
+                )}
+              </Box>
 
               {reportLoading && !report ? (
                 <Box display="flex" justifyContent="center" py={2}>
@@ -2246,9 +2572,14 @@ const MailAutomationPage: React.FC = () => {
                   </Box>
                 </Stack>
               ) : (
-                <Typography variant="body2" color="text.secondary">
-                  No report data available yet.
-                </Typography>
+                <Stack spacing={0.5}>
+                  <Typography variant="body2" color="text.secondary">
+                    No report data available for the selected filters.
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {reportSelectionSummary}
+                  </Typography>
+                </Stack>
               )}
             </CardContent>
           </Card>
@@ -2337,6 +2668,17 @@ const MailAutomationPage: React.FC = () => {
                       <Chip size="small" color="error" label={`Errors ${lastFetchSummary.errorMessages}`} />
                     )}
                     <Chip size="small" label={`Duration ${(lastFetchSummary.durationMs / 1000).toFixed(1)}s`} />
+                    {lastFetchSummary.runId && (
+                      <Tooltip title={`Copy run id: ${lastFetchSummary.runId}`}>
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          icon={<ContentCopy fontSize="small" />}
+                          label={formatRunIdLabel(lastFetchSummary.runId)}
+                          onClick={() => copyRunId(lastFetchSummary.runId)}
+                        />
+                      </Tooltip>
+                    )}
                   </Stack>
                 ) : (
                   <Typography variant="body2" color="text.secondary">
@@ -2382,6 +2724,17 @@ const MailAutomationPage: React.FC = () => {
                       variant="outlined"
                       label={`Duration: ${(debugResult.summary.durationMs / 1000).toFixed(1)}s`}
                     />
+                    {debugResult.summary.runId && (
+                      <Tooltip title={`Copy run id: ${debugResult.summary.runId}`}>
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          icon={<ContentCopy fontSize="small" />}
+                          label={formatRunIdLabel(debugResult.summary.runId)}
+                          onClick={() => copyRunId(debugResult.summary.runId)}
+                        />
+                      </Tooltip>
+                    )}
                   </Stack>
 
                   {toSortedEntries(debugResult.skipReasons).length > 0 && (
@@ -2580,6 +2933,9 @@ const MailAutomationPage: React.FC = () => {
                           color={summaryAccount.oauthConnected ? 'success' : 'warning'}
                           label={summaryAccount.oauthConnected ? 'OAuth connected' : 'OAuth not connected'}
                         />
+                      )}
+                      {summaryAccount.security === 'OAUTH2' && isOauthReauthError(summaryAccount.lastFetchError) && (
+                        <Chip size="small" color="warning" label="OAuth reauth required" />
                       )}
                       {summaryAccount.security === 'OAUTH2' && summaryAccount.oauthEnvConfigured === false && (
                         <Chip size="small" color="warning" label="OAuth env missing" />
@@ -3292,35 +3648,41 @@ const MailAutomationPage: React.FC = () => {
                                 <TableCell>
                                   {(() => {
                                     const linkedDoc = recentDocumentByProcessedKey.get(
-                                      processedKey(item.accountId, item.uid)
+                                      processedKey(item.accountId, item.folder, item.uid)
                                     );
-                                    if (!linkedDoc) {
-                                      return (
-                                        <Typography variant="caption" color="text.secondary">
-                                          -
-                                        </Typography>
-                                      );
-                                    }
                                     return (
                                       <Stack direction="row" spacing={0.5} alignItems="center">
-                                        <Tooltip title="Open linked document">
+                                        <Tooltip title="View ingested documents">
                                           <IconButton
                                             size="small"
-                                            aria-label="open linked document"
-                                            onClick={() => handleOpenMailDocument(linkedDoc.documentId)}
+                                            aria-label="view ingested documents"
+                                            onClick={() => handleOpenProcessedDocuments(item)}
                                           >
-                                            <Visibility fontSize="inherit" />
+                                            <ListAlt fontSize="inherit" />
                                           </IconButton>
                                         </Tooltip>
-                                        <Tooltip title="Find similar documents">
-                                          <IconButton
-                                            size="small"
-                                            aria-label="find similar linked document"
-                                            onClick={() => handleFindSimilarFromMailDocument(linkedDoc)}
-                                          >
-                                            <Search fontSize="inherit" />
-                                          </IconButton>
-                                        </Tooltip>
+                                        {linkedDoc && (
+                                          <>
+                                            <Tooltip title="Open linked document">
+                                              <IconButton
+                                                size="small"
+                                                aria-label="open linked document"
+                                                onClick={() => handleOpenMailDocument(linkedDoc.documentId)}
+                                              >
+                                                <Visibility fontSize="inherit" />
+                                              </IconButton>
+                                            </Tooltip>
+                                            <Tooltip title="Find similar documents">
+                                              <IconButton
+                                                size="small"
+                                                aria-label="find similar linked document"
+                                                onClick={() => handleFindSimilarFromMailDocument(linkedDoc)}
+                                              >
+                                                <Search fontSize="inherit" />
+                                              </IconButton>
+                                            </Tooltip>
+                                          </>
+                                        )}
                                       </Stack>
                                     );
                                   })()}
@@ -3568,6 +3930,14 @@ const MailAutomationPage: React.FC = () => {
                                 label={account.oauthConnected ? 'OAuth connected' : 'OAuth not connected'}
                               />
                             )}
+                            {account.security === 'OAUTH2' && isOauthReauthError(account.lastFetchError) && (
+                              <Chip
+                                size="small"
+                                variant="outlined"
+                                color="warning"
+                                label="OAuth reauth required"
+                              />
+                            )}
                             {account.lastFetchStatus === 'ERROR' && account.lastFetchError && (
                               <Typography variant="caption" color="error.main">
                                 {summarizeError(account.lastFetchError)}
@@ -3597,8 +3967,8 @@ const MailAutomationPage: React.FC = () => {
                           {account.security === 'OAUTH2'
                             && account.oauthProvider
                             && account.oauthProvider !== 'CUSTOM'
-                            && account.oauthConnected !== true && (
-                              <Tooltip title="Connect OAuth">
+                            && (account.oauthConnected !== true || isOauthReauthError(account.lastFetchError)) && (
+                              <Tooltip title={isOauthReauthError(account.lastFetchError) ? 'Reconnect OAuth' : 'Connect OAuth'}>
                                 <span>
                                   <IconButton
                                     size="small"
@@ -3616,6 +3986,24 @@ const MailAutomationPage: React.FC = () => {
                                   </IconButton>
                                 </span>
                               </Tooltip>
+                          )}
+                          {account.security === 'OAUTH2' && (
+                            <Tooltip title="Reset OAuth">
+                              <span>
+                                <IconButton
+                                  size="small"
+                                  aria-label="Reset OAuth"
+                                  onClick={() => handleResetOAuth(account)}
+                                  disabled={resettingAccountId === account.id}
+                                >
+                                  {resettingAccountId === account.id ? (
+                                    <CircularProgress size={16} />
+                                  ) : (
+                                    <RestartAlt fontSize="small" />
+                                  )}
+                                </IconButton>
+                              </span>
+                            </Tooltip>
                           )}
                           <Tooltip title="Test connection">
                             <span>
@@ -4486,6 +4874,103 @@ const MailAutomationPage: React.FC = () => {
         </DialogActions>
       </Dialog>
 
+      <Dialog
+        open={processedDocsDialogOpen}
+        onClose={handleCloseProcessedDocuments}
+        maxWidth="md"
+        fullWidth
+        data-testid="processed-mail-docs-dialog"
+      >
+        <DialogTitle>Ingested Documents</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} mt={1}>
+            {processedDocsContext ? (
+              <Stack spacing={0.5}>
+                <Typography variant="caption" color="text.secondary">
+                  {processedDocsContext.accountName || processedDocsContext.accountId || '-'} · {processedDocsContext.folder}{' '}
+                  · UID {processedDocsContext.uid}
+                </Typography>
+                {processedDocsContext.subject && (
+                  <Typography variant="caption" title={processedDocsContext.subject}>
+                    Subject: {summarizeText(processedDocsContext.subject, 120)}
+                  </Typography>
+                )}
+              </Stack>
+            ) : (
+              <Typography variant="caption" color="text.secondary">
+                No processed mail selected.
+              </Typography>
+            )}
+
+            {processedDocsLoading ? (
+              <Box display="flex" justifyContent="center" py={2}>
+                <CircularProgress size={24} />
+              </Box>
+            ) : processedDocsError ? (
+              <Typography variant="body2" color="error">
+                {processedDocsError}
+              </Typography>
+            ) : processedDocsItems.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">
+                No mail documents found for this message.
+              </Typography>
+            ) : (
+              <TableContainer sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Created</TableCell>
+                      <TableCell>Name</TableCell>
+                      <TableCell>Path</TableCell>
+                      <TableCell align="right">Search</TableCell>
+                      <TableCell align="right">Open</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {processedDocsItems.map((doc) => (
+                      <TableRow key={doc.documentId} hover>
+                        <TableCell>{formatDateTime(doc.createdDate)}</TableCell>
+                        <TableCell>{doc.name}</TableCell>
+                        <TableCell>
+                          <Typography variant="caption" title={doc.path}>
+                            {summarizeText(doc.path, 80)}
+                          </Typography>
+                        </TableCell>
+                        <TableCell align="right">
+                          <Tooltip title="Find similar documents">
+                            <IconButton
+                              size="small"
+                              aria-label="find similar documents"
+                              onClick={() => handleFindSimilarFromMailDocument(doc)}
+                            >
+                              <Search fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </TableCell>
+                        <TableCell align="right">
+                          <Tooltip title="Open in folder">
+                            <IconButton
+                              size="small"
+                              aria-label="open mail document"
+                              onClick={() => handleOpenMailDocument(doc.documentId)}
+                            >
+                              <Visibility fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseProcessedDocuments}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
       <Dialog open={previewDialogOpen} onClose={closePreviewDialog} maxWidth="md" fullWidth>
         <DialogTitle>Preview Mail Rule</DialogTitle>
         <DialogContent>
@@ -4546,6 +5031,17 @@ const MailAutomationPage: React.FC = () => {
                     <Chip size="small" label={`Processable ${previewResult.processableMessages}`} />
                     <Chip size="small" label={`Skipped ${previewResult.skippedMessages}`} />
                     <Chip size="small" label={`Errors ${previewResult.errorMessages}`} color="warning" />
+                    {previewResult.runId && (
+                      <Tooltip title={`Copy run id: ${previewResult.runId}`}>
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          icon={<ContentCopy fontSize="small" />}
+                          label={formatRunIdLabel(previewResult.runId)}
+                          onClick={() => copyRunId(previewResult.runId)}
+                        />
+                      </Tooltip>
+                    )}
                   </Box>
                 </Box>
                 {previewResult.skipReasons && Object.keys(previewResult.skipReasons).length > 0 && (

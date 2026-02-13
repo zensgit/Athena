@@ -1,5 +1,8 @@
 package com.ecm.core.service;
 
+import com.ecm.core.dto.TextDiffDto;
+import com.ecm.core.dto.VersionCompareResultDto;
+import com.ecm.core.dto.VersionDto;
 import com.ecm.core.entity.*;
 import com.ecm.core.entity.Permission.PermissionType;
 import com.ecm.core.entity.Version.VersionStatus;
@@ -7,6 +10,7 @@ import com.ecm.core.entity.AutomationRule.TriggerType;
 import com.ecm.core.event.*;
 import com.ecm.core.repository.DocumentRepository;
 import com.ecm.core.repository.VersionRepository;
+import com.ecm.core.util.LineDiffUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,10 +25,12 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.Objects;
+import java.util.Locale;
 
 @Slf4j
 @Service
@@ -45,6 +51,10 @@ public class VersionService {
 
     @Value("${ecm.rules.enabled:true}")
     private boolean rulesEnabled;
+
+    private static final int MAX_COMPARE_TEXT_BYTES_HARD_LIMIT = 1_000_000;
+    private static final int MAX_COMPARE_TEXT_LINES_HARD_LIMIT = 10_000;
+    private static final int MAX_COMPARE_DIFF_CHARS_HARD_LIMIT = 400_000;
     
     public Version createVersion(UUID documentId, InputStream content, String filename, 
                                  String comment, boolean majorVersion) throws IOException {
@@ -279,6 +289,56 @@ public class VersionService {
         
         return compareVersions(version1, version2);
     }
+
+    /**
+     * Compare two versions and optionally compute a line-based diff for small text content.
+     *
+     * <p>This is intended for UI display (bounded by byte/line/char limits).</p>
+     */
+    public VersionCompareResultDto compareVersionsDetailed(
+        UUID documentId,
+        UUID fromVersionId,
+        UUID toVersionId,
+        boolean includeTextDiff,
+        int maxBytes,
+        int maxLines
+    ) throws IOException {
+        Version from = getVersion(fromVersionId);
+        Version to = getVersion(toVersionId);
+
+        UUID fromDocId = from.getDocument() != null ? from.getDocument().getId() : null;
+        UUID toDocId = to.getDocument() != null ? to.getDocument().getId() : null;
+        if (!Objects.equals(fromDocId, toDocId)) {
+            throw new IllegalArgumentException("Versions belong to different documents");
+        }
+        if (documentId != null && !Objects.equals(documentId, fromDocId)) {
+            throw new IllegalArgumentException("Versions do not belong to document: " + documentId);
+        }
+
+        boolean metadataChanged = !Objects.equals(from.getMimeType(), to.getMimeType())
+            || !Objects.equals(from.getFileSize(), to.getFileSize());
+        boolean contentChanged = !Objects.equals(from.getContentHash(), to.getContentHash());
+        Long sizeDifference = null;
+        if (from.getFileSize() != null && to.getFileSize() != null) {
+            sizeDifference = to.getFileSize() - from.getFileSize();
+        }
+
+        TextDiffDto textDiff = null;
+        if (includeTextDiff) {
+            int safeMaxBytes = clamp(maxBytes, 1, MAX_COMPARE_TEXT_BYTES_HARD_LIMIT);
+            int safeMaxLines = clamp(maxLines, 1, MAX_COMPARE_TEXT_LINES_HARD_LIMIT);
+            textDiff = buildTextDiff(from, to, safeMaxBytes, safeMaxLines, MAX_COMPARE_DIFF_CHARS_HARD_LIMIT);
+        }
+
+        return new VersionCompareResultDto(
+            VersionDto.from(from),
+            VersionDto.from(to),
+            metadataChanged,
+            contentChanged,
+            sizeDifference,
+            textDiff
+        );
+    }
     
     public List<Version> getMajorVersions(UUID documentId) {
         Document document = documentRepository.findById(documentId)
@@ -358,6 +418,77 @@ public class VersionService {
         }
 
         return comparison;
+    }
+
+    private record TextReadResult(String text, boolean truncated) {}
+
+    private TextDiffDto buildTextDiff(
+        Version from,
+        Version to,
+        int maxBytes,
+        int maxLines,
+        int maxChars
+    ) throws IOException {
+        String fromMime = normalizeMimeType(from.getMimeType());
+        String toMime = normalizeMimeType(to.getMimeType());
+        if (!isTextLikeMimeType(fromMime) || !isTextLikeMimeType(toMime)) {
+            return new TextDiffDto(false, false, "Text diff is only available for text/* and json/xml content types.", null);
+        }
+        if (from.getContentId() == null || to.getContentId() == null) {
+            return new TextDiffDto(false, false, "Missing content for one or both versions.", null);
+        }
+
+        TextReadResult fromText = readTextContent(from.getContentId(), maxBytes);
+        TextReadResult toText = readTextContent(to.getContentId(), maxBytes);
+
+        LineDiffUtils.DiffOutput diff = LineDiffUtils.diff(fromText.text(), toText.text(), maxLines, maxChars);
+        boolean truncated = fromText.truncated() || toText.truncated() || diff.truncated();
+        return new TextDiffDto(true, truncated, null, diff.diff());
+    }
+
+    private TextReadResult readTextContent(String contentId, int maxBytes) throws IOException {
+        try (InputStream in = contentService.getContent(contentId)) {
+            byte[] bytes = in.readNBytes(maxBytes + 1);
+            boolean truncated = bytes.length > maxBytes;
+            if (truncated) {
+                bytes = Arrays.copyOf(bytes, maxBytes);
+            }
+            // For the supported mime types, UTF-8 decoding is a pragmatic default for UI diffs.
+            return new TextReadResult(new String(bytes, StandardCharsets.UTF_8), truncated);
+        }
+    }
+
+    private static boolean isTextLikeMimeType(String mimeType) {
+        if (mimeType == null || mimeType.isBlank()) {
+            return false;
+        }
+        String normalized = mimeType.trim().toLowerCase(Locale.ROOT);
+        if (normalized.startsWith("text/")) {
+            return true;
+        }
+        return normalized.equals("application/json")
+            || normalized.equals("application/xml")
+            || normalized.equals("text/xml")
+            || normalized.equals("application/x-yaml")
+            || normalized.equals("text/yaml")
+            || normalized.equals("application/yaml");
+    }
+
+    private static String normalizeMimeType(String mimeType) {
+        if (mimeType == null || mimeType.isBlank()) {
+            return null;
+        }
+        return mimeType.split(";")[0].trim();
+    }
+
+    private static int clamp(int value, int min, int max) {
+        if (value < min) {
+            return min;
+        }
+        if (value > max) {
+            return max;
+        }
+        return value;
     }
 
     /**

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Autocomplete,
   Box,
   Paper,
   Typography,
@@ -13,15 +14,17 @@ import {
   CardContent,
   CardActions,
   Button,
+  Menu,
+  MenuItem,
   Pagination,
   CircularProgress,
   Alert,
   FormControl,
   InputLabel,
   Select,
-  MenuItem,
   Divider,
   Checkbox,
+  ListItemIcon,
   ListItemText,
   Tooltip,
 } from '@mui/material';
@@ -36,19 +39,27 @@ import {
   AutoAwesome,
   FilterList,
   Refresh,
+  Autorenew,
   InfoOutlined,
+  Star,
+  StarBorder,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppSelector, useAppDispatch } from 'store';
-import { fetchSearchFacets, searchNodes } from 'store/slices/nodeSlice';
-import { setSearchOpen, setSidebarOpen } from 'store/slices/uiSlice';
+import { executeSavedSearch, fetchSearchFacets, searchNodes, setLastSearchCriteria } from 'store/slices/nodeSlice';
+import { setSearchOpen, setSearchPrefill, setSidebarOpen } from 'store/slices/uiSlice';
 import nodeService, { SearchDiagnostics, SearchIndexStats, SearchRebuildStatus } from 'services/nodeService';
+import savedSearchService, { SavedSearch } from 'services/savedSearchService';
 import { Node, SearchCriteria } from 'types';
 import { toast } from 'react-toastify';
 import Highlight from 'components/search/Highlight';
+import { buildSearchCriteriaFromSavedSearch } from 'utils/savedSearchUtils';
+import { shouldSuppressStaleFallbackForQuery } from 'utils/searchFallbackUtils';
+import { formatBreadcrumbPath } from 'utils/pathDisplayUtils';
 import {
   formatPreviewFailureReasonLabel,
+  getEffectivePreviewStatus,
   getFailedPreviewMeta,
   isUnsupportedPreviewFailure,
   normalizePreviewFailureReason,
@@ -88,6 +99,57 @@ const MATCH_FIELD_LABELS: Record<string, string> = {
   correspondent: 'Correspondent',
 };
 
+const FALLBACK_AUTO_RETRY_MAX = 3;
+const FALLBACK_AUTO_RETRY_BASE_DELAY_MS = 1500;
+const FALLBACK_AUTO_RETRY_MAX_DELAY_MS = 10000;
+
+const getFallbackAutoRetryDelayMs = (attempt: number) => {
+  if (attempt < 0) {
+    return FALLBACK_AUTO_RETRY_BASE_DELAY_MS;
+  }
+  const scaled = FALLBACK_AUTO_RETRY_BASE_DELAY_MS * (2 ** attempt);
+  return Math.min(scaled, FALLBACK_AUTO_RETRY_MAX_DELAY_MS);
+};
+
+const normalizeCriteriaValues = (values?: string[]) =>
+  (values || [])
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
+    .sort();
+
+const buildFallbackCriteriaKey = (criteria?: SearchCriteria): string => {
+  if (!criteria) {
+    return '';
+  }
+
+  const mimeTypes = criteria.mimeTypes?.length
+    ? criteria.mimeTypes
+    : (criteria.contentType ? [criteria.contentType] : []);
+  const createdBy = criteria.createdByList?.length
+    ? criteria.createdByList
+    : (criteria.createdBy ? [criteria.createdBy] : []);
+
+  return JSON.stringify({
+    mimeTypes: normalizeCriteriaValues(mimeTypes),
+    createdBy: normalizeCriteriaValues(createdBy),
+    tags: normalizeCriteriaValues(criteria.tags),
+    categories: normalizeCriteriaValues(criteria.categories),
+    correspondents: normalizeCriteriaValues(criteria.correspondents),
+    previewStatuses: normalizeCriteriaValues(criteria.previewStatuses),
+    createdFrom: criteria.createdFrom || '',
+    createdTo: criteria.createdTo || '',
+    modifiedFrom: criteria.modifiedFrom || '',
+    modifiedTo: criteria.modifiedTo || '',
+    minSize: criteria.minSize ?? null,
+    maxSize: criteria.maxSize ?? null,
+    path: criteria.path || '',
+    folderId: criteria.folderId || '',
+    includeChildren: criteria.includeChildren ?? true,
+    sortBy: criteria.sortBy || '',
+    sortDirection: criteria.sortDirection || '',
+  });
+};
+
 const SearchResults: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -96,6 +158,16 @@ const SearchResults: React.FC = () => {
   const { user } = useAppSelector((state) => state.auth);
   const { sidebarAutoCollapse } = useAppSelector((state) => state.ui);
   const [quickSearch, setQuickSearch] = useState('');
+  const [quickSearchSuggestions, setQuickSearchSuggestions] = useState<string[]>([]);
+  const [quickSearchSuggestionsLoading, setQuickSearchSuggestionsLoading] = useState(false);
+  const quickSearchSuggestDebounceRef = useRef<number | null>(null);
+  const lastQuickSearchSuggestQueryRef = useRef<string>('');
+  const [pinnedSavedSearches, setPinnedSavedSearches] = useState<SavedSearch[]>([]);
+  const [pinnedSavedSearchesLoading, setPinnedSavedSearchesLoading] = useState(false);
+  const [pinnedSavedSearchesError, setPinnedSavedSearchesError] = useState<string | null>(null);
+  const [pinnedSavedSearchMenuAnchorEl, setPinnedSavedSearchMenuAnchorEl] = useState<null | HTMLElement>(null);
+  const pinnedSavedSearchMenuOpen = Boolean(pinnedSavedSearchMenuAnchorEl);
+  const lastSavedSearchIdFromUrlRef = useRef<string>('');
   const [sortBy, setSortBy] = useState('relevance');
   const [page, setPage] = useState(1);
   const pageSize = 20;
@@ -111,6 +183,12 @@ const SearchResults: React.FC = () => {
   const [hiddenNodeIds, setHiddenNodeIds] = useState<string[]>([]);
   const [fallbackNodes, setFallbackNodes] = useState<Node[]>([]);
   const [fallbackLabel, setFallbackLabel] = useState('');
+  const [fallbackCriteriaKey, setFallbackCriteriaKey] = useState('');
+  const [dismissedFallbackCriteriaKey, setDismissedFallbackCriteriaKey] = useState('');
+  const [forcedFallbackCriteriaKey, setForcedFallbackCriteriaKey] = useState('');
+  const [fallbackAutoRetryCount, setFallbackAutoRetryCount] = useState(0);
+  const [fallbackLastRetryAt, setFallbackLastRetryAt] = useState<Date | null>(null);
+  const fallbackAutoRetryTimerRef = useRef<number | null>(null);
   const [queueingPreviewId, setQueueingPreviewId] = useState<string | null>(null);
   const [previewQueueStatusById, setPreviewQueueStatusById] = useState<Record<string, {
     attempts?: number;
@@ -142,8 +220,11 @@ const SearchResults: React.FC = () => {
   const previewOpen = Boolean(previewNode);
   const isAdmin = Boolean(user?.roles?.includes('ROLE_ADMIN'));
   const canWrite = Boolean(user?.roles?.includes('ROLE_ADMIN') || user?.roles?.includes('ROLE_EDITOR'));
-  const suppressFacetSearch = useRef(false);
+  // During criteria -> UI state sync, facet-change effects can run with stale UI values and
+  // accidentally trigger an extra search. Use a state flag so effects re-run once the sync is done.
+  const [facetSyncSuppressed, setFacetSyncSuppressed] = useState(false);
   const quickSearchDebounceRef = useRef<number | null>(null);
+  const lastSearchCriteriaRef = useRef<SearchCriteria | undefined>(lastSearchCriteria);
   const isSimilarMode = similarResults !== null;
   const previewRetrySummary = useMemo(() => {
     const entries = Object.values(previewQueueStatusById);
@@ -168,6 +249,55 @@ const SearchResults: React.FC = () => {
     setSimilarLoadingId(null);
     setSimilarError(null);
   }, []);
+
+  const loadPinnedSavedSearches = useCallback(async () => {
+    setPinnedSavedSearchesLoading(true);
+    try {
+      const searches = await savedSearchService.list();
+      const pinned = (searches || []).filter((item) => item.pinned);
+      pinned.sort((a, b) => {
+        const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return bTime - aTime;
+      });
+      setPinnedSavedSearches(pinned);
+      setPinnedSavedSearchesError(null);
+    } catch {
+      setPinnedSavedSearches([]);
+      setPinnedSavedSearchesError('Failed to load pinned saved searches');
+    } finally {
+      setPinnedSavedSearchesLoading(false);
+    }
+  }, []);
+
+  const handleOpenPinnedSavedSearchMenu = (event: React.MouseEvent<HTMLElement>) => {
+    setPinnedSavedSearchMenuAnchorEl(event.currentTarget);
+    loadPinnedSavedSearches();
+  };
+
+  const handleClosePinnedSavedSearchMenu = () => {
+    setPinnedSavedSearchMenuAnchorEl(null);
+  };
+
+  const handleRunPinnedSavedSearch = async (item: SavedSearch) => {
+    handleClosePinnedSavedSearchMenu();
+    try {
+      await dispatch(executeSavedSearch(item.id)).unwrap();
+      dispatch(setLastSearchCriteria(buildSearchCriteriaFromSavedSearch(item)));
+    } catch {
+      toast.error('Failed to execute saved search');
+    }
+  };
+
+  const handleUnpinSavedSearch = async (item: SavedSearch) => {
+    try {
+      await savedSearchService.setPinned(item.id, false);
+      setPinnedSavedSearches((prev) => prev.filter((current) => current.id !== item.id));
+      toast.success('Unpinned saved search');
+    } catch {
+      toast.error('Failed to update pin');
+    }
+  };
 
   const runSearch = useCallback(
     (criteria: SearchCriteria) => {
@@ -272,7 +402,10 @@ const SearchResults: React.FC = () => {
     }
     setPage(1);
     const sortParams = getSortParams(sortBy);
-    await runSearch({ name: query, page: 0, size: pageSize, ...sortParams });
+    const scopeParams = lastSearchCriteria?.folderId
+      ? { folderId: lastSearchCriteria.folderId, includeChildren: lastSearchCriteria.includeChildren ?? true }
+      : {};
+    await runSearch({ name: query, page: 0, size: pageSize, ...scopeParams, ...sortParams });
   };
 
   const handleClearSearch = () => {
@@ -280,16 +413,91 @@ const SearchResults: React.FC = () => {
   };
 
   const handleAdvancedSearch = () => {
+    const normalizedQuickSearch = quickSearch.trim();
+    const normalizedLastName = (lastSearchCriteria?.name || '').trim();
+    const contentType =
+      selectedMimeTypes.length === 1
+        ? selectedMimeTypes[0]
+        : (lastSearchCriteria?.contentType || '');
+    const createdBy =
+      selectedCreators.length === 1
+        ? selectedCreators[0]
+        : (lastSearchCriteria?.createdBy || '');
+
+    dispatch(setSearchPrefill({
+      name: normalizedQuickSearch || normalizedLastName,
+      contentType,
+      createdBy,
+      createdFrom: lastSearchCriteria?.createdFrom,
+      createdTo: lastSearchCriteria?.createdTo,
+      modifiedFrom: lastSearchCriteria?.modifiedFrom,
+      modifiedTo: lastSearchCriteria?.modifiedTo,
+      aspects: lastSearchCriteria?.aspects || [],
+      properties: lastSearchCriteria?.properties || {},
+      tags: selectedTags.length > 0 ? selectedTags : (lastSearchCriteria?.tags || []),
+      categories: selectedCategories.length > 0 ? selectedCategories : (lastSearchCriteria?.categories || []),
+      correspondents: selectedCorrespondents.length > 0
+        ? selectedCorrespondents
+        : (lastSearchCriteria?.correspondents || []),
+      previewStatuses: selectedPreviewStatuses.length > 0
+        ? selectedPreviewStatuses
+        : (lastSearchCriteria?.previewStatuses || []),
+      minSize: lastSearchCriteria?.minSize,
+      maxSize: lastSearchCriteria?.maxSize,
+      pathPrefix: lastSearchCriteria?.path || '',
+      folderId: lastSearchCriteria?.folderId || '',
+      includeChildren: lastSearchCriteria?.includeChildren ?? true,
+    }));
     dispatch(setSearchOpen(true));
   };
 
-  const handleRetrySearch = () => {
-    if (!lastSearchCriteria) {
+  const folderScopeLabel = lastSearchCriteria?.includeChildren === false
+    ? 'Scope: This folder (no subfolders)'
+    : 'Scope: This folder';
+
+  const handleClearFolderScope = () => {
+    if (!lastSearchCriteria?.folderId) {
       return;
     }
     const sortParams = getSortParams(sortBy);
-    runSearch({ ...lastSearchCriteria, page: 0, size: pageSize, ...sortParams });
+    runSearch({
+      ...lastSearchCriteria,
+      folderId: undefined,
+      includeChildren: undefined,
+      page: 0,
+      size: pageSize,
+      ...sortParams,
+    });
   };
+
+  const handleRetrySearch = useCallback(() => {
+    if (!lastSearchCriteria) {
+      return;
+    }
+    setFallbackLastRetryAt(new Date());
+    const sortParams = getSortParams(sortBy);
+    runSearch({ ...lastSearchCriteria, page: 0, size: pageSize, ...sortParams });
+  }, [lastSearchCriteria, sortBy, pageSize, runSearch]);
+
+  const handleHideFallbackResults = useCallback(() => {
+    const criteriaKey = buildFallbackCriteriaKey(lastSearchCriteria);
+    if (!criteriaKey) {
+      return;
+    }
+    setDismissedFallbackCriteriaKey(criteriaKey);
+    setForcedFallbackCriteriaKey('');
+    setFallbackAutoRetryCount(0);
+    setFallbackLastRetryAt(null);
+  }, [lastSearchCriteria]);
+
+  const handleShowFallbackResults = useCallback(() => {
+    const criteriaKey = buildFallbackCriteriaKey(lastSearchCriteria);
+    if (!criteriaKey) {
+      return;
+    }
+    setForcedFallbackCriteriaKey(criteriaKey);
+    setDismissedFallbackCriteriaKey('');
+  }, [lastSearchCriteria]);
 
   const handleSpellcheckSuggestion = (suggestion: string) => {
     const nextQuery = suggestion.trim();
@@ -299,7 +507,10 @@ const SearchResults: React.FC = () => {
     setQuickSearch(nextQuery);
     setPage(1);
     const sortParams = getSortParams(sortBy);
-    runSearch({ name: nextQuery, page: 0, size: pageSize, ...sortParams });
+    const scopeParams = lastSearchCriteria?.folderId
+      ? { folderId: lastSearchCriteria.folderId, includeChildren: lastSearchCriteria.includeChildren ?? true }
+      : {};
+    runSearch({ name: nextQuery, page: 0, size: pageSize, ...scopeParams, ...sortParams });
   };
 
   const clearFacetFilters = () => {
@@ -336,7 +547,7 @@ const SearchResults: React.FC = () => {
     if (!lastSearchCriteria) {
       return;
     }
-    suppressFacetSearch.current = true;
+    setFacetSyncSuppressed(true);
     const baseMimeTypes = lastSearchCriteria.mimeTypes
       ?? (lastSearchCriteria.contentType ? [lastSearchCriteria.contentType] : []);
     const baseCreators = lastSearchCriteria.createdByList
@@ -347,10 +558,11 @@ const SearchResults: React.FC = () => {
     setSelectedCorrespondents(lastSearchCriteria.correspondents || []);
     setSelectedTags(lastSearchCriteria.tags || []);
     setSelectedCategories(lastSearchCriteria.categories || []);
+    setSelectedPreviewStatuses(lastSearchCriteria.previewStatuses || []);
     setPage(1);
 
     const timer = window.setTimeout(() => {
-      suppressFacetSearch.current = false;
+      setFacetSyncSuppressed(false);
     }, 0);
 
     return () => window.clearTimeout(timer);
@@ -364,11 +576,11 @@ const SearchResults: React.FC = () => {
 
   useEffect(() => {
     const query = (lastSearchCriteria?.name || '').trim();
-    if (!query || nonPreviewFiltersApplied) {
+    if (!query || nonPreviewFiltersApplied || previewStatusFilterApplied) {
       return;
     }
     dispatch(fetchSearchFacets(query));
-  }, [lastSearchCriteria, dispatch, nonPreviewFiltersApplied]);
+  }, [lastSearchCriteria, dispatch, nonPreviewFiltersApplied, previewStatusFilterApplied]);
 
   useEffect(() => {
     const query = (lastSearchCriteria?.name || '').trim();
@@ -448,6 +660,91 @@ const SearchResults: React.FC = () => {
   }, [lastSearchCriteria]);
 
   useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const savedSearchId = (params.get('savedSearchId') || '').trim();
+    if (!savedSearchId) {
+      return;
+    }
+
+    if (savedSearchId === lastSavedSearchIdFromUrlRef.current) {
+      return;
+    }
+    lastSavedSearchIdFromUrlRef.current = savedSearchId;
+
+    let active = true;
+
+    (async () => {
+      try {
+        const savedSearch = await savedSearchService.get(savedSearchId);
+
+        await dispatch(executeSavedSearch(savedSearchId)).unwrap();
+        if (!active) {
+          return;
+        }
+        dispatch(setLastSearchCriteria(buildSearchCriteriaFromSavedSearch(savedSearch)));
+      } catch {
+        if (active) {
+          toast.error('Failed to load saved search');
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [dispatch, location.search]);
+
+  useEffect(() => {
+    const prefix = quickSearch.trim();
+    if (prefix.length < 2) {
+      lastQuickSearchSuggestQueryRef.current = '';
+      setQuickSearchSuggestions([]);
+      setQuickSearchSuggestionsLoading(false);
+      if (quickSearchSuggestDebounceRef.current) {
+        window.clearTimeout(quickSearchSuggestDebounceRef.current);
+        quickSearchSuggestDebounceRef.current = null;
+      }
+      return;
+    }
+
+    if (prefix === lastQuickSearchSuggestQueryRef.current) {
+      return;
+    }
+
+    if (quickSearchSuggestDebounceRef.current) {
+      window.clearTimeout(quickSearchSuggestDebounceRef.current);
+    }
+
+    let active = true;
+    quickSearchSuggestDebounceRef.current = window.setTimeout(() => {
+      lastQuickSearchSuggestQueryRef.current = prefix;
+      setQuickSearchSuggestionsLoading(true);
+      nodeService.getSearchSuggestions(prefix, 10)
+        .then((suggestions) => {
+          if (!active) return;
+          setQuickSearchSuggestions(Array.isArray(suggestions) ? suggestions : []);
+        })
+        .catch(() => {
+          if (!active) return;
+          setQuickSearchSuggestions([]);
+        })
+        .finally(() => {
+          if (active) {
+            setQuickSearchSuggestionsLoading(false);
+          }
+        });
+    }, 250);
+
+    return () => {
+      active = false;
+      if (quickSearchSuggestDebounceRef.current) {
+        window.clearTimeout(quickSearchSuggestDebounceRef.current);
+        quickSearchSuggestDebounceRef.current = null;
+      }
+    };
+  }, [quickSearch]);
+
+  useEffect(() => {
     const state = location.state as { similarSourceId?: string; similarSourceName?: string } | null;
     const sourceId = state?.similarSourceId;
     if (!sourceId) {
@@ -522,14 +819,47 @@ const SearchResults: React.FC = () => {
   }, [lastSearchCriteria]);
 
   useEffect(() => {
-    if (nodes.length > 0) {
-      setFallbackNodes(nodes);
-      setFallbackLabel((lastSearchCriteria?.name || '').trim());
-    }
-  }, [nodes, lastSearchCriteria]);
+    lastSearchCriteriaRef.current = lastSearchCriteria;
+  }, [lastSearchCriteria]);
 
   useEffect(() => {
-    if (!lastSearchCriteria || suppressFacetSearch.current) {
+    if (nodes.length > 0) {
+      const criteria = lastSearchCriteriaRef.current;
+      setFallbackNodes(nodes);
+      setFallbackLabel((criteria?.name || '').trim());
+      setFallbackCriteriaKey(buildFallbackCriteriaKey(criteria));
+    }
+  }, [nodes]);
+
+  const currentFallbackCriteriaKey = useMemo(
+    () => buildFallbackCriteriaKey(lastSearchCriteria),
+    [lastSearchCriteria]
+  );
+
+  useEffect(() => {
+    setFallbackAutoRetryCount(0);
+  }, [currentFallbackCriteriaKey]);
+
+  useEffect(() => {
+    if (!dismissedFallbackCriteriaKey) {
+      return;
+    }
+    if (!currentFallbackCriteriaKey || currentFallbackCriteriaKey !== dismissedFallbackCriteriaKey) {
+      setDismissedFallbackCriteriaKey('');
+    }
+  }, [currentFallbackCriteriaKey, dismissedFallbackCriteriaKey]);
+
+  useEffect(() => {
+    if (!forcedFallbackCriteriaKey) {
+      return;
+    }
+    if (!currentFallbackCriteriaKey || currentFallbackCriteriaKey !== forcedFallbackCriteriaKey) {
+      setForcedFallbackCriteriaKey('');
+    }
+  }, [currentFallbackCriteriaKey, forcedFallbackCriteriaKey]);
+
+  useEffect(() => {
+    if (!lastSearchCriteria || facetSyncSuppressed) {
       return;
     }
 
@@ -551,12 +881,14 @@ const SearchResults: React.FC = () => {
     const baseTags = normalize(lastSearchCriteria.tags || []);
     const baseCategories = normalize(lastSearchCriteria.categories || []);
     const baseCorrespondents = normalize(lastSearchCriteria.correspondents || []);
+    const basePreviewStatuses = normalize(lastSearchCriteria.previewStatuses || []);
 
     const nextMimeTypes = normalize(selectedMimeTypes);
     const nextCreators = normalize(selectedCreators);
     const nextTags = normalize(selectedTags);
     const nextCategories = normalize(selectedCategories);
     const nextCorrespondents = normalize(selectedCorrespondents);
+    const nextPreviewStatuses = normalize(selectedPreviewStatuses);
 
     if (
       arraysEqual(baseMimeTypes, nextMimeTypes)
@@ -564,6 +896,7 @@ const SearchResults: React.FC = () => {
       && arraysEqual(baseTags, nextTags)
       && arraysEqual(baseCategories, nextCategories)
       && arraysEqual(baseCorrespondents, nextCorrespondents)
+      && arraysEqual(basePreviewStatuses, nextPreviewStatuses)
     ) {
       return;
     }
@@ -578,6 +911,7 @@ const SearchResults: React.FC = () => {
       tags: nextTags.length ? nextTags : undefined,
       categories: nextCategories.length ? nextCategories : undefined,
       correspondents: nextCorrespondents.length ? nextCorrespondents : undefined,
+      previewStatuses: nextPreviewStatuses.length ? nextPreviewStatuses : undefined,
       page: 0,
       size: pageSize,
       ...sortParams,
@@ -588,7 +922,9 @@ const SearchResults: React.FC = () => {
     selectedCorrespondents,
     selectedTags,
     selectedCategories,
+    selectedPreviewStatuses,
     lastSearchCriteria,
+    facetSyncSuppressed,
     pageSize,
     runSearch,
     sortBy,
@@ -596,7 +932,7 @@ const SearchResults: React.FC = () => {
 
   useEffect(() => {
     setPage(1);
-  }, [selectedMimeTypes, selectedCreators, selectedCorrespondents, selectedTags, selectedCategories]);
+  }, [selectedMimeTypes, selectedCreators, selectedCorrespondents, selectedTags, selectedCategories, selectedPreviewStatuses]);
 
   useEffect(() => {
     if (!lastSearchCriteria) {
@@ -915,34 +1251,38 @@ const SearchResults: React.FC = () => {
     if (node.nodeType === 'FOLDER') {
       return null;
     }
-    const status = node.previewStatus?.toUpperCase();
-    const normalized = status || 'PENDING';
     const nodeMimeType = node.contentType || node.properties?.mimeType || node.properties?.contentType;
+    const effectiveStatus = getEffectivePreviewStatus(
+      node.previewStatus,
+      node.previewFailureCategory,
+      nodeMimeType,
+      node.previewFailureReason
+    );
     const failedPreviewMeta = getFailedPreviewMeta(
       nodeMimeType,
       node.previewFailureCategory,
       node.previewFailureReason
     );
     const failureReason = node.previewFailureReason || '';
-    const label = normalized === 'READY'
+    const label = effectiveStatus === 'READY'
       ? 'Preview ready'
-      : normalized === 'FAILED'
+      : effectiveStatus === 'FAILED' || effectiveStatus === 'UNSUPPORTED'
         ? failedPreviewMeta.label
-        : normalized === 'PROCESSING'
+        : effectiveStatus === 'PROCESSING'
           ? 'Preview processing'
-          : normalized === 'QUEUED'
+          : effectiveStatus === 'QUEUED'
             ? 'Preview queued'
             : 'Preview pending';
-    const color = normalized === 'READY'
+    const color = effectiveStatus === 'READY'
       ? 'success'
-      : normalized === 'FAILED'
+      : effectiveStatus === 'FAILED' || effectiveStatus === 'UNSUPPORTED'
         ? failedPreviewMeta.color
-        : normalized === 'PROCESSING'
+        : effectiveStatus === 'PROCESSING'
           ? 'warning'
-          : normalized === 'QUEUED'
+          : effectiveStatus === 'QUEUED'
             ? 'info'
             : 'default';
-    const failedPreviewUnsupported = normalized === 'FAILED' && failedPreviewMeta.unsupported;
+    const failedPreviewUnsupported = (effectiveStatus === 'FAILED' || effectiveStatus === 'UNSUPPORTED') && failedPreviewMeta.unsupported;
     const queueStatus = previewQueueStatusById[node.id];
     const queueDetail = (() => {
       if (!queueStatus) {
@@ -971,14 +1311,14 @@ const SearchResults: React.FC = () => {
           >
             <Chip label={label} size="small" variant="outlined" color={color} />
           </Tooltip>
-          {normalized === 'FAILED' && failureReason && !failedPreviewUnsupported && (
+          {effectiveStatus === 'FAILED' && failureReason && !failedPreviewUnsupported && (
             <Tooltip title={failureReason} placement="top-start" arrow>
               <IconButton size="small" aria-label="Preview failure reason">
                 <InfoOutlined fontSize="small" />
               </IconButton>
             </Tooltip>
           )}
-          {normalized === 'FAILED' && !failedPreviewUnsupported && (
+          {effectiveStatus === 'FAILED' && !failedPreviewUnsupported && (
             <Tooltip title="Retry preview" placement="top-start" arrow>
               <span>
                 <IconButton
@@ -991,6 +1331,23 @@ const SearchResults: React.FC = () => {
                   disabled={queueingPreviewId === node.id}
                 >
                   <Refresh fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+          )}
+          {effectiveStatus === 'FAILED' && !failedPreviewUnsupported && (
+            <Tooltip title="Force rebuild preview" placement="top-start" arrow>
+              <span>
+                <IconButton
+                  size="small"
+                  aria-label="Force rebuild preview"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleRetryPreview(node, true);
+                  }}
+                  disabled={queueingPreviewId === node.id}
+                >
+                  <Autorenew fontSize="small" />
                 </IconButton>
               </span>
             </Tooltip>
@@ -1033,11 +1390,71 @@ const SearchResults: React.FC = () => {
   const hasActiveCriteria = isSimilarMode
     || Boolean((lastSearchCriteria?.name || '').trim())
     || filtersApplied;
-  const shouldShowFallback = !isSimilarMode && !loading && nodes.length === 0 && fallbackNodes.length > 0 && hasActiveCriteria;
+  const fallbackCriteriaMatches = Boolean(currentFallbackCriteriaKey) && currentFallbackCriteriaKey === fallbackCriteriaKey;
+  const fallbackHiddenForCriteria = Boolean(currentFallbackCriteriaKey)
+    && currentFallbackCriteriaKey === dismissedFallbackCriteriaKey;
+  const fallbackForcedForCriteria = Boolean(currentFallbackCriteriaKey)
+    && currentFallbackCriteriaKey === forcedFallbackCriteriaKey;
+  const fallbackSuppressionQueryLabel = (lastSearchCriteria?.name || '').trim() || fallbackLabel;
+  const shouldEvaluateFallback = !isSimilarMode
+    && !loading
+    && nodes.length === 0
+    && fallbackNodes.length > 0
+    && hasActiveCriteria
+    && fallbackCriteriaMatches
+    && !fallbackHiddenForCriteria;
+  const shouldSuppressFallbackForQuery = shouldEvaluateFallback
+    && !fallbackForcedForCriteria
+    && shouldSuppressStaleFallbackForQuery(fallbackSuppressionQueryLabel);
+  const shouldShowFallback = shouldEvaluateFallback && !shouldSuppressFallbackForQuery;
+  const shouldShowSuppressedFallbackNotice = shouldEvaluateFallback && shouldSuppressFallbackForQuery;
+  const shouldRunFallbackAutoRetry = shouldShowFallback || shouldShowSuppressedFallbackNotice;
+  useEffect(() => {
+    if (loading) {
+      return;
+    }
+    if (!shouldRunFallbackAutoRetry && fallbackAutoRetryCount !== 0) {
+      setFallbackAutoRetryCount(0);
+    }
+    if (!shouldRunFallbackAutoRetry && fallbackLastRetryAt) {
+      setFallbackLastRetryAt(null);
+    }
+  }, [loading, shouldRunFallbackAutoRetry, fallbackAutoRetryCount, fallbackLastRetryAt]);
   const displayNodes = useMemo(
     () => (isSimilarMode ? (similarResults || []) : (shouldShowFallback ? fallbackNodes : nodes)),
     [isSimilarMode, similarResults, shouldShowFallback, fallbackNodes, nodes]
   );
+
+  useEffect(() => {
+    if (fallbackAutoRetryTimerRef.current !== null) {
+      window.clearTimeout(fallbackAutoRetryTimerRef.current);
+      fallbackAutoRetryTimerRef.current = null;
+    }
+    if (!shouldRunFallbackAutoRetry || !lastSearchCriteria) {
+      return;
+    }
+    if (fallbackAutoRetryCount >= FALLBACK_AUTO_RETRY_MAX) {
+      return;
+    }
+    const nextDelayMs = getFallbackAutoRetryDelayMs(fallbackAutoRetryCount);
+
+    fallbackAutoRetryTimerRef.current = window.setTimeout(() => {
+      setFallbackAutoRetryCount((prev) => prev + 1);
+      handleRetrySearch();
+    }, nextDelayMs);
+
+    return () => {
+      if (fallbackAutoRetryTimerRef.current !== null) {
+        window.clearTimeout(fallbackAutoRetryTimerRef.current);
+        fallbackAutoRetryTimerRef.current = null;
+      }
+    };
+  }, [shouldRunFallbackAutoRetry, lastSearchCriteria, fallbackAutoRetryCount, handleRetrySearch]);
+
+  const fallbackAutoRetryNextDelayMs = shouldRunFallbackAutoRetry && fallbackAutoRetryCount < FALLBACK_AUTO_RETRY_MAX
+    ? getFallbackAutoRetryDelayMs(fallbackAutoRetryCount)
+    : null;
+
   const failedPreviewSummary = useMemo(
     () => summarizeFailedPreviews(
       displayNodes
@@ -1061,30 +1478,55 @@ const SearchResults: React.FC = () => {
   const failedPreviewReasonSummary = useMemo(() => {
     return failedPreviewSummary.retryableReasons.slice(0, 6);
   }, [failedPreviewSummary]);
-  const previewStatusCounts = displayNodes.reduce(
-    (acc, node) => {
+	  const previewStatusCounts = useMemo(() => {
+	    const base = {
+      READY: 0,
+      PROCESSING: 0,
+      QUEUED: 0,
+      FAILED: 0,
+      UNSUPPORTED: 0,
+      PENDING: 0,
+      other: 0,
+	      folders: 0,
+	    };
+
+	    const previewStatusFacets = searchFacets?.previewStatus;
+	    const canUseSearchFacetsForPreview =
+	      !nonPreviewFiltersApplied
+	      && !previewStatusFilterApplied
+	      && Array.isArray(previewStatusFacets)
+	      && previewStatusFacets.length > 0;
+
+	    if (canUseSearchFacetsForPreview) {
+	      for (const facet of previewStatusFacets) {
+	        const key = (facet.value || '').toUpperCase();
+	        if (key in base) {
+	          base[key as keyof typeof base] = facet.count;
+	        }
+	      }
+      return base;
+    }
+
+    return displayNodes.reduce((acc, node) => {
       if (node.nodeType === 'FOLDER') {
         acc.folders += 1;
         return acc;
       }
-      const status = node.previewStatus?.toUpperCase() || 'PENDING';
+      const nodeMimeType = node.contentType || node.properties?.mimeType || node.properties?.contentType;
+      const status = getEffectivePreviewStatus(
+        node.previewStatus,
+        node.previewFailureCategory,
+        nodeMimeType,
+        node.previewFailureReason
+      ) || 'PENDING';
       if (status in acc) {
         acc[status as keyof typeof acc] += 1;
       } else {
         acc.other += 1;
       }
       return acc;
-    },
-    {
-      READY: 0,
-      PROCESSING: 0,
-      QUEUED: 0,
-      FAILED: 0,
-      PENDING: 0,
-      other: 0,
-      folders: 0,
-    }
-  );
+    }, base);
+  }, [displayNodes, nonPreviewFiltersApplied, previewStatusFilterApplied, searchFacets]);
 
   const handleRetryPreview = useCallback(async (node: Node, force = false) => {
     if (!node?.id || node.nodeType !== 'DOCUMENT') {
@@ -1185,16 +1627,7 @@ const SearchResults: React.FC = () => {
     toast.success(`Preview ${force ? 'rebuilds' : 'retries'} (${reasonLabel}): ${parts.join(', ')}`);
     setBatchRetrying(false);
   };
-  const statusFilteredNodes = previewStatusFilterApplied
-    ? displayNodes.filter((node) => {
-        if (node.nodeType === 'FOLDER') {
-          return false;
-        }
-        const status = node.previewStatus?.toUpperCase() || 'PENDING';
-        return selectedPreviewStatuses.includes(status);
-      })
-    : displayNodes;
-  const paginatedNodes = statusFilteredNodes.filter((node) => !hiddenNodeIds.includes(node.id));
+  const paginatedNodes = displayNodes.filter((node) => !hiddenNodeIds.includes(node.id));
   const queuedPreviewDetails = useMemo(() => {
     return paginatedNodes
       .map((node) => {
@@ -1205,7 +1638,12 @@ const SearchResults: React.FC = () => {
         return {
           id: node.id,
           name: node.name,
-          status: node.previewStatus?.toUpperCase() || 'PENDING',
+          status: getEffectivePreviewStatus(
+            node.previewStatus,
+            node.previewFailureCategory,
+            node.contentType || node.properties?.mimeType || node.properties?.contentType,
+            node.previewFailureReason
+          ),
           attempts: queueStatus.attempts,
           nextAttemptAt: queueStatus.nextAttemptAt,
         };
@@ -1220,13 +1658,11 @@ const SearchResults: React.FC = () => {
   }, [paginatedNodes, previewQueueStatusById]);
   const displayTotal = isSimilarMode
     ? paginatedNodes.length
-    : previewStatusFilterApplied
-      ? statusFilteredNodes.length
-      : nodesTotal;
+    : nodesTotal;
   const totalPages = Math.max(1, Math.ceil(displayTotal / pageSize));
   const spellcheckQuery = (lastSearchCriteria?.name || '').trim();
   const normalizedSpellcheckQuery = spellcheckQuery.toLowerCase();
-  const shouldUseSearchFacets = !nonPreviewFiltersApplied && searchFacets && Object.keys(searchFacets).length > 0;
+  const shouldUseSearchFacets = !nonPreviewFiltersApplied && !previewStatusFilterApplied && searchFacets && Object.keys(searchFacets).length > 0;
   const facets = useMemo(() => {
     if (shouldUseSearchFacets) {
       const toSorted = (values?: FacetValue[]) =>
@@ -1251,7 +1687,7 @@ const SearchResults: React.FC = () => {
       map.set(key, (map.get(key) || 0) + 1);
     };
 
-    for (const node of statusFilteredNodes) {
+    for (const node of displayNodes) {
       if (node.contentType) {
         inc(mimeTypeCounts, node.contentType);
       }
@@ -1286,7 +1722,7 @@ const SearchResults: React.FC = () => {
       tags: mapToSortedArray(tagCounts),
       categories: mapToSortedArray(categoryCounts),
     };
-  }, [shouldUseSearchFacets, searchFacets, statusFilteredNodes]);
+  }, [shouldUseSearchFacets, searchFacets, displayNodes]);
   const facetScopeLabel = shouldUseSearchFacets
     ? 'Facet counts reflect the full result set for this query.'
     : 'Facet counts reflect the current page after filters are applied.';
@@ -1311,27 +1747,66 @@ const SearchResults: React.FC = () => {
       <Paper sx={{ p: 2, mb: 3 }}>
         <form onSubmit={handleQuickSearch}>
           <Box display="flex" alignItems="center" gap={2}>
-            <TextField
+            <Autocomplete
+              freeSolo
               fullWidth
-              placeholder="Quick search by name..."
-              name="quickSearch"
-              value={quickSearch}
-              onChange={(e) => setQuickSearch(e.target.value)}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <Search />
-                  </InputAdornment>
-                ),
-                endAdornment: quickSearch && (
-                  <InputAdornment position="end">
-                    <IconButton onClick={handleClearSearch} edge="end">
-                      <Clear />
-                    </IconButton>
-                  </InputAdornment>
-                ),
+              options={quickSearchSuggestions}
+              inputValue={quickSearch}
+              onInputChange={(_, value, reason) => {
+                if (reason === 'reset') {
+                  return;
+                }
+                setQuickSearch(value);
               }}
+              onChange={(_, value) => {
+                if (typeof value === 'string') {
+                  setQuickSearch(value);
+                }
+              }}
+              filterOptions={(options) => options}
+              loading={quickSearchSuggestionsLoading}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  placeholder="Quick search by name..."
+                  name="quickSearch"
+                  InputProps={{
+                    ...params.InputProps,
+                    startAdornment: (
+                      <>
+                        <InputAdornment position="start">
+                          <Search />
+                        </InputAdornment>
+                        {params.InputProps.startAdornment}
+                      </>
+                    ),
+                    endAdornment: (
+                      <>
+                        {quickSearchSuggestionsLoading ? (
+                          <CircularProgress color="inherit" size={18} />
+                        ) : null}
+                        {quickSearch ? (
+                          <InputAdornment position="end">
+                            <IconButton onClick={handleClearSearch} edge="end" size="small">
+                              <Clear />
+                            </IconButton>
+                          </InputAdornment>
+                        ) : null}
+                        {params.InputProps.endAdornment}
+                      </>
+                    ),
+                  }}
+                />
+              )}
             />
+            <Button
+              variant="outlined"
+              startIcon={<Star fontSize="small" color="warning" />}
+              onClick={handleOpenPinnedSavedSearchMenu}
+              aria-label="Pinned saved searches"
+            >
+              Saved
+            </Button>
             <Button
               variant="outlined"
               startIcon={<FilterList />}
@@ -1341,7 +1816,91 @@ const SearchResults: React.FC = () => {
             </Button>
           </Box>
         </form>
+        <Menu
+          anchorEl={pinnedSavedSearchMenuAnchorEl}
+          open={pinnedSavedSearchMenuOpen}
+          onClose={handleClosePinnedSavedSearchMenu}
+          keepMounted
+        >
+          <MenuItem disabled>
+            <ListItemText
+              primary="Pinned Saved Searches"
+              secondary="Quickly run your pinned searches"
+            />
+          </MenuItem>
+          <Divider />
+          {pinnedSavedSearchesLoading ? (
+            <MenuItem disabled>
+              <ListItemIcon>
+                <CircularProgress size={18} />
+              </ListItemIcon>
+              <ListItemText primary="Loading pinned searches…" />
+            </MenuItem>
+          ) : pinnedSavedSearchesError ? (
+            <MenuItem disabled>
+              <ListItemText primary={pinnedSavedSearchesError} />
+            </MenuItem>
+          ) : pinnedSavedSearches.length === 0 ? (
+            <MenuItem disabled>
+              <ListItemText primary="No pinned searches yet." secondary="Pin one in Saved Searches or Admin Dashboard." />
+            </MenuItem>
+          ) : (
+            pinnedSavedSearches.map((item) => (
+              <MenuItem
+                key={item.id}
+                onClick={() => handleRunPinnedSavedSearch(item)}
+                aria-label={`Run saved search ${item.name}`}
+              >
+                <ListItemIcon>
+                  <Star fontSize="small" color="warning" />
+                </ListItemIcon>
+                <ListItemText primary={item.name} />
+                <Tooltip title="Unpin">
+                  <IconButton
+                    size="small"
+                    aria-label={`Unpin saved search ${item.name}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleUnpinSavedSearch(item);
+                    }}
+                  >
+                    <StarBorder fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </MenuItem>
+            ))
+          )}
+          <Divider />
+          <MenuItem
+            onClick={() => {
+              handleClosePinnedSavedSearchMenu();
+              navigate('/saved-searches');
+            }}
+          >
+            <ListItemText primary="Manage saved searches" />
+          </MenuItem>
+          <MenuItem
+            onClick={() => loadPinnedSavedSearches()}
+            aria-label="Refresh pinned saved searches"
+          >
+            <ListItemIcon>
+              <Refresh fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="Refresh" />
+          </MenuItem>
+        </Menu>
       </Paper>
+
+      {lastSearchCriteria?.folderId && (
+        <Box display="flex" flexWrap="wrap" gap={1} sx={{ mb: 2 }}>
+          <Chip
+            label={folderScopeLabel}
+            onDelete={handleClearFolderScope}
+            size="small"
+            variant="outlined"
+          />
+        </Box>
+      )}
 
       {spellcheckLoading && (
         <Alert severity="info" sx={{ mb: 2 }}>
@@ -1446,17 +2005,13 @@ const SearchResults: React.FC = () => {
             <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
               Filter results by preview generation state.
             </Typography>
-            {previewStatusFilterApplied && (
-              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-                Preview status filters apply to the current page only.
-              </Typography>
-            )}
             <Box display="flex" flexWrap="wrap" gap={1} mb={2}>
               {[
                 { value: 'READY', label: 'Ready', color: 'success' as const, count: previewStatusCounts.READY },
                 { value: 'PROCESSING', label: 'Processing', color: 'warning' as const, count: previewStatusCounts.PROCESSING },
                 { value: 'QUEUED', label: 'Queued', color: 'info' as const, count: previewStatusCounts.QUEUED },
                 { value: 'FAILED', label: 'Failed', color: 'error' as const, count: previewStatusCounts.FAILED },
+                { value: 'UNSUPPORTED', label: 'Unsupported', color: 'default' as const, count: previewStatusCounts.UNSUPPORTED },
                 { value: 'PENDING', label: 'Pending', color: 'default' as const, count: previewStatusCounts.PENDING },
               ].map((status) => (
                 <Chip
@@ -1503,14 +2058,14 @@ const SearchResults: React.FC = () => {
             )}
             {failedPreviewSummary.totalFailed > 0 && (
               <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-                Failed previews on current page: {failedPreviewSummary.totalFailed}
+                Preview issues on current page: {failedPreviewSummary.totalFailed}
                 {' • '}Retryable {failedPreviewSummary.retryableFailed}
                 {' • '}Unsupported {failedPreviewSummary.unsupportedFailed}
               </Typography>
             )}
             {failedPreviewSummary.totalFailed > 0 && failedPreviewSummary.retryableFailed === 0 && (
               <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-                All failed previews on this page are unsupported; retry actions are hidden.
+                All preview issues on this page are unsupported; retry actions are hidden.
               </Typography>
             )}
             {failedPreviewSummary.retryableFailed > 0 && failedPreviewReasonSummary.length > 0 && (
@@ -1735,14 +2290,49 @@ const SearchResults: React.FC = () => {
               severity="info"
               sx={{ mb: 2 }}
               action={(
-                <Button color="inherit" size="small" onClick={handleRetrySearch}>
-                  Retry
-                </Button>
+                <Stack direction="row" spacing={1}>
+                  <Button color="inherit" size="small" onClick={handleRetrySearch}>
+                    Retry
+                  </Button>
+                  <Button color="inherit" size="small" onClick={handleHideFallbackResults}>
+                    Hide previous results
+                  </Button>
+                </Stack>
               )}
             >
               {fallbackLabel
                 ? `Search results may still be indexing. Showing previous results for "${fallbackLabel}".`
                 : 'Search results may still be indexing. Showing previous results.'}
+              {' '}
+              {fallbackAutoRetryCount < FALLBACK_AUTO_RETRY_MAX
+                ? `Auto-retry ${fallbackAutoRetryCount}/${FALLBACK_AUTO_RETRY_MAX}${fallbackAutoRetryNextDelayMs ? ` (next in ${(fallbackAutoRetryNextDelayMs / 1000).toFixed(1)}s).` : '.'}`
+                : `Auto-retry stopped after ${FALLBACK_AUTO_RETRY_MAX} attempts.`}
+              {fallbackLastRetryAt ? ` Last retry: ${format(fallbackLastRetryAt, 'PPp')}.` : ''}
+            </Alert>
+          )}
+          {shouldShowSuppressedFallbackNotice && (
+            <Alert
+              severity="info"
+              sx={{ mb: 2 }}
+              action={(
+                <Stack direction="row" spacing={1}>
+                  <Button color="inherit" size="small" onClick={handleRetrySearch}>
+                    Retry
+                  </Button>
+                  <Button color="inherit" size="small" onClick={handleShowFallbackResults}>
+                    Show previous results
+                  </Button>
+                </Stack>
+              )}
+            >
+              {fallbackSuppressionQueryLabel
+                ? `Search results may still be indexing for exact query "${fallbackSuppressionQueryLabel}". Previous results are hidden to avoid stale mismatch.`
+                : 'Search results may still be indexing for an exact query. Previous results are hidden to avoid stale mismatch.'}
+              {' '}
+              {fallbackAutoRetryCount < FALLBACK_AUTO_RETRY_MAX
+                ? `Auto-retry ${fallbackAutoRetryCount}/${FALLBACK_AUTO_RETRY_MAX}${fallbackAutoRetryNextDelayMs ? ` (next in ${(fallbackAutoRetryNextDelayMs / 1000).toFixed(1)}s).` : '.'}`
+                : `Auto-retry stopped after ${FALLBACK_AUTO_RETRY_MAX} attempts.`}
+              {fallbackLastRetryAt ? ` Last retry: ${format(fallbackLastRetryAt, 'PPp')}.` : ''}
             </Alert>
           )}
           {suggestedFiltersError && (
@@ -1895,7 +2485,7 @@ const SearchResults: React.FC = () => {
             </Paper>
           )}
           <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-            <Typography variant="h6">
+              <Typography variant="h6">
               {loading
                 ? 'Searching...'
                 : isSimilarMode
@@ -1905,16 +2495,9 @@ const SearchResults: React.FC = () => {
                   : shouldShowFallback
                     ? `Showing previous results (${paginatedNodes.length}) while the index refreshes`
                     : displayTotal > 0
-                      ? previewStatusFilterApplied
-                        ? `Showing ${paginatedNodes.length} result${paginatedNodes.length === 1 ? '' : 's'} on this page`
-                        : `Showing ${paginatedNodes.length} of ${displayTotal} results`
+                      ? `Showing ${paginatedNodes.length} of ${displayTotal} results`
                       : '0 results found'}
             </Typography>
-            {previewStatusFilterApplied && displayTotal > 0 && !loading && !isSimilarMode && !shouldShowFallback && (
-              <Typography variant="caption" color="text.secondary">
-                Preview status filters apply per page. Clear the filter to page through all results.
-              </Typography>
-            )}
             <FormControl size="small" sx={{ minWidth: 150 }}>
               <InputLabel>Sort by</InputLabel>
               <Select value={sortBy} onChange={(e) => setSortBy(e.target.value)} label="Sort by">
@@ -2029,9 +2612,21 @@ const SearchResults: React.FC = () => {
                             </Box>
                           </Box>
                         </Box>
-                        <Typography variant="body2" color="text.secondary" gutterBottom>
-                          {node.path}
-                        </Typography>
+                        {(() => {
+                          const breadcrumb = formatBreadcrumbPath(node.path, { nodeName: node.name, maxSegments: 4 });
+                          const creator = (node.creator || '').trim();
+                          const parts = [breadcrumb, creator ? `By ${creator}` : null].filter(Boolean) as string[];
+                          if (parts.length === 0) {
+                            return null;
+                          }
+                          return (
+                            <Tooltip title={node.path} placement="top-start" arrow disableHoverListener={!node.path}>
+                              <Typography variant="caption" color="text.secondary" gutterBottom noWrap>
+                                {parts.join(' | ')}
+                              </Typography>
+                            </Tooltip>
+                          );
+                        })()}
                         <Highlight
                           text={node.description}
                           highlights={

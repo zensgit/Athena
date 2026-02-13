@@ -98,6 +98,7 @@ const FileList: React.FC<FileListProps> = ({
   const { user } = useAppSelector((state) => state.auth);
   const { compactMode, sortBy, sortAscending, viewMode } = useAppSelector((state) => state.ui);
   const canWrite = Boolean(user?.roles?.includes('ROLE_ADMIN') || user?.roles?.includes('ROLE_EDITOR'));
+  const isAdmin = Boolean(user?.roles?.includes('ROLE_ADMIN'));
   const [contextMenu, setContextMenu] = React.useState<{
     mouseX: number;
     mouseY: number;
@@ -880,6 +881,19 @@ const FileList: React.FC<FileListProps> = ({
           </ListItemIcon>
           <ListItemText>Permissions</ListItemText>
         </MenuItem>
+        {isAdmin && contextMenu && (
+          <MenuItem
+            onClick={() => {
+              navigate(`/admin?auditNodeId=${encodeURIComponent(contextMenu.node.id)}`);
+              handleCloseContextMenu();
+            }}
+          >
+            <ListItemIcon>
+              <InfoOutlined fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>View Audit</ListItemText>
+          </MenuItem>
+        )}
         {canWrite && contextMenu && isDocumentNode(contextMenu.node) && (
           <MenuItem onClick={() => contextMenu && handleOpenTags(contextMenu.node)}>
             <ListItemIcon>

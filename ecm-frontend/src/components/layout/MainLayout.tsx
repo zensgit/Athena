@@ -40,13 +40,15 @@ import {
   PushPinOutlined,
 } from '@mui/icons-material';
 import { alpha } from '@mui/material/styles';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from 'store';
 import { logout } from 'store/slices/authSlice';
 import {
+  SearchPrefill,
   setUploadDialogOpen,
   setCreateFolderDialogOpen,
   setSearchOpen,
+  setSearchPrefill,
   setSidebarOpen,
   setTagManagerOpen,
   setCategoryManagerOpen,
@@ -62,6 +64,7 @@ import CategoryManager from 'components/categories/CategoryManager';
 import ShareLinkManager from 'components/share/ShareLinkManager';
 import MLSuggestionsDialog from 'components/ml/MLSuggestionsDialog';
 import authService from 'services/authService';
+import { buildSearchPrefillFromAdvancedSearchUrl } from 'utils/searchPrefillUtils';
 
 const DRAWER_WIDTH_STORAGE_KEY = 'athena.ecm.drawerWidth';
 const SIDEBAR_AUTO_COLLAPSE_STORAGE_KEY = 'athena.ecm.sidebarAutoCollapse';
@@ -76,9 +79,11 @@ interface MainLayoutProps {
 
 const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { nodeId } = useParams<{ nodeId: string }>();
   const dispatch = useAppDispatch();
   const { user } = useAppSelector((state) => state.auth);
+  const { currentNode } = useAppSelector((state) => state.node);
   const { sidebarOpen, sidebarAutoCollapse, compactMode, tagManagerOpen, categoryManagerOpen, shareLinkManagerOpen, selectedNodeId } =
     useAppSelector((state) => state.ui);
   const effectiveUser = user ?? authService.getCurrentUser();
@@ -122,6 +127,28 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   };
 
   const handleSearch = () => {
+    const looksLikeUuid = (value: string) =>
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+
+    // When invoked from a folder page, default to "search within this folder".
+    // Avoid using the route param directly since "root" is an alias; currentNode.id is the real UUID.
+    const folderScopeId =
+      currentNode?.nodeType === 'FOLDER'
+        ? currentNode.id
+        : (nodeId && nodeId !== 'root' && looksLikeUuid(nodeId) ? nodeId : null);
+
+    const prefillPayload: Partial<SearchPrefill> = {
+      ...buildSearchPrefillFromAdvancedSearchUrl(location.pathname, location.search),
+    };
+
+    if (folderScopeId) {
+      prefillPayload.folderId = folderScopeId;
+      prefillPayload.includeChildren = true;
+    }
+
+    if (Object.keys(prefillPayload).length > 0) {
+      dispatch(setSearchPrefill(prefillPayload));
+    }
     dispatch(setSearchOpen(true));
   };
 

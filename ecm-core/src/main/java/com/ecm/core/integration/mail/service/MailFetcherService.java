@@ -52,6 +52,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -124,6 +125,9 @@ public class MailFetcherService {
     private volatile MailFetchSummary lastFetchSummary;
     private volatile Instant lastFetchAt;
 
+    private record AccountSkipDecision(String reason, boolean throttlePollInterval) {
+    }
+
     @Scheduled(fixedDelayString = "${ecm.mail.fetcher.poll-interval-ms:60000}")
     public void fetchAllAccounts() {
         fetchAllAccounts(false);
@@ -131,7 +135,8 @@ public class MailFetcherService {
 
     public MailFetchSummary fetchAllAccounts(boolean force) {
         List<MailAccount> accounts = accountRepository.findByEnabledTrue();
-        log.info("Starting mail fetch for {} accounts (force={})", accounts.size(), force);
+        String runId = UUID.randomUUID().toString();
+        log.info("Starting mail fetch (runId={}) for {} accounts (force={})", runId, accounts.size(), force);
 
         MailFetchRunStats stats = new MailFetchRunStats();
         stats.accounts = accounts.size();
@@ -146,6 +151,16 @@ public class MailFetcherService {
                 continue;
             }
 
+            AccountSkipDecision skipDecision = resolveAccountSkipDecision(account);
+            if (skipDecision != null) {
+                stats.skippedAccounts++;
+                incrementAccountMetric("skipped", skipDecision.reason());
+                if (skipDecision.throttlePollInterval()) {
+                    lastPollByAccount.put(account.getId(), now);
+                }
+                continue;
+            }
+
             stats.attemptedAccounts++;
             String status = "ok";
             String reason = "none";
@@ -153,6 +168,12 @@ public class MailFetcherService {
             try {
                 runWithSystemAuthenticationIfMissing(() -> processAccount(account, stats));
                 updateAccountFetchStatus(account, "SUCCESS", null);
+            } catch (MailOAuthReauthRequiredException e) {
+                status = "error";
+                reason = "oauth_reauth_required";
+                stats.accountErrors++;
+                log.warn("OAuth reauth required for mail account {}: {}", account.getName(), e.getMessage());
+                updateAccountFetchStatus(account, "ERROR", e.getMessage());
             } catch (Exception e) {
                 status = "error";
                 reason = "exception";
@@ -168,13 +189,35 @@ public class MailFetcherService {
 
         runSample.stop(meterRegistry.timer("mail_fetch_run_duration"));
         long durationMs = (System.nanoTime() - startNs) / 1_000_000L;
-        log.info("Mail fetch completed: accounts={}, attempted={}, skipped={}, force={}",
-            accounts.size(), stats.attemptedAccounts, stats.skippedAccounts, force);
+        log.info("Mail fetch completed (runId={}): accounts={}, attempted={}, skipped={}, force={}",
+            runId, accounts.size(), stats.attemptedAccounts, stats.skippedAccounts, force);
 
-        MailFetchSummary summary = stats.toSummary(durationMs);
+        MailFetchSummary summary = stats.toSummary(durationMs, runId);
         lastFetchSummary = summary;
         lastFetchAt = Instant.now();
         return summary;
+    }
+
+    private AccountSkipDecision resolveAccountSkipDecision(MailAccount account) {
+        if (account.getSecurity() != MailAccount.SecurityType.OAUTH2) {
+            return null;
+        }
+
+        OAuthEnvCheckResult envCheck = checkOAuthEnv(account);
+        if (!envCheck.configured()) {
+            // Environment/credential-key based secrets are missing; avoid noisy failures.
+            return new AccountSkipDecision("oauth_unconfigured", true);
+        }
+
+        if (!hasCredentialKey(account)) {
+            String refreshToken = account.getOauthRefreshToken();
+            if (refreshToken == null || refreshToken.isBlank()) {
+                // Account exists but has not been connected via OAuth callback yet.
+                return new AccountSkipDecision("oauth_not_connected", false);
+            }
+        }
+
+        return null;
     }
 
     public MailFetchSummaryStatus getLastFetchSummary() {
@@ -256,8 +299,10 @@ public class MailFetcherService {
     public MailFetchDebugResult fetchAllAccountsDebug(boolean force, Integer maxMessagesPerFolder) {
         List<MailAccount> accounts = accountRepository.findByEnabledTrue();
         int effectiveMaxMessages = resolveDebugMaxMessages(maxMessagesPerFolder);
+        String runId = UUID.randomUUID().toString();
         log.info(
-            "Starting mail fetch debug run for {} accounts (force={}, maxMessagesPerFolder={})",
+            "Starting mail fetch debug run (runId={}) for {} accounts (force={}, maxMessagesPerFolder={})",
+            runId,
             accounts.size(),
             force,
             effectiveMaxMessages
@@ -288,6 +333,31 @@ public class MailFetcherService {
                     0,
                     0,
                     Map.of("poll_interval", 1),
+                    Map.of(),
+                    List.of()
+                );
+                stats.addAccountResult(result);
+                continue;
+            }
+
+            AccountSkipDecision skipDecision = resolveAccountSkipDecision(account);
+            if (skipDecision != null) {
+                stats.skippedAccounts++;
+                MailFetchDebugAccountResult result = new MailFetchDebugAccountResult(
+                    account.getId(),
+                    account.getName(),
+                    false,
+                    skipDecision.reason(),
+                    null,
+                    rules.size(),
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    Map.of(skipDecision.reason(), 1),
                     Map.of(),
                     List.of()
                 );
@@ -327,9 +397,10 @@ public class MailFetcherService {
         }
 
         long durationMs = (System.nanoTime() - startNs) / 1_000_000L;
-        MailFetchSummary summary = stats.toSummary(durationMs);
+        MailFetchSummary summary = stats.toSummary(durationMs, runId);
         log.info(
-            "Mail fetch debug run completed: accounts={}, attempted={}, skipped={}, errors={}",
+            "Mail fetch debug run completed (runId={}): accounts={}, attempted={}, skipped={}, errors={}",
+            runId,
             summary.accounts(),
             summary.attemptedAccounts(),
             summary.skippedAccounts(),
@@ -342,6 +413,10 @@ public class MailFetcherService {
         return new MailFetchDebugResult(summary, effectiveMaxMessages, stats.skipReasons, stats.accountResults);
     }
 
+    public void evictOAuthSession(UUID accountId) {
+        oauthSessionByAccount.remove(accountId);
+    }
+
     public MailRulePreviewResult previewRule(UUID accountId, UUID ruleId, Integer maxMessagesPerFolder) {
         MailAccount account = accountRepository.findById(accountId)
             .orElseThrow(() -> new IllegalArgumentException("Mail account not found: " + accountId));
@@ -352,7 +427,16 @@ public class MailFetcherService {
             throw new IllegalArgumentException("Mail rule does not belong to account: " + accountId);
         }
 
+        String runId = UUID.randomUUID().toString();
         int effectiveMaxMessages = resolveDebugMaxMessages(maxMessagesPerFolder);
+        long startNs = System.nanoTime();
+        log.info(
+            "Starting mail rule preview (runId={}): accountId={}, ruleId={}, maxMessagesPerFolder={}",
+            runId,
+            accountId,
+            ruleId,
+            effectiveMaxMessages
+        );
         List<String> folders = normalizeFolders(rule.getFolder());
         Map<String, Integer> skipReasons = new HashMap<>();
         List<MailRulePreviewMessage> matchedMessages = new ArrayList<>();
@@ -484,6 +568,19 @@ public class MailFetcherService {
             }
         }
 
+        long durationMs = (System.nanoTime() - startNs) / 1_000_000L;
+        log.info(
+            "Mail rule preview completed (runId={}): found={}, scanned={}, matched={}, processable={}, skipped={}, errors={}, durationMs={}",
+            runId,
+            foundMessages,
+            scannedMessages,
+            matchedCount,
+            processableCount,
+            skippedMessages,
+            errorMessages,
+            durationMs
+        );
+
         return new MailRulePreviewResult(
             account.getId(),
             account.getName(),
@@ -497,7 +594,8 @@ public class MailFetcherService {
             skippedMessages,
             errorMessages,
             skipReasons,
-            matchedMessages
+            matchedMessages,
+            runId
         );
     }
 
@@ -916,6 +1014,27 @@ public class MailFetcherService {
         }
     }
 
+    public List<MailDocumentDiagnosticItem> listProcessedMailDocuments(UUID processedMailId, Integer limit) {
+        int effectiveLimit = limit != null && limit > 0 ? Math.min(limit, 200) : 50;
+        ProcessedMail processedMail = processedMailRepository.findById(processedMailId)
+            .orElseThrow(() -> new IllegalArgumentException("Processed mail not found: " + processedMailId));
+
+        Map<UUID, String> accountNames = accountRepository.findAll().stream()
+            .collect(Collectors.toMap(MailAccount::getId, MailAccount::getName));
+        Map<UUID, String> ruleNames = ruleRepository.findAllByOrderByPriorityAsc().stream()
+            .collect(Collectors.toMap(MailRule::getId, MailRule::getName));
+
+        List<Document> docs = documentRepository.findMailDocumentsForMessage(
+            effectiveLimit,
+            processedMail.getAccountId() != null ? processedMail.getAccountId().toString() : null,
+            processedMail.getFolder(),
+            processedMail.getUid()
+        );
+        return docs.stream()
+            .map(doc -> toMailDocumentDiagnosticItem(doc, accountNames, ruleNames))
+            .toList();
+    }
+
     private record MailRoutingTarget(UUID folderId, String reason, String address) {
     }
 
@@ -929,7 +1048,8 @@ public class MailFetcherService {
         int processedMessages,
         int skippedMessages,
         int errorMessages,
-        long durationMs
+        long durationMs,
+        String runId
     ) {
     }
 
@@ -1056,7 +1176,8 @@ public class MailFetcherService {
         int skippedMessages,
         int errorMessages,
         Map<String, Integer> skipReasons,
-        List<MailRulePreviewMessage> matches
+        List<MailRulePreviewMessage> matches,
+        String runId
     ) {
     }
 
@@ -1119,7 +1240,7 @@ public class MailFetcherService {
         private int skippedMessages;
         private int errorMessages;
 
-        private MailFetchSummary toSummary(long durationMs) {
+        private MailFetchSummary toSummary(long durationMs, String runId) {
             return new MailFetchSummary(
                 accounts,
                 attemptedAccounts,
@@ -1130,7 +1251,8 @@ public class MailFetcherService {
                 processedMessages,
                 skippedMessages,
                 errorMessages,
-                durationMs
+                durationMs,
+                runId
             );
         }
     }
@@ -1174,7 +1296,7 @@ public class MailFetcherService {
             skipReasons.merge(reason, amount, Integer::sum);
         }
 
-        private MailFetchSummary toSummary(long durationMs) {
+        private MailFetchSummary toSummary(long durationMs, String runId) {
             return new MailFetchSummary(
                 accounts,
                 attemptedAccounts,
@@ -1185,7 +1307,8 @@ public class MailFetcherService {
                 processedMessages,
                 skippedMessages,
                 errorMessages,
-                durationMs
+                durationMs,
+                runId
             );
         }
     }
@@ -2859,8 +2982,34 @@ public class MailFetcherService {
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-        var response = restTemplate.postForEntity(tokenEndpoint, new HttpEntity<>(form, headers), Map.class);
-        Map<?, ?> body = response.getBody();
+        Map<?, ?> body;
+        try {
+            var response = restTemplate.postForEntity(tokenEndpoint, new HttpEntity<>(form, headers), Map.class);
+            body = response.getBody();
+        } catch (HttpStatusCodeException ex) {
+            // Detect non-retryable "invalid_grant" and force reconnect by clearing stored tokens.
+            var parsed = MailOAuthTokenErrorParser.parse(ex.getResponseBodyAsString()).orElse(null);
+            if (parsed != null) {
+                if ("invalid_grant".equalsIgnoreCase(parsed.error())) {
+                    clearStoredOAuthTokens(account);
+                    try {
+                        accountRepository.save(account);
+                    } catch (Exception saveError) {
+                        log.warn("Failed to persist OAuth token reset for account {}", account.getName(), saveError);
+                    }
+                    oauthSessionByAccount.remove(account.getId());
+                    throw new MailOAuthReauthRequiredException(account.getId(), parsed.error(), parsed.errorDescription());
+                }
+
+                String message = "OAuth token refresh failed: " + parsed.error();
+                if (parsed.errorDescription() != null && !parsed.errorDescription().isBlank()) {
+                    message += " - " + parsed.errorDescription().trim();
+                }
+                throw new IllegalStateException(message, ex);
+            }
+            throw ex;
+        }
+
         if (body == null || body.get("access_token") == null) {
             throw new IllegalStateException("OAuth token refresh failed for account " + account.getName());
         }
@@ -2870,6 +3019,12 @@ public class MailFetcherService {
         Long expiresIn = body.get("expires_in") instanceof Number number ? number.longValue() : null;
 
         return new OAuthTokenResponse(accessToken, refreshToken, expiresIn);
+    }
+
+    private void clearStoredOAuthTokens(MailAccount account) {
+        account.setOauthAccessToken(null);
+        account.setOauthRefreshToken(null);
+        account.setOauthTokenExpiresAt(null);
     }
 
     private String resolveOAuthTokenEndpoint(MailAccount account) {

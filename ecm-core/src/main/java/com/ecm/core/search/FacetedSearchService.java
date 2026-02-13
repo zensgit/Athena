@@ -10,8 +10,10 @@ import co.elastic.clients.elasticsearch._types.aggregations.Aggregate;
 import co.elastic.clients.elasticsearch._types.aggregations.Aggregation;
 import co.elastic.clients.elasticsearch._types.aggregations.AggregationRange;
 import co.elastic.clients.elasticsearch._types.aggregations.DateRangeExpression;
+import co.elastic.clients.elasticsearch._types.aggregations.FiltersBucket;
 import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery;
 import co.elastic.clients.elasticsearch._types.query_dsl.Operator;
+import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 import co.elastic.clients.elasticsearch._types.query_dsl.TextQueryType;
 import co.elastic.clients.json.JsonData;
 import co.elastic.clients.elasticsearch.core.search.Suggester;
@@ -85,6 +87,7 @@ public class FacetedSearchService {
         "tags",
         "categories",
         "correspondent",
+        "previewStatus",
         "nodeType"
     );
 
@@ -112,15 +115,11 @@ public class FacetedSearchService {
                 .map(this::toSearchResult)
                 .collect(Collectors.toList());
 
-            // Build facets from aggregations when available (admin), otherwise from authorized hits
+            // Build facets from aggregations when available (query already includes ACL filter),
+            // otherwise fall back to in-memory counting of the current page as best-effort.
             List<String> facetFields = resolveFacetFields(request);
-            Map<String, List<FacetValue>> facets;
-            if (securityService.hasRole("ROLE_ADMIN")) {
-                facets = buildFacetsFromAggregations(searchHits, facetFields);
-                if (facets.isEmpty()) {
-                    facets = buildFacets(authorizedHits);
-                }
-            } else {
+            Map<String, List<FacetValue>> facets = buildFacetsFromAggregations(searchHits, facetFields);
+            if (facets.isEmpty()) {
                 facets = buildFacets(authorizedHits);
             }
 
@@ -171,10 +170,6 @@ public class FacetedSearchService {
             NativeQuery esQuery = buildFacetedQuery(request);
             SearchHits<NodeDocument> searchHits = elasticsearchOperations.search(
                 esQuery, NodeDocument.class, IndexCoordinates.of(INDEX_NAME));
-
-            if (!securityService.hasRole("ROLE_ADMIN")) {
-                return buildFacets(filterAuthorizedHits(searchHits));
-            }
 
             Map<String, List<FacetValue>> facets = buildFacetsFromAggregations(searchHits, resolveFacetFields(request));
             if (facets.isEmpty()) {
@@ -421,7 +416,9 @@ public class FacetedSearchService {
         List<String> searchFields = resolveSearchFields(request);
         SearchFilters filters = request.getFilters();
 
-        NativeQueryBuilder builder = NativeQuery.builder().withPageable(pageable);
+        NativeQueryBuilder builder = NativeQuery.builder()
+            .withPageable(pageable)
+            .withTrackTotalHits(true);
 
         builder.withQuery(q -> q.bool(b -> {
             if (searchTerm.isBlank()) {
@@ -435,7 +432,9 @@ public class FacetedSearchService {
                 ));
             }
 
-            if (request.getPathPrefix() != null && !request.getPathPrefix().isBlank()) {
+            if ((filters == null || filters.getFolderId() == null || filters.getFolderId().isBlank())
+                && request.getPathPrefix() != null
+                && !request.getPathPrefix().isBlank()) {
                 b.filter(f -> f.prefix(p -> p.field("path").value(request.getPathPrefix())));
             }
 
@@ -523,7 +522,37 @@ public class FacetedSearchService {
         addDateRangeFilter(bool, "createdDate", filters.getDateFrom(), filters.getDateTo());
         addDateRangeFilter(bool, "lastModifiedDate", filters.getModifiedFrom(), filters.getModifiedTo());
         addNumberRangeFilter(bool, "fileSize", filters.getMinSize(), filters.getMaxSize());
-        addAnyPrefixFilter(bool, List.of("path"), filters.getPath());
+        if (filters.getFolderId() != null && !filters.getFolderId().isBlank()) {
+            applyFolderScopeFilter(bool, filters.getFolderId(), filters.isIncludeChildren());
+        } else {
+            addAnyPrefixFilter(bool, List.of("path.keyword", "path"), filters.getPath());
+        }
+
+        PreviewStatusFilterHelper.apply(bool, filters.getPreviewStatuses());
+    }
+
+    private void applyFolderScopeFilter(BoolQuery.Builder bool, String folderId, boolean includeChildren) {
+        if (folderId == null || folderId.isBlank()) {
+            return;
+        }
+
+        UUID id = UUID.fromString(folderId.trim());
+        if (!includeChildren) {
+            bool.filter(f -> f.term(t -> t.field("parentId").value(id.toString())));
+            return;
+        }
+
+        Node folder = nodeRepository.findByIdAndDeletedFalse(id).orElse(null);
+        if (folder == null || folder.getPath() == null || folder.getPath().isBlank()) {
+            bool.filter(f -> f.term(t -> t.field("parentId").value("__none__")));
+            return;
+        }
+
+        String prefix = folder.getPath();
+        if (!prefix.endsWith("/")) {
+            prefix += "/";
+        }
+        addAnyPrefixFilter(bool, List.of("path.keyword", "path"), prefix);
     }
 
     private static void addAnyOfTermsFilter(BoolQuery.Builder bool, List<String> fields, List<String> values) {
@@ -620,6 +649,10 @@ public class FacetedSearchService {
             if ("fileSizeRange".equalsIgnoreCase(field) || "createdDateRange".equalsIgnoreCase(field)) {
                 continue;
             }
+            if ("previewStatus".equalsIgnoreCase(field)) {
+                builder.withAggregation("previewStatus", buildPreviewStatusFacetAggregation());
+                continue;
+            }
             builder.withAggregation(field, Aggregation.of(a -> a.terms(t -> t
                 .field(field)
                 .size(DEFAULT_FACET_SIZE)
@@ -660,6 +693,15 @@ public class FacetedSearchService {
         )));
     }
 
+    private Aggregation buildPreviewStatusFacetAggregation() {
+        Map<String, Query> keyedFilters = new LinkedHashMap<>();
+        for (String bucket : PreviewStatusFilterHelper.facetBucketKeys()) {
+            keyedFilters.put(bucket, PreviewStatusFilterHelper.buildFacetBucketQuery(bucket));
+        }
+
+        return Aggregation.of(a -> a.filters(f -> f.filters(b -> b.keyed(keyedFilters))));
+    }
+
     private Map<String, List<FacetValue>> buildFacetsFromAggregations(
         SearchHits<NodeDocument> searchHits,
         List<String> facetFields
@@ -683,7 +725,9 @@ public class FacetedSearchService {
         var aggregationsMap = aggregations.aggregationsAsMap();
         for (String field : resolvedFields) {
             Aggregate agg = extractAggregate(aggregationsMap, field);
-            List<FacetValue> values = extractTermsFacet(agg);
+            List<FacetValue> values = "previewStatus".equalsIgnoreCase(field)
+                ? extractPreviewStatusFacet(agg)
+                : extractTermsFacet(agg);
             if (!values.isEmpty()) {
                 facets.put(field, values);
             }
@@ -725,6 +769,25 @@ public class FacetedSearchService {
         return aggregate.sterms().buckets().array().stream()
             .map(bucket -> new FacetValue(bucket.key().stringValue(), toFacetCount(bucket.docCount())))
             .collect(Collectors.toList());
+    }
+
+    private List<FacetValue> extractPreviewStatusFacet(Aggregate aggregate) {
+        if (aggregate == null || !aggregate.isFilters()) {
+            return List.of();
+        }
+
+        Map<String, FiltersBucket> keyed = aggregate.filters().buckets().keyed();
+        if (keyed == null || keyed.isEmpty()) {
+            return List.of();
+        }
+
+        List<FacetValue> values = new ArrayList<>();
+        for (String bucket : PreviewStatusFilterHelper.facetBucketKeys()) {
+            FiltersBucket entry = keyed.get(bucket);
+            long count = entry != null ? entry.docCount() : 0L;
+            values.add(new FacetValue(bucket, toFacetCount(count)));
+        }
+        return values;
     }
 
     private List<FacetValue> extractRangeFacet(Aggregate aggregate) {

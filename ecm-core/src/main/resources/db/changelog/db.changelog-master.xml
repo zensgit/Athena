@@ -39,6 +39,7 @@
     <include file="db/changelog/changes/026-add-webhook-subscriptions.xml"/>
     <include file="db/changelog/changes/027-add-permission-templates.xml"/>
     <include file="db/changelog/changes/028-add-permission-template-versions.xml"/>
+    <include file="db/changelog/changes/029-normalize-preview-unsupported-status.xml"/>
     <include file="db/changelog/changes/007-insert-initial-data.xml"/>
 
 </databaseChangeLog>

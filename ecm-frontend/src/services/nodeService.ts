@@ -140,6 +140,15 @@ export interface PreviewQueueStatus {
   nextAttemptAt?: string;
 }
 
+export interface OcrQueueStatus {
+  documentId: string;
+  ocrStatus: string | null;
+  queued: boolean;
+  attempts?: number;
+  nextAttemptAt?: string | null;
+  message?: string | null;
+}
+
 export interface PermissionDecision {
   nodeId: string | null;
   username: string | null;
@@ -436,6 +445,12 @@ class NodeService {
     if (criteria.tags?.length) {
       filters.tags = criteria.tags;
     }
+    if (criteria.aspects?.length) {
+      filters.aspects = criteria.aspects;
+    }
+    if (criteria.properties && Object.keys(criteria.properties).length > 0) {
+      filters.properties = criteria.properties;
+    }
     if (criteria.categories?.length) {
       filters.categories = criteria.categories;
     }
@@ -463,12 +478,22 @@ class NodeService {
     if (criteria.path) {
       filters.path = criteria.path;
     }
+    if (criteria.folderId) {
+      filters.folderId = criteria.folderId;
+      filters.includeChildren = criteria.includeChildren ?? true;
+    }
+    if (criteria.previewStatuses?.length) {
+      filters.previewStatuses = criteria.previewStatuses;
+    }
 
-    const hasFilters = Object.keys(filters).length > 0;
+    const hasNonScopeFilters = Object.keys(filters).some(
+      (key) => key !== 'folderId' && key !== 'includeChildren' && key !== 'previewStatuses'
+    );
+    const canUseFullTextEndpoint = Boolean(query) && !hasNonScopeFilters;
 
     // Fast path: for simple name-only searches, use the dedicated full-text endpoint.
     // It handles punctuation (e.g. hyphens) more reliably than the Criteria-based advanced endpoint.
-    const response = !hasFilters && query
+    const response = canUseFullTextEndpoint
       ? await api.get<{ content: any[]; totalElements?: number }>('/search', {
           params: {
             q: query,
@@ -476,6 +501,9 @@ class NodeService {
             size,
             sortBy: criteria.sortBy,
             sortDirection: criteria.sortDirection,
+            folderId: criteria.folderId,
+            includeChildren: criteria.includeChildren ?? true,
+            previewStatus: criteria.previewStatuses?.length ? criteria.previewStatuses.join(',') : undefined,
           },
         })
       : await api.post<{ content: any[]; totalElements?: number }>('/search/advanced', {
@@ -517,6 +545,10 @@ class NodeService {
     return api.get<string[]>('/search/spellcheck', { params: { q: query, limit } });
   }
 
+  async getSearchSuggestions(prefix: string, limit = 10): Promise<string[]> {
+    return api.get<string[]>('/search/suggestions', { params: { prefix, limit } });
+  }
+
   async getSearchDiagnostics(): Promise<SearchDiagnostics> {
     return api.get<SearchDiagnostics>('/search/diagnostics');
   }
@@ -531,6 +563,12 @@ class NodeService {
 
   async queuePreview(nodeId: string, force = false): Promise<PreviewQueueStatus> {
     return api.post<PreviewQueueStatus>(`/documents/${nodeId}/preview/queue`, null, {
+      params: { force },
+    });
+  }
+
+  async queueOcr(nodeId: string, force = false): Promise<OcrQueueStatus> {
+    return api.post<OcrQueueStatus>(`/documents/${nodeId}/ocr/queue`, null, {
       params: { force },
     });
   }
@@ -656,6 +694,28 @@ class NodeService {
     const version = versions.find((v) => v.id === versionId);
     const suffix = version?.versionLabel ? `_v${version.versionLabel}` : `_v${versionId}`;
     return api.downloadFile(`/documents/${nodeId}/versions/${versionId}/download`, `${node.name}${suffix}`);
+  }
+
+  async getVersionTextDiff(
+    nodeId: string,
+    fromVersionId: string,
+    toVersionId: string,
+    maxBytes = 200000,
+    maxLines = 2000
+  ): Promise<{ available: boolean; truncated: boolean; reason?: string | null; diff?: string | null }> {
+    const response = await api.get<{
+      textDiff?: { available: boolean; truncated: boolean; reason?: string | null; diff?: string | null } | null;
+    }>(`/documents/${nodeId}/versions/compare`, {
+      params: {
+        fromVersionId,
+        toVersionId,
+        includeTextDiff: true,
+        maxBytes,
+        maxLines,
+      },
+    });
+
+    return response.textDiff ?? { available: false, truncated: false, reason: 'No diff available', diff: null };
   }
 
   async revertToVersion(nodeId: string, versionId: string): Promise<Node> {

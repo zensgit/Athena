@@ -68,7 +68,7 @@ class AnalyticsControllerTest {
     @Test
     @DisplayName("Audit export accepts ISO offset datetime")
     void exportAuditLogsAcceptsOffsetDatetime() throws Exception {
-        Mockito.when(analyticsService.exportAuditLogsCsv(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any()))
+        Mockito.when(analyticsService.exportAuditLogsCsv(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any()))
             .thenReturn(new AnalyticsService.AuditExportResult("header\n", 0));
 
         mockMvc.perform(get("/api/v1/analytics/audit/export")
@@ -83,6 +83,7 @@ class AnalyticsControllerTest {
         Mockito.verify(analyticsService).exportAuditLogsCsv(
             fromCaptor.capture(),
             toCaptor.capture(),
+            Mockito.isNull(),
             Mockito.isNull(),
             Mockito.isNull(),
             Mockito.isNull()
@@ -127,7 +128,7 @@ class AnalyticsControllerTest {
     @Test
     @DisplayName("Audit export accepts local datetime without offset")
     void exportAuditLogsAcceptsLocalDatetime() throws Exception {
-        Mockito.when(analyticsService.exportAuditLogsCsv(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any()))
+        Mockito.when(analyticsService.exportAuditLogsCsv(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any()))
             .thenReturn(new AnalyticsService.AuditExportResult("header\n", 0));
 
         mockMvc.perform(get("/api/v1/analytics/audit/export")
@@ -141,6 +142,7 @@ class AnalyticsControllerTest {
         Mockito.verify(analyticsService).exportAuditLogsCsv(
             fromCaptor.capture(),
             toCaptor.capture(),
+            Mockito.isNull(),
             Mockito.isNull(),
             Mockito.isNull(),
             Mockito.isNull()
@@ -224,7 +226,7 @@ class AnalyticsControllerTest {
     @Test
     @DisplayName("Audit export accepts range at max window")
     void exportAuditLogsAcceptsMaxWindow() throws Exception {
-        Mockito.when(analyticsService.exportAuditLogsCsv(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any()))
+        Mockito.when(analyticsService.exportAuditLogsCsv(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any()))
             .thenReturn(new AnalyticsService.AuditExportResult("header\nrow\n", 1));
 
         mockMvc.perform(get("/api/v1/analytics/audit/export")
@@ -240,6 +242,7 @@ class AnalyticsControllerTest {
             toCaptor.capture(),
             Mockito.isNull(),
             Mockito.isNull(),
+            Mockito.isNull(),
             Mockito.isNull()
         );
 
@@ -250,7 +253,7 @@ class AnalyticsControllerTest {
     @Test
     @DisplayName("Audit export sets CSV headers and filename")
     void exportAuditLogsSetsCsvHeadersAndFilename() throws Exception {
-        Mockito.when(analyticsService.exportAuditLogsCsv(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any()))
+        Mockito.when(analyticsService.exportAuditLogsCsv(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any()))
             .thenReturn(new AnalyticsService.AuditExportResult("header\nrow\n", 2));
 
         mockMvc.perform(get("/api/v1/analytics/audit/export")
@@ -263,7 +266,7 @@ class AnalyticsControllerTest {
             .andExpect(header().string("X-Audit-Export-Count", "2"))
             .andExpect(content().string("header\nrow\n"));
 
-        Mockito.verify(analyticsService).exportAuditLogsCsv(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any());
+        Mockito.verify(analyticsService).exportAuditLogsCsv(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any());
     }
 
     @Test

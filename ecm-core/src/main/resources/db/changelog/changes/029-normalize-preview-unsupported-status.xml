@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="029-normalize-preview-unsupported-status" author="codex">
+        <!--
+          Move legacy "unsupported preview" rows out of FAILED into UNSUPPORTED so:
+          - UI filters become meaningful (FAILED vs UNSUPPORTED)
+          - Retry actions don't repeatedly target unsupported content types
+
+          NOTE: Search index may still carry the previous status until those docs are reindexed.
+        -->
+        <sql>
+            UPDATE documents
+            SET preview_status = 'UNSUPPORTED',
+                preview_available = false,
+                preview_last_updated = NOW()
+            WHERE preview_status = 'FAILED'
+              AND preview_failure_reason IS NOT NULL
+              AND (
+                LOWER(preview_failure_reason) LIKE 'preview not supported%'
+                OR LOWER(preview_failure_reason) LIKE '%not supported for mime type%'
+                OR LOWER(preview_failure_reason) LIKE '%unsupported media type%'
+                OR LOWER(preview_failure_reason) LIKE '%unsupported mime%'
+                OR LOWER(preview_failure_reason) LIKE '%unsupported file type%'
+                OR LOWER(preview_failure_reason) LIKE '%unsupported format%'
+              );
+        </sql>
+    </changeSet>
+
+</databaseChangeLog>
+

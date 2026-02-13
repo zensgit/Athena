@@ -52,6 +52,17 @@ class SavedSearchService {
     return api.get<SavedSearch[]>('/search/saved');
   }
 
+  async get(id: string): Promise<SavedSearch> {
+    return api.get<SavedSearch>(`/search/saved/${id}`);
+  }
+
+  async update(
+    id: string,
+    input: { name?: string; queryParams?: Record<string, any> },
+  ): Promise<SavedSearch> {
+    return api.patch<SavedSearch>(`/search/saved/${id}`, input);
+  }
+
   async delete(id: string): Promise<void> {
     await api.delete<void>(`/search/saved/${id}`);
   }

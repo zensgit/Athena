@@ -36,10 +36,11 @@ import { SearchCriteria } from 'types';
 import { useAppDispatch, useAppSelector } from 'store';
 import { setSearchOpen, setSearchPrefill } from 'store/slices/uiSlice';
 import { searchNodes } from 'store/slices/nodeSlice';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import apiService from 'services/api';
-import savedSearchService from 'services/savedSearchService';
+import savedSearchService, { SavedSearch } from 'services/savedSearchService';
 import { toast } from 'react-toastify';
+import { buildSearchPrefillFromAdvancedSearchUrl } from 'utils/searchPrefillUtils';
 
 const CONTENT_TYPES = [
   { value: 'application/pdf', label: 'PDF' },
@@ -58,10 +59,22 @@ const ASPECTS = [
   { value: 'cm:classifiable', label: 'Classifiable' },
 ];
 
+const PREVIEW_STATUS_OPTIONS = [
+  { value: 'READY', label: 'Ready' },
+  { value: 'PROCESSING', label: 'Processing' },
+  { value: 'QUEUED', label: 'Queued' },
+  { value: 'FAILED', label: 'Failed' },
+  { value: 'UNSUPPORTED', label: 'Unsupported' },
+  { value: 'PENDING', label: 'Pending' },
+];
+
 const SearchDialog: React.FC = () => {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
+  const location = useLocation();
   const { searchOpen, searchPrefill } = useAppSelector((state) => state.ui);
+  const { lastSearchCriteria } = useAppSelector((state) => state.node);
+  const prefillInitializedRef = React.useRef(false);
   
   const [searchCriteria, setSearchCriteria] = useState<SearchCriteria>({
     name: '',
@@ -79,11 +92,19 @@ const SearchDialog: React.FC = () => {
   const [tags, setTags] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [correspondents, setCorrespondents] = useState<string[]>([]);
+  const [selectedPreviewStatuses, setSelectedPreviewStatuses] = useState<string[]>([]);
   const [minSize, setMinSize] = useState<number | undefined>();
   const [maxSize, setMaxSize] = useState<number | undefined>();
   const [pathPrefix, setPathPrefix] = useState<string>('');
+  const [scopeFolderId, setScopeFolderId] = useState<string>('');
+  const [scopeIncludeChildren, setScopeIncludeChildren] = useState(true);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [saveName, setSaveName] = useState('');
+  const [saveMode, setSaveMode] = useState<'create' | 'update'>('create');
+  const [saveExistingId, setSaveExistingId] = useState('');
+  const [saveDialogLoading, setSaveDialogLoading] = useState(false);
+  const [saveDialogSubmitting, setSaveDialogSubmitting] = useState(false);
+  const [savedSearchOptions, setSavedSearchOptions] = useState<SavedSearch[]>([]);
   const [nameSuggestions, setNameSuggestions] = useState<string[]>([]);
   const [nameSuggestionsLoading, setNameSuggestionsLoading] = useState(false);
   const [facetOptions, setFacetOptions] = useState<{
@@ -163,41 +184,175 @@ const SearchDialog: React.FC = () => {
   }, [searchCriteria.name, searchOpen]);
 
   React.useEffect(() => {
-    if (!searchOpen || !searchPrefill) {
+    if (!searchOpen || prefillInitializedRef.current) {
       return;
+    }
+
+    const urlPrefill = buildSearchPrefillFromAdvancedSearchUrl(location.pathname, location.search);
+    const source = searchPrefill || (lastSearchCriteria
+      ? {
+          name: lastSearchCriteria.name || '',
+          contentType: lastSearchCriteria.contentType || lastSearchCriteria.mimeTypes?.[0] || '',
+          previewStatuses: lastSearchCriteria.previewStatuses || [],
+          aspects: lastSearchCriteria.aspects || [],
+          properties: lastSearchCriteria.properties || {},
+          createdBy: lastSearchCriteria.createdBy || lastSearchCriteria.createdByList?.[0] || '',
+          createdFrom: lastSearchCriteria.createdFrom,
+          createdTo: lastSearchCriteria.createdTo,
+          modifiedFrom: lastSearchCriteria.modifiedFrom,
+          modifiedTo: lastSearchCriteria.modifiedTo,
+          tags: lastSearchCriteria.tags || [],
+          categories: lastSearchCriteria.categories || [],
+          correspondents: lastSearchCriteria.correspondents || [],
+          minSize: lastSearchCriteria.minSize,
+          maxSize: lastSearchCriteria.maxSize,
+          pathPrefix: lastSearchCriteria.path || '',
+          folderId: lastSearchCriteria.folderId || '',
+          includeChildren: lastSearchCriteria.includeChildren,
+        }
+      : (Object.keys(urlPrefill).length > 0 ? urlPrefill : null));
+
+    if (!source) {
+      return;
+    }
+
+    const prefilledProperties = Object.entries(source.properties || {})
+      .filter(([key, value]) => key.trim().length > 0 && value !== undefined && value !== null)
+      .map(([key, value]) => ({ key, value: String(value) }));
+    const hasBasicPrefill = Boolean(
+      source.name
+      || source.contentType
+      || source.createdBy
+      || (source.previewStatuses && source.previewStatuses.length > 0)
+      || (source.folderId && source.folderId.trim().length > 0)
+    );
+    const hasDatePrefill = Boolean(
+      source.createdFrom
+      || source.createdTo
+      || source.modifiedFrom
+      || source.modifiedTo
+    );
+    const hasAspectsPrefill = Boolean(source.aspects && source.aspects.length > 0);
+    const hasPropertiesPrefill = prefilledProperties.length > 0;
+    const hasMetaPrefill = Boolean(
+      (source.tags && source.tags.length > 0)
+      || (source.categories && source.categories.length > 0)
+      || (source.correspondents && source.correspondents.length > 0)
+      || source.minSize !== undefined
+      || source.maxSize !== undefined
+      || (source.pathPrefix && source.pathPrefix.length > 0)
+    );
+
+    let nextExpandedSection: string | false = 'basic';
+    if (!hasBasicPrefill) {
+      if (hasDatePrefill) {
+        nextExpandedSection = 'dates';
+      } else if (hasAspectsPrefill) {
+        nextExpandedSection = 'aspects';
+      } else if (hasPropertiesPrefill) {
+        nextExpandedSection = 'properties';
+      } else if (hasMetaPrefill) {
+        nextExpandedSection = 'meta';
+      }
     }
 
     // Start from a clean slate before applying prefill values.
     setSearchCriteria({
-      name: searchPrefill.name || '',
-      properties: {},
-      aspects: [],
-      contentType: searchPrefill.contentType || '',
-      createdBy: searchPrefill.createdBy || '',
-      createdFrom: searchPrefill.createdFrom,
-      createdTo: searchPrefill.createdTo,
-      modifiedFrom: searchPrefill.modifiedFrom,
-      modifiedTo: searchPrefill.modifiedTo,
+      name: source.name || '',
+      properties: source.properties || {},
+      aspects: source.aspects || [],
+      contentType: source.contentType || '',
+      createdBy: source.createdBy || '',
+      createdFrom: source.createdFrom,
+      createdTo: source.createdTo,
+      modifiedFrom: source.modifiedFrom,
+      modifiedTo: source.modifiedTo,
     });
-    setCustomProperties([]);
+    setCustomProperties(prefilledProperties);
     setNewPropertyKey('');
     setNewPropertyValue('');
-    setExpandedSection('basic');
-    setTags(searchPrefill.tags || []);
-    setCategories(searchPrefill.categories || []);
-    setCorrespondents(searchPrefill.correspondents || []);
-    setMinSize(searchPrefill.minSize);
-    setMaxSize(searchPrefill.maxSize);
-    setPathPrefix(searchPrefill.pathPrefix || '');
+    setExpandedSection(nextExpandedSection);
+    setTags(source.tags || []);
+    setCategories(source.categories || []);
+    setCorrespondents(source.correspondents || []);
+    setSelectedPreviewStatuses(source.previewStatuses || []);
+    setMinSize(source.minSize);
+    setMaxSize(source.maxSize);
+    setPathPrefix(source.pathPrefix || '');
+    setScopeFolderId(source.folderId || '');
+    setScopeIncludeChildren(source.includeChildren ?? true);
     setSaveDialogOpen(false);
     setSaveName('');
 
-    dispatch(setSearchPrefill(null));
-  }, [searchOpen, searchPrefill, dispatch]);
+    prefillInitializedRef.current = true;
+    if (searchPrefill) {
+      dispatch(setSearchPrefill(null));
+    }
+  }, [searchOpen, searchPrefill, lastSearchCriteria, dispatch, location.pathname, location.search]);
+
+  React.useEffect(() => {
+    if (!searchOpen) {
+      prefillInitializedRef.current = false;
+    }
+  }, [searchOpen]);
 
   const handleClose = () => {
     dispatch(setSearchOpen(false));
     resetForm();
+  };
+
+  const closeSaveDialog = (options?: { force?: boolean }) => {
+    if (saveDialogSubmitting && !options?.force) {
+      return;
+    }
+    setSaveDialogOpen(false);
+    setSaveName('');
+    setSaveMode('create');
+    setSaveExistingId('');
+    setSaveDialogLoading(false);
+    setSaveDialogSubmitting(false);
+  };
+
+  const handleCloseSaveDialog = () => closeSaveDialog();
+
+  const openSaveDialog = async () => {
+    setSaveDialogOpen(true);
+    setSaveDialogLoading(true);
+    setSaveMode('create');
+    setSaveExistingId('');
+    try {
+      const searches = await savedSearchService.list();
+      setSavedSearchOptions(searches);
+    } catch {
+      setSavedSearchOptions([]);
+      toast.error('Failed to load saved searches');
+    } finally {
+      setSaveDialogLoading(false);
+    }
+  };
+
+  const handleSaveModeChange = (nextMode: 'create' | 'update') => {
+    setSaveMode(nextMode);
+    if (nextMode === 'update') {
+      const first = savedSearchOptions[0];
+      if (first) {
+        setSaveExistingId(first.id);
+        setSaveName(first.name || '');
+      } else {
+        setSaveExistingId('');
+      }
+      return;
+    }
+    setSaveExistingId('');
+    setSaveName('');
+  };
+
+  const handleUpdateTargetChange = (id: string) => {
+    setSaveExistingId(id);
+    const selected = savedSearchOptions.find((item) => item.id === id);
+    if (selected) {
+      setSaveName(selected.name || '');
+    }
   };
 
   const resetForm = () => {
@@ -215,11 +370,13 @@ const SearchDialog: React.FC = () => {
     setTags([]);
     setCategories([]);
     setCorrespondents([]);
+    setSelectedPreviewStatuses([]);
     setMinSize(undefined);
     setMaxSize(undefined);
     setPathPrefix('');
-    setSaveDialogOpen(false);
-    setSaveName('');
+    setScopeFolderId('');
+    setScopeIncludeChildren(true);
+    closeSaveDialog({ force: true });
     setNameSuggestions([]);
     setNameSuggestionsLoading(false);
   };
@@ -230,12 +387,26 @@ const SearchDialog: React.FC = () => {
     const normalizedTags = normalizeList(tags);
     const normalizedCategories = normalizeList(categories);
     const normalizedCorrespondents = normalizeList(correspondents);
+    const normalizedProperties = customProperties.reduce((acc, prop) => {
+      const key = prop.key.trim();
+      if (!key || prop.value === undefined || prop.value === null || prop.value === '') {
+        return acc;
+      }
+      acc[key] = prop.value;
+      return acc;
+    }, {} as Record<string, string>);
 
     if (searchCriteria.contentType) {
       filters.mimeTypes = [searchCriteria.contentType];
     }
+    if (searchCriteria.aspects && searchCriteria.aspects.length > 0) {
+      filters.aspects = searchCriteria.aspects;
+    }
     if (searchCriteria.createdBy) {
       filters.createdBy = searchCriteria.createdBy;
+    }
+    if (Object.keys(normalizedProperties).length > 0) {
+      filters.properties = normalizedProperties;
     }
     if (normalizedTags.length) {
       filters.tags = normalizedTags;
@@ -245,6 +416,9 @@ const SearchDialog: React.FC = () => {
     }
     if (normalizedCorrespondents.length) {
       filters.correspondents = normalizedCorrespondents;
+    }
+    if (selectedPreviewStatuses.length > 0) {
+      filters.previewStatuses = selectedPreviewStatuses;
     }
     if (minSize !== undefined) {
       filters.minSize = minSize;
@@ -264,7 +438,10 @@ const SearchDialog: React.FC = () => {
     if (searchCriteria.modifiedTo) {
       filters.modifiedTo = searchCriteria.modifiedTo;
     }
-    if (pathPrefix.length > 0) {
+    if (scopeFolderId.trim()) {
+      filters.folderId = scopeFolderId.trim();
+      filters.includeChildren = scopeIncludeChildren;
+    } else if (pathPrefix.length > 0) {
       filters.path = pathPrefix;
     }
 
@@ -283,15 +460,30 @@ const SearchDialog: React.FC = () => {
       toast.error('Please enter a saved search name');
       return;
     }
+    if (saveMode === 'update' && !saveExistingId) {
+      toast.error('Please choose a saved search to update');
+      return;
+    }
 
+    setSaveDialogSubmitting(true);
     try {
-      await savedSearchService.save(trimmed, buildSavedSearchQueryParams());
-      toast.success('Saved search created');
-      setSaveDialogOpen(false);
-      setSaveName('');
+      const queryParams = buildSavedSearchQueryParams();
+      if (saveMode === 'update') {
+        await savedSearchService.update(saveExistingId, {
+          name: trimmed,
+          queryParams,
+        });
+        toast.success('Saved search updated');
+      } else {
+        await savedSearchService.save(trimmed, queryParams);
+        toast.success('Saved search created');
+      }
+      closeSaveDialog({ force: true });
     } catch (err: any) {
       const message = err?.response?.data?.message || err?.message || 'Failed to save search';
       toast.error(message);
+    } finally {
+      setSaveDialogSubmitting(false);
     }
   };
 
@@ -309,9 +501,12 @@ const SearchDialog: React.FC = () => {
       tags: normalizedTags,
       categories: normalizedCategories,
       correspondents: normalizedCorrespondents,
+      previewStatuses: selectedPreviewStatuses,
       minSize,
       maxSize,
-      path: pathPrefix || undefined,
+      path: scopeFolderId.trim() ? undefined : (pathPrefix || undefined),
+      folderId: scopeFolderId.trim() || undefined,
+      includeChildren: scopeIncludeChildren,
       page: 0,
       size: 20,
     };
@@ -347,6 +542,110 @@ const SearchDialog: React.FC = () => {
     }));
   };
 
+  const activeCriteriaChips = React.useMemo(() => {
+    const chips: Array<{ key: string; label: string }> = [];
+    const aspectLabelByValue = new Map(ASPECTS.map((item) => [item.value, item.label]));
+    const previewLabelByValue = new Map(PREVIEW_STATUS_OPTIONS.map((item) => [item.value, item.label]));
+    const asDateLabel = (value?: string) => (value ? value.slice(0, 10) : '');
+
+    if (searchCriteria.name?.trim()) {
+      chips.push({ key: 'name', label: `Name: ${searchCriteria.name.trim()}` });
+    }
+    if (searchCriteria.contentType?.trim()) {
+      chips.push({ key: 'contentType', label: `Type: ${searchCriteria.contentType.trim()}` });
+    }
+    if (searchCriteria.createdBy?.trim()) {
+      chips.push({ key: 'createdBy', label: `Creator: ${searchCriteria.createdBy.trim()}` });
+    }
+    if (searchCriteria.createdFrom || searchCriteria.createdTo) {
+      chips.push({
+        key: 'createdDate',
+        label: `Created: ${asDateLabel(searchCriteria.createdFrom) || '...'} -> ${asDateLabel(searchCriteria.createdTo) || '...'}`,
+      });
+    }
+    if (searchCriteria.modifiedFrom || searchCriteria.modifiedTo) {
+      chips.push({
+        key: 'modifiedDate',
+        label: `Modified: ${asDateLabel(searchCriteria.modifiedFrom) || '...'} -> ${asDateLabel(searchCriteria.modifiedTo) || '...'}`,
+      });
+    }
+    (searchCriteria.aspects || []).forEach((aspect) => {
+      chips.push({ key: `aspect-${aspect}`, label: `Aspect: ${aspectLabelByValue.get(aspect) || aspect}` });
+    });
+    customProperties.forEach((item, index) => {
+      chips.push({
+        key: `property-${index}`,
+        label: `Property: ${item.key}=${item.value}`,
+      });
+    });
+    tags.forEach((tag) => chips.push({ key: `tag-${tag}`, label: `Tag: ${tag}` }));
+    categories.forEach((category) => chips.push({ key: `category-${category}`, label: `Category: ${category}` }));
+    correspondents.forEach((correspondent) =>
+      chips.push({ key: `correspondent-${correspondent}`, label: `Correspondent: ${correspondent}` })
+    );
+    selectedPreviewStatuses.forEach((status) =>
+      chips.push({ key: `preview-${status}`, label: `Preview: ${previewLabelByValue.get(status) || status}` })
+    );
+    if (minSize !== undefined || maxSize !== undefined) {
+      chips.push({
+        key: 'sizeRange',
+        label: `Size: ${minSize !== undefined ? minSize : '...'} - ${maxSize !== undefined ? maxSize : '...'} bytes`,
+      });
+    }
+    if (scopeFolderId.trim().length > 0) {
+      chips.push({
+        key: 'scopeFolder',
+        label: `Scope: folder (${scopeIncludeChildren ? 'include children' : 'this folder only'})`,
+      });
+    } else if (pathPrefix.trim().length > 0) {
+      chips.push({ key: 'pathPrefix', label: `Path: ${pathPrefix.trim()}` });
+    }
+
+    return chips;
+  }, [
+    searchCriteria.name,
+    searchCriteria.contentType,
+    searchCriteria.createdBy,
+    searchCriteria.createdFrom,
+    searchCriteria.createdTo,
+    searchCriteria.modifiedFrom,
+    searchCriteria.modifiedTo,
+    searchCriteria.aspects,
+    customProperties,
+    tags,
+    categories,
+    correspondents,
+    selectedPreviewStatuses,
+    minSize,
+    maxSize,
+    scopeFolderId,
+    scopeIncludeChildren,
+    pathPrefix,
+  ]);
+
+  const contentTypeOptions = React.useMemo(() => {
+    const baseValues = facetOptions.mimeTypes.length > 0
+      ? facetOptions.mimeTypes
+      : CONTENT_TYPES.map((item) => item.value);
+    const selected = (searchCriteria.contentType || '').trim();
+    return selected && !baseValues.includes(selected)
+      ? [...baseValues, selected]
+      : baseValues;
+  }, [facetOptions.mimeTypes, searchCriteria.contentType]);
+
+  const createdByOptions = React.useMemo(() => {
+    const baseValues = facetOptions.createdBy;
+    const selected = (searchCriteria.createdBy || '').trim();
+    return selected && !baseValues.includes(selected)
+      ? [selected, ...baseValues]
+      : baseValues;
+  }, [facetOptions.createdBy, searchCriteria.createdBy]);
+
+  const contentTypeLabelByValue = React.useMemo(
+    () => new Map(CONTENT_TYPES.map((item) => [item.value, item.label])),
+    []
+  );
+
   const isSearchValid = () => {
     return (
       searchCriteria.name ||
@@ -361,11 +660,18 @@ const SearchDialog: React.FC = () => {
       tags.length > 0 ||
       categories.length > 0 ||
       correspondents.length > 0 ||
+      selectedPreviewStatuses.length > 0 ||
       minSize !== undefined ||
       maxSize !== undefined ||
-      pathPrefix.length > 0
+      pathPrefix.length > 0 ||
+      scopeFolderId.trim().length > 0
     );
   };
+
+  const canSubmitSaveDialog = saveName.trim().length > 0
+    && (saveMode === 'create' || saveExistingId.length > 0)
+    && !saveDialogSubmitting;
+  const canSubmitSearch = isSearchValid();
 
   return (
     <>
@@ -430,53 +736,101 @@ const SearchDialog: React.FC = () => {
                       )}
                     />
                   </Grid>
-                <Grid item xs={12}>
-                  <FormControl fullWidth>
-                    <InputLabel>Content Type</InputLabel>
-                    <Select
-                      value={searchCriteria.contentType || ''}
-                      onChange={(e) => {
-                        setSearchCriteria({ ...searchCriteria, contentType: e.target.value as string });
-                      }}
-                      label="Content Type"
-                    >
-                      <MenuItem value="">All Types</MenuItem>
-                      {facetOptions.mimeTypes.length > 0
-                        ? facetOptions.mimeTypes.map((mt) => (
-                            <MenuItem key={mt} value={mt}>
-                              {mt}
-                            </MenuItem>
-                          ))
-                        : CONTENT_TYPES.map((type) => (
-                            <MenuItem key={type.value} value={type.value}>
-                              {type.label}
-                            </MenuItem>
-                          ))}
-                    </Select>
-                  </FormControl>
-                </Grid>
-                <Grid item xs={12}>
-                  <FormControl fullWidth>
-                    <InputLabel>Created By</InputLabel>
-                    <Select
-                      value={searchCriteria.createdBy || ''}
-                      label="Created By"
-                      onChange={(e) =>
-                        setSearchCriteria({
-                          ...searchCriteria,
-                          createdBy: e.target.value as string,
-                        })
-                      }
-                    >
-                      <MenuItem value="">Any creator</MenuItem>
-                      {facetOptions.createdBy.map((u) => (
-                        <MenuItem key={u} value={u}>
-                          {u}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Grid>
+                  {scopeFolderId.trim().length > 0 && (
+                    <Grid item xs={12}>
+                      <Box display="flex" flexWrap="wrap" alignItems="center" gap={1}>
+                        <Chip
+                          label="Scope: This folder"
+                          onDelete={() => setScopeFolderId('')}
+                          size="small"
+                        />
+                        <FormControlLabel
+                          control={(
+                            <Checkbox
+                              checked={scopeIncludeChildren}
+                              onChange={(event) => setScopeIncludeChildren(event.target.checked)}
+                            />
+                          )}
+                          label="Include subfolders"
+                        />
+                      </Box>
+                    </Grid>
+                  )}
+                  <Grid item xs={12}>
+                    <FormControl fullWidth>
+                      <InputLabel>Content Type</InputLabel>
+                      <Select
+                        value={searchCriteria.contentType || ''}
+                        onChange={(e) => {
+                          setSearchCriteria({ ...searchCriteria, contentType: e.target.value as string });
+                        }}
+                        label="Content Type"
+                      >
+                        <MenuItem value="">All Types</MenuItem>
+                        {contentTypeOptions.map((mimeType) => (
+                          <MenuItem key={mimeType} value={mimeType}>
+                            {facetOptions.mimeTypes.length > 0
+                              ? mimeType
+                              : (contentTypeLabelByValue.get(mimeType) || mimeType)}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                  <Grid item xs={12}>
+                    <FormControl fullWidth>
+                      <InputLabel>Created By</InputLabel>
+                      <Select
+                        value={searchCriteria.createdBy || ''}
+                        label="Created By"
+                        onChange={(e) =>
+                          setSearchCriteria({
+                            ...searchCriteria,
+                            createdBy: e.target.value as string,
+                          })
+                        }
+                      >
+                        <MenuItem value="">Any creator</MenuItem>
+                        {createdByOptions.map((u) => (
+                          <MenuItem key={u} value={u}>
+                            {u}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                  <Grid item xs={12}>
+                    <FormControl fullWidth>
+                      <InputLabel id="preview-status-label">Preview Status</InputLabel>
+                      <Select
+                        labelId="preview-status-label"
+                        multiple
+                        value={selectedPreviewStatuses}
+                        label="Preview Status"
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setSelectedPreviewStatuses(typeof value === 'string' ? value.split(',') : value);
+                        }}
+                        renderValue={(selected) => (
+                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                            {(selected as string[]).map((value) => (
+                              <Chip
+                                key={value}
+                                size="small"
+                                label={PREVIEW_STATUS_OPTIONS.find((item) => item.value === value)?.label || value}
+                              />
+                            ))}
+                          </Box>
+                        )}
+                      >
+                        {PREVIEW_STATUS_OPTIONS.map((status) => (
+                          <MenuItem key={status.value} value={status.value}>
+                            {status.label}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Grid>
               </Grid>
             </AccordionDetails>
           </Accordion>
@@ -708,20 +1062,50 @@ const SearchDialog: React.FC = () => {
                     value={pathPrefix}
                     onChange={(e) => setPathPrefix(e.target.value)}
                     placeholder="/Documents/Projects"
+                    disabled={scopeFolderId.trim().length > 0}
                   />
                 </Grid>
               </Grid>
             </AccordionDetails>
           </Accordion>
+
+          {activeCriteriaChips.length > 0 && (
+            <Box
+              data-testid="active-criteria-summary"
+              aria-label="Active criteria summary"
+              sx={{
+                mt: 2,
+                p: 1.5,
+                border: '1px solid',
+                borderColor: 'divider',
+                borderRadius: 1,
+                backgroundColor: 'background.paper',
+              }}
+            >
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                Active Criteria ({activeCriteriaChips.length})
+              </Typography>
+              <Box display="flex" flexWrap="wrap" gap={0.75}>
+                {activeCriteriaChips.map((item) => (
+                  <Chip key={item.key} size="small" label={item.label} />
+                ))}
+              </Box>
+            </Box>
+          )}
           </Box>
         </DialogContent>
         <DialogActions>
+          {!canSubmitSearch && (
+            <Typography variant="caption" color="text.secondary" sx={{ mr: 'auto' }}>
+              Add at least one search criterion to enable Save Search and Search.
+            </Typography>
+          )}
           <Button onClick={resetForm}>Clear All</Button>
           <Button onClick={handleClose}>Cancel</Button>
           <Button
-            onClick={() => setSaveDialogOpen(true)}
+            onClick={openSaveDialog}
             startIcon={<Save />}
-            disabled={!isSearchValid()}
+            disabled={!canSubmitSearch}
           >
             Save Search
           </Button>
@@ -729,29 +1113,67 @@ const SearchDialog: React.FC = () => {
             onClick={handleSearch}
             variant="contained"
             startIcon={<Search />}
-            disabled={!isSearchValid()}
+            disabled={!canSubmitSearch}
           >
             Search
           </Button>
         </DialogActions>
       </Dialog>
-      <Dialog open={saveDialogOpen} onClose={() => setSaveDialogOpen(false)} maxWidth="xs" fullWidth>
+      <Dialog open={saveDialogOpen} onClose={handleCloseSaveDialog} maxWidth="xs" fullWidth>
         <DialogTitle>Save Search</DialogTitle>
         <DialogContent>
           <Box sx={{ mt: 1 }}>
+            <FormControl fullWidth sx={{ mb: 2 }}>
+              <InputLabel id="save-search-mode-label">Mode</InputLabel>
+              <Select
+                labelId="save-search-mode-label"
+                label="Mode"
+                value={saveMode}
+                disabled={saveDialogSubmitting || saveDialogLoading}
+                onChange={(e) => handleSaveModeChange(e.target.value as 'create' | 'update')}
+              >
+                <MenuItem value="create">Create new</MenuItem>
+                <MenuItem value="update">Update existing</MenuItem>
+              </Select>
+            </FormControl>
+            {saveMode === 'update' && (
+              <FormControl fullWidth sx={{ mb: 2 }}>
+                <InputLabel id="save-search-target-label">Saved Search</InputLabel>
+                <Select
+                  labelId="save-search-target-label"
+                  label="Saved Search"
+                  value={saveExistingId}
+                  disabled={saveDialogSubmitting || saveDialogLoading || savedSearchOptions.length === 0}
+                  onChange={(e) => handleUpdateTargetChange(e.target.value)}
+                >
+                  {savedSearchOptions.length === 0 ? (
+                    <MenuItem value="" disabled>
+                      No saved searches
+                    </MenuItem>
+                  ) : (
+                    savedSearchOptions.map((item) => (
+                      <MenuItem key={item.id} value={item.id}>
+                        {item.name}
+                      </MenuItem>
+                    ))
+                  )}
+                </Select>
+              </FormControl>
+            )}
             <TextField
               fullWidth
               label="Name"
               value={saveName}
               onChange={(e) => setSaveName(e.target.value)}
               placeholder="e.g. Recent PDFs"
+              disabled={saveDialogSubmitting || saveDialogLoading}
             />
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setSaveDialogOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={handleSaveSearch} disabled={!saveName.trim()}>
-            Save
+          <Button onClick={handleCloseSaveDialog} disabled={saveDialogSubmitting}>Cancel</Button>
+          <Button variant="contained" onClick={handleSaveSearch} disabled={!canSubmitSaveDialog}>
+            {saveDialogSubmitting ? 'Saving…' : (saveMode === 'update' ? 'Update' : 'Save')}
           </Button>
         </DialogActions>
       </Dialog>

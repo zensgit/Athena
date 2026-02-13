@@ -640,13 +640,22 @@ public class PreviewService {
         if (result == null) {
             return;
         }
-        PreviewStatus status = result.isSupported() ? PreviewStatus.READY : PreviewStatus.FAILED;
-        String failureReason = result.isSupported() ? null : result.getMessage();
-        String failureCategory = PreviewFailureClassifier.classify(
-            status.name(),
-            result.getMimeType(),
-            failureReason
-        );
+        PreviewStatus status = PreviewStatus.READY;
+        String failureReason = null;
+        String failureCategory = null;
+
+        if (!result.isSupported()) {
+            failureReason = result.getMessage();
+            // Classify as if it were FAILED first, then potentially upgrade the status to UNSUPPORTED.
+            failureCategory = PreviewFailureClassifier.classify(
+                PreviewStatus.FAILED.name(),
+                result.getMimeType(),
+                failureReason
+            );
+            status = PreviewFailureClassifier.CATEGORY_UNSUPPORTED.equalsIgnoreCase(failureCategory)
+                ? PreviewStatus.UNSUPPORTED
+                : PreviewStatus.FAILED;
+        }
 
         if (document != null) {
             if (result.getPageCount() > 0) {

@@ -37,7 +37,7 @@ import authService from 'services/authService';
 import nodeService from 'services/nodeService';
 import apiService from 'services/api';
 import { Node } from 'types';
-import { getFailedPreviewMeta } from 'utils/previewStatusUtils';
+import { getEffectivePreviewStatus, getFailedPreviewMeta } from 'utils/previewStatusUtils';
 
 interface UploadFile {
   file: File;
@@ -215,7 +215,7 @@ const UploadDialog: React.FC = () => {
         `/documents/${nodeId}/preview/queue`,
         { force }
       );
-      const nextStatus = status?.previewStatus || (status?.queued ? 'PROCESSING' : undefined);
+      const nextStatus = status?.queued ? 'PROCESSING' : status?.previewStatus;
       if (nextStatus) {
         setUploadedItems((prev) =>
           prev.map((item) => (item.id === nodeId ? { ...item, previewStatus: nextStatus } : item))
@@ -356,15 +356,20 @@ const UploadDialog: React.FC = () => {
   };
 
   const getPreviewStatusMeta = (node: Node) => {
-    const status = node.previewStatus?.toUpperCase();
-    if (!status) {
+    const mimeType = node.contentType || node.properties?.mimeType || node.properties?.contentType;
+    const status = getEffectivePreviewStatus(
+      node.previewStatus,
+      node.previewFailureCategory,
+      mimeType,
+      node.previewFailureReason
+    );
+    if (!status || status === 'PENDING') {
       return { label: 'Preview pending', color: 'default' as const };
     }
     if (status === 'READY') {
       return { label: 'Preview ready', color: 'success' as const };
     }
-    if (status === 'FAILED') {
-      const mimeType = node.contentType || node.properties?.mimeType || node.properties?.contentType;
+    if (status === 'FAILED' || status === 'UNSUPPORTED') {
       return getFailedPreviewMeta(mimeType, node.previewFailureCategory, node.previewFailureReason);
     }
     if (status === 'PROCESSING') {
@@ -379,13 +384,23 @@ const UploadDialog: React.FC = () => {
   const showUploadedItems = Boolean(uploadSummary || uploadedItems.length > 0);
   const statusSummary = uploadedItems.reduce(
     (acc, item) => {
-      const status = item.previewStatus?.toUpperCase();
-      if (!status) {
+      const mimeType = item.contentType || item.properties?.mimeType || item.properties?.contentType;
+      const status = getEffectivePreviewStatus(
+        item.previewStatus,
+        item.previewFailureCategory,
+        mimeType,
+        item.previewFailureReason
+      );
+      if (!status || status === 'PENDING') {
         acc.pending += 1;
         return acc;
       }
       if (status === 'READY') {
         acc.ready += 1;
+        return acc;
+      }
+      if (status === 'UNSUPPORTED') {
+        acc.unsupported += 1;
         return acc;
       }
       if (status === 'FAILED') {
@@ -409,6 +424,7 @@ const UploadDialog: React.FC = () => {
       processing: 0,
       queued: 0,
       failed: 0,
+      unsupported: 0,
       other: 0,
     }
   );
@@ -530,6 +546,7 @@ const UploadDialog: React.FC = () => {
                   <Chip label={`Pending ${statusSummary.pending}`} size="small" />
                   <Chip label={`Processing ${statusSummary.processing}`} size="small" color="warning" />
                   <Chip label={`Queued ${statusSummary.queued}`} size="small" color="info" />
+                  <Chip label={`Unsupported ${statusSummary.unsupported}`} size="small" />
                   <Chip label={`Failed ${statusSummary.failed}`} size="small" color="error" />
                 </Box>
               )}
@@ -544,8 +561,15 @@ const UploadDialog: React.FC = () => {
               <List dense>
                 {uploadedItems.map((item) => {
                   const previewMeta = getPreviewStatusMeta(item);
-                  const previewStatus = item.previewStatus?.toUpperCase();
-                  const showQueueActions = item.nodeType === 'DOCUMENT' && previewStatus !== 'READY';
+                  const mimeType = item.contentType || item.properties?.mimeType || item.properties?.contentType;
+                  const effectiveStatus = getEffectivePreviewStatus(
+                    item.previewStatus,
+                    item.previewFailureCategory,
+                    mimeType,
+                    item.previewFailureReason
+                  );
+                  const showForceRebuild = item.nodeType === 'DOCUMENT' && effectiveStatus !== 'READY';
+                  const showQueuePreview = showForceRebuild && effectiveStatus !== 'UNSUPPORTED';
                   const isQueueing = queueingPreviewIds.includes(item.id);
                   return (
                     <ListItem
@@ -557,15 +581,17 @@ const UploadDialog: React.FC = () => {
                             size="small"
                             color={previewMeta.color}
                           />
-                          {showQueueActions && (
+                          {showForceRebuild && (
                             <>
-                              <Button
-                                size="small"
-                                onClick={() => handleQueuePreview(item.id, false)}
-                                disabled={isQueueing}
-                              >
-                                Queue preview
-                              </Button>
+                              {showQueuePreview && (
+                                <Button
+                                  size="small"
+                                  onClick={() => handleQueuePreview(item.id, false)}
+                                  disabled={isQueueing}
+                                >
+                                  Queue preview
+                                </Button>
+                              )}
                               <Button
                                 size="small"
                                 onClick={() => handleQueuePreview(item.id, true)}

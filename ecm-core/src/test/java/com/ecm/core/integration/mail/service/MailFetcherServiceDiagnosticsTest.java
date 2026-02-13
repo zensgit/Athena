@@ -14,6 +14,7 @@ import com.ecm.core.service.DocumentUploadService;
 import com.ecm.core.service.NodeService;
 import com.ecm.core.service.TagService;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -30,8 +31,10 @@ import org.springframework.data.jpa.domain.Specification;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -128,6 +131,42 @@ class MailFetcherServiceDiagnosticsTest {
         assertEquals(3L, metrics.topErrors().get(0).count());
         assertEquals("STABLE", metrics.trend().direction());
         assertTrue(metrics.trend().summary().contains("unchanged") || metrics.trend().summary().contains("No processed"));
+    }
+
+    @Test
+    @DisplayName("Fetch run includes runId correlation value")
+    void fetchRunIncludesRunId() {
+        MailFetcherService localService = new MailFetcherService(
+            accountRepository,
+            ruleRepository,
+            processedMailRepository,
+            documentRepository,
+            nodeRepository,
+            uploadService,
+            nodeService,
+            tagService,
+            emailIngestionService,
+            new SimpleMeterRegistry(),
+            environment
+        );
+
+        when(accountRepository.findByEnabledTrue()).thenReturn(List.of());
+
+        var summary = localService.fetchAllAccounts(true);
+
+        assertTrue(summary.runId() != null && !summary.runId().isBlank());
+        assertDoesNotThrow(() -> UUID.fromString(summary.runId()));
+    }
+
+    @Test
+    @DisplayName("Debug diagnostics include runId correlation value")
+    void debugRunIncludesRunId() {
+        when(accountRepository.findByEnabledTrue()).thenReturn(List.of());
+
+        var result = service.fetchAllAccountsDebug(true, 25);
+
+        assertTrue(result.summary().runId() != null && !result.summary().runId().isBlank());
+        assertDoesNotThrow(() -> UUID.fromString(result.summary().runId()));
     }
 
     @Test
@@ -288,6 +327,75 @@ class MailFetcherServiceDiagnosticsTest {
         assertTrue(!docHeader.contains("Path"));
         assertTrue(docHeader.contains("MimeType"));
         assertTrue(!docHeader.contains("FileSize"));
+    }
+
+    @Test
+    @DisplayName("Processed mail documents lists correlated ingested documents")
+    void listProcessedMailDocumentsListsCorrelatedDocuments() {
+        UUID accountId = UUID.randomUUID();
+        UUID ruleId = UUID.randomUUID();
+        UUID processedId = UUID.randomUUID();
+        LocalDateTime now = LocalDateTime.of(2026, 1, 28, 10, 15);
+
+        MailAccount account = new MailAccount();
+        account.setId(accountId);
+        account.setName("gmail-imap");
+
+        MailRule rule = new MailRule();
+        rule.setId(ruleId);
+        rule.setName("gmail-attachments");
+
+        ProcessedMail processed = new ProcessedMail();
+        processed.setId(processedId);
+        processed.setAccountId(accountId);
+        processed.setRuleId(ruleId);
+        processed.setFolder("INBOX");
+        processed.setUid("12345");
+        processed.setSubject("subject");
+        processed.setProcessedAt(now);
+        processed.setStatus(ProcessedMail.Status.PROCESSED);
+
+        Document document1 = new Document();
+        document1.setId(UUID.randomUUID());
+        document1.setName("mail-attachment-1.pdf");
+        document1.setPath("/Root/Documents/mail-attachment-1.pdf");
+        document1.setCreatedDate(now);
+        document1.setCreatedBy("admin");
+        document1.setMimeType("application/pdf");
+        document1.setFileSize(1024L);
+        document1.getProperties().put("mail:accountId", accountId.toString());
+        document1.getProperties().put("mail:ruleId", ruleId.toString());
+        document1.getProperties().put("mail:folder", "INBOX");
+        document1.getProperties().put("mail:uid", "12345");
+
+        Document document2 = new Document();
+        document2.setId(UUID.randomUUID());
+        document2.setName("mail-attachment-2.pdf");
+        document2.setPath("/Root/Documents/mail-attachment-2.pdf");
+        document2.setCreatedDate(now.plusMinutes(1));
+        document2.setCreatedBy("admin");
+        document2.setMimeType("application/pdf");
+        document2.setFileSize(2048L);
+        document2.getProperties().put("mail:accountId", accountId.toString());
+        document2.getProperties().put("mail:ruleId", ruleId.toString());
+        document2.getProperties().put("mail:folder", "INBOX");
+        document2.getProperties().put("mail:uid", "12345");
+
+        when(processedMailRepository.findById(processedId)).thenReturn(Optional.of(processed));
+        when(accountRepository.findAll()).thenReturn(List.of(account));
+        when(ruleRepository.findAllByOrderByPriorityAsc()).thenReturn(List.of(rule));
+        when(documentRepository.findMailDocumentsForMessage(200, accountId.toString(), "INBOX", "12345"))
+            .thenReturn(List.of(document1, document2));
+
+        var docs = service.listProcessedMailDocuments(processedId, 999);
+
+        verify(documentRepository).findMailDocumentsForMessage(200, accountId.toString(), "INBOX", "12345");
+        assertEquals(2, docs.size());
+        assertEquals("mail-attachment-1.pdf", docs.get(0).name());
+        assertEquals("gmail-imap", docs.get(0).accountName());
+        assertEquals("gmail-attachments", docs.get(0).ruleName());
+        assertEquals("INBOX", docs.get(0).folder());
+        assertEquals("12345", docs.get(0).uid());
     }
 
     private static final class RuntimeErrorAggregate implements ProcessedMailRepository.MailRuntimeErrorAggregateRow {

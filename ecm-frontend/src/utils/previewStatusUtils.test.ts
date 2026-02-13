@@ -1,6 +1,7 @@
 import {
   formatPreviewFailureReasonLabel,
   getFailedPreviewMeta,
+  getEffectivePreviewStatus,
   isUnsupportedPreviewFailure,
   isUnsupportedPreviewReason,
   isUnsupportedPreviewMimeType,
@@ -112,5 +113,12 @@ describe('previewStatusUtils', () => {
     expect(summary.unsupportedFailed).toBe(1);
     expect(summary.retryableFailed).toBe(2);
     expect(summary.retryableReasons).toEqual([{ reason: 'timeout', count: 2 }]);
+  });
+
+  it('maps failed unsupported to UNSUPPORTED effective status', () => {
+    expect(getEffectivePreviewStatus('FAILED', 'UNSUPPORTED', 'application/pdf', 'unsupported media type')).toBe('UNSUPPORTED');
+    expect(getEffectivePreviewStatus('FAILED', undefined, 'application/octet-stream', 'Preview not supported')).toBe('UNSUPPORTED');
+    expect(getEffectivePreviewStatus('UNSUPPORTED', undefined, 'application/pdf', 'Preview not supported')).toBe('UNSUPPORTED');
+    expect(getEffectivePreviewStatus('FAILED', undefined, 'application/pdf', 'timeout')).toBe('FAILED');
   });
 });

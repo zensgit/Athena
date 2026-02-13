@@ -43,6 +43,9 @@ interface UIState {
 export interface SearchPrefill {
   name?: string;
   contentType?: string;
+  previewStatuses?: string[];
+  aspects?: string[];
+  properties?: Record<string, any>;
   createdBy?: string;
   createdFrom?: string;
   createdTo?: string;
@@ -54,6 +57,8 @@ export interface SearchPrefill {
   minSize?: number;
   maxSize?: number;
   pathPrefix?: string;
+  folderId?: string;
+  includeChildren?: boolean;
 }
 
 const initialState: UIState = {

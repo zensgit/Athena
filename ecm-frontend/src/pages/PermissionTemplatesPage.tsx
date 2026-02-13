@@ -61,6 +61,7 @@ const PermissionTemplatesPage: React.FC = () => {
   const [compareCurrent, setCompareCurrent] = useState<PermissionTemplateVersionDetail | null>(null);
   const [comparePrevious, setComparePrevious] = useState<PermissionTemplateVersionDetail | null>(null);
   const [compareLoading, setCompareLoading] = useState(false);
+  const [exportingCompare, setExportingCompare] = useState<'csv' | 'json' | null>(null);
 
   const permissionSetOptions = useMemo(() => {
     return [...permissionSets].sort((a, b) => {
@@ -300,50 +301,44 @@ const PermissionTemplatesPage: React.FC = () => {
     return { added, removed, changed, unchanged };
   };
 
-  const exportCompareCsv = () => {
-    if (!compareCurrent || !comparePrevious) {
+  const exportCompare = async (format: 'csv' | 'json') => {
+    if (!compareCurrent || !comparePrevious || !historyTemplate) {
       toast.info('Select versions to compare');
       return;
     }
+
     const diff = computeEntryDiff(compareCurrent.entries ?? [], comparePrevious.entries ?? []);
-    const rows: Array<[string, string, string, string, string]> = [];
-    diff.added.forEach((entry) => {
-      rows.push(['ADDED', entry.authority, entry.authorityType, '', entry.permissionSet]);
-    });
-    diff.removed.forEach((entry) => {
-      rows.push(['REMOVED', entry.authority, entry.authorityType, entry.permissionSet, '']);
-    });
-    diff.changed.forEach((change) => {
-      rows.push([
-        'CHANGED',
-        change.after.authority,
-        change.after.authorityType,
-        change.before.permissionSet,
-        change.after.permissionSet,
-      ]);
-    });
-    if (rows.length === 0) {
+    const hasChanges = diff.added.length > 0 || diff.removed.length > 0 || diff.changed.length > 0;
+    if (!hasChanges) {
       toast.info('No differences to export');
       return;
     }
-    const escapeCsv = (value: string) => {
-      const safe = value ?? '';
-      if (/[",\n]/.test(safe)) {
-        return `"${safe.replace(/"/g, '""')}"`;
-      }
-      return safe;
-    };
-    const header = ['status', 'authority', 'authorityType', 'previousPermissionSet', 'currentPermissionSet'];
-    const csv = [header, ...rows].map((row) => row.map(escapeCsv).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    const baseName = historyTemplate?.name ? historyTemplate.name.replace(/\s+/g, '-') : 'template';
-    anchor.href = url;
-    anchor.download = `${baseName}-diff-${comparePrevious.versionNumber}-to-${compareCurrent.versionNumber}.csv`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+
+    try {
+      setExportingCompare(format);
+      const blob = await permissionTemplateService.exportVersionDiff(
+        historyTemplate.id,
+        comparePrevious.id,
+        compareCurrent.id,
+        format,
+      );
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      const baseNameRaw = historyTemplate.name ? historyTemplate.name.replace(/\s+/g, '-') : 'template';
+      const baseName = baseNameRaw.replace(/[^A-Za-z0-9._-]/g, '') || 'template';
+      anchor.href = url;
+      anchor.download = `${baseName}-diff-${comparePrevious.versionNumber}-to-${compareCurrent.versionNumber}.${format}`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Failed to export version diff');
+    } finally {
+      setExportingCompare(null);
+    }
   };
+
+  const exportCompareCsv = () => exportCompare('csv');
+  const exportCompareJson = () => exportCompare('json');
 
   return (
     <Box maxWidth={1100}>
@@ -675,9 +670,16 @@ const PermissionTemplatesPage: React.FC = () => {
           <Button
             variant="outlined"
             onClick={exportCompareCsv}
-            disabled={!compareCurrent || !comparePrevious}
+            disabled={!compareCurrent || !comparePrevious || exportingCompare !== null}
           >
-            Export CSV
+            {exportingCompare === 'csv' ? 'Exporting...' : 'Export CSV'}
+          </Button>
+          <Button
+            variant="outlined"
+            onClick={exportCompareJson}
+            disabled={!compareCurrent || !comparePrevious || exportingCompare !== null}
+          >
+            {exportingCompare === 'json' ? 'Exporting...' : 'Export JSON'}
           </Button>
           <Button onClick={() => setCompareOpen(false)}>Close</Button>
         </DialogActions>

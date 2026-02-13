@@ -49,11 +49,19 @@ test('P1 smoke: login CTA redirects to Keycloak auth endpoint', async ({ page, r
 
 test('P1 smoke: app error fallback can return to login', async ({ page, request }) => {
   await waitForApiReady(request);
-  await page.goto('/login', { waitUntil: 'domcontentloaded' });
-  await page.evaluate(() => {
-    window.localStorage.setItem('ecm_e2e_force_render_error', '1');
+  await page.addInitScript(() => {
+    try {
+      // Ensure the error trigger is applied once for this context so "Back to Login"
+      // can clear it without being immediately re-applied on the next navigation.
+      if (window.sessionStorage.getItem('ecm_e2e_force_render_error_once') !== '1') {
+        window.localStorage.setItem('ecm_e2e_force_render_error', '1');
+        window.sessionStorage.setItem('ecm_e2e_force_render_error_once', '1');
+      }
+    } catch {
+      // Ignore storage access errors.
+    }
   });
-  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.goto('/login', { waitUntil: 'domcontentloaded' });
   await expect(page.getByText(/unexpected error/i)).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole('button', { name: /back to login/i })).toBeVisible({ timeout: 30_000 });
 
