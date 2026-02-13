@@ -144,7 +144,7 @@ Verification:
   - Logs:
     - `docker logs --tail 200 athena-ecm-core-1 | rg "Preview generation outcome" | tail`
 
-## Day 6: Automation Coverage Expansion
+## Day 6 (Done): Automation Coverage Expansion
 
 Goal:
 
@@ -158,6 +158,15 @@ Scope:
   - CAD disabled shows UNSUPPORTED
 - Backend:
   - classifier tests for new error hints
+
+Deliverables:
+
+- Design/verification report:
+  - `docs/PHASE4_D6_AUTOMATION_COVERAGE_EXPANSION_20260213.md`
+
+Verification:
+
+- `cd ecm-frontend && npx playwright test e2e/ocr-queue-ui.spec.ts e2e/pdf-preview.spec.ts e2e/search-preview-status.spec.ts --project=chromium`
 
 ## Day 7: Regression Gate + Release Documentation
 

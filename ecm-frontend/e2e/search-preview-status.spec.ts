@@ -123,6 +123,37 @@ async function uploadInvalidPdfFile(
   return documentId;
 }
 
+async function uploadDwgFile(
+  request: APIRequestContext,
+  folderId: string,
+  filename: string,
+  token: string,
+) {
+  const uploadRes = await request.post(`${baseApiUrl}/api/v1/documents/upload?folderId=${folderId}`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+      multipart: {
+        file: {
+          name: filename,
+          mimeType: 'application/octet-stream',
+          buffer: Buffer.from([1, 2, 3, 4, 5]),
+        },
+      },
+    });
+  // DWG parsing can fail during text extraction but still create a document record.
+  // Accept both (2xx) and 400 as long as we get a document id back.
+  const status = uploadRes.status();
+  const uploadJson = (await uploadRes.json().catch(() => ({}))) as { documentId?: string; id?: string };
+  const documentId = uploadJson.documentId ?? uploadJson.id;
+  if (!documentId) {
+    throw new Error('Upload did not return document id');
+  }
+  if (!(uploadRes.ok() || status === 400)) {
+    throw new Error(`Upload failed: status=${status}`);
+  }
+  return documentId;
+}
+
 test('Search preview status filters are visible and selectable', async ({ page, request }) => {
   test.setTimeout(240_000);
   await waitForApiReady(request, { apiUrl: baseApiUrl });
@@ -257,7 +288,9 @@ test('Permanent preview failure hides retry and force rebuild actions in search 
 
   const folderName = `e2e-preview-failed-${Date.now()}`;
   const folderId = await createFolder(request, documentsId, folderName, token);
-  const filename = `e2e-preview-failed-${Date.now()}.pdf`;
+  // Use alpha-only tokens to avoid fuzzy/n-gram matches with prior runs.
+  const tokenPrefix = `pwsrv${randomLetters(16)}`;
+  const filename = `${tokenPrefix}-${Date.now()}.pdf`;
   const documentId = await uploadInvalidPdfFile(request, folderId, filename, token);
 
   const previewRes = await request.get(`${baseApiUrl}/api/v1/documents/${documentId}/preview`, {
@@ -441,6 +474,69 @@ test('Advanced search keeps unsupported filter and hides retry actions for unsup
   await expect(page.getByRole('button', { name: /Retry \".+\" \(\d+\)/i })).toHaveCount(0);
   if (await resultCard.count()) {
     await expect(resultCard.getByRole('button', { name: /Retry preview/i })).toHaveCount(0);
+  }
+
+  await request.delete(`${baseApiUrl}/api/v1/nodes/${folderId}`,
+    { headers: { Authorization: `Bearer ${token}` } }).catch(() => null);
+});
+
+test('CAD preview not configured is treated as UNSUPPORTED and hides retry actions', async ({ page, request }) => {
+  test.setTimeout(240_000);
+  await waitForApiReady(request, { apiUrl: baseApiUrl });
+  const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+  const rootId = await getRootFolderId(request, token, { apiUrl: baseApiUrl });
+  const documentsId = await findChildFolderId(request, rootId, 'Documents', token, { apiUrl: baseApiUrl });
+
+  const tokenPrefix = `pwsrv${randomLetters(16)}`;
+  const folderName = `e2e-cad-preview-${Date.now()}`;
+  const folderId = await createFolder(request, documentsId, folderName, token);
+  const filename = `${tokenPrefix}-${Date.now()}.dwg`;
+  const documentId = await uploadDwgFile(request, folderId, filename, token);
+
+  const previewRes = await request.get(`${baseApiUrl}/api/v1/documents/${documentId}/preview`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(previewRes.ok()).toBeTruthy();
+  const previewJson = (await previewRes.json()) as { supported?: boolean; status?: string; failureCategory?: string; failureReason?: string };
+  if (previewJson.supported) {
+    test.skip(true, 'CAD render service is configured and reachable; failure semantics are not applicable.');
+  }
+  expect(previewJson.supported).toBe(false);
+  const effectiveStatus = (previewJson.status || '').toUpperCase();
+  const effectiveCategory = (previewJson.failureCategory || '').toUpperCase();
+  const retryable = effectiveStatus === 'FAILED' && effectiveCategory === 'TEMPORARY';
+  if (effectiveStatus === 'UNSUPPORTED') {
+    expect(effectiveCategory).toBe('UNSUPPORTED');
+    expect(previewJson.failureReason || '').toMatch(/CAD preview (disabled|service not configured)/i);
+  } else {
+    expect(effectiveStatus).toBe('FAILED');
+    // When the CAD render service is configured but unhealthy/unreachable, this should be retryable.
+    // Allow a PERMANENT fallback in case the error message has no transient hints.
+    expect(['TEMPORARY', 'PERMANENT']).toContain(effectiveCategory);
+  }
+
+  const indexRes = await request.post(`${baseApiUrl}/api/v1/search/index/${documentId}`,
+    { headers: { Authorization: `Bearer ${token}` } });
+  expect(indexRes.ok()).toBeTruthy();
+  await waitForSearchIndex(request, filename, token, { apiUrl: baseApiUrl, maxAttempts: 40 });
+
+  await gotoWithAuthE2E(page, '/search-results', defaultUsername, defaultPassword, { token });
+
+  const quickSearchInput = page.getByPlaceholder('Quick search by name...');
+  await quickSearchInput.fill(filename);
+  await quickSearchInput.press('Enter');
+
+  const resultCard = page.locator('.MuiCard-root').filter({ hasText: filename }).first();
+  await expect(resultCard).toBeVisible({ timeout: 60_000 });
+  if (effectiveStatus === 'UNSUPPORTED') {
+    await expect(resultCard.getByText(/Preview unsupported/i)).toBeVisible();
+    await expect(resultCard.getByRole('button', { name: /Preview failure reason/i })).toHaveCount(0);
+    await expect(resultCard.getByRole('button', { name: /Retry preview/i })).toHaveCount(0);
+    await expect(resultCard.getByRole('button', { name: /Force rebuild preview/i })).toHaveCount(0);
+  } else {
+    await expect(resultCard.getByText(/Preview failed/i)).toBeVisible();
+    await expect(resultCard.getByRole('button', { name: /Retry preview/i })).toHaveCount(retryable ? 1 : 0);
+    await expect(resultCard.getByRole('button', { name: /Force rebuild preview/i })).toHaveCount(retryable ? 1 : 0);
   }
 
   await request.delete(`${baseApiUrl}/api/v1/nodes/${folderId}`,
