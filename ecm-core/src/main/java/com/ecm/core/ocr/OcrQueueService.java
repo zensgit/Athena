@@ -3,6 +3,7 @@ package com.ecm.core.ocr;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Correspondent;
 import com.ecm.core.ml.MLServiceClient;
+import com.ecm.core.queue.RedisScheduledQueueStore;
 import com.ecm.core.repository.DocumentRepository;
 import com.ecm.core.search.SearchIndexService;
 import com.ecm.core.service.ContentService;
@@ -10,6 +11,7 @@ import com.ecm.core.service.CorrespondentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -18,6 +20,7 @@ import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.io.InputStream;
 import java.time.Instant;
 import java.util.List;
@@ -33,6 +36,12 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 @RequiredArgsConstructor
 public class OcrQueueService {
 
+    private static final String REDIS_SCHEDULE_KEY = "ecm:queue:ocr:schedule";
+    private static final String REDIS_ATTEMPTS_KEY = "ecm:queue:ocr:attempts";
+    private static final String REDIS_FORCE_KEY = "ecm:queue:ocr:force";
+    private static final String REDIS_LOCK_PREFIX = "ecm:queue:ocr:lock:";
+    private static final Duration REDIS_LOCK_TTL = Duration.ofMinutes(10);
+
     private static final String META_OCR_STATUS = "ocrStatus";
     private static final String META_OCR_FAILURE_REASON = "ocrFailureReason";
     private static final String META_OCR_LAST_UPDATED = "ocrLastUpdated";
@@ -47,6 +56,7 @@ public class OcrQueueService {
     private final CorrespondentService correspondentService;
     private final SearchIndexService searchIndexService;
     private final MLServiceClient mlServiceClient;
+    private final StringRedisTemplate redisTemplate;
 
     @Value("${ecm.ocr.enabled:false}")
     private boolean ocrEnabled;
@@ -68,6 +78,9 @@ public class OcrQueueService {
 
     @Value("${ecm.ocr.queue.enabled:true}")
     private boolean queueEnabled;
+
+    @Value("${ecm.ocr.queue.backend:memory}")
+    private String queueBackend;
 
     @Value("${ecm.ocr.queue.max-attempts:2}")
     private int maxAttempts;
@@ -99,6 +112,10 @@ public class OcrQueueService {
             return new OcrQueueStatus(documentId, getOcrStatus(document), false, 0, null, "Not eligible for OCR");
         }
 
+        if (useRedisBackend()) {
+            return enqueueRedis(document, force);
+        }
+
         OcrJob existing = queuedJobs.get(documentId);
         if (existing != null) {
             return new OcrQueueStatus(documentId, getOcrStatus(document), true, existing.attempts(), existing.nextAttemptAt(), null);
@@ -115,6 +132,11 @@ public class OcrQueueService {
 
     @Scheduled(fixedDelayString = "${ecm.ocr.queue.poll-interval-ms:5000}")
     public void processQueue() {
+        if (useRedisBackend()) {
+            processRedisQueue();
+            return;
+        }
+
         if (!queueEnabled || !ocrEnabled) {
             return;
         }
@@ -169,6 +191,95 @@ public class OcrQueueService {
             queuedJobs.remove(documentId);
             log.warn("OCR failed for {} after {} attempts: {}", documentId, job.attempts() + 1, e.getMessage());
         }
+    }
+
+    private OcrQueueStatus enqueueRedis(Document document, boolean force) {
+        UUID documentId = document.getId();
+
+        RedisScheduledQueueStore store = redisStore();
+        RedisScheduledQueueStore.Entry existing = store.getOrNull(documentId);
+        if (existing != null) {
+            // Force upgrades are sticky; do not downgrade an existing force job.
+            if (force) {
+                redisTemplate.opsForHash().put(REDIS_FORCE_KEY, documentId.toString(), "1");
+            }
+            return new OcrQueueStatus(documentId, getOcrStatus(document), true, existing.attempts(), existing.nextAttemptAt(), null);
+        }
+
+        RedisScheduledQueueStore.Entry job = store.enqueueIfAbsent(documentId, Instant.now());
+        if (force) {
+            redisTemplate.opsForHash().put(REDIS_FORCE_KEY, documentId.toString(), "1");
+        }
+        markProcessing(document);
+        log.info("Queued OCR extraction for document {} (redis)", documentId);
+        return new OcrQueueStatus(documentId, getOcrStatus(document), true, job.attempts(), job.nextAttemptAt(), null);
+    }
+
+    private void processRedisQueue() {
+        if (!queueEnabled || !ocrEnabled) {
+            return;
+        }
+        int limit = Math.max(1, batchSize);
+        Instant now = Instant.now();
+
+        RedisScheduledQueueStore store = redisStore();
+        List<RedisScheduledQueueStore.Entry> due = store.claimDue(limit, now);
+        for (RedisScheduledQueueStore.Entry entry : due) {
+            try {
+                boolean force = isForceQueued(entry.documentId());
+                handleRedisJob(store, entry, force);
+            } finally {
+                store.release(entry.documentId());
+            }
+        }
+    }
+
+    private void handleRedisJob(RedisScheduledQueueStore store, RedisScheduledQueueStore.Entry entry, boolean force) {
+        UUID documentId = entry.documentId();
+        Document document = documentRepository.findById(documentId).orElse(null);
+        if (document == null) {
+            clearRedisJob(store, documentId);
+            return;
+        }
+
+        if (!isEligible(document, force)) {
+            markSkipped(document, "Not eligible for OCR");
+            clearRedisJob(store, documentId);
+            return;
+        }
+
+        try {
+            runAsSystem(() -> {
+                extractAndPersist(document, force);
+                return null;
+            });
+            clearRedisJob(store, documentId);
+        } catch (Exception e) {
+            if (entry.attempts() + 1 < maxAttempts) {
+                markRetrying(document, e.getMessage());
+                int nextAttempts = entry.attempts() + 1;
+                Instant nextRunAt = Instant.now().plusMillis(Math.max(1000, retryDelayMs));
+                store.scheduleRetry(documentId, nextAttempts, nextRunAt);
+                log.info("Scheduled OCR retry {} for document {} at {} (redis)", nextAttempts, documentId, nextRunAt);
+                return;
+            }
+            markFailed(document, e.getMessage());
+            clearRedisJob(store, documentId);
+            log.warn("OCR failed for {} after {} attempts: {}", documentId, entry.attempts() + 1, e.getMessage());
+        }
+    }
+
+    private void clearRedisJob(RedisScheduledQueueStore store, UUID documentId) {
+        store.complete(documentId);
+        redisTemplate.opsForHash().delete(REDIS_FORCE_KEY, documentId.toString());
+    }
+
+    private boolean isForceQueued(UUID documentId) {
+        if (documentId == null) {
+            return false;
+        }
+        Object val = redisTemplate.opsForHash().get(REDIS_FORCE_KEY, documentId.toString());
+        return "1".equals(String.valueOf(val));
     }
 
     private void extractAndPersist(Document document, boolean force) throws Exception {
@@ -337,6 +448,20 @@ public class OcrQueueService {
     @FunctionalInterface
     private interface OcrTask<T> {
         T run() throws Exception;
+    }
+
+    private boolean useRedisBackend() {
+        return "redis".equalsIgnoreCase(queueBackend);
+    }
+
+    private RedisScheduledQueueStore redisStore() {
+        return new RedisScheduledQueueStore(
+            redisTemplate,
+            REDIS_SCHEDULE_KEY,
+            REDIS_ATTEMPTS_KEY,
+            REDIS_LOCK_PREFIX,
+            REDIS_LOCK_TTL
+        );
     }
 
     public record OcrQueueStatus(

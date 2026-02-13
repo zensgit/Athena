@@ -5,6 +5,7 @@ import com.ecm.core.entity.PreviewStatus;
 import com.ecm.core.repository.DocumentRepository;
 import com.ecm.core.search.SearchIndexService;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Optional;
@@ -20,7 +21,8 @@ class PreviewQueueServiceTest {
         DocumentRepository documentRepository = mock(DocumentRepository.class);
         PreviewService previewService = mock(PreviewService.class);
         SearchIndexService searchIndexService = mock(SearchIndexService.class);
-        PreviewQueueService service = new PreviewQueueService(documentRepository, previewService, searchIndexService);
+        StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
+        PreviewQueueService service = new PreviewQueueService(documentRepository, previewService, searchIndexService, redisTemplate);
 
         ReflectionTestUtils.setField(service, "queueEnabled", true);
         ReflectionTestUtils.setField(service, "maxAttempts", 1);
@@ -49,7 +51,8 @@ class PreviewQueueServiceTest {
         DocumentRepository documentRepository = mock(DocumentRepository.class);
         PreviewService previewService = mock(PreviewService.class);
         SearchIndexService searchIndexService = mock(SearchIndexService.class);
-        PreviewQueueService service = new PreviewQueueService(documentRepository, previewService, searchIndexService);
+        StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
+        PreviewQueueService service = new PreviewQueueService(documentRepository, previewService, searchIndexService, redisTemplate);
 
         ReflectionTestUtils.setField(service, "queueEnabled", true);
         ReflectionTestUtils.setField(service, "batchSize", 1);

@@ -8,6 +8,7 @@ import com.ecm.core.search.SearchIndexService;
 import com.ecm.core.service.ContentService;
 import com.ecm.core.service.CorrespondentService;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.io.ByteArrayInputStream;
@@ -28,8 +29,9 @@ class OcrQueueServiceTest {
         CorrespondentService correspondentService = mock(CorrespondentService.class);
         SearchIndexService searchIndexService = mock(SearchIndexService.class);
         MLServiceClient mlServiceClient = mock(MLServiceClient.class);
+        StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
 
-        OcrQueueService service = new OcrQueueService(documentRepository, contentService, correspondentService, searchIndexService, mlServiceClient);
+        OcrQueueService service = new OcrQueueService(documentRepository, contentService, correspondentService, searchIndexService, mlServiceClient, redisTemplate);
         ReflectionTestUtils.setField(service, "ocrEnabled", false);
 
         UUID docId = UUID.randomUUID();
@@ -53,8 +55,9 @@ class OcrQueueServiceTest {
         CorrespondentService correspondentService = mock(CorrespondentService.class);
         SearchIndexService searchIndexService = mock(SearchIndexService.class);
         MLServiceClient mlServiceClient = mock(MLServiceClient.class);
+        StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
 
-        OcrQueueService service = new OcrQueueService(documentRepository, contentService, correspondentService, searchIndexService, mlServiceClient);
+        OcrQueueService service = new OcrQueueService(documentRepository, contentService, correspondentService, searchIndexService, mlServiceClient, redisTemplate);
         ReflectionTestUtils.setField(service, "ocrEnabled", true);
         ReflectionTestUtils.setField(service, "queueEnabled", true);
         ReflectionTestUtils.setField(service, "batchSize", 1);
@@ -113,8 +116,9 @@ class OcrQueueServiceTest {
         CorrespondentService correspondentService = mock(CorrespondentService.class);
         SearchIndexService searchIndexService = mock(SearchIndexService.class);
         MLServiceClient mlServiceClient = mock(MLServiceClient.class);
+        StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
 
-        OcrQueueService service = new OcrQueueService(documentRepository, contentService, correspondentService, searchIndexService, mlServiceClient);
+        OcrQueueService service = new OcrQueueService(documentRepository, contentService, correspondentService, searchIndexService, mlServiceClient, redisTemplate);
         ReflectionTestUtils.setField(service, "ocrEnabled", true);
         ReflectionTestUtils.setField(service, "queueEnabled", true);
         ReflectionTestUtils.setField(service, "batchSize", 1);
