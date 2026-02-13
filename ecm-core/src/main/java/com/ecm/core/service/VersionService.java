@@ -73,7 +73,7 @@ public class VersionService {
         
         // Store content
         String contentId = contentService.storeContent(content, filename);
-        String mimeType = contentService.detectMimeType(contentId);
+        String mimeType = contentService.detectMimeType(contentId, filename);
         long fileSize = contentService.getContentSize(contentId);
         
         // Extract content hash

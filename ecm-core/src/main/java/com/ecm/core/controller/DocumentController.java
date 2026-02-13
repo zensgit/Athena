@@ -72,12 +72,12 @@ public class DocumentController {
             // Create new document
             Document document = new Document();
             document.setName(file.getOriginalFilename());
-            document.setMimeType(file.getContentType());
             document.setFileSize(file.getSize());
             
             // Store content
             String contentId = contentService.storeContent(file);
             document.setContentId(contentId);
+            document.setMimeType(contentService.detectMimeType(contentId, file.getOriginalFilename()));
             
             UUID effectiveParentId = parentId != null ? parentId : folderId;
             Document created = (Document) nodeService.createNode(document, effectiveParentId);

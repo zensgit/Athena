@@ -26,7 +26,7 @@ Verification:
 - `cd ecm-core && mvn -q test`
 - `cd ecm-frontend && ECM_UI_URL=http://localhost:5500 ECM_API_URL=http://localhost:7700 npx playwright test e2e/ocr-queue-ui.spec.ts e2e/pdf-preview.spec.ts e2e/search-preview-status.spec.ts --project=chromium`
 
-## Day 2: MIME Type Normalization for `application/octet-stream`
+## Day 2 (Done): MIME Type Normalization for `application/octet-stream`
 
 Goal:
 
@@ -44,10 +44,16 @@ Acceptance:
 - When a PDF is uploaded with `application/octet-stream` but `.pdf` name or PDF magic bytes, it is stored as `application/pdf` and preview succeeds.
 - No regression for truly unknown binaries.
 
+Deliverables:
+
+- Design/verification report:
+  - `docs/PHASE4_D2_MIME_TYPE_NORMALIZATION_20260213.md`
+
 Verification:
 
-- Unit tests for MIME sniffing.
-- Playwright: upload mislabeled PDF and verify preview READY.
+- Backend: `cd ecm-core && mvn -q test`
+- Playwright: upload mislabeled PDF and verify the client PDF preview renders:
+  - `cd ecm-frontend && ECM_UI_URL=http://localhost:5500 ECM_API_URL=http://localhost:7700 npx playwright test e2e/ocr-queue-ui.spec.ts e2e/pdf-preview.spec.ts e2e/search-preview-status.spec.ts --project=chromium`
 
 ## Day 3 (Done): Preview Failure Taxonomy + UX Messaging
 

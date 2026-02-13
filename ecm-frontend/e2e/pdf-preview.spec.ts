@@ -42,6 +42,7 @@ async function uploadPdf(
   folderId: string,
   filename: string,
   token: string,
+  uploadMimeType = 'application/pdf',
 ) {
   const pdfBytes = Buffer.from(PDF_SAMPLE_BASE64, 'base64');
   const deadline = Date.now() + 90_000;
@@ -57,7 +58,7 @@ async function uploadPdf(
           multipart: {
             file: {
               name: filename,
-              mimeType: 'application/pdf',
+              mimeType: uploadMimeType,
               buffer: pdfBytes,
             },
           },
@@ -118,6 +119,55 @@ async function waitForIndexStatus(
   }
   return false;
 }
+
+test('PDF upload mislabeled as octet-stream still renders client preview', async ({ page, request }) => {
+  test.setTimeout(240_000);
+
+  await waitForApiReady(request, { apiUrl: baseApiUrl });
+  const apiToken = await fetchAccessToken(request, defaultUsername, defaultPassword);
+  const rootId = await getRootFolderId(request, apiToken, { apiUrl: baseApiUrl });
+  const documentsId = await findChildFolderId(request, rootId, 'Documents', apiToken, { apiUrl: baseApiUrl });
+
+  const folderName = `e2e-pdf-octet-stream-${Date.now()}`;
+  const folderId = await createFolder(request, documentsId, folderName, apiToken);
+
+  const filename = `e2e-preview-octet-stream-${Date.now()}.pdf`;
+  const documentId = await uploadPdf(request, folderId, filename, apiToken, 'application/octet-stream');
+
+  const nodeRes = await request.get(`${baseApiUrl}/api/v1/nodes/${documentId}`, {
+    headers: { Authorization: `Bearer ${apiToken}` },
+  });
+  expect(nodeRes.ok()).toBeTruthy();
+  const nodePayload = (await nodeRes.json()) as { contentType?: string };
+  const normalizedMime = (nodePayload.contentType ?? '').split(';')[0].trim().toLowerCase();
+  expect(normalizedMime).toBe('application/pdf');
+
+  const indexed = await waitForIndexStatus(request, documentId, apiToken);
+  if (!indexed) {
+    console.log(`Index status not ready for ${documentId}; falling back to search polling`);
+  }
+  await waitForSearchIndex(request, filename, apiToken, { apiUrl: baseApiUrl, maxAttempts: 40 });
+
+  await gotoWithAuthE2E(page, '/search-results', defaultUsername, defaultPassword, { token: apiToken });
+
+  const quickSearchInput = page.getByPlaceholder('Quick search by name...');
+  await quickSearchInput.fill(filename);
+  await quickSearchInput.press('Enter');
+
+  const resultCard = page.locator('.MuiCard-root').filter({ hasText: filename }).first();
+  await expect(resultCard).toBeVisible({ timeout: 60_000 });
+  await resultCard.getByRole('button', { name: 'View', exact: true }).click();
+
+  const previewDialog = page.getByRole('dialog');
+  await expect(previewDialog.getByLabel('close')).toBeVisible({ timeout: 60_000 });
+  await page.waitForSelector('.react-pdf__Page__canvas', { timeout: 60_000 });
+
+  await previewDialog.getByLabel('close').click();
+
+  await request.delete(`${baseApiUrl}/api/v1/nodes/${folderId}`, {
+    headers: { Authorization: `Bearer ${apiToken}` },
+  }).catch(() => null);
+});
 
 test('PDF preview shows dialog and controls', async ({ page, request }) => {
   test.setTimeout(240_000);

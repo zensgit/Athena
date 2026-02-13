@@ -50,7 +50,7 @@ public class ContentStorageProcessor implements DocumentProcessor {
             context.setFileSize(fileSize);
 
             // Detect MIME type
-            String mimeType = contentService.detectMimeType(contentId);
+            String mimeType = contentService.detectMimeType(contentId, context.getOriginalFilename());
             context.setMimeType(mimeType);
 
             long processingTime = System.currentTimeMillis() - startTime;
