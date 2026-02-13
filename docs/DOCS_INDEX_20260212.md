@@ -15,7 +15,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Phase 3 release notes: `docs/RELEASE_NOTES_20260213_PHASE3.md`
 - Phase 3 delivery report (single file): `docs/PHASE3_DELIVERY_REPORT_20260213.md`
 - Phase 4 plan: `docs/NEXT_7DAY_PLAN_PHASE4_20260213.md`
+- Phase 4 progress: `docs/PHASE4_EXECUTION_PROGRESS_20260213.md`
 - Phase 4 D1: Preview retry classification hardening: `docs/PHASE4_D1_PREVIEW_RETRY_CLASSIFICATION_20260213.md`
+- Phase 4 D2: MIME normalization for octet-stream uploads: `docs/PHASE4_D2_MIME_NORMALIZATION_20260213.md`
 
 ## OCR (Phase 3)
 
