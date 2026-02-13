@@ -3,6 +3,7 @@ package com.ecm.core.service;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Version;
 import com.ecm.core.repository.DocumentRepository;
+import com.ecm.core.util.MimeTypeNormalizer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.codec.digest.DigestUtils;
@@ -169,17 +170,40 @@ public class ContentService {
     }
     
     public String detectMimeType(String contentId) throws IOException {
-        try (InputStream is = getContent(contentId)) {
-            return tika.detect(is);
+        return detectMimeType(contentId, null);
+    }
+
+    public String detectMimeType(String contentId, String filename) throws IOException {
+        try (InputStream raw = getContent(contentId)) {
+            BufferedInputStream is = new BufferedInputStream(raw);
+            is.mark(512);
+            byte[] header = is.readNBytes(64);
+            is.reset();
+
+            Metadata metadata = new Metadata();
+            if (filename != null && !filename.isBlank()) {
+                metadata.set(TikaCoreProperties.RESOURCE_NAME_KEY, filename);
+            }
+
+            String detected = tika.detect(is, metadata);
+            return MimeTypeNormalizer.normalize(detected, filename, header);
         }
     }
     
     public String detectMimeType(InputStream inputStream, String filename) throws IOException {
+        BufferedInputStream is = inputStream instanceof BufferedInputStream
+            ? (BufferedInputStream) inputStream
+            : new BufferedInputStream(inputStream);
+        is.mark(512);
+        byte[] header = is.readNBytes(64);
+        is.reset();
+
         Metadata metadata = new Metadata();
-        if (filename != null) {
+        if (filename != null && !filename.isBlank()) {
             metadata.set(TikaCoreProperties.RESOURCE_NAME_KEY, filename);
         }
-        return tika.detect(inputStream, metadata);
+        String detected = tika.detect(is, metadata);
+        return MimeTypeNormalizer.normalize(detected, filename, header);
     }
     
     public long getContentSize(String contentId) throws IOException {
