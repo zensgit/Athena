@@ -59,3 +59,6 @@ ECM_UI_URL=http://localhost:5500 PW_WORKERS=2 bash scripts/phase5-regression.sh
 
 - This gate does not require Docker.
 - Integration suites (full-stack) remain separate, since they depend on Keycloak/DB/Elasticsearch.
+- Optional full-stack smoke (when Docker/backends are healthy):
+  - Doc: `docs/PHASE5_FULLSTACK_SMOKE_20260214.md`
+  - Script: `scripts/phase5-fullstack-smoke.sh`

@@ -105,6 +105,8 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - Phase 55: Preview diagnostics hardening (deep links + copy id + open parent folder)
     - Dev: `docs/PHASE55_PREVIEW_DIAGNOSTICS_HARDENING_DEV_20260214.md`
     - Verification: `docs/PHASE55_PREVIEW_DIAGNOSTICS_HARDENING_VERIFICATION_20260214.md`
+  - Phase 5: Preview diagnostics real-chain verification (optional)
+    - Verification: `docs/PHASE5_PREVIEW_DIAGNOSTICS_REALCHAIN_VERIFICATION_20260214.md`
 
 ## Version Management
 
@@ -179,6 +181,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - Regression gate rollup (mocked-first)
     - Doc: `docs/PHASE5_REGRESSION_GATE_ROLLUP_20260214.md`
     - Script: `scripts/phase5-regression.sh`
+  - Full-stack smoke (optional, Docker required)
+    - Doc: `docs/PHASE5_FULLSTACK_SMOKE_20260214.md`
+    - Script: `scripts/phase5-fullstack-smoke.sh`
 - Weekly regression command rollup:
   - `docs/WEEKLY_REGRESSION_UPDATE_20260212.md`
 
