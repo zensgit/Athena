@@ -31,6 +31,7 @@ import {
   Checkbox,
   Alert,
   Tooltip,
+  Stack,
 } from '@mui/material';
 import {
   Close,
@@ -95,6 +96,15 @@ const PERMISSION_LABELS: Record<PermissionType, string> = {
   CANCEL_CHECKOUT: 'Cancel Checkout',
   APPROVE: 'Approve',
   REJECT: 'Reject',
+};
+
+type PermissionSetMatch = {
+  exact: boolean;
+  setName: string | null;
+  setLabel: string | null;
+  setDescription: string | null;
+  missing: PermissionType[];
+  extra: PermissionType[];
 };
 
 const PermissionsDialog: React.FC = () => {
@@ -528,8 +538,69 @@ const PermissionsDialog: React.FC = () => {
       name,
       label: name,
       description: '',
+      order: null,
       permissions: permissionSets[name] || [],
     }));
+
+  const permissionSetLookup = useMemo(() => {
+    const lookup = new Map<string, Set<PermissionType>>();
+    for (const option of permissionSetOptions) {
+      lookup.set(option.name, new Set(option.permissions || []));
+    }
+    return lookup;
+  }, [permissionSetOptions]);
+
+  const getPermissionSetMatch = useCallback((entry: PermissionEntry): PermissionSetMatch => {
+    const allPermissionTypes = Object.keys(PERMISSION_LABELS) as PermissionType[];
+    const allowed = new Set<PermissionType>(
+      allPermissionTypes.filter((perm) => entry.permissions[perm] === 'ALLOW')
+    );
+
+    let best: { option: PermissionSetMetadata; missing: PermissionType[]; extra: PermissionType[]; score: number } | null = null;
+    for (const option of permissionSetOptions) {
+      const setPerms = permissionSetLookup.get(option.name) || new Set<PermissionType>();
+      // Prefer the smallest preset that fully contains the current allows.
+      // This reads best in UX: "Custom (Closest: Editor)" when a principal has a subset of a known preset.
+      const isSuperset = Array.from(allowed).every((perm) => setPerms.has(perm));
+      if (!isSuperset) {
+        continue;
+      }
+
+      const missing: PermissionType[] = (option.permissions || []).filter((perm) => !allowed.has(perm));
+      const extra: PermissionType[] = [];
+      const score = missing.length;
+      if (!best || score < best.score) {
+        best = { option, missing, extra, score };
+      } else if (best && score === best.score) {
+        // Stable tie-breakers: prefer the lower order (more privileged), then name.
+        const leftOrder = option.order ?? 0;
+        const rightOrder = best.option.order ?? 0;
+        if (leftOrder !== rightOrder ? leftOrder < rightOrder : option.name.localeCompare(best.option.name) < 0) {
+          best = { option, missing, extra, score };
+        }
+      }
+    }
+
+    if (!best) {
+      return {
+        exact: false,
+        setName: null,
+        setLabel: null,
+        setDescription: null,
+        missing: [],
+        extra: Array.from(allowed),
+      };
+    }
+
+    return {
+      exact: best.score === 0,
+      setName: best.option.name,
+      setLabel: best.option.label || best.option.name,
+      setDescription: best.option.description || null,
+      missing: best.missing,
+      extra: best.extra,
+    };
+  }, [permissionSetLookup, permissionSetOptions]);
   const inheritanceChain = nodePath.split('/').filter(Boolean);
 
   const renderPermissionsTable = (entries: PermissionEntry[]) => (
@@ -538,6 +609,7 @@ const PermissionsDialog: React.FC = () => {
         <TableHead>
           <TableRow>
             <TableCell>Principal</TableCell>
+            <TableCell sx={{ minWidth: 180 }}>Effective preset</TableCell>
             {Object.keys(PERMISSION_LABELS).map((perm) => (
               <TableCell key={perm} align="center" sx={{ minWidth: 80 }}>
                 {PERMISSION_LABELS[perm as PermissionType]}
@@ -563,6 +635,47 @@ const PermissionsDialog: React.FC = () => {
                     {entry.principal.replace('GROUP_', '')}
                   </Typography>
                 </Box>
+              </TableCell>
+              <TableCell>
+                {(() => {
+                  const match = getPermissionSetMatch(entry);
+                  const missingLabel = match.missing.length > 0
+                    ? `Missing: ${match.missing.map((perm) => PERMISSION_LABELS[perm] || perm).join(', ')}`
+                    : null;
+                  const extraLabel = match.extra.length > 0
+                    ? `Extra: ${match.extra.map((perm) => PERMISSION_LABELS[perm] || perm).join(', ')}`
+                    : null;
+                  const tooltipLines = [
+                    match.setDescription,
+                    missingLabel,
+                    extraLabel,
+                  ].filter(Boolean);
+
+                  return (
+                    <Tooltip
+                      title={(
+                        <Box sx={{ whiteSpace: 'pre-line' }}>
+                          {tooltipLines.join('\n')}
+                        </Box>
+                      )}
+                      arrow
+                      disableHoverListener={tooltipLines.length === 0}
+                    >
+                      <Box display="flex" flexWrap="wrap" gap={0.5} alignItems="center">
+                        {match.exact && match.setLabel ? (
+                          <Chip size="small" color="success" label={match.setLabel} />
+                        ) : (
+                          <>
+                            <Chip size="small" variant="outlined" label="Custom" />
+                            {match.setLabel && (
+                              <Chip size="small" variant="outlined" label={`Closest: ${match.setLabel}`} />
+                            )}
+                          </>
+                        )}
+                      </Box>
+                    </Tooltip>
+                  );
+                })()}
               </TableCell>
               {Object.keys(PERMISSION_LABELS).map((perm) => (
                 <TableCell key={perm} align="center">
@@ -961,6 +1074,39 @@ const PermissionsDialog: React.FC = () => {
           </Box>
         ) : (
           <>
+            {permissionSetOptions.length > 0 && (
+              <Box mb={2}>
+                <Typography variant="subtitle2">Permission presets (Alfresco-style)</Typography>
+                <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.75 }}>
+                  Presets map common roles (Coordinator/Editor/Contributor/Consumer) to concrete permission grants.
+                </Typography>
+                <Stack direction="row" gap={1} flexWrap="wrap">
+                  {permissionSetOptions.map((option) => {
+                    const permissionLabels = (option.permissions || [])
+                      .map((perm) => PERMISSION_LABELS[perm] || perm)
+                      .join(', ');
+                    const tooltipLines = [
+                      option.description || option.label || option.name,
+                      permissionLabels ? `Permissions: ${permissionLabels}` : null,
+                    ].filter(Boolean) as string[];
+                    return (
+                      <Tooltip
+                        key={option.name}
+                        title={(
+                          <Box sx={{ whiteSpace: 'pre-line' }}>
+                            {tooltipLines.join('\n')}
+                          </Box>
+                        )}
+                        arrow
+                      >
+                        <Chip size="small" variant="outlined" label={option.label || option.name} />
+                      </Tooltip>
+                    );
+                  })}
+                </Stack>
+              </Box>
+            )}
+
             <Tabs value={tabValue} onChange={handleTabChange}>
               <Tab label="Users" />
               <Tab label="Groups" />
