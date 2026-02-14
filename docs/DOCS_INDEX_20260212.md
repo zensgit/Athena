@@ -65,6 +65,8 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - Mocked regression gate coverage (Trigger Fetch + diagnostics + exports)
     - Rollup: `docs/PHASE5_REGRESSION_GATE_ROLLUP_20260214.md`
     - Dev+Verification: `docs/DEVELOPMENT_AND_VERIFICATION_PHASE5_MAIL_AUTOMATION_DIAGNOSTICS_EXPORT_20260214.md`
+  - Mocked regression gate coverage (Processed management: retention/cleanup/bulk delete/replay)
+    - Dev+Verification: `docs/DEVELOPMENT_AND_VERIFICATION_PHASE5_MAIL_AUTOMATION_PROCESSED_MANAGEMENT_20260214.md`
 
 ## Permissions
 

@@ -43,11 +43,10 @@ bash scripts/phase5-regression.sh
 
 Expected result:
 
-- `7 passed`
+- `8 passed` (after adding `mail-automation-processed-management.mock.spec.ts` to the Phase 5 gate)
 - Gate ends with `phase5_regression: ok`
 
 ## Notes
 
 - This suite is **mocked-first** and does not require Docker.
 - The export flows in `MailAutomationPage.tsx` use `URL.createObjectURL` and `anchor.click()`. The E2E spec captures these clicks instead of relying on OS download integrations.
-

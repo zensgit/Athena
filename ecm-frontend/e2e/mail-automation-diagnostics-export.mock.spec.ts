@@ -324,8 +324,11 @@ test('Mail automation: List folders, run diagnostics, export CSVs, and copy diag
   const reportingCard = cardByHeading('Mail Reporting');
   const reportExportButton = reportingCard.getByRole('button', { name: 'Export CSV' });
   await expect(reportExportButton).toBeEnabled();
+  const downloadsBeforeReport = await page.evaluate(() => ((window as any).__downloads || []).length);
   await reportExportButton.click();
 
+  // Export fetch + blob conversion is async; wait for the programmatic anchor click to be captured.
+  await page.waitForFunction((before) => ((window as any).__downloads || []).length > before, downloadsBeforeReport);
   const downloadsAfterReport = await page.evaluate(() => (window as any).__downloads || []);
   expect(downloadsAfterReport.some((item: any) => typeof item.download === 'string' && /^mail-report-/.test(item.download))).toBeTruthy();
 
@@ -350,8 +353,13 @@ test('Mail automation: List folders, run diagnostics, export CSVs, and copy diag
 
   const diagnosticsExportButton = recentActivityCard.getByRole('button', { name: 'Export CSV' });
   await expect(diagnosticsExportButton).toBeEnabled();
+  const downloadsBeforeDiagnostics = await page.evaluate(() => ((window as any).__downloads || []).length);
   await diagnosticsExportButton.click();
 
+  await page.waitForFunction(
+    (before) => ((window as any).__downloads || []).length > before,
+    downloadsBeforeDiagnostics
+  );
   const downloadsAfterDiagnostics = await page.evaluate(() => (window as any).__downloads || []);
   expect(downloadsAfterDiagnostics.some((item: any) => typeof item.download === 'string' && /^mail-diagnostics-/.test(item.download))).toBeTruthy();
 });
