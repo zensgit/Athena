@@ -92,6 +92,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - Phase 54: Admin preview diagnostics UI
     - Dev: `docs/PHASE54_PREVIEW_DIAGNOSTICS_UI_DEV_20260213.md`
     - Verification: `docs/PHASE54_PREVIEW_DIAGNOSTICS_UI_VERIFICATION_20260213.md`
+  - Phase 55: Preview diagnostics hardening (deep links + copy id + open parent folder)
+    - Dev: `docs/PHASE55_PREVIEW_DIAGNOSTICS_HARDENING_DEV_20260214.md`
+    - Verification: `docs/PHASE55_PREVIEW_DIAGNOSTICS_HARDENING_VERIFICATION_20260214.md`
 
 ## Version Management
 

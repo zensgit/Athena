@@ -78,12 +78,12 @@ ECM_UI_URL=http://localhost:5500 npx playwright test e2e/admin-preview-diagnosti
 Scope:
 - Frontend + small API contract checks
 
-Implementation:
+Implementation (completed 2026-02-14):
 - Add per-row quick actions:
   - Copy document id
-  - “Open node” (navigate to folder/document view when possible)
+  - Open parent folder (resolve by `item.path` -> `/folders/path` -> `/browse/:nodeId`)
 - Improve deep link to Advanced Search:
-  - include `previewStatus` filter when the failure is UNSUPPORTED/FAILED
+  - include `previewStatus=FAILED|UNSUPPORTED` when present
 
 Code touchpoints:
 - `ecm-frontend/src/pages/PreviewDiagnosticsPage.tsx`
@@ -91,12 +91,12 @@ Code touchpoints:
 - `ecm-frontend/src/utils/searchPrefillUtils.ts` (if we extend URL prefill)
 
 Verification:
-- Extend `admin-preview-diagnostics.mock.spec.ts` to assert new actions.
+- Extend `admin-preview-diagnostics.mock.spec.ts` to assert new actions (clipboard is stubbed for stability).
 - Add/extend integration E2E if backend is available.
 
 Mocked E2E should cover:
-- Copy-to-clipboard for doc id (assert via `page.evaluate(() => navigator.clipboard.readText())` or by stubbing clipboard).
-- “Open node” navigates to browse/search view with the expected id in URL.
+- Copy-to-clipboard for doc id (assert via init-script clipboard stub).
+- Open parent folder navigates to `/browse/<folderId>` (folder resolved by path).
 - Advanced Search deep link includes preview-status filters for FAILED vs UNSUPPORTED.
 
 Integration E2E should cover:
@@ -105,6 +105,15 @@ Integration E2E should cover:
 Docs:
 - `docs/PHASE55_PREVIEW_DIAGNOSTICS_HARDENING_DEV_20260214.md`
 - `docs/PHASE55_PREVIEW_DIAGNOSTICS_HARDENING_VERIFICATION_20260214.md`
+
+Verification (PASS 2026-02-14):
+
+```bash
+cd ecm-frontend
+npm run build
+(python3 -m http.server 5500 --directory build)
+ECM_UI_URL=http://localhost:5500 npx playwright test e2e/admin-preview-diagnostics.mock.spec.ts --project=chromium --workers=1
+```
 
 ## Day 3 (P0) - Permissions: Permission-Set UX Parity
 
