@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Box,
   Container,
@@ -187,6 +187,24 @@ const RULE_EVENT_LABELS: Record<string, string> = {
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+const AUDIT_QUERY_KEYS = {
+  user: 'auditUser',
+  eventType: 'auditEventType',
+  category: 'auditCategory',
+  nodeId: 'auditNodeId',
+  from: 'auditFrom',
+  to: 'auditTo',
+} as const;
+
+const sanitizeFilenameSegment = (value: string) => {
+  return value
+    .trim()
+    .replace(/[\s/\\?%*:|"<>]+/g, '-')
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^[-_.]+|[-_.]+$/g, '');
+};
+
 const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -258,6 +276,99 @@ const AdminDashboard: React.FC = () => {
   });
   const [auditExportTo, setAuditExportTo] = useState(() => formatDateTimeInput(new Date()));
   const maxExportRangeDays = retentionInfo?.exportMaxRangeDays ?? 90;
+
+  const suppressAuditUrlSyncRef = useRef(false);
+
+  const syncAuditUrlFilters = (values: {
+    username: string;
+    eventType: string;
+    category: string;
+    nodeId: string;
+    from?: string;
+    to?: string;
+  }) => {
+    const params = new URLSearchParams(location.search);
+    const setOrDelete = (key: string, value?: string) => {
+      const trimmed = value?.trim() ?? '';
+      if (trimmed) {
+        params.set(key, trimmed);
+      } else {
+        params.delete(key);
+      }
+    };
+
+    setOrDelete(AUDIT_QUERY_KEYS.user, values.username);
+    setOrDelete(AUDIT_QUERY_KEYS.eventType, values.eventType);
+    setOrDelete(AUDIT_QUERY_KEYS.category, values.category);
+    setOrDelete(AUDIT_QUERY_KEYS.nodeId, values.nodeId);
+    setOrDelete(AUDIT_QUERY_KEYS.from, values.from);
+    setOrDelete(AUDIT_QUERY_KEYS.to, values.to);
+
+    suppressAuditUrlSyncRef.current = true;
+    const nextSearch = params.toString();
+    navigate({ pathname: location.pathname, search: nextSearch ? `?${nextSearch}` : '' }, { replace: true });
+  };
+
+  const buildAuditExportFilename = (
+    downloadLabel: string,
+    filters: { username?: string; eventType?: string; category?: string; nodeId?: string; preset?: string }
+  ) => {
+    const parts: string[] = ['audit_logs', downloadLabel];
+
+    const username = (filters.username ?? '').trim();
+    const eventType = (filters.eventType ?? '').trim();
+    const category = (filters.category ?? '').trim();
+    const nodeId = (filters.nodeId ?? '').trim();
+    const preset = (filters.preset ?? '').trim();
+
+    if (preset && preset !== 'custom') {
+      parts.push(`preset-${sanitizeFilenameSegment(preset)}`);
+    }
+    if (username) {
+      parts.push(`user-${sanitizeFilenameSegment(username)}`);
+    }
+    if (eventType) {
+      parts.push(`event-${sanitizeFilenameSegment(eventType)}`);
+    }
+    if (category) {
+      parts.push(`cat-${sanitizeFilenameSegment(category)}`);
+    }
+    if (nodeId) {
+      parts.push(`node-${nodeId.slice(0, 8)}`);
+    }
+
+    const raw = parts.filter(Boolean).join('_').replace(/_+/g, '_');
+    const truncated = raw.length > 180 ? raw.slice(0, 180) : raw;
+    return `${truncated}.csv`;
+  };
+
+  const normalizeAuditEventType = (input: string) => {
+    const trimmed = input.trim();
+    if (!trimmed) {
+      return '';
+    }
+
+    const directMatch = auditEventTypes.find((item) => item.eventType === trimmed);
+    if (directMatch) {
+      return trimmed;
+    }
+
+    const canonical = trimmed.toUpperCase().replace(/\s+/g, '_');
+    const canonicalMatch = auditEventTypes.find((item) => item.eventType === canonical);
+    if (canonicalMatch) {
+      return canonical;
+    }
+
+    const normalizedLabel = trimmed.toLowerCase();
+    const labelMatch = auditEventTypes.find((item) => (
+      formatAuditEventTypeLabel(item.eventType).toLowerCase() === normalizedLabel
+    ));
+    if (labelMatch) {
+      return labelMatch.eventType;
+    }
+
+    return canonical;
+  };
 
   const resolveAuditExportRange = () => {
     const fallbackTo = new Date();
@@ -352,7 +463,18 @@ const AdminDashboard: React.FC = () => {
         apiService.get<AuditEventTypeOption[]>('/analytics/audit/event-types?limit=50').catch(() => []),
       ]);
       setData(dashboardRes);
-      setLogs(logsRes);
+      const auditParams = new URLSearchParams(location.search);
+      const hasAuditFiltersInUrl = Boolean(
+        auditParams.get(AUDIT_QUERY_KEYS.nodeId)
+        || auditParams.get(AUDIT_QUERY_KEYS.user)
+        || auditParams.get(AUDIT_QUERY_KEYS.eventType)
+        || auditParams.get(AUDIT_QUERY_KEYS.category)
+        || auditParams.get(AUDIT_QUERY_KEYS.from)
+        || auditParams.get(AUDIT_QUERY_KEYS.to)
+      );
+      if (!hasAuditFiltersInUrl) {
+        setLogs(logsRes);
+      }
       setLicenseInfo(licenseRes);
       setRetentionInfo(retentionRes);
       setAuditReport(auditReportRes);
@@ -460,6 +582,7 @@ const AdminDashboard: React.FC = () => {
       setExportingAudit(true);
       let downloadLabel = format(new Date(), 'yyyyMMdd');
       const nodeId = auditFilterNodeId.trim();
+      const eventType = normalizeAuditEventType(auditFilterEventType);
       if (nodeId && !UUID_PATTERN.test(nodeId)) {
         toast.error('Invalid Node ID (expected UUID)');
         return;
@@ -473,8 +596,8 @@ const AdminDashboard: React.FC = () => {
           params.append('username', auditFilterUser.trim());
           params.append('days', String(presetDays));
         }
-        if (auditExportPreset === 'event' && auditFilterEventType.trim()) {
-          params.append('eventType', auditFilterEventType.trim());
+        if (auditExportPreset === 'event' && eventType) {
+          params.append('eventType', eventType);
           params.append('days', String(presetDays));
         }
         if (auditFilterCategory.trim()) {
@@ -496,8 +619,8 @@ const AdminDashboard: React.FC = () => {
         if (auditFilterUser.trim()) {
           params.append('username', auditFilterUser.trim());
         }
-        if (auditFilterEventType.trim()) {
-          params.append('eventType', auditFilterEventType.trim());
+        if (eventType) {
+          params.append('eventType', eventType);
         }
         if (auditFilterCategory.trim()) {
           params.append('category', auditFilterCategory.trim());
@@ -550,7 +673,13 @@ const AdminDashboard: React.FC = () => {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `audit_logs_${downloadLabel}.csv`;
+      a.download = buildAuditExportFilename(downloadLabel, {
+        preset: auditExportPreset,
+        username: auditFilterUser,
+        eventType,
+        category: auditFilterCategory,
+        nodeId,
+      });
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -581,13 +710,22 @@ const AdminDashboard: React.FC = () => {
     }> = {}
   ) => {
     const username = (overrides.username ?? auditFilterUser).trim();
-    const eventType = (overrides.eventType ?? auditFilterEventType).trim();
+    const eventType = normalizeAuditEventType(overrides.eventType ?? auditFilterEventType);
     const category = (overrides.category ?? auditFilterCategory).trim();
     const nodeId = (overrides.nodeId ?? auditFilterNodeId).trim();
     if (nodeId && !UUID_PATTERN.test(nodeId)) {
       toast.error('Invalid Node ID (expected UUID)');
       return;
     }
+
+    syncAuditUrlFilters({
+      username,
+      eventType,
+      category,
+      nodeId,
+      from: isCustomExport && auditExportFrom?.trim() ? auditExportFrom : undefined,
+      to: isCustomExport && auditExportTo?.trim() ? auditExportTo : undefined,
+    });
 
     try {
       setFilteringAudit(true);
@@ -631,6 +769,14 @@ const AdminDashboard: React.FC = () => {
       setAuditFilterEventType('');
       setAuditFilterCategory('');
       setAuditFilterNodeId('');
+      syncAuditUrlFilters({
+        username: '',
+        eventType: '',
+        category: '',
+        nodeId: '',
+        from: undefined,
+        to: undefined,
+      });
       const logsRes = await apiService.get<AuditLog[]>('/analytics/audit/recent?limit=10');
       setLogs(logsRes);
     } catch {
@@ -701,29 +847,88 @@ const AdminDashboard: React.FC = () => {
     fetchDashboard();
     loadPinnedSearches();
     fetchMailFetchSummary({ silent: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    const auditNodeId = new URLSearchParams(location.search).get('auditNodeId')?.trim();
-    if (!auditNodeId) {
+    if (suppressAuditUrlSyncRef.current) {
+      suppressAuditUrlSyncRef.current = false;
       return;
     }
-    if (!UUID_PATTERN.test(auditNodeId)) {
+
+    const auditParams = new URLSearchParams(location.search);
+    const auditNodeId = auditParams.get(AUDIT_QUERY_KEYS.nodeId)?.trim() ?? '';
+    const auditUser = auditParams.get(AUDIT_QUERY_KEYS.user)?.trim() ?? '';
+    const auditEventType = normalizeAuditEventType(
+      auditParams.get(AUDIT_QUERY_KEYS.eventType)?.trim() ?? ''
+    );
+    const auditCategory = auditParams.get(AUDIT_QUERY_KEYS.category)?.trim() ?? '';
+    const auditFromRaw = auditParams.get(AUDIT_QUERY_KEYS.from)?.trim() ?? '';
+    const auditToRaw = auditParams.get(AUDIT_QUERY_KEYS.to)?.trim() ?? '';
+
+    const hasAnyAuditFilters = Boolean(
+      auditNodeId || auditUser || auditEventType || auditCategory || auditFromRaw || auditToRaw
+    );
+    if (!hasAnyAuditFilters) {
+      return;
+    }
+
+    if (auditNodeId && !UUID_PATTERN.test(auditNodeId)) {
       toast.error('Invalid auditNodeId in URL');
       return;
     }
 
+    const fromDate = auditFromRaw ? new Date(auditFromRaw) : null;
+    const toDate = auditToRaw ? new Date(auditToRaw) : null;
+    if (fromDate && Number.isNaN(fromDate.getTime())) {
+      toast.error('Invalid auditFrom in URL');
+      return;
+    }
+    if (toDate && Number.isNaN(toDate.getTime())) {
+      toast.error('Invalid auditTo in URL');
+      return;
+    }
+
     setTab(0);
-    setAuditFilterUser('');
-    setAuditFilterEventType('');
-    setAuditFilterCategory('');
+    setAuditFilterUser(auditUser);
+    setAuditFilterEventType(auditEventType);
+    setAuditFilterCategory(auditCategory);
     setAuditFilterNodeId(auditNodeId);
+
+    if (auditFromRaw) {
+      setAuditExportFrom(auditFromRaw);
+    }
+    if (auditToRaw) {
+      setAuditExportTo(auditToRaw);
+    }
+    if (auditFromRaw || auditToRaw) {
+      setAuditExportPreset('custom');
+      setAuditQuickRange('custom');
+    }
 
     void (async () => {
       try {
         setFilteringAudit(true);
         const params = new URLSearchParams();
-        params.append('nodeId', auditNodeId);
+        if (auditUser) {
+          params.append('username', auditUser);
+        }
+        if (auditEventType) {
+          params.append('eventType', auditEventType);
+        }
+        if (auditCategory) {
+          params.append('category', auditCategory);
+        }
+        if (auditNodeId) {
+          params.append('nodeId', auditNodeId);
+        }
+        if (fromDate) {
+          params.append('from', formatDateTimeOffset(fromDate));
+        }
+        if (toDate) {
+          params.append('to', formatDateTimeOffset(toDate));
+        }
+
         const query = params.toString();
         const response = await apiService.get<PageResponse<AuditLog>>(
           `/analytics/audit/search${query ? `?${query}` : ''}`
@@ -735,6 +940,7 @@ const AdminDashboard: React.FC = () => {
         setFilteringAudit(false);
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.search]);
 
   useEffect(() => {
@@ -1260,8 +1466,9 @@ const AdminDashboard: React.FC = () => {
                     />
                   )}
                   <FormControl size="small" sx={{ minWidth: 180 }}>
-                    <InputLabel>Export Preset</InputLabel>
+                    <InputLabel id="audit-export-preset-label">Export Preset</InputLabel>
                     <Select
+                      labelId="audit-export-preset-label"
                       label="Export Preset"
                       value={auditExportPreset}
                       onChange={(event) => {
@@ -1298,7 +1505,7 @@ const AdminDashboard: React.FC = () => {
                     freeSolo
                     options={auditEventTypes.map((item) => item.eventType)}
                     value={auditFilterEventType}
-                    onInputChange={(_, value) => setAuditFilterEventType(value)}
+                    onInputChange={(_, value) => setAuditFilterEventType(normalizeAuditEventType(value))}
                     getOptionLabel={(option) => formatAuditEventTypeLabel(String(option))}
                     renderOption={(props, option) => (
                       <li {...props}>{formatAuditEventTypeLabel(String(option))}</li>
@@ -1313,8 +1520,9 @@ const AdminDashboard: React.FC = () => {
                     )}
                   />
                   <FormControl size="small" sx={{ minWidth: 160 }}>
-                    <InputLabel>Category</InputLabel>
+                    <InputLabel id="audit-category-label">Category</InputLabel>
                     <Select
+                      labelId="audit-category-label"
                       label="Category"
                       value={auditFilterCategory}
                       onChange={(event) => setAuditFilterCategory(String(event.target.value))}
