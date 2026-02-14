@@ -110,6 +110,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 
 - Audit execution history: `docs/EXECUTION_AUDIT_REPORT.md`
 - Recent audit export fix: `docs/DESIGN_AUDIT_EXPORT_NODEID_NULL_UUID_FIX_20260210.md`
+- Phase 5 D4 (Phase 57): Audit filtered explorer + stable export UX (Admin Dashboard)
+  - Design: `docs/PHASE57_AUDIT_FILTER_EXPORT_UX_DEV_20260214.md`
+  - Verification: `docs/PHASE57_AUDIT_FILTER_EXPORT_UX_VERIFICATION_20260214.md`
 
 ## Search (Simple Search + Advanced Search + Saved Search)
 
