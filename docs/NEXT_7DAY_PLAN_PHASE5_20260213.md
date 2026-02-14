@@ -121,23 +121,30 @@ Goal:
 - Make Alfresco-style permission sets obvious in the UI:
   - Coordinator / Editor / Contributor / Consumer
 
-Implementation:
-- Permissions dialog: display permission-set mapping alongside raw permissions.
-- Add tooltip/help text describing what each set implies.
+Implementation (completed 2026-02-14):
+- Permissions dialog: add preset legend ("Permission presets (Alfresco-style)") with tooltips.
+- Permissions grid: add "Effective preset" column derived from current ALLOW grants:
+  - exact match => green chip (e.g., Editor)
+  - otherwise => `Custom` + `Closest: <Preset>` (tooltip shows missing permissions)
 
 Code touchpoints:
 - `ecm-frontend/src/components/dialogs/PermissionsDialog.tsx`
-- `ecm-frontend/src/utils/permissionUtils.ts` (or similar mapping helpers)
+- `ecm-frontend/e2e/permissions-dialog-presets.mock.spec.ts`
 
-Verification:
-- Playwright: open permissions dialog, assert permission sets render for admin.
+Verification (PASS 2026-02-14):
 
-Mocked E2E option (preferred):
-- Add a mocked spec for permissions dialog rendering, to avoid needing backend ACL setup.
+```bash
+cd ecm-frontend
+npm run build
+python3 -m http.server 5500 --directory build
+ECM_UI_URL=http://localhost:5500 npx playwright test \
+  e2e/permissions-dialog-presets.mock.spec.ts \
+  --project=chromium --workers=1
+```
 
 Docs:
-- `docs/PHASE56_PERMISSION_SET_UX_PARITY_DEV_20260215.md`
-- `docs/PHASE56_PERMISSION_SET_UX_PARITY_VERIFICATION_20260215.md`
+- `docs/PHASE56_PERMISSION_SET_UX_PARITY_DEV_20260214.md`
+- `docs/PHASE56_PERMISSION_SET_UX_PARITY_VERIFICATION_20260214.md`
 
 ## Day 4 (P0) - Audit: Filtered Explorer + Export Presets UX
 

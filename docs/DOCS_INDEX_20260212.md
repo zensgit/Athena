@@ -68,6 +68,10 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - D2: Permission template diff export JSON + audit trail
     - Design: `docs/PHASE2_D2_PERMISSION_TEMPLATE_DIFF_JSON_DESIGN_20260212.md`
     - Verification: `docs/PHASE2_D2_PERMISSION_TEMPLATE_DIFF_JSON_VERIFICATION_20260212.md`
+- Phase 5
+  - Phase 56: Permission-set UX parity (Alfresco-style presets)
+    - Dev: `docs/PHASE56_PERMISSION_SET_UX_PARITY_DEV_20260214.md`
+    - Verification: `docs/PHASE56_PERMISSION_SET_UX_PARITY_VERIFICATION_20260214.md`
 
 ## Preview
 
