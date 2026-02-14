@@ -62,8 +62,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
     - Design: `docs/PHASE2_D5_MAIL_REPORT_SCHEDULE_EXPORT_DESIGN_20260212.md`
     - Verification: `docs/PHASE2_D5_MAIL_REPORT_SCHEDULE_EXPORT_VERIFICATION_20260212.md`
 - Phase 5
-  - Mocked regression gate coverage (Trigger Fetch + last fetch summary)
+  - Mocked regression gate coverage (Trigger Fetch + diagnostics + exports)
     - Rollup: `docs/PHASE5_REGRESSION_GATE_ROLLUP_20260214.md`
+    - Dev+Verification: `docs/DEVELOPMENT_AND_VERIFICATION_PHASE5_MAIL_AUTOMATION_DIAGNOSTICS_EXPORT_20260214.md`
 
 ## Permissions
 

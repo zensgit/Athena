@@ -20,6 +20,7 @@ PHASE5_SPECS=(
   "e2e/version-history-paging-major-only.mock.spec.ts"
   "e2e/search-suggestions-save-search.mock.spec.ts"
   "e2e/mail-automation-trigger-fetch.mock.spec.ts"
+  "e2e/mail-automation-diagnostics-export.mock.spec.ts"
 )
 
 if [[ ! -d "ecm-frontend" ]]; then

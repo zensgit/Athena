@@ -265,6 +265,7 @@ Regression gate contents (mocked-first):
 - `ecm-frontend/e2e/version-history-paging-major-only.mock.spec.ts`
 - `ecm-frontend/e2e/search-suggestions-save-search.mock.spec.ts`
 - `ecm-frontend/e2e/mail-automation-trigger-fetch.mock.spec.ts`
+- `ecm-frontend/e2e/mail-automation-diagnostics-export.mock.spec.ts`
 
 Optional full-stack add-ons (when Docker/backends are healthy):
 - `ecm-frontend/e2e/ui-smoke.spec.ts`
@@ -272,7 +273,9 @@ Optional full-stack add-ons (when Docker/backends are healthy):
 
 Implementation (completed 2026-02-14):
 - Add `scripts/phase5-regression.sh` (mocked-first).
-- Add `ecm-frontend/e2e/mail-automation-trigger-fetch.mock.spec.ts` and include it in the rollup gate.
+- Add Mail Automation mocked E2E coverage and include it in the rollup gate:
+  - `ecm-frontend/e2e/mail-automation-trigger-fetch.mock.spec.ts`
+  - `ecm-frontend/e2e/mail-automation-diagnostics-export.mock.spec.ts`
 - Add `docs/PHASE5_REGRESSION_GATE_ROLLUP_20260214.md`.
 - Update `docs/DOCS_INDEX_20260212.md` to reference the Phase 5 regression gate rollup.
 
