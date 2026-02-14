@@ -12,6 +12,13 @@ Provide a single CLI entrypoint to validate the Phase 5 admin UX slices without 
 bash scripts/phase5-regression.sh
 ```
 
+## CI
+
+This gate is also executed in GitHub Actions:
+
+- Workflow: `.github/workflows/ci.yml`
+- Job: `frontend_e2e_phase5_mocked` (Phase 5 Mocked Regression Gate)
+
 ## What It Runs
 
 The gate is intentionally **mocked-first** and runs against a static build server (`:5500`):
@@ -49,4 +56,3 @@ ECM_UI_URL=http://localhost:5500 PW_WORKERS=2 bash scripts/phase5-regression.sh
 
 - This gate does not require Docker.
 - Integration suites (full-stack) remain separate, since they depend on Keycloak/DB/Elasticsearch.
-

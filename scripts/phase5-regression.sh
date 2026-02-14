@@ -31,9 +31,6 @@ cd ecm-frontend
 echo "phase5_regression: build frontend"
 npm run build
 
-echo "phase5_regression: check e2e target"
-ALLOW_STATIC=1 ../scripts/check-e2e-target.sh "${ECM_UI_URL}" || true
-
 echo "phase5_regression: ensure static server reachable"
 if ! curl -fsS --max-time 3 "${ECM_UI_URL}" >/dev/null 2>&1; then
   case "${ECM_UI_URL}" in
@@ -57,6 +54,9 @@ if ! curl -fsS --max-time 3 "${ECM_UI_URL}" >/dev/null 2>&1; then
       ;;
   esac
 fi
+
+echo "phase5_regression: check e2e target"
+ALLOW_STATIC=1 ../scripts/check-e2e-target.sh "${ECM_UI_URL}" || true
 
 echo "phase5_regression: run playwright specs"
 ECM_UI_URL="${ECM_UI_URL}" npx playwright test \
