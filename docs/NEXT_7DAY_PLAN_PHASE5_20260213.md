@@ -227,17 +227,31 @@ Goal:
 - Surface spellcheck/suggestions in Search/Advanced Search.
 - Make it easy to save the current advanced criteria.
 
-Verification:
-- Playwright: search misspelling shows suggestion chip; saving creates saved search.
-
 Code touchpoints:
-- `ecm-frontend/src/pages/SearchPage.tsx`
-- `ecm-frontend/src/components/search/AdvancedSearchDialog.tsx`
+- `ecm-frontend/src/pages/SearchResults.tsx`
+- `ecm-frontend/src/components/search/SearchDialog.tsx`
+- `ecm-frontend/e2e/search-suggestions-save-search.mock.spec.ts`
 - Search API spellcheck endpoint/response contract (ensure UI supports empty states)
 
+Implementation (completed 2026-02-14):
+- Mocked Playwright coverage for:
+  - Spellcheck "Did you mean" suggestions (clickable)
+  - Save Search flow from Advanced Search
+
+Verification (PASS 2026-02-14):
+
+```bash
+cd ecm-frontend
+npm run build
+python3 -m http.server 5500 --directory build
+ECM_UI_URL=http://localhost:5500 npx playwright test \
+  e2e/search-suggestions-save-search.mock.spec.ts \
+  --project=chromium --workers=1
+```
+
 Docs:
-- `docs/PHASE59_SEARCH_SUGGESTIONS_SAVED_SEARCH_UX_DEV_20260218.md`
-- `docs/PHASE59_SEARCH_SUGGESTIONS_SAVED_SEARCH_UX_VERIFICATION_20260218.md`
+- `docs/PHASE59_SEARCH_SUGGESTIONS_SAVED_SEARCH_UX_DEV_20260214.md`
+- `docs/PHASE59_SEARCH_SUGGESTIONS_SAVED_SEARCH_UX_VERIFICATION_20260214.md`
 
 ## Day 7 (Ops) - Regression Gate Rollup + Docs Index Refresh
 

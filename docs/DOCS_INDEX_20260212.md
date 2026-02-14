@@ -119,6 +119,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 
 ## Search (Simple Search + Advanced Search + Saved Search)
 
+- Phase 5 D6 (Phase 59): Search spellcheck suggestions + Save Search convenience (mocked coverage)
+  - Design: `docs/PHASE59_SEARCH_SUGGESTIONS_SAVED_SEARCH_UX_DEV_20260214.md`
+  - Verification: `docs/PHASE59_SEARCH_SUGGESTIONS_SAVED_SEARCH_UX_VERIFICATION_20260214.md`
 - Search continuity + regression gate
   - P104: Search continuity regression gate
     - Verification: `docs/PHASE1_P104_SEARCH_CONTINUITY_REGRESSION_GATE_VERIFICATION_20260212.md`
