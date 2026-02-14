@@ -198,19 +198,28 @@ Docs:
 Goal:
 - UI supports paged history and “major-only” view (already available in API).
 
-Implementation:
-- Version history dialog: add paging controls + major-only toggle.
-
-Verification:
-- Playwright: check paging + major-only toggles change visible versions.
-
 Code touchpoints:
 - `ecm-frontend/src/components/dialogs/VersionHistoryDialog.tsx`
+- `ecm-frontend/e2e/version-history-paging-major-only.mock.spec.ts`
 - `ecm-core` versions endpoint(s) (ensure paging params align)
 
+Implementation (completed 2026-02-14):
+- Mocked Playwright coverage for paging (`Load more`) and `Major versions only` toggle.
+
+Verification (PASS 2026-02-14):
+
+```bash
+cd ecm-frontend
+npm run build
+python3 -m http.server 5500 --directory build
+ECM_UI_URL=http://localhost:5500 npx playwright test \
+  e2e/version-history-paging-major-only.mock.spec.ts \
+  --project=chromium --workers=1
+```
+
 Docs:
-- `docs/PHASE58_VERSION_HISTORY_PAGING_UX_DEV_20260217.md`
-- `docs/PHASE58_VERSION_HISTORY_PAGING_UX_VERIFICATION_20260217.md`
+- `docs/PHASE58_VERSION_HISTORY_PAGING_UX_DEV_20260214.md`
+- `docs/PHASE58_VERSION_HISTORY_PAGING_UX_VERIFICATION_20260214.md`
 
 ## Day 6 (P1) - Search: “Did You Mean” + Saved Search Convenience
 

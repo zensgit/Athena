@@ -105,6 +105,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Version paging/history slice
   - Dev: `docs/PHASE15_VERSION_PAGED_HISTORY_DEV_20260203.md`
   - Verification: `docs/PHASE15_VERSION_PAGED_HISTORY_VERIFICATION_20260203.md`
+- Phase 5 D5 (Phase 58): Version history paging + major-only toggle (mocked coverage)
+  - Design: `docs/PHASE58_VERSION_HISTORY_PAGING_UX_DEV_20260214.md`
+  - Verification: `docs/PHASE58_VERSION_HISTORY_PAGING_UX_VERIFICATION_20260214.md`
 
 ## Audit
 
