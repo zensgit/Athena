@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
@@ -24,6 +24,8 @@ import {
 import {
   Autorenew as RetryIcon,
   Build as ForceIcon,
+  ContentCopy as CopyIcon,
+  FolderOpen as FolderOpenIcon,
   Refresh as RefreshIcon,
   Search as SearchIcon,
 } from '@mui/icons-material';
@@ -60,7 +62,7 @@ const PreviewDiagnosticsPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [queueingId, setQueueingId] = useState<string | null>(null);
 
-  const loadFailures = async () => {
+  const loadFailures = useCallback(async () => {
     try {
       setLoading(true);
       const data = await previewDiagnosticsService.listRecentFailures(limit);
@@ -71,11 +73,11 @@ const PreviewDiagnosticsPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [limit]);
 
   useEffect(() => {
     void loadFailures();
-  }, [limit]);
+  }, [loadFailures]);
 
   const summary = useMemo(() => {
     return summarizeFailedPreviews(
@@ -108,10 +110,55 @@ const PreviewDiagnosticsPage: React.FC = () => {
     });
   }, [filterText, items]);
 
+  const getParentFolderPath = (rawPath?: string | null): string | null => {
+    if (!rawPath) {
+      return null;
+    }
+    const cleaned = rawPath.trim();
+    if (!cleaned.startsWith('/')) {
+      return null;
+    }
+    const parts = cleaned.split('/').filter(Boolean);
+    if (parts.length < 2) {
+      return null;
+    }
+    return `/${parts.slice(0, -1).join('/')}`;
+  };
+
   const handleOpenInSearch = (item: PreviewFailureSample) => {
+    const params = new URLSearchParams();
     const q = (item.name || '').trim();
-    const encoded = encodeURIComponent(q);
-    navigate(`/search?q=${encoded}`);
+    if (q) {
+      params.set('q', q);
+    }
+    const previewStatus = (item.previewStatus || '').toUpperCase();
+    if (previewStatus === 'FAILED' || previewStatus === 'UNSUPPORTED') {
+      params.set('previewStatus', previewStatus);
+    }
+    const query = params.toString();
+    navigate(query ? `/search?${query}` : '/search');
+  };
+
+  const handleCopyId = async (item: PreviewFailureSample) => {
+    try {
+      await navigator.clipboard.writeText(item.id);
+      toast.success('Document id copied');
+    } catch {
+      toast.error('Failed to copy document id');
+    }
+  };
+
+  const handleOpenParentFolder = async (item: PreviewFailureSample) => {
+    const parentPath = getParentFolderPath(item.path);
+    if (!parentPath) {
+      return;
+    }
+    try {
+      const folder = await nodeService.getFolderByPath(parentPath);
+      navigate(`/browse/${folder.id}`);
+    } catch {
+      toast.error('Failed to open parent folder');
+    }
   };
 
   const handleQueuePreview = async (item: PreviewFailureSample, force: boolean) => {
@@ -210,6 +257,7 @@ const PreviewDiagnosticsPage: React.FC = () => {
                   );
                   const queueBusy = queueingId === item.id;
                   const reasonLabel = formatPreviewFailureReasonLabel(item.previewFailureReason);
+                  const parentPath = getParentFolderPath(item.path);
 
                   return (
                     <TableRow key={item.id} hover>
@@ -248,6 +296,33 @@ const PreviewDiagnosticsPage: React.FC = () => {
                       </TableCell>
                       <TableCell align="right">
                         <Stack direction="row" justifyContent="flex-end" gap={0.5}>
+                          <Tooltip title="Copy document id" placement="top-start" arrow>
+                            <IconButton
+                              aria-label="Copy document id"
+                              size="small"
+                              onClick={() => void handleCopyId(item)}
+                            >
+                              <CopyIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+
+                          <Tooltip
+                            title={parentPath ? 'Open parent folder' : 'Path is missing; cannot open parent folder'}
+                            placement="top-start"
+                            arrow
+                          >
+                            <span>
+                              <IconButton
+                                aria-label="Open parent folder"
+                                size="small"
+                                disabled={!parentPath}
+                                onClick={() => void handleOpenParentFolder(item)}
+                              >
+                                <FolderOpenIcon fontSize="small" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+
                           <Tooltip title="Open in Advanced Search" placement="top-start" arrow>
                             <IconButton
                               aria-label="Open in Advanced Search"
@@ -314,4 +389,3 @@ const PreviewDiagnosticsPage: React.FC = () => {
 };
 
 export default PreviewDiagnosticsPage;
-

@@ -12,6 +12,19 @@ test('Preview diagnostics renders failures and gates retry actions (mocked API)'
   const unsupportedName = 'e2e-preview-diagnostics-unsupported.bin';
   const permanentName = 'e2e-preview-diagnostics-permanent.pdf';
 
+  await page.addInitScript(() => {
+    // Avoid relying on system clipboard permissions in CI/local runs.
+    (window as any).__copiedText = null;
+    Object.defineProperty(navigator, 'clipboard', {
+      value: {
+        writeText: async (text: string) => {
+          (window as any).__copiedText = text;
+        },
+      },
+      configurable: true,
+    });
+  });
+
   await seedBypassSessionE2E(page, 'admin', 'e2e-token');
 
   await page.route('**/api/v1/folders/roots', async (route) => {
@@ -41,6 +54,66 @@ test('Preview diagnostics renders failures and gates retry actions (mocked API)'
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ content: [], totalElements: 0 }),
+    });
+  });
+
+  await page.route('**/api/v1/folders/path**', async (route) => {
+    const url = new URL(route.request().url());
+    const requestedPath = url.searchParams.get('path');
+    if (requestedPath !== '/Root/Documents/e2e-preview-diagnostics') {
+      await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ message: 'Not found' }) });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 'parent-folder-id',
+        name: 'e2e-preview-diagnostics',
+        path: '/Root/Documents/e2e-preview-diagnostics',
+        folderType: 'USER',
+        parentId: 'root-folder-id',
+        inheritPermissions: true,
+        description: null,
+        createdBy: 'admin',
+        createdDate: new Date().toISOString(),
+        lastModifiedBy: 'admin',
+        lastModifiedDate: new Date().toISOString(),
+      }),
+    });
+  });
+
+  await page.route('**/api/v1/nodes/parent-folder-id', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 'parent-folder-id',
+        name: 'e2e-preview-diagnostics',
+        path: '/Root/Documents/e2e-preview-diagnostics',
+        nodeType: 'FOLDER',
+        parentId: 'root-folder-id',
+        size: 0,
+        contentType: null,
+        currentVersionLabel: null,
+        correspondentId: null,
+        correspondentName: null,
+        properties: {},
+        metadata: {},
+        aspects: [],
+        tags: [],
+        categories: [],
+        inheritPermissions: true,
+        locked: false,
+        lockedBy: null,
+        previewStatus: null,
+        previewFailureReason: null,
+        previewFailureCategory: null,
+        createdBy: 'admin',
+        createdDate: new Date().toISOString(),
+        lastModifiedBy: 'admin',
+        lastModifiedDate: new Date().toISOString(),
+      }),
     });
   });
 
@@ -83,6 +156,17 @@ test('Preview diagnostics renders failures and gates retry actions (mocked API)'
     });
   });
 
+  await page.route('**/api/v1/search/faceted', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: { content: [], totalElements: 0, totalPages: 0 },
+        facets: { mimeType: [], createdBy: [], tags: [], categories: [], previewStatus: [] },
+      }),
+    });
+  });
+
   await page.route('**/api/v1/documents/*/preview/queue**', async (route) => {
     await route.fulfill({
       status: 200,
@@ -110,15 +194,34 @@ test('Preview diagnostics renders failures and gates retry actions (mocked API)'
 
   const retryableRow = page.locator('tr', { hasText: retryableName });
   await expect(retryableRow).toBeVisible();
+
+  await retryableRow.getByRole('button', { name: 'Copy document id' }).click();
+  await expect(page.getByText('Document id copied')).toBeVisible();
+  const copied = await page.evaluate(() => (window as any).__copiedText);
+  expect(copied).toBe(retryableId);
+
   // Tooltip wrapper includes a <span aria-label="Retry preview"> plus the real button; use role=button.
   const retryButton = retryableRow.getByRole('button', { name: 'Retry preview' });
   await expect(retryButton).toBeEnabled();
   await retryButton.click();
   await expect(page.getByText('Preview retry queued')).toBeVisible();
 
+  await retryableRow.getByRole('button', { name: 'Open in Advanced Search' }).click();
+  await expect(page).toHaveURL(/\/search\?/);
+  await expect(page.getByRole('heading', { name: 'Advanced Search' })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`previewStatus=FAILED`));
+  await expect(page).toHaveURL(new RegExp(`q=${encodeURIComponent(retryableName)}`));
+  await page.goBack();
+  await expect(page.getByRole('heading', { name: 'Preview Diagnostics' })).toBeVisible();
+
   await filter.fill(unsupportedName);
   const unsupportedRow = page.locator('tr', { hasText: unsupportedName });
   await expect(unsupportedRow).toBeVisible();
   await expect(unsupportedRow.getByRole('button', { name: 'Retry preview' })).toBeDisabled();
   await expect(unsupportedRow.getByRole('button', { name: 'Force rebuild preview' })).toBeDisabled();
+
+  await filter.fill(retryableName);
+  await expect(retryableRow.getByRole('button', { name: 'Open parent folder' })).toBeEnabled();
+  await retryableRow.getByRole('button', { name: 'Open parent folder' }).click();
+  await expect(page).toHaveURL(/\/browse\/parent-folder-id$/);
 });
