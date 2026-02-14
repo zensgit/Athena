@@ -28,6 +28,7 @@ The gate is intentionally **mocked-first** and runs against a static build serve
 - `ecm-frontend/e2e/admin-audit-filter-export.mock.spec.ts`
 - `ecm-frontend/e2e/version-history-paging-major-only.mock.spec.ts`
 - `ecm-frontend/e2e/search-suggestions-save-search.mock.spec.ts`
+- `ecm-frontend/e2e/mail-automation-trigger-fetch.mock.spec.ts`
 
 ## Behavior
 
