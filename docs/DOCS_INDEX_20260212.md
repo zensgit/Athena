@@ -169,6 +169,10 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - D7: Ops/CI guardrails
     - Design: `docs/PHASE2_D7_CI_GUARDRAILS_DESIGN_20260212.md`
     - Verification: `docs/PHASE2_D7_CI_GUARDRAILS_VERIFICATION_20260212.md`
+- Phase 5
+  - Regression gate rollup (mocked-first)
+    - Doc: `docs/PHASE5_REGRESSION_GATE_ROLLUP_20260214.md`
+    - Script: `scripts/phase5-regression.sh`
 - Weekly regression command rollup:
   - `docs/WEEKLY_REGRESSION_UPDATE_20260212.md`
 

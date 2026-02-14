@@ -258,17 +258,27 @@ Docs:
 Goal:
 - One command runs the highest-signal E2E suite for Phase 5 admin tooling.
 
-Implementation:
-- Add `scripts/phase5-regression.sh` (or extend an existing smoke script).
-- Update `docs/DOCS_INDEX_20260212.md` with Phase 5 entries.
-
-Verification:
-- `bash scripts/phase5-regression.sh` passes on a clean environment.
-
-Regression gate contents (minimum):
-- `ecm-frontend/e2e/ui-smoke.spec.ts`
+Regression gate contents (mocked-first):
 - `ecm-frontend/e2e/admin-preview-diagnostics.mock.spec.ts`
-- `ecm-frontend/e2e/mail-automation.spec.ts` (if stable in this environment)
+- `ecm-frontend/e2e/permissions-dialog-presets.mock.spec.ts`
+- `ecm-frontend/e2e/admin-audit-filter-export.mock.spec.ts`
+- `ecm-frontend/e2e/version-history-paging-major-only.mock.spec.ts`
+- `ecm-frontend/e2e/search-suggestions-save-search.mock.spec.ts`
+
+Optional full-stack add-ons (when Docker/backends are healthy):
+- `ecm-frontend/e2e/ui-smoke.spec.ts`
+- `ecm-frontend/e2e/mail-automation.spec.ts`
+
+Implementation (completed 2026-02-14):
+- Add `scripts/phase5-regression.sh` (mocked-first).
+- Add `docs/PHASE5_REGRESSION_GATE_ROLLUP_20260214.md`.
+- Update `docs/DOCS_INDEX_20260212.md` to reference the Phase 5 regression gate rollup.
+
+Verification (PASS 2026-02-14):
+
+```bash
+bash scripts/phase5-regression.sh
+```
 
 Docs:
-- `docs/PHASE5_REGRESSION_GATE_ROLLUP_20260219.md`
+- `docs/PHASE5_REGRESSION_GATE_ROLLUP_20260214.md`
