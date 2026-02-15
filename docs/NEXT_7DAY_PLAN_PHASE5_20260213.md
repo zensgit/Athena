@@ -294,3 +294,11 @@ bash scripts/phase5-regression.sh
 
 Docs:
 - `docs/PHASE5_REGRESSION_GATE_ROLLUP_20260214.md`
+
+## Closure Update (2026-02-15)
+
+- Remaining pending integration item is now closed:
+  - `ecm-frontend/e2e/admin-preview-diagnostics.spec.ts` ran with real backend and passed.
+- Verification docs updated:
+  - `docs/PHASE54_PREVIEW_DIAGNOSTICS_UI_VERIFICATION_20260213.md`
+  - `docs/PHASE55_PREVIEW_DIAGNOSTICS_HARDENING_VERIFICATION_20260214.md`

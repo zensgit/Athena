@@ -101,10 +101,10 @@ test('Admin preview diagnostics lists recent failures and supports filtering', a
 
   const filter = page.getByPlaceholder('Filter by name, path, mime type...');
   await filter.fill(filename);
-  await expect(page.getByText(filename)).toBeVisible({ timeout: 60_000 });
+  const matchingRow = page.locator('tr', { hasText: filename });
+  await expect(matchingRow).toBeVisible({ timeout: 60_000 });
 
   await request.delete(`${baseApiUrl}/api/v1/nodes/${folderId}`, {
     headers: { Authorization: `Bearer ${token}` },
   }).catch(() => null);
 });
-

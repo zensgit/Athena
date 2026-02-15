@@ -41,7 +41,7 @@ Command:
 
 ```bash
 cd ecm-frontend
-ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 npx playwright test e2e/admin-preview-diagnostics.spec.ts --project=chromium --workers=1
+ECM_UI_URL=http://localhost ECM_API_URL=http://localhost:7700 npx playwright test e2e/admin-preview-diagnostics.spec.ts --project=chromium --workers=1
 ```
 
 ## Manual Smoke
@@ -54,4 +54,11 @@ ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 npx playwrigh
 ## Results (2026-02-13)
 
 - Mocked E2E: ✅ `admin-preview-diagnostics.mock.spec.ts`
-- Real backend E2E: ⏳ pending (requires Docker stack running at `http://localhost:7700`)
+
+## Results Update (2026-02-15)
+
+- Real backend E2E: ✅ `admin-preview-diagnostics.spec.ts` (1 passed, 4.8s)
+- Runtime used:
+  - Backend API: `http://localhost:7700`
+  - Keycloak: `http://localhost:8180`
+  - UI base URL: `http://localhost` (Nginx)

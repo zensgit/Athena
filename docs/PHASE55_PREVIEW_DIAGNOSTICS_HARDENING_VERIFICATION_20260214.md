@@ -27,14 +27,18 @@ Status: PASS (2026-02-14)
 
 ### 2) UI + API E2E (Real Backend Required)
 
-Integration spec (not re-run in this environment; requires Docker stack + backend at `http://localhost:7700`):
+Integration spec (real backend):
 
 ```bash
 cd ecm-frontend
-ECM_UI_URL=http://localhost:3000 ECM_API_URL=http://localhost:7700 npx playwright test e2e/admin-preview-diagnostics.spec.ts --project=chromium --workers=1
+ECM_UI_URL=http://localhost ECM_API_URL=http://localhost:7700 npx playwright test e2e/admin-preview-diagnostics.spec.ts --project=chromium --workers=1
 ```
 
-Status: ⏳ pending (backend unavailable)
+Status: PASS (2026-02-15)
+
+Notes:
+- The integration spec assertion was tightened to row-level matching (`tr` + `hasText`) so file name and path duplicate text no longer causes Playwright strict-mode false failures.
+- Result: `1 passed (4.8s)`.
 
 ## Manual Smoke
 
@@ -44,4 +48,3 @@ Status: ⏳ pending (backend unavailable)
    - **Copy document id** copies a UUID to clipboard.
    - **Open parent folder** navigates to the containing folder.
    - **Open in Advanced Search** opens with a preview-status filter applied.
-
