@@ -43,7 +43,9 @@ if [[ -z "${TOKEN}" ]]; then
 fi
 
 echo "phase5_preview_realchain: create corrupted pdf"
-TMP_PDF="$(mktemp /tmp/ecm-preview-corrupt.XXXXXX.pdf)"
+TMP_PDF_BASE="$(mktemp /tmp/ecm-preview-corrupt.XXXXXX)"
+TMP_PDF="${TMP_PDF_BASE}.pdf"
+mv -f "${TMP_PDF_BASE}" "${TMP_PDF}"
 cat >"${TMP_PDF}" <<'EOF'
 %PDF-1.4
 1 0 obj
@@ -71,14 +73,23 @@ fi
 echo "root_id=${root_id}"
 
 echo "phase5_preview_realchain: upload corrupted pdf"
-upload_resp="$(curl -fsS -H "Authorization: Bearer ${TOKEN}" \
+upload_http_and_body="$(curl -sS -w '\n__HTTP_STATUS__:%{http_code}' -H "Authorization: Bearer ${TOKEN}" \
   -F "file=@${FILE};type=application/pdf" \
   "${ECM_API_URL}/api/v1/documents/upload?folderId=${root_id}")"
 
-doc_id="$(echo "${upload_resp}" | jq -r '.documentId // empty')"
+upload_http="$(echo "${upload_http_and_body}" | sed -n 's/^__HTTP_STATUS__://p' | tail -n 1)"
+upload_resp="$(echo "${upload_http_and_body}" | sed '/^__HTTP_STATUS__:/d')"
+
+doc_id="$(echo "${upload_resp}" | jq -r '.documentId // empty' 2>/dev/null || true)"
 if [[ -z "${doc_id}" ]]; then
-  echo "ERROR: upload did not return documentId"
-  echo "${upload_resp}" | head -c 400 || true
+  echo "ERROR: upload did not return documentId (http=${upload_http})"
+  echo "${upload_resp}" | head -c 600 || true
+  echo
+  exit 1
+fi
+if [[ "${upload_http}" != "200" && "${upload_http}" != "201" && "${upload_http}" != "202" && "${upload_http}" != "400" ]]; then
+  echo "ERROR: unexpected upload status ${upload_http}"
+  echo "${upload_resp}" | head -c 600 || true
   echo
   exit 1
 fi
@@ -111,4 +122,3 @@ done
 echo "FAIL: uploaded doc did not appear in preview failures within ${POLL_SECONDS}s (last_failures_count=${last_count})"
 echo "hint: ensure preview pipeline workers are running and the file actually produces a FAILED/UNSUPPORTED status"
 exit 2
-

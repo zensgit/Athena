@@ -59,3 +59,19 @@ ECM_UI_URL=http://localhost:3000 ECM_E2E_USERNAME=admin ECM_E2E_PASSWORD=admin \
 - Playwright reports `1 passed`
 - Script ends with `phase5_fullstack_smoke: ok`
 
+## 2026-02-15 Post-Merge Run (PASS)
+
+Environment:
+- `ecm-core`, `ecm-frontend`, and `nginx` containers running.
+- `ECM_UI_URL=http://localhost` (nginx reverse-proxy target that forwards `/api` to backend).
+
+Command:
+
+```bash
+ECM_UI_URL=http://localhost bash scripts/phase5-fullstack-smoke.sh
+```
+
+Observed:
+- `phase5_fullstack_smoke: run playwright (full-stack admin smoke)` executed successfully.
+- Playwright output: `1 passed`.
+- Script ended with `phase5_fullstack_smoke: ok`.
