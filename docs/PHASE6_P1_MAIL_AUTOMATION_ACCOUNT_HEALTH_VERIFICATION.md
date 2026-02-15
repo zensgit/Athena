@@ -26,3 +26,6 @@ ECM_UI_URL=http://localhost npx playwright test \
 
 ## Result
 - PASS (2026-02-15): `1 passed`
+
+## Real Backend Integration
+- Shared integration run: `docs/PHASE6_P1_MAIL_AUTOMATION_INTEGRATION_VERIFICATION_20260215.md`

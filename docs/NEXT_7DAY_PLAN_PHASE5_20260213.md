@@ -272,6 +272,7 @@ Regression gate contents (mocked-first):
 Optional full-stack add-ons (when Docker/backends are healthy):
 - `scripts/phase5-fullstack-smoke.sh` (runs `ecm-frontend/e2e/phase5-fullstack-admin-smoke.spec.ts`)
 - `scripts/phase5-preview-diagnostics-realchain.sh` (upload corrupted PDF + poll preview failures)
+- `scripts/phase6-mail-automation-integration-smoke.sh` (runs `ecm-frontend/e2e/mail-automation-phase6-p1.spec.ts`)
 - `ecm-frontend/e2e/ui-smoke.spec.ts`
 - `ecm-frontend/e2e/mail-automation.spec.ts`
 
