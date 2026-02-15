@@ -32,7 +32,7 @@ services:
       - ECM_STORAGE_ROOT_PATH=/var/ecm/content
       - ECM_STORAGE_TEMP_PATH=/var/ecm/temp
       - ECM_ODOO_URL=http://odoo:8069
-      - JODCONVERTER_LOCAL_ENABLED=true
+      - JODCONVERTER_LOCAL_ENABLED=${JODCONVERTER_LOCAL_ENABLED:-true}
       - JODCONVERTER_LOCAL_OFFICE_HOME=/usr/lib/libreoffice
       - ECM_ML_SERVICE_URL=http://ml-service:8080
       # Optional: WPS online editor integration (disabled by default)

@@ -102,7 +102,7 @@ jobs:
     needs:
       - backend
       - frontend
-    timeout-minutes: 90
+    timeout-minutes: 120
 
     steps:
       - uses: actions/checkout@v4
@@ -190,7 +190,6 @@ jobs:
               e2e/permission-templates.spec.ts \
               e2e/rules-manual-backfill-validation.spec.ts \
               e2e/search-highlight.spec.ts \
-              e2e/search-preview-status.spec.ts \
               e2e/search-sort-pagination.spec.ts \
               e2e/search-view.spec.ts \
               e2e/version-details.spec.ts \
@@ -198,6 +197,12 @@ jobs:
           ECM_UI_URL=http://localhost:5500 ECM_API_URL=http://localhost:7700 ECM_E2E_WORKERS=1 \
             npx playwright test --workers=1 e2e/ui-smoke.spec.ts \
               --grep 'UI smoke: PDF upload \+ search \+ version history \+ preview|UI search download failure shows error toast'
+
+      - name: Run preview/search regression gate
+        working-directory: ecm-frontend
+        run: |
+          ECM_UI_URL=http://localhost:5500 ECM_API_URL=http://localhost:7700 ECM_E2E_WORKERS=1 \
+            npm run e2e:preview-search:regression -- --workers=1
 
       - name: Capture docker logs (on failure)
         if: failure()

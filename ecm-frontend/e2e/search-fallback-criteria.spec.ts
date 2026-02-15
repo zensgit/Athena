@@ -85,7 +85,12 @@ test.describe('Search fallback criteria guard', () => {
     await quickSearchInput.press('Enter');
     await searchResponsePromise;
 
-    await expect(page.locator('text=0 results found')).toBeVisible({ timeout: 60_000 });
+    const hidePreviousResultsButton = page.getByRole('button', { name: 'Hide previous results' });
+    if (await hidePreviousResultsButton.isVisible().catch(() => false)) {
+      await hidePreviousResultsButton.click();
+    }
+
+    await expect(page.getByText(/0 (similar )?results found/i)).toBeVisible({ timeout: 60_000 });
     await expect(page.locator('text=No results found')).toBeVisible({ timeout: 60_000 });
     await expect(page.locator('text=Search results may still be indexing')).toHaveCount(0);
     await expect(page.locator('.MuiCard-root').filter({ hasText: filename })).toHaveCount(0);
