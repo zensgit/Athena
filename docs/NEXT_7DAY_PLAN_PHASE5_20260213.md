@@ -273,6 +273,7 @@ Optional full-stack add-ons (when Docker/backends are healthy):
 - `scripts/phase5-fullstack-smoke.sh` (runs `ecm-frontend/e2e/phase5-fullstack-admin-smoke.spec.ts`)
 - `scripts/phase5-preview-diagnostics-realchain.sh` (upload corrupted PDF + poll preview failures)
 - `scripts/phase6-mail-automation-integration-smoke.sh` (runs `ecm-frontend/e2e/mail-automation-phase6-p1.spec.ts`)
+- `scripts/phase5-phase6-delivery-gate.sh` (Phase 5 mocked regression + full-stack smoke + Phase 6 integration + `p1-smoke`)
 - `ecm-frontend/e2e/ui-smoke.spec.ts`
 - `ecm-frontend/e2e/mail-automation.spec.ts`
 
@@ -301,6 +302,10 @@ Docs:
 
 - Remaining pending integration item is now closed:
   - `ecm-frontend/e2e/admin-preview-diagnostics.spec.ts` ran with real backend and passed.
+- Added one-command delivery gate for Phase 5 + Phase 6:
+  - Script: `scripts/phase5-phase6-delivery-gate.sh`
+  - Dev doc: `docs/PHASE5_PHASE6_DELIVERY_GATE_DEV_20260215.md`
+  - Verification doc: `docs/PHASE5_PHASE6_DELIVERY_GATE_VERIFICATION_20260215.md`
 - Verification docs updated:
   - `docs/PHASE54_PREVIEW_DIAGNOSTICS_UI_VERIFICATION_20260213.md`
   - `docs/PHASE55_PREVIEW_DIAGNOSTICS_HARDENING_VERIFICATION_20260214.md`

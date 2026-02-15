@@ -16,6 +16,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Phase 3 delivery report (single file): `docs/PHASE3_DELIVERY_REPORT_20260213.md`
 - Phase 4 plan: `docs/NEXT_7DAY_PLAN_PHASE4_20260213.md`
 - Phase 5 plan: `docs/NEXT_7DAY_PLAN_PHASE5_20260213.md`
+- Phase 5/6 one-command delivery gate:
+  - Dev: `docs/PHASE5_PHASE6_DELIVERY_GATE_DEV_20260215.md`
+  - Verification: `docs/PHASE5_PHASE6_DELIVERY_GATE_VERIFICATION_20260215.md`
 - Phase 4 D1: Preview retry classification hardening: `docs/PHASE4_D1_PREVIEW_RETRY_CLASSIFICATION_20260213.md`
 - Phase 4 D2: MIME type normalization (octet-stream): `docs/PHASE4_D2_MIME_TYPE_NORMALIZATION_20260213.md`
 - Phase 4 D3: Preview failure taxonomy + UX messaging: `docs/PHASE4_D3_PREVIEW_FAILURE_TAXONOMY_UX_20260213.md`
@@ -67,6 +70,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
     - Dev+Verification: `docs/DEVELOPMENT_AND_VERIFICATION_PHASE5_MAIL_AUTOMATION_DIAGNOSTICS_EXPORT_20260214.md`
   - Mocked regression gate coverage (Processed management: retention/cleanup/bulk delete/replay)
     - Dev+Verification: `docs/DEVELOPMENT_AND_VERIFICATION_PHASE5_MAIL_AUTOMATION_PROCESSED_MANAGEMENT_20260214.md`
+- Phase 6
+  - P1 integration smoke (account health + preview dialog controls)
+    - Verification: `docs/PHASE6_P1_MAIL_AUTOMATION_INTEGRATION_VERIFICATION_20260215.md`
 
 ## Permissions
 
@@ -184,6 +190,10 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - Full-stack smoke (optional, Docker required)
     - Doc: `docs/PHASE5_FULLSTACK_SMOKE_20260214.md`
     - Script: `scripts/phase5-fullstack-smoke.sh`
+  - One-command delivery gate (Phase 5 + Phase 6)
+    - Dev: `docs/PHASE5_PHASE6_DELIVERY_GATE_DEV_20260215.md`
+    - Verification: `docs/PHASE5_PHASE6_DELIVERY_GATE_VERIFICATION_20260215.md`
+    - Script: `scripts/phase5-phase6-delivery-gate.sh`
 - Weekly regression command rollup:
   - `docs/WEEKLY_REGRESSION_UPDATE_20260212.md`
 

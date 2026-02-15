@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
+
+ECM_UI_URL_MOCKED="${ECM_UI_URL_MOCKED:-http://localhost:5500}"
+ECM_UI_URL_FULLSTACK="${ECM_UI_URL_FULLSTACK:-http://localhost}"
+ECM_API_URL="${ECM_API_URL:-http://localhost:7700}"
+KEYCLOAK_URL="${KEYCLOAK_URL:-http://localhost:8180}"
+KEYCLOAK_REALM="${KEYCLOAK_REALM:-ecm}"
+
+ECM_E2E_USERNAME="${ECM_E2E_USERNAME:-admin}"
+ECM_E2E_PASSWORD="${ECM_E2E_PASSWORD:-admin}"
+
+PW_PROJECT="${PW_PROJECT:-chromium}"
+PW_WORKERS="${PW_WORKERS:-1}"
+
+echo "phase5_phase6_delivery_gate: start"
+echo "ECM_UI_URL_MOCKED=${ECM_UI_URL_MOCKED}"
+echo "ECM_UI_URL_FULLSTACK=${ECM_UI_URL_FULLSTACK}"
+echo "ECM_API_URL=${ECM_API_URL}"
+echo "KEYCLOAK_URL=${KEYCLOAK_URL} KEYCLOAK_REALM=${KEYCLOAK_REALM}"
+echo "PW_PROJECT=${PW_PROJECT} PW_WORKERS=${PW_WORKERS}"
+
+echo ""
+echo "[1/4] mocked regression gate"
+ECM_UI_URL="${ECM_UI_URL_MOCKED}" \
+PW_PROJECT="${PW_PROJECT}" \
+PW_WORKERS="${PW_WORKERS}" \
+bash scripts/phase5-regression.sh
+
+echo ""
+echo "[2/4] full-stack admin smoke"
+ECM_UI_URL="${ECM_UI_URL_FULLSTACK}" \
+ECM_API_URL="${ECM_API_URL}" \
+KEYCLOAK_URL="${KEYCLOAK_URL}" \
+KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
+ECM_E2E_USERNAME="${ECM_E2E_USERNAME}" \
+ECM_E2E_PASSWORD="${ECM_E2E_PASSWORD}" \
+PW_PROJECT="${PW_PROJECT}" \
+PW_WORKERS="${PW_WORKERS}" \
+bash scripts/phase5-fullstack-smoke.sh
+
+echo ""
+echo "[3/4] phase6 mail integration smoke"
+ECM_UI_URL="${ECM_UI_URL_FULLSTACK}" \
+ECM_API_URL="${ECM_API_URL}" \
+KEYCLOAK_URL="${KEYCLOAK_URL}" \
+KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
+ECM_E2E_USERNAME="${ECM_E2E_USERNAME}" \
+ECM_E2E_PASSWORD="${ECM_E2E_PASSWORD}" \
+PW_PROJECT="${PW_PROJECT}" \
+PW_WORKERS="${PW_WORKERS}" \
+bash scripts/phase6-mail-automation-integration-smoke.sh
+
+echo ""
+echo "[4/4] p1 smoke"
+(
+  cd ecm-frontend
+  ECM_UI_URL="${ECM_UI_URL_FULLSTACK}" \
+  ECM_API_URL="${ECM_API_URL}" \
+  KEYCLOAK_URL="${KEYCLOAK_URL}" \
+  KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
+  ECM_E2E_USERNAME="${ECM_E2E_USERNAME}" \
+  ECM_E2E_PASSWORD="${ECM_E2E_PASSWORD}" \
+  npx playwright test e2e/p1-smoke.spec.ts \
+    --project="${PW_PROJECT}" --workers="${PW_WORKERS}"
+)
+
+echo ""
+echo "phase5_phase6_delivery_gate: ok"

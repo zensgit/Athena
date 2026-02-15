@@ -63,3 +63,7 @@ ECM_UI_URL=http://localhost:5500 PW_WORKERS=2 bash scripts/phase5-regression.sh
 - Optional full-stack smoke (when Docker/backends are healthy):
   - Doc: `docs/PHASE5_FULLSTACK_SMOKE_20260214.md`
   - Script: `scripts/phase5-fullstack-smoke.sh`
+- Optional one-command delivery gate (Phase 5 + Phase 6):
+  - Dev: `docs/PHASE5_PHASE6_DELIVERY_GATE_DEV_20260215.md`
+  - Verification: `docs/PHASE5_PHASE6_DELIVERY_GATE_VERIFICATION_20260215.md`
+  - Script: `scripts/phase5-phase6-delivery-gate.sh`
