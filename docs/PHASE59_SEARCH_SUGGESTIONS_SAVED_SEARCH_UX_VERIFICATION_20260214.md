@@ -33,3 +33,8 @@ ECM_UI_URL=http://localhost:5500 npx playwright test \
 - UI shows "Did you mean" for the misspelled query.
 - UI renders a result for the corrected query after clicking the suggestion.
 
+## Real Backend Integration
+
+- Verification doc: `docs/PHASE59_SEARCH_SUGGESTIONS_SAVED_SEARCH_INTEGRATION_VERIFICATION_20260215.md`
+- Smoke script: `scripts/phase5-search-suggestions-integration-smoke.sh`
+- Integration spec: `ecm-frontend/e2e/search-suggestions-save-search.integration.spec.ts`

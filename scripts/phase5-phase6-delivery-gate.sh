@@ -24,14 +24,14 @@ echo "KEYCLOAK_URL=${KEYCLOAK_URL} KEYCLOAK_REALM=${KEYCLOAK_REALM}"
 echo "PW_PROJECT=${PW_PROJECT} PW_WORKERS=${PW_WORKERS}"
 
 echo ""
-echo "[1/4] mocked regression gate"
+echo "[1/5] mocked regression gate"
 ECM_UI_URL="${ECM_UI_URL_MOCKED}" \
 PW_PROJECT="${PW_PROJECT}" \
 PW_WORKERS="${PW_WORKERS}" \
 bash scripts/phase5-regression.sh
 
 echo ""
-echo "[2/4] full-stack admin smoke"
+echo "[2/5] full-stack admin smoke"
 ECM_UI_URL="${ECM_UI_URL_FULLSTACK}" \
 ECM_API_URL="${ECM_API_URL}" \
 KEYCLOAK_URL="${KEYCLOAK_URL}" \
@@ -43,7 +43,7 @@ PW_WORKERS="${PW_WORKERS}" \
 bash scripts/phase5-fullstack-smoke.sh
 
 echo ""
-echo "[3/4] phase6 mail integration smoke"
+echo "[3/5] phase6 mail integration smoke"
 ECM_UI_URL="${ECM_UI_URL_FULLSTACK}" \
 ECM_API_URL="${ECM_API_URL}" \
 KEYCLOAK_URL="${KEYCLOAK_URL}" \
@@ -55,7 +55,19 @@ PW_WORKERS="${PW_WORKERS}" \
 bash scripts/phase6-mail-automation-integration-smoke.sh
 
 echo ""
-echo "[4/4] p1 smoke"
+echo "[4/5] phase5 search suggestions integration smoke"
+ECM_UI_URL="${ECM_UI_URL_FULLSTACK}" \
+ECM_API_URL="${ECM_API_URL}" \
+KEYCLOAK_URL="${KEYCLOAK_URL}" \
+KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
+ECM_E2E_USERNAME="${ECM_E2E_USERNAME}" \
+ECM_E2E_PASSWORD="${ECM_E2E_PASSWORD}" \
+PW_PROJECT="${PW_PROJECT}" \
+PW_WORKERS="${PW_WORKERS}" \
+bash scripts/phase5-search-suggestions-integration-smoke.sh
+
+echo ""
+echo "[5/5] p1 smoke"
 (
   cd ecm-frontend
   ECM_UI_URL="${ECM_UI_URL_FULLSTACK}" \

@@ -22,7 +22,9 @@ bash scripts/phase5-phase6-delivery-gate.sh
    - `1 passed`
 3. `scripts/phase6-mail-automation-integration-smoke.sh`
    - `1 passed`
-4. `ecm-frontend/e2e/p1-smoke.spec.ts`
+4. `scripts/phase5-search-suggestions-integration-smoke.sh`
+   - `1 passed`
+5. `ecm-frontend/e2e/p1-smoke.spec.ts`
    - `3 passed`, `1 skipped`
 
 ## Notes

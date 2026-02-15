@@ -67,3 +67,7 @@ ECM_UI_URL=http://localhost:5500 PW_WORKERS=2 bash scripts/phase5-regression.sh
   - Dev: `docs/PHASE5_PHASE6_DELIVERY_GATE_DEV_20260215.md`
   - Verification: `docs/PHASE5_PHASE6_DELIVERY_GATE_VERIFICATION_20260215.md`
   - Script: `scripts/phase5-phase6-delivery-gate.sh`
+- Day 6 real-backend integration smoke:
+  - Dev: `docs/PHASE59_SEARCH_SUGGESTIONS_SAVED_SEARCH_INTEGRATION_DEV_20260215.md`
+  - Verification: `docs/PHASE59_SEARCH_SUGGESTIONS_SAVED_SEARCH_INTEGRATION_VERIFICATION_20260215.md`
+  - Script: `scripts/phase5-search-suggestions-integration-smoke.sh`

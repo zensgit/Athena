@@ -136,6 +136,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Phase 5 D6 (Phase 59): Search spellcheck suggestions + Save Search convenience (mocked coverage)
   - Design: `docs/PHASE59_SEARCH_SUGGESTIONS_SAVED_SEARCH_UX_DEV_20260214.md`
   - Verification: `docs/PHASE59_SEARCH_SUGGESTIONS_SAVED_SEARCH_UX_VERIFICATION_20260214.md`
+  - Real-backend integration:
+    - Dev: `docs/PHASE59_SEARCH_SUGGESTIONS_SAVED_SEARCH_INTEGRATION_DEV_20260215.md`
+    - Verification: `docs/PHASE59_SEARCH_SUGGESTIONS_SAVED_SEARCH_INTEGRATION_VERIFICATION_20260215.md`
 - Search continuity + regression gate
   - P104: Search continuity regression gate
     - Verification: `docs/PHASE1_P104_SEARCH_CONTINUITY_REGRESSION_GATE_VERIFICATION_20260212.md`
@@ -190,6 +193,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - Full-stack smoke (optional, Docker required)
     - Doc: `docs/PHASE5_FULLSTACK_SMOKE_20260214.md`
     - Script: `scripts/phase5-fullstack-smoke.sh`
+  - Day 6 search integration smoke (optional, Docker required)
+    - Doc: `docs/PHASE59_SEARCH_SUGGESTIONS_SAVED_SEARCH_INTEGRATION_VERIFICATION_20260215.md`
+    - Script: `scripts/phase5-search-suggestions-integration-smoke.sh`
   - One-command delivery gate (Phase 5 + Phase 6)
     - Dev: `docs/PHASE5_PHASE6_DELIVERY_GATE_DEV_20260215.md`
     - Verification: `docs/PHASE5_PHASE6_DELIVERY_GATE_VERIFICATION_20260215.md`
