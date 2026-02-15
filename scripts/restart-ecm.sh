@@ -3,7 +3,63 @@ set -euo pipefail
 
 # Rebuild and restart the core services needed for local ECM testing.
 # Usage:
-#   ./scripts/restart-ecm.sh
+#   ./scripts/restart-ecm.sh [--mode fast|full]
+#   ./scripts/restart-ecm.sh --fast
+#   ./scripts/restart-ecm.sh --full
+
+usage() {
+  cat <<'EOF'
+Usage: ./scripts/restart-ecm.sh [--mode fast|full]
+
+Modes:
+  fast  Build ecm-core with SKIP_LIBREOFFICE=true and run with JODCONVERTER_LOCAL_ENABLED=false.
+  full  Keep LibreOffice/JODConverter local conversion enabled.
+
+Examples:
+  ./scripts/restart-ecm.sh --mode fast
+  ./scripts/restart-ecm.sh --full
+EOF
+}
+
+MODE="${ECM_RUN_MODE:-full}"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --mode)
+      shift
+      if [[ $# -eq 0 ]]; then
+        echo "error: --mode requires a value (fast|full)" >&2
+        usage
+        exit 1
+      fi
+      MODE="$1"
+      ;;
+    --mode=*)
+      MODE="${1#*=}"
+      ;;
+    --fast)
+      MODE="fast"
+      ;;
+    --full)
+      MODE="full"
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "error: unknown argument: $1" >&2
+      usage
+      exit 1
+      ;;
+  esac
+  shift
+done
+
+if [[ "${MODE}" != "fast" && "${MODE}" != "full" ]]; then
+  echo "error: unsupported mode '${MODE}' (expected fast|full)" >&2
+  usage
+  exit 1
+fi
 
 if [[ -f .env ]]; then
   set -a
@@ -98,9 +154,23 @@ repair_rabbitmq_plugins_expand() {
 
 repair_rabbitmq_plugins_expand
 
-# Keep ml-service in sync with repo changes (e.g., OCR deps/endpoints).
-docker_compose build ml-service ecm-core ecm-frontend
-docker_compose up -d --no-deps --force-recreate ml-service ecm-core ecm-frontend
+CORE_BUILD_ARGS=()
+JODCONVERTER_LOCAL_ENABLED_VALUE="true"
+if [[ "${MODE}" == "fast" ]]; then
+  CORE_BUILD_ARGS=(--build-arg SKIP_LIBREOFFICE=true)
+  JODCONVERTER_LOCAL_ENABLED_VALUE="false"
+fi
+
+echo "mode: ${MODE}"
+echo "JODCONVERTER_LOCAL_ENABLED=${JODCONVERTER_LOCAL_ENABLED_VALUE}"
+
+# Keep ml-service/ecm-core/ecm-frontend in sync with repo changes (e.g., OCR deps/endpoints).
+# Note: do not use --no-deps here; when the stack is stopped we want dependencies (DB/ES/Keycloak/etc.)
+# to come up automatically via docker-compose.
+docker_compose build ml-service ecm-frontend
+docker_compose build "${CORE_BUILD_ARGS[@]}" ecm-core
+JODCONVERTER_LOCAL_ENABLED="${JODCONVERTER_LOCAL_ENABLED_VALUE}" \
+  docker_compose up -d --force-recreate ml-service ecm-core ecm-frontend
 
 echo "OK"
 echo "Frontend: http://localhost:${ECM_FRONTEND_PORT:-3000}/"

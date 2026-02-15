@@ -15,7 +15,14 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Phase 3 release notes: `docs/RELEASE_NOTES_20260213_PHASE3.md`
 - Phase 3 delivery report (single file): `docs/PHASE3_DELIVERY_REPORT_20260213.md`
 - Phase 4 plan: `docs/NEXT_7DAY_PLAN_PHASE4_20260213.md`
+- Phase 5 plan: `docs/NEXT_7DAY_PLAN_PHASE5_20260213.md`
 - Phase 4 D1: Preview retry classification hardening: `docs/PHASE4_D1_PREVIEW_RETRY_CLASSIFICATION_20260213.md`
+- Phase 4 D2: MIME type normalization (octet-stream): `docs/PHASE4_D2_MIME_TYPE_NORMALIZATION_20260213.md`
+- Phase 4 D3: Preview failure taxonomy + UX messaging: `docs/PHASE4_D3_PREVIEW_FAILURE_TAXONOMY_UX_20260213.md`
+- Phase 4 D4: Backend preview queue guardrails: `docs/PHASE4_D4_BACKEND_PREVIEW_QUEUE_GUARDRAILS_20260213.md`
+- Phase 4 D5: Preview observability + diagnostics: `docs/PHASE4_D5_OBSERVABILITY_DIAGNOSTICS_20260213.md`
+- Phase 4 D6: Automation coverage expansion: `docs/PHASE4_D6_AUTOMATION_COVERAGE_EXPANSION_20260213.md`
+- Phase 4 D7: Regression gate + release notes: `docs/PHASE4_D7_REGRESSION_GATE_RELEASE_NOTES_20260213.md`
 
 ## OCR (Phase 3)
 
@@ -54,6 +61,12 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - D5: Mail reporting scheduled export (status + manual trigger + upload)
     - Design: `docs/PHASE2_D5_MAIL_REPORT_SCHEDULE_EXPORT_DESIGN_20260212.md`
     - Verification: `docs/PHASE2_D5_MAIL_REPORT_SCHEDULE_EXPORT_VERIFICATION_20260212.md`
+- Phase 5
+  - Mocked regression gate coverage (Trigger Fetch + diagnostics + exports)
+    - Rollup: `docs/PHASE5_REGRESSION_GATE_ROLLUP_20260214.md`
+    - Dev+Verification: `docs/DEVELOPMENT_AND_VERIFICATION_PHASE5_MAIL_AUTOMATION_DIAGNOSTICS_EXPORT_20260214.md`
+  - Mocked regression gate coverage (Processed management: retention/cleanup/bulk delete/replay)
+    - Dev+Verification: `docs/DEVELOPMENT_AND_VERIFICATION_PHASE5_MAIL_AUTOMATION_PROCESSED_MANAGEMENT_20260214.md`
 
 ## Permissions
 
@@ -61,6 +74,10 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - D2: Permission template diff export JSON + audit trail
     - Design: `docs/PHASE2_D2_PERMISSION_TEMPLATE_DIFF_JSON_DESIGN_20260212.md`
     - Verification: `docs/PHASE2_D2_PERMISSION_TEMPLATE_DIFF_JSON_VERIFICATION_20260212.md`
+- Phase 5
+  - Phase 56: Permission-set UX parity (Alfresco-style presets)
+    - Dev: `docs/PHASE56_PERMISSION_SET_UX_PARITY_DEV_20260214.md`
+    - Verification: `docs/PHASE56_PERMISSION_SET_UX_PARITY_VERIFICATION_20260214.md`
 
 ## Preview
 
@@ -78,20 +95,41 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - D3: Per-item preview retry / force rebuild actions (Search + Advanced Search)
     - Design: `docs/PHASE2_D3_PREVIEW_RETRY_PER_ITEM_DESIGN_20260212.md`
     - Verification: `docs/PHASE2_D3_PREVIEW_RETRY_PER_ITEM_VERIFICATION_20260212.md`
+- Phase 4
+  - D4: Backend preview queue guardrails
+    - Design + verification: `docs/PHASE4_D4_BACKEND_PREVIEW_QUEUE_GUARDRAILS_20260213.md`
+- Phase 5
+  - Phase 54: Admin preview diagnostics UI
+    - Dev: `docs/PHASE54_PREVIEW_DIAGNOSTICS_UI_DEV_20260213.md`
+    - Verification: `docs/PHASE54_PREVIEW_DIAGNOSTICS_UI_VERIFICATION_20260213.md`
+  - Phase 55: Preview diagnostics hardening (deep links + copy id + open parent folder)
+    - Dev: `docs/PHASE55_PREVIEW_DIAGNOSTICS_HARDENING_DEV_20260214.md`
+    - Verification: `docs/PHASE55_PREVIEW_DIAGNOSTICS_HARDENING_VERIFICATION_20260214.md`
+  - Phase 5: Preview diagnostics real-chain verification (optional)
+    - Verification: `docs/PHASE5_PREVIEW_DIAGNOSTICS_REALCHAIN_VERIFICATION_20260214.md`
 
 ## Version Management
 
 - Version paging/history slice
   - Dev: `docs/PHASE15_VERSION_PAGED_HISTORY_DEV_20260203.md`
   - Verification: `docs/PHASE15_VERSION_PAGED_HISTORY_VERIFICATION_20260203.md`
+- Phase 5 D5 (Phase 58): Version history paging + major-only toggle (mocked coverage)
+  - Design: `docs/PHASE58_VERSION_HISTORY_PAGING_UX_DEV_20260214.md`
+  - Verification: `docs/PHASE58_VERSION_HISTORY_PAGING_UX_VERIFICATION_20260214.md`
 
 ## Audit
 
 - Audit execution history: `docs/EXECUTION_AUDIT_REPORT.md`
 - Recent audit export fix: `docs/DESIGN_AUDIT_EXPORT_NODEID_NULL_UUID_FIX_20260210.md`
+- Phase 5 D4 (Phase 57): Audit filtered explorer + stable export UX (Admin Dashboard)
+  - Design: `docs/PHASE57_AUDIT_FILTER_EXPORT_UX_DEV_20260214.md`
+  - Verification: `docs/PHASE57_AUDIT_FILTER_EXPORT_UX_VERIFICATION_20260214.md`
 
 ## Search (Simple Search + Advanced Search + Saved Search)
 
+- Phase 5 D6 (Phase 59): Search spellcheck suggestions + Save Search convenience (mocked coverage)
+  - Design: `docs/PHASE59_SEARCH_SUGGESTIONS_SAVED_SEARCH_UX_DEV_20260214.md`
+  - Verification: `docs/PHASE59_SEARCH_SUGGESTIONS_SAVED_SEARCH_UX_VERIFICATION_20260214.md`
 - Search continuity + regression gate
   - P104: Search continuity regression gate
     - Verification: `docs/PHASE1_P104_SEARCH_CONTINUITY_REGRESSION_GATE_VERIFICATION_20260212.md`
@@ -139,6 +177,13 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - D7: Ops/CI guardrails
     - Design: `docs/PHASE2_D7_CI_GUARDRAILS_DESIGN_20260212.md`
     - Verification: `docs/PHASE2_D7_CI_GUARDRAILS_VERIFICATION_20260212.md`
+- Phase 5
+  - Regression gate rollup (mocked-first)
+    - Doc: `docs/PHASE5_REGRESSION_GATE_ROLLUP_20260214.md`
+    - Script: `scripts/phase5-regression.sh`
+  - Full-stack smoke (optional, Docker required)
+    - Doc: `docs/PHASE5_FULLSTACK_SMOKE_20260214.md`
+    - Script: `scripts/phase5-fullstack-smoke.sh`
 - Weekly regression command rollup:
   - `docs/WEEKLY_REGRESSION_UPDATE_20260212.md`
 

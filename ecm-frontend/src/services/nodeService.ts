@@ -138,6 +138,7 @@ export interface PreviewQueueStatus {
   queued: boolean;
   attempts?: number;
   nextAttemptAt?: string;
+  message?: string | null;
 }
 
 export interface OcrQueueStatus {

@@ -46,7 +46,7 @@ import { useAppSelector } from 'store';
 import apiService from 'services/api';
 import nodeService, { OcrQueueStatus } from 'services/nodeService';
 import { toast } from 'react-toastify';
-import { getFailedPreviewMeta } from 'utils/previewStatusUtils';
+import { getFailedPreviewMeta, isRetryablePreviewFailure } from 'utils/previewStatusUtils';
 
 interface DocumentPreviewProps {
   open: boolean;
@@ -104,6 +104,7 @@ type PreviewQueueStatus = {
   queued?: boolean;
   attempts?: number;
   nextAttemptAt?: string;
+  message?: string;
 };
 
 const OFFICE_MIME_TYPES = new Set([
@@ -286,8 +287,18 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   const failedPreviewMeta = getFailedPreviewMeta(
     effectiveContentType,
     node?.previewFailureCategory,
-    node?.previewFailureReason
+    resolvedPreviewFailure
   );
+  const previewFailureRetryable = resolvedPreviewStatus === 'FAILED' && isRetryablePreviewFailure(
+    node?.previewFailureCategory,
+    effectiveContentType,
+    resolvedPreviewFailure
+  );
+  const previewFailureSeverity = previewFailureRetryable
+    ? 'warning'
+    : failedPreviewMeta.unsupported
+      ? 'info'
+      : 'error';
   const previewStatusLabel = resolvedPreviewStatus
     ? resolvedPreviewStatus === 'FAILED'
       ? failedPreviewMeta.label
@@ -475,7 +486,11 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
       setPreviewQueueStatus(status);
       setPreviewStatusOverride('PROCESSING');
       setPreviewFailureOverride(null);
-      toast.success(status?.queued ? 'Preview queued' : 'Preview already up to date');
+      if (status?.queued) {
+        toast.success(status?.message || 'Preview queued');
+      } else {
+        toast.info(status?.message || 'Preview already up to date');
+      }
     } catch {
       toast.error('Failed to queue preview generation');
     } finally {
@@ -1790,8 +1805,8 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
             )}
             {resolvedPreviewStatus === 'FAILED' && (
               <Alert
-                severity="warning"
-                action={(
+                severity={previewFailureSeverity}
+                action={previewFailureRetryable ? (
                   <Box display="flex" gap={1} flexWrap="wrap">
                     <Button
                       size="small"
@@ -1810,11 +1825,19 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                       Force rebuild
                     </Button>
                   </Box>
-                )}
+                ) : undefined}
               >
                 {resolvedPreviewFailure
-                  ? `Preview failed: ${resolvedPreviewFailure}`
-                  : 'Preview failed. Retry generation or force a rebuild if the file recently changed.'}
+                  ? failedPreviewMeta.unsupported
+                    ? `Preview unsupported: ${resolvedPreviewFailure}`
+                    : previewFailureRetryable
+                      ? `Preview failed: ${resolvedPreviewFailure}`
+                      : `Preview failed (permanent): ${resolvedPreviewFailure}`
+                  : previewFailureRetryable
+                    ? 'Preview failed. Retry generation or force a rebuild if the file recently changed.'
+                    : failedPreviewMeta.unsupported
+                      ? 'Preview is not supported for this file type.'
+                      : 'Preview failed permanently. Retry is disabled; download the file or upload a corrected version.'}
               </Alert>
             )}
             {shouldPollOcr && (

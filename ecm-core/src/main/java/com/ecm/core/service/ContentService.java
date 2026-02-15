@@ -31,7 +31,9 @@ import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -49,6 +51,12 @@ public class ContentService {
     private String tempPath;
     
     private final Tika tika = new Tika();
+
+    private static final Set<String> GENERIC_MIME_TYPES = Set.of(
+        "application/octet-stream",
+        "binary/octet-stream",
+        "application/x-empty"
+    );
     
     public String storeContent(MultipartFile file) throws IOException {
         return storeContent(file.getInputStream(), file.getOriginalFilename());
@@ -173,6 +181,27 @@ public class ContentService {
             return tika.detect(is);
         }
     }
+
+    /**
+     * Detect MIME type for stored content, using content bytes first and falling back to filename
+     * metadata only when the primary detection result is generic (e.g. octet-stream).
+     */
+    public String detectMimeType(String contentId, String filename) throws IOException {
+        String detected = detectMimeType(contentId);
+        if (!isGenericMimeType(detected)) {
+            return detected;
+        }
+        if (filename == null || filename.isBlank()) {
+            return detected;
+        }
+        try (InputStream is = getContent(contentId)) {
+            String detectedWithName = detectMimeType(is, filename);
+            if (!isGenericMimeType(detectedWithName)) {
+                return detectedWithName;
+            }
+            return detected != null ? detected : detectedWithName;
+        }
+    }
     
     public String detectMimeType(InputStream inputStream, String filename) throws IOException {
         Metadata metadata = new Metadata();
@@ -180,6 +209,18 @@ public class ContentService {
             metadata.set(TikaCoreProperties.RESOURCE_NAME_KEY, filename);
         }
         return tika.detect(inputStream, metadata);
+    }
+
+    private static boolean isGenericMimeType(String mimeType) {
+        String normalized = normalizeMimeType(mimeType);
+        return normalized != null && GENERIC_MIME_TYPES.contains(normalized);
+    }
+
+    private static String normalizeMimeType(String mimeType) {
+        if (mimeType == null || mimeType.isBlank()) {
+            return null;
+        }
+        return mimeType.split(";")[0].trim().toLowerCase(Locale.ROOT);
     }
     
     public long getContentSize(String contentId) throws IOException {

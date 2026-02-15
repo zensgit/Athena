@@ -26,7 +26,7 @@ Verification:
 - `cd ecm-core && mvn -q test`
 - `cd ecm-frontend && ECM_UI_URL=http://localhost:5500 ECM_API_URL=http://localhost:7700 npx playwright test e2e/ocr-queue-ui.spec.ts e2e/pdf-preview.spec.ts e2e/search-preview-status.spec.ts --project=chromium`
 
-## Day 2: MIME Type Normalization for `application/octet-stream`
+## Day 2 (Done): MIME Type Normalization for `application/octet-stream`
 
 Goal:
 
@@ -44,12 +44,18 @@ Acceptance:
 - When a PDF is uploaded with `application/octet-stream` but `.pdf` name or PDF magic bytes, it is stored as `application/pdf` and preview succeeds.
 - No regression for truly unknown binaries.
 
+Deliverables:
+
+- Design/verification report:
+  - `docs/PHASE4_D2_MIME_TYPE_NORMALIZATION_20260213.md`
+
 Verification:
 
-- Unit tests for MIME sniffing.
-- Playwright: upload mislabeled PDF and verify preview READY.
+- Backend: `cd ecm-core && mvn -q test`
+- Playwright: upload mislabeled PDF and verify the client PDF preview renders:
+  - `cd ecm-frontend && ECM_UI_URL=http://localhost:5500 ECM_API_URL=http://localhost:7700 npx playwright test e2e/ocr-queue-ui.spec.ts e2e/pdf-preview.spec.ts e2e/search-preview-status.spec.ts --project=chromium`
 
-## Day 3: Preview Failure Taxonomy + UX Messaging
+## Day 3 (Done): Preview Failure Taxonomy + UX Messaging
 
 Goal:
 
@@ -60,14 +66,28 @@ Goal:
 
 Scope:
 
-- Add/extend a small, curated set of "permanent" PDF parse error hints.
-- UI copy updates for PERMANENT failures.
+- UI action gating + copy updates for PERMANENT failures across:
+  - Search Results
+  - Advanced Search
+  - Document Preview dialog
+  - Upload dialog (post-upload status list)
+- Ensure bulk retry only targets retryable failures (TEMPORARY / transient-hint fallback).
 
 Acceptance:
 
 - Search/Advanced Search show consistent chips and consistent action availability.
 
-## Day 4: Bulk Actions Guardrails
+Deliverables:
+
+- Design/verification report:
+  - `docs/PHASE4_D3_PREVIEW_FAILURE_TAXONOMY_UX_20260213.md`
+
+Verification:
+
+- `cd ecm-frontend && CI=true npm test -- --watchAll=false`
+- `cd ecm-frontend && npx playwright test e2e/ocr-queue-ui.spec.ts e2e/pdf-preview.spec.ts e2e/search-preview-status.spec.ts --project=chromium`
+
+## Day 4 (Done): Bulk Actions Guardrails
 
 Goal:
 
@@ -75,14 +95,26 @@ Goal:
 
 Scope:
 
-- Backend: optional endpoint or server-side filter for "retry eligible".
-- Frontend: bulk "Retry failed previews" only affects TEMPORARY items.
+- Frontend: bulk "Retry failed previews" only affects retryable items.
+- Optional hardening:
+  - Backend: server-side filter for "retry eligible" to protect API calls and future UIs.
 
 Acceptance:
 
 - Clicking bulk retry does not re-queue PERMANENT failures.
 
-## Day 5: Observability + Diagnostics
+Deliverables:
+
+- Design/verification report:
+  - `docs/PHASE4_D4_BACKEND_PREVIEW_QUEUE_GUARDRAILS_20260213.md`
+
+Verification:
+
+- `cd ecm-core && mvn -q test`
+- `cd ecm-frontend && CI=true npm test -- --watchAll=false`
+- `cd ecm-frontend && npx playwright test e2e/ocr-queue-ui.spec.ts e2e/pdf-preview.spec.ts e2e/search-preview-status.spec.ts --project=chromium`
+
+## Day 5 (Done): Observability + Diagnostics
 
 Goal:
 
@@ -94,7 +126,25 @@ Scope:
 - Logs: structured reason + category.
 - Optional: admin endpoint to sample recent failures with categories.
 
-## Day 6: Automation Coverage Expansion
+Deliverables:
+
+- Design/verification report:
+  - `docs/PHASE4_D5_OBSERVABILITY_DIAGNOSTICS_20260213.md`
+
+Verification:
+
+- Backend: `cd ecm-core && mvn -q test`
+- Runtime smoke:
+  - `./scripts/get-token.sh admin admin`
+  - `curl -fsS -H "Authorization: Bearer $(cat tmp/admin.access_token)" "http://localhost:7700/api/v1/preview/diagnostics/failures?limit=5" | jq .`
+  - Trigger one preview to create the counter (Micrometer creates on first use):
+    - `curl -fsS -H "Authorization: Bearer $(cat tmp/admin.access_token)" "http://localhost:7700/api/v1/documents/<docId>/preview" | jq .`
+  - Metrics:
+    - `curl -fsS -H "Authorization: Bearer $(cat tmp/admin.access_token)" http://localhost:7700/actuator/prometheus | rg '^preview_generation_total' | head`
+  - Logs:
+    - `docker logs --tail 200 athena-ecm-core-1 | rg "Preview generation outcome" | tail`
+
+## Day 6 (Done): Automation Coverage Expansion
 
 Goal:
 
@@ -109,13 +159,26 @@ Scope:
 - Backend:
   - classifier tests for new error hints
 
-## Day 7: Regression Gate + Release Documentation
+Deliverables:
+
+- Design/verification report:
+  - `docs/PHASE4_D6_AUTOMATION_COVERAGE_EXPANSION_20260213.md`
+
+Verification:
+
+- `cd ecm-frontend && npx playwright test e2e/ocr-queue-ui.spec.ts e2e/pdf-preview.spec.ts e2e/search-preview-status.spec.ts --project=chromium`
+
+## Day 7 (Done): Regression Gate + Release Documentation
 
 Goal:
 
 - Run weekly subset gate and produce a short release note / delivery note.
 
+Deliverables:
+
+- Release / delivery note:
+  - `docs/PHASE4_D7_REGRESSION_GATE_RELEASE_NOTES_20260213.md`
+
 Verification:
 
 - `cd ecm-frontend && npx playwright test --workers=1 e2e/ui-smoke.spec.ts e2e/search-view.spec.ts e2e/search-preview-status.spec.ts e2e/pdf-preview.spec.ts e2e/ocr-queue-ui.spec.ts --project=chromium`
-

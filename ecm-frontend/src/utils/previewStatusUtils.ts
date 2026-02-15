@@ -10,6 +10,7 @@ export type PreviewFailureLike = {
 export type PreviewFailureSummary = {
   totalFailed: number;
   retryableFailed: number;
+  permanentFailed: number;
   unsupportedFailed: number;
   retryableReasons: Array<{ reason: string; count: number }>;
 };
@@ -49,6 +50,25 @@ export const isUnsupportedPreviewReason = (failureReason?: string | null): boole
     || normalized.includes('unsupported format');
 };
 
+export const isTemporaryPreviewReason = (failureReason?: string | null): boolean => {
+  const normalized = (failureReason || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+  if (!normalized) {
+    return false;
+  }
+  return normalized.includes('timeout')
+    || normalized.includes('timed out')
+    || normalized.includes('temporar')
+    || normalized.includes('connection reset')
+    || normalized.includes('connection refused')
+    || normalized.includes('service unavailable')
+    || normalized.includes('502')
+    || normalized.includes('503')
+    || normalized.includes('504');
+};
+
 export const isUnsupportedPreviewFailure = (
   failureCategory?: PreviewFailureCategory,
   mimeType?: string | null,
@@ -62,6 +82,23 @@ export const isUnsupportedPreviewFailure = (
     return true;
   }
   return isUnsupportedPreviewMimeType(mimeType);
+};
+
+export const isRetryablePreviewFailure = (
+  failureCategory?: PreviewFailureCategory,
+  mimeType?: string | null,
+  failureReason?: string | null
+): boolean => {
+  if (isUnsupportedPreviewFailure(failureCategory, mimeType, failureReason)) {
+    return false;
+  }
+  const normalizedCategory = (failureCategory || '').toUpperCase().trim();
+  if (normalizedCategory === 'TEMPORARY') {
+    return true;
+  }
+  // Backwards/edge-case fallback: when category is missing or unknown, only allow retry if
+  // the reason contains transient hints (safe-by-default).
+  return isTemporaryPreviewReason(failureReason);
 };
 
 export const getEffectivePreviewStatus = (
@@ -99,6 +136,7 @@ export const summarizeFailedPreviews = (items: PreviewFailureLike[]): PreviewFai
   let totalFailed = 0;
   let retryableFailed = 0;
   let unsupportedFailed = 0;
+  let permanentFailed = 0;
   const retryableReasonBuckets = new Map<string, number>();
 
   items.forEach((item) => {
@@ -118,9 +156,14 @@ export const summarizeFailedPreviews = (items: PreviewFailureLike[]): PreviewFai
       return;
     }
 
-    retryableFailed += 1;
-    const reason = normalizePreviewFailureReason(item.previewFailureReason);
-    retryableReasonBuckets.set(reason, (retryableReasonBuckets.get(reason) || 0) + 1);
+    if (isRetryablePreviewFailure(item.previewFailureCategory, item.mimeType, item.previewFailureReason)) {
+      retryableFailed += 1;
+      const reason = normalizePreviewFailureReason(item.previewFailureReason);
+      retryableReasonBuckets.set(reason, (retryableReasonBuckets.get(reason) || 0) + 1);
+      return;
+    }
+
+    permanentFailed += 1;
   });
 
   const retryableReasons = Array.from(retryableReasonBuckets.entries())
@@ -130,6 +173,7 @@ export const summarizeFailedPreviews = (items: PreviewFailureLike[]): PreviewFai
   return {
     totalFailed,
     retryableFailed,
+    permanentFailed,
     unsupportedFailed,
     retryableReasons,
   };
@@ -149,10 +193,17 @@ export const getFailedPreviewMeta = (
       unsupported: true,
     };
   }
-  if (normalizedCategory === 'TEMPORARY') {
+  if (normalizedCategory === 'TEMPORARY' || isTemporaryPreviewReason(failureReason)) {
     return {
       label: 'Preview failed (temporary)',
       color: 'warning',
+      unsupported: false,
+    };
+  }
+  if (normalizedCategory === 'PERMANENT') {
+    return {
+      label: 'Preview failed (permanent)',
+      color: 'error',
       unsupported: false,
     };
   }

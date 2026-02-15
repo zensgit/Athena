@@ -61,7 +61,7 @@ import {
   formatPreviewFailureReasonLabel,
   getEffectivePreviewStatus,
   getFailedPreviewMeta,
-  isUnsupportedPreviewFailure,
+  isRetryablePreviewFailure,
   normalizePreviewFailureReason,
   summarizeFailedPreviews,
 } from 'utils/previewStatusUtils';
@@ -1283,6 +1283,11 @@ const SearchResults: React.FC = () => {
             ? 'info'
             : 'default';
     const failedPreviewUnsupported = (effectiveStatus === 'FAILED' || effectiveStatus === 'UNSUPPORTED') && failedPreviewMeta.unsupported;
+    const failedPreviewRetryable = effectiveStatus === 'FAILED' && isRetryablePreviewFailure(
+      node.previewFailureCategory,
+      nodeMimeType,
+      node.previewFailureReason
+    );
     const queueStatus = previewQueueStatusById[node.id];
     const queueDetail = (() => {
       if (!queueStatus) {
@@ -1318,7 +1323,7 @@ const SearchResults: React.FC = () => {
               </IconButton>
             </Tooltip>
           )}
-          {effectiveStatus === 'FAILED' && !failedPreviewUnsupported && (
+          {effectiveStatus === 'FAILED' && failedPreviewRetryable && (
             <Tooltip title="Retry preview" placement="top-start" arrow>
               <span>
                 <IconButton
@@ -1335,7 +1340,7 @@ const SearchResults: React.FC = () => {
               </span>
             </Tooltip>
           )}
-          {effectiveStatus === 'FAILED' && !failedPreviewUnsupported && (
+          {effectiveStatus === 'FAILED' && failedPreviewRetryable && (
             <Tooltip title="Force rebuild preview" placement="top-start" arrow>
               <span>
                 <IconButton
@@ -1470,7 +1475,7 @@ const SearchResults: React.FC = () => {
   );
   const failedPreviewNodes = displayNodes.filter((node) => node.nodeType === 'DOCUMENT'
     && (node.previewStatus || '').toUpperCase() === 'FAILED'
-    && !isUnsupportedPreviewFailure(
+    && isRetryablePreviewFailure(
       node.previewFailureCategory,
       node.contentType || node.properties?.mimeType || node.properties?.contentType,
       node.previewFailureReason
@@ -1543,9 +1548,9 @@ const SearchResults: React.FC = () => {
         },
       }));
       if (status?.queued) {
-        toast.success('Preview queued');
+        toast.success(status?.message || 'Preview queued');
       } else {
-        toast.info('Preview already up to date');
+        toast.info(status?.message || 'Preview already up to date');
       }
     } catch {
       toast.error('Failed to queue preview');
@@ -2061,11 +2066,20 @@ const SearchResults: React.FC = () => {
                 Preview issues on current page: {failedPreviewSummary.totalFailed}
                 {' • '}Retryable {failedPreviewSummary.retryableFailed}
                 {' • '}Unsupported {failedPreviewSummary.unsupportedFailed}
+                {failedPreviewSummary.permanentFailed > 0 && (
+                  <>
+                    {' • '}Permanent {failedPreviewSummary.permanentFailed}
+                  </>
+                )}
               </Typography>
             )}
             {failedPreviewSummary.totalFailed > 0 && failedPreviewSummary.retryableFailed === 0 && (
               <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-                All preview issues on this page are unsupported; retry actions are hidden.
+                {failedPreviewSummary.permanentFailed > 0
+                  ? failedPreviewSummary.unsupportedFailed > 0
+                    ? 'All preview issues on this page are permanent or unsupported; retry actions are hidden.'
+                    : 'All preview issues on this page are permanent; retry actions are hidden.'
+                  : 'All preview issues on this page are unsupported; retry actions are hidden.'}
               </Typography>
             )}
             {failedPreviewSummary.retryableFailed > 0 && failedPreviewReasonSummary.length > 0 && (

@@ -1,6 +1,7 @@
 package com.ecm.core.repository;
 
 import com.ecm.core.entity.Document;
+import com.ecm.core.entity.PreviewStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -132,5 +133,13 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
     Page<Document> findModifiedSinceInFolder(
         @Param("since") LocalDateTime since,
         @Param("folderId") UUID folderId,
+        Pageable pageable);
+
+    @Query("SELECT d FROM Document d " +
+           "WHERE d.deleted = false " +
+           "AND d.previewStatus IN :statuses " +
+           "ORDER BY d.previewLastUpdated DESC")
+    Page<Document> findRecentPreviewFailures(
+        @Param("statuses") List<PreviewStatus> statuses,
         Pageable pageable);
 }
