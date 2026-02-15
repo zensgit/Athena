@@ -1,17 +1,27 @@
 # Phase 6 P1 Mail Automation Activity Tables - Verification
 
 ## Date
-2026-02-02
+2026-02-15
 
 ## Environment
-- UI: http://localhost:5500
-- API: http://localhost:7700
+- UI: `http://localhost`
+- API: mocked in Playwright route handlers (no backend dependency)
 
-## Automated Tests
+## Automated Test
+
 ```bash
 cd ecm-frontend
-npx playwright test e2e/p1-smoke.spec.ts
+ECM_UI_URL=http://localhost npx playwright test \
+  e2e/mail-automation-phase6-p1.mock.spec.ts \
+  --project=chromium --workers=1
 ```
 
-## Results
-- PASS: 2 tests
+## Verified Scope
+- Processed Messages quick status chips:
+  - `All` shows full set
+  - `Error` filters to failed rows only
+- Processed table and mail documents table render expected rows.
+- Mail document `Open` action resolves node parent and navigates to `/browse/:parentId`.
+
+## Result
+- PASS (2026-02-15): `1 passed`

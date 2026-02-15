@@ -267,6 +267,7 @@ Regression gate contents (mocked-first):
 - `ecm-frontend/e2e/mail-automation-trigger-fetch.mock.spec.ts`
 - `ecm-frontend/e2e/mail-automation-diagnostics-export.mock.spec.ts`
 - `ecm-frontend/e2e/mail-automation-processed-management.mock.spec.ts`
+- `ecm-frontend/e2e/mail-automation-phase6-p1.mock.spec.ts`
 
 Optional full-stack add-ons (when Docker/backends are healthy):
 - `scripts/phase5-fullstack-smoke.sh` (runs `ecm-frontend/e2e/phase5-fullstack-admin-smoke.spec.ts`)

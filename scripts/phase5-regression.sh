@@ -22,6 +22,7 @@ PHASE5_SPECS=(
   "e2e/mail-automation-trigger-fetch.mock.spec.ts"
   "e2e/mail-automation-diagnostics-export.mock.spec.ts"
   "e2e/mail-automation-processed-management.mock.spec.ts"
+  "e2e/mail-automation-phase6-p1.mock.spec.ts"
 )
 
 if [[ ! -d "ecm-frontend" ]]; then

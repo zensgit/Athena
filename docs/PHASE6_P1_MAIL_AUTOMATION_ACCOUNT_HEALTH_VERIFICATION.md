@@ -1,17 +1,28 @@
 # Phase 6 P1 Mail Automation Account Health - Verification
 
 ## Date
-2026-02-02
+2026-02-15
 
 ## Environment
-- UI: http://localhost:5500
-- API: http://localhost:7700
+- UI: `http://localhost`
+- API: mocked in Playwright route handlers (no backend dependency)
 
-## Automated Tests
+## Automated Test
+
 ```bash
 cd ecm-frontend
-npx playwright test e2e/p1-smoke.spec.ts
+ECM_UI_URL=http://localhost npx playwright test \
+  e2e/mail-automation-phase6-p1.mock.spec.ts \
+  --project=chromium --workers=1
 ```
 
-## Results
-- PASS: 2 tests
+## Verified Scope
+- Account health summary chips:
+  - `Total / Enabled / Disabled`
+  - `Fetch OK / Fetch errors / Fetch other / Never fetched`
+  - `Stale`
+  - `OAuth / OAuth connected / OAuth not connected / OAuth env missing`
+- Latest fetch timestamp label renders from account list data.
+
+## Result
+- PASS (2026-02-15): `1 passed`

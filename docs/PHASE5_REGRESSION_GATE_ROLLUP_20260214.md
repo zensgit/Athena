@@ -1,6 +1,6 @@
 # Phase 5 - Regression Gate Rollup (Mocked-First)
 
-Date: 2026-02-14
+Date: 2026-02-14 (updated 2026-02-15)
 
 ## Goal
 
@@ -31,6 +31,7 @@ The gate is intentionally **mocked-first** and runs against a static build serve
 - `ecm-frontend/e2e/mail-automation-trigger-fetch.mock.spec.ts`
 - `ecm-frontend/e2e/mail-automation-diagnostics-export.mock.spec.ts`
 - `ecm-frontend/e2e/mail-automation-processed-management.mock.spec.ts`
+- `ecm-frontend/e2e/mail-automation-phase6-p1.mock.spec.ts`
 
 ## Behavior
 
