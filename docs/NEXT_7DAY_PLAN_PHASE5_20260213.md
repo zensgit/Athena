@@ -312,6 +312,10 @@ Docs:
   - Script: `scripts/phase5-search-suggestions-integration-smoke.sh`
   - Dev doc: `docs/PHASE59_SEARCH_SUGGESTIONS_SAVED_SEARCH_INTEGRATION_DEV_20260215.md`
   - Verification doc: `docs/PHASE59_SEARCH_SUGGESTIONS_SAVED_SEARCH_INTEGRATION_VERIFICATION_20260215.md`
+- Added reference-informed spellcheck decision parity (Alfresco-aligned wording):
+  - UI: `Did you mean` when results exist; `Search instead for` when results are zero.
+  - Dev doc: `docs/PHASE59_SPELLCHECK_DECISION_PARITY_DEV_20260216.md`
+  - Verification doc: `docs/PHASE59_SPELLCHECK_DECISION_PARITY_VERIFICATION_20260216.md`
 - Verification docs updated:
   - `docs/PHASE54_PREVIEW_DIAGNOSTICS_UI_VERIFICATION_20260213.md`
   - `docs/PHASE55_PREVIEW_DIAGNOSTICS_HARDENING_VERIFICATION_20260214.md`

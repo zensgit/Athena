@@ -133,7 +133,7 @@ test('Phase 5 D6 integration: spellcheck suggestion + save search from advanced 
       return;
     }
 
-    await expect(page.getByText('Did you mean')).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByText(/Did you mean|Search instead for/i)).toBeVisible({ timeout: 60_000 });
     const suggestionButton = page.getByRole('button', { name: targetWord }).first();
     await expect(suggestionButton).toBeVisible({ timeout: 60_000 });
 

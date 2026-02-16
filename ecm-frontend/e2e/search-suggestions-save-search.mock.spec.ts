@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { seedBypassSessionE2E } from './helpers/login';
 
-test('Search: spellcheck "Did you mean" + Save Search (mocked API)', async ({ page }) => {
+test('Search: spellcheck suggestion + Save Search (mocked API)', async ({ page }) => {
   test.setTimeout(120_000);
 
   await seedBypassSessionE2E(page, 'admin', 'e2e-token');
@@ -173,7 +173,7 @@ test('Search: spellcheck "Did you mean" + Save Search (mocked API)', async ({ pa
   // Run the search and assert spellcheck suggestions are surfaced.
   await searchDialog.getByRole('button', { name: 'Search', exact: true }).click();
 
-  await expect(page.getByText('Did you mean')).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(/Did you mean|Search instead for/i)).toBeVisible({ timeout: 60_000 });
   await expect(page.getByRole('button', { name: suggestion })).toBeVisible();
 
   await page.getByRole('button', { name: suggestion }).click();

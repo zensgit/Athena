@@ -221,7 +221,7 @@ test('P1 smoke: spellcheck suggests corrected term', async ({ page, request }) =
   await input.press('Enter');
 
   await page.waitForResponse((response) => response.url().includes('/api/v1/search') && response.request().method() === 'GET');
-  const didYouMean = page.getByText(/Did you mean/i);
+  const didYouMean = page.getByText(/Did you mean|Search instead for/i);
   await expect(didYouMean).toBeVisible({ timeout: 60_000 });
   await expect(page.getByRole('button', { name: targetWord })).toBeVisible({ timeout: 60_000 });
 });

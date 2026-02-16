@@ -139,6 +139,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - Real-backend integration:
     - Dev: `docs/PHASE59_SEARCH_SUGGESTIONS_SAVED_SEARCH_INTEGRATION_DEV_20260215.md`
     - Verification: `docs/PHASE59_SEARCH_SUGGESTIONS_SAVED_SEARCH_INTEGRATION_VERIFICATION_20260215.md`
+  - Spellcheck decision parity (reference-informed):
+    - Dev: `docs/PHASE59_SPELLCHECK_DECISION_PARITY_DEV_20260216.md`
+    - Verification: `docs/PHASE59_SPELLCHECK_DECISION_PARITY_VERIFICATION_20260216.md`
 - Search continuity + regression gate
   - P104: Search continuity regression gate
     - Verification: `docs/PHASE1_P104_SEARCH_CONTINUITY_REGRESSION_GATE_VERIFICATION_20260212.md`

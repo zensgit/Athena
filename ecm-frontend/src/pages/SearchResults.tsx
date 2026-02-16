@@ -1746,6 +1746,7 @@ const SearchResults: React.FC = () => {
   const primarySpellcheckSuggestion = filteredSpellcheckSuggestions[0];
   const secondarySpellcheckSuggestions = filteredSpellcheckSuggestions.slice(1);
   const showSpellcheckSuggestions = !spellcheckLoading && filteredSpellcheckSuggestions.length > 0;
+  const spellcheckActionLabel = displayTotal > 0 ? 'Did you mean' : 'Search instead for';
 
   return (
     <Box>
@@ -1928,7 +1929,7 @@ const SearchResults: React.FC = () => {
               </Typography>
             )}
             <Typography variant="body2" sx={{ fontWeight: 600 }}>
-              Did you mean
+              {spellcheckActionLabel}
             </Typography>
             {primarySpellcheckSuggestion && (
               <Button
