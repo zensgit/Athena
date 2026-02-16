@@ -203,6 +203,8 @@ jobs:
         run: |
           ECM_UI_URL=http://localhost:5500 ECM_API_URL=http://localhost:7700 ECM_E2E_WORKERS=1 \
             npm run e2e:preview-search:regression -- --workers=1
+          ECM_UI_URL=http://localhost:5500 ECM_API_URL=http://localhost:7700 ECM_E2E_WORKERS=1 \
+            npx playwright test --workers=1 e2e/search-suggestions-save-search.integration.spec.ts
 
       - name: Capture docker logs (on failure)
         if: failure()

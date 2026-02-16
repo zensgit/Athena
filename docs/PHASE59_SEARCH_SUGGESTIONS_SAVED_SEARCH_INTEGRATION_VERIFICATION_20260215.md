@@ -23,3 +23,4 @@ bash scripts/phase5-search-suggestions-integration-smoke.sh
 ## Notes
 - This complements mocked coverage in `e2e/search-suggestions-save-search.mock.spec.ts`.
 - Use full-stack target (`http://localhost` or dev server) instead of static `:5500`.
+- CI coverage is enforced in `.github/workflows/ci.yml` under job `Frontend E2E Core Gate`.
