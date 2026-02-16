@@ -17,8 +17,8 @@ bash scripts/phase5-search-suggestions-integration-smoke.sh
 ## Verified
 1. Advanced Search can save criteria as a Saved Search with real backend.
 2. Saved search payload persists misspelled query for replay.
-3. Search results page renders "Did you mean" for the misspelled query.
-4. Clicking suggestion updates quick-search value to corrected query and shows results.
+3. If spellcheck endpoint returns suggestion data, search results page renders "Did you mean" for misspelled query.
+4. If suggestion is present, clicking it updates quick-search value to corrected query and shows results.
 
 ## Notes
 - This complements mocked coverage in `e2e/search-suggestions-save-search.mock.spec.ts`.
