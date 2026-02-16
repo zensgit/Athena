@@ -5,6 +5,7 @@ export const AUTH_INIT_STATUS_KEY = 'ecm_auth_init_status';
 export const AUTH_INIT_STATUS_TIMEOUT = 'timeout';
 export const AUTH_INIT_STATUS_ERROR = 'error';
 export const AUTH_INIT_STATUS_REDIRECT_FAILED = 'redirect_failed';
+export const AUTH_INIT_STATUS_SESSION_EXPIRED = 'session_expired';
 export const AUTH_REDIRECT_FAILURE_COUNT_KEY = 'ecm_auth_redirect_failure_count';
 export const AUTH_REDIRECT_LAST_FAILURE_AT_KEY = 'ecm_auth_redirect_last_failure_at';
 

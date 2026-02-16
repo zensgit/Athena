@@ -45,6 +45,14 @@ test('shows generic init warning when auth bootstrap failed', async () => {
   expect(await screen.findByText(/sign-in initialization failed/i)).toBeTruthy();
 });
 
+test('shows session expired message when api marks auth expiry', async () => {
+  sessionStorage.setItem('ecm_auth_init_status', 'session_expired');
+
+  render(<Login />);
+
+  expect(await screen.findByText(/your session expired/i)).toBeTruthy();
+});
+
 test('shows redirect warning when automatic sign-in redirect fails', async () => {
   sessionStorage.setItem('ecm_auth_init_status', 'redirect_failed');
   sessionStorage.setItem('ecm_auth_redirect_last_failure_at', String(Date.now()));

@@ -19,6 +19,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Phase 5/6 one-command delivery gate:
   - Dev: `docs/PHASE5_PHASE6_DELIVERY_GATE_DEV_20260215.md`
   - Verification: `docs/PHASE5_PHASE6_DELIVERY_GATE_VERIFICATION_20260215.md`
+- Phase 5/6 auth session recovery hardening:
+  - Dev: `docs/PHASE60_AUTH_SESSION_RECOVERY_DEV_20260216.md`
+  - Verification: `docs/PHASE60_AUTH_SESSION_RECOVERY_VERIFICATION_20260216.md`
 - Phase 4 D1: Preview retry classification hardening: `docs/PHASE4_D1_PREVIEW_RETRY_CLASSIFICATION_20260213.md`
 - Phase 4 D2: MIME type normalization (octet-stream): `docs/PHASE4_D2_MIME_TYPE_NORMALIZATION_20260213.md`
 - Phase 4 D3: Preview failure taxonomy + UX messaging: `docs/PHASE4_D3_PREVIEW_FAILURE_TAXONOMY_UX_20260213.md`
@@ -73,6 +76,12 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Phase 6
   - P1 integration smoke (account health + preview dialog controls)
     - Verification: `docs/PHASE6_P1_MAIL_AUTOMATION_INTEGRATION_VERIFICATION_20260215.md`
+
+## Auth + Session
+
+- Phase 5/6 hardening: 401 retry + session-expiry handoff
+  - Dev: `docs/PHASE60_AUTH_SESSION_RECOVERY_DEV_20260216.md`
+  - Verification: `docs/PHASE60_AUTH_SESSION_RECOVERY_VERIFICATION_20260216.md`
 
 ## Permissions
 

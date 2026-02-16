@@ -1,0 +1,136 @@
+import axios from 'axios';
+import { toast } from 'react-toastify';
+import {
+  AUTH_INIT_STATUS_KEY,
+  AUTH_INIT_STATUS_SESSION_EXPIRED,
+} from 'constants/auth';
+import authService from './authService';
+import { ApiService } from './api';
+
+jest.mock('./authService', () => ({
+  __esModule: true,
+  default: {
+    refreshToken: jest.fn().mockResolvedValue(undefined),
+    getToken: jest.fn().mockReturnValue(undefined),
+  },
+}));
+
+jest.mock('react-toastify', () => ({
+  toast: {
+    error: jest.fn(),
+  },
+}));
+
+type AxiosMockInstance = {
+  request: jest.Mock;
+  get: jest.Mock;
+  post: jest.Mock;
+  put: jest.Mock;
+  patch: jest.Mock;
+  delete: jest.Mock;
+  interceptors: {
+    request: {
+      use: jest.Mock;
+    };
+    response: {
+      use: jest.Mock;
+    };
+  };
+};
+
+const authServiceMock = authService as jest.Mocked<typeof authService>;
+const toastErrorMock = toast.error as jest.Mock;
+
+const getLatestAxiosInstance = (): AxiosMockInstance => {
+  const createMock = axios.create as jest.Mock;
+  const latestCall = createMock.mock.results[createMock.mock.results.length - 1];
+  if (!latestCall) {
+    throw new Error('Expected axios.create to be called');
+  }
+  return latestCall.value as AxiosMockInstance;
+};
+
+const getResponseErrorHandler = (instance: AxiosMockInstance) => {
+  const call = instance.interceptors.response.use.mock.calls[instance.interceptors.response.use.mock.calls.length - 1];
+  if (!call) {
+    throw new Error('Expected response interceptor registration');
+  }
+  return call[1] as (error: any) => Promise<unknown>;
+};
+
+describe('ApiService auth recovery', () => {
+  const createAxiosInstance = (): AxiosMockInstance => ({
+    request: jest.fn().mockResolvedValue({ data: {} }),
+    get: jest.fn().mockResolvedValue({ data: {} }),
+    post: jest.fn().mockResolvedValue({ data: {} }),
+    put: jest.fn().mockResolvedValue({ data: {} }),
+    patch: jest.fn().mockResolvedValue({ data: {} }),
+    delete: jest.fn().mockResolvedValue({ data: {} }),
+    interceptors: {
+      request: { use: jest.fn() },
+      response: { use: jest.fn() },
+    },
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    sessionStorage.clear();
+    window.history.pushState({}, '', '/search-results');
+    (axios.isCancel as unknown as jest.Mock | undefined)?.mockReset?.();
+    (axios.isCancel as unknown as jest.Mock | undefined)?.mockReturnValue?.(false);
+    if (typeof axios.isCancel !== 'function') {
+      (axios as any).isCancel = jest.fn().mockReturnValue(false);
+    }
+    const createMock = axios.create as jest.Mock;
+    createMock.mockReset();
+    createMock.mockImplementation(() => createAxiosInstance());
+  });
+
+  it('retries once with refreshed token before forcing login redirect', async () => {
+    authServiceMock.refreshToken.mockResolvedValueOnce('fresh-token');
+    const service = new ApiService();
+    const instance = getLatestAxiosInstance();
+    const responseErrorHandler = getResponseErrorHandler(instance);
+
+    instance.request.mockResolvedValueOnce({ data: { ok: true } });
+    const originalConfig = { headers: {}, url: '/documents', method: 'get' };
+
+    const retriedResponse = await responseErrorHandler({
+      response: { status: 401 },
+      config: originalConfig,
+    });
+
+    expect(authServiceMock.refreshToken).toHaveBeenCalledTimes(1);
+    expect(instance.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        _retryAuth: true,
+        headers: expect.objectContaining({
+          Authorization: 'Bearer fresh-token',
+        }),
+      })
+    );
+    expect(sessionStorage.getItem(AUTH_INIT_STATUS_KEY)).toBeNull();
+    expect(retriedResponse).toEqual({ data: { ok: true } });
+    expect(toastErrorMock).not.toHaveBeenCalled();
+    expect(service).toBeTruthy();
+  });
+
+  it('marks session expired when refresh cannot recover 401', async () => {
+    window.history.pushState({}, '', '/login');
+    authServiceMock.refreshToken.mockResolvedValueOnce(undefined);
+    const service = new ApiService();
+    const instance = getLatestAxiosInstance();
+    const responseErrorHandler = getResponseErrorHandler(instance);
+
+    const error = {
+      response: { status: 401 },
+      config: { headers: {}, url: '/documents', method: 'get' },
+    };
+
+    await expect(responseErrorHandler(error)).rejects.toBe(error);
+    expect(instance.request).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem(AUTH_INIT_STATUS_KEY)).toBe(AUTH_INIT_STATUS_SESSION_EXPIRED);
+    expect(toastErrorMock).toHaveBeenCalledWith('Session expired. Please login again.');
+    expect(service).toBeTruthy();
+  });
+});

@@ -24,6 +24,7 @@ jest.mock('axios', () => {
       response: { use: jest.fn() },
     },
     get: jest.fn().mockResolvedValue({ data: {} }),
+    request: jest.fn().mockResolvedValue({ data: {} }),
     post: jest.fn().mockResolvedValue({ data: {} }),
     put: jest.fn().mockResolvedValue({ data: {} }),
     patch: jest.fn().mockResolvedValue({ data: {} }),

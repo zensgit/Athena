@@ -1,13 +1,21 @@
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 import { toast } from 'react-toastify';
 import authService from './authService';
+import {
+  AUTH_INIT_STATUS_KEY,
+  AUTH_INIT_STATUS_SESSION_EXPIRED,
+  LOGIN_IN_PROGRESS_KEY,
+  LOGIN_IN_PROGRESS_STARTED_AT_KEY,
+} from 'constants/auth';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL
   || process.env.REACT_APP_API_BASE_URL
   || '/api/v1';
 
-class ApiService {
+export class ApiService {
   private api: AxiosInstance;
+  private tokenRefreshPromise: Promise<string | undefined> | null = null;
+  private redirectInFlight = false;
 
   constructor() {
     this.api = axios.create({
@@ -21,7 +29,7 @@ class ApiService {
     this.api.interceptors.request.use(
       async (config) => {
         try {
-          await authService.refreshToken();
+          await this.refreshTokenOnce();
         } catch {
           // If refresh fails, let the request proceed; the 401 handler will redirect to login.
         }
@@ -40,14 +48,32 @@ class ApiService {
     // Response interceptor for error handling
     this.api.interceptors.response.use(
       (response) => response,
-      (error) => {
+      async (error) => {
         if (axios.isCancel(error) || error.code === 'ERR_CANCELED') {
           return Promise.reject(error);
         }
         if (error.response?.status === 401) {
-          localStorage.removeItem('token');
-          window.location.href = '/login';
-          toast.error('Session expired. Please login again.');
+          const originalRequest = (error.config || {}) as AxiosRequestConfig & {
+            _retryAuth?: boolean;
+          };
+
+          if (!originalRequest._retryAuth) {
+            originalRequest._retryAuth = true;
+            try {
+              const refreshedToken = await this.refreshTokenOnce();
+              if (refreshedToken) {
+                originalRequest.headers = {
+                  ...(originalRequest.headers || {}),
+                  Authorization: `Bearer ${refreshedToken}`,
+                };
+                return this.api.request(originalRequest);
+              }
+            } catch {
+              // Fall through and redirect to login below.
+            }
+          }
+
+          this.markSessionExpiredAndRedirect();
         } else if (error.response?.data?.message) {
           toast.error(error.response.data.message);
         } else {
@@ -56,6 +82,34 @@ class ApiService {
         return Promise.reject(error);
       }
     );
+  }
+
+  private async refreshTokenOnce(): Promise<string | undefined> {
+    if (!this.tokenRefreshPromise) {
+      this.tokenRefreshPromise = authService.refreshToken().finally(() => {
+        this.tokenRefreshPromise = null;
+      });
+    }
+    return this.tokenRefreshPromise;
+  }
+
+  private markSessionExpiredAndRedirect() {
+    try {
+      sessionStorage.setItem(AUTH_INIT_STATUS_KEY, AUTH_INIT_STATUS_SESSION_EXPIRED);
+      sessionStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
+      sessionStorage.removeItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY);
+    } catch {
+      // Best effort only.
+    }
+    localStorage.removeItem('token');
+
+    if (!this.redirectInFlight) {
+      this.redirectInFlight = true;
+      toast.error('Session expired. Please login again.');
+      if (window.location.pathname !== '/login') {
+        window.location.assign('/login');
+      }
+    }
   }
 
   get<T>(url: string, config?: AxiosRequestConfig): Promise<T> {

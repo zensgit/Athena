@@ -9,6 +9,7 @@ import {
   AUTH_REDIRECT_MAX_AUTO_ATTEMPTS,
   AUTH_INIT_STATUS_ERROR,
   AUTH_INIT_STATUS_KEY,
+  AUTH_INIT_STATUS_SESSION_EXPIRED,
   AUTH_INIT_STATUS_REDIRECT_FAILED,
   AUTH_INIT_STATUS_TIMEOUT,
   LOGIN_IN_PROGRESS_KEY,
@@ -26,6 +27,8 @@ const Login: React.FC = () => {
       setAuthInitMessage('Sign-in initialization timed out. Please retry.');
     } else if (initStatus === AUTH_INIT_STATUS_ERROR) {
       setAuthInitMessage('Sign-in initialization failed. Please retry.');
+    } else if (initStatus === AUTH_INIT_STATUS_SESSION_EXPIRED) {
+      setAuthInitMessage('Your session expired. Please sign in again.');
     } else if (initStatus === AUTH_INIT_STATUS_REDIRECT_FAILED) {
       const failureCount = Number(sessionStorage.getItem(AUTH_REDIRECT_FAILURE_COUNT_KEY) || '0');
       const lastFailureAt = Number(sessionStorage.getItem(AUTH_REDIRECT_LAST_FAILURE_AT_KEY) || '0');

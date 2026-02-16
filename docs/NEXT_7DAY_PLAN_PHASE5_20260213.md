@@ -316,6 +316,11 @@ Docs:
   - UI: `Did you mean` when results exist; `Search instead for` when results are zero.
   - Dev doc: `docs/PHASE59_SPELLCHECK_DECISION_PARITY_DEV_20260216.md`
   - Verification doc: `docs/PHASE59_SPELLCHECK_DECISION_PARITY_VERIFICATION_20260216.md`
+- Added auth/session hardening for unexpected 401 bursts:
+  - API now retries once after token refresh before redirecting to login.
+  - Login page shows explicit session-expired guidance after backend-auth failures.
+  - Dev doc: `docs/PHASE60_AUTH_SESSION_RECOVERY_DEV_20260216.md`
+  - Verification doc: `docs/PHASE60_AUTH_SESSION_RECOVERY_VERIFICATION_20260216.md`
 - Verification docs updated:
   - `docs/PHASE54_PREVIEW_DIAGNOSTICS_UI_VERIFICATION_20260213.md`
   - `docs/PHASE55_PREVIEW_DIAGNOSTICS_HARDENING_VERIFICATION_20260214.md`
