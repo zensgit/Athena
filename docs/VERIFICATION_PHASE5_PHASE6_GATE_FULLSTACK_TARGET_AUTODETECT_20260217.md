@@ -42,9 +42,17 @@ ECM_FULLSTACK_ALLOW_STATIC=0 ./scripts/phase5-phase6-delivery-gate.sh
 - Result: EXPECTED FAIL at full-stack smoke target check
   - `detected_mode=static`
   - exit with hint to use `ECM_UI_URL=http://localhost:3000` for branch-accurate E2E.
+  - with latest script: failure happens during strict preflight, before `[1/5]`.
+
+4. CI-default strict policy (expect same behavior when UI target is static)
+```bash
+CI=1 ./scripts/phase5-phase6-delivery-gate.sh
+```
+- Result: EXPECTED FAIL (same as strict mode), unless `ECM_UI_URL_FULLSTACK` points to dev/proxy target.
 
 ## Conclusion
 - Auto-detect logic works as designed.
 - Existing gate behavior remains intact by default (`ECM_FULLSTACK_ALLOW_STATIC=1`).
 - Strict mode is now available to enforce branch-accurate full-stack targets.
 - `p1 smoke` stage now uses the same static-target policy check as stages 2-4.
+- CI default is stricter for safer branch-accurate gating.

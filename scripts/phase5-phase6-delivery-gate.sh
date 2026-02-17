@@ -15,7 +15,13 @@ ECM_E2E_PASSWORD="${ECM_E2E_PASSWORD:-admin}"
 
 PW_PROJECT="${PW_PROJECT:-chromium}"
 PW_WORKERS="${PW_WORKERS:-1}"
-ECM_FULLSTACK_ALLOW_STATIC="${ECM_FULLSTACK_ALLOW_STATIC:-1}"
+if [[ -n "${ECM_FULLSTACK_ALLOW_STATIC:-}" ]]; then
+  ECM_FULLSTACK_ALLOW_STATIC="${ECM_FULLSTACK_ALLOW_STATIC}"
+elif [[ -n "${CI:-}" ]]; then
+  ECM_FULLSTACK_ALLOW_STATIC="0"
+else
+  ECM_FULLSTACK_ALLOW_STATIC="1"
+fi
 
 is_http_reachable() {
   local target="$1"
@@ -53,6 +59,11 @@ echo "PW_PROJECT=${PW_PROJECT} PW_WORKERS=${PW_WORKERS}"
 echo "ECM_FULLSTACK_ALLOW_STATIC=${ECM_FULLSTACK_ALLOW_STATIC}"
 if [[ -z "${ECM_UI_URL_FULLSTACK_INPUT}" ]]; then
   echo "ECM_UI_URL_FULLSTACK auto-detected (set ECM_UI_URL_FULLSTACK to override)"
+fi
+
+if [[ "${ECM_FULLSTACK_ALLOW_STATIC}" == "0" ]]; then
+  echo "phase5_phase6_delivery_gate: strict fullstack target preflight"
+  ALLOW_STATIC=0 scripts/check-e2e-target.sh "${ECM_UI_URL_FULLSTACK}"
 fi
 
 echo ""

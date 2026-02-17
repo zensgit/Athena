@@ -22,10 +22,14 @@
 - Emit log when auto-detected target is used.
 - Add configurable static-target policy for full-stack smoke:
   - Gate env: `ECM_FULLSTACK_ALLOW_STATIC` (default `1`)
+  - If `CI` is set and `ECM_FULLSTACK_ALLOW_STATIC` is not provided, default becomes `0`
   - Propagated to child scripts as `FULLSTACK_ALLOW_STATIC`
   - Child scripts pass it to `check-e2e-target.sh` via `ALLOW_STATIC`
   - Gate `p1 smoke` stage runs the same target check before executing Playwright
   - `0` means strict mode (static target fails fast), `1` keeps compatibility.
+- Add strict-mode preflight:
+  - When `ECM_FULLSTACK_ALLOW_STATIC=0`, gate runs `check-e2e-target.sh` immediately after target resolution.
+  - If target is static, gate exits before stage `[1/5]` to save execution time.
 
 ## Non-Goals
 - No change to mocked gate target semantics.
