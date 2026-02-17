@@ -39,6 +39,8 @@
 
 - `scripts/phase5-fullstack-smoke.sh` / `scripts/phase6-mail-automation-integration-smoke.sh` / `scripts/phase5-search-suggestions-integration-smoke.sh`
   - 新增 `FULLSTACK_ALLOW_STATIC`（默认 `1`），统一接入 `check-e2e-target.sh`。
+- `scripts/phase5-phase6-delivery-gate.sh`
+  - `p1 smoke` 入口也接入同一静态目标策略校验，避免策略绕过。
 
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage

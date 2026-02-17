@@ -103,6 +103,8 @@ bash scripts/phase5-search-suggestions-integration-smoke.sh
 
 echo ""
 echo "[5/5] p1 smoke"
+echo "phase5_phase6_delivery_gate: check p1 e2e target"
+ALLOW_STATIC="${ECM_FULLSTACK_ALLOW_STATIC}" scripts/check-e2e-target.sh "${ECM_UI_URL_FULLSTACK}"
 (
   cd ecm-frontend
   ECM_UI_URL="${ECM_UI_URL_FULLSTACK}" \

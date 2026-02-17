@@ -47,3 +47,4 @@ ECM_FULLSTACK_ALLOW_STATIC=0 ./scripts/phase5-phase6-delivery-gate.sh
 - Auto-detect logic works as designed.
 - Existing gate behavior remains intact by default (`ECM_FULLSTACK_ALLOW_STATIC=1`).
 - Strict mode is now available to enforce branch-accurate full-stack targets.
+- `p1 smoke` stage now uses the same static-target policy check as stages 2-4.

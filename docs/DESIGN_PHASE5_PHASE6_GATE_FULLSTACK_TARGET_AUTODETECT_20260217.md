@@ -24,6 +24,7 @@
   - Gate env: `ECM_FULLSTACK_ALLOW_STATIC` (default `1`)
   - Propagated to child scripts as `FULLSTACK_ALLOW_STATIC`
   - Child scripts pass it to `check-e2e-target.sh` via `ALLOW_STATIC`
+  - Gate `p1 smoke` stage runs the same target check before executing Playwright
   - `0` means strict mode (static target fails fast), `1` keeps compatibility.
 
 ## Non-Goals
