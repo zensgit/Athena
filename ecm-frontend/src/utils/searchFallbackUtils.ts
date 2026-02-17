@@ -36,6 +36,8 @@ const TEXT_LIKE_SUFFIXES = new Set([
   '.webp',
 ]);
 
+const FILENAME_QUERY_PATTERN = /^[^\s/\\]+\.[a-z0-9]{1,10}$/i;
+
 export const shouldSuppressStaleFallbackForQuery = (query?: string): boolean => {
   const normalized = (query || '').trim().toLowerCase();
   if (!normalized) {
@@ -59,4 +61,27 @@ export const shouldSuppressStaleFallbackForQuery = (query?: string): boolean => 
 
   const vowelCount = (normalized.match(/[aeiou]/g) || []).length;
   return vowelCount <= Math.floor(normalized.length / 6);
+};
+
+export const shouldSkipSpellcheckForQuery = (query?: string): boolean => {
+  const normalized = (query || '').trim().toLowerCase();
+  if (!normalized || normalized.length < 3) {
+    return true;
+  }
+  if (normalized.includes(' ')) {
+    return false;
+  }
+  if (/[\\/]/.test(normalized)) {
+    return true;
+  }
+  if (FILENAME_QUERY_PATTERN.test(normalized)) {
+    return true;
+  }
+  if (shouldSuppressStaleFallbackForQuery(normalized)) {
+    return true;
+  }
+
+  const hasLongDigitRun = /\d{6,}/.test(normalized);
+  const hasStructuredSeparators = /[-_.]/.test(normalized);
+  return hasLongDigitRun && hasStructuredSeparators && normalized.length >= 16;
 };

@@ -151,6 +151,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - Spellcheck decision parity (reference-informed):
     - Dev: `docs/PHASE59_SPELLCHECK_DECISION_PARITY_DEV_20260216.md`
     - Verification: `docs/PHASE59_SPELLCHECK_DECISION_PARITY_VERIFICATION_20260216.md`
+  - Spellcheck filename guard (precision query noise reduction):
+    - Dev: `docs/PHASE59_SPELLCHECK_FILENAME_GUARD_DEV_20260217.md`
+    - Verification: `docs/PHASE59_SPELLCHECK_FILENAME_GUARD_VERIFICATION_20260217.md`
 - Search continuity + regression gate
   - P104: Search continuity regression gate
     - Verification: `docs/PHASE1_P104_SEARCH_CONTINUITY_REGRESSION_GATE_VERIFICATION_20260212.md`

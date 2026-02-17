@@ -6,6 +6,7 @@
   - 新增 Auth Session Recovery 的 Playwright 回归覆盖。
   - Phase5 回归脚本增强：支持自定义本地端口自动拉起静态 SPA 服务。
   - Phase5+Phase6 交付门禁增强：full-stack UI 目标自动探测，优先开发态 `:3000`。
+  - Search spellcheck 精确查询降噪：文件名/ID 类查询跳过拼写建议请求。
 
 ## 二、主要变更
 ### 1) 会话恢复与登录提示
@@ -44,6 +45,18 @@
 - `scripts/phase5-phase6-delivery-gate.sh`
   - `p1 smoke` 入口也接入同一静态目标策略校验，避免策略绕过。
 
+### 4) Spellcheck 精确查询降噪
+- `ecm-frontend/src/utils/searchFallbackUtils.ts`
+  - 新增 `shouldSkipSpellcheckForQuery`：
+    - 文件名（如 `*.bin` / `*.pdf`）或路径/结构化 ID 查询默认跳过 spellcheck。
+    - 自然语言查询仍保持 spellcheck 建议能力。
+- `ecm-frontend/src/pages/SearchResults.tsx`
+  - spellcheck effect 接入 guard：
+    - 精确查询不再调用 `/search/spellcheck`。
+    - 不展示“Checking spelling suggestions…”与“Did you mean”噪声提示。
+- `ecm-frontend/e2e/search-suggestions-save-search.mock.spec.ts`
+  - 增加“文件名查询跳过 spellcheck 请求”的 mocked E2E 场景。
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -55,7 +68,7 @@
 - 前端 build：通过
 - 新增 auth session recovery Playwright：通过
 - `phase5-phase6-delivery-gate.sh`：通过
-  - mocked gate：10 passed
+  - mocked gate：11 passed
   - full-stack admin smoke：1 passed
   - phase6 mail integration smoke：1 passed
   - phase5 search suggestions integration smoke：1 passed
@@ -73,3 +86,5 @@
 - `docs/PHASE5_AUTH_SESSION_RECOVERY_VERIFICATION_20260216.md`
 - `docs/DESIGN_PHASE5_PHASE6_GATE_FULLSTACK_TARGET_AUTODETECT_20260217.md`
 - `docs/VERIFICATION_PHASE5_PHASE6_GATE_FULLSTACK_TARGET_AUTODETECT_20260217.md`
+- `docs/PHASE59_SPELLCHECK_FILENAME_GUARD_DEV_20260217.md`
+- `docs/PHASE59_SPELLCHECK_FILENAME_GUARD_VERIFICATION_20260217.md`

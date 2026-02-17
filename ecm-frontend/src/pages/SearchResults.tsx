@@ -55,7 +55,7 @@ import { Node, SearchCriteria } from 'types';
 import { toast } from 'react-toastify';
 import Highlight from 'components/search/Highlight';
 import { buildSearchCriteriaFromSavedSearch } from 'utils/savedSearchUtils';
-import { shouldSuppressStaleFallbackForQuery } from 'utils/searchFallbackUtils';
+import { shouldSkipSpellcheckForQuery, shouldSuppressStaleFallbackForQuery } from 'utils/searchFallbackUtils';
 import { formatBreadcrumbPath } from 'utils/pathDisplayUtils';
 import {
   formatPreviewFailureReasonLabel,
@@ -618,6 +618,13 @@ const SearchResults: React.FC = () => {
     const query = (lastSearchCriteria?.name || '').trim();
     if (!query || isSimilarMode) {
       lastSpellcheckQueryRef.current = '';
+      setSpellcheckSuggestions([]);
+      setSpellcheckError(null);
+      setSpellcheckLoading(false);
+      return;
+    }
+    if (shouldSkipSpellcheckForQuery(query)) {
+      lastSpellcheckQueryRef.current = query;
       setSpellcheckSuggestions([]);
       setSpellcheckError(null);
       setSpellcheckLoading(false);
