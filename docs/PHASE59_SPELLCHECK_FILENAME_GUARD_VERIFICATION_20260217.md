@@ -27,6 +27,33 @@ CI=1 npm test -- --watch=false --runTestsByPath src/utils/searchFallbackUtils.te
       - no spellcheck request fired
       - no “Did you mean / Search instead for” banner shown
 
+3. P1 smoke (real backend/static UI compatibility assertion)
+```bash
+cd ecm-frontend
+ECM_UI_URL=http://localhost \
+ECM_API_URL=http://localhost:7700 \
+KEYCLOAK_URL=http://localhost:8180 \
+KEYCLOAK_REALM=ecm \
+npx playwright test e2e/p1-smoke.spec.ts -g "filename-like query skips spellcheck call" --project=chromium --workers=1
+```
+- Result: PASS (`1 passed`)
+- Assertion: filename-like query does not show spellcheck suggestion banners.
+
+4. Strong request-level assertion on branch build (optional)
+```bash
+cd ecm-frontend
+npx serve -s build -l 3000
+# in another shell
+ECM_UI_URL=http://localhost:3000 \
+ECM_API_URL=http://localhost:7700 \
+KEYCLOAK_URL=http://localhost:8180 \
+KEYCLOAK_REALM=ecm \
+ECM_E2E_ASSERT_SPELLCHECK_SKIP=1 \
+npx playwright test e2e/p1-smoke.spec.ts -g "filename-like query skips spellcheck call" --project=chromium --workers=1
+```
+- Result: PASS (`1 passed`)
+- Assertion: spellcheck request count is exactly `0`.
+
 ## Behavior Checks
 - Query `e2e-preview-failure-1770563224443.bin`:
   - Spellcheck lookup is skipped.

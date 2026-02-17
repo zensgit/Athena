@@ -226,6 +226,39 @@ test('P1 smoke: spellcheck suggests corrected term', async ({ page, request }) =
   await expect(page.getByRole('button', { name: targetWord })).toBeVisible({ timeout: 60_000 });
 });
 
+test('P1 smoke: filename-like query skips spellcheck call', async ({ page, request }) => {
+  await waitForApiReady(request);
+  const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+  await loginWithCredentials(page, defaultUsername, defaultPassword, token);
+  await page.goto('/search-results', { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle');
+
+  const assertNoSpellcheckRequest = process.env.ECM_E2E_ASSERT_SPELLCHECK_SKIP === '1';
+  let spellcheckRequestCount = 0;
+  const onRequest = (req: { url: () => string; method: () => string }) => {
+    if (req.method() === 'GET' && req.url().includes('/api/v1/search/spellcheck')) {
+      spellcheckRequestCount += 1;
+    }
+  };
+  page.on('request', onRequest);
+  try {
+    const filenameLikeQuery = `e2e-preview-failure-${Date.now()}.bin`;
+    const input = page.getByPlaceholder('Quick search by name...');
+    await input.fill(filenameLikeQuery);
+    await input.press('Enter');
+
+    await page.waitForResponse((response) => response.url().includes('/api/v1/search') && response.request().method() === 'GET');
+    await page.waitForTimeout(500);
+    await expect(page.getByText(/Did you mean|Search instead for/i)).toHaveCount(0);
+    await expect(page.getByText(/Checking spelling suggestions/i)).toHaveCount(0);
+    if (assertNoSpellcheckRequest) {
+      expect(spellcheckRequestCount).toBe(0);
+    }
+  } finally {
+    page.off('request', onRequest);
+  }
+});
+
 test('P1 smoke: mail rule preview dialog runs', async ({ page, request }) => {
   await waitForApiReady(request);
   const token = await fetchAccessToken(request, defaultUsername, defaultPassword);

@@ -56,6 +56,9 @@
     - 不展示“Checking spelling suggestions…”与“Did you mean”噪声提示。
 - `ecm-frontend/e2e/search-suggestions-save-search.mock.spec.ts`
   - 增加“文件名查询跳过 spellcheck 请求”的 mocked E2E 场景。
+- `ecm-frontend/e2e/p1-smoke.spec.ts`
+  - 增加“文件名查询不展示拼写建议提示”的 full-stack smoke 场景。
+  - 支持可选强校验：`ECM_E2E_ASSERT_SPELLCHECK_SKIP=1` 时断言零 spellcheck 请求。
 
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
@@ -72,7 +75,7 @@
   - full-stack admin smoke：1 passed
   - phase6 mail integration smoke：1 passed
   - phase5 search suggestions integration smoke：1 passed
-  - p1 smoke：3 passed，1 skipped（可选 mail preview-run 场景）
+  - p1 smoke：4 passed，1 skipped（可选 mail preview-run 场景）
 
 ## 五、影响与兼容性
 - 不涉及后端接口契约破坏。

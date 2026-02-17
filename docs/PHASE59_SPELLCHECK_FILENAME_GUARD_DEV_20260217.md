@@ -32,6 +32,9 @@
      - Covers skip/non-skip query classification.
    - Mocked E2E: `ecm-frontend/e2e/search-suggestions-save-search.mock.spec.ts`
      - New scenario verifies filename-like query does not trigger spellcheck request or suggestion banner.
+   - P1 smoke: `ecm-frontend/e2e/p1-smoke.spec.ts`
+     - Added compatibility assertion for filename-like query behavior.
+     - Optional strict request-level assertion can be enabled by `ECM_E2E_ASSERT_SPELLCHECK_SKIP=1`.
 
 ## Impact
 - Reduces false-positive spell suggestions for exact filename searches.
