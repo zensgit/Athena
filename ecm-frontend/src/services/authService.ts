@@ -6,6 +6,73 @@ type KeycloakInitOptionsWithPkce = KeycloakInitOptions & { pkceMethod?: string }
 let keycloakInstance: KeycloakInstance | null = null;
 let keycloakLoadPromise: Promise<KeycloakInstance> | null = null;
 
+const TRANSIENT_REFRESH_ERROR_PATTERN =
+  /network error|failed to fetch|timeout|timed out|ecconnreset|econnrefused|etimedout|status code 5\d{2}/i;
+const AUTH_TERMINAL_REFRESH_ERROR_PATTERN =
+  /invalid[_\s-]?grant|invalid[_\s-]?token|refresh token|session not active|not authenticated|unauthorized|forbidden/i;
+
+const extractRefreshErrorStatus = (error: unknown): number | null => {
+  if (!error || typeof error !== 'object') return null;
+  const candidate = error as {
+    status?: unknown;
+    response?: { status?: unknown };
+    xhr?: { status?: unknown };
+  };
+  const raw = candidate.response?.status ?? candidate.status ?? candidate.xhr?.status;
+  const status = Number(raw);
+  if (!Number.isFinite(status)) return null;
+  return status;
+};
+
+const extractRefreshErrorText = (error: unknown): string => {
+  if (!error) return '';
+  if (typeof error === 'string') return error;
+  if (error instanceof Error) return error.message || '';
+  if (typeof error === 'object') {
+    const candidate = error as {
+      message?: unknown;
+      error?: unknown;
+      error_description?: unknown;
+      response?: { data?: unknown };
+    };
+    const responseText =
+      typeof candidate.response?.data === 'string'
+        ? candidate.response?.data
+        : JSON.stringify(candidate.response?.data ?? {});
+    return [
+      typeof candidate.message === 'string' ? candidate.message : '',
+      typeof candidate.error === 'string' ? candidate.error : '',
+      typeof candidate.error_description === 'string' ? candidate.error_description : '',
+      responseText,
+    ]
+      .filter(Boolean)
+      .join(' ');
+  }
+  return String(error);
+};
+
+export const shouldLogoutOnRefreshError = (error: unknown): boolean => {
+  const status = extractRefreshErrorStatus(error);
+  const text = extractRefreshErrorText(error);
+
+  if (TRANSIENT_REFRESH_ERROR_PATTERN.test(text)) {
+    return false;
+  }
+  if (status === 0) {
+    return false;
+  }
+  if (status !== null) {
+    if (status >= 500) return false;
+    if (status >= 400 && status < 500) return true;
+  }
+  if (AUTH_TERMINAL_REFRESH_ERROR_PATTERN.test(text)) {
+    return true;
+  }
+
+  // Keep previous conservative behavior for unknown refresh failures.
+  return true;
+};
+
 const getBypassMode = () => {
   const bypassEnabledByEnv = process.env.REACT_APP_E2E_BYPASS_AUTH === '1';
   if (typeof window === 'undefined') {
@@ -104,8 +171,12 @@ class AuthService {
       await keycloakInstance.updateToken(30);
       return keycloakInstance.token || undefined;
     } catch (err) {
-      await this.logout();
-      return undefined;
+      if (shouldLogoutOnRefreshError(err)) {
+        await this.logout();
+        return undefined;
+      }
+      console.warn('Token refresh failed due to transient error; keeping current session.', err);
+      return keycloakInstance.token || undefined;
     }
   }
 

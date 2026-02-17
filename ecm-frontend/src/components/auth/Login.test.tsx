@@ -15,6 +15,8 @@ const authServiceMock = authService as jest.Mocked<typeof authService>;
 beforeEach(() => {
   jest.clearAllMocks();
   sessionStorage.clear();
+  localStorage.clear();
+  window.history.pushState({}, '', '/login');
 });
 
 test('clears stale login markers on mount', () => {
@@ -47,6 +49,22 @@ test('shows generic init warning when auth bootstrap failed', async () => {
 
 test('shows session expired message when api marks auth expiry', async () => {
   sessionStorage.setItem('ecm_auth_init_status', 'session_expired');
+
+  render(<Login />);
+
+  expect(await screen.findByText(/your session expired/i)).toBeTruthy();
+});
+
+test('shows session expired message from redirect reason fallback', async () => {
+  localStorage.setItem('ecm_auth_redirect_reason', 'session_expired');
+
+  render(<Login />);
+
+  expect(await screen.findByText(/your session expired/i)).toBeTruthy();
+});
+
+test('shows session expired message from login reason query param fallback', async () => {
+  window.history.pushState({}, '', '/login?reason=session_expired');
 
   render(<Login />);
 

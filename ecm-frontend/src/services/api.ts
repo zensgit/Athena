@@ -3,6 +3,7 @@ import { toast } from 'react-toastify';
 import authService from './authService';
 import {
   AUTH_INIT_STATUS_KEY,
+  AUTH_REDIRECT_REASON_KEY,
   AUTH_INIT_STATUS_SESSION_EXPIRED,
   LOGIN_IN_PROGRESS_KEY,
   LOGIN_IN_PROGRESS_STARTED_AT_KEY,
@@ -16,6 +17,7 @@ export class ApiService {
   private api: AxiosInstance;
   private tokenRefreshPromise: Promise<string | undefined> | null = null;
   private redirectInFlight = false;
+  private lastRequestConfig: (AxiosRequestConfig & { _retryAuth?: boolean }) | null = null;
 
   constructor() {
     this.api = axios.create({
@@ -38,6 +40,12 @@ export class ApiService {
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
         }
+        this.lastRequestConfig = {
+          ...config,
+          headers: {
+            ...(config.headers || {}),
+          },
+        };
         return config;
       },
       (error) => {
@@ -53,21 +61,21 @@ export class ApiService {
           return Promise.reject(error);
         }
         if (error.response?.status === 401) {
-          const originalRequest = (error.config || {}) as AxiosRequestConfig & {
-            _retryAuth?: boolean;
-          };
-
-          if (!originalRequest._retryAuth) {
+          const originalRequest = this.resolveRetryRequestConfig(error);
+          if (originalRequest && !originalRequest._retryAuth) {
             originalRequest._retryAuth = true;
             try {
               const refreshedToken = await this.refreshTokenOnce();
-              if (refreshedToken) {
+              const fallbackToken = authService.getToken();
+              const effectiveToken = refreshedToken || fallbackToken;
+              if (effectiveToken) {
                 originalRequest.headers = {
                   ...(originalRequest.headers || {}),
-                  Authorization: `Bearer ${refreshedToken}`,
+                  Authorization: `Bearer ${effectiveToken}`,
                 };
-                return this.api.request(originalRequest);
               }
+              // Retry once even if refresh returns undefined (browser/runtime differences).
+              return await this.api.request(originalRequest);
             } catch {
               // Fall through and redirect to login below.
             }
@@ -98,18 +106,49 @@ export class ApiService {
       sessionStorage.setItem(AUTH_INIT_STATUS_KEY, AUTH_INIT_STATUS_SESSION_EXPIRED);
       sessionStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
       sessionStorage.removeItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY);
+      localStorage.setItem(AUTH_REDIRECT_REASON_KEY, AUTH_INIT_STATUS_SESSION_EXPIRED);
+      localStorage.removeItem('token');
     } catch {
       // Best effort only.
     }
-    localStorage.removeItem('token');
 
     if (!this.redirectInFlight) {
       this.redirectInFlight = true;
       toast.error('Session expired. Please login again.');
       if (window.location.pathname !== '/login') {
-        window.location.assign('/login');
+        const loginUrl = new URL('/login', window.location.origin);
+        loginUrl.searchParams.set('reason', AUTH_INIT_STATUS_SESSION_EXPIRED);
+        window.location.assign(`${loginUrl.pathname}${loginUrl.search}`);
       }
     }
+  }
+
+  private resolveRetryRequestConfig(
+    error: any
+  ): (AxiosRequestConfig & { _retryAuth?: boolean }) | null {
+    const candidate = (error?.config || error?.response?.config || {}) as AxiosRequestConfig & {
+      _retryAuth?: boolean;
+    };
+    const responseUrl = typeof error?.request?.responseURL === 'string' ? error.request.responseURL : undefined;
+    const resolvedUrl = candidate.url || responseUrl;
+    if (!resolvedUrl) {
+      if (this.lastRequestConfig?.url) {
+        return {
+          ...this.lastRequestConfig,
+          headers: {
+            ...(this.lastRequestConfig.headers || {}),
+          },
+        };
+      }
+      return null;
+    }
+    return {
+      ...candidate,
+      url: resolvedUrl,
+      headers: {
+        ...(candidate.headers || {}),
+      },
+    };
   }
 
   get<T>(url: string, config?: AxiosRequestConfig): Promise<T> {

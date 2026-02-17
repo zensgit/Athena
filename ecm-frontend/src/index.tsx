@@ -10,6 +10,7 @@ import { setSession } from 'store/slices/authSlice';
 import {
   AUTH_INIT_STATUS_ERROR,
   AUTH_INIT_STATUS_KEY,
+  AUTH_INIT_STATUS_SESSION_EXPIRED,
   AUTH_INIT_STATUS_TIMEOUT,
   LOGIN_IN_PROGRESS_KEY,
   LOGIN_IN_PROGRESS_STARTED_AT_KEY,
@@ -131,7 +132,12 @@ const clearLoginProgress = () => {
   sessionStorage.removeItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY);
 };
 
-const clearAuthInitStatus = () => {
+const clearAuthInitStatus = (options?: { preserveSessionExpired?: boolean }) => {
+  const preserveSessionExpired = options?.preserveSessionExpired ?? false;
+  const currentStatus = sessionStorage.getItem(AUTH_INIT_STATUS_KEY);
+  if (preserveSessionExpired && currentStatus === AUTH_INIT_STATUS_SESSION_EXPIRED) {
+    return;
+  }
   sessionStorage.removeItem(AUTH_INIT_STATUS_KEY);
 };
 
@@ -141,7 +147,7 @@ const setAuthInitStatus = (status: string) => {
 
 const initAuth = async () => {
   renderAuthBooting();
-  clearAuthInitStatus();
+  clearAuthInitStatus({ preserveSessionExpired: true });
   try {
     const canUsePkce = !!(window.crypto && window.crypto.subtle);
     if (!canUsePkce) {

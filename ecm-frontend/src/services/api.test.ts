@@ -115,6 +115,30 @@ describe('ApiService auth recovery', () => {
     expect(service).toBeTruthy();
   });
 
+  it('retries from responseURL when axios error config is missing', async () => {
+    authServiceMock.refreshToken.mockResolvedValueOnce('fresh-token');
+    new ApiService();
+    const instance = getLatestAxiosInstance();
+    const responseErrorHandler = getResponseErrorHandler(instance);
+
+    instance.request.mockResolvedValueOnce({ data: { ok: true } });
+
+    const retriedResponse = await responseErrorHandler({
+      response: { status: 401 },
+      request: {
+        responseURL: '/api/v1/search?q=fallback-retry',
+      },
+    });
+
+    expect(instance.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        _retryAuth: true,
+        url: '/api/v1/search?q=fallback-retry',
+      })
+    );
+    expect(retriedResponse).toEqual({ data: { ok: true } });
+  });
+
   it('marks session expired when refresh cannot recover 401', async () => {
     window.history.pushState({}, '', '/login');
     authServiceMock.refreshToken.mockResolvedValueOnce(undefined);
@@ -126,10 +150,17 @@ describe('ApiService auth recovery', () => {
       response: { status: 401 },
       config: { headers: {}, url: '/documents', method: 'get' },
     };
+    instance.request.mockRejectedValueOnce({
+      response: { status: 401 },
+      config: { headers: {}, url: '/documents', method: 'get', _retryAuth: true },
+    });
 
-    await expect(responseErrorHandler(error)).rejects.toBe(error);
-    expect(instance.request).not.toHaveBeenCalled();
+    await expect(responseErrorHandler(error)).rejects.toMatchObject({
+      response: { status: 401 },
+    });
+    expect(instance.request).toHaveBeenCalledTimes(1);
     expect(sessionStorage.getItem(AUTH_INIT_STATUS_KEY)).toBe(AUTH_INIT_STATUS_SESSION_EXPIRED);
+    expect(localStorage.getItem('ecm_auth_redirect_reason')).toBe(AUTH_INIT_STATUS_SESSION_EXPIRED);
     expect(toastErrorMock).toHaveBeenCalledWith('Session expired. Please login again.');
     expect(service).toBeTruthy();
   });

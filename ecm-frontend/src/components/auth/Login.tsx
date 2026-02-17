@@ -7,6 +7,7 @@ import {
   AUTH_REDIRECT_FAILURE_WINDOW_MS,
   AUTH_REDIRECT_LAST_FAILURE_AT_KEY,
   AUTH_REDIRECT_MAX_AUTO_ATTEMPTS,
+  AUTH_REDIRECT_REASON_KEY,
   AUTH_INIT_STATUS_ERROR,
   AUTH_INIT_STATUS_KEY,
   AUTH_INIT_STATUS_SESSION_EXPIRED,
@@ -22,12 +23,24 @@ const Login: React.FC = () => {
   const [authInitMessage, setAuthInitMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    const initStatus = sessionStorage.getItem(AUTH_INIT_STATUS_KEY);
+    const queryReason = new URLSearchParams(window.location.search).get('reason');
+    let initStatus: string | null = null;
+    let redirectReason: string | null = null;
+    try {
+      initStatus = sessionStorage.getItem(AUTH_INIT_STATUS_KEY);
+      redirectReason = localStorage.getItem(AUTH_REDIRECT_REASON_KEY);
+    } catch {
+      // Storage can be unavailable in restricted contexts; keep URL-based fallback.
+    }
     if (initStatus === AUTH_INIT_STATUS_TIMEOUT) {
       setAuthInitMessage('Sign-in initialization timed out. Please retry.');
     } else if (initStatus === AUTH_INIT_STATUS_ERROR) {
       setAuthInitMessage('Sign-in initialization failed. Please retry.');
-    } else if (initStatus === AUTH_INIT_STATUS_SESSION_EXPIRED) {
+    } else if (
+      initStatus === AUTH_INIT_STATUS_SESSION_EXPIRED
+      || (!initStatus && redirectReason === AUTH_INIT_STATUS_SESSION_EXPIRED)
+      || queryReason === AUTH_INIT_STATUS_SESSION_EXPIRED
+    ) {
       setAuthInitMessage('Your session expired. Please sign in again.');
     } else if (initStatus === AUTH_INIT_STATUS_REDIRECT_FAILED) {
       const failureCount = Number(sessionStorage.getItem(AUTH_REDIRECT_FAILURE_COUNT_KEY) || '0');
@@ -58,9 +71,17 @@ const Login: React.FC = () => {
         }
       }
     }
-    sessionStorage.removeItem(AUTH_INIT_STATUS_KEY);
-    sessionStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
-    sessionStorage.removeItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY);
+    try {
+      sessionStorage.removeItem(AUTH_INIT_STATUS_KEY);
+      sessionStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
+      sessionStorage.removeItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY);
+      localStorage.removeItem(AUTH_REDIRECT_REASON_KEY);
+    } catch {
+      // Best effort cleanup.
+    }
+    if (queryReason) {
+      window.history.replaceState({}, '', `${window.location.pathname}${window.location.hash || ''}`);
+    }
   }, []);
 
   const handleLogin = async () => {
@@ -70,6 +91,7 @@ const Login: React.FC = () => {
     sessionStorage.removeItem(AUTH_INIT_STATUS_KEY);
     sessionStorage.removeItem(AUTH_REDIRECT_FAILURE_COUNT_KEY);
     sessionStorage.removeItem(AUTH_REDIRECT_LAST_FAILURE_AT_KEY);
+    localStorage.removeItem(AUTH_REDIRECT_REASON_KEY);
     try {
       await authService.login({ redirectUri: window.location.origin + '/' });
     } catch (loginError) {
