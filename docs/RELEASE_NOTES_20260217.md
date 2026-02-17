@@ -33,6 +33,12 @@
     1. `http://localhost:3000`
     2. `http://localhost`
   - 优先开发态地址，降低“误测旧静态包”概率。
+  - 新增 `ECM_FULLSTACK_ALLOW_STATIC`（默认 `1`）并透传到 full-stack smoke 脚本：
+    - `1`：允许静态目标（兼容现有本地环境）
+    - `0`：严格模式，若目标为 static 则直接失败并提示改用 `:3000`
+
+- `scripts/phase5-fullstack-smoke.sh` / `scripts/phase6-mail-automation-integration-smoke.sh` / `scripts/phase5-search-suggestions-integration-smoke.sh`
+  - 新增 `FULLSTACK_ALLOW_STATIC`（默认 `1`），统一接入 `check-e2e-target.sh`。
 
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
@@ -56,6 +62,7 @@
 - 现有登录流程保持兼容；新增 query reason 为向后兼容增强。
 - 门禁脚本行为仅在未显式传入 `ECM_UI_URL_FULLSTACK` 时采用自动探测，显式配置优先级不变。
 - `phase5-regression` 默认将优先使用临时独立静态服务进行 mocked 回归，减少本地端口污染导致的误报风险；可通过 `PHASE5_USE_EXISTING_UI=1` 关闭。
+- full-stack 门禁增加静态目标策略开关，默认保持兼容；可按需启用严格模式提高分支准确性。
 
 ## 六、相关文档
 - `docs/PHASE5_AUTH_SESSION_RECOVERY_DESIGN_20260216.md`

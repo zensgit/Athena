@@ -14,12 +14,14 @@ ECM_E2E_PASSWORD="${ECM_E2E_PASSWORD:-admin}"
 
 PW_PROJECT="${PW_PROJECT:-chromium}"
 PW_WORKERS="${PW_WORKERS:-1}"
+FULLSTACK_ALLOW_STATIC="${FULLSTACK_ALLOW_STATIC:-1}"
 
 echo "phase5_search_suggestions_integration_smoke: start"
 echo "ECM_UI_URL=${ECM_UI_URL}"
 echo "ECM_API_URL=${ECM_API_URL}"
 echo "KEYCLOAK_URL=${KEYCLOAK_URL} KEYCLOAK_REALM=${KEYCLOAK_REALM}"
 echo "PW_PROJECT=${PW_PROJECT} PW_WORKERS=${PW_WORKERS}"
+echo "FULLSTACK_ALLOW_STATIC=${FULLSTACK_ALLOW_STATIC}"
 
 case "${ECM_UI_URL}" in
   http://localhost:5500*|http://127.0.0.1:5500*)
@@ -37,6 +39,9 @@ curl -fsS --max-time 5 "${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/.well-known/ope
 
 echo "phase5_search_suggestions_integration_smoke: check UI reachable"
 curl -fsS --max-time 5 "${ECM_UI_URL}" >/dev/null
+
+echo "phase5_search_suggestions_integration_smoke: check e2e target"
+ALLOW_STATIC="${FULLSTACK_ALLOW_STATIC}" scripts/check-e2e-target.sh "${ECM_UI_URL}"
 
 if [[ ! -d "ecm-frontend" ]]; then
   echo "error: missing ecm-frontend/"

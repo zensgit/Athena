@@ -2,6 +2,7 @@
 
 ## Scope
 - Verify `scripts/phase5-phase6-delivery-gate.sh` full-stack UI auto-detect behavior.
+- Verify full-stack static-target policy switch (`ECM_FULLSTACK_ALLOW_STATIC`).
 - Confirm complete delivery gate remains green after change.
 
 ## Commands
@@ -34,6 +35,15 @@ ECM_E2E_PASSWORD=admin \
   - phase5 search suggestions integration smoke: `1 passed`
   - p1 smoke: `3 passed, 1 skipped`
 
+3. Strict full-stack policy (expect failure on static target)
+```bash
+ECM_FULLSTACK_ALLOW_STATIC=0 ./scripts/phase5-phase6-delivery-gate.sh
+```
+- Result: EXPECTED FAIL at full-stack smoke target check
+  - `detected_mode=static`
+  - exit with hint to use `ECM_UI_URL=http://localhost:3000` for branch-accurate E2E.
+
 ## Conclusion
 - Auto-detect logic works as designed.
-- Existing gate behavior and pass criteria remain intact.
+- Existing gate behavior remains intact by default (`ECM_FULLSTACK_ALLOW_STATIC=1`).
+- Strict mode is now available to enforce branch-accurate full-stack targets.

@@ -20,6 +20,11 @@
     2. `http://localhost`
   - fallback: `http://localhost`.
 - Emit log when auto-detected target is used.
+- Add configurable static-target policy for full-stack smoke:
+  - Gate env: `ECM_FULLSTACK_ALLOW_STATIC` (default `1`)
+  - Propagated to child scripts as `FULLSTACK_ALLOW_STATIC`
+  - Child scripts pass it to `check-e2e-target.sh` via `ALLOW_STATIC`
+  - `0` means strict mode (static target fails fast), `1` keeps compatibility.
 
 ## Non-Goals
 - No change to mocked gate target semantics.
