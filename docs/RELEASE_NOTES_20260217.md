@@ -24,8 +24,10 @@
 
 ### 3) 门禁脚本可用性增强
 - `scripts/phase5-regression.sh`
+  - 默认（`PHASE5_USE_EXISTING_UI=0`）会启动“独立临时静态 SPA 服务”（随机端口）并以该地址运行 mocked 回归，避免命中旧静态包。
   - 当 `ECM_UI_URL` 指向本地且不可达时，自动在目标端口启动静态 SPA 服务。
   - 不再仅限 `:5500`，支持自定义端口（如 `:5514`、`:5515`）。
+  - 如需复用现有 UI，可显式设置 `PHASE5_USE_EXISTING_UI=1`。
 - `scripts/phase5-phase6-delivery-gate.sh`
   - 当未显式设置 `ECM_UI_URL_FULLSTACK` 时，自动探测：
     1. `http://localhost:3000`
@@ -53,6 +55,7 @@
 - 不涉及后端接口契约破坏。
 - 现有登录流程保持兼容；新增 query reason 为向后兼容增强。
 - 门禁脚本行为仅在未显式传入 `ECM_UI_URL_FULLSTACK` 时采用自动探测，显式配置优先级不变。
+- `phase5-regression` 默认将优先使用临时独立静态服务进行 mocked 回归，减少本地端口污染导致的误报风险；可通过 `PHASE5_USE_EXISTING_UI=1` 关闭。
 
 ## 六、相关文档
 - `docs/PHASE5_AUTH_SESSION_RECOVERY_DESIGN_20260216.md`

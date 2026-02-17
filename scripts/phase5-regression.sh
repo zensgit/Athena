@@ -7,10 +7,12 @@ cd "$ROOT_DIR"
 ECM_UI_URL="${ECM_UI_URL:-http://localhost:5500}"
 PW_WORKERS="${PW_WORKERS:-1}"
 PW_PROJECT="${PW_PROJECT:-chromium}"
+PHASE5_USE_EXISTING_UI="${PHASE5_USE_EXISTING_UI:-0}"
 
 echo "phase5_regression: start"
 echo "ECM_UI_URL=${ECM_UI_URL}"
 echo "PW_PROJECT=${PW_PROJECT} PW_WORKERS=${PW_WORKERS}"
+echo "PHASE5_USE_EXISTING_UI=${PHASE5_USE_EXISTING_UI}"
 
 extract_host() {
   local url="$1"
@@ -30,6 +32,35 @@ extract_port() {
   else
     printf '80'
   fi
+}
+
+EFFECTIVE_ECM_UI_URL="${ECM_UI_URL}"
+srv_pid=""
+srv_log=""
+
+start_ephemeral_static_server() {
+  if ! command -v npx >/dev/null 2>&1; then
+    return 1
+  fi
+  srv_log="/tmp/phase5-regression.http.$$.$RANDOM.log"
+  npx serve -s build -l 0 >"${srv_log}" 2>&1 &
+  srv_pid=$!
+
+  local discovered_url=""
+  for _ in $(seq 1 60); do
+    if [[ -f "${srv_log}" ]]; then
+      discovered_url="$(sed -nE 's#.*(http://localhost:[0-9]+).*#\1#p' "${srv_log}" | tail -n 1)"
+    fi
+    if [[ -n "${discovered_url}" ]] && curl -fsS --max-time 1 "${discovered_url}" >/dev/null 2>&1; then
+      EFFECTIVE_ECM_UI_URL="${discovered_url}"
+      return 0
+    fi
+    if ! kill -0 "${srv_pid}" >/dev/null 2>&1; then
+      break
+    fi
+    sleep 0.25
+  done
+  return 1
 }
 
 # This gate is intentionally "mocked-first" so it can run without Docker/backend.
@@ -57,9 +88,22 @@ echo "phase5_regression: build frontend"
 npm run build
 
 echo "phase5_regression: ensure static server reachable"
-if ! curl -fsS --max-time 3 "${ECM_UI_URL}" >/dev/null 2>&1; then
-  ui_host="$(extract_host "${ECM_UI_URL}")"
-  ui_port="$(extract_port "${ECM_UI_URL}")"
+ui_host="$(extract_host "${ECM_UI_URL}")"
+ui_port="$(extract_port "${ECM_UI_URL}")"
+
+if [[ "${PHASE5_USE_EXISTING_UI}" != "1" ]] && [[ "${ui_host}" == "localhost" || "${ui_host}" == "127.0.0.1" ]]; then
+  echo "phase5_regression: starting dedicated static SPA server (ephemeral port)"
+  if ! start_ephemeral_static_server; then
+    echo "error: failed to start dedicated static SPA server"
+    if [[ -n "${srv_log}" && -f "${srv_log}" ]]; then
+      echo "phase5_regression: server log tail"
+      tail -n 40 "${srv_log}" || true
+    fi
+    exit 1
+  fi
+  trap 'if [[ -n "${srv_pid:-}" ]]; then kill "${srv_pid}" >/dev/null 2>&1 || true; fi' EXIT
+  echo "phase5_regression: using dedicated server ${EFFECTIVE_ECM_UI_URL}"
+elif ! curl -fsS --max-time 3 "${ECM_UI_URL}" >/dev/null 2>&1; then
   case "${ui_host}" in
     localhost|127.0.0.1)
       echo "phase5_regression: starting static SPA server on :${ui_port}"
@@ -71,7 +115,7 @@ if ! curl -fsS --max-time 3 "${ECM_UI_URL}" >/dev/null 2>&1; then
         python3 -m http.server "${ui_port}" --directory build >/tmp/phase5-regression.http.log 2>&1 &
         srv_pid=$!
       fi
-      trap 'kill "${srv_pid}" >/dev/null 2>&1 || true' EXIT
+      trap 'if [[ -n "${srv_pid:-}" ]]; then kill "${srv_pid}" >/dev/null 2>&1 || true; fi' EXIT
 
       for _ in $(seq 1 30); do
         if curl -fsS --max-time 1 "${ECM_UI_URL}" >/dev/null 2>&1; then
@@ -89,10 +133,10 @@ if ! curl -fsS --max-time 3 "${ECM_UI_URL}" >/dev/null 2>&1; then
 fi
 
 echo "phase5_regression: check e2e target"
-ALLOW_STATIC=1 ../scripts/check-e2e-target.sh "${ECM_UI_URL}" || true
+ALLOW_STATIC=1 ../scripts/check-e2e-target.sh "${EFFECTIVE_ECM_UI_URL}" || true
 
 echo "phase5_regression: run playwright specs"
-ECM_UI_URL="${ECM_UI_URL}" npx playwright test \
+ECM_UI_URL="${EFFECTIVE_ECM_UI_URL}" npx playwright test \
   "${PHASE5_SPECS[@]}" \
   --project="${PW_PROJECT}" --workers="${PW_WORKERS}"
 
