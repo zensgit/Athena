@@ -8,6 +8,7 @@
 ```bash
 ECM_UI_URL=http://localhost \
 ECM_API_URL=http://localhost:7700 \
+ECM_SYNC_PREBUILT_UI=auto \
 bash scripts/phase5-search-suggestions-integration-smoke.sh
 ```
 

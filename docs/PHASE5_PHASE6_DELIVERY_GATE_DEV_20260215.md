@@ -33,6 +33,7 @@ Provide one deterministic command that executes the highest-signal Phase 5 + Pha
   - `auto`: when full-stack target is local static proxy and prebuilt is stale, rebuild prebuilt UI
   - `1`: force rebuild prebuilt UI
   - `0`: skip prebuilt sync
+  - Note: gate performs one sync check and passes `ECM_SYNC_PREBUILT_UI=0` to child smoke scripts to avoid duplicate sync in the same run.
 
 ## Why This Helps
 - Reduces manual ordering mistakes during local delivery checks.

@@ -17,6 +17,7 @@ ECM_E2E_PASSWORD="${ECM_E2E_PASSWORD:-admin}"
 PW_PROJECT="${PW_PROJECT:-chromium}"
 PW_WORKERS="${PW_WORKERS:-1}"
 FULLSTACK_ALLOW_STATIC="${FULLSTACK_ALLOW_STATIC:-1}"
+ECM_SYNC_PREBUILT_UI="${ECM_SYNC_PREBUILT_UI:-auto}"
 
 echo "phase5_fullstack_smoke: start"
 echo "ECM_UI_URL=${ECM_UI_URL}"
@@ -24,6 +25,7 @@ echo "ECM_API_URL=${ECM_API_URL}"
 echo "KEYCLOAK_URL=${KEYCLOAK_URL} KEYCLOAK_REALM=${KEYCLOAK_REALM}"
 echo "PW_PROJECT=${PW_PROJECT} PW_WORKERS=${PW_WORKERS}"
 echo "FULLSTACK_ALLOW_STATIC=${FULLSTACK_ALLOW_STATIC}"
+echo "ECM_SYNC_PREBUILT_UI=${ECM_SYNC_PREBUILT_UI}"
 
 case "${ECM_UI_URL}" in
   http://localhost:5500*|http://127.0.0.1:5500*)
@@ -32,6 +34,10 @@ case "${ECM_UI_URL}" in
     exit 2
     ;;
 esac
+
+echo "phase5_fullstack_smoke: prebuilt sync check"
+ECM_SYNC_PREBUILT_UI="${ECM_SYNC_PREBUILT_UI}" \
+bash scripts/sync-prebuilt-frontend-if-needed.sh "${ECM_UI_URL}"
 
 echo "phase5_fullstack_smoke: check backend health"
 curl -fsS --max-time 5 "${ECM_API_URL}/actuator/health" >/dev/null

@@ -91,6 +91,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Gate prebuilt sync + route fallback smoke hardening
   - Design: `docs/PHASE61_GATE_PREBUILT_SYNC_AND_ROUTE_FALLBACK_SMOKE_DEV_20260218.md`
   - Verification: `docs/PHASE61_GATE_PREBUILT_SYNC_AND_ROUTE_FALLBACK_SMOKE_VERIFICATION_20260218.md`
+- Full-stack smoke prebuilt sync reuse
+  - Design: `docs/PHASE62_FULLSTACK_SMOKE_PREBUILT_SYNC_REUSE_DEV_20260218.md`
+  - Verification: `docs/PHASE62_FULLSTACK_SMOKE_PREBUILT_SYNC_REUSE_VERIFICATION_20260218.md`
 
 ## Permissions
 
@@ -227,6 +230,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - Phase 61: prebuilt sync + unknown-route smoke hardening
     - Dev: `docs/PHASE61_GATE_PREBUILT_SYNC_AND_ROUTE_FALLBACK_SMOKE_DEV_20260218.md`
     - Verification: `docs/PHASE61_GATE_PREBUILT_SYNC_AND_ROUTE_FALLBACK_SMOKE_VERIFICATION_20260218.md`
+  - Phase 62: standalone full-stack smoke prebuilt sync reuse
+    - Dev: `docs/PHASE62_FULLSTACK_SMOKE_PREBUILT_SYNC_REUSE_DEV_20260218.md`
+    - Verification: `docs/PHASE62_FULLSTACK_SMOKE_PREBUILT_SYNC_REUSE_VERIFICATION_20260218.md`
 - Weekly regression command rollup:
   - `docs/WEEKLY_REGRESSION_UPDATE_20260212.md`
 

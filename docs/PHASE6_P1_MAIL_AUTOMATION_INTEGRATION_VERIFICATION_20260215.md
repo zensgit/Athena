@@ -20,7 +20,8 @@ ECM_UI_URL=http://localhost ECM_API_URL=http://localhost:7700 npx playwright tes
 or (one-command wrapper):
 
 ```bash
-ECM_UI_URL=http://localhost bash scripts/phase6-mail-automation-integration-smoke.sh
+ECM_UI_URL=http://localhost ECM_SYNC_PREBUILT_UI=auto \
+  bash scripts/phase6-mail-automation-integration-smoke.sh
 ```
 
 ## Verified Scope

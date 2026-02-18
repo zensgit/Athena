@@ -49,92 +49,6 @@ resolve_fullstack_ui_url() {
   printf '%s' "http://localhost"
 }
 
-get_file_mtime_epoch() {
-  local target_file="$1"
-  if stat -f %m "${target_file}" >/dev/null 2>&1; then
-    stat -f %m "${target_file}"
-    return
-  fi
-  if stat -c %Y "${target_file}" >/dev/null 2>&1; then
-    stat -c %Y "${target_file}"
-    return
-  fi
-  printf '0'
-}
-
-is_local_static_proxy_target() {
-  local target="${1%/}"
-  case "${target}" in
-    http://localhost|http://localhost:80|http://127.0.0.1|http://127.0.0.1:80)
-      return 0
-      ;;
-    *)
-      return 1
-      ;;
-  esac
-}
-
-is_prebuilt_frontend_stale() {
-  local manifest_path="ecm-frontend/build/asset-manifest.json"
-  if [[ ! -f "${manifest_path}" ]]; then
-    return 0
-  fi
-
-  local source_epoch
-  local build_epoch
-  source_epoch="$(git log -1 --format=%ct -- \
-    ecm-frontend/src \
-    ecm-frontend/public \
-    ecm-frontend/package.json \
-    ecm-frontend/package-lock.json 2>/dev/null || echo 0)"
-  build_epoch="$(get_file_mtime_epoch "${manifest_path}")"
-
-  if ! [[ "${source_epoch}" =~ ^[0-9]+$ ]]; then
-    source_epoch=0
-  fi
-  if ! [[ "${build_epoch}" =~ ^[0-9]+$ ]]; then
-    build_epoch=0
-  fi
-
-  [[ "${build_epoch}" -lt "${source_epoch}" ]]
-}
-
-sync_prebuilt_frontend_if_needed() {
-  if ! is_local_static_proxy_target "${ECM_UI_URL_FULLSTACK}"; then
-    return
-  fi
-
-  case "${ECM_SYNC_PREBUILT_UI}" in
-    0|false|FALSE|no|NO)
-      echo "phase5_phase6_delivery_gate: skip prebuilt frontend sync (ECM_SYNC_PREBUILT_UI=${ECM_SYNC_PREBUILT_UI})"
-      return
-      ;;
-    1|true|TRUE|yes|YES)
-      echo "phase5_phase6_delivery_gate: force refresh prebuilt frontend"
-      bash scripts/rebuild-frontend-prebuilt.sh
-      return
-      ;;
-    auto|AUTO)
-      if is_prebuilt_frontend_stale; then
-        echo "phase5_phase6_delivery_gate: stale prebuilt frontend detected, rebuilding"
-        bash scripts/rebuild-frontend-prebuilt.sh
-      else
-        echo "phase5_phase6_delivery_gate: prebuilt frontend is up-to-date, skip rebuild"
-      fi
-      return
-      ;;
-    *)
-      echo "phase5_phase6_delivery_gate: unknown ECM_SYNC_PREBUILT_UI=${ECM_SYNC_PREBUILT_UI}, treating as auto"
-      if is_prebuilt_frontend_stale; then
-        echo "phase5_phase6_delivery_gate: stale prebuilt frontend detected, rebuilding"
-        bash scripts/rebuild-frontend-prebuilt.sh
-      else
-        echo "phase5_phase6_delivery_gate: prebuilt frontend is up-to-date, skip rebuild"
-      fi
-      ;;
-  esac
-}
-
 ECM_UI_URL_FULLSTACK="$(resolve_fullstack_ui_url)"
 
 echo "phase5_phase6_delivery_gate: start"
@@ -163,7 +77,8 @@ bash scripts/phase5-regression.sh
 
 echo ""
 echo "phase5_phase6_delivery_gate: full-stack prebuilt sync check"
-sync_prebuilt_frontend_if_needed
+ECM_SYNC_PREBUILT_UI="${ECM_SYNC_PREBUILT_UI}" \
+bash scripts/sync-prebuilt-frontend-if-needed.sh "${ECM_UI_URL_FULLSTACK}"
 
 echo ""
 echo "[2/5] full-stack admin smoke"
@@ -176,6 +91,7 @@ ECM_E2E_PASSWORD="${ECM_E2E_PASSWORD}" \
 PW_PROJECT="${PW_PROJECT}" \
 PW_WORKERS="${PW_WORKERS}" \
 FULLSTACK_ALLOW_STATIC="${ECM_FULLSTACK_ALLOW_STATIC}" \
+ECM_SYNC_PREBUILT_UI=0 \
 bash scripts/phase5-fullstack-smoke.sh
 
 echo ""
@@ -189,6 +105,7 @@ ECM_E2E_PASSWORD="${ECM_E2E_PASSWORD}" \
 PW_PROJECT="${PW_PROJECT}" \
 PW_WORKERS="${PW_WORKERS}" \
 FULLSTACK_ALLOW_STATIC="${ECM_FULLSTACK_ALLOW_STATIC}" \
+ECM_SYNC_PREBUILT_UI=0 \
 bash scripts/phase6-mail-automation-integration-smoke.sh
 
 echo ""
@@ -202,6 +119,7 @@ ECM_E2E_PASSWORD="${ECM_E2E_PASSWORD}" \
 PW_PROJECT="${PW_PROJECT}" \
 PW_WORKERS="${PW_WORKERS}" \
 FULLSTACK_ALLOW_STATIC="${ECM_FULLSTACK_ALLOW_STATIC}" \
+ECM_SYNC_PREBUILT_UI=0 \
 bash scripts/phase5-search-suggestions-integration-smoke.sh
 
 echo ""

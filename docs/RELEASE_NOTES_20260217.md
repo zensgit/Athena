@@ -10,6 +10,7 @@
   - Search spellcheck 精确查询降噪：文件名/ID 类查询跳过拼写建议请求。
   - 路由兜底增强：未知路径自动回退，避免空白页。
   - P1 smoke 覆盖增强：新增未知路径回退无白屏场景。
+  - Full-stack smoke 脚本增强：单独执行时复用 prebuilt 同步策略，减少旧静态包误测。
 
 ## 二、主要变更
 ### 1) 会话恢复与登录提示
@@ -86,6 +87,16 @@
   - 新增并稳定化未知路径回退用例：
     - 使用 `expect.poll(() => page.url())` 断言 SPA 同文档路由跳转，避免 `waitForURL` 在某些 same-document 场景下超时误判。
 
+### 7) Standalone full-stack smoke 同步策略复用
+- 新增共享脚本 `scripts/sync-prebuilt-frontend-if-needed.sh`：
+  - 统一 `ECM_SYNC_PREBUILT_UI` 策略（`auto/1/0`）与 prebuilt 新鲜度判定逻辑。
+- `scripts/phase5-fullstack-smoke.sh`
+- `scripts/phase6-mail-automation-integration-smoke.sh`
+- `scripts/phase5-search-suggestions-integration-smoke.sh`
+  - 三个脚本在单独执行时可自动复用 prebuilt 同步策略，避免仅在 delivery gate 内生效。
+- `scripts/phase5-phase6-delivery-gate.sh`
+  - 继续在 gate 内统一做一次 prebuilt 同步，并在子脚本调用时透传 `ECM_SYNC_PREBUILT_UI=0`，避免重复同步。
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -123,3 +134,5 @@
 - `docs/VERIFICATION_ROUTE_FALLBACK_NO_BLANK_PAGE_20260218.md`
 - `docs/PHASE61_GATE_PREBUILT_SYNC_AND_ROUTE_FALLBACK_SMOKE_DEV_20260218.md`
 - `docs/PHASE61_GATE_PREBUILT_SYNC_AND_ROUTE_FALLBACK_SMOKE_VERIFICATION_20260218.md`
+- `docs/PHASE62_FULLSTACK_SMOKE_PREBUILT_SYNC_REUSE_DEV_20260218.md`
+- `docs/PHASE62_FULLSTACK_SMOKE_PREBUILT_SYNC_REUSE_VERIFICATION_20260218.md`

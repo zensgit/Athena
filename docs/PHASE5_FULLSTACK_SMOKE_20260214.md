@@ -46,6 +46,10 @@ bash scripts/phase5-fullstack-smoke.sh
 - `ECM_E2E_USERNAME` / `ECM_E2E_PASSWORD` (default `admin` / `admin`)
 - `PW_PROJECT` (default `chromium`)
 - `PW_WORKERS` (default `1`)
+- `ECM_SYNC_PREBUILT_UI` (default `auto`)
+  - `auto`: when target is local static proxy and prebuilt is stale, auto rebuild prebuilt UI
+  - `1`: force prebuilt rebuild
+  - `0`: skip prebuilt sync
 
 Example:
 
