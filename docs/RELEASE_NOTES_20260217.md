@@ -18,6 +18,9 @@
 - 新增 `ecm-frontend/e2e/auth-session-recovery.mock.spec.ts`：
   - 覆盖查询触发 `401`（初次+重试）后回到登录页。
   - 校验登录页展示 “Your session expired. Please sign in again.”
+- 新增 `ecm-frontend/e2e/settings-session-actions.mock.spec.ts`：
+  - 覆盖 Settings 页会话工具动作（复制 token / 复制 header / 刷新 token）与提示信息。
+  - 校验复制内容准确写入剪贴板（mocked clipboard）。
 - 增补前端单元测试：
   - `authService` 刷新失败分类与行为覆盖。
   - `api` 401 重试与失效标记覆盖。
@@ -71,7 +74,7 @@
 - 前端 build：通过
 - 新增 auth session recovery Playwright：通过
 - `phase5-phase6-delivery-gate.sh`：通过
-  - mocked gate：11 passed
+  - mocked gate：12 passed
   - full-stack admin smoke：1 passed
   - phase6 mail integration smoke：1 passed
   - phase5 search suggestions integration smoke：1 passed
@@ -91,3 +94,5 @@
 - `docs/VERIFICATION_PHASE5_PHASE6_GATE_FULLSTACK_TARGET_AUTODETECT_20260217.md`
 - `docs/PHASE59_SPELLCHECK_FILENAME_GUARD_DEV_20260217.md`
 - `docs/PHASE59_SPELLCHECK_FILENAME_GUARD_VERIFICATION_20260217.md`
+- `docs/DESIGN_SETTINGS_SESSION_ACTIONS_MOCKED_20260218.md`
+- `docs/VERIFICATION_SETTINGS_SESSION_ACTIONS_MOCKED_20260218.md`

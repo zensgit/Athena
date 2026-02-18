@@ -82,6 +82,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Phase 5/6 hardening: 401 retry + session-expiry handoff
   - Dev: `docs/PHASE60_AUTH_SESSION_RECOVERY_DEV_20260216.md`
   - Verification: `docs/PHASE60_AUTH_SESSION_RECOVERY_VERIFICATION_20260216.md`
+- Settings session actions mocked regression coverage
+  - Design: `docs/DESIGN_SETTINGS_SESSION_ACTIONS_MOCKED_20260218.md`
+  - Verification: `docs/VERIFICATION_SETTINGS_SESSION_ACTIONS_MOCKED_20260218.md`
 
 ## Permissions
 

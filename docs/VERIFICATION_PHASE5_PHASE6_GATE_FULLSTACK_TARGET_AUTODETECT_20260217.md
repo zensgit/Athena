@@ -29,7 +29,7 @@ ECM_E2E_PASSWORD=admin \
 - Observed output includes auto-detect notice:
   - `ECM_UI_URL_FULLSTACK auto-detected (set ECM_UI_URL_FULLSTACK to override)`
 - Gate stages:
-  - mocked regression gate: `11 passed`
+  - mocked regression gate: `12 passed`
   - full-stack admin smoke: `1 passed`
   - phase6 mail integration smoke: `1 passed`
   - phase5 search suggestions integration smoke: `1 passed`
