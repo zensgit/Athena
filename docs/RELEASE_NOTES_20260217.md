@@ -7,6 +7,7 @@
   - Phase5 回归脚本增强：支持自定义本地端口自动拉起静态 SPA 服务。
   - Phase5+Phase6 交付门禁增强：full-stack UI 目标自动探测，优先开发态 `:3000`。
   - Search spellcheck 精确查询降噪：文件名/ID 类查询跳过拼写建议请求。
+  - 路由兜底增强：未知路径自动回退，避免空白页。
 
 ## 二、主要变更
 ### 1) 会话恢复与登录提示
@@ -63,6 +64,12 @@
   - 增加“文件名查询不展示拼写建议提示”的 full-stack smoke 场景。
   - 支持可选强校验：`ECM_E2E_ASSERT_SPELLCHECK_SKIP=1` 时断言零 spellcheck 请求。
 
+### 5) 路由空白页防护
+- `ecm-frontend/src/App.tsx`
+  - 新增通配路由 `path="*"`，统一回退到 `/`（再按现有认证逻辑进入 `/browse/root` 或 `/login`）。
+- `ecm-frontend/src/App.test.tsx`
+  - 新增未知路径回退测试，确保不出现空白渲染。
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -96,3 +103,5 @@
 - `docs/PHASE59_SPELLCHECK_FILENAME_GUARD_VERIFICATION_20260217.md`
 - `docs/DESIGN_SETTINGS_SESSION_ACTIONS_MOCKED_20260218.md`
 - `docs/VERIFICATION_SETTINGS_SESSION_ACTIONS_MOCKED_20260218.md`
+- `docs/DESIGN_ROUTE_FALLBACK_NO_BLANK_PAGE_20260218.md`
+- `docs/VERIFICATION_ROUTE_FALLBACK_NO_BLANK_PAGE_20260218.md`

@@ -85,6 +85,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Settings session actions mocked regression coverage
   - Design: `docs/DESIGN_SETTINGS_SESSION_ACTIONS_MOCKED_20260218.md`
   - Verification: `docs/VERIFICATION_SETTINGS_SESSION_ACTIONS_MOCKED_20260218.md`
+- Route fallback guard (unknown path -> no blank page)
+  - Design: `docs/DESIGN_ROUTE_FALLBACK_NO_BLANK_PAGE_20260218.md`
+  - Verification: `docs/VERIFICATION_ROUTE_FALLBACK_NO_BLANK_PAGE_20260218.md`
 
 ## Permissions
 

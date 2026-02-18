@@ -280,6 +280,7 @@ const App: React.FC = () => {
                 </PrivateRoute>
               }
             />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
 
           {/* Global Dialogs - Must be inside Router for useNavigate */}

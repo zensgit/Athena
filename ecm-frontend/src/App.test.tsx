@@ -33,3 +33,16 @@ test('renders unauthorized page copy', async () => {
   expect(await screen.findByRole('heading', { name: 'Unauthorized' })).toBeTruthy();
   expect(screen.getByText('You do not have permission to access this page.')).toBeTruthy();
 });
+
+test('unknown route falls back to login instead of blank page', async () => {
+  window.history.pushState({}, 'Unknown', '/definitely-not-a-real-route');
+
+  render(
+    <Provider store={store}>
+      <App />
+    </Provider>
+  );
+
+  expect(await screen.findByRole('heading', { name: 'Athena ECM' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Sign in with Keycloak' })).toBeTruthy();
+});
