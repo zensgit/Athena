@@ -94,6 +94,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Full-stack smoke prebuilt sync reuse
   - Design: `docs/PHASE62_FULLSTACK_SMOKE_PREBUILT_SYNC_REUSE_DEV_20260218.md`
   - Verification: `docs/PHASE62_FULLSTACK_SMOKE_PREBUILT_SYNC_REUSE_VERIFICATION_20260218.md`
+- Preview status unsupported matching for MIME parameters
+  - Design: `docs/PHASE63_PREVIEW_STATUS_MIME_PARAMETER_UNSUPPORTED_DEV_20260218.md`
+  - Verification: `docs/PHASE63_PREVIEW_STATUS_MIME_PARAMETER_UNSUPPORTED_VERIFICATION_20260218.md`
 
 ## Permissions
 
@@ -233,6 +236,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - Phase 62: standalone full-stack smoke prebuilt sync reuse
     - Dev: `docs/PHASE62_FULLSTACK_SMOKE_PREBUILT_SYNC_REUSE_DEV_20260218.md`
     - Verification: `docs/PHASE62_FULLSTACK_SMOKE_PREBUILT_SYNC_REUSE_VERIFICATION_20260218.md`
+  - Phase 63: preview status unsupported matching for MIME parameters
+    - Dev: `docs/PHASE63_PREVIEW_STATUS_MIME_PARAMETER_UNSUPPORTED_DEV_20260218.md`
+    - Verification: `docs/PHASE63_PREVIEW_STATUS_MIME_PARAMETER_UNSUPPORTED_VERIFICATION_20260218.md`
 - Weekly regression command rollup:
   - `docs/WEEKLY_REGRESSION_UPDATE_20260212.md`
 

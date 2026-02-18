@@ -228,6 +228,7 @@ class SearchAclElasticsearchTest {
         UUID pendingId = UUID.randomUUID();
         UUID failedId = UUID.randomUUID();
         UUID failedOctetId = UUID.randomUUID();
+        UUID failedOctetWithParamsId = UUID.randomUUID();
         UUID unsupportedId = UUID.randomUUID();
 
         NodeDocument pendingDoc = NodeDocument.builder()
@@ -262,6 +263,18 @@ class SearchAclElasticsearchTest {
             .deleted(false)
             .build();
 
+        // Simulate a stale/legacy unsupported failure with MIME parameters.
+        NodeDocument failedOctetWithParamsDoc = NodeDocument.builder()
+            .id(failedOctetWithParamsId.toString())
+            .name("doc-failed-octet-params")
+            .nameSort("doc-failed-octet-params")
+            .nodeType(NodeType.DOCUMENT)
+            .mimeType("application/octet-stream; charset=binary")
+            .previewStatus("FAILED")
+            .previewFailureReason("conversion failed for unsupported stream")
+            .deleted(false)
+            .build();
+
         NodeDocument unsupportedDoc = NodeDocument.builder()
             .id(unsupportedId.toString())
             .name("doc-unsupported")
@@ -273,7 +286,7 @@ class SearchAclElasticsearchTest {
             .deleted(false)
             .build();
 
-        indexDocuments(pendingDoc, failedDoc, failedOctetDoc, unsupportedDoc);
+        indexDocuments(pendingDoc, failedDoc, failedOctetDoc, failedOctetWithParamsDoc, unsupportedDoc);
 
         var pendingResults = fullTextSearchService.search(
             "",
@@ -311,7 +324,7 @@ class SearchAclElasticsearchTest {
             true,
             List.of("UNSUPPORTED")
         );
-        assertEquals(2, unsupportedResults.getTotalElements());
+        assertEquals(3, unsupportedResults.getTotalElements());
     }
 
     @Test
@@ -356,6 +369,72 @@ class SearchAclElasticsearchTest {
         assertEquals(1, response.getTotalHits());
         assertEquals(1, response.getResults().getTotalElements());
         assertEquals(unsupportedId.toString(), response.getResults().getContent().get(0).getId());
+    }
+
+    @Test
+    @DisplayName("Preview status facet treats octet-stream with parameters as UNSUPPORTED")
+    void facetedSearchPreviewStatusFacetTreatsOctetStreamWithParametersAsUnsupported() {
+        Mockito.when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+
+        NodeDocument retryableFailedDoc = NodeDocument.builder()
+            .id(UUID.randomUUID().toString())
+            .name("doc-failed-retryable")
+            .nameSort("doc-failed-retryable")
+            .nodeType(NodeType.DOCUMENT)
+            .mimeType("application/pdf")
+            .previewStatus("FAILED")
+            .previewFailureReason("timeout")
+            .deleted(false)
+            .build();
+
+        NodeDocument legacyUnsupportedDoc = NodeDocument.builder()
+            .id(UUID.randomUUID().toString())
+            .name("doc-failed-octet-params")
+            .nameSort("doc-failed-octet-params")
+            .nodeType(NodeType.DOCUMENT)
+            .mimeType("application/octet-stream; charset=binary")
+            .previewStatus("FAILED")
+            .previewFailureReason("conversion failed for unsupported stream")
+            .deleted(false)
+            .build();
+
+        NodeDocument unsupportedDoc = NodeDocument.builder()
+            .id(UUID.randomUUID().toString())
+            .name("doc-unsupported")
+            .nameSort("doc-unsupported")
+            .nodeType(NodeType.DOCUMENT)
+            .mimeType("application/octet-stream")
+            .previewStatus("UNSUPPORTED")
+            .previewFailureReason("Preview not supported for mime type: application/octet-stream")
+            .deleted(false)
+            .build();
+
+        indexDocuments(retryableFailedDoc, legacyUnsupportedDoc, unsupportedDoc);
+
+        FacetedSearchService.FacetedSearchRequest request = new FacetedSearchService.FacetedSearchRequest();
+        request.setFacetFields(List.of("previewStatus"));
+
+        FacetedSearchService.FacetedSearchResponse response = facetedSearchService.search(request);
+
+        Map<String, List<FacetedSearchService.FacetValue>> facets = response.getFacets();
+        assertNotNull(facets.get("previewStatus"));
+        assertEquals(1, facetCount(facets, "previewStatus", "FAILED"));
+        assertEquals(2, facetCount(facets, "previewStatus", "UNSUPPORTED"));
+    }
+
+    private int facetCount(
+        Map<String, List<FacetedSearchService.FacetValue>> facets,
+        String field,
+        String value
+    ) {
+        if (facets == null || facets.get(field) == null) {
+            return 0;
+        }
+        return facets.get(field).stream()
+            .filter(item -> value.equals(item.getValue()))
+            .map(FacetedSearchService.FacetValue::getCount)
+            .findFirst()
+            .orElse(0);
     }
 
     private void indexDocuments(NodeDocument... docs) {

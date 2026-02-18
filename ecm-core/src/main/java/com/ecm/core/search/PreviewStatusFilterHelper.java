@@ -165,8 +165,14 @@ final class PreviewStatusFilterHelper {
         return query.bool(signal -> {
             for (String mimeType : UNSUPPORTED_MIME_TYPES) {
                 signal.should(s -> s.term(t -> t.field("mimeType").value(mimeType)));
+                // Handle legacy/variant values that append parameters, e.g. "application/octet-stream; charset=binary".
+                signal.should(s -> s.wildcard(w -> w
+                    .field("mimeType")
+                    .value(mimeType + ";*")
+                ));
             }
             for (String phrase : UNSUPPORTED_REASON_PHRASES) {
+                signal.should(s -> s.matchPhrase(mp -> mp.field("previewFailureReason").query(phrase)));
                 signal.should(s -> s.match(m -> m.field("previewFailureReason").query(phrase)));
             }
             signal.minimumShouldMatch("1");

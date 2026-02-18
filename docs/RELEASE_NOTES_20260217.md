@@ -11,6 +11,7 @@
   - 路由兜底增强：未知路径自动回退，避免空白页。
   - P1 smoke 覆盖增强：新增未知路径回退无白屏场景。
   - Full-stack smoke 脚本增强：单独执行时复用 prebuilt 同步策略，减少旧静态包误测。
+  - Preview 状态统计一致性增强：带参数的 `application/octet-stream;...` 归类为 unsupported，避免误计入 failed。
 
 ## 二、主要变更
 ### 1) 会话恢复与登录提示
@@ -97,6 +98,17 @@
 - `scripts/phase5-phase6-delivery-gate.sh`
   - 继续在 gate 内统一做一次 prebuilt 同步，并在子脚本调用时透传 `ECM_SYNC_PREBUILT_UI=0`，避免重复同步。
 
+### 8) Preview 状态过滤/分面：MIME 参数兼容
+- `ecm-core/src/main/java/com/ecm/core/search/PreviewStatusFilterHelper.java`
+  - unsupported 信号匹配增强：
+    - 对 `mimeType` 保留精确匹配，并新增 `;*` 后缀通配匹配（兼容 `application/octet-stream; charset=...`）
+    - unsupported reason 增加 `match_phrase` 辅助匹配，降低分词偏差影响
+- `ecm-core/src/test/java/com/ecm/core/search/SearchAclElasticsearchTest.java`
+  - 增补回归覆盖：
+    - `FAILED` 过滤不应包含 parameterized octet-stream 旧数据
+    - `UNSUPPORTED` 过滤应包含 parameterized octet-stream 旧数据
+    - previewStatus facets 计数应将 parameterized octet-stream 归类到 `UNSUPPORTED`
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -136,3 +148,5 @@
 - `docs/PHASE61_GATE_PREBUILT_SYNC_AND_ROUTE_FALLBACK_SMOKE_VERIFICATION_20260218.md`
 - `docs/PHASE62_FULLSTACK_SMOKE_PREBUILT_SYNC_REUSE_DEV_20260218.md`
 - `docs/PHASE62_FULLSTACK_SMOKE_PREBUILT_SYNC_REUSE_VERIFICATION_20260218.md`
+- `docs/PHASE63_PREVIEW_STATUS_MIME_PARAMETER_UNSUPPORTED_DEV_20260218.md`
+- `docs/PHASE63_PREVIEW_STATUS_MIME_PARAMETER_UNSUPPORTED_VERIFICATION_20260218.md`
