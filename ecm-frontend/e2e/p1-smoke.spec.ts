@@ -70,6 +70,23 @@ test('P1 smoke: app error fallback can return to login', async ({ page, request 
   await expect(page.getByRole('button', { name: /sign in with keycloak/i })).toBeVisible({ timeout: 30_000 });
 });
 
+test('P1 smoke: unknown route falls back without blank page', async ({ page, request }) => {
+  await waitForApiReady(request);
+  await page.goto('/login', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('heading', { name: /Athena ECM/i })).toBeVisible({ timeout: 60_000 });
+
+  const unknownPath = `/unknown-route-${Date.now()}`;
+  await page.evaluate((path) => {
+    window.history.pushState({}, 'Unknown Route', path);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }, unknownPath);
+
+  await expect
+    .poll(() => page.url(), { timeout: 60_000 })
+    .toMatch(/(\/browse\/|\/login($|[?#]))/);
+  await expect(page.getByText('Athena ECM')).toBeVisible({ timeout: 60_000 });
+});
+
 async function loginWithCredentials(page: Page, username: string, password: string, token?: string) {
   const forceUiLogin = process.env.ECM_E2E_FORCE_UI_LOGIN === '1';
   if (!forceUiLogin) {

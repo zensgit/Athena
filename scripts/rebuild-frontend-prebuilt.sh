@@ -10,6 +10,9 @@ set -euo pipefail
 #
 # Usage:
 #   ./scripts/rebuild-frontend-prebuilt.sh
+#
+# Optional env:
+#   FRONTEND_REBUILD_WITH_DEPS=1  # also rebuild/start dependent services
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -36,6 +39,8 @@ docker_compose() {
   fi
 }
 
+FRONTEND_REBUILD_WITH_DEPS="${FRONTEND_REBUILD_WITH_DEPS:-0}"
+
 echo "== Building frontend static assets (ecm-frontend/build) =="
 cd "${FRONTEND_DIR}"
 if [[ ! -d node_modules ]]; then
@@ -49,7 +54,11 @@ npm run build
 
 cd "${REPO_ROOT}"
 echo "== Rebuilding/restarting ecm-frontend container =="
-docker_compose up -d --build ecm-frontend
+if [[ "${FRONTEND_REBUILD_WITH_DEPS}" == "1" ]]; then
+  docker_compose up -d --build ecm-frontend
+else
+  docker_compose up -d --no-deps --build ecm-frontend
+fi
 
 echo "OK"
 echo "Frontend: http://localhost:${ECM_FRONTEND_PORT:-3000}/"

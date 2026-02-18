@@ -88,6 +88,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Route fallback guard (unknown path -> no blank page)
   - Design: `docs/DESIGN_ROUTE_FALLBACK_NO_BLANK_PAGE_20260218.md`
   - Verification: `docs/VERIFICATION_ROUTE_FALLBACK_NO_BLANK_PAGE_20260218.md`
+- Gate prebuilt sync + route fallback smoke hardening
+  - Design: `docs/PHASE61_GATE_PREBUILT_SYNC_AND_ROUTE_FALLBACK_SMOKE_DEV_20260218.md`
+  - Verification: `docs/PHASE61_GATE_PREBUILT_SYNC_AND_ROUTE_FALLBACK_SMOKE_VERIFICATION_20260218.md`
 
 ## Permissions
 
@@ -221,6 +224,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
     - Dev: `docs/PHASE5_PHASE6_DELIVERY_GATE_DEV_20260215.md`
     - Verification: `docs/PHASE5_PHASE6_DELIVERY_GATE_VERIFICATION_20260215.md`
     - Script: `scripts/phase5-phase6-delivery-gate.sh`
+  - Phase 61: prebuilt sync + unknown-route smoke hardening
+    - Dev: `docs/PHASE61_GATE_PREBUILT_SYNC_AND_ROUTE_FALLBACK_SMOKE_DEV_20260218.md`
+    - Verification: `docs/PHASE61_GATE_PREBUILT_SYNC_AND_ROUTE_FALLBACK_SMOKE_VERIFICATION_20260218.md`
 - Weekly regression command rollup:
   - `docs/WEEKLY_REGRESSION_UPDATE_20260212.md`
 

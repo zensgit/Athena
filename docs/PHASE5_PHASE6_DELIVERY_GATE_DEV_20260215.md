@@ -15,10 +15,11 @@ Provide one deterministic command that executes the highest-signal Phase 5 + Pha
 - Added `scripts/phase5-phase6-delivery-gate.sh`.
 - Script orchestration order:
   1. `scripts/phase5-regression.sh`
-  2. `scripts/phase5-fullstack-smoke.sh`
-  3. `scripts/phase6-mail-automation-integration-smoke.sh`
-  4. `scripts/phase5-search-suggestions-integration-smoke.sh`
-  5. `ecm-frontend/e2e/p1-smoke.spec.ts`
+  2. (optional, policy-driven) prebuilt frontend sync for static full-stack target
+  3. `scripts/phase5-fullstack-smoke.sh`
+  4. `scripts/phase6-mail-automation-integration-smoke.sh`
+  5. `scripts/phase5-search-suggestions-integration-smoke.sh`
+  6. `ecm-frontend/e2e/p1-smoke.spec.ts`
 
 ## Environment Inputs
 - `ECM_UI_URL_MOCKED` (default `http://localhost:5500`)
@@ -28,6 +29,10 @@ Provide one deterministic command that executes the highest-signal Phase 5 + Pha
 - `KEYCLOAK_REALM` (default `ecm`)
 - `ECM_E2E_USERNAME` / `ECM_E2E_PASSWORD` (default `admin` / `admin`)
 - `PW_PROJECT` / `PW_WORKERS` (default `chromium` / `1`)
+- `ECM_SYNC_PREBUILT_UI` (default `auto`)
+  - `auto`: when full-stack target is local static proxy and prebuilt is stale, rebuild prebuilt UI
+  - `1`: force rebuild prebuilt UI
+  - `0`: skip prebuilt sync
 
 ## Why This Helps
 - Reduces manual ordering mistakes during local delivery checks.

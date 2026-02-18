@@ -6,8 +6,10 @@
   - 新增 Auth Session Recovery 的 Playwright 回归覆盖。
   - Phase5 回归脚本增强：支持自定义本地端口自动拉起静态 SPA 服务。
   - Phase5+Phase6 交付门禁增强：full-stack UI 目标自动探测，优先开发态 `:3000`。
+  - Phase5+Phase6 交付门禁增强：静态 full-stack 目标支持 prebuilt 自动同步（可配置）。
   - Search spellcheck 精确查询降噪：文件名/ID 类查询跳过拼写建议请求。
   - 路由兜底增强：未知路径自动回退，避免空白页。
+  - P1 smoke 覆盖增强：新增未知路径回退无白屏场景。
 
 ## 二、主要变更
 ### 1) 会话恢复与登录提示
@@ -70,6 +72,20 @@
 - `ecm-frontend/src/App.test.tsx`
   - 新增未知路径回退测试，确保不出现空白渲染。
 
+### 6) Full-stack 预构建同步与 P1 回归稳定性
+- `scripts/phase5-phase6-delivery-gate.sh`
+  - 新增 `ECM_SYNC_PREBUILT_UI`（默认 `auto`）：
+    - `auto`：当 full-stack 目标为本地静态代理（`http://localhost`）且 prebuilt 落后于源码时，自动触发 prebuilt 重建。
+    - `1`：强制重建 prebuilt。
+    - `0`：跳过 prebuilt 同步。
+  - 新增 prebuilt 新鲜度判断：以 `ecm-frontend/build/asset-manifest.json` 修改时间与前端源码最新提交时间比较。
+- `scripts/rebuild-frontend-prebuilt.sh`
+  - 默认改为 `--no-deps`，仅重建/重启 `ecm-frontend`，避免误触发 `ecm-core` 等依赖服务重建。
+  - 保留 `FRONTEND_REBUILD_WITH_DEPS=1` 作为显式全依赖重建开关。
+- `ecm-frontend/e2e/p1-smoke.spec.ts`
+  - 新增并稳定化未知路径回退用例：
+    - 使用 `expect.poll(() => page.url())` 断言 SPA 同文档路由跳转，避免 `waitForURL` 在某些 same-document 场景下超时误判。
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -85,7 +101,7 @@
   - full-stack admin smoke：1 passed
   - phase6 mail integration smoke：1 passed
   - phase5 search suggestions integration smoke：1 passed
-  - p1 smoke：4 passed，1 skipped（可选 mail preview-run 场景）
+  - p1 smoke：5 passed，1 skipped（可选 mail preview-run 场景）
 
 ## 五、影响与兼容性
 - 不涉及后端接口契约破坏。
@@ -105,3 +121,5 @@
 - `docs/VERIFICATION_SETTINGS_SESSION_ACTIONS_MOCKED_20260218.md`
 - `docs/DESIGN_ROUTE_FALLBACK_NO_BLANK_PAGE_20260218.md`
 - `docs/VERIFICATION_ROUTE_FALLBACK_NO_BLANK_PAGE_20260218.md`
+- `docs/PHASE61_GATE_PREBUILT_SYNC_AND_ROUTE_FALLBACK_SMOKE_DEV_20260218.md`
+- `docs/PHASE61_GATE_PREBUILT_SYNC_AND_ROUTE_FALLBACK_SMOKE_VERIFICATION_20260218.md`
