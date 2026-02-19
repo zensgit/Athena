@@ -92,16 +92,28 @@
   - `docs/PHASE72_FAILURE_INJECTION_COVERAGE_DEV_20260219.md`
   - `docs/PHASE72_FAILURE_INJECTION_COVERAGE_VERIFICATION_20260219.md`
 
-## Day 7: Release Closure
+## Day 7 (Completed): Release Closure
 - Scope:
   - Consolidate release notes, docs index, and a single verification rollup.
   - Ensure all newly added docs are linked and searchable.
 - Deliverables:
-  - release summary MD
-  - verification rollup MD
+  - `docs/PHASE73_AUTH_SEARCH_RECOVERY_RELEASE_SUMMARY_20260219.md`
+  - `docs/PHASE73_AUTH_SEARCH_RECOVERY_VERIFICATION_ROLLUP_20260219.md`
 
-## Exit Criteria
+## Exit Criteria (Status)
 1. All new/updated tests pass (unit + mocked regression + delivery gate).
 2. No unknown-route blank screen regressions.
 3. Search failure flows consistently expose recovery actions.
 4. Auth recovery debug tooling is discoverable and controlled via UI.
+
+### Closure Check
+- 1) Met:
+  - Unit: `authService.test.ts`, `api.test.ts` pass.
+  - Mocked E2E: auth/session + search recovery specs pass.
+  - Gate: `DELIVERY_GATE_MODE=all` and `DELIVERY_GATE_MODE=mocked` pass.
+- 2) Met:
+  - Unknown-route fallback covered by Day4 matrix and prior P1 smoke.
+- 3) Met:
+  - Search error mapping + retry/back actions + temporary failure retry recovery covered.
+- 4) Met:
+  - Settings debug toggle delivered with mocked regression coverage.

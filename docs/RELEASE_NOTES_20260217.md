@@ -21,6 +21,7 @@
   - Auth/Route 回归矩阵增强：新增 session-expired、redirect-pause、unknown-route、Keycloak terminal redirect 的独立 E2E 矩阵与 smoke 脚本。
   - Delivery gate 分层增强：新增 `DELIVERY_GATE_MODE`（all/mocked/integration）与失败摘要输出，提升 CI 可诊断性。
   - Failure-injection 覆盖增强：补齐 auth transient/terminal 与 search temporary-failure->retry-success 场景。
+  - 7-day 收尾文档增强：新增统一 release summary 与 verification rollup 文档。
 
 ## 二、主要变更
 ### 1) 会话恢复与登录提示
@@ -223,6 +224,14 @@
 - `ecm-frontend/e2e/search-suggestions-save-search.mock.spec.ts`
   - 新增 temporary `503` -> 点击 `Retry` -> 查询恢复成功场景。
 
+### 18) 7-day 交付收尾文档（Phase73）
+- 新增 `docs/PHASE73_AUTH_SEARCH_RECOVERY_RELEASE_SUMMARY_20260219.md`
+  - 汇总 Day1-Day7 交付内容与关键提交。
+- 新增 `docs/PHASE73_AUTH_SEARCH_RECOVERY_VERIFICATION_ROLLUP_20260219.md`
+  - 汇总 Day4-Day6 关键验证命令与结果（含正向/受控失败验证）。
+- `docs/NEXT_7DAY_PLAN_AUTH_SEARCH_RECOVERY_20260219.md`
+  - Day7 标记完成并补充 exit criteria closure check。
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -282,3 +291,5 @@
 - `docs/PHASE71_REGRESSION_GATE_LAYERING_VERIFICATION_20260219.md`
 - `docs/PHASE72_FAILURE_INJECTION_COVERAGE_DEV_20260219.md`
 - `docs/PHASE72_FAILURE_INJECTION_COVERAGE_VERIFICATION_20260219.md`
+- `docs/PHASE73_AUTH_SEARCH_RECOVERY_RELEASE_SUMMARY_20260219.md`
+- `docs/PHASE73_AUTH_SEARCH_RECOVERY_VERIFICATION_ROLLUP_20260219.md`

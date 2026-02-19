@@ -17,6 +17,8 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Phase 4 plan: `docs/NEXT_7DAY_PLAN_PHASE4_20260213.md`
 - Phase 5 plan: `docs/NEXT_7DAY_PLAN_PHASE5_20260213.md`
 - Auth/Search recovery follow-up plan: `docs/NEXT_7DAY_PLAN_AUTH_SEARCH_RECOVERY_20260219.md`
+- Auth/Search recovery 7-day release summary: `docs/PHASE73_AUTH_SEARCH_RECOVERY_RELEASE_SUMMARY_20260219.md`
+- Auth/Search recovery verification rollup: `docs/PHASE73_AUTH_SEARCH_RECOVERY_VERIFICATION_ROLLUP_20260219.md`
 - Phase 5/6 one-command delivery gate:
   - Dev: `docs/PHASE5_PHASE6_DELIVERY_GATE_DEV_20260215.md`
   - Verification: `docs/PHASE5_PHASE6_DELIVERY_GATE_VERIFICATION_20260215.md`
