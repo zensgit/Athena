@@ -107,6 +107,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Settings auth recovery debug toggle
   - Design: `docs/PHASE67_SETTINGS_AUTH_RECOVERY_DEBUG_TOGGLE_DEV_20260219.md`
   - Verification: `docs/PHASE67_SETTINGS_AUTH_RECOVERY_DEBUG_TOGGLE_VERIFICATION_20260219.md`
+- Auth/route deterministic matrix coverage
+  - Design: `docs/PHASE70_AUTH_ROUTE_E2E_MATRIX_DEV_20260219.md`
+  - Verification: `docs/PHASE70_AUTH_ROUTE_E2E_MATRIX_VERIFICATION_20260219.md`
 
 ## Permissions
 
@@ -276,6 +279,10 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - Phase 69: preview failure operator loop
     - Dev: `docs/PHASE69_PREVIEW_FAILURE_OPERATOR_LOOP_DEV_20260219.md`
     - Verification: `docs/PHASE69_PREVIEW_FAILURE_OPERATOR_LOOP_VERIFICATION_20260219.md`
+  - Phase 70: auth/route matrix smoke
+    - Dev: `docs/PHASE70_AUTH_ROUTE_E2E_MATRIX_DEV_20260219.md`
+    - Verification: `docs/PHASE70_AUTH_ROUTE_E2E_MATRIX_VERIFICATION_20260219.md`
+    - Script: `scripts/phase70-auth-route-matrix-smoke.sh`
 - Weekly regression command rollup:
   - `docs/WEEKLY_REGRESSION_UPDATE_20260212.md`
 

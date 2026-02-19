@@ -18,6 +18,7 @@
   - Settings 诊断增强：新增 Auth Recovery Debug 本地开关并纳入 mocked 回归覆盖。
   - Search 错误恢复增强：引入分类映射，按错误类型智能控制 Retry 行为与提示。
   - Advanced Search 预览失败运维体验增强：批量操作进度、原因分组操作与非重试分组统计。
+  - Auth/Route 回归矩阵增强：新增 session-expired、redirect-pause、unknown-route、Keycloak terminal redirect 的独立 E2E 矩阵与 smoke 脚本。
 
 ## 二、主要变更
 ### 1) 会话恢复与登录提示
@@ -180,6 +181,18 @@
 - `ecm-frontend/src/utils/previewStatusUtils.test.ts`
   - 增补上述 helper 的单元测试覆盖。
 
+### 15) Auth/Route 独立矩阵回归（Phase70）
+- 新增 `ecm-frontend/e2e/auth-route-recovery.matrix.spec.ts`
+  - 覆盖四个终态场景：
+    - `/login?reason=session_expired` 会话过期提示
+    - redirect failure cap 生效后的登录提示（经受保护路由触发）
+    - unknown route 回退到登录页且无白屏
+    - 登录 CTA 可到达 Keycloak authorize endpoint
+- 新增 `scripts/phase70-auth-route-matrix-smoke.sh`
+  - 增加 API/Keycloak/UI 可达性预检查
+  - 复用 prebuilt 同步策略与 e2e target 检查
+  - 一键执行 Phase70 矩阵回归
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -233,3 +246,5 @@
 - `docs/PHASE68_SEARCH_ERROR_TAXONOMY_RECOVERY_MAPPING_VERIFICATION_20260219.md`
 - `docs/PHASE69_PREVIEW_FAILURE_OPERATOR_LOOP_DEV_20260219.md`
 - `docs/PHASE69_PREVIEW_FAILURE_OPERATOR_LOOP_VERIFICATION_20260219.md`
+- `docs/PHASE70_AUTH_ROUTE_E2E_MATRIX_DEV_20260219.md`
+- `docs/PHASE70_AUTH_ROUTE_E2E_MATRIX_VERIFICATION_20260219.md`

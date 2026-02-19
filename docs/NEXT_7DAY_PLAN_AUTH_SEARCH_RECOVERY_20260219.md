@@ -41,7 +41,7 @@
   - `docs/PHASE69_PREVIEW_FAILURE_OPERATOR_LOOP_DEV_20260219.md`
   - `docs/PHASE69_PREVIEW_FAILURE_OPERATOR_LOOP_VERIFICATION_20260219.md`
 
-## Day 4: Auth/Route E2E Matrix
+## Day 4 (Completed): Auth/Route E2E Matrix
 - Scope:
   - Add deterministic E2E matrix for:
     - session expired
@@ -49,10 +49,14 @@
     - auto-login pause window
     - keycloak redirect terminal state
 - Planned code areas:
-  - `ecm-frontend/e2e/p1-smoke.spec.ts`
-  - `ecm-frontend/e2e/auth-session-recovery.mock.spec.ts`
+  - `ecm-frontend/e2e/auth-route-recovery.matrix.spec.ts`
+  - `scripts/phase70-auth-route-matrix-smoke.sh`
 - Verification:
-  - e2e matrix script + docs
+  - `bash scripts/phase70-auth-route-matrix-smoke.sh`
+  - `npx playwright test e2e/auth-route-recovery.matrix.spec.ts --project=chromium --workers=1`
+- Deliverables:
+  - `docs/PHASE70_AUTH_ROUTE_E2E_MATRIX_DEV_20260219.md`
+  - `docs/PHASE70_AUTH_ROUTE_E2E_MATRIX_VERIFICATION_20260219.md`
 
 ## Day 5: Regression Gate Layering
 - Scope:

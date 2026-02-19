@@ -1,0 +1,68 @@
+import { expect, Page, test } from '@playwright/test';
+import { waitForApiReady } from './helpers/api';
+
+const AUTH_REDIRECT_FAILURE_COUNT_KEY = 'ecm_auth_redirect_failure_count';
+const AUTH_REDIRECT_LAST_FAILURE_AT_KEY = 'ecm_auth_redirect_last_failure_at';
+const AUTH_REDIRECT_MAX_AUTO_ATTEMPTS = 2;
+
+const REDIRECT_PAUSE_MESSAGE_PATTERN = /Automatic sign-in (is paused after repeated failures|redirect failed)/i;
+
+const seedRedirectPauseState = async (page: Page) => {
+  await page.addInitScript(
+    ({ countKey, countValue, lastFailureKey }) => {
+      try {
+        sessionStorage.setItem(countKey, String(countValue));
+        sessionStorage.setItem(lastFailureKey, String(Date.now()));
+      } catch {
+        // Best effort in restrictive browser contexts.
+      }
+    },
+    {
+      countKey: AUTH_REDIRECT_FAILURE_COUNT_KEY,
+      countValue: AUTH_REDIRECT_MAX_AUTO_ATTEMPTS,
+      lastFailureKey: AUTH_REDIRECT_LAST_FAILURE_AT_KEY,
+    }
+  );
+};
+
+test.describe('Auth/Route recovery matrix', () => {
+  test('matrix: login shows session-expired guidance from URL reason', async ({ page, request }) => {
+    await waitForApiReady(request);
+    await page.goto('/login?reason=session_expired', { waitUntil: 'domcontentloaded' });
+
+    await expect(page.getByRole('heading', { name: /Athena ECM/i })).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByText('Your session expired. Please sign in again.')).toBeVisible({ timeout: 60_000 });
+    await expect(page).toHaveURL(/\/login$/, { timeout: 60_000 });
+  });
+
+  test('matrix: login shows redirect-pause guidance when auto-login exceeded limit', async ({ page, request }) => {
+    await waitForApiReady(request);
+    await seedRedirectPauseState(page);
+    await page.goto('/browse/root', { waitUntil: 'domcontentloaded' });
+
+    await expect(page).toHaveURL(/\/login($|[?#])/, { timeout: 60_000 });
+    await expect(page.getByRole('heading', { name: /Athena ECM/i })).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByText(REDIRECT_PAUSE_MESSAGE_PATTERN)).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByRole('button', { name: /Sign in with Keycloak/i })).toBeVisible();
+  });
+
+  test('matrix: unknown route falls back to login with no blank page under redirect-pause state', async ({ page, request }) => {
+    await waitForApiReady(request);
+    await seedRedirectPauseState(page);
+    await page.goto(`/matrix-unknown-route-${Date.now()}`, { waitUntil: 'domcontentloaded' });
+
+    await expect(page).toHaveURL(/\/login($|[?#])/, { timeout: 60_000 });
+    await expect(page.getByRole('heading', { name: /Athena ECM/i })).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByRole('button', { name: /Sign in with Keycloak/i })).toBeVisible({ timeout: 60_000 });
+  });
+
+  test('matrix: login CTA reaches keycloak auth endpoint as terminal redirect state', async ({ page, request }) => {
+    await waitForApiReady(request);
+    await page.goto('/login', { waitUntil: 'domcontentloaded' });
+
+    await expect(page.getByRole('button', { name: /Sign in with Keycloak/i })).toBeVisible({ timeout: 60_000 });
+    await page.getByRole('button', { name: /Sign in with Keycloak/i }).click({ noWaitAfter: true });
+    await page.waitForURL(/\/realms\/ecm\/protocol\/openid-connect\/auth/, { timeout: 60_000 });
+    await expect(page).toHaveURL(/client_id=unified-portal/);
+  });
+});
