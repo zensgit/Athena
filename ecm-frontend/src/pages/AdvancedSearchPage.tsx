@@ -33,11 +33,14 @@ import { useAppDispatch, useAppSelector } from 'store';
 import { setSidebarOpen } from 'store/slices/uiSlice';
 import nodeService from 'services/nodeService';
 import {
+  buildNonRetryablePreviewSummaryMessage,
+  formatPreviewBatchOperationProgress,
   formatPreviewFailureReasonLabel,
   getEffectivePreviewStatus,
   getFailedPreviewMeta,
   isRetryablePreviewFailure,
   normalizePreviewFailureReason,
+  PreviewBatchOperationProgress,
   summarizeFailedPreviews,
 } from 'utils/previewStatusUtils';
 import { normalizePreviewStatusTokens } from 'utils/searchPrefillUtils';
@@ -235,6 +238,10 @@ const AdvancedSearchPage: React.FC = () => {
   const [selectedPreviewStatuses, setSelectedPreviewStatuses] = useState<string[]>([]);
   const [queueingPreviewId, setQueueingPreviewId] = useState<string | null>(null);
   const [batchRetrying, setBatchRetrying] = useState(false);
+  const [previewBatchLabel, setPreviewBatchLabel] = useState<string | null>(null);
+  const [previewBatchProgress, setPreviewBatchProgress] = useState<PreviewBatchOperationProgress | null>(null);
+  const [previewBatchFinishedAt, setPreviewBatchFinishedAt] = useState<Date | null>(null);
+  const [showAllRetryReasons, setShowAllRetryReasons] = useState(false);
   const [previewQueueStatusById, setPreviewQueueStatusById] = useState<Record<string, {
     attempts?: number;
     nextAttemptAt?: string;
@@ -692,8 +699,16 @@ const AdvancedSearchPage: React.FC = () => {
   );
 
   const failedPreviewReasonSummary = useMemo(() => {
+    if (showAllRetryReasons) {
+      return failedPreviewSummary.retryableReasons;
+    }
     return failedPreviewSummary.retryableReasons.slice(0, 4);
-  }, [failedPreviewSummary]);
+  }, [failedPreviewSummary, showAllRetryReasons]);
+
+  const nonRetryablePreviewSummaryMessage = useMemo(
+    () => buildNonRetryablePreviewSummaryMessage(failedPreviewSummary),
+    [failedPreviewSummary]
+  );
 
   const previewRetrySummary = useMemo(() => {
     const entries = Object.values(previewQueueStatusById);
@@ -714,6 +729,20 @@ const AdvancedSearchPage: React.FC = () => {
       nextAt,
     };
   }, [previewQueueStatusById]);
+
+  useEffect(() => {
+    if (failedPreviewSummary.retryableReasons.length <= 4 && showAllRetryReasons) {
+      setShowAllRetryReasons(false);
+    }
+  }, [failedPreviewSummary.retryableReasons.length, showAllRetryReasons]);
+
+  useEffect(() => {
+    if (failedPreviewSummary.totalFailed === 0 && previewBatchProgress) {
+      setPreviewBatchLabel(null);
+      setPreviewBatchProgress(null);
+      setPreviewBatchFinishedAt(null);
+    }
+  }, [failedPreviewSummary.totalFailed, previewBatchProgress]);
 
   const getQueueDetail = useCallback((resultId: string) => {
     const queueStatus = previewQueueStatusById[resultId];
@@ -776,78 +805,96 @@ const AdvancedSearchPage: React.FC = () => {
     }
   }, []);
 
-  const handleRetryFailedPreviews = useCallback(async (force = false) => {
-    if (failedPreviewResults.length === 0) {
+  const runPreviewBatchAction = useCallback(async (
+    targets: SearchResult[],
+    options?: {
+      force?: boolean;
+      reason?: string;
+    }
+  ) => {
+    if (targets.length === 0) {
       return;
     }
-    setBatchRetrying(true);
+
+    const force = options?.force ?? false;
+    const reason = options?.reason;
+    const reasonLabel = reason ? formatPreviewFailureReasonLabel(reason) : null;
+    const actionLabel = force ? 'Force rebuild' : 'Retry';
+    const batchLabel = reasonLabel
+      ? `${actionLabel} failed previews (${reasonLabel})`
+      : `${actionLabel} failed previews`;
+
+    const total = targets.length;
     let queued = 0;
     let skipped = 0;
     let failed = 0;
-    for (const result of failedPreviewResults) {
-      try {
-        const status = await nodeService.queuePreview(result.id, force);
-        setPreviewQueueStatusById((prev) => ({
-          ...prev,
-          [result.id]: {
-            attempts: status?.attempts,
-            nextAttemptAt: status?.nextAttemptAt,
-          },
-        }));
-        if (status?.queued) {
-          queued += 1;
-        } else {
-          skipped += 1;
+
+    setBatchRetrying(true);
+    setPreviewBatchLabel(batchLabel);
+    setPreviewBatchFinishedAt(null);
+    setPreviewBatchProgress({
+      processed: 0,
+      total,
+      queued: 0,
+      skipped: 0,
+      failed: 0,
+    });
+
+    try {
+      for (const [index, result] of targets.entries()) {
+        try {
+          const status = await nodeService.queuePreview(result.id, force);
+          setPreviewQueueStatusById((prev) => ({
+            ...prev,
+            [result.id]: {
+              attempts: status?.attempts,
+              nextAttemptAt: status?.nextAttemptAt,
+            },
+          }));
+          if (status?.queued) {
+            queued += 1;
+          } else {
+            skipped += 1;
+          }
+        } catch {
+          failed += 1;
         }
-      } catch {
-        failed += 1;
+
+        setPreviewBatchProgress({
+          processed: index + 1,
+          total,
+          queued,
+          skipped,
+          failed,
+        });
       }
+    } finally {
+      setBatchRetrying(false);
+      setPreviewBatchFinishedAt(new Date());
     }
+
     const parts = [`queued ${queued}`];
     if (skipped > 0) parts.push(`skipped ${skipped}`);
     if (failed > 0) parts.push(`failed ${failed}`);
-    toast.success(`Preview ${force ? 'rebuilds' : 'retries'}: ${parts.join(', ')}`);
-    setBatchRetrying(false);
-  }, [failedPreviewResults]);
+    const toastMessage = `Preview ${force ? 'rebuilds' : 'retries'}${reasonLabel ? ` (${reasonLabel})` : ''}: ${parts.join(', ')}`;
+    if (failed > 0) {
+      toast.warning(toastMessage);
+      return;
+    }
+    toast.success(toastMessage);
+  }, []);
+
+  const handleRetryFailedPreviews = useCallback(async (force = false) => {
+    await runPreviewBatchAction(failedPreviewResults, { force });
+  }, [failedPreviewResults, runPreviewBatchAction]);
 
   const handleRetryFailedReason = useCallback(async (reason: string, force = false) => {
     const targets = failedPreviewResults.filter((result) => {
       const nodeReason = normalizePreviewFailureReason(result.previewFailureReason);
       return nodeReason === reason;
     });
-    if (targets.length === 0) {
-      return;
-    }
-    setBatchRetrying(true);
-    let queued = 0;
-    let skipped = 0;
-    let failed = 0;
-    for (const result of targets) {
-      try {
-        const status = await nodeService.queuePreview(result.id, force);
-        setPreviewQueueStatusById((prev) => ({
-          ...prev,
-          [result.id]: {
-            attempts: status?.attempts,
-            nextAttemptAt: status?.nextAttemptAt,
-          },
-        }));
-        if (status?.queued) {
-          queued += 1;
-        } else {
-          skipped += 1;
-        }
-      } catch {
-        failed += 1;
-      }
-    }
-    const reasonLabel = formatPreviewFailureReasonLabel(reason);
-    const parts = [`queued ${queued}`];
-    if (skipped > 0) parts.push(`skipped ${skipped}`);
-    if (failed > 0) parts.push(`failed ${failed}`);
-    toast.success(`Preview ${force ? 'rebuilds' : 'retries'} (${reasonLabel}): ${parts.join(', ')}`);
-    setBatchRetrying(false);
-  }, [failedPreviewResults]);
+    await runPreviewBatchAction(targets, { force, reason });
+  }, [failedPreviewResults, runPreviewBatchAction]);
 
   return (
     <Box p={3} sx={{ height: 'calc(100vh - 64px)', display: 'flex', flexDirection: 'column' }}>
@@ -1212,6 +1259,28 @@ const AdvancedSearchPage: React.FC = () => {
                           </>
                         )}
                       </Typography>
+                      {previewBatchProgress && (
+                        <Alert
+                          severity={
+                            batchRetrying
+                              ? 'info'
+                              : previewBatchProgress.failed > 0
+                                ? 'warning'
+                                : 'success'
+                          }
+                          sx={{ py: 0.25 }}
+                        >
+                          <Typography variant="caption" display="block">
+                            {previewBatchLabel ? `${previewBatchLabel}: ` : ''}
+                            {formatPreviewBatchOperationProgress(previewBatchProgress)}
+                          </Typography>
+                          {!batchRetrying && previewBatchFinishedAt && (
+                            <Typography variant="caption" color="text.secondary" display="block">
+                              Finished {format(previewBatchFinishedAt, 'PPp')}
+                            </Typography>
+                          )}
+                        </Alert>
+                      )}
                       {failedPreviewSummary.retryableFailed > 0 && (
                         <Box display="flex" flexWrap="wrap" gap={1}>
                           <Button
@@ -1233,28 +1302,61 @@ const AdvancedSearchPage: React.FC = () => {
                         </Box>
                       )}
                       {failedPreviewSummary.totalFailed > 0 && failedPreviewSummary.retryableFailed === 0 && (
-                        <Typography variant="caption" color="text.secondary">
-                          {failedPreviewSummary.permanentFailed > 0
-                            ? failedPreviewSummary.unsupportedFailed > 0
-                              ? 'All preview issues on this page are permanent or unsupported; retry actions are hidden.'
-                              : 'All preview issues on this page are permanent; retry actions are hidden.'
-                            : 'All preview issues on this page are unsupported; retry actions are hidden.'}
-                        </Typography>
+                        <>
+                          <Typography variant="caption" color="text.secondary">
+                            {nonRetryablePreviewSummaryMessage}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            Unsupported {failedPreviewSummary.unsupportedFailed}
+                            {' • '}Permanent {failedPreviewSummary.permanentFailed}
+                          </Typography>
+                        </>
                       )}
                       {failedPreviewSummary.retryableFailed > 0 && failedPreviewReasonSummary.length > 0 && (
-                        <Box display="flex" flexWrap="wrap" gap={1}>
-                          {failedPreviewReasonSummary.map((item) => (
-                            <Button
-                              key={`retry-reason-${item.reason}`}
-                              size="small"
-                              variant="text"
-                              onClick={() => { void handleRetryFailedReason(item.reason); }}
-                              disabled={batchRetrying}
-                            >
-                              Retry reason "{formatPreviewFailureReasonLabel(item.reason)}" ({item.count})
-                            </Button>
-                          ))}
-                        </Box>
+                        <>
+                          <Typography variant="caption" color="text.secondary">
+                            Retryable reasons
+                            {failedPreviewSummary.retryableReasons.length > failedPreviewReasonSummary.length
+                              ? ` (showing ${failedPreviewReasonSummary.length} of ${failedPreviewSummary.retryableReasons.length})`
+                              : ` (${failedPreviewReasonSummary.length})`}
+                          </Typography>
+                          <Box display="flex" flexWrap="wrap" gap={1}>
+                            {failedPreviewReasonSummary.map((item) => (
+                              <Stack direction="row" spacing={0.5} key={`retry-reason-${item.reason}`}>
+                                <Chip
+                                  size="small"
+                                  label={`${formatPreviewFailureReasonLabel(item.reason)} (${item.count})`}
+                                  variant="outlined"
+                                />
+                                <Button
+                                  size="small"
+                                  variant="text"
+                                  onClick={() => { void handleRetryFailedReason(item.reason, false); }}
+                                  disabled={batchRetrying}
+                                >
+                                  Retry
+                                </Button>
+                                <Button
+                                  size="small"
+                                  variant="text"
+                                  onClick={() => { void handleRetryFailedReason(item.reason, true); }}
+                                  disabled={batchRetrying}
+                                >
+                                  Rebuild
+                                </Button>
+                              </Stack>
+                            ))}
+                            {failedPreviewSummary.retryableReasons.length > 4 && (
+                              <Button
+                                size="small"
+                                variant="text"
+                                onClick={() => setShowAllRetryReasons((prev) => !prev)}
+                              >
+                                {showAllRetryReasons ? 'Show fewer reasons' : 'Show all reasons'}
+                              </Button>
+                            )}
+                          </Box>
+                        </>
                       )}
                       {failedPreviewSummary.retryableFailed > 0 && previewRetrySummary && (
                         <Typography variant="caption" color="text.secondary">

@@ -15,6 +15,14 @@ export type PreviewFailureSummary = {
   retryableReasons: Array<{ reason: string; count: number }>;
 };
 
+export type PreviewBatchOperationProgress = {
+  processed: number;
+  total: number;
+  queued: number;
+  skipped: number;
+  failed: number;
+};
+
 const PREVIEW_UNSUPPORTED_MIME_TYPES = new Set([
   'application/octet-stream',
   'binary/octet-stream',
@@ -177,6 +185,34 @@ export const summarizeFailedPreviews = (items: PreviewFailureLike[]): PreviewFai
     unsupportedFailed,
     retryableReasons,
   };
+};
+
+export const formatPreviewBatchOperationProgress = (progress: PreviewBatchOperationProgress): string => {
+  const total = Math.max(0, Math.floor(progress.total));
+  const processed = Math.max(0, Math.min(total, Math.floor(progress.processed)));
+  const queued = Math.max(0, Math.floor(progress.queued));
+  const skipped = Math.max(0, Math.floor(progress.skipped));
+  const failed = Math.max(0, Math.floor(progress.failed));
+  return `${processed}/${total} processed • queued ${queued} • skipped ${skipped} • failed ${failed}`;
+};
+
+export const buildNonRetryablePreviewSummaryMessage = (summary: PreviewFailureSummary): string => {
+  if (summary.retryableFailed > 0) {
+    return '';
+  }
+  const unsupported = summary.unsupportedFailed;
+  const permanent = summary.permanentFailed;
+
+  if (unsupported > 0 && permanent > 0) {
+    return 'All preview issues on this page are permanent or unsupported; retry actions are hidden.';
+  }
+  if (unsupported > 0) {
+    return 'All preview issues on this page are unsupported; retry actions are hidden.';
+  }
+  if (permanent > 0) {
+    return 'All preview issues on this page are permanent; retry actions are hidden.';
+  }
+  return 'No retryable preview issues on this page.';
 };
 
 export const getFailedPreviewMeta = (

@@ -188,6 +188,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Search error taxonomy + recovery mapping
   - Design: `docs/PHASE68_SEARCH_ERROR_TAXONOMY_RECOVERY_MAPPING_DEV_20260219.md`
   - Verification: `docs/PHASE68_SEARCH_ERROR_TAXONOMY_RECOVERY_MAPPING_VERIFICATION_20260219.md`
+- Preview failure operator loop (batch progress + reason grouping)
+  - Design: `docs/PHASE69_PREVIEW_FAILURE_OPERATOR_LOOP_DEV_20260219.md`
+  - Verification: `docs/PHASE69_PREVIEW_FAILURE_OPERATOR_LOOP_VERIFICATION_20260219.md`
 - Search fallback governance parity
   - P105: Criteria-key parity fix (fallback governance stays correct when query changes)
     - Design: `docs/PHASE1_P105_SEARCH_FALLBACK_CRITERIA_KEY_PARITY_DESIGN_20260212.md`
@@ -270,6 +273,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - Phase 68: search error taxonomy + recovery mapping
     - Dev: `docs/PHASE68_SEARCH_ERROR_TAXONOMY_RECOVERY_MAPPING_DEV_20260219.md`
     - Verification: `docs/PHASE68_SEARCH_ERROR_TAXONOMY_RECOVERY_MAPPING_VERIFICATION_20260219.md`
+  - Phase 69: preview failure operator loop
+    - Dev: `docs/PHASE69_PREVIEW_FAILURE_OPERATOR_LOOP_DEV_20260219.md`
+    - Verification: `docs/PHASE69_PREVIEW_FAILURE_OPERATOR_LOOP_VERIFICATION_20260219.md`
 - Weekly regression command rollup:
   - `docs/WEEKLY_REGRESSION_UPDATE_20260212.md`
 

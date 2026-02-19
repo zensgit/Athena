@@ -1,4 +1,6 @@
 import {
+  buildNonRetryablePreviewSummaryMessage,
+  formatPreviewBatchOperationProgress,
   formatPreviewFailureReasonLabel,
   getFailedPreviewMeta,
   getEffectivePreviewStatus,
@@ -150,5 +152,28 @@ describe('previewStatusUtils', () => {
     expect(getEffectivePreviewStatus('FAILED', undefined, 'application/octet-stream', 'Preview not supported')).toBe('UNSUPPORTED');
     expect(getEffectivePreviewStatus('UNSUPPORTED', undefined, 'application/pdf', 'Preview not supported')).toBe('UNSUPPORTED');
     expect(getEffectivePreviewStatus('FAILED', undefined, 'application/pdf', 'timeout')).toBe('FAILED');
+  });
+
+  it('formats batch operation progress summary', () => {
+    expect(
+      formatPreviewBatchOperationProgress({
+        processed: 3,
+        total: 5,
+        queued: 2,
+        skipped: 1,
+        failed: 0,
+      })
+    ).toBe('3/5 processed • queued 2 • skipped 1 • failed 0');
+  });
+
+  it('builds non-retryable summary message with unsupported and permanent counts', () => {
+    const message = buildNonRetryablePreviewSummaryMessage({
+      totalFailed: 4,
+      retryableFailed: 0,
+      unsupportedFailed: 2,
+      permanentFailed: 2,
+      retryableReasons: [],
+    });
+    expect(message).toBe('All preview issues on this page are permanent or unsupported; retry actions are hidden.');
   });
 });

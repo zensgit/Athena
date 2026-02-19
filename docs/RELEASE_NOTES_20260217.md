@@ -17,6 +17,7 @@
   - Unknown Route 回退稳定性增强：按认证状态回退 + P1 smoke 适配 Keycloak 重定向时序。
   - Settings 诊断增强：新增 Auth Recovery Debug 本地开关并纳入 mocked 回归覆盖。
   - Search 错误恢复增强：引入分类映射，按错误类型智能控制 Retry 行为与提示。
+  - Advanced Search 预览失败运维体验增强：批量操作进度、原因分组操作与非重试分组统计。
 
 ## 二、主要变更
 ### 1) 会话恢复与登录提示
@@ -164,6 +165,21 @@
 - 新增单测 `ecm-frontend/src/utils/searchErrorUtils.test.ts`
   - 覆盖状态码/文本分类、消息解析和 retryability。
 
+### 14) Advanced Search 预览失败运维闭环优化
+- `ecm-frontend/src/pages/AdvancedSearchPage.tsx`
+  - 新增批量重试/重建过程进度反馈：
+    - `processed/total`
+    - `queued/skipped/failed`
+    - 结束时间显示
+  - retryable reason 分组升级：
+    - 分组 chip + `Retry` / `Rebuild` 动作
+    - `Show all reasons` / `Show fewer reasons`
+  - 非可重试场景保留既有治理文案，并新增 `Unsupported/Permanent` 数量展示。
+- `ecm-frontend/src/utils/previewStatusUtils.ts`
+  - 新增批量进度格式化和非重试分组文案 helper。
+- `ecm-frontend/src/utils/previewStatusUtils.test.ts`
+  - 增补上述 helper 的单元测试覆盖。
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -215,3 +231,5 @@
 - `docs/PHASE67_SETTINGS_AUTH_RECOVERY_DEBUG_TOGGLE_VERIFICATION_20260219.md`
 - `docs/PHASE68_SEARCH_ERROR_TAXONOMY_RECOVERY_MAPPING_DEV_20260219.md`
 - `docs/PHASE68_SEARCH_ERROR_TAXONOMY_RECOVERY_MAPPING_VERIFICATION_20260219.md`
+- `docs/PHASE69_PREVIEW_FAILURE_OPERATOR_LOOP_DEV_20260219.md`
+- `docs/PHASE69_PREVIEW_FAILURE_OPERATOR_LOOP_VERIFICATION_20260219.md`

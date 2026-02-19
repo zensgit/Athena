@@ -27,7 +27,7 @@
   - `docs/PHASE68_SEARCH_ERROR_TAXONOMY_RECOVERY_MAPPING_DEV_20260219.md`
   - `docs/PHASE68_SEARCH_ERROR_TAXONOMY_RECOVERY_MAPPING_VERIFICATION_20260219.md`
 
-## Day 3: Preview Failure Operator Loop
+## Day 3 (Completed): Preview Failure Operator Loop
 - Scope:
   - Improve preview-failure action feedback (batch retry/rebuild progress + reason grouping polish).
   - Ensure unsupported/permanent gating text remains explicit.
@@ -37,6 +37,9 @@
 - Verification:
   - unit tests for summary/gating logic
   - mocked regression assertions
+- Deliverables:
+  - `docs/PHASE69_PREVIEW_FAILURE_OPERATOR_LOOP_DEV_20260219.md`
+  - `docs/PHASE69_PREVIEW_FAILURE_OPERATOR_LOOP_VERIFICATION_20260219.md`
 
 ## Day 4: Auth/Route E2E Matrix
 - Scope:
