@@ -74,7 +74,7 @@
   - `docs/PHASE71_REGRESSION_GATE_LAYERING_DEV_20260219.md`
   - `docs/PHASE71_REGRESSION_GATE_LAYERING_VERIFICATION_20260219.md`
 
-## Day 6: Failure Injection Coverage
+## Day 6 (Completed): Failure Injection Coverage
 - Scope:
   - Add focused mocked scenarios for:
     - transient refresh failure (no forced logout)
@@ -85,7 +85,12 @@
   - `ecm-frontend/src/services/api.test.ts`
   - `ecm-frontend/e2e/*mock*.spec.ts`
 - Verification:
-  - targeted unit + mocked e2e pass
+  - `CI=1 npm test -- --runTestsByPath src/services/authService.test.ts src/services/api.test.ts`
+  - `npx playwright test e2e/auth-session-recovery.mock.spec.ts e2e/search-suggestions-save-search.mock.spec.ts --project=chromium --workers=1`
+  - `DELIVERY_GATE_MODE=mocked bash scripts/phase5-phase6-delivery-gate.sh`
+- Deliverables:
+  - `docs/PHASE72_FAILURE_INJECTION_COVERAGE_DEV_20260219.md`
+  - `docs/PHASE72_FAILURE_INJECTION_COVERAGE_VERIFICATION_20260219.md`
 
 ## Day 7: Release Closure
 - Scope:

@@ -110,6 +110,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Auth/route deterministic matrix coverage
   - Design: `docs/PHASE70_AUTH_ROUTE_E2E_MATRIX_DEV_20260219.md`
   - Verification: `docs/PHASE70_AUTH_ROUTE_E2E_MATRIX_VERIFICATION_20260219.md`
+- Failure-injection coverage (transient vs terminal auth + search retry recovery)
+  - Design: `docs/PHASE72_FAILURE_INJECTION_COVERAGE_DEV_20260219.md`
+  - Verification: `docs/PHASE72_FAILURE_INJECTION_COVERAGE_VERIFICATION_20260219.md`
 
 ## Permissions
 
@@ -289,6 +292,12 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
     - Scripts:
       - `scripts/phase5-regression.sh`
       - `scripts/phase5-phase6-delivery-gate.sh`
+  - Phase 72: failure-injection coverage expansion
+    - Dev: `docs/PHASE72_FAILURE_INJECTION_COVERAGE_DEV_20260219.md`
+    - Verification: `docs/PHASE72_FAILURE_INJECTION_COVERAGE_VERIFICATION_20260219.md`
+    - Specs:
+      - `ecm-frontend/e2e/auth-session-recovery.mock.spec.ts`
+      - `ecm-frontend/e2e/search-suggestions-save-search.mock.spec.ts`
 - Weekly regression command rollup:
   - `docs/WEEKLY_REGRESSION_UPDATE_20260212.md`
 

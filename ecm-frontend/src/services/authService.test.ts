@@ -102,6 +102,33 @@ describe('authService.refreshToken', () => {
     warnSpy.mockRestore();
   });
 
+  test('keeps session on transient 503 refresh failure payload', async () => {
+    const keycloakMock = createKeycloakMock();
+    keycloakMock.token = 'still-valid-token';
+    keycloakMock.updateToken.mockRejectedValueOnce({
+      response: { status: 503 },
+      message: 'Service temporarily unavailable',
+    });
+
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const module = await loadIsolatedAuthService(keycloakMock) as IsolatedAuthServiceModule;
+    const authService = module.default;
+
+    await authService.init({ onLoad: 'check-sso', checkLoginIframe: false });
+    const token = await authService.refreshToken();
+
+    expect(token).toBe('still-valid-token');
+    expect(keycloakMock.logout).not.toHaveBeenCalled();
+    expect(module.logAuthRecoveryEventMock).toHaveBeenCalledWith(
+      'auth.refresh.failed',
+      expect.objectContaining({
+        status: 503,
+        shouldLogout: false,
+      })
+    );
+    warnSpy.mockRestore();
+  });
+
   test('logs out on terminal refresh failure', async () => {
     const keycloakMock = createKeycloakMock();
     keycloakMock.updateToken.mockRejectedValueOnce({
@@ -123,6 +150,35 @@ describe('authService.refreshToken', () => {
     expect(module.logAuthRecoveryEventMock).toHaveBeenCalledWith(
       'auth.refresh.failed',
       expect.objectContaining({
+        shouldLogout: true,
+      })
+    );
+    expect(localStorage.getItem('token')).toBeNull();
+    expect(localStorage.getItem('user')).toBeNull();
+  });
+
+  test('logs out on terminal forbidden refresh failure payload', async () => {
+    const keycloakMock = createKeycloakMock();
+    keycloakMock.updateToken.mockRejectedValueOnce({
+      response: { status: 403 },
+      message: 'Forbidden',
+    });
+
+    localStorage.setItem('token', 'stale-token');
+    localStorage.setItem('user', JSON.stringify({ id: 'u1' }));
+
+    const module = await loadIsolatedAuthService(keycloakMock) as IsolatedAuthServiceModule;
+    const authService = module.default;
+
+    await authService.init({ onLoad: 'check-sso', checkLoginIframe: false });
+    const token = await authService.refreshToken();
+
+    expect(token).toBeUndefined();
+    expect(keycloakMock.logout).toHaveBeenCalledTimes(1);
+    expect(module.logAuthRecoveryEventMock).toHaveBeenCalledWith(
+      'auth.refresh.failed',
+      expect.objectContaining({
+        status: 403,
         shouldLogout: true,
       })
     );

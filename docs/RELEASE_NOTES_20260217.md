@@ -20,6 +20,7 @@
   - Advanced Search 预览失败运维体验增强：批量操作进度、原因分组操作与非重试分组统计。
   - Auth/Route 回归矩阵增强：新增 session-expired、redirect-pause、unknown-route、Keycloak terminal redirect 的独立 E2E 矩阵与 smoke 脚本。
   - Delivery gate 分层增强：新增 `DELIVERY_GATE_MODE`（all/mocked/integration）与失败摘要输出，提升 CI 可诊断性。
+  - Failure-injection 覆盖增强：补齐 auth transient/terminal 与 search temporary-failure->retry-success 场景。
 
 ## 二、主要变更
 ### 1) 会话恢复与登录提示
@@ -206,6 +207,22 @@
   - 新增 Playwright 失败摘要抽取与日志路径输出。
   - 修复 `set -euo pipefail` 下管道退出码与 macOS `mktemp` 兼容性问题。
 
+### 17) Failure Injection 覆盖扩展（Phase72）
+- `ecm-frontend/src/services/authService.test.ts`
+  - 新增 refresh failure payload 注入覆盖：
+    - transient `503` 保持会话
+    - terminal `403` 触发登出与本地会话清理
+- `ecm-frontend/src/services/api.test.ts`
+  - 新增 API 拦截器注入覆盖：
+    - request refresh transient fail 不写入 session-expired 标记
+    - 401 重试链路中 terminal refresh throw 触发 session-expired 标记与登录回退
+- `ecm-frontend/e2e/auth-session-recovery.mock.spec.ts`
+  - 扩展为双场景：
+    - 首次 401 + 二次成功（留在搜索页）
+    - 连续 401（回退登录并提示 session expired）
+- `ecm-frontend/e2e/search-suggestions-save-search.mock.spec.ts`
+  - 新增 temporary `503` -> 点击 `Retry` -> 查询恢复成功场景。
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -263,3 +280,5 @@
 - `docs/PHASE70_AUTH_ROUTE_E2E_MATRIX_VERIFICATION_20260219.md`
 - `docs/PHASE71_REGRESSION_GATE_LAYERING_DEV_20260219.md`
 - `docs/PHASE71_REGRESSION_GATE_LAYERING_VERIFICATION_20260219.md`
+- `docs/PHASE72_FAILURE_INJECTION_COVERAGE_DEV_20260219.md`
+- `docs/PHASE72_FAILURE_INJECTION_COVERAGE_VERIFICATION_20260219.md`

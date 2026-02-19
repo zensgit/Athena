@@ -65,6 +65,14 @@ const getResponseErrorHandler = (instance: AxiosMockInstance) => {
   return call[1] as (error: any) => Promise<unknown>;
 };
 
+const getRequestInterceptor = (instance: AxiosMockInstance) => {
+  const call = instance.interceptors.request.use.mock.calls[instance.interceptors.request.use.mock.calls.length - 1];
+  if (!call) {
+    throw new Error('Expected request interceptor registration');
+  }
+  return call[0] as (config: any) => Promise<any>;
+};
+
 describe('ApiService auth recovery', () => {
   const createAxiosInstance = (): AxiosMockInstance => ({
     request: jest.fn().mockResolvedValue({ data: {} }),
@@ -128,6 +136,33 @@ describe('ApiService auth recovery', () => {
     expect(service).toBeTruthy();
   });
 
+  it('continues request flow on transient refresh failure without forcing logout markers', async () => {
+    authServiceMock.refreshToken.mockRejectedValueOnce(new Error('Network Error'));
+    authServiceMock.getToken.mockReturnValue('still-valid-token');
+    new ApiService();
+    const instance = getLatestAxiosInstance();
+    const requestInterceptor = getRequestInterceptor(instance);
+
+    const requestConfig = await requestInterceptor({
+      headers: {},
+      url: '/search',
+      method: 'get',
+    });
+
+    expect(authServiceMock.refreshToken).toHaveBeenCalledTimes(1);
+    expect(requestConfig.headers.Authorization).toBe('Bearer still-valid-token');
+    expect(sessionStorage.getItem(AUTH_INIT_STATUS_KEY)).toBeNull();
+    expect(localStorage.getItem('ecm_auth_redirect_reason')).toBeNull();
+    expect(toastErrorMock).not.toHaveBeenCalled();
+    expect(logAuthRecoveryEventMock).toHaveBeenCalledWith(
+      'api.request.refresh.failed',
+      expect.objectContaining({
+        method: 'GET',
+        url: '/search',
+      })
+    );
+  });
+
   it('retries from responseURL when axios error config is missing', async () => {
     authServiceMock.refreshToken.mockResolvedValueOnce('fresh-token');
     new ApiService();
@@ -182,5 +217,43 @@ describe('ApiService auth recovery', () => {
       })
     );
     expect(service).toBeTruthy();
+  });
+
+  it('marks session expired when refresh throws terminal auth error during 401 recovery', async () => {
+    window.history.pushState({}, '', '/login');
+    authServiceMock.refreshToken.mockRejectedValueOnce({
+      response: { status: 401 },
+      error: 'invalid_grant',
+    });
+    new ApiService();
+    const instance = getLatestAxiosInstance();
+    const responseErrorHandler = getResponseErrorHandler(instance);
+
+    const error = {
+      response: { status: 401 },
+      config: { headers: {}, url: '/documents', method: 'get' },
+    };
+
+    await expect(responseErrorHandler(error)).rejects.toMatchObject({
+      response: { status: 401 },
+    });
+
+    expect(instance.request).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem(AUTH_INIT_STATUS_KEY)).toBe(AUTH_INIT_STATUS_SESSION_EXPIRED);
+    expect(localStorage.getItem('ecm_auth_redirect_reason')).toBe(AUTH_INIT_STATUS_SESSION_EXPIRED);
+    expect(toastErrorMock).toHaveBeenCalledWith('Session expired. Please login again.');
+    expect(logAuthRecoveryEventMock).toHaveBeenCalledWith(
+      'api.response.401.retry.failed',
+      expect.objectContaining({
+        method: 'GET',
+        url: '/documents',
+      })
+    );
+    expect(logAuthRecoveryEventMock).toHaveBeenCalledWith(
+      'api.session_expired.mark',
+      expect.objectContaining({
+        pathname: '/login',
+      })
+    );
   });
 });
