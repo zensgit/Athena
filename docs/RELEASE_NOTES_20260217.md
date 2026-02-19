@@ -19,6 +19,7 @@
   - Search 错误恢复增强：引入分类映射，按错误类型智能控制 Retry 行为与提示。
   - Advanced Search 预览失败运维体验增强：批量操作进度、原因分组操作与非重试分组统计。
   - Auth/Route 回归矩阵增强：新增 session-expired、redirect-pause、unknown-route、Keycloak terminal redirect 的独立 E2E 矩阵与 smoke 脚本。
+  - Delivery gate 分层增强：新增 `DELIVERY_GATE_MODE`（all/mocked/integration）与失败摘要输出，提升 CI 可诊断性。
 
 ## 二、主要变更
 ### 1) 会话恢复与登录提示
@@ -193,6 +194,18 @@
   - 复用 prebuilt 同步策略与 e2e target 检查
   - 一键执行 Phase70 矩阵回归
 
+### 16) Regression Gate 分层与失败摘要（Phase71）
+- `scripts/phase5-phase6-delivery-gate.sh`
+  - 新增 `DELIVERY_GATE_MODE`：
+    - `all`：默认，先 fast mocked，再 integration/full-stack
+    - `mocked`：仅跑 fast mocked 层
+    - `integration`：仅跑 integration/full-stack 层
+  - 新增层级化 stage 汇总输出，明确每层 PASS/FAIL。
+  - 失败时输出一行化摘要（failed spec 或首条错误）并保留 stage log 路径。
+- `scripts/phase5-regression.sh`
+  - 新增 Playwright 失败摘要抽取与日志路径输出。
+  - 修复 `set -euo pipefail` 下管道退出码与 macOS `mktemp` 兼容性问题。
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -248,3 +261,5 @@
 - `docs/PHASE69_PREVIEW_FAILURE_OPERATOR_LOOP_VERIFICATION_20260219.md`
 - `docs/PHASE70_AUTH_ROUTE_E2E_MATRIX_DEV_20260219.md`
 - `docs/PHASE70_AUTH_ROUTE_E2E_MATRIX_VERIFICATION_20260219.md`
+- `docs/PHASE71_REGRESSION_GATE_LAYERING_DEV_20260219.md`
+- `docs/PHASE71_REGRESSION_GATE_LAYERING_VERIFICATION_20260219.md`

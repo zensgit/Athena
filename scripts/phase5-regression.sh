@@ -14,6 +14,56 @@ echo "ECM_UI_URL=${ECM_UI_URL}"
 echo "PW_PROJECT=${PW_PROJECT} PW_WORKERS=${PW_WORKERS}"
 echo "PHASE5_USE_EXISTING_UI=${PHASE5_USE_EXISTING_UI}"
 
+strip_ansi_file() {
+  local log_file="$1"
+  sed -E $'s/\x1B\\[[0-9;]*[[:alpha:]]//g' "${log_file}" | tr -d '\r'
+}
+
+print_playwright_failure_summary() {
+  local log_file="$1"
+  local failure_lines=()
+
+  mapfile -t failure_lines < <(
+    strip_ansi_file "${log_file}" \
+      | rg "^[[:space:]]*\\[[^]]+\\][[:space:]]+›[[:space:]]+e2e/" \
+      | sed -E 's/^[[:space:]]*\[[^]]+\][[:space:]]+›[[:space:]]+//'
+  )
+
+  if [[ "${#failure_lines[@]}" -gt 0 ]]; then
+    echo "phase5_regression: failed specs summary"
+    local line
+    for line in "${failure_lines[@]}"; do
+      echo " - ${line}"
+    done
+    return
+  fi
+
+  local first_error
+  first_error="$(strip_ansi_file "${log_file}" | rg -m1 "(^Error:|^error:|error: )" || true)"
+  if [[ -n "${first_error}" ]]; then
+    echo "phase5_regression: first error => ${first_error}"
+  fi
+}
+
+run_with_tee() {
+  local log_file="$1"
+  shift
+
+  set +e
+  "$@" 2>&1 | tee "${log_file}"
+  local cmd_rc="${PIPESTATUS[0]:-1}"
+  local tee_rc="${PIPESTATUS[1]:-0}"
+  set -e
+
+  if [[ "${cmd_rc}" -ne 0 ]]; then
+    return "${cmd_rc}"
+  fi
+  if [[ "${tee_rc}" -ne 0 ]]; then
+    return "${tee_rc}"
+  fi
+  return 0
+}
+
 extract_host() {
   local url="$1"
   printf '%s' "$url" | sed -E 's#^https?://([^/:]+).*#\1#'
@@ -137,8 +187,17 @@ echo "phase5_regression: check e2e target"
 ALLOW_STATIC=1 ../scripts/check-e2e-target.sh "${EFFECTIVE_ECM_UI_URL}" || true
 
 echo "phase5_regression: run playwright specs"
-ECM_UI_URL="${EFFECTIVE_ECM_UI_URL}" npx playwright test \
+playwright_log="$(mktemp "/tmp/phase5-regression.playwright.XXXXXX")"
+playwright_rc=0
+run_with_tee "${playwright_log}" \
+  env ECM_UI_URL="${EFFECTIVE_ECM_UI_URL}" \
+  npx playwright test \
   "${PHASE5_SPECS[@]}" \
-  --project="${PW_PROJECT}" --workers="${PW_WORKERS}"
-
-echo "phase5_regression: ok"
+  --project="${PW_PROJECT}" --workers="${PW_WORKERS}" || playwright_rc=$?
+if [[ "${playwright_rc}" -eq 0 ]]; then
+  echo "phase5_regression: ok"
+else
+  print_playwright_failure_summary "${playwright_log}"
+  echo "phase5_regression: playwright log => ${playwright_log}"
+  exit "${playwright_rc}"
+fi

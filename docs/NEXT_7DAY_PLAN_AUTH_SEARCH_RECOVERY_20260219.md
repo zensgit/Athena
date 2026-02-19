@@ -58,16 +58,21 @@
   - `docs/PHASE70_AUTH_ROUTE_E2E_MATRIX_DEV_20260219.md`
   - `docs/PHASE70_AUTH_ROUTE_E2E_MATRIX_VERIFICATION_20260219.md`
 
-## Day 5: Regression Gate Layering
+## Day 5 (Completed): Regression Gate Layering
 - Scope:
   - Split fast mocked gate and slower integration gate outputs for clearer CI signal.
   - Improve failure reason output with one-line summary per failed spec.
 - Planned code areas:
   - `scripts/phase5-regression.sh`
   - `scripts/phase5-phase6-delivery-gate.sh`
-  - `scripts/lib/*.sh` (if needed)
+  - `scripts/sync-prebuilt-frontend-if-needed.sh` (reuse only)
 - Verification:
-  - local gate run + sample failing scenario dry run
+  - `DELIVERY_GATE_MODE=mocked bash scripts/phase5-phase6-delivery-gate.sh`
+  - `DELIVERY_GATE_MODE=all bash scripts/phase5-phase6-delivery-gate.sh`
+  - `DELIVERY_GATE_MODE=mocked PW_PROJECT=does-not-exist bash scripts/phase5-phase6-delivery-gate.sh`
+- Deliverables:
+  - `docs/PHASE71_REGRESSION_GATE_LAYERING_DEV_20260219.md`
+  - `docs/PHASE71_REGRESSION_GATE_LAYERING_VERIFICATION_20260219.md`
 
 ## Day 6: Failure Injection Coverage
 - Scope:

@@ -283,6 +283,12 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
     - Dev: `docs/PHASE70_AUTH_ROUTE_E2E_MATRIX_DEV_20260219.md`
     - Verification: `docs/PHASE70_AUTH_ROUTE_E2E_MATRIX_VERIFICATION_20260219.md`
     - Script: `scripts/phase70-auth-route-matrix-smoke.sh`
+  - Phase 71: regression gate layering + failure summary
+    - Dev: `docs/PHASE71_REGRESSION_GATE_LAYERING_DEV_20260219.md`
+    - Verification: `docs/PHASE71_REGRESSION_GATE_LAYERING_VERIFICATION_20260219.md`
+    - Scripts:
+      - `scripts/phase5-regression.sh`
+      - `scripts/phase5-phase6-delivery-gate.sh`
 - Weekly regression command rollup:
   - `docs/WEEKLY_REGRESSION_UPDATE_20260212.md`
 
