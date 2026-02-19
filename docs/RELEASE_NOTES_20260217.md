@@ -15,6 +15,8 @@
   - Auth 恢复可观测性增强：支持结构化调试事件（默认关闭，按需开启）。
   - Search/Advanced Search 恢复增强：搜索失败时提供 Retry + Back to folder 内联操作。
   - Unknown Route 回退稳定性增强：按认证状态回退 + P1 smoke 适配 Keycloak 重定向时序。
+  - Settings 诊断增强：新增 Auth Recovery Debug 本地开关并纳入 mocked 回归覆盖。
+  - Search 错误恢复增强：引入分类映射，按错误类型智能控制 Retry 行为与提示。
 
 ## 二、主要变更
 ### 1) 会话恢复与登录提示
@@ -141,6 +143,27 @@
     - 接受 in-app 恢复页可见，或到达 Keycloak 授权页（`client_id=unified-portal`）两种合法终态。
   - 降低认证跳转时序导致的误报。
 
+### 12) Settings: Auth Recovery Debug 本地开关
+- `ecm-frontend/src/utils/authRecoveryDebug.ts`
+  - 导出本地开关常量与读写 helper（localStorage）。
+- `ecm-frontend/src/pages/SettingsPage.tsx`
+  - 新增 `Diagnostics` 卡片与 `Enable auth recovery debug logs` 开关。
+  - 展示 effective status，并在 env/query 覆盖开启时给出提示。
+  - `Copy Debug Info` 增加 debug 开关状态字段。
+- `ecm-frontend/e2e/settings-session-actions.mock.spec.ts`
+  - 覆盖开关启停、localStorage 持久化与 toast 提示。
+
+### 13) Search 错误分类与恢复映射
+- 新增 `ecm-frontend/src/utils/searchErrorUtils.ts`
+  - 统一搜索错误分类：`transient / authorization / query / server / unknown`
+  - 统一恢复决策：`canRetry` + `hint` + 标准化 `message`
+- `ecm-frontend/src/pages/AdvancedSearchPage.tsx`
+  - 搜索失败告警改为结构化恢复对象，按分类决定 `Retry` 是否可用。
+- `ecm-frontend/src/pages/SearchResults.tsx`
+  - Redux 错误消息接入同一恢复映射，告警展示统一 hint，`Retry` 按分类启停。
+- 新增单测 `ecm-frontend/src/utils/searchErrorUtils.test.ts`
+  - 覆盖状态码/文本分类、消息解析和 retryability。
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -188,3 +211,7 @@
 - `docs/PHASE65_SEARCH_RECOVERABLE_ERROR_ACTIONS_VERIFICATION_20260218.md`
 - `docs/PHASE66_ROUTE_FALLBACK_AUTH_AWARE_RECOVERY_DEV_20260219.md`
 - `docs/PHASE66_ROUTE_FALLBACK_AUTH_AWARE_RECOVERY_VERIFICATION_20260219.md`
+- `docs/PHASE67_SETTINGS_AUTH_RECOVERY_DEBUG_TOGGLE_DEV_20260219.md`
+- `docs/PHASE67_SETTINGS_AUTH_RECOVERY_DEBUG_TOGGLE_VERIFICATION_20260219.md`
+- `docs/PHASE68_SEARCH_ERROR_TAXONOMY_RECOVERY_MAPPING_DEV_20260219.md`
+- `docs/PHASE68_SEARCH_ERROR_TAXONOMY_RECOVERY_MAPPING_VERIFICATION_20260219.md`

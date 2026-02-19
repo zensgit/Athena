@@ -65,6 +65,7 @@ import {
   normalizePreviewFailureReason,
   summarizeFailedPreviews,
 } from 'utils/previewStatusUtils';
+import { buildSearchErrorRecovery } from 'utils/searchErrorUtils';
 const DocumentPreview = React.lazy(() => import('components/preview/DocumentPreview'));
 
 type FacetValue = { value: string; count: number };
@@ -220,6 +221,10 @@ const SearchResults: React.FC = () => {
   const previewOpen = Boolean(previewNode);
   const isAdmin = Boolean(user?.roles?.includes('ROLE_ADMIN'));
   const canWrite = Boolean(user?.roles?.includes('ROLE_ADMIN') || user?.roles?.includes('ROLE_EDITOR'));
+  const primarySearchErrorRecovery = useMemo(
+    () => (error ? buildSearchErrorRecovery(error, 'Search failed') : null),
+    [error]
+  );
   // During criteria -> UI state sync, facet-change effects can run with stale UI values and
   // accidentally trigger an extra search. Use a state flag so effects re-run once the sync is done.
   const [facetSyncSuppressed, setFacetSyncSuppressed] = useState(false);
@@ -2305,7 +2310,10 @@ const SearchResults: React.FC = () => {
                     color="inherit"
                     size="small"
                     onClick={handleRetryPrimarySearch}
-                    disabled={!lastSearchCriteria && quickSearch.trim().length === 0}
+                    disabled={
+                      !primarySearchErrorRecovery?.canRetry
+                      || (!lastSearchCriteria && quickSearch.trim().length === 0)
+                    }
                   >
                     Retry
                   </Button>
@@ -2318,7 +2326,12 @@ const SearchResults: React.FC = () => {
                 </Stack>
               }
             >
-              {error}
+              <Typography variant="body2">{primarySearchErrorRecovery?.message || error}</Typography>
+              {primarySearchErrorRecovery?.hint && (
+                <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
+                  {primarySearchErrorRecovery.hint}
+                </Typography>
+              )}
             </Alert>
           )}
           {similarError && (

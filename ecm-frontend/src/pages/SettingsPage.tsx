@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Box,
   Button,
@@ -23,6 +23,11 @@ import { useAppDispatch, useAppSelector } from 'store';
 import { setCompactMode, setSidebarAutoCollapse } from 'store/slices/uiSlice';
 import authService from 'services/authService';
 import apiService from 'services/api';
+import {
+  isAuthRecoveryDebugEnabled,
+  isAuthRecoveryDebugLocalEnabled,
+  setAuthRecoveryDebugLocalEnabled as persistAuthRecoveryDebugLocalEnabled,
+} from 'utils/authRecoveryDebug';
 
 type CollaboraCapabilities = {
   reachable: boolean;
@@ -96,6 +101,8 @@ const SettingsPage: React.FC = () => {
   const [mfaDisableDialogOpen, setMfaDisableDialogOpen] = useState(false);
   const [mfaCodeInput, setMfaCodeInput] = useState('');
   const [mfaDisableCode, setMfaDisableCode] = useState('');
+  const [authRecoveryDebugLocalEnabled, setAuthRecoveryDebugLocalEnabled] = useState(false);
+  const [authRecoveryDebugEffectiveEnabled, setAuthRecoveryDebugEffectiveEnabled] = useState(false);
 
   const env = useMemo(() => {
     return {
@@ -141,6 +148,10 @@ const SettingsPage: React.FC = () => {
           userAgent: navigator.userAgent,
           locale: navigator.language,
         },
+        diagnostics: {
+          authRecoveryDebugLocalEnabled,
+          authRecoveryDebugEffectiveEnabled,
+        },
         timestamp: new Date().toISOString(),
       };
 
@@ -150,6 +161,21 @@ const SettingsPage: React.FC = () => {
       toast.error('Failed to copy debug info');
     }
   };
+
+  const refreshAuthRecoveryDebugState = useCallback(() => {
+    setAuthRecoveryDebugLocalEnabled(isAuthRecoveryDebugLocalEnabled());
+    setAuthRecoveryDebugEffectiveEnabled(isAuthRecoveryDebugEnabled());
+  }, []);
+
+  const handleToggleAuthRecoveryDebug = useCallback((enabled: boolean) => {
+    persistAuthRecoveryDebugLocalEnabled(enabled);
+    refreshAuthRecoveryDebugState();
+    toast.success(
+      enabled
+        ? 'Auth recovery debug logs enabled for this browser.'
+        : 'Auth recovery debug logs disabled for this browser.'
+    );
+  }, [refreshAuthRecoveryDebugState]);
 
   const handleCopyWopiHealth = async () => {
     try {
@@ -316,6 +342,10 @@ const SettingsPage: React.FC = () => {
     loadMfaStatus();
   }, [sessionVersion]);
 
+  useEffect(() => {
+    refreshAuthRecoveryDebugState();
+  }, [refreshAuthRecoveryDebugState]);
+
   const discoveryStatus = wopiHealth?.discovery;
   const capabilities = wopiHealth?.capabilities;
   const discoveryLoadedAt = discoveryStatus?.lastLoadedAtMs
@@ -397,6 +427,39 @@ const SettingsPage: React.FC = () => {
 
               <Typography variant="caption" color="text.secondary">
                 For local testing only. Avoid sharing tokens.
+              </Typography>
+            </Stack>
+          </CardContent>
+        </Card>
+
+        <Card variant="outlined">
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              Diagnostics
+            </Typography>
+            <Divider sx={{ mb: 2 }} />
+
+            <Stack spacing={1}>
+              <FormControlLabel
+                control={(
+                  <Switch
+                    checked={authRecoveryDebugLocalEnabled}
+                    onChange={(event) => handleToggleAuthRecoveryDebug(event.target.checked)}
+                  />
+                )}
+                label="Enable auth recovery debug logs"
+              />
+              <Typography variant="body2">
+                <strong>Effective status:</strong> {authRecoveryDebugEffectiveEnabled ? 'Enabled' : 'Disabled'}
+              </Typography>
+              {authRecoveryDebugEffectiveEnabled && !authRecoveryDebugLocalEnabled && (
+                <Alert severity="info" sx={{ mt: 1 }}>
+                  Debug logs are enabled by environment or URL query override.
+                </Alert>
+              )}
+              <Typography variant="caption" color="text.secondary">
+                When enabled, auth recovery events are logged to the browser console with prefix
+                {' '}<code>[auth-recovery]</code>. Sensitive fields are redacted automatically.
               </Typography>
             </Stack>
           </CardContent>

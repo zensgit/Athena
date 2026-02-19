@@ -1,4 +1,10 @@
-import { isAuthRecoveryDebugEnabled, logAuthRecoveryEvent } from './authRecoveryDebug';
+import {
+  AUTH_RECOVERY_DEBUG_STORAGE_KEY,
+  isAuthRecoveryDebugEnabled,
+  isAuthRecoveryDebugLocalEnabled,
+  logAuthRecoveryEvent,
+  setAuthRecoveryDebugLocalEnabled,
+} from './authRecoveryDebug';
 
 describe('authRecoveryDebug', () => {
   const originalEnv = process.env.REACT_APP_DEBUG_RECOVERY;
@@ -24,8 +30,20 @@ describe('authRecoveryDebug', () => {
   });
 
   test('enables debug by localStorage flag', () => {
-    window.localStorage.setItem('ecm_debug_recovery', '1');
+    window.localStorage.setItem(AUTH_RECOVERY_DEBUG_STORAGE_KEY, '1');
     expect(isAuthRecoveryDebugEnabled()).toBe(true);
+  });
+
+  test('local debug helper persists and clears override', () => {
+    expect(isAuthRecoveryDebugLocalEnabled()).toBe(false);
+
+    setAuthRecoveryDebugLocalEnabled(true);
+    expect(isAuthRecoveryDebugLocalEnabled()).toBe(true);
+    expect(window.localStorage.getItem(AUTH_RECOVERY_DEBUG_STORAGE_KEY)).toBe('1');
+
+    setAuthRecoveryDebugLocalEnabled(false);
+    expect(isAuthRecoveryDebugLocalEnabled()).toBe(false);
+    expect(window.localStorage.getItem(AUTH_RECOVERY_DEBUG_STORAGE_KEY)).toBeNull();
   });
 
   test('enables debug by query flag', () => {
@@ -59,4 +77,3 @@ describe('authRecoveryDebug', () => {
     );
   });
 });
-

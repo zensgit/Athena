@@ -113,10 +113,13 @@ test('Settings: session actions copy token/header and refresh token (mocked API)
   const copyAccessTokenButton = page.getByRole('button', { name: 'Copy Access Token' });
   const copyAuthHeaderButton = page.getByRole('button', { name: 'Copy Authorization Header' });
   const refreshTokenButton = page.getByRole('button', { name: 'Refresh Token' });
+  const authDebugSwitch = page.getByRole('checkbox', { name: 'Enable auth recovery debug logs' });
 
   await expect(copyAccessTokenButton).toBeEnabled();
   await expect(copyAuthHeaderButton).toBeEnabled();
   await expect(refreshTokenButton).toBeEnabled();
+  await expect(authDebugSwitch).not.toBeChecked();
+  await expect.poll(async () => page.evaluate(() => window.localStorage.getItem('ecm_debug_recovery'))).toBeNull();
 
   await copyAccessTokenButton.click();
   await expect(page.getByText('Access token copied')).toBeVisible({ timeout: 30_000 });
@@ -129,5 +132,16 @@ test('Settings: session actions copy token/header and refresh token (mocked API)
 
   await refreshTokenButton.click();
   await expect(page.getByText('Token refreshed')).toBeVisible({ timeout: 30_000 });
+
+  await authDebugSwitch.check();
+  await expect(page.getByText('Auth recovery debug logs enabled for this browser.')).toBeVisible({ timeout: 30_000 });
+  await expect(authDebugSwitch).toBeChecked();
+  await expect.poll(async () => page.evaluate(() => window.localStorage.getItem('ecm_debug_recovery'))).toBe('1');
+
+  await authDebugSwitch.uncheck();
+  await expect(page.getByText('Auth recovery debug logs disabled for this browser.')).toBeVisible({ timeout: 30_000 });
+  await expect(authDebugSwitch).not.toBeChecked();
+  await expect.poll(async () => page.evaluate(() => window.localStorage.getItem('ecm_debug_recovery'))).toBeNull();
+
   await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
 });

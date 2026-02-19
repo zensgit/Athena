@@ -1,4 +1,4 @@
-const DEBUG_STORAGE_KEY = 'ecm_debug_recovery';
+export const AUTH_RECOVERY_DEBUG_STORAGE_KEY = 'ecm_debug_recovery';
 const REDACTED = '[redacted]';
 const SENSITIVE_KEYS = new Set([
   'token',
@@ -8,6 +8,32 @@ const SENSITIVE_KEYS = new Set([
   'authorization',
   'Authorization',
 ]);
+
+export const isAuthRecoveryDebugLocalEnabled = (): boolean => {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  try {
+    return window.localStorage.getItem(AUTH_RECOVERY_DEBUG_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
+
+export const setAuthRecoveryDebugLocalEnabled = (enabled: boolean) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    if (enabled) {
+      window.localStorage.setItem(AUTH_RECOVERY_DEBUG_STORAGE_KEY, '1');
+      return;
+    }
+    window.localStorage.removeItem(AUTH_RECOVERY_DEBUG_STORAGE_KEY);
+  } catch {
+    // Best effort only.
+  }
+};
 
 const sanitizeValue = (value: unknown): unknown => {
   if (Array.isArray(value)) {
@@ -35,11 +61,7 @@ export const isAuthRecoveryDebugEnabled = (): boolean => {
   }
 
   let storageEnabled = false;
-  try {
-    storageEnabled = window.localStorage.getItem(DEBUG_STORAGE_KEY) === '1';
-  } catch {
-    storageEnabled = false;
-  }
+  storageEnabled = isAuthRecoveryDebugLocalEnabled();
 
   let queryEnabled = false;
   try {
@@ -64,4 +86,3 @@ export const logAuthRecoveryEvent = (event: string, payload?: Record<string, unk
   }
   console.info(`[auth-recovery] ${event}`);
 };
-

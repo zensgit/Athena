@@ -43,6 +43,7 @@ import {
 import { normalizePreviewStatusTokens } from 'utils/searchPrefillUtils';
 import { shouldSuppressStaleFallbackForQuery } from 'utils/searchFallbackUtils';
 import { formatBreadcrumbPath } from 'utils/pathDisplayUtils';
+import { buildSearchErrorRecovery, SearchErrorRecovery } from 'utils/searchErrorUtils';
 
 const MATCH_FIELD_LABELS: Record<string, string> = {
   name: 'Name',
@@ -221,7 +222,7 @@ const AdvancedSearchPage: React.FC = () => {
   const [totalPages, setTotalPages] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchError, setSearchError] = useState<SearchErrorRecovery | null>(null);
 
   // Filters
   const [selectedMimeTypes, setSelectedMimeTypes] = useState<string[]>([]);
@@ -417,9 +418,9 @@ const AdvancedSearchPage: React.FC = () => {
       });
 
     } catch (error) {
-      const message = (error as any)?.response?.data?.message || 'Search failed';
-      setSearchError(message);
-      toast.error(message);
+      const recovery = buildSearchErrorRecovery(error, 'Search failed');
+      setSearchError(recovery);
+      toast.error(recovery.message);
     } finally {
       setLoading(false);
     }
@@ -1071,7 +1072,12 @@ const AdvancedSearchPage: React.FC = () => {
                 sx={{ mb: 2 }}
                 action={(
                   <Stack direction="row" spacing={1}>
-                    <Button color="inherit" size="small" onClick={() => { void handleSearch(page); }}>
+                    <Button
+                      color="inherit"
+                      size="small"
+                      disabled={!searchError.canRetry}
+                      onClick={() => { void handleSearch(page); }}
+                    >
                       Retry
                     </Button>
                     <Button color="inherit" size="small" onClick={handleGoHome}>
@@ -1080,7 +1086,10 @@ const AdvancedSearchPage: React.FC = () => {
                   </Stack>
                 )}
               >
-                {searchError}
+                <Typography variant="body2">{searchError.message}</Typography>
+                <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
+                  {searchError.hint}
+                </Typography>
               </Alert>
             )}
             {shouldShowSuppressedFallbackNotice && !loading && (

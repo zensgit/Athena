@@ -16,6 +16,7 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Phase 3 delivery report (single file): `docs/PHASE3_DELIVERY_REPORT_20260213.md`
 - Phase 4 plan: `docs/NEXT_7DAY_PLAN_PHASE4_20260213.md`
 - Phase 5 plan: `docs/NEXT_7DAY_PLAN_PHASE5_20260213.md`
+- Auth/Search recovery follow-up plan: `docs/NEXT_7DAY_PLAN_AUTH_SEARCH_RECOVERY_20260219.md`
 - Phase 5/6 one-command delivery gate:
   - Dev: `docs/PHASE5_PHASE6_DELIVERY_GATE_DEV_20260215.md`
   - Verification: `docs/PHASE5_PHASE6_DELIVERY_GATE_VERIFICATION_20260215.md`
@@ -103,6 +104,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Route fallback auth-aware recovery (unknown route + Keycloak redirect timing)
   - Design: `docs/PHASE66_ROUTE_FALLBACK_AUTH_AWARE_RECOVERY_DEV_20260219.md`
   - Verification: `docs/PHASE66_ROUTE_FALLBACK_AUTH_AWARE_RECOVERY_VERIFICATION_20260219.md`
+- Settings auth recovery debug toggle
+  - Design: `docs/PHASE67_SETTINGS_AUTH_RECOVERY_DEBUG_TOGGLE_DEV_20260219.md`
+  - Verification: `docs/PHASE67_SETTINGS_AUTH_RECOVERY_DEBUG_TOGGLE_VERIFICATION_20260219.md`
 
 ## Permissions
 
@@ -181,6 +185,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Search recoverable error actions (Retry + Back to folder)
   - Design: `docs/PHASE65_SEARCH_RECOVERABLE_ERROR_ACTIONS_DEV_20260218.md`
   - Verification: `docs/PHASE65_SEARCH_RECOVERABLE_ERROR_ACTIONS_VERIFICATION_20260218.md`
+- Search error taxonomy + recovery mapping
+  - Design: `docs/PHASE68_SEARCH_ERROR_TAXONOMY_RECOVERY_MAPPING_DEV_20260219.md`
+  - Verification: `docs/PHASE68_SEARCH_ERROR_TAXONOMY_RECOVERY_MAPPING_VERIFICATION_20260219.md`
 - Search fallback governance parity
   - P105: Criteria-key parity fix (fallback governance stays correct when query changes)
     - Design: `docs/PHASE1_P105_SEARCH_FALLBACK_CRITERIA_KEY_PARITY_DESIGN_20260212.md`
@@ -257,6 +264,12 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - Phase 66: route fallback auth-aware recovery
     - Dev: `docs/PHASE66_ROUTE_FALLBACK_AUTH_AWARE_RECOVERY_DEV_20260219.md`
     - Verification: `docs/PHASE66_ROUTE_FALLBACK_AUTH_AWARE_RECOVERY_VERIFICATION_20260219.md`
+  - Phase 67: settings auth recovery debug toggle
+    - Dev: `docs/PHASE67_SETTINGS_AUTH_RECOVERY_DEBUG_TOGGLE_DEV_20260219.md`
+    - Verification: `docs/PHASE67_SETTINGS_AUTH_RECOVERY_DEBUG_TOGGLE_VERIFICATION_20260219.md`
+  - Phase 68: search error taxonomy + recovery mapping
+    - Dev: `docs/PHASE68_SEARCH_ERROR_TAXONOMY_RECOVERY_MAPPING_DEV_20260219.md`
+    - Verification: `docs/PHASE68_SEARCH_ERROR_TAXONOMY_RECOVERY_MAPPING_VERIFICATION_20260219.md`
 - Weekly regression command rollup:
   - `docs/WEEKLY_REGRESSION_UPDATE_20260212.md`
 
