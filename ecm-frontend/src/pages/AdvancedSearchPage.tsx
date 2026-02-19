@@ -221,6 +221,7 @@ const AdvancedSearchPage: React.FC = () => {
   const [totalPages, setTotalPages] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   // Filters
   const [selectedMimeTypes, setSelectedMimeTypes] = useState<string[]>([]);
@@ -329,6 +330,7 @@ const AdvancedSearchPage: React.FC = () => {
   ) => {
     try {
       setLoading(true);
+      setSearchError(null);
       const effectiveQuery = options?.queryOverride ?? query;
       const effectivePreviewStatuses = options?.previewStatuses ?? selectedPreviewStatuses;
       const effectiveDateRange = options?.dateRangeOverride ?? dateRange;
@@ -415,7 +417,9 @@ const AdvancedSearchPage: React.FC = () => {
       });
 
     } catch (error) {
-      toast.error('Search failed');
+      const message = (error as any)?.response?.data?.message || 'Search failed';
+      setSearchError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -515,6 +519,13 @@ const AdvancedSearchPage: React.FC = () => {
     setFallbackLastRetryAt(new Date());
     void handleSearch(page);
   }, [handleSearch, page]);
+
+  const handleGoHome = useCallback(() => {
+    navigate('/browse/root');
+    if (sidebarAutoCollapse) {
+      dispatch(setSidebarOpen(false));
+    }
+  }, [dispatch, navigate, sidebarAutoCollapse]);
 
   const handleHideFallbackResults = useCallback(() => {
     if (!currentCriteriaKey) {
@@ -1054,6 +1065,24 @@ const AdvancedSearchPage: React.FC = () => {
         {/* Results Area */}
         <Grid item xs={12} md={9} sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
           <Box flex={1} overflow="auto">
+            {searchError && (
+              <Alert
+                severity="error"
+                sx={{ mb: 2 }}
+                action={(
+                  <Stack direction="row" spacing={1}>
+                    <Button color="inherit" size="small" onClick={() => { void handleSearch(page); }}>
+                      Retry
+                    </Button>
+                    <Button color="inherit" size="small" onClick={handleGoHome}>
+                      Back to folder
+                    </Button>
+                  </Stack>
+                )}
+              >
+                {searchError}
+              </Alert>
+            )}
             {shouldShowSuppressedFallbackNotice && !loading && (
               <Alert
                 severity="info"

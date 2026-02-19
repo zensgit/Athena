@@ -479,6 +479,27 @@ const SearchResults: React.FC = () => {
     runSearch({ ...lastSearchCriteria, page: 0, size: pageSize, ...sortParams });
   }, [lastSearchCriteria, sortBy, pageSize, runSearch]);
 
+  const handleRetryPrimarySearch = useCallback(() => {
+    if (lastSearchCriteria) {
+      const sortParams = getSortParams(sortBy);
+      runSearch({ ...lastSearchCriteria, page: 0, size: pageSize, ...sortParams });
+      return;
+    }
+    const normalizedQuery = quickSearch.trim();
+    if (!normalizedQuery) {
+      return;
+    }
+    const sortParams = getSortParams(sortBy);
+    runSearch({ name: normalizedQuery, page: 0, size: pageSize, ...sortParams });
+  }, [lastSearchCriteria, pageSize, quickSearch, runSearch, sortBy]);
+
+  const handleGoHomeFromError = useCallback(() => {
+    navigate('/browse/root');
+    if (sidebarAutoCollapse) {
+      dispatch(setSidebarOpen(false));
+    }
+  }, [dispatch, navigate, sidebarAutoCollapse]);
+
   const handleHideFallbackResults = useCallback(() => {
     const criteriaKey = buildFallbackCriteriaKey(lastSearchCriteria);
     if (!criteriaKey) {
@@ -2279,9 +2300,22 @@ const SearchResults: React.FC = () => {
               severity="error"
               sx={{ mb: 2 }}
               action={
-                <Button color="inherit" size="small" onClick={handleAdvancedSearch}>
-                  Advanced
-                </Button>
+                <Stack direction="row" spacing={1}>
+                  <Button
+                    color="inherit"
+                    size="small"
+                    onClick={handleRetryPrimarySearch}
+                    disabled={!lastSearchCriteria && quickSearch.trim().length === 0}
+                  >
+                    Retry
+                  </Button>
+                  <Button color="inherit" size="small" onClick={handleGoHomeFromError}>
+                    Back to folder
+                  </Button>
+                  <Button color="inherit" size="small" onClick={handleAdvancedSearch}>
+                    Advanced
+                  </Button>
+                </Stack>
               }
             >
               {error}

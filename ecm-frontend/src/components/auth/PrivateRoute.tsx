@@ -15,6 +15,7 @@ import {
   LOGIN_IN_PROGRESS_STARTED_AT_KEY,
   LOGIN_IN_PROGRESS_TIMEOUT_MS,
 } from 'constants/auth';
+import { logAuthRecoveryEvent } from 'utils/authRecoveryDebug';
 
 interface PrivateRouteProps {
   children: React.ReactNode;
@@ -75,11 +76,17 @@ const PrivateRoute: React.FC<PrivateRouteProps> = ({ children, requiredRoles }) 
 
   useEffect(() => {
     if (loginStale) {
+      logAuthRecoveryEvent('private_route.login_stale', {
+        pathname: location.pathname,
+      });
       sessionStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
       sessionStorage.removeItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY);
       return;
     }
     if (redirectFailureWindowExpired) {
+      logAuthRecoveryEvent('private_route.redirect_failure_window_reset', {
+        pathname: location.pathname,
+      });
       sessionStorage.removeItem(AUTH_REDIRECT_FAILURE_COUNT_KEY);
       sessionStorage.removeItem(AUTH_REDIRECT_LAST_FAILURE_AT_KEY);
     }
@@ -93,15 +100,29 @@ const PrivateRoute: React.FC<PrivateRouteProps> = ({ children, requiredRoles }) 
     if (hasCallbackParams) return;
     if (effectiveLoginInProgress) return;
     if (shouldPauseAutoRedirect) {
+      logAuthRecoveryEvent('private_route.redirect_paused', {
+        pathname: location.pathname,
+        effectiveRedirectFailureCount,
+        hasRecentRedirectFailure,
+        hasReachedAutoRedirectLimit,
+      });
       sessionStorage.setItem(AUTH_INIT_STATUS_KEY, AUTH_INIT_STATUS_REDIRECT_FAILED);
       return;
     }
 
+    logAuthRecoveryEvent('private_route.redirect_start', {
+      pathname: location.pathname,
+      redirectUri: buildSafeRedirectUri(location.pathname, location.search, location.hash),
+    });
     sessionStorage.setItem(LOGIN_IN_PROGRESS_KEY, '1');
     sessionStorage.setItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY, String(Date.now()));
     const redirectUri = buildSafeRedirectUri(location.pathname, location.search, location.hash);
     const loginRequest = authService.login({ redirectUri });
     void Promise.resolve(loginRequest).catch((error) => {
+      logAuthRecoveryEvent('private_route.redirect_failed', {
+        pathname: location.pathname,
+        error: error instanceof Error ? error.message : String(error),
+      });
       console.error('Automatic login redirect failed', error);
       sessionStorage.setItem(AUTH_INIT_STATUS_KEY, AUTH_INIT_STATUS_REDIRECT_FAILED);
       sessionStorage.setItem(AUTH_REDIRECT_LAST_FAILURE_AT_KEY, String(Date.now()));
@@ -121,6 +142,8 @@ const PrivateRoute: React.FC<PrivateRouteProps> = ({ children, requiredRoles }) 
     redirectFailureWindowExpired,
     shouldPauseAutoRedirect,
     loginStale,
+    hasReachedAutoRedirectLimit,
+    hasRecentRedirectFailure,
   ]);
 
   if (!isAuthenticated && !keycloakAuthenticated) {

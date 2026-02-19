@@ -12,6 +12,9 @@
   - P1 smoke 覆盖增强：新增未知路径回退无白屏场景。
   - Full-stack smoke 脚本增强：单独执行时复用 prebuilt 同步策略，减少旧静态包误测。
   - Preview 状态统计一致性增强：带参数的 `application/octet-stream;...` 归类为 unsupported，避免误计入 failed。
+  - Auth 恢复可观测性增强：支持结构化调试事件（默认关闭，按需开启）。
+  - Search/Advanced Search 恢复增强：搜索失败时提供 Retry + Back to folder 内联操作。
+  - Unknown Route 回退稳定性增强：按认证状态回退 + P1 smoke 适配 Keycloak 重定向时序。
 
 ## 二、主要变更
 ### 1) 会话恢复与登录提示
@@ -109,6 +112,35 @@
     - `UNSUPPORTED` 过滤应包含 parameterized octet-stream 旧数据
     - previewStatus facets 计数应将 parameterized octet-stream 归类到 `UNSUPPORTED`
 
+### 9) Auth 恢复链路可观测性（调试开关）
+- 新增 `ecm-frontend/src/utils/authRecoveryDebug.ts`：
+  - `REACT_APP_DEBUG_RECOVERY=1` / `localStorage.ecm_debug_recovery=1` / `?debugRecovery=1` 触发调试输出。
+  - 输出前递归脱敏：`token` / `Authorization` / `refreshToken` 等字段会被替换为 `[redacted]`。
+- 在以下链路补齐事件日志（默认不输出）：
+  - `index.tsx`: bootstrap start/retry/success/failed
+  - `authService.ts`: login/logout/refresh decision
+  - `api.ts`: 401 receive/retry/redirect + session-expired marking
+  - `PrivateRoute.tsx`: auto redirect start/pause/failure
+  - `App.tsx`: unknown route fallback redirect
+
+### 10) Search 可恢复错误操作
+- `ecm-frontend/src/pages/SearchResults.tsx`
+  - 错误提示新增动作：`Retry` / `Back to folder` / `Advanced`
+- `ecm-frontend/src/pages/AdvancedSearchPage.tsx`
+  - 新增内联搜索错误提示与动作：`Retry` / `Back to folder`
+  - 保留 toast 反馈，便于快速感知
+
+### 11) Unknown Route 回退认证态一致性
+- `ecm-frontend/src/App.tsx`
+  - `RouteFallbackRedirect` 改为按认证态选择目标：
+    - 已认证 -> `/browse/root`
+    - 未认证 -> `/login`
+  - 避免未知路径先落到受保护路由再触发额外认证跳转。
+- `ecm-frontend/e2e/p1-smoke.spec.ts`
+  - Unknown route smoke 断言增强：
+    - 接受 in-app 恢复页可见，或到达 Keycloak 授权页（`client_id=unified-portal`）两种合法终态。
+  - 降低认证跳转时序导致的误报。
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -150,3 +182,9 @@
 - `docs/PHASE62_FULLSTACK_SMOKE_PREBUILT_SYNC_REUSE_VERIFICATION_20260218.md`
 - `docs/PHASE63_PREVIEW_STATUS_MIME_PARAMETER_UNSUPPORTED_DEV_20260218.md`
 - `docs/PHASE63_PREVIEW_STATUS_MIME_PARAMETER_UNSUPPORTED_VERIFICATION_20260218.md`
+- `docs/PHASE64_AUTH_RECOVERY_OBSERVABILITY_DEV_20260218.md`
+- `docs/PHASE64_AUTH_RECOVERY_OBSERVABILITY_VERIFICATION_20260218.md`
+- `docs/PHASE65_SEARCH_RECOVERABLE_ERROR_ACTIONS_DEV_20260218.md`
+- `docs/PHASE65_SEARCH_RECOVERABLE_ERROR_ACTIONS_VERIFICATION_20260218.md`
+- `docs/PHASE66_ROUTE_FALLBACK_AUTH_AWARE_RECOVERY_DEV_20260219.md`
+- `docs/PHASE66_ROUTE_FALLBACK_AUTH_AWARE_RECOVERY_VERIFICATION_20260219.md`

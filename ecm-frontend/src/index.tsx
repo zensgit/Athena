@@ -15,6 +15,7 @@ import {
   LOGIN_IN_PROGRESS_KEY,
   LOGIN_IN_PROGRESS_STARTED_AT_KEY,
 } from 'constants/auth';
+import { logAuthRecoveryEvent } from 'utils/authRecoveryDebug';
 
 const allowInsecureCrypto = process.env.REACT_APP_INSECURE_CRYPTO_OK === 'true';
 const installInsecureCryptoFallback = () => {
@@ -146,6 +147,10 @@ const setAuthInitStatus = (status: string) => {
 };
 
 const initAuth = async () => {
+  logAuthRecoveryEvent('auth.bootstrap.start', {
+    pathname: window.location.pathname,
+    search: window.location.search,
+  });
   renderAuthBooting();
   clearAuthInitStatus({ preserveSessionExpired: true });
   try {
@@ -166,6 +171,11 @@ const initAuth = async () => {
         retryDelayMs: AUTH_INIT_RETRY_DELAY_MS,
         onRetry: (attempt, error) => {
           const retryAt = attempt + 1;
+          logAuthRecoveryEvent('auth.bootstrap.retry', {
+            attempt,
+            retryAt,
+            error: error instanceof Error ? error.message : String(error),
+          });
           console.warn(`Keycloak init attempt ${attempt} failed, retrying attempt ${retryAt}.`, error);
         },
       }
@@ -183,6 +193,9 @@ const initAuth = async () => {
     if (authenticated) {
       authService.startTokenRefresh();
     }
+    logAuthRecoveryEvent('auth.bootstrap.success', {
+      authenticated,
+    });
   } catch (error) {
     clearLoginProgress();
     store.dispatch(
@@ -195,9 +208,17 @@ const initAuth = async () => {
     if (error instanceof AuthInitTimeoutError) {
       setAuthInitStatus(AUTH_INIT_STATUS_TIMEOUT);
       console.error('Keycloak init timeout:', error.message);
+      logAuthRecoveryEvent('auth.bootstrap.failed', {
+        status: AUTH_INIT_STATUS_TIMEOUT,
+        error: error.message,
+      });
     } else {
       setAuthInitStatus(AUTH_INIT_STATUS_ERROR);
       console.error('Keycloak init error:', error);
+      logAuthRecoveryEvent('auth.bootstrap.failed', {
+        status: AUTH_INIT_STATUS_ERROR,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
     renderApp();
   }

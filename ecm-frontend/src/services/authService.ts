@@ -1,5 +1,6 @@
 import type { KeycloakInstance, KeycloakLoginOptions, KeycloakInitOptions } from 'keycloak-js';
 import { User } from 'types';
+import { logAuthRecoveryEvent } from 'utils/authRecoveryDebug';
 
 type KeycloakInitOptionsWithPkce = KeycloakInitOptions & { pkceMethod?: string };
 
@@ -139,16 +140,24 @@ class AuthService {
   }
 
   async login(options?: KeycloakLoginOptions): Promise<void> {
+    logAuthRecoveryEvent('auth.login.start', {
+      hasRedirectUri: Boolean(options?.redirectUri),
+    });
     const keycloak = await loadKeycloak();
     await ensureKeycloakInitializedForLogin(keycloak);
     await keycloak.login(options);
+    logAuthRecoveryEvent('auth.login.redirect_requested');
   }
 
   async logout(): Promise<void> {
+    logAuthRecoveryEvent('auth.logout.start', {
+      hasKeycloakInstance: Boolean(keycloakInstance),
+    });
     if (keycloakInstance) {
       await keycloakInstance.logout();
     }
     this.clearSession();
+    logAuthRecoveryEvent('auth.logout.done');
   }
 
   getToken(): string | undefined {
@@ -164,14 +173,30 @@ class AuthService {
 
   async refreshToken(): Promise<string | undefined> {
     if (getBypassMode()) {
+      logAuthRecoveryEvent('auth.refresh.bypass');
       return loadBypassSession()?.token;
     }
-    if (!keycloakInstance || !keycloakInstance.authenticated) return undefined;
+    if (!keycloakInstance || !keycloakInstance.authenticated) {
+      logAuthRecoveryEvent('auth.refresh.skipped', {
+        hasKeycloakInstance: Boolean(keycloakInstance),
+        authenticated: Boolean(keycloakInstance?.authenticated),
+      });
+      return undefined;
+    }
     try {
       await keycloakInstance.updateToken(30);
+      logAuthRecoveryEvent('auth.refresh.success');
       return keycloakInstance.token || undefined;
     } catch (err) {
-      if (shouldLogoutOnRefreshError(err)) {
+      const status = extractRefreshErrorStatus(err);
+      const text = extractRefreshErrorText(err);
+      const shouldLogout = shouldLogoutOnRefreshError(err);
+      logAuthRecoveryEvent('auth.refresh.failed', {
+        status,
+        shouldLogout,
+        error: text,
+      });
+      if (shouldLogout) {
         await this.logout();
         return undefined;
       }

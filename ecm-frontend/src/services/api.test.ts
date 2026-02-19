@@ -6,6 +6,7 @@ import {
 } from 'constants/auth';
 import authService from './authService';
 import { ApiService } from './api';
+import { logAuthRecoveryEvent } from 'utils/authRecoveryDebug';
 
 jest.mock('./authService', () => ({
   __esModule: true,
@@ -19,6 +20,11 @@ jest.mock('react-toastify', () => ({
   toast: {
     error: jest.fn(),
   },
+}));
+
+jest.mock('utils/authRecoveryDebug', () => ({
+  __esModule: true,
+  logAuthRecoveryEvent: jest.fn(),
 }));
 
 type AxiosMockInstance = {
@@ -40,6 +46,7 @@ type AxiosMockInstance = {
 
 const authServiceMock = authService as jest.Mocked<typeof authService>;
 const toastErrorMock = toast.error as jest.Mock;
+const logAuthRecoveryEventMock = logAuthRecoveryEvent as jest.Mock;
 
 const getLatestAxiosInstance = (): AxiosMockInstance => {
   const createMock = axios.create as jest.Mock;
@@ -112,6 +119,12 @@ describe('ApiService auth recovery', () => {
     expect(sessionStorage.getItem(AUTH_INIT_STATUS_KEY)).toBeNull();
     expect(retriedResponse).toEqual({ data: { ok: true } });
     expect(toastErrorMock).not.toHaveBeenCalled();
+    expect(logAuthRecoveryEventMock).toHaveBeenCalledWith(
+      'api.response.401.retry.success',
+      expect.objectContaining({
+        retryAuth: true,
+      })
+    );
     expect(service).toBeTruthy();
   });
 
@@ -162,6 +175,12 @@ describe('ApiService auth recovery', () => {
     expect(sessionStorage.getItem(AUTH_INIT_STATUS_KEY)).toBe(AUTH_INIT_STATUS_SESSION_EXPIRED);
     expect(localStorage.getItem('ecm_auth_redirect_reason')).toBe(AUTH_INIT_STATUS_SESSION_EXPIRED);
     expect(toastErrorMock).toHaveBeenCalledWith('Session expired. Please login again.');
+    expect(logAuthRecoveryEventMock).toHaveBeenCalledWith(
+      'api.session_expired.mark',
+      expect.objectContaining({
+        pathname: '/login',
+      })
+    );
     expect(service).toBeTruthy();
   });
 });

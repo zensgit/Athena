@@ -24,19 +24,36 @@ const createKeycloakMock = (): MockKeycloak => ({
 
 const loadIsolatedAuthService = async (keycloakMock: MockKeycloak) => {
   let loadedModule: any;
+  let logAuthRecoveryEventMock: jest.Mock;
   jest.isolateModules(() => {
     jest.doMock('auth/keycloak', () => ({
       __esModule: true,
       default: keycloakMock,
     }));
+    logAuthRecoveryEventMock = jest.fn();
+    jest.doMock('utils/authRecoveryDebug', () => ({
+      __esModule: true,
+      logAuthRecoveryEvent: logAuthRecoveryEventMock,
+    }));
     loadedModule = require('./authService');
   });
-  return loadedModule as {
+  return {
+    ...(loadedModule as {
+      default: {
+        init: (options: any) => Promise<boolean>;
+        refreshToken: () => Promise<string | undefined>;
+      };
+    }),
+    logAuthRecoveryEventMock: logAuthRecoveryEventMock!,
+  };
+};
+
+type IsolatedAuthServiceModule = {
     default: {
       init: (options: any) => Promise<boolean>;
       refreshToken: () => Promise<string | undefined>;
     };
-  };
+    logAuthRecoveryEventMock: jest.Mock;
 };
 
 describe('shouldLogoutOnRefreshError', () => {
@@ -68,7 +85,7 @@ describe('authService.refreshToken', () => {
     keycloakMock.updateToken.mockRejectedValueOnce(new Error('Network Error'));
 
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
-    const module = await loadIsolatedAuthService(keycloakMock);
+    const module = await loadIsolatedAuthService(keycloakMock) as IsolatedAuthServiceModule;
     const authService = module.default;
 
     await authService.init({ onLoad: 'check-sso', checkLoginIframe: false });
@@ -76,6 +93,12 @@ describe('authService.refreshToken', () => {
 
     expect(token).toBe('still-valid-token');
     expect(keycloakMock.logout).not.toHaveBeenCalled();
+    expect(module.logAuthRecoveryEventMock).toHaveBeenCalledWith(
+      'auth.refresh.failed',
+      expect.objectContaining({
+        shouldLogout: false,
+      })
+    );
     warnSpy.mockRestore();
   });
 
@@ -89,7 +112,7 @@ describe('authService.refreshToken', () => {
     localStorage.setItem('token', 'stale-token');
     localStorage.setItem('user', JSON.stringify({ id: 'u1' }));
 
-    const module = await loadIsolatedAuthService(keycloakMock);
+    const module = await loadIsolatedAuthService(keycloakMock) as IsolatedAuthServiceModule;
     const authService = module.default;
 
     await authService.init({ onLoad: 'check-sso', checkLoginIframe: false });
@@ -97,6 +120,12 @@ describe('authService.refreshToken', () => {
 
     expect(token).toBeUndefined();
     expect(keycloakMock.logout).toHaveBeenCalledTimes(1);
+    expect(module.logAuthRecoveryEventMock).toHaveBeenCalledWith(
+      'auth.refresh.failed',
+      expect.objectContaining({
+        shouldLogout: true,
+      })
+    );
     expect(localStorage.getItem('token')).toBeNull();
     expect(localStorage.getItem('user')).toBeNull();
   });

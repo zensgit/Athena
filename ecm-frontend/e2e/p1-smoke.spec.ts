@@ -81,10 +81,21 @@ test('P1 smoke: unknown route falls back without blank page', async ({ page, req
     window.dispatchEvent(new PopStateEvent('popstate'));
   }, unknownPath);
 
-  await expect
-    .poll(() => page.url(), { timeout: 60_000 })
-    .toMatch(/(\/browse\/|\/login($|[?#]))/);
-  await expect(page.getByText('Athena ECM')).toBeVisible({ timeout: 60_000 });
+  const reachedState = await Promise.race([
+    page
+      .waitForURL(/\/protocol\/openid-connect\/auth/, { timeout: 60_000 })
+      .then(() => 'auth' as const)
+      .catch(() => null),
+    page
+      .getByText('Athena ECM')
+      .waitFor({ state: 'visible', timeout: 60_000 })
+      .then(() => 'ui' as const)
+      .catch(() => null),
+  ]);
+  expect(reachedState).toBeTruthy();
+  if (reachedState === 'auth') {
+    await expect(page).toHaveURL(/client_id=unified-portal/);
+  }
 });
 
 async function loginWithCredentials(page: Page, username: string, password: string, token?: string) {

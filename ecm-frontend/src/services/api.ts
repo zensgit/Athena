@@ -8,6 +8,7 @@ import {
   LOGIN_IN_PROGRESS_KEY,
   LOGIN_IN_PROGRESS_STARTED_AT_KEY,
 } from 'constants/auth';
+import { logAuthRecoveryEvent } from 'utils/authRecoveryDebug';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL
   || process.env.REACT_APP_API_BASE_URL
@@ -32,7 +33,11 @@ export class ApiService {
       async (config) => {
         try {
           await this.refreshTokenOnce();
-        } catch {
+        } catch (refreshError) {
+          logAuthRecoveryEvent('api.request.refresh.failed', {
+            ...this.toRequestMeta(config),
+            error: this.toErrorMessage(refreshError),
+          });
           // If refresh fails, let the request proceed; the 401 handler will redirect to login.
         }
 
@@ -62,8 +67,10 @@ export class ApiService {
         }
         if (error.response?.status === 401) {
           const originalRequest = this.resolveRetryRequestConfig(error);
+          logAuthRecoveryEvent('api.response.401.received', this.toRequestMeta(originalRequest));
           if (originalRequest && !originalRequest._retryAuth) {
             originalRequest._retryAuth = true;
+            logAuthRecoveryEvent('api.response.401.retry.start', this.toRequestMeta(originalRequest));
             try {
               const refreshedToken = await this.refreshTokenOnce();
               const fallbackToken = authService.getToken();
@@ -75,12 +82,19 @@ export class ApiService {
                 };
               }
               // Retry once even if refresh returns undefined (browser/runtime differences).
-              return await this.api.request(originalRequest);
-            } catch {
+              const response = await this.api.request(originalRequest);
+              logAuthRecoveryEvent('api.response.401.retry.success', this.toRequestMeta(originalRequest));
+              return response;
+            } catch (retryError) {
+              logAuthRecoveryEvent('api.response.401.retry.failed', {
+                ...this.toRequestMeta(originalRequest),
+                error: this.toErrorMessage(retryError),
+              });
               // Fall through and redirect to login below.
             }
           }
 
+          logAuthRecoveryEvent('api.response.401.redirect', this.toRequestMeta(originalRequest));
           this.markSessionExpiredAndRedirect();
         } else if (error.response?.data?.message) {
           toast.error(error.response.data.message);
@@ -102,6 +116,9 @@ export class ApiService {
   }
 
   private markSessionExpiredAndRedirect() {
+    logAuthRecoveryEvent('api.session_expired.mark', {
+      pathname: window.location.pathname,
+    });
     try {
       sessionStorage.setItem(AUTH_INIT_STATUS_KEY, AUTH_INIT_STATUS_SESSION_EXPIRED);
       sessionStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
@@ -118,7 +135,15 @@ export class ApiService {
       if (window.location.pathname !== '/login') {
         const loginUrl = new URL('/login', window.location.origin);
         loginUrl.searchParams.set('reason', AUTH_INIT_STATUS_SESSION_EXPIRED);
+        logAuthRecoveryEvent('api.session_expired.redirect', {
+          from: window.location.pathname,
+          to: `${loginUrl.pathname}${loginUrl.search}`,
+        });
         window.location.assign(`${loginUrl.pathname}${loginUrl.search}`);
+      } else {
+        logAuthRecoveryEvent('api.session_expired.redirect.skipped', {
+          reason: 'already_on_login',
+        });
       }
     }
   }
@@ -148,6 +173,33 @@ export class ApiService {
       headers: {
         ...(candidate.headers || {}),
       },
+    };
+  }
+
+  private toErrorMessage(error: unknown): string {
+    if (!error) {
+      return 'unknown';
+    }
+    if (error instanceof Error) {
+      return error.message || error.name;
+    }
+    if (typeof error === 'string') {
+      return error;
+    }
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return String(error);
+    }
+  }
+
+  private toRequestMeta(config?: AxiosRequestConfig & { _retryAuth?: boolean } | null): Record<string, unknown> {
+    const method = typeof config?.method === 'string' ? config.method.toUpperCase() : undefined;
+    const url = typeof config?.url === 'string' ? config.url : undefined;
+    return {
+      method,
+      url,
+      retryAuth: Boolean(config?._retryAuth),
     };
   }
 

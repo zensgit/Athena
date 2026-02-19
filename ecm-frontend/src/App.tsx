@@ -1,11 +1,11 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Provider } from 'react-redux';
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
-import { store } from './store';
+import { store, useAppSelector } from './store';
 import Login from './components/auth/Login';
 import PrivateRoute from './components/auth/PrivateRoute';
 import MainLayout from './components/layout/MainLayout';
@@ -30,6 +30,8 @@ import PreviewDiagnosticsPage from './pages/PreviewDiagnosticsPage';
 import VersionHistoryDialog from './components/dialogs/VersionHistoryDialog';
 import PermissionsDialog from './components/dialogs/PermissionsDialog';
 import PropertiesDialog from './components/dialogs/PropertiesDialog';
+import { logAuthRecoveryEvent } from 'utils/authRecoveryDebug';
+import authService from 'services/authService';
 
 const SearchDialog = React.lazy(() => import('./components/search/SearchDialog'));
 
@@ -69,6 +71,22 @@ const shouldForceE2ERenderCrash = () => {
   } catch {
     return false;
   }
+};
+
+const RouteFallbackRedirect: React.FC = () => {
+  const location = useLocation();
+  const { isAuthenticated } = useAppSelector((state) => state.auth);
+  const hasSession = isAuthenticated || authService.isAuthenticated();
+  const target = hasSession ? '/browse/root' : '/login';
+
+  React.useEffect(() => {
+    logAuthRecoveryEvent('route.fallback.redirect', {
+      from: `${location.pathname}${location.search}${location.hash || ''}`,
+      to: target,
+    });
+  }, [location.hash, location.pathname, location.search, target]);
+
+  return <Navigate to={target} replace />;
 };
 
 const App: React.FC = () => {
@@ -280,7 +298,7 @@ const App: React.FC = () => {
                 </PrivateRoute>
               }
             />
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="*" element={<RouteFallbackRedirect />} />
           </Routes>
 
           {/* Global Dialogs - Must be inside Router for useNavigate */}

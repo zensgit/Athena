@@ -97,6 +97,12 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Preview status unsupported matching for MIME parameters
   - Design: `docs/PHASE63_PREVIEW_STATUS_MIME_PARAMETER_UNSUPPORTED_DEV_20260218.md`
   - Verification: `docs/PHASE63_PREVIEW_STATUS_MIME_PARAMETER_UNSUPPORTED_VERIFICATION_20260218.md`
+- Auth recovery observability
+  - Design: `docs/PHASE64_AUTH_RECOVERY_OBSERVABILITY_DEV_20260218.md`
+  - Verification: `docs/PHASE64_AUTH_RECOVERY_OBSERVABILITY_VERIFICATION_20260218.md`
+- Route fallback auth-aware recovery (unknown route + Keycloak redirect timing)
+  - Design: `docs/PHASE66_ROUTE_FALLBACK_AUTH_AWARE_RECOVERY_DEV_20260219.md`
+  - Verification: `docs/PHASE66_ROUTE_FALLBACK_AUTH_AWARE_RECOVERY_VERIFICATION_20260219.md`
 
 ## Permissions
 
@@ -172,6 +178,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Search continuity + regression gate
   - P104: Search continuity regression gate
     - Verification: `docs/PHASE1_P104_SEARCH_CONTINUITY_REGRESSION_GATE_VERIFICATION_20260212.md`
+- Search recoverable error actions (Retry + Back to folder)
+  - Design: `docs/PHASE65_SEARCH_RECOVERABLE_ERROR_ACTIONS_DEV_20260218.md`
+  - Verification: `docs/PHASE65_SEARCH_RECOVERABLE_ERROR_ACTIONS_VERIFICATION_20260218.md`
 - Search fallback governance parity
   - P105: Criteria-key parity fix (fallback governance stays correct when query changes)
     - Design: `docs/PHASE1_P105_SEARCH_FALLBACK_CRITERIA_KEY_PARITY_DESIGN_20260212.md`
@@ -239,6 +248,15 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - Phase 63: preview status unsupported matching for MIME parameters
     - Dev: `docs/PHASE63_PREVIEW_STATUS_MIME_PARAMETER_UNSUPPORTED_DEV_20260218.md`
     - Verification: `docs/PHASE63_PREVIEW_STATUS_MIME_PARAMETER_UNSUPPORTED_VERIFICATION_20260218.md`
+  - Phase 64: auth recovery observability
+    - Dev: `docs/PHASE64_AUTH_RECOVERY_OBSERVABILITY_DEV_20260218.md`
+    - Verification: `docs/PHASE64_AUTH_RECOVERY_OBSERVABILITY_VERIFICATION_20260218.md`
+  - Phase 65: search recoverable error actions
+    - Dev: `docs/PHASE65_SEARCH_RECOVERABLE_ERROR_ACTIONS_DEV_20260218.md`
+    - Verification: `docs/PHASE65_SEARCH_RECOVERABLE_ERROR_ACTIONS_VERIFICATION_20260218.md`
+  - Phase 66: route fallback auth-aware recovery
+    - Dev: `docs/PHASE66_ROUTE_FALLBACK_AUTH_AWARE_RECOVERY_DEV_20260219.md`
+    - Verification: `docs/PHASE66_ROUTE_FALLBACK_AUTH_AWARE_RECOVERY_VERIFICATION_20260219.md`
 - Weekly regression command rollup:
   - `docs/WEEKLY_REGRESSION_UPDATE_20260212.md`
 
