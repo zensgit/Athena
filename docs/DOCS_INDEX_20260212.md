@@ -122,6 +122,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - FileBrowser loading watchdog + recovery actions
   - Design: `docs/PHASE77_FILEBROWSER_LOADING_WATCHDOG_DEV_20260220.md`
   - Verification: `docs/PHASE77_FILEBROWSER_LOADING_WATCHDOG_VERIFICATION_20260220.md`
+- Auth boot startup watchdog + recovery actions
+  - Design: `docs/PHASE78_AUTH_BOOT_WATCHDOG_DEV_20260220.md`
+  - Verification: `docs/PHASE78_AUTH_BOOT_WATCHDOG_VERIFICATION_20260220.md`
 - Failure-injection coverage (transient vs terminal auth + search retry recovery)
   - Design: `docs/PHASE72_FAILURE_INJECTION_COVERAGE_DEV_20260219.md`
   - Verification: `docs/PHASE72_FAILURE_INJECTION_COVERAGE_VERIFICATION_20260219.md`

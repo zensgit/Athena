@@ -295,6 +295,30 @@
   - `npm run lint`
   - `bash scripts/phase70-auth-route-matrix-smoke.sh`
 
+### 23) Auth boot startup watchdog + recovery actions（Phase78）
+- `ecm-frontend/src/components/auth/AuthBootingScreen.tsx`
+  - 新增认证启动 watchdog 组件（默认 12s）
+  - watchdog 触发后展示恢复动作：
+    - `Reload`
+    - `Continue to login`
+- `ecm-frontend/src/index.tsx`
+  - 启动页接入 watchdog 组件
+  - 新增 `REACT_APP_AUTH_BOOT_WATCHDOG_MS`
+  - `Continue to login` 触发后立即回落应用登录态，避免 spinner-only 停留
+  - 增加恢复后竞态保护：watchdog 恢复生效后，迟到的 bootstrap success/error/fatal 结果不再覆盖当前恢复态
+  - 新增 debug 事件：
+    - `auth.bootstrap.watchdog.triggered`
+    - `auth.bootstrap.watchdog.reload`
+    - `auth.bootstrap.watchdog.continue_to_login`
+    - `auth.bootstrap.skipped_after_watchdog_recovery`
+- `ecm-frontend/src/components/auth/AuthBootingScreen.test.tsx`
+  - 新增 watchdog 状态迁移与动作回调单测覆盖
+- 验证方式：
+  - `npm test -- --watch=false --runInBand src/components/auth/AuthBootingScreen.test.tsx src/components/auth/Login.test.tsx src/services/authBootstrap.test.ts`
+  - `npm run lint`
+  - `bash scripts/phase70-auth-route-matrix-smoke.sh`
+  - `bash scripts/phase5-regression.sh`
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -358,3 +382,5 @@
 - `docs/PHASE73_AUTH_SEARCH_RECOVERY_VERIFICATION_ROLLUP_20260219.md`
 - `docs/PHASE74_GATE_INTEGRATION_AUTH_ROUTE_MATRIX_DEV_20260220.md`
 - `docs/PHASE74_GATE_INTEGRATION_AUTH_ROUTE_MATRIX_VERIFICATION_20260220.md`
+- `docs/PHASE78_AUTH_BOOT_WATCHDOG_DEV_20260220.md`
+- `docs/PHASE78_AUTH_BOOT_WATCHDOG_VERIFICATION_20260220.md`

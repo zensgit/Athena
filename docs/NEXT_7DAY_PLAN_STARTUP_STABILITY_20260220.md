@@ -25,7 +25,7 @@
   - avoid infinite spinner-only state when requests hang
 - Add targeted mocked E2E for slow/hanging folder list APIs.
 
-### Day 3
+### Day 3 (Completed)
 - App-level startup watchdog banner:
   - if auth booting exceeds threshold, show actionable recovery controls
   - keep telemetry hook for timeout/fatal-path diagnostics

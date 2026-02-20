@@ -5,6 +5,7 @@ import App from './App';
 import authService from 'services/authService';
 import { AuthInitTimeoutError, runAuthInitWithRetry } from 'services/authBootstrap';
 import AppErrorBoundary from 'components/layout/AppErrorBoundary';
+import AuthBootingScreen from 'components/auth/AuthBootingScreen';
 import { store } from './store';
 import { setSession } from 'store/slices/authSlice';
 import {
@@ -14,6 +15,7 @@ import {
   AUTH_INIT_STATUS_TIMEOUT,
   LOGIN_IN_PROGRESS_KEY,
   LOGIN_IN_PROGRESS_STARTED_AT_KEY,
+  resolvePositiveIntEnv,
 } from 'constants/auth';
 import { logAuthRecoveryEvent } from 'utils/authRecoveryDebug';
 
@@ -56,9 +58,13 @@ installInsecureCryptoFallback();
 
 const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
 const KEYCLOAK_CALLBACK_KEYS = ['code', 'state', 'session_state', 'iss'] as const;
-const AUTH_INIT_TIMEOUT_MS = Number(process.env.REACT_APP_AUTH_INIT_TIMEOUT_MS || '15000');
-const AUTH_INIT_MAX_ATTEMPTS = Number(process.env.REACT_APP_AUTH_INIT_MAX_ATTEMPTS || '2');
-const AUTH_INIT_RETRY_DELAY_MS = Number(process.env.REACT_APP_AUTH_INIT_RETRY_DELAY_MS || '800');
+const AUTH_INIT_TIMEOUT_MS = resolvePositiveIntEnv(process.env.REACT_APP_AUTH_INIT_TIMEOUT_MS, 15_000);
+const AUTH_INIT_MAX_ATTEMPTS = resolvePositiveIntEnv(process.env.REACT_APP_AUTH_INIT_MAX_ATTEMPTS, 2);
+const AUTH_INIT_RETRY_DELAY_MS = resolvePositiveIntEnv(process.env.REACT_APP_AUTH_INIT_RETRY_DELAY_MS, 800);
+const AUTH_BOOT_WATCHDOG_MS = resolvePositiveIntEnv(process.env.REACT_APP_AUTH_BOOT_WATCHDOG_MS, 12_000);
+
+let authBootWatchdogRecovered = false;
+let authBootWatchdogTriggeredLogged = false;
 
 const safeSessionGetItem = (key: string): string | null => {
   try {
@@ -112,46 +118,6 @@ const renderApp = () => {
   );
 };
 
-const renderAuthBooting = () => {
-  root.render(
-    <React.StrictMode>
-      <div
-        style={{
-          minHeight: '100vh',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '12px',
-          backgroundColor: '#f5f5f5',
-          color: '#333',
-          fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
-        }}
-      >
-        <div
-          style={{
-            width: '34px',
-            height: '34px',
-            borderRadius: '50%',
-            border: '4px solid #d9d9d9',
-            borderTopColor: '#1976d2',
-            animation: 'ecm-auth-spin 1s linear infinite',
-          }}
-        />
-        <div>Initializing sign-in...</div>
-        <style>
-          {`
-            @keyframes ecm-auth-spin {
-              from { transform: rotate(0deg); }
-              to { transform: rotate(360deg); }
-            }
-          `}
-        </style>
-      </div>
-    </React.StrictMode>
-  );
-};
-
 const clearLoginProgress = () => {
   safeSessionRemoveItem(LOGIN_IN_PROGRESS_KEY);
   safeSessionRemoveItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY);
@@ -170,7 +136,59 @@ const setAuthInitStatus = (status: string) => {
   safeSessionSetItem(AUTH_INIT_STATUS_KEY, status);
 };
 
+const recoverStartupToLogin = () => {
+  if (authBootWatchdogRecovered) {
+    return;
+  }
+  authBootWatchdogRecovered = true;
+  clearLoginProgress();
+  setAuthInitStatus(AUTH_INIT_STATUS_TIMEOUT);
+  try {
+    store.dispatch(
+      setSession({
+        user: null,
+        token: null,
+        isAuthenticated: false,
+      })
+    );
+  } catch {
+    // Best effort only.
+  }
+  logAuthRecoveryEvent('auth.bootstrap.watchdog.continue_to_login', {
+    pathname: window.location.pathname,
+  });
+  renderApp();
+};
+
+const renderAuthBooting = () => {
+  root.render(
+    <React.StrictMode>
+      <AuthBootingScreen
+        watchdogMs={AUTH_BOOT_WATCHDOG_MS}
+        onWatchdogTriggered={() => {
+          if (!authBootWatchdogTriggeredLogged) {
+            authBootWatchdogTriggeredLogged = true;
+            logAuthRecoveryEvent('auth.bootstrap.watchdog.triggered', {
+              watchdogMs: AUTH_BOOT_WATCHDOG_MS,
+              pathname: window.location.pathname,
+            });
+          }
+        }}
+        onReload={() => {
+          logAuthRecoveryEvent('auth.bootstrap.watchdog.reload', {
+            pathname: window.location.pathname,
+          });
+          window.location.reload();
+        }}
+        onContinueToLogin={recoverStartupToLogin}
+      />
+    </React.StrictMode>
+  );
+};
+
 const initAuth = async () => {
+  authBootWatchdogRecovered = false;
+  authBootWatchdogTriggeredLogged = false;
   logAuthRecoveryEvent('auth.bootstrap.start', {
     pathname: window.location.pathname,
     search: window.location.search,
@@ -204,6 +222,12 @@ const initAuth = async () => {
         },
       }
     );
+    if (authBootWatchdogRecovered) {
+      logAuthRecoveryEvent('auth.bootstrap.skipped_after_watchdog_recovery', {
+        stage: 'success',
+      });
+      return;
+    }
     clearLoginProgress();
     store.dispatch(
       setSession({
@@ -221,6 +245,13 @@ const initAuth = async () => {
       authenticated,
     });
   } catch (error) {
+    if (authBootWatchdogRecovered) {
+      logAuthRecoveryEvent('auth.bootstrap.skipped_after_watchdog_recovery', {
+        stage: 'error',
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
     clearLoginProgress();
     store.dispatch(
       setSession({
@@ -250,6 +281,13 @@ const initAuth = async () => {
 
 // Initialize Keycloak before rendering
 void initAuth().catch((error) => {
+  if (authBootWatchdogRecovered) {
+    logAuthRecoveryEvent('auth.bootstrap.skipped_after_watchdog_recovery', {
+      stage: 'fatal',
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return;
+  }
   clearLoginProgress();
   setAuthInitStatus(AUTH_INIT_STATUS_ERROR);
   console.error('Keycloak init fatal error:', error);
