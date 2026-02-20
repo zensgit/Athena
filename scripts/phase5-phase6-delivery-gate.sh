@@ -160,6 +160,50 @@ print_gate_summary() {
   print_layer_summary "integration"
 }
 
+print_startup_failure_hints() {
+  if [[ "${#FAILED_STAGE_RECORDS[@]}" -eq 0 ]]; then
+    return
+  fi
+
+  local hint_static_target=0
+  local hint_storage_restricted=0
+  local hint_auth_timeout=0
+  local record
+  for record in "${FAILED_STAGE_RECORDS[@]}"; do
+    local record_layer
+    local record_label
+    local record_log
+    local record_rc
+    IFS='|' read -r record_layer record_label record_log record_rc <<< "${record}"
+
+    if strip_ansi_file "${record_log}" | rg -qi "detected static/prebuilt bundle target|stale prebuilt|dirty_worktree|missing_manifest|committed_source_newer_than_build"; then
+      hint_static_target=1
+    fi
+    if strip_ansi_file "${record_log}" | rg -qi "sessionstorage|localstorage|securityerror|storage blocked"; then
+      hint_storage_restricted=1
+    fi
+    if strip_ansi_file "${record_log}" | rg -qi "auth initialization timed out|sign-in initialization timed out|keycloak init timeout|request timed out|econnaborted"; then
+      hint_auth_timeout=1
+    fi
+  done
+
+  if [[ "${hint_static_target}" -eq 0 && "${hint_storage_restricted}" -eq 0 && "${hint_auth_timeout}" -eq 0 ]]; then
+    return
+  fi
+
+  echo ""
+  echo "phase5_phase6_delivery_gate: startup diagnostics hints"
+  if [[ "${hint_static_target}" -eq 1 ]]; then
+    echo " - Static/prebuilt target may be stale. Prefer dev target (:3000) or run prebuilt sync before rerun."
+  fi
+  if [[ "${hint_storage_restricted}" -eq 1 ]]; then
+    echo " - Storage APIs may be restricted. Verify browser privacy policy / extension isolation and rerun startup matrix."
+  fi
+  if [[ "${hint_auth_timeout}" -eq 1 ]]; then
+    echo " - Auth bootstrap timeout symptoms detected. Check Keycloak reachability and timeout env budgets."
+  fi
+}
+
 run_mocked_regression_stage() {
   ECM_UI_URL="${ECM_UI_URL_MOCKED}" \
   PW_PROJECT="${PW_PROJECT}" \
@@ -371,6 +415,7 @@ fi
 print_gate_summary
 
 if [[ "${overall_rc}" -ne 0 ]]; then
+  print_startup_failure_hints
   if [[ "${fast_layer_failed}" -ne 0 ]]; then
     echo "phase5_phase6_delivery_gate: failed in fast mocked layer"
   elif [[ "${integration_layer_failed}" -ne 0 ]]; then

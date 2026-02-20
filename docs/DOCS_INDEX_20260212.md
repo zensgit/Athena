@@ -125,6 +125,17 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Auth boot startup watchdog + recovery actions
   - Design: `docs/PHASE78_AUTH_BOOT_WATCHDOG_DEV_20260220.md`
   - Verification: `docs/PHASE78_AUTH_BOOT_WATCHDOG_VERIFICATION_20260220.md`
+- API timeout budget alignment + timeout recovery
+  - Design: `docs/PHASE79_API_TIMEOUT_BUDGET_ALIGNMENT_DEV_20260220.md`
+  - Verification: `docs/PHASE79_API_TIMEOUT_BUDGET_ALIGNMENT_VERIFICATION_20260220.md`
+- Startup chaos matrix expansion
+  - Design: `docs/PHASE80_STARTUP_CHAOS_MATRIX_EXPANSION_DEV_20260220.md`
+  - Verification: `docs/PHASE80_STARTUP_CHAOS_MATRIX_EXPANSION_VERIFICATION_20260220.md`
+- Delivery gate startup diagnostics hints
+  - Design: `docs/PHASE81_DELIVERY_GATE_STARTUP_HINTS_DEV_20260220.md`
+  - Verification: `docs/PHASE81_DELIVERY_GATE_STARTUP_HINTS_VERIFICATION_20260220.md`
+- Startup stability 7-day closeout
+  - Release closeout: `docs/PHASE82_STARTUP_STABILITY_RELEASE_CLOSEOUT_20260220.md`
 - Failure-injection coverage (transient vs terminal auth + search retry recovery)
   - Design: `docs/PHASE72_FAILURE_INJECTION_COVERAGE_DEV_20260219.md`
   - Verification: `docs/PHASE72_FAILURE_INJECTION_COVERAGE_VERIFICATION_20260219.md`

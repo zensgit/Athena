@@ -31,24 +31,24 @@
   - keep telemetry hook for timeout/fatal-path diagnostics
 - Add unit coverage for startup watchdog transitions.
 
-### Day 4
+### Day 4 (Completed)
 - Network timeout budget alignment:
   - standardize API timeout defaults by operation class (read/upload/download)
   - ensure long-running operations opt-in to larger timeout budgets
 - Add regression tests for timeout-to-retry/timeout-to-warning behavior.
 
-### Day 5
+### Day 5 (Completed)
 - Chaos matrix expansion:
   - storage errors, transient API hangs, auth redirect timing jitter
   - verify terminal states are recoverable (login or keycloak), not blank
 - Integrate matrix into smoke scripts where applicable.
 
-### Day 6
+### Day 6 (Completed)
 - Delivery gate observability:
   - summarize startup-related failures in a dedicated section
   - add quick hints for stale static target / storage restriction / auth timeout
 
-### Day 7
+### Day 7 (Completed)
 - Release closeout:
   - consolidate verification rollup
   - publish rollback checklist and operator runbook updates

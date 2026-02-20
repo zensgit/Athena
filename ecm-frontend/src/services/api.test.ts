@@ -4,6 +4,12 @@ import {
   AUTH_INIT_STATUS_KEY,
   AUTH_INIT_STATUS_SESSION_EXPIRED,
 } from 'constants/auth';
+import {
+  API_TIMEOUT_DOWNLOAD_MS,
+  API_TIMEOUT_READ_MS,
+  API_TIMEOUT_UPLOAD_MS,
+  API_TIMEOUT_WRITE_MS,
+} from 'constants/network';
 import authService from './authService';
 import { ApiService } from './api';
 import { logAuthRecoveryEvent } from 'utils/authRecoveryDebug';
@@ -99,6 +105,17 @@ describe('ApiService auth recovery', () => {
     const createMock = axios.create as jest.Mock;
     createMock.mockReset();
     createMock.mockImplementation(() => createAxiosInstance());
+  });
+
+  it('uses read timeout as axios default timeout budget', () => {
+    new ApiService();
+    const createMock = axios.create as jest.Mock;
+
+    expect(createMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        timeout: API_TIMEOUT_READ_MS,
+      })
+    );
   });
 
   it('retries once with refreshed token before forcing login redirect', async () => {
@@ -255,5 +272,139 @@ describe('ApiService auth recovery', () => {
         pathname: '/login',
       })
     );
+  });
+
+  it('retries timed-out GET request once and returns retry response', async () => {
+    new ApiService();
+    const instance = getLatestAxiosInstance();
+    const responseErrorHandler = getResponseErrorHandler(instance);
+
+    const timeoutError = {
+      code: 'ECONNABORTED',
+      message: 'timeout of 15000ms exceeded',
+      config: { headers: {}, url: '/search', method: 'get' },
+    };
+    instance.request.mockResolvedValueOnce({ data: { recovered: true } });
+
+    const response = await responseErrorHandler(timeoutError);
+
+    expect(instance.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        _retryTimeout: true,
+        method: 'get',
+        url: '/search',
+      })
+    );
+    expect(response).toEqual({ data: { recovered: true } });
+    expect(toastErrorMock).not.toHaveBeenCalled();
+  });
+
+  it('shows timeout warning when timeout retry cannot recover', async () => {
+    new ApiService();
+    const instance = getLatestAxiosInstance();
+    const responseErrorHandler = getResponseErrorHandler(instance);
+
+    const timeoutError = {
+      code: 'ECONNABORTED',
+      message: 'timeout of 15000ms exceeded',
+      config: { headers: {}, url: '/search', method: 'get' },
+    };
+    instance.request.mockRejectedValueOnce({
+      code: 'ECONNABORTED',
+      message: 'timeout of 15000ms exceeded',
+      config: { headers: {}, url: '/search', method: 'get', _retryTimeout: true },
+    });
+
+    await expect(responseErrorHandler(timeoutError)).rejects.toMatchObject({
+      code: 'ECONNABORTED',
+    });
+
+    expect(toastErrorMock).toHaveBeenCalledWith('Request timed out. Please retry.');
+    expect(logAuthRecoveryEventMock).toHaveBeenCalledWith(
+      'api.response.timeout.warning',
+      expect.objectContaining({
+        method: 'GET',
+        url: '/search',
+      })
+    );
+  });
+
+  it('applies timeout budgets by operation class and preserves explicit overrides', async () => {
+    const service = new ApiService();
+    const instance = getLatestAxiosInstance();
+    const testBlob = new Blob(['content']);
+    if (!window.URL.createObjectURL) {
+      Object.defineProperty(window.URL, 'createObjectURL', {
+        value: jest.fn(),
+        writable: true,
+      });
+    }
+    if (!window.URL.revokeObjectURL) {
+      Object.defineProperty(window.URL, 'revokeObjectURL', {
+        value: jest.fn(),
+        writable: true,
+      });
+    }
+    const createObjectURLSpy = jest.spyOn(window.URL, 'createObjectURL').mockReturnValue('blob:test-url');
+    const revokeObjectURLSpy = jest.spyOn(window.URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    const anchorClickSpy = jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+
+    instance.get.mockResolvedValueOnce({ data: { ok: true } });
+    await service.get('/search');
+    expect(instance.get).toHaveBeenNthCalledWith(
+      1,
+      '/search',
+      expect.objectContaining({ timeout: API_TIMEOUT_READ_MS })
+    );
+
+    instance.post.mockResolvedValueOnce({ data: { ok: true } });
+    await service.post('/rules', { enabled: true });
+    expect(instance.post).toHaveBeenNthCalledWith(
+      1,
+      '/rules',
+      { enabled: true },
+      expect.objectContaining({ timeout: API_TIMEOUT_WRITE_MS })
+    );
+
+    instance.get.mockResolvedValueOnce({ data: testBlob });
+    await service.getBlob('/documents/1/content');
+    expect(instance.get).toHaveBeenNthCalledWith(
+      2,
+      '/documents/1/content',
+      expect.objectContaining({ timeout: API_TIMEOUT_DOWNLOAD_MS, responseType: 'blob' })
+    );
+
+    const uploadFile = new File(['x'], 'upload.txt', { type: 'text/plain' });
+    instance.post.mockResolvedValueOnce({ data: { id: 'u1' } });
+    await service.uploadFile('/documents/upload', uploadFile);
+    expect(instance.post).toHaveBeenNthCalledWith(
+      2,
+      '/documents/upload',
+      expect.any(FormData),
+      expect.objectContaining({ timeout: API_TIMEOUT_UPLOAD_MS })
+    );
+
+    instance.get.mockResolvedValueOnce({ data: testBlob });
+    await service.downloadFile('/documents/1/download', 'download.txt');
+    expect(instance.get).toHaveBeenNthCalledWith(
+      3,
+      '/documents/1/download',
+      expect.objectContaining({ timeout: API_TIMEOUT_DOWNLOAD_MS, responseType: 'blob' })
+    );
+    expect(createObjectURLSpy).toHaveBeenCalled();
+    expect(anchorClickSpy).toHaveBeenCalled();
+    expect(revokeObjectURLSpy).toHaveBeenCalledWith('blob:test-url');
+
+    instance.get.mockResolvedValueOnce({ data: { ok: true } });
+    await service.get('/search', { timeout: 321 });
+    expect(instance.get).toHaveBeenNthCalledWith(
+      4,
+      '/search',
+      expect.objectContaining({ timeout: 321 })
+    );
+
+    createObjectURLSpy.mockRestore();
+    revokeObjectURLSpy.mockRestore();
+    anchorClickSpy.mockRestore();
   });
 });

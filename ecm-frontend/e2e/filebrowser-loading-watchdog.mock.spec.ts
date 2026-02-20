@@ -8,7 +8,8 @@ test('File browser: long loading shows watchdog actions and can recover via retr
 
   const now = new Date().toISOString();
   const rootFolderId = 'root-folder-id';
-  const hangingRequestLimit = 2;
+  const slowRequestLimit = 2;
+  const slowResponseMs = 13_500;
   const json = (body: unknown) => JSON.stringify(body);
   const fulfillJson = (route: any, body: unknown) =>
     route.fulfill({
@@ -46,12 +47,10 @@ test('File browser: long loading shows watchdog actions and can recover via retr
       const size = requestUrl.searchParams.get('size');
       if (size === '50') {
         fileBrowserContentsRequestCount += 1;
-        if (fileBrowserContentsRequestCount <= hangingRequestLimit) {
-          await new Promise(() => {
-            // Keep initial file-browser contents requests hanging to trigger watchdog
-            // in both strict-mode (dev) and non-strict (static) runtimes.
+        if (fileBrowserContentsRequestCount <= slowRequestLimit) {
+          await new Promise((resolve) => {
+            setTimeout(resolve, slowResponseMs);
           });
-          return;
         }
       }
 
@@ -88,16 +87,26 @@ test('File browser: long loading shows watchdog actions and can recover via retr
   await expect(page.getByTestId('filebrowser-loading-watchdog-retry')).toBeVisible();
   await expect(page.getByTestId('filebrowser-loading-watchdog-back-root')).toBeVisible();
 
-  const emptyState = page.getByText('This folder is empty');
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    if (await emptyState.isVisible().catch(() => false)) {
-      break;
-    }
-    await page.getByTestId('filebrowser-loading-watchdog-retry').click();
-    await page.waitForTimeout(250);
-  }
+  const emptyState = page.getByText('This folder is empty').first();
+  await expect
+    .poll(
+      async () => {
+        if (await emptyState.isVisible().catch(() => false)) {
+          return 'ready';
+        }
+        const retryButton = page.getByTestId('filebrowser-loading-watchdog-retry');
+        if (await retryButton.isVisible().catch(() => false)) {
+          await retryButton.click();
+        }
+        return 'pending';
+      },
+      {
+        timeout: 90_000,
+      }
+    )
+    .toBe('ready');
 
   await expect(emptyState).toBeVisible({ timeout: 60_000 });
   await expect(page.getByTestId('filebrowser-loading-watchdog-alert')).toHaveCount(0);
-  await expect.poll(() => fileBrowserContentsRequestCount, { timeout: 60_000 }).toBeGreaterThanOrEqual(hangingRequestLimit + 1);
+  await expect.poll(() => fileBrowserContentsRequestCount, { timeout: 60_000 }).toBeGreaterThanOrEqual(slowRequestLimit);
 });

@@ -8,17 +8,25 @@ import {
   LOGIN_IN_PROGRESS_KEY,
   LOGIN_IN_PROGRESS_STARTED_AT_KEY,
 } from 'constants/auth';
+import {
+  API_TIMEOUT_DOWNLOAD_MS,
+  API_TIMEOUT_READ_MS,
+  API_TIMEOUT_UPLOAD_MS,
+  API_TIMEOUT_WRITE_MS,
+} from 'constants/network';
 import { logAuthRecoveryEvent } from 'utils/authRecoveryDebug';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL
   || process.env.REACT_APP_API_BASE_URL
   || '/api/v1';
 
+type ApiRequestConfig = AxiosRequestConfig & { _retryAuth?: boolean; _retryTimeout?: boolean };
+
 export class ApiService {
   private api: AxiosInstance;
   private tokenRefreshPromise: Promise<string | undefined> | null = null;
   private redirectInFlight = false;
-  private lastRequestConfig: (AxiosRequestConfig & { _retryAuth?: boolean }) | null = null;
+  private lastRequestConfig: ApiRequestConfig | null = null;
 
   constructor() {
     this.api = axios.create({
@@ -26,6 +34,7 @@ export class ApiService {
       headers: {
         'Content-Type': 'application/json',
       },
+      timeout: API_TIMEOUT_READ_MS,
     });
 
     // Request interceptor to add auth token
@@ -61,9 +70,40 @@ export class ApiService {
     // Response interceptor for error handling
     this.api.interceptors.response.use(
       (response) => response,
-      async (error) => {
+      async (rawError) => {
+        let error = rawError;
         if (axios.isCancel(error) || error.code === 'ERR_CANCELED') {
           return Promise.reject(error);
+        }
+        if (this.isRequestTimeoutError(error)) {
+          const timedOutRequest = this.resolveRetryRequestConfig(error);
+          if (
+            timedOutRequest
+            && !timedOutRequest._retryTimeout
+            && this.canRetryTimeoutRequest(timedOutRequest.method)
+          ) {
+            timedOutRequest._retryTimeout = true;
+            logAuthRecoveryEvent('api.response.timeout.retry.start', this.toRequestMeta(timedOutRequest));
+            try {
+              const retryResponse = await this.api.request(timedOutRequest);
+              logAuthRecoveryEvent('api.response.timeout.retry.success', this.toRequestMeta(timedOutRequest));
+              return retryResponse;
+            } catch (retryError) {
+              logAuthRecoveryEvent('api.response.timeout.retry.failed', {
+                ...this.toRequestMeta(timedOutRequest),
+                error: this.toErrorMessage(retryError),
+              });
+              error = retryError;
+            }
+          }
+          if (this.isRequestTimeoutError(error)) {
+            logAuthRecoveryEvent('api.response.timeout.warning', {
+              ...this.toRequestMeta(this.resolveRetryRequestConfig(error)),
+              error: this.toErrorMessage(error),
+            });
+            toast.error('Request timed out. Please retry.');
+            return Promise.reject(error);
+          }
         }
         if (error.response?.status === 401) {
           const originalRequest = this.resolveRetryRequestConfig(error);
@@ -104,6 +144,16 @@ export class ApiService {
         return Promise.reject(error);
       }
     );
+  }
+
+  private isRequestTimeoutError(error: any): boolean {
+    const message = typeof error?.message === 'string' ? error.message.toLowerCase() : '';
+    return error?.code === 'ECONNABORTED' || message.includes('timeout');
+  }
+
+  private canRetryTimeoutRequest(method?: string): boolean {
+    const normalized = typeof method === 'string' ? method.toUpperCase() : 'GET';
+    return normalized === 'GET' || normalized === 'HEAD' || normalized === 'OPTIONS';
   }
 
   private async refreshTokenOnce(): Promise<string | undefined> {
@@ -150,10 +200,8 @@ export class ApiService {
 
   private resolveRetryRequestConfig(
     error: any
-  ): (AxiosRequestConfig & { _retryAuth?: boolean }) | null {
-    const candidate = (error?.config || error?.response?.config || {}) as AxiosRequestConfig & {
-      _retryAuth?: boolean;
-    };
+  ): ApiRequestConfig | null {
+    const candidate = (error?.config || error?.response?.config || {}) as ApiRequestConfig;
     const responseUrl = typeof error?.request?.responseURL === 'string' ? error.request.responseURL : undefined;
     const resolvedUrl = candidate.url || responseUrl;
     if (!resolvedUrl) {
@@ -200,54 +248,85 @@ export class ApiService {
       method,
       url,
       retryAuth: Boolean(config?._retryAuth),
+      retryTimeout: Boolean((config as ApiRequestConfig | null | undefined)?._retryTimeout),
     };
   }
 
+  private withTimeout(config: AxiosRequestConfig | undefined, timeoutMs: number): AxiosRequestConfig {
+    const nextConfig: AxiosRequestConfig = {
+      ...(config || {}),
+    };
+    if (nextConfig.timeout == null) {
+      nextConfig.timeout = timeoutMs;
+    }
+    return nextConfig;
+  }
+
   get<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
-    return this.api.get<T>(url, config).then((response) => response.data);
+    return this.api.get<T>(url, this.withTimeout(config, API_TIMEOUT_READ_MS)).then((response) => response.data);
   }
 
   post<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
-    return this.api.post<T>(url, data, config).then((response) => response.data);
+    return this.api.post<T>(url, data, this.withTimeout(config, API_TIMEOUT_WRITE_MS)).then((response) => response.data);
   }
 
   put<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
-    return this.api.put<T>(url, data, config).then((response) => response.data);
+    return this.api.put<T>(url, data, this.withTimeout(config, API_TIMEOUT_WRITE_MS)).then((response) => response.data);
   }
 
   patch<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
-    return this.api.patch<T>(url, data, config).then((response) => response.data);
+    return this.api.patch<T>(url, data, this.withTimeout(config, API_TIMEOUT_WRITE_MS)).then((response) => response.data);
   }
 
   delete<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
-    return this.api.delete<T>(url, config).then((response) => response.data);
+    return this.api.delete<T>(url, this.withTimeout(config, API_TIMEOUT_WRITE_MS)).then((response) => response.data);
   }
 
   getBlob(url: string, config?: AxiosRequestConfig): Promise<Blob> {
     return this.api
-      .get(url, { ...config, responseType: 'blob' })
+      .get(url, {
+        ...this.withTimeout(config, API_TIMEOUT_DOWNLOAD_MS),
+        responseType: 'blob',
+      })
       .then((response) => response.data as Blob);
   }
 
-  uploadFile(url: string, file: File, onProgress?: (progress: number) => void): Promise<any> {
+  uploadFile(
+    url: string,
+    file: File,
+    onProgress?: (progress: number) => void,
+    config?: AxiosRequestConfig
+  ): Promise<any> {
     const formData = new FormData();
     formData.append('file', file);
 
-    return this.api.post(url, formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-      onUploadProgress: (progressEvent) => {
-        if (onProgress && progressEvent.total) {
-          const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-          onProgress(progress);
-        }
-      },
-    }).then((response) => response.data);
+    return this.api.post(
+      url,
+      formData,
+      this.withTimeout(
+        {
+          ...config,
+          headers: {
+            ...(config?.headers || {}),
+            'Content-Type': 'multipart/form-data',
+          },
+          onUploadProgress: (progressEvent) => {
+            if (onProgress && progressEvent.total) {
+              const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+              onProgress(progress);
+            }
+          },
+        },
+        API_TIMEOUT_UPLOAD_MS
+      )
+    ).then((response) => response.data);
   }
 
-  downloadFile(url: string, filename: string): Promise<void> {
-    return this.api.get(url, { responseType: 'blob' }).then((response) => {
+  downloadFile(url: string, filename: string, config?: AxiosRequestConfig): Promise<void> {
+    return this.api.get(url, {
+      ...this.withTimeout(config, API_TIMEOUT_DOWNLOAD_MS),
+      responseType: 'blob',
+    }).then((response) => {
       const blob = new Blob([response.data]);
       const link = document.createElement('a');
       link.href = window.URL.createObjectURL(blob);

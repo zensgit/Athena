@@ -319,6 +319,57 @@
   - `bash scripts/phase70-auth-route-matrix-smoke.sh`
   - `bash scripts/phase5-regression.sh`
 
+### 24) API 超时预算分层 + 超时恢复路径（Phase79）
+- `ecm-frontend/src/constants/network.ts`
+  - 新增读/写/上传/下载四类超时预算配置（env 可覆盖）。
+- `ecm-frontend/src/services/api.ts`
+  - 请求超时预算按操作类型统一：
+    - `get` -> read timeout
+    - `post/put/patch/delete` -> write timeout
+    - `uploadFile` -> upload timeout
+    - `getBlob/downloadFile` -> download timeout
+  - 超时恢复策略：
+    - 安全方法（GET/HEAD/OPTIONS）超时自动单次重试
+    - 终态超时提示统一为 `Request timed out. Please retry.`
+  - 增加 timeout 相关 debug 事件（retry start/success/failed + warning）。
+- `ecm-frontend/src/services/api.test.ts`
+  - 新增 timeout 预算与 timeout retry/warning 单测。
+- `ecm-frontend/e2e/filebrowser-loading-watchdog.mock.spec.ts`
+  - 调整为“慢响应触发 watchdog”模型，避免与新超时预算冲突并提升回归稳定性。
+- 验证方式：
+  - `npm test -- --watch=false --runInBand src/services/api.test.ts src/services/authBootstrap.test.ts src/components/auth/AuthBootingScreen.test.tsx`
+  - `npm run lint`
+  - `ECM_UI_URL=http://localhost npx playwright test e2e/filebrowser-loading-watchdog.mock.spec.ts --project=chromium --workers=1`
+  - `bash scripts/phase70-auth-route-matrix-smoke.sh`
+  - `bash scripts/phase5-regression.sh`
+
+### 25) Startup Chaos Matrix 扩展（Phase80）
+- `ecm-frontend/e2e/auth-route-recovery.matrix.spec.ts`
+  - 新增 localStorage 读取受限场景：
+    - redirect reason 读取抛错时，`/login?reason=session_expired` 仍可展示会话过期提示
+  - 新增登录重定向时序抖动场景：
+    - stale `ecm_kc_login_in_progress` marker 可在登录页被清理
+- `scripts/phase70-auth-route-matrix-smoke.sh`
+  - 直接复用，无需改脚本即可承载扩展后的 8 条矩阵用例
+
+### 26) Delivery Gate 启动诊断提示（Phase81）
+- `scripts/phase5-phase6-delivery-gate.sh`
+  - 新增 `startup diagnostics hints` 失败提示段
+  - 失败日志模式识别并输出快捷建议：
+    - static/prebuilt 目标陈旧风险
+    - storage 受限症状
+    - auth timeout 症状
+- 验证：
+  - mocked 成功路径保持不变
+  - integration 严格静态预检查受控失败时，成功输出 startup hints
+
+### 27) Startup Stability 7-day 收尾（Phase82）
+- 新增 `docs/PHASE82_STARTUP_STABILITY_RELEASE_CLOSEOUT_20260220.md`
+  - 汇总 Day1-Day7 交付结果与验证命令
+  - 包含 rollback checklist
+  - 包含 operator runbook 更新要点
+  - 标记 startup baseline freeze
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -384,3 +435,10 @@
 - `docs/PHASE74_GATE_INTEGRATION_AUTH_ROUTE_MATRIX_VERIFICATION_20260220.md`
 - `docs/PHASE78_AUTH_BOOT_WATCHDOG_DEV_20260220.md`
 - `docs/PHASE78_AUTH_BOOT_WATCHDOG_VERIFICATION_20260220.md`
+- `docs/PHASE79_API_TIMEOUT_BUDGET_ALIGNMENT_DEV_20260220.md`
+- `docs/PHASE79_API_TIMEOUT_BUDGET_ALIGNMENT_VERIFICATION_20260220.md`
+- `docs/PHASE80_STARTUP_CHAOS_MATRIX_EXPANSION_DEV_20260220.md`
+- `docs/PHASE80_STARTUP_CHAOS_MATRIX_EXPANSION_VERIFICATION_20260220.md`
+- `docs/PHASE81_DELIVERY_GATE_STARTUP_HINTS_DEV_20260220.md`
+- `docs/PHASE81_DELIVERY_GATE_STARTUP_HINTS_VERIFICATION_20260220.md`
+- `docs/PHASE82_STARTUP_STABILITY_RELEASE_CLOSEOUT_20260220.md`
