@@ -300,6 +300,10 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
     - Specs:
       - `ecm-frontend/e2e/auth-session-recovery.mock.spec.ts`
       - `ecm-frontend/e2e/search-suggestions-save-search.mock.spec.ts`
+  - Phase 74: integration gate includes auth/route matrix smoke
+    - Dev: `docs/PHASE74_GATE_INTEGRATION_AUTH_ROUTE_MATRIX_DEV_20260220.md`
+    - Verification: `docs/PHASE74_GATE_INTEGRATION_AUTH_ROUTE_MATRIX_VERIFICATION_20260220.md`
+    - Script: `scripts/phase5-phase6-delivery-gate.sh`
 - Weekly regression command rollup:
   - `docs/WEEKLY_REGRESSION_UPDATE_20260212.md`
 

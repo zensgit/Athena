@@ -218,6 +218,18 @@ run_phase5_search_integration_stage() {
   bash scripts/phase5-search-suggestions-integration-smoke.sh
 }
 
+run_phase70_auth_route_matrix_stage() {
+  ECM_UI_URL="${ECM_UI_URL_FULLSTACK}" \
+  ECM_API_URL="${ECM_API_URL}" \
+  KEYCLOAK_URL="${KEYCLOAK_URL}" \
+  KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
+  PW_PROJECT="${PW_PROJECT}" \
+  PW_WORKERS="${PW_WORKERS}" \
+  FULLSTACK_ALLOW_STATIC="${ECM_FULLSTACK_ALLOW_STATIC}" \
+  ECM_SYNC_PREBUILT_UI=0 \
+  bash scripts/phase70-auth-route-matrix-smoke.sh
+}
+
 run_p1_smoke_stage() {
   echo "phase5_phase6_delivery_gate: check p1 e2e target"
   ALLOW_STATIC="${ECM_FULLSTACK_ALLOW_STATIC}" scripts/check-e2e-target.sh "${ECM_UI_URL_FULLSTACK}"
@@ -332,6 +344,15 @@ if [[ "${run_integration_layer}" -eq 1 ]]; then
       "phase5_search_integration_smoke" \
       "phase5 search suggestions integration smoke" \
       run_phase5_search_integration_stage; then
+      integration_layer_failed=1
+      overall_rc=1
+    fi
+
+    if ! run_stage \
+      "integration" \
+      "phase70_auth_route_matrix_smoke" \
+      "phase70 auth-route matrix smoke" \
+      run_phase70_auth_route_matrix_stage; then
       integration_layer_failed=1
       overall_rc=1
     fi

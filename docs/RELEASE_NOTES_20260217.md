@@ -22,6 +22,7 @@
   - Delivery gate 分层增强：新增 `DELIVERY_GATE_MODE`（all/mocked/integration）与失败摘要输出，提升 CI 可诊断性。
   - Failure-injection 覆盖增强：补齐 auth transient/terminal 与 search temporary-failure->retry-success 场景。
   - 7-day 收尾文档增强：新增统一 release summary 与 verification rollup 文档。
+  - Integration gate 覆盖增强：默认纳入 Phase70 auth-route 矩阵 smoke stage。
 
 ## 二、主要变更
 ### 1) 会话恢复与登录提示
@@ -232,6 +233,15 @@
 - `docs/NEXT_7DAY_PLAN_AUTH_SEARCH_RECOVERY_20260219.md`
   - Day7 标记完成并补充 exit criteria closure check。
 
+### 19) Integration Gate 纳入 Auth/Route Matrix（Phase74）
+- `scripts/phase5-phase6-delivery-gate.sh`
+  - integration 层新增 stage：`phase70 auth-route matrix smoke`
+  - 调用 `scripts/phase70-auth-route-matrix-smoke.sh`
+  - 复用现有 gate 环境变量并设置 `ECM_SYNC_PREBUILT_UI=0` 避免重复 prebuilt 同步
+- 验证方式：
+  - `bash scripts/phase70-auth-route-matrix-smoke.sh`
+  - `DELIVERY_GATE_MODE=integration bash scripts/phase5-phase6-delivery-gate.sh`
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -293,3 +303,5 @@
 - `docs/PHASE72_FAILURE_INJECTION_COVERAGE_VERIFICATION_20260219.md`
 - `docs/PHASE73_AUTH_SEARCH_RECOVERY_RELEASE_SUMMARY_20260219.md`
 - `docs/PHASE73_AUTH_SEARCH_RECOVERY_VERIFICATION_ROLLUP_20260219.md`
+- `docs/PHASE74_GATE_INTEGRATION_AUTH_ROUTE_MATRIX_DEV_20260220.md`
+- `docs/PHASE74_GATE_INTEGRATION_AUTH_ROUTE_MATRIX_VERIFICATION_20260220.md`
