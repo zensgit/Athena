@@ -6,6 +6,7 @@ cd "${ROOT_DIR}"
 
 TARGET_UI_URL="${1:-${ECM_UI_URL:-http://localhost}}"
 SYNC_MODE="${ECM_SYNC_PREBUILT_UI:-auto}"
+PREBUILT_STALE_REASON="unknown"
 
 get_file_mtime_epoch() {
   local target_file="$1"
@@ -32,9 +33,25 @@ is_local_static_proxy_target() {
   esac
 }
 
+has_frontend_uncommitted_changes() {
+  local dirty_output
+  dirty_output="$(git status --porcelain -- \
+    ecm-frontend/src \
+    ecm-frontend/public \
+    ecm-frontend/package.json \
+    ecm-frontend/package-lock.json 2>/dev/null || true)"
+  [[ -n "${dirty_output}" ]]
+}
+
 is_prebuilt_frontend_stale() {
   local manifest_path="ecm-frontend/build/asset-manifest.json"
   if [[ ! -f "${manifest_path}" ]]; then
+    PREBUILT_STALE_REASON="missing_manifest"
+    return 0
+  fi
+
+  if has_frontend_uncommitted_changes; then
+    PREBUILT_STALE_REASON="dirty_worktree"
     return 0
   fi
 
@@ -54,7 +71,13 @@ is_prebuilt_frontend_stale() {
     build_epoch=0
   fi
 
-  [[ "${build_epoch}" -lt "${source_epoch}" ]]
+  if [[ "${build_epoch}" -lt "${source_epoch}" ]]; then
+    PREBUILT_STALE_REASON="committed_source_newer_than_build"
+    return 0
+  fi
+
+  PREBUILT_STALE_REASON="up_to_date"
+  return 1
 }
 
 if ! is_local_static_proxy_target "${TARGET_UI_URL}"; then
@@ -74,7 +97,7 @@ case "${SYNC_MODE}" in
     ;;
   auto|AUTO)
     if is_prebuilt_frontend_stale; then
-      echo "sync_prebuilt_frontend_if_needed: stale prebuilt detected, rebuilding for ${TARGET_UI_URL}"
+      echo "sync_prebuilt_frontend_if_needed: stale prebuilt detected (${PREBUILT_STALE_REASON}), rebuilding for ${TARGET_UI_URL}"
       bash scripts/rebuild-frontend-prebuilt.sh
     else
       echo "sync_prebuilt_frontend_if_needed: prebuilt up-to-date for ${TARGET_UI_URL}"
@@ -84,7 +107,7 @@ case "${SYNC_MODE}" in
   *)
     echo "sync_prebuilt_frontend_if_needed: unknown ECM_SYNC_PREBUILT_UI=${SYNC_MODE}, using auto"
     if is_prebuilt_frontend_stale; then
-      echo "sync_prebuilt_frontend_if_needed: stale prebuilt detected, rebuilding for ${TARGET_UI_URL}"
+      echo "sync_prebuilt_frontend_if_needed: stale prebuilt detected (${PREBUILT_STALE_REASON}), rebuilding for ${TARGET_UI_URL}"
       bash scripts/rebuild-frontend-prebuilt.sh
     else
       echo "sync_prebuilt_frontend_if_needed: prebuilt up-to-date for ${TARGET_UI_URL}"

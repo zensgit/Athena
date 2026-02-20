@@ -24,6 +24,8 @@
   - 7-day 收尾文档增强：新增统一 release summary 与 verification rollup 文档。
   - Integration gate 覆盖增强：默认纳入 Phase70 auth-route 矩阵 smoke stage。
   - Login 恢复提示增强：支持仅 marker 状态（无 `ecm_auth_init_status`）下的 redirect-failure 兜底提示与过期 marker 清理。
+  - Startup 稳定性增强：auth bootstrap 存储访问安全化 + 顶层 fatal 兜底，新增 storage 异常矩阵用例。
+  - Prebuilt 同步治理增强：`ECM_SYNC_PREBUILT_UI=auto` 下，前端 dirty worktree 视为 stale 并自动重建静态包。
 
 ## 二、主要变更
 ### 1) 会话恢复与登录提示
@@ -257,6 +259,22 @@
   - `ECM_UI_URL=http://localhost:3000 npx playwright test e2e/auth-route-recovery.matrix.spec.ts --project=chromium --workers=1`
   - `ECM_UI_URL=http://localhost:3000 bash scripts/phase70-auth-route-matrix-smoke.sh`
   - `DELIVERY_GATE_MODE=integration PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh`
+
+### 21) Startup resilience + prebuilt dirty-worktree guard（Phase76）
+- `ecm-frontend/src/index.tsx`
+  - 启动链路存储读写改为安全调用，避免受限上下文抛异常导致启动卡死
+  - 新增 bootstrap 顶层 fatal catch，确保故障时可回落到可恢复 UI
+- `ecm-frontend/e2e/auth-route-recovery.matrix.spec.ts`
+  - 新增 storage remove 异常场景，验证启动可恢复终态（login 或 keycloak）
+- `scripts/sync-prebuilt-frontend-if-needed.sh`
+  - `auto` 模式新增 dirty worktree 检测（前端关键路径）
+  - stale 输出新增 reason（`dirty_worktree`/`missing_manifest`/`committed_source_newer_than_build`）
+- 验证方式：
+  - `CI=1 npm test -- --runTestsByPath src/App.test.tsx src/components/auth/Login.test.tsx src/services/authBootstrap.test.ts`
+  - `ECM_UI_URL=http://localhost:3000 npx playwright test e2e/auth-route-recovery.matrix.spec.ts --project=chromium --workers=1`
+  - `ECM_UI_URL=http://localhost:3000 bash scripts/phase70-auth-route-matrix-smoke.sh`
+  - `ECM_SYNC_PREBUILT_UI=1 DELIVERY_GATE_MODE=all PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh`
+  - `ECM_SYNC_PREBUILT_UI=auto bash scripts/sync-prebuilt-frontend-if-needed.sh http://localhost`
 
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage

@@ -60,6 +60,30 @@ const AUTH_INIT_TIMEOUT_MS = Number(process.env.REACT_APP_AUTH_INIT_TIMEOUT_MS |
 const AUTH_INIT_MAX_ATTEMPTS = Number(process.env.REACT_APP_AUTH_INIT_MAX_ATTEMPTS || '2');
 const AUTH_INIT_RETRY_DELAY_MS = Number(process.env.REACT_APP_AUTH_INIT_RETRY_DELAY_MS || '800');
 
+const safeSessionGetItem = (key: string): string | null => {
+  try {
+    return sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+
+const safeSessionSetItem = (key: string, value: string) => {
+  try {
+    sessionStorage.setItem(key, value);
+  } catch {
+    // Storage can be unavailable in restricted browser contexts.
+  }
+};
+
+const safeSessionRemoveItem = (key: string) => {
+  try {
+    sessionStorage.removeItem(key);
+  } catch {
+    // Storage can be unavailable in restricted browser contexts.
+  }
+};
+
 const stripKeycloakCallbackParams = () => {
   const url = new URL(window.location.href);
   KEYCLOAK_CALLBACK_KEYS.forEach((key) => url.searchParams.delete(key));
@@ -129,21 +153,21 @@ const renderAuthBooting = () => {
 };
 
 const clearLoginProgress = () => {
-  sessionStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
-  sessionStorage.removeItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY);
+  safeSessionRemoveItem(LOGIN_IN_PROGRESS_KEY);
+  safeSessionRemoveItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY);
 };
 
 const clearAuthInitStatus = (options?: { preserveSessionExpired?: boolean }) => {
   const preserveSessionExpired = options?.preserveSessionExpired ?? false;
-  const currentStatus = sessionStorage.getItem(AUTH_INIT_STATUS_KEY);
+  const currentStatus = safeSessionGetItem(AUTH_INIT_STATUS_KEY);
   if (preserveSessionExpired && currentStatus === AUTH_INIT_STATUS_SESSION_EXPIRED) {
     return;
   }
-  sessionStorage.removeItem(AUTH_INIT_STATUS_KEY);
+  safeSessionRemoveItem(AUTH_INIT_STATUS_KEY);
 };
 
 const setAuthInitStatus = (status: string) => {
-  sessionStorage.setItem(AUTH_INIT_STATUS_KEY, status);
+  safeSessionSetItem(AUTH_INIT_STATUS_KEY, status);
 };
 
 const initAuth = async () => {
@@ -152,8 +176,8 @@ const initAuth = async () => {
     search: window.location.search,
   });
   renderAuthBooting();
-  clearAuthInitStatus({ preserveSessionExpired: true });
   try {
+    clearAuthInitStatus({ preserveSessionExpired: true });
     const canUsePkce = !!(window.crypto && window.crypto.subtle);
     if (!canUsePkce) {
       console.warn('PKCE disabled: Web Crypto API is unavailable in this context.');
@@ -225,4 +249,23 @@ const initAuth = async () => {
 };
 
 // Initialize Keycloak before rendering
-void initAuth();
+void initAuth().catch((error) => {
+  clearLoginProgress();
+  setAuthInitStatus(AUTH_INIT_STATUS_ERROR);
+  console.error('Keycloak init fatal error:', error);
+  logAuthRecoveryEvent('auth.bootstrap.fatal', {
+    error: error instanceof Error ? error.message : String(error),
+  });
+  try {
+    store.dispatch(
+      setSession({
+        user: null,
+        token: null,
+        isAuthenticated: false,
+      })
+    );
+  } catch {
+    // Best effort only.
+  }
+  renderApp();
+});

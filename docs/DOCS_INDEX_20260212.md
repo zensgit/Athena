@@ -17,6 +17,7 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Phase 4 plan: `docs/NEXT_7DAY_PLAN_PHASE4_20260213.md`
 - Phase 5 plan: `docs/NEXT_7DAY_PLAN_PHASE5_20260213.md`
 - Auth/Search recovery follow-up plan: `docs/NEXT_7DAY_PLAN_AUTH_SEARCH_RECOVERY_20260219.md`
+- Startup stability next 7-day plan: `docs/NEXT_7DAY_PLAN_STARTUP_STABILITY_20260220.md`
 - Auth/Search recovery 7-day release summary: `docs/PHASE73_AUTH_SEARCH_RECOVERY_RELEASE_SUMMARY_20260219.md`
 - Auth/Search recovery verification rollup: `docs/PHASE73_AUTH_SEARCH_RECOVERY_VERIFICATION_ROLLUP_20260219.md`
 - Phase 5/6 one-command delivery gate:
@@ -115,6 +116,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Login redirect-failure marker fallback hardening
   - Design: `docs/PHASE75_LOGIN_REDIRECT_MARKER_FALLBACK_DEV_20260220.md`
   - Verification: `docs/PHASE75_LOGIN_REDIRECT_MARKER_FALLBACK_VERIFICATION_20260220.md`
+- Startup resilience + prebuilt sync dirty-worktree guard
+  - Design: `docs/PHASE76_STARTUP_RESILIENCE_AND_PREBUILT_SYNC_DEV_20260220.md`
+  - Verification: `docs/PHASE76_STARTUP_RESILIENCE_AND_PREBUILT_SYNC_VERIFICATION_20260220.md`
 - Failure-injection coverage (transient vs terminal auth + search retry recovery)
   - Design: `docs/PHASE72_FAILURE_INJECTION_COVERAGE_DEV_20260219.md`
   - Verification: `docs/PHASE72_FAILURE_INJECTION_COVERAGE_VERIFICATION_20260219.md`

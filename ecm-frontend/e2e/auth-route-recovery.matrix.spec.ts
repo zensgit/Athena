@@ -28,6 +28,24 @@ const seedRedirectPauseState = async (page: Page) => {
   );
 };
 
+const injectSessionStorageRemoveGuard = async (page: Page, blockedKey: string) => {
+  await page.addInitScript(
+    ({ key }) => {
+      const storageProto = Object.getPrototypeOf(window.sessionStorage) as Storage & {
+        removeItem: (storageKey: string) => void;
+      };
+      const originalRemove = storageProto.removeItem;
+      storageProto.removeItem = function removeItemWithGuard(storageKey: string) {
+        if (storageKey === key) {
+          throw new DOMException('Storage blocked for test', 'SecurityError');
+        }
+        return originalRemove.call(this, storageKey);
+      };
+    },
+    { key: blockedKey }
+  );
+};
+
 test.describe('Auth/Route recovery matrix', () => {
   test('matrix: login shows session-expired guidance from URL reason', async ({ page, request }) => {
     await waitForApiReady(request);
@@ -68,6 +86,26 @@ test.describe('Auth/Route recovery matrix', () => {
     await expect(page).toHaveURL(/\/login($|[?#])/, { timeout: 60_000 });
     await expect(page.getByRole('heading', { name: /Athena ECM/i })).toBeVisible({ timeout: 60_000 });
     await expect(page.getByRole('button', { name: /Sign in with Keycloak/i })).toBeVisible({ timeout: 60_000 });
+  });
+
+  test('matrix: startup remains recoverable when sessionStorage remove throws', async ({ page, request }) => {
+    await waitForApiReady(request);
+    await injectSessionStorageRemoveGuard(page, AUTH_INIT_STATUS_KEY);
+    await page.goto('/browse/root', { waitUntil: 'domcontentloaded' });
+    await expect
+      .poll(async () => {
+        const url = page.url();
+        if (/\/realms\/ecm\/protocol\/openid-connect\/auth/.test(url)) {
+          return 'keycloak';
+        }
+        const loginHeadingVisible = await page.getByRole('heading', { name: /Athena ECM/i }).isVisible().catch(() => false);
+        const loginButtonVisible = await page.getByRole('button', { name: /Sign in with Keycloak/i }).isVisible().catch(() => false);
+        if (loginHeadingVisible && loginButtonVisible) {
+          return 'login';
+        }
+        return 'pending';
+      }, { timeout: 60_000 })
+      .not.toBe('pending');
   });
 
   test('matrix: login CTA reaches keycloak auth endpoint as terminal redirect state', async ({ page, request }) => {
