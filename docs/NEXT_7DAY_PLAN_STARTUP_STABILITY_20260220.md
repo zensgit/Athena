@@ -19,7 +19,7 @@
 - Prebuilt sync stale detection hardening:
   - in `auto`, treat frontend dirty worktree as stale and rebuild static prebuilt
 
-### Day 2
+### Day 2 (Completed)
 - FileBrowser loading-state watchdog:
   - add “loading too long” warning panel (retry + back to root)
   - avoid infinite spinner-only state when requests hang

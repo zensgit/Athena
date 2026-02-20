@@ -29,6 +29,16 @@ import nodeService from 'services/nodeService';
 import { toast } from 'react-toastify';
 
 const DocumentPreview = React.lazy(() => import('components/preview/DocumentPreview'));
+const resolvePositiveInt = (rawValue: string | undefined, fallback: number): number => {
+  if (!rawValue) return fallback;
+  const parsed = Number(rawValue);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.floor(parsed);
+};
+const FILE_BROWSER_LOADING_WATCHDOG_MS = resolvePositiveInt(
+  process.env.REACT_APP_FILE_BROWSER_LOADING_WATCHDOG_MS,
+  12_000
+);
 
 const FileBrowser: React.FC = () => {
   const { nodeId = 'root' } = useParams<{ nodeId: string }>();
@@ -44,9 +54,13 @@ const FileBrowser: React.FC = () => {
   const [previewNode, setPreviewNode] = useState<Node | null>(null);
   const [previewAnnotate, setPreviewAnnotate] = useState(false);
   const [bulkMetadataOpen, setBulkMetadataOpen] = useState(false);
+  const [loadingStartedAt, setLoadingStartedAt] = useState<number | null>(null);
+  const [loadingWatchdogTriggered, setLoadingWatchdogTriggered] = useState(false);
   const previewOpen = Boolean(previewNode);
 
   const loadNodeData = useCallback(async () => {
+    setLoadingStartedAt(Date.now());
+    setLoadingWatchdogTriggered(false);
     await dispatch(fetchNode(nodeId));
     await dispatch(fetchChildren({ nodeId, sortBy, ascending: sortAscending, page, size: pageSize }));
   }, [dispatch, nodeId, sortAscending, sortBy, page, pageSize]);
@@ -58,6 +72,35 @@ const FileBrowser: React.FC = () => {
   useEffect(() => {
     setPage(0);
   }, [nodeId, sortBy, sortAscending]);
+
+  useEffect(() => {
+    if (!loading) {
+      setLoadingStartedAt(null);
+      setLoadingWatchdogTriggered(false);
+      return;
+    }
+    if (loadingStartedAt === null) {
+      setLoadingStartedAt(Date.now());
+    }
+  }, [loading, loadingStartedAt]);
+
+  useEffect(() => {
+    if (!loading || loadingStartedAt === null || loadingWatchdogTriggered) {
+      return undefined;
+    }
+    const elapsedMs = Date.now() - loadingStartedAt;
+    const remainingMs = FILE_BROWSER_LOADING_WATCHDOG_MS - elapsedMs;
+    if (remainingMs <= 0) {
+      setLoadingWatchdogTriggered(true);
+      return undefined;
+    }
+    const timer = window.setTimeout(() => {
+      setLoadingWatchdogTriggered(true);
+    }, remainingMs);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [loading, loadingStartedAt, loadingWatchdogTriggered]);
 
   const isDocumentNode = (node: Node) => {
     if (node.nodeType === 'DOCUMENT') {
@@ -159,10 +202,60 @@ const FileBrowser: React.FC = () => {
     }
   };
 
+  const handleRetryLoad = () => {
+    void loadNodeData();
+  };
+
+  const handleBackToRoot = () => {
+    if (nodeId === 'root') {
+      void loadNodeData();
+      return;
+    }
+    navigate('/browse/root');
+    if (sidebarAutoCollapse) {
+      dispatch(setSidebarOpen(false));
+    }
+  };
+
+  const renderLoadingWatchdogAlert = () => {
+    if (!loadingWatchdogTriggered) {
+      return null;
+    }
+    return (
+      <Alert
+        severity="warning"
+        data-testid="filebrowser-loading-watchdog-alert"
+        action={(
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button
+              color="inherit"
+              size="small"
+              onClick={handleRetryLoad}
+              data-testid="filebrowser-loading-watchdog-retry"
+            >
+              Retry
+            </Button>
+            <Button
+              color="inherit"
+              size="small"
+              onClick={handleBackToRoot}
+              data-testid="filebrowser-loading-watchdog-back-root"
+            >
+              Back to root
+            </Button>
+          </Box>
+        )}
+      >
+        Folder loading is taking longer than expected. You can retry or go back to root.
+      </Alert>
+    );
+  };
+
   if (loading && !currentNode) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" height="400px">
-        <CircularProgress />
+      <Box display="flex" flexDirection="column" justifyContent="center" alignItems="center" gap={2} height="400px">
+        <CircularProgress data-testid="filebrowser-loading-spinner" />
+        {renderLoadingWatchdogAlert()}
       </Box>
     );
   }
@@ -228,11 +321,16 @@ const FileBrowser: React.FC = () => {
       </Paper>
 
       <Paper>
+        {loading && loadingWatchdogTriggered && (
+          <Box sx={{ p: 2 }}>
+            {renderLoadingWatchdogAlert()}
+          </Box>
+        )}
         {error && !loading && (
           <Alert
             severity="warning"
             action={(
-              <Button color="inherit" size="small" onClick={() => { void loadNodeData(); }}>
+              <Button color="inherit" size="small" onClick={handleRetryLoad}>
                 Retry
               </Button>
             )}

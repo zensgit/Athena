@@ -26,6 +26,8 @@
   - Login 恢复提示增强：支持仅 marker 状态（无 `ecm_auth_init_status`）下的 redirect-failure 兜底提示与过期 marker 清理。
   - Startup 稳定性增强：auth bootstrap 存储访问安全化 + 顶层 fatal 兜底，新增 storage 异常矩阵用例。
   - Prebuilt 同步治理增强：`ECM_SYNC_PREBUILT_UI=auto` 下，前端 dirty worktree 视为 stale 并自动重建静态包。
+  - FileBrowser 可恢复性增强：新增长加载 watchdog 告警与 `Retry` / `Back to root` 操作，避免 spinner-only 卡住。
+  - Mocked 门禁覆盖增强：新增 FileBrowser 长加载 watchdog mocked 场景并纳入 `phase5-regression`。
 
 ## 二、主要变更
 ### 1) 会话恢复与登录提示
@@ -275,6 +277,23 @@
   - `ECM_UI_URL=http://localhost:3000 bash scripts/phase70-auth-route-matrix-smoke.sh`
   - `ECM_SYNC_PREBUILT_UI=1 DELIVERY_GATE_MODE=all PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh`
   - `ECM_SYNC_PREBUILT_UI=auto bash scripts/sync-prebuilt-frontend-if-needed.sh http://localhost`
+
+### 22) FileBrowser loading watchdog + mocked gate coverage（Phase77）
+- `ecm-frontend/src/pages/FileBrowser.tsx`
+  - 新增长加载 watchdog（默认 12s，可由 `REACT_APP_FILE_BROWSER_LOADING_WATCHDOG_MS` 配置）
+  - 告警面板新增恢复动作：
+    - `Retry`
+    - `Back to root`
+  - 同时覆盖初始加载和目录内容加载阶段，避免 spinner-only 卡住
+- `ecm-frontend/e2e/filebrowser-loading-watchdog.mock.spec.ts`
+  - 新增长加载挂起 mocked 场景，验证 watchdog 提示与恢复动作
+- `scripts/phase5-regression.sh`
+  - mocked regression 列表新增 watchdog spec，默认门禁覆盖
+- 验证方式：
+  - `ECM_UI_URL=http://localhost:3000 npx playwright test e2e/filebrowser-loading-watchdog.mock.spec.ts --project=chromium --workers=1`
+  - `bash scripts/phase5-regression.sh`
+  - `npm run lint`
+  - `bash scripts/phase70-auth-route-matrix-smoke.sh`
 
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
