@@ -17,6 +17,37 @@ import {
   LOGIN_IN_PROGRESS_STARTED_AT_KEY,
 } from 'constants/auth';
 
+const buildRedirectFailureMessage = (failureCount: number, lastFailureAt: number): string | null => {
+  if (failureCount <= 0) {
+    return null;
+  }
+  if (lastFailureAt <= 0) {
+    if (failureCount >= AUTH_REDIRECT_MAX_AUTO_ATTEMPTS) {
+      return `Automatic sign-in is paused after repeated failures (${failureCount}/${AUTH_REDIRECT_MAX_AUTO_ATTEMPTS}). Click Sign in with Keycloak to retry.`;
+    }
+    return 'Automatic sign-in redirect failed. Click Sign in with Keycloak to retry.';
+  }
+  const now = Date.now();
+  const elapsed = now - lastFailureAt;
+  if (elapsed > AUTH_REDIRECT_FAILURE_WINDOW_MS) {
+    return null;
+  }
+  if (failureCount >= AUTH_REDIRECT_MAX_AUTO_ATTEMPTS) {
+    const remainingMs = Math.max(0, AUTH_REDIRECT_FAILURE_WINDOW_MS - elapsed);
+    const remainingSeconds = Math.ceil(remainingMs / 1000);
+    if (remainingSeconds > 0) {
+      return `Automatic sign-in is paused after repeated failures (${failureCount}/${AUTH_REDIRECT_MAX_AUTO_ATTEMPTS}). Auto retry resumes in ~${remainingSeconds}s. Click Sign in with Keycloak to retry now.`;
+    }
+    return `Automatic sign-in is paused after repeated failures (${failureCount}/${AUTH_REDIRECT_MAX_AUTO_ATTEMPTS}). Click Sign in with Keycloak to retry.`;
+  }
+  const remainingMs = Math.max(0, AUTH_REDIRECT_FAILURE_COOLDOWN_MS - elapsed);
+  const remainingSeconds = Math.ceil(remainingMs / 1000);
+  if (remainingSeconds > 0) {
+    return `Automatic sign-in redirect failed. Auto retry is paused for ~${remainingSeconds}s. Click Sign in with Keycloak to retry now.`;
+  }
+  return 'Automatic sign-in redirect failed. Click Sign in with Keycloak to retry.';
+};
+
 const Login: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,9 +57,13 @@ const Login: React.FC = () => {
     const queryReason = new URLSearchParams(window.location.search).get('reason');
     let initStatus: string | null = null;
     let redirectReason: string | null = null;
+    let redirectFailureCount = 0;
+    let redirectLastFailureAt = 0;
     try {
       initStatus = sessionStorage.getItem(AUTH_INIT_STATUS_KEY);
       redirectReason = localStorage.getItem(AUTH_REDIRECT_REASON_KEY);
+      redirectFailureCount = Number(sessionStorage.getItem(AUTH_REDIRECT_FAILURE_COUNT_KEY) || '0');
+      redirectLastFailureAt = Number(sessionStorage.getItem(AUTH_REDIRECT_LAST_FAILURE_AT_KEY) || '0');
     } catch {
       // Storage can be unavailable in restricted contexts; keep URL-based fallback.
     }
@@ -42,32 +77,22 @@ const Login: React.FC = () => {
       || queryReason === AUTH_INIT_STATUS_SESSION_EXPIRED
     ) {
       setAuthInitMessage('Your session expired. Please sign in again.');
-    } else if (initStatus === AUTH_INIT_STATUS_REDIRECT_FAILED) {
-      const failureCount = Number(sessionStorage.getItem(AUTH_REDIRECT_FAILURE_COUNT_KEY) || '0');
-      const lastFailureAt = Number(sessionStorage.getItem(AUTH_REDIRECT_LAST_FAILURE_AT_KEY) || '0');
-      if (failureCount >= AUTH_REDIRECT_MAX_AUTO_ATTEMPTS) {
-        const elapsed = lastFailureAt > 0 ? Date.now() - lastFailureAt : AUTH_REDIRECT_FAILURE_WINDOW_MS;
-        const remainingMs = Math.max(0, AUTH_REDIRECT_FAILURE_WINDOW_MS - elapsed);
-        const remainingSeconds = Math.ceil(remainingMs / 1000);
-        if (remainingSeconds > 0) {
-          setAuthInitMessage(
-            `Automatic sign-in is paused after repeated failures (${failureCount}/${AUTH_REDIRECT_MAX_AUTO_ATTEMPTS}). Auto retry resumes in ~${remainingSeconds}s. Click Sign in with Keycloak to retry now.`
-          );
-        } else {
-          setAuthInitMessage(
-            `Automatic sign-in is paused after repeated failures (${failureCount}/${AUTH_REDIRECT_MAX_AUTO_ATTEMPTS}). Click Sign in with Keycloak to retry.`
-          );
-        }
-      } else {
-        const elapsed = lastFailureAt > 0 ? Date.now() - lastFailureAt : AUTH_REDIRECT_FAILURE_COOLDOWN_MS;
-        const remainingMs = Math.max(0, AUTH_REDIRECT_FAILURE_COOLDOWN_MS - elapsed);
-        const remainingSeconds = Math.ceil(remainingMs / 1000);
-        if (remainingSeconds > 0) {
-          setAuthInitMessage(
-            `Automatic sign-in redirect failed. Auto retry is paused for ~${remainingSeconds}s. Click Sign in with Keycloak to retry now.`
-          );
-        } else {
-          setAuthInitMessage('Automatic sign-in redirect failed. Click Sign in with Keycloak to retry.');
+    } else if (
+      initStatus === AUTH_INIT_STATUS_REDIRECT_FAILED
+      || (!initStatus && redirectFailureCount > 0 && redirectLastFailureAt > 0)
+    ) {
+      const normalizedFailureCount = initStatus === AUTH_INIT_STATUS_REDIRECT_FAILED
+        ? Math.max(1, redirectFailureCount)
+        : redirectFailureCount;
+      const redirectFailureMessage = buildRedirectFailureMessage(normalizedFailureCount, redirectLastFailureAt);
+      if (redirectFailureMessage) {
+        setAuthInitMessage(redirectFailureMessage);
+      } else if (redirectFailureCount > 0 || redirectLastFailureAt > 0) {
+        try {
+          sessionStorage.removeItem(AUTH_REDIRECT_FAILURE_COUNT_KEY);
+          sessionStorage.removeItem(AUTH_REDIRECT_LAST_FAILURE_AT_KEY);
+        } catch {
+          // Best effort cleanup.
         }
       }
     }

@@ -112,6 +112,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Auth/route deterministic matrix coverage
   - Design: `docs/PHASE70_AUTH_ROUTE_E2E_MATRIX_DEV_20260219.md`
   - Verification: `docs/PHASE70_AUTH_ROUTE_E2E_MATRIX_VERIFICATION_20260219.md`
+- Login redirect-failure marker fallback hardening
+  - Design: `docs/PHASE75_LOGIN_REDIRECT_MARKER_FALLBACK_DEV_20260220.md`
+  - Verification: `docs/PHASE75_LOGIN_REDIRECT_MARKER_FALLBACK_VERIFICATION_20260220.md`
 - Failure-injection coverage (transient vs terminal auth + search retry recovery)
   - Design: `docs/PHASE72_FAILURE_INJECTION_COVERAGE_DEV_20260219.md`
   - Verification: `docs/PHASE72_FAILURE_INJECTION_COVERAGE_VERIFICATION_20260219.md`

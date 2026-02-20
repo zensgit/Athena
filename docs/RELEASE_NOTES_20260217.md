@@ -23,6 +23,7 @@
   - Failure-injection 覆盖增强：补齐 auth transient/terminal 与 search temporary-failure->retry-success 场景。
   - 7-day 收尾文档增强：新增统一 release summary 与 verification rollup 文档。
   - Integration gate 覆盖增强：默认纳入 Phase70 auth-route 矩阵 smoke stage。
+  - Login 恢复提示增强：支持仅 marker 状态（无 `ecm_auth_init_status`）下的 redirect-failure 兜底提示与过期 marker 清理。
 
 ## 二、主要变更
 ### 1) 会话恢复与登录提示
@@ -241,6 +242,20 @@
 - 验证方式：
   - `bash scripts/phase70-auth-route-matrix-smoke.sh`
   - `DELIVERY_GATE_MODE=integration bash scripts/phase5-phase6-delivery-gate.sh`
+
+### 20) Login redirect-failure marker fallback hardening（Phase75）
+- `ecm-frontend/src/components/auth/Login.tsx`
+  - 新增 redirect-failure 提示构建 helper，统一 cap/cooldown 文案与过期窗口处理
+  - 在 `ecm_auth_init_status` 缺失但 marker 存在时，仍显示登录页恢复提示
+  - 对超出失败窗口的 marker 执行 best-effort 清理，减少陈旧噪声
+- `ecm-frontend/src/components/auth/Login.test.tsx`
+  - 增补 marker-only fallback 提示与 stale-marker 清理单测
+- `ecm-frontend/e2e/auth-route-recovery.matrix.spec.ts`
+  - 增补 `/login` 直达场景的 marker fallback 矩阵用例
+- 验证方式：
+  - `CI=1 npm test -- --runTestsByPath src/components/auth/Login.test.tsx`
+  - `ECM_UI_URL=http://localhost:3000 npx playwright test e2e/auth-route-recovery.matrix.spec.ts --project=chromium --workers=1`
+  - `ECM_UI_URL=http://localhost:3000 bash scripts/phase70-auth-route-matrix-smoke.sh`
 
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage

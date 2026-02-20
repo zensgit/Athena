@@ -2,6 +2,7 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import Login from './Login';
 import authService from 'services/authService';
+import { AUTH_REDIRECT_FAILURE_WINDOW_MS } from 'constants/auth';
 
 jest.mock('services/authService', () => ({
   __esModule: true,
@@ -80,6 +81,15 @@ test('shows redirect warning when automatic sign-in redirect fails', async () =>
   expect(await screen.findByText(/automatic sign-in redirect failed/i)).toBeTruthy();
 });
 
+test('shows redirect warning from marker fallback when init status is missing', async () => {
+  sessionStorage.setItem('ecm_auth_redirect_failure_count', '1');
+  sessionStorage.setItem('ecm_auth_redirect_last_failure_at', String(Date.now()));
+
+  render(<Login />);
+
+  expect(await screen.findByText(/automatic sign-in redirect failed/i)).toBeTruthy();
+});
+
 test('shows paused message when auto redirect failure count reaches cap', async () => {
   sessionStorage.setItem('ecm_auth_init_status', 'redirect_failed');
   sessionStorage.setItem('ecm_auth_redirect_failure_count', '2');
@@ -90,6 +100,20 @@ test('shows paused message when auto redirect failure count reaches cap', async 
   expect(await screen.findByText(/automatic sign-in is paused after repeated failures/i)).toBeTruthy();
   expect(screen.getByText(/2\/2/)).toBeTruthy();
   expect(screen.getByText(/auto retry resumes in/i)).toBeTruthy();
+});
+
+test('clears stale redirect failure markers without showing warning', async () => {
+  sessionStorage.setItem('ecm_auth_redirect_failure_count', '1');
+  sessionStorage.setItem(
+    'ecm_auth_redirect_last_failure_at',
+    String(Date.now() - AUTH_REDIRECT_FAILURE_WINDOW_MS - 1_000)
+  );
+
+  render(<Login />);
+
+  expect(screen.queryByText(/automatic sign-in/i)).toBeNull();
+  expect(sessionStorage.getItem('ecm_auth_redirect_failure_count')).toBeNull();
+  expect(sessionStorage.getItem('ecm_auth_redirect_last_failure_at')).toBeNull();
 });
 
 test('manual sign-in clears redirect failure cooldown markers', async () => {
