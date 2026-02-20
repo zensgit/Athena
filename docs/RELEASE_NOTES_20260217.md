@@ -256,6 +256,7 @@
   - `CI=1 npm test -- --runTestsByPath src/components/auth/Login.test.tsx`
   - `ECM_UI_URL=http://localhost:3000 npx playwright test e2e/auth-route-recovery.matrix.spec.ts --project=chromium --workers=1`
   - `ECM_UI_URL=http://localhost:3000 bash scripts/phase70-auth-route-matrix-smoke.sh`
+  - `DELIVERY_GATE_MODE=integration PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh`
 
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage

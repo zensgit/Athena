@@ -40,6 +40,20 @@ npm run lint
 ```
 - Result: PASS
 
+5. Integration delivery gate
+```bash
+DELIVERY_GATE_MODE=integration PW_WORKERS=1 \
+bash scripts/phase5-phase6-delivery-gate.sh
+```
+- Result: PASS
+- Integration layer summary:
+  - full-stack prebuilt sync check: PASS
+  - full-stack admin smoke: PASS
+  - phase6 mail integration smoke: PASS
+  - phase5 search suggestions integration smoke: PASS
+  - phase70 auth-route matrix smoke: PASS (`5 passed`)
+  - p1 smoke: PASS (`5 passed`, `1 skipped`)
+
 ## Environment Note
 - Local default auto-detected e2e target may resolve to `http://localhost:5500` (prebuilt/static instance).
 - For this phase, fallback coverage validation requires latest source behavior; therefore verification was pinned to `ECM_UI_URL=http://localhost:3000`.
