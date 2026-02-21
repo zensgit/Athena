@@ -387,6 +387,8 @@
   - mocked 规格新增：
     - `e2e/auth-boot-watchdog-recovery.mock.spec.ts`
   - 默认 mocked gate 变更为 `16` 条 spec
+- Full gate 回归确认：
+  - `DELIVERY_GATE_MODE=all` 下 fast mocked 与 integration/full-stack 两层均通过
 
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
@@ -462,3 +464,4 @@
 - `docs/PHASE82_STARTUP_STABILITY_RELEASE_CLOSEOUT_20260220.md`
 - `docs/REPORT_STARTUP_PARALLEL_EXECUTION_20260221.md`
 - `docs/VERIFICATION_STARTUP_PARALLEL_EXECUTION_20260221.md`
+- `docs/VERIFICATION_STARTUP_FULL_DELIVERY_GATE_ALL_20260221.md`
