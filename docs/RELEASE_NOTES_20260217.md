@@ -370,6 +370,24 @@
   - 包含 operator runbook 更新要点
   - 标记 startup baseline freeze
 
+### 28) 并行续开发：Auth Boot Watchdog Mocked 回归纳管（2026-02-21）
+- `ecm-frontend/src/index.tsx`
+  - 增加受控 e2e 启动注入开关：
+    - `ecm_e2e_force_auth_boot_hang`
+    - `ecm_e2e_auth_boot_watchdog_ms`
+  - `Continue to login` 恢复路径增强：
+    - 恢复时先将 URL 置为 `/login` 再渲染应用，避免被受保护路由立即拉回 Keycloak
+  - 恢复后清理 e2e boot override flags，减少后续污染
+- `ecm-frontend/e2e/auth-boot-watchdog-recovery.mock.spec.ts`
+  - 新增 mocked 启动恢复场景：
+    - 强制 auth boot hang
+    - watchdog 告警触发
+    - `Continue to login` 终态验证
+- `scripts/phase5-regression.sh`
+  - mocked 规格新增：
+    - `e2e/auth-boot-watchdog-recovery.mock.spec.ts`
+  - 默认 mocked gate 变更为 `16` 条 spec
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -442,3 +460,5 @@
 - `docs/PHASE81_DELIVERY_GATE_STARTUP_HINTS_DEV_20260220.md`
 - `docs/PHASE81_DELIVERY_GATE_STARTUP_HINTS_VERIFICATION_20260220.md`
 - `docs/PHASE82_STARTUP_STABILITY_RELEASE_CLOSEOUT_20260220.md`
+- `docs/REPORT_STARTUP_PARALLEL_EXECUTION_20260221.md`
+- `docs/VERIFICATION_STARTUP_PARALLEL_EXECUTION_20260221.md`

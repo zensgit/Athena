@@ -62,6 +62,8 @@ const AUTH_INIT_TIMEOUT_MS = resolvePositiveIntEnv(process.env.REACT_APP_AUTH_IN
 const AUTH_INIT_MAX_ATTEMPTS = resolvePositiveIntEnv(process.env.REACT_APP_AUTH_INIT_MAX_ATTEMPTS, 2);
 const AUTH_INIT_RETRY_DELAY_MS = resolvePositiveIntEnv(process.env.REACT_APP_AUTH_INIT_RETRY_DELAY_MS, 800);
 const AUTH_BOOT_WATCHDOG_MS = resolvePositiveIntEnv(process.env.REACT_APP_AUTH_BOOT_WATCHDOG_MS, 12_000);
+const E2E_FORCE_AUTH_BOOT_HANG_KEY = 'ecm_e2e_force_auth_boot_hang';
+const E2E_AUTH_BOOT_WATCHDOG_MS_KEY = 'ecm_e2e_auth_boot_watchdog_ms';
 
 let authBootWatchdogRecovered = false;
 let authBootWatchdogTriggeredLogged = false;
@@ -88,6 +90,50 @@ const safeSessionRemoveItem = (key: string) => {
   } catch {
     // Storage can be unavailable in restricted browser contexts.
   }
+};
+
+const safeLocalGetItem = (key: string): string | null => {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+
+const safeLocalRemoveItem = (key: string) => {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // Storage can be unavailable in restricted browser contexts.
+  }
+};
+
+const isWebdriverRuntime = (): boolean => window.navigator?.webdriver === true;
+const isLocalhostRuntime = (): boolean => window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const canUseE2EBootOverrides = (): boolean => isWebdriverRuntime() || isLocalhostRuntime();
+
+const resolveAuthBootWatchdogMs = (): number => {
+  const fallback = AUTH_BOOT_WATCHDOG_MS;
+  if (!canUseE2EBootOverrides()) {
+    return fallback;
+  }
+  const overrideRaw = safeLocalGetItem(E2E_AUTH_BOOT_WATCHDOG_MS_KEY) || undefined;
+  return resolvePositiveIntEnv(overrideRaw, fallback);
+};
+
+const shouldForceE2EAuthBootHang = (): boolean => {
+  if (!canUseE2EBootOverrides()) {
+    return false;
+  }
+  return safeLocalGetItem(E2E_FORCE_AUTH_BOOT_HANG_KEY) === '1';
+};
+
+const clearE2EAuthBootFlags = () => {
+  if (!canUseE2EBootOverrides()) {
+    return;
+  }
+  safeLocalRemoveItem(E2E_FORCE_AUTH_BOOT_HANG_KEY);
+  safeLocalRemoveItem(E2E_AUTH_BOOT_WATCHDOG_MS_KEY);
 };
 
 const stripKeycloakCallbackParams = () => {
@@ -157,19 +203,27 @@ const recoverStartupToLogin = () => {
   logAuthRecoveryEvent('auth.bootstrap.watchdog.continue_to_login', {
     pathname: window.location.pathname,
   });
+  clearE2EAuthBootFlags();
+  try {
+    window.history.replaceState({}, '', '/login');
+  } catch {
+    window.location.assign('/login');
+    return;
+  }
   renderApp();
 };
 
 const renderAuthBooting = () => {
+  const watchdogMs = resolveAuthBootWatchdogMs();
   root.render(
     <React.StrictMode>
       <AuthBootingScreen
-        watchdogMs={AUTH_BOOT_WATCHDOG_MS}
+        watchdogMs={watchdogMs}
         onWatchdogTriggered={() => {
           if (!authBootWatchdogTriggeredLogged) {
             authBootWatchdogTriggeredLogged = true;
             logAuthRecoveryEvent('auth.bootstrap.watchdog.triggered', {
-              watchdogMs: AUTH_BOOT_WATCHDOG_MS,
+              watchdogMs,
               pathname: window.location.pathname,
             });
           }
@@ -195,6 +249,14 @@ const initAuth = async () => {
   });
   renderAuthBooting();
   try {
+    if (shouldForceE2EAuthBootHang()) {
+      logAuthRecoveryEvent('auth.bootstrap.e2e_forced_hang', {
+        pathname: window.location.pathname,
+      });
+      await new Promise<never>(() => {
+        // E2E-only startup hang injection; recovered via watchdog controls.
+      });
+    }
     clearAuthInitStatus({ preserveSessionExpired: true });
     const canUsePkce = !!(window.crypto && window.crypto.subtle);
     if (!canUsePkce) {

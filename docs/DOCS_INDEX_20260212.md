@@ -136,6 +136,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - Verification: `docs/PHASE81_DELIVERY_GATE_STARTUP_HINTS_VERIFICATION_20260220.md`
 - Startup stability 7-day closeout
   - Release closeout: `docs/PHASE82_STARTUP_STABILITY_RELEASE_CLOSEOUT_20260220.md`
+- Startup parallel continuation (post-closeout)
+  - Report: `docs/REPORT_STARTUP_PARALLEL_EXECUTION_20260221.md`
+  - Verification: `docs/VERIFICATION_STARTUP_PARALLEL_EXECUTION_20260221.md`
 - Failure-injection coverage (transient vs terminal auth + search retry recovery)
   - Design: `docs/PHASE72_FAILURE_INJECTION_COVERAGE_DEV_20260219.md`
   - Verification: `docs/PHASE72_FAILURE_INJECTION_COVERAGE_VERIFICATION_20260219.md`
