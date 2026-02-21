@@ -390,6 +390,19 @@
 - Full gate 回归确认：
   - `DELIVERY_GATE_MODE=all` 下 fast mocked 与 integration/full-stack 两层均通过
 
+### 29) Watchdog 恢复纳入 Phase70 集成矩阵（Phase83）
+- `ecm-frontend/e2e/auth-route-recovery.matrix.spec.ts`
+  - 新增 `forced auth boot hang -> watchdog continue-to-login` 集成场景
+  - 覆盖点：
+    - 启动页 watchdog 出现
+    - 点击 `Continue to login` 后恢复到 `/login`
+    - 启动 override key 清理
+- `scripts/phase70-auth-route-matrix-smoke.sh`
+  - 无需改脚本，自动承载扩展后矩阵（由 8 -> 9 case）
+- 验证：
+  - `bash scripts/phase70-auth-route-matrix-smoke.sh` -> `9 passed`
+  - `DELIVERY_GATE_MODE=all PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -465,3 +478,5 @@
 - `docs/REPORT_STARTUP_PARALLEL_EXECUTION_20260221.md`
 - `docs/VERIFICATION_STARTUP_PARALLEL_EXECUTION_20260221.md`
 - `docs/VERIFICATION_STARTUP_FULL_DELIVERY_GATE_ALL_20260221.md`
+- `docs/PHASE83_AUTH_BOOT_WATCHDOG_MATRIX_INTEGRATION_DEV_20260221.md`
+- `docs/PHASE83_AUTH_BOOT_WATCHDOG_MATRIX_INTEGRATION_VERIFICATION_20260221.md`

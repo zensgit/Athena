@@ -7,6 +7,8 @@ const AUTH_INIT_STATUS_KEY = 'ecm_auth_init_status';
 const AUTH_REDIRECT_REASON_KEY = 'ecm_auth_redirect_reason';
 const LOGIN_IN_PROGRESS_KEY = 'ecm_kc_login_in_progress';
 const LOGIN_IN_PROGRESS_STARTED_AT_KEY = 'ecm_kc_login_in_progress_started_at';
+const E2E_FORCE_AUTH_BOOT_HANG_KEY = 'ecm_e2e_force_auth_boot_hang';
+const E2E_AUTH_BOOT_WATCHDOG_MS_KEY = 'ecm_e2e_auth_boot_watchdog_ms';
 const AUTH_REDIRECT_MAX_AUTO_ATTEMPTS = 2;
 
 const REDIRECT_PAUSE_MESSAGE_PATTERN = /Automatic sign-in (is paused after repeated failures|redirect failed)/i;
@@ -84,6 +86,24 @@ const seedStaleLoginInProgress = async (page: Page) => {
   );
 };
 
+const seedForcedAuthBootHang = async (page: Page, watchdogMs: number) => {
+  await page.addInitScript(
+    ({ forceHangKey, watchdogMsKey, watchdog }) => {
+      try {
+        localStorage.setItem(forceHangKey, '1');
+        localStorage.setItem(watchdogMsKey, String(watchdog));
+      } catch {
+        // Best effort in restrictive browser contexts.
+      }
+    },
+    {
+      forceHangKey: E2E_FORCE_AUTH_BOOT_HANG_KEY,
+      watchdogMsKey: E2E_AUTH_BOOT_WATCHDOG_MS_KEY,
+      watchdog: watchdogMs,
+    }
+  );
+};
+
 test.describe('Auth/Route recovery matrix', () => {
   test('matrix: login shows session-expired guidance from URL reason', async ({ page, request }) => {
     await waitForApiReady(request);
@@ -154,6 +174,36 @@ test.describe('Auth/Route recovery matrix', () => {
         return 'pending';
       }, { timeout: 60_000 })
       .not.toBe('pending');
+  });
+
+  test('matrix: forced auth boot hang is recoverable via watchdog continue-to-login action', async ({ page, request }) => {
+    await waitForApiReady(request);
+    await seedForcedAuthBootHang(page, 1_200);
+    await page.goto('/browse/root', { waitUntil: 'domcontentloaded' });
+
+    await expect(page.getByTestId('auth-booting-screen')).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId('auth-booting-watchdog-alert')).toBeVisible({ timeout: 60_000 });
+    await page.getByTestId('auth-booting-watchdog-continue-login').click();
+
+    await expect(page).toHaveURL(/\/login($|[?#])/, { timeout: 60_000 });
+    await expect(page.getByRole('heading', { name: /Athena ECM/i })).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByText('Sign-in initialization timed out. Please retry.')).toBeVisible({ timeout: 60_000 });
+    await expect
+      .poll(
+        () =>
+          page.evaluate(
+            ({ forceHangKey, watchdogMsKey }) => ({
+              forceHang: localStorage.getItem(forceHangKey),
+              watchdogMs: localStorage.getItem(watchdogMsKey),
+            }),
+            {
+              forceHangKey: E2E_FORCE_AUTH_BOOT_HANG_KEY,
+              watchdogMsKey: E2E_AUTH_BOOT_WATCHDOG_MS_KEY,
+            }
+          ),
+        { timeout: 60_000 }
+      )
+      .toEqual({ forceHang: null, watchdogMs: null });
   });
 
   test('matrix: login clears stale in-progress markers under redirect timing jitter', async ({ page, request }) => {

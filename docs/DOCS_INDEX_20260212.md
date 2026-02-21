@@ -140,6 +140,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - Report: `docs/REPORT_STARTUP_PARALLEL_EXECUTION_20260221.md`
   - Verification: `docs/VERIFICATION_STARTUP_PARALLEL_EXECUTION_20260221.md`
   - Full gate verification (`all` mode): `docs/VERIFICATION_STARTUP_FULL_DELIVERY_GATE_ALL_20260221.md`
+  - Matrix integration (watchdog recovery in phase70):
+    - Design: `docs/PHASE83_AUTH_BOOT_WATCHDOG_MATRIX_INTEGRATION_DEV_20260221.md`
+    - Verification: `docs/PHASE83_AUTH_BOOT_WATCHDOG_MATRIX_INTEGRATION_VERIFICATION_20260221.md`
 - Failure-injection coverage (transient vs terminal auth + search retry recovery)
   - Design: `docs/PHASE72_FAILURE_INJECTION_COVERAGE_DEV_20260219.md`
   - Verification: `docs/PHASE72_FAILURE_INJECTION_COVERAGE_VERIFICATION_20260219.md`
