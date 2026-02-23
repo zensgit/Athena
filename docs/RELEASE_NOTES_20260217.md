@@ -495,6 +495,17 @@
   - `ECM_SYNC_PREBUILT_UI=false FULLSTACK_ALLOW_STATIC=1 bash scripts/phase70-auth-route-matrix-smoke.sh` -> expected fail（依赖缺失），结构化提示正确
   - `DELIVERY_GATE_MODE=integration ECM_SYNC_PREBUILT_UI=false PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> expected fail（依赖缺失），分组诊断输出正确
 
+### 38) App 全局崩溃恢复 mocked 回归纳管（Phase92）
+- `ecm-frontend/e2e/app-error-boundary-recovery.mock.spec.ts`
+  - 新增场景：强制 render crash 后进入 `AppErrorBoundary`，点击 `Back to Login` 可恢复到登录页并清理 crash 标记。
+- `scripts/phase5-regression.sh`
+  - mocked 回归新增 `app-error-boundary-recovery` 场景，当前集合执行结果 `19 passed`。
+- 验证：
+  - `bash scripts/phase5-regression.sh` -> PASS (`19 passed`)
+  - `DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
+  - `npm test -- --watch=false --runInBand src/components/layout/AppErrorBoundary.test.tsx src/components/auth/Login.test.tsx src/components/auth/PrivateRoute.test.tsx src/utils/searchFallbackUtils.test.ts` -> PASS (`37 tests`)
+  - `npm run lint` -> PASS
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -588,3 +599,5 @@
 - `docs/NEXT_7DAY_PLAN_RESILIENCE_CONTINUATION_20260221.md`
 - `docs/PHASE91_FOLDER_TREE_ROOT_LOADING_WATCHDOG_DEV_20260222.md`
 - `docs/PHASE91_FOLDER_TREE_ROOT_LOADING_WATCHDOG_VERIFICATION_20260222.md`
+- `docs/PHASE92_APP_ERROR_BOUNDARY_RECOVERY_E2E_DEV_20260223.md`
+- `docs/PHASE92_APP_ERROR_BOUNDARY_RECOVERY_E2E_VERIFICATION_20260223.md`

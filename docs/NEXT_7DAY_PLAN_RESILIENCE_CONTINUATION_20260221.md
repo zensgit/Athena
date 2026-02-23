@@ -66,6 +66,13 @@
     - `docs/PHASE91_FOLDER_TREE_ROOT_LOADING_WATCHDOG_DEV_20260222.md`
     - `docs/PHASE91_FOLDER_TREE_ROOT_LOADING_WATCHDOG_VERIFICATION_20260222.md`
 
+## Post Day 7 Stabilization (Completed on 2026-02-23)
+- App error boundary crash-recovery mocked E2E:
+  - cover forced render failure and verify `Back to Login` recovery path avoids persistent blank/fatal shell.
+  - Deliverables:
+    - `docs/PHASE92_APP_ERROR_BOUNDARY_RECOVERY_E2E_DEV_20260223.md`
+    - `docs/PHASE92_APP_ERROR_BOUNDARY_RECOVERY_E2E_VERIFICATION_20260223.md`
+
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
 2. Filename-like queries do not trigger noisy spellcheck suggestions.
