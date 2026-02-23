@@ -537,6 +537,24 @@
   - `npm test -- --watch=false --runInBand src/App.test.tsx src/components/layout/AppErrorBoundary.test.tsx` -> PASS (`6 tests`)
   - `npm run lint` -> PASS
 
+### 41) Startup SLA OK/WARN 摘要与 Gate 失败提示聚合（Phase95）
+- `scripts/phase5-regression.sh`
+  - 新增 `phase5_regression: startup SLA status` 聚合段，输出 `OK/WARN`：
+    - `WARN` 条件：超过阈值或接近阈值（`>= 80%`）。
+  - 新增 `phase5_regression: startup SLA warning count: N`。
+  - 解析加固：仅识别严格结构化 `startup_sla:*` 样本行，避免失败堆栈源码行误判。
+- `scripts/phase5-phase6-delivery-gate.sh`
+  - 失败提示聚合增加 startup SLA warning 信号：
+    - 检测 `phase5_regression: startup SLA warning count: [1-9]+`
+    - 输出提示：
+      - `Startup visibility SLA warnings detected. Review 'phase5_regression: startup SLA status' for near-threshold routes.`
+- 验证：
+  - `bash scripts/phase5-regression.sh` -> PASS（含 `startup SLA status` 与 warning count 输出）
+  - `DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
+  - 受控失败验证：
+    - `ECM_E2E_STARTUP_LOGIN_SLA_MS=100 ECM_E2E_STARTUP_BROWSE_SLA_MS=100 DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh`
+    - expected FAIL，且 gate failure hints 成功输出 startup SLA warning 提示
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -636,3 +654,5 @@
 - `docs/PHASE93_ROUTE_FALLBACK_NO_BLANK_MOCK_E2E_VERIFICATION_20260223.md`
 - `docs/PHASE94_STARTUP_VISIBILITY_SLA_MOCKED_GATE_DEV_20260223.md`
 - `docs/PHASE94_STARTUP_VISIBILITY_SLA_MOCKED_GATE_VERIFICATION_20260223.md`
+- `docs/PHASE95_STARTUP_SLA_WARN_SUMMARY_AND_GATE_HINTS_DEV_20260223.md`
+- `docs/PHASE95_STARTUP_SLA_WARN_SUMMARY_AND_GATE_HINTS_VERIFICATION_20260223.md`

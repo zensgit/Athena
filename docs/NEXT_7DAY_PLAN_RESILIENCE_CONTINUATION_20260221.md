@@ -82,6 +82,11 @@
   - Deliverables:
     - `docs/PHASE94_STARTUP_VISIBILITY_SLA_MOCKED_GATE_DEV_20260223.md`
     - `docs/PHASE94_STARTUP_VISIBILITY_SLA_MOCKED_GATE_VERIFICATION_20260223.md`
+- Startup SLA WARN summary + delivery-gate failure hints:
+  - convert SLA samples to explicit OK/WARN status lines and surface warning signals in gate startup hints.
+  - Deliverables:
+    - `docs/PHASE95_STARTUP_SLA_WARN_SUMMARY_AND_GATE_HINTS_DEV_20260223.md`
+    - `docs/PHASE95_STARTUP_SLA_WARN_SUMMARY_AND_GATE_HINTS_VERIFICATION_20260223.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
