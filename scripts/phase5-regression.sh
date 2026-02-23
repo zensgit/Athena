@@ -110,6 +110,14 @@ const retrySignals = lines.filter((line) => /retry #\d+/i.test(line)).length;
 if (retrySignals > 0) {
   console.log(`phase5_regression: retry signals observed in run: ${retrySignals}`);
 }
+
+const startupSlaLines = lines.filter((line) => line.includes('startup_sla:'));
+if (startupSlaLines.length > 0) {
+  console.log('phase5_regression: startup SLA samples');
+  for (const line of startupSlaLines) {
+    console.log(` - ${line.trim()}`);
+  }
+}
 NODE
 }
 
@@ -189,6 +197,7 @@ PHASE5_SPECS=(
   "e2e/version-history-paging-major-only.mock.spec.ts"
   "e2e/app-error-boundary-recovery.mock.spec.ts"
   "e2e/route-fallback-no-blank.mock.spec.ts"
+  "e2e/startup-visibility-sla.mock.spec.ts"
   "e2e/search-suggestions-save-search.mock.spec.ts"
   "e2e/settings-session-actions.mock.spec.ts"
   "e2e/auth-session-recovery.mock.spec.ts"
