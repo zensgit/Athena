@@ -220,6 +220,68 @@ run_prebuilt_sync_stage() {
   bash scripts/sync-prebuilt-frontend-if-needed.sh "${ECM_UI_URL_FULLSTACK}"
 }
 
+run_integration_dependency_preflight_stage() {
+  local dependency_failures=()
+  local hints=()
+
+  check_dependency() {
+    local label="$1"
+    local url="$2"
+    local hint="$3"
+    if curl -fsS --max-time 5 "${url}" >/dev/null 2>&1; then
+      return 0
+    fi
+    dependency_failures+=("${label}|${url}|${hint}")
+    hints+=("${hint}")
+    return 1
+  }
+
+  check_dependency "backend health" "${ECM_API_URL}/actuator/health" \
+    "Start ecm-core API (or set ECM_API_URL to a reachable backend)." || true
+  check_dependency "keycloak discovery" "${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" \
+    "Start Keycloak realm '${KEYCLOAK_REALM}' (or set KEYCLOAK_URL/KEYCLOAK_REALM)." || true
+  check_dependency "ui reachability" "${ECM_UI_URL_FULLSTACK}" \
+    "Start frontend UI target (or set ECM_UI_URL_FULLSTACK)." || true
+
+  if [[ "${#dependency_failures[@]}" -eq 0 ]]; then
+    echo "phase5_phase6_delivery_gate: integration dependency preflight ok"
+    return 0
+  fi
+
+  echo "phase5_phase6_delivery_gate: integration dependency preflight failed"
+  local failure
+  for failure in "${dependency_failures[@]}"; do
+    local label
+    local url
+    local hint
+    IFS='|' read -r label url hint <<< "${failure}"
+    echo " - ${label}: ${url}"
+  done
+
+  echo "phase5_phase6_delivery_gate: remediation hints"
+  local unique_hints=()
+  local hint
+  for hint in "${hints[@]}"; do
+    local seen=0
+    local existing
+    for existing in "${unique_hints[@]}"; do
+      if [[ "${existing}" == "${hint}" ]]; then
+        seen=1
+        break
+      fi
+    done
+    if [[ "${seen}" -eq 0 ]]; then
+      unique_hints+=("${hint}")
+    fi
+  done
+
+  local item
+  for item in "${unique_hints[@]}"; do
+    echo " - ${item}"
+  done
+  return 1
+}
+
 run_fullstack_admin_smoke_stage() {
   ECM_UI_URL="${ECM_UI_URL_FULLSTACK}" \
   ECM_API_URL="${ECM_API_URL}" \
@@ -342,7 +404,18 @@ if [[ "${run_integration_layer}" -eq 1 ]]; then
   echo "=== Layer 2/2: integration + full-stack smokes ==="
   integration_prereq_ok=1
 
-  if [[ "${ECM_FULLSTACK_ALLOW_STATIC}" == "0" ]]; then
+  if ! run_stage \
+    "integration" \
+    "integration_dependency_preflight" \
+    "integration dependency preflight" \
+    run_integration_dependency_preflight_stage; then
+    integration_layer_failed=1
+    overall_rc=1
+    integration_prereq_ok=0
+    echo "phase5_phase6_delivery_gate: integration stages skipped (dependency preflight failed)"
+  fi
+
+  if [[ "${integration_prereq_ok}" -eq 1 && "${ECM_FULLSTACK_ALLOW_STATIC}" == "0" ]]; then
     if ! run_stage \
       "integration" \
       "strict_fullstack_preflight" \

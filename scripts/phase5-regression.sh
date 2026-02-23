@@ -45,6 +45,74 @@ print_playwright_failure_summary() {
   fi
 }
 
+print_playwright_timing_summary() {
+  local log_file="$1"
+  node - "${log_file}" <<'NODE'
+const fs = require('fs');
+
+const logFile = process.argv[2];
+if (!logFile || !fs.existsSync(logFile)) {
+  process.exit(0);
+}
+
+const content = fs.readFileSync(logFile, 'utf8').replace(/\r/g, '');
+const lines = content.split('\n');
+const specLinePattern = /^\s*[✓✘]\s+\d+\s+\[[^\]]+\]\s+›\s+(e2e\/[^:]+):\d+:\d+\s+›\s+(.+)\s+\(([\d.]+)(ms|s|m)\)\s*$/;
+
+const tests = [];
+for (const line of lines) {
+  const match = line.match(specLinePattern);
+  if (!match) continue;
+  const [, spec, title, rawDuration, unit] = match;
+  let durationSec = Number.parseFloat(rawDuration);
+  if (!Number.isFinite(durationSec)) continue;
+  if (unit === 'ms') durationSec /= 1000;
+  if (unit === 'm') durationSec *= 60;
+  tests.push({ spec, title, durationSec });
+}
+
+if (tests.length === 0) {
+  process.exit(0);
+}
+
+tests.sort((left, right) => right.durationSec - left.durationSec);
+console.log('phase5_regression: duration hotspots (top 5)');
+for (const item of tests.slice(0, 5)) {
+  console.log(` - ${item.spec} :: ${item.title} (${item.durationSec.toFixed(1)}s)`);
+}
+
+const riskCandidates = tests
+  .map((item) => {
+    let score = 0;
+    if (item.durationSec >= 12) score += 3;
+    else if (item.durationSec >= 8) score += 2;
+    else if (item.durationSec >= 5) score += 1;
+
+    const normalized = `${item.spec} ${item.title}`.toLowerCase();
+    if (/watchdog|auth|session|mail automation|trigger fetch|search suggestions/.test(normalized)) {
+      score += 1;
+    }
+    return { ...item, score };
+  })
+  .filter((item) => item.score > 0)
+  .sort((left, right) => right.score - left.score || right.durationSec - left.durationSec);
+
+if (riskCandidates.length > 0) {
+  console.log('phase5_regression: flaky-risk candidates (heuristic)');
+  for (const item of riskCandidates.slice(0, 3)) {
+    console.log(` - score ${item.score}: ${item.spec} :: ${item.title} (${item.durationSec.toFixed(1)}s)`);
+  }
+} else {
+  console.log('phase5_regression: flaky-risk candidates (heuristic): none');
+}
+
+const retrySignals = lines.filter((line) => /retry #\d+/i.test(line)).length;
+if (retrySignals > 0) {
+  console.log(`phase5_regression: retry signals observed in run: ${retrySignals}`);
+}
+NODE
+}
+
 run_with_tee() {
   local log_file="$1"
   shift
@@ -122,7 +190,9 @@ PHASE5_SPECS=(
   "e2e/search-suggestions-save-search.mock.spec.ts"
   "e2e/settings-session-actions.mock.spec.ts"
   "e2e/auth-session-recovery.mock.spec.ts"
+  "e2e/auth-storage-restricted-recovery.mock.spec.ts"
   "e2e/auth-boot-watchdog-recovery.mock.spec.ts"
+  "e2e/folder-tree-root-watchdog.mock.spec.ts"
   "e2e/filebrowser-loading-watchdog.mock.spec.ts"
   "e2e/mail-automation-trigger-fetch.mock.spec.ts"
   "e2e/mail-automation-diagnostics-export.mock.spec.ts"
@@ -196,6 +266,7 @@ run_with_tee "${playwright_log}" \
   npx playwright test \
   "${PHASE5_SPECS[@]}" \
   --project="${PW_PROJECT}" --workers="${PW_WORKERS}" || playwright_rc=$?
+print_playwright_timing_summary "${playwright_log}"
 if [[ "${playwright_rc}" -eq 0 ]]; then
   echo "phase5_regression: ok"
 else
