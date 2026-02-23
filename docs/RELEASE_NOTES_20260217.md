@@ -506,6 +506,19 @@
   - `npm test -- --watch=false --runInBand src/components/layout/AppErrorBoundary.test.tsx src/components/auth/Login.test.tsx src/components/auth/PrivateRoute.test.tsx src/utils/searchFallbackUtils.test.ts` -> PASS (`37 tests`)
   - `npm run lint` -> PASS
 
+### 39) Unknown Route No-Blank mocked 回归纳管（Phase93）
+- `ecm-frontend/e2e/route-fallback-no-blank.mock.spec.ts`
+  - 新增双场景：
+    - 未登录访问未知路由 -> 回退到 `/login`，登录页可见，无错误边界页
+    - 已登录访问未知路由 -> 回退到 `/browse/root`，浏览壳与空文件夹态可见，无错误边界页
+- `scripts/phase5-regression.sh`
+  - mocked 集合新增 `route-fallback-no-blank`，当前回归总结果 `21 passed`。
+- 验证：
+  - `bash scripts/phase5-regression.sh` -> PASS (`21 passed`)
+  - `DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
+  - `npm test -- --watch=false --runInBand src/App.test.tsx src/components/layout/AppErrorBoundary.test.tsx` -> PASS (`6 tests`)
+  - `npm run lint` -> PASS
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -601,3 +614,5 @@
 - `docs/PHASE91_FOLDER_TREE_ROOT_LOADING_WATCHDOG_VERIFICATION_20260222.md`
 - `docs/PHASE92_APP_ERROR_BOUNDARY_RECOVERY_E2E_DEV_20260223.md`
 - `docs/PHASE92_APP_ERROR_BOUNDARY_RECOVERY_E2E_VERIFICATION_20260223.md`
+- `docs/PHASE93_ROUTE_FALLBACK_NO_BLANK_MOCK_E2E_DEV_20260223.md`
+- `docs/PHASE93_ROUTE_FALLBACK_NO_BLANK_MOCK_E2E_VERIFICATION_20260223.md`

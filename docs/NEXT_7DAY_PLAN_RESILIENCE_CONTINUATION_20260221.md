@@ -72,6 +72,11 @@
   - Deliverables:
     - `docs/PHASE92_APP_ERROR_BOUNDARY_RECOVERY_E2E_DEV_20260223.md`
     - `docs/PHASE92_APP_ERROR_BOUNDARY_RECOVERY_E2E_VERIFICATION_20260223.md`
+- Unknown-route no-blank fallback mocked E2E:
+  - cover wildcard route fallback for both unauthenticated and authenticated sessions to prevent runtime blank-page regressions.
+  - Deliverables:
+    - `docs/PHASE93_ROUTE_FALLBACK_NO_BLANK_MOCK_E2E_DEV_20260223.md`
+    - `docs/PHASE93_ROUTE_FALLBACK_NO_BLANK_MOCK_E2E_VERIFICATION_20260223.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
