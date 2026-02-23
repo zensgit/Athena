@@ -111,11 +111,45 @@ if (retrySignals > 0) {
   console.log(`phase5_regression: retry signals observed in run: ${retrySignals}`);
 }
 
-const startupSlaLines = lines.filter((line) => line.includes('startup_sla:'));
+const startupSlaLinePattern = /^\s*startup_sla:[a-z_]+_ms=[0-9]+:threshold_ms=[0-9]+\s*$/;
+const startupSlaLines = lines.filter((line) => startupSlaLinePattern.test(line));
 if (startupSlaLines.length > 0) {
   console.log('phase5_regression: startup SLA samples');
   for (const line of startupSlaLines) {
     console.log(` - ${line.trim()}`);
+  }
+
+  const startupSlaPattern = /startup_sla:([a-z_]+)_ms=([0-9]+):threshold_ms=([0-9]+)/;
+  const startupSlaStatus = [];
+  for (const line of startupSlaLines) {
+    const match = line.match(startupSlaPattern);
+    if (!match) continue;
+    const [, name, elapsedRaw, thresholdRaw] = match;
+    const elapsedMs = Number.parseInt(elapsedRaw, 10);
+    const thresholdMs = Number.parseInt(thresholdRaw, 10);
+    if (!Number.isFinite(elapsedMs) || !Number.isFinite(thresholdMs) || thresholdMs <= 0) {
+      continue;
+    }
+    const ratio = elapsedMs / thresholdMs;
+    const isWarn = elapsedMs > thresholdMs || ratio >= 0.8;
+    startupSlaStatus.push({
+      name,
+      elapsedMs,
+      thresholdMs,
+      ratio,
+      level: isWarn ? 'WARN' : 'OK',
+    });
+  }
+
+  if (startupSlaStatus.length > 0) {
+    console.log('phase5_regression: startup SLA status');
+    for (const sample of startupSlaStatus) {
+      console.log(
+        ` - ${sample.level} ${sample.name}: ${sample.elapsedMs}ms / ${sample.thresholdMs}ms (${(sample.ratio * 100).toFixed(1)}%)`
+      );
+    }
+    const warnCount = startupSlaStatus.filter((item) => item.level === 'WARN').length;
+    console.log(`phase5_regression: startup SLA warning count: ${warnCount}`);
   }
 }
 NODE

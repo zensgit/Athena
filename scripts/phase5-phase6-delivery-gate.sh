@@ -168,6 +168,7 @@ print_startup_failure_hints() {
   local hint_static_target=0
   local hint_storage_restricted=0
   local hint_auth_timeout=0
+  local hint_startup_sla_warn=0
   local record
   for record in "${FAILED_STAGE_RECORDS[@]}"; do
     local record_layer
@@ -185,9 +186,12 @@ print_startup_failure_hints() {
     if strip_ansi_file "${record_log}" | rg -qi "auth initialization timed out|sign-in initialization timed out|keycloak init timeout|request timed out|econnaborted"; then
       hint_auth_timeout=1
     fi
+    if strip_ansi_file "${record_log}" | rg -qi "phase5_regression: startup SLA warning count: [1-9][0-9]*"; then
+      hint_startup_sla_warn=1
+    fi
   done
 
-  if [[ "${hint_static_target}" -eq 0 && "${hint_storage_restricted}" -eq 0 && "${hint_auth_timeout}" -eq 0 ]]; then
+  if [[ "${hint_static_target}" -eq 0 && "${hint_storage_restricted}" -eq 0 && "${hint_auth_timeout}" -eq 0 && "${hint_startup_sla_warn}" -eq 0 ]]; then
     return
   fi
 
@@ -201,6 +205,9 @@ print_startup_failure_hints() {
   fi
   if [[ "${hint_auth_timeout}" -eq 1 ]]; then
     echo " - Auth bootstrap timeout symptoms detected. Check Keycloak reachability and timeout env budgets."
+  fi
+  if [[ "${hint_startup_sla_warn}" -eq 1 ]]; then
+    echo " - Startup visibility SLA warnings detected. Review 'phase5_regression: startup SLA status' for near-threshold routes."
   fi
 }
 
