@@ -188,6 +188,7 @@ PHASE5_SPECS=(
   "e2e/admin-audit-filter-export.mock.spec.ts"
   "e2e/version-history-paging-major-only.mock.spec.ts"
   "e2e/app-error-boundary-recovery.mock.spec.ts"
+  "e2e/route-fallback-no-blank.mock.spec.ts"
   "e2e/search-suggestions-save-search.mock.spec.ts"
   "e2e/settings-session-actions.mock.spec.ts"
   "e2e/auth-session-recovery.mock.spec.ts"
