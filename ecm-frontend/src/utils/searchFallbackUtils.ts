@@ -38,8 +38,20 @@ const TEXT_LIKE_SUFFIXES = new Set([
 
 const FILENAME_QUERY_PATTERN = /^[^\s/\\]+\.[a-z0-9]{1,10}$/i;
 
+const normalizeSearchToken = (query?: string): string => {
+  let normalized = (query || '').trim().toLowerCase();
+  if (!normalized) {
+    return '';
+  }
+
+  // Strip wrapping quote/pair punctuation so `"file.bin"` and `(file.bin),` are treated as the same token.
+  normalized = normalized.replace(/^["'`“”‘’([{<]+|["'`“”‘’)\]}>]+$/g, '');
+  normalized = normalized.replace(/^[,;:!?]+|[,;:!?]+$/g, '');
+  return normalized.trim();
+};
+
 export const shouldSuppressStaleFallbackForQuery = (query?: string): boolean => {
-  const normalized = (query || '').trim().toLowerCase();
+  const normalized = normalizeSearchToken(query);
   if (!normalized) {
     return false;
   }
@@ -63,8 +75,27 @@ export const shouldSuppressStaleFallbackForQuery = (query?: string): boolean => 
   return vowelCount <= Math.floor(normalized.length / 6);
 };
 
+export const isPrecisionFilenameLikeQuery = (query?: string): boolean => {
+  const normalized = normalizeSearchToken(query);
+  if (!normalized) {
+    return false;
+  }
+  if (normalized.includes(' ') || /[\\/]/.test(normalized)) {
+    return false;
+  }
+  if (FILENAME_QUERY_PATTERN.test(normalized)) {
+    return true;
+  }
+  if (shouldSuppressStaleFallbackForQuery(normalized)) {
+    return true;
+  }
+  const hasLongDigitRun = /\d{6,}/.test(normalized);
+  const hasStructuredSeparators = /[-_.]/.test(normalized);
+  return hasLongDigitRun && hasStructuredSeparators && normalized.length >= 16;
+};
+
 export const shouldSkipSpellcheckForQuery = (query?: string): boolean => {
-  const normalized = (query || '').trim().toLowerCase();
+  const normalized = normalizeSearchToken(query);
   if (!normalized || normalized.length < 3) {
     return true;
   }
@@ -74,14 +105,8 @@ export const shouldSkipSpellcheckForQuery = (query?: string): boolean => {
   if (/[\\/]/.test(normalized)) {
     return true;
   }
-  if (FILENAME_QUERY_PATTERN.test(normalized)) {
+  if (isPrecisionFilenameLikeQuery(normalized)) {
     return true;
   }
-  if (shouldSuppressStaleFallbackForQuery(normalized)) {
-    return true;
-  }
-
-  const hasLongDigitRun = /\d{6,}/.test(normalized);
-  const hasStructuredSeparators = /[-_.]/.test(normalized);
-  return hasLongDigitRun && hasStructuredSeparators && normalized.length >= 16;
+  return false;
 };

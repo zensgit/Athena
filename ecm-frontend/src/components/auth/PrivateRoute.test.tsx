@@ -102,6 +102,34 @@ test('redirects unauthenticated users to login', async () => {
   expect(await screen.findByText('Login Page')).toBeTruthy();
 });
 
+test('falls back safely when sessionStorage access throws', async () => {
+  const getItemSpy = jest.spyOn(Storage.prototype, 'getItem').mockImplementation(function (this: Storage, key: string) {
+    if (this === window.sessionStorage) {
+      throw new Error(`blocked:${key}`);
+    }
+    return null;
+  });
+  const setItemSpy = jest.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage) {
+    if (this === window.sessionStorage) {
+      throw new Error('blocked:set');
+    }
+  });
+  const removeItemSpy = jest.spyOn(Storage.prototype, 'removeItem').mockImplementation(function (this: Storage) {
+    if (this === window.sessionStorage) {
+      throw new Error('blocked:remove');
+    }
+  });
+
+  try {
+    renderPrivateRoute({ isAuthenticated: false });
+    expect(await screen.findByText('Login Page')).toBeTruthy();
+  } finally {
+    getItemSpy.mockRestore();
+    setItemSpy.mockRestore();
+    removeItemSpy.mockRestore();
+  }
+});
+
 test('renders children for authenticated users', () => {
   renderPrivateRoute({ isAuthenticated: true, roles: ['ROLE_VIEWER'] });
 

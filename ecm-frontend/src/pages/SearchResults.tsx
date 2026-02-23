@@ -55,7 +55,11 @@ import { Node, SearchCriteria } from 'types';
 import { toast } from 'react-toastify';
 import Highlight from 'components/search/Highlight';
 import { buildSearchCriteriaFromSavedSearch } from 'utils/savedSearchUtils';
-import { shouldSkipSpellcheckForQuery, shouldSuppressStaleFallbackForQuery } from 'utils/searchFallbackUtils';
+import {
+  isPrecisionFilenameLikeQuery,
+  shouldSkipSpellcheckForQuery,
+  shouldSuppressStaleFallbackForQuery,
+} from 'utils/searchFallbackUtils';
 import { formatBreadcrumbPath } from 'utils/pathDisplayUtils';
 import {
   formatPreviewFailureReasonLabel,
@@ -1780,6 +1784,7 @@ const SearchResults: React.FC = () => {
   const secondarySpellcheckSuggestions = filteredSpellcheckSuggestions.slice(1);
   const showSpellcheckSuggestions = !spellcheckLoading && filteredSpellcheckSuggestions.length > 0;
   const spellcheckActionLabel = displayTotal > 0 ? 'Did you mean' : 'Search instead for';
+  const exactMatchModeActive = !isSimilarMode && isPrecisionFilenameLikeQuery(spellcheckQuery);
 
   return (
     <Box>
@@ -1939,6 +1944,17 @@ const SearchResults: React.FC = () => {
             variant="outlined"
           />
         </Box>
+      )}
+
+      {exactMatchModeActive && (
+        <Alert severity="info" sx={{ mb: 2 }} data-testid="search-exact-match-mode-alert">
+          <Typography variant="body2" sx={{ fontWeight: 600 }}>
+            Exact filename mode active
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Spelling suggestions are skipped for precise filename-like queries.
+          </Typography>
+        </Alert>
       )}
 
       {spellcheckLoading && (

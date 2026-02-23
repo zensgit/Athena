@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import Login from './Login';
 import authService from 'services/authService';
 import { AUTH_REDIRECT_FAILURE_WINDOW_MS } from 'constants/auth';
@@ -37,7 +37,9 @@ test('shows timeout warning when auth bootstrap timed out', async () => {
 
   render(<Login />);
 
-  expect(await screen.findByText(/sign-in initialization timed out/i)).toBeTruthy();
+  const statusCard = await screen.findByTestId('login-auth-status-card');
+  expect(within(statusCard).getByText('Sign-in initialization timed out')).toBeTruthy();
+  expect(within(statusCard).getByText('Sign-in initialization timed out. Please retry.')).toBeTruthy();
 });
 
 test('shows generic init warning when auth bootstrap failed', async () => {
@@ -45,7 +47,9 @@ test('shows generic init warning when auth bootstrap failed', async () => {
 
   render(<Login />);
 
-  expect(await screen.findByText(/sign-in initialization failed/i)).toBeTruthy();
+  const statusCard = await screen.findByTestId('login-auth-status-card');
+  expect(within(statusCard).getByText('Sign-in initialization failed')).toBeTruthy();
+  expect(within(statusCard).getByText('Sign-in initialization failed. Please retry.')).toBeTruthy();
 });
 
 test('shows session expired message when api marks auth expiry', async () => {
@@ -53,7 +57,9 @@ test('shows session expired message when api marks auth expiry', async () => {
 
   render(<Login />);
 
-  expect(await screen.findByText(/your session expired/i)).toBeTruthy();
+  const statusCard = await screen.findByTestId('login-auth-status-card');
+  expect(within(statusCard).getByText('Session expired')).toBeTruthy();
+  expect(within(statusCard).getByText('Your session expired. Please sign in again.')).toBeTruthy();
 });
 
 test('shows session expired message from redirect reason fallback', async () => {
@@ -128,6 +134,25 @@ test('manual sign-in clears redirect failure cooldown markers', async () => {
     expect(sessionStorage.getItem('ecm_auth_redirect_failure_count')).toBeNull();
   });
   expect(sessionStorage.getItem('ecm_auth_redirect_last_failure_at')).toBeNull();
+});
+
+test('manual sign-in proceeds when storage cleanup throws', async () => {
+  const removeItemSpy = jest.spyOn(Storage.prototype, 'removeItem').mockImplementation(function (this: Storage) {
+    if (this === window.sessionStorage || this === window.localStorage) {
+      throw new Error('blocked remove');
+    }
+  });
+
+  try {
+    render(<Login />);
+    fireEvent.click(screen.getByRole('button', { name: /sign in with keycloak/i }));
+
+    await waitFor(() => {
+      expect(authServiceMock.login).toHaveBeenCalledTimes(1);
+    });
+  } finally {
+    removeItemSpy.mockRestore();
+  }
 });
 
 test('shows error when login fails', async () => {

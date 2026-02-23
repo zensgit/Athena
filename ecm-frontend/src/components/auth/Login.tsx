@@ -17,6 +17,11 @@ import {
   LOGIN_IN_PROGRESS_STARTED_AT_KEY,
 } from 'constants/auth';
 
+type AuthInitNotice = {
+  title: string;
+  detail: string;
+};
+
 const buildRedirectFailureMessage = (failureCount: number, lastFailureAt: number): string | null => {
   if (failureCount <= 0) {
     return null;
@@ -48,10 +53,89 @@ const buildRedirectFailureMessage = (failureCount: number, lastFailureAt: number
   return 'Automatic sign-in redirect failed. Click Sign in with Keycloak to retry.';
 };
 
+const buildAuthInitNotice = (
+  initStatus: string | null,
+  redirectReason: string | null,
+  queryReason: string | null,
+  redirectFailureCount: number,
+  redirectLastFailureAt: number
+): AuthInitNotice | null => {
+  if (initStatus === AUTH_INIT_STATUS_TIMEOUT) {
+    return {
+      title: 'Sign-in initialization timed out',
+      detail: 'Sign-in initialization timed out. Please retry.',
+    };
+  }
+  if (initStatus === AUTH_INIT_STATUS_ERROR) {
+    return {
+      title: 'Sign-in initialization failed',
+      detail: 'Sign-in initialization failed. Please retry.',
+    };
+  }
+  if (
+    initStatus === AUTH_INIT_STATUS_SESSION_EXPIRED
+    || (!initStatus && redirectReason === AUTH_INIT_STATUS_SESSION_EXPIRED)
+    || queryReason === AUTH_INIT_STATUS_SESSION_EXPIRED
+  ) {
+    return {
+      title: 'Session expired',
+      detail: 'Your session expired. Please sign in again.',
+    };
+  }
+  if (
+    initStatus === AUTH_INIT_STATUS_REDIRECT_FAILED
+    || (!initStatus && redirectFailureCount > 0 && redirectLastFailureAt > 0)
+  ) {
+    const normalizedFailureCount = initStatus === AUTH_INIT_STATUS_REDIRECT_FAILED
+      ? Math.max(1, redirectFailureCount)
+      : redirectFailureCount;
+    const redirectFailureMessage = buildRedirectFailureMessage(normalizedFailureCount, redirectLastFailureAt);
+    if (redirectFailureMessage) {
+      return {
+        title: 'Automatic sign-in needs retry',
+        detail: redirectFailureMessage,
+      };
+    }
+  }
+  return null;
+};
+
+const safeSessionGetItem = (key: string): string | null => {
+  try {
+    return sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+
+const safeSessionRemoveItem = (key: string) => {
+  try {
+    sessionStorage.removeItem(key);
+  } catch {
+    // Ignore restricted storage contexts.
+  }
+};
+
+const safeLocalGetItem = (key: string): string | null => {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+
+const safeLocalRemoveItem = (key: string) => {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // Ignore restricted storage contexts.
+  }
+};
+
 const Login: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [authInitMessage, setAuthInitMessage] = useState<string | null>(null);
+  const [authInitNotice, setAuthInitNotice] = useState<AuthInitNotice | null>(null);
 
   useEffect(() => {
     const queryReason = new URLSearchParams(window.location.search).get('reason');
@@ -59,51 +143,26 @@ const Login: React.FC = () => {
     let redirectReason: string | null = null;
     let redirectFailureCount = 0;
     let redirectLastFailureAt = 0;
-    try {
-      initStatus = sessionStorage.getItem(AUTH_INIT_STATUS_KEY);
-      redirectReason = localStorage.getItem(AUTH_REDIRECT_REASON_KEY);
-      redirectFailureCount = Number(sessionStorage.getItem(AUTH_REDIRECT_FAILURE_COUNT_KEY) || '0');
-      redirectLastFailureAt = Number(sessionStorage.getItem(AUTH_REDIRECT_LAST_FAILURE_AT_KEY) || '0');
-    } catch {
-      // Storage can be unavailable in restricted contexts; keep URL-based fallback.
+    initStatus = safeSessionGetItem(AUTH_INIT_STATUS_KEY);
+    redirectReason = safeLocalGetItem(AUTH_REDIRECT_REASON_KEY);
+    redirectFailureCount = Number(safeSessionGetItem(AUTH_REDIRECT_FAILURE_COUNT_KEY) || '0');
+    redirectLastFailureAt = Number(safeSessionGetItem(AUTH_REDIRECT_LAST_FAILURE_AT_KEY) || '0');
+    const notice = buildAuthInitNotice(
+      initStatus,
+      redirectReason,
+      queryReason,
+      redirectFailureCount,
+      redirectLastFailureAt
+    );
+    setAuthInitNotice(notice);
+    if (!notice && (redirectFailureCount > 0 || redirectLastFailureAt > 0)) {
+      safeSessionRemoveItem(AUTH_REDIRECT_FAILURE_COUNT_KEY);
+      safeSessionRemoveItem(AUTH_REDIRECT_LAST_FAILURE_AT_KEY);
     }
-    if (initStatus === AUTH_INIT_STATUS_TIMEOUT) {
-      setAuthInitMessage('Sign-in initialization timed out. Please retry.');
-    } else if (initStatus === AUTH_INIT_STATUS_ERROR) {
-      setAuthInitMessage('Sign-in initialization failed. Please retry.');
-    } else if (
-      initStatus === AUTH_INIT_STATUS_SESSION_EXPIRED
-      || (!initStatus && redirectReason === AUTH_INIT_STATUS_SESSION_EXPIRED)
-      || queryReason === AUTH_INIT_STATUS_SESSION_EXPIRED
-    ) {
-      setAuthInitMessage('Your session expired. Please sign in again.');
-    } else if (
-      initStatus === AUTH_INIT_STATUS_REDIRECT_FAILED
-      || (!initStatus && redirectFailureCount > 0 && redirectLastFailureAt > 0)
-    ) {
-      const normalizedFailureCount = initStatus === AUTH_INIT_STATUS_REDIRECT_FAILED
-        ? Math.max(1, redirectFailureCount)
-        : redirectFailureCount;
-      const redirectFailureMessage = buildRedirectFailureMessage(normalizedFailureCount, redirectLastFailureAt);
-      if (redirectFailureMessage) {
-        setAuthInitMessage(redirectFailureMessage);
-      } else if (redirectFailureCount > 0 || redirectLastFailureAt > 0) {
-        try {
-          sessionStorage.removeItem(AUTH_REDIRECT_FAILURE_COUNT_KEY);
-          sessionStorage.removeItem(AUTH_REDIRECT_LAST_FAILURE_AT_KEY);
-        } catch {
-          // Best effort cleanup.
-        }
-      }
-    }
-    try {
-      sessionStorage.removeItem(AUTH_INIT_STATUS_KEY);
-      sessionStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
-      sessionStorage.removeItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY);
-      localStorage.removeItem(AUTH_REDIRECT_REASON_KEY);
-    } catch {
-      // Best effort cleanup.
-    }
+    safeSessionRemoveItem(AUTH_INIT_STATUS_KEY);
+    safeSessionRemoveItem(LOGIN_IN_PROGRESS_KEY);
+    safeSessionRemoveItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY);
+    safeLocalRemoveItem(AUTH_REDIRECT_REASON_KEY);
     if (queryReason) {
       window.history.replaceState({}, '', `${window.location.pathname}${window.location.hash || ''}`);
     }
@@ -112,11 +171,11 @@ const Login: React.FC = () => {
   const handleLogin = async () => {
     setSubmitting(true);
     setError(null);
-    setAuthInitMessage(null);
-    sessionStorage.removeItem(AUTH_INIT_STATUS_KEY);
-    sessionStorage.removeItem(AUTH_REDIRECT_FAILURE_COUNT_KEY);
-    sessionStorage.removeItem(AUTH_REDIRECT_LAST_FAILURE_AT_KEY);
-    localStorage.removeItem(AUTH_REDIRECT_REASON_KEY);
+    setAuthInitNotice(null);
+    safeSessionRemoveItem(AUTH_INIT_STATUS_KEY);
+    safeSessionRemoveItem(AUTH_REDIRECT_FAILURE_COUNT_KEY);
+    safeSessionRemoveItem(AUTH_REDIRECT_LAST_FAILURE_AT_KEY);
+    safeLocalRemoveItem(AUTH_REDIRECT_REASON_KEY);
     try {
       await authService.login({ redirectUri: window.location.origin + '/' });
     } catch (loginError) {
@@ -144,9 +203,12 @@ const Login: React.FC = () => {
           <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
             Sign in with your organization account
           </Typography>
-          {authInitMessage && (
-            <Alert severity="warning" sx={{ mb: 2, textAlign: 'left' }}>
-              {authInitMessage}
+          {authInitNotice && (
+            <Alert severity="warning" sx={{ mb: 2, textAlign: 'left' }} data-testid="login-auth-status-card">
+              <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                {authInitNotice.title}
+              </Typography>
+              {authInitNotice.detail}
             </Alert>
           )}
           {error && (

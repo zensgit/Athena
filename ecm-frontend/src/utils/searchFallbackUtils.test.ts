@@ -1,4 +1,8 @@
-import { shouldSkipSpellcheckForQuery, shouldSuppressStaleFallbackForQuery } from './searchFallbackUtils';
+import {
+  isPrecisionFilenameLikeQuery,
+  shouldSkipSpellcheckForQuery,
+  shouldSuppressStaleFallbackForQuery,
+} from './searchFallbackUtils';
 
 describe('searchFallbackUtils', () => {
   test('suppresses stale fallback for high-precision binary filename queries', () => {
@@ -23,6 +27,19 @@ describe('searchFallbackUtils', () => {
   test('skips spellcheck for filename-like exact queries', () => {
     expect(shouldSkipSpellcheckForQuery('e2e-preview-failure-1770563224443.bin')).toBe(true);
     expect(shouldSkipSpellcheckForQuery('ui-e2e-1770139014192.pdf')).toBe(true);
+  });
+
+  test('skips spellcheck for quoted or punctuated filename-like queries', () => {
+    expect(shouldSkipSpellcheckForQuery('"e2e-preview-failure-1770563224443.bin"')).toBe(true);
+    expect(shouldSkipSpellcheckForQuery("'ui-e2e-1770139014192.pdf',")).toBe(true);
+    expect(shouldSkipSpellcheckForQuery('(e2e-preview-failure-1770563224443.bin);')).toBe(true);
+  });
+
+  test('detects precision filename-like mode', () => {
+    expect(isPrecisionFilenameLikeQuery('ui-e2e-1770139014192.pdf')).toBe(true);
+    expect(isPrecisionFilenameLikeQuery('"e2e-preview-failure-1770563224443.bin"')).toBe(true);
+    expect(isPrecisionFilenameLikeQuery('spelcheck')).toBe(false);
+    expect(isPrecisionFilenameLikeQuery('/Root/Documents/ui-e2e-1770139014192.pdf')).toBe(false);
   });
 
   test('does not skip spellcheck for natural-language misspelling', () => {

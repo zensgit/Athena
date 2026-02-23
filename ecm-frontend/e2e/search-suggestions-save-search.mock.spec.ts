@@ -174,6 +174,7 @@ test('Search: spellcheck suggestion + Save Search (mocked API)', async ({ page }
   await searchDialog.getByRole('button', { name: 'Search', exact: true }).click();
 
   await expect(page.getByText(/Did you mean|Search instead for/i)).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId('search-exact-match-mode-alert')).toHaveCount(0);
   await expect(page.getByRole('button', { name: suggestion })).toBeVisible();
 
   await page.getByRole('button', { name: suggestion }).click();
@@ -317,6 +318,8 @@ test('Search: filename-like query skips spellcheck suggestion request (mocked AP
   await searchDialog.getByRole('button', { name: 'Search', exact: true }).click();
 
   await expect(page.getByRole('heading', { name: exactFilename })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId('search-exact-match-mode-alert')).toBeVisible();
+  await expect(page.getByText(/spelling suggestions are skipped/i)).toBeVisible();
   await expect(page.getByText(/Did you mean|Search instead for/i)).toHaveCount(0);
   await expect(page.getByText(/Checking spelling suggestions/i)).toHaveCount(0);
 

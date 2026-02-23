@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { TreeView, TreeItem } from '@mui/x-tree-view';
 import { ExpandMore, ChevronRight, Folder, FolderOpen } from '@mui/icons-material';
-import { Box, Typography, CircularProgress } from '@mui/material';
+import { Box, Typography, CircularProgress, Alert, Button } from '@mui/material';
 import { Node } from 'types';
 import nodeService from 'services/nodeService';
 import { useAppDispatch } from 'store';
 import { setCurrentNode, fetchChildren } from 'store/slices/nodeSlice';
+import { resolvePositiveIntEnv } from 'constants/auth';
 
 interface FolderTreeProps {
   rootNodeId: string;
@@ -19,6 +20,37 @@ interface TreeNode extends Node {
   loaded?: boolean;
 }
 
+const FOLDER_TREE_LOADING_WATCHDOG_MS = resolvePositiveIntEnv(
+  process.env.REACT_APP_FOLDER_TREE_LOADING_WATCHDOG_MS,
+  12_000
+);
+const E2E_FOLDER_TREE_WATCHDOG_MS_KEY = 'ecm_e2e_folder_tree_watchdog_ms';
+
+const safeLocalGetItem = (key: string): string | null => {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+
+const canUseE2EWatchdogOverrides = (): boolean => {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  return window.navigator?.webdriver === true
+    || window.location.hostname === 'localhost'
+    || window.location.hostname === '127.0.0.1';
+};
+
+const resolveFolderTreeWatchdogMs = (): number => {
+  if (!canUseE2EWatchdogOverrides()) {
+    return FOLDER_TREE_LOADING_WATCHDOG_MS;
+  }
+  const override = safeLocalGetItem(E2E_FOLDER_TREE_WATCHDOG_MS_KEY) || undefined;
+  return resolvePositiveIntEnv(override, FOLDER_TREE_LOADING_WATCHDOG_MS);
+};
+
 const FolderTree: React.FC<FolderTreeProps> = ({
   rootNodeId,
   selectedNodeId,
@@ -29,33 +61,62 @@ const FolderTree: React.FC<FolderTreeProps> = ({
   const [treeData, setTreeData] = useState<TreeNode | null>(null);
   const [expanded, setExpanded] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadingWatchdogTriggered, setLoadingWatchdogTriggered] = useState(false);
   const folderIdCacheRef = useRef<Map<string, string>>(new Map());
+  const rootLoadRequestIdRef = useRef(0);
+  const folderTreeWatchdogMs = resolveFolderTreeWatchdogMs();
 
   const loadRootNode = useCallback(async () => {
+    const requestId = rootLoadRequestIdRef.current + 1;
+    rootLoadRequestIdRef.current = requestId;
     try {
       setLoading(true);
+      setLoadError(null);
+      setLoadingWatchdogTriggered(false);
       const rootNode = await nodeService.getNode(rootNodeId);
       const children = await nodeService.getChildren(rootNodeId);
       const folderChildren = children.filter((child) => child.nodeType === 'FOLDER');
-      
+      if (requestId !== rootLoadRequestIdRef.current) {
+        return;
+      }
+
       const treeNode: TreeNode = {
         ...rootNode,
         children: folderChildren.map((child) => ({ ...child, children: [], loaded: false })),
         loaded: true,
       };
-      
+
       setTreeData(treeNode);
       setExpanded([treeNode.id]);
     } catch (error) {
+      if (requestId !== rootLoadRequestIdRef.current) {
+        return;
+      }
       console.error('Failed to load root node:', error);
+      setTreeData(null);
+      setLoadError('Failed to load folder tree');
     } finally {
-      setLoading(false);
+      if (requestId === rootLoadRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   }, [rootNodeId]);
 
   useEffect(() => {
     loadRootNode();
   }, [loadRootNode]);
+
+  useEffect(() => {
+    if (!loading) {
+      setLoadingWatchdogTriggered(false);
+      return;
+    }
+    const timerId = window.setTimeout(() => {
+      setLoadingWatchdogTriggered(true);
+    }, folderTreeWatchdogMs);
+    return () => window.clearTimeout(timerId);
+  }, [folderTreeWatchdogMs, loading]);
 
   useEffect(() => {
     if (!treeData) {
@@ -329,17 +390,50 @@ const FolderTree: React.FC<FolderTreeProps> = ({
 
   if (loading) {
     return (
-      <Box display="flex" justifyContent="center" p={3}>
-        <CircularProgress size={24} />
+      <Box display="flex" flexDirection="column" gap={1.5} p={2} data-testid="folder-tree-loading-state">
+        <Box display="flex" justifyContent="center" p={1}>
+          <CircularProgress size={24} />
+        </Box>
+        {loadingWatchdogTriggered && (
+          <Alert severity="warning" data-testid="folder-tree-loading-watchdog-alert">
+            <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
+              <Typography variant="body2">
+                Folder tree is taking longer than expected to load.
+              </Typography>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => {
+                  void loadRootNode();
+                }}
+                data-testid="folder-tree-loading-watchdog-retry"
+              >
+                Retry
+              </Button>
+            </Box>
+          </Alert>
+        )}
       </Box>
     );
   }
 
   if (!treeData) {
     return (
-      <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
-        Failed to load folder tree
-      </Typography>
+      <Box sx={{ p: 2 }} data-testid="folder-tree-load-error">
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+          {loadError || 'Failed to load folder tree'}
+        </Typography>
+        <Button
+          size="small"
+          variant="outlined"
+          onClick={() => {
+            void loadRootNode();
+          }}
+          data-testid="folder-tree-load-error-retry"
+        >
+          Retry
+        </Button>
+      </Box>
     );
   }
 

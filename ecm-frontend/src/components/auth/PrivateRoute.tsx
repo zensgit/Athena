@@ -52,14 +52,38 @@ const buildSafeRedirectUri = (pathname: string, search: string, hash: string) =>
   return url.toString();
 };
 
+const safeSessionGetItem = (key: string): string | null => {
+  try {
+    return sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+
+const safeSessionSetItem = (key: string, value: string) => {
+  try {
+    sessionStorage.setItem(key, value);
+  } catch {
+    // Ignore restricted-storage contexts.
+  }
+};
+
+const safeSessionRemoveItem = (key: string) => {
+  try {
+    sessionStorage.removeItem(key);
+  } catch {
+    // Ignore restricted-storage contexts.
+  }
+};
+
 const PrivateRoute: React.FC<PrivateRouteProps> = ({ children, requiredRoles }) => {
   const location = useLocation();
   const { isAuthenticated, user } = useAppSelector((state) => state.auth);
   const keycloakAuthenticated = authService.isAuthenticated();
-  const loginInProgress = sessionStorage.getItem(LOGIN_IN_PROGRESS_KEY) === '1';
-  const loginStartedAt = Number(sessionStorage.getItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY) || '0');
-  const redirectFailureCount = Number(sessionStorage.getItem(AUTH_REDIRECT_FAILURE_COUNT_KEY) || '0');
-  const redirectLastFailureAt = Number(sessionStorage.getItem(AUTH_REDIRECT_LAST_FAILURE_AT_KEY) || '0');
+  const loginInProgress = safeSessionGetItem(LOGIN_IN_PROGRESS_KEY) === '1';
+  const loginStartedAt = Number(safeSessionGetItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY) || '0');
+  const redirectFailureCount = Number(safeSessionGetItem(AUTH_REDIRECT_FAILURE_COUNT_KEY) || '0');
+  const redirectLastFailureAt = Number(safeSessionGetItem(AUTH_REDIRECT_LAST_FAILURE_AT_KEY) || '0');
   const redirectFailureWindowExpired =
     redirectLastFailureAt > 0 && Date.now() - redirectLastFailureAt > AUTH_REDIRECT_FAILURE_WINDOW_MS;
   const effectiveRedirectFailureCount = redirectFailureWindowExpired ? 0 : redirectFailureCount;
@@ -79,22 +103,22 @@ const PrivateRoute: React.FC<PrivateRouteProps> = ({ children, requiredRoles }) 
       logAuthRecoveryEvent('private_route.login_stale', {
         pathname: location.pathname,
       });
-      sessionStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
-      sessionStorage.removeItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY);
+      safeSessionRemoveItem(LOGIN_IN_PROGRESS_KEY);
+      safeSessionRemoveItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY);
       return;
     }
     if (redirectFailureWindowExpired) {
       logAuthRecoveryEvent('private_route.redirect_failure_window_reset', {
         pathname: location.pathname,
       });
-      sessionStorage.removeItem(AUTH_REDIRECT_FAILURE_COUNT_KEY);
-      sessionStorage.removeItem(AUTH_REDIRECT_LAST_FAILURE_AT_KEY);
+      safeSessionRemoveItem(AUTH_REDIRECT_FAILURE_COUNT_KEY);
+      safeSessionRemoveItem(AUTH_REDIRECT_LAST_FAILURE_AT_KEY);
     }
     if (isAuthenticated || keycloakAuthenticated) {
-      sessionStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
-      sessionStorage.removeItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY);
-      sessionStorage.removeItem(AUTH_REDIRECT_FAILURE_COUNT_KEY);
-      sessionStorage.removeItem(AUTH_REDIRECT_LAST_FAILURE_AT_KEY);
+      safeSessionRemoveItem(LOGIN_IN_PROGRESS_KEY);
+      safeSessionRemoveItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY);
+      safeSessionRemoveItem(AUTH_REDIRECT_FAILURE_COUNT_KEY);
+      safeSessionRemoveItem(AUTH_REDIRECT_LAST_FAILURE_AT_KEY);
       return;
     }
     if (hasCallbackParams) return;
@@ -106,7 +130,7 @@ const PrivateRoute: React.FC<PrivateRouteProps> = ({ children, requiredRoles }) 
         hasRecentRedirectFailure,
         hasReachedAutoRedirectLimit,
       });
-      sessionStorage.setItem(AUTH_INIT_STATUS_KEY, AUTH_INIT_STATUS_REDIRECT_FAILED);
+      safeSessionSetItem(AUTH_INIT_STATUS_KEY, AUTH_INIT_STATUS_REDIRECT_FAILED);
       return;
     }
 
@@ -114,8 +138,8 @@ const PrivateRoute: React.FC<PrivateRouteProps> = ({ children, requiredRoles }) 
       pathname: location.pathname,
       redirectUri: buildSafeRedirectUri(location.pathname, location.search, location.hash),
     });
-    sessionStorage.setItem(LOGIN_IN_PROGRESS_KEY, '1');
-    sessionStorage.setItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY, String(Date.now()));
+    safeSessionSetItem(LOGIN_IN_PROGRESS_KEY, '1');
+    safeSessionSetItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY, String(Date.now()));
     const redirectUri = buildSafeRedirectUri(location.pathname, location.search, location.hash);
     const loginRequest = authService.login({ redirectUri });
     void Promise.resolve(loginRequest).catch((error) => {
@@ -124,11 +148,11 @@ const PrivateRoute: React.FC<PrivateRouteProps> = ({ children, requiredRoles }) 
         error: error instanceof Error ? error.message : String(error),
       });
       console.error('Automatic login redirect failed', error);
-      sessionStorage.setItem(AUTH_INIT_STATUS_KEY, AUTH_INIT_STATUS_REDIRECT_FAILED);
-      sessionStorage.setItem(AUTH_REDIRECT_LAST_FAILURE_AT_KEY, String(Date.now()));
-      sessionStorage.setItem(AUTH_REDIRECT_FAILURE_COUNT_KEY, String(effectiveRedirectFailureCount + 1));
-      sessionStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
-      sessionStorage.removeItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY);
+      safeSessionSetItem(AUTH_INIT_STATUS_KEY, AUTH_INIT_STATUS_REDIRECT_FAILED);
+      safeSessionSetItem(AUTH_REDIRECT_LAST_FAILURE_AT_KEY, String(Date.now()));
+      safeSessionSetItem(AUTH_REDIRECT_FAILURE_COUNT_KEY, String(effectiveRedirectFailureCount + 1));
+      safeSessionRemoveItem(LOGIN_IN_PROGRESS_KEY);
+      safeSessionRemoveItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY);
     });
   }, [
     effectiveRedirectFailureCount,
