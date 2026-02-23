@@ -114,6 +114,34 @@ if (retrySignals > 0) {
 const startupSlaLinePattern = /^\s*startup_sla:[a-z_]+_ms=[0-9]+:threshold_ms=[0-9]+\s*$/;
 const startupSlaLines = lines.filter((line) => startupSlaLinePattern.test(line));
 if (startupSlaLines.length > 0) {
+  const parsePositiveInt = (rawValue) => {
+    const value = Number.parseInt(rawValue ?? '', 10);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  };
+  const baselineOverrides = {
+    login_visible:
+      parsePositiveInt(process.env.ECM_STARTUP_SLA_BASELINE_LOGIN_VISIBLE_MS)
+      ?? parsePositiveInt(process.env.ECM_STARTUP_SLA_BASELINE_LOGIN_MS),
+    browse_visible:
+      parsePositiveInt(process.env.ECM_STARTUP_SLA_BASELINE_BROWSE_VISIBLE_MS)
+      ?? parsePositiveInt(process.env.ECM_STARTUP_SLA_BASELINE_BROWSE_MS),
+  };
+  const defaultBaselines = {
+    login_visible: 1500,
+    browse_visible: 1800,
+  };
+  const resolveBaselineMs = (name, thresholdMs) => {
+    const override = baselineOverrides[name];
+    if (override && override > 0) {
+      return override;
+    }
+    const baseline = defaultBaselines[name];
+    if (baseline && baseline > 0) {
+      return baseline;
+    }
+    return Math.max(500, Math.floor(thresholdMs * 0.2));
+  };
+
   console.log('phase5_regression: startup SLA samples');
   for (const line of startupSlaLines) {
     console.log(` - ${line.trim()}`);
@@ -132,12 +160,20 @@ if (startupSlaLines.length > 0) {
     }
     const ratio = elapsedMs / thresholdMs;
     const isWarn = elapsedMs > thresholdMs || ratio >= 0.8;
+    const baselineMs = resolveBaselineMs(name, thresholdMs);
+    const driftDeltaMs = elapsedMs - baselineMs;
+    const driftRatio = baselineMs > 0 ? elapsedMs / baselineMs : 1;
+    const driftWarn = driftDeltaMs >= 700 || driftRatio >= 1.35;
     startupSlaStatus.push({
       name,
       elapsedMs,
       thresholdMs,
       ratio,
       level: isWarn ? 'WARN' : 'OK',
+      baselineMs,
+      driftDeltaMs,
+      driftRatio,
+      driftLevel: driftWarn ? 'WARN' : 'OK',
     });
   }
 
@@ -150,6 +186,16 @@ if (startupSlaLines.length > 0) {
     }
     const warnCount = startupSlaStatus.filter((item) => item.level === 'WARN').length;
     console.log(`phase5_regression: startup SLA warning count: ${warnCount}`);
+
+    console.log('phase5_regression: startup SLA drift vs baseline');
+    for (const sample of startupSlaStatus) {
+      const driftSign = sample.driftDeltaMs >= 0 ? '+' : '';
+      console.log(
+        ` - ${sample.driftLevel} ${sample.name}: ${sample.elapsedMs}ms vs baseline ${sample.baselineMs}ms (${driftSign}${sample.driftDeltaMs}ms, ${(sample.driftRatio * 100).toFixed(1)}%)`
+      );
+    }
+    const driftWarnCount = startupSlaStatus.filter((item) => item.driftLevel === 'WARN').length;
+    console.log(`phase5_regression: startup SLA drift warning count: ${driftWarnCount}`);
   }
 }
 NODE
