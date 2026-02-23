@@ -77,6 +77,11 @@
   - Deliverables:
     - `docs/PHASE93_ROUTE_FALLBACK_NO_BLANK_MOCK_E2E_DEV_20260223.md`
     - `docs/PHASE93_ROUTE_FALLBACK_NO_BLANK_MOCK_E2E_VERIFICATION_20260223.md`
+- Startup visibility SLA mocked gate checks:
+  - add first-visible SLA assertions for login and browse entry routes and publish samples in gate output.
+  - Deliverables:
+    - `docs/PHASE94_STARTUP_VISIBILITY_SLA_MOCKED_GATE_DEV_20260223.md`
+    - `docs/PHASE94_STARTUP_VISIBILITY_SLA_MOCKED_GATE_VERIFICATION_20260223.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.

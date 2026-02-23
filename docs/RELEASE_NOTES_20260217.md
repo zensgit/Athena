@@ -519,6 +519,24 @@
   - `npm test -- --watch=false --runInBand src/App.test.tsx src/components/layout/AppErrorBoundary.test.tsx` -> PASS (`6 tests`)
   - `npm run lint` -> PASS
 
+### 40) Startup 可见性 SLA mocked 回归纳管（Phase94）
+- `ecm-frontend/e2e/startup-visibility-sla.mock.spec.ts`
+  - 新增双场景：
+    - `Startup SLA: login route visible under threshold (mocked)`
+    - `Startup SLA: browse root visible under threshold (mocked)`
+  - 支持阈值环境变量：
+    - `ECM_E2E_STARTUP_LOGIN_SLA_MS`（默认 12000）
+    - `ECM_E2E_STARTUP_BROWSE_SLA_MS`（默认 15000）
+  - 用例输出 `startup_sla:*` 实测样本，便于快速诊断。
+- `scripts/phase5-regression.sh`
+  - mocked 集合新增 `startup-visibility-sla` spec。
+  - 汇总新增 `phase5_regression: startup SLA samples` 段落。
+- 验证：
+  - `bash scripts/phase5-regression.sh` -> PASS (`23 passed`)
+  - `DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
+  - `npm test -- --watch=false --runInBand src/App.test.tsx src/components/layout/AppErrorBoundary.test.tsx` -> PASS (`6 tests`)
+  - `npm run lint` -> PASS
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -616,3 +634,5 @@
 - `docs/PHASE92_APP_ERROR_BOUNDARY_RECOVERY_E2E_VERIFICATION_20260223.md`
 - `docs/PHASE93_ROUTE_FALLBACK_NO_BLANK_MOCK_E2E_DEV_20260223.md`
 - `docs/PHASE93_ROUTE_FALLBACK_NO_BLANK_MOCK_E2E_VERIFICATION_20260223.md`
+- `docs/PHASE94_STARTUP_VISIBILITY_SLA_MOCKED_GATE_DEV_20260223.md`
+- `docs/PHASE94_STARTUP_VISIBILITY_SLA_MOCKED_GATE_VERIFICATION_20260223.md`
