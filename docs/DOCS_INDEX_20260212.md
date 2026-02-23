@@ -30,6 +30,8 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - Verification: `docs/PHASE94_STARTUP_VISIBILITY_SLA_MOCKED_GATE_VERIFICATION_20260223.md`
   - Design: `docs/PHASE95_STARTUP_SLA_WARN_SUMMARY_AND_GATE_HINTS_DEV_20260223.md`
   - Verification: `docs/PHASE95_STARTUP_SLA_WARN_SUMMARY_AND_GATE_HINTS_VERIFICATION_20260223.md`
+  - Design: `docs/PHASE96_STARTUP_SLA_DRIFT_BASELINE_WARNINGS_DEV_20260223.md`
+  - Verification: `docs/PHASE96_STARTUP_SLA_DRIFT_BASELINE_WARNINGS_VERIFICATION_20260223.md`
 - Auth/Search recovery 7-day release summary: `docs/PHASE73_AUTH_SEARCH_RECOVERY_RELEASE_SUMMARY_20260219.md`
 - Auth/Search recovery verification rollup: `docs/PHASE73_AUTH_SEARCH_RECOVERY_VERIFICATION_ROLLUP_20260219.md`
 - Phase 5/6 one-command delivery gate:
@@ -182,6 +184,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Startup SLA WARN summary + delivery-gate failure hints
   - Design: `docs/PHASE95_STARTUP_SLA_WARN_SUMMARY_AND_GATE_HINTS_DEV_20260223.md`
   - Verification: `docs/PHASE95_STARTUP_SLA_WARN_SUMMARY_AND_GATE_HINTS_VERIFICATION_20260223.md`
+- Startup SLA drift baseline warnings
+  - Design: `docs/PHASE96_STARTUP_SLA_DRIFT_BASELINE_WARNINGS_DEV_20260223.md`
+  - Verification: `docs/PHASE96_STARTUP_SLA_DRIFT_BASELINE_WARNINGS_VERIFICATION_20260223.md`
 - Integration dependency preflight grouped diagnostics
   - Design: `docs/PHASE89_INTEGRATION_PREFLIGHT_GROUPED_DIAGNOSTICS_DEV_20260221.md`
   - Verification: `docs/PHASE89_INTEGRATION_PREFLIGHT_GROUPED_DIAGNOSTICS_VERIFICATION_20260221.md`

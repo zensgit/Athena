@@ -555,6 +555,28 @@
     - `ECM_E2E_STARTUP_LOGIN_SLA_MS=100 ECM_E2E_STARTUP_BROWSE_SLA_MS=100 DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh`
     - expected FAIL，且 gate failure hints 成功输出 startup SLA warning 提示
 
+### 42) Startup SLA 基线漂移告警与 Gate 漂移提示（Phase96）
+- `scripts/phase5-regression.sh`
+  - 新增 `phase5_regression: startup SLA drift vs baseline` 聚合段。
+  - 新增 `phase5_regression: startup SLA drift warning count: N`。
+  - baseline 支持 env 覆盖：
+    - `ECM_STARTUP_SLA_BASELINE_LOGIN_VISIBLE_MS` / `ECM_STARTUP_SLA_BASELINE_LOGIN_MS`
+    - `ECM_STARTUP_SLA_BASELINE_BROWSE_VISIBLE_MS` / `ECM_STARTUP_SLA_BASELINE_BROWSE_MS`
+  - 默认 baseline：
+    - `login_visible=1500ms`
+    - `browse_visible=1800ms`
+- `scripts/phase5-phase6-delivery-gate.sh`
+  - 失败提示聚合新增 drift warning 信号检测：
+    - `phase5_regression: startup SLA drift warning count: [1-9]+`
+  - 新增提示：
+    - `Startup latency drift warnings detected. Compare against baseline and investigate runtime variance/regression.`
+- 验证：
+  - `bash scripts/phase5-regression.sh` -> PASS（含 drift summary / drift warning count）
+  - `DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
+  - 受控失败验证：
+    - `ECM_E2E_STARTUP_LOGIN_SLA_MS=100 ECM_E2E_STARTUP_BROWSE_SLA_MS=100 ECM_STARTUP_SLA_BASELINE_LOGIN_MS=100 ECM_STARTUP_SLA_BASELINE_BROWSE_MS=100 DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh`
+    - expected FAIL，且 gate failure hints 成功输出 startup drift warning 提示
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -656,3 +678,5 @@
 - `docs/PHASE94_STARTUP_VISIBILITY_SLA_MOCKED_GATE_VERIFICATION_20260223.md`
 - `docs/PHASE95_STARTUP_SLA_WARN_SUMMARY_AND_GATE_HINTS_DEV_20260223.md`
 - `docs/PHASE95_STARTUP_SLA_WARN_SUMMARY_AND_GATE_HINTS_VERIFICATION_20260223.md`
+- `docs/PHASE96_STARTUP_SLA_DRIFT_BASELINE_WARNINGS_DEV_20260223.md`
+- `docs/PHASE96_STARTUP_SLA_DRIFT_BASELINE_WARNINGS_VERIFICATION_20260223.md`

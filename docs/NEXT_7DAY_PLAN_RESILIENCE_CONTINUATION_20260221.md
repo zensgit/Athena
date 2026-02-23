@@ -87,6 +87,11 @@
   - Deliverables:
     - `docs/PHASE95_STARTUP_SLA_WARN_SUMMARY_AND_GATE_HINTS_DEV_20260223.md`
     - `docs/PHASE95_STARTUP_SLA_WARN_SUMMARY_AND_GATE_HINTS_VERIFICATION_20260223.md`
+- Startup SLA drift baseline warnings:
+  - add baseline drift analysis for startup visibility metrics and aggregate drift hints in gate failures.
+  - Deliverables:
+    - `docs/PHASE96_STARTUP_SLA_DRIFT_BASELINE_WARNINGS_DEV_20260223.md`
+    - `docs/PHASE96_STARTUP_SLA_DRIFT_BASELINE_WARNINGS_VERIFICATION_20260223.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
