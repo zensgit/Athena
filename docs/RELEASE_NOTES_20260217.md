@@ -403,6 +403,98 @@
   - `bash scripts/phase70-auth-route-matrix-smoke.sh` -> `9 passed`
   - `DELIVERY_GATE_MODE=all PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
 
+### 30) Auth 存储安全 + Spellcheck 精度加固（Phase84）
+- `ecm-frontend/src/components/auth/PrivateRoute.tsx`
+  - 认证重定向状态机改为安全 sessionStorage 访问（get/set/remove 全面 try/catch 封装）
+  - 避免受限浏览器上下文下 storage 异常影响私有路由恢复链路
+- `ecm-frontend/src/components/auth/Login.tsx`
+  - 登录页状态读取与清理改为安全 storage 访问
+  - 手动登录按钮在 storage 清理抛错场景仍可继续触发登录流程
+- `ecm-frontend/src/utils/searchFallbackUtils.ts`
+  - spellcheck 判定前增加 token 归一化（剥离包裹引号/配对符号/尾部标点）
+  - 降低 filename-like 精确查询被误判为拼写建议候选的概率
+- `scripts/phase70-auth-route-matrix-smoke.sh`
+  - preflight 检查增加结构化失败提示（backend/keycloak/ui）
+  - 失败时输出 target + actionable hint，减少仅 curl 超时报错的信息缺口
+- 相关测试更新：
+  - `src/components/auth/PrivateRoute.test.tsx`：新增 storage 抛错 fallback 场景
+  - `src/components/auth/Login.test.tsx`：新增 storage 清理抛错下手动登录场景
+  - `src/utils/searchFallbackUtils.test.ts`：新增 quoted/punctuated filename 场景
+- 验证：
+  - `npm test -- --watch=false --runInBand src/components/auth/Login.test.tsx src/components/auth/PrivateRoute.test.tsx src/utils/searchFallbackUtils.test.ts` -> PASS
+  - `npm run lint` -> PASS
+  - `bash scripts/phase5-regression.sh` -> PASS (`16 passed`)
+  - `ECM_SYNC_PREBUILT_UI=false FULLSTACK_ALLOW_STATIC=1 bash scripts/phase70-auth-route-matrix-smoke.sh` -> expected fail（backend 不可达），新诊断提示输出正确
+
+### 31) Storage 受限 auth 转场 mocked E2E 纳管（Phase85）
+- `ecm-frontend/e2e/auth-storage-restricted-recovery.mock.spec.ts`
+  - 新增组合场景：auth 相关 `sessionStorage/localStorage` 读受限时，`/browse/root` 与 `/login?reason=session_expired` 仍可达可操作终态。
+- `scripts/phase5-regression.sh`
+  - 默认 mocked 列表新增该 spec，回归数 `16 -> 17`。
+- 验证：
+  - `bash scripts/phase5-regression.sh` -> PASS (`17 passed`)
+
+### 32) Login 统一认证交接状态卡（Phase86）
+- `ecm-frontend/src/components/auth/Login.tsx`
+  - 新增统一状态模型 `AuthInitNotice { title, detail }`
+  - 登录状态卡标题可区分：
+    - timeout
+    - init error
+    - session expired
+    - redirect failed / paused
+- `ecm-frontend/src/components/auth/Login.test.tsx`
+  - 断言改为状态卡内范围检查，避免重复文本二义性。
+- 验证：
+  - `npm test -- --watch=false --runInBand src/components/auth/Login.test.tsx` -> PASS
+
+### 33) Search 精确文件名模式可视提示（Phase87）
+- `ecm-frontend/src/utils/searchFallbackUtils.ts`
+  - 新增 `isPrecisionFilenameLikeQuery` 分类函数并复用到 spellcheck skip 判定。
+- `ecm-frontend/src/pages/SearchResults.tsx`
+  - 新增 `Exact filename mode active` 信息提示（`search-exact-match-mode-alert`）。
+- `ecm-frontend/e2e/search-suggestions-save-search.mock.spec.ts`
+  - filename-like 场景断言精确模式提示可见，自然拼写场景提示不可见。
+- 验证：
+  - `bash scripts/phase5-regression.sh` -> PASS (`17 passed`)
+
+### 34) Phase5 回归热点/抖动风险摘要（Phase88）
+- `scripts/phase5-regression.sh`
+  - 新增运行后摘要：
+    - `duration hotspots (top 5)`
+    - `flaky-risk candidates (heuristic)`
+- 不改变原有通过/失败判定，仅增强可观测性。
+
+### 35) Integration 依赖预检分组诊断（Phase89）
+- `scripts/phase5-phase6-delivery-gate.sh`
+  - integration 层新增 `integration dependency preflight` stage
+  - 失败时输出缺失依赖列表 + 去重 remediation hints，并提前跳过后续集成步骤
+- `scripts/phase70-auth-route-matrix-smoke.sh`
+  - preflight 失败输出结构化 `label + target + hint`
+- 验证：
+  - `DELIVERY_GATE_MODE=integration ECM_SYNC_PREBUILT_UI=false PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> expected fail（依赖缺失），分组诊断输出正确
+  - `ECM_SYNC_PREBUILT_UI=false FULLSTACK_ALLOW_STATIC=1 bash scripts/phase70-auth-route-matrix-smoke.sh` -> expected fail（依赖缺失），结构化提示正确
+
+### 36) Resilience continuation 7-day 收尾（Phase90）
+- 新增：
+  - `docs/PHASE90_RESILIENCE_CONTINUATION_RELEASE_CLOSEOUT_20260221.md`
+- `docs/NEXT_7DAY_PLAN_RESILIENCE_CONTINUATION_20260221.md`
+  - Day2-Day7 已标记完成并挂接交付文档。
+
+### 37) FolderTree 根节点加载看门狗与重试恢复（Phase91）
+- `ecm-frontend/src/components/browser/FolderTree.tsx`
+  - 根节点加载链路新增 `loading watchdog` 超时提示与 `Retry` 操作。
+  - 根加载失败终态新增独立错误面板与重试按钮（避免空白/卡死感知）。
+  - 支持测试环境 watchdog 覆盖键：`ecm_e2e_folder_tree_watchdog_ms`。
+- `ecm-frontend/e2e/folder-tree-root-watchdog.mock.spec.ts`
+  - 新增 mocked 场景：根节点请求慢响应触发 watchdog，点击重试后成功恢复树节点显示。
+- `scripts/phase5-regression.sh`
+  - mocked 回归用例集合新增 `folder-tree-root-watchdog`，总执行结果更新为 `18 passed`（按当前集合）。
+- 验证：
+  - `bash scripts/phase5-regression.sh` -> PASS (`18 passed`)
+  - `DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
+  - `ECM_SYNC_PREBUILT_UI=false FULLSTACK_ALLOW_STATIC=1 bash scripts/phase70-auth-route-matrix-smoke.sh` -> expected fail（依赖缺失），结构化提示正确
+  - `DELIVERY_GATE_MODE=integration ECM_SYNC_PREBUILT_UI=false PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> expected fail（依赖缺失），分组诊断输出正确
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -480,3 +572,19 @@
 - `docs/VERIFICATION_STARTUP_FULL_DELIVERY_GATE_ALL_20260221.md`
 - `docs/PHASE83_AUTH_BOOT_WATCHDOG_MATRIX_INTEGRATION_DEV_20260221.md`
 - `docs/PHASE83_AUTH_BOOT_WATCHDOG_MATRIX_INTEGRATION_VERIFICATION_20260221.md`
+- `docs/PHASE84_AUTH_STORAGE_SAFETY_AND_SPELLCHECK_PRECISION_DEV_20260221.md`
+- `docs/PHASE84_AUTH_STORAGE_SAFETY_AND_SPELLCHECK_PRECISION_VERIFICATION_20260221.md`
+- `docs/PHASE85_AUTH_STORAGE_RESTRICTED_MOCK_E2E_DEV_20260221.md`
+- `docs/PHASE85_AUTH_STORAGE_RESTRICTED_MOCK_E2E_VERIFICATION_20260221.md`
+- `docs/PHASE86_LOGIN_AUTH_HANDOFF_STATUS_CARD_DEV_20260221.md`
+- `docs/PHASE86_LOGIN_AUTH_HANDOFF_STATUS_CARD_VERIFICATION_20260221.md`
+- `docs/PHASE87_SEARCH_EXACT_MATCH_MODE_VISIBILITY_DEV_20260221.md`
+- `docs/PHASE87_SEARCH_EXACT_MATCH_MODE_VISIBILITY_VERIFICATION_20260221.md`
+- `docs/PHASE88_PHASE5_REGRESSION_HOTSPOT_SUMMARY_DEV_20260221.md`
+- `docs/PHASE88_PHASE5_REGRESSION_HOTSPOT_SUMMARY_VERIFICATION_20260221.md`
+- `docs/PHASE89_INTEGRATION_PREFLIGHT_GROUPED_DIAGNOSTICS_DEV_20260221.md`
+- `docs/PHASE89_INTEGRATION_PREFLIGHT_GROUPED_DIAGNOSTICS_VERIFICATION_20260221.md`
+- `docs/PHASE90_RESILIENCE_CONTINUATION_RELEASE_CLOSEOUT_20260221.md`
+- `docs/NEXT_7DAY_PLAN_RESILIENCE_CONTINUATION_20260221.md`
+- `docs/PHASE91_FOLDER_TREE_ROOT_LOADING_WATCHDOG_DEV_20260222.md`
+- `docs/PHASE91_FOLDER_TREE_ROOT_LOADING_WATCHDOG_VERIFICATION_20260222.md`

@@ -18,11 +18,18 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Phase 5 plan: `docs/NEXT_7DAY_PLAN_PHASE5_20260213.md`
 - Auth/Search recovery follow-up plan: `docs/NEXT_7DAY_PLAN_AUTH_SEARCH_RECOVERY_20260219.md`
 - Startup stability next 7-day plan: `docs/NEXT_7DAY_PLAN_STARTUP_STABILITY_20260220.md`
+- Resilience continuation next 7-day plan: `docs/NEXT_7DAY_PLAN_RESILIENCE_CONTINUATION_20260221.md`
+- Resilience continuation post-day7 stabilization:
+  - Design: `docs/PHASE91_FOLDER_TREE_ROOT_LOADING_WATCHDOG_DEV_20260222.md`
+  - Verification: `docs/PHASE91_FOLDER_TREE_ROOT_LOADING_WATCHDOG_VERIFICATION_20260222.md`
 - Auth/Search recovery 7-day release summary: `docs/PHASE73_AUTH_SEARCH_RECOVERY_RELEASE_SUMMARY_20260219.md`
 - Auth/Search recovery verification rollup: `docs/PHASE73_AUTH_SEARCH_RECOVERY_VERIFICATION_ROLLUP_20260219.md`
 - Phase 5/6 one-command delivery gate:
   - Dev: `docs/PHASE5_PHASE6_DELIVERY_GATE_DEV_20260215.md`
   - Verification: `docs/PHASE5_PHASE6_DELIVERY_GATE_VERIFICATION_20260215.md`
+  - Mocked hotspot/flaky summary enhancement:
+    - Dev: `docs/PHASE88_PHASE5_REGRESSION_HOTSPOT_SUMMARY_DEV_20260221.md`
+    - Verification: `docs/PHASE88_PHASE5_REGRESSION_HOTSPOT_SUMMARY_VERIFICATION_20260221.md`
 - Phase 5/6 auth session recovery hardening:
   - Dev: `docs/PHASE60_AUTH_SESSION_RECOVERY_DEV_20260216.md`
   - Verification: `docs/PHASE60_AUTH_SESSION_RECOVERY_VERIFICATION_20260216.md`
@@ -143,6 +150,23 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - Matrix integration (watchdog recovery in phase70):
     - Design: `docs/PHASE83_AUTH_BOOT_WATCHDOG_MATRIX_INTEGRATION_DEV_20260221.md`
     - Verification: `docs/PHASE83_AUTH_BOOT_WATCHDOG_MATRIX_INTEGRATION_VERIFICATION_20260221.md`
+- Auth storage safety + spellcheck precision hardening
+  - Design: `docs/PHASE84_AUTH_STORAGE_SAFETY_AND_SPELLCHECK_PRECISION_DEV_20260221.md`
+  - Verification: `docs/PHASE84_AUTH_STORAGE_SAFETY_AND_SPELLCHECK_PRECISION_VERIFICATION_20260221.md`
+- Auth storage-restricted mocked E2E
+  - Design: `docs/PHASE85_AUTH_STORAGE_RESTRICTED_MOCK_E2E_DEV_20260221.md`
+  - Verification: `docs/PHASE85_AUTH_STORAGE_RESTRICTED_MOCK_E2E_VERIFICATION_20260221.md`
+- Login auth-handoff unified status card
+  - Design: `docs/PHASE86_LOGIN_AUTH_HANDOFF_STATUS_CARD_DEV_20260221.md`
+  - Verification: `docs/PHASE86_LOGIN_AUTH_HANDOFF_STATUS_CARD_VERIFICATION_20260221.md`
+- Folder tree root-loading watchdog + retry recovery
+  - Design: `docs/PHASE91_FOLDER_TREE_ROOT_LOADING_WATCHDOG_DEV_20260222.md`
+  - Verification: `docs/PHASE91_FOLDER_TREE_ROOT_LOADING_WATCHDOG_VERIFICATION_20260222.md`
+- Integration dependency preflight grouped diagnostics
+  - Design: `docs/PHASE89_INTEGRATION_PREFLIGHT_GROUPED_DIAGNOSTICS_DEV_20260221.md`
+  - Verification: `docs/PHASE89_INTEGRATION_PREFLIGHT_GROUPED_DIAGNOSTICS_VERIFICATION_20260221.md`
+- Resilience continuation closeout
+  - Closeout: `docs/PHASE90_RESILIENCE_CONTINUATION_RELEASE_CLOSEOUT_20260221.md`
 - Failure-injection coverage (transient vs terminal auth + search retry recovery)
   - Design: `docs/PHASE72_FAILURE_INJECTION_COVERAGE_DEV_20260219.md`
   - Verification: `docs/PHASE72_FAILURE_INJECTION_COVERAGE_VERIFICATION_20260219.md`
@@ -227,6 +251,9 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
 - Search error taxonomy + recovery mapping
   - Design: `docs/PHASE68_SEARCH_ERROR_TAXONOMY_RECOVERY_MAPPING_DEV_20260219.md`
   - Verification: `docs/PHASE68_SEARCH_ERROR_TAXONOMY_RECOVERY_MAPPING_VERIFICATION_20260219.md`
+- Search exact-match mode visibility (filename-like precision)
+  - Design: `docs/PHASE87_SEARCH_EXACT_MATCH_MODE_VISIBILITY_DEV_20260221.md`
+  - Verification: `docs/PHASE87_SEARCH_EXACT_MATCH_MODE_VISIBILITY_VERIFICATION_20260221.md`
 - Preview failure operator loop (batch progress + reason grouping)
   - Design: `docs/PHASE69_PREVIEW_FAILURE_OPERATOR_LOOP_DEV_20260219.md`
   - Verification: `docs/PHASE69_PREVIEW_FAILURE_OPERATOR_LOOP_VERIFICATION_20260219.md`
