@@ -154,6 +154,11 @@
   - Deliverables:
     - `docs/PHASE108_APP_ERROR_RECOVERY_EVENT_COVERAGE_DEV_20260224.md`
     - `docs/PHASE108_APP_ERROR_RECOVERY_EVENT_COVERAGE_VERIFICATION_20260224.md`
+- Delivery gate recovery hint detail:
+  - when recovery guard warnings occur, surface concrete missing `recovery_event` names in startup diagnostics hints.
+  - Deliverables:
+    - `docs/PHASE109_GATE_RECOVERY_HINT_MISSING_EVENTS_DEV_20260224.md`
+    - `docs/PHASE109_GATE_RECOVERY_HINT_MISSING_EVENTS_VERIFICATION_20260224.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.

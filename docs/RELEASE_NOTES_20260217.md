@@ -775,6 +775,18 @@
   - `bash scripts/phase5-regression.sh` -> PASS (`30 passed`，recovery events 包含 app_error 两项，`recovery guard warning count: 0`)
   - `DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
 
+### 55) Delivery gate recovery 缺失事件提示增强（Phase109）
+- `scripts/phase5-phase6-delivery-gate.sh`
+  - `print_startup_failure_hints` 新增 missing-event 抽取逻辑：
+    - 从 `phase5_regression` 输出中解析 `WARN missing event: <name>`
+    - 去重后输出最多 8 个缺失事件名
+  - recovery guard 警告提示升级为：
+    - 有名称时：`Missing events: ...`
+    - 无名称时：保持原有通用提示（向后兼容）
+- 验证：
+  - `bash -n scripts/phase5-phase6-delivery-gate.sh` -> PASS
+  - `DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS（通过路径无回归）
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -902,3 +914,5 @@
 - `docs/PHASE107_STARTUP_FALLBACK_RELOAD_CACHE_BUST_VERIFICATION_20260224.md`
 - `docs/PHASE108_APP_ERROR_RECOVERY_EVENT_COVERAGE_DEV_20260224.md`
 - `docs/PHASE108_APP_ERROR_RECOVERY_EVENT_COVERAGE_VERIFICATION_20260224.md`
+- `docs/PHASE109_GATE_RECOVERY_HINT_MISSING_EVENTS_DEV_20260224.md`
+- `docs/PHASE109_GATE_RECOVERY_HINT_MISSING_EVENTS_VERIFICATION_20260224.md`

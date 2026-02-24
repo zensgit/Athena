@@ -56,6 +56,8 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - Verification: `docs/PHASE107_STARTUP_FALLBACK_RELOAD_CACHE_BUST_VERIFICATION_20260224.md`
   - Design: `docs/PHASE108_APP_ERROR_RECOVERY_EVENT_COVERAGE_DEV_20260224.md`
   - Verification: `docs/PHASE108_APP_ERROR_RECOVERY_EVENT_COVERAGE_VERIFICATION_20260224.md`
+  - Design: `docs/PHASE109_GATE_RECOVERY_HINT_MISSING_EVENTS_DEV_20260224.md`
+  - Verification: `docs/PHASE109_GATE_RECOVERY_HINT_MISSING_EVENTS_VERIFICATION_20260224.md`
 - Auth/Search recovery 7-day release summary: `docs/PHASE73_AUTH_SEARCH_RECOVERY_RELEASE_SUMMARY_20260219.md`
 - Auth/Search recovery verification rollup: `docs/PHASE73_AUTH_SEARCH_RECOVERY_VERIFICATION_ROLLUP_20260219.md`
 - Phase 5/6 one-command delivery gate:
