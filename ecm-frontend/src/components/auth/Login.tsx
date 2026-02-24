@@ -24,6 +24,8 @@ type AuthInitNotice = {
   detail: string;
 };
 
+const RECOVERY_CACHE_BUST_PARAM = '_ecm_reload';
+
 const buildRedirectFailureMessage = (failureCount: number, lastFailureAt: number): string | null => {
   if (failureCount <= 0) {
     return null;
@@ -154,6 +156,23 @@ const safeLocalRemoveItem = (key: string) => {
   }
 };
 
+const clearTransientRecoveryQueryParams = () => {
+  try {
+    const url = new URL(window.location.href);
+    const originalSearch = url.search;
+    url.searchParams.delete('reason');
+    url.searchParams.delete(RECOVERY_CACHE_BUST_PARAM);
+
+    if (url.search !== originalSearch) {
+      const nextSearch = url.searchParams.toString();
+      const nextUrl = `${url.pathname}${nextSearch ? `?${nextSearch}` : ''}${url.hash || ''}`;
+      window.history.replaceState({}, '', nextUrl);
+    }
+  } catch {
+    // Ignore URL parsing failures in constrained environments.
+  }
+};
+
 const Login: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -185,8 +204,8 @@ const Login: React.FC = () => {
     safeSessionRemoveItem(LOGIN_IN_PROGRESS_KEY);
     safeSessionRemoveItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY);
     safeLocalRemoveItem(AUTH_REDIRECT_REASON_KEY);
-    if (queryReason) {
-      window.history.replaceState({}, '', `${window.location.pathname}${window.location.hash || ''}`);
+    if (queryReason || window.location.search.includes(RECOVERY_CACHE_BUST_PARAM)) {
+      clearTransientRecoveryQueryParams();
     }
   }, []);
 

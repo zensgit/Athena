@@ -112,6 +112,25 @@ test('shows startup recovery message from login reason query param fallback', as
   expect(await screen.findByText(/recovered from startup timeout/i)).toBeTruthy();
 });
 
+test('clears reason query param while preserving other login query params', async () => {
+  window.history.pushState({}, '', '/login?reason=session_expired&source=mail#anchor');
+
+  render(<Login />);
+
+  expect(await screen.findByText(/your session expired/i)).toBeTruthy();
+  expect(window.location.search).toBe('?source=mail');
+  expect(window.location.hash).toBe('#anchor');
+});
+
+test('clears startup cache-bust query param on login once shell is visible', async () => {
+  window.history.pushState({}, '', '/login?_ecm_reload=12345&source=bootstrap');
+
+  render(<Login />);
+
+  expect(await screen.findByText(/sign in with your organization account/i)).toBeTruthy();
+  expect(window.location.search).toBe('?source=bootstrap');
+});
+
 test('shows redirect warning when automatic sign-in redirect fails', async () => {
   sessionStorage.setItem('ecm_auth_init_status', 'redirect_failed');
   sessionStorage.setItem('ecm_auth_redirect_last_failure_at', String(Date.now()));

@@ -43,7 +43,8 @@ test('App error boundary: chunk-load reload uses cache-busting query (mocked)', 
     .toBeVisible({ timeout: 60_000 });
   await page.getByRole('button', { name: /reload/i }).click();
 
-  await expect(page).toHaveURL(/_ecm_reload=\d+/, { timeout: 60_000 });
+  await page.waitForURL(/_ecm_reload=\d+/, { timeout: 60_000 });
+  await expect.poll(() => page.url()).not.toContain('_ecm_reload=');
   await expect(page.getByText('Sign in with your organization account')).toBeVisible({ timeout: 60_000 });
   console.log('recovery_event:chunk_load_reload_cache_bust');
 });
