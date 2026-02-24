@@ -11,14 +11,25 @@ type AppErrorBoundaryProps = {
   children: React.ReactNode;
 };
 
+type AppErrorCategory = 'generic' | 'chunk_load';
+
 type AppErrorBoundaryState = {
   hasError: boolean;
   message: string;
+  category: AppErrorCategory;
 };
 
 const IGNORED_GLOBAL_ERROR_PATTERNS = [
   /ResizeObserver loop limit exceeded/i,
   /ResizeObserver loop completed with undelivered notifications/i,
+];
+
+const CHUNK_LOAD_ERROR_PATTERNS = [
+  /Loading chunk [\d]+ failed/i,
+  /ChunkLoadError/i,
+  /Failed to fetch dynamically imported module/i,
+  /Importing a module script failed/i,
+  /module script load failure/i,
 ];
 
 const isAbortLikeReason = (reason: unknown): boolean => {
@@ -56,6 +67,29 @@ const shouldIgnoreGlobalRuntimeIssue = (message: string, reason?: unknown): bool
   return isAbortLikeReason(reason);
 };
 
+const resolveErrorCategory = (message: string, reason?: unknown): AppErrorCategory => {
+  if (CHUNK_LOAD_ERROR_PATTERNS.some((pattern) => pattern.test(message))) {
+    return 'chunk_load';
+  }
+  if (typeof reason === 'object' && reason && 'name' in reason) {
+    const name = String((reason as Record<string, unknown>).name || '');
+    if (/ChunkLoadError/i.test(name)) {
+      return 'chunk_load';
+    }
+  }
+  return 'generic';
+};
+
+export const buildCacheBustReloadUrl = (href: string): string => {
+  try {
+    const url = new URL(href, window.location.origin);
+    url.searchParams.set('_ecm_reload', String(Date.now()));
+    return url.toString();
+  } catch {
+    return href;
+  }
+};
+
 const safeSessionSetItem = (key: string, value: string) => {
   try {
     sessionStorage.setItem(key, value);
@@ -84,6 +118,7 @@ class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, AppErrorBo
   state: AppErrorBoundaryState = {
     hasError: false,
     message: '',
+    category: 'generic',
   };
 
   componentDidMount() {
@@ -97,9 +132,11 @@ class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, AppErrorBo
   }
 
   static getDerivedStateFromError(error: unknown): AppErrorBoundaryState {
+    const message = error instanceof Error ? error.message : 'Unexpected application error';
     return {
       hasError: true,
-      message: error instanceof Error ? error.message : 'Unexpected application error',
+      message,
+      category: resolveErrorCategory(message, error),
     };
   }
 
@@ -115,7 +152,7 @@ class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, AppErrorBo
       return;
     }
     if (!this.state.hasError) {
-      this.setState({ hasError: true, message });
+      this.setState({ hasError: true, message, category: resolveErrorCategory(message, error) });
     }
     console.error('AppErrorBoundary caught global runtime error', { error, message });
   };
@@ -128,12 +165,16 @@ class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, AppErrorBo
       return;
     }
     if (!this.state.hasError) {
-      this.setState({ hasError: true, message });
+      this.setState({ hasError: true, message, category: resolveErrorCategory(message, reason) });
     }
     console.error('AppErrorBoundary caught unhandled promise rejection', { reason, message });
   };
 
   private handleReload = () => {
+    if (this.state.category === 'chunk_load') {
+      window.location.assign(buildCacheBustReloadUrl(window.location.href));
+      return;
+    }
     window.location.reload();
   };
 
@@ -181,6 +222,11 @@ class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, AppErrorBo
           <p style={{ marginTop: 0, marginBottom: '12px', color: '#333' }}>
             The page encountered an unexpected error. You can refresh and try again.
           </p>
+          {this.state.category === 'chunk_load' && (
+            <p style={{ marginTop: 0, marginBottom: '12px', color: '#333' }}>
+              Application files may be outdated after an update. Reload to fetch the latest assets.
+            </p>
+          )}
           {process.env.NODE_ENV !== 'production' && (
             <p style={{ marginTop: 0, marginBottom: '16px', color: '#a40000' }}>
               Details: {this.state.message || 'unknown error'}

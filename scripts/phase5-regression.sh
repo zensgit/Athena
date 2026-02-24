@@ -277,6 +277,7 @@ PHASE5_SPECS=(
   "e2e/version-history-paging-major-only.mock.spec.ts"
   "e2e/app-error-boundary-recovery.mock.spec.ts"
   "e2e/app-error-boundary-noise-filter.mock.spec.ts"
+  "e2e/app-error-boundary-chunk-load-recovery.mock.spec.ts"
   "e2e/route-fallback-no-blank.mock.spec.ts"
   "e2e/startup-visibility-sla.mock.spec.ts"
   "e2e/search-suggestions-save-search.mock.spec.ts"
