@@ -29,6 +29,7 @@ test('Startup fallback: forced blank bootstrap shows recovery overlay and can re
     .toContainText('Application startup is taking longer than expected');
   await expect(page.getByRole('button', { name: /reload/i })).toBeVisible();
   await expect(page.getByRole('button', { name: /back to login/i })).toBeVisible();
+  console.log('recovery_event:startup_fallback_overlay_shown');
 
   await page.evaluate(
     ({ forceKey, timeoutKey }) => {
@@ -49,6 +50,7 @@ test('Startup fallback: forced blank bootstrap shows recovery overlay and can re
 
   await expect(page).toHaveURL(/\/login(?:\?reason=app_recovery)?$/, { timeout: 60_000 });
   await expect(page.getByTestId('login-auth-status-card')).toContainText('Recovered from unexpected app error');
+  console.log('recovery_event:startup_fallback_back_to_login');
 });
 
 test('Startup fallback: normal startup does not show fallback overlay', async ({ page }) => {
@@ -74,6 +76,7 @@ test('Startup fallback: normal startup does not show fallback overlay', async ({
 
   await page.waitForTimeout(3800);
   await expect(page.getByTestId('bootstrap-startup-fallback')).toHaveCount(0);
+  console.log('recovery_event:startup_fallback_not_shown_normal');
 
   await page.evaluate(({ timeoutKey }) => {
     try {

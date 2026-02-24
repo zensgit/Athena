@@ -198,6 +198,46 @@ if (startupSlaLines.length > 0) {
     console.log(`phase5_regression: startup SLA drift warning count: ${driftWarnCount}`);
   }
 }
+
+const recoveryEventPattern = /^\s*recovery_event:([a-z0-9_]+)\s*$/i;
+const recoveryEvents = [];
+for (const line of lines) {
+  const match = line.match(recoveryEventPattern);
+  if (!match) continue;
+  recoveryEvents.push(match[1].toLowerCase());
+}
+
+if (recoveryEvents.length > 0) {
+  const recoverySummary = new Map();
+  for (const eventName of recoveryEvents) {
+    recoverySummary.set(eventName, (recoverySummary.get(eventName) ?? 0) + 1);
+  }
+
+  console.log('phase5_regression: recovery events');
+  const sorted = Array.from(recoverySummary.entries()).sort((left, right) => left[0].localeCompare(right[0]));
+  for (const [eventName, count] of sorted) {
+    console.log(` - ${eventName}: ${count}`);
+  }
+
+  const expectedEvents = [
+    'chunk_load_hint_shown',
+    'chunk_load_reload_cache_bust',
+    'startup_fallback_overlay_shown',
+    'startup_fallback_back_to_login',
+    'startup_fallback_not_shown_normal',
+  ];
+  const missingEvents = expectedEvents.filter((eventName) => !recoverySummary.has(eventName));
+
+  console.log('phase5_regression: recovery guard status');
+  if (missingEvents.length === 0) {
+    console.log(' - OK all expected recovery events observed');
+  } else {
+    for (const missing of missingEvents) {
+      console.log(` - WARN missing event: ${missing}`);
+    }
+  }
+  console.log(`phase5_regression: recovery guard warning count: ${missingEvents.length}`);
+}
 NODE
 }
 

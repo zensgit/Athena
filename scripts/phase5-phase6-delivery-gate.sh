@@ -170,6 +170,7 @@ print_startup_failure_hints() {
   local hint_auth_timeout=0
   local hint_startup_sla_warn=0
   local hint_startup_sla_drift_warn=0
+  local hint_recovery_guard_warn=0
   local record
   for record in "${FAILED_STAGE_RECORDS[@]}"; do
     local record_layer
@@ -193,9 +194,12 @@ print_startup_failure_hints() {
     if strip_ansi_file "${record_log}" | rg -qi "phase5_regression: startup SLA drift warning count: [1-9][0-9]*"; then
       hint_startup_sla_drift_warn=1
     fi
+    if strip_ansi_file "${record_log}" | rg -qi "phase5_regression: recovery guard warning count: [1-9][0-9]*"; then
+      hint_recovery_guard_warn=1
+    fi
   done
 
-  if [[ "${hint_static_target}" -eq 0 && "${hint_storage_restricted}" -eq 0 && "${hint_auth_timeout}" -eq 0 && "${hint_startup_sla_warn}" -eq 0 && "${hint_startup_sla_drift_warn}" -eq 0 ]]; then
+  if [[ "${hint_static_target}" -eq 0 && "${hint_storage_restricted}" -eq 0 && "${hint_auth_timeout}" -eq 0 && "${hint_startup_sla_warn}" -eq 0 && "${hint_startup_sla_drift_warn}" -eq 0 && "${hint_recovery_guard_warn}" -eq 0 ]]; then
     return
   fi
 
@@ -215,6 +219,9 @@ print_startup_failure_hints() {
   fi
   if [[ "${hint_startup_sla_drift_warn}" -eq 1 ]]; then
     echo " - Startup latency drift warnings detected. Compare against baseline and investigate runtime variance/regression."
+  fi
+  if [[ "${hint_recovery_guard_warn}" -eq 1 ]]; then
+    echo " - Recovery guard coverage appears incomplete. Inspect 'phase5_regression: recovery guard status' for missing startup/error events."
   fi
 }
 

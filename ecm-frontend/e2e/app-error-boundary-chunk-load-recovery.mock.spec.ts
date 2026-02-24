@@ -21,6 +21,7 @@ test('App error boundary: chunk-load failure shows asset-refresh recovery hint (
     .toBeVisible({ timeout: 60_000 });
   await expect(page.getByRole('button', { name: /reload/i })).toBeVisible();
   await expect(page.getByRole('button', { name: /back to login/i })).toBeVisible();
+  console.log('recovery_event:chunk_load_hint_shown');
 });
 
 test('App error boundary: chunk-load reload uses cache-busting query (mocked)', async ({ page }) => {
@@ -44,4 +45,5 @@ test('App error boundary: chunk-load reload uses cache-busting query (mocked)', 
 
   await expect(page).toHaveURL(/_ecm_reload=\d+/, { timeout: 60_000 });
   await expect(page.getByText('Sign in with your organization account')).toBeVisible({ timeout: 60_000 });
+  console.log('recovery_event:chunk_load_reload_cache_bust');
 });
