@@ -649,6 +649,17 @@
   - `npm run lint` -> PASS
   - `bash scripts/phase5-regression.sh` -> PASS (`26 passed`)
 
+### 47) Chunk-load cache-busting reload 行为 E2E 加固（Phase101）
+- `ecm-frontend/e2e/app-error-boundary-chunk-load-recovery.mock.spec.ts`
+  - 新增场景：
+    - `App error boundary: chunk-load reload uses cache-busting query (mocked)`
+  - 断言点击 fallback `Reload` 后 URL 包含 `_ecm_reload=<ts>`，并回到可用登录页。
+- `scripts/phase5-regression.sh`
+  - 复用同一 spec（无需新增脚本项），因 spec 增加一条用例，mocked 总数 `26 -> 27`。
+- 验证：
+  - `ECM_UI_URL=http://localhost:5500 npx playwright test e2e/app-error-boundary-chunk-load-recovery.mock.spec.ts --project=chromium --workers=1` -> PASS (`2 passed`)
+  - `bash scripts/phase5-regression.sh` -> PASS (`27 passed`)
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports

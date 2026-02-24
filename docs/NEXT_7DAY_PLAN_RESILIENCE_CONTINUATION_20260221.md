@@ -114,6 +114,11 @@
   - Deliverables:
     - `docs/PHASE100_APP_ERROR_BOUNDARY_CHUNK_LOAD_RECOVERY_DEV_20260224.md`
     - `docs/PHASE100_APP_ERROR_BOUNDARY_CHUNK_LOAD_RECOVERY_VERIFICATION_20260224.md`
+- Chunk-load cache-busting reload behavior E2E hardening:
+  - add dedicated mocked E2E assertion that `Reload` from chunk-load fallback navigates with `_ecm_reload` cache-busting query.
+  - Deliverables:
+    - `docs/PHASE101_CHUNK_LOAD_CACHE_BUST_RELOAD_E2E_DEV_20260224.md`
+    - `docs/PHASE101_CHUNK_LOAD_CACHE_BUST_RELOAD_E2E_VERIFICATION_20260224.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
