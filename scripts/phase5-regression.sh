@@ -223,6 +223,10 @@ if (recoverySummary.size === 0) {
 }
 
 const expectedEvents = [
+  'filebrowser_watchdog_alert_shown',
+  'filebrowser_watchdog_retry_recovered',
+  'folder_tree_watchdog_alert_shown',
+  'folder_tree_watchdog_retry_recovered',
   'auth_storage_restricted_browse_recovered',
   'auth_storage_restricted_login_notice_visible',
   'auth_boot_watchdog_alert_shown',

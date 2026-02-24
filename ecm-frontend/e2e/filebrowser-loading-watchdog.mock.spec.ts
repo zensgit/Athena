@@ -86,6 +86,7 @@ test('File browser: long loading shows watchdog actions and can recover via retr
   await expect(page.getByTestId('filebrowser-loading-watchdog-alert')).toBeVisible({ timeout: 90_000 });
   await expect(page.getByTestId('filebrowser-loading-watchdog-retry')).toBeVisible();
   await expect(page.getByTestId('filebrowser-loading-watchdog-back-root')).toBeVisible();
+  console.log('recovery_event:filebrowser_watchdog_alert_shown');
 
   const emptyState = page.getByText('This folder is empty').first();
   await expect
@@ -109,4 +110,5 @@ test('File browser: long loading shows watchdog actions and can recover via retr
   await expect(emptyState).toBeVisible({ timeout: 60_000 });
   await expect(page.getByTestId('filebrowser-loading-watchdog-alert')).toHaveCount(0);
   await expect.poll(() => fileBrowserContentsRequestCount, { timeout: 60_000 }).toBeGreaterThanOrEqual(slowRequestLimit);
+  console.log('recovery_event:filebrowser_watchdog_retry_recovered');
 });

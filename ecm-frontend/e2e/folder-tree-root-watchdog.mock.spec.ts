@@ -91,9 +91,11 @@ test('Folder tree: root loading watchdog shows retry and recovers (mocked API)',
   await page.goto('/browse/root', { waitUntil: 'domcontentloaded' });
   await expect(page.getByText('Athena ECM')).toBeVisible({ timeout: 60_000 });
   await expect(page.getByTestId('folder-tree-loading-watchdog-alert')).toBeVisible({ timeout: 60_000 });
+  console.log('recovery_event:folder_tree_watchdog_alert_shown');
   await page.getByTestId('folder-tree-loading-watchdog-retry').click();
 
   await expect(page.getByRole('treeitem', { name: /Root/i })).toBeVisible({ timeout: 60_000 });
   await expect(page.getByTestId('folder-tree-loading-watchdog-alert')).toHaveCount(0);
   await expect.poll(() => rootRequestCount, { timeout: 60_000 }).toBeGreaterThan(slowRootRequestLimit);
+  console.log('recovery_event:folder_tree_watchdog_retry_recovered');
 });
