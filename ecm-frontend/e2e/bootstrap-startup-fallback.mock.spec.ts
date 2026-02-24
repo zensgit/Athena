@@ -1,0 +1,52 @@
+import { expect, test } from '@playwright/test';
+
+const E2E_FORCE_BOOTSTRAP_BLANK_KEY = 'ecm_e2e_force_bootstrap_blank';
+const E2E_BOOTSTRAP_FALLBACK_MS_KEY = 'ecm_e2e_bootstrap_fallback_ms';
+
+test('Startup fallback: forced blank bootstrap shows recovery overlay and can return to login', async ({ page }) => {
+  test.setTimeout(120_000);
+
+  await page.addInitScript(
+    ({ forceKey, timeoutKey }) => {
+      try {
+        localStorage.setItem(forceKey, '1');
+        localStorage.setItem(timeoutKey, '600');
+      } catch {
+        // Ignore storage restrictions for this test setup.
+      }
+    },
+    {
+      forceKey: E2E_FORCE_BOOTSTRAP_BLANK_KEY,
+      timeoutKey: E2E_BOOTSTRAP_FALLBACK_MS_KEY,
+    }
+  );
+
+  await page.goto('/login', { waitUntil: 'domcontentloaded' });
+
+  const fallback = page.getByTestId('bootstrap-startup-fallback');
+  await expect(fallback).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId('bootstrap-startup-fallback-message'))
+    .toContainText('Application startup is taking longer than expected');
+  await expect(page.getByRole('button', { name: /reload/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /back to login/i })).toBeVisible();
+
+  await page.evaluate(
+    ({ forceKey, timeoutKey }) => {
+      try {
+        localStorage.removeItem(forceKey);
+        localStorage.removeItem(timeoutKey);
+      } catch {
+        // Ignore storage restrictions for this test cleanup.
+      }
+    },
+    {
+      forceKey: E2E_FORCE_BOOTSTRAP_BLANK_KEY,
+      timeoutKey: E2E_BOOTSTRAP_FALLBACK_MS_KEY,
+    }
+  );
+
+  await page.getByRole('button', { name: /back to login/i }).click();
+
+  await expect(page).toHaveURL(/\/login(?:\?reason=app_recovery)?$/, { timeout: 60_000 });
+  await expect(page.getByTestId('login-auth-status-card')).toContainText('Recovered from unexpected app error');
+});

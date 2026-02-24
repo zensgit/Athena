@@ -285,6 +285,7 @@ PHASE5_SPECS=(
   "e2e/auth-session-recovery.mock.spec.ts"
   "e2e/auth-storage-restricted-recovery.mock.spec.ts"
   "e2e/auth-boot-watchdog-recovery.mock.spec.ts"
+  "e2e/bootstrap-startup-fallback.mock.spec.ts"
   "e2e/folder-tree-root-watchdog.mock.spec.ts"
   "e2e/filebrowser-loading-watchdog.mock.spec.ts"
   "e2e/mail-automation-trigger-fetch.mock.spec.ts"

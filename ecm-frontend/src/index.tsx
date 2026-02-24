@@ -19,6 +19,12 @@ import {
 } from 'constants/auth';
 import { logAuthRecoveryEvent } from 'utils/authRecoveryDebug';
 
+declare global {
+  interface Window {
+    __ECM_MARK_APP_RENDERED__?: () => void;
+  }
+}
+
 const allowInsecureCrypto = process.env.REACT_APP_INSECURE_CRYPTO_OK === 'true';
 const installInsecureCryptoFallback = () => {
   if (!allowInsecureCrypto) {
@@ -154,6 +160,17 @@ const stripKeycloakCallbackParams = () => {
   }
 };
 
+const markAppRendered = () => {
+  if (typeof window.__ECM_MARK_APP_RENDERED__ !== 'function') {
+    return;
+  }
+  try {
+    window.__ECM_MARK_APP_RENDERED__();
+  } catch {
+    // Best effort only.
+  }
+};
+
 const renderApp = () => {
   root.render(
     <React.StrictMode>
@@ -162,6 +179,7 @@ const renderApp = () => {
       </AppErrorBoundary>
     </React.StrictMode>
   );
+  markAppRendered();
 };
 
 const clearLoginProgress = () => {
@@ -238,6 +256,7 @@ const renderAuthBooting = () => {
       />
     </React.StrictMode>
   );
+  markAppRendered();
 };
 
 const initAuth = async () => {

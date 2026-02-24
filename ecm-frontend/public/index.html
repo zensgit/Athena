@@ -24,5 +24,155 @@
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
+    <script>
+      (function () {
+        var FALLBACK_ID = 'ecm-bootstrap-fallback';
+        var FALLBACK_TIMEOUT_MS = 20000;
+        var E2E_FORCE_BLANK_KEY = 'ecm_e2e_force_bootstrap_blank';
+        var E2E_TIMEOUT_OVERRIDE_KEY = 'ecm_e2e_bootstrap_fallback_ms';
+
+        function isWebdriverRuntime() {
+          return window.navigator && window.navigator.webdriver === true;
+        }
+
+        function isLocalhostRuntime() {
+          return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        }
+
+        function canUseE2EOverrides() {
+          return isWebdriverRuntime() || isLocalhostRuntime();
+        }
+
+        function safeLocalGetItem(key) {
+          try {
+            return window.localStorage.getItem(key);
+          } catch (error) {
+            return null;
+          }
+        }
+
+        function resolveTimeoutMs(forceBlank) {
+          var timeoutMs = FALLBACK_TIMEOUT_MS;
+          if (canUseE2EOverrides()) {
+            var overrideRaw = safeLocalGetItem(E2E_TIMEOUT_OVERRIDE_KEY);
+            var override = Number(overrideRaw);
+            if (Number.isFinite(override) && override > 0) {
+              timeoutMs = Math.floor(override);
+            }
+          }
+          if (forceBlank) {
+            return Math.min(timeoutMs, 1200);
+          }
+          return timeoutMs;
+        }
+
+        function createActionButton(label, onClick, id) {
+          var button = document.createElement('button');
+          button.type = 'button';
+          button.textContent = label;
+          button.id = id;
+          button.style.padding = '10px 14px';
+          button.style.border = '1px solid #888';
+          button.style.borderRadius = '4px';
+          button.style.backgroundColor = '#fff';
+          button.style.cursor = 'pointer';
+          button.addEventListener('click', onClick);
+          return button;
+        }
+
+        function renderFallback() {
+          if (document.getElementById(FALLBACK_ID)) {
+            return;
+          }
+
+          var overlay = document.createElement('div');
+          overlay.id = FALLBACK_ID;
+          overlay.setAttribute('data-testid', 'bootstrap-startup-fallback');
+          overlay.style.position = 'fixed';
+          overlay.style.top = '0';
+          overlay.style.right = '0';
+          overlay.style.bottom = '0';
+          overlay.style.left = '0';
+          overlay.style.display = 'flex';
+          overlay.style.alignItems = 'center';
+          overlay.style.justifyContent = 'center';
+          overlay.style.backgroundColor = '#f5f5f5';
+          overlay.style.zIndex = '2147483647';
+          overlay.style.padding = '24px';
+
+          var card = document.createElement('div');
+          card.style.maxWidth = '560px';
+          card.style.width = '100%';
+          card.style.backgroundColor = '#fff';
+          card.style.border = '1px solid #ddd';
+          card.style.borderRadius = '8px';
+          card.style.padding = '24px';
+          card.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.08)';
+
+          var title = document.createElement('h1');
+          title.textContent = 'Athena ECM';
+          title.style.margin = '0 0 12px 0';
+          title.style.fontSize = '40px';
+          title.style.lineHeight = '1.1';
+          card.appendChild(title);
+
+          var message = document.createElement('p');
+          message.textContent = 'Application startup is taking longer than expected. You can reload or return to login.';
+          message.style.margin = '0 0 16px 0';
+          message.style.color = '#333';
+          message.setAttribute('data-testid', 'bootstrap-startup-fallback-message');
+          card.appendChild(message);
+
+          var actions = document.createElement('div');
+          actions.style.display = 'flex';
+          actions.style.gap = '12px';
+          actions.style.flexWrap = 'wrap';
+
+          actions.appendChild(
+            createActionButton('Reload', function () {
+              window.location.reload();
+            }, 'ecm-bootstrap-fallback-reload')
+          );
+          actions.appendChild(
+            createActionButton('Back to Login', function () {
+              window.location.assign('/login?reason=app_recovery');
+            }, 'ecm-bootstrap-fallback-login')
+          );
+          card.appendChild(actions);
+          overlay.appendChild(card);
+          document.body.appendChild(overlay);
+        }
+
+        var forceBlank = canUseE2EOverrides() && safeLocalGetItem(E2E_FORCE_BLANK_KEY) === '1';
+        var appMarkedAsRendered = false;
+        var timeoutHandle = null;
+
+        window.__ECM_MARK_APP_RENDERED__ = function () {
+          if (forceBlank) {
+            return;
+          }
+          appMarkedAsRendered = true;
+          if (timeoutHandle !== null) {
+            window.clearTimeout(timeoutHandle);
+            timeoutHandle = null;
+          }
+          var existing = document.getElementById(FALLBACK_ID);
+          if (existing && existing.parentNode) {
+            existing.parentNode.removeChild(existing);
+          }
+        };
+
+        timeoutHandle = window.setTimeout(function () {
+          if (appMarkedAsRendered) {
+            return;
+          }
+          var root = document.getElementById('root');
+          if (!forceBlank && root && root.childElementCount > 0) {
+            return;
+          }
+          renderFallback();
+        }, resolveTimeoutMs(forceBlank));
+      }());
+    </script>
   </body>
 </html>
