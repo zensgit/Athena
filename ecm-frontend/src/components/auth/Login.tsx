@@ -8,6 +8,7 @@ import {
   AUTH_REDIRECT_LAST_FAILURE_AT_KEY,
   AUTH_REDIRECT_MAX_AUTO_ATTEMPTS,
   AUTH_REDIRECT_REASON_KEY,
+  AUTH_INIT_STATUS_APP_RECOVERY,
   AUTH_INIT_STATUS_ERROR,
   AUTH_INIT_STATUS_KEY,
   AUTH_INIT_STATUS_SESSION_EXPIRED,
@@ -80,6 +81,16 @@ const buildAuthInitNotice = (
     return {
       title: 'Session expired',
       detail: 'Your session expired. Please sign in again.',
+    };
+  }
+  if (
+    initStatus === AUTH_INIT_STATUS_APP_RECOVERY
+    || (!initStatus && redirectReason === AUTH_INIT_STATUS_APP_RECOVERY)
+    || queryReason === AUTH_INIT_STATUS_APP_RECOVERY
+  ) {
+    return {
+      title: 'Recovered from unexpected app error',
+      detail: 'The app encountered an unexpected runtime error and returned to sign-in. Please sign in again.',
     };
   }
   if (

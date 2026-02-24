@@ -78,6 +78,23 @@ test('shows session expired message from login reason query param fallback', asy
   expect(await screen.findByText(/your session expired/i)).toBeTruthy();
 });
 
+test('shows app recovery message when error boundary returns to login', async () => {
+  sessionStorage.setItem('ecm_auth_init_status', 'app_recovery');
+
+  render(<Login />);
+
+  expect(await screen.findByText(/recovered from unexpected app error/i)).toBeTruthy();
+  expect(screen.getByText(/returned to sign-in/i)).toBeTruthy();
+});
+
+test('shows app recovery message from login reason query param fallback', async () => {
+  window.history.pushState({}, '', '/login?reason=app_recovery');
+
+  render(<Login />);
+
+  expect(await screen.findByText(/recovered from unexpected app error/i)).toBeTruthy();
+});
+
 test('shows redirect warning when automatic sign-in redirect fails', async () => {
   sessionStorage.setItem('ecm_auth_init_status', 'redirect_failed');
   sessionStorage.setItem('ecm_auth_redirect_last_failure_at', String(Date.now()));

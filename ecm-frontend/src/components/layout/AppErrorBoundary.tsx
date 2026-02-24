@@ -1,4 +1,11 @@
 import React from 'react';
+import {
+  AUTH_INIT_STATUS_APP_RECOVERY,
+  AUTH_INIT_STATUS_KEY,
+  AUTH_REDIRECT_REASON_KEY,
+  LOGIN_IN_PROGRESS_KEY,
+  LOGIN_IN_PROGRESS_STARTED_AT_KEY,
+} from 'constants/auth';
 
 type AppErrorBoundaryProps = {
   children: React.ReactNode;
@@ -7,6 +14,30 @@ type AppErrorBoundaryProps = {
 type AppErrorBoundaryState = {
   hasError: boolean;
   message: string;
+};
+
+const safeSessionSetItem = (key: string, value: string) => {
+  try {
+    sessionStorage.setItem(key, value);
+  } catch {
+    // Ignore restricted storage contexts.
+  }
+};
+
+const safeSessionRemoveItem = (key: string) => {
+  try {
+    sessionStorage.removeItem(key);
+  } catch {
+    // Ignore restricted storage contexts.
+  }
+};
+
+const safeLocalRemoveItem = (key: string) => {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // Ignore restricted storage contexts.
+  }
 };
 
 class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, AppErrorBoundaryState> {
@@ -64,7 +95,11 @@ class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, AppErrorBo
     } catch {
       // Ignore storage cleanup errors.
     }
-    window.location.assign('/login');
+    safeSessionSetItem(AUTH_INIT_STATUS_KEY, AUTH_INIT_STATUS_APP_RECOVERY);
+    safeSessionRemoveItem(LOGIN_IN_PROGRESS_KEY);
+    safeSessionRemoveItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY);
+    safeLocalRemoveItem(AUTH_REDIRECT_REASON_KEY);
+    window.location.assign(`/login?reason=${AUTH_INIT_STATUS_APP_RECOVERY}`);
   };
 
   render() {
