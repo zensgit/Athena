@@ -119,6 +119,11 @@
   - Deliverables:
     - `docs/PHASE101_CHUNK_LOAD_CACHE_BUST_RELOAD_E2E_DEV_20260224.md`
     - `docs/PHASE101_CHUNK_LOAD_CACHE_BUST_RELOAD_E2E_VERIFICATION_20260224.md`
+- Startup blank-screen fallback watchdog:
+  - add pre-React startup fallback overlay in `index.html` when app shell stays blank beyond timeout, with `Reload` and `Back to Login` recovery actions.
+  - Deliverables:
+    - `docs/PHASE102_STARTUP_BLANK_SCREEN_FALLBACK_WATCHDOG_DEV_20260224.md`
+    - `docs/PHASE102_STARTUP_BLANK_SCREEN_FALLBACK_WATCHDOG_VERIFICATION_20260224.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.

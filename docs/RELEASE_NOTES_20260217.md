@@ -660,6 +660,26 @@
   - `ECM_UI_URL=http://localhost:5500 npx playwright test e2e/app-error-boundary-chunk-load-recovery.mock.spec.ts --project=chromium --workers=1` -> PASS (`2 passed`)
   - `bash scripts/phase5-regression.sh` -> PASS (`27 passed`)
 
+### 48) 启动白屏静态兜底 watchdog（Phase102）
+- `ecm-frontend/public/index.html`
+  - 新增 pre-React 启动 watchdog：
+    - 启动超时且页面仍空白时，显示全屏兜底卡片。
+    - 提供 `Reload` / `Back to Login` 操作，降低白屏不可恢复风险。
+  - 新增 E2E 开关：
+    - `ecm_e2e_force_bootstrap_blank`
+    - `ecm_e2e_bootstrap_fallback_ms`
+- `ecm-frontend/src/index.tsx`
+  - 新增 `markAppRendered()` 与静态 watchdog 对接，`renderAuthBooting/renderApp` 后标记已渲染以取消兜底定时器。
+- 新增 `ecm-frontend/e2e/bootstrap-startup-fallback.mock.spec.ts`
+  - 覆盖强制白屏场景下的 fallback 展示与 `Back to Login` 恢复路径。
+- `scripts/phase5-regression.sh`
+  - 纳入 `bootstrap-startup-fallback` mocked spec。
+  - mocked 总数：`27 -> 28`。
+- 验证：
+  - `ECM_UI_URL=http://localhost:5500 npx playwright test e2e/bootstrap-startup-fallback.mock.spec.ts --project=chromium --workers=1` -> PASS (`1 passed`)
+  - `npm run lint` -> PASS
+  - `bash scripts/phase5-regression.sh` -> PASS (`28 passed`)
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
