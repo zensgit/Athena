@@ -124,6 +124,11 @@
   - Deliverables:
     - `docs/PHASE102_STARTUP_BLANK_SCREEN_FALLBACK_WATCHDOG_DEV_20260224.md`
     - `docs/PHASE102_STARTUP_BLANK_SCREEN_FALLBACK_WATCHDOG_VERIFICATION_20260224.md`
+- Startup fallback false-positive guard:
+  - add mocked E2E asserting normal startup path does not trigger fallback overlay.
+  - Deliverables:
+    - `docs/PHASE103_STARTUP_FALLBACK_FALSE_POSITIVE_GUARD_DEV_20260224.md`
+    - `docs/PHASE103_STARTUP_FALLBACK_FALSE_POSITIVE_GUARD_VERIFICATION_20260224.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.

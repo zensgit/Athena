@@ -680,6 +680,17 @@
   - `npm run lint` -> PASS
   - `bash scripts/phase5-regression.sh` -> PASS (`28 passed`)
 
+### 49) 启动 fallback 误触发防护（Phase103）
+- `ecm-frontend/e2e/bootstrap-startup-fallback.mock.spec.ts`
+  - 新增反向场景：
+    - `Startup fallback: normal startup does not show fallback overlay`
+  - 校验普通登录启动路径在超时窗口后仍不出现 fallback overlay。
+- `scripts/phase5-regression.sh`
+  - 继续复用同一 spec，默认 mocked 用例总数 `28 -> 29`。
+- 验证：
+  - `ECM_UI_URL=http://localhost:5500 npx playwright test e2e/bootstrap-startup-fallback.mock.spec.ts --project=chromium --workers=1` -> PASS (`2 passed`)
+  - `bash scripts/phase5-regression.sh` -> PASS (`29 passed`)
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
