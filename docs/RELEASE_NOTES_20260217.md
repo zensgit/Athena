@@ -837,6 +837,23 @@
   - `bash scripts/phase5-regression.sh` -> PASS (`30 passed`，recovery events 包含 auth_storage_restricted 两项，`recovery guard warning count: 0`)
   - `DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
 
+### 59) FileBrowser/FolderTree watchdog 恢复事件纳入 recovery guard（Phase113）
+- `ecm-frontend/e2e/filebrowser-loading-watchdog.mock.spec.ts`
+  - 新增结构化 marker：
+    - `recovery_event:filebrowser_watchdog_alert_shown`
+    - `recovery_event:filebrowser_watchdog_retry_recovered`
+- `ecm-frontend/e2e/folder-tree-root-watchdog.mock.spec.ts`
+  - 新增结构化 marker：
+    - `recovery_event:folder_tree_watchdog_alert_shown`
+    - `recovery_event:folder_tree_watchdog_retry_recovered`
+- `scripts/phase5-regression.sh`
+  - recovery guard 期望事件集合新增上述 4 项 watchdog 事件。
+- 交付影响：
+  - recovery telemetry 覆盖补齐文件浏览与目录树 watchdog 恢复路径，guard 可见性更完整。
+- 验证：
+  - `bash scripts/phase5-regression.sh` -> PASS (`30 passed`，recovery events 包含 filebrowser/folder_tree watchdog 四项，`recovery guard warning count: 0`)
+  - `DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -972,3 +989,5 @@
 - `docs/PHASE111_AUTH_BOOT_RECOVERY_EVENT_COVERAGE_VERIFICATION_20260224.md`
 - `docs/PHASE112_AUTH_STORAGE_RECOVERY_EVENT_COVERAGE_DEV_20260224.md`
 - `docs/PHASE112_AUTH_STORAGE_RECOVERY_EVENT_COVERAGE_VERIFICATION_20260224.md`
+- `docs/PHASE113_FILE_TREE_WATCHDOG_RECOVERY_EVENTS_DEV_20260224.md`
+- `docs/PHASE113_FILE_TREE_WATCHDOG_RECOVERY_EVENTS_VERIFICATION_20260224.md`

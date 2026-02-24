@@ -174,6 +174,11 @@
   - Deliverables:
     - `docs/PHASE112_AUTH_STORAGE_RECOVERY_EVENT_COVERAGE_DEV_20260224.md`
     - `docs/PHASE112_AUTH_STORAGE_RECOVERY_EVENT_COVERAGE_VERIFICATION_20260224.md`
+- FileBrowser/FolderTree watchdog recovery event coverage:
+  - emit watchdog recovery markers for file browser and folder tree flows and include them in `phase5-regression` recovery guard expected set.
+  - Deliverables:
+    - `docs/PHASE113_FILE_TREE_WATCHDOG_RECOVERY_EVENTS_DEV_20260224.md`
+    - `docs/PHASE113_FILE_TREE_WATCHDOG_RECOVERY_EVENTS_VERIFICATION_20260224.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
