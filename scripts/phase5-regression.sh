@@ -223,6 +223,8 @@ if (recoverySummary.size === 0) {
 }
 
 const expectedEvents = [
+  'auth_storage_restricted_browse_recovered',
+  'auth_storage_restricted_login_notice_visible',
   'auth_boot_watchdog_alert_shown',
   'auth_boot_watchdog_continue_login',
   'app_error_overlay_shown',

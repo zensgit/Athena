@@ -136,9 +136,11 @@ test('Auth recovery remains usable when auth storage reads are partially restric
   await page.goto('/browse/root', { waitUntil: 'domcontentloaded' });
   await expect(page.getByText('Athena ECM')).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText('Folders')).toBeVisible({ timeout: 60_000 });
+  console.log('recovery_event:auth_storage_restricted_browse_recovered');
 
   await page.goto('/login?reason=session_expired', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: /Athena ECM/i })).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText('Your session expired. Please sign in again.')).toBeVisible({ timeout: 60_000 });
   await expect(page.getByRole('button', { name: /Sign in with Keycloak/i })).toBeVisible({ timeout: 60_000 });
+  console.log('recovery_event:auth_storage_restricted_login_notice_visible');
 });
