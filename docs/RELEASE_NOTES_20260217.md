@@ -787,6 +787,26 @@
   - `bash -n scripts/phase5-phase6-delivery-gate.sh` -> PASS
   - `DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS（通过路径无回归）
 
+### 56) Login 恢复参数精准清理与 cache-bust 断言对齐（Phase110）
+- `ecm-frontend/src/components/auth/Login.tsx`
+  - 新增临时恢复参数清理 helper，只移除：
+    - `reason`
+    - `_ecm_reload`
+  - 保留其余 query 参数与 hash，避免误清空登录页上下文参数。
+- `ecm-frontend/src/components/auth/Login.test.tsx`
+  - 新增回归：
+    - `reason` 清理但保留 `source` + hash
+    - `_ecm_reload` 清理但保留其他 query
+- `ecm-frontend/e2e/bootstrap-startup-fallback.mock.spec.ts`
+- `ecm-frontend/e2e/app-error-boundary-chunk-load-recovery.mock.spec.ts`
+  - reload cache-bust 场景断言更新为：
+    - 先命中 `_ecm_reload`
+    - 再确认最终 URL 已清理该参数
+- 验证：
+  - `CI=1 npm test -- --runTestsByPath src/components/auth/Login.test.tsx` -> PASS (`19 passed`)
+  - `bash scripts/phase5-regression.sh` -> PASS (`30 passed`)
+  - `DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -916,3 +936,5 @@
 - `docs/PHASE108_APP_ERROR_RECOVERY_EVENT_COVERAGE_VERIFICATION_20260224.md`
 - `docs/PHASE109_GATE_RECOVERY_HINT_MISSING_EVENTS_DEV_20260224.md`
 - `docs/PHASE109_GATE_RECOVERY_HINT_MISSING_EVENTS_VERIFICATION_20260224.md`
+- `docs/PHASE110_LOGIN_TRANSIENT_QUERY_CLEANUP_DEV_20260224.md`
+- `docs/PHASE110_LOGIN_TRANSIENT_QUERY_CLEANUP_VERIFICATION_20260224.md`

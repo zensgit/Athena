@@ -159,6 +159,11 @@
   - Deliverables:
     - `docs/PHASE109_GATE_RECOVERY_HINT_MISSING_EVENTS_DEV_20260224.md`
     - `docs/PHASE109_GATE_RECOVERY_HINT_MISSING_EVENTS_VERIFICATION_20260224.md`
+- Login transient recovery query cleanup:
+  - remove only transient recovery params (`reason`, `_ecm_reload`) while preserving unrelated query/hash; align chunk/startup cache-bust E2E expectations.
+  - Deliverables:
+    - `docs/PHASE110_LOGIN_TRANSIENT_QUERY_CLEANUP_DEV_20260224.md`
+    - `docs/PHASE110_LOGIN_TRANSIENT_QUERY_CLEANUP_VERIFICATION_20260224.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
