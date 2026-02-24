@@ -600,6 +600,22 @@
   - `npx playwright test e2e/app-error-boundary-recovery.mock.spec.ts --project=chromium --workers=1` -> PASS
   - `bash scripts/phase5-regression.sh` -> PASS
 
+### 44) AppErrorBoundary 全局噪音过滤（Phase98）
+- `ecm-frontend/src/components/layout/AppErrorBoundary.tsx`
+  - 新增全局非致命噪音过滤：
+    - `ResizeObserver loop limit exceeded`
+    - `ResizeObserver loop completed with undelivered notifications`
+    - `AbortError` / canceled(`ERR_CANCELED`) 异步拒绝
+  - 对上述噪音仅记录 warning，不再切换到全页 fatal fallback。
+- `ecm-frontend/src/components/layout/AppErrorBoundary.test.tsx`
+  - 新增两个回归用例：
+    - `ResizeObserver` 噪音不触发 fallback
+    - abort-like unhandled rejection 不触发 fallback
+- 验证：
+  - `CI=1 npm test -- --runInBand --watch=false src/components/layout/AppErrorBoundary.test.tsx src/components/auth/Login.test.tsx` -> PASS (`20 tests`)
+  - `npm run lint` -> PASS
+  - `bash scripts/phase5-regression.sh` -> PASS (`23 passed`)
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports

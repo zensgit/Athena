@@ -99,6 +99,11 @@
   - Deliverables:
     - `docs/PHASE97_APP_ERROR_RECOVERY_LOGIN_REASON_HANDOFF_DEV_20260224.md`
     - `docs/PHASE97_APP_ERROR_RECOVERY_LOGIN_REASON_HANDOFF_VERIFICATION_20260224.md`
+- AppErrorBoundary global noise filtering:
+  - ignore non-fatal `ResizeObserver` and abort/canceled rejection noise to reduce false-positive fatal fallback pages.
+  - Deliverables:
+    - `docs/PHASE98_APP_ERROR_BOUNDARY_GLOBAL_NOISE_FILTERING_DEV_20260224.md`
+    - `docs/PHASE98_APP_ERROR_BOUNDARY_GLOBAL_NOISE_FILTERING_VERIFICATION_20260224.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.

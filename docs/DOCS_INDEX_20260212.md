@@ -34,6 +34,8 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - Verification: `docs/PHASE96_STARTUP_SLA_DRIFT_BASELINE_WARNINGS_VERIFICATION_20260223.md`
   - Design: `docs/PHASE97_APP_ERROR_RECOVERY_LOGIN_REASON_HANDOFF_DEV_20260224.md`
   - Verification: `docs/PHASE97_APP_ERROR_RECOVERY_LOGIN_REASON_HANDOFF_VERIFICATION_20260224.md`
+  - Design: `docs/PHASE98_APP_ERROR_BOUNDARY_GLOBAL_NOISE_FILTERING_DEV_20260224.md`
+  - Verification: `docs/PHASE98_APP_ERROR_BOUNDARY_GLOBAL_NOISE_FILTERING_VERIFICATION_20260224.md`
 - Auth/Search recovery 7-day release summary: `docs/PHASE73_AUTH_SEARCH_RECOVERY_RELEASE_SUMMARY_20260219.md`
 - Auth/Search recovery verification rollup: `docs/PHASE73_AUTH_SEARCH_RECOVERY_VERIFICATION_ROLLUP_20260219.md`
 - Phase 5/6 one-command delivery gate:
