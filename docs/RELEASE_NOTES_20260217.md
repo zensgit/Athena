@@ -760,6 +760,21 @@
   - `bash scripts/phase5-regression.sh` -> PASS (`30 passed`，`startup_fallback_reload_cache_bust` 已计入 recovery events)
   - `DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
 
+### 54) AppErrorBoundary 恢复事件纳入 recovery guard（Phase108）
+- `ecm-frontend/e2e/app-error-boundary-recovery.mock.spec.ts`
+  - 新增结构化 marker：
+    - `recovery_event:app_error_overlay_shown`
+    - `recovery_event:app_error_back_to_login`
+- `scripts/phase5-regression.sh`
+  - recovery guard 期望事件集合新增：
+    - `app_error_overlay_shown`
+    - `app_error_back_to_login`
+- 交付影响：
+  - recovery telemetry 覆盖从 startup/chunk 扩展到 runtime app-error 恢复路径，缺失检测更完整。
+- 验证：
+  - `bash scripts/phase5-regression.sh` -> PASS (`30 passed`，recovery events 包含 app_error 两项，`recovery guard warning count: 0`)
+  - `DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -885,3 +900,5 @@
 - `docs/PHASE106_STARTUP_RECOVERY_REASON_SPLIT_VERIFICATION_20260224.md`
 - `docs/PHASE107_STARTUP_FALLBACK_RELOAD_CACHE_BUST_DEV_20260224.md`
 - `docs/PHASE107_STARTUP_FALLBACK_RELOAD_CACHE_BUST_VERIFICATION_20260224.md`
+- `docs/PHASE108_APP_ERROR_RECOVERY_EVENT_COVERAGE_DEV_20260224.md`
+- `docs/PHASE108_APP_ERROR_RECOVERY_EVENT_COVERAGE_VERIFICATION_20260224.md`

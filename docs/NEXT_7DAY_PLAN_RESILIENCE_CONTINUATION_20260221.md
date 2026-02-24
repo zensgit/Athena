@@ -149,6 +149,11 @@
   - Deliverables:
     - `docs/PHASE107_STARTUP_FALLBACK_RELOAD_CACHE_BUST_DEV_20260224.md`
     - `docs/PHASE107_STARTUP_FALLBACK_RELOAD_CACHE_BUST_VERIFICATION_20260224.md`
+- App runtime-error recovery event guard coverage:
+  - emit `app_error_*` recovery markers in app-error-boundary mocked flow and include them in `phase5-regression` recovery guard expected set.
+  - Deliverables:
+    - `docs/PHASE108_APP_ERROR_RECOVERY_EVENT_COVERAGE_DEV_20260224.md`
+    - `docs/PHASE108_APP_ERROR_RECOVERY_EVENT_COVERAGE_VERIFICATION_20260224.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
