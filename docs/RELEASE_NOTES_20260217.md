@@ -616,6 +616,18 @@
   - `npm run lint` -> PASS
   - `bash scripts/phase5-regression.sh` -> PASS (`23 passed`)
 
+### 45) AppErrorBoundary 噪音过滤纳入 mocked 门禁（Phase99）
+- 新增 `ecm-frontend/e2e/app-error-boundary-noise-filter.mock.spec.ts`
+  - 覆盖：
+    - `ResizeObserver` 全局噪音不触发 fatal fallback
+    - abort/canceled unhandled rejection 不触发 fatal fallback
+- `scripts/phase5-regression.sh`
+  - 默认 mocked spec 集合新增 `app-error-boundary-noise-filter`。
+  - 回归总用例数：`23 -> 25`。
+- 验证：
+  - `ECM_UI_URL=http://localhost:5500 npx playwright test e2e/app-error-boundary-noise-filter.mock.spec.ts --project=chromium --workers=1` -> PASS (`2 passed`)
+  - `bash scripts/phase5-regression.sh` -> PASS (`25 passed`)
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
