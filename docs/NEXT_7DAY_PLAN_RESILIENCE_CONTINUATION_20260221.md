@@ -109,6 +109,11 @@
   - Deliverables:
     - `docs/PHASE99_APP_ERROR_BOUNDARY_NOISE_FILTER_MOCK_GATE_DEV_20260224.md`
     - `docs/PHASE99_APP_ERROR_BOUNDARY_NOISE_FILTER_MOCK_GATE_VERIFICATION_20260224.md`
+- AppErrorBoundary chunk-load recovery guidance:
+  - detect dynamic import/chunk load failures, show targeted asset-refresh hint, and use cache-busting reload path.
+  - Deliverables:
+    - `docs/PHASE100_APP_ERROR_BOUNDARY_CHUNK_LOAD_RECOVERY_DEV_20260224.md`
+    - `docs/PHASE100_APP_ERROR_BOUNDARY_CHUNK_LOAD_RECOVERY_VERIFICATION_20260224.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.

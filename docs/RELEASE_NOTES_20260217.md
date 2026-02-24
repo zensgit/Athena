@@ -628,6 +628,27 @@
   - `ECM_UI_URL=http://localhost:5500 npx playwright test e2e/app-error-boundary-noise-filter.mock.spec.ts --project=chromium --workers=1` -> PASS (`2 passed`)
   - `bash scripts/phase5-regression.sh` -> PASS (`25 passed`)
 
+### 46) AppErrorBoundary 分包加载失败恢复提示（Phase100）
+- `ecm-frontend/src/components/layout/AppErrorBoundary.tsx`
+  - 新增错误分类：`generic | chunk_load`。
+  - 新增 chunk-load 识别（`Loading chunk ... failed` / `ChunkLoadError` / dynamic import 失败等）。
+  - chunk-load 情况下 fallback 增加专用提示：
+    - `Application files may be outdated after an update. Reload to fetch the latest assets.`
+  - chunk-load 情况下 `Reload` 改为 cache-busting 导航（追加 `_ecm_reload=<ts>`）。
+- `ecm-frontend/src/components/layout/AppErrorBoundary.test.tsx`
+  - 新增：
+    - chunk-load 提示文案回归测试
+    - cache-busting URL helper 测试
+- 新增 `ecm-frontend/e2e/app-error-boundary-chunk-load-recovery.mock.spec.ts`
+  - 覆盖 chunk-load-like unhandled rejection 时的恢复提示展示。
+- `scripts/phase5-regression.sh`
+  - mocked 集合纳入上述新 spec。
+  - 回归总用例数：`25 -> 26`。
+- 验证：
+  - `CI=1 npm test -- --runInBand --watch=false src/components/layout/AppErrorBoundary.test.tsx src/components/auth/Login.test.tsx` -> PASS (`22 tests`)
+  - `npm run lint` -> PASS
+  - `bash scripts/phase5-regression.sh` -> PASS (`26 passed`)
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
