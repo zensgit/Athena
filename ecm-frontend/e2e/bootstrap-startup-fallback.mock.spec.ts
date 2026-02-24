@@ -50,3 +50,36 @@ test('Startup fallback: forced blank bootstrap shows recovery overlay and can re
   await expect(page).toHaveURL(/\/login(?:\?reason=app_recovery)?$/, { timeout: 60_000 });
   await expect(page.getByTestId('login-auth-status-card')).toContainText('Recovered from unexpected app error');
 });
+
+test('Startup fallback: normal startup does not show fallback overlay', async ({ page }) => {
+  test.setTimeout(120_000);
+
+  await page.addInitScript(
+    ({ forceKey, timeoutKey }) => {
+      try {
+        localStorage.removeItem(forceKey);
+        localStorage.setItem(timeoutKey, '3000');
+      } catch {
+        // Ignore storage restrictions for this test setup.
+      }
+    },
+    {
+      forceKey: E2E_FORCE_BOOTSTRAP_BLANK_KEY,
+      timeoutKey: E2E_BOOTSTRAP_FALLBACK_MS_KEY,
+    }
+  );
+
+  await page.goto('/login', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByText('Sign in with your organization account')).toBeVisible({ timeout: 60_000 });
+
+  await page.waitForTimeout(3800);
+  await expect(page.getByTestId('bootstrap-startup-fallback')).toHaveCount(0);
+
+  await page.evaluate(({ timeoutKey }) => {
+    try {
+      localStorage.removeItem(timeoutKey);
+    } catch {
+      // Ignore storage restrictions for this test cleanup.
+    }
+  }, { timeoutKey: E2E_BOOTSTRAP_FALLBACK_MS_KEY });
+});
