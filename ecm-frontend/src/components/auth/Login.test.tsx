@@ -95,6 +95,23 @@ test('shows app recovery message from login reason query param fallback', async 
   expect(await screen.findByText(/recovered from unexpected app error/i)).toBeTruthy();
 });
 
+test('shows startup recovery message when bootstrap fallback returns to login', async () => {
+  sessionStorage.setItem('ecm_auth_init_status', 'startup_recovery');
+
+  render(<Login />);
+
+  expect(await screen.findByText(/recovered from startup timeout/i)).toBeTruthy();
+  expect(screen.getByText(/startup took too long/i)).toBeTruthy();
+});
+
+test('shows startup recovery message from login reason query param fallback', async () => {
+  window.history.pushState({}, '', '/login?reason=startup_recovery');
+
+  render(<Login />);
+
+  expect(await screen.findByText(/recovered from startup timeout/i)).toBeTruthy();
+});
+
 test('shows redirect warning when automatic sign-in redirect fails', async () => {
   sessionStorage.setItem('ecm_auth_init_status', 'redirect_failed');
   sessionStorage.setItem('ecm_auth_redirect_last_failure_at', String(Date.now()));

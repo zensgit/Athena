@@ -48,8 +48,8 @@ test('Startup fallback: forced blank bootstrap shows recovery overlay and can re
 
   await page.getByRole('button', { name: /back to login/i }).click();
 
-  await expect(page).toHaveURL(/\/login(?:\?reason=app_recovery)?$/, { timeout: 60_000 });
-  await expect(page.getByTestId('login-auth-status-card')).toContainText('Recovered from unexpected app error');
+  await expect(page).toHaveURL(/\/login(?:\?reason=startup_recovery)?$/, { timeout: 60_000 });
+  await expect(page.getByTestId('login-auth-status-card')).toContainText('Recovered from startup timeout');
   console.log('recovery_event:startup_fallback_back_to_login');
 });
 

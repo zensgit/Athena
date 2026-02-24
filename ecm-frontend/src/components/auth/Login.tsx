@@ -11,6 +11,7 @@ import {
   AUTH_INIT_STATUS_APP_RECOVERY,
   AUTH_INIT_STATUS_ERROR,
   AUTH_INIT_STATUS_KEY,
+  AUTH_INIT_STATUS_STARTUP_RECOVERY,
   AUTH_INIT_STATUS_SESSION_EXPIRED,
   AUTH_INIT_STATUS_REDIRECT_FAILED,
   AUTH_INIT_STATUS_TIMEOUT,
@@ -81,6 +82,16 @@ const buildAuthInitNotice = (
     return {
       title: 'Session expired',
       detail: 'Your session expired. Please sign in again.',
+    };
+  }
+  if (
+    initStatus === AUTH_INIT_STATUS_STARTUP_RECOVERY
+    || (!initStatus && redirectReason === AUTH_INIT_STATUS_STARTUP_RECOVERY)
+    || queryReason === AUTH_INIT_STATUS_STARTUP_RECOVERY
+  ) {
+    return {
+      title: 'Recovered from startup timeout',
+      detail: 'App startup took too long and switched to sign-in recovery. Please sign in again.',
     };
   }
   if (

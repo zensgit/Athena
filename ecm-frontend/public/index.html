@@ -30,6 +30,8 @@
         var FALLBACK_TIMEOUT_MS = 20000;
         var E2E_FORCE_BLANK_KEY = 'ecm_e2e_force_bootstrap_blank';
         var E2E_TIMEOUT_OVERRIDE_KEY = 'ecm_e2e_bootstrap_fallback_ms';
+        var AUTH_INIT_STATUS_KEY = 'ecm_auth_init_status';
+        var AUTH_INIT_STATUS_STARTUP_RECOVERY = 'startup_recovery';
 
         function isWebdriverRuntime() {
           return window.navigator && window.navigator.webdriver === true;
@@ -135,7 +137,12 @@
           );
           actions.appendChild(
             createActionButton('Back to Login', function () {
-              window.location.assign('/login?reason=app_recovery');
+              try {
+                window.sessionStorage.setItem(AUTH_INIT_STATUS_KEY, AUTH_INIT_STATUS_STARTUP_RECOVERY);
+              } catch (error) {
+                // Ignore restricted storage contexts.
+              }
+              window.location.assign('/login?reason=' + AUTH_INIT_STATUS_STARTUP_RECOVERY);
             }, 'ecm-bootstrap-fallback-login')
           );
           card.appendChild(actions);
