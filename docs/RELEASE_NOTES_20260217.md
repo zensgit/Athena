@@ -577,6 +577,29 @@
     - `ECM_E2E_STARTUP_LOGIN_SLA_MS=100 ECM_E2E_STARTUP_BROWSE_SLA_MS=100 ECM_STARTUP_SLA_BASELINE_LOGIN_MS=100 ECM_STARTUP_SLA_BASELINE_BROWSE_MS=100 DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh`
     - expected FAIL，且 gate failure hints 成功输出 startup drift warning 提示
 
+### 43) App 崩溃恢复登录原因透传与登录页状态卡（Phase97）
+- `ecm-frontend/src/constants/auth.ts`
+  - 新增恢复状态常量：`AUTH_INIT_STATUS_APP_RECOVERY='app_recovery'`。
+- `ecm-frontend/src/components/layout/AppErrorBoundary.tsx`
+  - `Back to Login` 动作增强：
+    - 写入 `sessionStorage.ecm_auth_init_status=app_recovery`
+    - 清理登录进行中标记与 redirect reason
+    - 跳转 `/login?reason=app_recovery`
+- `ecm-frontend/src/components/auth/Login.tsx`
+  - 登录页状态卡新增 `app_recovery` 分支：
+    - 标题：`Recovered from unexpected app error`
+    - 文案：提示运行时错误后已回到登录页，请重新登录。
+  - 兼容来源：`sessionStorage` / `localStorage` reason / query reason。
+- 测试覆盖：
+  - `ecm-frontend/src/components/auth/Login.test.tsx`
+    - 新增 `app_recovery` 状态与 query reason 两个单测场景。
+  - `ecm-frontend/e2e/app-error-boundary-recovery.mock.spec.ts`
+    - 新增断言：`Back to Login` 后登录状态卡显示 app recovery 提示文案。
+- 验证：
+  - `CI=1 npm test -- --runInBand --watch=false src/components/auth/Login.test.tsx src/components/layout/AppErrorBoundary.test.tsx` -> PASS
+  - `npx playwright test e2e/app-error-boundary-recovery.mock.spec.ts --project=chromium --workers=1` -> PASS
+  - `bash scripts/phase5-regression.sh` -> PASS
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports

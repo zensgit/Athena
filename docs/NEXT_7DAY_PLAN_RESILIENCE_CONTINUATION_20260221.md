@@ -93,6 +93,13 @@
     - `docs/PHASE96_STARTUP_SLA_DRIFT_BASELINE_WARNINGS_DEV_20260223.md`
     - `docs/PHASE96_STARTUP_SLA_DRIFT_BASELINE_WARNINGS_VERIFICATION_20260223.md`
 
+## Post Day 7 Stabilization (Completed on 2026-02-24)
+- App crash recovery login-reason handoff hardening:
+  - when `AppErrorBoundary` sends user back to login, persist a structured recovery reason and show dedicated login status card copy.
+  - Deliverables:
+    - `docs/PHASE97_APP_ERROR_RECOVERY_LOGIN_REASON_HANDOFF_DEV_20260224.md`
+    - `docs/PHASE97_APP_ERROR_RECOVERY_LOGIN_REASON_HANDOFF_VERIFICATION_20260224.md`
+
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
 2. Filename-like queries do not trigger noisy spellcheck suggestions.
