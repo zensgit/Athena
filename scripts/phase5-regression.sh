@@ -223,6 +223,8 @@ if (recoverySummary.size === 0) {
 }
 
 const expectedEvents = [
+  'app_error_overlay_shown',
+  'app_error_back_to_login',
   'chunk_load_hint_shown',
   'chunk_load_reload_cache_bust',
   'startup_fallback_overlay_shown',

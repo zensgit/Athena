@@ -20,6 +20,7 @@ test('App error boundary: forced render crash can recover to login', async ({ pa
   await expect(page.getByText('The page encountered an unexpected error. You can refresh and try again.'))
     .toBeVisible({ timeout: 60_000 });
   await expect(page.getByRole('button', { name: /back to login/i })).toBeVisible();
+  console.log('recovery_event:app_error_overlay_shown');
 
   await page.getByRole('button', { name: /back to login/i }).click();
 
@@ -28,6 +29,7 @@ test('App error boundary: forced render crash can recover to login', async ({ pa
   await expect(page.getByText('Sign in with your organization account')).toBeVisible({ timeout: 60_000 });
   await expect(page.getByTestId('login-auth-status-card')).toContainText('Recovered from unexpected app error');
   await expect(page.getByTestId('login-auth-status-card')).toContainText('returned to sign-in');
+  console.log('recovery_event:app_error_back_to_login');
 
   await expect.poll(async () => page.evaluate((key) => {
     try {
