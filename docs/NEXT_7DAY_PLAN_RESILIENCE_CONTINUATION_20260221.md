@@ -169,6 +169,11 @@
   - Deliverables:
     - `docs/PHASE111_AUTH_BOOT_RECOVERY_EVENT_COVERAGE_DEV_20260224.md`
     - `docs/PHASE111_AUTH_BOOT_RECOVERY_EVENT_COVERAGE_VERIFICATION_20260224.md`
+- Auth storage-restricted recovery event coverage:
+  - emit storage-restricted auth flow `recovery_event` markers and include them in `phase5-regression` recovery guard expected set.
+  - Deliverables:
+    - `docs/PHASE112_AUTH_STORAGE_RECOVERY_EVENT_COVERAGE_DEV_20260224.md`
+    - `docs/PHASE112_AUTH_STORAGE_RECOVERY_EVENT_COVERAGE_VERIFICATION_20260224.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
