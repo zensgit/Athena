@@ -726,6 +726,25 @@
   - `bash scripts/phase5-regression.sh` -> PASS (`29 passed`，输出 recovery guard 三行摘要)
   - `DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
 
+### 52) 启动恢复原因拆分（Phase106）
+- `ecm-frontend/src/constants/auth.ts`
+  - 新增 `AUTH_INIT_STATUS_STARTUP_RECOVERY = 'startup_recovery'`。
+- `ecm-frontend/public/index.html`
+  - 启动 fallback 的 `Back to Login` 改为写入 `sessionStorage.ecm_auth_init_status=startup_recovery`，并跳转：
+    - `/login?reason=startup_recovery`
+- `ecm-frontend/src/components/auth/Login.tsx`
+  - 登录恢复提示新增 startup 分支（与 app runtime crash 恢复分离）：
+    - 标题：`Recovered from startup timeout`
+    - 说明：`App startup took too long and switched to sign-in recovery. Please sign in again.`
+- `ecm-frontend/src/components/auth/Login.test.tsx`
+  - 新增 startup recovery（session/query）提示回归测试。
+- `ecm-frontend/e2e/bootstrap-startup-fallback.mock.spec.ts`
+  - 更新断言：回登录 URL reason 为 `startup_recovery`，并校验启动恢复专属提示。
+- 验证：
+  - `CI=1 npm test -- --runTestsByPath src/components/auth/Login.test.tsx` -> PASS (`17 passed`)
+  - `bash scripts/phase5-regression.sh` -> PASS (`29 passed`)
+  - `DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -847,3 +866,5 @@
 - `docs/PHASE104_RECOVERY_EVENT_TELEMETRY_SUMMARY_VERIFICATION_20260224.md`
 - `docs/PHASE105_RECOVERY_GUARD_FAILFAST_SUMMARY_DEV_20260224.md`
 - `docs/PHASE105_RECOVERY_GUARD_FAILFAST_SUMMARY_VERIFICATION_20260224.md`
+- `docs/PHASE106_STARTUP_RECOVERY_REASON_SPLIT_DEV_20260224.md`
+- `docs/PHASE106_STARTUP_RECOVERY_REASON_SPLIT_VERIFICATION_20260224.md`

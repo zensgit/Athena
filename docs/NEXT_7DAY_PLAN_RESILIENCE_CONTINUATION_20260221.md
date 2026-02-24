@@ -139,6 +139,11 @@
   - Deliverables:
     - `docs/PHASE105_RECOVERY_GUARD_FAILFAST_SUMMARY_DEV_20260224.md`
     - `docs/PHASE105_RECOVERY_GUARD_FAILFAST_SUMMARY_VERIFICATION_20260224.md`
+- Startup recovery reason split for login handoff:
+  - separate startup timeout recovery from runtime crash recovery by introducing dedicated `startup_recovery` login handoff reason/status.
+  - Deliverables:
+    - `docs/PHASE106_STARTUP_RECOVERY_REASON_SPLIT_DEV_20260224.md`
+    - `docs/PHASE106_STARTUP_RECOVERY_REASON_SPLIT_VERIFICATION_20260224.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
