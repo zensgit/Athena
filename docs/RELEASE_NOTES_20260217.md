@@ -807,6 +807,21 @@
   - `bash scripts/phase5-regression.sh` -> PASS (`30 passed`)
   - `DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
 
+### 57) Auth boot watchdog 恢复事件纳入 recovery guard（Phase111）
+- `ecm-frontend/e2e/auth-boot-watchdog-recovery.mock.spec.ts`
+  - 新增结构化 marker：
+    - `recovery_event:auth_boot_watchdog_alert_shown`
+    - `recovery_event:auth_boot_watchdog_continue_login`
+- `scripts/phase5-regression.sh`
+  - recovery guard 期望事件集合新增：
+    - `auth_boot_watchdog_alert_shown`
+    - `auth_boot_watchdog_continue_login`
+- 交付影响：
+  - recovery telemetry 覆盖补齐 auth boot watchdog 恢复路径，guard 缺失检测更完整。
+- 验证：
+  - `bash scripts/phase5-regression.sh` -> PASS (`30 passed`，recovery events 包含 auth_boot_watchdog 两项，`recovery guard warning count: 0`)
+  - `DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -938,3 +953,5 @@
 - `docs/PHASE109_GATE_RECOVERY_HINT_MISSING_EVENTS_VERIFICATION_20260224.md`
 - `docs/PHASE110_LOGIN_TRANSIENT_QUERY_CLEANUP_DEV_20260224.md`
 - `docs/PHASE110_LOGIN_TRANSIENT_QUERY_CLEANUP_VERIFICATION_20260224.md`
+- `docs/PHASE111_AUTH_BOOT_RECOVERY_EVENT_COVERAGE_DEV_20260224.md`
+- `docs/PHASE111_AUTH_BOOT_RECOVERY_EVENT_COVERAGE_VERIFICATION_20260224.md`

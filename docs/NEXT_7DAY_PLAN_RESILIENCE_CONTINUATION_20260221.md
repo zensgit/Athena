@@ -164,6 +164,11 @@
   - Deliverables:
     - `docs/PHASE110_LOGIN_TRANSIENT_QUERY_CLEANUP_DEV_20260224.md`
     - `docs/PHASE110_LOGIN_TRANSIENT_QUERY_CLEANUP_VERIFICATION_20260224.md`
+- Auth boot watchdog recovery event coverage:
+  - emit auth boot watchdog `recovery_event` markers and include them in `phase5-regression` recovery guard expected set.
+  - Deliverables:
+    - `docs/PHASE111_AUTH_BOOT_RECOVERY_EVENT_COVERAGE_DEV_20260224.md`
+    - `docs/PHASE111_AUTH_BOOT_RECOVERY_EVENT_COVERAGE_VERIFICATION_20260224.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
