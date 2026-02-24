@@ -171,6 +171,7 @@ print_startup_failure_hints() {
   local hint_startup_sla_warn=0
   local hint_startup_sla_drift_warn=0
   local hint_recovery_guard_warn=0
+  local recovery_missing_events=()
   local record
   for record in "${FAILED_STAGE_RECORDS[@]}"; do
     local record_layer
@@ -196,6 +197,15 @@ print_startup_failure_hints() {
     fi
     if strip_ansi_file "${record_log}" | rg -qi "phase5_regression: recovery guard warning count: [1-9][0-9]*"; then
       hint_recovery_guard_warn=1
+      local missing_event
+      while IFS= read -r missing_event; do
+        if [[ -n "${missing_event}" ]]; then
+          recovery_missing_events+=("${missing_event}")
+        fi
+      done < <(
+        strip_ansi_file "${record_log}" \
+          | sed -nE 's/^[[:space:]]*-[[:space:]]*WARN missing event:[[:space:]]*([a-z0-9_]+).*/\1/p'
+      )
     fi
   done
 
@@ -221,7 +231,27 @@ print_startup_failure_hints() {
     echo " - Startup latency drift warnings detected. Compare against baseline and investigate runtime variance/regression."
   fi
   if [[ "${hint_recovery_guard_warn}" -eq 1 ]]; then
-    echo " - Recovery guard coverage appears incomplete. Inspect 'phase5_regression: recovery guard status' for missing startup/error events."
+    local missing_events_line=""
+    if [[ "${#recovery_missing_events[@]}" -gt 0 ]]; then
+      missing_events_line="$(
+        printf '%s\n' "${recovery_missing_events[@]}" \
+          | awk 'NF && !seen[$0]++ {
+              events[++count] = $0
+            }
+            END {
+              limit = count < 8 ? count : 8
+              for (i = 1; i <= limit; i++) {
+                printf "%s%s", (i > 1 ? ", " : ""), events[i]
+              }
+            }'
+      )"
+    fi
+
+    if [[ -n "${missing_events_line}" ]]; then
+      echo " - Recovery guard coverage appears incomplete. Missing events: ${missing_events_line}."
+    else
+      echo " - Recovery guard coverage appears incomplete. Inspect 'phase5_regression: recovery guard status' for missing startup/error events."
+    fi
   fi
 }
 
