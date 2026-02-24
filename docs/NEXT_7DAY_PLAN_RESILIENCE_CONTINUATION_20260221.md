@@ -129,6 +129,11 @@
   - Deliverables:
     - `docs/PHASE103_STARTUP_FALLBACK_FALSE_POSITIVE_GUARD_DEV_20260224.md`
     - `docs/PHASE103_STARTUP_FALLBACK_FALSE_POSITIVE_GUARD_VERIFICATION_20260224.md`
+- Recovery event telemetry summary + gate hinting:
+  - emit structured `recovery_event:*` markers in startup/chunk fallback mocked E2E and aggregate coverage summary/warnings in `phase5-regression` + delivery gate hints.
+  - Deliverables:
+    - `docs/PHASE104_RECOVERY_EVENT_TELEMETRY_SUMMARY_DEV_20260224.md`
+    - `docs/PHASE104_RECOVERY_EVENT_TELEMETRY_SUMMARY_VERIFICATION_20260224.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.

@@ -691,6 +691,27 @@
   - `ECM_UI_URL=http://localhost:5500 npx playwright test e2e/bootstrap-startup-fallback.mock.spec.ts --project=chromium --workers=1` -> PASS (`2 passed`)
   - `bash scripts/phase5-regression.sh` -> PASS (`29 passed`)
 
+### 50) Recovery 事件摘要与 gate 提示联动（Phase104）
+- `ecm-frontend/e2e/app-error-boundary-chunk-load-recovery.mock.spec.ts`
+  - 新增结构化 marker：
+    - `recovery_event:chunk_load_hint_shown`
+    - `recovery_event:chunk_load_reload_cache_bust`
+- `ecm-frontend/e2e/bootstrap-startup-fallback.mock.spec.ts`
+  - 新增结构化 marker：
+    - `recovery_event:startup_fallback_overlay_shown`
+    - `recovery_event:startup_fallback_back_to_login`
+    - `recovery_event:startup_fallback_not_shown_normal`
+- `scripts/phase5-regression.sh`
+  - 新增 recovery marker 聚合输出：
+    - `phase5_regression: recovery events`
+    - `phase5_regression: recovery guard status`
+    - `phase5_regression: recovery guard warning count: N`
+- `scripts/phase5-phase6-delivery-gate.sh`
+  - startup hints 新增 recovery-guard 缺失信号检测与提示语。
+- 验证：
+  - `bash scripts/phase5-regression.sh` -> PASS (`29 passed`，`recovery guard warning count: 0`)
+  - `DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
