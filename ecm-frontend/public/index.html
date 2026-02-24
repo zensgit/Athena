@@ -68,6 +68,16 @@
           return timeoutMs;
         }
 
+        function buildCacheBustReloadUrl() {
+          try {
+            var url = new URL(window.location.href, window.location.origin);
+            url.searchParams.set('_ecm_reload', String(Date.now()));
+            return url.toString();
+          } catch (error) {
+            return window.location.href;
+          }
+        }
+
         function createActionButton(label, onClick, id) {
           var button = document.createElement('button');
           button.type = 'button';
@@ -132,6 +142,11 @@
 
           actions.appendChild(
             createActionButton('Reload', function () {
+              var reloadTarget = buildCacheBustReloadUrl();
+              if (reloadTarget && reloadTarget !== window.location.href) {
+                window.location.assign(reloadTarget);
+                return;
+              }
               window.location.reload();
             }, 'ecm-bootstrap-fallback-reload')
           );

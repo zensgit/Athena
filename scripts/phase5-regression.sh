@@ -226,6 +226,7 @@ const expectedEvents = [
   'chunk_load_hint_shown',
   'chunk_load_reload_cache_bust',
   'startup_fallback_overlay_shown',
+  'startup_fallback_reload_cache_bust',
   'startup_fallback_back_to_login',
   'startup_fallback_not_shown_normal',
 ];
