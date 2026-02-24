@@ -16,6 +16,46 @@ type AppErrorBoundaryState = {
   message: string;
 };
 
+const IGNORED_GLOBAL_ERROR_PATTERNS = [
+  /ResizeObserver loop limit exceeded/i,
+  /ResizeObserver loop completed with undelivered notifications/i,
+];
+
+const isAbortLikeReason = (reason: unknown): boolean => {
+  if (!reason) {
+    return false;
+  }
+  if (reason instanceof Error) {
+    if (reason.name === 'AbortError') {
+      return true;
+    }
+    return /aborted|cancelled|canceled/i.test(reason.message || '');
+  }
+  if (typeof reason === 'object') {
+    const record = reason as Record<string, unknown>;
+    if (record.code === 'ERR_CANCELED') {
+      return true;
+    }
+    if (typeof record.name === 'string' && record.name === 'AbortError') {
+      return true;
+    }
+    if (typeof record.message === 'string' && /aborted|cancelled|canceled/i.test(record.message)) {
+      return true;
+    }
+  }
+  if (typeof reason === 'string') {
+    return /aborted|cancelled|canceled/i.test(reason);
+  }
+  return false;
+};
+
+const shouldIgnoreGlobalRuntimeIssue = (message: string, reason?: unknown): boolean => {
+  if (IGNORED_GLOBAL_ERROR_PATTERNS.some((pattern) => pattern.test(message))) {
+    return true;
+  }
+  return isAbortLikeReason(reason);
+};
+
 const safeSessionSetItem = (key: string, value: string) => {
   try {
     sessionStorage.setItem(key, value);
@@ -70,6 +110,10 @@ class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, AppErrorBo
   private handleWindowError = (event: ErrorEvent) => {
     const error = event.error;
     const message = error instanceof Error ? error.message : event.message || 'Unexpected runtime error';
+    if (shouldIgnoreGlobalRuntimeIssue(message, error)) {
+      console.warn('AppErrorBoundary ignored non-fatal global runtime error', { message });
+      return;
+    }
     if (!this.state.hasError) {
       this.setState({ hasError: true, message });
     }
@@ -79,6 +123,10 @@ class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, AppErrorBo
   private handleUnhandledRejection = (event: PromiseRejectionEvent | Event) => {
     const reason = (event as PromiseRejectionEvent).reason;
     const message = reason instanceof Error ? reason.message : typeof reason === 'string' ? reason : 'Unhandled promise rejection';
+    if (shouldIgnoreGlobalRuntimeIssue(message, reason)) {
+      console.warn('AppErrorBoundary ignored non-fatal unhandled rejection', { message });
+      return;
+    }
     if (!this.state.hasError) {
       this.setState({ hasError: true, message });
     }

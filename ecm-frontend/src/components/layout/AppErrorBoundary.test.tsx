@@ -58,4 +58,45 @@ describe('AppErrorBoundary', () => {
     expect(screen.getByText(/runtime-unhandled-rejection/i)).toBeTruthy();
     errorSpy.mockRestore();
   });
+
+  it('ignores non-fatal ResizeObserver window errors', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    render(
+      <AppErrorBoundary>
+        <div>safe-child</div>
+      </AppErrorBoundary>
+    );
+
+    window.dispatchEvent(new ErrorEvent('error', { message: 'ResizeObserver loop limit exceeded' }));
+
+    expect(screen.getByText('safe-child')).toBeTruthy();
+    expect(screen.queryByText('Athena ECM')).toBeNull();
+    expect(warnSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
+  it('ignores abort-like unhandled rejections', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    render(
+      <AppErrorBoundary>
+        <div>safe-child</div>
+      </AppErrorBoundary>
+    );
+
+    const rejectionEvent = new Event('unhandledrejection');
+    Object.defineProperty(rejectionEvent, 'reason', {
+      value: { name: 'AbortError', message: 'The operation was aborted', code: 'ERR_CANCELED' },
+      configurable: true,
+    });
+    window.dispatchEvent(rejectionEvent);
+
+    expect(screen.getByText('safe-child')).toBeTruthy();
+    expect(screen.queryByText('Athena ECM')).toBeNull();
+    expect(warnSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
 });
