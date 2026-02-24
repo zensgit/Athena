@@ -26,10 +26,12 @@ test('Auth boot watchdog: forced startup hang can recover via continue-to-login 
   await expect(page.getByTestId('auth-booting-watchdog-alert')).toBeVisible({ timeout: 60_000 });
   await expect(page.getByTestId('auth-booting-watchdog-reload')).toBeVisible();
   await expect(page.getByTestId('auth-booting-watchdog-continue-login')).toBeVisible();
+  console.log('recovery_event:auth_boot_watchdog_alert_shown');
 
   await page.getByTestId('auth-booting-watchdog-continue-login').click();
 
   await expect(page).toHaveURL(/\/login($|[?#])/, { timeout: 60_000 });
   await expect(page.getByRole('heading', { name: /Athena ECM/i })).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText('Sign-in initialization timed out. Please retry.')).toBeVisible({ timeout: 60_000 });
+  console.log('recovery_event:auth_boot_watchdog_continue_login');
 });

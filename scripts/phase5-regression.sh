@@ -223,6 +223,8 @@ if (recoverySummary.size === 0) {
 }
 
 const expectedEvents = [
+  'auth_boot_watchdog_alert_shown',
+  'auth_boot_watchdog_continue_login',
   'app_error_overlay_shown',
   'app_error_back_to_login',
   'chunk_load_hint_shown',
