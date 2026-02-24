@@ -144,6 +144,11 @@
   - Deliverables:
     - `docs/PHASE106_STARTUP_RECOVERY_REASON_SPLIT_DEV_20260224.md`
     - `docs/PHASE106_STARTUP_RECOVERY_REASON_SPLIT_VERIFICATION_20260224.md`
+- Startup fallback reload cache-bust hardening:
+  - add `_ecm_reload` cache-busting navigation to startup fallback reload path and cover it in mocked gate telemetry.
+  - Deliverables:
+    - `docs/PHASE107_STARTUP_FALLBACK_RELOAD_CACHE_BUST_DEV_20260224.md`
+    - `docs/PHASE107_STARTUP_FALLBACK_RELOAD_CACHE_BUST_VERIFICATION_20260224.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.

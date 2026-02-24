@@ -745,6 +745,21 @@
   - `bash scripts/phase5-regression.sh` -> PASS (`29 passed`)
   - `DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
 
+### 53) 启动 fallback reload cache-bust 加固（Phase107）
+- `ecm-frontend/public/index.html`
+  - 启动 fallback `Reload` 动作改为优先跳转到带 `_ecm_reload=<ts>` 的 URL（无法构造 URL 时回退 `window.location.reload()`）。
+- `ecm-frontend/e2e/bootstrap-startup-fallback.mock.spec.ts`
+  - 新增场景：
+    - `Startup fallback: reload uses cache-busting query and restores login shell`
+  - 校验点击 `Reload` 后 URL 包含 `_ecm_reload=<ts>` 且登录页可见。
+  - 新增结构化 marker：
+    - `recovery_event:startup_fallback_reload_cache_bust`
+- `scripts/phase5-regression.sh`
+  - recovery guard 期望事件集合新增 `startup_fallback_reload_cache_bust`。
+- 验证：
+  - `bash scripts/phase5-regression.sh` -> PASS (`30 passed`，`startup_fallback_reload_cache_bust` 已计入 recovery events)
+  - `DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -868,3 +883,5 @@
 - `docs/PHASE105_RECOVERY_GUARD_FAILFAST_SUMMARY_VERIFICATION_20260224.md`
 - `docs/PHASE106_STARTUP_RECOVERY_REASON_SPLIT_DEV_20260224.md`
 - `docs/PHASE106_STARTUP_RECOVERY_REASON_SPLIT_VERIFICATION_20260224.md`
+- `docs/PHASE107_STARTUP_FALLBACK_RELOAD_CACHE_BUST_DEV_20260224.md`
+- `docs/PHASE107_STARTUP_FALLBACK_RELOAD_CACHE_BUST_VERIFICATION_20260224.md`
