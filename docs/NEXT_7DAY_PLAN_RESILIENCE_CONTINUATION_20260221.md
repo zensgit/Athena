@@ -134,6 +134,11 @@
   - Deliverables:
     - `docs/PHASE104_RECOVERY_EVENT_TELEMETRY_SUMMARY_DEV_20260224.md`
     - `docs/PHASE104_RECOVERY_EVENT_TELEMETRY_SUMMARY_VERIFICATION_20260224.md`
+- Recovery guard deterministic fail-fast summary:
+  - ensure `phase5-regression` always prints recovery summary/guard/warning lines even when no `recovery_event` markers are captured.
+  - Deliverables:
+    - `docs/PHASE105_RECOVERY_GUARD_FAILFAST_SUMMARY_DEV_20260224.md`
+    - `docs/PHASE105_RECOVERY_GUARD_FAILFAST_SUMMARY_VERIFICATION_20260224.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.

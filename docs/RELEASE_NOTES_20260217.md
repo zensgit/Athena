@@ -712,6 +712,20 @@
   - `bash scripts/phase5-regression.sh` -> PASS (`29 passed`，`recovery guard warning count: 0`)
   - `DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
 
+### 51) Recovery guard 在 fail-fast 场景下固定输出（Phase105）
+- `scripts/phase5-regression.sh`
+  - recovery 聚合逻辑改为始终输出（不再依赖 `recovery_event` 是否存在）。
+  - 即使无 marker，也会固定打印：
+    - `phase5_regression: recovery events`
+    - `phase5_regression: recovery guard status`
+    - `phase5_regression: recovery guard warning count: N`
+  - 无 marker 时显示 ` - (none)`，并对期望事件逐条输出 `WARN missing event`。
+- 交付影响：
+  - 让 `phase5-phase6-delivery-gate` 在早失败/截断日志场景仍可稳定消费 recovery guard 警告信号。
+- 验证：
+  - `bash scripts/phase5-regression.sh` -> PASS (`29 passed`，输出 recovery guard 三行摘要)
+  - `DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -815,3 +829,21 @@
 - `docs/PHASE95_STARTUP_SLA_WARN_SUMMARY_AND_GATE_HINTS_VERIFICATION_20260223.md`
 - `docs/PHASE96_STARTUP_SLA_DRIFT_BASELINE_WARNINGS_DEV_20260223.md`
 - `docs/PHASE96_STARTUP_SLA_DRIFT_BASELINE_WARNINGS_VERIFICATION_20260223.md`
+- `docs/PHASE97_APP_ERROR_RECOVERY_LOGIN_REASON_HANDOFF_DEV_20260224.md`
+- `docs/PHASE97_APP_ERROR_RECOVERY_LOGIN_REASON_HANDOFF_VERIFICATION_20260224.md`
+- `docs/PHASE98_APP_ERROR_BOUNDARY_GLOBAL_NOISE_FILTERING_DEV_20260224.md`
+- `docs/PHASE98_APP_ERROR_BOUNDARY_GLOBAL_NOISE_FILTERING_VERIFICATION_20260224.md`
+- `docs/PHASE99_APP_ERROR_BOUNDARY_NOISE_FILTER_MOCK_GATE_DEV_20260224.md`
+- `docs/PHASE99_APP_ERROR_BOUNDARY_NOISE_FILTER_MOCK_GATE_VERIFICATION_20260224.md`
+- `docs/PHASE100_APP_ERROR_BOUNDARY_CHUNK_LOAD_RECOVERY_DEV_20260224.md`
+- `docs/PHASE100_APP_ERROR_BOUNDARY_CHUNK_LOAD_RECOVERY_VERIFICATION_20260224.md`
+- `docs/PHASE101_CHUNK_LOAD_CACHE_BUST_RELOAD_E2E_DEV_20260224.md`
+- `docs/PHASE101_CHUNK_LOAD_CACHE_BUST_RELOAD_E2E_VERIFICATION_20260224.md`
+- `docs/PHASE102_STARTUP_BLANK_SCREEN_FALLBACK_WATCHDOG_DEV_20260224.md`
+- `docs/PHASE102_STARTUP_BLANK_SCREEN_FALLBACK_WATCHDOG_VERIFICATION_20260224.md`
+- `docs/PHASE103_STARTUP_FALLBACK_FALSE_POSITIVE_GUARD_DEV_20260224.md`
+- `docs/PHASE103_STARTUP_FALLBACK_FALSE_POSITIVE_GUARD_VERIFICATION_20260224.md`
+- `docs/PHASE104_RECOVERY_EVENT_TELEMETRY_SUMMARY_DEV_20260224.md`
+- `docs/PHASE104_RECOVERY_EVENT_TELEMETRY_SUMMARY_VERIFICATION_20260224.md`
+- `docs/PHASE105_RECOVERY_GUARD_FAILFAST_SUMMARY_DEV_20260224.md`
+- `docs/PHASE105_RECOVERY_GUARD_FAILFAST_SUMMARY_VERIFICATION_20260224.md`
