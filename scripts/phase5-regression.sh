@@ -12,6 +12,7 @@ PHASE5_RECOVERY_GUARD_STRICT="${PHASE5_RECOVERY_GUARD_STRICT:-0}"
 PHASE5_RECOVERY_EVENTS_FILE="${PHASE5_RECOVERY_EVENTS_FILE:-e2e/recovery-events.expected.txt}"
 PHASE5_RECOVERY_REGISTRY_STRICT="${PHASE5_RECOVERY_REGISTRY_STRICT:-${PHASE5_RECOVERY_GUARD_STRICT}}"
 PHASE5_VALIDATE_RECOVERY_REGISTRY_ONLY="${PHASE5_VALIDATE_RECOVERY_REGISTRY_ONLY:-0}"
+PHASE5_RECOVERY_REGISTRY_SYNC="${PHASE5_RECOVERY_REGISTRY_SYNC:-0}"
 
 echo "phase5_regression: start"
 echo "ECM_UI_URL=${ECM_UI_URL}"
@@ -21,6 +22,7 @@ echo "PHASE5_RECOVERY_GUARD_STRICT=${PHASE5_RECOVERY_GUARD_STRICT}"
 echo "PHASE5_RECOVERY_EVENTS_FILE=${PHASE5_RECOVERY_EVENTS_FILE}"
 echo "PHASE5_RECOVERY_REGISTRY_STRICT=${PHASE5_RECOVERY_REGISTRY_STRICT}"
 echo "PHASE5_VALIDATE_RECOVERY_REGISTRY_ONLY=${PHASE5_VALIDATE_RECOVERY_REGISTRY_ONLY}"
+echo "PHASE5_RECOVERY_REGISTRY_SYNC=${PHASE5_RECOVERY_REGISTRY_SYNC}"
 
 strip_ansi_file() {
   local log_file="$1"
@@ -348,6 +350,44 @@ validate_recovery_event_registry() {
   return 0
 }
 
+collect_recovery_events_from_specs() {
+  rg -No "recovery_event:[a-z0-9_]+" "${PHASE5_SPECS[@]}" \
+    | sed -E 's/.*recovery_event:([a-z0-9_]+).*/\1/' \
+    | awk 'NF { print tolower($0) }' \
+    | sort -u
+}
+
+sync_recovery_event_registry() {
+  local events_file="$1"
+
+  echo "phase5_regression: sync recovery event registry"
+  local generated_tmp
+  generated_tmp="$(mktemp "/tmp/phase5-recovery-generated.XXXXXX")"
+  local sync_rc=0
+
+  if ! collect_recovery_events_from_specs >"${generated_tmp}"; then
+    echo " - WARN failed to collect recovery event markers from specs"
+    sync_rc=1
+  elif [[ ! -s "${generated_tmp}" ]]; then
+    echo " - WARN no recovery event markers found in PHASE5_SPECS"
+    sync_rc=1
+  else
+    mkdir -p "$(dirname "${events_file}")"
+    {
+      echo "# phase5-regression expected recovery events"
+      echo "# generated from PHASE5_SPECS recovery_event markers"
+      echo ""
+      cat "${generated_tmp}"
+    } > "${events_file}"
+    local generated_count
+    generated_count="$(wc -l < "${generated_tmp}" | tr -d '[:space:]')"
+    echo " - synced file: ${events_file} (${generated_count} events)"
+  fi
+
+  rm -f "${generated_tmp}" >/dev/null 2>&1 || true
+  return "${sync_rc}"
+}
+
 run_with_tee() {
   local log_file="$1"
   shift
@@ -447,6 +487,10 @@ if [[ ! -d "ecm-frontend" ]]; then
 fi
 
 cd ecm-frontend
+
+if [[ "${PHASE5_RECOVERY_REGISTRY_SYNC}" == "1" ]]; then
+  sync_recovery_event_registry "${PHASE5_RECOVERY_EVENTS_FILE}"
+fi
 
 validate_recovery_event_registry "${PHASE5_RECOVERY_EVENTS_FILE}" "${PHASE5_RECOVERY_REGISTRY_STRICT}"
 if [[ "${PHASE5_VALIDATE_RECOVERY_REGISTRY_ONLY}" == "1" ]]; then
