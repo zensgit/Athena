@@ -582,10 +582,10 @@ if [[ -z "${ECM_UI_URL_FULLSTACK_INPUT}" ]]; then
 fi
 
 case "${DELIVERY_GATE_MODE}" in
-  all|mocked|integration|preflight)
+  all|mocked|integration|preflight|integration-preflight)
     ;;
   *)
-    echo "error: unsupported DELIVERY_GATE_MODE=${DELIVERY_GATE_MODE} (expected: all|mocked|integration|preflight)"
+    echo "error: unsupported DELIVERY_GATE_MODE=${DELIVERY_GATE_MODE} (expected: all|mocked|integration|preflight|integration-preflight)"
     exit 1
     ;;
 esac
@@ -594,7 +594,7 @@ overall_rc=0
 fast_layer_failed=0
 integration_layer_failed=0
 
-if [[ "${DELIVERY_GATE_MODE}" == "all" || "${DELIVERY_GATE_MODE}" == "mocked" || "${DELIVERY_GATE_MODE}" == "preflight" ]]; then
+if [[ "${DELIVERY_GATE_MODE}" == "all" || "${DELIVERY_GATE_MODE}" == "mocked" || "${DELIVERY_GATE_MODE}" == "preflight" || "${DELIVERY_GATE_MODE}" == "integration-preflight" ]]; then
   echo ""
   echo "=== Layer 1/2: fast mocked regression ==="
   fast_prereq_ok=1
@@ -604,9 +604,9 @@ if [[ "${DELIVERY_GATE_MODE}" == "all" || "${DELIVERY_GATE_MODE}" == "mocked" ||
     fast_prereq_ok=0
     echo "phase5_phase6_delivery_gate: mocked regression stage skipped (registry preflight failed)"
   fi
-  if [[ "${DELIVERY_GATE_MODE}" == "preflight" ]]; then
+  if [[ "${DELIVERY_GATE_MODE}" == "preflight" || "${DELIVERY_GATE_MODE}" == "integration-preflight" ]]; then
     if [[ "${fast_prereq_ok}" -eq 1 ]]; then
-      echo "phase5_phase6_delivery_gate: mocked regression stage skipped (preflight mode)"
+      echo "phase5_phase6_delivery_gate: mocked regression stage skipped (${DELIVERY_GATE_MODE} mode)"
     fi
   elif [[ "${fast_prereq_ok}" -eq 1 ]] && ! run_stage "fast" "mocked_regression" "mocked regression gate" run_mocked_regression_stage; then
     fast_layer_failed=1
@@ -617,6 +617,11 @@ fi
 run_integration_layer=0
 if [[ "${DELIVERY_GATE_MODE}" == "integration" ]]; then
   run_integration_layer=1
+elif [[ "${DELIVERY_GATE_MODE}" == "integration-preflight" && "${fast_layer_failed}" -eq 0 ]]; then
+  run_integration_layer=1
+elif [[ "${DELIVERY_GATE_MODE}" == "integration-preflight" ]]; then
+  echo ""
+  echo "phase5_phase6_delivery_gate: integration layer skipped (fast preflight layer failed)"
 elif [[ "${DELIVERY_GATE_MODE}" == "all" && "${fast_layer_failed}" -eq 0 ]]; then
   run_integration_layer=1
 elif [[ "${DELIVERY_GATE_MODE}" == "all" ]]; then
