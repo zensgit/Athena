@@ -223,6 +223,8 @@ if (recoverySummary.size === 0) {
 }
 
 const expectedEvents = [
+  'route_fallback_unauth_login_visible',
+  'route_fallback_auth_browse_visible',
   'filebrowser_watchdog_alert_shown',
   'filebrowser_watchdog_retry_recovered',
   'folder_tree_watchdog_alert_shown',

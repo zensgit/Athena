@@ -82,6 +82,7 @@ test('Route fallback: unknown route redirects unauthenticated users to login wit
   await expect(page).toHaveURL(/\/login(?:\?.*)?$/, { timeout: 60_000 });
   await expect(page.getByText('Sign in with your organization account')).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText('The page encountered an unexpected error. You can refresh and try again.')).toHaveCount(0);
+  console.log('recovery_event:route_fallback_unauth_login_visible');
 });
 
 test('Route fallback: unknown route redirects authenticated users to browse root without blank page (mocked)', async ({ page }) => {
@@ -97,4 +98,5 @@ test('Route fallback: unknown route redirects authenticated users to browse root
   await expect(page.getByText('This folder is empty')).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText('Sign in with your organization account')).toHaveCount(0);
   await expect(page.getByText('The page encountered an unexpected error. You can refresh and try again.')).toHaveCount(0);
+  console.log('recovery_event:route_fallback_auth_browse_visible');
 });
