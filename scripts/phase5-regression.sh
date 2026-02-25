@@ -9,12 +9,16 @@ PW_WORKERS="${PW_WORKERS:-1}"
 PW_PROJECT="${PW_PROJECT:-chromium}"
 PHASE5_USE_EXISTING_UI="${PHASE5_USE_EXISTING_UI:-0}"
 PHASE5_RECOVERY_GUARD_STRICT="${PHASE5_RECOVERY_GUARD_STRICT:-0}"
+PHASE5_RECOVERY_EVENTS_FILE="${PHASE5_RECOVERY_EVENTS_FILE:-e2e/recovery-events.expected.txt}"
+PHASE5_RECOVERY_REGISTRY_STRICT="${PHASE5_RECOVERY_REGISTRY_STRICT:-${PHASE5_RECOVERY_GUARD_STRICT}}"
 
 echo "phase5_regression: start"
 echo "ECM_UI_URL=${ECM_UI_URL}"
 echo "PW_PROJECT=${PW_PROJECT} PW_WORKERS=${PW_WORKERS}"
 echo "PHASE5_USE_EXISTING_UI=${PHASE5_USE_EXISTING_UI}"
 echo "PHASE5_RECOVERY_GUARD_STRICT=${PHASE5_RECOVERY_GUARD_STRICT}"
+echo "PHASE5_RECOVERY_EVENTS_FILE=${PHASE5_RECOVERY_EVENTS_FILE}"
+echo "PHASE5_RECOVERY_REGISTRY_STRICT=${PHASE5_RECOVERY_REGISTRY_STRICT}"
 
 strip_ansi_file() {
   local log_file="$1"
@@ -49,11 +53,12 @@ print_playwright_failure_summary() {
 
 print_playwright_timing_summary() {
   local log_file="$1"
-  node - "${log_file}" "${PHASE5_RECOVERY_GUARD_STRICT}" <<'NODE'
+  node - "${log_file}" "${PHASE5_RECOVERY_GUARD_STRICT}" "${PHASE5_RECOVERY_EVENTS_FILE}" <<'NODE'
 const fs = require('fs');
 
 const logFile = process.argv[2];
 const strictMode = process.argv[3] || '0';
+const expectedEventsFile = process.argv[4] || '';
 if (!logFile || !fs.existsSync(logFile)) {
   process.exit(0);
 }
@@ -225,32 +230,25 @@ if (recoverySummary.size === 0) {
   }
 }
 
-const expectedEvents = [
-  'auth_session_transient_retry_success',
-  'auth_session_terminal_redirect_login',
-  'search_recoverable_error_alert_shown',
-  'search_recoverable_retry_success',
-  'app_error_noise_resize_observer_ignored',
-  'app_error_noise_abort_rejection_ignored',
-  'route_fallback_unauth_login_visible',
-  'route_fallback_auth_browse_visible',
-  'filebrowser_watchdog_alert_shown',
-  'filebrowser_watchdog_retry_recovered',
-  'folder_tree_watchdog_alert_shown',
-  'folder_tree_watchdog_retry_recovered',
-  'auth_storage_restricted_browse_recovered',
-  'auth_storage_restricted_login_notice_visible',
-  'auth_boot_watchdog_alert_shown',
-  'auth_boot_watchdog_continue_login',
-  'app_error_overlay_shown',
-  'app_error_back_to_login',
-  'chunk_load_hint_shown',
-  'chunk_load_reload_cache_bust',
-  'startup_fallback_overlay_shown',
-  'startup_fallback_reload_cache_bust',
-  'startup_fallback_back_to_login',
-  'startup_fallback_not_shown_normal',
-];
+if (!expectedEventsFile || !fs.existsSync(expectedEventsFile)) {
+  console.log(`phase5_regression: recovery expected events file not found: ${expectedEventsFile || '(empty)'}`);
+  process.exit(2);
+}
+const expectedEvents = Array.from(
+  new Set(
+    fs.readFileSync(expectedEventsFile, 'utf8')
+      .replace(/\r/g, '')
+      .split('\n')
+      .map((line) => line.replace(/#.*$/, '').trim().toLowerCase())
+      .filter((line) => /^[a-z0-9_]+$/.test(line))
+  )
+);
+if (expectedEvents.length === 0) {
+  console.log(`phase5_regression: recovery expected events file is empty or invalid: ${expectedEventsFile}`);
+  process.exit(2);
+}
+console.log(`phase5_regression: recovery expected events source: ${expectedEventsFile} (${expectedEvents.length})`);
+
 const expectedEventSet = new Set(expectedEvents);
 const missingEvents = expectedEvents.filter((eventName) => !recoverySummary.has(eventName));
 const unexpectedEvents = Array.from(recoverySummary.keys()).filter((eventName) => !expectedEventSet.has(eventName));
@@ -275,6 +273,77 @@ if (strictMode === '1' && guardWarningCount > 0) {
   process.exit(2);
 }
 NODE
+}
+
+validate_recovery_event_registry() {
+  local events_file="$1"
+  local strict_mode="$2"
+
+  echo "phase5_regression: validate recovery event registry"
+  if [[ ! -f "${events_file}" ]]; then
+    echo " - WARN events file not found: ${events_file}"
+    if [[ "${strict_mode}" == "1" ]]; then
+      echo " - strict mode enabled: failing due to missing events file"
+      return 1
+    fi
+    return 0
+  fi
+
+  local expected_tmp
+  local observed_tmp
+  local observed_missing_tmp
+  local expected_stale_tmp
+  expected_tmp="$(mktemp "/tmp/phase5-recovery-expected.XXXXXX")"
+  observed_tmp="$(mktemp "/tmp/phase5-recovery-observed.XXXXXX")"
+  observed_missing_tmp="$(mktemp "/tmp/phase5-recovery-observed-missing.XXXXXX")"
+  expected_stale_tmp="$(mktemp "/tmp/phase5-recovery-expected-stale.XXXXXX")"
+  trap 'rm -f "${expected_tmp}" "${observed_tmp}" "${observed_missing_tmp}" "${expected_stale_tmp}" >/dev/null 2>&1 || true' RETURN
+
+  sed -E 's/#.*$//' "${events_file}" \
+    | awk 'NF { print tolower($0) }' \
+    | sort -u >"${expected_tmp}"
+
+  rg -No "recovery_event:[a-z0-9_]+" "${PHASE5_SPECS[@]}" \
+    | sed -E 's/.*recovery_event:([a-z0-9_]+).*/\1/' \
+    | awk 'NF { print tolower($0) }' \
+    | sort -u >"${observed_tmp}" || true
+
+  local expected_count
+  local observed_count
+  expected_count="$(wc -l < "${expected_tmp}" | tr -d '[:space:]')"
+  observed_count="$(wc -l < "${observed_tmp}" | tr -d '[:space:]')"
+  echo " - expected events: ${expected_count}"
+  echo " - observed markers in specs: ${observed_count}"
+
+  comm -23 "${observed_tmp}" "${expected_tmp}" >"${observed_missing_tmp}"
+  comm -13 "${observed_tmp}" "${expected_tmp}" >"${expected_stale_tmp}"
+
+  local warning_count=0
+  if [[ -s "${observed_missing_tmp}" ]]; then
+    while IFS= read -r event_name; do
+      [[ -z "${event_name}" ]] && continue
+      echo " - WARN marker missing from events file: ${event_name}"
+      warning_count=$((warning_count + 1))
+    done < "${observed_missing_tmp}"
+  fi
+  if [[ -s "${expected_stale_tmp}" ]]; then
+    while IFS= read -r event_name; do
+      [[ -z "${event_name}" ]] && continue
+      echo " - WARN events file entry not found in specs: ${event_name}"
+      warning_count=$((warning_count + 1))
+    done < "${expected_stale_tmp}"
+  fi
+
+  if [[ "${warning_count}" -eq 0 ]]; then
+    echo " - OK registry matches spec markers"
+    return 0
+  fi
+  echo " - WARN registry mismatch count: ${warning_count}"
+  if [[ "${strict_mode}" == "1" ]]; then
+    echo " - strict mode enabled: failing due to registry mismatch"
+    return 1
+  fi
+  return 0
 }
 
 run_with_tee() {
@@ -376,6 +445,8 @@ if [[ ! -d "ecm-frontend" ]]; then
 fi
 
 cd ecm-frontend
+
+validate_recovery_event_registry "${PHASE5_RECOVERY_EVENTS_FILE}" "${PHASE5_RECOVERY_REGISTRY_STRICT}"
 
 echo "phase5_regression: build frontend"
 npm run build
