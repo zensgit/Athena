@@ -582,10 +582,10 @@ if [[ -z "${ECM_UI_URL_FULLSTACK_INPUT}" ]]; then
 fi
 
 case "${DELIVERY_GATE_MODE}" in
-  all|mocked|integration)
+  all|mocked|integration|preflight)
     ;;
   *)
-    echo "error: unsupported DELIVERY_GATE_MODE=${DELIVERY_GATE_MODE} (expected: all|mocked|integration)"
+    echo "error: unsupported DELIVERY_GATE_MODE=${DELIVERY_GATE_MODE} (expected: all|mocked|integration|preflight)"
     exit 1
     ;;
 esac
@@ -594,7 +594,7 @@ overall_rc=0
 fast_layer_failed=0
 integration_layer_failed=0
 
-if [[ "${DELIVERY_GATE_MODE}" == "all" || "${DELIVERY_GATE_MODE}" == "mocked" ]]; then
+if [[ "${DELIVERY_GATE_MODE}" == "all" || "${DELIVERY_GATE_MODE}" == "mocked" || "${DELIVERY_GATE_MODE}" == "preflight" ]]; then
   echo ""
   echo "=== Layer 1/2: fast mocked regression ==="
   fast_prereq_ok=1
@@ -604,7 +604,11 @@ if [[ "${DELIVERY_GATE_MODE}" == "all" || "${DELIVERY_GATE_MODE}" == "mocked" ]]
     fast_prereq_ok=0
     echo "phase5_phase6_delivery_gate: mocked regression stage skipped (registry preflight failed)"
   fi
-  if [[ "${fast_prereq_ok}" -eq 1 ]] && ! run_stage "fast" "mocked_regression" "mocked regression gate" run_mocked_regression_stage; then
+  if [[ "${DELIVERY_GATE_MODE}" == "preflight" ]]; then
+    if [[ "${fast_prereq_ok}" -eq 1 ]]; then
+      echo "phase5_phase6_delivery_gate: mocked regression stage skipped (preflight mode)"
+    fi
+  elif [[ "${fast_prereq_ok}" -eq 1 ]] && ! run_stage "fast" "mocked_regression" "mocked regression gate" run_mocked_regression_stage; then
     fast_layer_failed=1
     overall_rc=1
   fi
