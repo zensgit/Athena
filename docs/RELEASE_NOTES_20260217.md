@@ -994,6 +994,19 @@
   - `bash -n scripts/phase5-phase6-delivery-gate.sh` -> PASS
   - `PHASE5_RECOVERY_GUARD_STRICT=1 PHASE5_RECOVERY_REGISTRY_STRICT=1 DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
 
+### 69) Recovery registry 同步生成模式（Phase123）
+- `scripts/phase5-regression.sh`
+  - 新增 `PHASE5_RECOVERY_REGISTRY_SYNC`（默认 `0`）：
+    - `1` 时从 `PHASE5_SPECS` 中扫描 `recovery_event:*` 并重写 `PHASE5_RECOVERY_EVENTS_FILE`。
+  - 输出同步摘要（文件路径 + 事件数），随后执行既有 registry 校验。
+- `ecm-frontend/e2e/recovery-events.expected.txt`
+  - 使用生成头注释 + 排序后的 canonical 列表。
+- 交付影响：
+  - 新增 recovery marker 后可一键重建清单，减少手工维护遗漏。
+- 验证：
+  - `PHASE5_RECOVERY_REGISTRY_SYNC=1 PHASE5_VALIDATE_RECOVERY_REGISTRY_ONLY=1 bash scripts/phase5-regression.sh` -> PASS
+  - `PHASE5_RECOVERY_GUARD_STRICT=1 PHASE5_RECOVERY_REGISTRY_STRICT=1 DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -1149,3 +1162,5 @@
 - `docs/PHASE121_MOCKED_REGISTRY_PREFLIGHT_STAGE_VERIFICATION_20260225.md`
 - `docs/PHASE122_GATE_REGISTRY_MISMATCH_HINTS_DEV_20260225.md`
 - `docs/PHASE122_GATE_REGISTRY_MISMATCH_HINTS_VERIFICATION_20260225.md`
+- `docs/PHASE123_RECOVERY_REGISTRY_SYNC_MODE_DEV_20260225.md`
+- `docs/PHASE123_RECOVERY_REGISTRY_SYNC_MODE_VERIFICATION_20260225.md`

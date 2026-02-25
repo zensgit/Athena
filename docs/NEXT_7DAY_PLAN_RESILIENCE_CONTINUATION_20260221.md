@@ -231,6 +231,11 @@
   - Deliverables:
     - `docs/PHASE122_GATE_REGISTRY_MISMATCH_HINTS_DEV_20260225.md`
     - `docs/PHASE122_GATE_REGISTRY_MISMATCH_HINTS_VERIFICATION_20260225.md`
+- Recovery registry sync mode:
+  - add `phase5-regression` sync mode to regenerate `recovery-events.expected.txt` from `PHASE5_SPECS` marker scan.
+  - Deliverables:
+    - `docs/PHASE123_RECOVERY_REGISTRY_SYNC_MODE_DEV_20260225.md`
+    - `docs/PHASE123_RECOVERY_REGISTRY_SYNC_MODE_VERIFICATION_20260225.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
