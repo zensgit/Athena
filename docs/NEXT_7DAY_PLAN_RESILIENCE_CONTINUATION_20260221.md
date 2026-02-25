@@ -251,6 +251,11 @@
   - Deliverables:
     - `docs/PHASE126_GATE_PREFLIGHT_STRICT_IDEMPOTENT_PATH_DEV_20260225.md`
     - `docs/PHASE126_GATE_PREFLIGHT_STRICT_IDEMPOTENT_PATH_VERIFICATION_20260225.md`
+- Verify-sync normalization + strict propagation:
+  - normalize verify-only mode to auto-enable sync and propagate strict mode through helper preflight path.
+  - Deliverables:
+    - `docs/PHASE127_VERIFY_SYNC_NORMALIZATION_AND_STRICT_PROPAGATION_DEV_20260225.md`
+    - `docs/PHASE127_VERIFY_SYNC_NORMALIZATION_AND_STRICT_PROPAGATION_VERIFICATION_20260225.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
