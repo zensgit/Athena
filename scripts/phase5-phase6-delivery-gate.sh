@@ -172,6 +172,7 @@ print_startup_failure_hints() {
   local hint_startup_sla_drift_warn=0
   local hint_recovery_guard_warn=0
   local recovery_missing_events=()
+  local recovery_unexpected_events=()
   local record
   for record in "${FAILED_STAGE_RECORDS[@]}"; do
     local record_layer
@@ -206,6 +207,15 @@ print_startup_failure_hints() {
         strip_ansi_file "${record_log}" \
           | sed -nE 's/^[[:space:]]*-[[:space:]]*WARN missing event:[[:space:]]*([a-z0-9_]+).*/\1/p'
       )
+      local unexpected_event
+      while IFS= read -r unexpected_event; do
+        if [[ -n "${unexpected_event}" ]]; then
+          recovery_unexpected_events+=("${unexpected_event}")
+        fi
+      done < <(
+        strip_ansi_file "${record_log}" \
+          | sed -nE 's/^[[:space:]]*-[[:space:]]*WARN unexpected event:[[:space:]]*([a-z0-9_]+).*/\1/p'
+      )
     fi
   done
 
@@ -232,6 +242,7 @@ print_startup_failure_hints() {
   fi
   if [[ "${hint_recovery_guard_warn}" -eq 1 ]]; then
     local missing_events_line=""
+    local unexpected_events_line=""
     if [[ "${#recovery_missing_events[@]}" -gt 0 ]]; then
       missing_events_line="$(
         printf '%s\n' "${recovery_missing_events[@]}" \
@@ -246,9 +257,27 @@ print_startup_failure_hints() {
             }'
       )"
     fi
+    if [[ "${#recovery_unexpected_events[@]}" -gt 0 ]]; then
+      unexpected_events_line="$(
+        printf '%s\n' "${recovery_unexpected_events[@]}" \
+          | awk 'NF && !seen[$0]++ {
+              events[++count] = $0
+            }
+            END {
+              limit = count < 8 ? count : 8
+              for (i = 1; i <= limit; i++) {
+                printf "%s%s", (i > 1 ? ", " : ""), events[i]
+              }
+            }'
+      )"
+    fi
 
-    if [[ -n "${missing_events_line}" ]]; then
+    if [[ -n "${missing_events_line}" && -n "${unexpected_events_line}" ]]; then
+      echo " - Recovery guard coverage appears incomplete. Missing events: ${missing_events_line}. Unexpected events: ${unexpected_events_line}."
+    elif [[ -n "${missing_events_line}" ]]; then
       echo " - Recovery guard coverage appears incomplete. Missing events: ${missing_events_line}."
+    elif [[ -n "${unexpected_events_line}" ]]; then
+      echo " - Recovery guard coverage appears incomplete. Unexpected events: ${unexpected_events_line}."
     else
       echo " - Recovery guard coverage appears incomplete. Inspect 'phase5_regression: recovery guard status' for missing startup/error events."
     fi
