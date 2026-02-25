@@ -266,6 +266,11 @@
   - Deliverables:
     - `docs/PHASE129_GATE_INTEGRATION_PREFLIGHT_MODE_DEV_20260225.md`
     - `docs/PHASE129_GATE_INTEGRATION_PREFLIGHT_MODE_VERIFICATION_20260225.md`
+- Gate usage/help and execution-plan preview:
+  - add `--help`, `--mode=<mode>`, and `--plan` with execution-plan output for operator-facing clarity.
+  - Deliverables:
+    - `docs/PHASE130_GATE_USAGE_AND_EXECUTION_PLAN_DEV_20260225.md`
+    - `docs/PHASE130_GATE_USAGE_AND_EXECUTION_PLAN_VERIFICATION_20260225.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
