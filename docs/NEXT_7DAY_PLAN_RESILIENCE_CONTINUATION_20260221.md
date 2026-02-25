@@ -241,6 +241,11 @@
   - Deliverables:
     - `docs/PHASE124_GATE_RECOVERY_REGISTRY_SYNC_AUTOMATION_DEV_20260225.md`
     - `docs/PHASE124_GATE_RECOVERY_REGISTRY_SYNC_AUTOMATION_VERIFICATION_20260225.md`
+- Gate registry determinism + CI defaults:
+  - enable CI default registry sync, emit deterministic DIFF lines, and add sync-helper idempotence verification.
+  - Deliverables:
+    - `docs/PHASE125_GATE_REGISTRY_DETERMINISM_AND_CI_DEFAULTS_DEV_20260225.md`
+    - `docs/PHASE125_GATE_REGISTRY_DETERMINISM_AND_CI_DEFAULTS_VERIFICATION_20260225.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.

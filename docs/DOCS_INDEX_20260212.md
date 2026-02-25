@@ -88,6 +88,8 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - Verification: `docs/PHASE123_RECOVERY_REGISTRY_SYNC_MODE_VERIFICATION_20260225.md`
   - Design: `docs/PHASE124_GATE_RECOVERY_REGISTRY_SYNC_AUTOMATION_DEV_20260225.md`
   - Verification: `docs/PHASE124_GATE_RECOVERY_REGISTRY_SYNC_AUTOMATION_VERIFICATION_20260225.md`
+  - Design: `docs/PHASE125_GATE_REGISTRY_DETERMINISM_AND_CI_DEFAULTS_DEV_20260225.md`
+  - Verification: `docs/PHASE125_GATE_REGISTRY_DETERMINISM_AND_CI_DEFAULTS_VERIFICATION_20260225.md`
 - Auth/Search recovery 7-day release summary: `docs/PHASE73_AUTH_SEARCH_RECOVERY_RELEASE_SUMMARY_20260219.md`
 - Auth/Search recovery verification rollup: `docs/PHASE73_AUTH_SEARCH_RECOVERY_VERIFICATION_ROLLUP_20260219.md`
 - Phase 5/6 one-command delivery gate:
