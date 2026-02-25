@@ -291,6 +291,14 @@ run_mocked_regression_stage() {
   bash scripts/phase5-regression.sh
 }
 
+run_mocked_recovery_registry_preflight_stage() {
+  ECM_UI_URL="${ECM_UI_URL_MOCKED}" \
+  PW_PROJECT="${PW_PROJECT}" \
+  PW_WORKERS="${PW_WORKERS}" \
+  PHASE5_VALIDATE_RECOVERY_REGISTRY_ONLY=1 \
+  bash scripts/phase5-regression.sh
+}
+
 run_fullstack_target_preflight_stage() {
   ALLOW_STATIC=0 scripts/check-e2e-target.sh "${ECM_UI_URL_FULLSTACK}"
 }
@@ -463,7 +471,14 @@ integration_layer_failed=0
 if [[ "${DELIVERY_GATE_MODE}" == "all" || "${DELIVERY_GATE_MODE}" == "mocked" ]]; then
   echo ""
   echo "=== Layer 1/2: fast mocked regression ==="
-  if ! run_stage "fast" "mocked_regression" "mocked regression gate" run_mocked_regression_stage; then
+  fast_prereq_ok=1
+  if ! run_stage "fast" "mocked_registry_preflight" "mocked recovery registry preflight" run_mocked_recovery_registry_preflight_stage; then
+    fast_layer_failed=1
+    overall_rc=1
+    fast_prereq_ok=0
+    echo "phase5_phase6_delivery_gate: mocked regression stage skipped (registry preflight failed)"
+  fi
+  if [[ "${fast_prereq_ok}" -eq 1 ]] && ! run_stage "fast" "mocked_regression" "mocked regression gate" run_mocked_regression_stage; then
     fast_layer_failed=1
     overall_rc=1
   fi
