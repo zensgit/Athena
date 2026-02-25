@@ -246,6 +246,11 @@
   - Deliverables:
     - `docs/PHASE125_GATE_REGISTRY_DETERMINISM_AND_CI_DEFAULTS_DEV_20260225.md`
     - `docs/PHASE125_GATE_REGISTRY_DETERMINISM_AND_CI_DEFAULTS_VERIFICATION_20260225.md`
+- Gate preflight strict/idempotent routing:
+  - add CI defaults for strict/idempotent preflight controls and route sync-enabled preflight through deterministic helper path.
+  - Deliverables:
+    - `docs/PHASE126_GATE_PREFLIGHT_STRICT_IDEMPOTENT_PATH_DEV_20260225.md`
+    - `docs/PHASE126_GATE_PREFLIGHT_STRICT_IDEMPOTENT_PATH_VERIFICATION_20260225.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
