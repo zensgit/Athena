@@ -169,6 +169,7 @@ test('Auth session recovery: transient 401 retries once and stays in search resu
   await expect(page.getByText('Your session expired. Please sign in again.')).toHaveCount(0);
   await expect.poll(() => queryAttemptCount, { timeout: 60_000 }).toBe(2);
   await expect.poll(() => query401Count, { timeout: 60_000 }).toBe(1);
+  console.log('recovery_event:auth_session_transient_retry_success');
 });
 
 test('Auth session recovery: unrecoverable 401 redirects to login with session-expired guidance', async ({ page }) => {
@@ -201,4 +202,5 @@ test('Auth session recovery: unrecoverable 401 redirects to login with session-e
   await page.waitForURL(/\/login(\?.*)?$/, { timeout: 60_000 });
   await expect(page.getByText('Your session expired. Please sign in again.')).toBeVisible({ timeout: 60_000 });
   await expect.poll(() => query401Count, { timeout: 60_000 }).toBe(2);
+  console.log('recovery_event:auth_session_terminal_redirect_login');
 });

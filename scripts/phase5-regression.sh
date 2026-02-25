@@ -223,6 +223,8 @@ if (recoverySummary.size === 0) {
 }
 
 const expectedEvents = [
+  'auth_session_transient_retry_success',
+  'auth_session_terminal_redirect_login',
   'route_fallback_unauth_login_visible',
   'route_fallback_auth_browse_visible',
   'filebrowser_watchdog_alert_shown',
