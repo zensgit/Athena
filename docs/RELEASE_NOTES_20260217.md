@@ -942,6 +942,26 @@
   - `bash -n scripts/phase5-phase6-delivery-gate.sh` -> PASS
   - `PHASE5_RECOVERY_GUARD_STRICT=1 DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
 
+### 66) Recovery expected-events 外置清单 + 清单一致性校验（Phase120）
+- 新增清单文件：
+  - `ecm-frontend/e2e/recovery-events.expected.txt`
+  - 统一维护 mocked regression recovery guard 的 expected event 集合。
+- `scripts/phase5-regression.sh`
+  - 新增参数：
+    - `PHASE5_RECOVERY_EVENTS_FILE`（默认 `e2e/recovery-events.expected.txt`）
+    - `PHASE5_RECOVERY_REGISTRY_STRICT`（默认跟随 `PHASE5_RECOVERY_GUARD_STRICT`）
+  - 在回归执行前新增清单一致性检查：
+    - 比对 `PHASE5_SPECS` 中观测到的 `recovery_event:*` 与清单内容
+    - 输出 mismatch 明细（marker missing from file / file entry not found in specs）
+    - strict 模式下可 fail-fast。
+  - recovery guard expected set 改为从清单文件加载，并输出实际来源与条目数。
+- 交付影响：
+  - recovery guard 维护从脚本硬编码迁移为文件驱动，减少后续事件扩展时的遗漏风险。
+- 验证：
+  - `bash -n scripts/phase5-regression.sh` -> PASS
+  - `PHASE5_RECOVERY_GUARD_STRICT=1 PHASE5_RECOVERY_REGISTRY_STRICT=1 bash scripts/phase5-regression.sh` -> PASS (`30 passed`)
+  - `PHASE5_RECOVERY_GUARD_STRICT=1 PHASE5_RECOVERY_REGISTRY_STRICT=1 DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -1091,3 +1111,5 @@
 - `docs/PHASE118_RECOVERY_GUARD_STRICT_MODE_VERIFICATION_20260225.md`
 - `docs/PHASE119_GATE_RECOVERY_HINT_UNEXPECTED_EVENTS_DEV_20260225.md`
 - `docs/PHASE119_GATE_RECOVERY_HINT_UNEXPECTED_EVENTS_VERIFICATION_20260225.md`
+- `docs/PHASE120_RECOVERY_EVENT_REGISTRY_EXTERNALIZATION_DEV_20260225.md`
+- `docs/PHASE120_RECOVERY_EVENT_REGISTRY_EXTERNALIZATION_VERIFICATION_20260225.md`

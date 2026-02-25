@@ -216,6 +216,11 @@
   - Deliverables:
     - `docs/PHASE119_GATE_RECOVERY_HINT_UNEXPECTED_EVENTS_DEV_20260225.md`
     - `docs/PHASE119_GATE_RECOVERY_HINT_UNEXPECTED_EVENTS_VERIFICATION_20260225.md`
+- Recovery event registry externalization:
+  - externalize expected recovery events to registry file and validate registry/spec marker parity before regression run.
+  - Deliverables:
+    - `docs/PHASE120_RECOVERY_EVENT_REGISTRY_EXTERNALIZATION_DEV_20260225.md`
+    - `docs/PHASE120_RECOVERY_EVENT_REGISTRY_EXTERNALIZATION_VERIFICATION_20260225.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
