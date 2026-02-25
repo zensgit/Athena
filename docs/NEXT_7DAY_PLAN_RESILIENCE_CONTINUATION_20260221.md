@@ -211,6 +211,11 @@
   - Deliverables:
     - `docs/PHASE118_RECOVERY_GUARD_STRICT_MODE_DEV_20260225.md`
     - `docs/PHASE118_RECOVERY_GUARD_STRICT_MODE_VERIFICATION_20260225.md`
+- Gate recovery hint unexpected-event detail:
+  - extend delivery gate startup hints to surface unexpected recovery-event names in addition to missing-event names.
+  - Deliverables:
+    - `docs/PHASE119_GATE_RECOVERY_HINT_UNEXPECTED_EVENTS_DEV_20260225.md`
+    - `docs/PHASE119_GATE_RECOVERY_HINT_UNEXPECTED_EVENTS_VERIFICATION_20260225.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.

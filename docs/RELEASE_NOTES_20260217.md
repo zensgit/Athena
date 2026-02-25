@@ -927,6 +927,21 @@
   - `PHASE5_RECOVERY_GUARD_STRICT=1 bash scripts/phase5-regression.sh` -> PASS (`30 passed`，`recovery guard warning count: 0`)
   - `PHASE5_RECOVERY_GUARD_STRICT=1 DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
 
+### 65) Delivery gate recovery 提示扩展 unexpected-event 明细（Phase119）
+- `scripts/phase5-phase6-delivery-gate.sh`
+  - `print_startup_failure_hints` 扩展：
+    - 继续解析并提示 missing events
+    - 新增解析并提示 unexpected events
+  - 提示文案支持三种组合：
+    - Missing + Unexpected
+    - Missing only
+    - Unexpected only
+- 交付影响：
+  - 当 strict recovery guard 失败时，交付门禁能直接提供更完整的异常事件诊断线索。
+- 验证：
+  - `bash -n scripts/phase5-phase6-delivery-gate.sh` -> PASS
+  - `PHASE5_RECOVERY_GUARD_STRICT=1 DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -1074,3 +1089,5 @@
 - `docs/PHASE117_APP_ERROR_NOISE_EVENT_COVERAGE_VERIFICATION_20260225.md`
 - `docs/PHASE118_RECOVERY_GUARD_STRICT_MODE_DEV_20260225.md`
 - `docs/PHASE118_RECOVERY_GUARD_STRICT_MODE_VERIFICATION_20260225.md`
+- `docs/PHASE119_GATE_RECOVERY_HINT_UNEXPECTED_EVENTS_DEV_20260225.md`
+- `docs/PHASE119_GATE_RECOVERY_HINT_UNEXPECTED_EVENTS_VERIFICATION_20260225.md`
