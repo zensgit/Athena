@@ -962,6 +962,23 @@
   - `PHASE5_RECOVERY_GUARD_STRICT=1 PHASE5_RECOVERY_REGISTRY_STRICT=1 bash scripts/phase5-regression.sh` -> PASS (`30 passed`)
   - `PHASE5_RECOVERY_GUARD_STRICT=1 PHASE5_RECOVERY_REGISTRY_STRICT=1 DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
 
+### 67) Delivery gate 增加 mocked registry 快速预检阶段（Phase121）
+- `scripts/phase5-regression.sh`
+  - 新增 `PHASE5_VALIDATE_RECOVERY_REGISTRY_ONLY`（默认 `0`）：
+    - `1` 时仅执行 recovery registry 校验并提前返回，不跑 build/Playwright。
+- `scripts/phase5-phase6-delivery-gate.sh`
+  - fast 层新增 stage：
+    - `mocked recovery registry preflight`
+  - 顺序调整为：
+    1. registry preflight
+    2. mocked regression gate
+  - preflight 失败时，明确跳过 mocked regression 并快速失败。
+- 交付影响：
+  - registry 漂移场景将以更低成本、更明确阶段定位失败原因。
+- 验证：
+  - `PHASE5_RECOVERY_GUARD_STRICT=1 PHASE5_RECOVERY_REGISTRY_STRICT=1 PHASE5_VALIDATE_RECOVERY_REGISTRY_ONLY=1 bash scripts/phase5-regression.sh` -> PASS
+  - `PHASE5_RECOVERY_GUARD_STRICT=1 PHASE5_RECOVERY_REGISTRY_STRICT=1 DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS（fast 层含 preflight + mocked 两个 PASS）
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -1113,3 +1130,5 @@
 - `docs/PHASE119_GATE_RECOVERY_HINT_UNEXPECTED_EVENTS_VERIFICATION_20260225.md`
 - `docs/PHASE120_RECOVERY_EVENT_REGISTRY_EXTERNALIZATION_DEV_20260225.md`
 - `docs/PHASE120_RECOVERY_EVENT_REGISTRY_EXTERNALIZATION_VERIFICATION_20260225.md`
+- `docs/PHASE121_MOCKED_REGISTRY_PREFLIGHT_STAGE_DEV_20260225.md`
+- `docs/PHASE121_MOCKED_REGISTRY_PREFLIGHT_STAGE_VERIFICATION_20260225.md`

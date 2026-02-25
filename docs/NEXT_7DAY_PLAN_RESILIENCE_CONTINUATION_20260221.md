@@ -221,6 +221,11 @@
   - Deliverables:
     - `docs/PHASE120_RECOVERY_EVENT_REGISTRY_EXTERNALIZATION_DEV_20260225.md`
     - `docs/PHASE120_RECOVERY_EVENT_REGISTRY_EXTERNALIZATION_VERIFICATION_20260225.md`
+- Mocked registry preflight stage:
+  - add `phase5-regression` registry-only mode and insert fast preflight stage in delivery gate before mocked regression.
+  - Deliverables:
+    - `docs/PHASE121_MOCKED_REGISTRY_PREFLIGHT_STAGE_DEV_20260225.md`
+    - `docs/PHASE121_MOCKED_REGISTRY_PREFLIGHT_STAGE_VERIFICATION_20260225.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
