@@ -914,6 +914,19 @@
   - `bash scripts/phase5-regression.sh` -> PASS (`30 passed`，recovery events 包含 app_error_noise 两项，`recovery guard warning count: 0`)
   - `DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
 
+### 64) Recovery guard strict 模式与 unexpected-event 检测（Phase118）
+- `scripts/phase5-regression.sh`
+  - 新增 `PHASE5_RECOVERY_GUARD_STRICT`（默认 `0`）：
+    - `0`: 保持兼容，仅输出告警
+    - `1`: guard 有告警时非零退出（严格模式）
+  - recovery guard 新增 unexpected-event 检测（观测到但不在 expected 列表中的事件）。
+  - `recovery guard warning count` 现在聚合 missing + unexpected 两类告警。
+- 交付影响：
+  - 在不破坏默认行为前提下，支持按需开启更严格的 telemetry guard 约束。
+- 验证：
+  - `PHASE5_RECOVERY_GUARD_STRICT=1 bash scripts/phase5-regression.sh` -> PASS (`30 passed`，`recovery guard warning count: 0`)
+  - `PHASE5_RECOVERY_GUARD_STRICT=1 DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -1059,3 +1072,5 @@
 - `docs/PHASE116_SEARCH_RECOVERABLE_EVENT_COVERAGE_VERIFICATION_20260225.md`
 - `docs/PHASE117_APP_ERROR_NOISE_EVENT_COVERAGE_DEV_20260225.md`
 - `docs/PHASE117_APP_ERROR_NOISE_EVENT_COVERAGE_VERIFICATION_20260225.md`
+- `docs/PHASE118_RECOVERY_GUARD_STRICT_MODE_DEV_20260225.md`
+- `docs/PHASE118_RECOVERY_GUARD_STRICT_MODE_VERIFICATION_20260225.md`

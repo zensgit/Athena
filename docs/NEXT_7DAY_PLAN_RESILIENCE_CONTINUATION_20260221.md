@@ -205,6 +205,12 @@
   - Deliverables:
     - `docs/PHASE117_APP_ERROR_NOISE_EVENT_COVERAGE_DEV_20260225.md`
     - `docs/PHASE117_APP_ERROR_NOISE_EVENT_COVERAGE_VERIFICATION_20260225.md`
+- Recovery guard strict mode:
+  - add optional strict guard switch and unexpected-event detection in `phase5-regression` recovery summary.
+  - validate strict mode in standalone regression and mocked delivery gate.
+  - Deliverables:
+    - `docs/PHASE118_RECOVERY_GUARD_STRICT_MODE_DEV_20260225.md`
+    - `docs/PHASE118_RECOVERY_GUARD_STRICT_MODE_VERIFICATION_20260225.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
