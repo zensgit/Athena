@@ -193,6 +193,12 @@
   - Deliverables:
     - `docs/PHASE115_AUTH_SESSION_RECOVERY_EVENT_COVERAGE_DEV_20260225.md`
     - `docs/PHASE115_AUTH_SESSION_RECOVERY_EVENT_COVERAGE_VERIFICATION_20260225.md`
+- Search recoverable event coverage:
+  - emit recoverable search error alert marker and retry-success marker for temporary backend failure path.
+  - include search recovery markers in `phase5-regression` recovery guard expected set.
+  - Deliverables:
+    - `docs/PHASE116_SEARCH_RECOVERABLE_EVENT_COVERAGE_DEV_20260225.md`
+    - `docs/PHASE116_SEARCH_RECOVERABLE_EVENT_COVERAGE_VERIFICATION_20260225.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.

@@ -884,6 +884,21 @@
   - `bash scripts/phase5-regression.sh` -> PASS (`30 passed`，recovery events 包含 auth_session 两项，`recovery guard warning count: 0`)
   - `DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
 
+### 62) Search recoverable 恢复事件纳入 recovery guard（Phase116）
+- `ecm-frontend/e2e/search-suggestions-save-search.mock.spec.ts`
+  - 在 temporary failure recovery 场景新增结构化 marker：
+    - `recovery_event:search_recoverable_error_alert_shown`
+    - `recovery_event:search_recoverable_retry_success`
+- `scripts/phase5-regression.sh`
+  - recovery guard 期望事件集合新增：
+    - `search_recoverable_error_alert_shown`
+    - `search_recoverable_retry_success`
+- 交付影响：
+  - recovery telemetry 覆盖补齐搜索可恢复错误从告警到重试成功的闭环路径。
+- 验证：
+  - `bash scripts/phase5-regression.sh` -> PASS (`30 passed`，recovery events 包含 search_recoverable 两项，`recovery guard warning count: 0`)
+  - `DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -1025,3 +1040,5 @@
 - `docs/PHASE114_ROUTE_FALLBACK_RECOVERY_EVENT_COVERAGE_VERIFICATION_20260225.md`
 - `docs/PHASE115_AUTH_SESSION_RECOVERY_EVENT_COVERAGE_DEV_20260225.md`
 - `docs/PHASE115_AUTH_SESSION_RECOVERY_EVENT_COVERAGE_VERIFICATION_20260225.md`
+- `docs/PHASE116_SEARCH_RECOVERABLE_EVENT_COVERAGE_DEV_20260225.md`
+- `docs/PHASE116_SEARCH_RECOVERABLE_EVENT_COVERAGE_VERIFICATION_20260225.md`
