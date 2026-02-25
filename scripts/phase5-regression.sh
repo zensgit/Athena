@@ -8,11 +8,13 @@ ECM_UI_URL="${ECM_UI_URL:-http://localhost:5500}"
 PW_WORKERS="${PW_WORKERS:-1}"
 PW_PROJECT="${PW_PROJECT:-chromium}"
 PHASE5_USE_EXISTING_UI="${PHASE5_USE_EXISTING_UI:-0}"
+PHASE5_RECOVERY_GUARD_STRICT="${PHASE5_RECOVERY_GUARD_STRICT:-0}"
 
 echo "phase5_regression: start"
 echo "ECM_UI_URL=${ECM_UI_URL}"
 echo "PW_PROJECT=${PW_PROJECT} PW_WORKERS=${PW_WORKERS}"
 echo "PHASE5_USE_EXISTING_UI=${PHASE5_USE_EXISTING_UI}"
+echo "PHASE5_RECOVERY_GUARD_STRICT=${PHASE5_RECOVERY_GUARD_STRICT}"
 
 strip_ansi_file() {
   local log_file="$1"
@@ -47,10 +49,11 @@ print_playwright_failure_summary() {
 
 print_playwright_timing_summary() {
   local log_file="$1"
-  node - "${log_file}" <<'NODE'
+  node - "${log_file}" "${PHASE5_RECOVERY_GUARD_STRICT}" <<'NODE'
 const fs = require('fs');
 
 const logFile = process.argv[2];
+const strictMode = process.argv[3] || '0';
 if (!logFile || !fs.existsSync(logFile)) {
   process.exit(0);
 }
@@ -248,7 +251,9 @@ const expectedEvents = [
   'startup_fallback_back_to_login',
   'startup_fallback_not_shown_normal',
 ];
+const expectedEventSet = new Set(expectedEvents);
 const missingEvents = expectedEvents.filter((eventName) => !recoverySummary.has(eventName));
+const unexpectedEvents = Array.from(recoverySummary.keys()).filter((eventName) => !expectedEventSet.has(eventName));
 
 console.log('phase5_regression: recovery guard status');
 if (missingEvents.length === 0) {
@@ -258,7 +263,17 @@ if (missingEvents.length === 0) {
     console.log(` - WARN missing event: ${missing}`);
   }
 }
-console.log(`phase5_regression: recovery guard warning count: ${missingEvents.length}`);
+if (unexpectedEvents.length > 0) {
+  for (const unexpected of unexpectedEvents.sort((left, right) => left.localeCompare(right))) {
+    console.log(` - WARN unexpected event: ${unexpected}`);
+  }
+}
+const guardWarningCount = missingEvents.length + unexpectedEvents.length;
+console.log(`phase5_regression: recovery guard warning count: ${guardWarningCount}`);
+if (strictMode === '1' && guardWarningCount > 0) {
+  console.log('phase5_regression: strict recovery guard failed');
+  process.exit(2);
+}
 NODE
 }
 
