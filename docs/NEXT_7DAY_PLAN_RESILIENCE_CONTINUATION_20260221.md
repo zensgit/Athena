@@ -256,6 +256,11 @@
   - Deliverables:
     - `docs/PHASE127_VERIFY_SYNC_NORMALIZATION_AND_STRICT_PROPAGATION_DEV_20260225.md`
     - `docs/PHASE127_VERIFY_SYNC_NORMALIZATION_AND_STRICT_PROPAGATION_VERIFICATION_20260225.md`
+- Gate preflight-only mode:
+  - add `DELIVERY_GATE_MODE=preflight` to run only mocked recovery-registry preflight and skip mocked regression/integration layers.
+  - Deliverables:
+    - `docs/PHASE128_GATE_PREFLIGHT_ONLY_MODE_DEV_20260225.md`
+    - `docs/PHASE128_GATE_PREFLIGHT_ONLY_MODE_VERIFICATION_20260225.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
