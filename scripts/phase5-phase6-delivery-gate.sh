@@ -17,7 +17,16 @@ PW_PROJECT="${PW_PROJECT:-chromium}"
 PW_WORKERS="${PW_WORKERS:-1}"
 ECM_SYNC_PREBUILT_UI="${ECM_SYNC_PREBUILT_UI:-auto}"
 DELIVERY_GATE_MODE="${DELIVERY_GATE_MODE:-all}"
-DELIVERY_GATE_RECOVERY_REGISTRY_SYNC="${DELIVERY_GATE_RECOVERY_REGISTRY_SYNC:-0}"
+if [[ -n "${DELIVERY_GATE_RECOVERY_REGISTRY_SYNC:-}" ]]; then
+  DELIVERY_GATE_RECOVERY_REGISTRY_SYNC="${DELIVERY_GATE_RECOVERY_REGISTRY_SYNC}"
+  DELIVERY_GATE_RECOVERY_REGISTRY_SYNC_SOURCE="env"
+elif [[ -n "${CI:-}" ]]; then
+  DELIVERY_GATE_RECOVERY_REGISTRY_SYNC="1"
+  DELIVERY_GATE_RECOVERY_REGISTRY_SYNC_SOURCE="ci_default"
+else
+  DELIVERY_GATE_RECOVERY_REGISTRY_SYNC="0"
+  DELIVERY_GATE_RECOVERY_REGISTRY_SYNC_SOURCE="local_default"
+fi
 if [[ -n "${ECM_FULLSTACK_ALLOW_STATIC:-}" ]]; then
   ECM_FULLSTACK_ALLOW_STATIC="${ECM_FULLSTACK_ALLOW_STATIC}"
 elif [[ -n "${CI:-}" ]]; then
@@ -130,6 +139,19 @@ run_stage() {
   return "${stage_rc}"
 }
 
+summarize_unique_events() {
+  printf '%s\n' "$@" \
+    | awk 'NF && !seen[$0]++ {
+        events[++count] = $0
+      }
+      END {
+        limit = count < 8 ? count : 8
+        for (i = 1; i <= limit; i++) {
+          printf "%s%s", (i > 1 ? ", " : ""), events[i]
+        }
+      }'
+}
+
 print_layer_summary() {
   local layer="$1"
   local layer_has_stage=0
@@ -223,6 +245,34 @@ print_startup_failure_hints() {
     fi
     if strip_ansi_file "${record_log}" | rg -qi "registry mismatch count: [1-9][0-9]*|strict mode enabled: failing due to registry mismatch"; then
       hint_recovery_registry_warn=1
+      local missing_csv_line
+      while IFS= read -r missing_csv_line; do
+        [[ -z "${missing_csv_line}" || "${missing_csv_line}" == "none" ]] && continue
+        IFS=',' read -r -a missing_csv_items <<< "${missing_csv_line}"
+        local missing_csv_event
+        for missing_csv_event in "${missing_csv_items[@]}"; do
+          missing_csv_event="$(printf '%s' "${missing_csv_event}" | tr -d '[:space:]')"
+          [[ -z "${missing_csv_event}" || "${missing_csv_event}" == "none" ]] && continue
+          registry_missing_events+=("${missing_csv_event}")
+        done
+      done < <(
+        strip_ansi_file "${record_log}" \
+          | sed -nE 's/^[[:space:]]*-[[:space:]]*DIFF missing_from_events_file_csv:[[:space:]]*([a-z0-9_,]+|none).*/\1/p'
+      )
+      local stale_csv_line
+      while IFS= read -r stale_csv_line; do
+        [[ -z "${stale_csv_line}" || "${stale_csv_line}" == "none" ]] && continue
+        IFS=',' read -r -a stale_csv_items <<< "${stale_csv_line}"
+        local stale_csv_event
+        for stale_csv_event in "${stale_csv_items[@]}"; do
+          stale_csv_event="$(printf '%s' "${stale_csv_event}" | tr -d '[:space:]')"
+          [[ -z "${stale_csv_event}" || "${stale_csv_event}" == "none" ]] && continue
+          registry_stale_events+=("${stale_csv_event}")
+        done
+      done < <(
+        strip_ansi_file "${record_log}" \
+          | sed -nE 's/^[[:space:]]*-[[:space:]]*DIFF stale_events_file_entries_csv:[[:space:]]*([a-z0-9_,]+|none).*/\1/p'
+      )
       local missing_in_file_event
       while IFS= read -r missing_in_file_event; do
         if [[ -n "${missing_in_file_event}" ]]; then
@@ -269,32 +319,10 @@ print_startup_failure_hints() {
     local missing_events_line=""
     local unexpected_events_line=""
     if [[ "${#recovery_missing_events[@]}" -gt 0 ]]; then
-      missing_events_line="$(
-        printf '%s\n' "${recovery_missing_events[@]}" \
-          | awk 'NF && !seen[$0]++ {
-              events[++count] = $0
-            }
-            END {
-              limit = count < 8 ? count : 8
-              for (i = 1; i <= limit; i++) {
-                printf "%s%s", (i > 1 ? ", " : ""), events[i]
-              }
-            }'
-      )"
+      missing_events_line="$(summarize_unique_events "${recovery_missing_events[@]}")"
     fi
     if [[ "${#recovery_unexpected_events[@]}" -gt 0 ]]; then
-      unexpected_events_line="$(
-        printf '%s\n' "${recovery_unexpected_events[@]}" \
-          | awk 'NF && !seen[$0]++ {
-              events[++count] = $0
-            }
-            END {
-              limit = count < 8 ? count : 8
-              for (i = 1; i <= limit; i++) {
-                printf "%s%s", (i > 1 ? ", " : ""), events[i]
-              }
-            }'
-      )"
+      unexpected_events_line="$(summarize_unique_events "${recovery_unexpected_events[@]}")"
     fi
 
     if [[ -n "${missing_events_line}" && -n "${unexpected_events_line}" ]]; then
@@ -311,32 +339,10 @@ print_startup_failure_hints() {
     local registry_missing_line=""
     local registry_stale_line=""
     if [[ "${#registry_missing_events[@]}" -gt 0 ]]; then
-      registry_missing_line="$(
-        printf '%s\n' "${registry_missing_events[@]}" \
-          | awk 'NF && !seen[$0]++ {
-              events[++count] = $0
-            }
-            END {
-              limit = count < 8 ? count : 8
-              for (i = 1; i <= limit; i++) {
-                printf "%s%s", (i > 1 ? ", " : ""), events[i]
-              }
-            }'
-      )"
+      registry_missing_line="$(summarize_unique_events "${registry_missing_events[@]}")"
     fi
     if [[ "${#registry_stale_events[@]}" -gt 0 ]]; then
-      registry_stale_line="$(
-        printf '%s\n' "${registry_stale_events[@]}" \
-          | awk 'NF && !seen[$0]++ {
-              events[++count] = $0
-            }
-            END {
-              limit = count < 8 ? count : 8
-              for (i = 1; i <= limit; i++) {
-                printf "%s%s", (i > 1 ? ", " : ""), events[i]
-              }
-            }'
-      )"
+      registry_stale_line="$(summarize_unique_events "${registry_stale_events[@]}")"
     fi
     if [[ -n "${registry_missing_line}" && -n "${registry_stale_line}" ]]; then
       echo " - Recovery registry mismatch detected. Missing in events file: ${registry_missing_line}. Stale entries: ${registry_stale_line}."
@@ -522,6 +528,7 @@ echo "ECM_FULLSTACK_ALLOW_STATIC=${ECM_FULLSTACK_ALLOW_STATIC}"
 echo "ECM_SYNC_PREBUILT_UI=${ECM_SYNC_PREBUILT_UI}"
 echo "DELIVERY_GATE_MODE=${DELIVERY_GATE_MODE}"
 echo "DELIVERY_GATE_RECOVERY_REGISTRY_SYNC=${DELIVERY_GATE_RECOVERY_REGISTRY_SYNC}"
+echo "DELIVERY_GATE_RECOVERY_REGISTRY_SYNC_SOURCE=${DELIVERY_GATE_RECOVERY_REGISTRY_SYNC_SOURCE}"
 if [[ -z "${ECM_UI_URL_FULLSTACK_INPUT}" ]]; then
   echo "ECM_UI_URL_FULLSTACK auto-detected (set ECM_UI_URL_FULLSTACK to override)"
 fi

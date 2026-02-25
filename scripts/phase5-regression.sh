@@ -322,6 +322,23 @@ validate_recovery_event_registry() {
   comm -23 "${observed_tmp}" "${expected_tmp}" >"${observed_missing_tmp}"
   comm -13 "${observed_tmp}" "${expected_tmp}" >"${expected_stale_tmp}"
 
+  local diff_missing_count
+  local diff_stale_count
+  diff_missing_count="$(wc -l < "${observed_missing_tmp}" | tr -d '[:space:]')"
+  diff_stale_count="$(wc -l < "${expected_stale_tmp}" | tr -d '[:space:]')"
+  local diff_missing_csv="none"
+  local diff_stale_csv="none"
+  if [[ -s "${observed_missing_tmp}" ]]; then
+    diff_missing_csv="$(paste -sd, "${observed_missing_tmp}")"
+  fi
+  if [[ -s "${expected_stale_tmp}" ]]; then
+    diff_stale_csv="$(paste -sd, "${expected_stale_tmp}")"
+  fi
+  echo " - DIFF missing_from_events_file_count: ${diff_missing_count}"
+  echo " - DIFF missing_from_events_file_csv: ${diff_missing_csv}"
+  echo " - DIFF stale_events_file_entries_count: ${diff_stale_count}"
+  echo " - DIFF stale_events_file_entries_csv: ${diff_stale_csv}"
+
   local warning_count=0
   if [[ -s "${observed_missing_tmp}" ]]; then
     while IFS= read -r event_name; do
