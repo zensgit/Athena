@@ -261,6 +261,11 @@
   - Deliverables:
     - `docs/PHASE128_GATE_PREFLIGHT_ONLY_MODE_DEV_20260225.md`
     - `docs/PHASE128_GATE_PREFLIGHT_ONLY_MODE_VERIFICATION_20260225.md`
+- Gate integration-preflight mode:
+  - add `DELIVERY_GATE_MODE=integration-preflight` to run fast registry preflight before integration checks while skipping mocked regression.
+  - Deliverables:
+    - `docs/PHASE129_GATE_INTEGRATION_PREFLIGHT_MODE_DEV_20260225.md`
+    - `docs/PHASE129_GATE_INTEGRATION_PREFLIGHT_MODE_VERIFICATION_20260225.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
