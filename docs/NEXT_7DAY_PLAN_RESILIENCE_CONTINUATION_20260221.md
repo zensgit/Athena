@@ -180,6 +180,14 @@
     - `docs/PHASE113_FILE_TREE_WATCHDOG_RECOVERY_EVENTS_DEV_20260224.md`
     - `docs/PHASE113_FILE_TREE_WATCHDOG_RECOVERY_EVENTS_VERIFICATION_20260224.md`
 
+## Post Day 7 Stabilization (Completed on 2026-02-25)
+- Route fallback recovery event coverage:
+  - emit unknown-route fallback markers for unauthenticated login recovery and authenticated browse recovery paths.
+  - include route-fallback markers in `phase5-regression` recovery guard expected set.
+  - Deliverables:
+    - `docs/PHASE114_ROUTE_FALLBACK_RECOVERY_EVENT_COVERAGE_DEV_20260225.md`
+    - `docs/PHASE114_ROUTE_FALLBACK_RECOVERY_EVENT_COVERAGE_VERIFICATION_20260225.md`
+
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
 2. Filename-like queries do not trigger noisy spellcheck suggestions.
