@@ -27,6 +27,29 @@ else
   DELIVERY_GATE_RECOVERY_REGISTRY_SYNC="0"
   DELIVERY_GATE_RECOVERY_REGISTRY_SYNC_SOURCE="local_default"
 fi
+if [[ -n "${DELIVERY_GATE_RECOVERY_REGISTRY_STRICT:-}" ]]; then
+  DELIVERY_GATE_RECOVERY_REGISTRY_STRICT="${DELIVERY_GATE_RECOVERY_REGISTRY_STRICT}"
+  DELIVERY_GATE_RECOVERY_REGISTRY_STRICT_SOURCE="env"
+elif [[ -n "${PHASE5_RECOVERY_REGISTRY_STRICT:-}" ]]; then
+  DELIVERY_GATE_RECOVERY_REGISTRY_STRICT="${PHASE5_RECOVERY_REGISTRY_STRICT}"
+  DELIVERY_GATE_RECOVERY_REGISTRY_STRICT_SOURCE="inherited_env"
+elif [[ -n "${CI:-}" ]]; then
+  DELIVERY_GATE_RECOVERY_REGISTRY_STRICT="1"
+  DELIVERY_GATE_RECOVERY_REGISTRY_STRICT_SOURCE="ci_default"
+else
+  DELIVERY_GATE_RECOVERY_REGISTRY_STRICT="0"
+  DELIVERY_GATE_RECOVERY_REGISTRY_STRICT_SOURCE="local_default"
+fi
+if [[ -n "${DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT:-}" ]]; then
+  DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT="${DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT}"
+  DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT_SOURCE="env"
+elif [[ -n "${CI:-}" ]]; then
+  DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT="1"
+  DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT_SOURCE="ci_default"
+else
+  DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT="0"
+  DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT_SOURCE="local_default"
+fi
 if [[ -n "${ECM_FULLSTACK_ALLOW_STATIC:-}" ]]; then
   ECM_FULLSTACK_ALLOW_STATIC="${ECM_FULLSTACK_ALLOW_STATIC}"
 elif [[ -n "${CI:-}" ]]; then
@@ -195,6 +218,7 @@ print_startup_failure_hints() {
   local hint_startup_sla_drift_warn=0
   local hint_recovery_guard_warn=0
   local hint_recovery_registry_warn=0
+  local hint_recovery_registry_deterministic_warn=0
   local recovery_missing_events=()
   local recovery_unexpected_events=()
   local registry_missing_events=()
@@ -292,9 +316,12 @@ print_startup_failure_hints() {
           | sed -nE 's/^[[:space:]]*-[[:space:]]*WARN events file entry not found in specs:[[:space:]]*([a-z0-9_]+).*/\1/p'
       )
     fi
+    if strip_ansi_file "${record_log}" | rg -qi "phase5_sync_recovery_registry: deterministic mismatch"; then
+      hint_recovery_registry_deterministic_warn=1
+    fi
   done
 
-  if [[ "${hint_static_target}" -eq 0 && "${hint_storage_restricted}" -eq 0 && "${hint_auth_timeout}" -eq 0 && "${hint_startup_sla_warn}" -eq 0 && "${hint_startup_sla_drift_warn}" -eq 0 && "${hint_recovery_guard_warn}" -eq 0 && "${hint_recovery_registry_warn}" -eq 0 ]]; then
+  if [[ "${hint_static_target}" -eq 0 && "${hint_storage_restricted}" -eq 0 && "${hint_auth_timeout}" -eq 0 && "${hint_startup_sla_warn}" -eq 0 && "${hint_startup_sla_drift_warn}" -eq 0 && "${hint_recovery_guard_warn}" -eq 0 && "${hint_recovery_registry_warn}" -eq 0 && "${hint_recovery_registry_deterministic_warn}" -eq 0 ]]; then
     return
   fi
 
@@ -355,7 +382,12 @@ print_startup_failure_hints() {
     fi
     if [[ "${DELIVERY_GATE_RECOVERY_REGISTRY_SYNC}" != "1" ]]; then
       echo " - To auto-sync registry in preflight, rerun with DELIVERY_GATE_RECOVERY_REGISTRY_SYNC=1 or run scripts/phase5-sync-recovery-registry.sh."
+    elif [[ "${DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT}" != "1" ]]; then
+      echo " - To enforce sync determinism in preflight, rerun with DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT=1."
     fi
+  fi
+  if [[ "${hint_recovery_registry_deterministic_warn}" -eq 1 ]]; then
+    echo " - Registry sync deterministic check failed. Rerun scripts/phase5-sync-recovery-registry.sh and inspect emitted diff."
   fi
 }
 
@@ -367,10 +399,17 @@ run_mocked_regression_stage() {
 }
 
 run_mocked_recovery_registry_preflight_stage() {
+  if [[ "${DELIVERY_GATE_RECOVERY_REGISTRY_SYNC}" == "1" && "${DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT}" == "1" ]]; then
+    PHASE5_RECOVERY_EVENTS_FILE="${PHASE5_RECOVERY_EVENTS_FILE:-ecm-frontend/e2e/recovery-events.expected.txt}" \
+    PHASE5_SYNC_VERIFY_IDEMPOTENT=1 \
+    scripts/phase5-sync-recovery-registry.sh
+    return
+  fi
   ECM_UI_URL="${ECM_UI_URL_MOCKED}" \
   PW_PROJECT="${PW_PROJECT}" \
   PW_WORKERS="${PW_WORKERS}" \
   PHASE5_RECOVERY_REGISTRY_SYNC="${DELIVERY_GATE_RECOVERY_REGISTRY_SYNC}" \
+  PHASE5_RECOVERY_REGISTRY_STRICT="${DELIVERY_GATE_RECOVERY_REGISTRY_STRICT}" \
   PHASE5_VALIDATE_RECOVERY_REGISTRY_ONLY=1 \
   bash scripts/phase5-regression.sh
 }
@@ -529,6 +568,10 @@ echo "ECM_SYNC_PREBUILT_UI=${ECM_SYNC_PREBUILT_UI}"
 echo "DELIVERY_GATE_MODE=${DELIVERY_GATE_MODE}"
 echo "DELIVERY_GATE_RECOVERY_REGISTRY_SYNC=${DELIVERY_GATE_RECOVERY_REGISTRY_SYNC}"
 echo "DELIVERY_GATE_RECOVERY_REGISTRY_SYNC_SOURCE=${DELIVERY_GATE_RECOVERY_REGISTRY_SYNC_SOURCE}"
+echo "DELIVERY_GATE_RECOVERY_REGISTRY_STRICT=${DELIVERY_GATE_RECOVERY_REGISTRY_STRICT}"
+echo "DELIVERY_GATE_RECOVERY_REGISTRY_STRICT_SOURCE=${DELIVERY_GATE_RECOVERY_REGISTRY_STRICT_SOURCE}"
+echo "DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT=${DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT}"
+echo "DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT_SOURCE=${DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT_SOURCE}"
 if [[ -z "${ECM_UI_URL_FULLSTACK_INPUT}" ]]; then
   echo "ECM_UI_URL_FULLSTACK auto-detected (set ECM_UI_URL_FULLSTACK to override)"
 fi
