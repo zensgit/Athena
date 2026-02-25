@@ -236,6 +236,11 @@
   - Deliverables:
     - `docs/PHASE123_RECOVERY_REGISTRY_SYNC_MODE_DEV_20260225.md`
     - `docs/PHASE123_RECOVERY_REGISTRY_SYNC_MODE_VERIFICATION_20260225.md`
+- Gate recovery registry sync automation:
+  - add delivery-gate preflight passthrough env for registry sync and standalone sync helper script.
+  - Deliverables:
+    - `docs/PHASE124_GATE_RECOVERY_REGISTRY_SYNC_AUTOMATION_DEV_20260225.md`
+    - `docs/PHASE124_GATE_RECOVERY_REGISTRY_SYNC_AUTOMATION_VERIFICATION_20260225.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
