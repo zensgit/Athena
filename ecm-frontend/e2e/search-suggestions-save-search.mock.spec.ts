@@ -471,10 +471,12 @@ test('Search: temporary backend failure can recover via retry action (mocked API
 
   const errorAlert = page.getByRole('alert').filter({ hasText: 'Request failed with status code 503' }).first();
   await expect(errorAlert).toBeVisible({ timeout: 60_000 });
+  console.log('recovery_event:search_recoverable_error_alert_shown');
   await errorAlert.getByRole('button', { name: 'Retry' }).click();
 
   await expect(page.getByRole('heading', { name: query })).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText('Your session expired. Please sign in again.')).toHaveCount(0);
   await expect.poll(() => searchAttemptCount, { timeout: 60_000 }).toBe(2);
   await expect.poll(() => temporaryFailureCount, { timeout: 60_000 }).toBe(1);
+  console.log('recovery_event:search_recoverable_retry_success');
 });
