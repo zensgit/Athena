@@ -187,6 +187,12 @@
   - Deliverables:
     - `docs/PHASE114_ROUTE_FALLBACK_RECOVERY_EVENT_COVERAGE_DEV_20260225.md`
     - `docs/PHASE114_ROUTE_FALLBACK_RECOVERY_EVENT_COVERAGE_VERIFICATION_20260225.md`
+- Auth session recovery event coverage:
+  - emit transient 401 retry-success and terminal 401 redirect-login markers for auth-session recovery paths.
+  - include auth-session markers in `phase5-regression` recovery guard expected set.
+  - Deliverables:
+    - `docs/PHASE115_AUTH_SESSION_RECOVERY_EVENT_COVERAGE_DEV_20260225.md`
+    - `docs/PHASE115_AUTH_SESSION_RECOVERY_EVENT_COVERAGE_VERIFICATION_20260225.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
