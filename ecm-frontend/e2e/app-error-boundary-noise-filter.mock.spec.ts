@@ -12,6 +12,7 @@ test('App error boundary: ignores ResizeObserver global error noise (mocked)', a
 
   await expect(page.getByText('The page encountered an unexpected error. You can refresh and try again.')).toHaveCount(0);
   await expect(page.getByText('Sign in with your organization account')).toBeVisible({ timeout: 60_000 });
+  console.log('recovery_event:app_error_noise_resize_observer_ignored');
 });
 
 test('App error boundary: ignores abort-like unhandled rejection noise (mocked)', async ({ page }) => {
@@ -31,4 +32,5 @@ test('App error boundary: ignores abort-like unhandled rejection noise (mocked)'
 
   await expect(page.getByText('The page encountered an unexpected error. You can refresh and try again.')).toHaveCount(0);
   await expect(page.getByText('Sign in with your organization account')).toBeVisible({ timeout: 60_000 });
+  console.log('recovery_event:app_error_noise_abort_rejection_ignored');
 });

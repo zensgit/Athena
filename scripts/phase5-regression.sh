@@ -227,6 +227,8 @@ const expectedEvents = [
   'auth_session_terminal_redirect_login',
   'search_recoverable_error_alert_shown',
   'search_recoverable_retry_success',
+  'app_error_noise_resize_observer_ignored',
+  'app_error_noise_abort_rejection_ignored',
   'route_fallback_unauth_login_visible',
   'route_fallback_auth_browse_visible',
   'filebrowser_watchdog_alert_shown',
