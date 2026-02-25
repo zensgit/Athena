@@ -979,6 +979,21 @@
   - `PHASE5_RECOVERY_GUARD_STRICT=1 PHASE5_RECOVERY_REGISTRY_STRICT=1 PHASE5_VALIDATE_RECOVERY_REGISTRY_ONLY=1 bash scripts/phase5-regression.sh` -> PASS
   - `PHASE5_RECOVERY_GUARD_STRICT=1 PHASE5_RECOVERY_REGISTRY_STRICT=1 DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS（fast 层含 preflight + mocked 两个 PASS）
 
+### 68) Delivery gate startup hints 支持 registry mismatch 明细（Phase122）
+- `scripts/phase5-phase6-delivery-gate.sh`
+  - `print_startup_failure_hints` 新增 registry mismatch 解析：
+    - `WARN marker missing from events file: ...`
+    - `WARN events file entry not found in specs: ...`
+  - 增加专用提示文案：
+    - Missing in events file
+    - Stale entries
+    - Mixed case（missing + stale）
+- 交付影响：
+  - registry preflight 失败时，交付门禁可直接输出更具体的修复线索。
+- 验证：
+  - `bash -n scripts/phase5-phase6-delivery-gate.sh` -> PASS
+  - `PHASE5_RECOVERY_GUARD_STRICT=1 PHASE5_RECOVERY_REGISTRY_STRICT=1 DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -1132,3 +1147,5 @@
 - `docs/PHASE120_RECOVERY_EVENT_REGISTRY_EXTERNALIZATION_VERIFICATION_20260225.md`
 - `docs/PHASE121_MOCKED_REGISTRY_PREFLIGHT_STAGE_DEV_20260225.md`
 - `docs/PHASE121_MOCKED_REGISTRY_PREFLIGHT_STAGE_VERIFICATION_20260225.md`
+- `docs/PHASE122_GATE_REGISTRY_MISMATCH_HINTS_DEV_20260225.md`
+- `docs/PHASE122_GATE_REGISTRY_MISMATCH_HINTS_VERIFICATION_20260225.md`

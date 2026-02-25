@@ -226,6 +226,11 @@
   - Deliverables:
     - `docs/PHASE121_MOCKED_REGISTRY_PREFLIGHT_STAGE_DEV_20260225.md`
     - `docs/PHASE121_MOCKED_REGISTRY_PREFLIGHT_STAGE_VERIFICATION_20260225.md`
+- Gate registry mismatch hints:
+  - extend delivery gate startup diagnostics hints with registry mismatch detail extraction (missing/stale event entries).
+  - Deliverables:
+    - `docs/PHASE122_GATE_REGISTRY_MISMATCH_HINTS_DEV_20260225.md`
+    - `docs/PHASE122_GATE_REGISTRY_MISMATCH_HINTS_VERIFICATION_20260225.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
