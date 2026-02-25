@@ -899,6 +899,21 @@
   - `bash scripts/phase5-regression.sh` -> PASS (`30 passed`，recovery events 包含 search_recoverable 两项，`recovery guard warning count: 0`)
   - `DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
 
+### 63) App error noise 忽略事件纳入 recovery guard（Phase117）
+- `ecm-frontend/e2e/app-error-boundary-noise-filter.mock.spec.ts`
+  - 新增结构化 marker：
+    - `recovery_event:app_error_noise_resize_observer_ignored`
+    - `recovery_event:app_error_noise_abort_rejection_ignored`
+- `scripts/phase5-regression.sh`
+  - recovery guard 期望事件集合新增：
+    - `app_error_noise_resize_observer_ignored`
+    - `app_error_noise_abort_rejection_ignored`
+- 交付影响：
+  - recovery telemetry 覆盖补齐 app-error 全局噪声误报抑制路径，guard 能更早发现噪声过滤回归。
+- 验证：
+  - `bash scripts/phase5-regression.sh` -> PASS (`30 passed`，recovery events 包含 app_error_noise 两项，`recovery guard warning count: 0`)
+  - `DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -1042,3 +1057,5 @@
 - `docs/PHASE115_AUTH_SESSION_RECOVERY_EVENT_COVERAGE_VERIFICATION_20260225.md`
 - `docs/PHASE116_SEARCH_RECOVERABLE_EVENT_COVERAGE_DEV_20260225.md`
 - `docs/PHASE116_SEARCH_RECOVERABLE_EVENT_COVERAGE_VERIFICATION_20260225.md`
+- `docs/PHASE117_APP_ERROR_NOISE_EVENT_COVERAGE_DEV_20260225.md`
+- `docs/PHASE117_APP_ERROR_NOISE_EVENT_COVERAGE_VERIFICATION_20260225.md`

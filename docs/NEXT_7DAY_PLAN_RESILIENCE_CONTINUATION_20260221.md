@@ -199,6 +199,12 @@
   - Deliverables:
     - `docs/PHASE116_SEARCH_RECOVERABLE_EVENT_COVERAGE_DEV_20260225.md`
     - `docs/PHASE116_SEARCH_RECOVERABLE_EVENT_COVERAGE_VERIFICATION_20260225.md`
+- App error noise event coverage:
+  - emit non-fatal global noise-ignore markers for ResizeObserver error and abort-like rejection paths.
+  - include app-error noise markers in `phase5-regression` recovery guard expected set.
+  - Deliverables:
+    - `docs/PHASE117_APP_ERROR_NOISE_EVENT_COVERAGE_DEV_20260225.md`
+    - `docs/PHASE117_APP_ERROR_NOISE_EVENT_COVERAGE_VERIFICATION_20260225.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
