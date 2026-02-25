@@ -17,6 +17,8 @@ PW_PROJECT="${PW_PROJECT:-chromium}"
 PW_WORKERS="${PW_WORKERS:-1}"
 ECM_SYNC_PREBUILT_UI="${ECM_SYNC_PREBUILT_UI:-auto}"
 DELIVERY_GATE_MODE="${DELIVERY_GATE_MODE:-all}"
+DELIVERY_GATE_PRINT_EXECUTION_PLAN="${DELIVERY_GATE_PRINT_EXECUTION_PLAN:-1}"
+DELIVERY_GATE_PLAN_ONLY="0"
 if [[ -n "${DELIVERY_GATE_RECOVERY_REGISTRY_SYNC:-}" ]]; then
   DELIVERY_GATE_RECOVERY_REGISTRY_SYNC="${DELIVERY_GATE_RECOVERY_REGISTRY_SYNC}"
   DELIVERY_GATE_RECOVERY_REGISTRY_SYNC_SOURCE="env"
@@ -87,6 +89,33 @@ resolve_fullstack_ui_url() {
   printf '%s' "http://localhost"
 }
 
+print_usage() {
+  cat <<'USAGE'
+Usage:
+  scripts/phase5-phase6-delivery-gate.sh [mode]
+  scripts/phase5-phase6-delivery-gate.sh --mode=<mode> [--plan]
+  scripts/phase5-phase6-delivery-gate.sh --help
+
+Modes:
+  all                   Run fast mocked layer then integration layer.
+  mocked                Run fast mocked layer only (preflight + mocked regression).
+  preflight             Run mocked registry preflight only.
+  integration           Run integration layer only.
+  integration-preflight Run mocked registry preflight, then integration layer.
+
+Flags:
+  --help, -h            Show this message and exit.
+  --plan                Print execution plan and exit.
+
+Environment controls:
+  DELIVERY_GATE_MODE
+  DELIVERY_GATE_PRINT_EXECUTION_PLAN=1|0
+  DELIVERY_GATE_RECOVERY_REGISTRY_SYNC=1|0
+  DELIVERY_GATE_RECOVERY_REGISTRY_STRICT=1|0
+  DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT=1|0
+USAGE
+}
+
 strip_ansi_file() {
   local log_file="$1"
   sed -E $'s/\x1B\\[[0-9;]*[[:alpha:]]//g' "${log_file}" | tr -d '\r'
@@ -136,6 +165,43 @@ run_with_tee() {
     return "${tee_rc}"
   fi
   return 0
+}
+
+print_execution_plan() {
+  local preflight_executor="phase5-regression (registry-only)"
+  if [[ "${DELIVERY_GATE_RECOVERY_REGISTRY_SYNC}" == "1" && "${DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT}" == "1" ]]; then
+    preflight_executor="phase5-sync-recovery-registry.sh (sync + idempotence check)"
+  fi
+
+  echo ""
+  echo "phase5_phase6_delivery_gate: execution plan"
+  echo " - mode: ${DELIVERY_GATE_MODE}"
+  echo " - fast registry preflight executor: ${preflight_executor}"
+  echo " - integration strict-fullstack preflight enabled when ECM_FULLSTACK_ALLOW_STATIC=0"
+  case "${DELIVERY_GATE_MODE}" in
+    all)
+      echo " - fast layer: mocked recovery registry preflight + mocked regression gate"
+      echo " - integration layer: dependency preflight + full-stack smokes + p1 smoke"
+      ;;
+    mocked)
+      echo " - fast layer: mocked recovery registry preflight + mocked regression gate"
+      echo " - integration layer: skipped"
+      ;;
+    preflight)
+      echo " - fast layer: mocked recovery registry preflight only"
+      echo " - mocked regression: skipped"
+      echo " - integration layer: skipped"
+      ;;
+    integration)
+      echo " - fast layer: skipped"
+      echo " - integration layer: dependency preflight + full-stack smokes + p1 smoke"
+      ;;
+    integration-preflight)
+      echo " - fast layer: mocked recovery registry preflight only"
+      echo " - mocked regression: skipped"
+      echo " - integration layer: dependency preflight + full-stack smokes + p1 smoke"
+      ;;
+  esac
 }
 
 STAGE_RESULTS=()
@@ -560,6 +626,29 @@ run_p1_smoke_stage() {
   )
 }
 
+for arg in "$@"; do
+  case "${arg}" in
+    --help|-h)
+      print_usage
+      exit 0
+      ;;
+    --plan)
+      DELIVERY_GATE_PLAN_ONLY="1"
+      ;;
+    --mode=*)
+      DELIVERY_GATE_MODE="${arg#--mode=}"
+      ;;
+    all|mocked|integration|preflight|integration-preflight)
+      DELIVERY_GATE_MODE="${arg}"
+      ;;
+    *)
+      echo "error: unsupported argument '${arg}'"
+      print_usage
+      exit 1
+      ;;
+  esac
+done
+
 ECM_UI_URL_FULLSTACK="$(resolve_fullstack_ui_url)"
 
 echo "phase5_phase6_delivery_gate: start"
@@ -577,6 +666,8 @@ echo "DELIVERY_GATE_RECOVERY_REGISTRY_STRICT=${DELIVERY_GATE_RECOVERY_REGISTRY_S
 echo "DELIVERY_GATE_RECOVERY_REGISTRY_STRICT_SOURCE=${DELIVERY_GATE_RECOVERY_REGISTRY_STRICT_SOURCE}"
 echo "DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT=${DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT}"
 echo "DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT_SOURCE=${DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT_SOURCE}"
+echo "DELIVERY_GATE_PRINT_EXECUTION_PLAN=${DELIVERY_GATE_PRINT_EXECUTION_PLAN}"
+echo "DELIVERY_GATE_PLAN_ONLY=${DELIVERY_GATE_PLAN_ONLY}"
 if [[ -z "${ECM_UI_URL_FULLSTACK_INPUT}" ]]; then
   echo "ECM_UI_URL_FULLSTACK auto-detected (set ECM_UI_URL_FULLSTACK to override)"
 fi
@@ -589,6 +680,15 @@ case "${DELIVERY_GATE_MODE}" in
     exit 1
     ;;
 esac
+
+if [[ "${DELIVERY_GATE_PRINT_EXECUTION_PLAN}" == "1" || "${DELIVERY_GATE_PLAN_ONLY}" == "1" ]]; then
+  print_execution_plan
+fi
+if [[ "${DELIVERY_GATE_PLAN_ONLY}" == "1" ]]; then
+  echo ""
+  echo "phase5_phase6_delivery_gate: plan-only mode complete"
+  exit 0
+fi
 
 overall_rc=0
 fast_layer_failed=0
