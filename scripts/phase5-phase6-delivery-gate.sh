@@ -17,6 +17,7 @@ PW_PROJECT="${PW_PROJECT:-chromium}"
 PW_WORKERS="${PW_WORKERS:-1}"
 ECM_SYNC_PREBUILT_UI="${ECM_SYNC_PREBUILT_UI:-auto}"
 DELIVERY_GATE_MODE="${DELIVERY_GATE_MODE:-all}"
+DELIVERY_GATE_RECOVERY_REGISTRY_SYNC="${DELIVERY_GATE_RECOVERY_REGISTRY_SYNC:-0}"
 if [[ -n "${ECM_FULLSTACK_ALLOW_STATIC:-}" ]]; then
   ECM_FULLSTACK_ALLOW_STATIC="${ECM_FULLSTACK_ALLOW_STATIC}"
 elif [[ -n "${CI:-}" ]]; then
@@ -346,6 +347,9 @@ print_startup_failure_hints() {
     else
       echo " - Recovery registry mismatch detected. Inspect 'validate recovery event registry' output for mismatch details."
     fi
+    if [[ "${DELIVERY_GATE_RECOVERY_REGISTRY_SYNC}" != "1" ]]; then
+      echo " - To auto-sync registry in preflight, rerun with DELIVERY_GATE_RECOVERY_REGISTRY_SYNC=1 or run scripts/phase5-sync-recovery-registry.sh."
+    fi
   fi
 }
 
@@ -360,6 +364,7 @@ run_mocked_recovery_registry_preflight_stage() {
   ECM_UI_URL="${ECM_UI_URL_MOCKED}" \
   PW_PROJECT="${PW_PROJECT}" \
   PW_WORKERS="${PW_WORKERS}" \
+  PHASE5_RECOVERY_REGISTRY_SYNC="${DELIVERY_GATE_RECOVERY_REGISTRY_SYNC}" \
   PHASE5_VALIDATE_RECOVERY_REGISTRY_ONLY=1 \
   bash scripts/phase5-regression.sh
 }
@@ -516,6 +521,7 @@ echo "PW_PROJECT=${PW_PROJECT} PW_WORKERS=${PW_WORKERS}"
 echo "ECM_FULLSTACK_ALLOW_STATIC=${ECM_FULLSTACK_ALLOW_STATIC}"
 echo "ECM_SYNC_PREBUILT_UI=${ECM_SYNC_PREBUILT_UI}"
 echo "DELIVERY_GATE_MODE=${DELIVERY_GATE_MODE}"
+echo "DELIVERY_GATE_RECOVERY_REGISTRY_SYNC=${DELIVERY_GATE_RECOVERY_REGISTRY_SYNC}"
 if [[ -z "${ECM_UI_URL_FULLSTACK_INPUT}" ]]; then
   echo "ECM_UI_URL_FULLSTACK auto-detected (set ECM_UI_URL_FULLSTACK to override)"
 fi
