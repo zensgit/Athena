@@ -171,8 +171,11 @@ print_startup_failure_hints() {
   local hint_startup_sla_warn=0
   local hint_startup_sla_drift_warn=0
   local hint_recovery_guard_warn=0
+  local hint_recovery_registry_warn=0
   local recovery_missing_events=()
   local recovery_unexpected_events=()
+  local registry_missing_events=()
+  local registry_stale_events=()
   local record
   for record in "${FAILED_STAGE_RECORDS[@]}"; do
     local record_layer
@@ -217,9 +220,30 @@ print_startup_failure_hints() {
           | sed -nE 's/^[[:space:]]*-[[:space:]]*WARN unexpected event:[[:space:]]*([a-z0-9_]+).*/\1/p'
       )
     fi
+    if strip_ansi_file "${record_log}" | rg -qi "registry mismatch count: [1-9][0-9]*|strict mode enabled: failing due to registry mismatch"; then
+      hint_recovery_registry_warn=1
+      local missing_in_file_event
+      while IFS= read -r missing_in_file_event; do
+        if [[ -n "${missing_in_file_event}" ]]; then
+          registry_missing_events+=("${missing_in_file_event}")
+        fi
+      done < <(
+        strip_ansi_file "${record_log}" \
+          | sed -nE 's/^[[:space:]]*-[[:space:]]*WARN marker missing from events file:[[:space:]]*([a-z0-9_]+).*/\1/p'
+      )
+      local stale_entry_event
+      while IFS= read -r stale_entry_event; do
+        if [[ -n "${stale_entry_event}" ]]; then
+          registry_stale_events+=("${stale_entry_event}")
+        fi
+      done < <(
+        strip_ansi_file "${record_log}" \
+          | sed -nE 's/^[[:space:]]*-[[:space:]]*WARN events file entry not found in specs:[[:space:]]*([a-z0-9_]+).*/\1/p'
+      )
+    fi
   done
 
-  if [[ "${hint_static_target}" -eq 0 && "${hint_storage_restricted}" -eq 0 && "${hint_auth_timeout}" -eq 0 && "${hint_startup_sla_warn}" -eq 0 && "${hint_startup_sla_drift_warn}" -eq 0 && "${hint_recovery_guard_warn}" -eq 0 ]]; then
+  if [[ "${hint_static_target}" -eq 0 && "${hint_storage_restricted}" -eq 0 && "${hint_auth_timeout}" -eq 0 && "${hint_startup_sla_warn}" -eq 0 && "${hint_startup_sla_drift_warn}" -eq 0 && "${hint_recovery_guard_warn}" -eq 0 && "${hint_recovery_registry_warn}" -eq 0 ]]; then
     return
   fi
 
@@ -280,6 +304,47 @@ print_startup_failure_hints() {
       echo " - Recovery guard coverage appears incomplete. Unexpected events: ${unexpected_events_line}."
     else
       echo " - Recovery guard coverage appears incomplete. Inspect 'phase5_regression: recovery guard status' for missing startup/error events."
+    fi
+  fi
+  if [[ "${hint_recovery_registry_warn}" -eq 1 ]]; then
+    local registry_missing_line=""
+    local registry_stale_line=""
+    if [[ "${#registry_missing_events[@]}" -gt 0 ]]; then
+      registry_missing_line="$(
+        printf '%s\n' "${registry_missing_events[@]}" \
+          | awk 'NF && !seen[$0]++ {
+              events[++count] = $0
+            }
+            END {
+              limit = count < 8 ? count : 8
+              for (i = 1; i <= limit; i++) {
+                printf "%s%s", (i > 1 ? ", " : ""), events[i]
+              }
+            }'
+      )"
+    fi
+    if [[ "${#registry_stale_events[@]}" -gt 0 ]]; then
+      registry_stale_line="$(
+        printf '%s\n' "${registry_stale_events[@]}" \
+          | awk 'NF && !seen[$0]++ {
+              events[++count] = $0
+            }
+            END {
+              limit = count < 8 ? count : 8
+              for (i = 1; i <= limit; i++) {
+                printf "%s%s", (i > 1 ? ", " : ""), events[i]
+              }
+            }'
+      )"
+    fi
+    if [[ -n "${registry_missing_line}" && -n "${registry_stale_line}" ]]; then
+      echo " - Recovery registry mismatch detected. Missing in events file: ${registry_missing_line}. Stale entries: ${registry_stale_line}."
+    elif [[ -n "${registry_missing_line}" ]]; then
+      echo " - Recovery registry mismatch detected. Missing in events file: ${registry_missing_line}."
+    elif [[ -n "${registry_stale_line}" ]]; then
+      echo " - Recovery registry mismatch detected. Stale entries: ${registry_stale_line}."
+    else
+      echo " - Recovery registry mismatch detected. Inspect 'validate recovery event registry' output for mismatch details."
     fi
   fi
 }
