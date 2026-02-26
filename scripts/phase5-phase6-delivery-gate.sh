@@ -18,6 +18,7 @@ PW_WORKERS="${PW_WORKERS:-1}"
 ECM_SYNC_PREBUILT_UI="${ECM_SYNC_PREBUILT_UI:-auto}"
 DELIVERY_GATE_MODE="${DELIVERY_GATE_MODE:-all}"
 DELIVERY_GATE_PRINT_EXECUTION_PLAN="${DELIVERY_GATE_PRINT_EXECUTION_PLAN:-1}"
+DELIVERY_GATE_EXECUTION_PLAN_FORMAT="${DELIVERY_GATE_EXECUTION_PLAN_FORMAT:-text}"
 DELIVERY_GATE_PLAN_ONLY="0"
 if [[ -n "${DELIVERY_GATE_RECOVERY_REGISTRY_SYNC:-}" ]]; then
   DELIVERY_GATE_RECOVERY_REGISTRY_SYNC="${DELIVERY_GATE_RECOVERY_REGISTRY_SYNC}"
@@ -93,7 +94,7 @@ print_usage() {
   cat <<'USAGE'
 Usage:
   scripts/phase5-phase6-delivery-gate.sh [mode]
-  scripts/phase5-phase6-delivery-gate.sh --mode=<mode> [--plan]
+  scripts/phase5-phase6-delivery-gate.sh --mode=<mode> [--plan] [--plan-format=<text|json>]
   scripts/phase5-phase6-delivery-gate.sh --help
 
 Modes:
@@ -106,10 +107,16 @@ Modes:
 Flags:
   --help, -h            Show this message and exit.
   --plan                Print execution plan and exit.
+  --no-plan             Do not print execution plan before execution.
+  --print-plan          Force printing execution plan before execution.
+  --plan-format=<...>   Execution plan format: text|json.
+  --plan-json           Shortcut for --plan-format=json.
+  --plan-text           Shortcut for --plan-format=text.
 
 Environment controls:
   DELIVERY_GATE_MODE
   DELIVERY_GATE_PRINT_EXECUTION_PLAN=1|0
+  DELIVERY_GATE_EXECUTION_PLAN_FORMAT=text|json
   DELIVERY_GATE_RECOVERY_REGISTRY_SYNC=1|0
   DELIVERY_GATE_RECOVERY_REGISTRY_STRICT=1|0
   DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT=1|0
@@ -173,35 +180,57 @@ print_execution_plan() {
     preflight_executor="phase5-sync-recovery-registry.sh (sync + idempotence check)"
   fi
 
+  local fast_layer_plan=""
+  local mocked_regression_plan=""
+  local integration_layer_plan=""
+  case "${DELIVERY_GATE_MODE}" in
+    all)
+      fast_layer_plan="mocked recovery registry preflight + mocked regression gate"
+      mocked_regression_plan="enabled"
+      integration_layer_plan="dependency preflight + full-stack smokes + p1 smoke"
+      ;;
+    mocked)
+      fast_layer_plan="mocked recovery registry preflight + mocked regression gate"
+      mocked_regression_plan="enabled"
+      integration_layer_plan="skipped"
+      ;;
+    preflight)
+      fast_layer_plan="mocked recovery registry preflight only"
+      mocked_regression_plan="skipped"
+      integration_layer_plan="skipped"
+      ;;
+    integration)
+      fast_layer_plan="skipped"
+      mocked_regression_plan="skipped"
+      integration_layer_plan="dependency preflight + full-stack smokes + p1 smoke"
+      ;;
+    integration-preflight)
+      fast_layer_plan="mocked recovery registry preflight only"
+      mocked_regression_plan="skipped"
+      integration_layer_plan="dependency preflight + full-stack smokes + p1 smoke"
+      ;;
+  esac
+
+  if [[ "${DELIVERY_GATE_EXECUTION_PLAN_FORMAT}" == "json" ]]; then
+    echo "{"
+    printf '  "mode": "%s",\n' "${DELIVERY_GATE_MODE}"
+    printf '  "fast_registry_preflight_executor": "%s",\n' "${preflight_executor}"
+    printf '  "integration_strict_fullstack_preflight_condition": "%s",\n' "ECM_FULLSTACK_ALLOW_STATIC=0"
+    printf '  "fast_layer": "%s",\n' "${fast_layer_plan}"
+    printf '  "mocked_regression": "%s",\n' "${mocked_regression_plan}"
+    printf '  "integration_layer": "%s"\n' "${integration_layer_plan}"
+    echo "}"
+    return
+  fi
+
   echo ""
   echo "phase5_phase6_delivery_gate: execution plan"
   echo " - mode: ${DELIVERY_GATE_MODE}"
   echo " - fast registry preflight executor: ${preflight_executor}"
   echo " - integration strict-fullstack preflight enabled when ECM_FULLSTACK_ALLOW_STATIC=0"
-  case "${DELIVERY_GATE_MODE}" in
-    all)
-      echo " - fast layer: mocked recovery registry preflight + mocked regression gate"
-      echo " - integration layer: dependency preflight + full-stack smokes + p1 smoke"
-      ;;
-    mocked)
-      echo " - fast layer: mocked recovery registry preflight + mocked regression gate"
-      echo " - integration layer: skipped"
-      ;;
-    preflight)
-      echo " - fast layer: mocked recovery registry preflight only"
-      echo " - mocked regression: skipped"
-      echo " - integration layer: skipped"
-      ;;
-    integration)
-      echo " - fast layer: skipped"
-      echo " - integration layer: dependency preflight + full-stack smokes + p1 smoke"
-      ;;
-    integration-preflight)
-      echo " - fast layer: mocked recovery registry preflight only"
-      echo " - mocked regression: skipped"
-      echo " - integration layer: dependency preflight + full-stack smokes + p1 smoke"
-      ;;
-  esac
+  echo " - fast layer: ${fast_layer_plan}"
+  echo " - mocked regression: ${mocked_regression_plan}"
+  echo " - integration layer: ${integration_layer_plan}"
 }
 
 STAGE_RESULTS=()
@@ -635,6 +664,21 @@ for arg in "$@"; do
     --plan)
       DELIVERY_GATE_PLAN_ONLY="1"
       ;;
+    --no-plan)
+      DELIVERY_GATE_PRINT_EXECUTION_PLAN="0"
+      ;;
+    --print-plan)
+      DELIVERY_GATE_PRINT_EXECUTION_PLAN="1"
+      ;;
+    --plan-format=*)
+      DELIVERY_GATE_EXECUTION_PLAN_FORMAT="${arg#--plan-format=}"
+      ;;
+    --plan-json)
+      DELIVERY_GATE_EXECUTION_PLAN_FORMAT="json"
+      ;;
+    --plan-text)
+      DELIVERY_GATE_EXECUTION_PLAN_FORMAT="text"
+      ;;
     --mode=*)
       DELIVERY_GATE_MODE="${arg#--mode=}"
       ;;
@@ -667,6 +711,7 @@ echo "DELIVERY_GATE_RECOVERY_REGISTRY_STRICT_SOURCE=${DELIVERY_GATE_RECOVERY_REG
 echo "DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT=${DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT}"
 echo "DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT_SOURCE=${DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT_SOURCE}"
 echo "DELIVERY_GATE_PRINT_EXECUTION_PLAN=${DELIVERY_GATE_PRINT_EXECUTION_PLAN}"
+echo "DELIVERY_GATE_EXECUTION_PLAN_FORMAT=${DELIVERY_GATE_EXECUTION_PLAN_FORMAT}"
 echo "DELIVERY_GATE_PLAN_ONLY=${DELIVERY_GATE_PLAN_ONLY}"
 if [[ -z "${ECM_UI_URL_FULLSTACK_INPUT}" ]]; then
   echo "ECM_UI_URL_FULLSTACK auto-detected (set ECM_UI_URL_FULLSTACK to override)"
@@ -677,6 +722,15 @@ case "${DELIVERY_GATE_MODE}" in
     ;;
   *)
     echo "error: unsupported DELIVERY_GATE_MODE=${DELIVERY_GATE_MODE} (expected: all|mocked|integration|preflight|integration-preflight)"
+    exit 1
+    ;;
+esac
+
+case "${DELIVERY_GATE_EXECUTION_PLAN_FORMAT}" in
+  text|json)
+    ;;
+  *)
+    echo "error: unsupported DELIVERY_GATE_EXECUTION_PLAN_FORMAT=${DELIVERY_GATE_EXECUTION_PLAN_FORMAT} (expected: text|json)"
     exit 1
     ;;
 esac
