@@ -102,6 +102,8 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - Verification: `docs/PHASE130_GATE_USAGE_AND_EXECUTION_PLAN_VERIFICATION_20260225.md`
   - Design: `docs/PHASE131_GATE_PLAN_MODE_AND_HELP_CLI_DEV_20260225.md`
   - Verification: `docs/PHASE131_GATE_PLAN_MODE_AND_HELP_CLI_VERIFICATION_20260225.md`
+  - Design: `docs/PHASE132_GATE_PLAN_FORMAT_AND_NO_PLAN_FLAGS_DEV_20260226.md`
+  - Verification: `docs/PHASE132_GATE_PLAN_FORMAT_AND_NO_PLAN_FLAGS_VERIFICATION_20260226.md`
 - Auth/Search recovery 7-day release summary: `docs/PHASE73_AUTH_SEARCH_RECOVERY_RELEASE_SUMMARY_20260219.md`
 - Auth/Search recovery verification rollup: `docs/PHASE73_AUTH_SEARCH_RECOVERY_VERIFICATION_ROLLUP_20260219.md`
 - Phase 5/6 one-command delivery gate:

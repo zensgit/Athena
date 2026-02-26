@@ -276,6 +276,11 @@
   - Deliverables:
     - `docs/PHASE131_GATE_PLAN_MODE_AND_HELP_CLI_DEV_20260225.md`
     - `docs/PHASE131_GATE_PLAN_MODE_AND_HELP_CLI_VERIFICATION_20260225.md`
+- Gate execution-plan format + no-plan controls:
+  - add `--no-plan`/`--print-plan` and `--plan-format=<text|json>` (with `--plan-json`/`--plan-text` shortcuts) for operator/automation usage.
+  - Deliverables:
+    - `docs/PHASE132_GATE_PLAN_FORMAT_AND_NO_PLAN_FLAGS_DEV_20260226.md`
+    - `docs/PHASE132_GATE_PLAN_FORMAT_AND_NO_PLAN_FLAGS_VERIFICATION_20260226.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.

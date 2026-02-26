@@ -1007,6 +1007,26 @@
   - `PHASE5_RECOVERY_REGISTRY_SYNC=1 PHASE5_VALIDATE_RECOVERY_REGISTRY_ONLY=1 bash scripts/phase5-regression.sh` -> PASS
   - `PHASE5_RECOVERY_GUARD_STRICT=1 PHASE5_RECOVERY_REGISTRY_STRICT=1 DELIVERY_GATE_MODE=mocked PW_WORKERS=1 bash scripts/phase5-phase6-delivery-gate.sh` -> PASS
 
+### 70) Delivery gate execution-plan format 与 no-plan 开关（Phase132）
+- `scripts/phase5-phase6-delivery-gate.sh`
+  - 新增 `DELIVERY_GATE_EXECUTION_PLAN_FORMAT=text|json`（默认 `text`）。
+  - 新增 CLI 参数：
+    - `--no-plan` / `--print-plan`
+    - `--plan-format=<text|json>`
+    - `--plan-json` / `--plan-text`
+  - `print_execution_plan` 支持 JSON 输出（便于自动化消费），并保留文本输出路径。
+  - 增加 `DELIVERY_GATE_EXECUTION_PLAN_FORMAT` 启动打印与非法格式 fail-fast 校验。
+- 交付影响：
+  - 运维可按需关闭 plan 噪声输出，CI/脚本可稳定消费 JSON execution plan。
+  - 默认行为保持兼容（仍为 text + 默认打印 plan）。
+- 验证：
+  - `bash -n scripts/phase5-phase6-delivery-gate.sh` -> PASS
+  - `scripts/phase5-phase6-delivery-gate.sh --mode=preflight --plan --plan-format=json` -> PASS
+  - `DELIVERY_GATE_MODE=preflight DELIVERY_GATE_PRINT_EXECUTION_PLAN=1 scripts/phase5-phase6-delivery-gate.sh --no-plan` -> PASS（无 execution plan 输出）
+  - `scripts/phase5-phase6-delivery-gate.sh --mode=preflight --plan --plan-format=yaml` -> expected FAIL（格式校验）
+  - `PHASE5_RECOVERY_GUARD_STRICT=1 PHASE5_RECOVERY_REGISTRY_STRICT=1 DELIVERY_GATE_MODE=preflight DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT=1 DELIVERY_GATE_PRINT_EXECUTION_PLAN=0 scripts/phase5-phase6-delivery-gate.sh` -> PASS
+  - `DELIVERY_GATE_MODE=mocked DELIVERY_GATE_PRINT_EXECUTION_PLAN=0 scripts/phase5-phase6-delivery-gate.sh` -> PASS（30 passed）
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -1180,3 +1200,5 @@
 - `docs/PHASE130_GATE_USAGE_AND_EXECUTION_PLAN_VERIFICATION_20260225.md`
 - `docs/PHASE131_GATE_PLAN_MODE_AND_HELP_CLI_DEV_20260225.md`
 - `docs/PHASE131_GATE_PLAN_MODE_AND_HELP_CLI_VERIFICATION_20260225.md`
+- `docs/PHASE132_GATE_PLAN_FORMAT_AND_NO_PLAN_FLAGS_DEV_20260226.md`
+- `docs/PHASE132_GATE_PLAN_FORMAT_AND_NO_PLAN_FLAGS_VERIFICATION_20260226.md`
