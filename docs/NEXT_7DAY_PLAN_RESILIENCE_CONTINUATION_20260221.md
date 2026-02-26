@@ -271,6 +271,11 @@
   - Deliverables:
     - `docs/PHASE130_GATE_USAGE_AND_EXECUTION_PLAN_DEV_20260225.md`
     - `docs/PHASE130_GATE_USAGE_AND_EXECUTION_PLAN_VERIFICATION_20260225.md`
+- Gate CLI plan/help hardening:
+  - validate and publish CLI usage + plan-only execution flow as documented artifacts.
+  - Deliverables:
+    - `docs/PHASE131_GATE_PLAN_MODE_AND_HELP_CLI_DEV_20260225.md`
+    - `docs/PHASE131_GATE_PLAN_MODE_AND_HELP_CLI_VERIFICATION_20260225.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
