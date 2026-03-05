@@ -2,6 +2,8 @@ import React from 'react';
 import {
   AUTH_INIT_STATUS_APP_RECOVERY,
   AUTH_INIT_STATUS_KEY,
+  AUTH_REDIRECT_FAILURE_COUNT_KEY,
+  AUTH_REDIRECT_LAST_FAILURE_AT_KEY,
   AUTH_REDIRECT_REASON_KEY,
   LOGIN_IN_PROGRESS_KEY,
   LOGIN_IN_PROGRESS_STARTED_AT_KEY,
@@ -87,6 +89,18 @@ export const buildCacheBustReloadUrl = (href: string): string => {
     return url.toString();
   } catch {
     return href;
+  }
+};
+
+export const buildRecoveryLoginUrl = (href: string, reason: string): string => {
+  try {
+    const currentUrl = new URL(href, window.location.origin);
+    const loginUrl = new URL('/login', currentUrl.origin);
+    loginUrl.searchParams.set('reason', reason);
+    loginUrl.searchParams.set('_ecm_reload', String(Date.now()));
+    return loginUrl.toString();
+  } catch {
+    return `/login?reason=${encodeURIComponent(reason)}&_ecm_reload=${Date.now()}`;
   }
 };
 
@@ -187,8 +201,10 @@ class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, AppErrorBo
     safeSessionSetItem(AUTH_INIT_STATUS_KEY, AUTH_INIT_STATUS_APP_RECOVERY);
     safeSessionRemoveItem(LOGIN_IN_PROGRESS_KEY);
     safeSessionRemoveItem(LOGIN_IN_PROGRESS_STARTED_AT_KEY);
+    safeSessionRemoveItem(AUTH_REDIRECT_FAILURE_COUNT_KEY);
+    safeSessionRemoveItem(AUTH_REDIRECT_LAST_FAILURE_AT_KEY);
     safeLocalRemoveItem(AUTH_REDIRECT_REASON_KEY);
-    window.location.assign(`/login?reason=${AUTH_INIT_STATUS_APP_RECOVERY}`);
+    window.location.assign(buildRecoveryLoginUrl(window.location.href, AUTH_INIT_STATUS_APP_RECOVERY));
   };
 
   render() {

@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import AppErrorBoundary, { buildCacheBustReloadUrl } from './AppErrorBoundary';
+import AppErrorBoundary, { buildCacheBustReloadUrl, buildRecoveryLoginUrl } from './AppErrorBoundary';
 
 const ThrowingComponent: React.FC = () => {
   throw new Error('boundary-test-error');
@@ -83,6 +83,13 @@ describe('AppErrorBoundary', () => {
     const output = buildCacheBustReloadUrl('http://localhost:3000/login?foo=bar');
     expect(output).toContain('foo=bar');
     expect(output).toMatch(/_ecm_reload=\d+/);
+  });
+
+  it('builds cache-busting login recovery urls', () => {
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(1700000000000);
+    const output = buildRecoveryLoginUrl('http://localhost:3000/browse/root?x=1', 'app_recovery');
+    expect(output).toBe('http://localhost:3000/login?reason=app_recovery&_ecm_reload=1700000000000');
+    nowSpy.mockRestore();
   });
 
   it('ignores non-fatal ResizeObserver window errors', async () => {
