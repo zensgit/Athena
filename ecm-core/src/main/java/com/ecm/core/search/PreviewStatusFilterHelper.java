@@ -40,6 +40,7 @@ final class PreviewStatusFilterHelper {
         "WAITING", "QUEUED",
         "ERROR", "FAILED",
         "UNSUPPORTED_MEDIA_TYPE", "UNSUPPORTED",
+        "UNSUPPORTED_MIME_TYPE", "UNSUPPORTED",
         "UNSUPPORTED_MIME", "UNSUPPORTED",
         "PREVIEW_UNSUPPORTED", "UNSUPPORTED"
     );
@@ -57,6 +58,12 @@ final class PreviewStatusFilterHelper {
         "cad preview disabled",
         "cad preview service not configured"
     );
+    private static final List<String> UNSUPPORTED_REASON_WILDCARDS = List.of(
+        "*unsupported_media_type*",
+        "*preview_not_supported*"
+    );
+    private static final List<String> MIME_SIGNAL_FIELDS = List.of("mimeType", "mimeType.keyword");
+    private static final List<String> FAILURE_REASON_FIELDS = List.of("previewFailureReason", "previewFailureReason.keyword");
 
     private PreviewStatusFilterHelper() {}
 
@@ -164,16 +171,23 @@ final class PreviewStatusFilterHelper {
     ) {
         return query.bool(signal -> {
             for (String mimeType : UNSUPPORTED_MIME_TYPES) {
-                signal.should(s -> s.term(t -> t.field("mimeType").value(mimeType)));
-                // Handle legacy/variant values that append parameters, e.g. "application/octet-stream; charset=binary".
-                signal.should(s -> s.wildcard(w -> w
-                    .field("mimeType")
-                    .value(mimeType + ";*")
-                ));
+                for (String field : MIME_SIGNAL_FIELDS) {
+                    signal.should(s -> s.term(t -> t.field(field).value(mimeType)));
+                    // Handle legacy/variant values that append parameters, e.g. "application/octet-stream; charset=binary".
+                    signal.should(s -> s.wildcard(w -> w
+                        .field(field)
+                        .value(mimeType + ";*")
+                    ));
+                }
             }
-            for (String phrase : UNSUPPORTED_REASON_PHRASES) {
-                signal.should(s -> s.matchPhrase(mp -> mp.field("previewFailureReason").query(phrase)));
-                signal.should(s -> s.match(m -> m.field("previewFailureReason").query(phrase)));
+            for (String field : FAILURE_REASON_FIELDS) {
+                for (String phrase : UNSUPPORTED_REASON_PHRASES) {
+                    signal.should(s -> s.matchPhrase(mp -> mp.field(field).query(phrase)));
+                    signal.should(s -> s.match(m -> m.field(field).query(phrase)));
+                }
+                for (String wildcard : UNSUPPORTED_REASON_WILDCARDS) {
+                    signal.should(s -> s.wildcard(w -> w.field(field).value(wildcard)));
+                }
             }
             signal.minimumShouldMatch("1");
             return signal;

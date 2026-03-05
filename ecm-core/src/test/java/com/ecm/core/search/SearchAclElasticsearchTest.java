@@ -229,6 +229,7 @@ class SearchAclElasticsearchTest {
         UUID failedId = UUID.randomUUID();
         UUID failedOctetId = UUID.randomUUID();
         UUID failedOctetWithParamsId = UUID.randomUUID();
+        UUID failedUnsupportedReasonId = UUID.randomUUID();
         UUID unsupportedId = UUID.randomUUID();
 
         NodeDocument pendingDoc = NodeDocument.builder()
@@ -275,6 +276,18 @@ class SearchAclElasticsearchTest {
             .deleted(false)
             .build();
 
+        // Simulate legacy/normalized unsupported marker carried in previewFailureReason while status remains FAILED.
+        NodeDocument failedUnsupportedReasonDoc = NodeDocument.builder()
+            .id(failedUnsupportedReasonId.toString())
+            .name("doc-failed-unsupported-reason")
+            .nameSort("doc-failed-unsupported-reason")
+            .nodeType(NodeType.DOCUMENT)
+            .mimeType("application/pdf")
+            .previewStatus("FAILED")
+            .previewFailureReason("unsupported_media_type")
+            .deleted(false)
+            .build();
+
         NodeDocument unsupportedDoc = NodeDocument.builder()
             .id(unsupportedId.toString())
             .name("doc-unsupported")
@@ -286,7 +299,14 @@ class SearchAclElasticsearchTest {
             .deleted(false)
             .build();
 
-        indexDocuments(pendingDoc, failedDoc, failedOctetDoc, failedOctetWithParamsDoc, unsupportedDoc);
+        indexDocuments(
+            pendingDoc,
+            failedDoc,
+            failedOctetDoc,
+            failedOctetWithParamsDoc,
+            failedUnsupportedReasonDoc,
+            unsupportedDoc
+        );
 
         var pendingResults = fullTextSearchService.search(
             "",
@@ -324,7 +344,7 @@ class SearchAclElasticsearchTest {
             true,
             List.of("UNSUPPORTED")
         );
-        assertEquals(3, unsupportedResults.getTotalElements());
+        assertEquals(4, unsupportedResults.getTotalElements());
     }
 
     @Test

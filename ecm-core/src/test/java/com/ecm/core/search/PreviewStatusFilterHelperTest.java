@@ -20,7 +20,7 @@ class PreviewStatusFilterHelperTest {
     @Test
     void normalizeMapsUnsupportedCategoryVariants() {
         List<String> normalized = PreviewStatusFilterHelper.normalize(
-            List.of("unsupported_media_type", "unsupported_mime", "preview_unsupported", "unsupported")
+            List.of("unsupported_media_type", "unsupported_mime_type", "unsupported_mime", "preview_unsupported", "unsupported")
         );
 
         assertEquals(List.of("UNSUPPORTED"), normalized);
