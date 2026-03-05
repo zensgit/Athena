@@ -1027,6 +1027,46 @@
   - `PHASE5_RECOVERY_GUARD_STRICT=1 PHASE5_RECOVERY_REGISTRY_STRICT=1 DELIVERY_GATE_MODE=preflight DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT=1 DELIVERY_GATE_PRINT_EXECUTION_PLAN=0 scripts/phase5-phase6-delivery-gate.sh` -> PASS
   - `DELIVERY_GATE_MODE=mocked DELIVERY_GATE_PRINT_EXECUTION_PLAN=0 scripts/phase5-phase6-delivery-gate.sh` -> PASS（30 passed）
 
+### 71) Delivery gate 增加 execution-plan 文件产物（Phase133）
+- `scripts/phase5-phase6-delivery-gate.sh`
+  - 新增 `DELIVERY_GATE_EXECUTION_PLAN_FILE` 与 `--plan-file=<path>`。
+  - execution plan payload 引入 `schema_version=1`。
+  - 当配置 `plan-file` 时可在不打印 plan 正文（`--no-plan`）的情况下落盘产物，便于 CI 消费。
+  - 新增目录保护：`DELIVERY_GATE_EXECUTION_PLAN_FILE` 指向目录时 fail-fast。
+- 验证：
+  - `bash -n scripts/phase5-phase6-delivery-gate.sh` -> PASS
+  - `scripts/phase5-phase6-delivery-gate.sh --help | rg -n -- '--plan-file|DELIVERY_GATE_EXECUTION_PLAN_FILE'` -> PASS
+  - `scripts/phase5-phase6-delivery-gate.sh --mode=preflight --plan --plan-json --no-plan --plan-file=/tmp/delivery-gate-plan.json` -> PASS（生成 plan artifact，schema/version 字段正确）
+
+### 72) AppErrorBoundary 登录恢复链路加固（Phase134）
+- `ecm-frontend/src/components/layout/AppErrorBoundary.tsx`
+  - 新增 `buildRecoveryLoginUrl(...)`，回退登录统一附带 `_ecm_reload` cache-bust 参数。
+  - `Back to Login` 时额外清理：
+    - `ecm_auth_redirect_failure_count`
+    - `ecm_auth_redirect_last_failure_at`
+  - 减少 runtime 异常后的重试冷却残留对登录恢复的干扰。
+- `ecm-frontend/src/components/layout/AppErrorBoundary.test.tsx`
+  - 增加 login recovery URL 构建断言。
+- 验证：
+  - `CI=1 npm test -- --runTestsByPath src/components/layout/AppErrorBoundary.test.tsx` -> PASS（8 passed）
+
+### 73) Preview unsupported 信号匹配对齐增强（Phase135）
+- `ecm-core/src/main/java/com/ecm/core/search/PreviewStatusFilterHelper.java`
+  - alias 新增：`UNSUPPORTED_MIME_TYPE -> UNSUPPORTED`。
+  - unsupported 信号匹配扩展到关键字段变体：
+    - `mimeType` + `mimeType.keyword`
+    - `previewFailureReason` + `previewFailureReason.keyword`
+  - 新增 legacy reason wildcard 变体支持：
+    - `*unsupported_media_type*`
+    - `*preview_not_supported*`
+- `ecm-core/src/test/java/com/ecm/core/search/PreviewStatusFilterHelperTest.java`
+  - alias 覆盖增强。
+- `ecm-core/src/test/java/com/ecm/core/search/SearchAclElasticsearchTest.java`
+  - 增加 `unsupported_media_type` 旧数据样本并更新 UNSUPPORTED 期望数量。
+- 验证：
+  - `mvn -Dtest=PreviewStatusFilterHelperTest test` -> PASS
+  - `mvn -Dtest=SearchAclElasticsearchTest test` -> PASS（本机 ES 依赖缺失，6 skipped）
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -1202,3 +1242,9 @@
 - `docs/PHASE131_GATE_PLAN_MODE_AND_HELP_CLI_VERIFICATION_20260225.md`
 - `docs/PHASE132_GATE_PLAN_FORMAT_AND_NO_PLAN_FLAGS_DEV_20260226.md`
 - `docs/PHASE132_GATE_PLAN_FORMAT_AND_NO_PLAN_FLAGS_VERIFICATION_20260226.md`
+- `docs/PHASE133_GATE_PLAN_FILE_ARTIFACT_DEV_20260305.md`
+- `docs/PHASE133_GATE_PLAN_FILE_ARTIFACT_VERIFICATION_20260305.md`
+- `docs/PHASE134_APP_ERROR_RECOVERY_LOGIN_HARDENING_DEV_20260305.md`
+- `docs/PHASE134_APP_ERROR_RECOVERY_LOGIN_HARDENING_VERIFICATION_20260305.md`
+- `docs/PHASE135_PREVIEW_UNSUPPORTED_SIGNAL_ALIGNMENT_DEV_20260305.md`
+- `docs/PHASE135_PREVIEW_UNSUPPORTED_SIGNAL_ALIGNMENT_VERIFICATION_20260305.md`

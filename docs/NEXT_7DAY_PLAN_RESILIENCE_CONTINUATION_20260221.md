@@ -281,6 +281,21 @@
   - Deliverables:
     - `docs/PHASE132_GATE_PLAN_FORMAT_AND_NO_PLAN_FLAGS_DEV_20260226.md`
     - `docs/PHASE132_GATE_PLAN_FORMAT_AND_NO_PLAN_FLAGS_VERIFICATION_20260226.md`
+- Gate execution-plan artifact output:
+  - add `--plan-file=<path>` / `DELIVERY_GATE_EXECUTION_PLAN_FILE` and schema-versioned plan payload export for CI/log consumers.
+  - Deliverables:
+    - `docs/PHASE133_GATE_PLAN_FILE_ARTIFACT_DEV_20260305.md`
+    - `docs/PHASE133_GATE_PLAN_FILE_ARTIFACT_VERIFICATION_20260305.md`
+- App error recovery login hardening:
+  - clear redirect-failure cooldown markers on fallback login path and navigate via cache-busted recovery login URL.
+  - Deliverables:
+    - `docs/PHASE134_APP_ERROR_RECOVERY_LOGIN_HARDENING_DEV_20260305.md`
+    - `docs/PHASE134_APP_ERROR_RECOVERY_LOGIN_HARDENING_VERIFICATION_20260305.md`
+- Preview unsupported signal alignment:
+  - extend unsupported alias/signal matching for legacy reason variants and keyword-field mappings.
+  - Deliverables:
+    - `docs/PHASE135_PREVIEW_UNSUPPORTED_SIGNAL_ALIGNMENT_DEV_20260305.md`
+    - `docs/PHASE135_PREVIEW_UNSUPPORTED_SIGNAL_ALIGNMENT_VERIFICATION_20260305.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
