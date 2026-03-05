@@ -296,6 +296,18 @@
   - Deliverables:
     - `docs/PHASE135_PREVIEW_UNSUPPORTED_SIGNAL_ALIGNMENT_DEV_20260305.md`
     - `docs/PHASE135_PREVIEW_UNSUPPORTED_SIGNAL_ALIGNMENT_VERIFICATION_20260305.md`
+- Mail diagnostics export runId traceability:
+  - pass optional runId through diagnostics export path and include run correlation in CSV header/audit details.
+  - frontend diagnostics export filename now includes runId token when available.
+  - Deliverables:
+    - `docs/PHASE136_MAIL_DIAGNOSTICS_EXPORT_RUNID_TRACEABILITY_DEV_20260305.md`
+    - `docs/PHASE136_MAIL_DIAGNOSTICS_EXPORT_RUNID_TRACEABILITY_VERIFICATION_20260305.md`
+- Phase5 regression summary artifact + strict thresholds:
+  - add optional `PHASE5_REGRESSION_SUMMARY_JSON` machine-readable artifact output.
+  - add optional strict threshold controls for hotspot duration and flaky-risk score under strict mode.
+  - Deliverables:
+    - `docs/PHASE137_PHASE5_REGRESSION_SUMMARY_ARTIFACT_AND_STRICT_THRESHOLDS_DEV_20260305.md`
+    - `docs/PHASE137_PHASE5_REGRESSION_SUMMARY_ARTIFACT_AND_STRICT_THRESHOLDS_VERIFICATION_20260305.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
