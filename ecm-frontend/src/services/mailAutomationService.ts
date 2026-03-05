@@ -471,6 +471,7 @@ class MailAutomationService {
     limit = 25,
     filters?: MailDiagnosticsFilters,
     options?: MailDiagnosticsExportOptions,
+    runId?: string | null,
   ): Promise<Blob> {
     return api.getBlob('/integration/mail/diagnostics/export', {
       params: {
@@ -491,6 +492,7 @@ class MailAutomationService {
         includePath: options?.includePath ?? undefined,
         includeMimeType: options?.includeMimeType ?? undefined,
         includeFileSize: options?.includeFileSize ?? undefined,
+        runId: runId || undefined,
       },
     });
   }

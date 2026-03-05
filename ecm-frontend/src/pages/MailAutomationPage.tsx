@@ -171,6 +171,24 @@ const formatRunIdLabel = (runId?: string | null) => {
   return trimmed.length > 8 ? `Run ${trimmed.slice(0, 8)}` : `Run ${trimmed}`;
 };
 
+const sanitizeRunIdForFilename = (runId?: string | null) => {
+  const trimmed = (runId || '').trim();
+  if (!trimmed) {
+    return '';
+  }
+  return trimmed
+    .replace(/[^a-zA-Z0-9_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+};
+
+const parseTimestamp = (value?: string | null) => {
+  if (!value) {
+    return Number.NaN;
+  }
+  return new Date(value).getTime();
+};
+
 const MailAutomationPage: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -182,6 +200,7 @@ const MailAutomationPage: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [debugging, setDebugging] = useState(false);
   const [debugResult, setDebugResult] = useState<MailFetchDebugResult | null>(null);
+  const [lastDebugAt, setLastDebugAt] = useState<string | null>(null);
   const [debugMaxMessages, setDebugMaxMessages] = useState(200);
   const [folderAccountId, setFolderAccountId] = useState('');
   const [summaryAccountId, setSummaryAccountId] = useState('');
@@ -1122,6 +1141,22 @@ const MailAutomationPage: React.FC = () => {
   const reportTotals = report?.totals;
   const maxTrendTotal = Math.max(1, ...reportTrend.map((row) => row.total));
   const exportDisabled = !exportOptions.includeProcessed && !exportOptions.includeDocuments;
+  const diagnosticsExportRunId = useMemo(() => {
+    const debugRunId = (debugResult?.summary.runId || '').trim();
+    const fetchRunId = (lastFetchSummary?.runId || '').trim();
+    if (!debugRunId && !fetchRunId) {
+      return '';
+    }
+    if (debugRunId && fetchRunId) {
+      const debugAt = parseTimestamp(lastDebugAt);
+      const fetchAt = parseTimestamp(lastFetchAt);
+      if (Number.isFinite(debugAt) && Number.isFinite(fetchAt)) {
+        return debugAt >= fetchAt ? debugRunId : fetchRunId;
+      }
+      return debugRunId;
+    }
+    return debugRunId || fetchRunId;
+  }, [debugResult, lastFetchSummary, lastDebugAt, lastFetchAt]);
   const diagnosticsExportScopeSummary = useMemo(() => {
     const segments: string[] = [];
     if (diagnosticsAccountId) {
@@ -1346,6 +1381,7 @@ const MailAutomationPage: React.FC = () => {
       return;
     }
     try {
+      const runId = diagnosticsExportRunId || undefined;
       const blob = await mailAutomationService.exportDiagnosticsCsv(diagnosticsLimit, {
         accountId: diagnosticsAccountId || undefined,
         ruleId: diagnosticsRuleId || undefined,
@@ -1356,12 +1392,15 @@ const MailAutomationPage: React.FC = () => {
         processedTo: diagnosticsProcessedTo || undefined,
         sort: diagnosticsSort,
         order: diagnosticsOrder,
-      }, exportOptions);
+      }, exportOptions, runId);
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const runIdToken = sanitizeRunIdForFilename(runId);
       anchor.href = url;
-      anchor.download = `mail-diagnostics-${timestamp}.csv`;
+      anchor.download = runIdToken
+        ? `mail-diagnostics-${runIdToken}-${timestamp}.csv`
+        : `mail-diagnostics-${timestamp}.csv`;
       anchor.style.display = 'none';
       document.body.appendChild(anchor);
       anchor.click();
@@ -1587,6 +1626,7 @@ const MailAutomationPage: React.FC = () => {
         maxMessagesPerFolder,
       });
       setDebugResult(result);
+      setLastDebugAt(new Date().toISOString());
       const durationSeconds = (result.summary.durationMs / 1000).toFixed(1);
       toast.success(
         `Diagnostics complete: matched ${result.summary.matchedMessages}, processable ${result.summary.processedMessages} in ${durationSeconds}s`

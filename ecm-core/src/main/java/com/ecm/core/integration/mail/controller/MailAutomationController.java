@@ -446,6 +446,7 @@ public class MailAutomationController {
             LocalDateTime processedTo,
         @RequestParam(required = false) String sort,
         @RequestParam(required = false) String order,
+        @RequestParam(required = false) String runId,
         @RequestParam(required = false) Boolean includeProcessed,
         @RequestParam(required = false) Boolean includeDocuments,
         @RequestParam(required = false) Boolean includeSubject,
@@ -476,6 +477,7 @@ public class MailAutomationController {
             processedTo,
             sort,
             order,
+            runId,
             requestId,
             actor,
             includeProcessed,
@@ -486,7 +488,7 @@ public class MailAutomationController {
             includeMimeType,
             includeFileSize
         );
-        auditDiagnosticsExport(limit, accountId, ruleId, sort, order, requestId, auditOptions);
+        auditDiagnosticsExport(limit, accountId, ruleId, sort, order, runId, requestId, auditOptions);
         String filename = "mail-diagnostics-" + LocalDate.now() + ".csv";
         return ResponseEntity.ok()
             .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
@@ -615,6 +617,7 @@ public class MailAutomationController {
         UUID ruleId,
         String sort,
         String order,
+        String runId,
         String requestId,
         MailDiagnosticsExportAuditOptions exportOptions
     ) {
@@ -623,11 +626,13 @@ public class MailAutomationController {
         String auditNodeName = accountId != null
             ? "MAIL_ACCOUNT"
             : (ruleId != null ? "MAIL_RULE" : "MAIL_DIAGNOSTICS");
+        String effectiveRunId = runId != null && !runId.isBlank() ? runId : "NONE";
         String details = String.format(
-            "Exported mail diagnostics (requestId=%s, limit=%d, accountId=%s, ruleId=%s, sort=%s, order=%s, " +
+            "Exported mail diagnostics (requestId=%s, runId=%s, limit=%d, accountId=%s, ruleId=%s, sort=%s, order=%s, " +
                 "includeProcessed=%s, includeDocuments=%s, includeSubject=%s, includeError=%s, includePath=%s, " +
                 "includeMimeType=%s, includeFileSize=%s)",
             requestId,
+            effectiveRunId,
             effectiveLimit,
             accountId != null ? accountId : "ALL",
             ruleId != null ? ruleId : "ALL",

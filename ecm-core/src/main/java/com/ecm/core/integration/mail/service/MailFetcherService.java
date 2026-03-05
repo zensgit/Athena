@@ -699,6 +699,7 @@ public class MailFetcherService {
         LocalDateTime processedTo,
         String sort,
         String order,
+        String runId,
         String requestId,
         String generatedBy,
         Boolean includeProcessed,
@@ -732,6 +733,7 @@ public class MailFetcherService {
                     processedTo,
                     sort,
                     order,
+                    runId,
                     requestId,
                     generatedBy,
                     exportOptions
@@ -1412,6 +1414,7 @@ public class MailFetcherService {
         LocalDateTime processedTo,
         String sort,
         String order,
+        String runId,
         String requestId,
         String generatedBy,
         MailDiagnosticsExportOptions exportOptions
@@ -1437,12 +1440,14 @@ public class MailFetcherService {
         String processedToLabel = processedTo != null ? processedTo.toString() : "ALL";
         String sortLabel = sort != null && !sort.isBlank() ? sort : "processedAt";
         String orderLabel = order != null && !order.isBlank() ? order : "desc";
+        String effectiveRunId = runId != null && !runId.isBlank() ? runId : "NONE";
         String effectiveRequestId = requestId != null && !requestId.isBlank() ? requestId : UUID.randomUUID().toString();
         String effectiveGeneratedBy = generatedBy != null && !generatedBy.isBlank() ? generatedBy : "unknown";
 
         StringBuilder csv = new StringBuilder();
         appendCsvRow(csv, "Mail Diagnostics Export");
         appendCsvRow(csv, "RequestId", effectiveRequestId);
+        appendCsvRow(csv, "RunId", effectiveRunId);
         appendCsvRow(csv, "GeneratedBy", effectiveGeneratedBy);
         appendCsvRow(csv, "GeneratedAt", LocalDateTime.now());
         appendCsvRow(csv, "Limit", diagnostics.limit());

@@ -221,6 +221,7 @@ class MailAutomationControllerSecurityTest {
             Mockito.isNull(),
             Mockito.isNull(),
             Mockito.isNull(),
+            Mockito.eq("run-abc"),
             Mockito.anyString(),
             Mockito.eq("admin"),
             Mockito.isNull(),
@@ -233,7 +234,7 @@ class MailAutomationControllerSecurityTest {
         ))
             .thenReturn("Mail Diagnostics Export\n");
 
-        mockMvc.perform(get("/api/v1/integration/mail/diagnostics/export").param("limit", "5"))
+        mockMvc.perform(get("/api/v1/integration/mail/diagnostics/export").param("limit", "5").param("runId", "run-abc"))
             .andExpect(status().isOk())
             .andExpect(header().string("Content-Type", Matchers.containsString("text/csv")))
             .andExpect(content().string(Matchers.containsString("Mail Diagnostics Export")));
@@ -249,6 +250,7 @@ class MailAutomationControllerSecurityTest {
             Mockito.isNull(),
             Mockito.isNull(),
             Mockito.isNull(),
+            Mockito.eq("run-abc"),
             Mockito.anyString(),
             Mockito.eq("admin"),
             Mockito.isNull(),
@@ -264,7 +266,7 @@ class MailAutomationControllerSecurityTest {
             Mockito.isNull(),
             Mockito.eq("MAIL_DIAGNOSTICS"),
             Mockito.eq("admin"),
-            ArgumentMatchers.contains("limit=5")
+            ArgumentMatchers.argThat(details -> details.contains("limit=5") && details.contains("runId=run-abc"))
         );
     }
 }

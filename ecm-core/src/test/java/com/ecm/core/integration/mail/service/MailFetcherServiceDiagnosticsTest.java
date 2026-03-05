@@ -300,6 +300,7 @@ class MailFetcherServiceDiagnosticsTest {
             null,
             null,
             null,
+            "fetch-run-123",
             "req-test",
             "admin",
             true,
@@ -315,6 +316,11 @@ class MailFetcherServiceDiagnosticsTest {
             .filter((line) -> line.startsWith("ProcessedAt,"))
             .findFirst()
             .orElse("");
+        String runIdHeader = csv.lines()
+            .filter((line) -> line.startsWith("RunId,"))
+            .findFirst()
+            .orElse("");
+        assertEquals("RunId,fetch-run-123", runIdHeader);
         assertTrue(processedHeader.contains("ProcessedAt"));
         assertTrue(!processedHeader.contains("Subject"));
         assertTrue(!processedHeader.contains("Error"));

@@ -13,6 +13,16 @@ PHASE5_RECOVERY_EVENTS_FILE="${PHASE5_RECOVERY_EVENTS_FILE:-e2e/recovery-events.
 PHASE5_RECOVERY_REGISTRY_STRICT="${PHASE5_RECOVERY_REGISTRY_STRICT:-${PHASE5_RECOVERY_GUARD_STRICT}}"
 PHASE5_VALIDATE_RECOVERY_REGISTRY_ONLY="${PHASE5_VALIDATE_RECOVERY_REGISTRY_ONLY:-0}"
 PHASE5_RECOVERY_REGISTRY_SYNC="${PHASE5_RECOVERY_REGISTRY_SYNC:-0}"
+PHASE5_REGRESSION_SUMMARY_JSON="${PHASE5_REGRESSION_SUMMARY_JSON:-}"
+PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD="${PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD:-0}"
+PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD="${PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD:-0}"
+PHASE5_RUN_START_EPOCH="$(date +%s)"
+PHASE5_RUN_START_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+PHASE5_ANALYSIS_JSON_FILE=""
+PHASE5_PLAYWRIGHT_LOG=""
+EFFECTIVE_ECM_UI_URL="${ECM_UI_URL}"
+srv_pid=""
+srv_log=""
 
 echo "phase5_regression: start"
 echo "ECM_UI_URL=${ECM_UI_URL}"
@@ -23,11 +33,187 @@ echo "PHASE5_RECOVERY_EVENTS_FILE=${PHASE5_RECOVERY_EVENTS_FILE}"
 echo "PHASE5_RECOVERY_REGISTRY_STRICT=${PHASE5_RECOVERY_REGISTRY_STRICT}"
 echo "PHASE5_VALIDATE_RECOVERY_REGISTRY_ONLY=${PHASE5_VALIDATE_RECOVERY_REGISTRY_ONLY}"
 echo "PHASE5_RECOVERY_REGISTRY_SYNC=${PHASE5_RECOVERY_REGISTRY_SYNC}"
+echo "PHASE5_REGRESSION_SUMMARY_JSON=${PHASE5_REGRESSION_SUMMARY_JSON:-"(unset)"}"
+echo "PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD=${PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD}"
+echo "PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD=${PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD}"
 
 strip_ansi_file() {
   local log_file="$1"
   sed -E $'s/\x1B\\[[0-9;]*[[:alpha:]]//g' "${log_file}" | tr -d '\r'
 }
+
+write_phase5_summary_artifact() {
+  local exit_code="$1"
+  if [[ -z "${PHASE5_REGRESSION_SUMMARY_JSON}" ]]; then
+    return 0
+  fi
+
+  local summary_dir
+  summary_dir="$(dirname "${PHASE5_REGRESSION_SUMMARY_JSON}")"
+  if [[ "${summary_dir}" != "." ]]; then
+    mkdir -p "${summary_dir}"
+  fi
+
+  local run_end_epoch
+  local run_end_iso
+  local run_duration_seconds
+  run_end_epoch="$(date +%s)"
+  run_end_iso="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  run_duration_seconds=$((run_end_epoch - PHASE5_RUN_START_EPOCH))
+
+  local spec_count="0"
+  if declare -p PHASE5_SPECS >/dev/null 2>&1; then
+    spec_count="${#PHASE5_SPECS[@]}"
+  fi
+
+  PHASE5_SUMMARY_EXIT_CODE="${exit_code}" \
+  PHASE5_RUN_START_EPOCH="${PHASE5_RUN_START_EPOCH}" \
+  PHASE5_RUN_START_ISO="${PHASE5_RUN_START_ISO}" \
+  PHASE5_RUN_END_EPOCH="${run_end_epoch}" \
+  PHASE5_RUN_END_ISO="${run_end_iso}" \
+  PHASE5_RUN_DURATION_SECONDS="${run_duration_seconds}" \
+  PHASE5_SPEC_COUNT="${spec_count}" \
+  PHASE5_EFFECTIVE_ECM_UI_URL="${EFFECTIVE_ECM_UI_URL}" \
+  PHASE5_PLAYWRIGHT_LOG_PATH="${PHASE5_PLAYWRIGHT_LOG}" \
+  PHASE5_RECOVERY_GUARD_STRICT="${PHASE5_RECOVERY_GUARD_STRICT}" \
+  PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD="${PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD}" \
+  PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD="${PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD}" \
+  PHASE5_VALIDATE_RECOVERY_REGISTRY_ONLY="${PHASE5_VALIDATE_RECOVERY_REGISTRY_ONLY}" \
+  PHASE5_USE_EXISTING_UI="${PHASE5_USE_EXISTING_UI}" \
+  PHASE5_RECOVERY_EVENTS_FILE="${PHASE5_RECOVERY_EVENTS_FILE}" \
+  ECM_UI_URL="${ECM_UI_URL}" \
+  PW_PROJECT="${PW_PROJECT}" \
+  PW_WORKERS="${PW_WORKERS}" \
+  node - "${PHASE5_REGRESSION_SUMMARY_JSON}" "${PHASE5_ANALYSIS_JSON_FILE:-}" <<'NODE' >/dev/null 2>&1 || {
+const fs = require('fs');
+
+const outputFile = process.argv[2];
+const analysisFile = process.argv[3] || '';
+const parseIntSafe = (rawValue, fallback = 0) => {
+  const value = Number.parseInt(rawValue ?? '', 10);
+  return Number.isFinite(value) ? value : fallback;
+};
+const parseNumberSafe = (rawValue, fallback = 0) => {
+  const value = Number.parseFloat(rawValue ?? '');
+  return Number.isFinite(value) ? value : fallback;
+};
+
+let analysis = {};
+if (analysisFile && fs.existsSync(analysisFile)) {
+  try {
+    analysis = JSON.parse(fs.readFileSync(analysisFile, 'utf8'));
+  } catch (_error) {
+    analysis = {};
+  }
+}
+
+const durationHotspots = Array.isArray(analysis.duration_hotspots)
+  ? analysis.duration_hotspots
+      .map((item) => ({
+        spec: String(item?.spec ?? ''),
+        title: String(item?.title ?? ''),
+        duration_sec: parseNumberSafe(item?.duration_sec, 0),
+      }))
+      .sort((left, right) => right.duration_sec - left.duration_sec || left.spec.localeCompare(right.spec))
+  : [];
+const flakyRiskCandidates = Array.isArray(analysis.flaky_risk_candidates)
+  ? analysis.flaky_risk_candidates
+      .map((item) => ({
+        spec: String(item?.spec ?? ''),
+        title: String(item?.title ?? ''),
+        duration_sec: parseNumberSafe(item?.duration_sec, 0),
+        score: parseIntSafe(item?.score, 0),
+      }))
+      .sort(
+        (left, right) =>
+          right.score - left.score || right.duration_sec - left.duration_sec || left.spec.localeCompare(right.spec)
+      )
+  : [];
+const recoveryMissingEvents = Array.isArray(analysis.recovery_missing_events)
+  ? analysis.recovery_missing_events.map((item) => String(item)).sort()
+  : [];
+const recoveryUnexpectedEvents = Array.isArray(analysis.recovery_unexpected_events)
+  ? analysis.recovery_unexpected_events.map((item) => String(item)).sort()
+  : [];
+const recoveryEventCounts = Array.isArray(analysis.recovery_event_counts)
+  ? analysis.recovery_event_counts
+      .map((item) => ({
+        name: String(item?.name ?? ''),
+        count: parseIntSafe(item?.count, 0),
+      }))
+      .filter((item) => item.name.length > 0)
+      .sort((left, right) => left.name.localeCompare(right.name))
+  : [];
+const strictFailureReasons = Array.isArray(analysis.strict_failure_reasons)
+  ? analysis.strict_failure_reasons.map((item) => String(item)).sort()
+  : [];
+
+const summary = {
+  schema_version: 1,
+  run_metadata: {
+    script: 'scripts/phase5-regression.sh',
+    cwd: process.cwd(),
+    start_epoch_seconds: parseIntSafe(process.env.PHASE5_RUN_START_EPOCH),
+    start_utc: process.env.PHASE5_RUN_START_ISO || '',
+    end_epoch_seconds: parseIntSafe(process.env.PHASE5_RUN_END_EPOCH),
+    end_utc: process.env.PHASE5_RUN_END_ISO || '',
+    duration_seconds: parseIntSafe(process.env.PHASE5_RUN_DURATION_SECONDS),
+    ui_url_configured: process.env.ECM_UI_URL || '',
+    ui_url_effective: process.env.PHASE5_EFFECTIVE_ECM_UI_URL || '',
+    playwright_project: process.env.PW_PROJECT || '',
+    playwright_workers: parseIntSafe(process.env.PW_WORKERS, 1),
+    spec_count: parseIntSafe(process.env.PHASE5_SPEC_COUNT),
+    validate_registry_only: process.env.PHASE5_VALIDATE_RECOVERY_REGISTRY_ONLY === '1',
+    use_existing_ui: process.env.PHASE5_USE_EXISTING_UI === '1',
+    recovery_events_file: process.env.PHASE5_RECOVERY_EVENTS_FILE || '',
+    playwright_log: process.env.PHASE5_PLAYWRIGHT_LOG_PATH || '',
+  },
+  strict_mode: process.env.PHASE5_RECOVERY_GUARD_STRICT === '1',
+  strict_threshold_controls: {
+    hotspot_duration_sec_threshold: parseNumberSafe(process.env.PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD, 0),
+    flaky_risk_score_threshold: parseIntSafe(process.env.PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD, 0),
+    hotspot_match_count: parseIntSafe(analysis.strict_hotspot_match_count, 0),
+    flaky_risk_match_count: parseIntSafe(analysis.strict_flaky_risk_match_count, 0),
+    strict_guard_failed: Boolean(analysis.strict_guard_failed),
+    strict_failure_reasons: strictFailureReasons,
+  },
+  duration_hotspots: durationHotspots,
+  flaky_risk_candidates: flakyRiskCandidates,
+  retry_signal_count: parseIntSafe(analysis.retry_signal_count, 0),
+  startup_sla: {
+    warning_count: parseIntSafe(analysis.startup_sla_warning_count, 0),
+    drift_warning_count: parseIntSafe(analysis.startup_sla_drift_warning_count, 0),
+  },
+  recovery_guard: {
+    warning_count: parseIntSafe(analysis.recovery_guard_warning_count, 0),
+    missing_events: recoveryMissingEvents,
+    unexpected_events: recoveryUnexpectedEvents,
+    event_counts: recoveryEventCounts,
+  },
+  exit_status: parseIntSafe(process.env.PHASE5_SUMMARY_EXIT_CODE, 1),
+};
+
+fs.writeFileSync(outputFile, `${JSON.stringify(summary, null, 2)}\n`, 'utf8');
+NODE
+    echo "phase5_regression: WARN failed to write summary artifact: ${PHASE5_REGRESSION_SUMMARY_JSON}"
+    return 0
+  }
+  echo "phase5_regression: wrote summary artifact => ${PHASE5_REGRESSION_SUMMARY_JSON}"
+  return 0
+}
+
+phase5_on_exit() {
+  local exit_code="$1"
+  if [[ -n "${srv_pid:-}" ]]; then
+    kill "${srv_pid}" >/dev/null 2>&1 || true
+  fi
+  write_phase5_summary_artifact "${exit_code}"
+  if [[ -n "${PHASE5_ANALYSIS_JSON_FILE:-}" && -f "${PHASE5_ANALYSIS_JSON_FILE}" ]]; then
+    rm -f "${PHASE5_ANALYSIS_JSON_FILE}" >/dev/null 2>&1 || true
+  fi
+}
+
+trap 'phase5_on_exit "$?"' EXIT
 
 print_playwright_failure_summary() {
   local log_file="$1"
@@ -57,14 +243,66 @@ print_playwright_failure_summary() {
 
 print_playwright_timing_summary() {
   local log_file="$1"
-  node - "${log_file}" "${PHASE5_RECOVERY_GUARD_STRICT}" "${PHASE5_RECOVERY_EVENTS_FILE}" <<'NODE'
+  local analysis_json_file="${2:-}"
+  node - \
+    "${log_file}" \
+    "${PHASE5_RECOVERY_GUARD_STRICT}" \
+    "${PHASE5_RECOVERY_EVENTS_FILE}" \
+    "${analysis_json_file}" \
+    "${PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD}" \
+    "${PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD}" <<'NODE'
 const fs = require('fs');
 
 const logFile = process.argv[2];
 const strictMode = process.argv[3] || '0';
 const expectedEventsFile = process.argv[4] || '';
+const analysisJsonFile = process.argv[5] || '';
+const strictHotspotThresholdRaw = process.argv[6] || '0';
+const strictFlakyRiskScoreThresholdRaw = process.argv[7] || '0';
+
+const parsePositiveNumber = (rawValue) => {
+  const value = Number.parseFloat(rawValue ?? '');
+  return Number.isFinite(value) && value > 0 ? value : 0;
+};
+const parsePositiveInt = (rawValue) => {
+  const value = Number.parseInt(rawValue ?? '', 10);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+};
+const strictHotspotThresholdSeconds = parsePositiveNumber(strictHotspotThresholdRaw);
+const strictFlakyRiskScoreThreshold = parsePositiveInt(strictFlakyRiskScoreThresholdRaw);
+
+const analysis = {
+  schema_version: 1,
+  duration_hotspots: [],
+  flaky_risk_candidates: [],
+  retry_signal_count: 0,
+  startup_sla_warning_count: 0,
+  startup_sla_drift_warning_count: 0,
+  recovery_guard_warning_count: 0,
+  recovery_missing_events: [],
+  recovery_unexpected_events: [],
+  recovery_event_counts: [],
+  strict_hotspot_duration_sec_threshold: strictHotspotThresholdSeconds,
+  strict_hotspot_match_count: 0,
+  strict_flaky_risk_score_threshold: strictFlakyRiskScoreThreshold,
+  strict_flaky_risk_match_count: 0,
+  strict_guard_failed: false,
+  strict_failure_reasons: [],
+};
+
+const persistAnalysis = () => {
+  if (!analysisJsonFile) {
+    return;
+  }
+  fs.writeFileSync(analysisJsonFile, `${JSON.stringify(analysis, null, 2)}\n`, 'utf8');
+};
+const exitWithCode = (exitCode) => {
+  persistAnalysis();
+  process.exit(exitCode);
+};
+
 if (!logFile || !fs.existsSync(logFile)) {
-  process.exit(0);
+  exitWithCode(0);
 }
 
 const content = fs.readFileSync(logFile, 'utf8').replace(/\r/g, '');
@@ -83,14 +321,24 @@ for (const line of lines) {
   tests.push({ spec, title, durationSec });
 }
 
-if (tests.length === 0) {
-  process.exit(0);
-}
-
-tests.sort((left, right) => right.durationSec - left.durationSec);
+tests.sort(
+  (left, right) =>
+    right.durationSec - left.durationSec
+    || left.spec.localeCompare(right.spec)
+    || left.title.localeCompare(right.title)
+);
+analysis.duration_hotspots = tests.slice(0, 5).map((item) => ({
+  spec: item.spec,
+  title: item.title,
+  duration_sec: Number(item.durationSec.toFixed(3)),
+}));
 console.log('phase5_regression: duration hotspots (top 5)');
-for (const item of tests.slice(0, 5)) {
-  console.log(` - ${item.spec} :: ${item.title} (${item.durationSec.toFixed(1)}s)`);
+if (analysis.duration_hotspots.length === 0) {
+  console.log(' - (none)');
+} else {
+  for (const item of analysis.duration_hotspots) {
+    console.log(` - ${item.spec} :: ${item.title} (${item.duration_sec.toFixed(1)}s)`);
+  }
 }
 
 const riskCandidates = tests
@@ -107,18 +355,31 @@ const riskCandidates = tests
     return { ...item, score };
   })
   .filter((item) => item.score > 0)
-  .sort((left, right) => right.score - left.score || right.durationSec - left.durationSec);
+  .sort(
+    (left, right) =>
+      right.score - left.score
+      || right.durationSec - left.durationSec
+      || left.spec.localeCompare(right.spec)
+      || left.title.localeCompare(right.title)
+  );
+analysis.flaky_risk_candidates = riskCandidates.slice(0, 3).map((item) => ({
+  spec: item.spec,
+  title: item.title,
+  duration_sec: Number(item.durationSec.toFixed(3)),
+  score: item.score,
+}));
 
-if (riskCandidates.length > 0) {
+if (analysis.flaky_risk_candidates.length > 0) {
   console.log('phase5_regression: flaky-risk candidates (heuristic)');
-  for (const item of riskCandidates.slice(0, 3)) {
-    console.log(` - score ${item.score}: ${item.spec} :: ${item.title} (${item.durationSec.toFixed(1)}s)`);
+  for (const item of analysis.flaky_risk_candidates) {
+    console.log(` - score ${item.score}: ${item.spec} :: ${item.title} (${item.duration_sec.toFixed(1)}s)`);
   }
 } else {
   console.log('phase5_regression: flaky-risk candidates (heuristic): none');
 }
 
 const retrySignals = lines.filter((line) => /retry #\d+/i.test(line)).length;
+analysis.retry_signal_count = retrySignals;
 if (retrySignals > 0) {
   console.log(`phase5_regression: retry signals observed in run: ${retrySignals}`);
 }
@@ -126,17 +387,17 @@ if (retrySignals > 0) {
 const startupSlaLinePattern = /^\s*startup_sla:[a-z_]+_ms=[0-9]+:threshold_ms=[0-9]+\s*$/;
 const startupSlaLines = lines.filter((line) => startupSlaLinePattern.test(line));
 if (startupSlaLines.length > 0) {
-  const parsePositiveInt = (rawValue) => {
+  const parseBaselineOverride = (rawValue) => {
     const value = Number.parseInt(rawValue ?? '', 10);
     return Number.isFinite(value) && value > 0 ? value : null;
   };
   const baselineOverrides = {
     login_visible:
-      parsePositiveInt(process.env.ECM_STARTUP_SLA_BASELINE_LOGIN_VISIBLE_MS)
-      ?? parsePositiveInt(process.env.ECM_STARTUP_SLA_BASELINE_LOGIN_MS),
+      parseBaselineOverride(process.env.ECM_STARTUP_SLA_BASELINE_LOGIN_VISIBLE_MS)
+      ?? parseBaselineOverride(process.env.ECM_STARTUP_SLA_BASELINE_LOGIN_MS),
     browse_visible:
-      parsePositiveInt(process.env.ECM_STARTUP_SLA_BASELINE_BROWSE_VISIBLE_MS)
-      ?? parsePositiveInt(process.env.ECM_STARTUP_SLA_BASELINE_BROWSE_MS),
+      parseBaselineOverride(process.env.ECM_STARTUP_SLA_BASELINE_BROWSE_VISIBLE_MS)
+      ?? parseBaselineOverride(process.env.ECM_STARTUP_SLA_BASELINE_BROWSE_MS),
   };
   const defaultBaselines = {
     login_visible: 1500,
@@ -208,6 +469,8 @@ if (startupSlaLines.length > 0) {
     }
     const driftWarnCount = startupSlaStatus.filter((item) => item.driftLevel === 'WARN').length;
     console.log(`phase5_regression: startup SLA drift warning count: ${driftWarnCount}`);
+    analysis.startup_sla_warning_count = warnCount;
+    analysis.startup_sla_drift_warning_count = driftWarnCount;
   }
 }
 
@@ -229,6 +492,7 @@ if (recoverySummary.size === 0) {
   console.log(' - (none)');
 } else {
   const sorted = Array.from(recoverySummary.entries()).sort((left, right) => left[0].localeCompare(right[0]));
+  analysis.recovery_event_counts = sorted.map(([name, count]) => ({ name, count }));
   for (const [eventName, count] of sorted) {
     console.log(` - ${eventName}: ${count}`);
   }
@@ -236,7 +500,9 @@ if (recoverySummary.size === 0) {
 
 if (!expectedEventsFile || !fs.existsSync(expectedEventsFile)) {
   console.log(`phase5_regression: recovery expected events file not found: ${expectedEventsFile || '(empty)'}`);
-  process.exit(2);
+  analysis.strict_guard_failed = true;
+  analysis.strict_failure_reasons = ['recovery_events_file_missing'];
+  exitWithCode(2);
 }
 const expectedEvents = Array.from(
   new Set(
@@ -249,13 +515,17 @@ const expectedEvents = Array.from(
 );
 if (expectedEvents.length === 0) {
   console.log(`phase5_regression: recovery expected events file is empty or invalid: ${expectedEventsFile}`);
-  process.exit(2);
+  analysis.strict_guard_failed = true;
+  analysis.strict_failure_reasons = ['recovery_events_file_invalid'];
+  exitWithCode(2);
 }
 console.log(`phase5_regression: recovery expected events source: ${expectedEventsFile} (${expectedEvents.length})`);
 
 const expectedEventSet = new Set(expectedEvents);
 const missingEvents = expectedEvents.filter((eventName) => !recoverySummary.has(eventName));
 const unexpectedEvents = Array.from(recoverySummary.keys()).filter((eventName) => !expectedEventSet.has(eventName));
+missingEvents.sort((left, right) => left.localeCompare(right));
+unexpectedEvents.sort((left, right) => left.localeCompare(right));
 
 console.log('phase5_regression: recovery guard status');
 if (missingEvents.length === 0) {
@@ -266,16 +536,56 @@ if (missingEvents.length === 0) {
   }
 }
 if (unexpectedEvents.length > 0) {
-  for (const unexpected of unexpectedEvents.sort((left, right) => left.localeCompare(right))) {
+  for (const unexpected of unexpectedEvents) {
     console.log(` - WARN unexpected event: ${unexpected}`);
   }
 }
 const guardWarningCount = missingEvents.length + unexpectedEvents.length;
+analysis.recovery_guard_warning_count = guardWarningCount;
+analysis.recovery_missing_events = missingEvents;
+analysis.recovery_unexpected_events = unexpectedEvents;
 console.log(`phase5_regression: recovery guard warning count: ${guardWarningCount}`);
-if (strictMode === '1' && guardWarningCount > 0) {
-  console.log('phase5_regression: strict recovery guard failed');
-  process.exit(2);
+
+if (strictHotspotThresholdSeconds > 0) {
+  const hotspotMatchCount = tests.filter((item) => item.durationSec >= strictHotspotThresholdSeconds).length;
+  analysis.strict_hotspot_match_count = hotspotMatchCount;
+  console.log(
+    `phase5_regression: strict hotspot threshold >=${strictHotspotThresholdSeconds}s match count: ${hotspotMatchCount}`
+  );
 }
+if (strictFlakyRiskScoreThreshold > 0) {
+  const flakyRiskMatchCount = riskCandidates.filter((item) => item.score >= strictFlakyRiskScoreThreshold).length;
+  analysis.strict_flaky_risk_match_count = flakyRiskMatchCount;
+  console.log(
+    `phase5_regression: strict flaky-risk score threshold >=${strictFlakyRiskScoreThreshold} match count: ${flakyRiskMatchCount}`
+  );
+}
+
+const strictFailureReasons = [];
+if (strictMode === '1' && guardWarningCount > 0) {
+  strictFailureReasons.push('recovery_guard');
+}
+if (strictMode === '1' && strictHotspotThresholdSeconds > 0 && analysis.strict_hotspot_match_count > 0) {
+  strictFailureReasons.push('hotspot_threshold');
+}
+if (strictMode === '1' && strictFlakyRiskScoreThreshold > 0 && analysis.strict_flaky_risk_match_count > 0) {
+  strictFailureReasons.push('flaky_risk_threshold');
+}
+analysis.strict_failure_reasons = strictFailureReasons;
+analysis.strict_guard_failed = strictFailureReasons.length > 0;
+if (analysis.strict_guard_failed) {
+  if (strictFailureReasons.includes('recovery_guard')) {
+    console.log('phase5_regression: strict recovery guard failed');
+  }
+  if (strictFailureReasons.includes('hotspot_threshold')) {
+    console.log('phase5_regression: strict hotspot threshold failed');
+  }
+  if (strictFailureReasons.includes('flaky_risk_threshold')) {
+    console.log('phase5_regression: strict flaky-risk threshold failed');
+  }
+  exitWithCode(2);
+}
+exitWithCode(0);
 NODE
 }
 
@@ -444,10 +754,6 @@ extract_port() {
   fi
 }
 
-EFFECTIVE_ECM_UI_URL="${ECM_UI_URL}"
-srv_pid=""
-srv_log=""
-
 start_ephemeral_static_server() {
   if ! command -v npx >/dev/null 2>&1; then
     return 1
@@ -532,7 +838,6 @@ if [[ "${PHASE5_USE_EXISTING_UI}" != "1" ]] && [[ "${ui_host}" == "localhost" ||
     fi
     exit 1
   fi
-  trap 'if [[ -n "${srv_pid:-}" ]]; then kill "${srv_pid}" >/dev/null 2>&1 || true; fi' EXIT
   echo "phase5_regression: using dedicated server ${EFFECTIVE_ECM_UI_URL}"
 elif ! curl -fsS --max-time 3 "${ECM_UI_URL}" >/dev/null 2>&1; then
   case "${ui_host}" in
@@ -546,8 +851,6 @@ elif ! curl -fsS --max-time 3 "${ECM_UI_URL}" >/dev/null 2>&1; then
         python3 -m http.server "${ui_port}" --directory build >/tmp/phase5-regression.http.log 2>&1 &
         srv_pid=$!
       fi
-      trap 'if [[ -n "${srv_pid:-}" ]]; then kill "${srv_pid}" >/dev/null 2>&1 || true; fi' EXIT
-
       for _ in $(seq 1 30); do
         if curl -fsS --max-time 1 "${ECM_UI_URL}" >/dev/null 2>&1; then
           break
@@ -567,18 +870,25 @@ echo "phase5_regression: check e2e target"
 ALLOW_STATIC=1 ../scripts/check-e2e-target.sh "${EFFECTIVE_ECM_UI_URL}" || true
 
 echo "phase5_regression: run playwright specs"
-playwright_log="$(mktemp "/tmp/phase5-regression.playwright.XXXXXX")"
+PHASE5_PLAYWRIGHT_LOG="$(mktemp "/tmp/phase5-regression.playwright.XXXXXX")"
+PHASE5_ANALYSIS_JSON_FILE="$(mktemp "/tmp/phase5-regression.analysis.XXXXXX")"
 playwright_rc=0
-run_with_tee "${playwright_log}" \
+timing_summary_rc=0
+run_with_tee "${PHASE5_PLAYWRIGHT_LOG}" \
   env ECM_UI_URL="${EFFECTIVE_ECM_UI_URL}" \
   npx playwright test \
   "${PHASE5_SPECS[@]}" \
   --project="${PW_PROJECT}" --workers="${PW_WORKERS}" || playwright_rc=$?
-print_playwright_timing_summary "${playwright_log}"
+print_playwright_timing_summary "${PHASE5_PLAYWRIGHT_LOG}" "${PHASE5_ANALYSIS_JSON_FILE}" || timing_summary_rc=$?
+if [[ "${timing_summary_rc}" -ne 0 ]]; then
+  echo "phase5_regression: timing guard failed (${timing_summary_rc})"
+  echo "phase5_regression: playwright log => ${PHASE5_PLAYWRIGHT_LOG}"
+  exit "${timing_summary_rc}"
+fi
 if [[ "${playwright_rc}" -eq 0 ]]; then
   echo "phase5_regression: ok"
 else
-  print_playwright_failure_summary "${playwright_log}"
-  echo "phase5_regression: playwright log => ${playwright_log}"
+  print_playwright_failure_summary "${PHASE5_PLAYWRIGHT_LOG}"
+  echo "phase5_regression: playwright log => ${PHASE5_PLAYWRIGHT_LOG}"
   exit "${playwright_rc}"
 fi
