@@ -19,6 +19,7 @@ ECM_SYNC_PREBUILT_UI="${ECM_SYNC_PREBUILT_UI:-auto}"
 DELIVERY_GATE_MODE="${DELIVERY_GATE_MODE:-all}"
 DELIVERY_GATE_PRINT_EXECUTION_PLAN="${DELIVERY_GATE_PRINT_EXECUTION_PLAN:-1}"
 DELIVERY_GATE_EXECUTION_PLAN_FORMAT="${DELIVERY_GATE_EXECUTION_PLAN_FORMAT:-text}"
+DELIVERY_GATE_EXECUTION_PLAN_FILE="${DELIVERY_GATE_EXECUTION_PLAN_FILE:-}"
 DELIVERY_GATE_PLAN_ONLY="0"
 if [[ -n "${DELIVERY_GATE_RECOVERY_REGISTRY_SYNC:-}" ]]; then
   DELIVERY_GATE_RECOVERY_REGISTRY_SYNC="${DELIVERY_GATE_RECOVERY_REGISTRY_SYNC}"
@@ -94,7 +95,7 @@ print_usage() {
   cat <<'USAGE'
 Usage:
   scripts/phase5-phase6-delivery-gate.sh [mode]
-  scripts/phase5-phase6-delivery-gate.sh --mode=<mode> [--plan] [--plan-format=<text|json>]
+  scripts/phase5-phase6-delivery-gate.sh --mode=<mode> [--plan] [--plan-format=<text|json>] [--plan-file=<path>]
   scripts/phase5-phase6-delivery-gate.sh --help
 
 Modes:
@@ -112,11 +113,13 @@ Flags:
   --plan-format=<...>   Execution plan format: text|json.
   --plan-json           Shortcut for --plan-format=json.
   --plan-text           Shortcut for --plan-format=text.
+  --plan-file=<path>    Write execution plan payload to file.
 
 Environment controls:
   DELIVERY_GATE_MODE
   DELIVERY_GATE_PRINT_EXECUTION_PLAN=1|0
   DELIVERY_GATE_EXECUTION_PLAN_FORMAT=text|json
+  DELIVERY_GATE_EXECUTION_PLAN_FILE=<path>
   DELIVERY_GATE_RECOVERY_REGISTRY_SYNC=1|0
   DELIVERY_GATE_RECOVERY_REGISTRY_STRICT=1|0
   DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT=1|0
@@ -174,7 +177,7 @@ run_with_tee() {
   return 0
 }
 
-print_execution_plan() {
+build_execution_plan_payload() {
   local preflight_executor="phase5-regression (registry-only)"
   if [[ "${DELIVERY_GATE_RECOVERY_REGISTRY_SYNC}" == "1" && "${DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT}" == "1" ]]; then
     preflight_executor="phase5-sync-recovery-registry.sh (sync + idempotence check)"
@@ -212,25 +215,46 @@ print_execution_plan() {
   esac
 
   if [[ "${DELIVERY_GATE_EXECUTION_PLAN_FORMAT}" == "json" ]]; then
-    echo "{"
-    printf '  "mode": "%s",\n' "${DELIVERY_GATE_MODE}"
-    printf '  "fast_registry_preflight_executor": "%s",\n' "${preflight_executor}"
-    printf '  "integration_strict_fullstack_preflight_condition": "%s",\n' "ECM_FULLSTACK_ALLOW_STATIC=0"
-    printf '  "fast_layer": "%s",\n' "${fast_layer_plan}"
-    printf '  "mocked_regression": "%s",\n' "${mocked_regression_plan}"
-    printf '  "integration_layer": "%s"\n' "${integration_layer_plan}"
-    echo "}"
+    cat <<JSON
+{
+  "schema_version": 1,
+  "mode": "${DELIVERY_GATE_MODE}",
+  "fast_registry_preflight_executor": "${preflight_executor}",
+  "integration_strict_fullstack_preflight_condition": "ECM_FULLSTACK_ALLOW_STATIC=0",
+  "fast_layer": "${fast_layer_plan}",
+  "mocked_regression": "${mocked_regression_plan}",
+  "integration_layer": "${integration_layer_plan}"
+}
+JSON
     return
   fi
 
-  echo ""
-  echo "phase5_phase6_delivery_gate: execution plan"
-  echo " - mode: ${DELIVERY_GATE_MODE}"
-  echo " - fast registry preflight executor: ${preflight_executor}"
-  echo " - integration strict-fullstack preflight enabled when ECM_FULLSTACK_ALLOW_STATIC=0"
-  echo " - fast layer: ${fast_layer_plan}"
-  echo " - mocked regression: ${mocked_regression_plan}"
-  echo " - integration layer: ${integration_layer_plan}"
+  cat <<TEXT
+
+phase5_phase6_delivery_gate: execution plan
+ - schema version: 1
+ - mode: ${DELIVERY_GATE_MODE}
+ - fast registry preflight executor: ${preflight_executor}
+ - integration strict-fullstack preflight enabled when ECM_FULLSTACK_ALLOW_STATIC=0
+ - fast layer: ${fast_layer_plan}
+ - mocked regression: ${mocked_regression_plan}
+ - integration layer: ${integration_layer_plan}
+TEXT
+}
+
+write_execution_plan_file() {
+  local plan_payload="$1"
+  if [[ -z "${DELIVERY_GATE_EXECUTION_PLAN_FILE}" ]]; then
+    return
+  fi
+
+  local plan_dir
+  plan_dir="$(dirname "${DELIVERY_GATE_EXECUTION_PLAN_FILE}")"
+  if [[ "${plan_dir}" != "." ]]; then
+    mkdir -p "${plan_dir}"
+  fi
+  printf '%s\n' "${plan_payload}" >"${DELIVERY_GATE_EXECUTION_PLAN_FILE}"
+  echo "phase5_phase6_delivery_gate: wrote execution plan => ${DELIVERY_GATE_EXECUTION_PLAN_FILE}"
 }
 
 STAGE_RESULTS=()
@@ -679,6 +703,9 @@ for arg in "$@"; do
     --plan-text)
       DELIVERY_GATE_EXECUTION_PLAN_FORMAT="text"
       ;;
+    --plan-file=*)
+      DELIVERY_GATE_EXECUTION_PLAN_FILE="${arg#--plan-file=}"
+      ;;
     --mode=*)
       DELIVERY_GATE_MODE="${arg#--mode=}"
       ;;
@@ -712,6 +739,7 @@ echo "DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT=${DELIVERY_GATE_RECOVERY
 echo "DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT_SOURCE=${DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT_SOURCE}"
 echo "DELIVERY_GATE_PRINT_EXECUTION_PLAN=${DELIVERY_GATE_PRINT_EXECUTION_PLAN}"
 echo "DELIVERY_GATE_EXECUTION_PLAN_FORMAT=${DELIVERY_GATE_EXECUTION_PLAN_FORMAT}"
+echo "DELIVERY_GATE_EXECUTION_PLAN_FILE=${DELIVERY_GATE_EXECUTION_PLAN_FILE:-<none>}"
 echo "DELIVERY_GATE_PLAN_ONLY=${DELIVERY_GATE_PLAN_ONLY}"
 if [[ -z "${ECM_UI_URL_FULLSTACK_INPUT}" ]]; then
   echo "ECM_UI_URL_FULLSTACK auto-detected (set ECM_UI_URL_FULLSTACK to override)"
@@ -735,8 +763,17 @@ case "${DELIVERY_GATE_EXECUTION_PLAN_FORMAT}" in
     ;;
 esac
 
-if [[ "${DELIVERY_GATE_PRINT_EXECUTION_PLAN}" == "1" || "${DELIVERY_GATE_PLAN_ONLY}" == "1" ]]; then
-  print_execution_plan
+if [[ -n "${DELIVERY_GATE_EXECUTION_PLAN_FILE}" && -d "${DELIVERY_GATE_EXECUTION_PLAN_FILE}" ]]; then
+  echo "error: DELIVERY_GATE_EXECUTION_PLAN_FILE points to a directory: ${DELIVERY_GATE_EXECUTION_PLAN_FILE}"
+  exit 1
+fi
+
+if [[ "${DELIVERY_GATE_PRINT_EXECUTION_PLAN}" == "1" || "${DELIVERY_GATE_PLAN_ONLY}" == "1" || -n "${DELIVERY_GATE_EXECUTION_PLAN_FILE}" ]]; then
+  execution_plan_payload="$(build_execution_plan_payload)"
+  if [[ "${DELIVERY_GATE_PRINT_EXECUTION_PLAN}" == "1" || "${DELIVERY_GATE_PLAN_ONLY}" == "1" ]]; then
+    printf '%s\n' "${execution_plan_payload}"
+  fi
+  write_execution_plan_file "${execution_plan_payload}"
 fi
 if [[ "${DELIVERY_GATE_PLAN_ONLY}" == "1" ]]; then
   echo ""
