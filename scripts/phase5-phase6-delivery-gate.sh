@@ -736,22 +736,80 @@ print_startup_failure_hints() {
     elif [[ -n "${strict_recovery_unexpected_line}" ]]; then
       echo " - Strict recovery guard details: unexpected events=${strict_recovery_unexpected_line}."
     fi
+    local hotspot_cmd=""
+    local flaky_cmd=""
+    local recovery_cmd=""
     if [[ -n "${phase5_hotspot_threshold}" ]]; then
       local hotspot_relax_target="0"
       if [[ "${phase5_hotspot_threshold}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
         hotspot_relax_target="$(awk -v v="${phase5_hotspot_threshold}" 'BEGIN { printf "%.1f", (v + 2.0) }')"
       fi
-      echo " - Suggested command (hotspot triage): DELIVERY_GATE_MODE=mocked DELIVERY_GATE_PHASE5_RECOVERY_GUARD_STRICT=1 DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD=${hotspot_relax_target} PW_WORKERS=${PW_WORKERS} bash scripts/phase5-phase6-delivery-gate.sh"
+      hotspot_cmd="DELIVERY_GATE_MODE=mocked DELIVERY_GATE_PHASE5_RECOVERY_GUARD_STRICT=1 DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD=${hotspot_relax_target} PW_WORKERS=${PW_WORKERS} bash scripts/phase5-phase6-delivery-gate.sh"
     fi
     if [[ -n "${phase5_flaky_threshold}" ]]; then
       local flaky_relax_target="0"
       if [[ "${phase5_flaky_threshold}" =~ ^[0-9]+$ ]]; then
         flaky_relax_target="$((phase5_flaky_threshold + 1))"
       fi
-      echo " - Suggested command (flaky-risk triage): DELIVERY_GATE_MODE=mocked DELIVERY_GATE_PHASE5_RECOVERY_GUARD_STRICT=1 DELIVERY_GATE_PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD=${flaky_relax_target} PW_WORKERS=${PW_WORKERS} bash scripts/phase5-phase6-delivery-gate.sh"
+      flaky_cmd="DELIVERY_GATE_MODE=mocked DELIVERY_GATE_PHASE5_RECOVERY_GUARD_STRICT=1 DELIVERY_GATE_PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD=${flaky_relax_target} PW_WORKERS=${PW_WORKERS} bash scripts/phase5-phase6-delivery-gate.sh"
     fi
     if [[ "${strict_reasons_line}" == *"recovery_guard"* ]]; then
-      echo " - Suggested command (recovery guard detail): PHASE5_RECOVERY_GUARD_STRICT=1 PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD} PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD} bash scripts/phase5-regression.sh"
+      recovery_cmd="PHASE5_RECOVERY_GUARD_STRICT=1 PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD} PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD} bash scripts/phase5-regression.sh"
+    fi
+
+    local strict_suggestions=()
+    local strict_reason
+    for strict_reason in "${phase5_strict_reasons[@]}"; do
+      case "${strict_reason}" in
+        recovery_guard)
+          if [[ -n "${recovery_cmd}" ]]; then
+            strict_suggestions+=("${recovery_cmd}")
+          fi
+          ;;
+        hotspot_threshold)
+          if [[ -n "${hotspot_cmd}" ]]; then
+            strict_suggestions+=("${hotspot_cmd}")
+          fi
+          ;;
+        flaky_risk_threshold)
+          if [[ -n "${flaky_cmd}" ]]; then
+            strict_suggestions+=("${flaky_cmd}")
+          fi
+          ;;
+      esac
+    done
+
+    if [[ -n "${recovery_cmd}" ]]; then
+      strict_suggestions+=("${recovery_cmd}")
+    fi
+    if [[ -n "${hotspot_cmd}" ]]; then
+      strict_suggestions+=("${hotspot_cmd}")
+    fi
+    if [[ -n "${flaky_cmd}" ]]; then
+      strict_suggestions+=("${flaky_cmd}")
+    fi
+
+    if [[ "${#strict_suggestions[@]}" -gt 0 ]]; then
+      echo " - Suggested commands (priority order):"
+      local printed_suggestions=()
+      local suggestion_idx=1
+      local suggestion_line
+      for suggestion_line in "${strict_suggestions[@]}"; do
+        local already_printed=0
+        local existing_suggestion
+        for existing_suggestion in "${printed_suggestions[@]}"; do
+          if [[ "${existing_suggestion}" == "${suggestion_line}" ]]; then
+            already_printed=1
+            break
+          fi
+        done
+        if [[ "${already_printed}" -eq 1 ]]; then
+          continue
+        fi
+        printed_suggestions+=("${suggestion_line}")
+        echo "   ${suggestion_idx}. ${suggestion_line}"
+        suggestion_idx=$((suggestion_idx + 1))
+      done
     fi
   fi
 }
