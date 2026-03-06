@@ -122,6 +122,8 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - Verification: `docs/PHASE140_GATE_PHASE5_STRICT_THRESHOLD_PASSTHROUGH_VERIFICATION_20260306.md`
   - Design: `docs/PHASE141_GATE_PHASE5_STRICT_HINTS_AND_EXITCODE_FIX_DEV_20260306.md`
   - Verification: `docs/PHASE141_GATE_PHASE5_STRICT_HINTS_AND_EXITCODE_FIX_VERIFICATION_20260306.md`
+  - Design: `docs/PHASE142_GATE_STRICT_COMMAND_HINTS_DEV_20260306.md`
+  - Verification: `docs/PHASE142_GATE_STRICT_COMMAND_HINTS_VERIFICATION_20260306.md`
 - Auth/Search recovery 7-day release summary: `docs/PHASE73_AUTH_SEARCH_RECOVERY_RELEASE_SUMMARY_20260219.md`
 - Auth/Search recovery verification rollup: `docs/PHASE73_AUTH_SEARCH_RECOVERY_VERIFICATION_ROLLUP_20260219.md`
 - Phase 5/6 one-command delivery gate:

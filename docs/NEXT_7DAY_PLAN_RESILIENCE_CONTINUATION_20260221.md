@@ -330,6 +330,11 @@
   - Deliverables:
     - `docs/PHASE141_GATE_PHASE5_STRICT_HINTS_AND_EXITCODE_FIX_DEV_20260306.md`
     - `docs/PHASE141_GATE_PHASE5_STRICT_HINTS_AND_EXITCODE_FIX_VERIFICATION_20260306.md`
+- Delivery gate strict command hints:
+  - add command-oriented remediation hints for strict hotspot/flaky failures using summary-derived details.
+  - Deliverables:
+    - `docs/PHASE142_GATE_STRICT_COMMAND_HINTS_DEV_20260306.md`
+    - `docs/PHASE142_GATE_STRICT_COMMAND_HINTS_VERIFICATION_20260306.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
