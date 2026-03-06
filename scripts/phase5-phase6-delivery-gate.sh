@@ -20,6 +20,7 @@ DELIVERY_GATE_MODE="${DELIVERY_GATE_MODE:-all}"
 DELIVERY_GATE_PRINT_EXECUTION_PLAN="${DELIVERY_GATE_PRINT_EXECUTION_PLAN:-1}"
 DELIVERY_GATE_EXECUTION_PLAN_FORMAT="${DELIVERY_GATE_EXECUTION_PLAN_FORMAT:-text}"
 DELIVERY_GATE_EXECUTION_PLAN_FILE="${DELIVERY_GATE_EXECUTION_PLAN_FILE:-}"
+DELIVERY_GATE_PHASE5_SUMMARY_DIR="${DELIVERY_GATE_PHASE5_SUMMARY_DIR:-}"
 DELIVERY_GATE_PLAN_ONLY="0"
 if [[ -n "${DELIVERY_GATE_RECOVERY_REGISTRY_SYNC:-}" ]]; then
   DELIVERY_GATE_RECOVERY_REGISTRY_SYNC="${DELIVERY_GATE_RECOVERY_REGISTRY_SYNC}"
@@ -95,7 +96,7 @@ print_usage() {
   cat <<'USAGE'
 Usage:
   scripts/phase5-phase6-delivery-gate.sh [mode]
-  scripts/phase5-phase6-delivery-gate.sh --mode=<mode> [--plan] [--plan-format=<text|json>] [--plan-file=<path>]
+  scripts/phase5-phase6-delivery-gate.sh --mode=<mode> [--plan] [--plan-format=<text|json>] [--plan-file=<path>] [--phase5-summary-dir=<path>]
   scripts/phase5-phase6-delivery-gate.sh --help
 
 Modes:
@@ -114,12 +115,15 @@ Flags:
   --plan-json           Shortcut for --plan-format=json.
   --plan-text           Shortcut for --plan-format=text.
   --plan-file=<path>    Write execution plan payload to file.
+  --phase5-summary-dir=<path>
+                        Write mocked phase5 regression summary JSON artifacts to directory.
 
 Environment controls:
   DELIVERY_GATE_MODE
   DELIVERY_GATE_PRINT_EXECUTION_PLAN=1|0
   DELIVERY_GATE_EXECUTION_PLAN_FORMAT=text|json
   DELIVERY_GATE_EXECUTION_PLAN_FILE=<path>
+  DELIVERY_GATE_PHASE5_SUMMARY_DIR=<path>
   DELIVERY_GATE_RECOVERY_REGISTRY_SYNC=1|0
   DELIVERY_GATE_RECOVERY_REGISTRY_STRICT=1|0
   DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT=1|0
@@ -221,6 +225,7 @@ build_execution_plan_payload() {
   "mode": "${DELIVERY_GATE_MODE}",
   "fast_registry_preflight_executor": "${preflight_executor}",
   "integration_strict_fullstack_preflight_condition": "ECM_FULLSTACK_ALLOW_STATIC=0",
+  "mocked_regression_summary_dir": "${DELIVERY_GATE_PHASE5_SUMMARY_DIR:-"(unset)"}",
   "fast_layer": "${fast_layer_plan}",
   "mocked_regression": "${mocked_regression_plan}",
   "integration_layer": "${integration_layer_plan}"
@@ -236,6 +241,7 @@ phase5_phase6_delivery_gate: execution plan
  - mode: ${DELIVERY_GATE_MODE}
  - fast registry preflight executor: ${preflight_executor}
  - integration strict-fullstack preflight enabled when ECM_FULLSTACK_ALLOW_STATIC=0
+ - mocked regression summary dir: ${DELIVERY_GATE_PHASE5_SUMMARY_DIR:-"(unset)"}
  - fast layer: ${fast_layer_plan}
  - mocked regression: ${mocked_regression_plan}
  - integration layer: ${integration_layer_plan}
@@ -515,10 +521,28 @@ print_startup_failure_hints() {
 }
 
 run_mocked_regression_stage() {
+  local phase5_summary_file=""
+  if [[ -n "${DELIVERY_GATE_PHASE5_SUMMARY_DIR}" ]]; then
+    mkdir -p "${DELIVERY_GATE_PHASE5_SUMMARY_DIR}"
+    local summary_ts
+    summary_ts="$(date -u +%Y%m%dT%H%M%SZ)"
+    phase5_summary_file="${DELIVERY_GATE_PHASE5_SUMMARY_DIR}/phase5-regression-summary-${summary_ts}.json"
+    echo "phase5_phase6_delivery_gate: mocked regression summary target => ${phase5_summary_file}"
+  fi
+
   ECM_UI_URL="${ECM_UI_URL_MOCKED}" \
   PW_PROJECT="${PW_PROJECT}" \
   PW_WORKERS="${PW_WORKERS}" \
+  PHASE5_REGRESSION_SUMMARY_JSON="${phase5_summary_file}" \
   bash scripts/phase5-regression.sh
+
+  if [[ -n "${phase5_summary_file}" ]]; then
+    if [[ -f "${phase5_summary_file}" ]]; then
+      echo "phase5_phase6_delivery_gate: mocked regression summary generated => ${phase5_summary_file}"
+    else
+      echo "phase5_phase6_delivery_gate: WARN mocked regression summary not found => ${phase5_summary_file}"
+    fi
+  fi
 }
 
 run_mocked_recovery_registry_preflight_stage() {
@@ -706,6 +730,9 @@ for arg in "$@"; do
     --plan-file=*)
       DELIVERY_GATE_EXECUTION_PLAN_FILE="${arg#--plan-file=}"
       ;;
+    --phase5-summary-dir=*)
+      DELIVERY_GATE_PHASE5_SUMMARY_DIR="${arg#--phase5-summary-dir=}"
+      ;;
     --mode=*)
       DELIVERY_GATE_MODE="${arg#--mode=}"
       ;;
@@ -740,6 +767,7 @@ echo "DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT_SOURCE=${DELIVERY_GATE_R
 echo "DELIVERY_GATE_PRINT_EXECUTION_PLAN=${DELIVERY_GATE_PRINT_EXECUTION_PLAN}"
 echo "DELIVERY_GATE_EXECUTION_PLAN_FORMAT=${DELIVERY_GATE_EXECUTION_PLAN_FORMAT}"
 echo "DELIVERY_GATE_EXECUTION_PLAN_FILE=${DELIVERY_GATE_EXECUTION_PLAN_FILE:-<none>}"
+echo "DELIVERY_GATE_PHASE5_SUMMARY_DIR=${DELIVERY_GATE_PHASE5_SUMMARY_DIR:-<none>}"
 echo "DELIVERY_GATE_PLAN_ONLY=${DELIVERY_GATE_PLAN_ONLY}"
 if [[ -z "${ECM_UI_URL_FULLSTACK_INPUT}" ]]; then
   echo "ECM_UI_URL_FULLSTACK auto-detected (set ECM_UI_URL_FULLSTACK to override)"
@@ -765,6 +793,10 @@ esac
 
 if [[ -n "${DELIVERY_GATE_EXECUTION_PLAN_FILE}" && -d "${DELIVERY_GATE_EXECUTION_PLAN_FILE}" ]]; then
   echo "error: DELIVERY_GATE_EXECUTION_PLAN_FILE points to a directory: ${DELIVERY_GATE_EXECUTION_PLAN_FILE}"
+  exit 1
+fi
+if [[ -n "${DELIVERY_GATE_PHASE5_SUMMARY_DIR}" && -f "${DELIVERY_GATE_PHASE5_SUMMARY_DIR}" ]]; then
+  echo "error: DELIVERY_GATE_PHASE5_SUMMARY_DIR points to a file: ${DELIVERY_GATE_PHASE5_SUMMARY_DIR}"
   exit 1
 fi
 

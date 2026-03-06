@@ -77,6 +77,7 @@ import mailAutomationService, {
 } from 'services/mailAutomationService';
 import tagService from 'services/tagService';
 import nodeService from 'services/nodeService';
+import { resolveDiagnosticsExportRunId, sanitizeRunIdForFilename } from './mailAutomationExportUtils';
 
 interface TagOption {
   id: string;
@@ -169,24 +170,6 @@ const formatRunIdLabel = (runId?: string | null) => {
     return '';
   }
   return trimmed.length > 8 ? `Run ${trimmed.slice(0, 8)}` : `Run ${trimmed}`;
-};
-
-const sanitizeRunIdForFilename = (runId?: string | null) => {
-  const trimmed = (runId || '').trim();
-  if (!trimmed) {
-    return '';
-  }
-  return trimmed
-    .replace(/[^a-zA-Z0-9_-]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
-};
-
-const parseTimestamp = (value?: string | null) => {
-  if (!value) {
-    return Number.NaN;
-  }
-  return new Date(value).getTime();
 };
 
 const MailAutomationPage: React.FC = () => {
@@ -1142,20 +1125,12 @@ const MailAutomationPage: React.FC = () => {
   const maxTrendTotal = Math.max(1, ...reportTrend.map((row) => row.total));
   const exportDisabled = !exportOptions.includeProcessed && !exportOptions.includeDocuments;
   const diagnosticsExportRunId = useMemo(() => {
-    const debugRunId = (debugResult?.summary.runId || '').trim();
-    const fetchRunId = (lastFetchSummary?.runId || '').trim();
-    if (!debugRunId && !fetchRunId) {
-      return '';
-    }
-    if (debugRunId && fetchRunId) {
-      const debugAt = parseTimestamp(lastDebugAt);
-      const fetchAt = parseTimestamp(lastFetchAt);
-      if (Number.isFinite(debugAt) && Number.isFinite(fetchAt)) {
-        return debugAt >= fetchAt ? debugRunId : fetchRunId;
-      }
-      return debugRunId;
-    }
-    return debugRunId || fetchRunId;
+    return resolveDiagnosticsExportRunId({
+      debugRunId: debugResult?.summary.runId,
+      fetchRunId: lastFetchSummary?.runId,
+      debugAt: lastDebugAt,
+      fetchAt: lastFetchAt,
+    });
   }, [debugResult, lastFetchSummary, lastDebugAt, lastFetchAt]);
   const diagnosticsExportScopeSummary = useMemo(() => {
     const segments: string[] = [];
