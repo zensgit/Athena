@@ -36,17 +36,22 @@ public class PreviewDiagnosticsController {
     private static final int MAX_FAILURE_LIST_LIMIT = 200;
     private static final int DEFAULT_SUMMARY_SAMPLE_LIMIT = 500;
     private static final int MAX_SUMMARY_SAMPLE_LIMIT = 2000;
+    private static final int DEFAULT_WINDOW_DAYS = 7;
+    private static final int MAX_WINDOW_DAYS = 365;
 
     @GetMapping("/failures")
     @Operation(summary = "Recent preview failures", description = "List recent preview failures (FAILED/UNSUPPORTED) with derived categories.")
     public ResponseEntity<List<PreviewFailureSampleDto>> getRecentFailures(
-        @RequestParam(defaultValue = "50") int limit
+        @RequestParam(defaultValue = "50") int limit,
+        @RequestParam(defaultValue = "7") int days
     ) {
         int safeLimit = clamp(limit, 1, MAX_FAILURE_LIST_LIMIT);
+        int safeDays = normalizeWindowDays(days);
         Pageable pageable = PageRequest.of(0, safeLimit);
+        LocalDateTime updatedSince = resolveUpdatedSince(safeDays);
 
         var statuses = failureStatuses();
-        var page = documentRepository.findRecentPreviewFailures(statuses, pageable);
+        var page = documentRepository.findRecentPreviewFailuresByWindow(statuses, updatedSince, pageable);
 
         List<PreviewFailureSampleDto> payload = page.getContent().stream()
             .map(PreviewFailureSampleDto::from)
@@ -61,15 +66,18 @@ public class PreviewDiagnosticsController {
         description = "Summarize recent preview failures with sample confidence and top failure reasons."
     )
     public ResponseEntity<PreviewFailureSummaryDto> getFailureSummary(
-        @RequestParam(defaultValue = "500") int sampleLimit
+        @RequestParam(defaultValue = "500") int sampleLimit,
+        @RequestParam(defaultValue = "7") int days
     ) {
         int requestedLimit = sampleLimit <= 0 ? DEFAULT_SUMMARY_SAMPLE_LIMIT : sampleLimit;
         int safeLimit = clamp(requestedLimit, 1, MAX_SUMMARY_SAMPLE_LIMIT);
+        int safeDays = normalizeWindowDays(days);
         Pageable pageable = PageRequest.of(0, safeLimit);
+        LocalDateTime updatedSince = resolveUpdatedSince(safeDays);
         var statuses = failureStatuses();
 
-        long totalFailures = documentRepository.countByDeletedFalseAndPreviewStatusIn(statuses);
-        List<Document> samples = documentRepository.findRecentPreviewFailures(statuses, pageable).getContent();
+        long totalFailures = documentRepository.countPreviewFailuresByWindow(statuses, updatedSince);
+        List<Document> samples = documentRepository.findRecentPreviewFailuresByWindow(statuses, updatedSince, pageable).getContent();
 
         List<PreviewFailureSampleDto> normalizedSamples = samples.stream()
             .map(PreviewFailureSampleDto::from)
@@ -126,6 +134,8 @@ public class PreviewDiagnosticsController {
             totalFailures,
             sampledFailures,
             safeLimit,
+            safeDays,
+            updatedSince,
             sampleTruncated,
             sampleTruncated ? "LOW" : "HIGH",
             sampleTruncated ? "sample_truncated" : "sample_complete",
@@ -138,6 +148,23 @@ public class PreviewDiagnosticsController {
 
     private static int clamp(int value, int min, int max) {
         return Math.min(Math.max(value, min), max);
+    }
+
+    private static int normalizeWindowDays(int rawDays) {
+        if (rawDays == 0) {
+            return 0;
+        }
+        if (rawDays < 0) {
+            return DEFAULT_WINDOW_DAYS;
+        }
+        return clamp(rawDays, 1, MAX_WINDOW_DAYS);
+    }
+
+    private static LocalDateTime resolveUpdatedSince(int days) {
+        if (days <= 0) {
+            return null;
+        }
+        return LocalDateTime.now().minusDays(days);
     }
 
     private static List<PreviewStatus> failureStatuses() {
@@ -167,6 +194,8 @@ public class PreviewDiagnosticsController {
         long totalFailures,
         int sampledFailures,
         int sampleLimit,
+        int windowDays,
+        LocalDateTime windowStart,
         boolean sampleTruncated,
         String confidenceLevel,
         String confidenceReason,

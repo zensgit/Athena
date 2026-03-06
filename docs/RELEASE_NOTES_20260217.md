@@ -1157,6 +1157,48 @@
   - `cd ecm-frontend && npm test -- --watchAll=false --runInBand src/utils/previewStatusUtils.test.ts` -> PASS
   - `cd ecm-frontend && npm run -s build` -> PASS
 
+### 79) Preview diagnostics 时间窗口过滤（Phase152）
+- `ecm-core/src/main/java/com/ecm/core/controller/PreviewDiagnosticsController.java`
+  - `failures` 与 `failures/summary` 新增 `days` 参数（默认 7）。
+  - `days` 归一化规则：
+    - `0` = all-time
+    - 负值回退默认 7
+    - 正值钳制到 `1..365`
+  - summary 新增窗口字段：
+    - `windowDays`
+    - `windowStart`（all-time 时为 `null`）
+- `ecm-core/src/main/java/com/ecm/core/repository/DocumentRepository.java`
+  - 新增 window-aware 查询：
+    - `findRecentPreviewFailuresByWindow(...)`
+    - `countPreviewFailuresByWindow(...)`
+- `ecm-frontend/src/pages/PreviewDiagnosticsPage.tsx`
+  - 新增 `Days` 切换（Last 7 / Last 30 / All time），并将窗口参数透传到列表与摘要请求。
+- 验证：
+  - `cd ecm-core && mvn -q -Dtest=PreviewDiagnosticsControllerSecurityTest test` -> PASS
+  - `cd ecm-frontend && npm run -s lint -- src/pages/PreviewDiagnosticsPage.tsx src/services/previewDiagnosticsService.ts` -> PASS
+
+### 80) Preview diagnostics 按原因分组批量重试/重建（Phase153）
+- `ecm-frontend/src/pages/PreviewDiagnosticsPage.tsx`
+  - Top reasons 表格新增：
+    - `Current List` 列
+    - 每行 `Retry` / `Force` 分组动作按钮（仅 retryable 且当前列表命中数 > 0 时可用）
+  - 分组匹配规则：
+    - 标准化 failure reason
+    - category 精确匹配
+    - retryable 信号匹配
+  - 执行策略：
+    - `Promise.allSettled` 聚合调用 `queuePreview`
+    - 汇总 queued/failed toast
+    - 执行时禁用冲突动作
+- `ecm-frontend/e2e/admin-preview-diagnostics.mock.spec.ts`
+  - 覆盖：
+    - summary 面板渲染
+    - days 7->30 切换
+    - reason-group retry 批量动作
+- 验证：
+  - `cd ecm-frontend && npm run -s build` -> PASS
+  - `cd ecm-frontend && npx playwright test e2e/admin-preview-diagnostics.mock.spec.ts --project=chromium` -> PASS（本地静态 `:5500`）
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -1370,3 +1412,7 @@
 - `docs/PHASE150_PREVIEW_DIAGNOSTICS_SUMMARY_API_VERIFICATION_20260306.md`
 - `docs/PHASE151_PREVIEW_DIAGNOSTICS_SUMMARY_UI_DEV_20260306.md`
 - `docs/PHASE151_PREVIEW_DIAGNOSTICS_SUMMARY_UI_VERIFICATION_20260306.md`
+- `docs/PHASE152_PREVIEW_DIAGNOSTICS_WINDOW_FILTER_DEV_20260306.md`
+- `docs/PHASE152_PREVIEW_DIAGNOSTICS_WINDOW_FILTER_VERIFICATION_20260306.md`
+- `docs/PHASE153_PREVIEW_DIAGNOSTICS_REASON_BATCH_ACTIONS_DEV_20260306.md`
+- `docs/PHASE153_PREVIEW_DIAGNOSTICS_REASON_BATCH_ACTIONS_VERIFICATION_20260306.md`

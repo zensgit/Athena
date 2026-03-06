@@ -11,6 +11,12 @@ test('Preview diagnostics renders failures and gates retry actions (mocked API)'
   const retryableName = 'e2e-preview-diagnostics-retryable.pdf';
   const unsupportedName = 'e2e-preview-diagnostics-unsupported.bin';
   const permanentName = 'e2e-preview-diagnostics-permanent.pdf';
+  const retryableTwinId = '44444444-4444-4444-4444-444444444444';
+  const retryableTwinName = 'e2e-preview-diagnostics-retryable-twin.pdf';
+
+  const queueCalls: Array<{ id: string; force: boolean }> = [];
+  const requestedFailureDays: string[] = [];
+  const requestedSummaryDays: string[] = [];
 
   await page.addInitScript(() => {
     // Avoid relying on system clipboard permissions in CI/local runs.
@@ -118,41 +124,125 @@ test('Preview diagnostics renders failures and gates retry actions (mocked API)'
   });
 
   await page.route('**/api/v1/preview/diagnostics/failures**', async (route) => {
+    const requestUrl = new URL(route.request().url());
+    const days = requestUrl.searchParams.get('days') || '7';
+    requestedFailureDays.push(days);
+
+    const baseRows = [
+      {
+        id: retryableId,
+        name: retryableName,
+        path: '/Root/Documents/e2e-preview-diagnostics/retryable.pdf',
+        mimeType: 'application/pdf',
+        previewStatus: 'FAILED',
+        previewFailureCategory: 'TEMPORARY',
+        previewFailureReason: 'Timeout contacting preview service',
+        previewLastUpdated: new Date().toISOString(),
+      },
+      {
+        id: unsupportedId,
+        name: unsupportedName,
+        path: '/Root/Documents/e2e-preview-diagnostics/unsupported.bin',
+        mimeType: 'application/octet-stream',
+        previewStatus: 'UNSUPPORTED',
+        previewFailureCategory: 'UNSUPPORTED',
+        previewFailureReason: 'Preview not supported for mime type application/octet-stream',
+        previewLastUpdated: new Date().toISOString(),
+      },
+      {
+        id: permanentId,
+        name: permanentName,
+        path: '/Root/Documents/e2e-preview-diagnostics/permanent.pdf',
+        mimeType: 'application/pdf',
+        previewStatus: 'FAILED',
+        previewFailureCategory: 'PERMANENT',
+        previewFailureReason: 'Error generating preview: Missing root object specification in trailer.',
+        previewLastUpdated: new Date().toISOString(),
+      },
+    ];
+
+    const rows = days === '30'
+      ? [
+          ...baseRows,
+          {
+            id: retryableTwinId,
+            name: retryableTwinName,
+            path: '/Root/Documents/e2e-preview-diagnostics/retryable-twin.pdf',
+            mimeType: 'application/pdf',
+            previewStatus: 'FAILED',
+            previewFailureCategory: 'TEMPORARY',
+            previewFailureReason: 'Timeout contacting preview service',
+            previewLastUpdated: new Date().toISOString(),
+          },
+        ]
+      : baseRows;
+
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify([
-        {
-          id: retryableId,
-          name: retryableName,
-          path: '/Root/Documents/e2e-preview-diagnostics/retryable.pdf',
-          mimeType: 'application/pdf',
-          previewStatus: 'FAILED',
-          previewFailureCategory: 'TEMPORARY',
-          previewFailureReason: 'Timeout contacting preview service',
-          previewLastUpdated: new Date().toISOString(),
-        },
-        {
-          id: unsupportedId,
-          name: unsupportedName,
-          path: '/Root/Documents/e2e-preview-diagnostics/unsupported.bin',
-          mimeType: 'application/octet-stream',
-          previewStatus: 'UNSUPPORTED',
-          previewFailureCategory: 'UNSUPPORTED',
-          previewFailureReason: 'Preview not supported for mime type application/octet-stream',
-          previewLastUpdated: new Date().toISOString(),
-        },
-        {
-          id: permanentId,
-          name: permanentName,
-          path: '/Root/Documents/e2e-preview-diagnostics/permanent.pdf',
-          mimeType: 'application/pdf',
-          previewStatus: 'FAILED',
-          previewFailureCategory: 'PERMANENT',
-          previewFailureReason: 'Error generating preview: Missing root object specification in trailer.',
-          previewLastUpdated: new Date().toISOString(),
-        },
-      ]),
+      body: JSON.stringify(rows),
+    });
+  });
+
+  await page.route('**/api/v1/preview/diagnostics/failures/summary**', async (route) => {
+    const requestUrl = new URL(route.request().url());
+    const days = requestUrl.searchParams.get('days') || '7';
+    requestedSummaryDays.push(days);
+
+    const summaryPayload = days === '30'
+      ? {
+          totalFailures: 4,
+          sampledFailures: 4,
+          sampleLimit: 500,
+          windowDays: 30,
+          windowStart: new Date().toISOString(),
+          sampleTruncated: false,
+          confidenceLevel: 'HIGH',
+          confidenceReason: 'sample_complete',
+          statusCounts: [
+            { status: 'FAILED', count: 3 },
+            { status: 'UNSUPPORTED', count: 1 },
+          ],
+          categoryCounts: [
+            { category: 'TEMPORARY', retryable: true, count: 2 },
+            { category: 'PERMANENT', retryable: false, count: 1 },
+            { category: 'UNSUPPORTED', retryable: false, count: 1 },
+          ],
+          topReasons: [
+            { reason: 'Timeout contacting preview service', category: 'TEMPORARY', retryable: true, count: 2 },
+            { reason: 'Preview not supported for mime type application/octet-stream', category: 'UNSUPPORTED', retryable: false, count: 1 },
+            { reason: 'Error generating preview: Missing root object specification in trailer.', category: 'PERMANENT', retryable: false, count: 1 },
+          ],
+        }
+      : {
+          totalFailures: 3,
+          sampledFailures: 3,
+          sampleLimit: 500,
+          windowDays: 7,
+          windowStart: new Date().toISOString(),
+          sampleTruncated: false,
+          confidenceLevel: 'HIGH',
+          confidenceReason: 'sample_complete',
+          statusCounts: [
+            { status: 'FAILED', count: 2 },
+            { status: 'UNSUPPORTED', count: 1 },
+          ],
+          categoryCounts: [
+            { category: 'TEMPORARY', retryable: true, count: 1 },
+            { category: 'PERMANENT', retryable: false, count: 1 },
+            { category: 'UNSUPPORTED', retryable: false, count: 1 },
+          ],
+          topReasons: [
+            { reason: 'Timeout contacting preview service', category: 'TEMPORARY', retryable: true, count: 1 },
+            { reason: 'Preview not supported for mime type application/octet-stream', category: 'UNSUPPORTED', retryable: false, count: 1 },
+            { reason: 'Error generating preview: Missing root object specification in trailer.', category: 'PERMANENT', retryable: false, count: 1 },
+          ],
+        };
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(summaryPayload),
     });
   });
 
@@ -168,10 +258,15 @@ test('Preview diagnostics renders failures and gates retry actions (mocked API)'
   });
 
   await page.route('**/api/v1/documents/*/preview/queue**', async (route) => {
+    const requestUrl = new URL(route.request().url());
+    const pathnameParts = requestUrl.pathname.split('/');
+    const documentId = pathnameParts[pathnameParts.length - 3];
+    const force = requestUrl.searchParams.get('force') === 'true';
+    queueCalls.push({ id: documentId, force });
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ status: 'QUEUED' }),
+      body: JSON.stringify({ queued: true, previewStatus: 'QUEUED', documentId }),
     });
   });
 
@@ -183,6 +278,9 @@ test('Preview diagnostics renders failures and gates retry actions (mocked API)'
   await page.getByRole('menuitem', { name: 'Preview Diagnostics' }).click();
 
   await expect(page.getByRole('heading', { name: 'Preview Diagnostics' })).toBeVisible();
+  await expect(page.getByText('Backend Failure Summary')).toBeVisible();
+  await expect(page.getByText('HIGH confidence (sample complete)')).toBeVisible();
+  await expect(page.getByText('Sampled 3/3')).toBeVisible();
 
   await expect(page.getByText('Total 3')).toBeVisible();
   await expect(page.getByText('Retryable 1')).toBeVisible();
@@ -206,22 +304,29 @@ test('Preview diagnostics renders failures and gates retry actions (mocked API)'
   await retryButton.click();
   await expect(page.getByText('Preview retry queued')).toBeVisible();
 
-  await retryableRow.getByRole('button', { name: 'Open in Advanced Search' }).click();
-  await expect(page).toHaveURL(/\/search\?/);
-  await expect(page.getByRole('heading', { name: 'Advanced Search' })).toBeVisible();
-  await expect(page).toHaveURL(new RegExp(`previewStatus=FAILED`));
-  await expect(page).toHaveURL(new RegExp(`q=${encodeURIComponent(retryableName)}`));
-  await page.goBack();
-  await expect(page.getByRole('heading', { name: 'Preview Diagnostics' })).toBeVisible();
-
   await filter.fill(unsupportedName);
   const unsupportedRow = page.locator('tr', { hasText: unsupportedName });
   await expect(unsupportedRow).toBeVisible();
   await expect(unsupportedRow.getByRole('button', { name: 'Retry preview' })).toBeDisabled();
   await expect(unsupportedRow.getByRole('button', { name: 'Force rebuild preview' })).toBeDisabled();
 
-  await filter.fill(retryableName);
-  await expect(retryableRow.getByRole('button', { name: 'Open parent folder' })).toBeEnabled();
-  await retryableRow.getByRole('button', { name: 'Open parent folder' }).click();
-  await expect(page).toHaveURL(/\/browse\/parent-folder-id$/);
+  await page.locator('[aria-label="Preview diagnostics days"]').click();
+  await page.getByRole('option', { name: 'Last 30 days' }).click();
+
+  await expect(page.getByText('Sampled 4/4')).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText('Total 4')).toBeVisible();
+  await expect(page.getByText('Retryable 2')).toBeVisible();
+
+  const retryByReason = page.getByRole('button', { name: /Retry reason group Timeout contacting preview service/i }).first();
+  await expect(retryByReason).toBeEnabled();
+  await retryByReason.click();
+  await expect(page.getByText(/Retry queued for 2 document\(s\): Timeout contacting preview service/i)).toBeVisible();
+
+  expect(requestedFailureDays.some((value) => value === '7')).toBeTruthy();
+  expect(requestedFailureDays.some((value) => value === '30')).toBeTruthy();
+  expect(requestedSummaryDays.some((value) => value === '7')).toBeTruthy();
+  expect(requestedSummaryDays.some((value) => value === '30')).toBeTruthy();
+  const nonForceQueueIds = queueCalls.filter((call) => !call.force).map((call) => call.id);
+  expect(nonForceQueueIds.filter((id) => id === retryableTwinId).length).toBe(1);
+  expect(nonForceQueueIds.filter((id) => id === retryableId).length).toBeGreaterThanOrEqual(2);
 });

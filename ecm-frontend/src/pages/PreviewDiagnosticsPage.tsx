@@ -41,11 +41,18 @@ import {
   formatPreviewFailureReasonLabel,
   getFailedPreviewMeta,
   isRetryablePreviewFailure,
+  normalizePreviewFailureReason,
   summarizeFailedPreviews,
 } from 'utils/previewStatusUtils';
 
 const LIMIT_OPTIONS = [25, 50, 100, 200] as const;
 const BACKEND_SUMMARY_SAMPLE_LIMIT = 500;
+const WINDOW_DAY_OPTIONS = [
+  { value: 7, label: 'Last 7 days' },
+  { value: 30, label: 'Last 30 days' },
+  { value: 0, label: 'All time' },
+] as const;
+type WindowDays = (typeof WINDOW_DAY_OPTIONS)[number]['value'];
 
 const formatLastUpdated = (raw?: string | null) => {
   if (!raw) {
@@ -61,18 +68,20 @@ const formatLastUpdated = (raw?: string | null) => {
 const PreviewDiagnosticsPage: React.FC = () => {
   const navigate = useNavigate();
   const [limit, setLimit] = useState<(typeof LIMIT_OPTIONS)[number]>(50);
+  const [windowDays, setWindowDays] = useState<WindowDays>(7);
   const [filterText, setFilterText] = useState('');
   const [items, setItems] = useState<PreviewFailureSample[]>([]);
   const [backendSummary, setBackendSummary] = useState<PreviewFailureSummaryDto | null>(null);
   const [loading, setLoading] = useState(false);
   const [queueingId, setQueueingId] = useState<string | null>(null);
+  const [reasonBatchActionKey, setReasonBatchActionKey] = useState<string | null>(null);
 
   const loadFailures = useCallback(async () => {
     try {
       setLoading(true);
       const [data, summaryData] = await Promise.all([
-        previewDiagnosticsService.listRecentFailures(limit),
-        previewDiagnosticsService.getFailureSummary(BACKEND_SUMMARY_SAMPLE_LIMIT),
+        previewDiagnosticsService.listRecentFailures(limit, windowDays),
+        previewDiagnosticsService.getFailureSummary(BACKEND_SUMMARY_SAMPLE_LIMIT, windowDays),
       ]);
       setItems(Array.isArray(data) ? data : []);
       setBackendSummary(summaryData || null);
@@ -83,7 +92,7 @@ const PreviewDiagnosticsPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [limit]);
+  }, [limit, windowDays]);
 
   useEffect(() => {
     void loadFailures();
@@ -125,6 +134,31 @@ const PreviewDiagnosticsPage: React.FC = () => {
     backendSummary?.confidenceLevel === 'LOW'
       ? 'LOW confidence (sample truncated)'
       : 'HIGH confidence (sample complete)';
+
+  const getReasonActionKey = (reason: string, category: string, force: boolean) =>
+    `${category.toUpperCase()}|${reason}|${force ? 'force' : 'retry'}`;
+
+  const matchReasonEntriesInCurrentList = useCallback(
+    (reason: string, category: string, retryable: boolean) => {
+      const normalizedReason = normalizePreviewFailureReason(reason);
+      const normalizedCategory = (category || '').toUpperCase();
+      return items.filter((item) => {
+        const itemRetryable = isRetryablePreviewFailure(
+          item.previewFailureCategory,
+          item.mimeType,
+          item.previewFailureReason
+        );
+        const itemReason = normalizePreviewFailureReason(item.previewFailureReason);
+        const itemCategory = (item.previewFailureCategory || '').toUpperCase();
+        return (
+          itemRetryable === retryable
+          && itemReason === normalizedReason
+          && itemCategory === normalizedCategory
+        );
+      });
+    },
+    [items]
+  );
 
   const getParentFolderPath = (rawPath?: string | null): string | null => {
     if (!rawPath) {
@@ -194,6 +228,52 @@ const PreviewDiagnosticsPage: React.FC = () => {
     }
   };
 
+  const handleQueuePreviewByReason = async (
+    reason: string,
+    category: string,
+    retryable: boolean,
+    force: boolean
+  ) => {
+    if (!retryable) {
+      return;
+    }
+    const matches = matchReasonEntriesInCurrentList(reason, category, retryable);
+    const reasonLabel = reason === 'UNSPECIFIED' ? 'Unspecified reason' : formatPreviewFailureReasonLabel(reason);
+    if (matches.length === 0) {
+      toast.info(`No retryable documents in current list for reason: ${reasonLabel}`);
+      return;
+    }
+
+    const actionKey = getReasonActionKey(reason, category, force);
+    let queued = 0;
+    let failed = 0;
+    setReasonBatchActionKey(actionKey);
+    try {
+      const results = await Promise.allSettled(
+        matches.map((item) => nodeService.queuePreview(item.id, force))
+      );
+      results.forEach((result) => {
+        if (result.status === 'fulfilled') {
+          queued += 1;
+        } else {
+          failed += 1;
+        }
+      });
+
+      const actionLabel = force ? 'Force rebuild' : 'Retry';
+      if (queued > 0 && failed === 0) {
+        toast.success(`${actionLabel} queued for ${queued} document(s): ${reasonLabel}`);
+      } else if (queued > 0) {
+        toast.warning(`${actionLabel} queued for ${queued} document(s), ${failed} failed: ${reasonLabel}`);
+      } else {
+        toast.error(`${actionLabel} failed for reason group: ${reasonLabel}`);
+      }
+      await loadFailures();
+    } finally {
+      setReasonBatchActionKey(null);
+    }
+  };
+
   return (
     <Box p={3}>
       <Stack direction="row" alignItems="flex-start" justifyContent="space-between" flexWrap="wrap" gap={2} mb={2}>
@@ -213,6 +293,19 @@ const PreviewDiagnosticsPage: React.FC = () => {
               {LIMIT_OPTIONS.map((option) => (
                 <MenuItem key={option} value={option}>
                   Limit {option}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <FormControl size="small">
+            <Select
+              aria-label="Preview diagnostics days"
+              value={windowDays}
+              onChange={(event) => setWindowDays(event.target.value as WindowDays)}
+            >
+              {WINDOW_DAY_OPTIONS.map((option) => (
+                <MenuItem key={option.value} value={option.value}>
+                  {option.label}
                 </MenuItem>
               ))}
             </Select>
@@ -296,6 +389,8 @@ const PreviewDiagnosticsPage: React.FC = () => {
                     <TableCell>Top Failure Reason</TableCell>
                     <TableCell>Category</TableCell>
                     <TableCell>Retryable</TableCell>
+                    <TableCell align="right">Current List</TableCell>
+                    <TableCell align="right">Actions</TableCell>
                     <TableCell align="right">Count</TableCell>
                   </TableRow>
                 </TableHead>
@@ -305,6 +400,14 @@ const PreviewDiagnosticsPage: React.FC = () => {
                       entry.reason === 'UNSPECIFIED'
                         ? 'Unspecified reason'
                         : formatPreviewFailureReasonLabel(entry.reason);
+                    const matchedInCurrentList = matchReasonEntriesInCurrentList(
+                      entry.reason,
+                      entry.category,
+                      entry.retryable
+                    ).length;
+                    const retryActionKey = getReasonActionKey(entry.reason, entry.category, false);
+                    const forceActionKey = getReasonActionKey(entry.reason, entry.category, true);
+                    const rowBusy = reasonBatchActionKey === retryActionKey || reasonBatchActionKey === forceActionKey;
                     return (
                       <TableRow key={`${entry.reason}-${entry.category}-${entry.retryable}`}>
                         <TableCell sx={{ maxWidth: 520 }}>
@@ -324,6 +427,29 @@ const PreviewDiagnosticsPage: React.FC = () => {
                             color={entry.retryable ? 'warning' : 'default'}
                             variant={entry.retryable ? 'filled' : 'outlined'}
                           />
+                        </TableCell>
+                        <TableCell align="right">{matchedInCurrentList}</TableCell>
+                        <TableCell align="right">
+                          <Stack direction="row" justifyContent="flex-end" gap={0.5}>
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              disabled={!entry.retryable || matchedInCurrentList === 0 || Boolean(reasonBatchActionKey)}
+                              onClick={() => void handleQueuePreviewByReason(entry.reason, entry.category, entry.retryable, false)}
+                              aria-label={`Retry reason group ${reasonLabel}`}
+                            >
+                              {rowBusy ? 'Running...' : 'Retry'}
+                            </Button>
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              disabled={!entry.retryable || matchedInCurrentList === 0 || Boolean(reasonBatchActionKey)}
+                              onClick={() => void handleQueuePreviewByReason(entry.reason, entry.category, entry.retryable, true)}
+                              aria-label={`Force rebuild reason group ${reasonLabel}`}
+                            >
+                              Force
+                            </Button>
+                          </Stack>
                         </TableCell>
                         <TableCell align="right">{entry.count}</TableCell>
                       </TableRow>
@@ -365,7 +491,7 @@ const PreviewDiagnosticsPage: React.FC = () => {
                     item.mimeType,
                     item.previewFailureReason
                   );
-                  const queueBusy = queueingId === item.id;
+                  const queueBusy = queueingId === item.id || Boolean(reasonBatchActionKey);
                   const reasonLabel = formatPreviewFailureReasonLabel(item.previewFailureReason);
                   const parentPath = getParentFolderPath(item.path);
 

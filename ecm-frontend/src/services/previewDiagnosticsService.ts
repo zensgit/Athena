@@ -33,6 +33,8 @@ export type PreviewFailureSummary = {
   totalFailures: number;
   sampledFailures: number;
   sampleLimit: number;
+  windowDays: number;
+  windowStart: string | null;
   sampleTruncated: boolean;
   confidenceLevel: 'HIGH' | 'LOW' | string;
   confidenceReason: 'sample_complete' | 'sample_truncated' | string;
@@ -42,13 +44,13 @@ export type PreviewFailureSummary = {
 };
 
 class PreviewDiagnosticsService {
-  async listRecentFailures(limit = 50): Promise<PreviewFailureSample[]> {
-    return api.get<PreviewFailureSample[]>('/preview/diagnostics/failures', { params: { limit } });
+  async listRecentFailures(limit = 50, days = 7): Promise<PreviewFailureSample[]> {
+    return api.get<PreviewFailureSample[]>('/preview/diagnostics/failures', { params: { limit, days } });
   }
 
-  async getFailureSummary(sampleLimit = 500): Promise<PreviewFailureSummary> {
+  async getFailureSummary(sampleLimit = 500, days = 7): Promise<PreviewFailureSummary> {
     return api.get<PreviewFailureSummary>('/preview/diagnostics/failures/summary', {
-      params: { sampleLimit },
+      params: { sampleLimit, days },
     });
   }
 }

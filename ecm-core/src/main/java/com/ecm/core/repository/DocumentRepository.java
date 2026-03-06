@@ -144,4 +144,22 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
         Pageable pageable);
 
     long countByDeletedFalseAndPreviewStatusIn(List<PreviewStatus> statuses);
+
+    @Query("SELECT d FROM Document d " +
+           "WHERE d.deleted = false " +
+           "AND d.previewStatus IN :statuses " +
+           "AND (:updatedSince IS NULL OR d.previewLastUpdated >= :updatedSince) " +
+           "ORDER BY d.previewLastUpdated DESC")
+    Page<Document> findRecentPreviewFailuresByWindow(
+        @Param("statuses") List<PreviewStatus> statuses,
+        @Param("updatedSince") LocalDateTime updatedSince,
+        Pageable pageable);
+
+    @Query("SELECT COUNT(d) FROM Document d " +
+           "WHERE d.deleted = false " +
+           "AND d.previewStatus IN :statuses " +
+           "AND (:updatedSince IS NULL OR d.previewLastUpdated >= :updatedSince)")
+    long countPreviewFailuresByWindow(
+        @Param("statuses") List<PreviewStatus> statuses,
+        @Param("updatedSince") LocalDateTime updatedSince);
 }

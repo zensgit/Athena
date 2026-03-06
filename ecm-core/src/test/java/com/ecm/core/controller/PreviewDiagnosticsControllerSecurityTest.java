@@ -29,6 +29,8 @@ import java.util.UUID;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
@@ -93,7 +95,7 @@ class PreviewDiagnosticsControllerSecurityTest {
         document.setPreviewFailureReason("Error generating preview: Missing root object specification in trailer.");
         document.setPreviewLastUpdated(updated);
 
-        Mockito.when(documentRepository.findRecentPreviewFailures(anyList(), any(Pageable.class)))
+        Mockito.when(documentRepository.findRecentPreviewFailuresByWindow(anyList(), any(), any(Pageable.class)))
             .thenReturn(new PageImpl<>(List.of(document), PageRequest.of(0, 50), 1));
 
         mockMvc.perform(get("/api/v1/preview/diagnostics/failures?limit=50"))
@@ -136,9 +138,9 @@ class PreviewDiagnosticsControllerSecurityTest {
         permanent.setPreviewStatus(PreviewStatus.FAILED);
         permanent.setPreviewFailureReason("Missing root object specification in trailer.");
 
-        Mockito.when(documentRepository.countByDeletedFalseAndPreviewStatusIn(anyList()))
+        Mockito.when(documentRepository.countPreviewFailuresByWindow(anyList(), any()))
             .thenReturn(10L);
-        Mockito.when(documentRepository.findRecentPreviewFailures(anyList(), any(Pageable.class)))
+        Mockito.when(documentRepository.findRecentPreviewFailuresByWindow(anyList(), any(), any(Pageable.class)))
             .thenReturn(new PageImpl<>(List.of(temporary, unsupported, permanent), PageRequest.of(0, 3), 3));
 
         mockMvc.perform(get("/api/v1/preview/diagnostics/failures/summary?sampleLimit=3"))
@@ -146,6 +148,8 @@ class PreviewDiagnosticsControllerSecurityTest {
             .andExpect(jsonPath("$.totalFailures", is(10)))
             .andExpect(jsonPath("$.sampledFailures", is(3)))
             .andExpect(jsonPath("$.sampleLimit", is(3)))
+            .andExpect(jsonPath("$.windowDays", is(7)))
+            .andExpect(jsonPath("$.windowStart", notNullValue()))
             .andExpect(jsonPath("$.sampleTruncated", is(true)))
             .andExpect(jsonPath("$.confidenceLevel", is("LOW")))
             .andExpect(jsonPath("$.confidenceReason", is("sample_truncated")))
@@ -162,14 +166,18 @@ class PreviewDiagnosticsControllerSecurityTest {
     @WithMockUser(roles = "ADMIN")
     @DisplayName("Limit is clamped to protect the API")
     void limitIsClamped() throws Exception {
-        Mockito.when(documentRepository.findRecentPreviewFailures(anyList(), any(Pageable.class)))
+        Mockito.when(documentRepository.findRecentPreviewFailuresByWindow(anyList(), any(), any(Pageable.class)))
             .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 200), 0));
 
         mockMvc.perform(get("/api/v1/preview/diagnostics/failures?limit=9999"))
             .andExpect(status().isOk());
 
         ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
-        Mockito.verify(documentRepository).findRecentPreviewFailures(eq(List.of(PreviewStatus.FAILED, PreviewStatus.UNSUPPORTED)), captor.capture());
+        Mockito.verify(documentRepository).findRecentPreviewFailuresByWindow(
+            eq(List.of(PreviewStatus.FAILED, PreviewStatus.UNSUPPORTED)),
+            any(),
+            captor.capture()
+        );
         Pageable pageable = captor.getValue();
         org.junit.jupiter.api.Assertions.assertEquals(200, pageable.getPageSize());
         org.junit.jupiter.api.Assertions.assertEquals(0, pageable.getPageNumber());
@@ -179,21 +187,39 @@ class PreviewDiagnosticsControllerSecurityTest {
     @WithMockUser(roles = "ADMIN")
     @DisplayName("Summary sample limit is clamped to protect the API")
     void summaryLimitIsClamped() throws Exception {
-        Mockito.when(documentRepository.countByDeletedFalseAndPreviewStatusIn(anyList()))
+        Mockito.when(documentRepository.countPreviewFailuresByWindow(anyList(), any()))
             .thenReturn(0L);
-        Mockito.when(documentRepository.findRecentPreviewFailures(anyList(), any(Pageable.class)))
+        Mockito.when(documentRepository.findRecentPreviewFailuresByWindow(anyList(), any(), any(Pageable.class)))
             .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 2000), 0));
 
         mockMvc.perform(get("/api/v1/preview/diagnostics/failures/summary?sampleLimit=99999"))
             .andExpect(status().isOk());
 
         ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
-        Mockito.verify(documentRepository).findRecentPreviewFailures(
+        Mockito.verify(documentRepository).findRecentPreviewFailuresByWindow(
             eq(List.of(PreviewStatus.FAILED, PreviewStatus.UNSUPPORTED)),
+            any(),
             captor.capture()
         );
         Pageable pageable = captor.getValue();
         org.junit.jupiter.api.Assertions.assertEquals(2000, pageable.getPageSize());
         org.junit.jupiter.api.Assertions.assertEquals(0, pageable.getPageNumber());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("Days=0 disables window filtering and returns HIGH confidence when sample is complete")
+    void summarySupportsAllWindow() throws Exception {
+        Mockito.when(documentRepository.countPreviewFailuresByWindow(anyList(), eq(null)))
+            .thenReturn(0L);
+        Mockito.when(documentRepository.findRecentPreviewFailuresByWindow(anyList(), eq(null), any(Pageable.class)))
+            .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 500), 0));
+
+        mockMvc.perform(get("/api/v1/preview/diagnostics/failures/summary?sampleLimit=500&days=0"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.windowDays", is(0)))
+            .andExpect(jsonPath("$.windowStart", nullValue()))
+            .andExpect(jsonPath("$.confidenceLevel", is("HIGH")))
+            .andExpect(jsonPath("$.confidenceReason", is("sample_complete")));
     }
 }

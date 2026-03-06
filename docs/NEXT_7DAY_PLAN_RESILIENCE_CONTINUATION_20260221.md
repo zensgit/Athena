@@ -385,6 +385,16 @@
   - Deliverables:
     - `docs/PHASE151_PREVIEW_DIAGNOSTICS_SUMMARY_UI_DEV_20260306.md`
     - `docs/PHASE151_PREVIEW_DIAGNOSTICS_SUMMARY_UI_VERIFICATION_20260306.md`
+- Preview diagnostics window filter:
+  - add `days` window controls for diagnostics list + summary APIs and frontend days selector (7/30/all).
+  - Deliverables:
+    - `docs/PHASE152_PREVIEW_DIAGNOSTICS_WINDOW_FILTER_DEV_20260306.md`
+    - `docs/PHASE152_PREVIEW_DIAGNOSTICS_WINDOW_FILTER_VERIFICATION_20260306.md`
+- Preview diagnostics reason-group batch actions:
+  - add top-reason grouped retry/force actions and mocked E2E regression coverage.
+  - Deliverables:
+    - `docs/PHASE153_PREVIEW_DIAGNOSTICS_REASON_BATCH_ACTIONS_DEV_20260306.md`
+    - `docs/PHASE153_PREVIEW_DIAGNOSTICS_REASON_BATCH_ACTIONS_VERIFICATION_20260306.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.

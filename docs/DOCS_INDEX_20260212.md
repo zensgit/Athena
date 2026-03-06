@@ -345,6 +345,12 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - Phase 151: Preview diagnostics summary UI
     - Dev: `docs/PHASE151_PREVIEW_DIAGNOSTICS_SUMMARY_UI_DEV_20260306.md`
     - Verification: `docs/PHASE151_PREVIEW_DIAGNOSTICS_SUMMARY_UI_VERIFICATION_20260306.md`
+  - Phase 152: Preview diagnostics window filter (`days`)
+    - Dev: `docs/PHASE152_PREVIEW_DIAGNOSTICS_WINDOW_FILTER_DEV_20260306.md`
+    - Verification: `docs/PHASE152_PREVIEW_DIAGNOSTICS_WINDOW_FILTER_VERIFICATION_20260306.md`
+  - Phase 153: Preview diagnostics reason-group batch actions
+    - Dev: `docs/PHASE153_PREVIEW_DIAGNOSTICS_REASON_BATCH_ACTIONS_DEV_20260306.md`
+    - Verification: `docs/PHASE153_PREVIEW_DIAGNOSTICS_REASON_BATCH_ACTIONS_VERIFICATION_20260306.md`
   - Phase 5: Preview diagnostics real-chain verification (optional)
     - Verification: `docs/PHASE5_PREVIEW_DIAGNOSTICS_REALCHAIN_VERIFICATION_20260214.md`
 
