@@ -308,6 +308,16 @@
   - Deliverables:
     - `docs/PHASE137_PHASE5_REGRESSION_SUMMARY_ARTIFACT_AND_STRICT_THRESHOLDS_DEV_20260305.md`
     - `docs/PHASE137_PHASE5_REGRESSION_SUMMARY_ARTIFACT_AND_STRICT_THRESHOLDS_VERIFICATION_20260305.md`
+- Delivery gate phase5 summary directory integration:
+  - add `DELIVERY_GATE_PHASE5_SUMMARY_DIR` / `--phase5-summary-dir=<path>` to collect mocked phase5 summary artifacts.
+  - Deliverables:
+    - `docs/PHASE138_GATE_PHASE5_SUMMARY_DIR_INTEGRATION_DEV_20260306.md`
+    - `docs/PHASE138_GATE_PHASE5_SUMMARY_DIR_INTEGRATION_VERIFICATION_20260306.md`
+- Mail export runId utility test coverage:
+  - extract diagnostics export runId helper logic and add isolated frontend unit tests.
+  - Deliverables:
+    - `docs/PHASE139_MAIL_EXPORT_RUNID_UTIL_TEST_COVERAGE_DEV_20260306.md`
+    - `docs/PHASE139_MAIL_EXPORT_RUNID_UTIL_TEST_COVERAGE_VERIFICATION_20260306.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
