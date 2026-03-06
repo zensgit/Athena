@@ -339,6 +339,12 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - Phase 55: Preview diagnostics hardening (deep links + copy id + open parent folder)
     - Dev: `docs/PHASE55_PREVIEW_DIAGNOSTICS_HARDENING_DEV_20260214.md`
     - Verification: `docs/PHASE55_PREVIEW_DIAGNOSTICS_HARDENING_VERIFICATION_20260214.md`
+  - Phase 150: Preview diagnostics summary API (sample confidence + distributions + top reasons)
+    - Dev: `docs/PHASE150_PREVIEW_DIAGNOSTICS_SUMMARY_API_DEV_20260306.md`
+    - Verification: `docs/PHASE150_PREVIEW_DIAGNOSTICS_SUMMARY_API_VERIFICATION_20260306.md`
+  - Phase 151: Preview diagnostics summary UI
+    - Dev: `docs/PHASE151_PREVIEW_DIAGNOSTICS_SUMMARY_UI_DEV_20260306.md`
+    - Verification: `docs/PHASE151_PREVIEW_DIAGNOSTICS_SUMMARY_UI_VERIFICATION_20260306.md`
   - Phase 5: Preview diagnostics real-chain verification (optional)
     - Verification: `docs/PHASE5_PREVIEW_DIAGNOSTICS_REALCHAIN_VERIFICATION_20260214.md`
 

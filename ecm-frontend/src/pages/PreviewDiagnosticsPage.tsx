@@ -33,7 +33,10 @@ import { format } from 'date-fns';
 import { toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
 import nodeService from 'services/nodeService';
-import previewDiagnosticsService, { PreviewFailureSample } from 'services/previewDiagnosticsService';
+import previewDiagnosticsService, {
+  PreviewFailureSample,
+  PreviewFailureSummary as PreviewFailureSummaryDto,
+} from 'services/previewDiagnosticsService';
 import {
   formatPreviewFailureReasonLabel,
   getFailedPreviewMeta,
@@ -42,6 +45,7 @@ import {
 } from 'utils/previewStatusUtils';
 
 const LIMIT_OPTIONS = [25, 50, 100, 200] as const;
+const BACKEND_SUMMARY_SAMPLE_LIMIT = 500;
 
 const formatLastUpdated = (raw?: string | null) => {
   if (!raw) {
@@ -59,17 +63,23 @@ const PreviewDiagnosticsPage: React.FC = () => {
   const [limit, setLimit] = useState<(typeof LIMIT_OPTIONS)[number]>(50);
   const [filterText, setFilterText] = useState('');
   const [items, setItems] = useState<PreviewFailureSample[]>([]);
+  const [backendSummary, setBackendSummary] = useState<PreviewFailureSummaryDto | null>(null);
   const [loading, setLoading] = useState(false);
   const [queueingId, setQueueingId] = useState<string | null>(null);
 
   const loadFailures = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await previewDiagnosticsService.listRecentFailures(limit);
+      const [data, summaryData] = await Promise.all([
+        previewDiagnosticsService.listRecentFailures(limit),
+        previewDiagnosticsService.getFailureSummary(BACKEND_SUMMARY_SAMPLE_LIMIT),
+      ]);
       setItems(Array.isArray(data) ? data : []);
+      setBackendSummary(summaryData || null);
     } catch {
       toast.error('Failed to load preview diagnostics (admin required)');
       setItems([]);
+      setBackendSummary(null);
     } finally {
       setLoading(false);
     }
@@ -109,6 +119,12 @@ const PreviewDiagnosticsPage: React.FC = () => {
       return haystacks.some((value) => value.includes(query));
     });
   }, [filterText, items]);
+
+  const confidenceColor = backendSummary?.confidenceLevel === 'LOW' ? 'warning' : 'success';
+  const confidenceLabel =
+    backendSummary?.confidenceLevel === 'LOW'
+      ? 'LOW confidence (sample truncated)'
+      : 'HIGH confidence (sample complete)';
 
   const getParentFolderPath = (rawPath?: string | null): string | null => {
     if (!rawPath) {
@@ -225,6 +241,100 @@ const PreviewDiagnosticsPage: React.FC = () => {
         <Chip label={`Permanent ${summary.permanentFailed}`} color="error" variant="outlined" />
         <Chip label={`Unsupported ${summary.unsupportedFailed}`} variant="outlined" />
       </Stack>
+
+      {backendSummary && (
+        <Paper sx={{ p: 2, mb: 2 }}>
+          <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1} flexWrap="wrap" mb={1}>
+            <Typography variant="h6">Backend Failure Summary</Typography>
+            <Stack direction="row" gap={1} flexWrap="wrap">
+              <Chip
+                label={confidenceLabel}
+                color={confidenceColor}
+                variant={backendSummary.confidenceLevel === 'LOW' ? 'filled' : 'outlined'}
+              />
+              <Chip label={`Sampled ${backendSummary.sampledFailures}/${backendSummary.totalFailures}`} />
+            </Stack>
+          </Stack>
+
+          {backendSummary.sampleTruncated && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              Summary is sampled ({backendSummary.sampledFailures}/{backendSummary.totalFailures}) and may miss long-tail
+              reasons. Increase sample limit in backend endpoint if you need full precision.
+            </Alert>
+          )}
+
+          <Stack direction="row" gap={1} flexWrap="wrap" mb={1}>
+            {backendSummary.statusCounts.map((entry) => (
+              <Chip
+                key={`status-${entry.status}`}
+                size="small"
+                label={`Status ${entry.status}: ${entry.count}`}
+                variant="outlined"
+              />
+            ))}
+          </Stack>
+
+          <Stack direction="row" gap={1} flexWrap="wrap" mb={2}>
+            {backendSummary.categoryCounts.map((entry) => (
+              <Chip
+                key={`category-${entry.category}`}
+                size="small"
+                color={entry.retryable ? 'warning' : 'default'}
+                label={`${entry.category}: ${entry.count}${entry.retryable ? ' (retryable)' : ''}`}
+                variant="outlined"
+              />
+            ))}
+          </Stack>
+
+          {backendSummary.topReasons.length === 0 ? (
+            <Alert severity="info">No failure reasons in current summary sample.</Alert>
+          ) : (
+            <TableContainer>
+              <Table size="small" aria-label="Preview diagnostics top reasons">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Top Failure Reason</TableCell>
+                    <TableCell>Category</TableCell>
+                    <TableCell>Retryable</TableCell>
+                    <TableCell align="right">Count</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {backendSummary.topReasons.map((entry) => {
+                    const reasonLabel =
+                      entry.reason === 'UNSPECIFIED'
+                        ? 'Unspecified reason'
+                        : formatPreviewFailureReasonLabel(entry.reason);
+                    return (
+                    <TableRow key={`${entry.reason}-${entry.category}-${entry.retryable}`}>
+                      <TableCell sx={{ maxWidth: 520 }}>
+                        <Tooltip title={reasonLabel} placement="top-start" arrow>
+                          <Typography variant="body2" noWrap>
+                            {reasonLabel}
+                          </Typography>
+                        </Tooltip>
+                      </TableCell>
+                      <TableCell>
+                        <Chip size="small" label={entry.category || 'UNKNOWN'} variant="outlined" />
+                      </TableCell>
+                      <TableCell>
+                        <Chip
+                          size="small"
+                          label={entry.retryable ? 'Yes' : 'No'}
+                          color={entry.retryable ? 'warning' : 'default'}
+                          variant={entry.retryable ? 'filled' : 'outlined'}
+                        />
+                      </TableCell>
+                      <TableCell align="right">{entry.count}</TableCell>
+                    </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </Paper>
+      )}
 
       <Paper sx={{ p: 2 }}>
         {loading ? (

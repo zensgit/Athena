@@ -72,6 +72,9 @@ class PreviewDiagnosticsControllerSecurityTest {
     void diagnosticsRequiresAdmin() throws Exception {
         mockMvc.perform(get("/api/v1/preview/diagnostics/failures"))
             .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/v1/preview/diagnostics/failures/summary"))
+            .andExpect(status().isForbidden());
     }
 
     @Test
@@ -107,6 +110,56 @@ class PreviewDiagnosticsControllerSecurityTest {
 
     @Test
     @WithMockUser(roles = "ADMIN")
+    @DisplayName("Admin summary includes confidence and reason/category aggregation")
+    void diagnosticsSummaryIncludesConfidenceAndAggregations() throws Exception {
+        Document temporary = new Document();
+        temporary.setId(UUID.randomUUID());
+        temporary.setName("temporary.pdf");
+        temporary.setPath("/Root/Documents/temporary.pdf");
+        temporary.setMimeType("application/pdf");
+        temporary.setPreviewStatus(PreviewStatus.FAILED);
+        temporary.setPreviewFailureReason("gateway timeout");
+
+        Document unsupported = new Document();
+        unsupported.setId(UUID.randomUUID());
+        unsupported.setName("unsupported.bin");
+        unsupported.setPath("/Root/Documents/unsupported.bin");
+        unsupported.setMimeType("application/octet-stream");
+        unsupported.setPreviewStatus(PreviewStatus.UNSUPPORTED);
+        unsupported.setPreviewFailureReason("Preview not supported for mime type: application/octet-stream");
+
+        Document permanent = new Document();
+        permanent.setId(UUID.randomUUID());
+        permanent.setName("broken.pdf");
+        permanent.setPath("/Root/Documents/broken.pdf");
+        permanent.setMimeType("application/pdf");
+        permanent.setPreviewStatus(PreviewStatus.FAILED);
+        permanent.setPreviewFailureReason("Missing root object specification in trailer.");
+
+        Mockito.when(documentRepository.countByDeletedFalseAndPreviewStatusIn(anyList()))
+            .thenReturn(10L);
+        Mockito.when(documentRepository.findRecentPreviewFailures(anyList(), any(Pageable.class)))
+            .thenReturn(new PageImpl<>(List.of(temporary, unsupported, permanent), PageRequest.of(0, 3), 3));
+
+        mockMvc.perform(get("/api/v1/preview/diagnostics/failures/summary?sampleLimit=3"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalFailures", is(10)))
+            .andExpect(jsonPath("$.sampledFailures", is(3)))
+            .andExpect(jsonPath("$.sampleLimit", is(3)))
+            .andExpect(jsonPath("$.sampleTruncated", is(true)))
+            .andExpect(jsonPath("$.confidenceLevel", is("LOW")))
+            .andExpect(jsonPath("$.confidenceReason", is("sample_truncated")))
+            .andExpect(jsonPath("$.statusCounts", hasSize(2)))
+            .andExpect(jsonPath("$.statusCounts[0].status", is("FAILED")))
+            .andExpect(jsonPath("$.statusCounts[0].count", is(2)))
+            .andExpect(jsonPath("$.statusCounts[1].status", is("UNSUPPORTED")))
+            .andExpect(jsonPath("$.statusCounts[1].count", is(1)))
+            .andExpect(jsonPath("$.categoryCounts", hasSize(3)))
+            .andExpect(jsonPath("$.topReasons", hasSize(3)));
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
     @DisplayName("Limit is clamped to protect the API")
     void limitIsClamped() throws Exception {
         Mockito.when(documentRepository.findRecentPreviewFailures(anyList(), any(Pageable.class)))
@@ -121,5 +174,26 @@ class PreviewDiagnosticsControllerSecurityTest {
         org.junit.jupiter.api.Assertions.assertEquals(200, pageable.getPageSize());
         org.junit.jupiter.api.Assertions.assertEquals(0, pageable.getPageNumber());
     }
-}
 
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("Summary sample limit is clamped to protect the API")
+    void summaryLimitIsClamped() throws Exception {
+        Mockito.when(documentRepository.countByDeletedFalseAndPreviewStatusIn(anyList()))
+            .thenReturn(0L);
+        Mockito.when(documentRepository.findRecentPreviewFailures(anyList(), any(Pageable.class)))
+            .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 2000), 0));
+
+        mockMvc.perform(get("/api/v1/preview/diagnostics/failures/summary?sampleLimit=99999"))
+            .andExpect(status().isOk());
+
+        ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+        Mockito.verify(documentRepository).findRecentPreviewFailures(
+            eq(List.of(PreviewStatus.FAILED, PreviewStatus.UNSUPPORTED)),
+            captor.capture()
+        );
+        Pageable pageable = captor.getValue();
+        org.junit.jupiter.api.Assertions.assertEquals(2000, pageable.getPageSize());
+        org.junit.jupiter.api.Assertions.assertEquals(0, pageable.getPageNumber());
+    }
+}

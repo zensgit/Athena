@@ -375,6 +375,16 @@
   - Deliverables:
     - `docs/PHASE149_GATE_STRICT_SUGGESTIONS_ARTIFACT_AND_CONFIDENCE_METADATA_DEV_20260306.md`
     - `docs/PHASE149_GATE_STRICT_SUGGESTIONS_ARTIFACT_AND_CONFIDENCE_METADATA_VERIFICATION_20260306.md`
+- Preview diagnostics summary API:
+  - add admin summary endpoint with sample confidence, status/category distributions, and top failure reasons.
+  - Deliverables:
+    - `docs/PHASE150_PREVIEW_DIAGNOSTICS_SUMMARY_API_DEV_20260306.md`
+    - `docs/PHASE150_PREVIEW_DIAGNOSTICS_SUMMARY_API_VERIFICATION_20260306.md`
+- Preview diagnostics summary UI:
+  - render backend summary confidence panel, distribution chips, and top reason table in diagnostics page.
+  - Deliverables:
+    - `docs/PHASE151_PREVIEW_DIAGNOSTICS_SUMMARY_UI_DEV_20260306.md`
+    - `docs/PHASE151_PREVIEW_DIAGNOSTICS_SUMMARY_UI_VERIFICATION_20260306.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.

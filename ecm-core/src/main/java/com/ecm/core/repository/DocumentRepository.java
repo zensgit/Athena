@@ -142,4 +142,6 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
     Page<Document> findRecentPreviewFailures(
         @Param("statuses") List<PreviewStatus> statuses,
         Pageable pageable);
+
+    long countByDeletedFalseAndPreviewStatusIn(List<PreviewStatus> statuses);
 }

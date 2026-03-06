@@ -1127,6 +1127,36 @@
   - 默认 mocked gate：`RC=0`
   - 参数校验：`DELIVERY_GATE_PRINT_STRICT_SUGGESTIONS_JSON=2` expected FAIL
 
+### 77) Preview diagnostics 聚合摘要 API（Phase150）
+- `ecm-core/src/main/java/com/ecm/core/controller/PreviewDiagnosticsController.java`
+  - 新增 `GET /api/v1/preview/diagnostics/failures/summary`：
+    - 返回 `totalFailures`、`sampledFailures`、`sampleLimit`
+    - 返回采样置信度：`confidenceLevel(HIGH|LOW)`、`confidenceReason(sample_complete|sample_truncated)`
+    - 返回分布统计：`statusCounts`、`categoryCounts`
+    - 返回 `topReasons`（Top10，包含 `category/retryable/count`）
+  - summary 采样上限安全钳制：`2000`
+- `ecm-core/src/main/java/com/ecm/core/repository/DocumentRepository.java`
+  - 新增 `countByDeletedFalseAndPreviewStatusIn(...)` 供摘要总量统计。
+- `ecm-core/src/test/java/com/ecm/core/controller/PreviewDiagnosticsControllerSecurityTest.java`
+  - 增补 summary 端点 admin 鉴权、聚合 payload、采样上限钳制用例。
+- 验证：
+  - `cd ecm-core && mvn -q -Dtest=PreviewDiagnosticsControllerSecurityTest test` -> PASS
+
+### 78) Preview diagnostics 摘要可视化面板（Phase151）
+- `ecm-frontend/src/services/previewDiagnosticsService.ts`
+  - 新增 summary 类型与 `getFailureSummary(sampleLimit)` API 调用。
+- `ecm-frontend/src/pages/PreviewDiagnosticsPage.tsx`
+  - 新增后端摘要面板：
+    - 置信度 chip（HIGH/LOW）+ 采样覆盖率
+    - 低置信度采样告警（sample truncated）
+    - 状态/分类分布 chip
+    - Top failure reasons 表格（reason/category/retryable/count）
+  - 列表与摘要并行拉取，刷新保持一致。
+- 验证：
+  - `cd ecm-frontend && npm run -s lint -- src/pages/PreviewDiagnosticsPage.tsx src/services/previewDiagnosticsService.ts` -> PASS
+  - `cd ecm-frontend && npm test -- --watchAll=false --runInBand src/utils/previewStatusUtils.test.ts` -> PASS
+  - `cd ecm-frontend && npm run -s build` -> PASS
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -1336,3 +1366,7 @@
 - `docs/PHASE148_STRICT_RECOMMENDATION_MATRIX_VERIFICATION_20260306.md`
 - `docs/PHASE149_GATE_STRICT_SUGGESTIONS_ARTIFACT_AND_CONFIDENCE_METADATA_DEV_20260306.md`
 - `docs/PHASE149_GATE_STRICT_SUGGESTIONS_ARTIFACT_AND_CONFIDENCE_METADATA_VERIFICATION_20260306.md`
+- `docs/PHASE150_PREVIEW_DIAGNOSTICS_SUMMARY_API_DEV_20260306.md`
+- `docs/PHASE150_PREVIEW_DIAGNOSTICS_SUMMARY_API_VERIFICATION_20260306.md`
+- `docs/PHASE151_PREVIEW_DIAGNOSTICS_SUMMARY_UI_DEV_20260306.md`
+- `docs/PHASE151_PREVIEW_DIAGNOSTICS_SUMMARY_UI_VERIFICATION_20260306.md`
