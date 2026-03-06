@@ -172,6 +172,12 @@ const summary = {
   strict_threshold_controls: {
     hotspot_duration_sec_threshold: parseNumberSafe(process.env.PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD, 0),
     flaky_risk_score_threshold: parseIntSafe(process.env.PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD, 0),
+    hotspot_recommended_threshold: parseNumberSafe(analysis.strict_hotspot_recommended_threshold, 0),
+    hotspot_recommended_percentile: parseNumberSafe(analysis.strict_hotspot_recommended_percentile, 0),
+    hotspot_recommended_sample: parseNumberSafe(analysis.strict_hotspot_recommended_sample, 0),
+    flaky_recommended_threshold: parseIntSafe(analysis.strict_flaky_risk_recommended_threshold, 0),
+    flaky_recommended_percentile: parseNumberSafe(analysis.strict_flaky_risk_recommended_percentile, 0),
+    flaky_recommended_sample: parseNumberSafe(analysis.strict_flaky_risk_recommended_sample, 0),
     hotspot_match_count: parseIntSafe(analysis.strict_hotspot_match_count, 0),
     flaky_risk_match_count: parseIntSafe(analysis.strict_flaky_risk_match_count, 0),
     strict_guard_failed: Boolean(analysis.strict_guard_failed),
@@ -284,8 +290,14 @@ const analysis = {
   recovery_event_counts: [],
   strict_hotspot_duration_sec_threshold: strictHotspotThresholdSeconds,
   strict_hotspot_match_count: 0,
+  strict_hotspot_recommended_threshold: 0,
+  strict_hotspot_recommended_percentile: 0,
+  strict_hotspot_recommended_sample: 0,
   strict_flaky_risk_score_threshold: strictFlakyRiskScoreThreshold,
   strict_flaky_risk_match_count: 0,
+  strict_flaky_risk_recommended_threshold: 0,
+  strict_flaky_risk_recommended_percentile: 0,
+  strict_flaky_risk_recommended_sample: 0,
   strict_guard_failed: false,
   strict_failure_reasons: [],
 };
@@ -308,6 +320,20 @@ if (!logFile || !fs.existsSync(logFile)) {
 const content = fs.readFileSync(logFile, 'utf8').replace(/\r/g, '');
 const lines = content.split('\n');
 const specLinePattern = /^\s*[✓✘]\s+\d+\s+\[[^\]]+\]\s+›\s+(e2e\/[^:]+):\d+:\d+\s+›\s+(.+)\s+\(([\d.]+)(ms|s|m)\)\s*$/;
+const percentileFromSorted = (sortedValues, percentile) => {
+  if (!Array.isArray(sortedValues) || sortedValues.length === 0) {
+    return 0;
+  }
+  const p = Math.min(1, Math.max(0, percentile));
+  const position = p * (sortedValues.length - 1);
+  const lowerIndex = Math.floor(position);
+  const upperIndex = Math.ceil(position);
+  if (lowerIndex === upperIndex) {
+    return sortedValues[lowerIndex];
+  }
+  const weight = position - lowerIndex;
+  return sortedValues[lowerIndex] + (sortedValues[upperIndex] - sortedValues[lowerIndex]) * weight;
+};
 
 const tests = [];
 for (const line of lines) {
@@ -339,6 +365,24 @@ if (analysis.duration_hotspots.length === 0) {
   for (const item of analysis.duration_hotspots) {
     console.log(` - ${item.spec} :: ${item.title} (${item.duration_sec.toFixed(1)}s)`);
   }
+}
+
+const durationValuesAsc = tests.map((item) => item.durationSec).sort((left, right) => left - right);
+if (durationValuesAsc.length > 0) {
+  const hotspotRecommendationPercentile = 0.95;
+  const hotspotRecommendationSample = percentileFromSorted(durationValuesAsc, hotspotRecommendationPercentile);
+  const hotspotRecommendedThreshold = Math.max(
+    hotspotRecommendationSample + 0.1,
+    strictHotspotThresholdSeconds > 0 ? strictHotspotThresholdSeconds + 0.1 : 0.1
+  );
+  analysis.strict_hotspot_recommended_percentile = hotspotRecommendationPercentile;
+  analysis.strict_hotspot_recommended_sample = Number(hotspotRecommendationSample.toFixed(3));
+  analysis.strict_hotspot_recommended_threshold = Number(hotspotRecommendedThreshold.toFixed(1));
+  console.log(
+    `phase5_regression: strict hotspot recommendation p95=${hotspotRecommendationSample.toFixed(2)}s => threshold >=${analysis.strict_hotspot_recommended_threshold.toFixed(1)}s`
+  );
+} else if (strictHotspotThresholdSeconds > 0) {
+  analysis.strict_hotspot_recommended_threshold = Number((strictHotspotThresholdSeconds + 0.1).toFixed(1));
 }
 
 const riskCandidates = tests
@@ -376,6 +420,24 @@ if (analysis.flaky_risk_candidates.length > 0) {
   }
 } else {
   console.log('phase5_regression: flaky-risk candidates (heuristic): none');
+}
+
+const flakyScoresAsc = riskCandidates.map((item) => item.score).sort((left, right) => left - right);
+if (flakyScoresAsc.length > 0) {
+  const flakyRecommendationPercentile = 0.9;
+  const flakyRecommendationSample = percentileFromSorted(flakyScoresAsc, flakyRecommendationPercentile);
+  const flakyRecommendedThreshold = Math.max(
+    Math.ceil(flakyRecommendationSample),
+    strictFlakyRiskScoreThreshold > 0 ? strictFlakyRiskScoreThreshold + 1 : 1
+  );
+  analysis.strict_flaky_risk_recommended_percentile = flakyRecommendationPercentile;
+  analysis.strict_flaky_risk_recommended_sample = Number(flakyRecommendationSample.toFixed(3));
+  analysis.strict_flaky_risk_recommended_threshold = flakyRecommendedThreshold;
+  console.log(
+    `phase5_regression: strict flaky-risk recommendation p90=${flakyRecommendationSample.toFixed(2)} => threshold >=${flakyRecommendedThreshold}`
+  );
+} else if (strictFlakyRiskScoreThreshold > 0) {
+  analysis.strict_flaky_risk_recommended_threshold = strictFlakyRiskScoreThreshold + 1;
 }
 
 const retrySignals = lines.filter((line) => /retry #\d+/i.test(line)).length;

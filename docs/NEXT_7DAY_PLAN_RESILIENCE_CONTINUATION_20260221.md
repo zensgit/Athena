@@ -340,6 +340,12 @@
   - Deliverables:
     - `docs/PHASE143_GATE_STRICT_HINT_PRIORITY_ORDER_DEV_20260306.md`
     - `docs/PHASE143_GATE_STRICT_HINT_PRIORITY_ORDER_VERIFICATION_20260306.md`
+- Delivery gate strict percentile recommendations:
+  - derive strict remediation threshold targets from run percentiles and expose them in phase5 summary artifact.
+  - consume percentile recommendation fields in gate strict hints/commands with fallback compatibility.
+  - Deliverables:
+    - `docs/PHASE144_GATE_STRICT_PERCENTILE_RECOMMENDATIONS_DEV_20260306.md`
+    - `docs/PHASE144_GATE_STRICT_PERCENTILE_RECOMMENDATIONS_VERIFICATION_20260306.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.

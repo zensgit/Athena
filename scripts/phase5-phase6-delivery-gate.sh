@@ -426,8 +426,14 @@ const emit = (key, value) => {
 emit('strict_guard_failed', strict?.strict_guard_failed ? '1' : '0');
 emit('strict_failure_reasons', toCsv(strict?.strict_failure_reasons));
 emit('hotspot_threshold', strict?.hotspot_duration_sec_threshold ?? '');
+emit('hotspot_recommended_threshold', strict?.hotspot_recommended_threshold ?? '');
+emit('hotspot_recommended_percentile', strict?.hotspot_recommended_percentile ?? '');
+emit('hotspot_recommended_sample', strict?.hotspot_recommended_sample ?? '');
 emit('hotspot_match_count', strict?.hotspot_match_count ?? 0);
 emit('flaky_threshold', strict?.flaky_risk_score_threshold ?? '');
+emit('flaky_recommended_threshold', strict?.flaky_recommended_threshold ?? '');
+emit('flaky_recommended_percentile', strict?.flaky_recommended_percentile ?? '');
+emit('flaky_recommended_sample', strict?.flaky_recommended_sample ?? '');
 emit('flaky_match_count', strict?.flaky_risk_match_count ?? 0);
 emit('recovery_warning_count', recovery?.warning_count ?? 0);
 emit('recovery_missing', toCsv(recovery?.missing_events));
@@ -456,8 +462,14 @@ print_startup_failure_hints() {
   local phase5_strict_reasons=()
   local phase5_hotspot_threshold=""
   local phase5_hotspot_match_count=""
+  local phase5_hotspot_recommended_threshold=""
+  local phase5_hotspot_recommended_percentile=""
+  local phase5_hotspot_recommended_sample=""
   local phase5_flaky_threshold=""
   local phase5_flaky_match_count=""
+  local phase5_flaky_recommended_threshold=""
+  local phase5_flaky_recommended_percentile=""
+  local phase5_flaky_recommended_sample=""
   local phase5_recovery_missing_events=()
   local phase5_recovery_unexpected_events=()
   local record
@@ -587,6 +599,21 @@ print_startup_failure_hints() {
               phase5_hotspot_threshold="${summary_value}"
             fi
             ;;
+          hotspot_recommended_threshold)
+            if [[ -n "${summary_value}" && "${summary_value}" != "0" ]]; then
+              phase5_hotspot_recommended_threshold="${summary_value}"
+            fi
+            ;;
+          hotspot_recommended_percentile)
+            if [[ -n "${summary_value}" && "${summary_value}" != "0" ]]; then
+              phase5_hotspot_recommended_percentile="${summary_value}"
+            fi
+            ;;
+          hotspot_recommended_sample)
+            if [[ -n "${summary_value}" && "${summary_value}" != "0" ]]; then
+              phase5_hotspot_recommended_sample="${summary_value}"
+            fi
+            ;;
           hotspot_match_count)
             if [[ -n "${summary_value}" && "${summary_value}" != "0" ]]; then
               phase5_hotspot_match_count="${summary_value}"
@@ -595,6 +622,21 @@ print_startup_failure_hints() {
           flaky_threshold)
             if [[ -n "${summary_value}" && "${summary_value}" != "0" ]]; then
               phase5_flaky_threshold="${summary_value}"
+            fi
+            ;;
+          flaky_recommended_threshold)
+            if [[ -n "${summary_value}" && "${summary_value}" != "0" ]]; then
+              phase5_flaky_recommended_threshold="${summary_value}"
+            fi
+            ;;
+          flaky_recommended_percentile)
+            if [[ -n "${summary_value}" && "${summary_value}" != "0" ]]; then
+              phase5_flaky_recommended_percentile="${summary_value}"
+            fi
+            ;;
+          flaky_recommended_sample)
+            if [[ -n "${summary_value}" && "${summary_value}" != "0" ]]; then
+              phase5_flaky_recommended_sample="${summary_value}"
             fi
             ;;
           flaky_match_count)
@@ -716,6 +758,15 @@ print_startup_failure_hints() {
         hotspot_hint="${hotspot_hint} matched ${phase5_hotspot_match_count} test(s)"
       fi
       echo " - Phase5 strict threshold guard hit (${hotspot_hint})."
+      if [[ -n "${phase5_hotspot_recommended_threshold}" ]]; then
+        local hotspot_rec_hint="recommended threshold >=${phase5_hotspot_recommended_threshold}s"
+        if [[ -n "${phase5_hotspot_recommended_percentile}" && -n "${phase5_hotspot_recommended_sample}" ]]; then
+          local hotspot_percentile_label
+          hotspot_percentile_label="$(awk -v p="${phase5_hotspot_recommended_percentile}" 'BEGIN { printf "p%.0f", (p * 100.0) }')"
+          hotspot_rec_hint="${hotspot_rec_hint} from ${hotspot_percentile_label}=${phase5_hotspot_recommended_sample}s"
+        fi
+        echo " - Hotspot percentile recommendation: ${hotspot_rec_hint}."
+      fi
     fi
     if [[ -n "${phase5_flaky_threshold}" ]]; then
       local flaky_hint="flaky-risk score threshold >=${phase5_flaky_threshold}"
@@ -723,6 +774,15 @@ print_startup_failure_hints() {
         flaky_hint="${flaky_hint} matched ${phase5_flaky_match_count} test(s)"
       fi
       echo " - Phase5 strict threshold guard hit (${flaky_hint})."
+      if [[ -n "${phase5_flaky_recommended_threshold}" ]]; then
+        local flaky_rec_hint="recommended threshold >=${phase5_flaky_recommended_threshold}"
+        if [[ -n "${phase5_flaky_recommended_percentile}" && -n "${phase5_flaky_recommended_sample}" ]]; then
+          local flaky_percentile_label
+          flaky_percentile_label="$(awk -v p="${phase5_flaky_recommended_percentile}" 'BEGIN { printf "p%.0f", (p * 100.0) }')"
+          flaky_rec_hint="${flaky_rec_hint} from ${flaky_percentile_label}=${phase5_flaky_recommended_sample}"
+        fi
+        echo " - Flaky-risk percentile recommendation: ${flaky_rec_hint}."
+      fi
     fi
     if [[ -n "${strict_reasons_line}" ]]; then
       echo " - Strict failure reasons: ${strict_reasons_line}."
@@ -741,14 +801,18 @@ print_startup_failure_hints() {
     local recovery_cmd=""
     if [[ -n "${phase5_hotspot_threshold}" ]]; then
       local hotspot_relax_target="0"
-      if [[ "${phase5_hotspot_threshold}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+      if [[ "${phase5_hotspot_recommended_threshold}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+        hotspot_relax_target="${phase5_hotspot_recommended_threshold}"
+      elif [[ "${phase5_hotspot_threshold}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
         hotspot_relax_target="$(awk -v v="${phase5_hotspot_threshold}" 'BEGIN { printf "%.1f", (v + 2.0) }')"
       fi
       hotspot_cmd="DELIVERY_GATE_MODE=mocked DELIVERY_GATE_PHASE5_RECOVERY_GUARD_STRICT=1 DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD=${hotspot_relax_target} PW_WORKERS=${PW_WORKERS} bash scripts/phase5-phase6-delivery-gate.sh"
     fi
     if [[ -n "${phase5_flaky_threshold}" ]]; then
       local flaky_relax_target="0"
-      if [[ "${phase5_flaky_threshold}" =~ ^[0-9]+$ ]]; then
+      if [[ "${phase5_flaky_recommended_threshold}" =~ ^[0-9]+$ ]]; then
+        flaky_relax_target="${phase5_flaky_recommended_threshold}"
+      elif [[ "${phase5_flaky_threshold}" =~ ^[0-9]+$ ]]; then
         flaky_relax_target="$((phase5_flaky_threshold + 1))"
       fi
       flaky_cmd="DELIVERY_GATE_MODE=mocked DELIVERY_GATE_PHASE5_RECOVERY_GUARD_STRICT=1 DELIVERY_GATE_PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD=${flaky_relax_target} PW_WORKERS=${PW_WORKERS} bash scripts/phase5-phase6-delivery-gate.sh"
@@ -758,9 +822,20 @@ print_startup_failure_hints() {
     fi
 
     local strict_suggestions=()
-    local strict_reason
-    for strict_reason in "${phase5_strict_reasons[@]}"; do
-      case "${strict_reason}" in
+    local strict_reason_priority
+    for strict_reason_priority in recovery_guard hotspot_threshold flaky_risk_threshold; do
+      local strict_reason_seen=0
+      local strict_reason_item
+      for strict_reason_item in "${phase5_strict_reasons[@]}"; do
+        if [[ "${strict_reason_item}" == "${strict_reason_priority}" ]]; then
+          strict_reason_seen=1
+          break
+        fi
+      done
+      if [[ "${strict_reason_seen}" -eq 0 ]]; then
+        continue
+      fi
+      case "${strict_reason_priority}" in
         recovery_guard)
           if [[ -n "${recovery_cmd}" ]]; then
             strict_suggestions+=("${recovery_cmd}")
