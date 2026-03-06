@@ -128,6 +128,8 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - Verification: `docs/PHASE143_GATE_STRICT_HINT_PRIORITY_ORDER_VERIFICATION_20260306.md`
   - Design: `docs/PHASE144_GATE_STRICT_PERCENTILE_RECOMMENDATIONS_DEV_20260306.md`
   - Verification: `docs/PHASE144_GATE_STRICT_PERCENTILE_RECOMMENDATIONS_VERIFICATION_20260306.md`
+  - Design: `docs/PHASE145_GATE_STRICT_PERCENTILE_CONFIG_PASSTHROUGH_DEV_20260306.md`
+  - Verification: `docs/PHASE145_GATE_STRICT_PERCENTILE_CONFIG_PASSTHROUGH_VERIFICATION_20260306.md`
 - Auth/Search recovery 7-day release summary: `docs/PHASE73_AUTH_SEARCH_RECOVERY_RELEASE_SUMMARY_20260219.md`
 - Auth/Search recovery verification rollup: `docs/PHASE73_AUTH_SEARCH_RECOVERY_VERIFICATION_ROLLUP_20260219.md`
 - Phase 5/6 one-command delivery gate:

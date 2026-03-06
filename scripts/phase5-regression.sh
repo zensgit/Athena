@@ -16,6 +16,10 @@ PHASE5_RECOVERY_REGISTRY_SYNC="${PHASE5_RECOVERY_REGISTRY_SYNC:-0}"
 PHASE5_REGRESSION_SUMMARY_JSON="${PHASE5_REGRESSION_SUMMARY_JSON:-}"
 PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD="${PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD:-0}"
 PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD="${PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD:-0}"
+PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE="${PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE:-0.95}"
+PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC="${PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC:-0.1}"
+PHASE5_STRICT_FLAKY_RISK_RECOMMEND_PERCENTILE="${PHASE5_STRICT_FLAKY_RISK_RECOMMEND_PERCENTILE:-0.9}"
+PHASE5_STRICT_FLAKY_RISK_RECOMMEND_STEP="${PHASE5_STRICT_FLAKY_RISK_RECOMMEND_STEP:-1}"
 PHASE5_RUN_START_EPOCH="$(date +%s)"
 PHASE5_RUN_START_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 PHASE5_ANALYSIS_JSON_FILE=""
@@ -36,6 +40,10 @@ echo "PHASE5_RECOVERY_REGISTRY_SYNC=${PHASE5_RECOVERY_REGISTRY_SYNC}"
 echo "PHASE5_REGRESSION_SUMMARY_JSON=${PHASE5_REGRESSION_SUMMARY_JSON:-"(unset)"}"
 echo "PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD=${PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD}"
 echo "PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD=${PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD}"
+echo "PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE=${PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE}"
+echo "PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC=${PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC}"
+echo "PHASE5_STRICT_FLAKY_RISK_RECOMMEND_PERCENTILE=${PHASE5_STRICT_FLAKY_RISK_RECOMMEND_PERCENTILE}"
+echo "PHASE5_STRICT_FLAKY_RISK_RECOMMEND_STEP=${PHASE5_STRICT_FLAKY_RISK_RECOMMEND_STEP}"
 
 strip_ansi_file() {
   local log_file="$1"
@@ -78,6 +86,10 @@ write_phase5_summary_artifact() {
   PHASE5_RECOVERY_GUARD_STRICT="${PHASE5_RECOVERY_GUARD_STRICT}" \
   PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD="${PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD}" \
   PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD="${PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD}" \
+  PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE="${PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE}" \
+  PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC="${PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC}" \
+  PHASE5_STRICT_FLAKY_RISK_RECOMMEND_PERCENTILE="${PHASE5_STRICT_FLAKY_RISK_RECOMMEND_PERCENTILE}" \
+  PHASE5_STRICT_FLAKY_RISK_RECOMMEND_STEP="${PHASE5_STRICT_FLAKY_RISK_RECOMMEND_STEP}" \
   PHASE5_VALIDATE_RECOVERY_REGISTRY_ONLY="${PHASE5_VALIDATE_RECOVERY_REGISTRY_ONLY}" \
   PHASE5_USE_EXISTING_UI="${PHASE5_USE_EXISTING_UI}" \
   PHASE5_RECOVERY_EVENTS_FILE="${PHASE5_RECOVERY_EVENTS_FILE}" \
@@ -172,6 +184,10 @@ const summary = {
   strict_threshold_controls: {
     hotspot_duration_sec_threshold: parseNumberSafe(process.env.PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD, 0),
     flaky_risk_score_threshold: parseIntSafe(process.env.PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD, 0),
+    hotspot_recommend_percentile: parseNumberSafe(process.env.PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE, 0.95),
+    hotspot_recommend_padding_sec: parseNumberSafe(process.env.PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC, 0.1),
+    flaky_recommend_percentile: parseNumberSafe(process.env.PHASE5_STRICT_FLAKY_RISK_RECOMMEND_PERCENTILE, 0.9),
+    flaky_recommend_step: parseIntSafe(process.env.PHASE5_STRICT_FLAKY_RISK_RECOMMEND_STEP, 1),
     hotspot_recommended_threshold: parseNumberSafe(analysis.strict_hotspot_recommended_threshold, 0),
     hotspot_recommended_percentile: parseNumberSafe(analysis.strict_hotspot_recommended_percentile, 0),
     hotspot_recommended_sample: parseNumberSafe(analysis.strict_hotspot_recommended_sample, 0),
@@ -256,7 +272,11 @@ print_playwright_timing_summary() {
     "${PHASE5_RECOVERY_EVENTS_FILE}" \
     "${analysis_json_file}" \
     "${PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD}" \
-    "${PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD}" <<'NODE'
+    "${PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD}" \
+    "${PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE}" \
+    "${PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC}" \
+    "${PHASE5_STRICT_FLAKY_RISK_RECOMMEND_PERCENTILE}" \
+    "${PHASE5_STRICT_FLAKY_RISK_RECOMMEND_STEP}" <<'NODE'
 const fs = require('fs');
 
 const logFile = process.argv[2];
@@ -265,17 +285,40 @@ const expectedEventsFile = process.argv[4] || '';
 const analysisJsonFile = process.argv[5] || '';
 const strictHotspotThresholdRaw = process.argv[6] || '0';
 const strictFlakyRiskScoreThresholdRaw = process.argv[7] || '0';
+const hotspotRecommendPercentileRaw = process.argv[8] || '0.95';
+const hotspotRecommendPaddingSecRaw = process.argv[9] || '0.1';
+const flakyRecommendPercentileRaw = process.argv[10] || '0.9';
+const flakyRecommendStepRaw = process.argv[11] || '1';
 
 const parsePositiveNumber = (rawValue) => {
   const value = Number.parseFloat(rawValue ?? '');
   return Number.isFinite(value) && value > 0 ? value : 0;
 };
+const parseNonNegativeNumber = (rawValue, fallback = 0) => {
+  const value = Number.parseFloat(rawValue ?? '');
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+};
 const parsePositiveInt = (rawValue) => {
   const value = Number.parseInt(rawValue ?? '', 10);
   return Number.isFinite(value) && value > 0 ? value : 0;
 };
+const parseNonNegativeInt = (rawValue, fallback = 0) => {
+  const value = Number.parseInt(rawValue ?? '', 10);
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+};
+const parsePercentile = (rawValue, fallback) => {
+  const value = Number.parseFloat(rawValue ?? '');
+  if (!Number.isFinite(value) || value <= 0 || value > 1) {
+    return fallback;
+  }
+  return value;
+};
 const strictHotspotThresholdSeconds = parsePositiveNumber(strictHotspotThresholdRaw);
 const strictFlakyRiskScoreThreshold = parsePositiveInt(strictFlakyRiskScoreThresholdRaw);
+const hotspotRecommendPercentile = parsePercentile(hotspotRecommendPercentileRaw, 0.95);
+const hotspotRecommendPaddingSec = parseNonNegativeNumber(hotspotRecommendPaddingSecRaw, 0.1);
+const flakyRecommendPercentile = parsePercentile(flakyRecommendPercentileRaw, 0.9);
+const flakyRecommendStep = parseNonNegativeInt(flakyRecommendStepRaw, 1);
 
 const analysis = {
   schema_version: 1,
@@ -369,20 +412,21 @@ if (analysis.duration_hotspots.length === 0) {
 
 const durationValuesAsc = tests.map((item) => item.durationSec).sort((left, right) => left - right);
 if (durationValuesAsc.length > 0) {
-  const hotspotRecommendationPercentile = 0.95;
-  const hotspotRecommendationSample = percentileFromSorted(durationValuesAsc, hotspotRecommendationPercentile);
+  const hotspotRecommendationSample = percentileFromSorted(durationValuesAsc, hotspotRecommendPercentile);
   const hotspotRecommendedThreshold = Math.max(
-    hotspotRecommendationSample + 0.1,
-    strictHotspotThresholdSeconds > 0 ? strictHotspotThresholdSeconds + 0.1 : 0.1
+    hotspotRecommendationSample + hotspotRecommendPaddingSec,
+    strictHotspotThresholdSeconds > 0 ? strictHotspotThresholdSeconds + hotspotRecommendPaddingSec : hotspotRecommendPaddingSec
   );
-  analysis.strict_hotspot_recommended_percentile = hotspotRecommendationPercentile;
+  analysis.strict_hotspot_recommended_percentile = hotspotRecommendPercentile;
   analysis.strict_hotspot_recommended_sample = Number(hotspotRecommendationSample.toFixed(3));
   analysis.strict_hotspot_recommended_threshold = Number(hotspotRecommendedThreshold.toFixed(1));
+  const hotspotPercentileLabel = `p${Math.round(hotspotRecommendPercentile * 100)}`;
   console.log(
-    `phase5_regression: strict hotspot recommendation p95=${hotspotRecommendationSample.toFixed(2)}s => threshold >=${analysis.strict_hotspot_recommended_threshold.toFixed(1)}s`
+    `phase5_regression: strict hotspot recommendation ${hotspotPercentileLabel}=${hotspotRecommendationSample.toFixed(2)}s (+${hotspotRecommendPaddingSec.toFixed(2)}s) => threshold >=${analysis.strict_hotspot_recommended_threshold.toFixed(1)}s`
   );
 } else if (strictHotspotThresholdSeconds > 0) {
-  analysis.strict_hotspot_recommended_threshold = Number((strictHotspotThresholdSeconds + 0.1).toFixed(1));
+  analysis.strict_hotspot_recommended_percentile = hotspotRecommendPercentile;
+  analysis.strict_hotspot_recommended_threshold = Number((strictHotspotThresholdSeconds + hotspotRecommendPaddingSec).toFixed(1));
 }
 
 const riskCandidates = tests
@@ -424,20 +468,21 @@ if (analysis.flaky_risk_candidates.length > 0) {
 
 const flakyScoresAsc = riskCandidates.map((item) => item.score).sort((left, right) => left - right);
 if (flakyScoresAsc.length > 0) {
-  const flakyRecommendationPercentile = 0.9;
-  const flakyRecommendationSample = percentileFromSorted(flakyScoresAsc, flakyRecommendationPercentile);
+  const flakyRecommendationSample = percentileFromSorted(flakyScoresAsc, flakyRecommendPercentile);
   const flakyRecommendedThreshold = Math.max(
     Math.ceil(flakyRecommendationSample),
-    strictFlakyRiskScoreThreshold > 0 ? strictFlakyRiskScoreThreshold + 1 : 1
+    strictFlakyRiskScoreThreshold > 0 ? strictFlakyRiskScoreThreshold + flakyRecommendStep : flakyRecommendStep
   );
-  analysis.strict_flaky_risk_recommended_percentile = flakyRecommendationPercentile;
+  analysis.strict_flaky_risk_recommended_percentile = flakyRecommendPercentile;
   analysis.strict_flaky_risk_recommended_sample = Number(flakyRecommendationSample.toFixed(3));
   analysis.strict_flaky_risk_recommended_threshold = flakyRecommendedThreshold;
+  const flakyPercentileLabel = `p${Math.round(flakyRecommendPercentile * 100)}`;
   console.log(
-    `phase5_regression: strict flaky-risk recommendation p90=${flakyRecommendationSample.toFixed(2)} => threshold >=${flakyRecommendedThreshold}`
+    `phase5_regression: strict flaky-risk recommendation ${flakyPercentileLabel}=${flakyRecommendationSample.toFixed(2)} (+step ${flakyRecommendStep}) => threshold >=${flakyRecommendedThreshold}`
   );
 } else if (strictFlakyRiskScoreThreshold > 0) {
-  analysis.strict_flaky_risk_recommended_threshold = strictFlakyRiskScoreThreshold + 1;
+  analysis.strict_flaky_risk_recommended_percentile = flakyRecommendPercentile;
+  analysis.strict_flaky_risk_recommended_threshold = strictFlakyRiskScoreThreshold + flakyRecommendStep;
 }
 
 const retrySignals = lines.filter((line) => /retry #\d+/i.test(line)).length;

@@ -346,6 +346,12 @@
   - Deliverables:
     - `docs/PHASE144_GATE_STRICT_PERCENTILE_RECOMMENDATIONS_DEV_20260306.md`
     - `docs/PHASE144_GATE_STRICT_PERCENTILE_RECOMMENDATIONS_VERIFICATION_20260306.md`
+- Delivery gate strict percentile config passthrough:
+  - make hotspot/flaky recommendation percentile controls configurable via gate CLI/env.
+  - propagate configured values into phase5 regression execution plan, runs, and strict rerun hints.
+  - Deliverables:
+    - `docs/PHASE145_GATE_STRICT_PERCENTILE_CONFIG_PASSTHROUGH_DEV_20260306.md`
+    - `docs/PHASE145_GATE_STRICT_PERCENTILE_CONFIG_PASSTHROUGH_VERIFICATION_20260306.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
