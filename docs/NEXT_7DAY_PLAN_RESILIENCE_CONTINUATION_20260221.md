@@ -358,6 +358,12 @@
   - Deliverables:
     - `docs/PHASE146_GATE_STRICT_RECOMMENDATION_CONFIDENCE_GUARDS_DEV_20260306.md`
     - `docs/PHASE146_GATE_STRICT_RECOMMENDATION_CONFIDENCE_GUARDS_VERIFICATION_20260306.md`
+- Delivery gate low-confidence recalibration command hints:
+  - add explicit recalibration hints that map LOW-confidence recommendations to observed sample sizes.
+  - prioritize min-sample recalibration reruns before strict threshold-relax reruns in strict suggestion output.
+  - Deliverables:
+    - `docs/PHASE147_GATE_LOW_CONFIDENCE_RECALIBRATION_HINTS_DEV_20260306.md`
+    - `docs/PHASE147_GATE_LOW_CONFIDENCE_RECALIBRATION_HINTS_VERIFICATION_20260306.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.

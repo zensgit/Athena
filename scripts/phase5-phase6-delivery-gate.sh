@@ -904,6 +904,9 @@ print_startup_failure_hints() {
             hotspot_confidence_hint="${hotspot_confidence_hint} (sample ${phase5_hotspot_recommended_count} < min ${phase5_hotspot_recommend_min_sample})"
           fi
           echo "${hotspot_confidence_hint}."
+          if [[ -n "${phase5_hotspot_recommended_count}" ]]; then
+            echo " - Hotspot recalibration hint: rerun with recommend min sample <= ${phase5_hotspot_recommended_count}."
+          fi
         fi
       fi
     fi
@@ -927,6 +930,9 @@ print_startup_failure_hints() {
             flaky_confidence_hint="${flaky_confidence_hint} (sample ${phase5_flaky_recommended_count} < min ${phase5_flaky_recommend_min_sample})"
           fi
           echo "${flaky_confidence_hint}."
+          if [[ -n "${phase5_flaky_recommended_count}" ]]; then
+            echo " - Flaky-risk recalibration hint: rerun with recommend min sample <= ${phase5_flaky_recommended_count}."
+          fi
         fi
       fi
     fi
@@ -945,6 +951,8 @@ print_startup_failure_hints() {
     local hotspot_cmd=""
     local flaky_cmd=""
     local recovery_cmd=""
+    local hotspot_recalibration_cmd=""
+    local flaky_recalibration_cmd=""
     if [[ -n "${phase5_hotspot_threshold}" ]]; then
       local hotspot_relax_target="0"
       if [[ "${phase5_hotspot_recommended_threshold}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
@@ -965,6 +973,12 @@ print_startup_failure_hints() {
     fi
     if [[ "${strict_reasons_line}" == *"recovery_guard"* ]]; then
       recovery_cmd="PHASE5_RECOVERY_GUARD_STRICT=1 PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD} PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD} PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE} PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC} PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE} PHASE5_STRICT_FLAKY_RISK_RECOMMEND_PERCENTILE=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_PERCENTILE} PHASE5_STRICT_FLAKY_RISK_RECOMMEND_STEP=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_STEP} PHASE5_STRICT_FLAKY_RISK_RECOMMEND_MIN_SAMPLE=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE} bash scripts/phase5-regression.sh"
+    fi
+    if [[ "${phase5_hotspot_recommendation_low_confidence}" -eq 1 && "${phase5_hotspot_recommended_count}" =~ ^[1-9][0-9]*$ ]]; then
+      hotspot_recalibration_cmd="DELIVERY_GATE_MODE=mocked DELIVERY_GATE_PHASE5_RECOVERY_GUARD_STRICT=1 DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD} DELIVERY_GATE_PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD} DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE} DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC} DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE=${phase5_hotspot_recommended_count} DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_PERCENTILE=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_PERCENTILE} DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_STEP=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_STEP} DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE} PW_WORKERS=${PW_WORKERS} bash scripts/phase5-phase6-delivery-gate.sh"
+    fi
+    if [[ "${phase5_flaky_recommendation_low_confidence}" -eq 1 && "${phase5_flaky_recommended_count}" =~ ^[1-9][0-9]*$ ]]; then
+      flaky_recalibration_cmd="DELIVERY_GATE_MODE=mocked DELIVERY_GATE_PHASE5_RECOVERY_GUARD_STRICT=1 DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD} DELIVERY_GATE_PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD} DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE} DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC} DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE} DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_PERCENTILE=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_PERCENTILE} DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_STEP=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_STEP} DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE=${phase5_flaky_recommended_count} PW_WORKERS=${PW_WORKERS} bash scripts/phase5-phase6-delivery-gate.sh"
     fi
 
     local strict_suggestions=()
@@ -988,11 +1002,17 @@ print_startup_failure_hints() {
           fi
           ;;
         hotspot_threshold)
+          if [[ -n "${hotspot_recalibration_cmd}" ]]; then
+            strict_suggestions+=("${hotspot_recalibration_cmd}")
+          fi
           if [[ -n "${hotspot_cmd}" ]]; then
             strict_suggestions+=("${hotspot_cmd}")
           fi
           ;;
         flaky_risk_threshold)
+          if [[ -n "${flaky_recalibration_cmd}" ]]; then
+            strict_suggestions+=("${flaky_recalibration_cmd}")
+          fi
           if [[ -n "${flaky_cmd}" ]]; then
             strict_suggestions+=("${flaky_cmd}")
           fi
@@ -1008,6 +1028,12 @@ print_startup_failure_hints() {
     fi
     if [[ -n "${flaky_cmd}" ]]; then
       strict_suggestions+=("${flaky_cmd}")
+    fi
+    if [[ -n "${hotspot_recalibration_cmd}" ]]; then
+      strict_suggestions+=("${hotspot_recalibration_cmd}")
+    fi
+    if [[ -n "${flaky_recalibration_cmd}" ]]; then
+      strict_suggestions+=("${flaky_recalibration_cmd}")
     fi
 
     if [[ "${#strict_suggestions[@]}" -gt 0 ]]; then

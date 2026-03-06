@@ -1067,6 +1067,25 @@
   - `mvn -Dtest=PreviewStatusFilterHelperTest test` -> PASS
   - `mvn -Dtest=SearchAclElasticsearchTest test` -> PASS（本机 ES 依赖缺失，6 skipped）
 
+### 74) Delivery gate 低置信度重校准命令提示（Phase147）
+- `scripts/phase5-phase6-delivery-gate.sh`
+  - strict LOW-confidence hint 增加重校准建议：
+    - hotspot: `rerun with recommend min sample <= <observed_count>`
+    - flaky-risk: `rerun with recommend min sample <= <observed_count>`
+  - 新增重校准命令拼装：
+    - `hotspot_recalibration_cmd`
+    - `flaky_recalibration_cmd`
+  - 按 strict reason 优先级输出建议命令时，先输出重校准命令，再输出阈值放宽命令。
+  - fallback 建议列表也纳入重校准命令，并复用既有去重逻辑。
+- 验证：
+  - `bash -n scripts/phase5-phase6-delivery-gate.sh` -> PASS
+  - 低置信度强制回归：`RC=1`，日志包含：
+    - `Hotspot recalibration hint: rerun with recommend min sample <= 30.`
+    - `Flaky-risk recalibration hint: rerun with recommend min sample <= 14.`
+    - `Suggested commands` 中重校准命令优先于放宽阈值命令
+  - 默认 mocked gate：`RC=0`，`phase5_phase6_delivery_gate: ok`
+  - plan + 参数校验：`--plan --plan-format=json` PASS；`--phase5-hotspot-recommend-min-sample=0` expected FAIL
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -1270,3 +1289,5 @@
 - `docs/PHASE145_GATE_STRICT_PERCENTILE_CONFIG_PASSTHROUGH_VERIFICATION_20260306.md`
 - `docs/PHASE146_GATE_STRICT_RECOMMENDATION_CONFIDENCE_GUARDS_DEV_20260306.md`
 - `docs/PHASE146_GATE_STRICT_RECOMMENDATION_CONFIDENCE_GUARDS_VERIFICATION_20260306.md`
+- `docs/PHASE147_GATE_LOW_CONFIDENCE_RECALIBRATION_HINTS_DEV_20260306.md`
+- `docs/PHASE147_GATE_LOW_CONFIDENCE_RECALIBRATION_HINTS_VERIFICATION_20260306.md`
