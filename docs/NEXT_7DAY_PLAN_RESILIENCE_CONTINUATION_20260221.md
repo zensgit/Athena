@@ -335,6 +335,11 @@
   - Deliverables:
     - `docs/PHASE142_GATE_STRICT_COMMAND_HINTS_DEV_20260306.md`
     - `docs/PHASE142_GATE_STRICT_COMMAND_HINTS_VERIFICATION_20260306.md`
+- Delivery gate strict hint priority ordering:
+  - rank strict remediation commands by parsed failure reason and output deterministic numbered suggestions.
+  - Deliverables:
+    - `docs/PHASE143_GATE_STRICT_HINT_PRIORITY_ORDER_DEV_20260306.md`
+    - `docs/PHASE143_GATE_STRICT_HINT_PRIORITY_ORDER_VERIFICATION_20260306.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
