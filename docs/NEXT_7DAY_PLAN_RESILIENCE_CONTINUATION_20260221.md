@@ -324,6 +324,12 @@
   - Deliverables:
     - `docs/PHASE140_GATE_PHASE5_STRICT_THRESHOLD_PASSTHROUGH_DEV_20260306.md`
     - `docs/PHASE140_GATE_PHASE5_STRICT_THRESHOLD_PASSTHROUGH_VERIFICATION_20260306.md`
+- Delivery gate strict failure hinting + exit-code fix:
+  - ensure mocked regression stage preserves phase5 strict non-zero return code.
+  - parse strict failure reasons from summary artifact and print explicit strict-threshold diagnostics hints.
+  - Deliverables:
+    - `docs/PHASE141_GATE_PHASE5_STRICT_HINTS_AND_EXITCODE_FIX_DEV_20260306.md`
+    - `docs/PHASE141_GATE_PHASE5_STRICT_HINTS_AND_EXITCODE_FIX_VERIFICATION_20260306.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
