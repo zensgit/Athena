@@ -458,6 +458,8 @@ print_startup_failure_hints() {
   local phase5_hotspot_match_count=""
   local phase5_flaky_threshold=""
   local phase5_flaky_match_count=""
+  local phase5_recovery_missing_events=()
+  local phase5_recovery_unexpected_events=()
   local record
   for record in "${FAILED_STAGE_RECORDS[@]}"; do
     local record_layer
@@ -600,6 +602,28 @@ print_startup_failure_hints() {
               phase5_flaky_match_count="${summary_value}"
             fi
             ;;
+          recovery_missing)
+            if [[ -n "${summary_value}" ]]; then
+              local summary_missing_event
+              IFS=',' read -r -a summary_missing_items <<< "${summary_value}"
+              for summary_missing_event in "${summary_missing_items[@]}"; do
+                summary_missing_event="$(printf '%s' "${summary_missing_event}" | tr -d '[:space:]')"
+                [[ -z "${summary_missing_event}" ]] && continue
+                phase5_recovery_missing_events+=("${summary_missing_event}")
+              done
+            fi
+            ;;
+          recovery_unexpected)
+            if [[ -n "${summary_value}" ]]; then
+              local summary_unexpected_event
+              IFS=',' read -r -a summary_unexpected_items <<< "${summary_value}"
+              for summary_unexpected_event in "${summary_unexpected_items[@]}"; do
+                summary_unexpected_event="$(printf '%s' "${summary_unexpected_event}" | tr -d '[:space:]')"
+                [[ -z "${summary_unexpected_event}" ]] && continue
+                phase5_recovery_unexpected_events+=("${summary_unexpected_event}")
+              done
+            fi
+            ;;
         esac
       done < <(extract_phase5_summary_strict_kv "${summary_file}")
     fi
@@ -675,8 +699,16 @@ print_startup_failure_hints() {
   fi
   if [[ "${hint_phase5_strict_threshold_warn}" -eq 1 ]]; then
     local strict_reasons_line=""
+    local strict_recovery_missing_line=""
+    local strict_recovery_unexpected_line=""
     if [[ "${#phase5_strict_reasons[@]}" -gt 0 ]]; then
       strict_reasons_line="$(summarize_unique_events "${phase5_strict_reasons[@]}")"
+    fi
+    if [[ "${#phase5_recovery_missing_events[@]}" -gt 0 ]]; then
+      strict_recovery_missing_line="$(summarize_unique_events "${phase5_recovery_missing_events[@]}")"
+    fi
+    if [[ "${#phase5_recovery_unexpected_events[@]}" -gt 0 ]]; then
+      strict_recovery_unexpected_line="$(summarize_unique_events "${phase5_recovery_unexpected_events[@]}")"
     fi
     if [[ -n "${phase5_hotspot_threshold}" ]]; then
       local hotspot_hint="hotspot threshold >=${phase5_hotspot_threshold}s"
@@ -696,6 +728,30 @@ print_startup_failure_hints() {
       echo " - Strict failure reasons: ${strict_reasons_line}."
     else
       echo " - Strict threshold guard failure detected. Review phase5 summary artifact strict_threshold_controls."
+    fi
+    if [[ -n "${strict_recovery_missing_line}" && -n "${strict_recovery_unexpected_line}" ]]; then
+      echo " - Strict recovery guard details: missing events=${strict_recovery_missing_line}; unexpected events=${strict_recovery_unexpected_line}."
+    elif [[ -n "${strict_recovery_missing_line}" ]]; then
+      echo " - Strict recovery guard details: missing events=${strict_recovery_missing_line}."
+    elif [[ -n "${strict_recovery_unexpected_line}" ]]; then
+      echo " - Strict recovery guard details: unexpected events=${strict_recovery_unexpected_line}."
+    fi
+    if [[ -n "${phase5_hotspot_threshold}" ]]; then
+      local hotspot_relax_target="0"
+      if [[ "${phase5_hotspot_threshold}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+        hotspot_relax_target="$(awk -v v="${phase5_hotspot_threshold}" 'BEGIN { printf "%.1f", (v + 2.0) }')"
+      fi
+      echo " - Suggested command (hotspot triage): DELIVERY_GATE_MODE=mocked DELIVERY_GATE_PHASE5_RECOVERY_GUARD_STRICT=1 DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD=${hotspot_relax_target} PW_WORKERS=${PW_WORKERS} bash scripts/phase5-phase6-delivery-gate.sh"
+    fi
+    if [[ -n "${phase5_flaky_threshold}" ]]; then
+      local flaky_relax_target="0"
+      if [[ "${phase5_flaky_threshold}" =~ ^[0-9]+$ ]]; then
+        flaky_relax_target="$((phase5_flaky_threshold + 1))"
+      fi
+      echo " - Suggested command (flaky-risk triage): DELIVERY_GATE_MODE=mocked DELIVERY_GATE_PHASE5_RECOVERY_GUARD_STRICT=1 DELIVERY_GATE_PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD=${flaky_relax_target} PW_WORKERS=${PW_WORKERS} bash scripts/phase5-phase6-delivery-gate.sh"
+    fi
+    if [[ "${strict_reasons_line}" == *"recovery_guard"* ]]; then
+      echo " - Suggested command (recovery guard detail): PHASE5_RECOVERY_GUARD_STRICT=1 PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD} PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD} bash scripts/phase5-regression.sh"
     fi
   fi
 }
