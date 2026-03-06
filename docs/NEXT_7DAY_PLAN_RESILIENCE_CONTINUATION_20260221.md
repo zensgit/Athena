@@ -364,6 +364,17 @@
   - Deliverables:
     - `docs/PHASE147_GATE_LOW_CONFIDENCE_RECALIBRATION_HINTS_DEV_20260306.md`
     - `docs/PHASE147_GATE_LOW_CONFIDENCE_RECALIBRATION_HINTS_VERIFICATION_20260306.md`
+- Strict recommendation matrix automation:
+  - add a deterministic matrix runner that validates baseline, forced low-confidence strict fail, and preflight edge-guard paths.
+  - Deliverables:
+    - `docs/PHASE148_STRICT_RECOMMENDATION_MATRIX_DEV_20260306.md`
+    - `docs/PHASE148_STRICT_RECOMMENDATION_MATRIX_VERIFICATION_20260306.md`
+- Gate strict suggestions artifact + confidence metadata normalization:
+  - add structured strict suggestion JSON outputs (stdout/file) for CI/tooling consumers.
+  - normalize strict recommendation confidence metadata (`confidence_level`, `reason_code`, `recommended_min_sample`) in phase5 summary.
+  - Deliverables:
+    - `docs/PHASE149_GATE_STRICT_SUGGESTIONS_ARTIFACT_AND_CONFIDENCE_METADATA_DEV_20260306.md`
+    - `docs/PHASE149_GATE_STRICT_SUGGESTIONS_ARTIFACT_AND_CONFIDENCE_METADATA_VERIFICATION_20260306.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.

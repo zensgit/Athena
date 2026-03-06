@@ -1086,6 +1086,47 @@
   - 默认 mocked gate：`RC=0`，`phase5_phase6_delivery_gate: ok`
   - plan + 参数校验：`--plan --plan-format=json` PASS；`--phase5-hotspot-recommend-min-sample=0` expected FAIL
 
+### 75) 严格推荐矩阵自动化脚本（Phase148）
+- `scripts/phase5-strict-recommendation-matrix.sh`
+  - 新增 strict 推荐矩阵脚本，统一运行并校验 3 个场景：
+    - `baseline_sufficient_sample`
+    - `low_confidence_forced_strict_fail`
+    - `edge_guard_missing_events_preflight`
+  - 每个场景输出：
+    - 期望 RC / 实际 RC
+    - 关键行为日志匹配结果
+    - 场景级 PASS/FAIL 摘要
+  - 产物落盘：
+    - raw/clean log
+    - key-lines 报告
+    - mocked 回归 summary JSON（适用场景）
+- 验证：
+  - `bash -n scripts/phase5-strict-recommendation-matrix.sh` -> PASS
+  - `PW_WORKERS=1 bash scripts/phase5-strict-recommendation-matrix.sh` -> PASS (`RC=0`, 三场景均 PASS)
+
+### 76) Gate 结构化建议产物 + 置信度元数据标准化（Phase149）
+- `scripts/phase5-regression.sh`
+  - strict 推荐元数据新增（hotspot/flaky）：
+    - `*_recommendation_confidence_level` (`HIGH|LOW`)
+    - `*_recommendation_reason_code` (`sufficient_sample|sample_below_min|sample_empty`)
+    - `*_recommended_min_sample`
+  - 对低样本场景输出可操作的推荐最小样本值（`sample_below_min` 时使用观测样本数）。
+- `scripts/phase5-phase6-delivery-gate.sh`
+  - 解析并消费新元数据，strict hint 输出 reason 语义。
+  - 新增结构化 strict 建议产物：
+    - `DELIVERY_GATE_PRINT_STRICT_SUGGESTIONS_JSON=1|0`
+    - `DELIVERY_GATE_STRICT_SUGGESTIONS_FILE=<path>`
+    - CLI：`--print-strict-suggestions-json` / `--no-print-strict-suggestions-json` / `--strict-suggestions-file=<path>`
+  - `execution plan` 新增 strict 建议产物相关字段。
+- 验证：
+  - `bash -n scripts/phase5-phase6-delivery-gate.sh scripts/phase5-regression.sh` -> PASS
+  - 低置信度强制回归：`RC=1`
+    - hint 含 `reason=sample_below_min`
+    - recalibration 目标为 `<=30` 与 `<=14`
+    - strict suggestions JSON 产物包含 4 条有序建议（重校准优先于阈值放宽）
+  - 默认 mocked gate：`RC=0`
+  - 参数校验：`DELIVERY_GATE_PRINT_STRICT_SUGGESTIONS_JSON=2` expected FAIL
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -1291,3 +1332,7 @@
 - `docs/PHASE146_GATE_STRICT_RECOMMENDATION_CONFIDENCE_GUARDS_VERIFICATION_20260306.md`
 - `docs/PHASE147_GATE_LOW_CONFIDENCE_RECALIBRATION_HINTS_DEV_20260306.md`
 - `docs/PHASE147_GATE_LOW_CONFIDENCE_RECALIBRATION_HINTS_VERIFICATION_20260306.md`
+- `docs/PHASE148_STRICT_RECOMMENDATION_MATRIX_DEV_20260306.md`
+- `docs/PHASE148_STRICT_RECOMMENDATION_MATRIX_VERIFICATION_20260306.md`
+- `docs/PHASE149_GATE_STRICT_SUGGESTIONS_ARTIFACT_AND_CONFIDENCE_METADATA_DEV_20260306.md`
+- `docs/PHASE149_GATE_STRICT_SUGGESTIONS_ARTIFACT_AND_CONFIDENCE_METADATA_VERIFICATION_20260306.md`

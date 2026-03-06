@@ -20,6 +20,8 @@ DELIVERY_GATE_MODE="${DELIVERY_GATE_MODE:-all}"
 DELIVERY_GATE_PRINT_EXECUTION_PLAN="${DELIVERY_GATE_PRINT_EXECUTION_PLAN:-1}"
 DELIVERY_GATE_EXECUTION_PLAN_FORMAT="${DELIVERY_GATE_EXECUTION_PLAN_FORMAT:-text}"
 DELIVERY_GATE_EXECUTION_PLAN_FILE="${DELIVERY_GATE_EXECUTION_PLAN_FILE:-}"
+DELIVERY_GATE_PRINT_STRICT_SUGGESTIONS_JSON="${DELIVERY_GATE_PRINT_STRICT_SUGGESTIONS_JSON:-0}"
+DELIVERY_GATE_STRICT_SUGGESTIONS_FILE="${DELIVERY_GATE_STRICT_SUGGESTIONS_FILE:-}"
 DELIVERY_GATE_PHASE5_SUMMARY_DIR="${DELIVERY_GATE_PHASE5_SUMMARY_DIR:-}"
 DELIVERY_GATE_PLAN_ONLY="0"
 if [[ -n "${DELIVERY_GATE_PHASE5_RECOVERY_GUARD_STRICT:-}" ]]; then
@@ -186,7 +188,7 @@ print_usage() {
   cat <<'USAGE'
 Usage:
   scripts/phase5-phase6-delivery-gate.sh [mode]
-  scripts/phase5-phase6-delivery-gate.sh --mode=<mode> [--plan] [--plan-format=<text|json>] [--plan-file=<path>] [--phase5-summary-dir=<path>] [--phase5-strict-recovery-guard=<0|1>] [--phase5-strict-hotspot-sec=<num>] [--phase5-strict-flaky-score=<int>] [--phase5-hotspot-recommend-percentile=<num>] [--phase5-hotspot-recommend-padding-sec=<num>] [--phase5-hotspot-recommend-min-sample=<int>] [--phase5-flaky-recommend-percentile=<num>] [--phase5-flaky-recommend-step=<int>] [--phase5-flaky-recommend-min-sample=<int>]
+  scripts/phase5-phase6-delivery-gate.sh --mode=<mode> [--plan] [--plan-format=<text|json>] [--plan-file=<path>] [--print-strict-suggestions-json] [--strict-suggestions-file=<path>] [--phase5-summary-dir=<path>] [--phase5-strict-recovery-guard=<0|1>] [--phase5-strict-hotspot-sec=<num>] [--phase5-strict-flaky-score=<int>] [--phase5-hotspot-recommend-percentile=<num>] [--phase5-hotspot-recommend-padding-sec=<num>] [--phase5-hotspot-recommend-min-sample=<int>] [--phase5-flaky-recommend-percentile=<num>] [--phase5-flaky-recommend-step=<int>] [--phase5-flaky-recommend-min-sample=<int>]
   scripts/phase5-phase6-delivery-gate.sh --help
 
 Modes:
@@ -205,6 +207,12 @@ Flags:
   --plan-json           Shortcut for --plan-format=json.
   --plan-text           Shortcut for --plan-format=text.
   --plan-file=<path>    Write execution plan payload to file.
+  --print-strict-suggestions-json
+                        Print structured strict remediation suggestions JSON in failure hints.
+  --no-print-strict-suggestions-json
+                        Disable structured strict remediation suggestions JSON printing.
+  --strict-suggestions-file=<path>
+                        Write structured strict remediation suggestions JSON artifact to file.
   --phase5-summary-dir=<path>
                         Write mocked phase5 regression summary JSON artifacts to directory.
   --phase5-strict-recovery-guard=<0|1>
@@ -231,6 +239,8 @@ Environment controls:
   DELIVERY_GATE_PRINT_EXECUTION_PLAN=1|0
   DELIVERY_GATE_EXECUTION_PLAN_FORMAT=text|json
   DELIVERY_GATE_EXECUTION_PLAN_FILE=<path>
+  DELIVERY_GATE_PRINT_STRICT_SUGGESTIONS_JSON=1|0
+  DELIVERY_GATE_STRICT_SUGGESTIONS_FILE=<path>
   DELIVERY_GATE_PHASE5_SUMMARY_DIR=<path>
   DELIVERY_GATE_PHASE5_RECOVERY_GUARD_STRICT=1|0
   DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD=<num>
@@ -342,6 +352,8 @@ build_execution_plan_payload() {
   "mode": "${DELIVERY_GATE_MODE}",
   "fast_registry_preflight_executor": "${preflight_executor}",
   "integration_strict_fullstack_preflight_condition": "ECM_FULLSTACK_ALLOW_STATIC=0",
+  "print_strict_suggestions_json": "${DELIVERY_GATE_PRINT_STRICT_SUGGESTIONS_JSON}",
+  "strict_suggestions_file": "${DELIVERY_GATE_STRICT_SUGGESTIONS_FILE:-"(unset)"}",
   "mocked_regression_summary_dir": "${DELIVERY_GATE_PHASE5_SUMMARY_DIR:-"(unset)"}",
   "phase5_recovery_guard_strict": "${DELIVERY_GATE_PHASE5_RECOVERY_GUARD_STRICT}",
   "phase5_strict_hotspot_duration_sec_threshold": "${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD}",
@@ -367,6 +379,8 @@ phase5_phase6_delivery_gate: execution plan
  - mode: ${DELIVERY_GATE_MODE}
  - fast registry preflight executor: ${preflight_executor}
  - integration strict-fullstack preflight enabled when ECM_FULLSTACK_ALLOW_STATIC=0
+ - print strict suggestions json: ${DELIVERY_GATE_PRINT_STRICT_SUGGESTIONS_JSON}
+ - strict suggestions file: ${DELIVERY_GATE_STRICT_SUGGESTIONS_FILE:-"(unset)"}
  - mocked regression summary dir: ${DELIVERY_GATE_PHASE5_SUMMARY_DIR:-"(unset)"}
  - phase5 recovery guard strict: ${DELIVERY_GATE_PHASE5_RECOVERY_GUARD_STRICT}
  - phase5 strict hotspot threshold (sec): ${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD}
@@ -396,6 +410,91 @@ write_execution_plan_file() {
   fi
   printf '%s\n' "${plan_payload}" >"${DELIVERY_GATE_EXECUTION_PLAN_FILE}"
   echo "phase5_phase6_delivery_gate: wrote execution plan => ${DELIVERY_GATE_EXECUTION_PLAN_FILE}"
+}
+
+build_strict_suggestions_payload() {
+  local records_file="$1"
+  local strict_reasons_csv="$2"
+  local summary_file="$3"
+
+  node - "${records_file}" "${strict_reasons_csv}" "${summary_file}" "${DELIVERY_GATE_MODE}" <<'NODE'
+const fs = require('fs');
+
+const recordsFile = process.argv[2] || '';
+const strictReasonsCsv = process.argv[3] || '';
+const summaryFile = process.argv[4] || '';
+const mode = process.argv[5] || '';
+
+const strictFailureReasons = strictReasonsCsv
+  .split(',')
+  .map((item) => item.trim())
+  .filter((item) => item.length > 0);
+
+let suggestions = [];
+if (recordsFile && fs.existsSync(recordsFile)) {
+  const lines = fs.readFileSync(recordsFile, 'utf8').replace(/\r/g, '').split('\n');
+  suggestions = lines
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      const [priorityRaw, reason, action, scope, ...commandParts] = line.split('\t');
+      const priority = Number.parseInt(priorityRaw, 10);
+      return {
+        priority: Number.isFinite(priority) && priority > 0 ? priority : 0,
+        reason: String(reason || '').trim() || 'unknown',
+        action: String(action || '').trim() || 'unknown',
+        scope: String(scope || '').trim() || 'global',
+        command: commandParts.join('\t').trim(),
+      };
+    })
+    .filter((item) => item.command.length > 0)
+    .sort((left, right) => left.priority - right.priority);
+}
+
+const payload = {
+  schema_version: 1,
+  source: 'phase5-phase6-delivery-gate.strict-hints',
+  generated_at_utc: new Date().toISOString(),
+  mode,
+  strict_failure_reasons: strictFailureReasons,
+  summary_file: summaryFile,
+  suggestion_count: suggestions.length,
+  suggestions,
+};
+
+process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+NODE
+}
+
+emit_strict_suggestions_artifact() {
+  local records_file="$1"
+  local strict_reasons_csv="$2"
+  local summary_file="$3"
+
+  if [[ "${DELIVERY_GATE_PRINT_STRICT_SUGGESTIONS_JSON}" != "1" && -z "${DELIVERY_GATE_STRICT_SUGGESTIONS_FILE}" ]]; then
+    return
+  fi
+
+  local strict_payload=""
+  if ! strict_payload="$(build_strict_suggestions_payload "${records_file}" "${strict_reasons_csv}" "${summary_file}")"; then
+    echo " - WARN failed to build strict suggestions JSON payload."
+    return
+  fi
+
+  if [[ "${DELIVERY_GATE_PRINT_STRICT_SUGGESTIONS_JSON}" == "1" ]]; then
+    echo " - Strict suggestions JSON:"
+    printf '%s\n' "${strict_payload}"
+  fi
+
+  if [[ -n "${DELIVERY_GATE_STRICT_SUGGESTIONS_FILE}" ]]; then
+    local strict_file_dir
+    strict_file_dir="$(dirname "${DELIVERY_GATE_STRICT_SUGGESTIONS_FILE}")"
+    if [[ "${strict_file_dir}" != "." ]]; then
+      mkdir -p "${strict_file_dir}"
+    fi
+    printf '%s\n' "${strict_payload}" >"${DELIVERY_GATE_STRICT_SUGGESTIONS_FILE}"
+    echo " - Wrote strict suggestions artifact: ${DELIVERY_GATE_STRICT_SUGGESTIONS_FILE}"
+  fi
 }
 
 STAGE_RESULTS=()
@@ -522,6 +621,9 @@ emit('hotspot_recommended_sample', strict?.hotspot_recommended_sample ?? '');
 emit('hotspot_recommend_min_sample', strict?.hotspot_recommend_min_sample ?? '');
 emit('hotspot_recommended_count', strict?.hotspot_recommended_count ?? '');
 emit('hotspot_recommendation_low_confidence', strict?.hotspot_recommendation_low_confidence ? '1' : '0');
+emit('hotspot_recommendation_confidence_level', strict?.hotspot_recommendation_confidence_level ?? '');
+emit('hotspot_recommendation_reason_code', strict?.hotspot_recommendation_reason_code ?? '');
+emit('hotspot_recommended_min_sample', strict?.hotspot_recommended_min_sample ?? '');
 emit('hotspot_match_count', strict?.hotspot_match_count ?? 0);
 emit('flaky_threshold', strict?.flaky_risk_score_threshold ?? '');
 emit('flaky_recommended_threshold', strict?.flaky_recommended_threshold ?? '');
@@ -530,6 +632,9 @@ emit('flaky_recommended_sample', strict?.flaky_recommended_sample ?? '');
 emit('flaky_recommend_min_sample', strict?.flaky_recommend_min_sample ?? '');
 emit('flaky_recommended_count', strict?.flaky_recommended_count ?? '');
 emit('flaky_recommendation_low_confidence', strict?.flaky_recommendation_low_confidence ? '1' : '0');
+emit('flaky_recommendation_confidence_level', strict?.flaky_recommendation_confidence_level ?? '');
+emit('flaky_recommendation_reason_code', strict?.flaky_recommendation_reason_code ?? '');
+emit('flaky_recommended_min_sample', strict?.flaky_recommended_min_sample ?? '');
 emit('flaky_match_count', strict?.flaky_risk_match_count ?? 0);
 emit('recovery_warning_count', recovery?.warning_count ?? 0);
 emit('recovery_missing', toCsv(recovery?.missing_events));
@@ -551,6 +656,7 @@ print_startup_failure_hints() {
   local hint_recovery_registry_warn=0
   local hint_recovery_registry_deterministic_warn=0
   local hint_phase5_strict_threshold_warn=0
+  local phase5_summary_file_for_hints=""
   local recovery_missing_events=()
   local recovery_unexpected_events=()
   local registry_missing_events=()
@@ -564,6 +670,9 @@ print_startup_failure_hints() {
   local phase5_hotspot_recommend_min_sample=""
   local phase5_hotspot_recommended_count=""
   local phase5_hotspot_recommendation_low_confidence=0
+  local phase5_hotspot_recommendation_confidence_level=""
+  local phase5_hotspot_recommendation_reason_code=""
+  local phase5_hotspot_recommended_min_sample=""
   local phase5_flaky_threshold=""
   local phase5_flaky_match_count=""
   local phase5_flaky_recommended_threshold=""
@@ -572,6 +681,9 @@ print_startup_failure_hints() {
   local phase5_flaky_recommend_min_sample=""
   local phase5_flaky_recommended_count=""
   local phase5_flaky_recommendation_low_confidence=0
+  local phase5_flaky_recommendation_confidence_level=""
+  local phase5_flaky_recommendation_reason_code=""
+  local phase5_flaky_recommended_min_sample=""
   local phase5_recovery_missing_events=()
   local phase5_recovery_unexpected_events=()
   local record
@@ -674,6 +786,7 @@ print_startup_failure_hints() {
     local summary_file
     summary_file="$(extract_phase5_summary_path_from_log "${record_log}")"
     if [[ -n "${summary_file}" && -f "${summary_file}" ]]; then
+      phase5_summary_file_for_hints="${summary_file}"
       local summary_line
       while IFS= read -r summary_line; do
         [[ -z "${summary_line}" ]] && continue
@@ -731,6 +844,21 @@ print_startup_failure_hints() {
               phase5_hotspot_recommendation_low_confidence=1
             fi
             ;;
+          hotspot_recommendation_confidence_level)
+            if [[ -n "${summary_value}" ]]; then
+              phase5_hotspot_recommendation_confidence_level="${summary_value}"
+            fi
+            ;;
+          hotspot_recommendation_reason_code)
+            if [[ -n "${summary_value}" ]]; then
+              phase5_hotspot_recommendation_reason_code="${summary_value}"
+            fi
+            ;;
+          hotspot_recommended_min_sample)
+            if [[ -n "${summary_value}" ]]; then
+              phase5_hotspot_recommended_min_sample="${summary_value}"
+            fi
+            ;;
           hotspot_match_count)
             if [[ -n "${summary_value}" && "${summary_value}" != "0" ]]; then
               phase5_hotspot_match_count="${summary_value}"
@@ -769,6 +897,21 @@ print_startup_failure_hints() {
           flaky_recommendation_low_confidence)
             if [[ "${summary_value}" == "1" ]]; then
               phase5_flaky_recommendation_low_confidence=1
+            fi
+            ;;
+          flaky_recommendation_confidence_level)
+            if [[ -n "${summary_value}" ]]; then
+              phase5_flaky_recommendation_confidence_level="${summary_value}"
+            fi
+            ;;
+          flaky_recommendation_reason_code)
+            if [[ -n "${summary_value}" ]]; then
+              phase5_flaky_recommendation_reason_code="${summary_value}"
+            fi
+            ;;
+          flaky_recommended_min_sample)
+            if [[ -n "${summary_value}" ]]; then
+              phase5_flaky_recommended_min_sample="${summary_value}"
             fi
             ;;
           flaky_match_count)
@@ -898,14 +1041,35 @@ print_startup_failure_hints() {
           hotspot_rec_hint="${hotspot_rec_hint} from ${hotspot_percentile_label}=${phase5_hotspot_recommended_sample}s"
         fi
         echo " - Hotspot percentile recommendation: ${hotspot_rec_hint}."
-        if [[ "${phase5_hotspot_recommendation_low_confidence}" -eq 1 ]]; then
-          local hotspot_confidence_hint=" - Hotspot recommendation confidence: LOW"
+        local hotspot_low_confidence=0
+        if [[ "${phase5_hotspot_recommendation_low_confidence}" -eq 1 || "${phase5_hotspot_recommendation_confidence_level}" == "LOW" ]]; then
+          hotspot_low_confidence=1
+        fi
+        if [[ "${hotspot_low_confidence}" -eq 1 ]]; then
+          local hotspot_confidence_label="LOW"
+          if [[ -n "${phase5_hotspot_recommendation_confidence_level}" ]]; then
+            hotspot_confidence_label="${phase5_hotspot_recommendation_confidence_level}"
+          fi
+          local hotspot_confidence_hint=" - Hotspot recommendation confidence: ${hotspot_confidence_label}"
           if [[ -n "${phase5_hotspot_recommended_count}" && -n "${phase5_hotspot_recommend_min_sample}" ]]; then
             hotspot_confidence_hint="${hotspot_confidence_hint} (sample ${phase5_hotspot_recommended_count} < min ${phase5_hotspot_recommend_min_sample})"
           fi
+          if [[ -n "${phase5_hotspot_recommendation_reason_code}" ]]; then
+            hotspot_confidence_hint="${hotspot_confidence_hint} [reason=${phase5_hotspot_recommendation_reason_code}]"
+          fi
           echo "${hotspot_confidence_hint}."
-          if [[ -n "${phase5_hotspot_recommended_count}" ]]; then
-            echo " - Hotspot recalibration hint: rerun with recommend min sample <= ${phase5_hotspot_recommended_count}."
+          local hotspot_can_recalibrate=0
+          if [[ "${phase5_hotspot_recommendation_reason_code}" == "sample_below_min" ]]; then
+            hotspot_can_recalibrate=1
+          elif [[ -z "${phase5_hotspot_recommendation_reason_code}" && "${phase5_hotspot_recommended_count}" =~ ^[1-9][0-9]*$ && "${phase5_hotspot_recommend_min_sample}" =~ ^[1-9][0-9]*$ && "${phase5_hotspot_recommended_count}" -lt "${phase5_hotspot_recommend_min_sample}" ]]; then
+            hotspot_can_recalibrate=1
+          fi
+          local hotspot_recalibration_target="${phase5_hotspot_recommended_min_sample}"
+          if [[ -z "${hotspot_recalibration_target}" ]]; then
+            hotspot_recalibration_target="${phase5_hotspot_recommended_count}"
+          fi
+          if [[ "${hotspot_can_recalibrate}" -eq 1 && -n "${hotspot_recalibration_target}" ]]; then
+            echo " - Hotspot recalibration hint: rerun with recommend min sample <= ${hotspot_recalibration_target}."
           fi
         fi
       fi
@@ -924,14 +1088,35 @@ print_startup_failure_hints() {
           flaky_rec_hint="${flaky_rec_hint} from ${flaky_percentile_label}=${phase5_flaky_recommended_sample}"
         fi
         echo " - Flaky-risk percentile recommendation: ${flaky_rec_hint}."
-        if [[ "${phase5_flaky_recommendation_low_confidence}" -eq 1 ]]; then
-          local flaky_confidence_hint=" - Flaky-risk recommendation confidence: LOW"
+        local flaky_low_confidence=0
+        if [[ "${phase5_flaky_recommendation_low_confidence}" -eq 1 || "${phase5_flaky_recommendation_confidence_level}" == "LOW" ]]; then
+          flaky_low_confidence=1
+        fi
+        if [[ "${flaky_low_confidence}" -eq 1 ]]; then
+          local flaky_confidence_label="LOW"
+          if [[ -n "${phase5_flaky_recommendation_confidence_level}" ]]; then
+            flaky_confidence_label="${phase5_flaky_recommendation_confidence_level}"
+          fi
+          local flaky_confidence_hint=" - Flaky-risk recommendation confidence: ${flaky_confidence_label}"
           if [[ -n "${phase5_flaky_recommended_count}" && -n "${phase5_flaky_recommend_min_sample}" ]]; then
             flaky_confidence_hint="${flaky_confidence_hint} (sample ${phase5_flaky_recommended_count} < min ${phase5_flaky_recommend_min_sample})"
           fi
+          if [[ -n "${phase5_flaky_recommendation_reason_code}" ]]; then
+            flaky_confidence_hint="${flaky_confidence_hint} [reason=${phase5_flaky_recommendation_reason_code}]"
+          fi
           echo "${flaky_confidence_hint}."
-          if [[ -n "${phase5_flaky_recommended_count}" ]]; then
-            echo " - Flaky-risk recalibration hint: rerun with recommend min sample <= ${phase5_flaky_recommended_count}."
+          local flaky_can_recalibrate=0
+          if [[ "${phase5_flaky_recommendation_reason_code}" == "sample_below_min" ]]; then
+            flaky_can_recalibrate=1
+          elif [[ -z "${phase5_flaky_recommendation_reason_code}" && "${phase5_flaky_recommended_count}" =~ ^[1-9][0-9]*$ && "${phase5_flaky_recommend_min_sample}" =~ ^[1-9][0-9]*$ && "${phase5_flaky_recommended_count}" -lt "${phase5_flaky_recommend_min_sample}" ]]; then
+            flaky_can_recalibrate=1
+          fi
+          local flaky_recalibration_target="${phase5_flaky_recommended_min_sample}"
+          if [[ -z "${flaky_recalibration_target}" ]]; then
+            flaky_recalibration_target="${phase5_flaky_recommended_count}"
+          fi
+          if [[ "${flaky_can_recalibrate}" -eq 1 && -n "${flaky_recalibration_target}" ]]; then
+            echo " - Flaky-risk recalibration hint: rerun with recommend min sample <= ${flaky_recalibration_target}."
           fi
         fi
       fi
@@ -974,11 +1159,31 @@ print_startup_failure_hints() {
     if [[ "${strict_reasons_line}" == *"recovery_guard"* ]]; then
       recovery_cmd="PHASE5_RECOVERY_GUARD_STRICT=1 PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD} PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD} PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE} PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC} PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE} PHASE5_STRICT_FLAKY_RISK_RECOMMEND_PERCENTILE=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_PERCENTILE} PHASE5_STRICT_FLAKY_RISK_RECOMMEND_STEP=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_STEP} PHASE5_STRICT_FLAKY_RISK_RECOMMEND_MIN_SAMPLE=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE} bash scripts/phase5-regression.sh"
     fi
-    if [[ "${phase5_hotspot_recommendation_low_confidence}" -eq 1 && "${phase5_hotspot_recommended_count}" =~ ^[1-9][0-9]*$ ]]; then
-      hotspot_recalibration_cmd="DELIVERY_GATE_MODE=mocked DELIVERY_GATE_PHASE5_RECOVERY_GUARD_STRICT=1 DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD} DELIVERY_GATE_PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD} DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE} DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC} DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE=${phase5_hotspot_recommended_count} DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_PERCENTILE=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_PERCENTILE} DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_STEP=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_STEP} DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE} PW_WORKERS=${PW_WORKERS} bash scripts/phase5-phase6-delivery-gate.sh"
+    local hotspot_recalibration_target="${phase5_hotspot_recommended_min_sample}"
+    if [[ -z "${hotspot_recalibration_target}" ]]; then
+      hotspot_recalibration_target="${phase5_hotspot_recommended_count}"
     fi
-    if [[ "${phase5_flaky_recommendation_low_confidence}" -eq 1 && "${phase5_flaky_recommended_count}" =~ ^[1-9][0-9]*$ ]]; then
-      flaky_recalibration_cmd="DELIVERY_GATE_MODE=mocked DELIVERY_GATE_PHASE5_RECOVERY_GUARD_STRICT=1 DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD} DELIVERY_GATE_PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD} DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE} DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC} DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE} DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_PERCENTILE=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_PERCENTILE} DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_STEP=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_STEP} DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE=${phase5_flaky_recommended_count} PW_WORKERS=${PW_WORKERS} bash scripts/phase5-phase6-delivery-gate.sh"
+    local hotspot_allow_recalibration_cmd=0
+    if [[ "${phase5_hotspot_recommendation_reason_code}" == "sample_below_min" ]]; then
+      hotspot_allow_recalibration_cmd=1
+    elif [[ -z "${phase5_hotspot_recommendation_reason_code}" && "${phase5_hotspot_recommended_count}" =~ ^[1-9][0-9]*$ && "${phase5_hotspot_recommend_min_sample}" =~ ^[1-9][0-9]*$ && "${phase5_hotspot_recommended_count}" -lt "${phase5_hotspot_recommend_min_sample}" ]]; then
+      hotspot_allow_recalibration_cmd=1
+    fi
+    if [[ "${hotspot_allow_recalibration_cmd}" -eq 1 && "${hotspot_recalibration_target}" =~ ^[1-9][0-9]*$ ]]; then
+      hotspot_recalibration_cmd="DELIVERY_GATE_MODE=mocked DELIVERY_GATE_PHASE5_RECOVERY_GUARD_STRICT=1 DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD} DELIVERY_GATE_PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD} DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE} DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC} DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE=${hotspot_recalibration_target} DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_PERCENTILE=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_PERCENTILE} DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_STEP=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_STEP} DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE} PW_WORKERS=${PW_WORKERS} bash scripts/phase5-phase6-delivery-gate.sh"
+    fi
+    local flaky_recalibration_target="${phase5_flaky_recommended_min_sample}"
+    if [[ -z "${flaky_recalibration_target}" ]]; then
+      flaky_recalibration_target="${phase5_flaky_recommended_count}"
+    fi
+    local flaky_allow_recalibration_cmd=0
+    if [[ "${phase5_flaky_recommendation_reason_code}" == "sample_below_min" ]]; then
+      flaky_allow_recalibration_cmd=1
+    elif [[ -z "${phase5_flaky_recommendation_reason_code}" && "${phase5_flaky_recommended_count}" =~ ^[1-9][0-9]*$ && "${phase5_flaky_recommend_min_sample}" =~ ^[1-9][0-9]*$ && "${phase5_flaky_recommended_count}" -lt "${phase5_flaky_recommend_min_sample}" ]]; then
+      flaky_allow_recalibration_cmd=1
+    fi
+    if [[ "${flaky_allow_recalibration_cmd}" -eq 1 && "${flaky_recalibration_target}" =~ ^[1-9][0-9]*$ ]]; then
+      flaky_recalibration_cmd="DELIVERY_GATE_MODE=mocked DELIVERY_GATE_PHASE5_RECOVERY_GUARD_STRICT=1 DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD} DELIVERY_GATE_PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD} DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE} DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC} DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE} DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_PERCENTILE=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_PERCENTILE} DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_STEP=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_STEP} DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE=${flaky_recalibration_target} PW_WORKERS=${PW_WORKERS} bash scripts/phase5-phase6-delivery-gate.sh"
     fi
 
     local strict_suggestions=()
@@ -998,54 +1203,62 @@ print_startup_failure_hints() {
       case "${strict_reason_priority}" in
         recovery_guard)
           if [[ -n "${recovery_cmd}" ]]; then
-            strict_suggestions+=("${recovery_cmd}")
+            strict_suggestions+=("recovery_guard|rerun_regression|recovery_guard|${recovery_cmd}")
           fi
           ;;
         hotspot_threshold)
           if [[ -n "${hotspot_recalibration_cmd}" ]]; then
-            strict_suggestions+=("${hotspot_recalibration_cmd}")
+            strict_suggestions+=("hotspot_threshold|recalibrate_min_sample|hotspot|${hotspot_recalibration_cmd}")
           fi
           if [[ -n "${hotspot_cmd}" ]]; then
-            strict_suggestions+=("${hotspot_cmd}")
+            strict_suggestions+=("hotspot_threshold|relax_threshold|hotspot|${hotspot_cmd}")
           fi
           ;;
         flaky_risk_threshold)
           if [[ -n "${flaky_recalibration_cmd}" ]]; then
-            strict_suggestions+=("${flaky_recalibration_cmd}")
+            strict_suggestions+=("flaky_risk_threshold|recalibrate_min_sample|flaky_risk|${flaky_recalibration_cmd}")
           fi
           if [[ -n "${flaky_cmd}" ]]; then
-            strict_suggestions+=("${flaky_cmd}")
+            strict_suggestions+=("flaky_risk_threshold|relax_threshold|flaky_risk|${flaky_cmd}")
           fi
           ;;
       esac
     done
 
     if [[ -n "${recovery_cmd}" ]]; then
-      strict_suggestions+=("${recovery_cmd}")
+      strict_suggestions+=("fallback|rerun_regression|recovery_guard|${recovery_cmd}")
     fi
     if [[ -n "${hotspot_cmd}" ]]; then
-      strict_suggestions+=("${hotspot_cmd}")
+      strict_suggestions+=("fallback|relax_threshold|hotspot|${hotspot_cmd}")
     fi
     if [[ -n "${flaky_cmd}" ]]; then
-      strict_suggestions+=("${flaky_cmd}")
+      strict_suggestions+=("fallback|relax_threshold|flaky_risk|${flaky_cmd}")
     fi
     if [[ -n "${hotspot_recalibration_cmd}" ]]; then
-      strict_suggestions+=("${hotspot_recalibration_cmd}")
+      strict_suggestions+=("fallback|recalibrate_min_sample|hotspot|${hotspot_recalibration_cmd}")
     fi
     if [[ -n "${flaky_recalibration_cmd}" ]]; then
-      strict_suggestions+=("${flaky_recalibration_cmd}")
+      strict_suggestions+=("fallback|recalibrate_min_sample|flaky_risk|${flaky_recalibration_cmd}")
     fi
 
     if [[ "${#strict_suggestions[@]}" -gt 0 ]]; then
       echo " - Suggested commands (priority order):"
       local printed_suggestions=()
+      local strict_records_file=""
+      strict_records_file="$(mktemp "/tmp/gate-strict-suggestions.XXXXXX")"
       local suggestion_idx=1
       local suggestion_line
       for suggestion_line in "${strict_suggestions[@]}"; do
+        local suggestion_reason=""
+        local suggestion_action=""
+        local suggestion_scope=""
+        local suggestion_command=""
+        IFS='|' read -r suggestion_reason suggestion_action suggestion_scope suggestion_command <<< "${suggestion_line}"
+        [[ -z "${suggestion_command}" ]] && continue
         local already_printed=0
         local existing_suggestion
         for existing_suggestion in "${printed_suggestions[@]}"; do
-          if [[ "${existing_suggestion}" == "${suggestion_line}" ]]; then
+          if [[ "${existing_suggestion}" == "${suggestion_command}" ]]; then
             already_printed=1
             break
           fi
@@ -1053,10 +1266,20 @@ print_startup_failure_hints() {
         if [[ "${already_printed}" -eq 1 ]]; then
           continue
         fi
-        printed_suggestions+=("${suggestion_line}")
-        echo "   ${suggestion_idx}. ${suggestion_line}"
+        printed_suggestions+=("${suggestion_command}")
+        echo "   ${suggestion_idx}. ${suggestion_command}"
+        printf '%s\t%s\t%s\t%s\t%s\n' \
+          "${suggestion_idx}" \
+          "${suggestion_reason}" \
+          "${suggestion_action}" \
+          "${suggestion_scope}" \
+          "${suggestion_command}" >> "${strict_records_file}"
         suggestion_idx=$((suggestion_idx + 1))
       done
+      if [[ -s "${strict_records_file}" ]]; then
+        emit_strict_suggestions_artifact "${strict_records_file}" "${strict_reasons_line}" "${phase5_summary_file_for_hints}"
+      fi
+      rm -f "${strict_records_file}" >/dev/null 2>&1 || true
     fi
   fi
 }
@@ -1291,6 +1514,15 @@ for arg in "$@"; do
     --plan-file=*)
       DELIVERY_GATE_EXECUTION_PLAN_FILE="${arg#--plan-file=}"
       ;;
+    --print-strict-suggestions-json)
+      DELIVERY_GATE_PRINT_STRICT_SUGGESTIONS_JSON="1"
+      ;;
+    --no-print-strict-suggestions-json)
+      DELIVERY_GATE_PRINT_STRICT_SUGGESTIONS_JSON="0"
+      ;;
+    --strict-suggestions-file=*)
+      DELIVERY_GATE_STRICT_SUGGESTIONS_FILE="${arg#--strict-suggestions-file=}"
+      ;;
     --phase5-summary-dir=*)
       DELIVERY_GATE_PHASE5_SUMMARY_DIR="${arg#--phase5-summary-dir=}"
       ;;
@@ -1364,6 +1596,8 @@ echo "DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT_SOURCE=${DELIVERY_GATE_R
 echo "DELIVERY_GATE_PRINT_EXECUTION_PLAN=${DELIVERY_GATE_PRINT_EXECUTION_PLAN}"
 echo "DELIVERY_GATE_EXECUTION_PLAN_FORMAT=${DELIVERY_GATE_EXECUTION_PLAN_FORMAT}"
 echo "DELIVERY_GATE_EXECUTION_PLAN_FILE=${DELIVERY_GATE_EXECUTION_PLAN_FILE:-<none>}"
+echo "DELIVERY_GATE_PRINT_STRICT_SUGGESTIONS_JSON=${DELIVERY_GATE_PRINT_STRICT_SUGGESTIONS_JSON}"
+echo "DELIVERY_GATE_STRICT_SUGGESTIONS_FILE=${DELIVERY_GATE_STRICT_SUGGESTIONS_FILE:-<none>}"
 echo "DELIVERY_GATE_PHASE5_SUMMARY_DIR=${DELIVERY_GATE_PHASE5_SUMMARY_DIR:-<none>}"
 echo "DELIVERY_GATE_PHASE5_RECOVERY_GUARD_STRICT=${DELIVERY_GATE_PHASE5_RECOVERY_GUARD_STRICT}"
 echo "DELIVERY_GATE_PHASE5_RECOVERY_GUARD_STRICT_SOURCE=${DELIVERY_GATE_PHASE5_RECOVERY_GUARD_STRICT_SOURCE}"
@@ -1402,6 +1636,14 @@ case "${DELIVERY_GATE_EXECUTION_PLAN_FORMAT}" in
     ;;
   *)
     echo "error: unsupported DELIVERY_GATE_EXECUTION_PLAN_FORMAT=${DELIVERY_GATE_EXECUTION_PLAN_FORMAT} (expected: text|json)"
+    exit 1
+    ;;
+esac
+case "${DELIVERY_GATE_PRINT_STRICT_SUGGESTIONS_JSON}" in
+  0|1)
+    ;;
+  *)
+    echo "error: unsupported DELIVERY_GATE_PRINT_STRICT_SUGGESTIONS_JSON=${DELIVERY_GATE_PRINT_STRICT_SUGGESTIONS_JSON} (expected: 0|1)"
     exit 1
     ;;
 esac
@@ -1456,6 +1698,10 @@ fi
 
 if [[ -n "${DELIVERY_GATE_EXECUTION_PLAN_FILE}" && -d "${DELIVERY_GATE_EXECUTION_PLAN_FILE}" ]]; then
   echo "error: DELIVERY_GATE_EXECUTION_PLAN_FILE points to a directory: ${DELIVERY_GATE_EXECUTION_PLAN_FILE}"
+  exit 1
+fi
+if [[ -n "${DELIVERY_GATE_STRICT_SUGGESTIONS_FILE}" && -d "${DELIVERY_GATE_STRICT_SUGGESTIONS_FILE}" ]]; then
+  echo "error: DELIVERY_GATE_STRICT_SUGGESTIONS_FILE points to a directory: ${DELIVERY_GATE_STRICT_SUGGESTIONS_FILE}"
   exit 1
 fi
 if [[ -n "${DELIVERY_GATE_PHASE5_SUMMARY_DIR}" && -f "${DELIVERY_GATE_PHASE5_SUMMARY_DIR}" ]]; then
