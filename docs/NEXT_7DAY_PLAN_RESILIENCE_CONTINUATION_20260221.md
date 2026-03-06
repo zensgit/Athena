@@ -318,6 +318,12 @@
   - Deliverables:
     - `docs/PHASE139_MAIL_EXPORT_RUNID_UTIL_TEST_COVERAGE_DEV_20260306.md`
     - `docs/PHASE139_MAIL_EXPORT_RUNID_UTIL_TEST_COVERAGE_VERIFICATION_20260306.md`
+- Delivery gate phase5 strict threshold passthrough:
+  - add gate-scoped strict controls/CLI flags for phase5 recovery guard and hotspot/flaky thresholds.
+  - expose strict threshold settings in execution plan payload and pass through to mocked preflight/regression stages.
+  - Deliverables:
+    - `docs/PHASE140_GATE_PHASE5_STRICT_THRESHOLD_PASSTHROUGH_DEV_20260306.md`
+    - `docs/PHASE140_GATE_PHASE5_STRICT_THRESHOLD_PASSTHROUGH_VERIFICATION_20260306.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.
