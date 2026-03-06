@@ -1199,6 +1199,34 @@
   - `cd ecm-frontend && npm run -s build` -> PASS
   - `cd ecm-frontend && npx playwright test e2e/admin-preview-diagnostics.mock.spec.ts --project=chromium` -> PASS（本地静态 `:5500`）
 
+### 81) Preview diagnostics 后端批量入队 API（Phase154）
+- `ecm-core/src/main/java/com/ecm/core/controller/PreviewDiagnosticsController.java`
+  - 新增 `POST /api/v1/preview/diagnostics/failures/queue-batch`
+  - 输入：
+    - `documentIds[]`
+    - `force`
+  - 输出聚合统计与明细：
+    - `requested/deduplicated/queued/skipped/failed`
+    - 每个文档 `outcome/message/previewStatus/attempts/nextAttemptAt`
+  - 复用 `PreviewQueueService.enqueue(...)`，保持与单文档队列语义一致。
+- `ecm-core/src/test/java/com/ecm/core/controller/PreviewDiagnosticsControllerSecurityTest.java`
+  - 增补 admin/non-admin 批量入队访问和聚合响应断言。
+- 验证：
+  - `cd ecm-core && mvn -q -Dtest=PreviewDiagnosticsControllerSecurityTest test` -> PASS
+
+### 82) Preview diagnostics 分组动作切换到 batch API（Phase155）
+- `ecm-frontend/src/services/previewDiagnosticsService.ts`
+  - 新增 `queueFailuresBatch(documentIds, force)`。
+- `ecm-frontend/src/pages/PreviewDiagnosticsPage.tsx`
+  - reason-group `Retry/Force` 从前端逐条循环改为一次 batch API 调用。
+  - toast 反馈升级为 queued/skipped/failed 聚合结果。
+- `ecm-frontend/e2e/admin-preview-diagnostics.mock.spec.ts`
+  - 增加 batch endpoint mock 与断言，覆盖分组批量动作路径。
+- 验证：
+  - `cd ecm-frontend && npm run -s lint -- src/pages/PreviewDiagnosticsPage.tsx src/services/previewDiagnosticsService.ts` -> PASS
+  - `cd ecm-frontend && npm test -- --watchAll=false --runInBand src/utils/previewStatusUtils.test.ts` -> PASS
+  - `cd ecm-frontend && npx playwright test e2e/admin-preview-diagnostics.mock.spec.ts --project=chromium` -> PASS（本地静态 `:5500`）
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -1416,3 +1444,7 @@
 - `docs/PHASE152_PREVIEW_DIAGNOSTICS_WINDOW_FILTER_VERIFICATION_20260306.md`
 - `docs/PHASE153_PREVIEW_DIAGNOSTICS_REASON_BATCH_ACTIONS_DEV_20260306.md`
 - `docs/PHASE153_PREVIEW_DIAGNOSTICS_REASON_BATCH_ACTIONS_VERIFICATION_20260306.md`
+- `docs/PHASE154_PREVIEW_DIAGNOSTICS_BATCH_QUEUE_API_DEV_20260306.md`
+- `docs/PHASE154_PREVIEW_DIAGNOSTICS_BATCH_QUEUE_API_VERIFICATION_20260306.md`
+- `docs/PHASE155_PREVIEW_DIAGNOSTICS_BATCH_ACTION_INTEGRATION_DEV_20260306.md`
+- `docs/PHASE155_PREVIEW_DIAGNOSTICS_BATCH_ACTION_INTEGRATION_VERIFICATION_20260306.md`

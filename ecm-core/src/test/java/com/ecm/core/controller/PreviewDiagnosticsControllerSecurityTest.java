@@ -2,6 +2,7 @@ package com.ecm.core.controller;
 
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.PreviewStatus;
+import com.ecm.core.preview.PreviewQueueService;
 import com.ecm.core.repository.DocumentRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -35,6 +36,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -50,6 +52,9 @@ class PreviewDiagnosticsControllerSecurityTest {
 
     @MockBean
     private DocumentRepository documentRepository;
+
+    @MockBean
+    private PreviewQueueService previewQueueService;
 
     @Configuration
     @EnableWebSecurity
@@ -76,6 +81,11 @@ class PreviewDiagnosticsControllerSecurityTest {
             .andExpect(status().isForbidden());
 
         mockMvc.perform(get("/api/v1/preview/diagnostics/failures/summary"))
+            .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/v1/preview/diagnostics/failures/queue-batch")
+                .contentType("application/json")
+                .content("{\"documentIds\":[],\"force\":false}"))
             .andExpect(status().isForbidden());
     }
 
@@ -221,5 +231,53 @@ class PreviewDiagnosticsControllerSecurityTest {
             .andExpect(jsonPath("$.windowStart", nullValue()))
             .andExpect(jsonPath("$.confidenceLevel", is("HIGH")))
             .andExpect(jsonPath("$.confidenceReason", is("sample_complete")));
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("Admin can queue preview failures in batch and get aggregated outcome")
+    void diagnosticsBatchQueueAggregatesOutcome() throws Exception {
+        UUID queuedId = UUID.randomUUID();
+        UUID skippedId = UUID.randomUUID();
+        UUID failedId = UUID.randomUUID();
+
+        Mockito.when(previewQueueService.enqueue(eq(queuedId), eq(false)))
+            .thenReturn(new PreviewQueueService.PreviewQueueStatus(
+                queuedId,
+                PreviewStatus.FAILED,
+                true,
+                0,
+                null,
+                "Preview queued"
+            ));
+        Mockito.when(previewQueueService.enqueue(eq(skippedId), eq(false)))
+            .thenReturn(new PreviewQueueService.PreviewQueueStatus(
+                skippedId,
+                PreviewStatus.UNSUPPORTED,
+                false,
+                0,
+                null,
+                "Preview unsupported"
+            ));
+        Mockito.when(previewQueueService.enqueue(eq(failedId), eq(false)))
+            .thenThrow(new IllegalArgumentException("Document not found"));
+
+        String payload = """
+            {
+              "documentIds": ["%s", "%s", "%s"],
+              "force": false
+            }
+            """.formatted(queuedId, skippedId, failedId);
+
+        mockMvc.perform(post("/api/v1/preview/diagnostics/failures/queue-batch")
+                .contentType("application/json")
+                .content(payload))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.requested", is(3)))
+            .andExpect(jsonPath("$.deduplicated", is(3)))
+            .andExpect(jsonPath("$.queued", is(1)))
+            .andExpect(jsonPath("$.skipped", is(1)))
+            .andExpect(jsonPath("$.failed", is(1)))
+            .andExpect(jsonPath("$.results", hasSize(3)));
     }
 }

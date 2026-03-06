@@ -43,6 +43,24 @@ export type PreviewFailureSummary = {
   topReasons: PreviewFailureReasonCount[];
 };
 
+export type PreviewQueueBatchItem = {
+  documentId: string;
+  outcome: 'QUEUED' | 'SKIPPED' | 'FAILED' | string;
+  message: string | null;
+  previewStatus: string | null;
+  attempts: number;
+  nextAttemptAt: string | null;
+};
+
+export type PreviewQueueBatchResult = {
+  requested: number;
+  deduplicated: number;
+  queued: number;
+  skipped: number;
+  failed: number;
+  results: PreviewQueueBatchItem[];
+};
+
 class PreviewDiagnosticsService {
   async listRecentFailures(limit = 50, days = 7): Promise<PreviewFailureSample[]> {
     return api.get<PreviewFailureSample[]>('/preview/diagnostics/failures', { params: { limit, days } });
@@ -51,6 +69,13 @@ class PreviewDiagnosticsService {
   async getFailureSummary(sampleLimit = 500, days = 7): Promise<PreviewFailureSummary> {
     return api.get<PreviewFailureSummary>('/preview/diagnostics/failures/summary', {
       params: { sampleLimit, days },
+    });
+  }
+
+  async queueFailuresBatch(documentIds: string[], force = false): Promise<PreviewQueueBatchResult> {
+    return api.post<PreviewQueueBatchResult>('/preview/diagnostics/failures/queue-batch', {
+      documentIds,
+      force,
     });
   }
 }

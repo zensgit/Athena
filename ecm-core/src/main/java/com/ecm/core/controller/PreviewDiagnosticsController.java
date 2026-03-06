@@ -3,6 +3,7 @@ package com.ecm.core.controller;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.PreviewStatus;
 import com.ecm.core.preview.PreviewFailureClassifier;
+import com.ecm.core.preview.PreviewQueueService;
 import com.ecm.core.repository.DocumentRepository;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -12,14 +13,18 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -33,6 +38,7 @@ import java.util.UUID;
 public class PreviewDiagnosticsController {
 
     private final DocumentRepository documentRepository;
+    private final PreviewQueueService previewQueueService;
     private static final int MAX_FAILURE_LIST_LIMIT = 200;
     private static final int DEFAULT_SUMMARY_SAMPLE_LIMIT = 500;
     private static final int MAX_SUMMARY_SAMPLE_LIMIT = 2000;
@@ -57,6 +63,70 @@ public class PreviewDiagnosticsController {
             .map(PreviewFailureSampleDto::from)
             .toList();
 
+        return ResponseEntity.ok(payload);
+    }
+
+    @PostMapping("/failures/queue-batch")
+    @Operation(
+        summary = "Queue preview failures in batch",
+        description = "Queue preview retry/rebuild for a batch of document ids from preview diagnostics."
+    )
+    public ResponseEntity<PreviewQueueBatchResponseDto> queueFailuresBatch(
+        @RequestBody PreviewQueueBatchRequestDto request
+    ) {
+        List<UUID> rawIds = request != null && request.documentIds() != null
+            ? request.documentIds()
+            : List.of();
+        boolean force = request != null && Boolean.TRUE.equals(request.force());
+
+        int requested = rawIds.size();
+        LinkedHashSet<UUID> deduplicatedIds = new LinkedHashSet<>();
+        rawIds.stream().filter(id -> id != null).forEach(deduplicatedIds::add);
+
+        List<PreviewQueueBatchItemDto> results = new ArrayList<>();
+        int queued = 0;
+        int skipped = 0;
+        int failed = 0;
+
+        for (UUID documentId : deduplicatedIds) {
+            try {
+                PreviewQueueService.PreviewQueueStatus status = previewQueueService.enqueue(documentId, force);
+                boolean wasQueued = status.queued();
+                String outcome = wasQueued ? "QUEUED" : "SKIPPED";
+                if (wasQueued) {
+                    queued += 1;
+                } else {
+                    skipped += 1;
+                }
+                results.add(new PreviewQueueBatchItemDto(
+                    documentId,
+                    outcome,
+                    status.message(),
+                    status.previewStatus() != null ? status.previewStatus().name() : null,
+                    status.attempts(),
+                    status.nextAttemptAt()
+                ));
+            } catch (Exception ex) {
+                failed += 1;
+                results.add(new PreviewQueueBatchItemDto(
+                    documentId,
+                    "FAILED",
+                    ex.getMessage(),
+                    null,
+                    0,
+                    null
+                ));
+            }
+        }
+
+        PreviewQueueBatchResponseDto payload = new PreviewQueueBatchResponseDto(
+            requested,
+            deduplicatedIds.size(),
+            queued,
+            skipped,
+            failed,
+            results
+        );
         return ResponseEntity.ok(payload);
     }
 
@@ -202,6 +272,29 @@ public class PreviewDiagnosticsController {
         List<PreviewFailureStatusCountDto> statusCounts,
         List<PreviewFailureCategoryCountDto> categoryCounts,
         List<PreviewFailureReasonCountDto> topReasons
+    ) {}
+
+    public record PreviewQueueBatchRequestDto(
+        List<UUID> documentIds,
+        Boolean force
+    ) {}
+
+    public record PreviewQueueBatchResponseDto(
+        int requested,
+        int deduplicated,
+        int queued,
+        int skipped,
+        int failed,
+        List<PreviewQueueBatchItemDto> results
+    ) {}
+
+    public record PreviewQueueBatchItemDto(
+        UUID documentId,
+        String outcome,
+        String message,
+        String previewStatus,
+        int attempts,
+        Instant nextAttemptAt
     ) {}
 
     public record PreviewFailureStatusCountDto(

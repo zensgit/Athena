@@ -245,28 +245,24 @@ const PreviewDiagnosticsPage: React.FC = () => {
     }
 
     const actionKey = getReasonActionKey(reason, category, force);
-    let queued = 0;
-    let failed = 0;
     setReasonBatchActionKey(actionKey);
     try {
-      const results = await Promise.allSettled(
-        matches.map((item) => nodeService.queuePreview(item.id, force))
+      const batch = await previewDiagnosticsService.queueFailuresBatch(
+        matches.map((item) => item.id),
+        force
       );
-      results.forEach((result) => {
-        if (result.status === 'fulfilled') {
-          queued += 1;
-        } else {
-          failed += 1;
-        }
-      });
 
       const actionLabel = force ? 'Force rebuild' : 'Retry';
-      if (queued > 0 && failed === 0) {
-        toast.success(`${actionLabel} queued for ${queued} document(s): ${reasonLabel}`);
-      } else if (queued > 0) {
-        toast.warning(`${actionLabel} queued for ${queued} document(s), ${failed} failed: ${reasonLabel}`);
+      if (batch.queued > 0 && batch.failed === 0 && batch.skipped === 0) {
+        toast.success(`${actionLabel} queued for ${batch.queued} document(s): ${reasonLabel}`);
+      } else if (batch.queued > 0) {
+        toast.warning(
+          `${actionLabel} queued=${batch.queued}, skipped=${batch.skipped}, failed=${batch.failed}: ${reasonLabel}`
+        );
       } else {
-        toast.error(`${actionLabel} failed for reason group: ${reasonLabel}`);
+        toast.error(
+          `${actionLabel} skipped=${batch.skipped}, failed=${batch.failed} for reason group: ${reasonLabel}`
+        );
       }
       await loadFailures();
     } finally {

@@ -395,6 +395,16 @@
   - Deliverables:
     - `docs/PHASE153_PREVIEW_DIAGNOSTICS_REASON_BATCH_ACTIONS_DEV_20260306.md`
     - `docs/PHASE153_PREVIEW_DIAGNOSTICS_REASON_BATCH_ACTIONS_VERIFICATION_20260306.md`
+- Preview diagnostics batch queue API:
+  - add admin batch queue endpoint for preview failures with per-item outcomes and aggregate counters.
+  - Deliverables:
+    - `docs/PHASE154_PREVIEW_DIAGNOSTICS_BATCH_QUEUE_API_DEV_20260306.md`
+    - `docs/PHASE154_PREVIEW_DIAGNOSTICS_BATCH_QUEUE_API_VERIFICATION_20260306.md`
+- Preview diagnostics reason action batch integration:
+  - switch reason-group actions to the backend batch endpoint and verify with mocked E2E.
+  - Deliverables:
+    - `docs/PHASE155_PREVIEW_DIAGNOSTICS_BATCH_ACTION_INTEGRATION_DEV_20260306.md`
+    - `docs/PHASE155_PREVIEW_DIAGNOSTICS_BATCH_ACTION_INTEGRATION_VERIFICATION_20260306.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.

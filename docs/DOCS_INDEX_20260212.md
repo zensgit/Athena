@@ -351,6 +351,12 @@ Goal: make it easy to find the latest design + verification artifacts by topic w
   - Phase 153: Preview diagnostics reason-group batch actions
     - Dev: `docs/PHASE153_PREVIEW_DIAGNOSTICS_REASON_BATCH_ACTIONS_DEV_20260306.md`
     - Verification: `docs/PHASE153_PREVIEW_DIAGNOSTICS_REASON_BATCH_ACTIONS_VERIFICATION_20260306.md`
+  - Phase 154: Preview diagnostics batch queue API
+    - Dev: `docs/PHASE154_PREVIEW_DIAGNOSTICS_BATCH_QUEUE_API_DEV_20260306.md`
+    - Verification: `docs/PHASE154_PREVIEW_DIAGNOSTICS_BATCH_QUEUE_API_VERIFICATION_20260306.md`
+  - Phase 155: Preview diagnostics reason batch integration
+    - Dev: `docs/PHASE155_PREVIEW_DIAGNOSTICS_BATCH_ACTION_INTEGRATION_DEV_20260306.md`
+    - Verification: `docs/PHASE155_PREVIEW_DIAGNOSTICS_BATCH_ACTION_INTEGRATION_VERIFICATION_20260306.md`
   - Phase 5: Preview diagnostics real-chain verification (optional)
     - Verification: `docs/PHASE5_PREVIEW_DIAGNOSTICS_REALCHAIN_VERIFICATION_20260214.md`
 

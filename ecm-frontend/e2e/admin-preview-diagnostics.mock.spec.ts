@@ -270,6 +270,32 @@ test('Preview diagnostics renders failures and gates retry actions (mocked API)'
     });
   });
 
+  await page.route('**/api/v1/preview/diagnostics/failures/queue-batch', async (route) => {
+    const payload = route.request().postDataJSON() as { documentIds?: string[]; force?: boolean } | null;
+    const documentIds = Array.isArray(payload?.documentIds) ? payload!.documentIds : [];
+    const force = payload?.force === true;
+    documentIds.forEach((id) => queueCalls.push({ id, force }));
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        requested: documentIds.length,
+        deduplicated: documentIds.length,
+        queued: documentIds.length,
+        skipped: 0,
+        failed: 0,
+        results: documentIds.map((id) => ({
+          documentId: id,
+          outcome: 'QUEUED',
+          message: 'Preview queued',
+          previewStatus: 'FAILED',
+          attempts: 0,
+          nextAttemptAt: null,
+        })),
+      }),
+    });
+  });
+
   // When running against a static build server (no SPA rewrite), avoid deep links.
   // Navigate from the app root instead.
   await page.goto('/', { waitUntil: 'domcontentloaded' });
