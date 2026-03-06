@@ -306,27 +306,27 @@ const PreviewDiagnosticsPage: React.FC = () => {
                         ? 'Unspecified reason'
                         : formatPreviewFailureReasonLabel(entry.reason);
                     return (
-                    <TableRow key={`${entry.reason}-${entry.category}-${entry.retryable}`}>
-                      <TableCell sx={{ maxWidth: 520 }}>
-                        <Tooltip title={reasonLabel} placement="top-start" arrow>
-                          <Typography variant="body2" noWrap>
-                            {reasonLabel}
-                          </Typography>
-                        </Tooltip>
-                      </TableCell>
-                      <TableCell>
-                        <Chip size="small" label={entry.category || 'UNKNOWN'} variant="outlined" />
-                      </TableCell>
-                      <TableCell>
-                        <Chip
-                          size="small"
-                          label={entry.retryable ? 'Yes' : 'No'}
-                          color={entry.retryable ? 'warning' : 'default'}
-                          variant={entry.retryable ? 'filled' : 'outlined'}
-                        />
-                      </TableCell>
-                      <TableCell align="right">{entry.count}</TableCell>
-                    </TableRow>
+                      <TableRow key={`${entry.reason}-${entry.category}-${entry.retryable}`}>
+                        <TableCell sx={{ maxWidth: 520 }}>
+                          <Tooltip title={reasonLabel} placement="top-start" arrow>
+                            <Typography variant="body2" noWrap>
+                              {reasonLabel}
+                            </Typography>
+                          </Tooltip>
+                        </TableCell>
+                        <TableCell>
+                          <Chip size="small" label={entry.category || 'UNKNOWN'} variant="outlined" />
+                        </TableCell>
+                        <TableCell>
+                          <Chip
+                            size="small"
+                            label={entry.retryable ? 'Yes' : 'No'}
+                            color={entry.retryable ? 'warning' : 'default'}
+                            variant={entry.retryable ? 'filled' : 'outlined'}
+                          />
+                        </TableCell>
+                        <TableCell align="right">{entry.count}</TableCell>
+                      </TableRow>
                     );
                   })}
                 </TableBody>
