@@ -380,6 +380,61 @@ print_gate_summary() {
   print_layer_summary "integration"
 }
 
+extract_phase5_summary_path_from_log() {
+  local log_file="$1"
+  local summary_path=""
+  summary_path="$(strip_ansi_file "${log_file}" | sed -nE 's#^.*phase5_regression: wrote summary artifact =>[[:space:]]*(.+)$#\1#p' | tail -n 1)"
+  if [[ -n "${summary_path}" ]]; then
+    printf '%s' "${summary_path}"
+    return
+  fi
+  summary_path="$(strip_ansi_file "${log_file}" | sed -nE 's#^.*mocked regression summary generated =>[[:space:]]*(.+)$#\1#p' | tail -n 1)"
+  printf '%s' "${summary_path}"
+}
+
+extract_phase5_summary_strict_kv() {
+  local summary_file="$1"
+  node - "${summary_file}" <<'NODE'
+const fs = require('fs');
+
+const summaryFile = process.argv[2];
+if (!summaryFile || !fs.existsSync(summaryFile)) {
+  process.exit(0);
+}
+
+let payload;
+try {
+  payload = JSON.parse(fs.readFileSync(summaryFile, 'utf8'));
+} catch (_error) {
+  process.exit(0);
+}
+
+const strict = payload?.strict_threshold_controls ?? {};
+const recovery = payload?.recovery_guard ?? {};
+const toCsv = (items) => (
+  Array.isArray(items)
+    ? items
+      .map((item) => String(item ?? '').trim())
+      .filter((item) => item.length > 0)
+      .join(',')
+    : ''
+);
+const emit = (key, value) => {
+  console.log(`${key}=${String(value ?? '')}`);
+};
+
+emit('strict_guard_failed', strict?.strict_guard_failed ? '1' : '0');
+emit('strict_failure_reasons', toCsv(strict?.strict_failure_reasons));
+emit('hotspot_threshold', strict?.hotspot_duration_sec_threshold ?? '');
+emit('hotspot_match_count', strict?.hotspot_match_count ?? 0);
+emit('flaky_threshold', strict?.flaky_risk_score_threshold ?? '');
+emit('flaky_match_count', strict?.flaky_risk_match_count ?? 0);
+emit('recovery_warning_count', recovery?.warning_count ?? 0);
+emit('recovery_missing', toCsv(recovery?.missing_events));
+emit('recovery_unexpected', toCsv(recovery?.unexpected_events));
+NODE
+}
+
 print_startup_failure_hints() {
   if [[ "${#FAILED_STAGE_RECORDS[@]}" -eq 0 ]]; then
     return
@@ -393,10 +448,16 @@ print_startup_failure_hints() {
   local hint_recovery_guard_warn=0
   local hint_recovery_registry_warn=0
   local hint_recovery_registry_deterministic_warn=0
+  local hint_phase5_strict_threshold_warn=0
   local recovery_missing_events=()
   local recovery_unexpected_events=()
   local registry_missing_events=()
   local registry_stale_events=()
+  local phase5_strict_reasons=()
+  local phase5_hotspot_threshold=""
+  local phase5_hotspot_match_count=""
+  local phase5_flaky_threshold=""
+  local phase5_flaky_match_count=""
   local record
   for record in "${FAILED_STAGE_RECORDS[@]}"; do
     local record_layer
@@ -493,9 +554,58 @@ print_startup_failure_hints() {
     if strip_ansi_file "${record_log}" | rg -qi "phase5_sync_recovery_registry: deterministic mismatch"; then
       hint_recovery_registry_deterministic_warn=1
     fi
+
+    local summary_file
+    summary_file="$(extract_phase5_summary_path_from_log "${record_log}")"
+    if [[ -n "${summary_file}" && -f "${summary_file}" ]]; then
+      local summary_line
+      while IFS= read -r summary_line; do
+        [[ -z "${summary_line}" ]] && continue
+        local summary_key="${summary_line%%=*}"
+        local summary_value="${summary_line#*=}"
+        case "${summary_key}" in
+          strict_guard_failed)
+            if [[ "${summary_value}" == "1" ]]; then
+              hint_phase5_strict_threshold_warn=1
+            fi
+            ;;
+          strict_failure_reasons)
+            if [[ -n "${summary_value}" ]]; then
+              local summary_reason
+              IFS=',' read -r -a summary_reason_items <<< "${summary_value}"
+              for summary_reason in "${summary_reason_items[@]}"; do
+                summary_reason="$(printf '%s' "${summary_reason}" | tr -d '[:space:]')"
+                [[ -z "${summary_reason}" ]] && continue
+                phase5_strict_reasons+=("${summary_reason}")
+              done
+            fi
+            ;;
+          hotspot_threshold)
+            if [[ -n "${summary_value}" && "${summary_value}" != "0" ]]; then
+              phase5_hotspot_threshold="${summary_value}"
+            fi
+            ;;
+          hotspot_match_count)
+            if [[ -n "${summary_value}" && "${summary_value}" != "0" ]]; then
+              phase5_hotspot_match_count="${summary_value}"
+            fi
+            ;;
+          flaky_threshold)
+            if [[ -n "${summary_value}" && "${summary_value}" != "0" ]]; then
+              phase5_flaky_threshold="${summary_value}"
+            fi
+            ;;
+          flaky_match_count)
+            if [[ -n "${summary_value}" && "${summary_value}" != "0" ]]; then
+              phase5_flaky_match_count="${summary_value}"
+            fi
+            ;;
+        esac
+      done < <(extract_phase5_summary_strict_kv "${summary_file}")
+    fi
   done
 
-  if [[ "${hint_static_target}" -eq 0 && "${hint_storage_restricted}" -eq 0 && "${hint_auth_timeout}" -eq 0 && "${hint_startup_sla_warn}" -eq 0 && "${hint_startup_sla_drift_warn}" -eq 0 && "${hint_recovery_guard_warn}" -eq 0 && "${hint_recovery_registry_warn}" -eq 0 && "${hint_recovery_registry_deterministic_warn}" -eq 0 ]]; then
+  if [[ "${hint_static_target}" -eq 0 && "${hint_storage_restricted}" -eq 0 && "${hint_auth_timeout}" -eq 0 && "${hint_startup_sla_warn}" -eq 0 && "${hint_startup_sla_drift_warn}" -eq 0 && "${hint_recovery_guard_warn}" -eq 0 && "${hint_recovery_registry_warn}" -eq 0 && "${hint_recovery_registry_deterministic_warn}" -eq 0 && "${hint_phase5_strict_threshold_warn}" -eq 0 ]]; then
     return
   fi
 
@@ -563,10 +673,36 @@ print_startup_failure_hints() {
   if [[ "${hint_recovery_registry_deterministic_warn}" -eq 1 ]]; then
     echo " - Registry sync deterministic check failed. Rerun scripts/phase5-sync-recovery-registry.sh and inspect emitted diff."
   fi
+  if [[ "${hint_phase5_strict_threshold_warn}" -eq 1 ]]; then
+    local strict_reasons_line=""
+    if [[ "${#phase5_strict_reasons[@]}" -gt 0 ]]; then
+      strict_reasons_line="$(summarize_unique_events "${phase5_strict_reasons[@]}")"
+    fi
+    if [[ -n "${phase5_hotspot_threshold}" ]]; then
+      local hotspot_hint="hotspot threshold >=${phase5_hotspot_threshold}s"
+      if [[ -n "${phase5_hotspot_match_count}" ]]; then
+        hotspot_hint="${hotspot_hint} matched ${phase5_hotspot_match_count} test(s)"
+      fi
+      echo " - Phase5 strict threshold guard hit (${hotspot_hint})."
+    fi
+    if [[ -n "${phase5_flaky_threshold}" ]]; then
+      local flaky_hint="flaky-risk score threshold >=${phase5_flaky_threshold}"
+      if [[ -n "${phase5_flaky_match_count}" ]]; then
+        flaky_hint="${flaky_hint} matched ${phase5_flaky_match_count} test(s)"
+      fi
+      echo " - Phase5 strict threshold guard hit (${flaky_hint})."
+    fi
+    if [[ -n "${strict_reasons_line}" ]]; then
+      echo " - Strict failure reasons: ${strict_reasons_line}."
+    else
+      echo " - Strict threshold guard failure detected. Review phase5 summary artifact strict_threshold_controls."
+    fi
+  fi
 }
 
 run_mocked_regression_stage() {
   local phase5_summary_file=""
+  local phase5_rc=0
   if [[ -n "${DELIVERY_GATE_PHASE5_SUMMARY_DIR}" ]]; then
     mkdir -p "${DELIVERY_GATE_PHASE5_SUMMARY_DIR}"
     local summary_ts
@@ -582,7 +718,7 @@ run_mocked_regression_stage() {
   PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD="${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD}" \
   PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD="${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD}" \
   PHASE5_REGRESSION_SUMMARY_JSON="${phase5_summary_file}" \
-  bash scripts/phase5-regression.sh
+  bash scripts/phase5-regression.sh || phase5_rc=$?
 
   if [[ -n "${phase5_summary_file}" ]]; then
     if [[ -f "${phase5_summary_file}" ]]; then
@@ -591,6 +727,7 @@ run_mocked_regression_stage() {
       echo "phase5_phase6_delivery_gate: WARN mocked regression summary not found => ${phase5_summary_file}"
     fi
   fi
+  return "${phase5_rc}"
 }
 
 run_mocked_recovery_registry_preflight_stage() {
