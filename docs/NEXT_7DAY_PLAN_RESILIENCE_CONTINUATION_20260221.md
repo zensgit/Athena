@@ -352,6 +352,12 @@
   - Deliverables:
     - `docs/PHASE145_GATE_STRICT_PERCENTILE_CONFIG_PASSTHROUGH_DEV_20260306.md`
     - `docs/PHASE145_GATE_STRICT_PERCENTILE_CONFIG_PASSTHROUGH_VERIFICATION_20260306.md`
+- Delivery gate strict recommendation confidence guards:
+  - add minimum-sample controls for hotspot/flaky recommendations and mark low-confidence recommendations in strict hints.
+  - apply low-sample fallback thresholds when strict mode is enabled.
+  - Deliverables:
+    - `docs/PHASE146_GATE_STRICT_RECOMMENDATION_CONFIDENCE_GUARDS_DEV_20260306.md`
+    - `docs/PHASE146_GATE_STRICT_RECOMMENDATION_CONFIDENCE_GUARDS_VERIFICATION_20260306.md`
 
 ## Exit Criteria
 1. Storage-restricted auth flows remain recoverable and non-blank.

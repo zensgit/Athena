@@ -72,6 +72,16 @@ else
   DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC="0.1"
   DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC_SOURCE="local_default"
 fi
+if [[ -n "${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE:-}" ]]; then
+  DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE="${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE}"
+  DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE_SOURCE="env"
+elif [[ -n "${PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE:-}" ]]; then
+  DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE="${PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE}"
+  DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE_SOURCE="inherited_env"
+else
+  DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE="5"
+  DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE_SOURCE="local_default"
+fi
 if [[ -n "${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_PERCENTILE:-}" ]]; then
   DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_PERCENTILE="${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_PERCENTILE}"
   DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_PERCENTILE_SOURCE="env"
@@ -91,6 +101,16 @@ elif [[ -n "${PHASE5_STRICT_FLAKY_RISK_RECOMMEND_STEP:-}" ]]; then
 else
   DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_STEP="1"
   DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_STEP_SOURCE="local_default"
+fi
+if [[ -n "${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE:-}" ]]; then
+  DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE="${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE}"
+  DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE_SOURCE="env"
+elif [[ -n "${PHASE5_STRICT_FLAKY_RISK_RECOMMEND_MIN_SAMPLE:-}" ]]; then
+  DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE="${PHASE5_STRICT_FLAKY_RISK_RECOMMEND_MIN_SAMPLE}"
+  DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE_SOURCE="inherited_env"
+else
+  DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE="3"
+  DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE_SOURCE="local_default"
 fi
 if [[ -n "${DELIVERY_GATE_RECOVERY_REGISTRY_SYNC:-}" ]]; then
   DELIVERY_GATE_RECOVERY_REGISTRY_SYNC="${DELIVERY_GATE_RECOVERY_REGISTRY_SYNC}"
@@ -166,7 +186,7 @@ print_usage() {
   cat <<'USAGE'
 Usage:
   scripts/phase5-phase6-delivery-gate.sh [mode]
-  scripts/phase5-phase6-delivery-gate.sh --mode=<mode> [--plan] [--plan-format=<text|json>] [--plan-file=<path>] [--phase5-summary-dir=<path>] [--phase5-strict-recovery-guard=<0|1>] [--phase5-strict-hotspot-sec=<num>] [--phase5-strict-flaky-score=<int>] [--phase5-hotspot-recommend-percentile=<num>] [--phase5-hotspot-recommend-padding-sec=<num>] [--phase5-flaky-recommend-percentile=<num>] [--phase5-flaky-recommend-step=<int>]
+  scripts/phase5-phase6-delivery-gate.sh --mode=<mode> [--plan] [--plan-format=<text|json>] [--plan-file=<path>] [--phase5-summary-dir=<path>] [--phase5-strict-recovery-guard=<0|1>] [--phase5-strict-hotspot-sec=<num>] [--phase5-strict-flaky-score=<int>] [--phase5-hotspot-recommend-percentile=<num>] [--phase5-hotspot-recommend-padding-sec=<num>] [--phase5-hotspot-recommend-min-sample=<int>] [--phase5-flaky-recommend-percentile=<num>] [--phase5-flaky-recommend-step=<int>] [--phase5-flaky-recommend-min-sample=<int>]
   scripts/phase5-phase6-delivery-gate.sh --help
 
 Modes:
@@ -197,10 +217,14 @@ Flags:
                         Percentile (0,1] used for hotspot recommendation (default: 0.95).
   --phase5-hotspot-recommend-padding-sec=<num>
                         Non-negative seconds added to hotspot percentile recommendation (default: 0.1).
+  --phase5-hotspot-recommend-min-sample=<int>
+                        Minimum sample count for hotspot percentile confidence (default: 5).
   --phase5-flaky-recommend-percentile=<num>
                         Percentile (0,1] used for flaky-risk recommendation (default: 0.9).
   --phase5-flaky-recommend-step=<int>
                         Non-negative step added for flaky-risk recommendation floor (default: 1).
+  --phase5-flaky-recommend-min-sample=<int>
+                        Minimum sample count for flaky-risk percentile confidence (default: 3).
 
 Environment controls:
   DELIVERY_GATE_MODE
@@ -213,8 +237,10 @@ Environment controls:
   DELIVERY_GATE_PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD=<int>
   DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE=<num>
   DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC=<num>
+  DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE=<int>
   DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_PERCENTILE=<num>
   DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_STEP=<int>
+  DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE=<int>
   DELIVERY_GATE_RECOVERY_REGISTRY_SYNC=1|0
   DELIVERY_GATE_RECOVERY_REGISTRY_STRICT=1|0
   DELIVERY_GATE_RECOVERY_REGISTRY_VERIFY_IDEMPOTENT=1|0
@@ -322,8 +348,10 @@ build_execution_plan_payload() {
   "phase5_strict_flaky_risk_score_threshold": "${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD}",
   "phase5_strict_hotspot_recommend_percentile": "${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE}",
   "phase5_strict_hotspot_recommend_padding_sec": "${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC}",
+  "phase5_strict_hotspot_recommend_min_sample": "${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE}",
   "phase5_strict_flaky_recommend_percentile": "${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_PERCENTILE}",
   "phase5_strict_flaky_recommend_step": "${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_STEP}",
+  "phase5_strict_flaky_recommend_min_sample": "${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE}",
   "fast_layer": "${fast_layer_plan}",
   "mocked_regression": "${mocked_regression_plan}",
   "integration_layer": "${integration_layer_plan}"
@@ -345,8 +373,10 @@ phase5_phase6_delivery_gate: execution plan
  - phase5 strict flaky-risk score threshold: ${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD}
  - phase5 hotspot recommend percentile: ${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE}
  - phase5 hotspot recommend padding (sec): ${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC}
+ - phase5 hotspot recommend min sample: ${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE}
  - phase5 flaky-risk recommend percentile: ${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_PERCENTILE}
  - phase5 flaky-risk recommend step: ${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_STEP}
+ - phase5 flaky-risk recommend min sample: ${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE}
  - fast layer: ${fast_layer_plan}
  - mocked regression: ${mocked_regression_plan}
  - integration layer: ${integration_layer_plan}
@@ -489,11 +519,17 @@ emit('hotspot_threshold', strict?.hotspot_duration_sec_threshold ?? '');
 emit('hotspot_recommended_threshold', strict?.hotspot_recommended_threshold ?? '');
 emit('hotspot_recommended_percentile', strict?.hotspot_recommended_percentile ?? '');
 emit('hotspot_recommended_sample', strict?.hotspot_recommended_sample ?? '');
+emit('hotspot_recommend_min_sample', strict?.hotspot_recommend_min_sample ?? '');
+emit('hotspot_recommended_count', strict?.hotspot_recommended_count ?? '');
+emit('hotspot_recommendation_low_confidence', strict?.hotspot_recommendation_low_confidence ? '1' : '0');
 emit('hotspot_match_count', strict?.hotspot_match_count ?? 0);
 emit('flaky_threshold', strict?.flaky_risk_score_threshold ?? '');
 emit('flaky_recommended_threshold', strict?.flaky_recommended_threshold ?? '');
 emit('flaky_recommended_percentile', strict?.flaky_recommended_percentile ?? '');
 emit('flaky_recommended_sample', strict?.flaky_recommended_sample ?? '');
+emit('flaky_recommend_min_sample', strict?.flaky_recommend_min_sample ?? '');
+emit('flaky_recommended_count', strict?.flaky_recommended_count ?? '');
+emit('flaky_recommendation_low_confidence', strict?.flaky_recommendation_low_confidence ? '1' : '0');
 emit('flaky_match_count', strict?.flaky_risk_match_count ?? 0);
 emit('recovery_warning_count', recovery?.warning_count ?? 0);
 emit('recovery_missing', toCsv(recovery?.missing_events));
@@ -525,11 +561,17 @@ print_startup_failure_hints() {
   local phase5_hotspot_recommended_threshold=""
   local phase5_hotspot_recommended_percentile=""
   local phase5_hotspot_recommended_sample=""
+  local phase5_hotspot_recommend_min_sample=""
+  local phase5_hotspot_recommended_count=""
+  local phase5_hotspot_recommendation_low_confidence=0
   local phase5_flaky_threshold=""
   local phase5_flaky_match_count=""
   local phase5_flaky_recommended_threshold=""
   local phase5_flaky_recommended_percentile=""
   local phase5_flaky_recommended_sample=""
+  local phase5_flaky_recommend_min_sample=""
+  local phase5_flaky_recommended_count=""
+  local phase5_flaky_recommendation_low_confidence=0
   local phase5_recovery_missing_events=()
   local phase5_recovery_unexpected_events=()
   local record
@@ -674,6 +716,21 @@ print_startup_failure_hints() {
               phase5_hotspot_recommended_sample="${summary_value}"
             fi
             ;;
+          hotspot_recommend_min_sample)
+            if [[ -n "${summary_value}" ]]; then
+              phase5_hotspot_recommend_min_sample="${summary_value}"
+            fi
+            ;;
+          hotspot_recommended_count)
+            if [[ -n "${summary_value}" ]]; then
+              phase5_hotspot_recommended_count="${summary_value}"
+            fi
+            ;;
+          hotspot_recommendation_low_confidence)
+            if [[ "${summary_value}" == "1" ]]; then
+              phase5_hotspot_recommendation_low_confidence=1
+            fi
+            ;;
           hotspot_match_count)
             if [[ -n "${summary_value}" && "${summary_value}" != "0" ]]; then
               phase5_hotspot_match_count="${summary_value}"
@@ -697,6 +754,21 @@ print_startup_failure_hints() {
           flaky_recommended_sample)
             if [[ -n "${summary_value}" && "${summary_value}" != "0" ]]; then
               phase5_flaky_recommended_sample="${summary_value}"
+            fi
+            ;;
+          flaky_recommend_min_sample)
+            if [[ -n "${summary_value}" ]]; then
+              phase5_flaky_recommend_min_sample="${summary_value}"
+            fi
+            ;;
+          flaky_recommended_count)
+            if [[ -n "${summary_value}" ]]; then
+              phase5_flaky_recommended_count="${summary_value}"
+            fi
+            ;;
+          flaky_recommendation_low_confidence)
+            if [[ "${summary_value}" == "1" ]]; then
+              phase5_flaky_recommendation_low_confidence=1
             fi
             ;;
           flaky_match_count)
@@ -826,6 +898,13 @@ print_startup_failure_hints() {
           hotspot_rec_hint="${hotspot_rec_hint} from ${hotspot_percentile_label}=${phase5_hotspot_recommended_sample}s"
         fi
         echo " - Hotspot percentile recommendation: ${hotspot_rec_hint}."
+        if [[ "${phase5_hotspot_recommendation_low_confidence}" -eq 1 ]]; then
+          local hotspot_confidence_hint=" - Hotspot recommendation confidence: LOW"
+          if [[ -n "${phase5_hotspot_recommended_count}" && -n "${phase5_hotspot_recommend_min_sample}" ]]; then
+            hotspot_confidence_hint="${hotspot_confidence_hint} (sample ${phase5_hotspot_recommended_count} < min ${phase5_hotspot_recommend_min_sample})"
+          fi
+          echo "${hotspot_confidence_hint}."
+        fi
       fi
     fi
     if [[ -n "${phase5_flaky_threshold}" ]]; then
@@ -842,6 +921,13 @@ print_startup_failure_hints() {
           flaky_rec_hint="${flaky_rec_hint} from ${flaky_percentile_label}=${phase5_flaky_recommended_sample}"
         fi
         echo " - Flaky-risk percentile recommendation: ${flaky_rec_hint}."
+        if [[ "${phase5_flaky_recommendation_low_confidence}" -eq 1 ]]; then
+          local flaky_confidence_hint=" - Flaky-risk recommendation confidence: LOW"
+          if [[ -n "${phase5_flaky_recommended_count}" && -n "${phase5_flaky_recommend_min_sample}" ]]; then
+            flaky_confidence_hint="${flaky_confidence_hint} (sample ${phase5_flaky_recommended_count} < min ${phase5_flaky_recommend_min_sample})"
+          fi
+          echo "${flaky_confidence_hint}."
+        fi
       fi
     fi
     if [[ -n "${strict_reasons_line}" ]]; then
@@ -878,7 +964,7 @@ print_startup_failure_hints() {
       flaky_cmd="DELIVERY_GATE_MODE=mocked DELIVERY_GATE_PHASE5_RECOVERY_GUARD_STRICT=1 DELIVERY_GATE_PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD=${flaky_relax_target} PW_WORKERS=${PW_WORKERS} bash scripts/phase5-phase6-delivery-gate.sh"
     fi
     if [[ "${strict_reasons_line}" == *"recovery_guard"* ]]; then
-      recovery_cmd="PHASE5_RECOVERY_GUARD_STRICT=1 PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD} PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD} PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE} PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC} PHASE5_STRICT_FLAKY_RISK_RECOMMEND_PERCENTILE=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_PERCENTILE} PHASE5_STRICT_FLAKY_RISK_RECOMMEND_STEP=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_STEP} bash scripts/phase5-regression.sh"
+      recovery_cmd="PHASE5_RECOVERY_GUARD_STRICT=1 PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD} PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD} PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE} PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC} PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE} PHASE5_STRICT_FLAKY_RISK_RECOMMEND_PERCENTILE=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_PERCENTILE} PHASE5_STRICT_FLAKY_RISK_RECOMMEND_STEP=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_STEP} PHASE5_STRICT_FLAKY_RISK_RECOMMEND_MIN_SAMPLE=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE} bash scripts/phase5-regression.sh"
     fi
 
     local strict_suggestions=()
@@ -968,8 +1054,10 @@ run_mocked_regression_stage() {
   PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD="${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD}" \
   PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE="${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE}" \
   PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC="${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC}" \
+  PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE="${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE}" \
   PHASE5_STRICT_FLAKY_RISK_RECOMMEND_PERCENTILE="${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_PERCENTILE}" \
   PHASE5_STRICT_FLAKY_RISK_RECOMMEND_STEP="${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_STEP}" \
+  PHASE5_STRICT_FLAKY_RISK_RECOMMEND_MIN_SAMPLE="${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE}" \
   PHASE5_REGRESSION_SUMMARY_JSON="${phase5_summary_file}" \
   bash scripts/phase5-regression.sh || phase5_rc=$?
 
@@ -999,8 +1087,10 @@ run_mocked_recovery_registry_preflight_stage() {
   PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD="${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD}" \
   PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE="${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE}" \
   PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC="${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC}" \
+  PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE="${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE}" \
   PHASE5_STRICT_FLAKY_RISK_RECOMMEND_PERCENTILE="${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_PERCENTILE}" \
   PHASE5_STRICT_FLAKY_RISK_RECOMMEND_STEP="${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_STEP}" \
+  PHASE5_STRICT_FLAKY_RISK_RECOMMEND_MIN_SAMPLE="${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE}" \
   PHASE5_RECOVERY_REGISTRY_SYNC="${DELIVERY_GATE_RECOVERY_REGISTRY_SYNC}" \
   PHASE5_RECOVERY_REGISTRY_STRICT="${DELIVERY_GATE_RECOVERY_REGISTRY_STRICT}" \
   PHASE5_VALIDATE_RECOVERY_REGISTRY_ONLY=1 \
@@ -1198,6 +1288,10 @@ for arg in "$@"; do
       DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC="${arg#--phase5-hotspot-recommend-padding-sec=}"
       DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC_SOURCE="cli"
       ;;
+    --phase5-hotspot-recommend-min-sample=*)
+      DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE="${arg#--phase5-hotspot-recommend-min-sample=}"
+      DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE_SOURCE="cli"
+      ;;
     --phase5-flaky-recommend-percentile=*)
       DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_PERCENTILE="${arg#--phase5-flaky-recommend-percentile=}"
       DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_PERCENTILE_SOURCE="cli"
@@ -1205,6 +1299,10 @@ for arg in "$@"; do
     --phase5-flaky-recommend-step=*)
       DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_STEP="${arg#--phase5-flaky-recommend-step=}"
       DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_STEP_SOURCE="cli"
+      ;;
+    --phase5-flaky-recommend-min-sample=*)
+      DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE="${arg#--phase5-flaky-recommend-min-sample=}"
+      DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE_SOURCE="cli"
       ;;
     --mode=*)
       DELIVERY_GATE_MODE="${arg#--mode=}"
@@ -1251,10 +1349,14 @@ echo "DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE=${DELIVERY_GATE_P
 echo "DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE_SOURCE=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE_SOURCE}"
 echo "DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC}"
 echo "DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC_SOURCE=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC_SOURCE}"
+echo "DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE}"
+echo "DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE_SOURCE=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE_SOURCE}"
 echo "DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_PERCENTILE=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_PERCENTILE}"
 echo "DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_PERCENTILE_SOURCE=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_PERCENTILE_SOURCE}"
 echo "DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_STEP=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_STEP}"
 echo "DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_STEP_SOURCE=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_STEP_SOURCE}"
+echo "DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE}"
+echo "DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE_SOURCE=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE_SOURCE}"
 echo "DELIVERY_GATE_PLAN_ONLY=${DELIVERY_GATE_PLAN_ONLY}"
 if [[ -z "${ECM_UI_URL_FULLSTACK_INPUT}" ]]; then
   echo "ECM_UI_URL_FULLSTACK auto-detected (set ECM_UI_URL_FULLSTACK to override)"
@@ -1315,6 +1417,14 @@ if ! awk -v v="${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_PERCENTILE}" 'BEGIN
 fi
 if ! [[ "${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_STEP}" =~ ^[0-9]+$ ]]; then
   echo "error: unsupported DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_STEP=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_STEP} (expected non-negative integer)"
+  exit 1
+fi
+if ! [[ "${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "error: unsupported DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE=${DELIVERY_GATE_PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE} (expected positive integer)"
+  exit 1
+fi
+if ! [[ "${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "error: unsupported DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE=${DELIVERY_GATE_PHASE5_STRICT_FLAKY_RECOMMEND_MIN_SAMPLE} (expected positive integer)"
   exit 1
 fi
 

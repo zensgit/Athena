@@ -18,8 +18,10 @@ PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD="${PHASE5_STRICT_HOTSPOT_DURATION_S
 PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD="${PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD:-0}"
 PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE="${PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE:-0.95}"
 PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC="${PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC:-0.1}"
+PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE="${PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE:-5}"
 PHASE5_STRICT_FLAKY_RISK_RECOMMEND_PERCENTILE="${PHASE5_STRICT_FLAKY_RISK_RECOMMEND_PERCENTILE:-0.9}"
 PHASE5_STRICT_FLAKY_RISK_RECOMMEND_STEP="${PHASE5_STRICT_FLAKY_RISK_RECOMMEND_STEP:-1}"
+PHASE5_STRICT_FLAKY_RISK_RECOMMEND_MIN_SAMPLE="${PHASE5_STRICT_FLAKY_RISK_RECOMMEND_MIN_SAMPLE:-3}"
 PHASE5_RUN_START_EPOCH="$(date +%s)"
 PHASE5_RUN_START_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 PHASE5_ANALYSIS_JSON_FILE=""
@@ -42,8 +44,10 @@ echo "PHASE5_STRICT_HOTSPOT_DURATION_SEC_THRESHOLD=${PHASE5_STRICT_HOTSPOT_DURAT
 echo "PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD=${PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD}"
 echo "PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE=${PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE}"
 echo "PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC=${PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC}"
+echo "PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE=${PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE}"
 echo "PHASE5_STRICT_FLAKY_RISK_RECOMMEND_PERCENTILE=${PHASE5_STRICT_FLAKY_RISK_RECOMMEND_PERCENTILE}"
 echo "PHASE5_STRICT_FLAKY_RISK_RECOMMEND_STEP=${PHASE5_STRICT_FLAKY_RISK_RECOMMEND_STEP}"
+echo "PHASE5_STRICT_FLAKY_RISK_RECOMMEND_MIN_SAMPLE=${PHASE5_STRICT_FLAKY_RISK_RECOMMEND_MIN_SAMPLE}"
 
 strip_ansi_file() {
   local log_file="$1"
@@ -88,8 +92,10 @@ write_phase5_summary_artifact() {
   PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD="${PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD}" \
   PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE="${PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE}" \
   PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC="${PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC}" \
+  PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE="${PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE}" \
   PHASE5_STRICT_FLAKY_RISK_RECOMMEND_PERCENTILE="${PHASE5_STRICT_FLAKY_RISK_RECOMMEND_PERCENTILE}" \
   PHASE5_STRICT_FLAKY_RISK_RECOMMEND_STEP="${PHASE5_STRICT_FLAKY_RISK_RECOMMEND_STEP}" \
+  PHASE5_STRICT_FLAKY_RISK_RECOMMEND_MIN_SAMPLE="${PHASE5_STRICT_FLAKY_RISK_RECOMMEND_MIN_SAMPLE}" \
   PHASE5_VALIDATE_RECOVERY_REGISTRY_ONLY="${PHASE5_VALIDATE_RECOVERY_REGISTRY_ONLY}" \
   PHASE5_USE_EXISTING_UI="${PHASE5_USE_EXISTING_UI}" \
   PHASE5_RECOVERY_EVENTS_FILE="${PHASE5_RECOVERY_EVENTS_FILE}" \
@@ -186,14 +192,20 @@ const summary = {
     flaky_risk_score_threshold: parseIntSafe(process.env.PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD, 0),
     hotspot_recommend_percentile: parseNumberSafe(process.env.PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE, 0.95),
     hotspot_recommend_padding_sec: parseNumberSafe(process.env.PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC, 0.1),
+    hotspot_recommend_min_sample: parseIntSafe(process.env.PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE, 5),
     flaky_recommend_percentile: parseNumberSafe(process.env.PHASE5_STRICT_FLAKY_RISK_RECOMMEND_PERCENTILE, 0.9),
     flaky_recommend_step: parseIntSafe(process.env.PHASE5_STRICT_FLAKY_RISK_RECOMMEND_STEP, 1),
+    flaky_recommend_min_sample: parseIntSafe(process.env.PHASE5_STRICT_FLAKY_RISK_RECOMMEND_MIN_SAMPLE, 3),
     hotspot_recommended_threshold: parseNumberSafe(analysis.strict_hotspot_recommended_threshold, 0),
     hotspot_recommended_percentile: parseNumberSafe(analysis.strict_hotspot_recommended_percentile, 0),
     hotspot_recommended_sample: parseNumberSafe(analysis.strict_hotspot_recommended_sample, 0),
+    hotspot_recommended_count: parseIntSafe(analysis.strict_hotspot_recommended_count, 0),
+    hotspot_recommendation_low_confidence: Boolean(analysis.strict_hotspot_recommendation_low_confidence),
     flaky_recommended_threshold: parseIntSafe(analysis.strict_flaky_risk_recommended_threshold, 0),
     flaky_recommended_percentile: parseNumberSafe(analysis.strict_flaky_risk_recommended_percentile, 0),
     flaky_recommended_sample: parseNumberSafe(analysis.strict_flaky_risk_recommended_sample, 0),
+    flaky_recommended_count: parseIntSafe(analysis.strict_flaky_risk_recommended_count, 0),
+    flaky_recommendation_low_confidence: Boolean(analysis.strict_flaky_risk_recommendation_low_confidence),
     hotspot_match_count: parseIntSafe(analysis.strict_hotspot_match_count, 0),
     flaky_risk_match_count: parseIntSafe(analysis.strict_flaky_risk_match_count, 0),
     strict_guard_failed: Boolean(analysis.strict_guard_failed),
@@ -275,8 +287,10 @@ print_playwright_timing_summary() {
     "${PHASE5_STRICT_FLAKY_RISK_SCORE_THRESHOLD}" \
     "${PHASE5_STRICT_HOTSPOT_RECOMMEND_PERCENTILE}" \
     "${PHASE5_STRICT_HOTSPOT_RECOMMEND_PADDING_SEC}" \
+    "${PHASE5_STRICT_HOTSPOT_RECOMMEND_MIN_SAMPLE}" \
     "${PHASE5_STRICT_FLAKY_RISK_RECOMMEND_PERCENTILE}" \
-    "${PHASE5_STRICT_FLAKY_RISK_RECOMMEND_STEP}" <<'NODE'
+    "${PHASE5_STRICT_FLAKY_RISK_RECOMMEND_STEP}" \
+    "${PHASE5_STRICT_FLAKY_RISK_RECOMMEND_MIN_SAMPLE}" <<'NODE'
 const fs = require('fs');
 
 const logFile = process.argv[2];
@@ -287,8 +301,10 @@ const strictHotspotThresholdRaw = process.argv[6] || '0';
 const strictFlakyRiskScoreThresholdRaw = process.argv[7] || '0';
 const hotspotRecommendPercentileRaw = process.argv[8] || '0.95';
 const hotspotRecommendPaddingSecRaw = process.argv[9] || '0.1';
-const flakyRecommendPercentileRaw = process.argv[10] || '0.9';
-const flakyRecommendStepRaw = process.argv[11] || '1';
+const hotspotRecommendMinSampleRaw = process.argv[10] || '5';
+const flakyRecommendPercentileRaw = process.argv[11] || '0.9';
+const flakyRecommendStepRaw = process.argv[12] || '1';
+const flakyRecommendMinSampleRaw = process.argv[13] || '3';
 
 const parsePositiveNumber = (rawValue) => {
   const value = Number.parseFloat(rawValue ?? '');
@@ -306,6 +322,13 @@ const parseNonNegativeInt = (rawValue, fallback = 0) => {
   const value = Number.parseInt(rawValue ?? '', 10);
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 };
+const parsePositiveIntWithFallback = (rawValue, fallback) => {
+  const value = Number.parseInt(rawValue ?? '', 10);
+  if (!Number.isFinite(value) || value <= 0) {
+    return fallback;
+  }
+  return value;
+};
 const parsePercentile = (rawValue, fallback) => {
   const value = Number.parseFloat(rawValue ?? '');
   if (!Number.isFinite(value) || value <= 0 || value > 1) {
@@ -317,8 +340,10 @@ const strictHotspotThresholdSeconds = parsePositiveNumber(strictHotspotThreshold
 const strictFlakyRiskScoreThreshold = parsePositiveInt(strictFlakyRiskScoreThresholdRaw);
 const hotspotRecommendPercentile = parsePercentile(hotspotRecommendPercentileRaw, 0.95);
 const hotspotRecommendPaddingSec = parseNonNegativeNumber(hotspotRecommendPaddingSecRaw, 0.1);
+const hotspotRecommendMinSample = parsePositiveIntWithFallback(hotspotRecommendMinSampleRaw, 5);
 const flakyRecommendPercentile = parsePercentile(flakyRecommendPercentileRaw, 0.9);
 const flakyRecommendStep = parseNonNegativeInt(flakyRecommendStepRaw, 1);
+const flakyRecommendMinSample = parsePositiveIntWithFallback(flakyRecommendMinSampleRaw, 3);
 
 const analysis = {
   schema_version: 1,
@@ -336,11 +361,15 @@ const analysis = {
   strict_hotspot_recommended_threshold: 0,
   strict_hotspot_recommended_percentile: 0,
   strict_hotspot_recommended_sample: 0,
+  strict_hotspot_recommended_count: 0,
+  strict_hotspot_recommendation_low_confidence: false,
   strict_flaky_risk_score_threshold: strictFlakyRiskScoreThreshold,
   strict_flaky_risk_match_count: 0,
   strict_flaky_risk_recommended_threshold: 0,
   strict_flaky_risk_recommended_percentile: 0,
   strict_flaky_risk_recommended_sample: 0,
+  strict_flaky_risk_recommended_count: 0,
+  strict_flaky_risk_recommendation_low_confidence: false,
   strict_guard_failed: false,
   strict_failure_reasons: [],
 };
@@ -411,22 +440,45 @@ if (analysis.duration_hotspots.length === 0) {
 }
 
 const durationValuesAsc = tests.map((item) => item.durationSec).sort((left, right) => left - right);
+analysis.strict_hotspot_recommended_percentile = hotspotRecommendPercentile;
+analysis.strict_hotspot_recommended_count = durationValuesAsc.length;
 if (durationValuesAsc.length > 0) {
   const hotspotRecommendationSample = percentileFromSorted(durationValuesAsc, hotspotRecommendPercentile);
-  const hotspotRecommendedThreshold = Math.max(
-    hotspotRecommendationSample + hotspotRecommendPaddingSec,
-    strictHotspotThresholdSeconds > 0 ? strictHotspotThresholdSeconds + hotspotRecommendPaddingSec : hotspotRecommendPaddingSec
+  const hotspotPercentileThreshold = hotspotRecommendationSample + hotspotRecommendPaddingSec;
+  const hotspotStrictFloorThreshold =
+    strictHotspotThresholdSeconds > 0 ? strictHotspotThresholdSeconds + hotspotRecommendPaddingSec : hotspotRecommendPaddingSec;
+  let hotspotRecommendedThreshold = Math.max(
+    hotspotPercentileThreshold,
+    hotspotStrictFloorThreshold
   );
-  analysis.strict_hotspot_recommended_percentile = hotspotRecommendPercentile;
+  const hotspotLowConfidence = durationValuesAsc.length < hotspotRecommendMinSample;
+  if (hotspotLowConfidence) {
+    analysis.strict_hotspot_recommendation_low_confidence = true;
+  }
+  if (hotspotLowConfidence && strictHotspotThresholdSeconds > 0) {
+    hotspotRecommendedThreshold = strictHotspotThresholdSeconds + hotspotRecommendPaddingSec;
+  }
   analysis.strict_hotspot_recommended_sample = Number(hotspotRecommendationSample.toFixed(3));
   analysis.strict_hotspot_recommended_threshold = Number(hotspotRecommendedThreshold.toFixed(1));
   const hotspotPercentileLabel = `p${Math.round(hotspotRecommendPercentile * 100)}`;
-  console.log(
-    `phase5_regression: strict hotspot recommendation ${hotspotPercentileLabel}=${hotspotRecommendationSample.toFixed(2)}s (+${hotspotRecommendPaddingSec.toFixed(2)}s) => threshold >=${analysis.strict_hotspot_recommended_threshold.toFixed(1)}s`
-  );
+  if (hotspotLowConfidence && strictHotspotThresholdSeconds > 0) {
+    console.log(
+      `phase5_regression: strict hotspot recommendation low-confidence sample(${durationValuesAsc.length}<${hotspotRecommendMinSample}), fallback strict+padding => threshold >=${analysis.strict_hotspot_recommended_threshold.toFixed(1)}s`
+    );
+  } else {
+    const hotspotLowConfidenceSuffix = hotspotLowConfidence ? ` [low-confidence sample(${durationValuesAsc.length}<${hotspotRecommendMinSample})]` : '';
+    console.log(
+      `phase5_regression: strict hotspot recommendation ${hotspotPercentileLabel}=${hotspotRecommendationSample.toFixed(2)}s (+${hotspotRecommendPaddingSec.toFixed(2)}s, count=${durationValuesAsc.length}) => threshold >=${analysis.strict_hotspot_recommended_threshold.toFixed(1)}s${hotspotLowConfidenceSuffix}`
+    );
+  }
 } else if (strictHotspotThresholdSeconds > 0) {
-  analysis.strict_hotspot_recommended_percentile = hotspotRecommendPercentile;
+  analysis.strict_hotspot_recommendation_low_confidence = true;
   analysis.strict_hotspot_recommended_threshold = Number((strictHotspotThresholdSeconds + hotspotRecommendPaddingSec).toFixed(1));
+  console.log(
+    `phase5_regression: strict hotspot recommendation low-confidence sample(0<${hotspotRecommendMinSample}), fallback strict+padding => threshold >=${analysis.strict_hotspot_recommended_threshold.toFixed(1)}s`
+  );
+} else if (durationValuesAsc.length < hotspotRecommendMinSample) {
+  analysis.strict_hotspot_recommendation_low_confidence = true;
 }
 
 const riskCandidates = tests
@@ -467,22 +519,45 @@ if (analysis.flaky_risk_candidates.length > 0) {
 }
 
 const flakyScoresAsc = riskCandidates.map((item) => item.score).sort((left, right) => left - right);
+analysis.strict_flaky_risk_recommended_percentile = flakyRecommendPercentile;
+analysis.strict_flaky_risk_recommended_count = flakyScoresAsc.length;
 if (flakyScoresAsc.length > 0) {
   const flakyRecommendationSample = percentileFromSorted(flakyScoresAsc, flakyRecommendPercentile);
-  const flakyRecommendedThreshold = Math.max(
-    Math.ceil(flakyRecommendationSample),
-    strictFlakyRiskScoreThreshold > 0 ? strictFlakyRiskScoreThreshold + flakyRecommendStep : flakyRecommendStep
+  const flakyPercentileThreshold = Math.ceil(flakyRecommendationSample);
+  const flakyStrictFloorThreshold =
+    strictFlakyRiskScoreThreshold > 0 ? strictFlakyRiskScoreThreshold + flakyRecommendStep : flakyRecommendStep;
+  let flakyRecommendedThreshold = Math.max(
+    flakyPercentileThreshold,
+    flakyStrictFloorThreshold
   );
-  analysis.strict_flaky_risk_recommended_percentile = flakyRecommendPercentile;
+  const flakyLowConfidence = flakyScoresAsc.length < flakyRecommendMinSample;
+  if (flakyLowConfidence) {
+    analysis.strict_flaky_risk_recommendation_low_confidence = true;
+  }
+  if (flakyLowConfidence && strictFlakyRiskScoreThreshold > 0) {
+    flakyRecommendedThreshold = strictFlakyRiskScoreThreshold + flakyRecommendStep;
+  }
   analysis.strict_flaky_risk_recommended_sample = Number(flakyRecommendationSample.toFixed(3));
   analysis.strict_flaky_risk_recommended_threshold = flakyRecommendedThreshold;
   const flakyPercentileLabel = `p${Math.round(flakyRecommendPercentile * 100)}`;
-  console.log(
-    `phase5_regression: strict flaky-risk recommendation ${flakyPercentileLabel}=${flakyRecommendationSample.toFixed(2)} (+step ${flakyRecommendStep}) => threshold >=${flakyRecommendedThreshold}`
-  );
+  if (flakyLowConfidence && strictFlakyRiskScoreThreshold > 0) {
+    console.log(
+      `phase5_regression: strict flaky-risk recommendation low-confidence sample(${flakyScoresAsc.length}<${flakyRecommendMinSample}), fallback strict+step => threshold >=${flakyRecommendedThreshold}`
+    );
+  } else {
+    const flakyLowConfidenceSuffix = flakyLowConfidence ? ` [low-confidence sample(${flakyScoresAsc.length}<${flakyRecommendMinSample})]` : '';
+    console.log(
+      `phase5_regression: strict flaky-risk recommendation ${flakyPercentileLabel}=${flakyRecommendationSample.toFixed(2)} (+step ${flakyRecommendStep}, count=${flakyScoresAsc.length}) => threshold >=${flakyRecommendedThreshold}${flakyLowConfidenceSuffix}`
+    );
+  }
 } else if (strictFlakyRiskScoreThreshold > 0) {
-  analysis.strict_flaky_risk_recommended_percentile = flakyRecommendPercentile;
+  analysis.strict_flaky_risk_recommendation_low_confidence = true;
   analysis.strict_flaky_risk_recommended_threshold = strictFlakyRiskScoreThreshold + flakyRecommendStep;
+  console.log(
+    `phase5_regression: strict flaky-risk recommendation low-confidence sample(0<${flakyRecommendMinSample}), fallback strict+step => threshold >=${analysis.strict_flaky_risk_recommended_threshold}`
+  );
+} else if (flakyScoresAsc.length < flakyRecommendMinSample) {
+  analysis.strict_flaky_risk_recommendation_low_confidence = true;
 }
 
 const retrySignals = lines.filter((line) => /retry #\d+/i.test(line)).length;
