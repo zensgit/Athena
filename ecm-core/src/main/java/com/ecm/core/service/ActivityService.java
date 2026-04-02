@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -19,7 +20,10 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ActivityService {
 
+    private static final UUID EMPTY_NODE_SENTINEL = UUID.fromString("00000000-0000-0000-0000-000000000000");
+
     private final ActivityRepository activityRepository;
+    private final FollowingService followingService;
 
     /**
      * Post a new activity entry.
@@ -53,6 +57,31 @@ public class ActivityService {
     @Transactional(readOnly = true)
     public Page<Activity> getSiteFeed(String siteId, Pageable pageable) {
         return activityRepository.findBySiteIdOrderByPostedAtDesc(siteId, pageable);
+    }
+
+    /**
+     * Get personalized activity feed based on followed users, sites, and nodes.
+     */
+    @Transactional(readOnly = true)
+    public Page<Activity> getFollowingFeed(String userId, Pageable pageable) {
+        FollowingService.FollowingTargets targets = followingService.getFollowingTargets(userId);
+        boolean includeUsers = !targets.userIds().isEmpty();
+        boolean includeSites = !targets.siteIds().isEmpty();
+        boolean includeNodes = !targets.nodeIds().isEmpty();
+
+        if (!includeUsers && !includeSites && !includeNodes) {
+            return Page.empty(pageable);
+        }
+
+        return activityRepository.findFollowingFeed(
+            includeUsers,
+            includeUsers ? targets.userIds() : List.of("__no-followed-user__"),
+            includeSites,
+            includeSites ? targets.siteIds() : List.of("__no-followed-site__"),
+            includeNodes,
+            includeNodes ? targets.nodeIds() : List.of(EMPTY_NODE_SENTINEL),
+            pageable
+        );
     }
 
     /**

@@ -2,6 +2,7 @@ package com.ecm.core.controller;
 
 import com.ecm.core.entity.Activity;
 import com.ecm.core.service.ActivityService;
+import com.ecm.core.service.SecurityService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -33,10 +34,11 @@ class ActivityControllerTest {
 
     private MockMvc mockMvc;
     @Mock private ActivityService activityService;
+    @Mock private SecurityService securityService;
 
     @BeforeEach
     void setUp() {
-        ActivityController controller = new ActivityController(activityService);
+        ActivityController controller = new ActivityController(activityService, securityService);
         ObjectMapper objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
         MappingJackson2HttpMessageConverter converter = new MappingJackson2HttpMessageConverter(objectMapper);
@@ -81,6 +83,22 @@ class ActivityControllerTest {
         mockMvc.perform(get("/api/v1/activities/sites/finance").param("page", "0").param("size", "20"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.content[0].siteId").value("finance"));
+    }
+
+    @Test
+    @DisplayName("GET /activities/following returns personalized feed")
+    void followingFeedReturnsActivities() throws Exception {
+        Activity a = activity("site.member.added", "alice", "report.pdf");
+        a.setSiteId("engineering");
+        when(securityService.getCurrentUser()).thenReturn("alice");
+        when(activityService.getFollowingFeed(eq("alice"), any()))
+            .thenReturn(new PageImpl<>(List.of(a), PageRequest.of(0, 20), 1));
+
+        mockMvc.perform(get("/api/v1/activities/following").param("page", "0").param("size", "20"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.content.length()").value(1))
+            .andExpect(jsonPath("$.content[0].activityType").value("site.member.added"))
+            .andExpect(jsonPath("$.content[0].siteId").value("engineering"));
     }
 
     @Test

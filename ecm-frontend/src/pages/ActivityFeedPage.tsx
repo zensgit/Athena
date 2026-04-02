@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useDeferredValue, useEffect, useState } from 'react';
 import {
   Box,
   Button,
@@ -21,8 +21,14 @@ import { toast } from 'react-toastify';
 import activityService, { ActivityPage } from 'services/activityService';
 import { useAppSelector } from 'store';
 import authService from 'services/authService';
+import {
+  formatActivityLabel,
+  formatActivitySummary,
+  getActivityLinkTargets,
+  matchesActivityFilter,
+} from 'utils/siteActivityUtils';
 
-type FeedScope = 'global' | 'mine' | 'site';
+type FeedScope = 'global' | 'mine' | 'site' | 'following';
 
 const ActivityFeedPage: React.FC = () => {
   const { user } = useAppSelector((state) => state.auth);
@@ -30,23 +36,48 @@ const ActivityFeedPage: React.FC = () => {
 
   const [scope, setScope] = useState<FeedScope>('mine');
   const [siteId, setSiteId] = useState('');
+  const [activityFilter, setActivityFilter] = useState('');
   const [page, setPage] = useState(0);
   const [data, setData] = useState<ActivityPage | null>(null);
   const [loading, setLoading] = useState(false);
   const [queryApplied, setQueryApplied] = useState(false);
+  const deferredActivityFilter = useDeferredValue(activityFilter.trim());
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const preselectedSiteId = params.get('siteId')?.trim();
     const preselectedScope = params.get('scope')?.trim();
+    const preselectedFilter = params.get('type')?.trim();
     if (preselectedSiteId) {
       setScope('site');
       setSiteId(preselectedSiteId);
-    } else if (preselectedScope === 'global' || preselectedScope === 'mine' || preselectedScope === 'site') {
+    } else if (preselectedScope === 'global' || preselectedScope === 'mine' || preselectedScope === 'site' || preselectedScope === 'following') {
       setScope(preselectedScope);
+    }
+    if (preselectedFilter) {
+      setActivityFilter(preselectedFilter);
     }
     setQueryApplied(true);
   }, []);
+
+  useEffect(() => {
+    if (!queryApplied) return;
+    const params = new URLSearchParams(window.location.search);
+    params.set('scope', scope);
+    if (scope === 'site' && siteId.trim()) {
+      params.set('siteId', siteId.trim());
+    } else {
+      params.delete('siteId');
+    }
+    if (activityFilter.trim()) {
+      params.set('type', activityFilter.trim());
+    } else {
+      params.delete('type');
+    }
+    const nextSearch = params.toString();
+    const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}`;
+    window.history.replaceState(null, '', nextUrl);
+  }, [activityFilter, queryApplied, scope, siteId]);
 
   const load = async () => {
     setLoading(true);
@@ -54,6 +85,8 @@ const ActivityFeedPage: React.FC = () => {
       let result: ActivityPage;
       if (scope === 'mine' && effectiveUser?.username) {
         result = await activityService.getUserFeed(effectiveUser.username, page);
+      } else if (scope === 'following') {
+        result = await activityService.getFollowingFeed(page);
       } else if (scope === 'site' && siteId.trim()) {
         result = await activityService.getSiteFeed(siteId.trim(), page);
       } else {
@@ -76,6 +109,8 @@ const ActivityFeedPage: React.FC = () => {
     return 'default' as const;
   };
 
+  const visibleActivities = data?.content.filter((activity) => matchesActivityFilter(activity, deferredActivityFilter)) ?? [];
+
   return (
     <Box maxWidth={900}>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
@@ -88,6 +123,7 @@ const ActivityFeedPage: React.FC = () => {
             <InputLabel>Scope</InputLabel>
             <Select label="Scope" value={scope} onChange={(e) => { setScope(e.target.value as FeedScope); setPage(0); }}>
               <MenuItem value="mine">My Activity</MenuItem>
+              <MenuItem value="following">Following</MenuItem>
               <MenuItem value="global">Global</MenuItem>
               <MenuItem value="site">By Site</MenuItem>
             </Select>
@@ -102,6 +138,16 @@ const ActivityFeedPage: React.FC = () => {
               sx={{ width: 140 }}
             />
           )}
+          <TextField
+            size="small"
+            label="Type Filter"
+            value={activityFilter}
+            onChange={(event) => {
+              setActivityFilter(event.target.value);
+              setPage(0);
+            }}
+            sx={{ width: 180 }}
+          />
           <Button variant="outlined" startIcon={<Refresh />} onClick={() => void load()} disabled={loading}>Refresh</Button>
         </Stack>
       </Box>
@@ -109,23 +155,35 @@ const ActivityFeedPage: React.FC = () => {
       {loading ? (
         <Box display="flex" justifyContent="center" p={4}><CircularProgress /></Box>
       ) : (
-        <>
-          <Stack spacing={1.5}>
-            {data?.content.map((activity) => (
+          <>
+            <Stack spacing={1.5}>
+            {visibleActivities.map((activity) => (
               <Card key={activity.id} variant="outlined">
                 <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
                   <Box display="flex" justifyContent="space-between" alignItems="flex-start">
                     <Box display="flex" gap={1.5} alignItems="center">
-                      <Chip label={activity.activityType} size="small" color={activityColor(activity.activityType)} variant="outlined" />
+                      <Chip label={formatActivityLabel(activity.activityType)} size="small" color={activityColor(activity.activityType)} variant="outlined" />
                       <Box>
                         <>
                           <Typography variant="body2">
                             <strong>{activity.userId}</strong>
                             {activity.nodeName && <> &middot; <em>{activity.nodeName}</em></>}
                           </Typography>
-                          {activity.summary?.action && (
-                            <Typography variant="caption" color="text.secondary">{String(activity.summary.action)}</Typography>
-                          )}
+                          <Typography variant="caption" color="text.secondary" display="block">
+                            {formatActivitySummary(activity)}
+                          </Typography>
+                          <Stack direction="row" spacing={0.75} mt={0.75}>
+                            {getActivityLinkTargets(activity).map((target) => (
+                              <Button
+                                key={`${activity.id}-${target.label}`}
+                                size="small"
+                                variant="text"
+                                onClick={() => window.open(target.href, '_blank')}
+                              >
+                                {target.label}
+                              </Button>
+                            ))}
+                          </Stack>
                         </>
                       </Box>
                     </Box>
@@ -136,9 +194,11 @@ const ActivityFeedPage: React.FC = () => {
                 </CardContent>
               </Card>
             ))}
-            {(!data || data.content.length === 0) && (
+            {(!data || visibleActivities.length === 0) && (
               <Paper sx={{ p: 4, textAlign: 'center' }}>
-                <Typography color="text.secondary">No activities to display</Typography>
+                <Typography color="text.secondary">
+                  {data && data.content.length > 0 ? 'No activities match the current filter' : 'No activities to display'}
+                </Typography>
               </Paper>
             )}
           </Stack>

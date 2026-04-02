@@ -27,6 +27,24 @@ public interface ActivityRepository extends JpaRepository<Activity, UUID> {
     @Query("SELECT a FROM Activity a WHERE a.userId IN :userIds ORDER BY a.postedAt DESC")
     Page<Activity> findByUserIdInOrderByPostedAtDesc(@Param("userIds") List<String> userIds, Pageable pageable);
 
+    @Query("""
+        SELECT a
+        FROM Activity a
+        WHERE (:includeUsers = true AND a.userId IN :userIds)
+           OR (:includeSites = true AND a.siteId IN :siteIds)
+           OR (:includeNodes = true AND a.nodeId IN :nodeIds)
+        ORDER BY a.postedAt DESC
+        """)
+    Page<Activity> findFollowingFeed(
+        @Param("includeUsers") boolean includeUsers,
+        @Param("userIds") List<String> userIds,
+        @Param("includeSites") boolean includeSites,
+        @Param("siteIds") List<String> siteIds,
+        @Param("includeNodes") boolean includeNodes,
+        @Param("nodeIds") List<UUID> nodeIds,
+        Pageable pageable
+    );
+
     @Modifying
     @Query("DELETE FROM Activity a WHERE a.postedAt < :before")
     int deleteOlderThan(@Param("before") LocalDateTime before);

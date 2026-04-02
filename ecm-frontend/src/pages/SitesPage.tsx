@@ -27,17 +27,36 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { Add, Delete, OpenInNew, Refresh, Archive } from '@mui/icons-material';
+import { Add, Delete, OpenInNew, Refresh, Archive, NotificationsActive, NotificationsOff } from '@mui/icons-material';
 import { toast } from 'react-toastify';
 import activityService, { ActivityDto } from 'services/activityService';
-import siteService, { CreateSiteRequest, MembershipRequestDto, SiteDto, SiteMemberDto, SiteVisibility } from 'services/siteService';
+import followingService from 'services/followingService';
+import siteService, {
+  CreateSiteRequest,
+  MembershipRequestDto,
+  SiteDto,
+  SiteMemberDto,
+  SiteMemberRole,
+  SiteVisibility,
+} from 'services/siteService';
 import { useAppSelector } from 'store';
 import authService from 'services/authService';
+import {
+  formatActivityLabel,
+  formatActivitySummary,
+  getActivityLinkTargets,
+} from 'utils/siteActivityUtils';
+
+const SITE_MEMBER_ROLE_OPTIONS: SiteMemberRole[] = ['MANAGER', 'COLLABORATOR', 'CONTRIBUTOR', 'CONSUMER'];
 
 const SitesPage: React.FC = () => {
   const { user } = useAppSelector((state) => state.auth);
   const effectiveUser = user ?? authService.getCurrentUser();
   const isAdmin = Boolean(effectiveUser?.roles?.includes('ROLE_ADMIN'));
+  const preselectedSiteId = React.useMemo(
+    () => new URLSearchParams(window.location.search).get('siteId')?.trim() ?? '',
+    []
+  );
 
   const [sites, setSites] = useState<SiteDto[]>([]);
   const [requests, setRequests] = useState<MembershipRequestDto[]>([]);
@@ -49,8 +68,10 @@ const SitesPage: React.FC = () => {
   const [members, setMembers] = useState<SiteMemberDto[]>([]);
   const [siteRequests, setSiteRequests] = useState<MembershipRequestDto[]>([]);
   const [siteActivity, setSiteActivity] = useState<ActivityDto[]>([]);
+  const [isFollowingSelectedSite, setIsFollowingSelectedSite] = useState(false);
+  const [followLoading, setFollowLoading] = useState(false);
   const [addMemberName, setAddMemberName] = useState('');
-  const [addMemberRole, setAddMemberRole] = useState('CONSUMER');
+  const [addMemberRole, setAddMemberRole] = useState<SiteMemberRole>('CONSUMER');
 
   // create dialog
   const [createOpen, setCreateOpen] = useState(false);
@@ -59,7 +80,11 @@ const SitesPage: React.FC = () => {
 
   // request dialog
   const [requestOpen, setRequestOpen] = useState(false);
-  const [requestForm, setRequestForm] = useState({ siteId: '', message: '', role: 'CONSUMER' });
+  const [requestForm, setRequestForm] = useState<{ message: string; role: SiteMemberRole; siteId: string }>({
+    siteId: '',
+    message: '',
+    role: 'CONSUMER',
+  });
 
   const load = async () => {
     setLoading(true);
@@ -80,18 +105,63 @@ const SitesPage: React.FC = () => {
 
   useEffect(() => { void load(); }, [includeArchived]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (!preselectedSiteId || selectedSiteId === preselectedSiteId) {
+      return;
+    }
+    if (sites.some((site) => site.siteId === preselectedSiteId)) {
+      void loadSiteDetail(preselectedSiteId);
+    }
+  }, [preselectedSiteId, selectedSiteId, sites]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (selectedSiteId) {
+      params.set('siteId', selectedSiteId);
+    } else {
+      params.delete('siteId');
+    }
+    const nextSearch = params.toString();
+    const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}`;
+    window.history.replaceState(null, '', nextUrl);
+  }, [selectedSiteId]);
+
   const loadSiteDetail = async (siteId: string) => {
     setSelectedSiteId(siteId);
     try {
-      const [m, r, a] = await Promise.all([
+      const [m, r, a, following] = await Promise.all([
         siteService.getMembers(siteId),
         siteService.getMembershipRequests(siteId),
         activityService.getSiteFeed(siteId, 0, 5).catch(() => ({ content: [] } as { content: ActivityDto[] })),
+        followingService.check('SITE', siteId).catch(() => false),
       ]);
       setMembers(m);
       setSiteRequests(r);
       setSiteActivity(a.content || []);
-    } catch { /* silent */ }
+      setIsFollowingSelectedSite(following);
+    } catch {
+      setIsFollowingSelectedSite(false);
+    }
+  };
+
+  const handleToggleFollow = async () => {
+    if (!selectedSiteId) return;
+    setFollowLoading(true);
+    try {
+      if (isFollowingSelectedSite) {
+        await followingService.unfollow('SITE', selectedSiteId);
+        setIsFollowingSelectedSite(false);
+        toast.success('Site unfollowed');
+      } else {
+        await followingService.follow('SITE', selectedSiteId);
+        setIsFollowingSelectedSite(true);
+        toast.success('Site followed');
+      }
+    } catch {
+      toast.error('Failed to update following');
+    } finally {
+      setFollowLoading(false);
+    }
   };
 
   const handleAddMember = async () => {
@@ -111,6 +181,15 @@ const SitesPage: React.FC = () => {
       toast.success('Member removed');
       await loadSiteDetail(selectedSiteId);
     } catch { toast.error('Failed to remove member'); }
+  };
+
+  const handleRoleChange = async (username: string, currentRole: SiteMemberRole, nextRole: SiteMemberRole) => {
+    if (!selectedSiteId || currentRole === nextRole) return;
+    try {
+      await siteService.updateMemberRole(selectedSiteId, username, nextRole);
+      toast.success('Member role updated');
+      await loadSiteDetail(selectedSiteId);
+    } catch { toast.error('Failed to update member role'); }
   };
 
   const handleCreate = async () => {
@@ -158,6 +237,9 @@ const SitesPage: React.FC = () => {
       await siteService.approveMembershipRequest(siteId, username);
       toast.success('Approved');
       await load();
+      if (selectedSiteId === siteId) {
+        await loadSiteDetail(siteId);
+      }
     } catch { toast.error('Failed to approve'); }
   };
 
@@ -166,6 +248,9 @@ const SitesPage: React.FC = () => {
       await siteService.rejectMembershipRequest(siteId, username);
       toast.success('Rejected');
       await load();
+      if (selectedSiteId === siteId) {
+        await loadSiteDetail(siteId);
+      }
     } catch { toast.error('Failed to reject'); }
   };
 
@@ -174,6 +259,9 @@ const SitesPage: React.FC = () => {
       await siteService.withdrawMembershipRequest(siteId);
       toast.success('Request withdrawn');
       await load();
+      if (selectedSiteId === siteId) {
+        await loadSiteDetail(siteId);
+      }
     } catch { toast.error('Failed to withdraw'); }
   };
 
@@ -307,18 +395,29 @@ const SitesPage: React.FC = () => {
               <CardContent>
                 <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
                   <Typography variant="h6">Members of {selectedSiteId} ({members.length})</Typography>
-                  {selectedSite?.rootFolderId && (
-                    <Button size="small" startIcon={<OpenInNew />} onClick={() => window.open(`/browse/${selectedSite.rootFolderId}`, '_blank')}>
-                      Open Workspace
+                  <Stack direction="row" spacing={1}>
+                    <Button
+                      size="small"
+                      variant={isFollowingSelectedSite ? 'contained' : 'outlined'}
+                      startIcon={isFollowingSelectedSite ? <NotificationsActive /> : <NotificationsOff />}
+                      onClick={() => void handleToggleFollow()}
+                      disabled={followLoading}
+                    >
+                      {isFollowingSelectedSite ? 'Following' : 'Follow Site'}
                     </Button>
-                  )}
+                    {selectedSite?.rootFolderId && (
+                      <Button size="small" startIcon={<OpenInNew />} onClick={() => window.open(`/browse/${selectedSite.rootFolderId}`, '_blank')}>
+                        Open Workspace
+                      </Button>
+                    )}
+                  </Stack>
                 </Box>
                 {isAdmin && (
                   <Box display="flex" gap={1} mb={1}>
                     <TextField size="small" label="Username" value={addMemberName} onChange={(e) => setAddMemberName(e.target.value)} sx={{ flex: 1 }} />
                     <FormControl size="small" sx={{ minWidth: 130 }}>
                       <InputLabel>Role</InputLabel>
-                      <Select label="Role" value={addMemberRole} onChange={(e) => setAddMemberRole(e.target.value)}>
+                      <Select label="Role" value={addMemberRole} onChange={(e) => setAddMemberRole(e.target.value as SiteMemberRole)}>
                         <MenuItem value="MANAGER">Manager</MenuItem>
                         <MenuItem value="COLLABORATOR">Collaborator</MenuItem>
                         <MenuItem value="CONTRIBUTOR">Contributor</MenuItem>
@@ -342,7 +441,23 @@ const SitesPage: React.FC = () => {
                       {members.map((m) => (
                         <TableRow key={m.id} hover>
                           <TableCell>{m.username}</TableCell>
-                          <TableCell><Chip label={m.role} size="small" variant="outlined" /></TableCell>
+                          <TableCell>
+                            {isAdmin ? (
+                              <FormControl size="small" variant="standard" sx={{ minWidth: 148 }}>
+                                <Select
+                                  disableUnderline
+                                  value={m.role}
+                                  onChange={(event) => void handleRoleChange(m.username, m.role, event.target.value as SiteMemberRole)}
+                                >
+                                  {SITE_MEMBER_ROLE_OPTIONS.map((role) => (
+                                    <MenuItem key={role} value={role}>{role}</MenuItem>
+                                  ))}
+                                </Select>
+                              </FormControl>
+                            ) : (
+                              <Chip label={m.role} size="small" variant="outlined" />
+                            )}
+                          </TableCell>
                           <TableCell>{m.joinedAt ? new Date(m.joinedAt).toLocaleDateString() : '-'}</TableCell>
                           {isAdmin && (
                             <TableCell align="right">
@@ -385,16 +500,28 @@ const SitesPage: React.FC = () => {
                           <Box display="flex" justifyContent="space-between" alignItems="flex-start" gap={1}>
                             <Box>
                               <>
-                                <Typography variant="body2" fontWeight={500}>{activity.activityType}</Typography>
+                                <Typography variant="body2" fontWeight={500}>{formatActivityLabel(activity.activityType)}</Typography>
                                 <Typography variant="caption" color="text.secondary">
                                   {activity.userId}
                                   {activity.nodeName ? ` · ${activity.nodeName}` : ''}
                                 </Typography>
-                                {activity.summary?.action && (
-                                  <Typography variant="caption" display="block" color="text.secondary">
-                                    {String(activity.summary.action)}
-                                  </Typography>
-                                )}
+                                <Typography variant="caption" display="block" color="text.secondary">
+                                  {formatActivitySummary(activity)}
+                                </Typography>
+                                <Stack direction="row" spacing={0.75} mt={0.75}>
+                                  {getActivityLinkTargets(activity)
+                                    .filter((target) => target.label !== 'Open Site')
+                                    .map((target) => (
+                                      <Button
+                                        key={`${activity.id}-${target.label}`}
+                                        size="small"
+                                        variant="text"
+                                        onClick={() => window.open(target.href, '_blank')}
+                                      >
+                                        {target.label}
+                                      </Button>
+                                    ))}
+                                </Stack>
                               </>
                             </Box>
                             <Typography variant="caption" color="text.secondary" whiteSpace="nowrap">
@@ -479,7 +606,7 @@ const SitesPage: React.FC = () => {
             </FormControl>
             <FormControl size="small" fullWidth>
               <InputLabel>Role</InputLabel>
-              <Select label="Role" value={requestForm.role} onChange={(e) => setRequestForm((p) => ({ ...p, role: e.target.value }))}>
+              <Select label="Role" value={requestForm.role} onChange={(e) => setRequestForm((p) => ({ ...p, role: e.target.value as SiteMemberRole }))}>
                 <MenuItem value="CONSUMER">Consumer</MenuItem>
                 <MenuItem value="CONTRIBUTOR">Contributor</MenuItem>
                 <MenuItem value="COLLABORATOR">Collaborator</MenuItem>

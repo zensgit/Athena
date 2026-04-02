@@ -2,6 +2,7 @@ import api from './api';
 
 export type SiteVisibility = 'PUBLIC' | 'MODERATED' | 'PRIVATE';
 export type SiteStatus = 'ACTIVE' | 'ARCHIVED';
+export type SiteMemberRole = 'MANAGER' | 'COLLABORATOR' | 'CONTRIBUTOR' | 'CONSUMER';
 
 export interface SiteDto {
   id: string;
@@ -84,11 +85,11 @@ class SiteService {
     return api.get<SiteMemberDto[]>(`/sites/${siteId}/members`);
   }
 
-  async addMember(siteId: string, username: string, role = 'CONSUMER'): Promise<SiteMemberDto> {
+  async addMember(siteId: string, username: string, role: SiteMemberRole = 'CONSUMER'): Promise<SiteMemberDto> {
     return api.post<SiteMemberDto>(`/sites/${siteId}/members`, { username, role });
   }
 
-  async updateMemberRole(siteId: string, username: string, role: string): Promise<SiteMemberDto> {
+  async updateMemberRole(siteId: string, username: string, role: SiteMemberRole): Promise<SiteMemberDto> {
     return api.put<SiteMemberDto>(`/sites/${siteId}/members/${username}`, { role });
   }
 
@@ -112,7 +113,7 @@ export interface MembershipRequestDto {
 
 export interface CreateMembershipRequest {
   siteTitle?: string;
-  role?: string;
+  role?: SiteMemberRole;
   message?: string;
 }
 
@@ -120,7 +121,7 @@ export interface SiteMemberDto {
   id: string;
   siteId: string;
   username: string;
-  role: string;
+  role: SiteMemberRole;
   joinedAt?: string;
 }
 

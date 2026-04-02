@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="049-create-follow-subscriptions-table" author="codex">
+        <createTable tableName="follow_subscriptions">
+            <column name="id" type="${uuid_type}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="user_id" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="target_type" type="varchar(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="target_id" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="timestamp" defaultValueComputed="${now}">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <addUniqueConstraint
+            tableName="follow_subscriptions"
+            columnNames="user_id,target_type,target_id"
+            constraintName="uk_follow_subscription_user_target"/>
+
+        <createIndex indexName="idx_follow_subscription_user_id" tableName="follow_subscriptions">
+            <column name="user_id"/>
+        </createIndex>
+
+        <createIndex indexName="idx_follow_subscription_target_type_target_id" tableName="follow_subscriptions">
+            <column name="target_type"/>
+            <column name="target_id"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

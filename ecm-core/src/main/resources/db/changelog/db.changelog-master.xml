@@ -59,6 +59,7 @@
     <include file="db/changelog/changes/046-create-sites-table.xml"/>
     <include file="db/changelog/changes/047-create-site-members-table.xml"/>
     <include file="db/changelog/changes/048-create-activities-table.xml"/>
+    <include file="db/changelog/changes/049-create-follow-subscriptions-table.xml"/>
     <include file="db/changelog/changes/007-insert-initial-data.xml"/>
 
 </databaseChangeLog>

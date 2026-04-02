@@ -32,6 +32,10 @@ class ActivityService {
     return api.get<ActivityPage>(`/activities/sites/${siteId}`, { params: { page, size } });
   }
 
+  async getFollowingFeed(page = 0, size = 20): Promise<ActivityPage> {
+    return api.get<ActivityPage>('/activities/following', { params: { page, size } });
+  }
+
   async getNodeFeed(nodeId: string, page = 0, size = 20): Promise<ActivityPage> {
     return api.get<ActivityPage>(`/activities/nodes/${nodeId}`, { params: { page, size } });
   }

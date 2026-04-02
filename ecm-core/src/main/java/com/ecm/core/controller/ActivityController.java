@@ -2,6 +2,7 @@ package com.ecm.core.controller;
 
 import com.ecm.core.entity.Activity;
 import com.ecm.core.service.ActivityService;
+import com.ecm.core.service.SecurityService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -23,6 +24,7 @@ import java.util.UUID;
 public class ActivityController {
 
     private final ActivityService activityService;
+    private final SecurityService securityService;
 
     @GetMapping
     @Operation(summary = "Get global activity feed")
@@ -44,6 +46,14 @@ public class ActivityController {
             @Parameter(description = "Site ID") @PathVariable String siteId,
             Pageable pageable) {
         return ResponseEntity.ok(activityService.getSiteFeed(siteId, pageable).map(ActivityDto::from));
+    }
+
+    @GetMapping("/following")
+    @Operation(summary = "Get personalized feed for followed users, sites, and nodes")
+    public ResponseEntity<Page<ActivityDto>> getFollowingFeed(Pageable pageable) {
+        return ResponseEntity.ok(
+            activityService.getFollowingFeed(securityService.getCurrentUser(), pageable).map(ActivityDto::from)
+        );
     }
 
     @GetMapping("/nodes/{nodeId}")
