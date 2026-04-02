@@ -1,4 +1,5 @@
 import { SearchPrefill } from 'store/slices/uiSlice';
+import { parseAdvancedSearchUrlState, resolveModifiedFromDate } from './advancedSearchStateUtils';
 
 const PREVIEW_STATUS_ALIAS_MAP: Record<string, string> = {
   IN_PROGRESS: 'PROCESSING',
@@ -24,34 +25,6 @@ const parseCsv = (value: string | null) =>
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean)));
-
-const parseOptionalNumber = (value: string | null) => {
-  if (!value) {
-    return undefined;
-  }
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
-};
-
-const resolveModifiedFromByRange = (raw: string | null) => {
-  const now = new Date();
-  if (raw === 'today') {
-    const today = new Date(now);
-    today.setHours(0, 0, 0, 0);
-    return today.toISOString();
-  }
-  if (raw === 'week') {
-    const week = new Date(now);
-    week.setDate(now.getDate() - 7);
-    return week.toISOString();
-  }
-  if (raw === 'month') {
-    const month = new Date(now);
-    month.setMonth(now.getMonth() - 1);
-    return month.toISOString();
-  }
-  return undefined;
-};
 
 export const normalizePreviewStatusTokens = (
   input: string[] | string | null | undefined
@@ -87,20 +60,29 @@ export const buildSearchPrefillFromAdvancedSearchUrl = (
     return {};
   }
 
+  const state = parseAdvancedSearchUrlState(search);
   const params = new URLSearchParams(search);
-  const query = (params.get('q') || params.get('query') || '').trim();
-  const previewStatuses = normalizePreviewStatusTokens(params.get('previewStatus'));
-  const mimeTypes = parseCsv(params.get('mimeTypes'));
-  const creators = parseCsv(params.get('creators'));
-  const tags = parseCsv(params.get('tags'));
-  const categories = parseCsv(params.get('categories'));
-  const minSize = parseOptionalNumber(params.get('minSize'));
-  const maxSize = parseOptionalNumber(params.get('maxSize'));
-  const modifiedFrom = resolveModifiedFromByRange(params.get('dateRange'));
+  const query = (params.get('q') || params.get('query') || state.query).trim();
+  const previewStatuses = state.previewStatuses.length > 0
+    ? state.previewStatuses
+    : normalizePreviewStatusTokens(params.get('previewStatus'));
+  const mimeTypes = state.mimeTypes.length > 0 ? state.mimeTypes : parseCsv(params.get('mimeTypes'));
+  const creators = state.creators.length > 0 ? state.creators : parseCsv(params.get('creators'));
+  const tags = state.tags.length > 0 ? state.tags : parseCsv(params.get('tags'));
+  const categories = state.categories.length > 0 ? state.categories : parseCsv(params.get('categories'));
+  const minSize = state.minSize;
+  const maxSize = state.maxSize;
+  const modifiedFrom = resolveModifiedFromDate(state.dateRange);
 
   const prefillPayload: Partial<SearchPrefill> = {};
   if (query) prefillPayload.name = query;
   if (previewStatuses.length > 0) prefillPayload.previewStatuses = previewStatuses;
+  if (state.lockState === 'locked') prefillPayload.locked = true;
+  if (state.lockState === 'unlocked') prefillPayload.locked = false;
+  if (state.lockOwner.trim()) prefillPayload.lockedBy = state.lockOwner.trim();
+  if (state.checkoutState === 'checkedOut') prefillPayload.checkedOut = true;
+  if (state.checkoutState === 'available') prefillPayload.checkedOut = false;
+  if (state.checkoutUser.trim()) prefillPayload.checkoutUser = state.checkoutUser.trim();
   if (mimeTypes.length === 1) prefillPayload.contentType = mimeTypes[0];
   if (creators.length === 1) prefillPayload.createdBy = creators[0];
   if (tags.length > 0) prefillPayload.tags = tags;

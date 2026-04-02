@@ -100,6 +100,12 @@ public class NodeDocument {
     
     @Field(type = FieldType.Keyword)
     private String lockedBy;
+
+    @Field(type = FieldType.Boolean)
+    private boolean checkedOut;
+
+    @Field(type = FieldType.Keyword)
+    private String checkoutUser;
     
     @Field(type = FieldType.Boolean)
     private boolean deleted;
@@ -112,6 +118,9 @@ public class NodeDocument {
 
     @Field(type = FieldType.Text, analyzer = "standard")
     private String previewFailureReason;
+
+    @Field(type = FieldType.Keyword)
+    private String previewFailureCategory;
     
     @Field(type = FieldType.Keyword)
     private Set<String> permissions;
@@ -131,7 +140,7 @@ public class NodeDocument {
         doc.setCreatedDate(node.getCreatedDate());
         doc.setLastModifiedBy(node.getLastModifiedBy());
         doc.setLastModifiedDate(node.getLastModifiedDate());
-        doc.setLocked(node.isLocked());
+        doc.setLocked(node.isEffectivelyLocked(LocalDateTime.now()));
         doc.setLockedBy(node.getLockedBy());
         doc.setDeleted(node.isDeleted());
         doc.setStatus(node.getStatus().toString());
@@ -140,14 +149,15 @@ public class NodeDocument {
             doc.setMimeType(document.getMimeType());
             doc.setFileSize(document.getFileSize());
             doc.setVersionLabel(document.getVersionLabel());
+            doc.setCheckedOut(document.isCheckedOut());
+            doc.setCheckoutUser(document.getCheckoutUser());
             // Store extracted text in both textContent and content for search fields
             doc.setTextContent(document.getTextContent());
             doc.setContent(document.getTextContent());
             doc.setExtractedText(document.getTextContent());
-            if (document.getPreviewStatus() != null) {
-                doc.setPreviewStatus(document.getPreviewStatus().name());
-            }
-            doc.setPreviewFailureReason(document.getPreviewFailureReason());
+            doc.setPreviewStatus(SearchPreviewProjection.projectPreviewStatus(document));
+            doc.setPreviewFailureReason(SearchPreviewProjection.projectPreviewFailureReason(document));
+            doc.setPreviewFailureCategory(SearchPreviewProjection.projectPreviewFailureCategory(document));
         }
         
         // Set tags and categories

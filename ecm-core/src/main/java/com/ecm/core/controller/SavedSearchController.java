@@ -34,6 +34,22 @@ public class SavedSearchController {
         return ResponseEntity.ok(savedSearchService.getMySavedSearches());
     }
 
+    @GetMapping("/templates")
+    @Operation(summary = "List built-in saved search templates", description = "Get built-in governance/compliance search templates")
+    public ResponseEntity<List<SavedSearchTemplateResponse>> getSavedSearchTemplates(
+            @RequestParam(required = false) String tag) {
+        List<SavedSearchTemplateResponse> templates = savedSearchService.listBuiltInTemplates(tag).stream()
+            .map(template -> new SavedSearchTemplateResponse(
+                template.id(),
+                template.name(),
+                template.description(),
+                template.queryParams(),
+                template.tags()
+            ))
+            .toList();
+        return ResponseEntity.ok(templates);
+    }
+
     @GetMapping("/{id}")
     @Operation(summary = "Get saved search", description = "Get a saved search by id for the current user")
     public ResponseEntity<SavedSearch> getSavedSearch(@PathVariable UUID id) {
@@ -71,4 +87,12 @@ public class SavedSearchController {
     public record UpdateSavedSearchRequest(String name, Map<String, Object> queryParams) {}
 
     public record UpdatePinRequest(boolean pinned) {}
+
+    public record SavedSearchTemplateResponse(
+        String id,
+        String name,
+        String description,
+        Map<String, Object> queryParams,
+        List<String> tags
+    ) {}
 }

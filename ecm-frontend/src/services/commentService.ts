@@ -1,9 +1,12 @@
 import api from './api';
 
-interface Comment {
+export interface Comment {
   id: string;
   content: string;
   author: string;
+  nodeId?: string;
+  nodeName?: string;
+  nodeType?: 'FOLDER' | 'DOCUMENT' | string;
   created: string;
   edited?: string;
   editor?: string;
@@ -13,7 +16,15 @@ interface Comment {
   replies?: Comment[];
 }
 
-interface CommentStatistics {
+export interface PageResponse<T> {
+  content: T[];
+  totalElements: number;
+  totalPages: number;
+  size: number;
+  number: number;
+}
+
+export interface CommentStatistics {
   nodeId: string;
   totalComments: number;
   uniqueCommenters: number;
@@ -54,14 +65,14 @@ class CommentService {
     return api.delete(`/comments/${commentId}/reactions`);
   }
 
-  async getUserComments(username: string, page = 0, size = 20): Promise<any> {
-    return api.get(`/users/${username}/comments`, {
+  async getUserComments(username: string, page = 0, size = 20): Promise<PageResponse<Comment>> {
+    return api.get<PageResponse<Comment>>(`/users/${username}/comments`, {
       params: { page, size },
     });
   }
 
-  async getMentionedComments(username: string, page = 0, size = 20): Promise<any> {
-    return api.get(`/users/${username}/mentioned-comments`, {
+  async getMentionedComments(username: string, page = 0, size = 20): Promise<PageResponse<Comment>> {
+    return api.get<PageResponse<Comment>>(`/users/${username}/mentioned-comments`, {
       params: { page, size },
     });
   }

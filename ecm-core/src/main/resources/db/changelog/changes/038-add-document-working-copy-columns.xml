@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="038-add-document-working-copy-columns" author="codex">
+        <comment>Add persisted working-copy backbone columns to documents table</comment>
+
+        <addColumn tableName="documents">
+            <column name="working_copy_of" type="uuid">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+
+        <addColumn tableName="documents">
+            <column name="is_working_copy" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+
+        <createIndex tableName="documents" indexName="idx_document_working_copy_of">
+            <column name="working_copy_of"/>
+        </createIndex>
+
+        <createIndex tableName="documents" indexName="idx_document_is_working_copy">
+            <column name="is_working_copy"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>

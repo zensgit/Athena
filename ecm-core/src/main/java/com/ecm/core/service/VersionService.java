@@ -60,10 +60,15 @@ public class VersionService {
                                  String comment, boolean majorVersion) throws IOException {
         Document document = documentRepository.findById(documentId)
             .orElseThrow(() -> new NoSuchElementException("Document not found: " + documentId));
+        document = normalizeExpiredLock(document);
         
         // Check permissions
         if (!securityService.hasPermission(document, PermissionType.WRITE)) {
             throw new SecurityException("No permission to create version for document: " + document.getName());
+        }
+
+        if (document.isEffectivelyLocked(LocalDateTime.now()) && !Objects.equals(document.getLockedBy(), securityService.getCurrentUser())) {
+            throw new IllegalStateException("Document is " + document.describeActiveLock(LocalDateTime.now()));
         }
         
         // Check if document is checked out
@@ -115,6 +120,8 @@ public class VersionService {
         
         Version savedVersion = versionRepository.save(version);
         
+        String previousContentHash = normalizeHash(document.getContentHash());
+
         // Update document
         document.setCurrentVersion(savedVersion);
         document.setContentId(contentId);
@@ -122,6 +129,7 @@ public class VersionService {
         document.setFileSize(fileSize);
         document.setContentHash(contentHash);
         document.setVersionLabel(savedVersion.getVersionLabel());
+        clearPreviewFailureLedgerOnContentChange(document, previousContentHash, contentHash);
         
         // Extract and store text content
         String textContent = (String) metadata.get("textContent");
@@ -137,6 +145,14 @@ public class VersionService {
         triggerRulesForDocument(document, TriggerType.VERSION_CREATED);
 
         return savedVersion;
+    }
+
+    private Document normalizeExpiredLock(Document document) {
+        if (document.isLockExpired(LocalDateTime.now())) {
+            document.clearLock();
+            return documentRepository.save(document);
+        }
+        return document;
     }
 
     public Version createVersion(UUID documentId, MultipartFile file, String comment,
@@ -360,6 +376,7 @@ public class VersionService {
     public void promoteVersion(UUID versionId) {
         Version version = getVersion(versionId);
         Document document = version.getDocument();
+        String previousContentHash = normalizeHash(document.getContentHash());
         
         // Check permissions
         if (!securityService.hasPermission(document, PermissionType.WRITE)) {
@@ -375,6 +392,7 @@ public class VersionService {
         document.setVersionLabel(version.getVersionLabel());
         document.setMajorVersion(version.getMajorVersion());
         document.setMinorVersion(version.getMinorVersion());
+        clearPreviewFailureLedgerOnContentChange(document, previousContentHash, version.getContentHash());
         
         documentRepository.save(document);
         
@@ -479,6 +497,37 @@ public class VersionService {
             return null;
         }
         return mimeType.split(";")[0].trim();
+    }
+
+    private static String normalizeHash(String hash) {
+        if (hash == null || hash.isBlank()) {
+            return null;
+        }
+        return hash.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static void clearPreviewFailureLedgerOnContentChange(
+        Document document,
+        String previousContentHash,
+        String newContentHash
+    ) {
+        if (document == null) {
+            return;
+        }
+        String previous = normalizeHash(previousContentHash);
+        String updated = normalizeHash(newContentHash);
+        if (previous == null || updated == null || Objects.equals(previous, updated)) {
+            return;
+        }
+        document.setPreviewStatus(null);
+        document.setPreviewFailureReason(null);
+        document.setPreviewLastUpdated(LocalDateTime.now());
+        document.setPreviewAvailable(false);
+        document.setPreviewContentHash(null);
+        document.setPreviewFailureCount(0);
+        document.setPreviewFailedAt(null);
+        document.setPreviewLastFailureReason(null);
+        document.setPreviewFailureContentHash(null);
     }
 
     private static int clamp(int value, int min, int max) {

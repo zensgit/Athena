@@ -42,7 +42,10 @@ import { useNavigate } from 'react-router-dom';
 import nodeService from 'services/nodeService';
 import opsPolicyService, { OpsPolicyHistoryEntry, OpsPolicyProfile } from 'services/opsPolicyService';
 import opsRecoveryService, {
+  RecoveryBatchItem,
   RecoveryHistoryExportAsyncActiveStatusFilter,
+  RecoveryHistoryExportAsyncRetryTerminalDryRunResponse,
+  RecoveryHistoryExportAsyncTerminalStatusFilter,
   RecoveryHistoryExportAsyncTaskSummary,
   RecoveryHistoryExportAsyncStatusFilter,
   RecoveryHistoryCompareActorSort,
@@ -85,25 +88,45 @@ import previewDiagnosticsService, {
   PreviewFailureSummary as PreviewFailureSummaryDto,
   PreviewRenditionResource,
   PreviewRenditionResourcesExportTask,
+  PreviewRenditionResourcesExportTaskRetryTerminalDryRunResponse,
   PreviewRenditionResourcesExportTaskStatusFilter,
+  PreviewRenditionResourcesExportTaskTerminalStatusFilter,
   PreviewRenditionResourcesExportTaskSummary,
   PreviewRenditionSummary,
   PreviewRenditionPreventionDiagnostics,
   PreviewTransformTrace,
 } from 'services/previewDiagnosticsService';
+import { applyPreviewQueueLocalOverrides } from 'utils/previewDiagnosticsPreviewQueueOverrideUtils';
+import {
+  applyQueueDeclinedLocalOverrides,
+  buildQueueDeclinedOverridesFromClear,
+  buildQueueDeclinedOverridesFromRequeue,
+  PreviewQueueDeclinedLocalOverride,
+} from 'utils/queueDeclinedUtils';
+import { applyQueueCancelActiveResultToQueueDiagnosticsSummary } from 'utils/previewQueueDiagnosticsUtils';
+import { applyQueueBatchResultToRenditionResources } from 'utils/previewQueueBatchUtils';
+import {
+  formatRecoveryHistoryExportAsyncRequestDetails,
+  formatRecoveryHistoryExportAsyncRequestPrimary,
+} from 'utils/opsRecoveryAsyncTaskUtils';
 import {
   formatPreviewFailureReasonLabel,
+  getEffectivePreviewStatus,
   getFailedPreviewMeta,
   isRetryablePreviewFailure,
   normalizePreviewFailureReason,
   summarizeFailedPreviews,
 } from 'utils/previewStatusUtils';
+import { buildPreviewQueueOverride, PreviewQueueOverride } from 'utils/previewQueueOverrideUtils';
+import RenditionDefinitionDialog from 'components/dialogs/RenditionDefinitionDialog';
 
 const LIMIT_OPTIONS = [25, 50, 100, 200] as const;
 const TRACE_LIMIT_OPTIONS = [10, 20, 50] as const;
 const BACKEND_SUMMARY_SAMPLE_LIMIT = 500;
 const RENDITION_TOP_REASONS_LIMIT = 5;
 const RENDITION_EXPORT_TASK_LIMIT = 10;
+const RENDITION_EXPORT_TASK_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
+const RENDITION_EXPORT_TASK_DEFAULT_MAX_ITEMS = 10;
 const PREVENTION_LIST_LIMIT = 100;
 const DEAD_LETTER_LIST_LIMIT = 100;
 const FAILURE_LEDGER_LIST_LIMIT = 100;
@@ -140,6 +163,8 @@ const QUEUE_DECLINED_WINDOW_HOURS_OPTIONS = [
 ] as const;
 const RECOVERY_HISTORY_EXPORT_LIMIT = 500;
 const RECOVERY_HISTORY_EXPORT_ASYNC_TASK_LIMIT = 20;
+const RECOVERY_HISTORY_EXPORT_ASYNC_TASK_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
+const RECOVERY_HISTORY_EXPORT_ASYNC_TASK_DEFAULT_MAX_ITEMS = 20;
 const RECOVERY_HISTORY_PAGE_LIMIT = 20;
 const RECOVERY_HISTORY_AUTO_REFRESH_OPTIONS = [15, 30, 60] as const;
 const WINDOW_DAY_OPTIONS = [
@@ -271,6 +296,7 @@ const QUEUE_DECLINED_REQUEUE_DRY_RUN_EXPORT_TASK_STATUS_FILTER_OPTIONS: Array<{
 const RENDITION_EXPORT_TASK_RUNNING_STATUSES = new Set(['QUEUED', 'RUNNING', 'PROCESSING', 'IN_PROGRESS', 'STARTED']);
 const RENDITION_EXPORT_TASK_COMPLETED_STATUSES = new Set(['COMPLETED', 'DONE', 'SUCCESS', 'SUCCEEDED', 'FINISHED']);
 const RENDITION_EXPORT_TASK_RETRYABLE_STATUSES = new Set(['FAILED', 'CANCELLED', 'TIMED_OUT', 'EXPIRED']);
+const RENDITION_EXPORT_TASK_TERMINAL_RETRY_FILTER_STATUSES = new Set(['COMPLETED', 'CANCELLED', 'FAILED', 'TIMED_OUT', 'EXPIRED']);
 const QUEUE_DECLINED_EXPORT_TASK_RUNNING_STATUSES = new Set(['QUEUED', 'RUNNING', 'PROCESSING', 'IN_PROGRESS', 'STARTED']);
 const QUEUE_DECLINED_EXPORT_TASK_COMPLETED_STATUSES = new Set(['COMPLETED', 'DONE', 'SUCCESS', 'SUCCEEDED', 'FINISHED']);
 const QUEUE_DECLINED_EXPORT_TASK_RETRYABLE_STATUSES = new Set(['FAILED', 'CANCELLED', 'TIMED_OUT', 'EXPIRED']);
@@ -280,6 +306,7 @@ const QUEUE_DECLINED_REQUEUE_DRY_RUN_EXPORT_TASK_RETRYABLE_STATUSES = new Set(['
 const RECOVERY_HISTORY_EXPORT_ASYNC_RUNNING_STATUSES = new Set(['QUEUED', 'RUNNING', 'PROCESSING', 'IN_PROGRESS', 'STARTED']);
 const RECOVERY_HISTORY_EXPORT_ASYNC_COMPLETED_STATUSES = new Set(['COMPLETED', 'DONE', 'SUCCESS', 'SUCCEEDED', 'FINISHED']);
 const RECOVERY_HISTORY_EXPORT_ASYNC_RETRYABLE_STATUSES = new Set(['FAILED', 'CANCELLED', 'TIMED_OUT', 'EXPIRED']);
+const RECOVERY_HISTORY_EXPORT_ASYNC_TERMINAL_RETRY_FILTER_STATUSES = new Set(['COMPLETED', 'CANCELLED', 'FAILED', 'TIMED_OUT', 'EXPIRED']);
 type WindowDays = (typeof WINDOW_DAY_OPTIONS)[number]['value'];
 
 const normalizeRenditionExportTaskStatus = (status?: string | null): string => {
@@ -369,6 +396,8 @@ type FailurePolicyDraft = {
   quietPeriodMs: string;
 };
 
+type PreviewQueueLocalOverride = PreviewQueueOverride;
+
 const toPolicyDraft = (policy: OpsPolicyProfile): FailurePolicyDraft => ({
   maxAttempts: String(policy.maxAttempts),
   retryDelayMs: String(policy.retryDelayMs),
@@ -391,6 +420,29 @@ const formatRetryPlan = (draft: FailurePolicyDraft) => {
   return `Retry delays: ${retryTimes.map((seconds) => `${seconds}s`).join(', ')}`;
 };
 
+const collectRetryableSourceTaskIds = (
+  results?: Array<{ sourceTaskId?: string | null; outcome?: string | null }> | null
+): string[] => (
+  Array.from(new Set(
+    (results || [])
+      .filter((item) => (item?.outcome || '').toUpperCase() === 'RETRYABLE')
+      .map((item) => String(item?.sourceTaskId || '').trim())
+      .filter((taskId) => taskId.length > 0)
+  ))
+);
+
+const formatRecoveryBatchPreviewDetail = (item?: RecoveryBatchItem | null): string => {
+  if (!item) {
+    return '';
+  }
+  const parts = [
+    item.previewStatus ? `preview=${item.previewStatus}` : '',
+    item.previewFailureCategory ? `failure=${item.previewFailureCategory}` : '',
+    item.previewFailureReason ? `reason=${formatPreviewFailureReasonLabel(item.previewFailureReason)}` : '',
+  ].filter(Boolean);
+  return parts.join(', ');
+};
+
 const PreviewDiagnosticsPage: React.FC = () => {
   const navigate = useNavigate();
   const [limit, setLimit] = useState<(typeof LIMIT_OPTIONS)[number]>(50);
@@ -400,11 +452,18 @@ const PreviewDiagnosticsPage: React.FC = () => {
   const [backendSummary, setBackendSummary] = useState<PreviewFailureSummaryDto | null>(null);
   const [renditionSummary, setRenditionSummary] = useState<PreviewRenditionSummary | null>(null);
   const [renditionResources, setRenditionResources] = useState<PreviewRenditionResource[]>([]);
+  const [renditionDialogTarget, setRenditionDialogTarget] = useState<{ id: string; name?: string | null } | null>(null);
   const [renditionSummaryRefreshing, setRenditionSummaryRefreshing] = useState(false);
   const [renditionExportTasks, setRenditionExportTasks] = useState<PreviewRenditionResourcesExportTask[]>([]);
   const [renditionExportTaskStatusFilter, setRenditionExportTaskStatusFilter] = useState<
     'ALL' | PreviewRenditionResourcesExportTaskStatusFilter
   >('ALL');
+  const [renditionExportTaskPage, setRenditionExportTaskPage] = useState(0);
+  const [renditionExportTaskMaxItems, setRenditionExportTaskMaxItems] = useState<
+    (typeof RENDITION_EXPORT_TASK_PAGE_SIZE_OPTIONS)[number]
+  >(RENDITION_EXPORT_TASK_DEFAULT_MAX_ITEMS);
+  const [renditionExportTaskTotalItems, setRenditionExportTaskTotalItems] = useState(0);
+  const [renditionExportTaskHasMoreItems, setRenditionExportTaskHasMoreItems] = useState(false);
   const [renditionExportTaskSummary, setRenditionExportTaskSummary] = useState<PreviewRenditionResourcesExportTaskSummary | null>(null);
   const [renditionExportTasksLoading, setRenditionExportTasksLoading] = useState(false);
   const [renditionExportTaskStarting, setRenditionExportTaskStarting] = useState(false);
@@ -412,6 +471,14 @@ const PreviewDiagnosticsPage: React.FC = () => {
   const [renditionExportTaskActionType, setRenditionExportTaskActionType] = useState<'cancel' | 'download' | 'retry' | null>(null);
   const [renditionExportTaskCleaning, setRenditionExportTaskCleaning] = useState(false);
   const [renditionExportTaskCancellingActive, setRenditionExportTaskCancellingActive] = useState(false);
+  const [renditionExportTaskRetryingTerminal, setRenditionExportTaskRetryingTerminal] = useState(false);
+  const [renditionExportTaskRetryingVisibleTerminal, setRenditionExportTaskRetryingVisibleTerminal] = useState(false);
+  const [renditionExportTaskDryRunningTerminal, setRenditionExportTaskDryRunningTerminal] = useState(false);
+  const [renditionExportTaskDryRunExporting, setRenditionExportTaskDryRunExporting] = useState(false);
+  const [renditionExportTaskRetryDryRun, setRenditionExportTaskRetryDryRun] =
+    useState<PreviewRenditionResourcesExportTaskRetryTerminalDryRunResponse | null>(null);
+  const [renditionExportTaskRetryDryRunSelectedTaskIds, setRenditionExportTaskRetryDryRunSelectedTaskIds] = useState<string[]>([]);
+  const [renditionExportTaskRetryingSelected, setRenditionExportTaskRetryingSelected] = useState(false);
   const [cadFailoverDiagnostics, setCadFailoverDiagnostics] = useState<PreviewCadFailoverDiagnostics | null>(null);
   const [transformTraces, setTransformTraces] = useState<PreviewTransformTrace[]>([]);
   const [failurePolicies, setFailurePolicies] = useState<OpsPolicyProfile[]>([]);
@@ -436,6 +503,7 @@ const PreviewDiagnosticsPage: React.FC = () => {
   const [queueDeclinedQueryFilter, setQueueDeclinedQueryFilter] = useState('');
   const [queueDeclinedForce, setQueueDeclinedForce] = useState(true);
   const [queueDeclinedDryRun, setQueueDeclinedDryRun] = useState<PreviewQueueDeclinedRequeueDryRunResult | null>(null);
+  const [queueDeclinedLocalOverrides, setQueueDeclinedLocalOverrides] = useState<Record<string, PreviewQueueDeclinedLocalOverride>>({});
   const [queueDeclinedDryRunning, setQueueDeclinedDryRunning] = useState(false);
   const [queueDeclinedDryRunExporting, setQueueDeclinedDryRunExporting] = useState(false);
   const [queueDeclinedRequeueing, setQueueDeclinedRequeueing] = useState(false);
@@ -513,6 +581,7 @@ const PreviewDiagnosticsPage: React.FC = () => {
   const [traceRequestId, setTraceRequestId] = useState('');
   const [loading, setLoading] = useState(false);
   const [queueingId, setQueueingId] = useState<string | null>(null);
+  const [previewQueueStatusById, setPreviewQueueStatusById] = useState<Record<string, PreviewQueueLocalOverride>>({});
   const [reasonBatchActionKey, setReasonBatchActionKey] = useState<string | null>(null);
   const [reasonDryRunActionKey, setReasonDryRunActionKey] = useState<string | null>(null);
   const [reasonClearActionKey, setReasonClearActionKey] = useState<string | null>(null);
@@ -525,6 +594,7 @@ const PreviewDiagnosticsPage: React.FC = () => {
   const [dryRunMaxDocuments, setDryRunMaxDocuments] = useState(100);
   const [dryRunForce, setDryRunForce] = useState(false);
   const [dryRunLoading, setDryRunLoading] = useState(false);
+  const [dryRunExporting, setDryRunExporting] = useState(false);
   const [dryRunExecuting, setDryRunExecuting] = useState(false);
   const [dryRunResult, setDryRunResult] = useState<RecoveryDryRunResult | null>(null);
   const [dryRunRequestSignature, setDryRunRequestSignature] = useState<string | null>(null);
@@ -570,7 +640,21 @@ const PreviewDiagnosticsPage: React.FC = () => {
   const [recoveryHistoryExportAsyncSummaryLoading, setRecoveryHistoryExportAsyncSummaryLoading] = useState(false);
   const [recoveryHistoryExportAsyncCleaning, setRecoveryHistoryExportAsyncCleaning] = useState(false);
   const [recoveryHistoryExportAsyncCancellingActive, setRecoveryHistoryExportAsyncCancellingActive] = useState(false);
+  const [recoveryHistoryExportAsyncRetryingTerminal, setRecoveryHistoryExportAsyncRetryingTerminal] = useState(false);
+  const [recoveryHistoryExportAsyncRetryingVisibleTerminal, setRecoveryHistoryExportAsyncRetryingVisibleTerminal] = useState(false);
+  const [recoveryHistoryExportAsyncDryRunningTerminal, setRecoveryHistoryExportAsyncDryRunningTerminal] = useState(false);
+  const [recoveryHistoryExportAsyncDryRunExporting, setRecoveryHistoryExportAsyncDryRunExporting] = useState(false);
+  const [recoveryHistoryExportAsyncRetryDryRun, setRecoveryHistoryExportAsyncRetryDryRun] =
+    useState<RecoveryHistoryExportAsyncRetryTerminalDryRunResponse | null>(null);
+  const [recoveryHistoryExportAsyncRetryDryRunSelectedTaskIds, setRecoveryHistoryExportAsyncRetryDryRunSelectedTaskIds] = useState<string[]>([]);
+  const [recoveryHistoryExportAsyncRetryingSelected, setRecoveryHistoryExportAsyncRetryingSelected] = useState(false);
   const [recoveryHistoryExportAsyncTasks, setRecoveryHistoryExportAsyncTasks] = useState<RecoveryHistoryExportAsyncTaskStatus[]>([]);
+  const [recoveryHistoryExportAsyncTaskPage, setRecoveryHistoryExportAsyncTaskPage] = useState(0);
+  const [recoveryHistoryExportAsyncTaskMaxItems, setRecoveryHistoryExportAsyncTaskMaxItems] = useState<
+    (typeof RECOVERY_HISTORY_EXPORT_ASYNC_TASK_PAGE_SIZE_OPTIONS)[number]
+  >(RECOVERY_HISTORY_EXPORT_ASYNC_TASK_DEFAULT_MAX_ITEMS);
+  const [recoveryHistoryExportAsyncTaskTotalItems, setRecoveryHistoryExportAsyncTaskTotalItems] = useState(0);
+  const [recoveryHistoryExportAsyncTaskHasMoreItems, setRecoveryHistoryExportAsyncTaskHasMoreItems] = useState(false);
   const [recoveryHistoryExportAsyncTasksLoading, setRecoveryHistoryExportAsyncTasksLoading] = useState(false);
   const [recoveryHistoryExportAsyncStarting, setRecoveryHistoryExportAsyncStarting] = useState(false);
   const [recoveryHistoryExportAsyncActionTaskId, setRecoveryHistoryExportAsyncActionTaskId] = useState<string | null>(null);
@@ -582,12 +666,23 @@ const PreviewDiagnosticsPage: React.FC = () => {
       const statusFilter = renditionExportTaskStatusFilter === 'ALL'
         ? undefined
         : renditionExportTaskStatusFilter;
+      const skipCount = renditionExportTaskPage * renditionExportTaskMaxItems;
       const response = await previewDiagnosticsService.listRenditionResourcesExportTasks(
-        RENDITION_EXPORT_TASK_LIMIT,
-        statusFilter
+        renditionExportTaskMaxItems,
+        statusFilter,
+        skipCount
       );
       const items = Array.isArray(response?.items) ? response.items : [];
       setRenditionExportTasks(items);
+      const paging = response?.paging || null;
+      const totalItems = Number.isFinite(Number(paging?.totalItems))
+        ? Number(paging?.totalItems)
+        : items.length;
+      const hasMoreItems = typeof paging?.hasMoreItems === 'boolean'
+        ? paging.hasMoreItems
+        : (skipCount + items.length) < totalItems;
+      setRenditionExportTaskTotalItems(totalItems);
+      setRenditionExportTaskHasMoreItems(hasMoreItems);
       const summary = await previewDiagnosticsService.getRenditionResourcesExportTaskSummary(statusFilter).catch(() => null);
       setRenditionExportTaskSummary(summary || null);
     } catch {
@@ -597,7 +692,7 @@ const PreviewDiagnosticsPage: React.FC = () => {
     } finally {
       setRenditionExportTasksLoading(false);
     }
-  }, [renditionExportTaskStatusFilter]);
+  }, [renditionExportTaskMaxItems, renditionExportTaskPage, renditionExportTaskStatusFilter]);
 
   const loadQueueDeclinedExportTasks = useCallback(async (silent = false) => {
     try {
@@ -694,13 +789,24 @@ const PreviewDiagnosticsPage: React.FC = () => {
   const loadRecoveryHistoryExportAsyncTasks = useCallback(async (silent = false) => {
     try {
       setRecoveryHistoryExportAsyncTasksLoading(true);
+      const skipCount = recoveryHistoryExportAsyncTaskPage * recoveryHistoryExportAsyncTaskMaxItems;
       const response = await opsRecoveryService.listHistoryExportAsyncTasks(
-        RECOVERY_HISTORY_EXPORT_ASYNC_TASK_LIMIT,
+        recoveryHistoryExportAsyncTaskMaxItems,
         recoveryHistoryExportAsyncFilterType === 'ALL' ? undefined : recoveryHistoryExportAsyncFilterType,
-        recoveryHistoryExportAsyncFilterStatus === 'ALL' ? undefined : recoveryHistoryExportAsyncFilterStatus
+        recoveryHistoryExportAsyncFilterStatus === 'ALL' ? undefined : recoveryHistoryExportAsyncFilterStatus,
+        skipCount
       );
       const items = Array.isArray(response?.items) ? response.items : [];
       setRecoveryHistoryExportAsyncTasks(items);
+      const paging = response?.paging || null;
+      const totalItems = Number.isFinite(Number(paging?.totalItems))
+        ? Number(paging?.totalItems)
+        : items.length;
+      const hasMoreItems = typeof paging?.hasMoreItems === 'boolean'
+        ? paging.hasMoreItems
+        : (skipCount + items.length) < totalItems;
+      setRecoveryHistoryExportAsyncTaskTotalItems(totalItems);
+      setRecoveryHistoryExportAsyncTaskHasMoreItems(hasMoreItems);
       const summary = await opsRecoveryService.getHistoryExportAsyncTaskSummaryFiltered(
         recoveryHistoryExportAsyncFilterType === 'ALL' ? undefined : recoveryHistoryExportAsyncFilterType,
         recoveryHistoryExportAsyncFilterStatus === 'ALL' ? undefined : recoveryHistoryExportAsyncFilterStatus
@@ -715,7 +821,12 @@ const PreviewDiagnosticsPage: React.FC = () => {
     } finally {
       setRecoveryHistoryExportAsyncTasksLoading(false);
     }
-  }, [recoveryHistoryExportAsyncFilterType, recoveryHistoryExportAsyncFilterStatus]);
+  }, [
+    recoveryHistoryExportAsyncFilterType,
+    recoveryHistoryExportAsyncFilterStatus,
+    recoveryHistoryExportAsyncTaskMaxItems,
+    recoveryHistoryExportAsyncTaskPage,
+  ]);
 
   const loadFailures = useCallback(async () => {
     try {
@@ -810,6 +921,7 @@ const PreviewDiagnosticsPage: React.FC = () => {
         ).catch(() => null),
       ]);
       setItems(Array.isArray(data) ? data : []);
+      setPreviewQueueStatusById({});
       setBackendSummary(summaryData || null);
       setRenditionSummary(renditionSummaryData || null);
       setRenditionResources(Array.isArray(renditionResourcesData) ? renditionResourcesData : []);
@@ -819,6 +931,7 @@ const PreviewDiagnosticsPage: React.FC = () => {
       setFailureLedgerDiagnostics(failureLedgerData || null);
       setQueueDiagnosticsSummary(queueSummaryData || null);
       setQueueDeclinedSummary(queueDeclinedData || null);
+      setQueueDeclinedLocalOverrides({});
       setDeadLetterDiagnostics(deadLetterData || null);
       const historyItems = recoveryHistoryData && Array.isArray(recoveryHistoryData.items)
         ? recoveryHistoryData.items
@@ -907,6 +1020,7 @@ const PreviewDiagnosticsPage: React.FC = () => {
     } catch {
       toast.error('Failed to load preview diagnostics (admin required)');
       setItems([]);
+      setPreviewQueueStatusById({});
       setBackendSummary(null);
       setRenditionSummary(null);
       setRenditionResources([]);
@@ -1033,6 +1147,48 @@ const PreviewDiagnosticsPage: React.FC = () => {
   }, [loadRecoveryHistoryExportAsyncTasks]);
 
   useEffect(() => {
+    setRenditionExportTaskPage(0);
+  }, [renditionExportTaskStatusFilter, renditionExportTaskMaxItems]);
+
+  useEffect(() => {
+    setRecoveryHistoryExportAsyncTaskPage(0);
+  }, [
+    recoveryHistoryExportAsyncFilterType,
+    recoveryHistoryExportAsyncFilterStatus,
+    recoveryHistoryExportAsyncTaskMaxItems,
+  ]);
+
+  useEffect(() => {
+    if (renditionExportTaskPage <= 0) {
+      return;
+    }
+    if (renditionExportTasks.length > 0) {
+      return;
+    }
+    if (renditionExportTaskTotalItems <= 0) {
+      return;
+    }
+    setRenditionExportTaskPage((current) => Math.max(0, current - 1));
+  }, [renditionExportTaskPage, renditionExportTasks.length, renditionExportTaskTotalItems]);
+
+  useEffect(() => {
+    if (recoveryHistoryExportAsyncTaskPage <= 0) {
+      return;
+    }
+    if (recoveryHistoryExportAsyncTasks.length > 0) {
+      return;
+    }
+    if (recoveryHistoryExportAsyncTaskTotalItems <= 0) {
+      return;
+    }
+    setRecoveryHistoryExportAsyncTaskPage((current) => Math.max(0, current - 1));
+  }, [
+    recoveryHistoryExportAsyncTaskPage,
+    recoveryHistoryExportAsyncTasks.length,
+    recoveryHistoryExportAsyncTaskTotalItems,
+  ]);
+
+  useEffect(() => {
     setRecoveryHistoryPage(0);
   }, [windowDays, recoveryHistoryMode, recoveryHistoryActor, recoveryHistoryEventType]);
 
@@ -1087,23 +1243,28 @@ const PreviewDiagnosticsPage: React.FC = () => {
   );
   const canExecuteDryRunPlan = !dryRunLoading && !dryRunExecuting && Boolean(dryRunResult) && !dryRunPlanStale;
 
+  const previewAwareItems = useMemo(
+    () => applyPreviewQueueLocalOverrides(items, previewQueueStatusById),
+    [items, previewQueueStatusById]
+  );
+
   const summary = useMemo(() => {
     return summarizeFailedPreviews(
-      items.map((item) => ({
+      previewAwareItems.map((item) => ({
         previewStatus: item.previewStatus,
         previewFailureCategory: item.previewFailureCategory,
         previewFailureReason: item.previewFailureReason,
         mimeType: item.mimeType,
       }))
     );
-  }, [items]);
+  }, [previewAwareItems]);
 
   const filteredItems = useMemo(() => {
     const query = filterText.trim().toLowerCase();
     if (!query) {
-      return items;
+      return previewAwareItems;
     }
-    return items.filter((item) => {
+    return previewAwareItems.filter((item) => {
       const haystacks = [
         item.name,
         item.path,
@@ -1116,7 +1277,7 @@ const PreviewDiagnosticsPage: React.FC = () => {
         .map((value) => String(value).toLowerCase());
       return haystacks.some((value) => value.includes(query));
     });
-  }, [filterText, items]);
+  }, [filterText, previewAwareItems]);
 
   const filteredPreventionItems = useMemo(() => {
     const query = preventionFilterText.trim().toLowerCase();
@@ -1188,14 +1349,19 @@ const PreviewDiagnosticsPage: React.FC = () => {
 
   const queueDeclinedCategoryOptions = useMemo(() => {
     const categories = new Set<string>(['ANY']);
-    (queueDeclinedSummary?.items || []).forEach((item) => {
+    (applyQueueDeclinedLocalOverrides(queueDeclinedSummary, queueDeclinedLocalOverrides)?.items || []).forEach((item) => {
       const category = (item.category || '').trim().toUpperCase();
       if (category) {
         categories.add(category);
       }
     });
     return Array.from(categories);
-  }, [queueDeclinedSummary]);
+  }, [queueDeclinedLocalOverrides, queueDeclinedSummary]);
+
+  const effectiveQueueDeclinedSummary = useMemo(
+    () => applyQueueDeclinedLocalOverrides(queueDeclinedSummary, queueDeclinedLocalOverrides),
+    [queueDeclinedLocalOverrides, queueDeclinedSummary]
+  );
 
   const confidenceColor = backendSummary?.confidenceLevel === 'LOW' ? 'warning' : 'success';
   const confidenceLabel =
@@ -1244,7 +1410,7 @@ const PreviewDiagnosticsPage: React.FC = () => {
     (reason: string, category: string, retryable: boolean) => {
       const normalizedReason = normalizePreviewFailureReason(reason);
       const normalizedCategory = (category || '').toUpperCase();
-      return items.filter((item) => {
+      return previewAwareItems.filter((item) => {
         const itemRetryable = isRetryablePreviewFailure(
           item.previewFailureCategory,
           item.mimeType,
@@ -1259,7 +1425,7 @@ const PreviewDiagnosticsPage: React.FC = () => {
         );
       });
     },
-    [items]
+    [previewAwareItems]
   );
 
   const getParentFolderPath = (rawPath?: string | null): string | null => {
@@ -1317,15 +1483,30 @@ const PreviewDiagnosticsPage: React.FC = () => {
     }
   };
 
+  const handleOpenRenditionRegistry = (documentId?: string | null, name?: string | null) => {
+    if (!documentId) {
+      return;
+    }
+    setRenditionDialogTarget({ id: documentId, name });
+  };
+
   const handleQueuePreview = async (item: PreviewFailureSample, force: boolean) => {
     const retryable = isRetryablePreviewFailure(item.previewFailureCategory, item.mimeType, item.previewFailureReason);
     if (!retryable) {
       return;
     }
-    try {
+      try {
       setQueueingId(item.id);
-      await nodeService.queuePreview(item.id, force);
-      toast.success(`Preview ${force ? 'rebuild' : 'retry'} queued`);
+      const status = await nodeService.queuePreview(item.id, force);
+      setPreviewQueueStatusById((prev) => ({
+        ...prev,
+        [item.id]: buildPreviewQueueOverride(status),
+      }));
+      if (status?.queued) {
+        toast.success(status?.message || `Preview ${force ? 'rebuild' : 'retry'} queued`);
+      } else {
+        toast.info(status?.message || 'Preview already up to date');
+      }
       await loadFailures();
     } catch {
       toast.error('Failed to queue preview');
@@ -1347,6 +1528,7 @@ const PreviewDiagnosticsPage: React.FC = () => {
       setRenditionResourceActionId(documentId);
       const batch = await previewDiagnosticsService.queueFailuresBatch([documentId], force);
       const result = Array.isArray(batch.results) ? batch.results[0] : null;
+      setRenditionResources((current) => applyQueueBatchResultToRenditionResources(current, batch));
       if (batch.queued > 0) {
         toast.success(`Rendition resource ${force ? 'rebuild' : 'retry'} queued`);
       } else if (batch.skipped > 0) {
@@ -1385,6 +1567,7 @@ const PreviewDiagnosticsPage: React.FC = () => {
         days: windowDays,
         force,
       });
+      const batchPreviewDetail = formatRecoveryBatchPreviewDetail(batch.results?.[0]);
 
       const actionLabel = force ? 'Force rebuild' : 'Retry';
       if (batch.matched === 0) {
@@ -1393,11 +1576,11 @@ const PreviewDiagnosticsPage: React.FC = () => {
         toast.success(`${actionLabel} queued for ${batch.queued}/${batch.matched} document(s): ${reasonLabel}`);
       } else if (batch.queued > 0) {
         toast.warning(
-          `${actionLabel} matched=${batch.matched}, queued=${batch.queued}, skipped=${batch.skipped}, failed=${batch.failed}: ${reasonLabel}`
+          `${actionLabel} matched=${batch.matched}, queued=${batch.queued}, skipped=${batch.skipped}, failed=${batch.failed}: ${reasonLabel}${batchPreviewDetail ? ` • ${batchPreviewDetail}` : ''}`
         );
       } else {
         toast.error(
-          `${actionLabel} matched=${batch.matched}, skipped=${batch.skipped}, failed=${batch.failed} for reason group: ${reasonLabel}`
+          `${actionLabel} matched=${batch.matched}, skipped=${batch.skipped}, failed=${batch.failed} for reason group: ${reasonLabel}${batchPreviewDetail ? ` • ${batchPreviewDetail}` : ''}`
         );
       }
       await loadFailures();
@@ -1456,15 +1639,16 @@ const PreviewDiagnosticsPage: React.FC = () => {
         maxDocuments: 100,
         days: windowDays,
       });
+      const batchPreviewDetail = formatRecoveryBatchPreviewDetail(result.results?.[0]);
       const cleared = result.queued || 0;
       if (result.matched === 0) {
         toast.info(`No dead-letter matched for clear: ${reasonLabel}`);
       } else if (result.failed === 0 && cleared === result.matched) {
         toast.success(`Dead-letter clear done: ${cleared}/${result.matched} (${reasonLabel})`);
       } else if (cleared > 0) {
-        toast.warning(`Dead-letter clear partial: matched=${result.matched}, cleared=${cleared}, failed=${result.failed}`);
+        toast.warning(`Dead-letter clear partial: matched=${result.matched}, cleared=${cleared}, failed=${result.failed}${batchPreviewDetail ? ` • ${batchPreviewDetail}` : ''}`);
       } else {
-        toast.error(`Dead-letter clear failed for reason group: ${reasonLabel}`);
+        toast.error(`Dead-letter clear failed for reason group: ${reasonLabel}${batchPreviewDetail ? ` • ${batchPreviewDetail}` : ''}`);
       }
       await loadFailures();
     } catch {
@@ -1492,14 +1676,15 @@ const PreviewDiagnosticsPage: React.FC = () => {
         days: windowDays,
         force: true,
       });
+      const batchPreviewDetail = formatRecoveryBatchPreviewDetail(result.results?.[0]);
       if (result.matched === 0) {
         toast.info(`No dead-letter matched for replay: ${reasonLabel}`);
       } else if (result.failed === 0 && result.skipped === 0 && result.queued > 0) {
         toast.success(`Dead-letter replay queued: ${result.queued}/${result.matched} (${reasonLabel})`);
       } else if (result.queued > 0) {
-        toast.warning(`Dead-letter replay partial: matched=${result.matched}, queued=${result.queued}, skipped=${result.skipped}, failed=${result.failed}`);
+        toast.warning(`Dead-letter replay partial: matched=${result.matched}, queued=${result.queued}, skipped=${result.skipped}, failed=${result.failed}${batchPreviewDetail ? ` • ${batchPreviewDetail}` : ''}`);
       } else {
-        toast.error(`Dead-letter replay failed for reason group: ${reasonLabel}`);
+        toast.error(`Dead-letter replay failed for reason group: ${reasonLabel}${batchPreviewDetail ? ` • ${batchPreviewDetail}` : ''}`);
       }
       await loadFailures();
     } catch {
@@ -1826,6 +2011,7 @@ const PreviewDiagnosticsPage: React.FC = () => {
       } else {
         toast.info('No queue tasks matched current filter');
       }
+      setQueueDiagnosticsSummary((current) => applyQueueCancelActiveResultToQueueDiagnosticsSummary(current, result));
       await loadFailures();
     } catch {
       toast.error('Failed to cancel filtered queue tasks');
@@ -2152,8 +2338,12 @@ const PreviewDiagnosticsPage: React.FC = () => {
       } else {
         toast.info('No declined queue items matched current filter');
       }
+      const localOverrides = buildQueueDeclinedOverridesFromRequeue(result);
+      if (Object.keys(localOverrides).length > 0) {
+        setQueueDeclinedLocalOverrides((current) => ({ ...current, ...localOverrides }));
+      }
       setQueueDeclinedDryRun(null);
-      await loadFailures();
+      void loadFailures();
     } catch {
       toast.error('Failed to requeue declined queue items');
     } finally {
@@ -2481,8 +2671,12 @@ const PreviewDiagnosticsPage: React.FC = () => {
       } else {
         toast.info('No declined queue items matched current filter');
       }
+      const localOverrides = buildQueueDeclinedOverridesFromClear(result);
+      if (Object.keys(localOverrides).length > 0) {
+        setQueueDeclinedLocalOverrides((current) => ({ ...current, ...localOverrides }));
+      }
       setQueueDeclinedDryRun(null);
-      await loadFailures();
+      void loadFailures();
     } catch {
       toast.error('Failed to clear declined queue items');
     } finally {
@@ -2524,12 +2718,13 @@ const PreviewDiagnosticsPage: React.FC = () => {
         entryKeys,
         force: true,
       });
+      const batchPreviewDetail = formatRecoveryBatchPreviewDetail(result.results?.[0]);
       if (result.failed === 0 && result.skipped === 0) {
         toast.success(`Replay queued: ${result.queued}/${result.deduplicated}`);
       } else if (result.queued > 0) {
-        toast.warning(`Replay partial: queued=${result.queued}, skipped=${result.skipped}, failed=${result.failed}`);
+        toast.warning(`Replay partial: queued=${result.queued}, skipped=${result.skipped}, failed=${result.failed}${batchPreviewDetail ? ` • ${batchPreviewDetail}` : ''}`);
       } else {
-        toast.error(`Replay failed: skipped=${result.skipped}, failed=${result.failed}`);
+        toast.error(`Replay failed: skipped=${result.skipped}, failed=${result.failed}${batchPreviewDetail ? ` • ${batchPreviewDetail}` : ''}`);
       }
       setSelectedDeadLetterEntryKeys([]);
       await loadFailures();
@@ -2551,13 +2746,14 @@ const PreviewDiagnosticsPage: React.FC = () => {
         domain: 'PREVIEW',
         entryKeys,
       });
+      const batchPreviewDetail = formatRecoveryBatchPreviewDetail(result.results?.[0]);
       const cleared = result.queued || 0;
       if (result.failed === 0 && cleared === result.deduplicated) {
         toast.success(`Dead-letter cleared: ${cleared}/${result.deduplicated}`);
       } else if (cleared > 0) {
-        toast.warning(`Dead-letter partial clear: cleared=${cleared}, failed=${result.failed}`);
+        toast.warning(`Dead-letter partial clear: cleared=${cleared}, failed=${result.failed}${batchPreviewDetail ? ` • ${batchPreviewDetail}` : ''}`);
       } else {
-        toast.error(`Dead-letter clear failed: failed=${result.failed}`);
+        toast.error(`Dead-letter clear failed: failed=${result.failed}${batchPreviewDetail ? ` • ${batchPreviewDetail}` : ''}`);
       }
       setSelectedDeadLetterEntryKeys([]);
       await loadFailures();
@@ -2669,6 +2865,7 @@ const PreviewDiagnosticsPage: React.FC = () => {
   const handleStartRecoveryHistoryExportAsync = async () => {
     try {
       setRecoveryHistoryExportAsyncStarting(true);
+      setRecoveryHistoryExportAsyncTaskPage(0);
       const response = await opsRecoveryService.startHistoryExportAsync({
         exportType: recoveryHistoryExportAsyncType,
         limit: RECOVERY_HISTORY_EXPORT_LIMIT,
@@ -2685,7 +2882,13 @@ const PreviewDiagnosticsPage: React.FC = () => {
       if (!taskId) {
         throw new Error('missing_task_id');
       }
-      toast.success(`Ops recovery async export task started: ${taskId}`);
+      const requestSummary = formatRecoveryHistoryExportAsyncRequestPrimary(response.request, response.exportType);
+      if (Boolean(response.deduplicated)) {
+        const reusedTaskId = (response.deduplicatedFromTaskId || taskId || '').trim() || taskId;
+        toast.info(response.message || `Ops recovery async export task reused: ${reusedTaskId} (${requestSummary})`);
+      } else {
+        toast.success(`Ops recovery async export task started: ${taskId} (${requestSummary})`);
+      }
       await loadRecoveryHistoryExportAsyncTasks(true);
     } catch {
       toast.error('Failed to start ops recovery async export task');
@@ -2718,7 +2921,15 @@ const PreviewDiagnosticsPage: React.FC = () => {
       if (!newTaskId) {
         throw new Error('missing_task_id');
       }
-      toast.success(`Ops recovery async export task retried: ${taskId} -> ${newTaskId}`);
+      const requestSummary = formatRecoveryHistoryExportAsyncRequestPrimary(retriedTask.request, retriedTask.exportType);
+      if (Boolean(retriedTask.deduplicated)) {
+        toast.info(
+          retriedTask.message
+          || `Ops recovery async export retry reused active task: ${newTaskId} (${requestSummary})`
+        );
+      } else {
+        toast.success(`Ops recovery async export task retried: ${taskId} -> ${newTaskId} (${requestSummary})`);
+      }
       await loadRecoveryHistoryExportAsyncTasks(true);
       await handleRefreshRecoveryHistoryExportAsyncSummary(true);
     } catch {
@@ -2851,6 +3062,176 @@ const PreviewDiagnosticsPage: React.FC = () => {
     }
   };
 
+  const handleRetryTerminalRecoveryHistoryExportAsyncTasks = async () => {
+    try {
+      setRecoveryHistoryExportAsyncRetryingTerminal(true);
+      const exportTypeFilter = recoveryHistoryExportAsyncFilterType === 'ALL'
+        ? undefined
+        : recoveryHistoryExportAsyncFilterType;
+      const rawStatusFilter = recoveryHistoryExportAsyncFilterStatus;
+      const statusFilter: RecoveryHistoryExportAsyncTerminalStatusFilter | undefined = (
+        rawStatusFilter !== 'ALL'
+        && RECOVERY_HISTORY_EXPORT_ASYNC_TERMINAL_RETRY_FILTER_STATUSES.has(rawStatusFilter)
+      ) ? (rawStatusFilter as RecoveryHistoryExportAsyncTerminalStatusFilter) : undefined;
+      const response = await opsRecoveryService.retryTerminalHistoryExportAsyncTasks(
+        exportTypeFilter,
+        statusFilter,
+        RECOVERY_HISTORY_EXPORT_ASYNC_TASK_LIMIT
+      );
+      const retriedCount = Number.isFinite(response?.retried) ? response.retried : 0;
+      const reusedCount = Number.isFinite(response?.reused) ? response.reused : 0;
+      const skippedCount = Number.isFinite(response?.skipped) ? response.skipped : 0;
+      const failedCount = Number.isFinite(response?.failed) ? response.failed : 0;
+      const summary = `retried=${retriedCount}, reused=${reusedCount}, skipped=${skippedCount}, failed=${failedCount}`;
+      if (retriedCount > 0) {
+        toast.success(`Ops recovery async terminal retry done: ${summary}`);
+      } else {
+        toast.info(response?.message || `No terminal ops recovery async export tasks matched retry filters (${summary})`);
+      }
+      setRecoveryHistoryExportAsyncRetryDryRun(null);
+      await loadRecoveryHistoryExportAsyncTasks(true);
+      await handleRefreshRecoveryHistoryExportAsyncSummary(true);
+    } catch {
+      toast.error('Failed to retry terminal ops recovery async export tasks');
+    } finally {
+      setRecoveryHistoryExportAsyncRetryingTerminal(false);
+    }
+  };
+
+  const handleDryRunRetryTerminalRecoveryHistoryExportAsyncTasks = async () => {
+    try {
+      setRecoveryHistoryExportAsyncDryRunningTerminal(true);
+      const exportTypeFilter = recoveryHistoryExportAsyncFilterType === 'ALL'
+        ? undefined
+        : recoveryHistoryExportAsyncFilterType;
+      const rawStatusFilter = recoveryHistoryExportAsyncFilterStatus;
+      const statusFilter: RecoveryHistoryExportAsyncTerminalStatusFilter | undefined = (
+        rawStatusFilter !== 'ALL'
+        && RECOVERY_HISTORY_EXPORT_ASYNC_TERMINAL_RETRY_FILTER_STATUSES.has(rawStatusFilter)
+      ) ? (rawStatusFilter as RecoveryHistoryExportAsyncTerminalStatusFilter) : undefined;
+      const response = await opsRecoveryService.dryRunRetryTerminalHistoryExportAsyncTasks(
+        exportTypeFilter,
+        statusFilter,
+        RECOVERY_HISTORY_EXPORT_ASYNC_TASK_LIMIT
+      );
+      setRecoveryHistoryExportAsyncRetryDryRun(response || null);
+      setRecoveryHistoryExportAsyncRetryDryRunSelectedTaskIds(
+        collectRetryableSourceTaskIds(response?.results)
+      );
+      const retryableCount = Number.isFinite(response?.retryable) ? response.retryable : 0;
+      const skippedCount = Number.isFinite(response?.skipped) ? response.skipped : 0;
+      const summary = `retryable=${retryableCount}, skipped=${skippedCount}`;
+      if (retryableCount > 0) {
+        toast.info(`Ops recovery async terminal dry-run: ${summary}`);
+      } else {
+        toast.info(response?.message || `No terminal ops recovery async export tasks matched dry-run filters (${summary})`);
+      }
+    } catch {
+      toast.error('Failed to dry-run terminal retry for ops recovery async export tasks');
+    } finally {
+      setRecoveryHistoryExportAsyncDryRunningTerminal(false);
+    }
+  };
+
+  const handleExportDryRunRetryTerminalRecoveryHistoryExportAsyncTasks = async () => {
+    try {
+      setRecoveryHistoryExportAsyncDryRunExporting(true);
+      const exportTypeFilter = recoveryHistoryExportAsyncFilterType === 'ALL'
+        ? undefined
+        : recoveryHistoryExportAsyncFilterType;
+      const rawStatusFilter = recoveryHistoryExportAsyncFilterStatus;
+      const statusFilter: RecoveryHistoryExportAsyncTerminalStatusFilter | undefined = (
+        rawStatusFilter !== 'ALL'
+        && RECOVERY_HISTORY_EXPORT_ASYNC_TERMINAL_RETRY_FILTER_STATUSES.has(rawStatusFilter)
+      ) ? (rawStatusFilter as RecoveryHistoryExportAsyncTerminalStatusFilter) : undefined;
+      await opsRecoveryService.exportDryRunRetryTerminalHistoryExportAsyncTasks(
+        exportTypeFilter,
+        statusFilter,
+        RECOVERY_HISTORY_EXPORT_ASYNC_TASK_LIMIT
+      );
+      toast.success('Ops recovery async terminal dry-run CSV exported');
+    } catch {
+      toast.error('Failed to export ops recovery async terminal dry-run CSV');
+    } finally {
+      setRecoveryHistoryExportAsyncDryRunExporting(false);
+    }
+  };
+
+  const handleRetrySelectedRecoveryHistoryExportAsyncTasks = async () => {
+    if (recoveryHistoryExportAsyncRetryDryRunSelectedTaskIds.length === 0) {
+      toast.info('No selected terminal ops recovery async export tasks to retry');
+      return;
+    }
+    try {
+      setRecoveryHistoryExportAsyncRetryingSelected(true);
+      const exportTypeFilter = recoveryHistoryExportAsyncFilterType === 'ALL'
+        ? undefined
+        : recoveryHistoryExportAsyncFilterType;
+      const response = await opsRecoveryService.retryTerminalHistoryExportAsyncTasksByTaskIds(
+        recoveryHistoryExportAsyncRetryDryRunSelectedTaskIds,
+        exportTypeFilter
+      );
+      const retriedCount = Number.isFinite(response?.retried) ? response.retried : 0;
+      const reusedCount = Number.isFinite(response?.reused) ? response.reused : 0;
+      const skippedCount = Number.isFinite(response?.skipped) ? response.skipped : 0;
+      const failedCount = Number.isFinite(response?.failed) ? response.failed : 0;
+      const summary = `retried=${retriedCount}, reused=${reusedCount}, skipped=${skippedCount}, failed=${failedCount}`;
+      if (retriedCount > 0) {
+        toast.success(`Ops recovery async selected retry done: ${summary}`);
+      } else {
+        toast.info(response?.message || `No selected terminal ops recovery async export tasks were retried (${summary})`);
+      }
+      setRecoveryHistoryExportAsyncRetryDryRun(null);
+      setRecoveryHistoryExportAsyncRetryDryRunSelectedTaskIds([]);
+      await loadRecoveryHistoryExportAsyncTasks(true);
+      await handleRefreshRecoveryHistoryExportAsyncSummary(true);
+    } catch {
+      toast.error('Failed to retry selected terminal ops recovery async export tasks');
+    } finally {
+      setRecoveryHistoryExportAsyncRetryingSelected(false);
+    }
+  };
+
+  const handleRetryVisibleTerminalRecoveryHistoryExportAsyncTasks = async () => {
+    const sourceTaskIds = recoveryHistoryExportAsyncTasks
+      .filter((task) => RECOVERY_HISTORY_EXPORT_ASYNC_TERMINAL_RETRY_FILTER_STATUSES.has(
+        normalizeRecoveryHistoryExportAsyncStatus(task.status)
+      ))
+      .map((task) => String(task?.taskId || '').trim())
+      .filter((taskId) => taskId.length > 0);
+    if (sourceTaskIds.length === 0) {
+      toast.info('No visible terminal ops recovery async export tasks to retry');
+      return;
+    }
+    try {
+      setRecoveryHistoryExportAsyncRetryingVisibleTerminal(true);
+      const exportTypeFilter = recoveryHistoryExportAsyncFilterType === 'ALL'
+        ? undefined
+        : recoveryHistoryExportAsyncFilterType;
+      const response = await opsRecoveryService.retryTerminalHistoryExportAsyncTasksByTaskIds(
+        sourceTaskIds,
+        exportTypeFilter
+      );
+      const retriedCount = Number.isFinite(response?.retried) ? response.retried : 0;
+      const reusedCount = Number.isFinite(response?.reused) ? response.reused : 0;
+      const skippedCount = Number.isFinite(response?.skipped) ? response.skipped : 0;
+      const failedCount = Number.isFinite(response?.failed) ? response.failed : 0;
+      const summary = `retried=${retriedCount}, reused=${reusedCount}, skipped=${skippedCount}, failed=${failedCount}`;
+      if (retriedCount > 0) {
+        toast.success(`Ops recovery async visible-terminal retry done: ${summary}`);
+      } else {
+        toast.info(response?.message || `No visible terminal ops recovery async export tasks were retried (${summary})`);
+      }
+      setRecoveryHistoryExportAsyncRetryDryRun(null);
+      await loadRecoveryHistoryExportAsyncTasks(true);
+      await handleRefreshRecoveryHistoryExportAsyncSummary(true);
+    } catch {
+      toast.error('Failed to retry visible terminal ops recovery async export tasks');
+    } finally {
+      setRecoveryHistoryExportAsyncRetryingVisibleTerminal(false);
+    }
+  };
+
   const handleRefreshRenditionSummary = useCallback(async () => {
     try {
       setRenditionSummaryRefreshing(true);
@@ -2879,6 +3260,7 @@ const PreviewDiagnosticsPage: React.FC = () => {
   const handleStartRenditionExportTask = async () => {
     try {
       setRenditionExportTaskStarting(true);
+      setRenditionExportTaskPage(0);
       const task = await previewDiagnosticsService.startRenditionResourcesExportTask(
         windowDays,
         BACKEND_SUMMARY_SAMPLE_LIMIT
@@ -2887,7 +3269,12 @@ const PreviewDiagnosticsPage: React.FC = () => {
       if (!taskId) {
         throw new Error('missing_task_id');
       }
-      toast.success(`Rendition async export task started: ${taskId}`);
+      if (Boolean(task.deduplicated)) {
+        const reusedTaskId = (task.deduplicatedFromTaskId || taskId || '').trim() || taskId;
+        toast.info(task.message || `Rendition async export task reused: ${reusedTaskId}`);
+      } else {
+        toast.success(`Rendition async export task started: ${taskId}`);
+      }
       await loadRenditionExportTasks(true);
     } catch {
       toast.error('Failed to start rendition async export task');
@@ -2939,6 +3326,151 @@ const PreviewDiagnosticsPage: React.FC = () => {
     }
   };
 
+  const handleRetryTerminalRenditionExportTasks = async () => {
+    try {
+      setRenditionExportTaskRetryingTerminal(true);
+      const rawStatusFilter = renditionExportTaskStatusFilter;
+      const statusFilter: PreviewRenditionResourcesExportTaskTerminalStatusFilter | undefined = (
+        rawStatusFilter !== 'ALL'
+        && RENDITION_EXPORT_TASK_TERMINAL_RETRY_FILTER_STATUSES.has(rawStatusFilter)
+      ) ? (rawStatusFilter as PreviewRenditionResourcesExportTaskTerminalStatusFilter) : undefined;
+      const response = await previewDiagnosticsService.retryTerminalRenditionResourcesExportTasks(
+        statusFilter,
+        RENDITION_EXPORT_TASK_LIMIT
+      );
+      const retriedCount = Number.isFinite(response?.retried) ? response.retried : 0;
+      const reusedCount = Number.isFinite(response?.reused) ? response.reused : 0;
+      const skippedCount = Number.isFinite(response?.skipped) ? response.skipped : 0;
+      const failedCount = Number.isFinite(response?.failed) ? response.failed : 0;
+      const summary = `retried=${retriedCount}, reused=${reusedCount}, skipped=${skippedCount}, failed=${failedCount}`;
+      if (retriedCount > 0) {
+        toast.success(`Rendition async terminal retry done: ${summary}`);
+      } else {
+        toast.info(response?.message || `No terminal rendition async export tasks matched retry filters (${summary})`);
+      }
+      setRenditionExportTaskRetryDryRun(null);
+      await loadRenditionExportTasks(true);
+    } catch {
+      toast.error('Failed to retry terminal rendition async export tasks');
+    } finally {
+      setRenditionExportTaskRetryingTerminal(false);
+    }
+  };
+
+  const handleDryRunRetryTerminalRenditionExportTasks = async () => {
+    try {
+      setRenditionExportTaskDryRunningTerminal(true);
+      const rawStatusFilter = renditionExportTaskStatusFilter;
+      const statusFilter: PreviewRenditionResourcesExportTaskTerminalStatusFilter | undefined = (
+        rawStatusFilter !== 'ALL'
+        && RENDITION_EXPORT_TASK_TERMINAL_RETRY_FILTER_STATUSES.has(rawStatusFilter)
+      ) ? (rawStatusFilter as PreviewRenditionResourcesExportTaskTerminalStatusFilter) : undefined;
+      const response = await previewDiagnosticsService.dryRunRetryTerminalRenditionResourcesExportTasks(
+        statusFilter,
+        RENDITION_EXPORT_TASK_LIMIT
+      );
+      setRenditionExportTaskRetryDryRun(response || null);
+      setRenditionExportTaskRetryDryRunSelectedTaskIds(
+        collectRetryableSourceTaskIds(response?.results)
+      );
+      const retryableCount = Number.isFinite(response?.retryable) ? response.retryable : 0;
+      const skippedCount = Number.isFinite(response?.skipped) ? response.skipped : 0;
+      const summary = `retryable=${retryableCount}, skipped=${skippedCount}`;
+      if (retryableCount > 0) {
+        toast.info(`Rendition async terminal dry-run: ${summary}`);
+      } else {
+        toast.info(response?.message || `No terminal rendition async export tasks matched dry-run filters (${summary})`);
+      }
+    } catch {
+      toast.error('Failed to dry-run terminal retry for rendition async export tasks');
+    } finally {
+      setRenditionExportTaskDryRunningTerminal(false);
+    }
+  };
+
+  const handleExportDryRunRetryTerminalRenditionExportTasks = async () => {
+    try {
+      setRenditionExportTaskDryRunExporting(true);
+      const rawStatusFilter = renditionExportTaskStatusFilter;
+      const statusFilter: PreviewRenditionResourcesExportTaskTerminalStatusFilter | undefined = (
+        rawStatusFilter !== 'ALL'
+        && RENDITION_EXPORT_TASK_TERMINAL_RETRY_FILTER_STATUSES.has(rawStatusFilter)
+      ) ? (rawStatusFilter as PreviewRenditionResourcesExportTaskTerminalStatusFilter) : undefined;
+      await previewDiagnosticsService.exportDryRunRetryTerminalRenditionResourcesExportTasks(
+        statusFilter,
+        RENDITION_EXPORT_TASK_LIMIT
+      );
+      toast.success('Rendition async terminal dry-run CSV exported');
+    } catch {
+      toast.error('Failed to export rendition async terminal dry-run CSV');
+    } finally {
+      setRenditionExportTaskDryRunExporting(false);
+    }
+  };
+
+  const handleRetrySelectedRenditionExportTasks = async () => {
+    if (renditionExportTaskRetryDryRunSelectedTaskIds.length === 0) {
+      toast.info('No selected terminal rendition async export tasks to retry');
+      return;
+    }
+    try {
+      setRenditionExportTaskRetryingSelected(true);
+      const response = await previewDiagnosticsService.retryTerminalRenditionResourcesExportTasksByTaskIds(
+        renditionExportTaskRetryDryRunSelectedTaskIds
+      );
+      const retriedCount = Number.isFinite(response?.retried) ? response.retried : 0;
+      const reusedCount = Number.isFinite(response?.reused) ? response.reused : 0;
+      const skippedCount = Number.isFinite(response?.skipped) ? response.skipped : 0;
+      const failedCount = Number.isFinite(response?.failed) ? response.failed : 0;
+      const summary = `retried=${retriedCount}, reused=${reusedCount}, skipped=${skippedCount}, failed=${failedCount}`;
+      if (retriedCount > 0) {
+        toast.success(`Rendition async selected retry done: ${summary}`);
+      } else {
+        toast.info(response?.message || `No selected terminal rendition async export tasks were retried (${summary})`);
+      }
+      setRenditionExportTaskRetryDryRun(null);
+      setRenditionExportTaskRetryDryRunSelectedTaskIds([]);
+      await loadRenditionExportTasks(true);
+    } catch {
+      toast.error('Failed to retry selected terminal rendition async export tasks');
+    } finally {
+      setRenditionExportTaskRetryingSelected(false);
+    }
+  };
+
+  const handleRetryVisibleTerminalRenditionExportTasks = async () => {
+    const sourceTaskIds = renditionExportTasks
+      .filter((task) => RENDITION_EXPORT_TASK_TERMINAL_RETRY_FILTER_STATUSES.has(
+        normalizeRenditionExportTaskStatus(task.status)
+      ))
+      .map((task) => String(task?.taskId || '').trim())
+      .filter((taskId) => taskId.length > 0);
+    if (sourceTaskIds.length === 0) {
+      toast.info('No visible terminal rendition async export tasks to retry');
+      return;
+    }
+    try {
+      setRenditionExportTaskRetryingVisibleTerminal(true);
+      const response = await previewDiagnosticsService.retryTerminalRenditionResourcesExportTasksByTaskIds(sourceTaskIds);
+      const retriedCount = Number.isFinite(response?.retried) ? response.retried : 0;
+      const reusedCount = Number.isFinite(response?.reused) ? response.reused : 0;
+      const skippedCount = Number.isFinite(response?.skipped) ? response.skipped : 0;
+      const failedCount = Number.isFinite(response?.failed) ? response.failed : 0;
+      const summary = `retried=${retriedCount}, reused=${reusedCount}, skipped=${skippedCount}, failed=${failedCount}`;
+      if (retriedCount > 0) {
+        toast.success(`Rendition async visible-terminal retry done: ${summary}`);
+      } else {
+        toast.info(response?.message || `No visible terminal rendition async export tasks were retried (${summary})`);
+      }
+      setRenditionExportTaskRetryDryRun(null);
+      await loadRenditionExportTasks(true);
+    } catch {
+      toast.error('Failed to retry visible terminal rendition async export tasks');
+    } finally {
+      setRenditionExportTaskRetryingVisibleTerminal(false);
+    }
+  };
+
   const handleCancelRenditionExportTask = async (taskId: string) => {
     try {
       setRenditionExportTaskActionId(taskId);
@@ -2963,7 +3495,14 @@ const PreviewDiagnosticsPage: React.FC = () => {
       if (!newTaskId) {
         throw new Error('missing_task_id');
       }
-      toast.success(`Rendition async export task retried: ${taskId} -> ${newTaskId}`);
+      if (Boolean(retriedTask.deduplicated)) {
+        toast.info(
+          retriedTask.message
+          || `Rendition async export retry reused active task: ${newTaskId}`
+        );
+      } else {
+        toast.success(`Rendition async export task retried: ${taskId} -> ${newTaskId}`);
+      }
       await loadRenditionExportTasks(true);
     } catch {
       toast.error(`Failed to retry rendition async export task: ${taskId}`);
@@ -3031,6 +3570,38 @@ const PreviewDiagnosticsPage: React.FC = () => {
     }
   };
 
+  const handleExportGlobalDryRun = async () => {
+    if (dryRunMode === 'QUEUE_BY_REASON' && !dryRunReason.trim()) {
+      toast.error('Reason is required in "Queue by Reason" mode');
+      return;
+    }
+    try {
+      setDryRunExporting(true);
+      const blob = await opsRecoveryService.exportDryRunCsv({
+        domain: 'PREVIEW',
+        mode: dryRunMode,
+        reason: normalizedDryRunReason,
+        category: dryRunCategory,
+        retryable: normalizedDryRunRetryable,
+        maxDocuments: normalizedDryRunMaxDocuments,
+        days: windowDays,
+        force: normalizedDryRunForce,
+      });
+      const filename = `ops_recovery_dry_run_${new Date().toISOString().replace(/[:.]/g, '-')}.csv`;
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.click();
+      window.URL.revokeObjectURL(url);
+      toast.success('Ops recovery dry-run CSV exported');
+    } catch {
+      toast.error('Failed to export ops recovery dry-run CSV');
+    } finally {
+      setDryRunExporting(false);
+    }
+  };
+
   const handleExecuteDryRunPlan = async () => {
     if (!dryRunResult) {
       toast.info('Run dry-run first, then execute recovery');
@@ -3086,12 +3657,13 @@ const PreviewDiagnosticsPage: React.FC = () => {
             });
 
       const primaryLabel = dryRunMode === 'CLEAR_BY_FILTER' ? 'cleared' : 'queued';
+      const batchPreviewDetail = formatRecoveryBatchPreviewDetail(batch.results?.[0]);
       if (batch.failed === 0 && batch.skipped === 0) {
         toast.success(`Recovery executed: ${primaryLabel}=${batch.queued}, skipped=${batch.skipped}, failed=${batch.failed}`);
       } else if (batch.queued > 0) {
-        toast.warning(`Recovery partial: ${primaryLabel}=${batch.queued}, skipped=${batch.skipped}, failed=${batch.failed}`);
+        toast.warning(`Recovery partial: ${primaryLabel}=${batch.queued}, skipped=${batch.skipped}, failed=${batch.failed}${batchPreviewDetail ? ` • ${batchPreviewDetail}` : ''}`);
       } else {
-        toast.error(`Recovery execution failed: ${primaryLabel}=${batch.queued}, skipped=${batch.skipped}, failed=${batch.failed}`);
+        toast.error(`Recovery execution failed: ${primaryLabel}=${batch.queued}, skipped=${batch.skipped}, failed=${batch.failed}${batchPreviewDetail ? ` • ${batchPreviewDetail}` : ''}`);
       }
       await loadFailures();
     } catch {
@@ -3100,6 +3672,32 @@ const PreviewDiagnosticsPage: React.FC = () => {
       setDryRunExecuting(false);
     }
   };
+
+  const renditionDryRunRetryableTaskIds = useMemo(
+    () => collectRetryableSourceTaskIds(renditionExportTaskRetryDryRun?.results),
+    [renditionExportTaskRetryDryRun]
+  );
+  const renditionDryRunSelectedRetryableCount = useMemo(
+    () => renditionDryRunRetryableTaskIds.filter((taskId) => renditionExportTaskRetryDryRunSelectedTaskIds.includes(taskId)).length,
+    [renditionDryRunRetryableTaskIds, renditionExportTaskRetryDryRunSelectedTaskIds]
+  );
+  const renditionDryRunAllSelected = renditionDryRunRetryableTaskIds.length > 0
+    && renditionDryRunSelectedRetryableCount === renditionDryRunRetryableTaskIds.length;
+  const renditionDryRunPartiallySelected = renditionDryRunSelectedRetryableCount > 0 && !renditionDryRunAllSelected;
+
+  const recoveryHistoryAsyncDryRunRetryableTaskIds = useMemo(
+    () => collectRetryableSourceTaskIds(recoveryHistoryExportAsyncRetryDryRun?.results),
+    [recoveryHistoryExportAsyncRetryDryRun]
+  );
+  const recoveryHistoryAsyncDryRunSelectedRetryableCount = useMemo(
+    () => recoveryHistoryAsyncDryRunRetryableTaskIds
+      .filter((taskId) => recoveryHistoryExportAsyncRetryDryRunSelectedTaskIds.includes(taskId)).length,
+    [recoveryHistoryAsyncDryRunRetryableTaskIds, recoveryHistoryExportAsyncRetryDryRunSelectedTaskIds]
+  );
+  const recoveryHistoryAsyncDryRunAllSelected = recoveryHistoryAsyncDryRunRetryableTaskIds.length > 0
+    && recoveryHistoryAsyncDryRunSelectedRetryableCount === recoveryHistoryAsyncDryRunRetryableTaskIds.length;
+  const recoveryHistoryAsyncDryRunPartiallySelected = recoveryHistoryAsyncDryRunSelectedRetryableCount > 0
+    && !recoveryHistoryAsyncDryRunAllSelected;
 
   return (
     <Box p={3}>
@@ -3472,7 +4070,34 @@ const PreviewDiagnosticsPage: React.FC = () => {
                             {item.previewStatus && (
                               <Chip size="small" variant="outlined" label={`Preview ${item.previewStatus}`} />
                             )}
+                            {item.previewFailureCategory && (
+                              <Chip size="small" variant="outlined" color="warning" label={`Failure ${item.previewFailureCategory}`} />
+                            )}
                           </Stack>
+                          {(item.previewFailureReason || item.previewLastUpdated) && (
+                            <Stack spacing={0.25}>
+                              {item.previewFailureReason && (
+                                <Typography variant="caption" color="text.secondary">
+                                  {`Preview reason: ${formatPreviewFailureReasonLabel(item.previewFailureReason)}`}
+                                </Typography>
+                              )}
+                              {item.previewLastUpdated && (
+                                <Typography variant="caption" color="text.secondary">
+                                  {`Preview updated: ${formatLastUpdated(item.previewLastUpdated)}`}
+                                </Typography>
+                              )}
+                            </Stack>
+                          )}
+                          {item.documentId && (
+                            <Button
+                              size="small"
+                              variant="text"
+                              sx={{ alignSelf: 'flex-start', px: 0 }}
+                              onClick={() => handleOpenRenditionRegistry(item.documentId, item.name)}
+                            >
+                              View rendition registry
+                            </Button>
+                          )}
                         </Stack>
                       </TableCell>
                       <TableCell align="right">{item.attempts}</TableCell>
@@ -3507,41 +4132,41 @@ const PreviewDiagnosticsPage: React.FC = () => {
         </Paper>
       )}
 
-      {queueDeclinedSummary && (
+      {effectiveQueueDeclinedSummary && (
         <Paper sx={{ p: 2, mb: 2 }}>
           <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1} flexWrap="wrap" mb={1}>
             <Typography variant="h6">Preview Queue Declined</Typography>
             <Stack direction="row" gap={1} flexWrap="wrap">
               <Chip
                 size="small"
-                label={queueDeclinedSummary.queueEnabled ? 'Queue enabled' : 'Queue disabled'}
-                color={queueDeclinedSummary.queueEnabled ? 'success' : 'default'}
-                variant={queueDeclinedSummary.queueEnabled ? 'outlined' : 'filled'}
+                label={effectiveQueueDeclinedSummary.queueEnabled ? 'Queue enabled' : 'Queue disabled'}
+                color={effectiveQueueDeclinedSummary.queueEnabled ? 'success' : 'default'}
+                variant={effectiveQueueDeclinedSummary.queueEnabled ? 'outlined' : 'filled'}
               />
-              <Chip size="small" label={`Declined ${queueDeclinedSummary.totalDeclined}`} variant="outlined" />
+              <Chip size="small" label={`Declined ${effectiveQueueDeclinedSummary.totalDeclined}`} variant="outlined" />
               <Chip
                 size="small"
-                label={`Sample ${queueDeclinedSummary.filteredSampledItems ?? queueDeclinedSummary.items.length}/${queueDeclinedSummary.totalSampledItems ?? queueDeclinedSummary.items.length}`}
+                label={`Sample ${effectiveQueueDeclinedSummary.filteredSampledItems ?? effectiveQueueDeclinedSummary.items.length}/${effectiveQueueDeclinedSummary.totalSampledItems ?? effectiveQueueDeclinedSummary.items.length}`}
                 variant="outlined"
               />
               <Chip
                 size="small"
-                label={`Force required ${queueDeclinedSummary.forceRequiredCount ?? 0}`}
+                label={`Force required ${effectiveQueueDeclinedSummary.forceRequiredCount ?? 0}`}
                 variant="outlined"
               />
               <Chip
                 size="small"
-                label={`Filter forceRequired=${queueDeclinedSummary.forceRequiredFilter || 'ANY'}`}
+                label={`Filter forceRequired=${effectiveQueueDeclinedSummary.forceRequiredFilter || 'ANY'}`}
                 variant="outlined"
               />
               <Chip
                 size="small"
                 label={`Filter window=${formatQueueDeclinedWindowHoursLabel(
-                  queueDeclinedSummary.windowHoursFilter ?? queueDeclinedWindowHoursFilter
+                  effectiveQueueDeclinedSummary.windowHoursFilter ?? queueDeclinedWindowHoursFilter
                 )}`}
                 variant="outlined"
               />
-              {(queueDeclinedSummary.categoryCounts || []).map((entry) => (
+              {(effectiveQueueDeclinedSummary.categoryCounts || []).map((entry) => (
                 <Chip
                   key={`queue-declined-category-count-${entry.category}`}
                   size="small"
@@ -3549,7 +4174,7 @@ const PreviewDiagnosticsPage: React.FC = () => {
                   variant="outlined"
                 />
               ))}
-              {queueDeclinedSummary.sampleTruncated && (
+              {effectiveQueueDeclinedSummary.sampleTruncated && (
                 <Chip size="small" label="Sample truncated" color="warning" variant="outlined" />
               )}
               <Button
@@ -3567,7 +4192,7 @@ const PreviewDiagnosticsPage: React.FC = () => {
                 disabled={
                   queueDeclinedRequeueing
                   || queueDeclinedDryRunning
-                  || (queueDeclinedSummary.filteredSampledItems ?? 0) === 0
+                  || (effectiveQueueDeclinedSummary.filteredSampledItems ?? 0) === 0
                 }
                 onClick={() => void handleRequeueQueueDeclined()}
               >
@@ -3577,7 +4202,7 @@ const PreviewDiagnosticsPage: React.FC = () => {
                 size="small"
                 variant="outlined"
                 startIcon={<SearchIcon />}
-                disabled={queueDeclinedDryRunning || queueDeclinedRequeueing || (queueDeclinedSummary.filteredSampledItems ?? 0) === 0}
+                disabled={queueDeclinedDryRunning || queueDeclinedRequeueing || (effectiveQueueDeclinedSummary.filteredSampledItems ?? 0) === 0}
                 onClick={() => void handleDryRunQueueDeclinedRequeue()}
               >
                 {queueDeclinedDryRunning ? 'Dry-running...' : 'Dry-run Requeue'}
@@ -3590,7 +4215,7 @@ const PreviewDiagnosticsPage: React.FC = () => {
                   queueDeclinedDryRunExporting
                   || queueDeclinedDryRunning
                   || queueDeclinedRequeueing
-                  || (queueDeclinedSummary.filteredSampledItems ?? 0) === 0
+                  || (effectiveQueueDeclinedSummary.filteredSampledItems ?? 0) === 0
                 }
                 onClick={() => void handleExportQueueDeclinedRequeueDryRunCsv()}
               >
@@ -3601,7 +4226,7 @@ const PreviewDiagnosticsPage: React.FC = () => {
                 variant="outlined"
                 color="warning"
                 startIcon={<ClearIcon />}
-                disabled={queueDeclinedClearing || queueDeclinedDryRunning || (queueDeclinedSummary.filteredSampledItems ?? 0) === 0}
+                disabled={queueDeclinedClearing || queueDeclinedDryRunning || (effectiveQueueDeclinedSummary.filteredSampledItems ?? 0) === 0}
                 onClick={() => void handleClearQueueDeclined()}
               >
                 {queueDeclinedClearing ? 'Clearing...' : 'Clear Declined'}
@@ -3860,6 +4485,7 @@ const PreviewDiagnosticsPage: React.FC = () => {
                         <TableCell>Category</TableCell>
                         <TableCell>Outcome</TableCell>
                         <TableCell>Reason Code</TableCell>
+                        <TableCell>Preview</TableCell>
                         <TableCell>Preflight</TableCell>
                         <TableCell>Message</TableCell>
                         <TableCell>Next Attempt</TableCell>
@@ -3872,6 +4498,22 @@ const PreviewDiagnosticsPage: React.FC = () => {
                           <TableCell>{item?.category || '-'}</TableCell>
                           <TableCell>{item?.outcome || '-'}</TableCell>
                           <TableCell>{item?.reasonCode || '-'}</TableCell>
+                          <TableCell sx={{ minWidth: 220 }}>
+                            <Stack spacing={0.25}>
+                              <Typography variant="caption" component="div">
+                                {`status: ${item?.previewStatus || '-'}`}
+                              </Typography>
+                              <Typography variant="caption" component="div">
+                                {`failure: ${item?.previewFailureCategory || '-'}`}
+                              </Typography>
+                              <Typography variant="caption" component="div">
+                                {`reason: ${formatPreviewFailureReasonLabel(item?.previewFailureReason)}`}
+                              </Typography>
+                              <Typography variant="caption" component="div">
+                                {`updated: ${formatLastUpdated(item?.previewLastUpdated)}`}
+                              </Typography>
+                            </Stack>
+                          </TableCell>
                           <TableCell>
                             <Stack spacing={0.25}>
                               <Typography variant="caption" component="div">
@@ -4500,7 +5142,7 @@ const PreviewDiagnosticsPage: React.FC = () => {
             </TableContainer>
           )}
 
-          {queueDeclinedSummary.items.length === 0 ? (
+          {effectiveQueueDeclinedSummary.items.length === 0 ? (
             <Alert severity="info">No declined queue decisions.</Alert>
           ) : (
             <TableContainer>
@@ -4516,7 +5158,7 @@ const PreviewDiagnosticsPage: React.FC = () => {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {queueDeclinedSummary.items.map((item) => (
+                  {effectiveQueueDeclinedSummary.items.map((item) => (
                     <TableRow key={`${item.documentId || 'unknown'}-${item.declinedAt || 'none'}`}>
                       <TableCell>
                         <Stack spacing={0.25}>
@@ -4536,7 +5178,34 @@ const PreviewDiagnosticsPage: React.FC = () => {
                             {item.previewStatus && (
                               <Chip size="small" variant="outlined" label={`Preview ${item.previewStatus}`} />
                             )}
+                            {item.previewFailureCategory && (
+                              <Chip size="small" variant="outlined" color="warning" label={`Failure ${item.previewFailureCategory}`} />
+                            )}
                           </Stack>
+                          {(item.previewFailureReason || item.previewLastUpdated) && (
+                            <Stack spacing={0.25}>
+                              {item.previewFailureReason && (
+                                <Typography variant="caption" color="text.secondary">
+                                  {`Preview reason: ${formatPreviewFailureReasonLabel(item.previewFailureReason)}`}
+                                </Typography>
+                              )}
+                              {item.previewLastUpdated && (
+                                <Typography variant="caption" color="text.secondary">
+                                  {`Preview updated: ${formatLastUpdated(item.previewLastUpdated)}`}
+                                </Typography>
+                              )}
+                            </Stack>
+                          )}
+                          {item.documentId && (
+                            <Button
+                              size="small"
+                              variant="text"
+                              sx={{ alignSelf: 'flex-start', px: 0 }}
+                              onClick={() => handleOpenRenditionRegistry(item.documentId, item.name)}
+                            >
+                              View rendition registry
+                            </Button>
+                          )}
                         </Stack>
                       </TableCell>
                       <TableCell>
@@ -4602,6 +5271,7 @@ const PreviewDiagnosticsPage: React.FC = () => {
                   aria-label="Rendition async task filter status"
                   value={renditionExportTaskStatusFilter}
                   onChange={(event) => {
+                    setRenditionExportTaskPage(0);
                     setRenditionExportTaskStatusFilter(
                       event.target.value as 'ALL' | PreviewRenditionResourcesExportTaskStatusFilter
                     );
@@ -4610,6 +5280,24 @@ const PreviewDiagnosticsPage: React.FC = () => {
                   {RENDITION_EXPORT_TASK_STATUS_FILTER_OPTIONS.map((option) => (
                     <MenuItem key={`rendition-task-filter-status-${option.value}`} value={option.value}>
                       {option.label}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <FormControl size="small" sx={{ minWidth: 150 }}>
+                <Select
+                  aria-label="Rendition async task page size"
+                  value={renditionExportTaskMaxItems}
+                  onChange={(event) => {
+                    setRenditionExportTaskPage(0);
+                    setRenditionExportTaskMaxItems(
+                      Number(event.target.value) as (typeof RENDITION_EXPORT_TASK_PAGE_SIZE_OPTIONS)[number]
+                    );
+                  }}
+                >
+                  {RENDITION_EXPORT_TASK_PAGE_SIZE_OPTIONS.map((option) => (
+                    <MenuItem key={`rendition-task-page-size-${option}`} value={option}>
+                      {`Rows ${option}`}
                     </MenuItem>
                   ))}
                 </Select>
@@ -4633,6 +5321,46 @@ const PreviewDiagnosticsPage: React.FC = () => {
                 aria-label="Cancel active rendition export tasks"
               >
                 {renditionExportTaskCancellingActive ? 'Cancelling active...' : 'Cancel active tasks'}
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<RetryIcon />}
+                onClick={() => void handleRetryTerminalRenditionExportTasks()}
+                disabled={renditionExportTaskRetryingTerminal}
+                aria-label="Retry terminal rendition export tasks"
+              >
+                {renditionExportTaskRetryingTerminal ? 'Retrying terminal...' : 'Retry terminal tasks'}
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<RetryIcon />}
+                onClick={() => void handleDryRunRetryTerminalRenditionExportTasks()}
+                disabled={renditionExportTaskDryRunningTerminal}
+                aria-label="Dry-run retry terminal rendition export tasks"
+              >
+                {renditionExportTaskDryRunningTerminal ? 'Dry-running terminal...' : 'Dry-run Terminal'}
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<DownloadIcon />}
+                onClick={() => void handleExportDryRunRetryTerminalRenditionExportTasks()}
+                disabled={renditionExportTaskDryRunExporting}
+                aria-label="Export rendition terminal dry-run CSV"
+              >
+                {renditionExportTaskDryRunExporting ? 'Exporting dry-run...' : 'Export Dry-run CSV'}
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<RetryIcon />}
+                onClick={() => void handleRetryVisibleTerminalRenditionExportTasks()}
+                disabled={renditionExportTaskRetryingVisibleTerminal}
+                aria-label="Retry visible terminal rendition export tasks"
+              >
+                {renditionExportTaskRetryingVisibleTerminal ? 'Retrying visible...' : 'Retry visible terminal'}
               </Button>
               <Button
                 size="small"
@@ -4700,7 +5428,156 @@ const PreviewDiagnosticsPage: React.FC = () => {
             <Chip size="small" variant="outlined" color="warning" label={`Timed out ${renditionExportTaskSummary?.timedOutCount ?? 0}`} />
             <Chip size="small" variant="outlined" color="default" label={`Expired ${renditionExportTaskSummary?.expiredCount ?? 0}`} />
             <Chip size="small" variant="outlined" label={`Terminal ${renditionExportTaskSummary?.terminalCount ?? 0}`} />
+            <Chip
+              size="small"
+              variant="outlined"
+              label={`Page ${Math.min(
+                renditionExportTaskPage + 1,
+                Math.max(Math.ceil(renditionExportTaskTotalItems / Math.max(renditionExportTaskMaxItems, 1)), 1)
+              )}/${Math.max(Math.ceil(renditionExportTaskTotalItems / Math.max(renditionExportTaskMaxItems, 1)), 1)}`}
+            />
+            <Chip
+              size="small"
+              variant="outlined"
+              label={`Listed ${renditionExportTasks.length}/${renditionExportTaskTotalItems}`}
+            />
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => setRenditionExportTaskPage((current) => Math.max(0, current - 1))}
+              disabled={renditionExportTasksLoading || renditionExportTaskPage <= 0}
+            >
+              Prev page
+            </Button>
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => setRenditionExportTaskPage((current) => current + 1)}
+              disabled={renditionExportTasksLoading || !renditionExportTaskHasMoreItems}
+            >
+              Next page
+            </Button>
           </Stack>
+
+          {renditionExportTaskRetryDryRun && (
+            <Box sx={{ mt: 2, mb: 1.5 }}>
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>Terminal Retry Dry-run Candidates</Typography>
+              <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap" sx={{ mb: 1 }}>
+                <Chip size="small" variant="outlined" label={`Requested ${renditionExportTaskRetryDryRun.requested ?? 0}`} />
+                <Chip size="small" variant="outlined" color="success" label={`Retryable ${renditionExportTaskRetryDryRun.retryable ?? 0}`} />
+                <Chip size="small" variant="outlined" color="warning" label={`Skipped ${renditionExportTaskRetryDryRun.skipped ?? 0}`} />
+                <Chip size="small" variant="outlined" label={`Selected ${renditionExportTaskRetryDryRunSelectedTaskIds.length}`} />
+                {(renditionExportTaskRetryDryRun.reasonBreakdown || []).map((item, index) => (
+                  <Chip
+                    key={`rendition-retry-dry-run-reason-${item?.reasonCode || 'unknown'}-${index}`}
+                    size="small"
+                    variant="outlined"
+                    label={`${item?.reasonCode || 'UNKNOWN'}:${item?.count ?? 0}`}
+                  />
+                ))}
+                <FormControlLabel
+                  sx={{ ml: 0.5, mr: 0.5 }}
+                  control={(
+                    <Checkbox
+                      size="small"
+                      checked={renditionDryRunAllSelected}
+                      indeterminate={renditionDryRunPartiallySelected}
+                      disabled={renditionExportTaskRetryingSelected || renditionDryRunRetryableTaskIds.length === 0}
+                      inputProps={{ 'aria-label': 'Select all retryable rendition dry-run candidates' }}
+                      onChange={(event) => {
+                        if (event.target.checked) {
+                          setRenditionExportTaskRetryDryRunSelectedTaskIds(renditionDryRunRetryableTaskIds);
+                        } else {
+                          setRenditionExportTaskRetryDryRunSelectedTaskIds([]);
+                        }
+                      }}
+                    />
+                  )}
+                  label="Select all retryable"
+                />
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => setRenditionExportTaskRetryDryRunSelectedTaskIds([])}
+                  disabled={renditionExportTaskRetryingSelected || renditionExportTaskRetryDryRunSelectedTaskIds.length === 0}
+                  aria-label="Clear selected rendition dry-run candidates"
+                >
+                  Clear Selection
+                </Button>
+                <Button
+                  size="small"
+                  variant="contained"
+                  startIcon={<RetryIcon />}
+                  onClick={() => void handleRetrySelectedRenditionExportTasks()}
+                  disabled={renditionExportTaskRetryingSelected || renditionExportTaskRetryDryRunSelectedTaskIds.length === 0}
+                  aria-label="Retry selected rendition dry-run candidates"
+                >
+                  {renditionExportTaskRetryingSelected ? 'Retrying selected...' : 'Retry Selected'}
+                </Button>
+              </Stack>
+              {(renditionExportTaskRetryDryRun.results || []).length === 0 ? (
+                <Alert severity="info">No dry-run candidates returned.</Alert>
+              ) : (
+                <TableContainer>
+                  <Table size="small" aria-label="Rendition async retry dry-run candidates">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell padding="checkbox">Select</TableCell>
+                        <TableCell>Source Task ID</TableCell>
+                        <TableCell>Status</TableCell>
+                        <TableCell>Outcome</TableCell>
+                        <TableCell>Reason</TableCell>
+                        <TableCell>Message</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {(renditionExportTaskRetryDryRun.results || []).map((item, index) => {
+                        const sourceTaskId = String(item?.sourceTaskId || '').trim();
+                        const selectable = sourceTaskId.length > 0 && (item?.outcome || '').toUpperCase() === 'RETRYABLE';
+                        const checked = selectable && renditionExportTaskRetryDryRunSelectedTaskIds.includes(sourceTaskId);
+                        return (
+                          <TableRow key={`rendition-retry-dry-run-${sourceTaskId || index}`}>
+                            <TableCell padding="checkbox">
+                              <Checkbox
+                                size="small"
+                                checked={checked}
+                                disabled={!selectable || renditionExportTaskRetryingSelected}
+                                inputProps={{ 'aria-label': `Select rendition dry-run source task ${sourceTaskId || 'unknown'}` }}
+                                onChange={(event) => {
+                                  if (!selectable) {
+                                    return;
+                                  }
+                                  setRenditionExportTaskRetryDryRunSelectedTaskIds((prev) => {
+                                    if (event.target.checked) {
+                                      return prev.includes(sourceTaskId) ? prev : [...prev, sourceTaskId];
+                                    }
+                                    return prev.filter((taskId) => taskId !== sourceTaskId);
+                                  });
+                                }}
+                              />
+                            </TableCell>
+                            <TableCell sx={{ maxWidth: 320 }}>
+                              <Tooltip title={item?.sourceTaskId || '—'} placement="top-start" arrow>
+                                <Typography variant="body2" noWrap>{item?.sourceTaskId || '—'}</Typography>
+                              </Tooltip>
+                            </TableCell>
+                            <TableCell>{item?.sourceStatus || '—'}</TableCell>
+                            <TableCell>{item?.outcome || '—'}</TableCell>
+                            <TableCell>{item?.reasonCode || '—'}</TableCell>
+                            <TableCell sx={{ maxWidth: 460 }}>
+                              <Tooltip title={item?.message || '—'} placement="top-start" arrow>
+                                <Typography variant="body2" noWrap>{item?.message || '—'}</Typography>
+                              </Tooltip>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </Box>
+          )}
 
           <Typography variant="subtitle2" sx={{ mt: 2, mb: 1 }}>Recent Async Export Tasks</Typography>
           {renditionExportTasks.length === 0 ? (
@@ -4847,6 +5724,14 @@ const PreviewDiagnosticsPage: React.FC = () => {
                             <Button
                               size="small"
                               variant="outlined"
+                              disabled={!documentId}
+                              onClick={() => handleOpenRenditionRegistry(documentId, resource.name)}
+                            >
+                              Registry
+                            </Button>
+                            <Button
+                              size="small"
+                              variant="outlined"
                               startIcon={<RetryIcon />}
                               disabled={disableRetry}
                               aria-label={`Retry rendition resource ${documentId || rowKey}`}
@@ -4888,6 +5773,16 @@ const PreviewDiagnosticsPage: React.FC = () => {
               disabled={dryRunLoading}
             >
               {dryRunLoading ? 'Running...' : 'Run Dry-run'}
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<DownloadIcon />}
+              onClick={() => void handleExportGlobalDryRun()}
+              disabled={dryRunExporting}
+              aria-label="Export ops recovery dry-run CSV"
+            >
+              {dryRunExporting ? 'Exporting dry-run...' : 'Export Dry-run CSV'}
             </Button>
             <Button
               variant="outlined"
@@ -5020,6 +5915,7 @@ const PreviewDiagnosticsPage: React.FC = () => {
                     <TableRow>
                       <TableCell>Document</TableCell>
                       <TableCell>Category</TableCell>
+                      <TableCell>Preview</TableCell>
                       <TableCell>Predicted Outcome</TableCell>
                       <TableCell>Predicted State</TableCell>
                       <TableCell>Reason</TableCell>
@@ -5035,6 +5931,22 @@ const PreviewDiagnosticsPage: React.FC = () => {
                         </TableCell>
                         <TableCell>
                           <Chip size="small" label={sample.failureCategory || 'UNKNOWN'} variant="outlined" />
+                        </TableCell>
+                        <TableCell sx={{ minWidth: 220 }}>
+                          <Stack spacing={0.25}>
+                            <Typography variant="caption" component="div">
+                              {`status: ${sample.previewStatus || '-'}`}
+                            </Typography>
+                            <Typography variant="caption" component="div">
+                              {`failure: ${sample.previewFailureCategory || '-'}`}
+                            </Typography>
+                            <Typography variant="caption" component="div">
+                              {`reason: ${formatPreviewFailureReasonLabel(sample.previewFailureReason)}`}
+                            </Typography>
+                            <Typography variant="caption" component="div">
+                              {`updated: ${formatLastUpdated(sample.previewLastUpdated)}`}
+                            </Typography>
+                          </Stack>
                         </TableCell>
                         <TableCell>{sample.predictedOutcome || '—'}</TableCell>
                         <TableCell>{sample.predictedState || '—'}</TableCell>
@@ -5247,6 +6159,24 @@ const PreviewDiagnosticsPage: React.FC = () => {
                 ))}
               </Select>
             </FormControl>
+            <FormControl size="small" sx={{ minWidth: 150 }}>
+              <Select
+                aria-label="Ops recovery async task page size"
+                value={recoveryHistoryExportAsyncTaskMaxItems}
+                onChange={(event) => {
+                  setRecoveryHistoryExportAsyncTaskPage(0);
+                  setRecoveryHistoryExportAsyncTaskMaxItems(
+                    Number(event.target.value) as (typeof RECOVERY_HISTORY_EXPORT_ASYNC_TASK_PAGE_SIZE_OPTIONS)[number]
+                  );
+                }}
+              >
+                {RECOVERY_HISTORY_EXPORT_ASYNC_TASK_PAGE_SIZE_OPTIONS.map((option) => (
+                  <MenuItem key={`ops-recovery-async-task-page-size-${option}`} value={option}>
+                    {`Rows ${option}`}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
             <Button
               variant="outlined"
               size="small"
@@ -5266,6 +6196,46 @@ const PreviewDiagnosticsPage: React.FC = () => {
               aria-label="Refresh ops recovery async export tasks"
             >
               {recoveryHistoryExportAsyncTasksLoading ? 'Refreshing tasks...' : 'Refresh async tasks'}
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<RetryIcon />}
+              onClick={() => void handleRetryTerminalRecoveryHistoryExportAsyncTasks()}
+              disabled={recoveryHistoryExportAsyncRetryingTerminal}
+              aria-label="Retry terminal ops recovery async export tasks"
+            >
+              {recoveryHistoryExportAsyncRetryingTerminal ? 'Retrying terminal...' : 'Retry terminal tasks'}
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<RetryIcon />}
+              onClick={() => void handleDryRunRetryTerminalRecoveryHistoryExportAsyncTasks()}
+              disabled={recoveryHistoryExportAsyncDryRunningTerminal}
+              aria-label="Dry-run retry terminal ops recovery async export tasks"
+            >
+              {recoveryHistoryExportAsyncDryRunningTerminal ? 'Dry-running terminal...' : 'Dry-run Terminal'}
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<DownloadIcon />}
+              onClick={() => void handleExportDryRunRetryTerminalRecoveryHistoryExportAsyncTasks()}
+              disabled={recoveryHistoryExportAsyncDryRunExporting}
+              aria-label="Export ops recovery terminal dry-run CSV"
+            >
+              {recoveryHistoryExportAsyncDryRunExporting ? 'Exporting dry-run...' : 'Export Dry-run CSV'}
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<RetryIcon />}
+              onClick={() => void handleRetryVisibleTerminalRecoveryHistoryExportAsyncTasks()}
+              disabled={recoveryHistoryExportAsyncRetryingVisibleTerminal}
+              aria-label="Retry visible terminal ops recovery async export tasks"
+            >
+              {recoveryHistoryExportAsyncRetryingVisibleTerminal ? 'Retrying visible...' : 'Retry visible terminal'}
             </Button>
             <Button
               variant="outlined"
@@ -5330,6 +6300,47 @@ const PreviewDiagnosticsPage: React.FC = () => {
             variant="outlined"
             label={`Expired ${recoveryHistoryExportAsyncSummary?.expiredCount ?? 0}`}
           />
+          <Chip
+            size="small"
+            variant="outlined"
+            label={`Page ${Math.min(
+              recoveryHistoryExportAsyncTaskPage + 1,
+              Math.max(
+                Math.ceil(
+                  recoveryHistoryExportAsyncTaskTotalItems
+                  / Math.max(recoveryHistoryExportAsyncTaskMaxItems, 1)
+                ),
+                1
+              )
+            )}/${Math.max(
+              Math.ceil(
+                recoveryHistoryExportAsyncTaskTotalItems
+                / Math.max(recoveryHistoryExportAsyncTaskMaxItems, 1)
+              ),
+              1
+            )}`}
+          />
+          <Chip
+            size="small"
+            variant="outlined"
+            label={`Listed ${recoveryHistoryExportAsyncTasks.length}/${recoveryHistoryExportAsyncTaskTotalItems}`}
+          />
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={() => setRecoveryHistoryExportAsyncTaskPage((current) => Math.max(0, current - 1))}
+            disabled={recoveryHistoryExportAsyncTasksLoading || recoveryHistoryExportAsyncTaskPage <= 0}
+          >
+            Prev page
+          </Button>
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={() => setRecoveryHistoryExportAsyncTaskPage((current) => current + 1)}
+            disabled={recoveryHistoryExportAsyncTasksLoading || !recoveryHistoryExportAsyncTaskHasMoreItems}
+          >
+            Next page
+          </Button>
           {recoveryHistoryExportAsyncSummaryLoading && (
             <Chip size="small" variant="outlined" label="Refreshing async summary..." />
           )}
@@ -5344,6 +6355,127 @@ const PreviewDiagnosticsPage: React.FC = () => {
             Refresh summary
           </Button>
         </Stack>
+        {recoveryHistoryExportAsyncRetryDryRun && (
+          <Box sx={{ mb: 1.5 }}>
+            <Typography variant="subtitle2" sx={{ mb: 1 }}>Terminal Retry Dry-run Candidates</Typography>
+            <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap" sx={{ mb: 1 }}>
+              <Chip size="small" variant="outlined" label={`Requested ${recoveryHistoryExportAsyncRetryDryRun.requested ?? 0}`} />
+              <Chip size="small" variant="outlined" color="success" label={`Retryable ${recoveryHistoryExportAsyncRetryDryRun.retryable ?? 0}`} />
+              <Chip size="small" variant="outlined" color="warning" label={`Skipped ${recoveryHistoryExportAsyncRetryDryRun.skipped ?? 0}`} />
+              <Chip size="small" variant="outlined" label={`Selected ${recoveryHistoryExportAsyncRetryDryRunSelectedTaskIds.length}`} />
+              {(recoveryHistoryExportAsyncRetryDryRun.reasonBreakdown || []).map((item, index) => (
+                <Chip
+                  key={`ops-recovery-retry-dry-run-reason-${item?.reasonCode || 'unknown'}-${index}`}
+                  size="small"
+                  variant="outlined"
+                  label={`${item?.reasonCode || 'UNKNOWN'}:${item?.count ?? 0}`}
+                />
+              ))}
+              <FormControlLabel
+                sx={{ ml: 0.5, mr: 0.5 }}
+                control={(
+                  <Checkbox
+                    size="small"
+                    checked={recoveryHistoryAsyncDryRunAllSelected}
+                    indeterminate={recoveryHistoryAsyncDryRunPartiallySelected}
+                    disabled={recoveryHistoryExportAsyncRetryingSelected || recoveryHistoryAsyncDryRunRetryableTaskIds.length === 0}
+                    inputProps={{ 'aria-label': 'Select all retryable ops recovery dry-run candidates' }}
+                    onChange={(event) => {
+                      if (event.target.checked) {
+                        setRecoveryHistoryExportAsyncRetryDryRunSelectedTaskIds(recoveryHistoryAsyncDryRunRetryableTaskIds);
+                      } else {
+                        setRecoveryHistoryExportAsyncRetryDryRunSelectedTaskIds([]);
+                      }
+                    }}
+                  />
+                )}
+                label="Select all retryable"
+              />
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => setRecoveryHistoryExportAsyncRetryDryRunSelectedTaskIds([])}
+                disabled={recoveryHistoryExportAsyncRetryingSelected || recoveryHistoryExportAsyncRetryDryRunSelectedTaskIds.length === 0}
+                aria-label="Clear selected ops recovery dry-run candidates"
+              >
+                Clear Selection
+              </Button>
+              <Button
+                size="small"
+                variant="contained"
+                startIcon={<RetryIcon />}
+                onClick={() => void handleRetrySelectedRecoveryHistoryExportAsyncTasks()}
+                disabled={recoveryHistoryExportAsyncRetryingSelected || recoveryHistoryExportAsyncRetryDryRunSelectedTaskIds.length === 0}
+                aria-label="Retry selected ops recovery dry-run candidates"
+              >
+                {recoveryHistoryExportAsyncRetryingSelected ? 'Retrying selected...' : 'Retry Selected'}
+              </Button>
+            </Stack>
+            {(recoveryHistoryExportAsyncRetryDryRun.results || []).length === 0 ? (
+              <Alert severity="info" sx={{ mb: 1 }}>No dry-run candidates returned.</Alert>
+            ) : (
+              <TableContainer sx={{ mb: 1 }}>
+                <Table size="small" aria-label="Ops recovery async retry dry-run candidates">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell padding="checkbox">Select</TableCell>
+                      <TableCell>Source Task ID</TableCell>
+                      <TableCell>Type</TableCell>
+                      <TableCell>Status</TableCell>
+                      <TableCell>Outcome</TableCell>
+                      <TableCell>Reason</TableCell>
+                      <TableCell>Message</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {(recoveryHistoryExportAsyncRetryDryRun.results || []).map((item, index) => {
+                      const sourceTaskId = String(item?.sourceTaskId || '').trim();
+                      const selectable = sourceTaskId.length > 0 && (item?.outcome || '').toUpperCase() === 'RETRYABLE';
+                      const checked = selectable && recoveryHistoryExportAsyncRetryDryRunSelectedTaskIds.includes(sourceTaskId);
+                      return (
+                        <TableRow key={`ops-recovery-retry-dry-run-${sourceTaskId || index}`}>
+                          <TableCell padding="checkbox">
+                            <Checkbox
+                              size="small"
+                              checked={checked}
+                              disabled={!selectable || recoveryHistoryExportAsyncRetryingSelected}
+                              inputProps={{ 'aria-label': `Select ops recovery dry-run source task ${sourceTaskId || 'unknown'}` }}
+                              onChange={(event) => {
+                                if (!selectable) {
+                                  return;
+                                }
+                                setRecoveryHistoryExportAsyncRetryDryRunSelectedTaskIds((prev) => {
+                                  if (event.target.checked) {
+                                    return prev.includes(sourceTaskId) ? prev : [...prev, sourceTaskId];
+                                  }
+                                  return prev.filter((taskId) => taskId !== sourceTaskId);
+                                });
+                              }}
+                            />
+                          </TableCell>
+                          <TableCell sx={{ maxWidth: 280 }}>
+                            <Tooltip title={item?.sourceTaskId || '—'} placement="top-start" arrow>
+                              <Typography variant="body2" noWrap>{item?.sourceTaskId || '—'}</Typography>
+                            </Tooltip>
+                          </TableCell>
+                          <TableCell>{item?.exportType || '—'}</TableCell>
+                          <TableCell>{item?.sourceStatus || '—'}</TableCell>
+                          <TableCell>{item?.outcome || '—'}</TableCell>
+                          <TableCell>{item?.reasonCode || '—'}</TableCell>
+                          <TableCell sx={{ maxWidth: 360 }}>
+                            <Tooltip title={item?.message || '—'} placement="top-start" arrow>
+                              <Typography variant="body2" noWrap>{item?.message || '—'}</Typography>
+                            </Tooltip>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+          </Box>
+        )}
         <Typography variant="subtitle2" sx={{ mb: 1 }}>Async Export Tasks</Typography>
         {recoveryHistoryExportAsyncTasks.length === 0 ? (
           <Alert severity="info" sx={{ mb: 1.5 }}>No ops recovery async export tasks yet.</Alert>
@@ -5353,6 +6485,7 @@ const PreviewDiagnosticsPage: React.FC = () => {
               <TableHead>
                 <TableRow>
                   <TableCell>Task ID</TableCell>
+                  <TableCell>Request</TableCell>
                   <TableCell>Status</TableCell>
                   <TableCell>Created</TableCell>
                   <TableCell>Finished</TableCell>
@@ -5363,6 +6496,8 @@ const PreviewDiagnosticsPage: React.FC = () => {
               <TableBody>
                 {recoveryHistoryExportAsyncTasks.map((task) => {
                   const normalizedStatus = normalizeRecoveryHistoryExportAsyncStatus(task.status);
+                  const requestPrimary = formatRecoveryHistoryExportAsyncRequestPrimary(task.request, task.exportType);
+                  const requestDetails = formatRecoveryHistoryExportAsyncRequestDetails(task.request);
                   const canCancel = RECOVERY_HISTORY_EXPORT_ASYNC_RUNNING_STATUSES.has(normalizedStatus);
                   const canDownload = RECOVERY_HISTORY_EXPORT_ASYNC_COMPLETED_STATUSES.has(normalizedStatus);
                   const canRetry = RECOVERY_HISTORY_EXPORT_ASYNC_RETRYABLE_STATUSES.has(normalizedStatus);
@@ -5385,6 +6520,24 @@ const PreviewDiagnosticsPage: React.FC = () => {
                         <Typography variant="caption" color="text.secondary" aria-hidden>
                           {`Actor ${task.updatedBy || task.createdBy || 'system'}`}
                         </Typography>
+                      </TableCell>
+                      <TableCell sx={{ maxWidth: 320 }}>
+                        <Tooltip
+                          title={requestDetails ? `${requestPrimary} • ${requestDetails}` : requestPrimary}
+                          placement="top-start"
+                          arrow
+                        >
+                          <Typography variant="body2" noWrap>{requestPrimary}</Typography>
+                        </Tooltip>
+                        {requestDetails ? (
+                          <Typography variant="caption" color="text.secondary" aria-hidden>
+                            {requestDetails}
+                          </Typography>
+                        ) : (
+                          <Typography variant="caption" color="text.secondary" aria-hidden>
+                            No extra filters
+                          </Typography>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Chip size="small" variant="outlined" label={normalizedStatus} />
@@ -5662,9 +6815,11 @@ const PreviewDiagnosticsPage: React.FC = () => {
               <TableHead>
                 <TableRow>
                   <TableCell>Time</TableCell>
+                  <TableCell>Node</TableCell>
                   <TableCell>Mode</TableCell>
                   <TableCell>Actor</TableCell>
                   <TableCell>Event Type</TableCell>
+                  <TableCell>Preview</TableCell>
                   <TableCell>Details</TableCell>
                 </TableRow>
               </TableHead>
@@ -5672,11 +6827,50 @@ const PreviewDiagnosticsPage: React.FC = () => {
                 {recoveryHistory.map((entry, index) => (
                   <TableRow key={`${entry.id || entry.eventType || 'ops'}-${index}`}>
                     <TableCell>{formatLastUpdated(entry.eventTime)}</TableCell>
+                    <TableCell sx={{ maxWidth: 240 }}>
+                      <Stack spacing={0.25}>
+                        <Typography variant="body2" noWrap>{entry.nodeName || '—'}</Typography>
+                        <Typography variant="caption" color="text.secondary" noWrap>
+                          {entry.nodeId || 'No node'}
+                        </Typography>
+                      </Stack>
+                    </TableCell>
                     <TableCell>
                       <Chip size="small" label={entry.mode || 'UNKNOWN'} variant="outlined" />
                     </TableCell>
                     <TableCell>{entry.actor || '—'}</TableCell>
                     <TableCell>{entry.eventType || '—'}</TableCell>
+                    <TableCell sx={{ minWidth: 220 }}>
+                      <Stack direction="row" gap={0.5} flexWrap="wrap" useFlexGap>
+                        {entry.previewStatus ? (
+                          <Chip size="small" variant="outlined" label={`Preview ${entry.previewStatus}`} />
+                        ) : (
+                          <Typography variant="caption" color="text.secondary">No preview context</Typography>
+                        )}
+                        {entry.previewFailureCategory && (
+                          <Chip
+                            size="small"
+                            variant="outlined"
+                            color="warning"
+                            label={`Failure ${entry.previewFailureCategory}`}
+                          />
+                        )}
+                      </Stack>
+                      {(entry.previewFailureReason || entry.previewLastUpdated) && (
+                        <Stack spacing={0.25} sx={{ mt: 0.5 }}>
+                          {entry.previewFailureReason && (
+                            <Typography variant="caption" color="text.secondary">
+                              {`Reason: ${formatPreviewFailureReasonLabel(entry.previewFailureReason)}`}
+                            </Typography>
+                          )}
+                          {entry.previewLastUpdated && (
+                            <Typography variant="caption" color="text.secondary">
+                              {`Updated: ${formatLastUpdated(entry.previewLastUpdated)}`}
+                            </Typography>
+                          )}
+                        </Stack>
+                      )}
+                    </TableCell>
                     <TableCell sx={{ maxWidth: 680 }}>
                       <Tooltip title={entry.details || '—'} placement="top-start" arrow>
                         <Typography variant="body2" noWrap>{entry.details || '—'}</Typography>
@@ -6156,9 +7350,19 @@ const PreviewDiagnosticsPage: React.FC = () => {
                         />
                       </TableCell>
                       <TableCell sx={{ maxWidth: 280 }}>
-                        <Tooltip title={item.path || item.name || item.documentId} placement="top-start" arrow>
-                          <Typography variant="body2" noWrap>{item.name || item.documentId}</Typography>
-                        </Tooltip>
+                        <Stack spacing={0.25} alignItems="flex-start">
+                          <Tooltip title={item.path || item.name || item.documentId} placement="top-start" arrow>
+                            <Typography variant="body2" noWrap>{item.name || item.documentId}</Typography>
+                          </Tooltip>
+                          <Button
+                            size="small"
+                            variant="text"
+                            sx={{ px: 0 }}
+                            onClick={() => handleOpenRenditionRegistry(item.documentId, item.name)}
+                          >
+                            View rendition registry
+                          </Button>
+                        </Stack>
                       </TableCell>
                       <TableCell>
                         <Stack direction="row" gap={0.5} alignItems="center" flexWrap="wrap">
@@ -6186,16 +7390,25 @@ const PreviewDiagnosticsPage: React.FC = () => {
                         )}
                       </TableCell>
                       <TableCell align="right">
-                        <Button
-                          size="small"
-                          variant="outlined"
-                          startIcon={<RollbackIcon />}
-                          disabled={Boolean(failureLedgerActionId)}
-                          onClick={() => void handleResetFailureLedger(item.documentId)}
-                          aria-label={`Reset failure ledger ${item.documentId}`}
-                        >
-                          {failureLedgerActionId === item.documentId ? 'Resetting...' : 'Reset'}
-                        </Button>
+                        <Stack direction="row" justifyContent="flex-end" gap={0.5}>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => handleOpenRenditionRegistry(item.documentId, item.name)}
+                          >
+                            Registry
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            startIcon={<RollbackIcon />}
+                            disabled={Boolean(failureLedgerActionId)}
+                            onClick={() => void handleResetFailureLedger(item.documentId)}
+                            aria-label={`Reset failure ledger ${item.documentId}`}
+                          >
+                            {failureLedgerActionId === item.documentId ? 'Resetting...' : 'Reset'}
+                          </Button>
+                        </Stack>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -6313,9 +7526,19 @@ const PreviewDiagnosticsPage: React.FC = () => {
                         />
                       </TableCell>
                       <TableCell sx={{ maxWidth: 260 }}>
-                        <Tooltip title={item.path || item.name || item.documentId} placement="top-start" arrow>
-                          <Typography variant="body2" noWrap>{item.name || item.documentId}</Typography>
-                        </Tooltip>
+                        <Stack spacing={0.25} alignItems="flex-start">
+                          <Tooltip title={item.path || item.name || item.documentId} placement="top-start" arrow>
+                            <Typography variant="body2" noWrap>{item.name || item.documentId}</Typography>
+                          </Tooltip>
+                          <Button
+                            size="small"
+                            variant="text"
+                            sx={{ px: 0 }}
+                            onClick={() => handleOpenRenditionRegistry(item.documentId, item.name)}
+                          >
+                            View rendition registry
+                          </Button>
+                        </Stack>
                       </TableCell>
                       <TableCell>
                         <Chip size="small" label={item.category || 'UNKNOWN'} variant="outlined" />
@@ -6338,6 +7561,13 @@ const PreviewDiagnosticsPage: React.FC = () => {
                       </TableCell>
                       <TableCell align="right">
                         <Stack direction="row" spacing={0.75} justifyContent="flex-end">
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => handleOpenRenditionRegistry(item.documentId, item.name)}
+                          >
+                            Registry
+                          </Button>
                           <Button
                             size="small"
                             variant="outlined"
@@ -6461,14 +7691,24 @@ const PreviewDiagnosticsPage: React.FC = () => {
                           />
                         </TableCell>
                         <TableCell sx={{ maxWidth: 360 }}>
-                          <Tooltip title={item.path || item.name || item.documentId} placement="top-start" arrow>
-                            <Typography variant="body2" noWrap>
-                              {item.name || item.documentId}
+                          <Stack spacing={0.25} alignItems="flex-start">
+                            <Tooltip title={item.path || item.name || item.documentId} placement="top-start" arrow>
+                              <Typography variant="body2" noWrap>
+                                {item.name || item.documentId}
+                              </Typography>
+                            </Tooltip>
+                            <Typography variant="caption" color="text.secondary" noWrap>
+                              {item.path || item.documentId}
                             </Typography>
-                          </Tooltip>
-                          <Typography variant="caption" color="text.secondary" noWrap>
-                            {item.path || item.documentId}
-                          </Typography>
+                            <Button
+                              size="small"
+                              variant="text"
+                              sx={{ px: 0 }}
+                              onClick={() => handleOpenRenditionRegistry(item.documentId, item.name)}
+                            >
+                              View rendition registry
+                            </Button>
+                          </Stack>
                         </TableCell>
                         <TableCell>
                           <Chip size="small" label={item.category || 'UNKNOWN'} variant="outlined" />
@@ -6494,6 +7734,13 @@ const PreviewDiagnosticsPage: React.FC = () => {
                                 <CopyIcon fontSize="small" />
                               </IconButton>
                             </Tooltip>
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              onClick={() => handleOpenRenditionRegistry(item.documentId, item.name)}
+                            >
+                              Registry
+                            </Button>
                             <Button
                               size="small"
                               variant="outlined"
@@ -6549,6 +7796,12 @@ const PreviewDiagnosticsPage: React.FC = () => {
               </TableHead>
               <TableBody>
                 {filteredItems.map((item) => {
+                  const effectiveStatus = getEffectivePreviewStatus(
+                    item.previewStatus,
+                    item.previewFailureCategory,
+                    item.mimeType,
+                    item.previewFailureReason
+                  );
                   const meta = getFailedPreviewMeta(item.mimeType, item.previewFailureCategory, item.previewFailureReason);
                   const retryable = isRetryablePreviewFailure(
                     item.previewFailureCategory,
@@ -6562,19 +7815,53 @@ const PreviewDiagnosticsPage: React.FC = () => {
                   return (
                     <TableRow key={item.id} hover>
                       <TableCell sx={{ maxWidth: 360 }}>
-                        <Tooltip title={item.path || item.name || item.id} placement="top-start" arrow>
-                          <Typography variant="body2" noWrap>
-                            {item.name || item.id}
-                          </Typography>
-                        </Tooltip>
-                        {item.path && (
-                          <Typography variant="caption" color="text.secondary" noWrap>
-                            {item.path}
-                          </Typography>
-                        )}
+                        <Stack spacing={0.25} alignItems="flex-start">
+                          <Tooltip title={item.path || item.name || item.id} placement="top-start" arrow>
+                            <Typography variant="body2" noWrap>
+                              {item.name || item.id}
+                            </Typography>
+                          </Tooltip>
+                          {item.path && (
+                            <Typography variant="caption" color="text.secondary" noWrap>
+                              {item.path}
+                            </Typography>
+                          )}
+                          <Button
+                            size="small"
+                            variant="text"
+                            sx={{ px: 0 }}
+                            onClick={() => handleOpenRenditionRegistry(item.id, item.name)}
+                          >
+                            View rendition registry
+                          </Button>
+                        </Stack>
                       </TableCell>
                       <TableCell>
-                        <Chip label={meta.label} color={meta.color} size="small" />
+                        <Chip
+                          label={
+                            effectiveStatus === 'READY'
+                              ? 'Preview ready'
+                              : effectiveStatus === 'PROCESSING'
+                                ? 'Preview processing'
+                                : effectiveStatus === 'QUEUED'
+                                  ? 'Preview queued'
+                                  : effectiveStatus === 'PENDING'
+                                    ? 'Preview pending'
+                                    : meta.label
+                          }
+                          color={
+                            effectiveStatus === 'READY'
+                              ? 'success'
+                              : effectiveStatus === 'PROCESSING'
+                                ? 'warning'
+                                : effectiveStatus === 'QUEUED'
+                                  ? 'info'
+                                  : effectiveStatus === 'PENDING'
+                                    ? 'default'
+                                    : meta.color
+                          }
+                          size="small"
+                        />
                       </TableCell>
                       <TableCell sx={{ maxWidth: 220 }}>
                         <Typography variant="body2" noWrap>
@@ -6596,6 +7883,13 @@ const PreviewDiagnosticsPage: React.FC = () => {
                       </TableCell>
                       <TableCell align="right">
                         <Stack direction="row" justifyContent="flex-end" gap={0.5}>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => handleOpenRenditionRegistry(item.id, item.name)}
+                          >
+                            Registry
+                          </Button>
                           <Tooltip title="Copy document id" placement="top-start" arrow>
                             <IconButton
                               aria-label="Copy document id"
@@ -6684,6 +7978,12 @@ const PreviewDiagnosticsPage: React.FC = () => {
           </TableContainer>
         )}
       </Paper>
+      <RenditionDefinitionDialog
+        open={Boolean(renditionDialogTarget)}
+        nodeId={renditionDialogTarget?.id || null}
+        nodeName={renditionDialogTarget?.name || undefined}
+        onClose={() => setRenditionDialogTarget(null)}
+      />
     </Box>
   );
 };

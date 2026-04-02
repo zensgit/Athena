@@ -113,7 +113,12 @@ export const searchNodes = createAsyncThunk(
   'node/searchNodes',
   async (criteria: SearchCriteria) => {
     const response = await nodeService.searchNodes(criteria);
-    return { nodes: response.nodes, total: response.total, criteria };
+    return {
+      nodes: response.nodes,
+      total: response.total,
+      facets: response.facets,
+      criteria,
+    };
   }
 );
 
@@ -155,6 +160,10 @@ export const executeSavedSearch = createAsyncThunk(
         modifier: item.lastModifiedBy || item.createdBy || '',
         size: item.fileSize,
         contentType: item.mimeType,
+        locked: item.locked,
+        lockedBy: item.lockedBy,
+        checkedOut: item.checkedOut,
+        checkoutUser: item.checkoutUser,
         description: item.description,
         highlights: item.highlights,
         matchFields: item.matchFields,
@@ -254,6 +263,9 @@ const nodeSlice = createSlice({
         state.loading = false;
         state.nodes = action.payload.nodes;
         state.nodesTotal = action.payload.total;
+        if (action.payload.facets && Object.keys(action.payload.facets).length > 0) {
+          state.searchFacets = action.payload.facets;
+        }
         state.lastSearchCriteria = action.payload.criteria;
       })
       .addCase(searchNodes.rejected, (state, action) => {

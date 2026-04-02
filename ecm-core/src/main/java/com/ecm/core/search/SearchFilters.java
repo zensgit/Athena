@@ -12,6 +12,10 @@ import java.util.List;
 public class SearchFilters {
     private List<String> nodeTypes;
     private List<String> mimeTypes;
+    private Boolean locked;
+    private String lockedBy;
+    private Boolean checkedOut;
+    private String checkoutUser;
     private String createdBy;
     private List<String> createdByList;
     private LocalDateTime dateFrom;
@@ -38,7 +42,8 @@ public class SearchFilters {
      * Optional preview status filter(s).
      *
      * The UI treats a missing preview status as {@code PENDING}. When the client sends {@code PENDING},
-     * the backend interprets it as "previewStatus is missing" in the search index.
+     * the backend interprets it as "previewStatus is missing and the indexed document does not match
+     * unsupported rendition signals" in the search index.
      */
     private List<String> previewStatuses;
 }

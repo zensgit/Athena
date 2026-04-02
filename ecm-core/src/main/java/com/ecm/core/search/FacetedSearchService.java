@@ -2,7 +2,6 @@ package com.ecm.core.search;
 
 import com.ecm.core.entity.Node;
 import com.ecm.core.entity.Permission.PermissionType;
-import com.ecm.core.preview.PreviewFailureClassifier;
 import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.service.SecurityService;
 import co.elastic.clients.elasticsearch._types.SuggestMode;
@@ -512,6 +511,18 @@ public class FacetedSearchService {
         addAnyOfTermsFilter(bool, List.of("tags"), filters.getTags());
         addAnyOfTermsFilter(bool, List.of("categories"), filters.getCategories());
         addAnyOfTermsFilter(bool, List.of("correspondent"), filters.getCorrespondents());
+        if (filters.getLocked() != null) {
+            bool.filter(f -> f.term(t -> t.field("locked").value(filters.getLocked())));
+        }
+        if (filters.getLockedBy() != null && !filters.getLockedBy().isBlank()) {
+            addAnyOfTermsFilter(bool, List.of("lockedBy"), List.of(filters.getLockedBy()));
+        }
+        if (filters.getCheckedOut() != null) {
+            bool.filter(f -> f.term(t -> t.field("checkedOut").value(filters.getCheckedOut())));
+        }
+        if (filters.getCheckoutUser() != null && !filters.getCheckoutUser().isBlank()) {
+            addAnyOfTermsFilter(bool, List.of("checkoutUser"), List.of(filters.getCheckoutUser()));
+        }
 
         if (filters.getCreatedByList() != null && !filters.getCreatedByList().isEmpty()) {
             addAnyOfTermsFilter(bool, List.of("createdBy"), filters.getCreatedByList());
@@ -919,6 +930,22 @@ public class FacetedSearchService {
     private SearchResult toSearchResult(SearchHit<NodeDocument> hit) {
         NodeDocument doc = hit.getContent();
         Map<String, List<String>> highlights = hit.getHighlightFields();
+        String effectivePreviewStatus = PreviewStatusFilterHelper.resolveEffectiveStatus(
+            doc.getPreviewStatus(),
+            doc.getMimeType(),
+            doc.getPreviewFailureReason()
+        );
+        String effectivePreviewFailureReason = PreviewStatusFilterHelper.resolveEffectiveFailureReason(
+            doc.getPreviewStatus(),
+            doc.getMimeType(),
+            doc.getPreviewFailureReason()
+        );
+        String effectivePreviewFailureCategory = PreviewStatusFilterHelper.resolveEffectiveFailureCategory(
+            doc.getPreviewStatus(),
+            doc.getMimeType(),
+            doc.getPreviewFailureReason(),
+            doc.getPreviewFailureCategory()
+        );
         return SearchResult.builder()
             .id(doc.getId())
             .name(doc.getName())
@@ -939,13 +966,9 @@ public class FacetedSearchService {
             .tags(doc.getTags() != null ? List.copyOf(doc.getTags()) : List.of())
             .categories(doc.getCategories() != null ? List.copyOf(doc.getCategories()) : List.of())
             .correspondent(doc.getCorrespondent())
-            .previewStatus(doc.getPreviewStatus())
-            .previewFailureReason(doc.getPreviewFailureReason())
-            .previewFailureCategory(PreviewFailureClassifier.classify(
-                doc.getPreviewStatus(),
-                doc.getMimeType(),
-                doc.getPreviewFailureReason()
-            ))
+            .previewStatus(effectivePreviewStatus)
+            .previewFailureReason(effectivePreviewFailureReason)
+            .previewFailureCategory(effectivePreviewFailureCategory)
             .build();
     }
 

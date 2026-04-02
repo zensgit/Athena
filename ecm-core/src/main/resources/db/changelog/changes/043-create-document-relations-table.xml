@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="043-create-document-relations-table" author="codex">
+        <comment>Create document_relations table with peer/secondary-child association support</comment>
+
+        <createTable tableName="document_relations">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="source_id" type="${uuid_type}">
+                <constraints nullable="false" foreignKeyName="fk_dr_source" references="nodes(id)"/>
+            </column>
+            <column name="target_id" type="${uuid_type}">
+                <constraints nullable="false" foreignKeyName="fk_dr_target" references="nodes(id)"/>
+            </column>
+            <column name="relation_type" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="assoc_type" type="varchar(200)"/>
+            <column name="direction" type="varchar(32)" defaultValue="PEER"/>
+            <column name="order_index" type="int"/>
+            <column name="created_by" type="varchar(255)"/>
+            <column name="created_date" type="timestamp" defaultValueComputed="${now}"/>
+            <column name="last_modified_by" type="varchar(255)"/>
+            <column name="last_modified_date" type="timestamp" defaultValueComputed="${now}"/>
+            <column name="entity_version" type="bigint" defaultValue="0"/>
+            <column name="is_deleted" type="boolean" defaultValueBoolean="false"/>
+            <column name="deleted_at" type="timestamp"/>
+            <column name="deleted_by" type="varchar(255)"/>
+        </createTable>
+
+        <addUniqueConstraint tableName="document_relations"
+            columnNames="source_id, target_id, relation_type"
+            constraintName="uq_dr_source_target_type"/>
+
+        <createIndex tableName="document_relations" indexName="idx_dr_source_id">
+            <column name="source_id"/>
+        </createIndex>
+        <createIndex tableName="document_relations" indexName="idx_dr_target_id">
+            <column name="target_id"/>
+        </createIndex>
+        <createIndex tableName="document_relations" indexName="idx_dr_assoc_type">
+            <column name="assoc_type"/>
+        </createIndex>
+        <createIndex tableName="document_relations" indexName="idx_dr_direction">
+            <column name="direction"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>

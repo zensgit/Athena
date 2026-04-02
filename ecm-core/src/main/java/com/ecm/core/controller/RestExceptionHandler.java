@@ -4,6 +4,7 @@ import com.ecm.core.exception.AccessDeniedException;
 import com.ecm.core.exception.DuplicateResourceException;
 import com.ecm.core.exception.IllegalOperationException;
 import com.ecm.core.exception.NodeNotFoundException;
+import com.ecm.core.exception.PropertyValidationException;
 import com.ecm.core.exception.ResourceNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.Value;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.NoSuchElementException;
 
 /**
@@ -28,6 +30,12 @@ public class RestExceptionHandler {
     public ResponseEntity<ApiError> handleBadRequest(IllegalArgumentException ex, HttpServletRequest request) {
         log.debug("Bad request: {}", ex.getMessage());
         return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(PropertyValidationException.class)
+    public ResponseEntity<ApiError> handlePropertyValidation(PropertyValidationException ex, HttpServletRequest request) {
+        log.debug("Property validation failed: {}", ex.getMessage());
+        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request, ex.getViolations());
     }
 
     @ExceptionHandler({DuplicateResourceException.class, IllegalOperationException.class})
@@ -61,7 +69,23 @@ public class RestExceptionHandler {
     }
 
     private ResponseEntity<ApiError> build(HttpStatus status, String message, HttpServletRequest request) {
-        ApiError body = new ApiError(Instant.now(), status.value(), status.getReasonPhrase(), message, request.getRequestURI());
+        return build(status, message, request, null);
+    }
+
+    private ResponseEntity<ApiError> build(
+        HttpStatus status,
+        String message,
+        HttpServletRequest request,
+        List<String> details
+    ) {
+        ApiError body = new ApiError(
+            Instant.now(),
+            status.value(),
+            status.getReasonPhrase(),
+            message,
+            request.getRequestURI(),
+            details
+        );
         return ResponseEntity.status(status).body(body);
     }
 
@@ -72,5 +96,6 @@ public class RestExceptionHandler {
         String error;
         String message;
         String path;
+        List<String> details;
     }
 }

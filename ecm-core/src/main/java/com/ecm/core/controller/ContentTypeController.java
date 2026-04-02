@@ -1,8 +1,10 @@
 package com.ecm.core.controller;
 
 import com.ecm.core.dto.NodeDto;
+import com.ecm.core.entity.Document;
 import com.ecm.core.entity.ContentType;
 import com.ecm.core.service.ContentTypeService;
+import com.ecm.core.service.RenditionResourceService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +23,7 @@ import java.util.UUID;
 public class ContentTypeController {
 
     private final ContentTypeService contentTypeService;
+    private final RenditionResourceService renditionResourceService;
 
     @GetMapping
     @Operation(summary = "List types", description = "Get all defined content types")
@@ -64,6 +67,23 @@ public class ContentTypeController {
             @PathVariable UUID nodeId,
             @RequestParam String type,
             @RequestBody Map<String, Object> properties) {
-        return ResponseEntity.ok(NodeDto.from(contentTypeService.applyType(nodeId, type, properties)));
+        return ResponseEntity.ok(toNodeDto(contentTypeService.applyType(nodeId, type, properties)));
+    }
+
+    private NodeDto toNodeDto(com.ecm.core.entity.Node node) {
+        NodeDto base = NodeDto.from(node);
+        if (!(node instanceof Document document)) {
+            return base;
+        }
+        RenditionResourceService.RenditionSummary renditionSummary = renditionResourceService.summarizeDocument(document);
+        if (renditionSummary == null || !renditionSummary.document()) {
+            return base;
+        }
+        return base.withPreviewSemantics(
+            renditionSummary.previewStatus(),
+            renditionSummary.previewFailureReason(),
+            renditionSummary.previewFailureCategory(),
+            renditionSummary.previewLastUpdated()
+        );
     }
 }

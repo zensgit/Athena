@@ -59,6 +59,29 @@ public interface AutomationRuleRepository extends JpaRepository<AutomationRule, 
     Page<AutomationRule> findAllActive(Pageable pageable);
 
     /**
+     * Find all rules scoped to a specific folder (paged).
+     */
+    @Query("SELECT r FROM AutomationRule r " +
+           "WHERE r.scopeFolderId = :scopeFolderId " +
+           "AND r.deleted = false " +
+           "ORDER BY r.priority ASC")
+    Page<AutomationRule> findByScopeFolderIdActive(
+        @Param("scopeFolderId") UUID scopeFolderId,
+        Pageable pageable
+    );
+
+    /**
+     * Find all rules scoped to a specific folder ordered by priority.
+     */
+    @Query("SELECT r FROM AutomationRule r " +
+           "WHERE r.scopeFolderId = :scopeFolderId " +
+           "AND r.deleted = false " +
+           "ORDER BY r.priority ASC")
+    List<AutomationRule> findByScopeFolderIdActiveOrderByPriority(
+        @Param("scopeFolderId") UUID scopeFolderId
+    );
+
+    /**
      * Find rule by name
      */
     @Query("SELECT r FROM AutomationRule r " +

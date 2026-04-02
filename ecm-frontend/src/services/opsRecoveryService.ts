@@ -24,6 +24,9 @@ export type RecoveryBatchItem = {
   message: string | null;
   previewStatus: string | null;
   failureCategory: RecoveryFailureCategory;
+  previewFailureReason?: string | null;
+  previewFailureCategory?: string | null;
+  previewLastUpdated?: string | null;
   attempts: number;
   nextAttemptAt: string | null;
 };
@@ -53,6 +56,9 @@ export type RecoveryDryRunItem = {
   mimeType: string | null;
   previewStatus: string | null;
   failureCategory: RecoveryFailureCategory;
+  previewFailureReason?: string | null;
+  previewFailureCategory?: string | null;
+  previewLastUpdated?: string | null;
   predictedState: RecoveryJobState;
   predictedOutcome: string;
   predictedReason: string;
@@ -76,11 +82,17 @@ export type RecoveryDryRunResult = {
 
 export type RecoveryHistoryItem = {
   id: string | null;
+  nodeId?: string | null;
+  nodeName?: string | null;
   eventType: string | null;
   mode: string;
   actor: string | null;
   eventTime: string | null;
   details: string | null;
+  previewStatus?: string | null;
+  previewFailureReason?: string | null;
+  previewFailureCategory?: string | null;
+  previewLastUpdated?: string | null;
 };
 
 export type RecoveryHistoryMode =
@@ -128,6 +140,13 @@ export type RecoveryHistoryExportAsyncActiveStatusFilter =
   | 'QUEUED'
   | 'RUNNING';
 
+export type RecoveryHistoryExportAsyncTerminalStatusFilter =
+  | 'COMPLETED'
+  | 'CANCELLED'
+  | 'FAILED'
+  | 'TIMED_OUT'
+  | 'EXPIRED';
+
 export type RecoveryHistoryExportAsyncRequest = {
   exportType?: RecoveryHistoryExportAsyncType;
   limit?: number;
@@ -141,10 +160,27 @@ export type RecoveryHistoryExportAsyncRequest = {
   compareActorSort?: RecoveryHistoryCompareActorSort;
 };
 
+export type RecoveryHistoryExportAsyncRequestSnapshot = {
+  exportType?: RecoveryHistoryExportAsyncType | string | null;
+  limit?: number;
+  days?: number;
+  mode?: RecoveryHistoryMode | string | null;
+  actor?: string | null;
+  eventType?: RecoveryHistoryEventType | string | null;
+  compareBreakdownLimit?: number;
+  compareBreakdownSort?: RecoveryHistoryCompareBreakdownSort | string | null;
+  compareActorLimit?: number;
+  compareActorSort?: RecoveryHistoryCompareActorSort | string | null;
+};
+
 export type RecoveryHistoryExportAsyncCreateResponse = {
   taskId: string;
   exportType: RecoveryHistoryExportAsyncType | string;
   status: string;
+  request?: RecoveryHistoryExportAsyncRequestSnapshot | null;
+  deduplicated?: boolean;
+  deduplicatedFromTaskId?: string | null;
+  message?: string | null;
   createdAt: string | null;
   timeoutAt?: string | null;
   expiresAt?: string | null;
@@ -157,6 +193,7 @@ export type RecoveryHistoryExportAsyncTaskStatus = {
   exportType: RecoveryHistoryExportAsyncType | string;
   status: string;
   error: string | null;
+  request?: RecoveryHistoryExportAsyncRequestSnapshot | null;
   createdAt: string | null;
   startedAt?: string | null;
   updatedAt?: string | null;
@@ -170,7 +207,15 @@ export type RecoveryHistoryExportAsyncTaskStatus = {
 
 export type RecoveryHistoryExportAsyncTaskList = {
   count: number;
+  paging?: RecoveryTaskCenterPaging | null;
   items: RecoveryHistoryExportAsyncTaskStatus[];
+};
+
+export type RecoveryTaskCenterPaging = {
+  skipCount: number;
+  maxItems: number;
+  totalItems: number;
+  hasMoreItems: boolean;
 };
 
 export type RecoveryHistoryExportAsyncTaskSummary = {
@@ -200,6 +245,59 @@ export type RecoveryHistoryExportAsyncTaskCancelActiveResponse = {
   exportTypeFilter?: RecoveryHistoryExportAsyncType | string | null;
   statusFilter?: string | null;
   message: string;
+};
+
+export type RecoveryHistoryExportAsyncRetryTerminalItem = {
+  sourceTaskId?: string | null;
+  retriedTaskId?: string | null;
+  exportType?: RecoveryHistoryExportAsyncType | string | null;
+  sourceStatus?: string | null;
+  outcome?: string | null;
+  message?: string | null;
+};
+
+export type RecoveryHistoryExportAsyncRetryTerminalResponse = {
+  requested: number;
+  retried: number;
+  reused: number;
+  skipped: number;
+  failed: number;
+  limit: number;
+  exportTypeFilter?: RecoveryHistoryExportAsyncType | string | null;
+  statusFilter?: string | null;
+  message: string;
+  results: RecoveryHistoryExportAsyncRetryTerminalItem[];
+};
+
+export type RecoveryHistoryExportAsyncRetryTerminalDryRunItem = {
+  sourceTaskId?: string | null;
+  exportType?: RecoveryHistoryExportAsyncType | string | null;
+  sourceStatus?: string | null;
+  outcome?: string | null;
+  reasonCode?: string | null;
+  message?: string | null;
+};
+
+export type RecoveryHistoryExportAsyncRetryTerminalDryRunReasonCount = {
+  reasonCode?: string | null;
+  outcome?: string | null;
+  count: number;
+};
+
+export type RecoveryHistoryExportAsyncRetryTerminalDryRunResponse = {
+  requested: number;
+  retryable: number;
+  skipped: number;
+  limit: number;
+  exportTypeFilter?: RecoveryHistoryExportAsyncType | string | null;
+  statusFilter?: string | null;
+  message: string;
+  results: RecoveryHistoryExportAsyncRetryTerminalDryRunItem[];
+  reasonBreakdown?: RecoveryHistoryExportAsyncRetryTerminalDryRunReasonCount[];
+};
+
+export type RecoveryHistoryExportAsyncRetryTerminalByTaskIdsRequest = {
+  sourceTaskIds: string[];
 };
 
 export type RecoveryHistoryResult = {
@@ -426,6 +524,12 @@ class OpsRecoveryService {
     return api.post<RecoveryDryRunResult>('/ops/recovery/dry-run', payload);
   }
 
+  async exportDryRunCsv(payload: RecoveryDryRunRequest): Promise<Blob> {
+    return api.post<Blob>('/ops/recovery/dry-run/export', payload, {
+      responseType: 'blob',
+    });
+  }
+
   async getHistory(
     limit = 20,
     days = 7,
@@ -581,13 +685,16 @@ class OpsRecoveryService {
   }
 
   async listHistoryExportAsyncTasks(
-    limit = 20,
+    maxItems = 20,
     exportType?: RecoveryHistoryExportAsyncType,
-    status?: RecoveryHistoryExportAsyncStatusFilter
+    status?: RecoveryHistoryExportAsyncStatusFilter,
+    skipCount = 0
   ): Promise<RecoveryHistoryExportAsyncTaskList> {
     return api.get<RecoveryHistoryExportAsyncTaskList>('/ops/recovery/history/export-async', {
       params: {
-        limit,
+        maxItems,
+        limit: maxItems,
+        skipCount: Math.max(0, Math.floor(skipCount)),
         exportType: exportType || undefined,
         status: status || undefined,
       },
@@ -625,6 +732,77 @@ class OpsRecoveryService {
   async retryHistoryExportAsyncTask(taskId: string): Promise<RecoveryHistoryExportAsyncCreateResponse> {
     return api.post<RecoveryHistoryExportAsyncCreateResponse>(
       `/ops/recovery/history/export-async/${encodeURIComponent(taskId)}/retry`
+    );
+  }
+
+  async retryTerminalHistoryExportAsyncTasks(
+    exportType?: RecoveryHistoryExportAsyncType,
+    status?: RecoveryHistoryExportAsyncTerminalStatusFilter,
+    limit = 20
+  ): Promise<RecoveryHistoryExportAsyncRetryTerminalResponse> {
+    return api.post<RecoveryHistoryExportAsyncRetryTerminalResponse>(
+      '/ops/recovery/history/export-async/retry-terminal',
+      {},
+      {
+        params: {
+          exportType: exportType || undefined,
+          status: status || undefined,
+          limit,
+        },
+      }
+    );
+  }
+
+  async dryRunRetryTerminalHistoryExportAsyncTasks(
+    exportType?: RecoveryHistoryExportAsyncType,
+    status?: RecoveryHistoryExportAsyncTerminalStatusFilter,
+    limit = 20
+  ): Promise<RecoveryHistoryExportAsyncRetryTerminalDryRunResponse> {
+    return api.post<RecoveryHistoryExportAsyncRetryTerminalDryRunResponse>(
+      '/ops/recovery/history/export-async/retry-terminal/dry-run',
+      {},
+      {
+        params: {
+          exportType: exportType || undefined,
+          status: status || undefined,
+          limit,
+        },
+      }
+    );
+  }
+
+  async exportDryRunRetryTerminalHistoryExportAsyncTasks(
+    exportType?: RecoveryHistoryExportAsyncType,
+    status?: RecoveryHistoryExportAsyncTerminalStatusFilter,
+    limit = 20
+  ): Promise<void> {
+    const filename = `ops_recovery_history_async_retry_dry_run_${new Date().toISOString().replace(/[:.]/g, '-')}.csv`;
+    return api.downloadFile('/ops/recovery/history/export-async/retry-terminal/dry-run/export', filename, {
+      params: {
+        exportType: exportType || undefined,
+        status: status || undefined,
+        limit,
+      },
+    });
+  }
+
+  async retryTerminalHistoryExportAsyncTasksByTaskIds(
+    sourceTaskIds: string[],
+    exportType?: RecoveryHistoryExportAsyncType
+  ): Promise<RecoveryHistoryExportAsyncRetryTerminalResponse> {
+    const payload: RecoveryHistoryExportAsyncRetryTerminalByTaskIdsRequest = {
+      sourceTaskIds: Array.from(new Set((sourceTaskIds || [])
+        .map((taskId) => String(taskId || '').trim())
+        .filter((taskId) => taskId.length > 0))),
+    };
+    return api.post<RecoveryHistoryExportAsyncRetryTerminalResponse>(
+      '/ops/recovery/history/export-async/retry-terminal/by-task-ids',
+      payload,
+      {
+        params: {
+          exportType: exportType || undefined,
+        },
+      }
     );
   }
 

@@ -6,12 +6,17 @@ import com.ecm.core.service.ShareLinkService;
 import com.ecm.core.service.ShareLinkService.CreateShareLinkRequest;
 import com.ecm.core.service.ShareLinkService.ShareLinkAccessResult;
 import com.ecm.core.service.ShareLinkService.UpdateShareLinkRequest;
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.UUID;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -147,6 +152,46 @@ public class ShareLinkController {
         shareLinkService.deleteShareLink(token);
         return ResponseEntity.noContent().build();
     }
+
+    // ---- enhanced lifecycle endpoints ----------------------------------------
+
+    @PostMapping("/{token}/reactivate")
+    @Operation(summary = "Reactivate share link", description = "Re-enable a previously deactivated link")
+    public ResponseEntity<ShareLinkResponse> reactivateShareLink(@PathVariable String token) {
+        ShareLink link = shareLinkService.reactivateShareLink(token);
+        return ResponseEntity.ok(ShareLinkResponse.from(link));
+    }
+
+    @GetMapping("/admin/all")
+    @Operation(summary = "List all share links (admin)", description = "Admin-only: list every share link in the system")
+    public ResponseEntity<List<ShareLinkResponse>> listAllShareLinks() {
+        return ResponseEntity.ok(
+            shareLinkService.listAllShareLinks().stream().map(ShareLinkResponse::from).toList()
+        );
+    }
+
+    @GetMapping("/{token}/access-log")
+    @Operation(summary = "Get access log", description = "View audit log of access attempts for a share link")
+    public ResponseEntity<List<AccessLogEntryDto>> getAccessLog(@PathVariable String token) {
+        return ResponseEntity.ok(
+            shareLinkService.getAccessLog(token).stream()
+                .map(e -> new AccessLogEntryDto(
+                    e.getId(), e.getAccessedAt(), e.getClientIp(),
+                    e.getUserAgent(), e.isSuccess(), e.getFailureReason()
+                )).toList()
+        );
+    }
+
+    @GetMapping("/{token}/access-stats")
+    @Operation(summary = "Get access statistics", description = "Get counts of total/successful/failed access attempts")
+    public ResponseEntity<ShareLinkService.ShareLinkAccessStats> getAccessStats(@PathVariable String token) {
+        return ResponseEntity.ok(shareLinkService.getAccessStats(token));
+    }
+
+    public record AccessLogEntryDto(
+        UUID id, LocalDateTime accessedAt, String clientIp,
+        String userAgent, boolean success, String failureReason
+    ) {}
 
     // Helper method to get client IP
     private String getClientIp(HttpServletRequest request) {

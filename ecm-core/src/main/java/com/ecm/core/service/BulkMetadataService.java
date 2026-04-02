@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -29,15 +30,19 @@ public class BulkMetadataService {
     private final NodeRepository nodeRepository;
     private final SecurityService securityService;
     private final ApplicationEventPublisher eventPublisher;
+    private final AuditService auditService;
 
     @Transactional
     public BulkMetadataResult applyMetadata(BulkMetadataRequest request) {
-        List<UUID> ids = request.ids() != null ? request.ids() : Collections.emptyList();
-        List<String> tagNames = normalizeTags(request.tagNames());
-        List<String> categoryIds = normalizeCategoryIds(request.categoryIds());
+        BulkMetadataRequest safeRequest = request != null
+            ? request
+            : new BulkMetadataRequest(List.of(), List.of(), List.of(), null, false);
+        List<UUID> ids = safeRequest.ids() != null ? safeRequest.ids() : Collections.emptyList();
+        List<String> tagNames = normalizeTags(safeRequest.tagNames());
+        List<String> categoryIds = normalizeCategoryIds(safeRequest.categoryIds());
 
         if (ids.isEmpty()) {
-            return BulkMetadataResult.builder()
+            BulkMetadataResult emptyResult = BulkMetadataResult.builder()
                 .operation("METADATA_UPDATE")
                 .totalRequested(0)
                 .successCount(0)
@@ -45,6 +50,8 @@ public class BulkMetadataService {
                 .successfulIds(List.of())
                 .failures(Map.of())
                 .build();
+            auditBulkMetadataUpdate(safeRequest, emptyResult);
+            return emptyResult;
         }
 
         List<String> successes = new ArrayList<>();
@@ -52,7 +59,7 @@ public class BulkMetadataService {
 
         for (UUID id : ids) {
             try {
-                applyToNode(id, tagNames, categoryIds, request);
+                applyToNode(id, tagNames, categoryIds, safeRequest);
                 successes.add(id.toString());
             } catch (Exception e) {
                 log.warn("Bulk metadata update failed for {}: {}", id, e.getMessage());
@@ -60,7 +67,7 @@ public class BulkMetadataService {
             }
         }
 
-        return BulkMetadataResult.builder()
+        BulkMetadataResult result = BulkMetadataResult.builder()
             .operation("METADATA_UPDATE")
             .totalRequested(ids.size())
             .successCount(successes.size())
@@ -68,6 +75,8 @@ public class BulkMetadataService {
             .successfulIds(successes)
             .failures(failures)
             .build();
+        auditBulkMetadataUpdate(safeRequest, result);
+        return result;
     }
 
     private void applyToNode(UUID nodeId, List<String> tagNames, List<String> categoryIds, BulkMetadataRequest request) {
@@ -115,6 +124,48 @@ public class BulkMetadataService {
             .map(String::trim)
             .filter(id -> !id.isBlank())
             .toList();
+    }
+
+    private void auditBulkMetadataUpdate(BulkMetadataRequest request, BulkMetadataResult result) {
+        if (request == null || result == null) {
+            return;
+        }
+        int failures = result.getFailureCount();
+        int successes = result.getSuccessCount();
+        String eventType = "BULK_METADATA_UPDATE" + (
+            failures == 0 ? "_COMPLETED" : (successes == 0 ? "_FAILED" : "_PARTIAL")
+        );
+        String actor = resolveAuditActor();
+        int tagCount = request.tagNames() != null ? request.tagNames().size() : 0;
+        int categoryCount = request.categoryIds() != null ? request.categoryIds().size() : 0;
+        String details = String.format(
+            Locale.ROOT,
+            "Bulk metadata update requested=%d success=%d failed=%d tags=%d categories=%d correspondentId=%s clearCorrespondent=%s",
+            result.getTotalRequested(),
+            successes,
+            failures,
+            tagCount,
+            categoryCount,
+            request.correspondentId(),
+            request.clearCorrespondent()
+        );
+        if (failures > 0 && result.getFailures() != null && !result.getFailures().isEmpty()) {
+            List<String> failedSample = result.getFailures().keySet().stream().limit(5).toList();
+            details += ", failedSample=" + String.join("|", failedSample);
+        }
+        auditService.logEvent(eventType, null, "BULK_METADATA", actor, details);
+    }
+
+    private String resolveAuditActor() {
+        try {
+            String username = securityService.getCurrentUser();
+            if (username != null && !username.isBlank()) {
+                return username;
+            }
+        } catch (Exception ex) {
+            log.debug("Failed to resolve bulk metadata actor: {}", ex.getMessage());
+        }
+        return "system";
     }
 
     public record BulkMetadataRequest(

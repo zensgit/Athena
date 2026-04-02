@@ -154,6 +154,11 @@ describe('previewStatusUtils', () => {
     expect(getEffectivePreviewStatus('FAILED', undefined, 'application/pdf', 'timeout')).toBe('FAILED');
   });
 
+  it('maps registered rendition state to pending preview status', () => {
+    expect(getEffectivePreviewStatus('REGISTERED', undefined, 'application/pdf', null)).toBe('PENDING');
+    expect(getEffectivePreviewStatus(undefined, undefined, 'application/pdf', null)).toBe('PENDING');
+  });
+
   it('formats batch operation progress summary', () => {
     expect(
       formatPreviewBatchOperationProgress({

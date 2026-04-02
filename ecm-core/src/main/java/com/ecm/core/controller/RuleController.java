@@ -2,6 +2,8 @@ package com.ecm.core.controller;
 
 import com.ecm.core.entity.*;
 import com.ecm.core.entity.AutomationRule.TriggerType;
+import com.ecm.core.repository.AuditLogRepository;
+import com.ecm.core.service.AuditService;
 import com.ecm.core.service.RuleEngineService;
 import com.ecm.core.service.RuleEngineService.*;
 import com.ecm.core.service.SecurityService;
@@ -11,15 +13,25 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.ecm.core.service.ScheduledRuleRunner;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -42,6 +54,8 @@ public class RuleController {
     private final RuleEngineService ruleEngineService;
     private final SecurityService securityService;
     private final ScheduledRuleRunner scheduledRuleRunner;
+    private final AuditService auditService;
+    private final AuditLogRepository auditLogRepository;
 
     // ==================== Rule CRUD ====================
 
@@ -96,6 +110,18 @@ public class RuleController {
     public ResponseEntity<Page<RuleResponse>> getMyRules(Pageable pageable) {
         String currentUser = securityService.getCurrentUser();
         Page<AutomationRule> rules = ruleEngineService.getRulesByOwner(currentUser, pageable);
+        return ResponseEntity.ok(rules.map(RuleResponse::from));
+    }
+
+    @GetMapping("/folders/{folderId}")
+    @Operation(
+        summary = "Get rules by scoped folder",
+        description = "Get automation rules scoped to a specific folder ordered by priority"
+    )
+    public ResponseEntity<Page<RuleResponse>> getRulesByScopeFolder(
+            @PathVariable UUID folderId,
+            Pageable pageable) {
+        Page<AutomationRule> rules = ruleEngineService.getRulesByScopeFolder(folderId, pageable);
         return ResponseEntity.ok(rules.map(RuleResponse::from));
     }
 
@@ -167,6 +193,284 @@ public class RuleController {
     public ResponseEntity<RuleResponse> disableRule(@PathVariable UUID ruleId) {
         AutomationRule rule = ruleEngineService.setRuleEnabled(ruleId, false);
         return ResponseEntity.ok(RuleResponse.from(rule));
+    }
+
+    @PostMapping("/folders/{folderId}/reorder")
+    @Operation(
+        summary = "Reorder folder scoped rules",
+        description = "Reorder scoped rules by IDs and reassign priorities in sequence"
+    )
+    @PreAuthorize("hasAnyRole('ADMIN', 'EDITOR')")
+    public ResponseEntity<FolderRuleReorderResponse> reorderScopeFolderRules(
+            @PathVariable UUID folderId,
+            @RequestBody FolderRuleReorderRequest request) {
+        List<AutomationRule> reordered = ruleEngineService.reorderRulesByScopeFolder(
+            folderId,
+            new RuleEngineService.FolderRuleReorderRequest(
+                request.ruleIds(),
+                request.basePriority(),
+                request.step()
+            )
+        );
+        return ResponseEntity.ok(new FolderRuleReorderResponse(
+            folderId,
+            reordered.size(),
+            reordered.stream().map(RuleResponse::from).toList()
+        ));
+    }
+
+    @PostMapping("/folders/{folderId}/dry-run")
+    @Operation(
+        summary = "Dry-run folder scoped rules",
+        description = "Evaluate folder scoped rules against synthetic input without executing actions"
+    )
+    @PreAuthorize("hasAnyRole('ADMIN', 'EDITOR')")
+    public ResponseEntity<FolderRuleDryRunResponse> dryRunScopeFolderRules(
+            @PathVariable UUID folderId,
+            @RequestBody(required = false) FolderRuleDryRunRequestDto request) {
+        FolderRuleDryRunRequestDto safeRequest = request != null
+            ? request
+            : new FolderRuleDryRunRequestDto(null, Map.of(), null);
+        RuleEngineService.FolderRuleDryRunResult result = ruleEngineService.dryRunRulesByScopeFolder(
+            folderId,
+            new RuleEngineService.FolderRuleDryRunRequest(
+                safeRequest.triggerType(),
+                safeRequest.testData(),
+                safeRequest.limit()
+            )
+        );
+        return ResponseEntity.ok(new FolderRuleDryRunResponse(
+            result.scopeFolderId(),
+            result.triggerType(),
+            result.found(),
+            result.scanned(),
+            result.matched(),
+            result.processable(),
+            result.skipped(),
+            result.errors(),
+            result.skipReasons(),
+            result.results().stream()
+                .map(item -> new FolderRuleDryRunItemResponse(
+                    item.ruleId(),
+                    item.ruleName(),
+                    item.priority(),
+                    item.matched(),
+                    item.processable(),
+                    item.skipReason(),
+                    item.unsupportedActions(),
+                    item.error()
+                ))
+                .toList()
+        ));
+    }
+
+    // ==================== Manual Execution Ledger ====================
+
+    @PostMapping("/{ruleId}/execute")
+    @Operation(
+        summary = "Execute rule manually",
+        description = "Execute one rule against a document with optional idempotency key and persist a run ledger record"
+    )
+    @PreAuthorize("hasAnyRole('ADMIN', 'EDITOR')")
+    public ResponseEntity<RuleExecutionCommandResponse> executeRuleManually(
+            @PathVariable UUID ruleId,
+            @RequestBody RuleExecutionCommandRequest request) {
+        if (request.documentId() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "documentId is required");
+        }
+        RuleEngineService.RuleExecutionCommandResult result = ruleEngineService.executeRuleManual(
+            ruleId,
+            request.documentId(),
+            request.triggerType(),
+            request.idempotencyKey()
+        );
+        return ResponseEntity.ok(new RuleExecutionCommandResponse(
+            result.runId(),
+            result.deduplicated(),
+            result.deduplicatedFromRunId(),
+            toRuleRunRecordResponse(result.run())
+        ));
+    }
+
+    @GetMapping({"/executions", "/executions/timeline"})
+    @Operation(
+        summary = "List recent manual rule executions",
+        description = "List manual rule execution ledger records with timeline filters"
+    )
+    @PreAuthorize("hasAnyRole('ADMIN', 'EDITOR')")
+    public ResponseEntity<List<RuleRunRecordResponse>> listManualRuleExecutions(
+            @RequestParam(required = false) UUID ruleId,
+            @RequestParam(required = false) UUID documentId,
+            @RequestParam(required = false) TriggerType triggerType,
+            @RequestParam(required = false) Boolean success,
+            @RequestParam(required = false) String actor,
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to,
+            @RequestParam(defaultValue = "20") int limit) {
+        RuleRunTimelineQuery query = new RuleRunTimelineQuery(
+            ruleId,
+            documentId,
+            triggerType,
+            success,
+            actor,
+            parseDateTimeFilter("from", from),
+            parseDateTimeFilter("to", to),
+            limit
+        );
+        return ResponseEntity.ok(
+            ruleEngineService.listRuleRuns(query).stream()
+                .map(this::toRuleRunRecordResponse)
+                .toList()
+        );
+    }
+
+    @GetMapping(value = {"/executions/export", "/executions/timeline/export"}, produces = "text/csv")
+    @Operation(
+        summary = "Export manual rule execution timeline",
+        description = "Export filtered manual rule execution ledger records to CSV"
+    )
+    @PreAuthorize("hasAnyRole('ADMIN', 'EDITOR')")
+    public ResponseEntity<byte[]> exportManualRuleExecutions(
+            @RequestParam(required = false) UUID ruleId,
+            @RequestParam(required = false) UUID documentId,
+            @RequestParam(required = false) TriggerType triggerType,
+            @RequestParam(required = false) Boolean success,
+            @RequestParam(required = false) String actor,
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to,
+            @RequestParam(defaultValue = "200") int limit) {
+        RuleRunTimelineQuery query = new RuleRunTimelineQuery(
+            ruleId,
+            documentId,
+            triggerType,
+            success,
+            actor,
+            parseDateTimeFilter("from", from),
+            parseDateTimeFilter("to", to),
+            limit
+        );
+        List<RuleRunRecordResponse> rows = ruleEngineService.listRuleRuns(query).stream()
+            .map(this::toRuleRunRecordResponse)
+            .toList();
+
+        String username = securityService.getCurrentUser();
+        auditService.logEvent(
+            "RULE_MANUAL_RUN_TIMELINE_EXPORTED",
+            null,
+            "rule-manual-executions",
+            username != null ? username : "system",
+            String.format(
+                "Exported %d manual rule executions (ruleId=%s, documentId=%s, trigger=%s, success=%s, actor=%s)",
+                rows.size(),
+                ruleId,
+                documentId,
+                triggerType,
+                success,
+                actor
+            )
+        );
+
+        byte[] csv = buildRuleExecutionCsv(rows).getBytes(StandardCharsets.UTF_8);
+        String filename = "rule-executions-" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")) + ".csv";
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.parseMediaType("text/csv; charset=UTF-8"));
+        headers.setContentDisposition(ContentDisposition.attachment().filename(filename).build());
+        headers.setContentLength(csv.length);
+        return ResponseEntity.ok().headers(headers).body(csv);
+    }
+
+    @GetMapping("/executions/{runId}")
+    @Operation(
+        summary = "Get manual rule execution run",
+        description = "Get one manual rule execution ledger record by run id"
+    )
+    @PreAuthorize("hasAnyRole('ADMIN', 'EDITOR')")
+    public ResponseEntity<RuleRunRecordResponse> getManualRuleExecution(
+            @PathVariable UUID runId) {
+        RuleEngineService.RuleRunLedgerRecord runRecord = ruleEngineService.getRuleRun(runId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Rule run not found: " + runId));
+        return ResponseEntity.ok(toRuleRunRecordResponse(runRecord));
+    }
+
+    @GetMapping("/executions/audit")
+    @Operation(
+        summary = "List rule audit timeline",
+        description = "List rule/scheduled-rule audit events with optional filters"
+    )
+    @PreAuthorize("hasAnyRole('ADMIN', 'EDITOR')")
+    public ResponseEntity<List<RuleAuditTimelineItemResponse>> listRuleExecutionAuditTimeline(
+            @RequestParam(required = false) String eventType,
+            @RequestParam(required = false) String actor,
+            @RequestParam(required = false) UUID nodeId,
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to,
+            @RequestParam(defaultValue = "50") int limit) {
+        int boundedLimit = Math.max(1, Math.min(limit, 500));
+        LocalDateTime fromAt = parseDateTimeFilter("from", from);
+        LocalDateTime toAt = parseDateTimeFilter("to", to);
+        return ResponseEntity.ok(
+            auditLogRepository.findRuleAuditTimeline(
+                eventType,
+                actor,
+                nodeId,
+                fromAt,
+                toAt,
+                PageRequest.of(0, boundedLimit)
+            ).getContent().stream()
+                .map(this::toRuleAuditTimelineItemResponse)
+                .toList()
+        );
+    }
+
+    @GetMapping(value = "/executions/audit/export", produces = "text/csv")
+    @Operation(
+        summary = "Export rule audit timeline",
+        description = "Export filtered rule/scheduled-rule audit events to CSV"
+    )
+    @PreAuthorize("hasAnyRole('ADMIN', 'EDITOR')")
+    public ResponseEntity<byte[]> exportRuleExecutionAuditTimeline(
+            @RequestParam(required = false) String eventType,
+            @RequestParam(required = false) String actor,
+            @RequestParam(required = false) UUID nodeId,
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to,
+            @RequestParam(defaultValue = "500") int limit) {
+        int boundedLimit = Math.max(1, Math.min(limit, 2000));
+        LocalDateTime fromAt = parseDateTimeFilter("from", from);
+        LocalDateTime toAt = parseDateTimeFilter("to", to);
+        List<RuleAuditTimelineItemResponse> rows = auditLogRepository.findRuleAuditTimeline(
+            eventType,
+            actor,
+            nodeId,
+            fromAt,
+            toAt,
+            PageRequest.of(0, boundedLimit)
+        ).getContent().stream()
+            .map(this::toRuleAuditTimelineItemResponse)
+            .toList();
+
+        String username = securityService.getCurrentUser();
+        auditService.logEvent(
+            "RULE_AUDIT_TIMELINE_EXPORTED",
+            nodeId,
+            "rule-audit-timeline",
+            username != null ? username : "system",
+            String.format(
+                "Exported %d rule audit events (eventType=%s, actor=%s, nodeId=%s)",
+                rows.size(),
+                eventType,
+                actor,
+                nodeId
+            )
+        );
+
+        byte[] csv = buildRuleAuditTimelineCsv(rows).getBytes(StandardCharsets.UTF_8);
+        String filename = "rule-audit-timeline-" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")) + ".csv";
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.parseMediaType("text/csv; charset=UTF-8"));
+        headers.setContentDisposition(ContentDisposition.attachment().filename(filename).build());
+        headers.setContentLength(csv.length);
+        return ResponseEntity.ok().headers(headers).body(csv);
     }
 
     // ==================== Rule Testing ====================
@@ -310,6 +614,18 @@ public class RuleController {
 
     // ==================== Template Rules ====================
 
+    @GetMapping("/actions/definitions")
+    @Operation(
+        summary = "Get rule action definitions",
+        description = "Get supported rule action types and parameter definitions for rule builder UIs."
+    )
+    public ResponseEntity<RuleActionDefinitionsResponse> getRuleActionDefinitions() {
+        List<RuleActionDefinition> actions = Arrays.stream(RuleAction.ActionType.values())
+            .map(this::toRuleActionDefinition)
+            .toList();
+        return ResponseEntity.ok(new RuleActionDefinitionsResponse(actions));
+    }
+
     @GetMapping("/templates")
     @Operation(summary = "Get rule templates",
                description = "Get predefined rule templates for common use cases")
@@ -399,7 +715,285 @@ public class RuleController {
         }
     }
 
+    private RuleActionDefinition toRuleActionDefinition(RuleAction.ActionType actionType) {
+        List<String> requiredParams = new ArrayList<>();
+        List<String> optionalParams = new ArrayList<>();
+        List<String> constraints = new ArrayList<>();
+
+        switch (actionType) {
+            case ADD_TAG, REMOVE_TAG -> requiredParams.add(RuleAction.ParamKeys.TAG_NAME);
+            case SET_CATEGORY, REMOVE_CATEGORY -> requiredParams.add(RuleAction.ParamKeys.CATEGORY_NAME);
+            case MOVE_TO_FOLDER -> requiredParams.add(RuleAction.ParamKeys.FOLDER_ID);
+            case COPY_TO_FOLDER -> {
+                requiredParams.add(RuleAction.ParamKeys.FOLDER_ID);
+                optionalParams.add(RuleAction.ParamKeys.NEW_NAME);
+            }
+            case SET_METADATA -> {
+                requiredParams.add(RuleAction.ParamKeys.KEY);
+                optionalParams.add(RuleAction.ParamKeys.VALUE);
+            }
+            case REMOVE_METADATA -> requiredParams.add(RuleAction.ParamKeys.KEY);
+            case RENAME -> {
+                optionalParams.add(RuleAction.ParamKeys.NEW_NAME);
+                optionalParams.add(RuleAction.ParamKeys.PATTERN);
+                constraints.add("atLeastOneOf:newName,pattern");
+            }
+            case START_WORKFLOW -> {
+                requiredParams.add(RuleAction.ParamKeys.WORKFLOW_KEY);
+                optionalParams.add(RuleAction.ParamKeys.VARIABLES);
+                constraints.add("workflowKey=documentApproval requires approvers");
+            }
+            case SEND_NOTIFICATION -> {
+                requiredParams.add(RuleAction.ParamKeys.RECIPIENT);
+                requiredParams.add(RuleAction.ParamKeys.MESSAGE);
+                optionalParams.add(RuleAction.ParamKeys.NOTIFICATION_TYPE);
+            }
+            case WEBHOOK -> {
+                requiredParams.add(RuleAction.ParamKeys.URL);
+                optionalParams.add(RuleAction.ParamKeys.METHOD);
+                optionalParams.add(RuleAction.ParamKeys.HEADERS);
+                optionalParams.add(RuleAction.ParamKeys.BODY);
+            }
+            case SET_STATUS -> requiredParams.add(RuleAction.ParamKeys.STATUS);
+            case LOCK_DOCUMENT -> {
+                // no params
+            }
+            case EXECUTE_SCRIPT -> {
+                optionalParams.add("script");
+                optionalParams.add("language");
+            }
+        }
+
+        return new RuleActionDefinition(
+            actionType.name(),
+            actionType != RuleAction.ActionType.EXECUTE_SCRIPT,
+            requiredParams,
+            optionalParams,
+            constraints
+        );
+    }
+
+    private LocalDateTime parseDateTimeFilter(String fieldName, String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return LocalDateTime.parse(value, DateTimeFormatter.ISO_DATE_TIME);
+        } catch (DateTimeParseException ignored) {
+            try {
+                return LocalDateTime.parse(value, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+            } catch (DateTimeParseException ex) {
+                throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Invalid datetime for " + fieldName + ": " + value
+                );
+            }
+        }
+    }
+
+    private String buildRuleExecutionCsv(List<RuleRunRecordResponse> rows) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("runId,ruleId,ruleName,documentId,documentName,triggerType,executedBy,idempotencyKey,conditionMatched,success,successfulActions,failedActions,totalActions,errorMessage,startedAt,completedAt,durationMs").append('\n');
+        for (RuleRunRecordResponse run : rows) {
+            sb.append(csvEscape(run.runId())).append(',')
+                .append(csvEscape(run.ruleId())).append(',')
+                .append(csvEscape(run.ruleName())).append(',')
+                .append(csvEscape(run.documentId())).append(',')
+                .append(csvEscape(run.documentName())).append(',')
+                .append(csvEscape(run.triggerType())).append(',')
+                .append(csvEscape(run.executedBy())).append(',')
+                .append(csvEscape(run.idempotencyKey())).append(',')
+                .append(run.conditionMatched()).append(',')
+                .append(run.success()).append(',')
+                .append(run.successfulActions()).append(',')
+                .append(run.failedActions()).append(',')
+                .append(run.totalActions()).append(',')
+                .append(csvEscape(run.errorMessage())).append(',')
+                .append(csvEscape(run.startedAt())).append(',')
+                .append(csvEscape(run.completedAt())).append(',')
+                .append(run.durationMs() != null ? run.durationMs() : "")
+                .append('\n');
+        }
+        return sb.toString();
+    }
+
+    private String buildRuleAuditTimelineCsv(List<RuleAuditTimelineItemResponse> rows) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("id,eventType,nodeId,nodeName,username,eventTime,details").append('\n');
+        for (RuleAuditTimelineItemResponse row : rows) {
+            sb.append(csvEscape(row.id())).append(',')
+                .append(csvEscape(row.eventType())).append(',')
+                .append(csvEscape(row.nodeId())).append(',')
+                .append(csvEscape(row.nodeName())).append(',')
+                .append(csvEscape(row.username())).append(',')
+                .append(csvEscape(row.eventTime())).append(',')
+                .append(csvEscape(row.details()))
+                .append('\n');
+        }
+        return sb.toString();
+    }
+
+    private String csvEscape(Object value) {
+        if (value == null) {
+            return "";
+        }
+        String raw = value.toString();
+        if (raw.contains(",") || raw.contains("\"") || raw.contains("\n") || raw.contains("\r")) {
+            return "\"" + raw.replace("\"", "\"\"") + "\"";
+        }
+        return raw;
+    }
+
+    private RuleRunRecordResponse toRuleRunRecordResponse(RuleEngineService.RuleRunLedgerRecord run) {
+        return new RuleRunRecordResponse(
+            run.runId(),
+            run.ruleId(),
+            run.ruleName(),
+            run.documentId(),
+            run.documentName(),
+            run.triggerType(),
+            run.idempotencyKey(),
+            run.executedBy(),
+            run.conditionMatched(),
+            run.success(),
+            run.successfulActions(),
+            run.failedActions(),
+            run.totalActions(),
+            run.errorMessage(),
+            run.startedAt(),
+            run.completedAt(),
+            run.durationMs(),
+            run.actions().stream()
+                .map(action -> new RuleRunActionRecordResponse(
+                    action.actionType(),
+                    action.success(),
+                    action.errorMessage(),
+                    action.durationMs(),
+                    action.details()
+                ))
+                .toList()
+        );
+    }
+
+    private RuleAuditTimelineItemResponse toRuleAuditTimelineItemResponse(AuditLog auditLog) {
+        return new RuleAuditTimelineItemResponse(
+            auditLog.getId(),
+            auditLog.getEventType(),
+            auditLog.getNodeId(),
+            auditLog.getNodeName(),
+            auditLog.getUsername(),
+            auditLog.getEventTime(),
+            auditLog.getDetails()
+        );
+    }
+
     // ==================== DTOs ====================
+
+    public record RuleActionDefinitionsResponse(
+        List<RuleActionDefinition> actions
+    ) {}
+
+    public record FolderRuleReorderRequest(
+        List<UUID> ruleIds,
+        Integer basePriority,
+        Integer step
+    ) {}
+
+    public record FolderRuleReorderResponse(
+        UUID scopeFolderId,
+        int updated,
+        List<RuleResponse> rules
+    ) {}
+
+    public record FolderRuleDryRunRequestDto(
+        TriggerType triggerType,
+        Map<String, Object> testData,
+        Integer limit
+    ) {}
+
+    public record FolderRuleDryRunResponse(
+        UUID scopeFolderId,
+        TriggerType triggerType,
+        int found,
+        int scanned,
+        int matched,
+        int processable,
+        int skipped,
+        int errors,
+        Map<String, Long> skipReasons,
+        List<FolderRuleDryRunItemResponse> results
+    ) {}
+
+    public record FolderRuleDryRunItemResponse(
+        UUID ruleId,
+        String ruleName,
+        Integer priority,
+        boolean matched,
+        boolean processable,
+        String skipReason,
+        List<String> unsupportedActions,
+        String error
+    ) {}
+
+    public record RuleExecutionCommandRequest(
+        UUID documentId,
+        TriggerType triggerType,
+        String idempotencyKey
+    ) {}
+
+    public record RuleExecutionCommandResponse(
+        UUID runId,
+        boolean deduplicated,
+        UUID deduplicatedFromRunId,
+        RuleRunRecordResponse run
+    ) {}
+
+    public record RuleRunRecordResponse(
+        UUID runId,
+        UUID ruleId,
+        String ruleName,
+        UUID documentId,
+        String documentName,
+        TriggerType triggerType,
+        String idempotencyKey,
+        String executedBy,
+        boolean conditionMatched,
+        boolean success,
+        int successfulActions,
+        int failedActions,
+        int totalActions,
+        String errorMessage,
+        LocalDateTime startedAt,
+        LocalDateTime completedAt,
+        Long durationMs,
+        List<RuleRunActionRecordResponse> actions
+    ) {}
+
+    public record RuleRunActionRecordResponse(
+        String actionType,
+        boolean success,
+        String errorMessage,
+        Long durationMs,
+        String details
+    ) {}
+
+    public record RuleAuditTimelineItemResponse(
+        UUID id,
+        String eventType,
+        UUID nodeId,
+        String nodeName,
+        String username,
+        LocalDateTime eventTime,
+        String details
+    ) {}
+
+    public record RuleActionDefinition(
+        String type,
+        boolean supported,
+        List<String> requiredParams,
+        List<String> optionalParams,
+        List<String> constraints
+    ) {}
 
     public record CreateRuleRequestDto(
         String name,

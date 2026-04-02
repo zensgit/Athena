@@ -1,24 +1,10 @@
 import { SavedSearch } from 'services/savedSearchService';
 import { SearchCriteria } from 'types';
-
-const KNOWN_PREVIEW_STATUSES = new Set([
-  'READY',
-  'PROCESSING',
-  'QUEUED',
-  'FAILED',
-  'UNSUPPORTED',
-  'PENDING',
-]);
-
-const PREVIEW_STATUS_ALIAS_MAP: Record<string, string> = {
-  IN_PROGRESS: 'PROCESSING',
-  RUNNING: 'PROCESSING',
-  WAITING: 'QUEUED',
-  ERROR: 'FAILED',
-  UNSUPPORTED_MEDIA_TYPE: 'UNSUPPORTED',
-  UNSUPPORTED_MIME: 'UNSUPPORTED',
-  PREVIEW_UNSUPPORTED: 'UNSUPPORTED',
-};
+import {
+  AdvancedSearchCriteriaState,
+  resolveModifiedFromDate,
+  resolveTemplateQueryState,
+} from './advancedSearchStateUtils';
 
 const asRecord = (input: unknown): Record<string, unknown> | undefined => {
   if (input && typeof input === 'object' && !Array.isArray(input)) {
@@ -121,37 +107,6 @@ const asRange = (input: unknown): { from?: string; to?: string } => {
   };
 };
 
-const normalizeStatusToken = (value: unknown) => {
-  const raw = String(value).trim().toUpperCase();
-  if (!raw) {
-    return undefined;
-  }
-  if (KNOWN_PREVIEW_STATUSES.has(raw)) {
-    return raw;
-  }
-  if (PREVIEW_STATUS_ALIAS_MAP[raw]) {
-    return PREVIEW_STATUS_ALIAS_MAP[raw];
-  }
-  if (raw.includes('UNSUPPORTED')) {
-    return 'UNSUPPORTED';
-  }
-  return undefined;
-};
-
-const normalizeStatusList = (input: unknown) => {
-  const rawValues = Array.isArray(input)
-    ? input
-    : (typeof input === 'string' ? input.split(',') : []);
-
-  return Array.from(
-    new Set(
-      rawValues
-        .map((value) => normalizeStatusToken(value))
-        .filter((value): value is string => Boolean(value))
-    )
-  );
-};
-
 export const buildSearchCriteriaFromSavedSearch = (item: SavedSearch): SearchCriteria => {
   const queryParams = asRecord(item.queryParams) || {};
   const filters =
@@ -174,43 +129,51 @@ export const buildSearchCriteriaFromSavedSearch = (item: SavedSearch): SearchCri
     return undefined;
   };
 
-  const mimeTypes = normalizeList(getFilterValue('mimeTypes', 'mimeType', 'mimetype'));
-  const createdByList = normalizeList(getFilterValue('createdByList', 'creators', 'creator', 'createdByUser'));
+  const advancedState = buildAdvancedSearchStateFromSavedSearch(item);
+  const mimeTypes = advancedState.mimeTypes;
+  const createdByList = advancedState.creators;
   const properties = normalizeProperties(getFilterValue('properties'));
   const createdByDirect = asString(getFilterValue('createdBy', 'creator', 'createdByUser'));
   const createdBy = createdByDirect || createdByList[0] || undefined;
   const contentTypeDirect = asString(getFilterValue('contentType', 'mimeType', 'mimetype'));
   const contentType = contentTypeDirect || mimeTypes[0] || undefined;
-  const previewStatuses = normalizeStatusList(
-    getFilterValue('previewStatuses', 'previewStatus')
-  );
   const createdRange = asRange(getFilterValue('createdRange', 'createdDateRange'));
   const modifiedRange = asRange(getFilterValue('modifiedRange', 'modifiedDateRange'));
-  const name = asString(queryParams.query)
-    || asString(queryParams.q)
-    || asString(queryParams.queryString)
-    || '';
+  const modifiedFromDateRange = advancedState.dateRange !== 'all'
+    ? resolveModifiedFromDate(advancedState.dateRange)
+    : undefined;
 
   return {
-    name,
+    name: advancedState.query,
     contentType,
     mimeTypes,
+    locked: advancedState.lockState === 'locked' ? true : advancedState.lockState === 'unlocked' ? false : undefined,
+    lockedBy: advancedState.lockOwner || undefined,
+    checkedOut: advancedState.checkoutState === 'checkedOut' ? true : advancedState.checkoutState === 'available' ? false : undefined,
+    checkoutUser: advancedState.checkoutUser || undefined,
     aspects: normalizeList(getFilterValue('aspects')),
     properties,
     createdBy,
     createdByList: createdByList.length ? createdByList : undefined,
     createdFrom: asDateString(getFilterValue('createdFrom', 'dateFrom')) || createdRange.from,
     createdTo: asDateString(getFilterValue('createdTo', 'dateTo')) || createdRange.to,
-    modifiedFrom: asDateString(getFilterValue('modifiedFrom', 'dateModifiedFrom')) || modifiedRange.from,
+    modifiedFrom: asDateString(getFilterValue('modifiedFrom', 'dateModifiedFrom'))
+      || modifiedRange.from
+      || modifiedFromDateRange,
     modifiedTo: asDateString(getFilterValue('modifiedTo', 'dateModifiedTo')) || modifiedRange.to,
-    tags: normalizeList(getFilterValue('tags')),
-    categories: normalizeList(getFilterValue('categories')),
+    tags: advancedState.tags,
+    categories: advancedState.categories,
     correspondents: normalizeList(getFilterValue('correspondents')),
-    previewStatuses,
-    minSize: asNonNegativeNumber(getFilterValue('minSize')),
-    maxSize: asNonNegativeNumber(getFilterValue('maxSize')),
+    previewStatuses: advancedState.previewStatuses,
+    minSize: advancedState.minSize ?? asNonNegativeNumber(getFilterValue('minSize')),
+    maxSize: advancedState.maxSize ?? asNonNegativeNumber(getFilterValue('maxSize')),
     path: asString(getFilterValue('path', 'pathPrefix', 'pathStartsWith')),
     folderId: asString(getFilterValue('folderId')),
     includeChildren: asBoolean(getFilterValue('includeChildren')),
   };
+};
+
+export const buildAdvancedSearchStateFromSavedSearch = (item: SavedSearch): AdvancedSearchCriteriaState => {
+  const queryParams = asRecord(item.queryParams) || {};
+  return resolveTemplateQueryState(queryParams);
 };

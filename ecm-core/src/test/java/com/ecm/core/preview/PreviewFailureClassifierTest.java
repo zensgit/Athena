@@ -37,6 +37,22 @@ class PreviewFailureClassifierTest {
     }
 
     @Test
+    void classifiesStaleHashMismatchAsTemporaryFailure() {
+        assertEquals(
+            PreviewFailureClassifier.CATEGORY_TEMPORARY,
+            PreviewFailureClassifier.classify("FAILED", "application/pdf", "STALE_HASH_MISMATCH")
+        );
+    }
+
+    @Test
+    void classifiesSourceEmptyAsUnsupported() {
+        assertEquals(
+            PreviewFailureClassifier.CATEGORY_UNSUPPORTED,
+            PreviewFailureClassifier.classify("FAILED", "application/pdf", "SOURCE_EMPTY")
+        );
+    }
+
+    @Test
     void treatsBadPdfParseAsPermanentFailure() {
         assertEquals(
             PreviewFailureClassifier.CATEGORY_PERMANENT,

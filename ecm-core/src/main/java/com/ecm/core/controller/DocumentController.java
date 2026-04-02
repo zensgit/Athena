@@ -1,5 +1,7 @@
 package com.ecm.core.controller;
 
+import com.ecm.core.dto.CheckoutInfoDto;
+import com.ecm.core.dto.CheckoutLineageDto;
 import com.ecm.core.dto.NodeDto;
 import com.ecm.core.dto.PdfAnnotationSaveRequest;
 import com.ecm.core.dto.PdfAnnotationStateDto;
@@ -7,8 +9,12 @@ import com.ecm.core.dto.VersionCompareResultDto;
 import com.ecm.core.dto.VersionDto;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Version;
+import com.ecm.core.preview.PreviewFailureClassifier;
+import com.ecm.core.preview.PreviewStatusSemantics;
+import com.ecm.core.service.CheckOutCheckInService;
 import com.ecm.core.service.NodeService;
 import com.ecm.core.service.PdfAnnotationService;
+import com.ecm.core.service.RenditionResourceService;
 import com.ecm.core.service.VersionService;
 import com.ecm.core.service.ContentService;
 import com.ecm.core.preview.PreviewService;
@@ -21,6 +27,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -34,8 +41,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.UUID;
 import java.util.Objects;
+import java.util.UUID;
 
 @RestController
 @RequestMapping({"/api/documents", "/api/v1/documents"})
@@ -51,6 +58,14 @@ public class DocumentController {
     private final OcrQueueService ocrQueueService;
     private final ConversionService conversionService;
     private final PdfAnnotationService pdfAnnotationService;
+    private final RenditionResourceService renditionResourceService;
+    private final CheckOutCheckInService checkOutCheckInService;
+
+    @Value("${ecm.preview.read.hash-enforce.enabled:true}")
+    private boolean previewReadHashEnforceEnabled;
+
+    @Value("${ecm.preview.read.auto-repair-on-stale:true}")
+    private boolean previewReadAutoRepairOnStale;
     
     @PostMapping("/upload-legacy")
     @Operation(summary = "Upload document (legacy)", description = "Legacy endpoint; prefer /api/v1/documents/upload pipeline API")
@@ -67,7 +82,7 @@ public class DocumentController {
             // Create new version
             Version version = versionService.createVersion(documentId, file, comment, majorVersion);
             Document document = (Document) nodeService.getNode(documentId);
-            return ResponseEntity.ok(NodeDto.from(document));
+            return ResponseEntity.ok(toNodeDto(document));
         } else {
             // Create new document
             Document document = new Document();
@@ -85,7 +100,7 @@ public class DocumentController {
             // Create initial version
             versionService.createVersion(created.getId(), file, "Initial version", true);
             
-            return ResponseEntity.status(HttpStatus.CREATED).body(NodeDto.from(created));
+            return ResponseEntity.status(HttpStatus.CREATED).body(toNodeDto(created));
         }
     }
     
@@ -185,17 +200,50 @@ public class DocumentController {
         
         versionService.revertToVersion(documentId, versionId);
         Document document = (Document) nodeService.getNode(documentId);
-        return ResponseEntity.ok(NodeDto.from(document));
+        return ResponseEntity.ok(toNodeDto(document));
     }
     
     @PostMapping("/{documentId}/checkout")
     @Operation(summary = "Check out document", description = "Check out a document for editing")
     public ResponseEntity<NodeDto> checkoutDocument(
             @Parameter(description = "Document ID") @PathVariable UUID documentId) {
-        
+        Document document = nodeService.checkoutDocument(documentId);
+        return ResponseEntity.ok(toNodeDto(document));
+    }
+
+    @GetMapping("/{documentId}/checkout-info")
+    @Operation(summary = "Get checkout info", description = "Retrieve caller-relative checkout status and available actions for a document")
+    public ResponseEntity<CheckoutInfoDto> getCheckoutInfo(
+            @Parameter(description = "Document ID") @PathVariable UUID documentId) {
+        return ResponseEntity.ok(nodeService.getCheckoutInfo(documentId));
+    }
+
+    @GetMapping("/{documentId}/checkout-lineage")
+    @Operation(summary = "Get checkout lineage", description = "Retrieve caller-relative checkout info plus baseline/current version references for active checkout lineage.")
+    public ResponseEntity<CheckoutLineageDto> getCheckoutLineage(
+            @Parameter(description = "Document ID") @PathVariable UUID documentId) {
         Document document = (Document) nodeService.getNode(documentId);
-        document.checkout(document.getLastModifiedBy());
-        return ResponseEntity.ok(NodeDto.from(document));
+        CheckoutInfoDto checkoutInfo = nodeService.getCheckoutInfo(documentId);
+
+        VersionDto baselineVersion = null;
+        if (document.getCheckoutBaselineVersionId() != null && !document.getCheckoutBaselineVersionId().isBlank()) {
+            try {
+                baselineVersion = VersionDto.from(versionService.getVersion(UUID.fromString(document.getCheckoutBaselineVersionId())));
+            } catch (IllegalArgumentException ignored) {
+                baselineVersion = null;
+            }
+        }
+
+        VersionDto currentVersion = document.getCurrentVersion() != null
+            ? VersionDto.from(document.getCurrentVersion())
+            : null;
+
+        return ResponseEntity.ok(new CheckoutLineageDto(
+            documentId,
+            checkoutInfo,
+            baselineVersion,
+            currentVersion
+        ));
     }
     
     @PostMapping("/{documentId}/checkin")
@@ -204,45 +252,234 @@ public class DocumentController {
             @Parameter(description = "Document ID") @PathVariable UUID documentId,
             @Parameter(description = "New version file") @RequestParam(required = false) MultipartFile file,
             @Parameter(description = "Version comment") @RequestParam(required = false) String comment,
-            @Parameter(description = "Major version") @RequestParam(defaultValue = "false") boolean majorVersion) 
+            @Parameter(description = "Major version") @RequestParam(defaultValue = "false") boolean majorVersion,
+            @Parameter(description = "Keep document checked out after check-in") @RequestParam(defaultValue = "false") boolean keepCheckedOut)
             throws IOException {
-        
-        Document document = (Document) nodeService.getNode(documentId);
-        
+
+        if (keepCheckedOut && file == null) {
+            throw new IllegalArgumentException("keepCheckedOut requires a new version file");
+        }
         if (file != null) {
             versionService.createVersion(documentId, file, comment, majorVersion);
         }
-        
-        document.checkin();
-        return ResponseEntity.ok(NodeDto.from(document));
+        Document document = nodeService.checkinDocument(documentId, keepCheckedOut);
+        return ResponseEntity.ok(toNodeDto(document));
     }
     
     @PostMapping("/{documentId}/cancel-checkout")
     @Operation(summary = "Cancel checkout", description = "Cancel document checkout")
     public ResponseEntity<NodeDto> cancelCheckout(
             @Parameter(description = "Document ID") @PathVariable UUID documentId) {
-        
-        Document document = (Document) nodeService.getNode(documentId);
-        document.checkin();
-        return ResponseEntity.ok(NodeDto.from(document));
+        Document document = nodeService.cancelCheckoutDocument(documentId);
+        return ResponseEntity.ok(toNodeDto(document));
+    }
+
+    // ---- persisted working-copy endpoints --------------------------------
+
+    @PostMapping("/{documentId}/checkout-wc")
+    @Operation(summary = "Check out with working copy",
+               description = "Check out a document creating a persisted working copy. "
+                   + "Optionally specify a destination folder for the working copy.")
+    public ResponseEntity<NodeDto> checkoutWithWorkingCopy(
+            @Parameter(description = "Document ID") @PathVariable UUID documentId,
+            @Parameter(description = "Destination folder ID (defaults to same parent)")
+            @RequestParam(required = false) UUID destination) {
+        Document wc = checkOutCheckInService.checkout(documentId, destination);
+        return ResponseEntity.ok(toNodeDto(wc));
+    }
+
+    @PostMapping("/{workingCopyId}/checkin-wc")
+    @Operation(summary = "Check in working copy",
+               description = "Check in a persisted working copy. Optionally upload a new file "
+                   + "and/or keep the document checked out.")
+    public ResponseEntity<NodeDto> checkinWorkingCopy(
+            @Parameter(description = "Working copy ID") @PathVariable UUID workingCopyId,
+            @Parameter(description = "New version file") @RequestParam(required = false) MultipartFile file,
+            @Parameter(description = "Version comment") @RequestParam(required = false) String comment,
+            @Parameter(description = "Major version") @RequestParam(defaultValue = "false") boolean majorVersion,
+            @Parameter(description = "Keep checked out") @RequestParam(defaultValue = "false") boolean keepCheckedOut)
+            throws IOException {
+
+        Document wc = (Document) nodeService.getNode(workingCopyId);
+        if (!wc.isWorkingCopy()) {
+            throw new IllegalArgumentException("Node is not a working copy");
+        }
+        UUID originalId = wc.getWorkingCopyOf();
+
+        if (file != null) {
+            versionService.createVersion(originalId, file, comment, majorVersion);
+        }
+
+        Document result = checkOutCheckInService.checkin(workingCopyId, keepCheckedOut);
+        return ResponseEntity.ok(toNodeDto(result));
+    }
+
+    @PostMapping("/{documentId}/cancel-checkout-wc")
+    @Operation(summary = "Cancel working-copy checkout",
+               description = "Cancel checkout and delete the persisted working copy. "
+                   + "Accepts either the original document ID or the working copy ID.")
+    public ResponseEntity<NodeDto> cancelCheckoutWorkingCopy(
+            @Parameter(description = "Document or working copy ID") @PathVariable UUID documentId) {
+        Document original = checkOutCheckInService.cancelCheckout(documentId);
+        return ResponseEntity.ok(toNodeDto(original));
+    }
+
+    @GetMapping("/{documentId}/working-copy")
+    @Operation(summary = "Get working copy",
+               description = "Retrieve the persisted working copy of a checked-out document.")
+    public ResponseEntity<NodeDto> getWorkingCopy(
+            @Parameter(description = "Original document ID") @PathVariable UUID documentId) {
+        return checkOutCheckInService.getWorkingCopy(documentId)
+            .map(wc -> ResponseEntity.ok(toNodeDto(wc)))
+            .orElse(ResponseEntity.notFound().build());
+    }
+
+    @GetMapping("/{workingCopyId}/original")
+    @Operation(summary = "Get original from working copy",
+               description = "Retrieve the original document from a working copy ID.")
+    public ResponseEntity<NodeDto> getOriginal(
+            @Parameter(description = "Working copy ID") @PathVariable UUID workingCopyId) {
+        return checkOutCheckInService.getOriginal(workingCopyId)
+            .map(orig -> ResponseEntity.ok(toNodeDto(orig)))
+            .orElse(ResponseEntity.notFound().build());
+    }
+
+    private NodeDto toNodeDto(Document document) {
+        NodeDto base = NodeDto.from(document);
+        RenditionResourceService.RenditionSummary renditionSummary = renditionResourceService.summarizeDocument(document);
+        if (renditionSummary == null || !renditionSummary.document()) {
+            return base;
+        }
+        return base.withPreviewSemantics(
+            renditionSummary.previewStatus(),
+            renditionSummary.previewFailureReason(),
+            renditionSummary.previewFailureCategory(),
+            renditionSummary.previewLastUpdated()
+        );
     }
     
     @GetMapping("/{documentId}/preview")
     @Operation(summary = "Preview document", description = "Generate document preview")
     public ResponseEntity<PreviewResult> previewDocument(
-            @Parameter(description = "Document ID") @PathVariable UUID documentId) throws IOException {
-        
+            @Parameter(description = "Document ID") @PathVariable UUID documentId,
+            @RequestParam(required = false) Boolean enforceHashCheck,
+            @RequestParam(required = false) Boolean autoRepair) throws IOException {
+
         Document document = (Document) nodeService.getNode(documentId);
+        boolean effectiveHashEnforce = enforceHashCheck != null ? enforceHashCheck : previewReadHashEnforceEnabled;
+        boolean effectiveAutoRepair = autoRepair != null ? autoRepair : previewReadAutoRepairOnStale;
+        PreviewService.PreviewReadiness readiness = previewService.evaluateReadiness(document);
+
+        if (effectiveHashEnforce && (readiness.staleHash() || readiness.zeroSource())) {
+            String reason = readiness.reason() != null
+                ? readiness.reason()
+                : (readiness.zeroSource() ? "SOURCE_EMPTY" : "HASH_ENFORCE_DECLINED");
+            PreviewService.PreviewRepairResult repair = previewService.invalidateRendition(document, reason);
+            PreviewQueueService.PreviewQueueStatus queueStatus = null;
+            if (effectiveAutoRepair && !readiness.zeroSource()) {
+                try {
+                    queueStatus = previewQueueService.enqueue(documentId, true);
+                } catch (Exception e) {
+                    queueStatus = new PreviewQueueService.PreviewQueueStatus(
+                        documentId,
+                        document.getPreviewStatus(),
+                        false,
+                        0,
+                        null,
+                        "Auto-repair queue failed: " + e.getMessage()
+                    );
+                }
+            }
+            return ResponseEntity.ok(buildHashEnforcedDeclinedResult(document, readiness, repair, queueStatus));
+        }
+
         PreviewResult preview = previewService.generatePreview(document);
         return ResponseEntity.ok(preview);
     }
 
+    @PostMapping("/{documentId}/preview/repair")
+    @Operation(summary = "Repair preview rendition", description = "Invalidate stale preview state and optionally queue repair.")
+    public ResponseEntity<PreviewRepairResponse> repairPreview(
+            @Parameter(description = "Document ID") @PathVariable UUID documentId,
+            @RequestParam(defaultValue = "true") boolean forceInvalidate,
+            @RequestParam(defaultValue = "true") boolean requeue,
+            @RequestParam(defaultValue = "true") boolean forceQueue) {
+        Document document = (Document) nodeService.getNode(documentId);
+        PreviewService.PreviewReadiness readiness = previewService.evaluateReadiness(document);
+
+        boolean shouldInvalidate = forceInvalidate || readiness.staleHash() || readiness.zeroSource();
+        PreviewService.PreviewRepairResult repairResult = shouldInvalidate
+            ? previewService.invalidateRendition(
+                document,
+                readiness.reason() != null ? readiness.reason() : "MANUAL_REPAIR"
+            )
+            : new PreviewService.PreviewRepairResult(
+                documentId,
+                document.getPreviewStatus() != null ? document.getPreviewStatus().name() : null,
+                false,
+                "No invalidation required",
+                document.getPreviewContentHash(),
+                document.getContentHash()
+            );
+
+        PreviewQueueService.PreviewQueueStatus queueStatus = null;
+        if (requeue && !readiness.zeroSource()) {
+            queueStatus = previewQueueService.enqueue(documentId, forceQueue);
+        }
+
+        RenditionResourceService.PreviewMutationStatus mutationStatus =
+            renditionResourceService.resolvePreviewMutationStatus(document, queueStatus);
+
+        return ResponseEntity.ok(new PreviewRepairResponse(
+            documentId,
+            readiness.state(),
+            readiness.reason(),
+            repairResult.invalidated(),
+            repairResult.reason(),
+            mutationStatus.queued(),
+            mutationStatus.message(),
+            mutationStatus.previewStatus(),
+            mutationStatus.previewFailureReason(),
+            mutationStatus.previewFailureCategory(),
+            mutationStatus.previewLastUpdated()
+        ));
+    }
+
     @PostMapping("/{documentId}/preview/queue")
     @Operation(summary = "Queue preview generation", description = "Enqueue document preview generation in the background")
-    public ResponseEntity<PreviewQueueService.PreviewQueueStatus> queuePreview(
+    public ResponseEntity<PreviewQueueResponse> queuePreview(
             @Parameter(description = "Document ID") @PathVariable UUID documentId,
             @RequestParam(defaultValue = "false") boolean force) {
-        return ResponseEntity.ok(previewQueueService.enqueue(documentId, force));
+        PreviewQueueService.PreviewQueueStatus queueStatus = previewQueueService.enqueue(documentId, force);
+        Document document = (Document) nodeService.getNode(documentId);
+        RenditionResourceService.PreviewMutationStatus mutationStatus =
+            renditionResourceService.resolvePreviewMutationStatus(document, queueStatus);
+        return ResponseEntity.ok(new PreviewQueueResponse(
+            mutationStatus.documentId(),
+            mutationStatus.previewStatus(),
+            mutationStatus.previewFailureReason(),
+            mutationStatus.previewFailureCategory(),
+            mutationStatus.previewLastUpdated(),
+            mutationStatus.queued(),
+            mutationStatus.attempts(),
+            mutationStatus.nextAttemptAt(),
+            mutationStatus.message()
+        ));
+    }
+
+    @PostMapping("/{documentId}/preview/queue/cancel")
+    @Operation(summary = "Cancel preview queue task", description = "Cancel queued/running preview task for a document.")
+    public ResponseEntity<PreviewQueueCancelResponse> cancelQueuedPreview(
+            @Parameter(description = "Document ID") @PathVariable UUID documentId) {
+        PreviewQueueService.PreviewQueueCancellationStatus status = previewQueueService.cancel(documentId);
+        return ResponseEntity.ok(new PreviewQueueCancelResponse(
+            status.documentId(),
+            status.queueState(),
+            status.cancelled(),
+            status.hadActiveTask(),
+            status.running(),
+            status.message()
+        ));
     }
 
     @PostMapping("/{documentId}/ocr/queue")
@@ -313,5 +550,111 @@ public class DocumentController {
         Document document = (Document) nodeService.getNode(documentId);
         List<String> conversions = conversionService.getSupportedConversions(document.getMimeType());
         return ResponseEntity.ok(conversions);
+    }
+
+    private PreviewResult buildHashEnforcedDeclinedResult(
+        Document document,
+        PreviewService.PreviewReadiness readiness,
+        PreviewService.PreviewRepairResult repairResult,
+        PreviewQueueService.PreviewQueueStatus queueStatus
+    ) {
+        PreviewResult result = new PreviewResult();
+        RenditionResourceService.RenditionSummary renditionSummary =
+            renditionResourceService.resolvePreviewMutationSummary(document, queueStatus);
+        String effectiveStatus = renditionSummary.previewStatus();
+        String failureReason = firstNonBlank(
+            renditionSummary.previewFailureReason(),
+            repairResult != null ? repairResult.reason() : null,
+            readiness.reason(),
+            PreviewStatusSemantics.resolveEffectiveFailureReason(document)
+        );
+        String failureCategory = firstNonBlank(
+            renditionSummary.previewFailureCategory(),
+            PreviewFailureClassifier.classify(
+                firstNonBlank(effectiveStatus, "FAILED"),
+                document != null ? document.getMimeType() : null,
+                failureReason
+            )
+        );
+        if (failureCategory == null || failureCategory.isBlank()) {
+            failureCategory = readiness.zeroSource()
+                ? PreviewFailureClassifier.CATEGORY_UNSUPPORTED
+                : PreviewFailureClassifier.CATEGORY_TEMPORARY;
+        }
+        String status = firstNonBlank(
+            effectiveStatus,
+            PreviewFailureClassifier.CATEGORY_UNSUPPORTED.equalsIgnoreCase(failureCategory)
+                ? "UNSUPPORTED"
+                : "FAILED"
+        );
+        result.setDocumentId(document != null ? document.getId() : null);
+        result.setMimeType(document != null ? document.getMimeType() : null);
+        result.setSupported(false);
+        result.setStatus(status);
+        result.setFailureReason(failureReason);
+        result.setFailureCategory(failureCategory);
+        result.setRetryNeeded(!readiness.zeroSource());
+        if (queueStatus != null) {
+            result.setRetryHint(queueStatus.message());
+            result.setMessage(queueStatus.queued()
+                ? "Preview withheld by hash enforcement; auto-repair queued"
+                : "Preview withheld by hash enforcement; auto-repair not queued");
+        } else {
+            result.setRetryHint(readiness.reason());
+            result.setMessage(readiness.zeroSource()
+                ? "Preview withheld: source content is empty"
+                : "Preview withheld by hash enforcement");
+        }
+        return result;
+    }
+
+    public record PreviewRepairResponse(
+        UUID documentId,
+        String readinessState,
+        String readinessReason,
+        boolean invalidated,
+        String invalidationReason,
+        boolean queued,
+        String queueMessage,
+        String previewStatus,
+        String previewFailureReason,
+        String previewFailureCategory,
+        java.time.LocalDateTime previewLastUpdated
+    ) {
+    }
+
+    public record PreviewQueueCancelResponse(
+        UUID documentId,
+        String queueState,
+        boolean cancelled,
+        boolean hadActiveTask,
+        boolean running,
+        String message
+    ) {
+    }
+
+    public record PreviewQueueResponse(
+        UUID documentId,
+        String previewStatus,
+        String previewFailureReason,
+        String previewFailureCategory,
+        java.time.LocalDateTime previewLastUpdated,
+        boolean queued,
+        int attempts,
+        java.time.Instant nextAttemptAt,
+        String message
+    ) {
+    }
+
+    private String firstNonBlank(String... candidates) {
+        if (candidates == null) {
+            return null;
+        }
+        for (String candidate : candidates) {
+            if (candidate != null && !candidate.isBlank()) {
+                return candidate.trim();
+            }
+        }
+        return null;
     }
 }

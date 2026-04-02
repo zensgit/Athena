@@ -20,6 +20,9 @@ import {
   Skeleton,
   Chip,
   Alert,
+  Collapse,
+  FormControlLabel,
+  Switch,
 } from '@mui/material';
 import {
   Close,
@@ -32,27 +35,49 @@ import {
   FitScreen,
   ArrowDropDown,
   MoreVert,
+  ContentCopy,
   NavigateBefore,
   NavigateNext,
   Edit,
   Visibility,
   AutoAwesome,
   Refresh,
+  ChatBubbleOutline,
+  Person,
+  Share,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
-import { Node, PdfAnnotation, PdfAnnotationState } from 'types';
-import { useAppSelector } from 'store';
+import { CheckoutInfo, LockInfo, Node, PdfAnnotation, PdfAnnotationState } from 'types';
+import { useAppSelector, useAppDispatch } from 'store';
+import { setSelectedNodeId, setShareLinkManagerOpen } from 'store/slices/uiSlice';
 import apiService from 'services/api';
-import nodeService, { OcrQueueStatus } from 'services/nodeService';
+import nodeService, {
+  NodeCheckoutGraph,
+  NodeRenditionDefinitionStatus,
+  NodeRenditionRelationSummary,
+  OcrQueueStatus,
+  PreviewQueueStatus,
+} from 'services/nodeService';
 import { toast } from 'react-toastify';
-import { getFailedPreviewMeta, isRetryablePreviewFailure } from 'utils/previewStatusUtils';
+import { getEffectivePreviewStatus, getFailedPreviewMeta, isRetryablePreviewFailure } from 'utils/previewStatusUtils';
+import { getLockInfoAlertMessage, getLockInfoAlertSeverity, getLockInfoChipLabel } from 'utils/lockInfoUtils';
+import { getCheckoutInfoAlertMessage, getCheckoutInfoAlertSeverity, getCheckoutInfoChipLabel } from 'utils/checkoutInfoUtils';
+import CheckoutGraphDialog from 'components/dialogs/CheckoutGraphDialog';
+import RenditionDefinitionDialog from 'components/dialogs/RenditionDefinitionDialog';
+import { resolveDocumentPreviewQueueState } from './documentPreviewQueueState';
+import { formatCheckoutGraphSummary } from 'utils/checkoutGraphUtils';
+import { getRenditionDefinitionLines } from 'utils/renditionDefinitionUtils';
+const CommentSection = React.lazy(() => import('../comments/CommentSection'));
 
 interface DocumentPreviewProps {
   open: boolean;
   onClose: () => void;
   node: Node;
   initialAnnotateMode?: boolean;
+  initialCommentsOpen?: boolean;
+  initialCommentDraftText?: string | null;
+  initialCommentId?: string | null;
 }
 
 const PdfPreview = React.lazy(() => import('./PdfPreview'));
@@ -93,18 +118,10 @@ type PreviewResult = {
   supported?: boolean;
   status?: string;
   message?: string;
+  failureCategory?: string;
   failureReason?: string;
   pages?: PreviewPage[];
   pageCount?: number;
-};
-
-type PreviewQueueStatus = {
-  documentId?: string;
-  previewStatus?: string;
-  queued?: boolean;
-  attempts?: number;
-  nextAttemptAt?: string;
-  message?: string;
 };
 
 const OFFICE_MIME_TYPES = new Set([
@@ -200,10 +217,16 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   onClose,
   node,
   initialAnnotateMode = false,
+  initialCommentsOpen = false,
+  initialCommentDraftText = null,
+  initialCommentId = null,
 }) => {
   const navigate = useNavigate();
+  const previewDispatch = useAppDispatch();
   const { user } = useAppSelector((state) => state.auth);
   const canWrite = Boolean(user?.roles?.includes('ROLE_ADMIN') || user?.roles?.includes('ROLE_EDITOR'));
+  const isAdmin = Boolean(user?.roles?.includes('ROLE_ADMIN'));
+  const currentUsername = user?.username ?? null;
   const nodeId = node?.id;
   const nodeName = node?.name;
   const [loading, setLoading] = useState(true);
@@ -236,11 +259,25 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   const [serverPreviewLoading, setServerPreviewLoading] = useState(false);
   const [serverPreviewError, setServerPreviewError] = useState<string | null>(null);
   const [previewQueueStatus, setPreviewQueueStatus] = useState<PreviewQueueStatus | null>(null);
+  const [previewRenditionSummary, setPreviewRenditionSummary] = useState<NodeRenditionRelationSummary | null>(null);
+  const [previewRenditionDefinitions, setPreviewRenditionDefinitions] = useState<NodeRenditionDefinitionStatus[]>([]);
   const [previewStatusOverride, setPreviewStatusOverride] = useState<string | null>(null);
   const [previewFailureOverride, setPreviewFailureOverride] = useState<string | null>(null);
   const [queueingPreview, setQueueingPreview] = useState(false);
   const [nodeDetails, setNodeDetails] = useState<Node | null>(null);
   const [nodeDetailsLoading, setNodeDetailsLoading] = useState(false);
+  const [lockInfo, setLockInfo] = useState<LockInfo | null>(null);
+  const [checkoutInfo, setCheckoutInfo] = useState<CheckoutInfo | null>(null);
+  const [checkoutGraph, setCheckoutGraph] = useState<NodeCheckoutGraph | null>(null);
+  const [checkoutActionLoading, setCheckoutActionLoading] = useState<'checkout' | 'cancel' | null>(null);
+  const [checkoutGraphDialogOpen, setCheckoutGraphDialogOpen] = useState(false);
+  const [renditionDefinitionDialogOpen, setRenditionDefinitionDialogOpen] = useState(false);
+  const [checkInDialogOpen, setCheckInDialogOpen] = useState(false);
+  const [checkInFile, setCheckInFile] = useState<File | null>(null);
+  const [checkInComment, setCheckInComment] = useState('');
+  const [checkInMajorVersion, setCheckInMajorVersion] = useState(false);
+  const [checkInKeepCheckedOut, setCheckInKeepCheckedOut] = useState(false);
+  const [checkInSubmitting, setCheckInSubmitting] = useState(false);
   const [ocrQueueStatus, setOcrQueueStatus] = useState<OcrQueueStatus | null>(null);
   const [ocrStatusOverride, setOcrStatusOverride] = useState<string | null>(null);
   const [ocrFailureOverride, setOcrFailureOverride] = useState<string | null>(null);
@@ -256,7 +293,11 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   const [annotationDialogOpen, setAnnotationDialogOpen] = useState(false);
   const [annotationDraft, setAnnotationDraft] = useState<PdfAnnotation | null>(null);
   const [annotationSaving, setAnnotationSaving] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [commentDraftSeed, setCommentDraftSeed] = useState<string | null>(null);
+  const [commentDraftVersion, setCommentDraftVersion] = useState(0);
   const pdfContainerRef = useRef<HTMLDivElement | null>(null);
+  const commentsPanelRef = useRef<HTMLDivElement | null>(null);
   const previewHeight = '100%';
   const resolvedContentType = (() => {
     const candidates = [
@@ -273,34 +314,62 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   const rotationNormalized = ((rotation % 360) + 360) % 360;
   const annotationsDisabledForRotation = rotationNormalized !== 0;
   const canAnnotate = canWrite && !annotationsDisabledForRotation;
+  const mentionTargets = [
+    { label: 'Creator', username: node?.creator },
+    { label: 'Modifier', username: node?.modifier },
+    { label: 'Correspondent', username: node?.correspondent },
+  ].filter((item, index, list) => (
+    Boolean(item.username)
+    && list.findIndex((candidate) => candidate.username === item.username) === index
+  )) as Array<{ label: string; username: string }>;
   const fitModeLabel = fitModeLabels[fitMode];
   const fitScaleLabel = fitScale ? ` (${Math.round(fitScale * 100)}%)` : '';
-  const resolvedPreviewStatus = previewStatusOverride
-    || previewQueueStatus?.previewStatus
-    || node?.previewStatus
-    || serverPreview?.status
-    || null;
-  const resolvedPreviewFailure = previewFailureOverride
-    || node?.previewFailureReason
-    || serverPreview?.failureReason
-    || null;
+  const previewQueueResolvedState = resolveDocumentPreviewQueueState(previewQueueStatus, {
+    previewStatus: previewStatusOverride
+      || previewRenditionSummary?.previewStatus
+      || node?.previewStatus
+      || serverPreview?.status
+      || null,
+    previewFailureReason: previewFailureOverride
+      || previewRenditionSummary?.previewFailureReason
+      || node?.previewFailureReason
+      || serverPreview?.failureReason
+      || null,
+    previewFailureCategory: previewRenditionSummary?.previewFailureCategory
+      || node?.previewFailureCategory
+      || serverPreview?.failureCategory
+      || null,
+    previewLastUpdated: previewRenditionSummary?.previewLastUpdated
+      || null,
+  });
+  const rawResolvedPreviewStatus = previewQueueResolvedState.previewStatus;
+  const resolvedPreviewFailure = previewQueueResolvedState.previewFailureReason;
+  const resolvedPreviewFailureCategory = previewQueueResolvedState.previewFailureCategory;
+  const resolvedPreviewLastUpdated = previewQueueResolvedState.previewLastUpdated;
+  const resolvedPreviewStatus = getEffectivePreviewStatus(
+    rawResolvedPreviewStatus,
+    resolvedPreviewFailureCategory,
+    effectiveContentType,
+    resolvedPreviewFailure
+  );
   const failedPreviewMeta = getFailedPreviewMeta(
     effectiveContentType,
-    node?.previewFailureCategory,
+    resolvedPreviewFailureCategory,
     resolvedPreviewFailure
   );
   const previewFailureRetryable = resolvedPreviewStatus === 'FAILED' && isRetryablePreviewFailure(
-    node?.previewFailureCategory,
+    resolvedPreviewFailureCategory,
     effectiveContentType,
     resolvedPreviewFailure
   );
+  const showPreviewFailureAlert = resolvedPreviewStatus === 'FAILED' || resolvedPreviewStatus === 'UNSUPPORTED';
   const previewFailureSeverity = previewFailureRetryable
     ? 'warning'
     : failedPreviewMeta.unsupported
       ? 'info'
       : 'error';
   const previewStatusLabel = resolvedPreviewStatus
-    ? resolvedPreviewStatus === 'FAILED'
+    ? resolvedPreviewStatus === 'FAILED' || resolvedPreviewStatus === 'UNSUPPORTED'
       ? failedPreviewMeta.label
       : `Preview: ${resolvedPreviewStatus.charAt(0).toUpperCase()}${resolvedPreviewStatus.slice(1).toLowerCase()}`
     : null;
@@ -317,13 +386,24 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         return 'success';
       case 'FAILED':
         return failedPreviewMeta.color;
+      case 'QUEUED':
       case 'PROCESSING':
         return 'warning';
+      case 'PENDING':
+      case 'UNSUPPORTED':
+      case 'STALE':
+        return 'info';
       default:
         return 'default';
     }
   })();
   const effectiveNodeMetadata = (nodeDetails?.metadata ?? node?.metadata ?? {}) as Record<string, any>;
+  const lockInfoChipLabel = getLockInfoChipLabel(lockInfo);
+  const lockInfoAlertMessage = getLockInfoAlertMessage(lockInfo);
+  const lockInfoAlertSeverity = getLockInfoAlertSeverity(lockInfo);
+  const checkoutInfoChipLabel = getCheckoutInfoChipLabel(checkoutInfo);
+  const checkoutInfoAlertMessage = getCheckoutInfoAlertMessage(checkoutInfo);
+  const checkoutInfoAlertSeverity = getCheckoutInfoAlertSeverity(checkoutInfo);
   const resolvedOcrStatus = ocrStatusOverride
     || ocrQueueStatus?.ocrStatus
     || (effectiveNodeMetadata?.ocrStatus as string | undefined)
@@ -369,6 +449,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         return 'default';
     }
   })();
+  const previewRenditionDefinitionLines = getRenditionDefinitionLines(previewRenditionDefinitions);
   const previewSource = (() => {
     if (officeDocument) {
       return canWrite ? 'Online editor' : 'Online viewer';
@@ -458,8 +539,20 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     }
     setNodeDetailsLoading(true);
     try {
-      const details = await nodeService.getNode(nodeId);
+      const [details, nextLockInfo, nextCheckoutInfo, nextCheckoutGraph, nextPreviewRenditionSummary, nextPreviewRenditionDefinitions] = await Promise.all([
+        nodeService.getNode(nodeId),
+        nodeService.getLockInfo(nodeId).catch(() => null),
+        nodeService.getCheckoutInfo(nodeId).catch(() => null),
+        nodeService.getNodeRelationCheckoutGraph(nodeId).catch(() => null),
+        nodeService.getNodeRenditionRelationSummary(nodeId).catch(() => null),
+        nodeService.getNodeRenditionDefinitions(nodeId).catch(() => []),
+      ]);
       setNodeDetails(details);
+      setLockInfo(nextLockInfo);
+      setCheckoutInfo(nextCheckoutInfo);
+      setCheckoutGraph(nextCheckoutGraph);
+      setPreviewRenditionSummary(nextPreviewRenditionSummary);
+      setPreviewRenditionDefinitions(nextPreviewRenditionDefinitions || []);
     } catch {
       // Best effort only: OCR metadata should not block preview rendering.
     } finally {
@@ -474,18 +567,85 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     void loadNodeDetails();
   }, [loadNodeDetails, nodeId, open]);
 
+  const closeCheckInDialog = useCallback(() => {
+    if (checkInSubmitting) {
+      return;
+    }
+    setCheckInDialogOpen(false);
+    setCheckInFile(null);
+    setCheckInComment('');
+    setCheckInMajorVersion(false);
+    setCheckInKeepCheckedOut(false);
+  }, [checkInSubmitting]);
+
+  const handleCheckoutAction = useCallback(async () => {
+    if (!nodeId) {
+      return;
+    }
+    setCheckoutActionLoading('checkout');
+    try {
+      await nodeService.checkoutDocument(nodeId);
+      await loadNodeDetails();
+      toast.success('Document checked out');
+    } catch {
+      toast.error('Failed to check out document');
+    } finally {
+      setCheckoutActionLoading(null);
+    }
+  }, [loadNodeDetails, nodeId]);
+
+  const handleCancelCheckoutAction = useCallback(async () => {
+    if (!nodeId) {
+      return;
+    }
+    setCheckoutActionLoading('cancel');
+    try {
+      await nodeService.cancelCheckoutDocument(nodeId);
+      await loadNodeDetails();
+      toast.success('Checkout cancelled');
+    } catch {
+      toast.error('Failed to cancel checkout');
+    } finally {
+      setCheckoutActionLoading(null);
+    }
+  }, [loadNodeDetails, nodeId]);
+
+  const handleCheckInAction = useCallback(async () => {
+    if (!nodeId) {
+      return;
+    }
+    if (checkInKeepCheckedOut && !checkInFile) {
+      toast.error('Keep checked out requires a new version file');
+      return;
+    }
+    setCheckInSubmitting(true);
+    try {
+      await nodeService.checkinDocument(nodeId, {
+        file: checkInFile,
+        comment: checkInComment,
+        majorVersion: checkInMajorVersion,
+        keepCheckedOut: checkInKeepCheckedOut,
+      });
+      await loadNodeDetails();
+      toast.success(checkInFile ? 'Document checked in with new version' : 'Document checked in');
+      closeCheckInDialog();
+    } catch {
+      toast.error('Failed to check in document');
+    } finally {
+      setCheckInSubmitting(false);
+    }
+  }, [checkInComment, checkInFile, checkInKeepCheckedOut, checkInMajorVersion, closeCheckInDialog, loadNodeDetails, nodeId]);
+
   const handleQueuePreview = useCallback(async (force = false) => {
     if (!nodeId) {
       return;
     }
     setQueueingPreview(true);
     try {
-      const status = await apiService.post<PreviewQueueStatus>(
-        `/documents/${nodeId}/preview/queue?force=${force}`
-      );
+      const status = await nodeService.queuePreview(nodeId, force);
       setPreviewQueueStatus(status);
-      setPreviewStatusOverride('PROCESSING');
-      setPreviewFailureOverride(null);
+      setPreviewStatusOverride(status?.previewStatus || (status?.queued ? 'PROCESSING' : null));
+      setPreviewFailureOverride(status?.previewFailureReason ?? null);
       if (status?.queued) {
         toast.success(status?.message || 'Preview queued');
       } else {
@@ -567,11 +727,15 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     setServerPreviewLoading(false);
     setServerPreviewError(null);
     setPreviewQueueStatus(null);
+    setPreviewRenditionSummary(null);
     setPreviewStatusOverride(null);
     setPreviewFailureOverride(null);
     setQueueingPreview(false);
     setNodeDetails(null);
     setNodeDetailsLoading(false);
+    setLockInfo(null);
+    setCheckoutInfo(null);
+    setCheckoutGraph(null);
     setOcrQueueStatus(null);
     setOcrStatusOverride(null);
     setOcrFailureOverride(null);
@@ -584,6 +748,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     setAnnotateMode(initialAnnotateMode);
     setAnnotationDialogOpen(false);
     setAnnotationDraft(null);
+    setCommentsOpen(false);
     setPageSize(null);
 
     const loadDocument = async () => {
@@ -970,6 +1135,24 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     };
   }, [open, pdfDocument, handleApplyFitMode, handleSelectFitMode, handleZoomIn, handleZoomOut]);
 
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    if (initialCommentDraftText !== undefined) {
+      setCommentDraftSeed(initialCommentDraftText || null);
+      setCommentDraftVersion((value) => value + 1);
+    }
+
+    if (initialCommentsOpen || initialCommentDraftText || initialCommentId) {
+      setCommentsOpen(true);
+      window.setTimeout(() => {
+        commentsPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 0);
+    }
+  }, [initialCommentDraftText, initialCommentId, initialCommentsOpen, nodeId, open]);
+
   const handleToggleAnnotate = () => {
     if (!canWrite) {
       return;
@@ -979,6 +1162,50 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
       return;
     }
     setAnnotateMode((prev) => !prev);
+  };
+
+  const handleOpenComments = (draftSeed?: string) => {
+    if (draftSeed) {
+      setCommentDraftSeed(draftSeed);
+      setCommentDraftVersion((value) => value + 1);
+    }
+    setCommentsOpen((current) => {
+      const next = !current;
+      if (next) {
+        window.setTimeout(() => {
+          commentsPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 0);
+      }
+      return next;
+    });
+  };
+
+  const handleQuickMention = async (username?: string) => {
+    if (!username) {
+      return;
+    }
+
+    const mentionText = `@${username} `;
+    setCommentDraftSeed(mentionText);
+    setCommentDraftVersion((value) => value + 1);
+    setCommentsOpen(true);
+    window.setTimeout(() => {
+      commentsPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 0);
+
+    try {
+      await navigator.clipboard.writeText(mentionText);
+      toast.success(`Copied ${mentionText.trim()} to clipboard`);
+    } catch {
+      // Clipboard access is best-effort only.
+    }
+  };
+
+  const handleOpenPeopleDirectoryProfile = (username?: string) => {
+    if (!username) {
+      return;
+    }
+    navigate(`/people-directory?username=${encodeURIComponent(username)}`);
   };
 
   const handleAnnotationOverlayClick = (event: React.MouseEvent<HTMLDivElement>) => {
@@ -1522,6 +1749,15 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
               PDF preview is read-only{canWrite ? ', annotations available' : ''}
             </Typography>
           )}
+          <Button
+            color="inherit"
+            variant={commentsOpen ? 'outlined' : 'text'}
+            onClick={() => handleOpenComments()}
+            startIcon={<ChatBubbleOutline />}
+            sx={{ mr: 2 }}
+          >
+            {commentsOpen ? 'Hide discussion' : 'Discuss'}
+          </Button>
           {previewStatusLabel && (
             <Tooltip title={previewStatusTooltip} arrow>
               <Chip
@@ -1551,6 +1787,29 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                 variant="outlined"
                 label={`Source: ${previewSource}`}
                 sx={{ mr: 2 }}
+              />
+            </Tooltip>
+          )}
+          {previewRenditionDefinitionLines.length > 0 && (
+            <Tooltip
+              title={(
+                <Box>
+                  {previewRenditionDefinitionLines.map((line) => (
+                    <Typography key={line} variant="caption" display="block">
+                      {line}
+                    </Typography>
+                  ))}
+                </Box>
+              )}
+              arrow
+            >
+              <Chip
+                size="small"
+                variant="outlined"
+                label={`Renditions ${previewRenditionDefinitionLines.length}`}
+                sx={{ mr: 2 }}
+                clickable
+                onClick={() => setRenditionDefinitionDialogOpen(true)}
               />
             </Tooltip>
           )}
@@ -1586,6 +1845,30 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
               <Typography variant="caption" sx={{ mr: 2, opacity: 0.8 }}>
                 Notes updated {annotationUpdatedLabel}
               </Typography>
+            </Tooltip>
+          )}
+
+          {lockInfoChipLabel && (
+            <Tooltip title={lockInfoAlertMessage || lockInfoChipLabel}>
+              <Chip
+                size="small"
+                color={lockInfo?.status === 'LOCK_OWNER' ? 'success' : lockInfo?.status === 'LOCK_EXPIRED' ? 'info' : 'warning'}
+                variant="outlined"
+                label={lockInfoChipLabel}
+                sx={{ mr: 2 }}
+              />
+            </Tooltip>
+          )}
+
+          {checkoutInfoChipLabel && (
+            <Tooltip title={checkoutInfoAlertMessage || checkoutInfoChipLabel}>
+              <Chip
+                size="small"
+                color={checkoutInfo?.status === 'CHECKED_OUT_BY_YOU' ? 'success' : 'warning'}
+                variant="outlined"
+                label={checkoutInfoChipLabel}
+                sx={{ mr: 2 }}
+              />
             </Tooltip>
           )}
 
@@ -1766,6 +2049,20 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
               </ListItemIcon>
               <ListItemText>Download</ListItemText>
             </MenuItem>
+            {canWrite && node?.nodeType === 'DOCUMENT' && (
+              <MenuItem onClick={() => {
+                if (nodeId) {
+                  previewDispatch(setSelectedNodeId(nodeId));
+                  previewDispatch(setShareLinkManagerOpen(true));
+                }
+                handleMenuClose();
+              }}>
+                <ListItemIcon>
+                  <Share fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>Share</ListItemText>
+              </MenuItem>
+            )}
             <MenuItem onClick={() => { handlePrint(); handleMenuClose(); }}>
               <ListItemIcon>
                 <Print fontSize="small" />
@@ -1794,16 +2091,88 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         }}
       >
         {(shouldPollPreview
-          || resolvedPreviewStatus === 'FAILED'
+          || showPreviewFailureAlert
           || shouldPollOcr
-          || resolvedOcrStatus === 'FAILED') && (
+          || resolvedOcrStatus === 'FAILED'
+          || Boolean(lockInfoAlertMessage)
+          || Boolean(checkoutInfoAlertMessage)) && (
           <Box sx={{ p: 2, bgcolor: 'background.paper', borderBottom: '1px solid', borderColor: 'divider' }}>
+            {checkoutInfoAlertMessage && checkoutInfoAlertSeverity && (
+              <Alert
+                severity={checkoutInfoAlertSeverity}
+                sx={{ mb: lockInfoAlertMessage || shouldPollPreview || showPreviewFailureAlert || shouldPollOcr || resolvedOcrStatus === 'FAILED' ? 1 : 0 }}
+                action={(
+                  <Box display="flex" gap={1} flexWrap="wrap">
+                    {checkoutInfo?.canCheckout && canWrite && (
+                      <Button
+                        color="inherit"
+                        size="small"
+                        disabled={checkoutActionLoading === 'checkout'}
+                        onClick={() => { void handleCheckoutAction(); }}
+                      >
+                        {checkoutActionLoading === 'checkout' ? 'Checking out...' : 'Check Out'}
+                      </Button>
+                    )}
+                    {checkoutInfo?.canCheckIn && canWrite && (
+                      <Button
+                        color="inherit"
+                        size="small"
+                        disabled={checkInSubmitting}
+                        onClick={() => setCheckInDialogOpen(true)}
+                      >
+                        {checkInSubmitting ? 'Checking in...' : 'Check In'}
+                      </Button>
+                    )}
+                    {checkoutInfo?.canCancelCheckout && canWrite && (
+                      <Button
+                        color="inherit"
+                        size="small"
+                        disabled={checkoutActionLoading === 'cancel'}
+                        onClick={() => { void handleCancelCheckoutAction(); }}
+                      >
+                        {checkoutActionLoading === 'cancel' ? 'Cancelling...' : 'Cancel Checkout'}
+                      </Button>
+                    )}
+                    {checkoutGraph?.destinationNode?.id && (
+                      <Button
+                        color="inherit"
+                        size="small"
+                        onClick={() => navigate(`/browse/${checkoutGraph.destinationNode?.id}`)}
+                      >
+                        Open check-in target
+                      </Button>
+                    )}
+                    {checkoutGraph?.checkedOut && (
+                      <Button
+                        color="inherit"
+                        size="small"
+                        onClick={() => setCheckoutGraphDialogOpen(true)}
+                      >
+                        View checkout graph
+                      </Button>
+                    )}
+                  </Box>
+                )}
+              >
+                {checkoutInfoAlertMessage}
+                {checkoutGraph && (
+                  <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
+                    Graph: {formatCheckoutGraphSummary(checkoutGraph)}
+                  </Typography>
+                )}
+              </Alert>
+            )}
+            {lockInfoAlertMessage && lockInfoAlertSeverity && (
+              <Alert severity={lockInfoAlertSeverity} sx={{ mb: shouldPollPreview || showPreviewFailureAlert || shouldPollOcr || resolvedOcrStatus === 'FAILED' ? 1 : 0 }}>
+                {lockInfoAlertMessage}
+              </Alert>
+            )}
             {shouldPollPreview && (
               <Alert severity="info" sx={{ mb: 1 }}>
                 Preview generation is in progress. Status updates every {previewPollIntervalMs / 1000}s.
               </Alert>
             )}
-            {resolvedPreviewStatus === 'FAILED' && (
+            {showPreviewFailureAlert && (
               <Alert
                 severity={previewFailureSeverity}
                 action={previewFailureRetryable ? (
@@ -1841,7 +2210,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
               </Alert>
             )}
             {shouldPollOcr && (
-              <Alert severity="info" sx={{ mt: shouldPollPreview || resolvedPreviewStatus === 'FAILED' ? 1 : 0, mb: 1 }}>
+              <Alert severity="info" sx={{ mt: shouldPollPreview || showPreviewFailureAlert ? 1 : 0, mb: 1 }}>
                 OCR extraction is in progress. Status updates every {ocrPollIntervalMs / 1000}s.
               </Alert>
             )}
@@ -1890,6 +2259,11 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                     Preview next retry: {format(new Date(previewQueueStatus.nextAttemptAt), 'PPp')}
                   </Typography>
                 )}
+                {resolvedPreviewLastUpdated && (
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    Preview updated: {format(new Date(resolvedPreviewLastUpdated), 'PPp')}
+                  </Typography>
+                )}
                 {serverPreviewError && (
                   <Typography variant="caption" color="text.secondary" display="block">
                     Server preview error: {serverPreviewError}
@@ -1914,8 +2288,176 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
             )}
           </Box>
         )}
-        {renderPreview()}
+        <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          <Box sx={{ flex: 1, minHeight: 0 }}>
+            {renderPreview()}
+          </Box>
+          <Collapse in={commentsOpen} timeout={250} unmountOnExit>
+            <Box
+              ref={commentsPanelRef}
+              sx={{
+                borderTop: '1px solid',
+                borderColor: 'divider',
+                bgcolor: 'background.paper',
+                height: { xs: 360, md: 420 },
+                overflow: 'auto',
+              }}
+            >
+              <Box sx={{ px: 2, py: 1.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                <Box display="flex" alignItems="center" justifyContent="space-between" gap={1} flexWrap="wrap">
+                  <Box>
+                    <Typography variant="subtitle2">Document Comments</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Visible discussion thread for this document
+                    </Typography>
+                  </Box>
+                  {mentionTargets.length > 0 && (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => {
+                        commentsPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }}
+                    >
+                      Jump to discussion
+                    </Button>
+                  )}
+                </Box>
+              </Box>
+              <Box sx={{ p: 2 }}>
+                {mentionTargets.length > 0 && (
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
+                      Quick mention
+                    </Typography>
+                    <Box display="flex" gap={1} flexWrap="wrap">
+                      {mentionTargets.map((target) => (
+                        <Box key={target.username} display="flex" alignItems="center" gap={0.5}>
+                          <Chip
+                            size="small"
+                            icon={<ContentCopy fontSize="small" />}
+                            variant="outlined"
+                            label={`@${target.username}`}
+                            onClick={() => void handleQuickMention(target.username)}
+                          />
+                          <Tooltip title={`Open ${target.label.toLowerCase()} profile`}>
+                            <IconButton
+                              size="small"
+                              aria-label={`Open ${target.username} profile`}
+                              onClick={() => handleOpenPeopleDirectoryProfile(target.username)}
+                              sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2 }}
+                            >
+                              <Person fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </Box>
+                      ))}
+                    </Box>
+                  </Box>
+                )}
+                <React.Suspense
+                  fallback={
+                    <Box display="flex" justifyContent="center" alignItems="center" py={4}>
+                      <CircularProgress />
+                    </Box>
+                  }
+                >
+                  <CommentSection
+                    nodeId={node.id}
+                    initialDraftText={commentDraftSeed}
+                    draftVersion={commentDraftVersion}
+                    initialCommentId={initialCommentId}
+                  />
+                </React.Suspense>
+              </Box>
+            </Box>
+          </Collapse>
+        </Box>
       </DialogContent>
+
+      <Dialog
+        open={checkInDialogOpen}
+        onClose={closeCheckInDialog}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Check In</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              Check in "{node.name}" with an optional new version file.
+            </Typography>
+            <Alert severity="info">
+              Leave the file empty to release checkout without uploading a new version. Enable keep checked out only when uploading a new file.
+            </Alert>
+            <Button component="label" variant="outlined" sx={{ alignSelf: 'flex-start' }}>
+              {checkInFile ? `Selected: ${checkInFile.name}` : 'Choose New Version File'}
+              <input
+                hidden
+                type="file"
+                onChange={(event) => {
+                  const file = event.target.files?.[0] ?? null;
+                  setCheckInFile(file);
+                  if (!file) {
+                    setCheckInMajorVersion(false);
+                    setCheckInKeepCheckedOut(false);
+                  }
+                  event.currentTarget.value = '';
+                }}
+              />
+            </Button>
+            {checkInFile && (
+              <Button
+                color="inherit"
+                onClick={() => {
+                  setCheckInFile(null);
+                  setCheckInMajorVersion(false);
+                  setCheckInKeepCheckedOut(false);
+                }}
+                sx={{ alignSelf: 'flex-start' }}
+              >
+                Clear File
+              </Button>
+            )}
+            <TextField
+              label="Version Comment"
+              value={checkInComment}
+              onChange={(event) => setCheckInComment(event.target.value)}
+              fullWidth
+              multiline
+              minRows={2}
+            />
+            <FormControlLabel
+              control={(
+                <Switch
+                  checked={checkInMajorVersion}
+                  onChange={(event) => setCheckInMajorVersion(event.target.checked)}
+                  disabled={!checkInFile}
+                />
+              )}
+              label="Create major version"
+            />
+            <FormControlLabel
+              control={(
+                <Switch
+                  checked={checkInKeepCheckedOut}
+                  onChange={(event) => setCheckInKeepCheckedOut(event.target.checked)}
+                  disabled={!checkInFile || (Boolean(node.checkoutUser) && node.checkoutUser !== currentUsername && !isAdmin)}
+                />
+              )}
+              label="Keep checked out after check-in"
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeCheckInDialog} disabled={checkInSubmitting}>
+            Cancel
+          </Button>
+          <Button onClick={() => void handleCheckInAction()} disabled={checkInSubmitting} variant="contained">
+            {checkInSubmitting ? 'Checking in...' : 'Check In'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog
         open={annotationDialogOpen}
@@ -1965,6 +2507,18 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
           )}
         </DialogActions>
       </Dialog>
+      <CheckoutGraphDialog
+        open={checkoutGraphDialogOpen}
+        nodeId={node.id}
+        nodeName={node.name}
+        onClose={() => setCheckoutGraphDialogOpen(false)}
+      />
+      <RenditionDefinitionDialog
+        open={renditionDefinitionDialogOpen}
+        nodeId={node.id}
+        nodeName={node.name}
+        onClose={() => setRenditionDefinitionDialogOpen(false)}
+      />
     </Dialog>
   );
 };

@@ -38,16 +38,25 @@ import {
   MoreVert,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
+import { useNavigate } from 'react-router-dom';
 import { Version } from 'types';
 import { useAppDispatch, useAppSelector } from 'store';
 import { setVersionHistoryDialogOpen } from 'store/slices/uiSlice';
-import nodeService from 'services/nodeService';
+import nodeService, { CheckoutLineage, NodeCheckoutGraph, NodeCheckoutRelation } from 'services/nodeService';
 import { toast } from 'react-toastify';
+import CheckoutGraphDialog from 'components/dialogs/CheckoutGraphDialog';
+import { formatCheckoutGraphSummary } from 'utils/checkoutGraphUtils';
 
 const VersionHistoryDialog: React.FC = () => {
   const dispatch = useAppDispatch();
+  const navigate = useNavigate();
   const { versionHistoryDialogOpen, selectedNodeId } = useAppSelector((state) => state.ui);
   const [versions, setVersions] = useState<Version[]>([]);
+  const [checkoutRelation, setCheckoutRelation] = useState<NodeCheckoutRelation | null>(null);
+  const [checkoutGraph, setCheckoutGraph] = useState<NodeCheckoutGraph | null>(null);
+  const [checkoutLineage, setCheckoutLineage] = useState<CheckoutLineage | null>(null);
+  const [checkoutRelationLoading, setCheckoutRelationLoading] = useState(false);
+  const [loadingCheckoutLineageVersions, setLoadingCheckoutLineageVersions] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [page, setPage] = useState(0);
@@ -66,6 +75,7 @@ const VersionHistoryDialog: React.FC = () => {
     to: Version;
     from: Version;
   } | null>(null);
+  const [checkoutGraphDialogOpen, setCheckoutGraphDialogOpen] = useState(false);
   const [textDiff, setTextDiff] = useState<{
     available: boolean;
     truncated: boolean;
@@ -108,9 +118,54 @@ const VersionHistoryDialog: React.FC = () => {
     }
   }, [versionHistoryDialogOpen, selectedNodeId, majorOnly, loadVersionHistory]);
 
+  useEffect(() => {
+    if (!versionHistoryDialogOpen || !selectedNodeId) {
+      setCheckoutRelation(null);
+      setCheckoutGraph(null);
+      setCheckoutLineage(null);
+      setCheckoutRelationLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setCheckoutRelationLoading(true);
+    void (async () => {
+      try {
+        const [relation, graph, lineage] = await Promise.all([
+          nodeService.getNodeRelationCheckout(selectedNodeId),
+          nodeService.getNodeRelationCheckoutGraph(selectedNodeId).catch(() => null),
+          nodeService.getCheckoutLineage(selectedNodeId),
+        ]);
+        if (!cancelled) {
+          setCheckoutRelation(relation);
+          setCheckoutGraph(graph);
+          setCheckoutLineage(lineage);
+        }
+      } catch {
+        if (!cancelled) {
+          setCheckoutRelation(null);
+          setCheckoutGraph(null);
+          setCheckoutLineage(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setCheckoutRelationLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [versionHistoryDialogOpen, selectedNodeId]);
+
   const handleClose = () => {
     dispatch(setVersionHistoryDialogOpen(false));
     setVersions([]);
+    setCheckoutRelation(null);
+    setCheckoutGraph(null);
+    setCheckoutLineage(null);
+    setCheckoutRelationLoading(false);
     setPage(0);
     setTotalElements(0);
   };
@@ -171,6 +226,69 @@ const VersionHistoryDialog: React.FC = () => {
     }
     setPendingAction(null);
   };
+
+  const loadCheckoutLineageVersions = useCallback(async () => {
+    const effectiveBaselineVersionId = checkoutGraph?.baselineVersion?.id || checkoutRelation?.checkoutBaselineVersionId || null;
+    const effectiveCurrentVersionId = checkoutGraph?.currentVersion?.id || null;
+
+    if (!selectedNodeId || !checkoutRelation?.checkedOut || loadingCheckoutLineageVersions) {
+      return;
+    }
+    if (!effectiveBaselineVersionId) {
+      return;
+    }
+
+    setLoadingCheckoutLineageVersions(true);
+    try {
+      let accumulatedVersions = versions;
+      let nextPage = page;
+      let total = totalElements;
+      let baselineLoaded = accumulatedVersions.some((version) => version.id === effectiveBaselineVersionId);
+      let currentLoaded = effectiveCurrentVersionId
+        ? accumulatedVersions.some((version) => version.id === effectiveCurrentVersionId)
+        : accumulatedVersions.some((version) => version.checkoutCurrent);
+
+      while ((!(baselineLoaded && currentLoaded)) && accumulatedVersions.length < total) {
+        const response = await nodeService.getVersionHistoryPage(
+          selectedNodeId,
+          nextPage + 1,
+          pageSize,
+          majorOnly
+        );
+        nextPage = response.page;
+        total = response.totalElements;
+        accumulatedVersions = [...accumulatedVersions, ...response.versions];
+        baselineLoaded = accumulatedVersions.some((version) => version.id === effectiveBaselineVersionId);
+        currentLoaded = effectiveCurrentVersionId
+          ? accumulatedVersions.some((version) => version.id === effectiveCurrentVersionId)
+          : accumulatedVersions.some((version) => version.checkoutCurrent);
+      }
+
+      setVersions(accumulatedVersions);
+      setPage(nextPage);
+      setTotalElements(total);
+
+      if (baselineLoaded && currentLoaded) {
+        toast.success('Checkout lineage versions loaded');
+      } else {
+        toast.info('Reached end of version history before loading full checkout lineage');
+      }
+    } catch {
+      toast.error('Failed to load checkout lineage versions');
+    } finally {
+      setLoadingCheckoutLineageVersions(false);
+    }
+  }, [
+    checkoutGraph,
+    checkoutRelation,
+    loadingCheckoutLineageVersions,
+    majorOnly,
+    page,
+    pageSize,
+    selectedNodeId,
+    totalElements,
+    versions,
+  ]);
 
   const formatFileSize = (bytes: number): string => {
     const sizes = ['B', 'KB', 'MB', 'GB'];
@@ -279,7 +397,10 @@ const VersionHistoryDialog: React.FC = () => {
         {version.isMajor && (
           <Chip label="Major" size="small" color="primary" />
         )}
-        {index === 0 && (
+        {version.checkoutBaseline && (
+          <Chip label="Baseline" size="small" color="info" />
+        )}
+        {(version.checkoutCurrent || index === 0) && (
           <Chip label="Current" size="small" color="success" />
         )}
       </Box>
@@ -307,6 +428,29 @@ const VersionHistoryDialog: React.FC = () => {
 
   const contextPrevious = contextMenu ? getPreviousVersion(contextMenu.version) : null;
   const currentVersion = versions[0] ?? null;
+  const checkoutBaselineVersion = versions.find((version) => version.checkoutBaseline) ?? null;
+  const checkoutCurrentVersion = versions.find((version) => version.checkoutCurrent) ?? currentVersion;
+  const effectiveCheckoutBaselineVersion = checkoutBaselineVersion || checkoutGraph?.baselineVersion || checkoutLineage?.baselineVersion || null;
+  const effectiveCheckoutCurrentVersion = checkoutCurrentVersion || checkoutGraph?.currentVersion || checkoutLineage?.currentVersion || null;
+  const canCompareCheckoutLineage = Boolean(
+    (checkoutGraph?.checkedOut || checkoutRelation?.checkedOut)
+    && effectiveCheckoutBaselineVersion
+    && effectiveCheckoutCurrentVersion
+    && effectiveCheckoutBaselineVersion.id !== effectiveCheckoutCurrentVersion.id
+  );
+  const checkoutLineageNeedsMoreHistory = Boolean(
+    (checkoutGraph?.checkedOut || checkoutRelation?.checkedOut)
+    && (checkoutGraph?.baselineVersion?.id || checkoutRelation?.checkoutBaselineVersionId)
+    && (
+      !checkoutBaselineVersion
+      || !(
+        checkoutGraph?.currentVersion?.id
+          ? versions.some((version) => version.id === checkoutGraph.currentVersion?.id)
+          : checkoutCurrentVersion
+      )
+    )
+    && versions.length < totalElements
+  );
   const hasMore = versions.length < totalElements;
 
   useEffect(() => {
@@ -336,6 +480,74 @@ const VersionHistoryDialog: React.FC = () => {
         <Alert severity="info" sx={{ mb: 2 }}>
           Download and restore actions are recorded in the audit log.
         </Alert>
+        {checkoutRelationLoading ? (
+          <Alert severity="info" sx={{ mb: 2 }}>
+            Loading active checkout lineage...
+          </Alert>
+        ) : (checkoutGraph?.checkedOut || checkoutRelation?.checkedOut) ? (
+          <Alert
+            severity="warning"
+            sx={{ mb: 2 }}
+            action={(
+              <Stack direction="row" spacing={1}>
+                {checkoutLineageNeedsMoreHistory && (
+                  <Button
+                    color="inherit"
+                    size="small"
+                    disabled={loadingCheckoutLineageVersions}
+                    onClick={() => { void loadCheckoutLineageVersions(); }}
+                  >
+                    {loadingCheckoutLineageVersions ? 'Loading lineage...' : 'Load checkout lineage versions'}
+                  </Button>
+                )}
+                {checkoutGraph?.destinationNode?.id && (
+                  <Button
+                    color="inherit"
+                    size="small"
+                    onClick={() => {
+                      navigate(`/browse/${checkoutGraph.destinationNode?.id}`);
+                      handleClose();
+                    }}
+                  >
+                    Open check-in target
+                  </Button>
+                )}
+                {checkoutGraph?.checkedOut && (
+                  <Button
+                    color="inherit"
+                    size="small"
+                    onClick={() => setCheckoutGraphDialogOpen(true)}
+                  >
+                    View checkout graph
+                  </Button>
+                )}
+                {canCompareCheckoutLineage && (
+                  <Button
+                    color="inherit"
+                    size="small"
+                    onClick={() => {
+                      const baseline = effectiveCheckoutBaselineVersion;
+                      const current = effectiveCheckoutCurrentVersion;
+                      if (baseline && current && baseline.id !== current.id) {
+                        setComparePair({ from: baseline, to: current });
+                      }
+                    }}
+                  >
+                    Compare checkout lineage
+                  </Button>
+                )}
+              </Stack>
+            )}
+          >
+            {`Checked out by ${checkoutGraph?.checkoutUser || checkoutRelation?.checkoutUser || 'unknown'}${effectiveCheckoutBaselineVersion?.versionLabel ? ` from v${effectiveCheckoutBaselineVersion.versionLabel}` : (checkoutRelation?.checkoutBaselineVersionLabel ? ` from v${checkoutRelation.checkoutBaselineVersionLabel}` : '')}${effectiveCheckoutCurrentVersion?.versionLabel ? ` to current v${effectiveCheckoutCurrentVersion.versionLabel}` : (checkoutRelation?.currentVersionLabel ? ` to current v${checkoutRelation.currentVersionLabel}` : '')}.`}
+            {(checkoutGraph?.canKeepCheckedOut || checkoutRelation?.canKeepCheckedOut) ? ' Keep checked out is supported.' : ''}
+            {checkoutGraph && (
+              <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
+                Graph: {formatCheckoutGraphSummary(checkoutGraph)}
+              </Typography>
+            )}
+          </Alert>
+        ) : null}
         <Box display="flex" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={1} mb={2}>
           <FormControlLabel
             control={
@@ -502,6 +714,34 @@ const VersionHistoryDialog: React.FC = () => {
             </ListItemIcon>
             <ListItemText>Compare with current</ListItemText>
           </MenuItem>
+          <MenuItem
+            disabled={!effectiveCheckoutBaselineVersion || !contextMenu || contextMenu.version.id === effectiveCheckoutBaselineVersion.id}
+            onClick={() => {
+              if (contextMenu && effectiveCheckoutBaselineVersion && contextMenu.version.id !== effectiveCheckoutBaselineVersion.id) {
+                setComparePair({ to: contextMenu.version, from: effectiveCheckoutBaselineVersion });
+                handleCloseContextMenu();
+              }
+            }}
+          >
+            <ListItemIcon>
+              <Compare fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Compare with checkout baseline</ListItemText>
+          </MenuItem>
+          <MenuItem
+            disabled={!effectiveCheckoutCurrentVersion || !contextMenu || contextMenu.version.id === effectiveCheckoutCurrentVersion.id}
+            onClick={() => {
+              if (contextMenu && effectiveCheckoutCurrentVersion && contextMenu.version.id !== effectiveCheckoutCurrentVersion.id) {
+                setComparePair({ to: effectiveCheckoutCurrentVersion, from: contextMenu.version });
+                handleCloseContextMenu();
+              }
+            }}
+          >
+            <ListItemIcon>
+              <Compare fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Compare with checkout current</ListItemText>
+          </MenuItem>
         </Menu>
       </DialogContent>
       <DialogActions>
@@ -559,7 +799,8 @@ const VersionHistoryDialog: React.FC = () => {
                       {versions.map((version, index) => (
                         <MenuItem key={`from-${version.id}`} value={version.id}>
                           {version.versionLabel}
-                          {index === 0 ? ' (Current)' : ''}
+                          {version.checkoutBaseline ? ' (Baseline)' : ''}
+                          {(version.checkoutCurrent || index === 0) ? ' (Current)' : ''}
                           {version.isMajor ? ' [Major]' : ''}
                         </MenuItem>
                       ))}
@@ -583,7 +824,8 @@ const VersionHistoryDialog: React.FC = () => {
                       {versions.map((version, index) => (
                         <MenuItem key={`to-${version.id}`} value={version.id}>
                           {version.versionLabel}
-                          {index === 0 ? ' (Current)' : ''}
+                          {version.checkoutBaseline ? ' (Baseline)' : ''}
+                          {(version.checkoutCurrent || index === 0) ? ' (Current)' : ''}
                           {version.isMajor ? ' [Major]' : ''}
                         </MenuItem>
                       ))}
@@ -778,6 +1020,11 @@ const VersionHistoryDialog: React.FC = () => {
           <Button onClick={() => setComparePair(null)}>Close</Button>
         </DialogActions>
       </Dialog>
+      <CheckoutGraphDialog
+        open={checkoutGraphDialogOpen}
+        nodeId={selectedNodeId}
+        onClose={() => setCheckoutGraphDialogOpen(false)}
+      />
     </Dialog>
   );
 };

@@ -243,13 +243,14 @@ public class FolderService {
      */
     public Folder updateFolder(UUID folderId, UpdateFolderRequest request) {
         Folder folder = getFolder(folderId);
+        folder = normalizeExpiredLock(folder);
 
         if (!securityService.hasPermission(folder, PermissionType.WRITE)) {
             throw new SecurityException("No permission to update folder: " + folder.getName());
         }
 
-        if (folder.isLocked() && !folder.getLockedBy().equals(securityService.getCurrentUser())) {
-            throw new IllegalStateException("Folder is locked by: " + folder.getLockedBy());
+        if (folder.isEffectivelyLocked(LocalDateTime.now()) && !folder.getLockedBy().equals(securityService.getCurrentUser())) {
+            throw new IllegalStateException("Folder is " + folder.describeActiveLock(LocalDateTime.now()));
         }
 
         // Update name if provided
@@ -284,6 +285,14 @@ public class FolderService {
         eventPublisher.publishEvent(new NodeUpdatedEvent(updatedFolder, securityService.getCurrentUser()));
 
         return updatedFolder;
+    }
+
+    private Folder normalizeExpiredLock(Folder folder) {
+        if (folder.isLockExpired(LocalDateTime.now())) {
+            folder.clearLock();
+            return folderRepository.save(folder);
+        }
+        return folder;
     }
 
     /**

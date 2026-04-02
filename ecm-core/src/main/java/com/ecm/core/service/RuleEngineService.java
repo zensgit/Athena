@@ -20,6 +20,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 import java.util.stream.Collectors;
@@ -42,6 +44,7 @@ public class RuleEngineService {
 
     private static final int MIN_MANUAL_BACKFILL_MINUTES = 1;
     private static final int MAX_MANUAL_BACKFILL_MINUTES = 1440;
+    private static final int RULE_RUN_LEDGER_LIMIT = 1000;
 
     private final AutomationRuleRepository ruleRepository;
     private final NodeRepository nodeRepository;
@@ -75,6 +78,10 @@ public class RuleEngineService {
 
     @Autowired
     private NotificationService notificationService;
+
+    private final Map<UUID, RuleRunLedgerRecord> ruleRunLedgerById = new ConcurrentHashMap<>();
+    private final Deque<UUID> ruleRunLedgerOrder = new ConcurrentLinkedDeque<>();
+    private final Map<String, UUID> ruleRunIdempotencyIndex = new ConcurrentHashMap<>();
 
     // ==================== Rule Management ====================
 
@@ -227,6 +234,331 @@ public class RuleEngineService {
      */
     public Page<AutomationRule> searchRules(String query, Pageable pageable) {
         return ruleRepository.searchRules(query, pageable);
+    }
+
+    /**
+     * Get rules scoped to a specific folder.
+     */
+    public Page<AutomationRule> getRulesByScopeFolder(UUID scopeFolderId, Pageable pageable) {
+        return ruleRepository.findByScopeFolderIdActive(scopeFolderId, pageable);
+    }
+
+    /**
+     * Reorder rules scoped to a specific folder.
+     * When request.ruleIds is partial, remaining rules keep their relative order and are appended.
+     */
+    @Transactional
+    public List<AutomationRule> reorderRulesByScopeFolder(
+        UUID scopeFolderId,
+        FolderRuleReorderRequest request
+    ) {
+        List<AutomationRule> scopedRules = ruleRepository.findByScopeFolderIdActiveOrderByPriority(scopeFolderId);
+        if (scopedRules.isEmpty()) {
+            return List.of();
+        }
+
+        int step = request != null && request.step() != null ? request.step() : 10;
+        int basePriority = request != null && request.basePriority() != null ? request.basePriority() : 100;
+        if (step < 1) {
+            throw new IllegalArgumentException("step must be >= 1");
+        }
+
+        Map<UUID, AutomationRule> scopedById = scopedRules.stream()
+            .collect(Collectors.toMap(AutomationRule::getId, rule -> rule, (a, b) -> a, LinkedHashMap::new));
+
+        List<UUID> requestedIds = request != null && request.ruleIds() != null ? request.ruleIds() : List.of();
+        Set<UUID> seen = new HashSet<>();
+        List<AutomationRule> ordered = new ArrayList<>();
+
+        for (UUID ruleId : requestedIds) {
+            if (ruleId == null || !seen.add(ruleId)) {
+                continue;
+            }
+            AutomationRule scopedRule = scopedById.remove(ruleId);
+            if (scopedRule == null) {
+                throw new IllegalArgumentException("Rule does not belong to scope folder: " + ruleId);
+            }
+            ordered.add(scopedRule);
+        }
+
+        for (AutomationRule scopedRule : scopedRules) {
+            if (scopedById.containsKey(scopedRule.getId())) {
+                ordered.add(scopedRule);
+            }
+        }
+
+        for (int i = 0; i < ordered.size(); i++) {
+            ordered.get(i).setPriority(basePriority + (i * step));
+        }
+
+        ruleRepository.saveAll(ordered);
+        return ordered;
+    }
+
+    /**
+     * Dry-run rules scoped to a specific folder against synthetic test data.
+     * Conditions are evaluated but actions are not executed.
+     */
+    public FolderRuleDryRunResult dryRunRulesByScopeFolder(
+        UUID scopeFolderId,
+        FolderRuleDryRunRequest request
+    ) {
+        TriggerType triggerType = request != null && request.triggerType() != null
+            ? request.triggerType()
+            : TriggerType.DOCUMENT_CREATED;
+        int limit = request != null && request.limit() != null ? request.limit() : 200;
+        if (limit < 1) {
+            limit = 200;
+        }
+        if (limit > 1000) {
+            limit = 1000;
+        }
+
+        List<AutomationRule> allScopedRules = ruleRepository.findByScopeFolderIdActiveOrderByPriority(scopeFolderId);
+        List<AutomationRule> candidateRules = allScopedRules.stream()
+            .filter(rule -> Boolean.TRUE.equals(rule.getEnabled()))
+            .filter(rule -> rule.getTriggerType() == triggerType)
+            .limit(limit)
+            .toList();
+
+        Document dryRunDocument = buildDryRunDocument(scopeFolderId, request != null ? request.testData() : null);
+
+        int matched = 0;
+        int processable = 0;
+        int errors = 0;
+        Map<String, Long> skipReasons = new LinkedHashMap<>();
+        List<FolderRuleDryRunItem> results = new ArrayList<>();
+
+        for (AutomationRule rule : candidateRules) {
+            boolean mimeMatched = rule.isMimeTypeInScope(dryRunDocument.getMimeType());
+            boolean conditionMatched = false;
+            boolean evaluated = false;
+            String evaluationError = null;
+
+            if (mimeMatched) {
+                try {
+                    conditionMatched = evaluateCondition(rule.getCondition(), dryRunDocument);
+                    evaluated = true;
+                } catch (Exception ex) {
+                    evaluationError = ex.getMessage();
+                    errors++;
+                }
+            }
+
+            List<String> unsupportedActions = rule.getActions() == null
+                ? List.of()
+                : rule.getActions().stream()
+                    .map(RuleAction::getType)
+                    .filter(Objects::nonNull)
+                    .filter(type -> type == ActionType.EXECUTE_SCRIPT)
+                    .map(Enum::name)
+                    .distinct()
+                    .toList();
+
+            boolean isMatched = mimeMatched && evaluated && conditionMatched;
+            boolean isProcessable = isMatched && unsupportedActions.isEmpty();
+            if (isMatched) {
+                matched++;
+            }
+            if (isProcessable) {
+                processable++;
+            }
+
+            String skipReason = null;
+            if (!isProcessable) {
+                if (!mimeMatched) {
+                    skipReason = "mime_out_of_scope";
+                } else if (evaluationError != null) {
+                    skipReason = "evaluation_error";
+                } else if (!conditionMatched) {
+                    skipReason = "condition_not_matched";
+                } else if (!unsupportedActions.isEmpty()) {
+                    skipReason = "contains_unsupported_action";
+                } else {
+                    skipReason = "not_processable";
+                }
+                skipReasons.merge(skipReason, 1L, Long::sum);
+            }
+
+            results.add(new FolderRuleDryRunItem(
+                rule.getId(),
+                rule.getName(),
+                rule.getPriority(),
+                isMatched,
+                isProcessable,
+                skipReason,
+                unsupportedActions,
+                evaluationError
+            ));
+        }
+
+        int scanned = candidateRules.size();
+        return new FolderRuleDryRunResult(
+            scopeFolderId,
+            triggerType,
+            allScopedRules.size(),
+            scanned,
+            matched,
+            processable,
+            scanned - processable,
+            errors,
+            skipReasons,
+            results
+        );
+    }
+
+    /**
+     * Execute a single rule manually with optional idempotency protection.
+     */
+    @Transactional
+    public RuleExecutionCommandResult executeRuleManual(
+        UUID ruleId,
+        UUID documentId,
+        TriggerType triggerType,
+        String idempotencyKey
+    ) {
+        AutomationRule rule = getRule(ruleId);
+        Node node = nodeService.getNode(documentId);
+        if (!(node instanceof Document document)) {
+            throw new IllegalArgumentException("Only document nodes can be used for manual rule execution");
+        }
+
+        TriggerType effectiveTrigger = triggerType != null ? triggerType : rule.getTriggerType();
+        String normalizedIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
+        String idempotencyIndexKey = buildIdempotencyIndexKey(ruleId, documentId, effectiveTrigger, normalizedIdempotencyKey);
+
+        if (idempotencyIndexKey != null) {
+            RuleExecutionCommandResult deduplicated = resolveDeduplicatedManualRun(idempotencyIndexKey);
+            if (deduplicated != null) {
+                return deduplicated;
+            }
+        }
+
+        RuleExecutionResult result;
+        if (!Boolean.TRUE.equals(rule.getEnabled())) {
+            result = RuleExecutionResult.notMatched(rule, document, "Rule is disabled");
+            result.setTriggerType(effectiveTrigger);
+        } else if (rule.getTriggerType() != effectiveTrigger) {
+            result = RuleExecutionResult.notMatched(rule, document, "Trigger type mismatch");
+            result.setTriggerType(effectiveTrigger);
+        } else if (!isDocumentInRuleScope(rule, document)) {
+            result = RuleExecutionResult.notMatched(rule, document, "Document not in scoped folder");
+            result.setTriggerType(effectiveTrigger);
+        } else if (!rule.isMimeTypeInScope(document.getMimeType())) {
+            result = RuleExecutionResult.notMatched(rule, document, "MIME type out of scope");
+            result.setTriggerType(effectiveTrigger);
+        } else {
+            result = executeRule(rule, document, effectiveTrigger);
+        }
+
+        if (result.getExecutionId() == null) {
+            result.setExecutionId(UUID.randomUUID());
+        }
+        if (result.getDurationMs() == null) {
+            result.calculateDuration();
+        }
+
+        String username = securityService.getCurrentUser();
+        String effectiveUsername = username != null ? username : "system";
+        RuleRunLedgerRecord runRecord = toRuleRunLedgerRecord(result, normalizedIdempotencyKey, effectiveUsername);
+        saveRuleRunLedger(runRecord, idempotencyIndexKey);
+
+        auditService.logEvent(
+            "RULE_MANUAL_RUN_EXECUTED",
+            runRecord.documentId(),
+            runRecord.documentName(),
+            effectiveUsername,
+            String.format(
+                "Rule manual run %s for rule %s on trigger %s (matched=%s, success=%s, idempotencyKey=%s)",
+                runRecord.runId(),
+                runRecord.ruleName(),
+                runRecord.triggerType(),
+                runRecord.conditionMatched(),
+                runRecord.success(),
+                runRecord.idempotencyKey() != null ? runRecord.idempotencyKey() : "-"
+            )
+        );
+
+        return new RuleExecutionCommandResult(
+            runRecord.runId(),
+            false,
+            null,
+            runRecord
+        );
+    }
+
+    /**
+     * List recent manual rule run ledger records.
+     */
+    public List<RuleRunLedgerRecord> listRuleRuns(UUID ruleId, int limit) {
+        return listRuleRuns(new RuleRunTimelineQuery(
+            ruleId,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            limit
+        ));
+    }
+
+    /**
+     * List recent manual rule run ledger records with timeline filters.
+     */
+    public List<RuleRunLedgerRecord> listRuleRuns(RuleRunTimelineQuery query) {
+        RuleRunTimelineQuery safeQuery = query != null
+            ? query
+            : new RuleRunTimelineQuery(null, null, null, null, null, null, null, 20);
+        int boundedLimit = Math.max(1, Math.min(safeQuery.limit(), 500));
+        String normalizedActor = safeQuery.actor() != null ? safeQuery.actor().trim().toLowerCase(Locale.ROOT) : null;
+        if (normalizedActor != null && normalizedActor.isEmpty()) {
+            normalizedActor = null;
+        }
+        List<RuleRunLedgerRecord> results = new ArrayList<>();
+        for (UUID runId : ruleRunLedgerOrder) {
+            RuleRunLedgerRecord record = ruleRunLedgerById.get(runId);
+            if (record == null) {
+                continue;
+            }
+            if (safeQuery.ruleId() != null && !safeQuery.ruleId().equals(record.ruleId())) {
+                continue;
+            }
+            if (safeQuery.documentId() != null && !safeQuery.documentId().equals(record.documentId())) {
+                continue;
+            }
+            if (safeQuery.triggerType() != null && safeQuery.triggerType() != record.triggerType()) {
+                continue;
+            }
+            if (safeQuery.success() != null && safeQuery.success().booleanValue() != record.success()) {
+                continue;
+            }
+            if (normalizedActor != null) {
+                String executedBy = record.executedBy();
+                if (executedBy == null || !executedBy.toLowerCase(Locale.ROOT).contains(normalizedActor)) {
+                    continue;
+                }
+            }
+            LocalDateTime anchorTime = record.startedAt() != null ? record.startedAt() : record.completedAt();
+            if (safeQuery.from() != null && (anchorTime == null || anchorTime.isBefore(safeQuery.from()))) {
+                continue;
+            }
+            if (safeQuery.to() != null && (anchorTime == null || anchorTime.isAfter(safeQuery.to()))) {
+                continue;
+            }
+            results.add(record);
+            if (results.size() >= boundedLimit) {
+                break;
+            }
+        }
+        return results;
+    }
+
+    /**
+     * Get a single manual rule run ledger record.
+     */
+    public Optional<RuleRunLedgerRecord> getRuleRun(UUID runId) {
+        return Optional.ofNullable(ruleRunLedgerById.get(runId));
     }
 
     // ==================== Rule Execution ====================
@@ -909,7 +1241,239 @@ public class RuleEngineService {
         return new ArrayList<>();
     }
 
+    private boolean isDocumentInRuleScope(AutomationRule rule, Document document) {
+        UUID scopeFolderId = rule.getScopeFolderId();
+        if (scopeFolderId == null) {
+            return true;
+        }
+        if (document.getParent() == null) {
+            return false;
+        }
+        return scopeFolderId.equals(document.getParent().getId());
+    }
+
+    private String normalizeIdempotencyKey(String idempotencyKey) {
+        if (idempotencyKey == null) {
+            return null;
+        }
+        String trimmed = idempotencyKey.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String buildIdempotencyIndexKey(
+        UUID ruleId,
+        UUID documentId,
+        TriggerType triggerType,
+        String normalizedIdempotencyKey
+    ) {
+        if (normalizedIdempotencyKey == null) {
+            return null;
+        }
+        return ruleId + "|" + documentId + "|" + triggerType + "|" + normalizedIdempotencyKey;
+    }
+
+    private RuleExecutionCommandResult resolveDeduplicatedManualRun(String idempotencyIndexKey) {
+        UUID existingRunId = ruleRunIdempotencyIndex.get(idempotencyIndexKey);
+        if (existingRunId == null) {
+            return null;
+        }
+        RuleRunLedgerRecord existing = ruleRunLedgerById.get(existingRunId);
+        if (existing == null) {
+            ruleRunIdempotencyIndex.remove(idempotencyIndexKey);
+            return null;
+        }
+        String username = securityService.getCurrentUser();
+        auditService.logEvent(
+            "RULE_MANUAL_RUN_REUSED",
+            existing.documentId(),
+            existing.documentName(),
+            username != null ? username : "system",
+            String.format("Reused manual run %s by idempotency key", existing.runId())
+        );
+        return new RuleExecutionCommandResult(
+            existing.runId(),
+            true,
+            existing.runId(),
+            existing
+        );
+    }
+
+    private void saveRuleRunLedger(RuleRunLedgerRecord record, String idempotencyIndexKey) {
+        ruleRunLedgerById.put(record.runId(), record);
+        ruleRunLedgerOrder.remove(record.runId());
+        ruleRunLedgerOrder.addFirst(record.runId());
+        if (idempotencyIndexKey != null) {
+            ruleRunIdempotencyIndex.put(idempotencyIndexKey, record.runId());
+        }
+
+        while (ruleRunLedgerOrder.size() > RULE_RUN_LEDGER_LIMIT) {
+            UUID tailRunId = ruleRunLedgerOrder.pollLast();
+            if (tailRunId == null) {
+                break;
+            }
+            ruleRunLedgerById.remove(tailRunId);
+            ruleRunIdempotencyIndex.entrySet().removeIf(entry -> tailRunId.equals(entry.getValue()));
+        }
+    }
+
+    private RuleRunLedgerRecord toRuleRunLedgerRecord(
+        RuleExecutionResult result,
+        String idempotencyKey,
+        String executedBy
+    ) {
+        List<RuleRunActionRecord> actionRecords = result.getActionResults() == null
+            ? List.of()
+            : result.getActionResults().stream()
+                .map(action -> new RuleRunActionRecord(
+                    action.getActionType() != null ? action.getActionType().name() : null,
+                    action.isSuccess(),
+                    action.getErrorMessage(),
+                    action.getDurationMs(),
+                    action.getDetails()
+                ))
+                .toList();
+
+        return new RuleRunLedgerRecord(
+            result.getExecutionId(),
+            result.getRule().getId(),
+            result.getRule().getName(),
+            result.getDocumentId(),
+            result.getDocumentName(),
+            result.getTriggerType(),
+            idempotencyKey,
+            executedBy,
+            result.isConditionMatched(),
+            result.isSuccess(),
+            result.getSuccessfulActionCount(),
+            result.getFailedActionCount(),
+            result.getTotalActionCount(),
+            result.getErrorMessage(),
+            result.getStartTime(),
+            result.getEndTime(),
+            result.getDurationMs(),
+            actionRecords
+        );
+    }
+
+    private Document buildDryRunDocument(UUID scopeFolderId, Map<String, Object> testData) {
+        Document document = new Document();
+        document.setId(UUID.randomUUID());
+        document.setName("dry-run-document");
+        document.setMimeType("application/pdf");
+        document.setFileSize(1024L);
+        document.setPath("/dry-run-document");
+
+        if (testData != null) {
+            Object name = testData.get("name");
+            if (name instanceof String value && !value.isBlank()) {
+                document.setName(value);
+            }
+            Object mimeType = testData.get("mimeType");
+            if (mimeType instanceof String value && !value.isBlank()) {
+                document.setMimeType(value);
+            }
+            Object size = testData.get("size");
+            if (size instanceof Number number) {
+                document.setFileSize(number.longValue());
+            }
+            Object path = testData.get("path");
+            if (path instanceof String value && !value.isBlank()) {
+                document.setPath(value);
+            }
+        }
+
+        if (scopeFolderId != null) {
+            Folder parent = new Folder();
+            parent.setId(scopeFolderId);
+            document.setParent(parent);
+        }
+        return document;
+    }
+
     // ==================== DTO Classes ====================
+
+    public record FolderRuleReorderRequest(
+        List<UUID> ruleIds,
+        Integer basePriority,
+        Integer step
+    ) {}
+
+    public record FolderRuleDryRunRequest(
+        TriggerType triggerType,
+        Map<String, Object> testData,
+        Integer limit
+    ) {}
+
+    public record FolderRuleDryRunResult(
+        UUID scopeFolderId,
+        TriggerType triggerType,
+        int found,
+        int scanned,
+        int matched,
+        int processable,
+        int skipped,
+        int errors,
+        Map<String, Long> skipReasons,
+        List<FolderRuleDryRunItem> results
+    ) {}
+
+    public record FolderRuleDryRunItem(
+        UUID ruleId,
+        String ruleName,
+        Integer priority,
+        boolean matched,
+        boolean processable,
+        String skipReason,
+        List<String> unsupportedActions,
+        String error
+    ) {}
+
+    public record RuleExecutionCommandResult(
+        UUID runId,
+        boolean deduplicated,
+        UUID deduplicatedFromRunId,
+        RuleRunLedgerRecord run
+    ) {}
+
+    public record RuleRunLedgerRecord(
+        UUID runId,
+        UUID ruleId,
+        String ruleName,
+        UUID documentId,
+        String documentName,
+        TriggerType triggerType,
+        String idempotencyKey,
+        String executedBy,
+        boolean conditionMatched,
+        boolean success,
+        int successfulActions,
+        int failedActions,
+        int totalActions,
+        String errorMessage,
+        LocalDateTime startedAt,
+        LocalDateTime completedAt,
+        Long durationMs,
+        List<RuleRunActionRecord> actions
+    ) {}
+
+    public record RuleRunTimelineQuery(
+        UUID ruleId,
+        UUID documentId,
+        TriggerType triggerType,
+        Boolean success,
+        String actor,
+        LocalDateTime from,
+        LocalDateTime to,
+        int limit
+    ) {}
+
+    public record RuleRunActionRecord(
+        String actionType,
+        boolean success,
+        String errorMessage,
+        Long durationMs,
+        String details
+    ) {}
 
     @lombok.Data
     @lombok.Builder

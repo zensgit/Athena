@@ -1,5 +1,7 @@
 package com.ecm.core.service;
 
+import com.ecm.core.dto.CheckoutInfoDto;
+import com.ecm.core.dto.LockInfoDto;
 import com.ecm.core.entity.*;
 import com.ecm.core.entity.Node.NodeStatus;
 import com.ecm.core.entity.Node.NodeType;
@@ -7,6 +9,7 @@ import com.ecm.core.entity.Permission.PermissionType;
 import com.ecm.core.entity.Folder.FolderType;
 import com.ecm.core.entity.AutomationRule.TriggerType;
 import com.ecm.core.event.*;
+import com.ecm.core.exception.PropertyValidationException;
 import com.ecm.core.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.Duration;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -41,6 +45,14 @@ public class NodeService {
     @Autowired
     @Lazy
     private RuleEngineService ruleEngineService;
+
+    @Autowired
+    @Lazy
+    private DictionaryService dictionaryService;
+
+    @Autowired
+    @Lazy
+    private PropertyConstraintValidator propertyConstraintValidator;
 
     @Value("${ecm.rules.enabled:true}")
     private boolean rulesEnabled;
@@ -72,7 +84,12 @@ public class NodeService {
         if (nodeRepository.findByParentIdAndName(parentId, node.getName()).isPresent()) {
             throw new IllegalArgumentException("Node with name already exists: " + node.getName());
         }
-        
+
+        // Content model enforcement: type → mandatory aspects → aspect properties
+        applyMandatoryAspects(node);
+        enforceTypeProperties(node);
+        enforceAspectProperties(node);
+
         Node savedNode = nodeRepository.save(node);
         
         // Copy parent permissions if inherit is true
@@ -88,6 +105,7 @@ public class NodeService {
     public Node getNode(UUID nodeId) {
         Node node = nodeRepository.findByIdAndDeletedFalse(nodeId)
             .orElseThrow(() -> new NoSuchElementException("Node not found: " + nodeId));
+        node = normalizeExpiredLock(node);
         
         if (!securityService.hasPermission(node, PermissionType.READ)) {
             throw new SecurityException("No permission to read node: " + node.getName());
@@ -99,6 +117,7 @@ public class NodeService {
     public Node getNodeByPath(String path) {
         Node node = nodeRepository.findFirstByPathAndDeletedFalseOrderByCreatedDateAsc(path)
             .orElseThrow(() -> new NoSuchElementException("Node not found at path: " + path));
+        node = normalizeExpiredLock(node);
         
         if (!securityService.hasPermission(node, PermissionType.READ)) {
             throw new SecurityException("No permission to read node: " + node.getName());
@@ -143,8 +162,8 @@ public class NodeService {
             throw new SecurityException("No permission to update node: " + node.getName());
         }
         
-        if (node.isLocked() && !node.getLockedBy().equals(securityService.getCurrentUser())) {
-            throw new IllegalStateException("Node is locked by: " + node.getLockedBy());
+        if (node.isEffectivelyLocked(LocalDateTime.now()) && !node.getLockedBy().equals(securityService.getCurrentUser())) {
+            throw new IllegalStateException("Node is " + node.describeActiveLock(LocalDateTime.now()));
         }
         
         // Update allowed fields
@@ -193,6 +212,10 @@ public class NodeService {
             }
         }
         
+        // Content model enforcement: type + aspect after property merge
+        enforceTypeProperties(node);
+        enforceAspectProperties(node);
+
         Node updatedNode = nodeRepository.save(node);
         eventPublisher.publishEvent(new NodeUpdatedEvent(updatedNode, securityService.getCurrentUser()));
 
@@ -307,19 +330,31 @@ public class NodeService {
     }
     
     public void lockNode(UUID nodeId) {
+        lockNode(nodeId, null, null);
+    }
+
+    public void lockNode(UUID nodeId, LockLifetime lifetime, Integer durationMinutes) {
         Node node = getNode(nodeId);
+        node = normalizeExpiredLock(node);
         
         if (!securityService.hasPermission(node, PermissionType.WRITE)) {
             throw new SecurityException("No permission to lock node: " + node.getName());
         }
         
-        if (node.isLocked()) {
-            throw new IllegalStateException("Node is already locked by: " + node.getLockedBy());
+        if (node.isEffectivelyLocked(LocalDateTime.now())) {
+            throw new IllegalStateException("Node is already " + node.describeActiveLock(LocalDateTime.now()));
         }
-        
-        node.setLocked(true);
-        node.setLockedBy(securityService.getCurrentUser());
-        node.setLockedDate(LocalDateTime.now());
+
+        LockLifetime effectiveLifetime = lifetime != null ? lifetime : LockLifetime.PERSISTENT;
+        if (durationMinutes != null && durationMinutes <= 0) {
+            throw new IllegalArgumentException("Lock duration must be positive");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime expiresAt = effectiveLifetime == LockLifetime.EPHEMERAL
+            ? now.plusMinutes(durationMinutes != null ? durationMinutes : 30L)
+            : null;
+
+        node.applyLock(securityService.getCurrentUser(), now, effectiveLifetime, expiresAt);
         
         nodeRepository.save(node);
         eventPublisher.publishEvent(new NodeLockedEvent(node, securityService.getCurrentUser()));
@@ -327,23 +362,417 @@ public class NodeService {
     
     public void unlockNode(UUID nodeId) {
         Node node = getNode(nodeId);
+        node = normalizeExpiredLock(node);
         
         String currentUser = securityService.getCurrentUser();
         boolean isOwner = node.getLockedBy() != null && node.getLockedBy().equals(currentUser);
         boolean isAdmin = securityService.hasRole("ROLE_ADMIN");
+
+        if (!node.isEffectivelyLocked(LocalDateTime.now())) {
+            return;
+        }
         
         if (!isOwner && !isAdmin) {
             throw new SecurityException("Only lock owner or admin can unlock node");
         }
-        
-        node.setLocked(false);
-        node.setLockedBy(null);
-        node.setLockedDate(null);
+
+        node.clearLock();
         
         nodeRepository.save(node);
         eventPublisher.publishEvent(new NodeUnlockedEvent(node, securityService.getCurrentUser()));
     }
+
+    public LockInfoDto getLockInfo(UUID nodeId) {
+        Node node = nodeRepository.findByIdAndDeletedFalse(nodeId)
+            .orElseThrow(() -> new NoSuchElementException("Node not found: " + nodeId));
+        if (!securityService.hasPermission(node, PermissionType.READ)) {
+            throw new SecurityException("No permission to read node: " + node.getName());
+        }
+        LocalDateTime now = LocalDateTime.now();
+        String currentUser = securityService.getCurrentUser();
+        boolean isAdmin = securityService.hasRole("ROLE_ADMIN");
+
+        if (node.isLockExpired(now)) {
+            return new LockInfoDto(
+                LockStatus.LOCK_EXPIRED,
+                node.getLockedBy(),
+                node.getLockedDate(),
+                node.getLockLifetime(),
+                node.getLockExpiresAt(),
+                node.getLockType(),
+                node.getLockAdditionalInfo(),
+                node.isLockDeep(),
+                0L,
+                ageSeconds(node.getLockedDate(), now),
+                false
+            );
+        }
+        if (!node.isEffectivelyLocked(now)) {
+            return new LockInfoDto(
+                LockStatus.NO_LOCK,
+                null, null, null, null, null, null, false,
+                null, null, false
+            );
+        }
+
+        boolean isOwner = Objects.equals(currentUser, node.getLockedBy());
+        Long remainingSeconds = node.getLockExpiresAt() != null
+            ? Math.max(0L, Duration.between(now, node.getLockExpiresAt()).getSeconds())
+            : null;
+
+        return new LockInfoDto(
+            isOwner ? LockStatus.LOCK_OWNER : LockStatus.LOCKED_BY_OTHER,
+            node.getLockedBy(),
+            node.getLockedDate(),
+            node.getLockLifetime(),
+            node.getLockExpiresAt(),
+            node.getLockType(),
+            node.getLockAdditionalInfo(),
+            node.isLockDeep(),
+            remainingSeconds,
+            ageSeconds(node.getLockedDate(), now),
+            isOwner || isAdmin
+        );
+    }
+
+    public CheckoutInfoDto getCheckoutInfo(UUID documentId) {
+        Document document = documentRepository.findById(documentId)
+            .orElseThrow(() -> new NoSuchElementException("Document not found: " + documentId));
+
+        if (document.isDeleted()) {
+            throw new NoSuchElementException("Document not found: " + documentId);
+        }
+        if (!securityService.hasPermission(document, PermissionType.READ)) {
+            throw new SecurityException("No permission to read document: " + document.getName());
+        }
+
+        document = (Document) normalizeExpiredLock(document);
+
+        String currentUser = securityService.getCurrentUser();
+        boolean isAdmin = securityService.hasRole("ROLE_ADMIN");
+        boolean canWrite = securityService.hasPermission(document, PermissionType.WRITE);
+        boolean lockedByOther = document.isEffectivelyLocked(LocalDateTime.now())
+            && !Objects.equals(document.getLockedBy(), currentUser);
+
+        if (!document.isCheckedOut()) {
+            String blockingReason = null;
+            if (!canWrite) {
+                blockingReason = "You do not have permission to check out this document.";
+            } else if (lockedByOther) {
+                blockingReason = "Cannot check out while " + document.describeActiveLock(LocalDateTime.now()) + ".";
+            }
+            return new CheckoutInfoDto(
+                CheckoutStatus.AVAILABLE,
+                null,
+                null,
+                null,
+                canWrite && !lockedByOther,
+                false,
+                false,
+                false,
+                true,
+                blockingReason
+            );
+        }
+
+        boolean isOwner = Objects.equals(document.getCheckoutUser(), currentUser);
+        String blockingReason = null;
+        if (!isOwner) {
+            blockingReason = document.getCheckoutUser() != null
+                ? "Checked out by " + document.getCheckoutUser() + "."
+                : "Checked out by another user.";
+        }
+
+        return new CheckoutInfoDto(
+            isOwner ? CheckoutStatus.CHECKED_OUT_BY_YOU : CheckoutStatus.CHECKED_OUT_BY_OTHER,
+            document.getCheckoutUser(),
+            document.getCheckoutDate(),
+            ageSeconds(document.getCheckoutDate(), LocalDateTime.now()),
+            false,
+            isOwner || isAdmin,
+            isOwner || isAdmin,
+            isOwner,
+            true,
+            blockingReason
+        );
+    }
+
+    public Document checkoutDocument(UUID documentId) {
+        Document document = documentRepository.findById(documentId)
+            .orElseThrow(() -> new NoSuchElementException("Document not found: " + documentId));
+
+        if (document.isDeleted()) {
+            throw new NoSuchElementException("Document not found: " + documentId);
+        }
+        if (!securityService.hasPermission(document, PermissionType.WRITE)) {
+            throw new SecurityException("No permission to check out document: " + document.getName());
+        }
+        document = (Document) normalizeExpiredLock(document);
+        if (document.isEffectivelyLocked(LocalDateTime.now()) && !Objects.equals(document.getLockedBy(), securityService.getCurrentUser())) {
+            throw new IllegalStateException("Document is " + document.describeActiveLock(LocalDateTime.now()));
+        }
+        if (document.isCheckedOut()) {
+            throw new IllegalStateException("Document is already checked out by: " + document.getCheckoutUser());
+        }
+
+        document.checkout(securityService.getCurrentUser());
+        return documentRepository.save(document);
+    }
+
+    public Document checkinDocument(UUID documentId) {
+        return checkinDocument(documentId, false);
+    }
+
+    public Document checkinDocument(UUID documentId, boolean keepCheckedOut) {
+        Document document = documentRepository.findById(documentId)
+            .orElseThrow(() -> new NoSuchElementException("Document not found: " + documentId));
+
+        if (document.isDeleted()) {
+            throw new NoSuchElementException("Document not found: " + documentId);
+        }
+        String currentUser = securityService.getCurrentUser();
+        boolean isAdmin = securityService.hasRole("ROLE_ADMIN");
+        if (!document.isCheckedOut()) {
+            throw new IllegalStateException("Document is not checked out");
+        }
+        if (!Objects.equals(document.getCheckoutUser(), currentUser) && !isAdmin) {
+            throw new SecurityException("Only checkout owner or admin can check in document");
+        }
+        if (keepCheckedOut && !Objects.equals(document.getCheckoutUser(), currentUser)) {
+            throw new SecurityException("Only checkout owner can keep document checked out");
+        }
+
+        if (keepCheckedOut) {
+            document.checkout(currentUser);
+        } else {
+            document.checkin();
+        }
+        return documentRepository.save(document);
+    }
+
+    private Node normalizeExpiredLock(Node node) {
+        if (node.isLockExpired(LocalDateTime.now())) {
+            node.clearLock();
+            return nodeRepository.save(node);
+        }
+        return node;
+    }
+
+    private Long ageSeconds(LocalDateTime lockedDate, LocalDateTime now) {
+        if (lockedDate == null) {
+            return null;
+        }
+        return Math.max(0L, Duration.between(lockedDate, now).getSeconds());
+    }
+
+    public Document cancelCheckoutDocument(UUID documentId) {
+        Document document = documentRepository.findById(documentId)
+            .orElseThrow(() -> new NoSuchElementException("Document not found: " + documentId));
+
+        if (document.isDeleted()) {
+            throw new NoSuchElementException("Document not found: " + documentId);
+        }
+        String currentUser = securityService.getCurrentUser();
+        boolean isAdmin = securityService.hasRole("ROLE_ADMIN");
+        if (!document.isCheckedOut()) {
+            throw new IllegalStateException("Document is not checked out");
+        }
+        if (!Objects.equals(document.getCheckoutUser(), currentUser) && !isAdmin) {
+            throw new SecurityException("Only checkout owner or admin can cancel checkout");
+        }
+
+        document.checkin();
+        return documentRepository.save(document);
+    }
     
+    // ---- aspect management --------------------------------------------------
+
+    public Set<String> getAspects(UUID nodeId) {
+        Node node = getNode(nodeId);
+        return node.getAspects() != null ? new HashSet<>(node.getAspects()) : new HashSet<>();
+    }
+
+    public Node addAspect(UUID nodeId, String aspectName) {
+        return addAspect(nodeId, aspectName, null);
+    }
+
+    public Node addAspect(UUID nodeId, String aspectName, Map<String, Object> aspectProperties) {
+        Node node = getNode(nodeId);
+        if (!securityService.hasPermission(node, PermissionType.WRITE)) {
+            throw new SecurityException("No permission to modify node: " + node.getName());
+        }
+        node.addAspect(aspectName);
+        // merge caller-supplied properties before defaults (caller overrides defaults)
+        if (aspectProperties != null && !aspectProperties.isEmpty()) {
+            if (node.getProperties() == null) {
+                node.setProperties(new HashMap<>());
+            }
+            node.getProperties().putAll(aspectProperties);
+        }
+        applyAspectDefaults(node, aspectName);
+        enforceAspectProperties(node);
+        return nodeRepository.save(node);
+    }
+
+    public Node removeAspect(UUID nodeId, String aspectName) {
+        Node node = getNode(nodeId);
+        if (!securityService.hasPermission(node, PermissionType.WRITE)) {
+            throw new SecurityException("No permission to modify node: " + node.getName());
+        }
+        node.removeAspect(aspectName);
+        // remove aspect-specific properties from the JSONB properties map
+        // (prefixed properties like "cm:title" belong to the aspect)
+        if (node.getProperties() != null) {
+            node.getProperties().entrySet().removeIf(e -> e.getKey().startsWith(aspectName.split(":")[0] + ":"));
+        }
+        return nodeRepository.save(node);
+    }
+
+    public boolean hasAspect(UUID nodeId, String aspectName) {
+        Node node = getNode(nodeId);
+        return node.hasAspect(aspectName);
+    }
+
+    // ---- content model enforcement -----------------------------------------
+
+    /**
+     * Validate node properties against the node's content-model type definition.
+     * Enforces mandatory properties and constraint rules. Applies defaults first.
+     * Silently skips if no typeQName is set or the type has no registered definition.
+     */
+    void enforceTypeProperties(Node node) {
+        if (dictionaryService == null || propertyConstraintValidator == null) return;
+        if (node.getTypeQName() == null || node.getTypeQName().isBlank()) return;
+
+        List<com.ecm.core.entity.PropertyDefinition> defs;
+        try {
+            defs = dictionaryService.getPropertiesForType(node.getTypeQName());
+        } catch (Exception e) {
+            return; // unmanaged type
+        }
+
+        // apply defaults
+        if (node.getProperties() == null) {
+            node.setProperties(new HashMap<>());
+        }
+        for (com.ecm.core.entity.PropertyDefinition def : defs) {
+            String key = def.qualifiedName();
+            if (!node.getProperties().containsKey(key) && def.getDefaultValue() != null) {
+                node.getProperties().put(key, def.getDefaultValue());
+            }
+        }
+
+        // validate
+        Map<String, Object> props = node.getProperties();
+        List<String> violations = new ArrayList<>();
+        for (com.ecm.core.entity.PropertyDefinition def : defs) {
+            String key = def.qualifiedName();
+            Object value = props.get(key);
+
+            if (def.isMandatory() && (value == null || (value instanceof String s && s.isBlank()))) {
+                violations.add("Missing mandatory property '" + key + "' for type " + node.getTypeQName());
+            }
+            if (value != null && def.getConstraints() != null && !def.getConstraints().isEmpty()) {
+                violations.addAll(propertyConstraintValidator.validate(value, def.getConstraints()));
+            }
+        }
+        if (!violations.isEmpty()) {
+            throw new PropertyValidationException(
+                "Type property validation failed: " + String.join("; ", violations),
+                violations
+            );
+        }
+    }
+
+    /**
+     * Apply mandatory aspects declared on the node's type definition.
+     * Adds the aspects to the node and applies their defaults.
+     */
+    void applyMandatoryAspects(Node node) {
+        if (dictionaryService == null) return;
+        if (node.getTypeQName() == null || node.getTypeQName().isBlank()) return;
+
+        List<String> mandatoryAspects;
+        try {
+            mandatoryAspects = dictionaryService.getMandatoryAspectsForType(node.getTypeQName());
+        } catch (Exception e) {
+            return;
+        }
+        for (String aspectName : mandatoryAspects) {
+            if (!node.hasAspect(aspectName)) {
+                node.addAspect(aspectName);
+                applyAspectDefaults(node, aspectName);
+            }
+        }
+    }
+
+    /**
+     * Validate node properties against all attached aspect definitions.
+     * Enforces mandatory properties and constraint rules from active models.
+     * Silently skips aspects that have no registered definition (unmanaged aspects).
+     */
+    void enforceAspectProperties(Node node) {
+        if (dictionaryService == null || propertyConstraintValidator == null) return;
+        if (node.getAspects() == null || node.getAspects().isEmpty()) return;
+
+        Map<String, Object> props = node.getProperties() != null ? node.getProperties() : Map.of();
+        List<String> violations = new ArrayList<>();
+
+        for (String aspectName : node.getAspects()) {
+            List<com.ecm.core.entity.PropertyDefinition> defs;
+            try {
+                defs = dictionaryService.getPropertiesForAspect(aspectName);
+            } catch (Exception e) {
+                // unmanaged aspect — no definition registered, skip
+                continue;
+            }
+            for (com.ecm.core.entity.PropertyDefinition def : defs) {
+                String key = def.qualifiedName();
+                Object value = props.get(key);
+
+                // mandatory check
+                if (def.isMandatory() && (value == null || (value instanceof String s && s.isBlank()))) {
+                    violations.add("Missing mandatory property '" + key + "' for aspect " + aspectName);
+                }
+
+                // constraint check
+                if (value != null && def.getConstraints() != null && !def.getConstraints().isEmpty()) {
+                    violations.addAll(propertyConstraintValidator.validate(value, def.getConstraints()));
+                }
+            }
+        }
+
+        if (!violations.isEmpty()) {
+            throw new PropertyValidationException(
+                "Property validation failed: " + String.join("; ", violations),
+                violations
+            );
+        }
+    }
+
+    /**
+     * Apply default property values from an aspect definition to the node.
+     * Only sets defaults for properties that are not already present.
+     */
+    void applyAspectDefaults(Node node, String aspectName) {
+        if (dictionaryService == null) return;
+        List<com.ecm.core.entity.PropertyDefinition> defs;
+        try {
+            defs = dictionaryService.getPropertiesForAspect(aspectName);
+        } catch (Exception e) {
+            return; // unmanaged aspect
+        }
+        if (node.getProperties() == null) {
+            node.setProperties(new HashMap<>());
+        }
+        for (com.ecm.core.entity.PropertyDefinition def : defs) {
+            String key = def.qualifiedName();
+            if (!node.getProperties().containsKey(key) && def.getDefaultValue() != null) {
+                node.getProperties().put(key, def.getDefaultValue());
+            }
+        }
+    }
+
     public List<Node> searchNodes(String query, Map<String, Object> filters, Pageable pageable) {
         // This is a simplified search - in production, use Elasticsearch
         return nodeRepository.findAll((root, criteriaQuery, criteriaBuilder) -> {

@@ -137,7 +137,15 @@ export class ApiService {
           logAuthRecoveryEvent('api.response.401.redirect', this.toRequestMeta(originalRequest));
           this.markSessionExpiredAndRedirect();
         } else if (error.response?.data?.message) {
-          toast.error(error.response.data.message);
+          const details: string[] | undefined = error.response.data.details;
+          if (details && details.length > 0) {
+            toast.error(
+              error.response.data.message + '\n' + details.map((d: string) => '• ' + d).join('\n'),
+              { autoClose: 8000, style: { whiteSpace: 'pre-line' } }
+            );
+          } else {
+            toast.error(error.response.data.message);
+          }
         } else {
           toast.error('An unexpected error occurred');
         }

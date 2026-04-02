@@ -7,10 +7,13 @@ import java.util.UUID;
 @Data
 public class PreviewResult {
     private UUID documentId;
+    private String traceRequestId;
     private String mimeType;
     private boolean supported;
     private String status;
     private String message;
+    private boolean retryNeeded;
+    private String retryHint;
     private String failureReason;
     private String failureCategory;
     private List<PreviewPage> pages;

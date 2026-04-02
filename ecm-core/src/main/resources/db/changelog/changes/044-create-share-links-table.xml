@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="044-create-share-links-table" author="codex">
+        <comment>Create share_links table and share_link_access_log table</comment>
+
+        <createTable tableName="share_links">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="token" type="varchar(64)">
+                <constraints nullable="false" unique="true" uniqueConstraintName="uq_share_link_token"/>
+            </column>
+            <column name="node_id" type="${uuid_type}">
+                <constraints nullable="false" foreignKeyName="fk_sl_node" references="nodes(id)"/>
+            </column>
+            <column name="created_by" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="timestamp" defaultValueComputed="${now}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="expiry_date" type="timestamp"/>
+            <column name="password_hash" type="varchar(255)"/>
+            <column name="max_access_count" type="int"/>
+            <column name="access_count" type="int" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <column name="is_active" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="name" type="varchar(255)"/>
+            <column name="permission_level" type="varchar(32)" defaultValue="VIEW">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_accessed_at" type="timestamp"/>
+            <column name="allowed_ips" type="varchar(500)"/>
+        </createTable>
+
+        <createIndex tableName="share_links" indexName="idx_share_link_token">
+            <column name="token"/>
+        </createIndex>
+        <createIndex tableName="share_links" indexName="idx_share_link_node">
+            <column name="node_id"/>
+        </createIndex>
+        <createIndex tableName="share_links" indexName="idx_share_link_created_by">
+            <column name="created_by"/>
+        </createIndex>
+        <createIndex tableName="share_links" indexName="idx_share_link_expiry">
+            <column name="expiry_date"/>
+        </createIndex>
+
+        <!-- Access audit log -->
+        <createTable tableName="share_link_access_log">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="share_link_id" type="${uuid_type}">
+                <constraints nullable="false" foreignKeyName="fk_slal_link" references="share_links(id)"/>
+            </column>
+            <column name="accessed_at" type="timestamp" defaultValueComputed="${now}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="client_ip" type="varchar(45)"/>
+            <column name="user_agent" type="varchar(500)"/>
+            <column name="success" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="failure_reason" type="varchar(255)"/>
+        </createTable>
+
+        <createIndex tableName="share_link_access_log" indexName="idx_slal_link_id">
+            <column name="share_link_id"/>
+        </createIndex>
+        <createIndex tableName="share_link_access_log" indexName="idx_slal_accessed_at">
+            <column name="accessed_at"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>

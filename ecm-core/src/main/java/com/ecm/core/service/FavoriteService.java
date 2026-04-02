@@ -1,6 +1,7 @@
 package com.ecm.core.service;
 
 import com.ecm.core.entity.Favorite;
+import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Node;
 import com.ecm.core.repository.FavoriteRepository;
 import com.ecm.core.repository.NodeRepository;
@@ -30,9 +31,30 @@ public class FavoriteService {
     @Transactional
     public Favorite addFavorite(UUID nodeId) {
         String userId = securityService.getCurrentUser();
-        
-        Node node = nodeRepository.findById(nodeId)
-            .orElseThrow(() -> new IllegalArgumentException("Node not found: " + nodeId));
+        return addFavoriteForUser(userId, nodeId);
+    }
+
+    /**
+     * Remove a node from favorites.
+     */
+    @Transactional
+    public void removeFavorite(UUID nodeId) {
+        String userId = securityService.getCurrentUser();
+        removeFavoriteForUser(userId, nodeId);
+    }
+
+    /**
+     * Get favorites for the current user.
+     */
+    @Transactional(readOnly = true)
+    public Page<Favorite> getMyFavorites(Pageable pageable) {
+        String userId = securityService.getCurrentUser();
+        return favoriteRepository.findByUserIdOrderByCreatedAtDesc(userId, pageable);
+    }
+
+    @Transactional
+    public Favorite addFavoriteForUser(String userId, UUID nodeId) {
+        Node node = loadNode(nodeId);
 
         if (favoriteRepository.existsByUserIdAndNodeId(userId, nodeId)) {
             throw new IllegalStateException("Node is already a favorite");
@@ -47,13 +69,28 @@ public class FavoriteService {
         return favoriteRepository.save(favorite);
     }
 
-    /**
-     * Remove a node from favorites.
-     */
     @Transactional
-    public void removeFavorite(UUID nodeId) {
-        String userId = securityService.getCurrentUser();
-        
+    public Favorite addFavoriteSiteForUser(String userId, UUID nodeId) {
+        Node node = loadNode(nodeId);
+        if (!(node instanceof Folder)) {
+            throw new IllegalArgumentException("Favorite site target must be a folder");
+        }
+
+        if (favoriteRepository.existsByUserIdAndNodeId(userId, nodeId)) {
+            throw new IllegalStateException("Node is already a favorite");
+        }
+
+        Favorite favorite = Favorite.builder()
+            .userId(userId)
+            .node(node)
+            .build();
+
+        log.info("User {} added folder {} to favorite sites", userId, nodeId);
+        return favoriteRepository.save(favorite);
+    }
+
+    @Transactional
+    public void removeFavoriteForUser(String userId, UUID nodeId) {
         if (!favoriteRepository.existsByUserIdAndNodeId(userId, nodeId)) {
             throw new IllegalArgumentException("Favorite not found");
         }
@@ -62,13 +99,15 @@ public class FavoriteService {
         log.info("User {} removed node {} from favorites", userId, nodeId);
     }
 
-    /**
-     * Get favorites for the current user.
-     */
     @Transactional(readOnly = true)
-    public Page<Favorite> getMyFavorites(Pageable pageable) {
-        String userId = securityService.getCurrentUser();
-        return favoriteRepository.findByUserIdOrderByCreatedAtDesc(userId, pageable);
+    public Favorite getFavoriteForUser(String userId, UUID nodeId) {
+        return favoriteRepository.findByUserIdAndNodeId(userId, nodeId)
+            .orElseThrow(() -> new IllegalArgumentException("Favorite not found"));
+    }
+
+    private Node loadNode(UUID nodeId) {
+        return nodeRepository.findById(nodeId)
+            .orElseThrow(() -> new IllegalArgumentException("Node not found: " + nodeId));
     }
 
     /**

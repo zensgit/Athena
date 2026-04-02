@@ -5,6 +5,7 @@ import com.ecm.core.entity.PreviewStatus;
 import com.ecm.core.repository.DocumentRepository;
 import com.ecm.core.search.SearchIndexService;
 import com.ecm.core.service.ContentService;
+import com.ecm.core.service.RenditionResourceSyncService;
 import com.ecm.core.service.SecurityService;
 import com.ecm.core.entity.Permission.PermissionType;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +24,7 @@ import org.springframework.core.io.ByteArrayResource;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -49,12 +51,19 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class PreviewService {
+
+    private static final String X_ALFRESCO_RETRY_NEEDED = "X-Alfresco-Retry-Needed";
+    private static final String X_ECM_RETRY_NEEDED = "X-Ecm-Retry-Needed";
     
     private final ContentService contentService;
     private final SecurityService securityService;
     private final MeterRegistry meterRegistry;
     private final DocumentRepository documentRepository;
     private final SearchIndexService searchIndexService;
+    private final RenditionResourceSyncService renditionResourceSyncService;
+    private final CadRenderEndpointRegistry cadRenderEndpointRegistry;
+    private final CadRenderFailoverTracker cadRenderFailoverTracker;
+    private final PreviewTransformTraceBuffer previewTransformTraceBuffer;
     
     @Value("${ecm.preview.cache.enabled:true}")
     private boolean cacheEnabled;
@@ -67,12 +76,6 @@ public class PreviewService {
     
     @Value("${ecm.preview.thumbnail.height:200}")
     private int thumbnailHeight;
-
-    @Value("${ecm.preview.cad.enabled:true}")
-    private boolean cadPreviewEnabled;
-
-    @Value("${ecm.preview.cad.render-url:}")
-    private String cadRenderUrl;
 
     @Value("${ecm.preview.cad.auth-token:}")
     private String cadRenderAuthToken;
@@ -90,37 +93,60 @@ public class PreviewService {
             throw new SecurityException("No permission to preview document");
         }
 
-        updatePreviewStatus(document, PreviewStatus.PROCESSING, null);
+        updatePreviewStatus(document, PreviewStatus.PROCESSING, null, null);
         
         String mimeType = normalizeMimeType(document.getMimeType(), document.getName());
+        String traceRequestId = previewTransformTraceBuffer.start(document.getId(), mimeType, "preview");
+        traceEvent(traceRequestId, "PREVIEW_START", "documentId=" + document.getId());
+        traceEvent(traceRequestId, "MIME_RESOLVED", "mimeType=" + mimeType);
         PreviewResult result = new PreviewResult();
         result.setDocumentId(document.getId());
+        result.setTraceRequestId(traceRequestId);
         result.setMimeType(mimeType);
         
         try (InputStream content = contentService.getContent(document.getContentId())) {
             if (isCadDocument(mimeType, document.getName())) {
-                result = generateCadPreview(content, document);
+                traceEvent(traceRequestId, "ROUTE", "cad");
+                result = generateCadPreview(content, document, traceRequestId);
             } else if (mimeType.startsWith("image/")) {
+                traceEvent(traceRequestId, "ROUTE", "image");
                 result = generateImagePreview(content, document);
             } else if (mimeType.equals("application/pdf")) {
+                traceEvent(traceRequestId, "ROUTE", "pdf");
                 result = generatePdfPreview(content, document);
             } else if (isOfficeDocument(mimeType)) {
+                traceEvent(traceRequestId, "ROUTE", "office");
                 result = generateOfficePreview(content, document, mimeType);
             } else if (mimeType.startsWith("text/")) {
+                traceEvent(traceRequestId, "ROUTE", "text");
                 result = generateTextPreview(content, document);
             } else {
                 result.setSupported(false);
                 result.setMessage("Preview not supported for mime type: " + mimeType);
+                traceEvent(traceRequestId, "UNSUPPORTED", result.getMessage());
             }
         } catch (Exception e) {
             log.error("Error generating preview for document: {}", document.getId(), e);
             result.setSupported(false);
             result.setMessage("Error generating preview: " + e.getMessage());
+            traceEvent(traceRequestId, "ERROR", result.getMessage());
         }
         
         result.setDocumentId(document.getId());
+        result.setTraceRequestId(traceRequestId);
         result.setMimeType(mimeType);
         applyPreviewOutcome(document, result);
+        traceEvent(
+            traceRequestId,
+            "OUTCOME",
+            "status=" + result.getStatus() + ", supported=" + result.isSupported() + ", retryNeeded=" + result.isRetryNeeded()
+        );
+        previewTransformTraceBuffer.complete(
+            traceRequestId,
+            result.getStatus(),
+            result.isRetryNeeded(),
+            result.getFailureReason()
+        );
         return result;
     }
     
@@ -146,6 +172,50 @@ public class PreviewService {
                 return generateDefaultThumbnail(mimeType);
             }
         }
+    }
+
+    public PreviewReadiness evaluateReadiness(Document document) {
+        if (document == null) {
+            return new PreviewReadiness("INVALID", false, false, "MISSING_DOCUMENT");
+        }
+
+        Long fileSize = document.getFileSize();
+        if (fileSize != null && fileSize <= 0L) {
+            return new PreviewReadiness("ZERO_SOURCE", false, false, "SOURCE_EMPTY");
+        }
+
+        if (document.getPreviewStatus() != PreviewStatus.READY) {
+            return new PreviewReadiness("NOT_READY", false, false, null);
+        }
+
+        String contentHash = normalizeContentHash(document.getContentHash());
+        String previewContentHash = normalizeContentHash(document.getPreviewContentHash());
+        if (contentHash == null || previewContentHash == null) {
+            return new PreviewReadiness("READY_HASH_UNKNOWN", true, false, null);
+        }
+        if (!contentHash.equals(previewContentHash)) {
+            return new PreviewReadiness("READY_STALE_HASH", false, true, "STALE_HASH_MISMATCH");
+        }
+        return new PreviewReadiness("READY_HASH_MATCH", true, false, null);
+    }
+
+    public PreviewRepairResult invalidateRendition(Document document, String reason) {
+        if (document == null) {
+            return new PreviewRepairResult(null, null, false, "MISSING_DOCUMENT", null, null);
+        }
+        String effectiveReason = reason == null || reason.isBlank() ? "Preview invalidated" : reason.trim();
+        PreviewStatus previousStatus = document.getPreviewStatus();
+        String previousPreviewHash = document.getPreviewContentHash();
+        String currentContentHash = document.getContentHash();
+        updatePreviewStatus(document, PreviewStatus.FAILED, effectiveReason, null);
+        return new PreviewRepairResult(
+            document.getId(),
+            previousStatus != null ? previousStatus.name() : null,
+            true,
+            effectiveReason,
+            previousPreviewHash,
+            currentContentHash
+        );
     }
     
     private PreviewResult generateImagePreview(InputStream content, Document document) 
@@ -339,25 +409,39 @@ public class PreviewService {
         return result;
     }
     
-    private PreviewResult generateCadPreview(InputStream content, Document document) 
+    private PreviewResult generateCadPreview(InputStream content, Document document, String traceRequestId)
             throws IOException {
         PreviewResult result = new PreviewResult();
 
-        if (!cadPreviewEnabled) {
+        if (!cadRenderEndpointRegistry.isCadPreviewEnabled()) {
             result.setSupported(false);
             result.setMessage("CAD preview disabled");
             meterRegistry.counter("cad_preview_total", "status", "error", "reason", "disabled").increment();
+            traceEvent(traceRequestId, "CAD_DISABLED", result.getMessage());
             return result;
         }
-        if (cadRenderUrl == null || cadRenderUrl.isBlank()) {
+        if (!cadRenderEndpointRegistry.isConfigured()) {
             result.setSupported(false);
             result.setMessage("CAD preview service not configured");
             meterRegistry.counter("cad_preview_total", "status", "error", "reason", "missing_render_url").increment();
+            traceEvent(traceRequestId, "CAD_NOT_CONFIGURED", result.getMessage());
             return result;
         }
 
         try {
-            CadRenderResult renderResult = renderCadToPng(content, document);
+            CadRenderResult renderResult = renderCadToPng(content, document, traceRequestId);
+            if (renderResult.retryNeeded()) {
+                result.setSupported(false);
+                result.setRetryNeeded(true);
+                result.setRetryHint(renderResult.retryHint());
+                result.setMessage(renderResult.retryHint() != null && !renderResult.retryHint().isBlank()
+                    ? renderResult.retryHint()
+                    : "CAD preview retry needed");
+                meterRegistry.counter("cad_preview_total", "status", "error", "reason", "retry_needed").increment();
+                traceEvent(traceRequestId, "CAD_RETRY_NEEDED", result.getMessage());
+                return result;
+            }
+
             PreviewPage page = new PreviewPage();
             page.setPageNumber(1);
             page.setWidth(renderResult.width());
@@ -369,22 +453,31 @@ public class PreviewService {
             result.setPages(List.of(page));
             result.setPageCount(1);
             meterRegistry.counter("cad_preview_total", "status", "ok", "reason", "rendered").increment();
+            traceEvent(
+                traceRequestId,
+                "CAD_RENDERED",
+                "width=" + renderResult.width() + ", height=" + renderResult.height()
+            );
             return result;
         } catch (Exception e) {
             result.setSupported(false);
             result.setMessage("CAD preview failed: " + e.getMessage());
             log.warn("CAD preview failed for document: {}", document.getId(), e);
             meterRegistry.counter("cad_preview_total", "status", "error", "reason", "render_failed").increment();
+            traceEvent(traceRequestId, "CAD_RENDER_FAILED", result.getMessage());
             return result;
         }
     }
 
     private byte[] generateCadThumbnail(InputStream content, Document document) throws IOException {
-        if (!cadPreviewEnabled || cadRenderUrl == null || cadRenderUrl.isBlank()) {
+        if (!cadRenderEndpointRegistry.isCadPreviewEnabled() || !cadRenderEndpointRegistry.isConfigured()) {
             return generateDefaultThumbnail("cad");
         }
         try {
-            CadRenderResult renderResult = renderCadToPng(content, document);
+            CadRenderResult renderResult = renderCadToPng(content, document, null);
+            if (renderResult.retryNeeded() || renderResult.pngBytes() == null || renderResult.pngBytes().length == 0) {
+                return generateDefaultThumbnail("cad");
+            }
             try (ByteArrayInputStream pngStream = new ByteArrayInputStream(renderResult.pngBytes())) {
                 return generateImageThumbnail(pngStream);
             }
@@ -394,23 +487,34 @@ public class PreviewService {
         }
     }
 
-    private CadRenderResult renderCadToPng(InputStream content, Document document) throws IOException {
+    private CadRenderResult renderCadToPng(InputStream content, Document document, String traceRequestId) throws IOException {
         byte[] cadBytes = content.readAllBytes();
         if (cadBytes.length == 0) {
+            traceEvent(traceRequestId, "CAD_EMPTY", "CAD content is empty");
             throw new IOException("CAD content is empty");
         }
         String fileName = document.getName() != null ? document.getName() : "drawing.dwg";
         String contentType = normalizeMimeType(document.getMimeType(), document.getName());
 
-        byte[] pngBytes = requestCadRender(cadBytes, fileName, contentType);
+        CadRenderRequestResult renderResponse = requestCadRender(cadBytes, fileName, contentType, traceRequestId);
+        if (renderResponse.retryNeeded()) {
+            return new CadRenderResult(null, 0, 0, true, renderResponse.retryHint());
+        }
+
+        byte[] pngBytes = renderResponse.pngBytes();
         BufferedImage image = ImageIO.read(new ByteArrayInputStream(pngBytes));
         if (image == null) {
             throw new IOException("CAD render returned invalid image");
         }
-        return new CadRenderResult(pngBytes, image.getWidth(), image.getHeight());
+        return new CadRenderResult(pngBytes, image.getWidth(), image.getHeight(), false, null);
     }
 
-    private byte[] requestCadRender(byte[] cadBytes, String fileName, String contentType) throws IOException {
+    private CadRenderRequestResult requestCadRender(
+        byte[] cadBytes,
+        String fileName,
+        String contentType,
+        String traceRequestId
+    ) throws IOException {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(cadRenderTimeoutMs);
         requestFactory.setReadTimeout(cadRenderTimeoutMs);
@@ -439,11 +543,68 @@ public class PreviewService {
         }
 
         HttpEntity<MultiValueMap<String, Object>> request = new HttpEntity<>(body, headers);
-        ResponseEntity<byte[]> response = restTemplate.postForEntity(cadRenderUrl, request, byte[].class);
-        if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
-            throw new IOException("CAD render service returned " + response.getStatusCode());
+        IOException firstException = null;
+        boolean attempted = false;
+        int skippedByCircuit = 0;
+        for (String renderUrl : cadRenderEndpointRegistry.resolveEndpoints()) {
+            CadRenderFailoverTracker.EndpointAttemptDecision decision = cadRenderFailoverTracker.beforeAttempt(renderUrl);
+            if (!decision.allowed()) {
+                skippedByCircuit += 1;
+                traceEvent(
+                    traceRequestId,
+                    "CAD_ENDPOINT_SKIPPED",
+                    renderUrl + " :: " + decision.state() + (decision.reopenAt() != null ? " until " + decision.reopenAt() : "")
+                );
+                continue;
+            }
+            attempted = true;
+            if (decision.halfOpen()) {
+                traceEvent(traceRequestId, "CAD_ENDPOINT_HALF_OPEN", renderUrl);
+            }
+            try {
+                traceEvent(traceRequestId, "CAD_ENDPOINT_ATTEMPT", renderUrl);
+                ResponseEntity<byte[]> response = restTemplate.exchange(renderUrl, HttpMethod.POST, request, byte[].class);
+
+                boolean retryNeeded = isRetryNeededHeader(response.getHeaders());
+                if (retryNeeded) {
+                    String retryHint = response.getHeaders().getFirst(X_ECM_RETRY_NEEDED);
+                    if (retryHint == null || retryHint.isBlank()) {
+                        retryHint = response.getHeaders().getFirst(X_ALFRESCO_RETRY_NEEDED);
+                    }
+                    if (retryHint == null || retryHint.isBlank() || isTruthyRetryHeaderValue(retryHint)) {
+                        retryHint = "CAD render service requested retry";
+                    }
+                    cadRenderFailoverTracker.recordFailure(renderUrl, retryHint);
+                    traceEvent(traceRequestId, "CAD_ENDPOINT_RETRY_HINT", renderUrl + " :: " + retryHint);
+                    return new CadRenderRequestResult(null, true, retryHint);
+                }
+
+                if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
+                    throw new IOException("CAD render service returned " + response.getStatusCode());
+                }
+                cadRenderFailoverTracker.recordSuccess(renderUrl);
+                traceEvent(traceRequestId, "CAD_ENDPOINT_SUCCESS", renderUrl);
+                return new CadRenderRequestResult(response.getBody(), false, null);
+            } catch (Exception ex) {
+                IOException ioEx = ex instanceof IOException
+                    ? (IOException) ex
+                    : new IOException("CAD render call failed: " + ex.getMessage(), ex);
+                if (firstException == null) {
+                    firstException = ioEx;
+                }
+                cadRenderFailoverTracker.recordFailure(renderUrl, ioEx.getMessage());
+                log.warn("CAD render endpoint attempt failed url={} reason={}", renderUrl, ioEx.getMessage());
+                traceEvent(traceRequestId, "CAD_ENDPOINT_FAILURE", renderUrl + " :: " + ioEx.getMessage());
+            }
         }
-        return response.getBody();
+
+        if (!attempted && skippedByCircuit > 0) {
+            throw new IOException("CAD render circuit is open for all endpoints");
+        }
+        if (firstException != null) {
+            throw firstException;
+        }
+        throw new IOException("CAD render service not configured");
     }
     
     private byte[] generateImageThumbnail(InputStream content) throws IOException {
@@ -606,18 +767,30 @@ public class PreviewService {
         return baos.toByteArray();
     }
 
-    private void updatePreviewStatus(Document document, PreviewStatus status, String failureReason) {
+    private void updatePreviewStatus(Document document, PreviewStatus status, String failureReason, String previewContentHash) {
         if (document == null || status == null) {
             return;
         }
         for (int attempt = 0; attempt < 2; attempt++) {
             try {
                 Document target = documentRepository.findById(document.getId()).orElse(document);
+                LocalDateTime now = LocalDateTime.now();
                 target.setPreviewStatus(status);
                 target.setPreviewFailureReason(failureReason);
-                target.setPreviewLastUpdated(LocalDateTime.now());
+                target.setPreviewLastUpdated(now);
                 target.setPreviewAvailable(status == PreviewStatus.READY);
+                target.setPreviewContentHash(previewContentHash);
+                if (status == PreviewStatus.READY) {
+                    clearFailureLedger(target);
+                } else if (status == PreviewStatus.FAILED || status == PreviewStatus.UNSUPPORTED) {
+                    int failureCount = target.getPreviewFailureCount() != null ? target.getPreviewFailureCount() : 0;
+                    target.setPreviewFailureCount(failureCount + 1);
+                    target.setPreviewFailedAt(now);
+                    target.setPreviewLastFailureReason(normalizeFailureReason(failureReason));
+                    target.setPreviewFailureContentHash(normalizeContentHash(target.getContentHash()));
+                }
                 documentRepository.save(target);
+                syncRenditionResources(target);
                 try {
                     searchIndexService.updateDocument(target);
                 } catch (Exception indexError) {
@@ -692,7 +865,8 @@ public class PreviewService {
             } else if (result.getPages() != null && !result.getPages().isEmpty()) {
                 document.setPageCount(result.getPages().size());
             }
-            updatePreviewStatus(document, status, failureReason);
+            String previewContentHash = status == PreviewStatus.READY ? normalizeContentHash(document.getContentHash()) : null;
+            updatePreviewStatus(document, status, failureReason, previewContentHash);
         }
 
         result.setStatus(status.name());
@@ -719,9 +893,106 @@ public class PreviewService {
         ).increment();
     }
 
-    private record CadRenderResult(byte[] pngBytes, int width, int height) {}
+    private String normalizeContentHash(String contentHash) {
+        if (contentHash == null || contentHash.isBlank()) {
+            return null;
+        }
+        return contentHash.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String normalizeFailureReason(String reason) {
+        if (reason == null || reason.isBlank()) {
+            return null;
+        }
+        return reason.replaceAll("\\s+", " ").trim();
+    }
+
+    private static void clearFailureLedger(Document document) {
+        if (document == null) {
+            return;
+        }
+        document.setPreviewFailureCount(0);
+        document.setPreviewFailedAt(null);
+        document.setPreviewLastFailureReason(null);
+        document.setPreviewFailureContentHash(null);
+    }
+
+    public record PreviewReadiness(
+        String state,
+        boolean valid,
+        boolean staleHash,
+        String reason
+    ) {
+        public boolean zeroSource() {
+            return "ZERO_SOURCE".equals(state);
+        }
+    }
+
+    public record PreviewRepairResult(
+        UUID documentId,
+        String previousStatus,
+        boolean invalidated,
+        String reason,
+        String previousPreviewContentHash,
+        String currentContentHash
+    ) {
+    }
+
+    private boolean isRetryNeededHeader(HttpHeaders headers) {
+        if (headers == null) {
+            return false;
+        }
+        if (headers.containsKey(X_ECM_RETRY_NEEDED)) {
+            String ecmHeader = headers.getFirst(X_ECM_RETRY_NEEDED);
+            return !isExplicitlyFalseRetryHeaderValue(ecmHeader);
+        }
+        if (headers.containsKey(X_ALFRESCO_RETRY_NEEDED)) {
+            String alfrescoHeader = headers.getFirst(X_ALFRESCO_RETRY_NEEDED);
+            return !isExplicitlyFalseRetryHeaderValue(alfrescoHeader);
+        }
+        return false;
+    }
+
+    private boolean isTruthyRetryHeaderValue(String value) {
+        if (value == null) {
+            return false;
+        }
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
+        return normalized.equals("true")
+            || normalized.equals("1")
+            || normalized.equals("yes")
+            || normalized.equals("retry")
+            || normalized.equals("needed");
+    }
+
+    private boolean isExplicitlyFalseRetryHeaderValue(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
+        return normalized.equals("false")
+            || normalized.equals("0")
+            || normalized.equals("no")
+            || normalized.equals("off");
+    }
+
+    private record CadRenderRequestResult(byte[] pngBytes, boolean retryNeeded, String retryHint) {}
+
+    private record CadRenderResult(byte[] pngBytes, int width, int height, boolean retryNeeded, String retryHint) {}
+
+    private void traceEvent(String requestId, String stage, String message) {
+        previewTransformTraceBuffer.append(requestId, stage, message);
+    }
 
     public boolean isCacheEnabled() {
         return cacheEnabled;
+    }
+
+    private void syncRenditionResources(Document document) {
+        try {
+            renditionResourceSyncService.syncDocument(document);
+        } catch (Exception syncError) {
+            log.warn("Failed to sync rendition resources for {}: {}", document.getId(), syncError.getMessage());
+        }
     }
 }

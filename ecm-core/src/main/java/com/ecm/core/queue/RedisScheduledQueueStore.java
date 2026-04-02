@@ -62,6 +62,40 @@ public class RedisScheduledQueueStore {
         return new Entry(documentId, 0, nextAttemptAt);
     }
 
+    public long scheduledCount() {
+        Long size = redis.opsForZSet().zCard(scheduleKey);
+        return size != null ? Math.max(0L, size) : 0L;
+    }
+
+    public List<Entry> peek(int limit) {
+        int safeLimit = Math.max(0, limit);
+        if (safeLimit == 0) {
+            return List.of();
+        }
+        Set<ZSetOperations.TypedTuple<String>> scheduled = redis.opsForZSet()
+            .rangeWithScores(scheduleKey, 0, safeLimit - 1L);
+        if (scheduled == null || scheduled.isEmpty()) {
+            return List.of();
+        }
+
+        List<Entry> items = new ArrayList<>();
+        for (ZSetOperations.TypedTuple<String> tuple : scheduled) {
+            String member = tuple != null ? tuple.getValue() : null;
+            Double score = tuple != null ? tuple.getScore() : null;
+            if (member == null || score == null) {
+                continue;
+            }
+            try {
+                UUID documentId = UUID.fromString(member);
+                int attempts = parseAttempts(redis.opsForHash().get(attemptsKey, member));
+                items.add(new Entry(documentId, attempts, Instant.ofEpochMilli(Math.round(score))));
+            } catch (IllegalArgumentException ignored) {
+                // Skip malformed queue member id.
+            }
+        }
+        return items;
+    }
+
     public List<Entry> claimDue(int limit, Instant now) {
         int batch = Math.max(0, limit);
         if (batch == 0) {
@@ -145,4 +179,3 @@ public class RedisScheduledQueueStore {
         }
     }
 }
-

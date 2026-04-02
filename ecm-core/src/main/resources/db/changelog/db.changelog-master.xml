@@ -40,6 +40,25 @@
     <include file="db/changelog/changes/027-add-permission-templates.xml"/>
     <include file="db/changelog/changes/028-add-permission-template-versions.xml"/>
     <include file="db/changelog/changes/029-normalize-preview-unsupported-status.xml"/>
+    <include file="db/changelog/changes/030-add-preview-content-hash-column.xml"/>
+    <include file="db/changelog/changes/031-add-preview-failure-ledger-columns.xml"/>
+    <include file="db/changelog/changes/032-add-async-task-acknowledgements.xml"/>
+    <include file="db/changelog/changes/033-add-rendition-resources-table.xml"/>
+    <include file="db/changelog/changes/034-add-node-lock-lifetime-columns.xml"/>
+    <include file="db/changelog/changes/035-add-document-checkout-baseline-columns.xml"/>
+    <include file="db/changelog/changes/036-add-rendition-resource-applicability-columns.xml"/>
+    <include file="db/changelog/changes/037-add-rendition-resource-definition-columns.xml"/>
+    <include file="db/changelog/changes/038-add-document-working-copy-columns.xml"/>
+    <include file="db/changelog/changes/039-add-lock-type-columns.xml"/>
+    <include file="db/changelog/changes/040-create-content-model-tables.xml"/>
+    <include file="db/changelog/changes/041-create-node-aspects-table.xml"/>
+    <include file="db/changelog/changes/042-add-node-type-qname-column.xml"/>
+    <include file="db/changelog/changes/043-create-document-relations-table.xml"/>
+    <include file="db/changelog/changes/044-create-share-links-table.xml"/>
+    <include file="db/changelog/changes/045-create-ratings-table.xml"/>
+    <include file="db/changelog/changes/046-create-sites-table.xml"/>
+    <include file="db/changelog/changes/047-create-site-members-table.xml"/>
+    <include file="db/changelog/changes/048-create-activities-table.xml"/>
     <include file="db/changelog/changes/007-insert-initial-data.xml"/>
 
 </databaseChangeLog>

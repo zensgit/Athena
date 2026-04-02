@@ -18,9 +18,35 @@
   - Settings 诊断增强：新增 Auth Recovery Debug 本地开关并纳入 mocked 回归覆盖。
   - Search 错误恢复增强：引入分类映射，按错误类型智能控制 Retry 行为与提示。
   - Advanced Search 预览失败运维体验增强：批量操作进度、原因分组操作与非重试分组统计。
+  - Alfresco 对标增强：新增 Node 关系摘要 API（parents/children/sources/targets/versions/rendition）与 Rule action definitions discoverability API，Advanced Search 新增 Node Relations Summary 面板。
+  - Alfresco 对标增强（续）：Advanced Search 新增 Node relation details 明细展示（parents/sources/targets/versions），并补齐 Node relations 端点自动化覆盖（parents/targets/versions）。
+  - Alfresco 对标增强（续）：新增 Folder Rule Set 管理能力（scope folder list/reorder/dry-run），Rules 页面新增目录规则集预演与优先级重排面板。
+  - Alfresco 对标增强（续）：新增 Rule Manual Execution + Idempotency Ledger（手动执行、幂等复用、运行台账查询）闭环。
+  - Alfresco 对标增强（续）：新增 Rule Execution Timeline + CSV Export（多维过滤查询、台账导出、执行人审计）闭环。
+  - Alfresco 对标增强（续）：新增 Bulk Governance Timeline + CSV Export（批量操作审计事件、时间线查询、文件浏览页治理面板）闭环。
+  - Alfresco 对标增强（续）：新增 Bulk Governance Summary Analytics + CSV Export（top eventType/top actor 聚合分析与导出）闭环。
+  - Alfresco 对标增强（续）：新增 Bulk Governance Trend Analytics + CSV Export（按天趋势聚合、趋势导出、文件浏览页趋势可视化）闭环。
   - Auth/Route 回归矩阵增强：新增 session-expired、redirect-pause、unknown-route、Keycloak terminal redirect 的独立 E2E 矩阵与 smoke 脚本。
   - Delivery gate 分层增强：新增 `DELIVERY_GATE_MODE`（all/mocked/integration）与失败摘要输出，提升 CI 可诊断性。
   - Failure-injection 覆盖增强：补齐 auth transient/terminal 与 search temporary-failure->retry-success 场景。
+  - Preview Queue Declined 治理增强：新增 `forceRequired` 过滤（ANY/YES/NO）、分类聚合统计与过滤维度一致的导出/重试/清理/干跑回显。
+  - Preview Queue Declined 治理增强（续）：新增 `windowHours` 时间窗口过滤（ANY/1..720h），并在 summary/export/requeue/dry-run/clear 全链路透传与审计回显。
+  - Preview Queue Declined 治理增强（续）：新增异步导出任务中心（start/list/summary/get/cancel/download/cleanup/cancel-active）与前端任务看板，支撑长任务治理与可追踪下载。
+  - Preview Queue Declined 治理增强（续）：异步导出任务中心新增状态过滤治理（ALL/QUEUED/RUNNING/COMPLETED/CANCELLED/FAILED）与后端异步生命周期审计事件闭环。
+  - Preview Queue Declined 治理增强（续）：异步导出任务中心新增终态任务 Retry（FAILED/CANCELLED）能力，支持基于原过滤上下文一键重跑并写入 retry 审计链路。
+  - Preview Queue Declined 治理增强（续）：终态重试 dry-run 新增 reason breakdown 聚合与 CSV 导出，支持离线分析与审计复核。
+  - Preview Queue Declined 治理增强（续）：异步导出任务 start 新增活跃任务去重复用（同过滤快照），减少重复任务与操作噪声。
+  - Preview Queue Declined 治理增强（续）：requeue dry-run async export 任务中心新增 terminal retry 治理（单任务/批量/按ID/dry-run/CSV 导出）与前端选择执行闭环。
+  - Preview Queue Declined 治理增强（续）：requeue dry-run async export retry 新增 active-task dedup 复用（单任务/批量/按ID），降低重复重试带来的任务放大风险。
+  - Preview Queue Declined 治理增强（续）：non-requeue async export retry 新增 dedup 复用对齐（单任务/批量/按ID）与 `REUSED` 结果回显，补齐任务中心治理一致性。
+  - Preview Queue Declined 治理增强（续）：retry-terminal 响应新增结构化 `reused` 指标（non-requeue + requeue dry-run async），并将 `reused` 写入审计详情，支持自动化消费。
+  - Preview Queue Declined 治理增强（续）：async task-center list 新增标准分页契约（`skipCount/maxItems/paging.totalItems/hasMoreItems`，兼容 `limit`），前端任务中心支持页大小与翻页控制。
+  - Preview Queue Declined 治理增强（续）：async 创建/重试接口统一采用 `202 Accepted + Location` 语义（non-requeue + requeue dry-run），并保持 `taskId/status/deduplicated` 响应体兼容。
+  - Preview Queue Declined 治理增强（续）：OpenAPI 文档补齐 `202 + Location` 响应契约，前端异步任务中心新增自适应轮询退避（2s->15s）以降低固定频率轮询压力。
+  - 异步生命周期治理增强（续）：`renditions/resources/export-async` 与 `ops/recovery/history/export-async` 新增 terminal retry（FAILED/CANCELLED/TIMED_OUT/EXPIRED）与原请求快照复用重跑，前端任务中心新增行级 Retry。
+  - 异步生命周期治理增强（续）：`renditions/resources/export-async` 与 `ops/recovery/history/export-async` 的 start 接口新增 active-task dedup 复用（同请求快照），并将两中心 start/retry 统一为 `202 Accepted + Location` 语义，回传 `deduplicated/deduplicatedFromTaskId/message` 并在前端显示 reused 提示。
+  - 异步生命周期治理增强（续）：`renditions/resources/export-async` 与 `ops/recovery/history/export-async` 新增 terminal bulk retry 与 selected retry（`retry-terminal` + `retry-terminal/by-task-ids`），支持 `reused` 去重复用统计；前端任务中心新增 `Retry terminal tasks` 与 `Retry visible terminal` 操作。
+  - 异步生命周期治理增强（续）：`renditions/resources/export-async` 与 `ops/recovery/history/export-async` 新增 terminal retry dry-run、dry-run CSV 导出与 mocked e2e 闭环，前端任务中心支持基于 dry-run 候选的一键 selected retry。
   - 7-day 收尾文档增强：新增统一 release summary 与 verification rollup 文档。
   - Integration gate 覆盖增强：默认纳入 Phase70 auth-route 矩阵 smoke stage。
   - Login 恢复提示增强：支持仅 marker 状态（无 `ecm_auth_init_status`）下的 redirect-failure 兜底提示与过期 marker 清理。
@@ -30,6 +56,279 @@
   - Mocked 门禁覆盖增强：新增 FileBrowser 长加载 watchdog mocked 场景并纳入 `phase5-regression`。
 
 ## 二、主要变更
+### 0.1) Alfresco 对标：Node Relations + Rule Action Definitions（Phase290）
+- 后端 Node 关系查询能力补齐：
+  - 新增 `GET /api/v1/nodes/{nodeId}/relations/summary`
+  - 新增 `GET /api/v1/nodes/{nodeId}/relations/parents|children|sources|targets|versions|renditions/summary`
+  - repository/service 增加 document relation 的 source/target 分页与 relationType 过滤。
+- 后端 Rule discoverability 能力补齐：
+  - 新增 `GET /api/v1/rules/actions/definitions`
+  - 返回 `type/supported/requiredParams/optionalParams/constraints`，支持 UI 动态构建动作参数表单。
+  - `EXECUTE_SCRIPT` 显式标记为 `supported=false`，`RENAME` 与 `START_WORKFLOW` 增加约束提示。
+- 前端 Advanced Search 增强：
+  - 新增 `Node Relations Summary` 面板（位于 Search Stats 与 Preview Status 之间）。
+  - 自动基于当前结果代表文档拉取关系摘要并展示 Parents/Children/Sources/Targets/Versions/Rendition/Status chips。
+  - 接口失败时降级为 `Relations summary unavailable`，不阻塞搜索主流程。
+- 前端 Rules 页面增强：
+  - 规则编辑弹窗新增 `Available Action Definitions` 提示区；
+  - 支持展示 action required params / constraints，减少动作参数误填。
+
+### 0.2) Alfresco 对标：Node Relation Details Panel + Endpoint Coverage（Phase291）
+- 前端 `AdvancedSearchPage` 的 Node Relations Summary 面板新增明细区：
+  - Parents: 祖先路径列表
+  - Sources / Targets: `relationType + 对端节点`
+  - Versions: 版本标签与创建者
+- 前端 `nodeService` 新增：
+  - `getNodeRelationParents`
+  - `getNodeRelationSources`
+  - `getNodeRelationTargets`
+  - `getNodeRelationVersions`
+- 增加关系明细请求的竞态保护与降级文案，保证搜索主流程稳定。
+- 后端测试 `NodeControllerRelationsTest` 增加：
+  - `parents` 返回顺序校验
+  - `targets` 关系边映射校验
+  - `versions`（folder）空分页与 no-invocation 校验
+
+### 0.3) Alfresco 对标：Folder Rule Set Dry-run + Reorder（Phase292）
+- 后端 Rule API 新增目录规则集能力：
+  - `GET /api/v1/rules/folders/{folderId}`：按 priority 分页返回 scope folder 规则集。
+  - `POST /api/v1/rules/folders/{folderId}/reorder`：支持按 `ruleIds[]` 批量重排并重写 priority（支持 basePriority + step）。
+  - `POST /api/v1/rules/folders/{folderId}/dry-run`：在不执行 action 的前提下做条件预演，返回 `found/scanned/matched/processable/skipped/errors/skipReasons/results`。
+- 后端服务 `RuleEngineService` 新增：
+  - `getRulesByScopeFolder`、`reorderRulesByScopeFolder`、`dryRunRulesByScopeFolder`。
+  - dry-run 内置不支持动作识别（`EXECUTE_SCRIPT`）并统一 skip reason 聚合。
+- 前端 Rules 页面新增 `Folder Rule Set (Dry-run & Reorder)` 面板：
+  - 输入目录 ID + trigger + limit + test JSON；
+  - 支持加载目录规则、行内上下移动并保存顺序；
+  - 支持 dry-run 并显示 summary/skip reason chips。
+- 权限与测试覆盖：
+  - `reorder/dry-run` 仅 `ADMIN/EDITOR` 可执行；
+  - 新增 controller/security/service 三层定向测试覆盖。
+
+### 0.4) Alfresco 对标：Rule Manual Execution + Idempotency Ledger（Phase293）
+- 后端新增手动执行 API：
+  - `POST /api/v1/rules/{ruleId}/execute`
+  - 支持 `documentId/triggerType/idempotencyKey` 入参；
+  - 返回 `runId/deduplicated/deduplicatedFromRunId/run`。
+- 后端新增运行台账 API：
+  - `GET /api/v1/rules/executions`（支持 `ruleId` + `limit`）
+  - `GET /api/v1/rules/executions/{runId}`
+- 后端服务新增 manual run ledger：
+  - 内存台账 + 顺序索引 + 幂等索引；
+  - 幂等命中返回复用 run（避免重复人工触发执行）。
+- 审计补齐：
+  - `RULE_MANUAL_RUN_EXECUTED`
+  - `RULE_MANUAL_RUN_REUSED`
+- 前端 `RulesPage` 新增 `Manual Execution Ledger (Idempotency)` 面板：
+  - 手动执行参数输入与触发；
+  - recent run ledger 列表展示（匹配/成功/动作数/耗时）。
+- 权限与测试覆盖：
+  - manual execute 与 ledger 查询仅 `ADMIN/EDITOR`；
+  - 新增 controller/security/service 定向测试并通过。
+
+### 0.5) Alfresco 对标：Rule Execution Timeline + CSV Export（Phase294）
+- 后端 Rule API 增强时间线查询能力：
+  - `GET /api/v1/rules/executions`
+  - `GET /api/v1/rules/executions/timeline`（别名兼容）
+  - 支持过滤：`ruleId/documentId/triggerType/success/actor/from/to/limit`
+- 后端新增规则执行台账 CSV 导出：
+  - `GET /api/v1/rules/executions/export`
+  - `GET /api/v1/rules/executions/timeline/export`（别名兼容）
+  - 返回 `text/csv` + `Content-Disposition` 附件下载
+- 后端 `RuleRunLedgerRecord` 新增 `executedBy` 字段，时间线可按执行人过滤。
+- 导出审计事件补齐：
+  - `RULE_MANUAL_RUN_TIMELINE_EXPORTED`
+- 前端 `RulesPage` 手动执行台账面板增强：
+  - 新增时间线过滤控件（Rule ID / Actor / Success / From / To / Limit）
+  - 新增 `Refresh Timeline` 与 `Export CSV` 操作
+  - 保持原手动执行触发与幂等回显流程不变
+- 自动化覆盖：
+  - controller 测试覆盖 timeline 参数绑定与 CSV 响应头；
+  - security 测试覆盖 export 权限；
+  - service 测试覆盖 actor/time filter。
+
+### 0.6) Alfresco 对标：Bulk Governance Timeline + CSV Export（Phase297）
+- 后端 Bulk API 增强：
+  - `GET /api/v1/bulk/history`
+  - `GET /api/v1/bulk/history/export`
+  - 支持过滤：`eventType/actor/nodeId/from/to`。
+- 后端 Bulk 审计事件补齐：
+  - `BULK_MOVE_* / BULK_COPY_* / BULK_DELETE_* / BULK_RESTORE_* / BULK_METADATA_UPDATE_*`
+  - 结尾状态统一：`_COMPLETED/_PARTIAL/_FAILED`。
+- 前端 `FileBrowser` 增强：
+  - 批量删除改为调用 bulk 端点并展示 success/failure 计数；
+  - 新增 `Bulk Governance Timeline` 面板，支持刷新与 CSV 导出；
+  - bulk delete / bulk metadata 执行后自动刷新时间线。
+- 自动化覆盖：
+  - 新增 `BulkOperationServiceAuditTest`（审计事件）
+  - 新增 `BulkOperationControllerHistoryTest`（history + export）。
+
+### 0.7) Alfresco 对标：Bulk Governance Summary Analytics + CSV Export（Phase298）
+- 后端 Bulk API 新增 summary 能力：
+  - `GET /api/v1/bulk/history/summary`
+  - `GET /api/v1/bulk/history/summary/export`
+  - 支持过滤：`eventType/actor/nodeId/from/to/topN`。
+- 后端聚合查询补齐：
+  - `countBulkByEventTypeWithFilters`
+  - `countBulkByUsernameWithFilters`
+- 后端审计补齐：
+  - `BULK_HISTORY_SUMMARY_EXPORTED`
+- 前端 `FileBrowser` Bulk 面板增强：
+  - 新增 `Summary` 区块（`total` / `eventType top` / `actor top`）
+  - 新增 `Export Summary CSV`
+  - `history + summary` 并行刷新。
+- 自动化覆盖：
+  - `BulkOperationControllerHistoryTest` 新增 summary 与 summary-export 用例。
+
+### 0.8) Alfresco 对标：Bulk Governance Trend Analytics + CSV Export（Phase299）
+- 后端 Bulk API 新增 trend 能力：
+  - `GET /api/v1/bulk/history/summary/trend`
+  - `GET /api/v1/bulk/history/summary/trend/export`
+  - 支持过滤：`eventType/actor/nodeId/from/to`。
+- 后端趋势聚合策略：
+  - 基于现有 bulk timeline 分页扫描并按天聚合；
+  - 扫描上限与截断标记：`scanLimit/truncated`。
+- 后端审计补齐：
+  - `BULK_HISTORY_TREND_EXPORTED`
+- 前端 `FileBrowser` Bulk 面板增强：
+  - 新增 `Trend` 区块（按天趋势 chips）
+  - 新增 `Export Trend CSV`
+  - `history + summary + trend` 并行刷新。
+- 自动化覆盖：
+  - `BulkOperationControllerHistoryTest` 新增 trend 与 trend-export 用例。
+
+### 0) Preview Queue Declined 治理增强（Phase261-284）
+- 后端 `queue/declined` 相关接口统一新增 `forceRequired` 过滤参数，并在 summary/export/requeue/dry-run/clear 中透传与回显。
+- 后端 `queue/declined` 相关接口新增 `windowHours` 过滤参数（`ANY` / `1..720`），支持按最近时间窗口收敛治理范围。
+- declined summary 新增：
+  - `forceRequiredFilter`
+  - `windowHoursFilter`
+  - `forceRequiredCount`
+  - `categoryCounts[]`（含 `forceRequiredCount`）
+- declined CSV 增加 `forceRequiredFilter` 与 `windowHoursFilter` 列，便于离线审计复现筛选上下文。
+- 后端新增 declined async export task center：
+  - `POST/GET /queue/declined/export-async`
+  - `GET /queue/declined/export-async/summary`
+  - `POST /queue/declined/export-async/cleanup`
+  - `POST /queue/declined/export-async/cancel-active`
+  - `GET/POST /queue/declined/export-async/{taskId}`（状态/取消）
+  - `GET /queue/declined/export-async/{taskId}/download`
+- 前端 Preview Diagnostics 新增 `Force required` 与 `windowHours` 过滤控件、分类统计 chips、dry-run 过滤维度提示。
+- 前端 Preview Diagnostics 新增 declined 异步导出任务中心：
+  - Start Async Export / Refresh / Cancel Active / Cleanup
+  - 任务汇总 chips（total/active/queued/running/completed/cancelled/failed/terminal）
+  - 任务表行级 Cancel/Download 操作
+- 前端 Queue Declined async export 新增状态筛选：
+  - `ALL/QUEUED/RUNNING/COMPLETED/CANCELLED/FAILED`
+  - list/summary/cleanup 按状态过滤透传
+  - cancel-active 仅对 active 状态（`QUEUED/RUNNING`）透传，其它状态自动回退 active-all
+- 后端新增 declined async export 审计事件：
+  - STARTED / CANCEL_SINGLE / CANCEL_ACTIVE / CLEANUP / DOWNLOADED / COMPLETED / FAILED / CANCELLED
+- 后端新增 declined async export retry 端点：
+  - `POST /queue/declined/export-async/{taskId}/retry`
+  - active task retry 返回 `409`，terminal task retry 创建新任务并返回新 task id
+- 后端新增 declined async export terminal bulk retry 端点：
+  - `POST /queue/declined/export-async/retry-terminal`
+  - 支持 `status`（`COMPLETED/CANCELLED/FAILED`）与 `limit`（`1..200`）治理参数；
+  - 未传 `status` 时默认按 `FAILED + CANCELLED` 批量重试；
+  - 返回 `requested/retried/skipped/failed/results[]` 可观测指标并写入批量审计事件。
+- 后端新增 declined async export terminal bulk retry dry-run 端点：
+  - `POST /queue/declined/export-async/retry-terminal/dry-run`
+  - 支持与 bulk retry 相同的 `status/limit` 治理参数；
+  - 返回 `requested/retryable/skipped/results[]` 作为执行前预演结果，并写入 dry-run 审计事件。
+- 后端新增 declined async export terminal selected-retry 端点：
+  - `POST /queue/declined/export-async/retry-terminal/by-task-ids`
+  - 支持按 `sourceTaskIds[]` 执行精确重试，返回 `requested/retried/skipped/failed/results[]`，并写入 selected-retry 审计事件。
+- 后端新增 declined async export terminal dry-run CSV 导出端点：
+  - `GET /queue/declined/export-async/retry-terminal/dry-run/export`
+  - dry-run 返回新增 `reasonBreakdown[]`，每项新增 `reasonCode`，用于执行前原因聚合分析；
+  - 导出 CSV 包含候选明细与 reason breakdown，并写入导出审计事件。
+- 前端 Queue Declined async 任务表新增行级 `Retry`（`FAILED/CANCELLED`）操作，成功后自动刷新任务列表。
+- 前端 Queue Declined async 任务中心新增批量 `Retry Terminal` 操作，按当前状态筛选自动透传治理参数并回显 `retried/skipped/failed` 结果。
+- 前端 Queue Declined async 任务中心新增批量 `Dry-run Terminal` 操作，用于执行前预估可重试任务范围。
+- 前端 Queue Declined async 任务中心新增 dry-run 候选选择面板与 `Retry Selected` 执行按钮，实现“预演->选择->执行”闭环。
+- 前端 Queue Declined async 任务中心新增 `Export Dry-run CSV` 与原因聚合 chips，支持快速离线诊断。
+- 后端 Queue Declined async export start 新增活跃任务去重命中逻辑：
+  - 同 `limit/category/forceRequired/query/windowHours` 且存在 `QUEUED/RUNNING` 任务时，复用任务并返回 `deduplicated=true`。
+  - 新增审计事件：`PREVIEW_QUEUE_DECLINED_ASYNC_EXPORT_START_DEDUP_HIT`。
+- 前端 Start Async Export 在去重命中时提示 `reused`，避免误判为重复创建新任务。
+- 后端 Queue Declined requeue dry-run 新增结构化原因诊断：
+  - `results[]` 新增 `reasonCode`，用于逐条判定 `QUEUED/SKIPPED/FAILED` 的治理原因；
+  - 响应新增 `reasonBreakdown[]`（`reasonCode/outcome/count`）用于聚合观测；
+  - 新增 `GET /queue/declined/requeue/dry-run/export`，CSV 同时输出明细与 breakdown；
+  - 新增审计事件：`PREVIEW_QUEUE_DECLINED_REQUEUE_DRY_RUN_EXPORTED`，并在 dry-run 审计附带 reason breakdown 摘要。
+- 前端 Queue Declined 新增 `Export Requeue Dry-run CSV`，并在 dry-run 区域新增原因聚合 chips 与 `Reason Code` 明细列。
+- 后端 Queue Declined requeue dry-run 新增 preflight 预检治理联动：
+  - dry-run item 新增 `preflightStatus/preflightSkipReason/preflightRoute/preflightPolicyProfile/preflightPipeline`；
+  - preflight declined 时，reason code 统一为 `PREFLIGHT_<skipReason>` 并计入 `reasonBreakdown[]`；
+  - dry-run CSV 明细新增 preflight 列，支持 route/pipeline 维度离线复盘。
+- 前端 Queue Declined dry-run 结果表新增 `Preflight` 诊断列，直接展示 status/skipReason/route/pipeline/profile。
+- 后端 Queue Declined requeue dry-run async export 新增 retry 治理端点：
+  - `POST /queue/declined/requeue/dry-run/export-async/{taskId}/retry`
+  - `POST /queue/declined/requeue/dry-run/export-async/retry-terminal`
+  - `POST /queue/declined/requeue/dry-run/export-async/retry-terminal/dry-run`
+  - `GET /queue/declined/requeue/dry-run/export-async/retry-terminal/dry-run/export`
+  - `POST /queue/declined/requeue/dry-run/export-async/retry-terminal/by-task-ids`
+  - 终态治理参数：`status=COMPLETED/CANCELLED/FAILED`，默认 `FAILED|CANCELLED`。
+- 后端新增 requeue dry-run async export retry 审计事件链：
+  - `..._RETRY` / `..._RETRY_BULK` / `..._RETRY_BULK_DRY_RUN` / `..._RETRY_BULK_DRY_RUN_EXPORTED` / `..._RETRY_BULK_SELECTED`
+- 前端 Queue Declined requeue dry-run async 任务中心新增：
+  - 行级 `Retry`（FAILED/CANCELLED）
+  - `Dry-run Terminal` / `Export Dry-run CSV` / `Retry Terminal`
+  - 候选选择面板 + `Retry Selected`
+- 后端 Queue Declined requeue dry-run async export retry 新增 active-task dedup 复用：
+  - 单任务重试命中去重时返回 `deduplicated=true` + `deduplicatedFromTaskId`；
+  - bulk/selected retry 在命中去重时返回 `results[].outcome=REUSED`，并复用已存在 active task id；
+  - bulk/selected message 新增 `reused` 计数回显，提升运维可观测性。
+- 前端 Queue Declined requeue dry-run async 行级重试新增 dedup UX：
+  - 命中去重时回显 `reused` 提示，不再误判为新任务创建。
+- 后端 Queue Declined async export（non-requeue）retry 新增 dedup 对齐：
+  - `POST /queue/declined/export-async/{taskId}/retry` 命中活跃同过滤任务时返回 `deduplicated=true` + `deduplicatedFromTaskId`；
+  - `POST /queue/declined/export-async/retry-terminal` 与 `/retry-terminal/by-task-ids` 命中去重时返回 `results[].outcome=REUSED`，并复用同一 active task；
+  - bulk/selected retry message 新增 `reused` 计数回显，提升治理可观测性。
+- 前端 Queue Declined async 行级 `Retry` 新增 dedup reuse 提示（reused toast），与 start/requeue 流程保持一致。
+- 后端 Queue Declined retry-terminal 响应新增结构化 `reused` 字段（non-requeue + requeue dry-run async）：
+  - 响应结构新增 `reused`，不再依赖 message 文本解析 dedup 命中数；
+  - bulk/selected retry 审计详情新增 `reused=`，便于指标采集与告警联动。
+- 前端 Queue Declined retry 摘要 toast 统一升级为 `retried/reused/skipped/failed` 四维指标。
+- 后端 Queue Declined async task-center list 新增标准分页参数与响应：
+  - 入参支持 `maxItems`（优先）+ `skipCount`，并兼容历史 `limit`；
+  - 响应新增 `paging { skipCount, maxItems, totalItems, hasMoreItems }`；
+  - 覆盖 non-requeue 与 requeue dry-run 两条 async task-center list 接口。
+- 前端 Preview Diagnostics 的两套 queue-declined async 任务中心新增分页控制：
+  - 页大小选择（10/20/50）；
+  - Prev/Next 翻页；
+  - 页码与 `listed/total` 元信息展示；
+  - 任务启动/清理后自动回到第一页以避免空页停留。
+- 后端 Queue Declined async 创建/重试语义标准化为 `202 + Location`：
+  - 覆盖 `start`、单任务 `retry`、`retry-terminal`、`retry-terminal/by-task-ids`（non-requeue + requeue dry-run）；
+  - 单任务操作 `Location` 指向 `.../export-async/{taskId}`；
+  - 批量 retry 操作 `Location` 指向任务列表 `.../export-async`，便于任务中心轮询刷新。
+- mocked e2e 异步契约同步升级：相关 start/retry/retry-terminal mock 响应改为 `202` 并回传 `location` 头，验证前端在 accepted 语义下持续通过。
+- 后端 OpenAPI 契约增强：以上 8 个 queue-declined async 创建/重试入口补齐 `@ApiResponses(202)` 与 `Location` 响应头 schema，提升客户端生成与联调可发现性。
+- 前端 Preview Diagnostics 异步任务中心轮询治理增强：
+  - queue-declined non-requeue / requeue-dry-run 两套任务中心新增自适应轮询退避；
+  - 当存在 active 任务时按 `2s -> 3s -> ... -> 15s` 递增轮询；
+  - 无 active 任务时自动回落到基础间隔，减少空转请求。
+- 异步生命周期治理扩展（对标 Odoo 作业治理模型）：
+  - 扩展到 `renditions/resources/export-async` 与 `ops/recovery/history/export-async` 两个任务中心；
+  - 统一新增状态 `TIMED_OUT/EXPIRED`；
+  - 统一新增任务生命周期与审计字段：`startedAt/updatedAt/timeoutAt/expiresAt/createdBy/updatedBy`；
+  - 后端新增任务生命周期刷新逻辑（active timeout + terminal retention expiry）；
+  - 前端任务中心新增 timed-out/expired 筛选与汇总展示，并回显更新时间/超时点/过期点与 actor。
+- 异步生命周期治理扩展（续，terminal retry）：
+  - 后端新增 `POST /preview/diagnostics/renditions/resources/export-async/{taskId}/retry`；
+  - 后端新增 `POST /ops/recovery/history/export-async/{taskId}/retry`；
+  - 两个端点均要求源任务为 terminal，且基于任务快照重建导出请求；
+  - 前端 Preview Diagnostics 两个任务中心新增行级 `Retry` 按钮（`FAILED/CANCELLED/TIMED_OUT/EXPIRED`），并在成功后回显 `source task -> new task`。
+- 异步生命周期治理扩展（续，start dedup）：
+  - 后端 `POST /preview/diagnostics/renditions/resources/export-async` 与 `POST /ops/recovery/history/export-async` 新增 active-task dedup 命中逻辑；
+  - 命中时复用 `QUEUED/RUNNING` 任务并回传 `deduplicated=true` 与 `deduplicatedFromTaskId`；
+  - 未命中时维持原有新建任务行为；
+  - 两中心 start/retry 接口统一升级为 `202 Accepted + Location`（Location 指向 `.../export-async/{taskId}`）；
+  - 前端 Start Async Export 命中 dedup 时提示 `reused`，避免误判为重复创建。
+- mocked e2e 与后端 controller security 测试均覆盖新增过滤维度。
+
 ### 1) 会话恢复与登录提示
 - `authService.refreshToken` 增加瞬时错误与终态认证错误分类，避免对网络抖动场景误登出。
 - API `401` 不可恢复时统一写入会话过期信号，并重定向到 `/login?reason=session_expired`。
@@ -1227,6 +1526,310 @@
   - `cd ecm-frontend && npm test -- --watchAll=false --runInBand src/utils/previewStatusUtils.test.ts` -> PASS
   - `cd ecm-frontend && npx playwright test e2e/admin-preview-diagnostics.mock.spec.ts --project=chromium` -> PASS（本地静态 `:5500`）
 
+### 83) Preview diagnostics 原因分组全范围批处理（Phase156）
+- `ecm-core/src/main/java/com/ecm/core/controller/PreviewDiagnosticsController.java`
+  - 新增 `POST /api/v1/preview/diagnostics/failures/queue-by-reason`
+  - 支持参数：`reason/category/retryable/maxDocuments/days/force`
+  - 引入扫描保护与批量上限：
+    - reason-scope 扫描上限 `2000`
+    - 批处理上限 `500`
+  - 复用统一 `queueFailuresInternal(...)` 聚合队列结果。
+- `ecm-core/src/main/java/com/ecm/core/repository/DocumentRepository.java`
+  - 新增 reason + window 查询和计数方法：
+    - `findPreviewFailuresByReasonAndWindow(...)`
+    - `countPreviewFailuresByReasonAndWindow(...)`
+- `ecm-frontend/src/pages/PreviewDiagnosticsPage.tsx`
+  - Top reasons `Retry/Force` 由“当前列表局部批量”升级为“服务端原因窗口批量”。
+  - toast 增加 `matched/queued/skipped/failed` 汇总反馈。
+- `ecm-frontend/src/services/previewDiagnosticsService.ts`
+  - 新增 `queueFailuresByReason(...)` 类型与调用。
+- `ecm-frontend/e2e/admin-preview-diagnostics.mock.spec.ts`
+  - 新增 `queue-by-reason` mock 和请求参数断言（reason/category/days）。
+- 验证：
+  - `cd ecm-core && mvn -q -Dtest=PreviewDiagnosticsControllerSecurityTest,PreviewQueueServiceTest test` -> PASS
+  - `cd ecm-frontend && npm run -s lint -- src/pages/PreviewDiagnosticsPage.tsx src/services/previewDiagnosticsService.ts` -> PASS
+  - `cd ecm-frontend && npx playwright test e2e/admin-preview-diagnostics.mock.spec.ts --project=chromium` -> PASS（本地静态 `:5500`）
+
+### 84) Preview 显式 retry-hint 管线（Phase157）
+- `ecm-core/src/main/java/com/ecm/core/preview/PreviewResult.java`
+  - 新增 `retryNeeded` 与 `retryHint` 字段。
+- `ecm-core/src/main/java/com/ecm/core/preview/PreviewService.java`
+  - CAD 渲染请求改为 `exchange(...)` 并解析显式重试 header：
+    - `X-Ecm-Retry-Needed`
+    - `X-Alfresco-Retry-Needed`
+  - header 指示重试时返回 `supported=false + retryNeeded=true`，并记录 `retry_needed` metric。
+  - 缩略图链路在 retry-needed 场景回退默认缩略图，避免空 payload 异常。
+- `ecm-core/src/main/java/com/ecm/core/preview/PreviewQueueService.java`
+  - `shouldRetry(...)` 优先使用 `result.retryNeeded`。
+- `ecm-core/src/test/java/com/ecm/core/preview/PreviewQueueServiceTest.java`
+  - 新增 `retriesWhenPreviewResultExplicitlyRequestsRetry`，覆盖显式重试信号重试路径。
+- 验证：
+  - `cd ecm-core && mvn -q -Dtest=PreviewDiagnosticsControllerSecurityTest,PreviewQueueServiceTest test` -> PASS
+
+### 85) CAD 渲染端点 failover 链路（Phase158）
+- `ecm-core/src/main/java/com/ecm/core/preview/PreviewService.java`
+  - 新增配置：`ecm.preview.cad.render-fallback-urls`
+  - CAD 渲染请求按“主端点 -> 后备端点”顺序依次尝试，首个成功即返回。
+  - 各尝试均保持 retry-hint header 解析逻辑，兼容显式重试信号。
+  - 端点失败时记录告警并继续下一个端点；全部失败时抛出首个异常以保留根因。
+- 验证：
+  - `cd ecm-core && mvn -q -Dtest=PreviewDiagnosticsControllerSecurityTest,PreviewQueueServiceTest test` -> PASS
+
+### 86) CAD failover 诊断接口与前端面板（Phase159）
+- `ecm-core/src/main/java/com/ecm/core/preview/CadRenderEndpointRegistry.java`
+  - 新增 CAD 渲染端点链路解析组件（主端点 + fallback 端点，去重有序）。
+- `ecm-core/src/main/java/com/ecm/core/preview/CadRenderFailoverTracker.java`
+  - 新增端点级成功/失败计数、最近成功/失败时间与失败原因追踪。
+- `ecm-core/src/main/java/com/ecm/core/preview/PreviewService.java`
+  - 在 CAD 渲染 failover 尝试过程中记录 endpoint 级结果。
+- `ecm-core/src/main/java/com/ecm/core/controller/PreviewDiagnosticsController.java`
+  - 新增 `GET /api/v1/preview/diagnostics/cad-failover`（admin only）。
+- `ecm-frontend/src/services/previewDiagnosticsService.ts`
+  - 新增 `getCadFailoverDiagnostics()`。
+- `ecm-frontend/src/pages/PreviewDiagnosticsPage.tsx`
+  - 新增 `CAD Failover Diagnostics` 面板，展示 endpoint 统计明细。
+- `ecm-frontend/e2e/admin-preview-diagnostics.mock.spec.ts`
+  - 新增 CAD 诊断 endpoint mock 与 UI 可见性断言。
+- `ecm-core/src/main/resources/application.yml`
+  - 新增 `ecm.preview.cad.render-fallback-urls` 配置桥接。
+- 验证：
+  - `cd ecm-core && mvn -q -Dtest=PreviewDiagnosticsControllerSecurityTest,PreviewQueueServiceTest test` -> PASS
+  - `cd ecm-frontend && npm run -s lint -- src/pages/PreviewDiagnosticsPage.tsx src/services/previewDiagnosticsService.ts` -> PASS
+  - `cd ecm-frontend && npm run -s build` -> PASS
+  - `cd ecm-frontend && npx playwright test e2e/admin-preview-diagnostics.mock.spec.ts --project=chromium` -> PASS（本地静态 `:5500`）
+
+### 87) Preview transform request-id 追踪诊断（Phase160）
+- `ecm-core/src/main/java/com/ecm/core/preview/PreviewTransformTraceBuffer.java`
+  - 新增 request-id 分组的 preview trace 缓冲区（有界保留 + 事件列表）。
+- `ecm-core/src/main/java/com/ecm/core/preview/PreviewService.java`
+  - 接入 trace 生命周期记录：开始、路由分支、CAD 端点尝试/失败/成功、最终结果。
+- `ecm-core/src/main/java/com/ecm/core/preview/PreviewQueueService.java`
+  - 接入队列侧 trace 事件：attempt/retry-scheduled/retry-exhausted/done。
+- `ecm-core/src/main/java/com/ecm/core/controller/PreviewDiagnosticsController.java`
+  - 新增 `GET /api/v1/preview/diagnostics/traces`（admin only）。
+- `ecm-core/src/main/java/com/ecm/core/preview/PreviewResult.java`
+  - 新增 `traceRequestId` 字段，贯通 preview 与 queue 追踪。
+- `ecm-core/src/main/resources/application.yml`
+  - 新增 trace 配置桥接：
+    - `ecm.preview.trace.enabled`
+    - `ecm.preview.trace.max-requests`
+    - `ecm.preview.trace.max-events-per-request`
+- `ecm-frontend/src/services/previewDiagnosticsService.ts`
+  - 新增 `getTransformTraces(...)`。
+- `ecm-frontend/src/pages/PreviewDiagnosticsPage.tsx`
+  - 新增 `Transform Trace Diagnostics` 面板（request-id 过滤 + trace 明细）。
+- `ecm-frontend/e2e/admin-preview-diagnostics.mock.spec.ts`
+  - 新增 traces endpoint mock 与面板断言。
+- 测试补充：
+  - `ecm-core/src/test/java/com/ecm/core/preview/PreviewTransformTraceBufferTest.java`
+  - `ecm-core/src/test/java/com/ecm/core/controller/PreviewDiagnosticsControllerSecurityTest.java`（新增 `/traces` 权限与返回断言）
+- 验证：
+  - `cd ecm-core && mvn -q -Dtest=PreviewTransformTraceBufferTest,PreviewDiagnosticsControllerSecurityTest,PreviewQueueServiceTest test` -> PASS
+  - `cd ecm-core && mvn -q -DskipTests compile` -> PASS
+  - `cd ecm-frontend && npm run -s lint -- src/pages/PreviewDiagnosticsPage.tsx src/services/previewDiagnosticsService.ts` -> PASS
+  - `cd ecm-frontend && npm run -s build` -> PASS
+  - `cd ecm-frontend && npx playwright test e2e/admin-preview-diagnostics.mock.spec.ts --project=chromium` -> PASS（本地静态 `:5500`）
+
+### 88) Preview 失败策略 profile 可配置化（Phase161）
+- `ecm-core/src/main/java/com/ecm/core/preview/PreviewFailurePolicyRegistry.java`
+  - 新增策略中心：按 mime/type class 输出 profile（`default/cad/pdf/office/image/text`）。
+  - 支持运行时更新并带安全边界 clamp（attempts/delay/backoff/quiet-period）。
+- `ecm-core/src/main/java/com/ecm/core/preview/PreviewQueueService.java`
+  - 重试决策改为 profile 驱动：
+    - 最大重试次数
+    - 基础延迟 + 退避斜率
+    - FAILED 状态的 quiet-period 入队保护
+- `ecm-core/src/main/java/com/ecm/core/controller/PreviewDiagnosticsController.java`
+  - 新增策略运维 API：
+    - `GET /api/v1/preview/diagnostics/policies`
+    - `PUT /api/v1/preview/diagnostics/policies/{profileKey}`
+- `ecm-frontend/src/services/previewDiagnosticsService.ts`
+  - 新增策略 list/update API 调用。
+- `ecm-frontend/src/pages/PreviewDiagnosticsPage.tsx`
+  - 新增 `Failure Policy Profiles` 面板：
+    - 行级编辑 `maxAttempts/retryDelayMs/backoffMultiplier/quietPeriodMs`
+    - 行级保存
+    - 影响预估（重试延迟计划）
+- `ecm-frontend/e2e/admin-preview-diagnostics.mock.spec.ts`
+  - 新增策略接口 mock 与面板可见性断言。
+- 测试补充：
+  - `ecm-core/src/test/java/com/ecm/core/preview/PreviewFailurePolicyRegistryTest.java`
+  - `ecm-core/src/test/java/com/ecm/core/preview/PreviewQueueServiceTest.java`（含 quiet period case）
+  - `ecm-core/src/test/java/com/ecm/core/controller/PreviewDiagnosticsControllerSecurityTest.java`（策略 API）
+- 验证：
+  - `cd ecm-core && mvn -q -Dtest=PreviewFailurePolicyRegistryTest,PreviewTransformTraceBufferTest,PreviewDiagnosticsControllerSecurityTest,PreviewQueueServiceTest test` -> PASS
+  - `cd ecm-core && mvn -q -DskipTests compile` -> PASS
+  - `cd ecm-frontend && npm run -s lint -- src/pages/PreviewDiagnosticsPage.tsx src/services/previewDiagnosticsService.ts` -> PASS
+  - `cd ecm-frontend && npm run -s build` -> PASS
+  - `cd ecm-frontend && npx playwright test e2e/admin-preview-diagnostics.mock.spec.ts --project=chromium` -> PASS（本地静态 `:5500`）
+
+### 89) Preview 预览阻断防护与解封重试（Phase162）
+- `ecm-core/src/main/java/com/ecm/core/preview/PreviewRenditionPreventionRegistry.java`
+  - 新增预览阻断 registry：
+    - 记录阻断原因/类别/时间/命中次数
+    - 有界容量保留（防止无限增长）
+    - 自动阻断类别控制（默认 `UNSUPPORTED/PERMANENT`）
+- `ecm-core/src/main/java/com/ecm/core/preview/PreviewQueueService.java`
+  - 入队防护：
+    - 非 `force` 下命中阻断直接 `SKIPPED`
+    - 记录阻断命中计数，用于识别 queue storm
+    - `force` 自动解封后再入队
+  - 终态自动阻断：
+    - 不可恢复终态（unsupported/permanent）自动加入阻断
+    - 成功支持型结果自动解封
+- `ecm-core/src/main/java/com/ecm/core/controller/PreviewDiagnosticsController.java`
+  - 新增 Day6 运维 API（admin only）：
+    - `GET /api/v1/preview/diagnostics/prevention/blocked`
+    - `POST /api/v1/preview/diagnostics/prevention/{documentId}/unblock`
+    - `POST /api/v1/preview/diagnostics/prevention/{documentId}/unblock-requeue`
+- `ecm-core/src/main/resources/application.yml`
+  - 新增 prevention 配置：
+    - `ecm.preview.prevention.enabled`
+    - `ecm.preview.prevention.max-blocked`
+    - `ecm.preview.prevention.auto-block-categories`
+- `ecm-frontend/src/services/previewDiagnosticsService.ts`
+  - 新增 prevention list/unblock/unblock+requeue API 调用。
+- `ecm-frontend/src/pages/PreviewDiagnosticsPage.tsx`
+  - 新增 `Rendition Prevention Registry` 面板：
+    - 阻断总量与自动阻断类别可视化
+    - 阻断条目列表（reason/category/hits/timestamps）
+    - 行级 `Unblock` 与 `Requeue` 操作
+- `ecm-frontend/e2e/admin-preview-diagnostics.mock.spec.ts`
+  - 新增 prevention 面板 mock 与 unblock/requeue 行为断言。
+- 测试补充：
+  - `ecm-core/src/test/java/com/ecm/core/preview/PreviewRenditionPreventionRegistryTest.java`
+  - `ecm-core/src/test/java/com/ecm/core/preview/PreviewQueueServiceTest.java`
+  - `ecm-core/src/test/java/com/ecm/core/preview/PreviewQueueServiceRedisBackendTest.java`
+  - `ecm-core/src/test/java/com/ecm/core/controller/PreviewDiagnosticsControllerSecurityTest.java`
+- 验证：
+  - `cd ecm-core && mvn -q -Dtest=PreviewRenditionPreventionRegistryTest,PreviewFailurePolicyRegistryTest,PreviewTransformTraceBufferTest,PreviewDiagnosticsControllerSecurityTest,PreviewQueueServiceTest,PreviewQueueServiceRedisBackendTest test` -> PASS
+  - `cd ecm-core && mvn -q -DskipTests compile` -> PASS
+  - `cd ecm-frontend && npm run -s lint -- src/pages/PreviewDiagnosticsPage.tsx src/services/previewDiagnosticsService.ts` -> PASS
+  - `cd ecm-frontend && npm run -s build` -> PASS
+  - `cd ecm-frontend/build && python3 -m http.server 5500` + `cd ecm-frontend && npx playwright test e2e/admin-preview-diagnostics.mock.spec.ts --project=chromium` -> PASS
+
+### 90) Preview 阻断项批量解封/重排队（Phase163）
+- `ecm-core/src/main/java/com/ecm/core/controller/PreviewDiagnosticsController.java`
+  - 新增批量运维 API：
+    - `POST /api/v1/preview/diagnostics/prevention/unblock-batch`
+    - `POST /api/v1/preview/diagnostics/prevention/unblock-requeue-batch`
+  - 提供批次聚合结果：`requested/deduplicated/unblocked/queued/failed`。
+  - 增加批处理上限保护（500）避免超大 payload 压垮队列入口。
+- `ecm-frontend/src/services/previewDiagnosticsService.ts`
+  - 新增 prevention batch API client。
+- `ecm-frontend/src/pages/PreviewDiagnosticsPage.tsx`
+  - `Rendition Prevention Registry` 面板新增：
+    - 选择框（单选/全选）
+    - 阻断项过滤输入
+    - `Unblock Selected` / `Requeue Selected`
+- `ecm-frontend/e2e/admin-preview-diagnostics.mock.spec.ts`
+  - 新增 prevention batch mock 与断言链路。
+- 测试补充：
+  - `ecm-core/src/test/java/com/ecm/core/controller/PreviewDiagnosticsControllerSecurityTest.java`
+    - 新增批量端点权限与 admin 行为断言。
+- 验证：
+  - `cd ecm-core && mvn -q -Dtest=PreviewDiagnosticsControllerSecurityTest,PreviewQueueServiceTest,PreviewRenditionPreventionRegistryTest test` -> PASS
+  - `cd ecm-core && mvn -q -DskipTests compile` -> PASS
+  - `cd ecm-frontend && npm run -s lint -- src/pages/PreviewDiagnosticsPage.tsx src/services/previewDiagnosticsService.ts` -> PASS
+  - `cd ecm-frontend && npm run -s build` -> PASS
+  - `cd ecm-frontend/build && python3 -m http.server 5500` + `cd ecm-frontend && npx playwright test e2e/admin-preview-diagnostics.mock.spec.ts --project=chromium` -> PASS
+
+### 91) Preview 死信回放闭环（Phase166）
+- `ecm-core/src/main/java/com/ecm/core/preview/PreviewDeadLetterRegistry.java`
+  - 新增 dead-letter registry（记录终态失败、维护 occurrences、有界保留）。
+- `ecm-core/src/main/java/com/ecm/core/preview/PreviewQueueService.java`
+  - 接入 dead-letter 生命周期：
+    - retry-exhausted / terminal / exception-exhausted -> record
+    - queue accepted / preview success -> remove
+- `ecm-core/src/main/java/com/ecm/core/controller/PreviewDiagnosticsController.java`
+  - 新增 dead-letter 运维 API：
+    - `GET /api/v1/preview/diagnostics/dead-letter`
+    - `POST /api/v1/preview/diagnostics/dead-letter/replay-batch`
+- `ecm-frontend/src/services/previewDiagnosticsService.ts`
+  - 新增 dead-letter list/replay API。
+- `ecm-frontend/src/pages/PreviewDiagnosticsPage.tsx`
+  - 新增 `Preview Dead Letter Queue` 面板：
+    - 过滤、选择、批量回放、行级回放。
+- `ecm-frontend/e2e/admin-preview-diagnostics.mock.spec.ts`
+  - 新增 dead-letter mock 与 replay 断言。
+- 测试补充：
+  - `ecm-core/src/test/java/com/ecm/core/preview/PreviewDeadLetterRegistryTest.java`
+  - `ecm-core/src/test/java/com/ecm/core/preview/PreviewQueueServiceTest.java`
+  - `ecm-core/src/test/java/com/ecm/core/controller/PreviewDiagnosticsControllerSecurityTest.java`
+- 验证：
+  - `cd ecm-core && mvn -q -Dtest=PreviewDiagnosticsControllerSecurityTest,PreviewQueueServiceTest,PreviewQueueServiceRedisBackendTest,PreviewDeadLetterRegistryTest test` -> PASS
+  - `cd ecm-core && mvn -q -DskipTests compile` -> PASS
+  - `cd ecm-frontend && npm run lint` -> PASS
+  - `cd ecm-frontend && npm run build` -> PASS
+  - `cd ecm-frontend && npx playwright test e2e/admin-preview-diagnostics.mock.spec.ts --project=chromium` -> PASS
+
+### 92) Preview 死信 Redis 持久化硬化（Phase167）
+- `ecm-core/src/main/java/com/ecm/core/preview/PreviewDeadLetterRegistry.java`
+  - dead-letter registry 升级为 Redis 优先 + 内存回退：
+    - Redis 索引：`ecm:preview:deadletter:index`
+    - Redis 条目：`ecm:preview:deadletter:entry:<documentId>`
+  - 新增 TTL 与 Redis 开关配置支持，异常自动回退内存路径。
+- `ecm-core/src/main/java/com/ecm/core/controller/PreviewDiagnosticsController.java`
+  - dead-letter diagnostics 返回增强：
+    - `redisEnabled`
+    - `backendMode`（`REDIS`/`MEMORY`）
+    - `ttlMs`
+- `ecm-core/src/main/resources/application.yml`
+  - 新增：
+    - `ecm.preview.dead-letter.redis.enabled`
+    - `ecm.preview.dead-letter.ttl-ms`
+- `ecm-frontend/src/services/previewDiagnosticsService.ts`
+  - dead-letter diagnostics 类型新增 `backendMode/redisEnabled/ttlMs`。
+- `ecm-frontend/src/pages/PreviewDiagnosticsPage.tsx`
+  - dead-letter 面板新增 `Backend` 与 `TTL` chip，TTL 以秒/分/小时可读展示。
+- `ecm-frontend/e2e/admin-preview-diagnostics.mock.spec.ts`
+  - mock payload 与断言覆盖 `Backend REDIS`、`TTL 5 minutes`。
+- 测试补充：
+  - `ecm-core/src/test/java/com/ecm/core/preview/PreviewDeadLetterRegistryRedisBackendTest.java`
+  - `ecm-core/src/test/java/com/ecm/core/controller/PreviewDiagnosticsControllerSecurityTest.java`（dead-letter 扩展字段断言）
+  - `scripts/phase164-preview-day7-delivery-gate.sh`（纳入 `PreviewDeadLetterRegistryRedisBackendTest`）
+- 验证：
+  - `cd ecm-core && mvn -q -Dtest=PreviewDiagnosticsControllerSecurityTest,PreviewQueueServiceTest,PreviewQueueServiceRedisBackendTest,PreviewDeadLetterRegistryTest,PreviewDeadLetterRegistryRedisBackendTest test` -> PASS
+  - `cd ecm-core && mvn -q -DskipTests compile` -> PASS
+  - `scripts/phase164-preview-day7-delivery-gate.sh` -> PASS
+
+### 93) Preview 死信自动回放 + 导出审计 + 并发压测（Phase168）
+- `ecm-core/src/main/java/com/ecm/core/preview/PreviewQueueService.java`
+  - 新增 dead-letter 自动回放调度任务：
+    - `ecm.preview.dead-letter.auto-replay.enabled`
+    - `poll-interval-ms / max-items / cooldown-ms / force / categories`
+  - 自动回放仅处理允许类别且超出冷却窗口的死信项。
+- `ecm-core/src/main/java/com/ecm/core/preview/PreviewDeadLetterRegistry.java`
+  - 扩展死信元数据：
+    - `lastReplayAt`
+    - `replayCount`
+  - 新增 `markReplayAttempt(...)`，支持 memory/redis 双后端。
+- `ecm-core/src/main/java/com/ecm/core/controller/PreviewDiagnosticsController.java`
+  - 新增 `GET /api/v1/preview/diagnostics/dead-letter/export`（CSV 导出）。
+  - 死信导出与回放新增审计事件：
+    - `PREVIEW_DEAD_LETTER_EXPORTED`
+    - `PREVIEW_DEAD_LETTER_REPLAY`
+- `ecm-frontend/src/services/previewDiagnosticsService.ts`
+  - 新增 dead-letter 导出 API：
+    - `exportDeadLetterCsv(limit)`
+- `ecm-frontend/src/pages/PreviewDiagnosticsPage.tsx`
+  - dead-letter 面板新增 `Export CSV` 操作按钮。
+- `ecm-frontend/e2e/admin-preview-diagnostics.mock.spec.ts`
+  - 新增 dead-letter export mock/断言，并校验导出成功反馈。
+- 测试补充：
+  - `ecm-core/src/test/java/com/ecm/core/preview/PreviewQueueServiceTest.java`（自动回放策略）
+  - `ecm-core/src/test/java/com/ecm/core/preview/PreviewQueueServiceRedisBackendTest.java`（并发入队幂等）
+  - `ecm-core/src/test/java/com/ecm/core/preview/PreviewDeadLetterRegistryTest.java`（回放元数据）
+  - `ecm-core/src/test/java/com/ecm/core/preview/PreviewDeadLetterRegistryRedisBackendTest.java`（Redis 回放元数据）
+  - `ecm-core/src/test/java/com/ecm/core/controller/PreviewDiagnosticsControllerSecurityTest.java`（导出 endpoint + 审计断言）
+- 验证：
+  - `cd ecm-core && mvn -q -Dtest=PreviewDiagnosticsControllerSecurityTest,PreviewQueueServiceTest,PreviewQueueServiceRedisBackendTest,PreviewDeadLetterRegistryTest,PreviewDeadLetterRegistryRedisBackendTest test` -> PASS
+  - `cd ecm-core && mvn -q -DskipTests compile` -> PASS
+  - `cd ecm-frontend && npm run -s lint -- src/pages/PreviewDiagnosticsPage.tsx src/services/previewDiagnosticsService.ts` -> PASS
+  - `cd ecm-frontend && npm run -s build` -> PASS
+  - `cd ecm-frontend && ECM_UI_URL=http://localhost:5500 npx playwright test e2e/admin-preview-diagnostics.mock.spec.ts --project=chromium` -> PASS
+  - `scripts/phase164-preview-day7-delivery-gate.sh` -> PASS
+
 ## 三、提交记录
 - `eb31c92` feat(frontend): harden auth session recovery and add e2e coverage
 - `388c254` chore(scripts): auto-start phase5 regression server on custom localhost ports
@@ -1448,3 +2051,409 @@
 - `docs/PHASE154_PREVIEW_DIAGNOSTICS_BATCH_QUEUE_API_VERIFICATION_20260306.md`
 - `docs/PHASE155_PREVIEW_DIAGNOSTICS_BATCH_ACTION_INTEGRATION_DEV_20260306.md`
 - `docs/PHASE155_PREVIEW_DIAGNOSTICS_BATCH_ACTION_INTEGRATION_VERIFICATION_20260306.md`
+- `docs/PHASE156_PREVIEW_REASON_SCOPE_BATCH_QUEUE_DEV_20260306.md`
+- `docs/PHASE156_PREVIEW_REASON_SCOPE_BATCH_QUEUE_VERIFICATION_20260306.md`
+- `docs/PHASE157_PREVIEW_RETRY_HINT_PIPELINE_DEV_20260306.md`
+- `docs/PHASE157_PREVIEW_RETRY_HINT_PIPELINE_VERIFICATION_20260306.md`
+- `docs/PHASE158_CAD_RENDER_FAILOVER_CHAIN_DEV_20260306.md`
+- `docs/PHASE158_CAD_RENDER_FAILOVER_CHAIN_VERIFICATION_20260306.md`
+- `docs/PHASE159_PREVIEW_CAD_FAILOVER_DIAGNOSTICS_PANEL_DEV_20260306.md`
+- `docs/PHASE159_PREVIEW_CAD_FAILOVER_DIAGNOSTICS_PANEL_VERIFICATION_20260306.md`
+- `docs/PHASE160_PREVIEW_TRANSFORM_TRACE_DIAGNOSTICS_DEV_20260306.md`
+- `docs/PHASE160_PREVIEW_TRANSFORM_TRACE_DIAGNOSTICS_VERIFICATION_20260306.md`
+- `docs/PHASE161_PREVIEW_FAILURE_POLICY_PROFILES_DEV_20260306.md`
+- `docs/PHASE161_PREVIEW_FAILURE_POLICY_PROFILES_VERIFICATION_20260306.md`
+- `docs/PHASE162_RENDITION_PREVENTION_PROTECTION_DEV_20260306.md`
+- `docs/PHASE162_RENDITION_PREVENTION_PROTECTION_VERIFICATION_20260306.md`
+- `docs/PHASE163_PREVENTION_BATCH_OPERATIONS_DEV_20260306.md`
+- `docs/PHASE163_PREVENTION_BATCH_OPERATIONS_VERIFICATION_20260306.md`
+- `docs/PHASE164_PREVIEW_CIRCUIT_BREAKER_REDIS_HARDENING_DEV_20260306.md`
+- `docs/PHASE164_PREVIEW_CIRCUIT_BREAKER_REDIS_HARDENING_VERIFICATION_20260306.md`
+- `docs/PHASE165_PREVIEW_DAY7_DELIVERY_GATE_DEV_20260306.md`
+- `docs/PHASE165_PREVIEW_DAY7_DELIVERY_GATE_VERIFICATION_20260306.md`
+- `docs/PHASE166_PREVIEW_DEAD_LETTER_REPLAY_DEV_20260306.md`
+- `docs/PHASE166_PREVIEW_DEAD_LETTER_REPLAY_VERIFICATION_20260306.md`
+- `docs/PHASE167_PREVIEW_DEAD_LETTER_REDIS_PERSISTENCE_DEV_20260306.md`
+- `docs/PHASE167_PREVIEW_DEAD_LETTER_REDIS_PERSISTENCE_VERIFICATION_20260306.md`
+- `docs/PHASE168_PREVIEW_DEAD_LETTER_AUTOREPLAY_EXPORT_STRESS_DEV_20260306.md`
+- `docs/PHASE168_PREVIEW_DEAD_LETTER_AUTOREPLAY_EXPORT_STRESS_VERIFICATION_20260306.md`
+- `docs/PHASE169_OPS_RECOVERY_CONTROL_PLANE_DEV_20260306.md`
+- `docs/PHASE169_OPS_RECOVERY_CONTROL_PLANE_VERIFICATION_20260306.md`
+- `docs/PHASE170_OPS_POLICY_CENTER_AND_SEARCH_FACETED_PATH_DEV_20260306.md`
+- `docs/PHASE170_OPS_POLICY_CENTER_AND_SEARCH_FACETED_PATH_VERIFICATION_20260306.md`
+- `docs/PHASE171_OPS_DRYRUN_POLICY_ROLLBACK_AND_VERIFICATION_DEV_20260306.md`
+- `docs/PHASE171_OPS_DRYRUN_POLICY_ROLLBACK_AND_VERIFICATION_VERIFICATION_20260306.md`
+- `docs/PHASE172_OPS_POLICY_HISTORY_TARGET_ROLLBACK_DEV_20260307.md`
+- `docs/PHASE172_OPS_POLICY_HISTORY_TARGET_ROLLBACK_VERIFICATION_20260307.md`
+- `docs/PHASE173_OPS_RECOVERY_DRYRUN_PANEL_AND_SEARCH_NODESERVICE_PATH_DEV_20260307.md`
+- `docs/PHASE173_OPS_RECOVERY_DRYRUN_PANEL_AND_SEARCH_NODESERVICE_PATH_VERIFICATION_20260307.md`
+- `docs/PHASE174_OPS_RECOVERY_EXECUTION_HISTORY_AUDIT_TIMELINE_DEV_20260307.md`
+- `docs/PHASE174_OPS_RECOVERY_EXECUTION_HISTORY_AUDIT_TIMELINE_VERIFICATION_20260307.md`
+- `docs/PHASE175_OPS_RECOVERY_DRYRUN_EXECUTE_AND_HISTORY_MODE_FILTER_DEV_20260307.md`
+- `docs/PHASE175_OPS_RECOVERY_DRYRUN_EXECUTE_AND_HISTORY_MODE_FILTER_VERIFICATION_20260307.md`
+- `docs/PHASE176_OPS_RECOVERY_HISTORY_EXPORT_CSV_DEV_20260307.md`
+- `docs/PHASE176_OPS_RECOVERY_HISTORY_EXPORT_CSV_VERIFICATION_20260307.md`
+- `docs/PHASE177_OPS_RECOVERY_HISTORY_PAGINATION_DEV_20260307.md`
+- `docs/PHASE177_OPS_RECOVERY_HISTORY_PAGINATION_VERIFICATION_20260307.md`
+- `docs/PHASE178_OPS_RECOVERY_HISTORY_ACTOR_FILTER_DEV_20260307.md`
+- `docs/PHASE178_OPS_RECOVERY_HISTORY_ACTOR_FILTER_VERIFICATION_20260307.md`
+- `docs/PHASE179_OPS_RECOVERY_HISTORY_EVENTTYPE_FILTER_DEV_20260307.md`
+- `docs/PHASE179_OPS_RECOVERY_HISTORY_EVENTTYPE_FILTER_VERIFICATION_20260307.md`
+- `docs/PHASE180_OPS_RECOVERY_HISTORY_AUTO_REFRESH_DEV_20260307.md`
+- `docs/PHASE180_OPS_RECOVERY_HISTORY_AUTO_REFRESH_VERIFICATION_20260307.md`
+- `docs/PHASE181_OPS_RECOVERY_HISTORY_SUMMARY_PANEL_DEV_20260307.md`
+- `docs/PHASE181_OPS_RECOVERY_HISTORY_SUMMARY_PANEL_VERIFICATION_20260307.md`
+- `docs/PHASE182_OPS_RECOVERY_HISTORY_TOP_ACTORS_SUMMARY_DEV_20260307.md`
+- `docs/PHASE182_OPS_RECOVERY_HISTORY_TOP_ACTORS_SUMMARY_VERIFICATION_20260307.md`
+- `docs/PHASE183_OPS_RECOVERY_HISTORY_SUMMARY_EXPORT_CSV_DEV_20260307.md`
+- `docs/PHASE183_OPS_RECOVERY_HISTORY_SUMMARY_EXPORT_CSV_VERIFICATION_20260307.md`
+- `docs/PHASE184_OPS_RECOVERY_HISTORY_SUMMARY_TREND_DEV_20260307.md`
+- `docs/PHASE184_OPS_RECOVERY_HISTORY_SUMMARY_TREND_VERIFICATION_20260307.md`
+- `docs/PHASE185_OPS_RECOVERY_HISTORY_TREND_EXPORT_CSV_DEV_20260307.md`
+- `docs/PHASE185_OPS_RECOVERY_HISTORY_TREND_EXPORT_CSV_VERIFICATION_20260307.md`
+- `docs/PHASE186_OPS_RECOVERY_HISTORY_SUMMARY_COMPARE_DEV_20260307.md`
+- `docs/PHASE186_OPS_RECOVERY_HISTORY_SUMMARY_COMPARE_VERIFICATION_20260307.md`
+- `docs/PHASE187_OPS_RECOVERY_HISTORY_COMPARE_EXPORT_CSV_DEV_20260307.md`
+- `docs/PHASE187_OPS_RECOVERY_HISTORY_COMPARE_EXPORT_CSV_VERIFICATION_20260307.md`
+- `docs/PHASE188_OPS_RECOVERY_HISTORY_COMPARE_BREAKDOWN_DEV_20260307.md`
+- `docs/PHASE188_OPS_RECOVERY_HISTORY_COMPARE_BREAKDOWN_VERIFICATION_20260307.md`
+- `docs/PHASE189_OPS_RECOVERY_HISTORY_COMPARE_BREAKDOWN_EXPORT_CSV_DEV_20260307.md`
+- `docs/PHASE189_OPS_RECOVERY_HISTORY_COMPARE_BREAKDOWN_EXPORT_CSV_VERIFICATION_20260307.md`
+- `docs/PHASE190_OPS_RECOVERY_HISTORY_COMPARE_BREAKDOWN_SORT_TOPN_DEV_20260307.md`
+- `docs/PHASE190_OPS_RECOVERY_HISTORY_COMPARE_BREAKDOWN_SORT_TOPN_VERIFICATION_20260307.md`
+- `docs/PHASE191_OPS_RECOVERY_HISTORY_ACTOR_COMPARE_SORT_TOPN_DEV_20260307.md`
+- `docs/PHASE191_OPS_RECOVERY_HISTORY_ACTOR_COMPARE_SORT_TOPN_VERIFICATION_20260307.md`
+- `docs/PHASE192_OPS_RECOVERY_HISTORY_ACTOR_COMPARE_EXPORT_CSV_DEV_20260307.md`
+- `docs/PHASE192_OPS_RECOVERY_HISTORY_ACTOR_COMPARE_EXPORT_CSV_VERIFICATION_20260307.md`
+- `docs/PHASE193_ADVANCED_SEARCH_ALL_MATCHED_PREVIEW_BATCH_DEV_20260307.md`
+- `docs/PHASE193_ADVANCED_SEARCH_ALL_MATCHED_PREVIEW_BATCH_VERIFICATION_20260307.md`
+- `docs/PHASE194_ADVANCED_SEARCH_ALL_MATCHED_REASON_FILTER_FIX_DEV_20260307.md`
+- `docs/PHASE194_ADVANCED_SEARCH_ALL_MATCHED_REASON_FILTER_FIX_VERIFICATION_20260307.md`
+- `docs/PHASE195_SEARCH_SCOPE_PREVIEW_BATCH_API_DEV_20260307.md`
+- `docs/PHASE195_SEARCH_SCOPE_PREVIEW_BATCH_API_VERIFICATION_20260307.md`
+- `docs/PHASE196_SEARCH_SCOPE_PREVIEW_BATCH_DRYRUN_API_DEV_20260307.md`
+- `docs/PHASE196_SEARCH_SCOPE_PREVIEW_BATCH_DRYRUN_API_VERIFICATION_20260307.md`
+- `docs/PHASE197_SEARCH_SCOPE_DRYRUN_REASON_BREAKDOWN_DEV_20260307.md`
+- `docs/PHASE197_SEARCH_SCOPE_DRYRUN_REASON_BREAKDOWN_VERIFICATION_20260307.md`
+- `docs/PHASE198_DRYRUN_REASON_BREAKDOWN_ACTIONABLE_OPERATIONS_DEV_20260307.md`
+- `docs/PHASE198_DRYRUN_REASON_BREAKDOWN_ACTIONABLE_OPERATIONS_VERIFICATION_20260307.md`
+- `docs/PHASE199_QUEUE_RESULT_REASON_BREAKDOWN_DEV_20260307.md`
+- `docs/PHASE199_QUEUE_RESULT_REASON_BREAKDOWN_VERIFICATION_20260307.md`
+- `docs/PHASE200_DRYRUN_CSV_EXPORT_BENCHMARK_ALFRESCO_DEV_20260307.md`
+- `docs/PHASE200_DRYRUN_CSV_EXPORT_BENCHMARK_ALFRESCO_VERIFICATION_20260307.md`
+- `docs/PHASE201_SEARCH_SCOPE_DRYRUN_CSV_ASYNC_EXPORT_TASK_DEV_20260308.md`
+- `docs/PHASE201_SEARCH_SCOPE_DRYRUN_CSV_ASYNC_EXPORT_TASK_VERIFICATION_20260308.md`
+- `docs/PHASE202_SEARCH_SCOPE_DRYRUN_CSV_ASYNC_TASK_CANCEL_AND_LIST_DEV_20260308.md`
+- `docs/PHASE202_SEARCH_SCOPE_DRYRUN_CSV_ASYNC_TASK_CANCEL_AND_LIST_VERIFICATION_20260308.md`
+- `docs/PHASE203_EXPORT_TASK_CENTER_PANEL_AND_CANCEL_CONTROL_DEV_20260308.md`
+- `docs/PHASE203_EXPORT_TASK_CENTER_PANEL_AND_CANCEL_CONTROL_VERIFICATION_20260308.md`
+- `docs/PHASE204_ADVANCED_SEARCH_CONTEXT_ECHO_DSL_OBSERVABILITY_DEV_20260308.md`
+- `docs/PHASE204_ADVANCED_SEARCH_CONTEXT_ECHO_DSL_OBSERVABILITY_VERIFICATION_20260308.md`
+- `docs/PHASE205_SEARCH_SCOPE_BATCH_EXECUTOR_REFACTOR_DEV_20260308.md`
+- `docs/PHASE205_SEARCH_SCOPE_BATCH_EXECUTOR_REFACTOR_VERIFICATION_20260308.md`
+- `docs/PHASE206_PREVIEW_RENDITION_RESOURCE_SUMMARY_API_UI_DEV_20260308.md`
+- `docs/PHASE206_PREVIEW_RENDITION_RESOURCE_SUMMARY_API_UI_VERIFICATION_20260308.md`
+- `docs/PHASE207_ADVANCED_SEARCH_STATS_API_DEV_20260308.md`
+- `docs/PHASE207_ADVANCED_SEARCH_STATS_API_VERIFICATION_20260308.md`
+- `docs/PHASE208_ADVANCED_SEARCH_STATS_PANEL_UI_DEV_20260308.md`
+- `docs/PHASE208_ADVANCED_SEARCH_STATS_PANEL_UI_VERIFICATION_20260308.md`
+- `docs/PHASE209_ADVANCED_SEARCH_PIVOT_STATS_API_DEV_20260308.md`
+- `docs/PHASE209_ADVANCED_SEARCH_PIVOT_STATS_API_VERIFICATION_20260308.md`
+- `docs/PHASE210_ADVANCED_SEARCH_PIVOT_PANEL_UI_DEV_20260308.md`
+- `docs/PHASE210_ADVANCED_SEARCH_PIVOT_PANEL_UI_VERIFICATION_20260308.md`
+- `docs/PHASE211_PREVIEW_RENDITION_RESOURCES_API_DEV_20260308.md`
+- `docs/PHASE211_PREVIEW_RENDITION_RESOURCES_API_VERIFICATION_20260308.md`
+- `docs/PHASE212_PREVIEW_RENDITION_RESOURCES_PANEL_UI_DEV_20260308.md`
+- `docs/PHASE212_PREVIEW_RENDITION_RESOURCES_PANEL_UI_VERIFICATION_20260308.md`
+- `docs/PHASE213_PREVIEW_RENDITION_RESOURCES_EXPORT_API_DEV_20260308.md`
+- `docs/PHASE213_PREVIEW_RENDITION_RESOURCES_EXPORT_API_VERIFICATION_20260308.md`
+- `docs/PHASE214_PREVIEW_RENDITION_RESOURCES_EXPORT_UI_DEV_20260308.md`
+- `docs/PHASE214_PREVIEW_RENDITION_RESOURCES_EXPORT_UI_VERIFICATION_20260308.md`
+- `docs/PHASE215_PREVIEW_RENDITION_RESOURCE_INLINE_ACTIONS_UI_DEV_20260308.md`
+- `docs/PHASE215_PREVIEW_RENDITION_RESOURCE_INLINE_ACTIONS_UI_VERIFICATION_20260308.md`
+- `docs/PHASE216_PREVIEW_RENDITION_RESOURCES_ASYNC_EXPORT_TASK_CENTER_DEV_20260308.md`
+- `docs/PHASE216_PREVIEW_RENDITION_RESOURCES_ASYNC_EXPORT_TASK_CENTER_VERIFICATION_20260308.md`
+- `docs/PHASE217_OPS_RECOVERY_HISTORY_ASYNC_EXPORT_TASK_CENTER_DEV_20260308.md`
+- `docs/PHASE217_OPS_RECOVERY_HISTORY_ASYNC_EXPORT_TASK_CENTER_VERIFICATION_20260308.md`
+- `docs/PHASE218_OPS_RECOVERY_ASYNC_EXPORT_TASK_FILTER_BY_TYPE_DEV_20260308.md`
+- `docs/PHASE218_OPS_RECOVERY_ASYNC_EXPORT_TASK_FILTER_BY_TYPE_VERIFICATION_20260308.md`
+- `docs/PHASE219_AUDIT_EXPORT_ASYNC_TASK_CENTER_DEV_20260308.md`
+- `docs/PHASE219_AUDIT_EXPORT_ASYNC_TASK_CENTER_VERIFICATION_20260308.md`
+- `docs/PHASE220_AUDIT_EXPORT_ASYNC_TASK_STATUS_FILTER_DEV_20260308.md`
+- `docs/PHASE220_AUDIT_EXPORT_ASYNC_TASK_STATUS_FILTER_VERIFICATION_20260308.md`
+- `docs/PHASE221_AUDIT_ASYNC_TASK_GOVERNANCE_API_DEV_20260308.md`
+- `docs/PHASE221_AUDIT_ASYNC_TASK_GOVERNANCE_API_VERIFICATION_20260308.md`
+- `docs/PHASE222_AUDIT_ASYNC_TASK_GOVERNANCE_UI_DEV_20260308.md`
+- `docs/PHASE222_AUDIT_ASYNC_TASK_GOVERNANCE_UI_VERIFICATION_20260308.md`
+- `docs/PHASE223_OPS_RECOVERY_ASYNC_TASK_GOVERNANCE_API_DEV_20260308.md`
+- `docs/PHASE223_OPS_RECOVERY_ASYNC_TASK_GOVERNANCE_API_VERIFICATION_20260308.md`
+- `docs/PHASE224_OPS_RECOVERY_ASYNC_TASK_GOVERNANCE_UI_DEV_20260308.md`
+- `docs/PHASE224_OPS_RECOVERY_ASYNC_TASK_GOVERNANCE_UI_VERIFICATION_20260308.md`
+- `docs/PHASE225_OPS_RECOVERY_ASYNC_TASK_STATUS_FILTER_API_DEV_20260308.md`
+- `docs/PHASE225_OPS_RECOVERY_ASYNC_TASK_STATUS_FILTER_API_VERIFICATION_20260308.md`
+- `docs/PHASE226_OPS_RECOVERY_ASYNC_TASK_STATUS_FILTER_UI_DEV_20260308.md`
+- `docs/PHASE226_OPS_RECOVERY_ASYNC_TASK_STATUS_FILTER_UI_VERIFICATION_20260308.md`
+- `docs/PHASE227_ASYNC_EXPORT_FILTERED_SUMMARY_API_DEV_20260308.md`
+- `docs/PHASE227_ASYNC_EXPORT_FILTERED_SUMMARY_API_VERIFICATION_20260308.md`
+- `docs/PHASE228_ASYNC_EXPORT_FILTER_ALIGNED_SUMMARY_UI_DEV_20260308.md`
+- `docs/PHASE228_ASYNC_EXPORT_FILTER_ALIGNED_SUMMARY_UI_VERIFICATION_20260308.md`
+- `docs/PHASE229_ASYNC_EXPORT_CANCEL_ACTIVE_GOVERNANCE_API_DEV_20260308.md`
+- `docs/PHASE229_ASYNC_EXPORT_CANCEL_ACTIVE_GOVERNANCE_API_VERIFICATION_20260308.md`
+- `docs/PHASE230_PREVIEW_RENDITION_ASYNC_TASK_GOVERNANCE_API_UI_DEV_20260308.md`
+- `docs/PHASE230_PREVIEW_RENDITION_ASYNC_TASK_GOVERNANCE_API_UI_VERIFICATION_20260308.md`
+- `docs/PHASE231_SEARCH_DRYRUN_ASYNC_TASK_GOVERNANCE_API_UI_DEV_20260308.md`
+- `docs/PHASE231_SEARCH_DRYRUN_ASYNC_TASK_GOVERNANCE_API_UI_VERIFICATION_20260308.md`
+- `docs/PHASE232_CANCEL_ACTIVE_GOVERNANCE_UI_INTEGRATION_DEV_20260308.md`
+- `docs/PHASE232_CANCEL_ACTIVE_GOVERNANCE_UI_INTEGRATION_VERIFICATION_20260308.md`
+- `docs/PHASE233_SEARCH_PREVIEW_CANCEL_ACTIVE_TASK_GOVERNANCE_DEV_20260308.md`
+- `docs/PHASE233_SEARCH_PREVIEW_CANCEL_ACTIVE_TASK_GOVERNANCE_VERIFICATION_20260308.md`
+- `docs/PHASE234_ASYNC_EXPORT_HEALTH_OVERVIEW_ADMIN_UI_DEV_20260309.md`
+- `docs/PHASE234_ASYNC_EXPORT_HEALTH_OVERVIEW_ADMIN_UI_VERIFICATION_20260309.md`
+- `docs/PHASE235_PREVIEW_ASYNC_TASK_CENTER_MOCK_E2E_AUTOSTART_GATE_DEV_20260309.md`
+- `docs/PHASE235_PREVIEW_ASYNC_TASK_CENTER_MOCK_E2E_AUTOSTART_GATE_VERIFICATION_20260309.md`
+- `docs/PHASE236_PARALLEL_BATCH_EXECUTOR_AND_SEARCH_WORKER_SCALING_DEV_20260309.md`
+- `docs/PHASE236_PARALLEL_BATCH_EXECUTOR_AND_SEARCH_WORKER_SCALING_VERIFICATION_20260309.md`
+- `docs/PHASE237_SEARCH_PREVIEW_BATCH_CAPABILITIES_WORKER_TUNING_DEV_20260309.md`
+- `docs/PHASE237_SEARCH_PREVIEW_BATCH_CAPABILITIES_WORKER_TUNING_VERIFICATION_20260309.md`
+- `docs/PHASE238_SEARCH_PREVIEW_SKIP_DIAGNOSTICS_DEV_20260309.md`
+- `docs/PHASE238_SEARCH_PREVIEW_SKIP_DIAGNOSTICS_VERIFICATION_20260309.md`
+- `docs/PHASE239_SEARCH_PREVIEW_SCAN_COVERAGE_METRICS_DEV_20260309.md`
+- `docs/PHASE239_SEARCH_PREVIEW_SCAN_COVERAGE_METRICS_VERIFICATION_20260309.md`
+- `docs/PHASE240_PREVIEW_DEADLETTER_RENDITION_GOVERNANCE_DEV_20260310.md`
+- `docs/PHASE240_PREVIEW_DEADLETTER_RENDITION_GOVERNANCE_VERIFICATION_20260310.md`
+- `docs/PHASE241_PREVIEW_PREFLIGHT_AND_HASH_READ_REPAIR_DEV_20260310.md`
+- `docs/PHASE241_PREVIEW_PREFLIGHT_AND_HASH_READ_REPAIR_VERIFICATION_20260310.md`
+- `docs/PHASE242_PREVIEW_QUEUE_CANCEL_AND_DECLINED_STATE_DEV_20260310.md`
+- `docs/PHASE242_PREVIEW_QUEUE_CANCEL_AND_DECLINED_STATE_VERIFICATION_20260310.md`
+- `docs/PHASE243_ADVANCED_SEARCH_PREVIEW_QUEUE_CANCEL_UI_DEV_20260310.md`
+- `docs/PHASE243_ADVANCED_SEARCH_PREVIEW_QUEUE_CANCEL_UI_VERIFICATION_20260310.md`
+- `docs/PHASE244_PREVIEW_DEADLETTER_CLEAR_GOVERNANCE_DEV_20260310.md`
+- `docs/PHASE244_PREVIEW_DEADLETTER_CLEAR_GOVERNANCE_VERIFICATION_20260310.md`
+- `docs/PHASE245_OPS_RECOVERY_CLEAR_BATCH_CONTROL_PLANE_DEV_20260310.md`
+- `docs/PHASE245_OPS_RECOVERY_CLEAR_BATCH_CONTROL_PLANE_VERIFICATION_20260310.md`
+- `docs/PHASE246_OPS_RECOVERY_CLEAR_BY_FILTER_GOVERNANCE_DEV_20260310.md`
+- `docs/PHASE246_OPS_RECOVERY_CLEAR_BY_FILTER_GOVERNANCE_VERIFICATION_20260310.md`
+- `docs/PHASE247_OPS_RECOVERY_DRYRUN_FILTER_MODES_DEV_20260310.md`
+- `docs/PHASE247_OPS_RECOVERY_DRYRUN_FILTER_MODES_VERIFICATION_20260310.md`
+- `docs/PHASE248_OPS_RECOVERY_DRYRUN_FILTER_REASON_PROPAGATION_DEV_20260310.md`
+- `docs/PHASE248_OPS_RECOVERY_DRYRUN_FILTER_REASON_PROPAGATION_VERIFICATION_20260310.md`
+- `docs/PHASE249_OPS_RECOVERY_DRYRUN_STALE_PLAN_GUARD_DEV_20260310.md`
+- `docs/PHASE249_OPS_RECOVERY_DRYRUN_STALE_PLAN_GUARD_VERIFICATION_20260310.md`
+- `docs/PHASE250_ADVANCED_SEARCH_REASON_DEADLETTER_GOVERNANCE_ACTIONS_DEV_20260310.md`
+- `docs/PHASE250_ADVANCED_SEARCH_REASON_DEADLETTER_GOVERNANCE_ACTIONS_VERIFICATION_20260310.md`
+- `docs/PHASE251_ADVANCED_SEARCH_NONRETRYABLE_DEADLETTER_CLEAR_DEV_20260310.md`
+- `docs/PHASE251_ADVANCED_SEARCH_NONRETRYABLE_DEADLETTER_CLEAR_VERIFICATION_20260310.md`
+- `docs/PHASE252_PREVIEW_DIAGNOSTICS_NONRETRYABLE_REPLAY_GUARD_DEV_20260310.md`
+- `docs/PHASE252_PREVIEW_DIAGNOSTICS_NONRETRYABLE_REPLAY_GUARD_VERIFICATION_20260310.md`
+- `docs/PHASE253_PREVIEW_FAILURE_LEDGER_LIFECYCLE_RESET_DEV_20260310.md`
+- `docs/PHASE253_PREVIEW_FAILURE_LEDGER_LIFECYCLE_RESET_VERIFICATION_20260310.md`
+- `docs/PHASE254_PREVIEW_FAILURE_LEDGER_FILTER_RESET_EXPORT_DEV_20260310.md`
+- `docs/PHASE254_PREVIEW_FAILURE_LEDGER_FILTER_RESET_EXPORT_VERIFICATION_20260310.md`
+- `docs/PHASE255_PREVIEW_QUEUE_HEALTH_DIAGNOSTICS_DEV_20260310.md`
+- `docs/PHASE255_PREVIEW_QUEUE_HEALTH_DIAGNOSTICS_VERIFICATION_20260310.md`
+- `docs/PHASE256_PREVIEW_QUEUE_DIAGNOSTICS_EXPORT_DEV_20260310.md`
+- `docs/PHASE256_PREVIEW_QUEUE_DIAGNOSTICS_EXPORT_VERIFICATION_20260310.md`
+- `docs/PHASE257_PREVIEW_QUEUE_DIAGNOSTICS_FILTERED_METADATA_DEV_20260310.md`
+- `docs/PHASE257_PREVIEW_QUEUE_DIAGNOSTICS_FILTERED_METADATA_VERIFICATION_20260310.md`
+- `docs/PHASE258_PREVIEW_QUEUE_CANCEL_ACTIVE_FILTERED_DEV_20260310.md`
+- `docs/PHASE258_PREVIEW_QUEUE_CANCEL_ACTIVE_FILTERED_VERIFICATION_20260310.md`
+- `docs/PHASE259_PREVIEW_QUEUE_DECLINED_GOVERNANCE_DEV_20260310.md`
+- `docs/PHASE259_PREVIEW_QUEUE_DECLINED_GOVERNANCE_VERIFICATION_20260310.md`
+- `docs/PHASE260_PREVIEW_QUEUE_DECLINED_REQUEUE_DRYRUN_DEV_20260310.md`
+- `docs/PHASE260_PREVIEW_QUEUE_DECLINED_REQUEUE_DRYRUN_VERIFICATION_20260310.md`
+- `docs/PHASE261_PREVIEW_QUEUE_DECLINED_FORCE_REQUIRED_FILTER_DEV_20260310.md`
+- `docs/PHASE261_PREVIEW_QUEUE_DECLINED_FORCE_REQUIRED_FILTER_VERIFICATION_20260310.md`
+- `docs/PHASE262_PREVIEW_QUEUE_DECLINED_WINDOW_HOURS_FILTER_DEV_20260310.md`
+- `docs/PHASE262_PREVIEW_QUEUE_DECLINED_WINDOW_HOURS_FILTER_VERIFICATION_20260310.md`
+- `docs/PHASE263_PREVIEW_QUEUE_DECLINED_ASYNC_EXPORT_TASK_CENTER_DEV_20260311.md`
+- `docs/PHASE263_PREVIEW_QUEUE_DECLINED_ASYNC_EXPORT_TASK_CENTER_VERIFICATION_20260311.md`
+- `docs/PHASE264_PREVIEW_QUEUE_DECLINED_ASYNC_EXPORT_STATUS_FILTER_GOVERNANCE_DEV_20260311.md`
+- `docs/PHASE264_PREVIEW_QUEUE_DECLINED_ASYNC_EXPORT_STATUS_FILTER_GOVERNANCE_VERIFICATION_20260311.md`
+- `docs/PHASE265_PREVIEW_QUEUE_DECLINED_ASYNC_EXPORT_RETRY_GOVERNANCE_DEV_20260311.md`
+- `docs/PHASE265_PREVIEW_QUEUE_DECLINED_ASYNC_EXPORT_RETRY_GOVERNANCE_VERIFICATION_20260311.md`
+- `docs/PHASE266_PREVIEW_QUEUE_DECLINED_ASYNC_EXPORT_TERMINAL_BULK_RETRY_GOVERNANCE_DEV_20260311.md`
+- `docs/PHASE266_PREVIEW_QUEUE_DECLINED_ASYNC_EXPORT_TERMINAL_BULK_RETRY_GOVERNANCE_VERIFICATION_20260311.md`
+- `docs/PHASE267_PREVIEW_QUEUE_DECLINED_ASYNC_EXPORT_TERMINAL_BULK_RETRY_DRYRUN_GOVERNANCE_DEV_20260311.md`
+- `docs/PHASE267_PREVIEW_QUEUE_DECLINED_ASYNC_EXPORT_TERMINAL_BULK_RETRY_DRYRUN_GOVERNANCE_VERIFICATION_20260311.md`
+- `docs/PHASE268_PREVIEW_QUEUE_DECLINED_ASYNC_EXPORT_TERMINAL_SELECTED_RETRY_GOVERNANCE_DEV_20260311.md`
+- `docs/PHASE268_PREVIEW_QUEUE_DECLINED_ASYNC_EXPORT_TERMINAL_SELECTED_RETRY_GOVERNANCE_VERIFICATION_20260311.md`
+- `docs/PHASE269_PREVIEW_QUEUE_DECLINED_ASYNC_EXPORT_TERMINAL_DRYRUN_BREAKDOWN_EXPORT_DEV_20260311.md`
+- `docs/PHASE269_PREVIEW_QUEUE_DECLINED_ASYNC_EXPORT_TERMINAL_DRYRUN_BREAKDOWN_EXPORT_VERIFICATION_20260311.md`
+- `docs/PHASE270_PREVIEW_QUEUE_DECLINED_ASYNC_EXPORT_START_DEDUP_GOVERNANCE_DEV_20260311.md`
+- `docs/PHASE270_PREVIEW_QUEUE_DECLINED_ASYNC_EXPORT_START_DEDUP_GOVERNANCE_VERIFICATION_20260311.md`
+- `docs/PHASE271_PREVIEW_QUEUE_DECLINED_REQUEUE_DRYRUN_REASON_BREAKDOWN_EXPORT_GOVERNANCE_DEV_20260311.md`
+- `docs/PHASE271_PREVIEW_QUEUE_DECLINED_REQUEUE_DRYRUN_REASON_BREAKDOWN_EXPORT_GOVERNANCE_VERIFICATION_20260311.md`
+- `docs/PHASE272_PREVIEW_QUEUE_DECLINED_REQUEUE_DRYRUN_PREFLIGHT_REASON_GOVERNANCE_DEV_20260311.md`
+- `docs/PHASE272_PREVIEW_QUEUE_DECLINED_REQUEUE_DRYRUN_PREFLIGHT_REASON_GOVERNANCE_VERIFICATION_20260311.md`
+- `docs/PHASE273_PREVIEW_QUEUE_DECLINED_REQUEUE_DRYRUN_ASYNC_EXPORT_TASK_CENTER_GOVERNANCE_DEV_20260311.md`
+- `docs/PHASE273_PREVIEW_QUEUE_DECLINED_REQUEUE_DRYRUN_ASYNC_EXPORT_TASK_CENTER_GOVERNANCE_VERIFICATION_20260311.md`
+- `docs/PHASE274_PREVIEW_QUEUE_DECLINED_REQUEUE_DRYRUN_ASYNC_EXPORT_STATUS_FILTER_UI_GOVERNANCE_DEV_20260312.md`
+- `docs/PHASE274_PREVIEW_QUEUE_DECLINED_REQUEUE_DRYRUN_ASYNC_EXPORT_STATUS_FILTER_UI_GOVERNANCE_VERIFICATION_20260312.md`
+- `docs/PHASE275_PREVIEW_QUEUE_DECLINED_REQUEUE_DRYRUN_ASYNC_EXPORT_TERMINAL_RETRY_GOVERNANCE_DEV_20260312.md`
+- `docs/PHASE275_PREVIEW_QUEUE_DECLINED_REQUEUE_DRYRUN_ASYNC_EXPORT_TERMINAL_RETRY_GOVERNANCE_VERIFICATION_20260312.md`
+- `docs/PHASE276_PREVIEW_QUEUE_DECLINED_REQUEUE_DRYRUN_ASYNC_EXPORT_RETRY_DEDUP_GOVERNANCE_DEV_20260312.md`
+- `docs/PHASE276_PREVIEW_QUEUE_DECLINED_REQUEUE_DRYRUN_ASYNC_EXPORT_RETRY_DEDUP_GOVERNANCE_VERIFICATION_20260312.md`
+- `docs/PHASE277_PREVIEW_QUEUE_DECLINED_ASYNC_EXPORT_RETRY_DEDUP_GOVERNANCE_DEV_20260312.md`
+- `docs/PHASE277_PREVIEW_QUEUE_DECLINED_ASYNC_EXPORT_RETRY_DEDUP_GOVERNANCE_VERIFICATION_20260312.md`
+- `docs/PHASE278_PREVIEW_QUEUE_DECLINED_RETRY_REUSED_STRUCTURED_METRICS_DEV_20260312.md`
+- `docs/PHASE278_PREVIEW_QUEUE_DECLINED_RETRY_REUSED_STRUCTURED_METRICS_VERIFICATION_20260312.md`
+- `docs/PHASE279_PREVIEW_QUEUE_DECLINED_ASYNC_TASK_CENTER_STANDARD_PAGING_DEV_20260312.md`
+- `docs/PHASE279_PREVIEW_QUEUE_DECLINED_ASYNC_TASK_CENTER_STANDARD_PAGING_VERIFICATION_20260312.md`
+- `docs/PHASE280_PREVIEW_QUEUE_DECLINED_ASYNC_ACCEPTED_LOCATION_SEMANTICS_DEV_20260312.md`
+- `docs/PHASE280_PREVIEW_QUEUE_DECLINED_ASYNC_ACCEPTED_LOCATION_SEMANTICS_VERIFICATION_20260312.md`
+- `docs/PHASE281_PREVIEW_ASYNC_CONTRACT_ANNOTATION_AND_POLL_BACKOFF_DEV_20260312.md`
+- `docs/PHASE281_PREVIEW_ASYNC_CONTRACT_ANNOTATION_AND_POLL_BACKOFF_VERIFICATION_20260312.md`
+- `docs/PHASE282_ODOO_ASYNC_TASK_LIFECYCLE_GOVERNANCE_DEV_20260312.md`
+- `docs/PHASE282_ODOO_ASYNC_TASK_LIFECYCLE_GOVERNANCE_VERIFICATION_20260312.md`
+- `docs/PHASE283_ODOO_ASYNC_EXPORT_TASK_RETRY_GOVERNANCE_DEV_20260312.md`
+- `docs/PHASE283_ODOO_ASYNC_EXPORT_TASK_RETRY_GOVERNANCE_VERIFICATION_20260312.md`
+- `docs/PHASE284_ODOO_ASYNC_EXPORT_TASK_START_DEDUP_GOVERNANCE_DEV_20260312.md`
+- `docs/PHASE284_ODOO_ASYNC_EXPORT_TASK_START_DEDUP_GOVERNANCE_VERIFICATION_20260312.md`
+- `docs/PHASE285_ODOO_ASYNC_EXPORT_TERMINAL_BULK_RETRY_GOVERNANCE_DEV_20260312.md`
+- `docs/PHASE285_ODOO_ASYNC_EXPORT_TERMINAL_BULK_RETRY_GOVERNANCE_VERIFICATION_20260312.md`
+- `docs/PHASE286_ODOO_ASYNC_TASK_CENTER_STANDARD_PAGING_DEV_20260313.md`
+- `docs/PHASE286_ODOO_ASYNC_TASK_CENTER_STANDARD_PAGING_VERIFICATION_20260313.md`
+- `docs/PHASE287_ODOO_ASYNC_EXPORT_RETRY_DRYRUN_GOVERNANCE_DEV_20260313.md`
+- `docs/PHASE287_ODOO_ASYNC_EXPORT_RETRY_DRYRUN_GOVERNANCE_VERIFICATION_20260313.md`
+- `docs/PHASE288_ODOO_ASYNC_RETRY_DRYRUN_SELECTED_RETRY_GOVERNANCE_DEV_20260313.md`
+- `docs/PHASE288_ODOO_ASYNC_RETRY_DRYRUN_SELECTED_RETRY_GOVERNANCE_VERIFICATION_20260313.md`
+- `docs/PHASE289_ODOO_ASYNC_GOVERNANCE_OVERVIEW_API_RISK_SCORING_DEV_20260313.md`
+- `docs/PHASE289_ODOO_ASYNC_GOVERNANCE_OVERVIEW_API_RISK_SCORING_VERIFICATION_20260313.md`
+- `docs/PHASE290_ALFRESCO_NODE_RELATIONS_AND_RULE_ACTION_DEFINITIONS_DEV_20260313.md`
+- `docs/PHASE290_ALFRESCO_NODE_RELATIONS_AND_RULE_ACTION_DEFINITIONS_VERIFICATION_20260313.md`
+- `docs/PHASE291_ALFRESCO_NODE_RELATION_DETAILS_PANEL_AND_ENDPOINT_COVERAGE_DEV_20260313.md`
+- `docs/PHASE291_ALFRESCO_NODE_RELATION_DETAILS_PANEL_AND_ENDPOINT_COVERAGE_VERIFICATION_20260313.md`
+- `docs/PHASE292_ALFRESCO_FOLDER_RULESET_DRYRUN_REORDER_DEV_20260313.md`
+- `docs/PHASE292_ALFRESCO_FOLDER_RULESET_DRYRUN_REORDER_VERIFICATION_20260313.md`
+- `docs/PHASE293_ALFRESCO_RULE_MANUAL_EXECUTION_IDEMPOTENCY_LEDGER_DEV_20260313.md`
+- `docs/PHASE293_ALFRESCO_RULE_MANUAL_EXECUTION_IDEMPOTENCY_LEDGER_VERIFICATION_20260313.md`
+- `docs/PHASE294_ALFRESCO_RULE_EXECUTION_TIMELINE_EXPORT_DEV_20260313.md`
+- `docs/PHASE294_ALFRESCO_RULE_EXECUTION_TIMELINE_EXPORT_VERIFICATION_20260313.md`
+- `docs/PHASE295_ALFRESCO_RULE_AUDIT_TIMELINE_EXPORT_DEV_20260313.md`
+- `docs/PHASE295_ALFRESCO_RULE_AUDIT_TIMELINE_EXPORT_VERIFICATION_20260313.md`
+- `docs/PHASE296_ALFRESCO_SAVED_SEARCH_GOVERNANCE_TEMPLATES_DEV_20260313.md`
+- `docs/PHASE296_ALFRESCO_SAVED_SEARCH_GOVERNANCE_TEMPLATES_VERIFICATION_20260313.md`
+- `docs/PHASE297_ALFRESCO_BULK_GOVERNANCE_TIMELINE_DEV_20260313.md`
+- `docs/PHASE297_ALFRESCO_BULK_GOVERNANCE_TIMELINE_VERIFICATION_20260313.md`
+- `docs/PHASE298_ALFRESCO_BULK_GOVERNANCE_SUMMARY_ANALYTICS_DEV_20260313.md`
+- `docs/PHASE298_ALFRESCO_BULK_GOVERNANCE_SUMMARY_ANALYTICS_VERIFICATION_20260313.md`
+- `docs/PHASE299_ALFRESCO_BULK_GOVERNANCE_TREND_ANALYTICS_DEV_20260313.md`
+- `docs/PHASE299_ALFRESCO_BULK_GOVERNANCE_TREND_ANALYTICS_VERIFICATION_20260313.md`
+- `docs/PHASE300_ALFRESCO_COMMENTS_PEOPLE_RENDITIONS_DEV_20260318.md`
+- `docs/PHASE300_ALFRESCO_COMMENTS_PEOPLE_RENDITIONS_VERIFICATION_20260318.md`
+- `docs/PHASE301_WORKFLOW_DETAIL_AND_DIAGRAM_METADATA_DEV_20260318.md`
+- `docs/PHASE301_WORKFLOW_DETAIL_AND_DIAGRAM_METADATA_VERIFICATION_20260318.md`
+- `docs/PHASE302_ALFRESCO_ASYNC_BATCH_DOWNLOAD_AND_COLLAB_SURFACES_DEV_20260318.md`
+- `docs/PHASE302_ALFRESCO_ASYNC_BATCH_DOWNLOAD_AND_COLLAB_SURFACES_VERIFICATION_20260318.md`
+- `docs/PHASE303_ALFRESCO_WORKFLOW_PROCESS_RELATIONS_AND_DIAGRAM_BINARY_DEV_20260318.md`
+- `docs/PHASE303_ALFRESCO_WORKFLOW_PROCESS_RELATIONS_AND_DIAGRAM_BINARY_VERIFICATION_20260318.md`
+- `docs/PHASE304_ALFRESCO_PEOPLE_DIRECTORY_AND_BATCH_DOWNLOAD_RETENTION_DEV_20260318.md`
+- `docs/PHASE304_ALFRESCO_PEOPLE_DIRECTORY_AND_BATCH_DOWNLOAD_RETENTION_VERIFICATION_20260318.md`
+- `docs/PHASE305_ALFRESCO_WORKFLOW_FORM_MODELS_AND_PROCESS_DIAGRAM_DEV_20260319.md`
+- `docs/PHASE305_ALFRESCO_WORKFLOW_FORM_MODELS_AND_PROCESS_DIAGRAM_VERIFICATION_20260319.md`
+- `docs/PHASE306_ALFRESCO_COMMENTS_MENTION_SEARCH_AND_DOWNLOAD_ADMIN_CENTER_DEV_20260319.md`
+- `docs/PHASE306_ALFRESCO_COMMENTS_MENTION_SEARCH_AND_DOWNLOAD_ADMIN_CENTER_VERIFICATION_20260319.md`
+- `docs/PHASE307_ALFRESCO_WORKFLOW_FORM_SUBMIT_AND_BATCH_DOWNLOAD_GOVERNANCE_DEV_20260319.md`
+- `docs/PHASE307_ALFRESCO_WORKFLOW_FORM_SUBMIT_AND_BATCH_DOWNLOAD_GOVERNANCE_VERIFICATION_20260319.md`
+- `docs/PHASE308_ALFRESCO_COMMENT_MENTION_SURFACES_DEV_20260319.md`
+- `docs/PHASE308_ALFRESCO_COMMENT_MENTION_SURFACES_VERIFICATION_20260319.md`
+- `docs/PHASE309_ALFRESCO_WORKFLOW_HISTORY_SUMMARY_AND_TASK_SURFACES_DEV_20260319.md`
+- `docs/PHASE309_ALFRESCO_WORKFLOW_HISTORY_SUMMARY_AND_TASK_SURFACES_VERIFICATION_20260319.md`
+- `docs/PHASE310_ALFRESCO_COLLAB_SURFACES_AND_DOWNLOAD_ADMIN_AUTOREFRESH_DEV_20260319.md`
+- `docs/PHASE310_ALFRESCO_COLLAB_SURFACES_AND_DOWNLOAD_ADMIN_AUTOREFRESH_VERIFICATION_20260319.md`
+- `docs/PHASE311_WORKFLOW_SUBMISSION_SUMMARY_SURFACES_DEV_20260319.md`
+- `docs/PHASE311_WORKFLOW_SUBMISSION_SUMMARY_SURFACES_VERIFICATION_20260319.md`
+- `docs/PHASE312_ALFRESCO_BATCH_DOWNLOAD_ARTIFACT_LIFECYCLE_AND_PEOPLE_DEEPLINKS_DEV_20260319.md`
+- `docs/PHASE312_ALFRESCO_BATCH_DOWNLOAD_ARTIFACT_LIFECYCLE_AND_PEOPLE_DEEPLINKS_VERIFICATION_20260319.md`
+- `docs/PHASE313_WORKFLOW_BUSINESS_ITEMS_AND_TASK_COLLAB_SURFACES_DEV_20260319.md`
+- `docs/PHASE313_WORKFLOW_BUSINESS_ITEMS_AND_TASK_COLLAB_SURFACES_VERIFICATION_20260319.md`
+- `docs/PHASE314_ALFRESCO_PEOPLE_AUTHORED_COMMENTS_AND_BATCH_DOWNLOAD_STANDARD_PAGING_DEV_20260319.md`
+- `docs/PHASE314_ALFRESCO_PEOPLE_AUTHORED_COMMENTS_AND_BATCH_DOWNLOAD_STANDARD_PAGING_VERIFICATION_20260319.md`
+- `docs/PHASE315_WORKFLOW_LIFECYCLE_ACTIONS_AND_CANCEL_SURFACES_DEV_20260319.md`
+- `docs/PHASE315_WORKFLOW_LIFECYCLE_ACTIONS_AND_CANCEL_SURFACES_VERIFICATION_20260319.md`
+- `docs/PHASE316_ALFRESCO_DOWNLOAD_ADMIN_QUERY_FILTER_AND_PEOPLE_PROFILE_DEEPLINKS_DEV_20260319.md`
+- `docs/PHASE316_ALFRESCO_DOWNLOAD_ADMIN_QUERY_FILTER_AND_PEOPLE_PROFILE_DEEPLINKS_VERIFICATION_20260319.md`
+- `docs/PHASE317_ALFRESCO_WORKFLOW_TASK_ASSIGNMENT_SURFACES_DEV_20260319.md`
+- `docs/PHASE317_ALFRESCO_WORKFLOW_TASK_ASSIGNMENT_SURFACES_VERIFICATION_20260319.md`
+- `docs/PHASE318_ALFRESCO_USER_DOWNLOADS_AND_COMMENT_PROFILE_DEEPLINKS_DEV_20260319.md`
+- `docs/PHASE318_ALFRESCO_USER_DOWNLOADS_AND_COMMENT_PROFILE_DEEPLINKS_VERIFICATION_20260319.md`
+- `docs/PHASE319_ALFRESCO_USER_BATCH_DOWNLOAD_TASK_CENTER_GOVERNANCE_DEV_20260319.md`
+- `docs/PHASE319_ALFRESCO_USER_BATCH_DOWNLOAD_TASK_CENTER_GOVERNANCE_VERIFICATION_20260319.md`
+- `docs/PHASE320_ALFRESCO_WORKFLOW_PEOPLE_COLLAB_AND_COMMENT_FOCUS_DEV_20260319.md`
+- `docs/PHASE320_ALFRESCO_WORKFLOW_PEOPLE_COLLAB_AND_COMMENT_FOCUS_VERIFICATION_20260319.md`
+- `docs/PHASE321_ALFRESCO_WORKFLOW_INBOX_SCOPE_AND_SEARCH_API_DEV_20260319.md`
+- `docs/PHASE321_ALFRESCO_WORKFLOW_INBOX_SCOPE_AND_SEARCH_API_VERIFICATION_20260319.md`
+- `docs/PHASE322_ALFRESCO_WORKFLOW_WORKBENCH_SCOPE_SEARCH_SURFACES_DEV_20260319.md`
+- `docs/PHASE322_ALFRESCO_WORKFLOW_WORKBENCH_SCOPE_SEARCH_SURFACES_VERIFICATION_20260319.md`
+- `docs/PHASE323_ALFRESCO_PROCESS_BROWSER_WORKSPACE_PAGE_DEV_20260319.md`
+- `docs/PHASE323_ALFRESCO_PROCESS_BROWSER_WORKSPACE_PAGE_VERIFICATION_20260319.md`
+- `docs/PHASE324_ALFRESCO_PEOPLE_SELF_SERVICE_PROFILE_AND_PREFERENCES_DEV_20260319.md`
+- `docs/PHASE324_ALFRESCO_PEOPLE_SELF_SERVICE_PROFILE_AND_PREFERENCES_VERIFICATION_20260319.md`
+- `docs/PHASE325_ALFRESCO_WORKFLOW_PROCESS_ACTIVITIES_AND_TASK_CANDIDATES_DEV_20260319.md`
+- `docs/PHASE325_ALFRESCO_WORKFLOW_PROCESS_ACTIVITIES_AND_TASK_CANDIDATES_VERIFICATION_20260319.md`
+- `docs/PHASE326_ALFRESCO_PEOPLE_SITE_REQUEST_WITHDRAW_DEV_20260319.md`
+- `docs/PHASE326_ALFRESCO_PEOPLE_SITE_REQUEST_WITHDRAW_VERIFICATION_20260319.md`
+- `docs/PHASE327_ALFRESCO_WORKFLOW_INVOLVED_SCOPE_AND_ACTOR_SURFACES_DEV_20260319.md`
+- `docs/PHASE327_ALFRESCO_WORKFLOW_INVOLVED_SCOPE_AND_ACTOR_SURFACES_VERIFICATION_20260319.md`
+- `docs/PHASE328_ALFRESCO_PROCESS_BROWSER_DEEPER_FILTERS_AND_INVOLVED_SURFACES_DEV_20260319.md`
+- `docs/PHASE328_ALFRESCO_PROCESS_BROWSER_DEEPER_FILTERS_AND_INVOLVED_SURFACES_VERIFICATION_20260319.md`
+- `docs/PHASE329_ALFRESCO_PEOPLE_SITE_MEMBERSHIP_REQUEST_SELF_SERVICE_DEV_20260319.md`
+- `docs/PHASE329_ALFRESCO_PEOPLE_SITE_MEMBERSHIP_REQUEST_SELF_SERVICE_VERIFICATION_20260319.md`
+- `docs/PHASE330_ALFRESCO_PEOPLE_SITE_MEMBERSHIP_REQUEST_MODERATION_QUEUE_DEV_20260320.md`
+- `docs/PHASE330_ALFRESCO_PEOPLE_SITE_MEMBERSHIP_REQUEST_MODERATION_QUEUE_VERIFICATION_20260320.md`
+- `docs/PHASE331_ALFRESCO_PEOPLE_FAVORITES_RELATION_RESOURCES_DEV_20260320.md`
+- `docs/PHASE331_ALFRESCO_PEOPLE_FAVORITES_RELATION_RESOURCES_VERIFICATION_20260320.md`
+- `docs/PHASE332_ALFRESCO_PEOPLE_DIRECTORY_WRITABLE_FAVORITES_SURFACES_DEV_20260320.md`
+- `docs/PHASE332_ALFRESCO_PEOPLE_DIRECTORY_WRITABLE_FAVORITES_SURFACES_VERIFICATION_20260320.md`
+- `docs/PHASE333_ALFRESCO_WORKFLOW_GENERIC_PROCESS_START_DEV_20260320.md`
+- `docs/PHASE333_ALFRESCO_WORKFLOW_GENERIC_PROCESS_START_VERIFICATION_20260320.md`
+- `docs/PHASE334_ALFRESCO_WORKFLOW_TASK_TRANSITIONS_AND_DELEGATION_DEV_20260320.md`
+- `docs/PHASE334_ALFRESCO_WORKFLOW_TASK_TRANSITIONS_AND_DELEGATION_VERIFICATION_20260320.md`
+- `docs/PHASE335_ALFRESCO_PEOPLE_DIRECTORY_FAVORITE_SEARCH_PICKERS_DEV_20260320.md`
+- `docs/PHASE335_ALFRESCO_PEOPLE_DIRECTORY_FAVORITE_SEARCH_PICKERS_VERIFICATION_20260320.md`
+- `docs/PHASE336_ALFRESCO_WORKFLOW_PROCESS_TASK_HISTORY_RELATIONS_DEV_20260320.md`
+- `docs/PHASE336_ALFRESCO_WORKFLOW_PROCESS_TASK_HISTORY_RELATIONS_VERIFICATION_20260320.md`
+- `docs/PHASE337_ALFRESCO_WORKFLOW_PROCESS_VARIABLE_WRITE_SURFACES_DEV_20260320.md`
+- `docs/PHASE337_ALFRESCO_WORKFLOW_PROCESS_VARIABLE_WRITE_SURFACES_VERIFICATION_20260320.md`
+- `docs/PHASE338_ALFRESCO_PEOPLE_SITE_AND_FAVORITE_QUICK_ACTIONS_DEV_20260320.md`
+- `docs/PHASE338_ALFRESCO_PEOPLE_SITE_AND_FAVORITE_QUICK_ACTIONS_VERIFICATION_20260320.md`
+- `docs/PHASE339_ALFRESCO_WORKFLOW_TASK_WORKBENCH_VARIABLE_GOVERNANCE_DEV_20260320.md`
+- `docs/PHASE339_ALFRESCO_WORKFLOW_TASK_WORKBENCH_VARIABLE_GOVERNANCE_VERIFICATION_20260320.md`
+- `docs/PHASE340_ALFRESCO_WORKFLOW_HISTORY_FILTER_SURFACES_DEV_20260320.md`
+- `docs/PHASE340_ALFRESCO_WORKFLOW_HISTORY_FILTER_SURFACES_VERIFICATION_20260320.md`
+- `docs/PHASE341_ALFRESCO_PEOPLE_COMMENT_AND_ACTIVITY_QUICK_ACTIONS_DEV_20260320.md`
+- `docs/PHASE341_ALFRESCO_PEOPLE_COMMENT_AND_ACTIVITY_QUICK_ACTIONS_VERIFICATION_20260320.md`
+- `docs/PHASE342_ALFRESCO_WORKFLOW_HISTORY_FILTER_WORKSPACES_DEV_20260320.md`
+- `docs/PHASE342_ALFRESCO_WORKFLOW_HISTORY_FILTER_WORKSPACES_VERIFICATION_20260320.md`
+- `docs/PHASE343_ALFRESCO_PEOPLE_FAVORITES_COLLAB_LAUNCHER_REFINEMENT_DEV_20260320.md`
+- `docs/PHASE343_ALFRESCO_PEOPLE_FAVORITES_COLLAB_LAUNCHER_REFINEMENT_VERIFICATION_20260320.md`
+- `docs/PHASE344_ALFRESCO_WORKFLOW_HISTORY_SCOPES_AND_TASK_VARIABLE_FILTER_DEV_20260320.md`
+- `docs/PHASE344_ALFRESCO_WORKFLOW_HISTORY_SCOPES_AND_TASK_VARIABLE_FILTER_VERIFICATION_20260320.md`
+- `docs/PHASE345_ALFRESCO_PEOPLE_SITE_LAUNCHER_ROW_ACTIONS_DEV_20260320.md`
+- `docs/PHASE345_ALFRESCO_PEOPLE_SITE_LAUNCHER_ROW_ACTIONS_VERIFICATION_20260320.md`
+- `docs/PHASE346_ALFRESCO_WORKFLOW_VARIABLE_FILTER_PARITY_DEV_20260320.md`
+- `docs/PHASE346_ALFRESCO_WORKFLOW_VARIABLE_FILTER_PARITY_VERIFICATION_20260320.md`
+- `docs/PHASE347_ALFRESCO_PEOPLE_COLLAB_FILTER_SURFACES_DEV_20260320.md`
+- `docs/PHASE347_ALFRESCO_PEOPLE_COLLAB_FILTER_SURFACES_VERIFICATION_20260320.md`
+- `docs/PHASE348_ALFRESCO_WORKFLOW_HISTORY_AND_VARIABLE_QUICK_SCOPES_DEV_20260320.md`
+- `docs/PHASE348_ALFRESCO_WORKFLOW_HISTORY_AND_VARIABLE_QUICK_SCOPES_VERIFICATION_20260320.md`
+- `docs/PHASE349_ALFRESCO_PEOPLE_COLLAB_QUICK_SCOPES_DEV_20260320.md`
+- `docs/PHASE349_ALFRESCO_PEOPLE_COLLAB_QUICK_SCOPES_VERIFICATION_20260320.md`
+- `docs/PHASE350_ALFRESCO_WORKFLOW_ACTIVITY_AND_TASK_HISTORY_QUICK_SCOPES_DEV_20260320.md`
+- `docs/PHASE350_ALFRESCO_WORKFLOW_ACTIVITY_AND_TASK_HISTORY_QUICK_SCOPES_VERIFICATION_20260320.md`
+- `docs/PHASE351_ALFRESCO_PEOPLE_ENTRYPOINT_INTERACTION_CONSISTENCY_DEV_20260320.md`
+- `docs/PHASE351_ALFRESCO_PEOPLE_ENTRYPOINT_INTERACTION_CONSISTENCY_VERIFICATION_20260320.md`
+- `docs/PHASE352_ALFRESCO_WORKFLOW_ACTIVITY_FILTER_AND_STATS_SURFACES_DEV_20260320.md`
+- `docs/PHASE352_ALFRESCO_WORKFLOW_ACTIVITY_FILTER_AND_STATS_SURFACES_VERIFICATION_20260320.md`
+- `docs/PHASE353_ALFRESCO_PEOPLE_RECENT_ACTIVITY_ENTRY_CONSISTENCY_DEV_20260320.md`
+- `docs/PHASE353_ALFRESCO_PEOPLE_RECENT_ACTIVITY_ENTRY_CONSISTENCY_VERIFICATION_20260320.md`
+- `docs/PHASE354_ALFRESCO_WORKFLOW_SERVER_FILTERED_TASK_HISTORY_DEV_20260320.md`
+- `docs/PHASE354_ALFRESCO_WORKFLOW_SERVER_FILTERED_TASK_HISTORY_VERIFICATION_20260320.md`
+- `docs/PHASE355_ALFRESCO_PEOPLE_WORKSPACE_LAUNCHER_TRIAGE_DEV_20260320.md`
+- `docs/PHASE355_ALFRESCO_PEOPLE_WORKSPACE_LAUNCHER_TRIAGE_VERIFICATION_20260320.md`
+- `docs/ALFRESCO_BENCHMARK_SURPASS_PLAN_20260307.md`
+- `docs/NEXT_7DAY_PLAN_ALFRESCO_SURPASS_PARALLEL_20260309.md`
+- `scripts/phase164-preview-day7-delivery-gate.sh`
+- `scripts/phase235-preview-async-task-center-mock-e2e.sh`
+- `docs/NEXT_7DAY_PLAN_ALFRESCO_SURPASS_20260306.md`
+- `docs/ALFRESCO_BORROWABLE_FEATURES_PARALLEL_DEV_20260306.md`

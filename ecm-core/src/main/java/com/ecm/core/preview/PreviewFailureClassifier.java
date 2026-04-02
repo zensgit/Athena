@@ -62,6 +62,8 @@ public final class PreviewFailureClassifier {
         return normalized.startsWith("preview not supported")
             || normalized.contains("not supported for mime type")
             || normalized.contains("not available for empty pdf content")
+            || normalized.equals("source_empty")
+            || normalized.contains("source empty")
             || normalized.contains("cad preview disabled")
             || normalized.contains("cad preview service not configured");
     }
@@ -78,6 +80,8 @@ public final class PreviewFailureClassifier {
         return normalized.contains("timeout")
             || normalized.contains("timed out")
             || normalized.contains("temporar")
+            || normalized.contains("stale_hash_mismatch")
+            || normalized.contains("hash_enforce_declined")
             || normalized.contains("connection reset")
             || normalized.contains("connection refused")
             || normalized.contains("service unavailable")

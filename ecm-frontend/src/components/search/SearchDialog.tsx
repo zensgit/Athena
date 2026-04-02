@@ -67,6 +67,8 @@ const PREVIEW_STATUS_OPTIONS = [
   { value: 'UNSUPPORTED', label: 'Unsupported' },
   { value: 'PENDING', label: 'Pending' },
 ];
+type CheckoutSearchState = 'all' | 'checkedOut' | 'available';
+type LockSearchState = 'all' | 'locked' | 'unlocked';
 
 const SearchDialog: React.FC = () => {
   const dispatch = useAppDispatch();
@@ -123,6 +125,10 @@ const SearchDialog: React.FC = () => {
 
   const normalizeList = (items: string[]) =>
     items.map((item) => item.trim()).filter((item) => item.length > 0);
+  const resolveCheckoutState = (checkedOut?: boolean): CheckoutSearchState =>
+    checkedOut === true ? 'checkedOut' : checkedOut === false ? 'available' : 'all';
+  const resolveLockState = (locked?: boolean): LockSearchState =>
+    locked === true ? 'locked' : locked === false ? 'unlocked' : 'all';
 
   const loadFacets = async () => {
     try {
@@ -204,6 +210,10 @@ const SearchDialog: React.FC = () => {
           tags: lastSearchCriteria.tags || [],
           categories: lastSearchCriteria.categories || [],
           correspondents: lastSearchCriteria.correspondents || [],
+          locked: lastSearchCriteria.locked,
+          lockedBy: lastSearchCriteria.lockedBy || '',
+          checkedOut: lastSearchCriteria.checkedOut,
+          checkoutUser: lastSearchCriteria.checkoutUser || '',
           minSize: lastSearchCriteria.minSize,
           maxSize: lastSearchCriteria.maxSize,
           pathPrefix: lastSearchCriteria.path || '',
@@ -223,6 +233,10 @@ const SearchDialog: React.FC = () => {
       source.name
       || source.contentType
       || source.createdBy
+      || source.locked !== undefined
+      || Boolean(source.lockedBy)
+      || source.checkedOut !== undefined
+      || Boolean(source.checkoutUser)
       || (source.previewStatuses && source.previewStatuses.length > 0)
       || (source.folderId && source.folderId.trim().length > 0)
     );
@@ -263,6 +277,10 @@ const SearchDialog: React.FC = () => {
       aspects: source.aspects || [],
       contentType: source.contentType || '',
       createdBy: source.createdBy || '',
+      locked: source.locked,
+      lockedBy: source.lockedBy || '',
+      checkedOut: source.checkedOut,
+      checkoutUser: source.checkoutUser || '',
       createdFrom: source.createdFrom,
       createdTo: source.createdTo,
       modifiedFrom: source.modifiedFrom,
@@ -362,6 +380,10 @@ const SearchDialog: React.FC = () => {
       aspects: [],
       contentType: '',
       createdBy: '',
+      locked: undefined,
+      lockedBy: '',
+      checkedOut: undefined,
+      checkoutUser: '',
     });
     setCustomProperties([]);
     setNewPropertyKey('');
@@ -419,6 +441,18 @@ const SearchDialog: React.FC = () => {
     }
     if (selectedPreviewStatuses.length > 0) {
       filters.previewStatuses = selectedPreviewStatuses;
+    }
+    if (searchCriteria.locked !== undefined) {
+      filters.locked = searchCriteria.locked;
+    }
+    if (searchCriteria.lockedBy?.trim()) {
+      filters.lockedBy = searchCriteria.lockedBy.trim();
+    }
+    if (searchCriteria.checkedOut !== undefined) {
+      filters.checkedOut = searchCriteria.checkedOut;
+    }
+    if (searchCriteria.checkoutUser?.trim()) {
+      filters.checkoutUser = searchCriteria.checkoutUser.trim();
     }
     if (minSize !== undefined) {
       filters.minSize = minSize;
@@ -557,6 +591,24 @@ const SearchDialog: React.FC = () => {
     if (searchCriteria.createdBy?.trim()) {
       chips.push({ key: 'createdBy', label: `Creator: ${searchCriteria.createdBy.trim()}` });
     }
+    if (searchCriteria.locked !== undefined) {
+      chips.push({
+        key: 'locked',
+        label: `Lock: ${searchCriteria.locked ? 'locked' : 'unlocked'}`,
+      });
+    }
+    if (searchCriteria.lockedBy?.trim()) {
+      chips.push({ key: 'lockedBy', label: `Lock owner: ${searchCriteria.lockedBy.trim()}` });
+    }
+    if (searchCriteria.checkedOut !== undefined) {
+      chips.push({
+        key: 'checkedOut',
+        label: `Checkout: ${searchCriteria.checkedOut ? 'checked out' : 'available'}`,
+      });
+    }
+    if (searchCriteria.checkoutUser?.trim()) {
+      chips.push({ key: 'checkoutUser', label: `Checkout user: ${searchCriteria.checkoutUser.trim()}` });
+    }
     if (searchCriteria.createdFrom || searchCriteria.createdTo) {
       chips.push({
         key: 'createdDate',
@@ -606,6 +658,10 @@ const SearchDialog: React.FC = () => {
     searchCriteria.name,
     searchCriteria.contentType,
     searchCriteria.createdBy,
+    searchCriteria.locked,
+    searchCriteria.lockedBy,
+    searchCriteria.checkedOut,
+    searchCriteria.checkoutUser,
     searchCriteria.createdFrom,
     searchCriteria.createdTo,
     searchCriteria.modifiedFrom,
@@ -651,6 +707,10 @@ const SearchDialog: React.FC = () => {
       searchCriteria.name ||
       searchCriteria.contentType ||
       searchCriteria.createdBy ||
+      searchCriteria.locked !== undefined ||
+      searchCriteria.lockedBy ||
+      searchCriteria.checkedOut !== undefined ||
+      searchCriteria.checkoutUser ||
       (searchCriteria.aspects && searchCriteria.aspects.length > 0) ||
       customProperties.length > 0 ||
       searchCriteria.createdFrom ||
@@ -798,6 +858,74 @@ const SearchDialog: React.FC = () => {
                         ))}
                       </Select>
                     </FormControl>
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <FormControl fullWidth>
+                      <InputLabel>Lock State</InputLabel>
+                      <Select
+                        value={resolveLockState(searchCriteria.locked)}
+                        label="Lock State"
+                        onChange={(e) => {
+                          const value = e.target.value as LockSearchState;
+                          setSearchCriteria({
+                            ...searchCriteria,
+                            locked: value === 'locked' ? true : value === 'unlocked' ? false : undefined,
+                          });
+                        }}
+                      >
+                        <MenuItem value="all">All documents</MenuItem>
+                        <MenuItem value="locked">Locked</MenuItem>
+                        <MenuItem value="unlocked">Unlocked</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="Lock Owner"
+                      value={searchCriteria.lockedBy || ''}
+                      onChange={(e) =>
+                        setSearchCriteria({
+                          ...searchCriteria,
+                          lockedBy: e.target.value,
+                        })
+                      }
+                      placeholder="alice"
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <FormControl fullWidth>
+                      <InputLabel>Checkout State</InputLabel>
+                      <Select
+                        value={resolveCheckoutState(searchCriteria.checkedOut)}
+                        label="Checkout State"
+                        onChange={(e) => {
+                          const value = e.target.value as CheckoutSearchState;
+                          setSearchCriteria({
+                            ...searchCriteria,
+                            checkedOut: value === 'checkedOut' ? true : value === 'available' ? false : undefined,
+                          });
+                        }}
+                      >
+                        <MenuItem value="all">All documents</MenuItem>
+                        <MenuItem value="checkedOut">Checked out</MenuItem>
+                        <MenuItem value="available">Available</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="Checkout User"
+                      value={searchCriteria.checkoutUser || ''}
+                      onChange={(e) =>
+                        setSearchCriteria({
+                          ...searchCriteria,
+                          checkoutUser: e.target.value,
+                        })
+                      }
+                      placeholder="alice"
+                    />
                   </Grid>
                   <Grid item xs={12}>
                     <FormControl fullWidth>

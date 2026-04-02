@@ -4,7 +4,9 @@ import com.ecm.core.entity.Node;
 import com.ecm.core.entity.Permission.PermissionType;
 import com.ecm.core.entity.ShareLink;
 import com.ecm.core.entity.ShareLink.SharePermission;
+import com.ecm.core.entity.ShareLinkAccessLog;
 import com.ecm.core.repository.NodeRepository;
+import com.ecm.core.repository.ShareLinkAccessLogRepository;
 import com.ecm.core.repository.ShareLinkRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -36,6 +38,7 @@ import java.util.UUID;
 public class ShareLinkService {
 
     private final ShareLinkRepository shareLinkRepository;
+    private final ShareLinkAccessLogRepository accessLogRepository;
     private final NodeRepository nodeRepository;
     private final SecurityService securityService;
     private final PasswordEncoder passwordEncoder;
@@ -96,6 +99,7 @@ public class ShareLinkService {
         if (!shareLink.isValid()) {
             String reason = determineInvalidReason(shareLink);
             log.warn("Invalid share link access attempt: {} - {}", token, reason);
+            recordAccessLog(shareLink, clientIp, null, false, reason);
             return ShareLinkAccessResult.invalid(reason);
         }
 
@@ -103,6 +107,7 @@ public class ShareLinkService {
         if (shareLink.requiresPassword()) {
             if (password == null || !passwordEncoder.matches(password, shareLink.getPasswordHash())) {
                 log.warn("Incorrect password for share link: {}", token);
+                recordAccessLog(shareLink, clientIp, null, false, "Incorrect password");
                 return ShareLinkAccessResult.requirePassword();
             }
         }
@@ -110,12 +115,14 @@ public class ShareLinkService {
         // Check IP restrictions
         if (shareLink.getAllowedIps() != null && !isIpAllowed(clientIp, shareLink.getAllowedIps())) {
             log.warn("IP {} not allowed for share link: {}", clientIp, token);
+            recordAccessLog(shareLink, clientIp, null, false, "IP restricted");
             return ShareLinkAccessResult.ipRestricted();
         }
 
         // Record access
         shareLink.recordAccess();
         shareLinkRepository.save(shareLink);
+        recordAccessLog(shareLink, clientIp, null, true, null);
 
         log.info("Share link {} accessed successfully", token);
         return ShareLinkAccessResult.success(shareLink);
@@ -434,6 +441,69 @@ public class ShareLinkService {
         }
         return String.join(",", normalized);
     }
+
+    // ---- enhanced lifecycle methods -----------------------------------------
+
+    /**
+     * Reactivate a previously deactivated share link.
+     */
+    @Transactional
+    public ShareLink reactivateShareLink(String token) {
+        ShareLink shareLink = getByToken(token);
+        String currentUser = securityService.getCurrentUser();
+        if (!shareLink.getCreatedBy().equals(currentUser) && !securityService.hasRole("ROLE_ADMIN")) {
+            throw new SecurityException("Only creator or admin can reactivate share link");
+        }
+        shareLink.setActive(true);
+        log.info("Share link {} reactivated by {}", token, currentUser);
+        return shareLinkRepository.save(shareLink);
+    }
+
+    /**
+     * List all share links in the system (admin only).
+     */
+    public List<ShareLink> listAllShareLinks() {
+        if (!securityService.hasRole("ROLE_ADMIN")) {
+            throw new SecurityException("Only admin can list all share links");
+        }
+        return shareLinkRepository.findAll();
+    }
+
+    /**
+     * Get access log entries for a share link.
+     */
+    public List<ShareLinkAccessLog> getAccessLog(String token) {
+        ShareLink shareLink = getByToken(token);
+        String currentUser = securityService.getCurrentUser();
+        if (!shareLink.getCreatedBy().equals(currentUser) && !securityService.hasRole("ROLE_ADMIN")) {
+            throw new SecurityException("Only creator or admin can view access log");
+        }
+        return accessLogRepository.findByShareLinkIdOrderByAccessedAtDesc(shareLink.getId());
+    }
+
+    /**
+     * Get access statistics for a share link.
+     */
+    public ShareLinkAccessStats getAccessStats(String token) {
+        ShareLink shareLink = getByToken(token);
+        long total = accessLogRepository.countByShareLinkId(shareLink.getId());
+        long successful = accessLogRepository.countByShareLinkIdAndSuccessTrue(shareLink.getId());
+        long failed = accessLogRepository.countByShareLinkIdAndSuccessFalse(shareLink.getId());
+        return new ShareLinkAccessStats(total, successful, failed);
+    }
+
+    private void recordAccessLog(ShareLink shareLink, String clientIp, String userAgent,
+                                  boolean success, String failureReason) {
+        ShareLinkAccessLog logEntry = new ShareLinkAccessLog();
+        logEntry.setShareLink(shareLink);
+        logEntry.setClientIp(clientIp);
+        logEntry.setUserAgent(userAgent);
+        logEntry.setSuccess(success);
+        logEntry.setFailureReason(failureReason);
+        accessLogRepository.save(logEntry);
+    }
+
+    public record ShareLinkAccessStats(long totalAccesses, long successfulAccesses, long failedAccesses) {}
 
     // Request/Response records
 

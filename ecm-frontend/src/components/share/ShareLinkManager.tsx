@@ -21,9 +21,27 @@ import {
   MenuItem,
   CircularProgress,
   Typography,
+  Collapse,
+  Chip,
+  Tooltip,
 } from '@mui/material';
-import { Close, Add, ContentCopy, Delete, Block } from '@mui/icons-material';
-import shareLinkService, { ShareLink, SharePermission } from 'services/shareLinkService';
+import {
+  Close,
+  Add,
+  ContentCopy,
+  Delete,
+  Block,
+  PlayArrow,
+  ExpandMore,
+  ExpandLess,
+  BarChart,
+} from '@mui/icons-material';
+import shareLinkService, {
+  ShareLink,
+  SharePermission,
+  AccessLogEntry,
+  AccessStats,
+} from 'services/shareLinkService';
 import { toast } from 'react-toastify';
 import { useAppSelector } from 'store';
 import authService from 'services/authService';
@@ -52,6 +70,12 @@ const ShareLinkManager: React.FC<ShareLinkManagerProps> = ({ open, onClose, sele
     allowedIps: '',
   });
 
+  // access stats / log state
+  const [expandedToken, setExpandedToken] = useState<string | null>(null);
+  const [accessStats, setAccessStats] = useState<Record<string, AccessStats>>({});
+  const [accessLog, setAccessLog] = useState<Record<string, AccessLogEntry[]>>({});
+  const [logLoading, setLogLoading] = useState(false);
+
   const loadLinks = async () => {
     if (!selectedNodeId) return;
     setLoading(true);
@@ -69,6 +93,7 @@ const ShareLinkManager: React.FC<ShareLinkManagerProps> = ({ open, onClose, sele
     if (open) {
       loadLinks();
       setCreateMode(false);
+      setExpandedToken(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, selectedNodeId]);
@@ -86,10 +111,7 @@ const ShareLinkManager: React.FC<ShareLinkManagerProps> = ({ open, onClose, sele
 
   const handleCreate = async () => {
     if (!selectedNodeId) return;
-    if (!canWrite) {
-      toast.error('Requires write permission');
-      return;
-    }
+    if (!canWrite) { toast.error('Requires write permission'); return; }
     try {
       const payload = {
         name: formData.name || undefined,
@@ -103,10 +125,8 @@ const ShareLinkManager: React.FC<ShareLinkManagerProps> = ({ open, onClose, sele
       toast.success('Share link created');
       resetForm();
       setCreateMode(false);
-      loadLinks();
-    } catch {
-      toast.error('Failed to create share link');
-    }
+      await loadLinks();
+    } catch { toast.error('Failed to create share link'); }
   };
 
   const handleCopy = async (token: string) => {
@@ -114,199 +134,192 @@ const ShareLinkManager: React.FC<ShareLinkManagerProps> = ({ open, onClose, sele
     try {
       await navigator.clipboard.writeText(url);
       toast.success('Link copied');
-    } catch {
-      toast.error('Failed to copy link');
-    }
+    } catch { toast.error('Failed to copy link'); }
   };
 
   const handleDeactivate = async (token: string) => {
-    if (!canWrite) {
-      toast.error('Requires write permission');
-      return;
-    }
+    if (!canWrite) return;
     try {
       await shareLinkService.deactivateLink(token);
       toast.success('Share link deactivated');
-      loadLinks();
-    } catch {
-      toast.error('Failed to deactivate link');
-    }
+      await loadLinks();
+    } catch { toast.error('Failed to deactivate link'); }
+  };
+
+  const handleReactivate = async (token: string) => {
+    if (!canWrite) return;
+    try {
+      await shareLinkService.reactivateLink(token);
+      toast.success('Share link reactivated');
+      await loadLinks();
+    } catch { toast.error('Failed to reactivate link'); }
   };
 
   const handleDelete = async (token: string) => {
-    if (!canWrite) {
-      toast.error('Requires write permission');
-      return;
-    }
+    if (!canWrite) return;
     if (!window.confirm('Delete this share link permanently?')) return;
     try {
       await shareLinkService.deleteLink(token);
       toast.success('Share link deleted');
-      loadLinks();
-    } catch {
-      toast.error('Failed to delete link');
+      await loadLinks();
+    } catch { toast.error('Failed to delete link'); }
+  };
+
+  const toggleExpand = async (token: string) => {
+    if (expandedToken === token) {
+      setExpandedToken(null);
+      return;
     }
+    setExpandedToken(token);
+    setLogLoading(true);
+    try {
+      const [stats, log] = await Promise.all([
+        shareLinkService.getAccessStats(token),
+        shareLinkService.getAccessLog(token),
+      ]);
+      setAccessStats((prev) => ({ ...prev, [token]: stats }));
+      setAccessLog((prev) => ({ ...prev, [token]: log }));
+    } catch { toast.error('Failed to load access data'); }
+    finally { setLogLoading(false); }
+  };
+
+  const statusChip = (link: ShareLink) => {
+    if (!link.active) return <Chip label="Inactive" size="small" color="default" />;
+    if (!link.isValid) return <Chip label="Expired" size="small" color="warning" />;
+    return <Chip label="Active" size="small" color="success" />;
   };
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle>
         Share Links
-        <IconButton
-          aria-label="close"
-          onClick={onClose}
-          sx={{ position: 'absolute', right: 8, top: 8 }}
-        >
+        <IconButton aria-label="close" onClick={onClose} sx={{ position: 'absolute', right: 8, top: 8 }}>
           <Close />
         </IconButton>
       </DialogTitle>
       <DialogContent>
         <Box display="flex" gap={2} mb={2}>
-          <Button
-            variant="contained"
-            startIcon={<Add />}
-            onClick={() => setCreateMode((v) => !v)}
-            disabled={!selectedNodeId || !canWrite}
-          >
+          <Button variant="contained" startIcon={<Add />} onClick={() => setCreateMode((v) => !v)} disabled={!selectedNodeId || !canWrite}>
             New Share Link
           </Button>
         </Box>
 
         {canWrite && createMode && (
           <Paper sx={{ p: 2, mb: 2 }}>
-            <Typography variant="h6" gutterBottom>
-              Create Share Link
-            </Typography>
+            <Typography variant="h6" gutterBottom>Create Share Link</Typography>
             <Box display="flex" flexDirection="column" gap={2}>
-              <TextField
-                label="Name"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                size="small"
-              />
+              <TextField label="Name" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} size="small" />
               <FormControl size="small">
                 <InputLabel>Permission</InputLabel>
-                <Select
-                  label="Permission"
-                  value={formData.permissionLevel}
-                  onChange={(e) =>
-                    setFormData({ ...formData, permissionLevel: e.target.value as SharePermission })
-                  }
-                >
+                <Select label="Permission" value={formData.permissionLevel} onChange={(e) => setFormData({ ...formData, permissionLevel: e.target.value as SharePermission })}>
                   <MenuItem value="VIEW">View</MenuItem>
                   <MenuItem value="COMMENT">Comment</MenuItem>
                   <MenuItem value="EDIT">Edit</MenuItem>
                 </Select>
               </FormControl>
-              <TextField
-                label="Expiry Date"
-                type="datetime-local"
-                value={formData.expiryDate}
-                onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })}
-                size="small"
-                InputLabelProps={{ shrink: true }}
-              />
-              <TextField
-                label="Max Access Count"
-                type="number"
-                value={formData.maxAccessCount}
-                onChange={(e) => setFormData({ ...formData, maxAccessCount: e.target.value })}
-                size="small"
-              />
-              <TextField
-                label="Password (optional)"
-                type="password"
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                size="small"
-              />
-              <TextField
-                label="Allowed IPs (comma-separated)"
-                value={formData.allowedIps}
-                onChange={(e) => setFormData({ ...formData, allowedIps: e.target.value })}
-                size="small"
-              />
+              <TextField label="Expiry Date" type="datetime-local" value={formData.expiryDate} onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })} size="small" InputLabelProps={{ shrink: true }} />
+              <TextField label="Max Access Count" type="number" value={formData.maxAccessCount} onChange={(e) => setFormData({ ...formData, maxAccessCount: e.target.value })} size="small" />
+              <TextField label="Password (optional)" type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} size="small" />
+              <TextField label="Allowed IPs (comma-separated)" value={formData.allowedIps} onChange={(e) => setFormData({ ...formData, allowedIps: e.target.value })} size="small" />
             </Box>
             <Box display="flex" gap={1} mt={2}>
-              <Button variant="contained" onClick={handleCreate}>
-                Create
-              </Button>
-              <Button
-                variant="outlined"
-                onClick={() => {
-                  resetForm();
-                  setCreateMode(false);
-                }}
-              >
-                Cancel
-              </Button>
+              <Button variant="contained" onClick={() => void handleCreate()}>Create</Button>
+              <Button variant="outlined" onClick={() => { resetForm(); setCreateMode(false); }}>Cancel</Button>
             </Box>
           </Paper>
         )}
 
         {loading ? (
-          <Box display="flex" justifyContent="center" p={4}>
-            <CircularProgress />
-          </Box>
+          <Box display="flex" justifyContent="center" p={4}><CircularProgress /></Box>
         ) : (
           <TableContainer component={Paper}>
             <Table size="small">
               <TableHead>
                 <TableRow>
+                  <TableCell width={40} />
                   <TableCell>Name</TableCell>
-                  <TableCell>Token</TableCell>
+                  <TableCell>Status</TableCell>
                   <TableCell>Permission</TableCell>
                   <TableCell>Expires</TableCell>
                   <TableCell>Access</TableCell>
-                  <TableCell align="right" width={160}>Actions</TableCell>
+                  <TableCell align="right" width={200}>Actions</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {links.map((link) => (
-                  <TableRow key={link.token} hover>
-                    <TableCell>{link.name || '-'}</TableCell>
-                    <TableCell>{link.token}</TableCell>
-                    <TableCell>{link.permissionLevel}</TableCell>
-                    <TableCell>{link.expiryDate ? new Date(link.expiryDate).toLocaleString() : '-'}</TableCell>
-                    <TableCell>
-                      {link.accessCount}/{link.maxAccessCount ?? '∞'}
-                    </TableCell>
-                    <TableCell align="right">
-                      <IconButton
-                        size="small"
-                        aria-label={`Copy share link ${link.name || link.token}`}
-                        onClick={() => handleCopy(link.token)}
-                      >
-                        <ContentCopy fontSize="small" />
-                      </IconButton>
-                      {canWrite && link.active && (
-                        <IconButton
-                          size="small"
-                          aria-label={`Deactivate share link ${link.name || link.token}`}
-                          onClick={() => handleDeactivate(link.token)}
-                        >
-                          <Block fontSize="small" />
+                  <React.Fragment key={link.token}>
+                    <TableRow hover>
+                      <TableCell>
+                        <IconButton size="small" onClick={() => void toggleExpand(link.token)}>
+                          {expandedToken === link.token ? <ExpandLess fontSize="small" /> : <ExpandMore fontSize="small" />}
                         </IconButton>
-                      )}
-                      {canWrite && (
-                        <IconButton
-                          size="small"
-                          color="error"
-                          aria-label={`Delete share link ${link.name || link.token}`}
-                          onClick={() => handleDelete(link.token)}
-                        >
-                          <Delete fontSize="small" />
-                        </IconButton>
-                      )}
-                    </TableCell>
-                  </TableRow>
+                      </TableCell>
+                      <TableCell>{link.name || link.token.slice(0, 8) + '...'}</TableCell>
+                      <TableCell>{statusChip(link)}</TableCell>
+                      <TableCell>{link.permissionLevel}</TableCell>
+                      <TableCell>{link.expiryDate ? new Date(link.expiryDate).toLocaleString() : 'Never'}</TableCell>
+                      <TableCell>
+                        {link.accessCount}/{link.maxAccessCount ?? '\u221e'}
+                        {link.passwordProtected && <Chip label="PWD" size="small" sx={{ ml: 0.5 }} variant="outlined" />}
+                        {link.hasIpRestrictions && <Chip label="IP" size="small" sx={{ ml: 0.5 }} variant="outlined" />}
+                      </TableCell>
+                      <TableCell align="right">
+                        <Tooltip title="Copy link"><IconButton size="small" onClick={() => void handleCopy(link.token)}><ContentCopy fontSize="small" /></IconButton></Tooltip>
+                        {canWrite && link.active && (
+                          <Tooltip title="Deactivate"><IconButton size="small" onClick={() => void handleDeactivate(link.token)}><Block fontSize="small" /></IconButton></Tooltip>
+                        )}
+                        {canWrite && !link.active && (
+                          <Tooltip title="Reactivate"><IconButton size="small" color="success" onClick={() => void handleReactivate(link.token)}><PlayArrow fontSize="small" /></IconButton></Tooltip>
+                        )}
+                        {canWrite && (
+                          <Tooltip title="Delete"><IconButton size="small" color="error" onClick={() => void handleDelete(link.token)}><Delete fontSize="small" /></IconButton></Tooltip>
+                        )}
+                      </TableCell>
+                    </TableRow>
+
+                    {/* Expandable access stats + log row */}
+                    <TableRow>
+                      <TableCell colSpan={7} sx={{ p: 0, border: 0 }}>
+                        <Collapse in={expandedToken === link.token} timeout="auto" unmountOnExit>
+                          <Box sx={{ p: 2, bgcolor: 'action.hover' }}>
+                            {logLoading ? <CircularProgress size={20} /> : (
+                              <>
+                                {accessStats[link.token] && (
+                                  <Box display="flex" gap={3} mb={1.5}>
+                                    <Box><Typography variant="caption" color="text.secondary">Total</Typography><Typography variant="h6">{accessStats[link.token].totalAccesses}</Typography></Box>
+                                    <Box><Typography variant="caption" color="text.secondary">Successful</Typography><Typography variant="h6" color="success.main">{accessStats[link.token].successfulAccesses}</Typography></Box>
+                                    <Box><Typography variant="caption" color="text.secondary">Failed</Typography><Typography variant="h6" color="error.main">{accessStats[link.token].failedAccesses}</Typography></Box>
+                                  </Box>
+                                )}
+                                {accessLog[link.token] && accessLog[link.token].length > 0 ? (
+                                  <Table size="small">
+                                    <TableHead><TableRow>
+                                      <TableCell>Time</TableCell><TableCell>IP</TableCell><TableCell>Result</TableCell><TableCell>Reason</TableCell>
+                                    </TableRow></TableHead>
+                                    <TableBody>
+                                      {accessLog[link.token].slice(0, 10).map((entry) => (
+                                        <TableRow key={entry.id}>
+                                          <TableCell>{new Date(entry.accessedAt).toLocaleString()}</TableCell>
+                                          <TableCell>{entry.clientIp || '-'}</TableCell>
+                                          <TableCell>{entry.success ? <Chip label="OK" size="small" color="success" /> : <Chip label="Fail" size="small" color="error" />}</TableCell>
+                                          <TableCell>{entry.failureReason || '-'}</TableCell>
+                                        </TableRow>
+                                      ))}
+                                    </TableBody>
+                                  </Table>
+                                ) : (
+                                  <Typography variant="body2" color="text.secondary">No access attempts recorded</Typography>
+                                )}
+                              </>
+                            )}
+                          </Box>
+                        </Collapse>
+                      </TableCell>
+                    </TableRow>
+                  </React.Fragment>
                 ))}
                 {links.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={6} align="center">
-                      No share links
-                    </TableCell>
-                  </TableRow>
+                  <TableRow><TableCell colSpan={7} align="center">No share links</TableCell></TableRow>
                 )}
               </TableBody>
             </Table>

@@ -10,6 +10,7 @@ import {
   Card,
   CardContent,
   Checkbox,
+  Alert,
   Button,
   IconButton,
   Typography,
@@ -24,6 +25,9 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
+  Switch,
+  TextField,
 } from '@mui/material';
 import { SxProps, Theme } from '@mui/material/styles';
 import {
@@ -47,10 +51,17 @@ import {
   InfoOutlined,
   Star,
   StarBorder,
+  LockOutlined,
+  EditOutlined,
+  CheckCircleOutline,
+  FolderOpen,
+  Undo,
+  Publish,
+  AccountTree,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
-import { Node } from 'types';
+import { LockType, Node } from 'types';
 import { useAppDispatch, useAppSelector } from 'store';
 import { copyNode, deleteNodes, fetchChildren, moveNode, setSelectedNodes, toggleNodeSelection } from 'store/slices/nodeSlice';
 import {
@@ -61,13 +72,19 @@ import {
   setTagManagerOpen,
   setCategoryManagerOpen,
   setShareLinkManagerOpen,
+  setAssociationManagerOpen,
   setMlSuggestionsOpen,
 } from 'store/slices/uiSlice';
 import nodeService from 'services/nodeService';
 import favoriteService from 'services/favoriteService';
 import { toast } from 'react-toastify';
 import MoveCopyDialog from 'components/dialogs/MoveCopyDialog';
-import { getFailedPreviewMeta } from 'utils/previewStatusUtils';
+import CheckoutGraphDialog from 'components/dialogs/CheckoutGraphDialog';
+import RenditionDefinitionDialog from 'components/dialogs/RenditionDefinitionDialog';
+import { getEffectivePreviewStatus, getFailedPreviewMeta } from 'utils/previewStatusUtils';
+import { getCancelCheckoutActionReason, getCheckInActionReason, getFileCheckoutActionReason, getFileCheckoutTooltip } from 'utils/fileCheckoutBadgeUtils';
+import { getFileLockActionReason, getFileLockTooltip } from 'utils/fileLockBadgeUtils';
+import RatingBadge from 'components/ratings/RatingBadge';
 
 interface FileListProps {
   nodes: Node[];
@@ -99,6 +116,7 @@ const FileList: React.FC<FileListProps> = ({
   const { compactMode, sortBy, sortAscending, viewMode } = useAppSelector((state) => state.ui);
   const canWrite = Boolean(user?.roles?.includes('ROLE_ADMIN') || user?.roles?.includes('ROLE_EDITOR'));
   const isAdmin = Boolean(user?.roles?.includes('ROLE_ADMIN'));
+  const currentUsername = user?.username ?? null;
   const [contextMenu, setContextMenu] = React.useState<{
     mouseX: number;
     mouseY: number;
@@ -108,6 +126,21 @@ const FileList: React.FC<FileListProps> = ({
   const [moveCopyMode, setMoveCopyMode] = React.useState<'move' | 'copy'>('copy');
   const [moveCopySource, setMoveCopySource] = React.useState<Node | null>(null);
   const [nameDialogNode, setNameDialogNode] = React.useState<Node | null>(null);
+  const [lockDialogNode, setLockDialogNode] = React.useState<Node | null>(null);
+  const [lockType, setLockType] = React.useState<LockType>('WRITE_LOCK');
+  const [lockLifetime, setLockLifetime] = React.useState<'PERSISTENT' | 'EPHEMERAL'>('PERSISTENT');
+  const [lockDurationMinutes, setLockDurationMinutes] = React.useState('30');
+  const [lockDeep, setLockDeep] = React.useState(false);
+  const [lockAdditionalInfo, setLockAdditionalInfo] = React.useState('');
+  const [lockSubmitting, setLockSubmitting] = React.useState(false);
+  const [checkInDialogNode, setCheckInDialogNode] = React.useState<Node | null>(null);
+  const [checkInFile, setCheckInFile] = React.useState<File | null>(null);
+  const [checkInComment, setCheckInComment] = React.useState('');
+  const [checkInMajorVersion, setCheckInMajorVersion] = React.useState(false);
+  const [checkInKeepCheckedOut, setCheckInKeepCheckedOut] = React.useState(false);
+  const [checkInSubmitting, setCheckInSubmitting] = React.useState(false);
+  const [checkoutGraphDialogNode, setCheckoutGraphDialogNode] = React.useState<Node | null>(null);
+  const [renditionDialogNode, setRenditionDialogNode] = React.useState<Node | null>(null);
   const [favoriteIds, setFavoriteIds] = React.useState<Set<string>>(() => new Set());
 
   React.useEffect(() => {
@@ -159,12 +192,17 @@ const FileList: React.FC<FileListProps> = ({
   };
 
   const getPreviewStatusMeta = (node: Node) => {
-    const status = node.previewStatus?.toUpperCase();
-    if (!status || status === 'READY') {
+    const mimeType = node.contentType || node.properties?.mimeType || node.properties?.contentType;
+    const status = getEffectivePreviewStatus(
+      node.previewStatus,
+      node.previewFailureCategory,
+      mimeType,
+      node.previewFailureReason
+    );
+    if (!status || status === 'READY' || status === 'PENDING') {
       return null;
     }
-    if (status === 'FAILED') {
-      const mimeType = node.contentType || node.properties?.mimeType || node.properties?.contentType;
+    if (status === 'FAILED' || status === 'UNSUPPORTED') {
       return getFailedPreviewMeta(mimeType, node.previewFailureCategory, node.previewFailureReason);
     }
     if (status === 'PROCESSING') {
@@ -324,6 +362,51 @@ const FileList: React.FC<FileListProps> = ({
     setContextMenu(null);
   };
 
+  const renderContextMenuItem = ({
+    visible = true,
+    disabledReason,
+    onClick,
+    icon,
+    label,
+  }: {
+    visible?: boolean;
+    disabledReason?: string | null;
+    onClick: () => void | Promise<void>;
+    icon: React.ReactNode;
+    label: string;
+  }) => {
+    if (!visible) {
+      return null;
+    }
+
+    const item = (
+      <MenuItem
+        disabled={Boolean(disabledReason)}
+        onClick={() => {
+          if (disabledReason) {
+            return;
+          }
+          void onClick();
+        }}
+      >
+        <ListItemIcon>{icon}</ListItemIcon>
+        <ListItemText>{label}</ListItemText>
+      </MenuItem>
+    );
+
+    if (!disabledReason) {
+      return item;
+    }
+
+    return (
+      <Tooltip title={disabledReason} placement="left" arrow>
+        <Box component="span" sx={{ display: 'block' }}>
+          {item}
+        </Box>
+      </Tooltip>
+    );
+  };
+
   const toggleFavorite = async (node: Node) => {
     const isFav = favoriteIds.has(node.id);
     try {
@@ -414,6 +497,12 @@ const FileList: React.FC<FileListProps> = ({
     handleCloseContextMenu();
   };
 
+  const handleOpenAssociations = (node: Node) => {
+    dispatch(setSelectedNodeId(node.id));
+    dispatch(setAssociationManagerOpen(true));
+    handleCloseContextMenu();
+  };
+
   const handleOpenMlSuggestions = (node: Node) => {
     dispatch(setSelectedNodeId(node.id));
     dispatch(setMlSuggestionsOpen(true));
@@ -430,6 +519,186 @@ const FileList: React.FC<FileListProps> = ({
       }
     }
     handleCloseContextMenu();
+  };
+
+  const handleCheckoutNode = async (node: Node) => {
+    try {
+      await nodeService.checkoutDocument(node.id);
+      await refreshCurrentFolder();
+      toast.success('Document checked out');
+    } catch {
+      toast.error('Failed to check out document');
+    }
+    handleCloseContextMenu();
+  };
+
+  const handleCancelCheckoutNode = async (node: Node) => {
+    try {
+      await nodeService.cancelCheckoutDocument(node.id);
+      await refreshCurrentFolder();
+      toast.success('Checkout cancelled');
+    } catch {
+      toast.error('Failed to cancel checkout');
+    }
+    handleCloseContextMenu();
+  };
+
+  const handleOpenCheckInTarget = async (node: Node) => {
+    try {
+      const graph = await nodeService.getNodeRelationCheckoutGraph(node.id);
+      const destinationId = graph.destinationNode?.id;
+      if (!destinationId) {
+        toast.info('No check-in target available for this document');
+        return;
+      }
+      navigate(`/browse/${destinationId}`);
+    } catch {
+      toast.error('Failed to open check-in target');
+    }
+    handleCloseContextMenu();
+  };
+
+  const handleOpenCheckoutGraph = (node: Node) => {
+    setCheckoutGraphDialogNode(node);
+    handleCloseContextMenu();
+  };
+
+  const handleOpenRenditionRegistry = (node: Node) => {
+    setRenditionDialogNode(node);
+    handleCloseContextMenu();
+  };
+
+  const getUnlockActionReason = (node: Node): string | null => {
+    if (!node.locked) {
+      return 'Item is not locked';
+    }
+    if (!isAdmin && node.lockedBy && currentUsername && node.lockedBy !== currentUsername) {
+      return `Locked by ${node.lockedBy}`;
+    }
+    if (!isAdmin && node.lockedBy && !currentUsername) {
+      return `Locked by ${node.lockedBy}`;
+    }
+    return null;
+  };
+
+  const closeLockDialog = () => {
+    if (lockSubmitting) {
+      return;
+    }
+    setLockDialogNode(null);
+    setLockType('WRITE_LOCK');
+    setLockLifetime('PERSISTENT');
+    setLockDurationMinutes('30');
+    setLockDeep(false);
+    setLockAdditionalInfo('');
+  };
+
+  const openLockDialog = (node: Node) => {
+    setLockDialogNode(node);
+    setLockType('WRITE_LOCK');
+    setLockLifetime('PERSISTENT');
+    setLockDurationMinutes('30');
+    setLockDeep(false);
+    setLockAdditionalInfo('');
+    handleCloseContextMenu();
+  };
+
+  const handleLockNode = async () => {
+    if (!lockDialogNode) {
+      return;
+    }
+    const durationMinutes = Number(lockDurationMinutes);
+    if (lockLifetime === 'EPHEMERAL' && (!Number.isFinite(durationMinutes) || durationMinutes <= 0)) {
+      toast.error('Ephemeral locks require a positive duration in minutes');
+      return;
+    }
+
+    setLockSubmitting(true);
+    try {
+      await nodeService.lockNodeTyped(lockDialogNode.id, {
+        lockType,
+        lifetime: lockLifetime,
+        durationSeconds: lockLifetime === 'EPHEMERAL' ? Math.round(durationMinutes * 60) : undefined,
+        deep: lockDialogNode.nodeType === 'FOLDER' ? lockDeep : false,
+        additionalInfo: lockAdditionalInfo,
+      });
+      await refreshCurrentFolder();
+      toast.success('Item locked');
+      setLockSubmitting(false);
+      closeLockDialog();
+    } catch {
+      toast.error('Failed to lock item');
+      setLockSubmitting(false);
+    }
+  };
+
+  const handleUnlockNode = async (node: Node) => {
+    try {
+      await nodeService.unlockNode(node.id);
+      await refreshCurrentFolder();
+      toast.success('Item unlocked');
+    } catch {
+      toast.error('Failed to unlock item');
+    }
+    handleCloseContextMenu();
+  };
+
+  const handleUnlockDeepNode = async (node: Node) => {
+    try {
+      await nodeService.unlockNodeDeep(node.id, true);
+      await refreshCurrentFolder();
+      toast.success('Item and descendant locks cleared');
+    } catch {
+      toast.error('Failed to unlock descendant items');
+    }
+    handleCloseContextMenu();
+  };
+
+  const closeCheckInDialog = () => {
+    if (checkInSubmitting) {
+      return;
+    }
+    setCheckInDialogNode(null);
+    setCheckInFile(null);
+    setCheckInComment('');
+    setCheckInMajorVersion(false);
+    setCheckInKeepCheckedOut(false);
+  };
+
+  const openCheckInDialog = (node: Node) => {
+    setCheckInDialogNode(node);
+    setCheckInFile(null);
+    setCheckInComment('');
+    setCheckInMajorVersion(false);
+    setCheckInKeepCheckedOut(false);
+    handleCloseContextMenu();
+  };
+
+  const handleCheckInNode = async () => {
+    if (!checkInDialogNode) {
+      return;
+    }
+    if (checkInKeepCheckedOut && !checkInFile) {
+      toast.error('Keep checked out requires a new version file');
+      return;
+    }
+
+    setCheckInSubmitting(true);
+    try {
+      await nodeService.checkinDocument(checkInDialogNode.id, {
+        file: checkInFile,
+        comment: checkInComment,
+        majorVersion: checkInMajorVersion,
+        keepCheckedOut: checkInKeepCheckedOut,
+      });
+      await refreshCurrentFolder();
+      setCheckInSubmitting(false);
+      toast.success(checkInFile ? 'Document checked in with new version' : 'Document checked in');
+      closeCheckInDialog();
+    } catch {
+      toast.error('Failed to check in document');
+      setCheckInSubmitting(false);
+    }
   };
 
   const refreshCurrentFolder = async () => {
@@ -511,6 +780,18 @@ const FileList: React.FC<FileListProps> = ({
       flex: 2,
       renderCell: (params: GridRenderCellParams<Node>) => {
         const previewMeta = params.row.nodeType !== 'FOLDER' ? getPreviewStatusMeta(params.row) : null;
+        const previewMimeType = params.row.contentType || params.row.properties?.mimeType || params.row.properties?.contentType;
+        const effectivePreviewStatus = getEffectivePreviewStatus(
+          params.row.previewStatus,
+          params.row.previewFailureCategory,
+          previewMimeType,
+          params.row.previewFailureReason
+        );
+        const previewFailureReason = (effectivePreviewStatus === 'FAILED' || effectivePreviewStatus === 'UNSUPPORTED')
+          ? (params.row.previewFailureReason || '')
+          : '';
+        const lockTooltip = getFileLockTooltip(params.row);
+        const checkoutTooltip = getFileCheckoutTooltip(params.row);
         return (
           <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
           {params.row.nodeType === 'FOLDER' ? (
@@ -523,6 +804,16 @@ const FileList: React.FC<FileListProps> = ({
               {params.value}
             </Typography>
           </Tooltip>
+          {lockTooltip && (
+            <Tooltip title={lockTooltip} placement="top" arrow>
+              <LockOutlined fontSize="small" color="warning" sx={{ ml: 1 }} />
+            </Tooltip>
+          )}
+          {checkoutTooltip && (
+            <Tooltip title={checkoutTooltip} placement="top" arrow>
+              <EditOutlined fontSize="small" color="info" sx={{ ml: 1 }} />
+            </Tooltip>
+          )}
           {params.row.aspects?.includes('cm:versionable') && (
             <Chip
               label={params.row.currentVersionLabel}
@@ -533,10 +824,10 @@ const FileList: React.FC<FileListProps> = ({
           {previewMeta && (
             <Box display="flex" alignItems="center" gap={0.5} ml={1}>
               <Tooltip
-                title={params.row.previewFailureReason || ''}
+                title={previewFailureReason}
                 placement="top-start"
                 arrow
-                disableHoverListener={!params.row.previewFailureReason}
+                disableHoverListener={!previewFailureReason}
               >
                 <Chip
                   label={previewMeta.label}
@@ -545,8 +836,8 @@ const FileList: React.FC<FileListProps> = ({
                   variant="outlined"
                 />
               </Tooltip>
-              {params.row.previewStatus?.toUpperCase() === 'FAILED' && params.row.previewFailureReason && (
-                <Tooltip title={params.row.previewFailureReason} placement="top-start" arrow>
+              {(effectivePreviewStatus === 'FAILED' || effectivePreviewStatus === 'UNSUPPORTED') && previewFailureReason && (
+                <Tooltip title={previewFailureReason} placement="top-start" arrow>
                   <IconButton size="small" aria-label="Preview failure reason">
                     <InfoOutlined fontSize="small" />
                   </IconButton>
@@ -581,6 +872,16 @@ const FileList: React.FC<FileListProps> = ({
       headerName: 'Size',
       width: 100,
       valueFormatter: (params) => formatFileSize(params.value),
+    },
+    {
+      field: 'rating',
+      headerName: 'Rating',
+      width: 110,
+      sortable: false,
+      renderCell: (params: GridRenderCellParams<Node>) =>
+        params.row.nodeType === 'DOCUMENT' ? (
+          <RatingBadge nodeId={params.row.id} compact />
+        ) : null,
     },
     {
       field: 'actions',
@@ -632,6 +933,18 @@ const FileList: React.FC<FileListProps> = ({
           const isSelected = selectedNodes.includes(node.id);
           const fileTypeLabel = getFileTypeLabel(node);
           const previewMeta = node.nodeType !== 'FOLDER' ? getPreviewStatusMeta(node) : null;
+          const previewMimeType = node.contentType || node.properties?.mimeType || node.properties?.contentType;
+          const effectivePreviewStatus = getEffectivePreviewStatus(
+            node.previewStatus,
+            node.previewFailureCategory,
+            previewMimeType,
+            node.previewFailureReason
+          );
+          const previewFailureReason = (effectivePreviewStatus === 'FAILED' || effectivePreviewStatus === 'UNSUPPORTED')
+            ? (node.previewFailureReason || '')
+            : '';
+          const lockTooltip = getFileLockTooltip(node);
+          const checkoutTooltip = getFileCheckoutTooltip(node);
           return (
             <Card
               key={node.id}
@@ -672,6 +985,16 @@ const FileList: React.FC<FileListProps> = ({
                           {node.name}
                         </Typography>
                       </Tooltip>
+                      {lockTooltip && (
+                        <Tooltip title={lockTooltip} placement="top" arrow>
+                          <LockOutlined fontSize="small" color="warning" />
+                        </Tooltip>
+                      )}
+                      {checkoutTooltip && (
+                        <Tooltip title={checkoutTooltip} placement="top" arrow>
+                          <EditOutlined fontSize="small" color="info" />
+                        </Tooltip>
+                      )}
                     </Box>
                     {node.currentVersionLabel && (
                       <Chip label={node.currentVersionLabel} size="small" sx={{ mt: 0.5 }} />
@@ -682,10 +1005,10 @@ const FileList: React.FC<FileListProps> = ({
                         {previewMeta && (
                           <Box display="flex" alignItems="center" gap={0.5}>
                             <Tooltip
-                              title={node.previewFailureReason || ''}
+                              title={previewFailureReason}
                               placement="top-start"
                               arrow
-                              disableHoverListener={!node.previewFailureReason}
+                              disableHoverListener={!previewFailureReason}
                             >
                               <Chip
                                 label={previewMeta.label}
@@ -694,8 +1017,8 @@ const FileList: React.FC<FileListProps> = ({
                                 variant="outlined"
                               />
                             </Tooltip>
-                            {node.previewStatus?.toUpperCase() === 'FAILED' && node.previewFailureReason && (
-                              <Tooltip title={node.previewFailureReason} placement="top-start" arrow>
+                            {(effectivePreviewStatus === 'FAILED' || effectivePreviewStatus === 'UNSUPPORTED') && previewFailureReason && (
+                              <Tooltip title={previewFailureReason} placement="top-start" arrow>
                                 <IconButton size="small" aria-label="Preview failure reason">
                                   <InfoOutlined fontSize="small" />
                                 </IconButton>
@@ -704,6 +1027,9 @@ const FileList: React.FC<FileListProps> = ({
                           </Box>
                         )}
                       </Box>
+                    )}
+                    {node.nodeType === 'DOCUMENT' && (
+                      <RatingBadge nodeId={node.id} compact />
                     )}
                   </Box>
                   <Box display="flex" alignItems="center" gap={0.5}>
@@ -836,22 +1162,24 @@ const FileList: React.FC<FileListProps> = ({
           </MenuItem>
         )}
         {contextMenu && isDocumentNode(contextMenu.node) && isPdfDocument(contextMenu.node) && canWrite && (
-          <MenuItem onClick={() => contextMenu && handleAnnotate(contextMenu.node)}>
-            <ListItemIcon>
-              <Edit fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>Annotate (PDF)</ListItemText>
-          </MenuItem>
+          renderContextMenuItem({
+            disabledReason: getFileLockActionReason(contextMenu.node, 'annotate this PDF', currentUsername)
+              || getFileCheckoutActionReason(contextMenu.node, 'annotate this PDF', currentUsername),
+            onClick: () => handleAnnotate(contextMenu.node),
+            icon: <Edit fontSize="small" />,
+            label: 'Annotate (PDF)',
+          })
         )}
         {contextMenu && isDocumentNode(contextMenu.node) && isOfficeDocument(contextMenu.node) && !isPdfDocument(contextMenu.node) && (
-          <MenuItem
-            onClick={() => contextMenu && handleEdit(contextMenu.node, canWrite ? 'write' : 'read')}
-          >
-            <ListItemIcon>
-              {canWrite ? <Edit fontSize="small" /> : <Visibility fontSize="small" />}
-            </ListItemIcon>
-            <ListItemText>{canWrite ? 'Edit Online' : 'View Online'}</ListItemText>
-          </MenuItem>
+          renderContextMenuItem({
+            disabledReason: canWrite
+              ? getFileLockActionReason(contextMenu.node, 'edit online', currentUsername)
+                || getFileCheckoutActionReason(contextMenu.node, 'edit online', currentUsername)
+              : null,
+            onClick: () => handleEdit(contextMenu.node, canWrite ? 'write' : 'read'),
+            icon: canWrite ? <Edit fontSize="small" /> : <Visibility fontSize="small" />,
+            label: canWrite ? 'Edit Online' : 'View Online',
+          })
         )}
         {contextMenu && isDocumentNode(contextMenu.node) && (
           <MenuItem onClick={() => handleDownload(contextMenu.node)}>
@@ -918,6 +1246,16 @@ const FileList: React.FC<FileListProps> = ({
             <ListItemText>Share</ListItemText>
           </MenuItem>
         )}
+        {contextMenu && isDocumentNode(contextMenu.node) && (
+          <MenuItem onClick={() => {
+            if (contextMenu) handleOpenAssociations(contextMenu.node);
+          }}>
+            <ListItemIcon>
+              <AccountTree fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Associations</ListItemText>
+          </MenuItem>
+        )}
         {canWrite && contextMenu && isDocumentNode(contextMenu.node) && (
           <MenuItem onClick={() => contextMenu && handleOpenMlSuggestions(contextMenu.node)}>
             <ListItemIcon>
@@ -945,6 +1283,74 @@ const FileList: React.FC<FileListProps> = ({
             <ListItemText>Version History</ListItemText>
           </MenuItem>
         )}
+        {canWrite && contextMenu && !contextMenu.node.locked && (
+          renderContextMenuItem({
+            onClick: () => openLockDialog(contextMenu.node),
+            icon: <LockOutlined fontSize="small" />,
+            label: 'Lock...',
+          })
+        )}
+        {canWrite && contextMenu && contextMenu.node.locked && (
+          renderContextMenuItem({
+            disabledReason: getUnlockActionReason(contextMenu.node),
+            onClick: () => handleUnlockNode(contextMenu.node),
+            icon: <Undo fontSize="small" />,
+            label: 'Unlock',
+          })
+        )}
+        {canWrite && contextMenu && contextMenu.node.locked && contextMenu.node.nodeType === 'FOLDER' && (
+          renderContextMenuItem({
+            disabledReason: getUnlockActionReason(contextMenu.node),
+            onClick: () => handleUnlockDeepNode(contextMenu.node),
+            icon: <Undo fontSize="small" />,
+            label: 'Unlock Deep',
+          })
+        )}
+        {canWrite && contextMenu && isDocumentNode(contextMenu.node) && !contextMenu.node.checkedOut && (
+          renderContextMenuItem({
+            disabledReason: getFileLockActionReason(contextMenu.node, 'check out this document', currentUsername),
+            onClick: () => handleCheckoutNode(contextMenu.node),
+            icon: <CheckCircleOutline fontSize="small" />,
+            label: 'Check Out',
+          })
+        )}
+        {canWrite && contextMenu && isDocumentNode(contextMenu.node) && contextMenu.node.checkedOut && (
+          renderContextMenuItem({
+            disabledReason: getCheckInActionReason(contextMenu.node, currentUsername, isAdmin),
+            onClick: () => openCheckInDialog(contextMenu.node),
+            icon: <Publish fontSize="small" />,
+            label: 'Check In',
+          })
+        )}
+        {canWrite && contextMenu && isDocumentNode(contextMenu.node) && contextMenu.node.checkedOut && (
+          renderContextMenuItem({
+            disabledReason: getCancelCheckoutActionReason(contextMenu.node, currentUsername, isAdmin),
+            onClick: () => handleCancelCheckoutNode(contextMenu.node),
+            icon: <Undo fontSize="small" />,
+            label: 'Cancel Checkout',
+          })
+        )}
+        {contextMenu && isDocumentNode(contextMenu.node) && contextMenu.node.checkedOut && (
+          renderContextMenuItem({
+            onClick: () => handleOpenCheckoutGraph(contextMenu.node),
+            icon: <AccountTree fontSize="small" />,
+            label: 'View Checkout Graph',
+          })
+        )}
+        {contextMenu && isDocumentNode(contextMenu.node) && (
+          renderContextMenuItem({
+            onClick: () => handleOpenRenditionRegistry(contextMenu.node),
+            icon: <InfoOutlined fontSize="small" />,
+            label: 'View Rendition Registry',
+          })
+        )}
+        {contextMenu && isDocumentNode(contextMenu.node) && contextMenu.node.checkedOut && (
+          renderContextMenuItem({
+            onClick: () => handleOpenCheckInTarget(contextMenu.node),
+            icon: <FolderOpen fontSize="small" />,
+            label: 'Open Check-In Target',
+          })
+        )}
         <MenuItem divider />
         {canWrite && (
           <MenuItem onClick={() => openMoveCopyDialog('copy')}>
@@ -955,12 +1361,15 @@ const FileList: React.FC<FileListProps> = ({
           </MenuItem>
         )}
         {canWrite && (
-          <MenuItem onClick={() => openMoveCopyDialog('move')}>
-            <ListItemIcon>
-              <DriveFileMove fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>Move</ListItemText>
-          </MenuItem>
+          renderContextMenuItem({
+            disabledReason: contextMenu
+              ? getFileLockActionReason(contextMenu.node, 'move this item', currentUsername)
+                || getFileCheckoutActionReason(contextMenu.node, 'move this item', currentUsername)
+              : null,
+            onClick: () => openMoveCopyDialog('move'),
+            icon: <DriveFileMove fontSize="small" />,
+            label: 'Move',
+          })
         )}
         <MenuItem
           onClick={async () => {
@@ -975,13 +1384,14 @@ const FileList: React.FC<FileListProps> = ({
           </ListItemIcon>
           <ListItemText>{contextMenu?.node && favoriteIds.has(contextMenu.node.id) ? 'Unfavorite' : 'Add to Favorites'}</ListItemText>
         </MenuItem>
-        {canWrite && (
-          <MenuItem onClick={() => contextMenu && handleDeleteNode(contextMenu.node)}>
-            <ListItemIcon>
-              <Delete fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>Delete</ListItemText>
-          </MenuItem>
+        {canWrite && contextMenu && (
+          renderContextMenuItem({
+            disabledReason: getFileLockActionReason(contextMenu.node, 'delete this item', currentUsername)
+              || getFileCheckoutActionReason(contextMenu.node, 'delete this item', currentUsername),
+            onClick: () => handleDeleteNode(contextMenu.node),
+            icon: <Delete fontSize="small" />,
+            label: 'Delete',
+          })
         )}
       </Menu>
 
@@ -1004,6 +1414,180 @@ const FileList: React.FC<FileListProps> = ({
           <Button onClick={() => setNameDialogNode(null)}>Close</Button>
         </DialogActions>
       </Dialog>
+
+      <Dialog
+        open={Boolean(lockDialogNode)}
+        onClose={closeLockDialog}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Lock Item</DialogTitle>
+        <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <Typography variant="body2" color="text.secondary">
+            {lockDialogNode ? `Lock "${lockDialogNode.name}" with typed lifetime and recursion controls.` : ''}
+          </Typography>
+          <Alert severity="info">
+            WRITE_LOCK blocks other writers. READ_ONLY_LOCK blocks all writes. NODE_LOCK blocks updates/deletes while still allowing child creation.
+          </Alert>
+          <TextField
+            select
+            label="Lock Type"
+            value={lockType}
+            onChange={(event) => setLockType(event.target.value as LockType)}
+            fullWidth
+          >
+            <MenuItem value="WRITE_LOCK">WRITE_LOCK</MenuItem>
+            <MenuItem value="READ_ONLY_LOCK">READ_ONLY_LOCK</MenuItem>
+            <MenuItem value="NODE_LOCK">NODE_LOCK</MenuItem>
+          </TextField>
+          <TextField
+            select
+            label="Lifetime"
+            value={lockLifetime}
+            onChange={(event) => setLockLifetime(event.target.value as 'PERSISTENT' | 'EPHEMERAL')}
+            fullWidth
+          >
+            <MenuItem value="PERSISTENT">PERSISTENT</MenuItem>
+            <MenuItem value="EPHEMERAL">EPHEMERAL</MenuItem>
+          </TextField>
+          {lockLifetime === 'EPHEMERAL' && (
+            <TextField
+              label="Duration (minutes)"
+              type="number"
+              value={lockDurationMinutes}
+              onChange={(event) => setLockDurationMinutes(event.target.value)}
+              inputProps={{ min: 1, step: 1 }}
+              fullWidth
+            />
+          )}
+          <FormControlLabel
+            control={(
+              <Switch
+                checked={lockDeep}
+                onChange={(event) => setLockDeep(event.target.checked)}
+                disabled={lockDialogNode?.nodeType !== 'FOLDER'}
+              />
+            )}
+            label="Lock descendants recursively"
+          />
+          {lockDialogNode?.nodeType !== 'FOLDER' && (
+            <Typography variant="caption" color="text.secondary">
+              Deep lock is only available for folders.
+            </Typography>
+          )}
+          <TextField
+            label="Additional Info"
+            value={lockAdditionalInfo}
+            onChange={(event) => setLockAdditionalInfo(event.target.value)}
+            fullWidth
+            multiline
+            minRows={2}
+            placeholder="Optional metadata, for example the editing channel or operator note"
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeLockDialog} disabled={lockSubmitting}>
+            Cancel
+          </Button>
+          <Button variant="contained" onClick={() => void handleLockNode()} disabled={lockSubmitting}>
+            {lockSubmitting ? 'Locking...' : 'Lock'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(checkInDialogNode)}
+        onClose={closeCheckInDialog}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Check In</DialogTitle>
+        <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <Typography variant="body2" color="text.secondary">
+            {checkInDialogNode ? `Check in "${checkInDialogNode.name}" with an optional new version file.` : ''}
+          </Typography>
+          <Alert severity="info">
+            Leave the file empty to release checkout without uploading a new version. Enable keep checked out only when uploading a new file.
+          </Alert>
+          <Button component="label" variant="outlined">
+            {checkInFile ? `Selected: ${checkInFile.name}` : 'Choose New Version File'}
+            <input
+              hidden
+              type="file"
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null;
+                setCheckInFile(file);
+                if (!file) {
+                  setCheckInMajorVersion(false);
+                  setCheckInKeepCheckedOut(false);
+                }
+                event.currentTarget.value = '';
+              }}
+            />
+          </Button>
+          {checkInFile && (
+            <Button
+              color="inherit"
+              onClick={() => {
+                setCheckInFile(null);
+                setCheckInMajorVersion(false);
+                setCheckInKeepCheckedOut(false);
+              }}
+              sx={{ alignSelf: 'flex-start' }}
+            >
+              Clear File
+            </Button>
+          )}
+          <TextField
+            label="Version Comment"
+            value={checkInComment}
+            onChange={(event) => setCheckInComment(event.target.value)}
+            fullWidth
+            multiline
+            minRows={2}
+          />
+          <FormControlLabel
+            control={(
+              <Switch
+                checked={checkInMajorVersion}
+                onChange={(event) => setCheckInMajorVersion(event.target.checked)}
+                disabled={!checkInFile}
+              />
+            )}
+            label="Create major version"
+          />
+          <FormControlLabel
+            control={(
+              <Switch
+                checked={checkInKeepCheckedOut}
+                onChange={(event) => setCheckInKeepCheckedOut(event.target.checked)}
+                disabled={!checkInFile || (Boolean(checkInDialogNode?.checkoutUser) && checkInDialogNode?.checkoutUser !== currentUsername)}
+              />
+            )}
+            label="Keep checked out after check-in"
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeCheckInDialog} disabled={checkInSubmitting}>
+            Cancel
+          </Button>
+          <Button variant="contained" onClick={() => void handleCheckInNode()} disabled={checkInSubmitting}>
+            {checkInSubmitting ? 'Checking In...' : 'Check In'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <CheckoutGraphDialog
+        open={Boolean(checkoutGraphDialogNode)}
+        nodeId={checkoutGraphDialogNode?.id || null}
+        nodeName={checkoutGraphDialogNode?.name}
+        onClose={() => setCheckoutGraphDialogNode(null)}
+      />
+      <RenditionDefinitionDialog
+        open={Boolean(renditionDialogNode)}
+        nodeId={renditionDialogNode?.id || null}
+        nodeName={renditionDialogNode?.name}
+        onClose={() => setRenditionDialogNode(null)}
+      />
 
       <MoveCopyDialog
         open={moveCopyOpen}

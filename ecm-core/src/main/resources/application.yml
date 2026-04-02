@@ -145,11 +145,21 @@ ecm:
       width: 200
       height: 200
       quality: 0.8
+    trace:
+      enabled: ${ECM_PREVIEW_TRACE_ENABLED:true}
+      max-requests: ${ECM_PREVIEW_TRACE_MAX_REQUESTS:100}
+      max-events-per-request: ${ECM_PREVIEW_TRACE_MAX_EVENTS_PER_REQUEST:80}
     cad:
       enabled: ${ECM_PREVIEW_CAD_ENABLED:true}
       render-url: ${ECM_PREVIEW_CAD_RENDER_URL:}
+      render-fallback-urls: ${ECM_PREVIEW_CAD_RENDER_FALLBACK_URLS:}
       auth-token: ${ECM_PREVIEW_CAD_AUTH_TOKEN:}
       timeout-ms: ${ECM_PREVIEW_CAD_TIMEOUT_MS:30000}
+      circuit-breaker:
+        enabled: ${ECM_PREVIEW_CAD_CIRCUIT_BREAKER_ENABLED:true}
+        failure-threshold: ${ECM_PREVIEW_CAD_CIRCUIT_BREAKER_FAILURE_THRESHOLD:3}
+        open-ms: ${ECM_PREVIEW_CAD_CIRCUIT_BREAKER_OPEN_MS:120000}
+        half-open-timeout-ms: ${ECM_PREVIEW_CAD_CIRCUIT_BREAKER_HALF_OPEN_TIMEOUT_MS:30000}
     queue:
       enabled: ${ECM_PREVIEW_QUEUE_ENABLED:true}
       poll-interval-ms: ${ECM_PREVIEW_QUEUE_POLL_INTERVAL_MS:2000}
@@ -157,6 +167,34 @@ ecm:
       max-attempts: ${ECM_PREVIEW_QUEUE_MAX_ATTEMPTS:3}
       retry-delay-ms: ${ECM_PREVIEW_QUEUE_RETRY_DELAY_MS:60000}
       run-as-user: ${ECM_PREVIEW_QUEUE_RUN_AS_USER:admin}
+    preflight:
+      enabled: ${ECM_PREVIEW_PREFLIGHT_ENABLED:true}
+      max-source-size-bytes: ${ECM_PREVIEW_PREFLIGHT_MAX_SOURCE_SIZE_BYTES:268435456}
+      max-source-size-bytes-by-route: ${ECM_PREVIEW_PREFLIGHT_MAX_SOURCE_SIZE_BYTES_BY_ROUTE:cad:536870912,office:209715200,pdf:268435456,image:157286400,text:104857600}
+    read:
+      hash-enforce:
+        enabled: ${ECM_PREVIEW_READ_HASH_ENFORCE_ENABLED:true}
+      auto-repair-on-stale: ${ECM_PREVIEW_READ_AUTO_REPAIR_ON_STALE:true}
+    prevention:
+      enabled: ${ECM_PREVIEW_PREVENTION_ENABLED:true}
+      redis:
+        enabled: ${ECM_PREVIEW_PREVENTION_REDIS_ENABLED:true}
+      max-blocked: ${ECM_PREVIEW_PREVENTION_MAX_BLOCKED:5000}
+      ttl-ms: ${ECM_PREVIEW_PREVENTION_TTL_MS:604800000}
+      auto-block-categories: ${ECM_PREVIEW_PREVENTION_AUTO_BLOCK_CATEGORIES:UNSUPPORTED,PERMANENT}
+    dead-letter:
+      enabled: ${ECM_PREVIEW_DEAD_LETTER_ENABLED:true}
+      redis:
+        enabled: ${ECM_PREVIEW_DEAD_LETTER_REDIS_ENABLED:true}
+      max-entries: ${ECM_PREVIEW_DEAD_LETTER_MAX_ENTRIES:5000}
+      ttl-ms: ${ECM_PREVIEW_DEAD_LETTER_TTL_MS:604800000}
+      auto-replay:
+        enabled: ${ECM_PREVIEW_DEAD_LETTER_AUTO_REPLAY_ENABLED:false}
+        poll-interval-ms: ${ECM_PREVIEW_DEAD_LETTER_AUTO_REPLAY_POLL_INTERVAL_MS:30000}
+        max-items: ${ECM_PREVIEW_DEAD_LETTER_AUTO_REPLAY_MAX_ITEMS:20}
+        cooldown-ms: ${ECM_PREVIEW_DEAD_LETTER_AUTO_REPLAY_COOLDOWN_MS:300000}
+        force: ${ECM_PREVIEW_DEAD_LETTER_AUTO_REPLAY_FORCE:false}
+        categories: ${ECM_PREVIEW_DEAD_LETTER_AUTO_REPLAY_CATEGORIES:TEMPORARY}
 
   versioning:
     label-policy: ${ECM_VERSION_LABEL_POLICY:semantic}

@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="033-add-rendition-resources-table" author="codex">
+        <createTable tableName="rendition_resources">
+            <column name="id" type="${uuid_type}">
+                <constraints nullable="false" primaryKey="true" primaryKeyName="pk_rendition_resources"/>
+            </column>
+            <column name="document_id" type="${uuid_type}">
+                <constraints nullable="false" foreignKeyName="fk_rendition_resources_document" references="documents(id)"/>
+            </column>
+            <column name="rendition_key" type="varchar(64)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="label" type="varchar(128)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="mime_type" type="varchar(191)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="state" type="varchar(32)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="available" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="downloadable" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="content_url" type="varchar(512)"/>
+            <column name="error_reason" type="text"/>
+            <column name="error_category" type="varchar(128)"/>
+            <column name="source_status" type="varchar(64)"/>
+            <column name="version_label" type="varchar(64)"/>
+            <column name="source_updated_at" type="timestamp"/>
+            <column name="last_synced_at" type="timestamp" defaultValueComputed="${now}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="sort_order" type="int" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <addUniqueConstraint
+            tableName="rendition_resources"
+            columnNames="document_id, rendition_key"
+            constraintName="uk_rendition_resources_document_key"/>
+
+        <createIndex tableName="rendition_resources" indexName="idx_rendition_resources_document">
+            <column name="document_id"/>
+        </createIndex>
+
+        <createIndex tableName="rendition_resources" indexName="idx_rendition_resources_state">
+            <column name="state"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

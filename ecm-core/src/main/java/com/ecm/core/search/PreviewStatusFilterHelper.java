@@ -2,6 +2,7 @@ package com.ecm.core.search;
 
 import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
+import com.ecm.core.preview.PreviewFailureClassifier;
 
 import java.util.ArrayList;
 import java.util.Map;
@@ -17,7 +18,9 @@ import java.util.Set;
  * (meaning the preview status is missing in the search index). We implement that semantics here
  * so Search Results and Advanced Search behave consistently across pages.
  */
-final class PreviewStatusFilterHelper {
+public final class PreviewStatusFilterHelper {
+    private static final String GENERIC_BINARY_UNSUPPORTED_REASON =
+        "Preview definition is not registered for generic binary sources";
     private static final Set<String> KNOWN_PREVIEW_STATUSES = Set.of(
         "READY",
         "PROCESSING",
@@ -67,6 +70,43 @@ final class PreviewStatusFilterHelper {
 
     private PreviewStatusFilterHelper() {}
 
+    public static String resolveEffectiveStatus(String previewStatus, String mimeType, String previewFailureReason) {
+        String normalized = normalizeRawStatus(previewStatus);
+        if (normalized == null) {
+            return hasUnsupportedSignals(mimeType, previewFailureReason) ? "UNSUPPORTED" : null;
+        }
+        if ("FAILED".equals(normalized) && hasUnsupportedSignals(mimeType, previewFailureReason)) {
+            return "UNSUPPORTED";
+        }
+        return normalized;
+    }
+
+    public static String resolveEffectiveFailureReason(String previewStatus, String mimeType, String previewFailureReason) {
+        String normalizedReason = normalizeReason(previewFailureReason);
+        if (normalizedReason != null) {
+            return normalizedReason;
+        }
+        return "UNSUPPORTED".equals(resolveEffectiveStatus(previewStatus, mimeType, previewFailureReason))
+            && isUnsupportedMimeType(mimeType)
+                ? GENERIC_BINARY_UNSUPPORTED_REASON
+                : null;
+    }
+
+    public static String resolveEffectiveFailureCategory(
+        String previewStatus,
+        String mimeType,
+        String previewFailureReason,
+        String previewFailureCategory
+    ) {
+        String normalizedCategory = normalizeCategory(previewFailureCategory);
+        if (normalizedCategory != null) {
+            return normalizedCategory;
+        }
+        String effectiveStatus = resolveEffectiveStatus(previewStatus, mimeType, previewFailureReason);
+        String effectiveReason = resolveEffectiveFailureReason(previewStatus, mimeType, previewFailureReason);
+        return normalizeCategory(PreviewFailureClassifier.classify(effectiveStatus, mimeType, effectiveReason));
+    }
+
     static List<String> facetBucketKeys() {
         return PREVIEW_STATUS_FACET_BUCKETS;
     }
@@ -96,13 +136,21 @@ final class PreviewStatusFilterHelper {
                 b.filter(f -> f.term(t -> t.field("nodeType").value("DOCUMENT")));
 
                 switch (resolved) {
-                    case "PENDING" -> b.mustNot(mn -> mn.exists(e -> e.field("previewStatus")));
+                    case "PENDING" -> {
+                        b.mustNot(mn -> mn.exists(e -> e.field("previewStatus")));
+                        b.mustNot(PreviewStatusFilterHelper::buildUnsupportedSignals);
+                    }
                     case "UNSUPPORTED" -> {
                         b.should(s -> s.term(t -> t.field("previewStatus").value("UNSUPPORTED")));
                         b.should(s -> s.bool(failed -> {
                             failed.filter(f -> f.term(t -> t.field("previewStatus").value("FAILED")));
                             failed.filter(PreviewStatusFilterHelper::buildUnsupportedSignals);
                             return failed;
+                        }));
+                        b.should(s -> s.bool(missing -> {
+                            missing.mustNot(mn -> mn.exists(e -> e.field("previewStatus")));
+                            missing.filter(PreviewStatusFilterHelper::buildUnsupportedSignals);
+                            return missing;
                         }));
                         b.minimumShouldMatch("1");
                     }
@@ -144,6 +192,7 @@ final class PreviewStatusFilterHelper {
         return switch (status) {
             case "PENDING" -> query.bool(b -> {
                 b.mustNot(mn -> mn.exists(e -> e.field("previewStatus")));
+                b.mustNot(PreviewStatusFilterHelper::buildUnsupportedSignals);
                 return b;
             });
             case "UNSUPPORTED" -> query.bool(b -> {
@@ -152,6 +201,11 @@ final class PreviewStatusFilterHelper {
                     failed.filter(f -> f.term(t -> t.field("previewStatus").value("FAILED")));
                     failed.filter(PreviewStatusFilterHelper::buildUnsupportedSignals);
                     return failed;
+                }));
+                b.should(s -> s.bool(missing -> {
+                    missing.mustNot(mn -> mn.exists(e -> e.field("previewStatus")));
+                    missing.filter(PreviewStatusFilterHelper::buildUnsupportedSignals);
+                    return missing;
                 }));
                 b.minimumShouldMatch("1");
                 return b;
@@ -220,5 +274,63 @@ final class PreviewStatusFilterHelper {
             }
         }
         return result;
+    }
+
+    private static String normalizeRawStatus(String previewStatus) {
+        if (previewStatus == null || previewStatus.isBlank()) {
+            return null;
+        }
+        String normalized = previewStatus.trim().toUpperCase(Locale.ROOT);
+        if (PREVIEW_STATUS_ALIAS_MAP.containsKey(normalized)) {
+            normalized = PREVIEW_STATUS_ALIAS_MAP.get(normalized);
+        } else if (normalized.contains("UNSUPPORTED")) {
+            normalized = "UNSUPPORTED";
+        }
+        return KNOWN_PREVIEW_STATUSES.contains(normalized) ? normalized : normalized;
+    }
+
+    private static String normalizeReason(String previewFailureReason) {
+        if (previewFailureReason == null || previewFailureReason.isBlank()) {
+            return null;
+        }
+        return previewFailureReason.trim();
+    }
+
+    private static String normalizeCategory(String previewFailureCategory) {
+        if (previewFailureCategory == null || previewFailureCategory.isBlank()) {
+            return null;
+        }
+        return previewFailureCategory.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private static boolean hasUnsupportedSignals(String mimeType, String previewFailureReason) {
+        return isUnsupportedMimeType(mimeType) || isUnsupportedReason(previewFailureReason);
+    }
+
+    private static boolean isUnsupportedMimeType(String mimeType) {
+        if (mimeType == null || mimeType.isBlank()) {
+            return false;
+        }
+        String normalized = mimeType.trim().toLowerCase(Locale.ROOT);
+        return UNSUPPORTED_MIME_TYPES.contains(normalized);
+    }
+
+    private static boolean isUnsupportedReason(String previewFailureReason) {
+        if (previewFailureReason == null || previewFailureReason.isBlank()) {
+            return false;
+        }
+        String normalized = previewFailureReason.trim().toLowerCase(Locale.ROOT);
+        for (String phrase : UNSUPPORTED_REASON_PHRASES) {
+            if (normalized.contains(phrase.toLowerCase(Locale.ROOT))) {
+                return true;
+            }
+        }
+        for (String wildcard : UNSUPPORTED_REASON_WILDCARDS) {
+            String token = wildcard.replace("*", "").toLowerCase(Locale.ROOT);
+            if (!token.isBlank() && normalized.contains(token)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

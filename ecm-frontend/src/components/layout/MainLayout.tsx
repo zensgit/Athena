@@ -29,16 +29,19 @@ import {
   InfoOutlined,
   Business,
   Star,
+  AccountTree,
   LocalOffer,
   Category as CategoryIcon,
   SavedSearch as SavedSearchIcon,
   MailOutline,
   Description,
+  Schema,
   Link as LinkIcon,
   AdminPanelSettings,
   Visibility,
   PushPin,
   PushPinOutlined,
+  People,
 } from '@mui/icons-material';
 import { alpha } from '@mui/material/styles';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -54,6 +57,7 @@ import {
   setTagManagerOpen,
   setCategoryManagerOpen,
   setShareLinkManagerOpen,
+  setAssociationManagerOpen,
   setSidebarAutoCollapse,
   toggleSidebar,
 } from 'store/slices/uiSlice';
@@ -63,6 +67,7 @@ import CreateFolderDialog from 'components/dialogs/CreateFolderDialog';
 import TagManager from 'components/tags/TagManager';
 import CategoryManager from 'components/categories/CategoryManager';
 import ShareLinkManager from 'components/share/ShareLinkManager';
+import AssociationManager from 'components/dialogs/AssociationManager';
 import MLSuggestionsDialog from 'components/ml/MLSuggestionsDialog';
 import authService from 'services/authService';
 import { buildSearchPrefillFromAdvancedSearchUrl } from 'utils/searchPrefillUtils';
@@ -85,7 +90,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   const dispatch = useAppDispatch();
   const { user } = useAppSelector((state) => state.auth);
   const { currentNode } = useAppSelector((state) => state.node);
-  const { sidebarOpen, sidebarAutoCollapse, compactMode, tagManagerOpen, categoryManagerOpen, shareLinkManagerOpen, selectedNodeId } =
+  const { sidebarOpen, sidebarAutoCollapse, compactMode, tagManagerOpen, categoryManagerOpen, shareLinkManagerOpen, associationManagerOpen, selectedNodeId } =
     useAppSelector((state) => state.ui);
   const effectiveUser = user ?? authService.getCurrentUser();
   const canWrite = Boolean(
@@ -352,6 +357,12 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                 </ListItemIcon>
                 <ListItemText>Tasks</ListItemText>
               </MenuItem>
+              <MenuItem onClick={() => navigate('/workflow-processes')}>
+                <ListItemIcon>
+                  <AccountTree fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>Workflow Processes</ListItemText>
+              </MenuItem>
               {effectiveUser?.roles?.includes('ROLE_ADMIN') && (
                 <MenuItem onClick={() => navigate('/status')}>
                   <ListItemIcon>
@@ -394,6 +405,12 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                   </ListItemIcon>
                   <ListItemText>Content Types</ListItemText>
                 </MenuItem>
+                <MenuItem onClick={() => navigate('/admin/content-models')}>
+                  <ListItemIcon>
+                    <Schema fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Content Models</ListItemText>
+                </MenuItem>
                 <MenuItem onClick={() => navigate('/admin/permission-templates')}>
                   <ListItemIcon>
                     <AdminPanelSettings fontSize="small" />
@@ -419,6 +436,24 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                 <Star fontSize="small" />
               </ListItemIcon>
               <ListItemText>Favorites</ListItemText>
+            </MenuItem>
+            <MenuItem onClick={() => navigate('/people-directory')}>
+              <ListItemIcon>
+                <People fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>People Directory</ListItemText>
+            </MenuItem>
+            <MenuItem onClick={() => navigate('/sites')}>
+              <ListItemIcon>
+                <People fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Sites</ListItemText>
+            </MenuItem>
+            <MenuItem onClick={() => navigate('/activities')}>
+              <ListItemIcon>
+                <People fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Activity Feed</ListItemText>
             </MenuItem>
             <MenuItem onClick={() => navigate('/saved-searches')}>
               <ListItemIcon>
@@ -583,6 +618,11 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         open={shareLinkManagerOpen}
         selectedNodeId={selectedNodeId || undefined}
         onClose={() => dispatch(setShareLinkManagerOpen(false))}
+      />
+      <AssociationManager
+        open={associationManagerOpen}
+        selectedNodeId={selectedNodeId || undefined}
+        onClose={() => dispatch(setAssociationManagerOpen(false))}
       />
       <MLSuggestionsDialog />
     </Box>

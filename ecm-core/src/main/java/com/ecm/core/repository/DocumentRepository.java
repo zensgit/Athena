@@ -28,6 +28,12 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
     
     @Query("SELECT d FROM Document d WHERE d.checkoutUser = :userId AND d.deleted = false")
     List<Document> findCheckedOutByUser(@Param("userId") String userId);
+
+    @Query("SELECT d FROM Document d WHERE d.workingCopyOf = :originalId AND d.workingCopy = true AND d.deleted = false")
+    Optional<Document> findWorkingCopyOf(@Param("originalId") UUID originalId);
+
+    @Query("SELECT d FROM Document d WHERE d.workingCopy = true AND d.checkoutUser = :userId AND d.deleted = false")
+    List<Document> findWorkingCopiesByUser(@Param("userId") String userId);
     
     @Query("SELECT d FROM Document d WHERE d.fileSize > :minSize AND d.deleted = false ORDER BY d.fileSize DESC")
     List<Document> findLargeDocuments(@Param("minSize") Long minSize);
@@ -162,4 +168,44 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
     long countPreviewFailuresByWindow(
         @Param("statuses") List<PreviewStatus> statuses,
         @Param("updatedSince") LocalDateTime updatedSince);
+
+    @Query("SELECT d FROM Document d " +
+           "WHERE d.deleted = false " +
+           "AND d.previewStatus IN :statuses " +
+           "AND (:updatedSince IS NULL OR d.previewLastUpdated >= :updatedSince) " +
+           "AND ((:reason = 'UNSPECIFIED' AND TRIM(COALESCE(d.previewFailureReason, '')) = '') " +
+           "  OR d.previewFailureReason = :reason) " +
+           "ORDER BY d.previewLastUpdated DESC")
+    Page<Document> findPreviewFailuresByReasonAndWindow(
+        @Param("statuses") List<PreviewStatus> statuses,
+        @Param("updatedSince") LocalDateTime updatedSince,
+        @Param("reason") String reason,
+        Pageable pageable);
+
+    @Query("SELECT COUNT(d) FROM Document d " +
+           "WHERE d.deleted = false " +
+           "AND d.previewStatus IN :statuses " +
+           "AND (:updatedSince IS NULL OR d.previewLastUpdated >= :updatedSince) " +
+           "AND ((:reason = 'UNSPECIFIED' AND TRIM(COALESCE(d.previewFailureReason, '')) = '') " +
+           "  OR d.previewFailureReason = :reason)")
+    long countPreviewFailuresByReasonAndWindow(
+        @Param("statuses") List<PreviewStatus> statuses,
+        @Param("updatedSince") LocalDateTime updatedSince,
+        @Param("reason") String reason);
+
+    @Query("SELECT d FROM Document d " +
+           "WHERE d.deleted = false " +
+           "AND COALESCE(d.previewFailureCount, 0) > 0 " +
+           "AND (:failedSince IS NULL OR d.previewFailedAt >= :failedSince) " +
+           "ORDER BY d.previewFailedAt DESC, d.previewLastUpdated DESC")
+    Page<Document> findPreviewFailureLedgerEntries(
+        @Param("failedSince") LocalDateTime failedSince,
+        Pageable pageable);
+
+    @Query("SELECT COUNT(d) FROM Document d " +
+           "WHERE d.deleted = false " +
+           "AND COALESCE(d.previewFailureCount, 0) > 0 " +
+           "AND (:failedSince IS NULL OR d.previewFailedAt >= :failedSince)")
+    long countPreviewFailureLedgerEntries(
+        @Param("failedSince") LocalDateTime failedSince);
 }

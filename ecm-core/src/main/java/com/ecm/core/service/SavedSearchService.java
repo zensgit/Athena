@@ -11,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -20,10 +21,93 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class SavedSearchService {
 
+    private static final List<SavedSearchTemplate> BUILT_IN_TEMPLATES = List.of(
+        new SavedSearchTemplate(
+            "failed-preview-last7d",
+            "Failed Preview (Last 7 Days)",
+            "Find recently failed preview documents for triage and retry planning.",
+            mapOf(
+                "previewStatus", List.of("FAILED"),
+                "dateRange", "week"
+            ),
+            List.of("governance", "preview", "triage")
+        ),
+        new SavedSearchTemplate(
+            "unsupported-preview-last30d",
+            "Unsupported Preview (Last 30 Days)",
+            "Track unsupported preview files to optimize renderer coverage.",
+            mapOf(
+                "previewStatus", List.of("UNSUPPORTED"),
+                "dateRange", "month"
+            ),
+            List.of("governance", "preview", "coverage")
+        ),
+        new SavedSearchTemplate(
+            "octet-stream-risk",
+            "Octet-stream Risk Files",
+            "Review generic binary uploads that typically need metadata cleanup.",
+            mapOf(
+                "mimeTypes", List.of("application/octet-stream"),
+                "dateRange", "month"
+            ),
+            List.of("governance", "metadata", "triage")
+        ),
+        new SavedSearchTemplate(
+            "large-documents-last30d",
+            "Large Documents (>=10MB)",
+            "Find large files to control storage and preview pipeline pressure.",
+            mapOf(
+                "minSize", 10 * 1024 * 1024,
+                "dateRange", "month"
+            ),
+            List.of("governance", "storage", "performance")
+        ),
+        new SavedSearchTemplate(
+            "pdf-ready-last7d",
+            "PDF Ready (Last 7 Days)",
+            "Quickly verify PDF uploads with ready preview state.",
+            mapOf(
+                "mimeTypes", List.of("application/pdf"),
+                "previewStatus", List.of("READY"),
+                "dateRange", "week"
+            ),
+            List.of("governance", "quality", "preview")
+        ),
+        new SavedSearchTemplate(
+            "cad-failed-last30d",
+            "CAD Preview Failed (Last 30 Days)",
+            "Identify CAD-like files that failed preview conversion.",
+            mapOf(
+                "mimeTypes", List.of(
+                    "application/acad",
+                    "application/dwg",
+                    "image/vnd.dwg",
+                    "application/dxf"
+                ),
+                "previewStatus", List.of("FAILED"),
+                "dateRange", "month"
+            ),
+            List.of("governance", "cad", "preview")
+        )
+    );
+
     private final SavedSearchRepository savedSearchRepository;
     private final SecurityService securityService;
     private final FacetedSearchService facetedSearchService;
     private final ObjectMapper objectMapper;
+
+    @Transactional(readOnly = true)
+    public List<SavedSearchTemplate> listBuiltInTemplates(String tag) {
+        String normalizedTag = tag != null ? tag.trim().toLowerCase() : "";
+        if (normalizedTag.isEmpty()) {
+            return BUILT_IN_TEMPLATES;
+        }
+        return BUILT_IN_TEMPLATES.stream()
+            .filter(template -> template.tags().stream()
+                .map(value -> value == null ? "" : value.trim().toLowerCase())
+                .anyMatch(normalizedTag::equals))
+            .toList();
+    }
 
     /**
      * Save a search configuration.
@@ -168,5 +252,22 @@ public class SavedSearchService {
             log.error("Failed to execute saved search {}", id, e);
             throw new RuntimeException("Failed to execute saved search", e);
         }
+    }
+
+    public record SavedSearchTemplate(
+        String id,
+        String name,
+        String description,
+        Map<String, Object> queryParams,
+        List<String> tags
+    ) {}
+
+    private static Map<String, Object> mapOf(Object... keyValues) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        for (int i = 0; i + 1 < keyValues.length; i += 2) {
+            String key = String.valueOf(keyValues[i]);
+            map.put(key, keyValues[i + 1]);
+        }
+        return Map.copyOf(map);
     }
 }

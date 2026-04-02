@@ -23,10 +23,26 @@ import {
   Chip,
   Stack,
 } from '@mui/material';
-import { Add, Delete, Edit, PlayArrow, LocalOffer, Approval } from '@mui/icons-material';
+import {
+  Add,
+  ArrowDownward,
+  ArrowUpward,
+  Delete,
+  Edit,
+  PlayArrow,
+  LocalOffer,
+  Approval,
+} from '@mui/icons-material';
 import ruleService, {
   CreateRuleRequest,
   CronValidationResult,
+  FolderRuleDryRunResult,
+  RuleAuditTimelineFilters,
+  RuleAuditTimelineItem,
+  RuleExecutionCommandResponse,
+  RuleExecutionTimelineFilters,
+  RuleRunRecord,
+  RuleActionDefinition,
   RuleResponse,
   RuleTemplate,
   TriggerType,
@@ -43,6 +59,8 @@ const TRIGGER_TYPES: TriggerType[] = [
   'COMMENT_ADDED',
   'SCHEDULED',
 ];
+
+type TimelineSuccessFilter = 'ALL' | 'SUCCESS' | 'FAILED';
 
 const DEFAULT_CONDITION = JSON.stringify({ type: 'ALWAYS_TRUE' }, null, 2);
 const DEFAULT_ACTIONS = JSON.stringify(
@@ -63,6 +81,17 @@ const DEFAULT_TEST_DATA = JSON.stringify(
     name: 'invoice.pdf',
     mimeType: 'application/pdf',
     size: 1048576,
+  },
+  null,
+  2
+);
+
+const DEFAULT_FOLDER_DRY_RUN_DATA = JSON.stringify(
+  {
+    name: 'folder-scope-dry-run.pdf',
+    mimeType: 'application/pdf',
+    size: 524288,
+    path: '/Documents/folder-scope-dry-run.pdf',
   },
   null,
   2
@@ -136,6 +165,7 @@ const QUICK_TEMPLATES = {
 const RulesPage: React.FC = () => {
   const [rules, setRules] = useState<RuleResponse[]>([]);
   const [templates, setTemplates] = useState<RuleTemplate[]>([]);
+  const [actionDefinitions, setActionDefinitions] = useState<RuleActionDefinition[]>([]);
   const [stats, setStats] = useState<Record<string, any> | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -171,17 +201,55 @@ const RulesPage: React.FC = () => {
   const [testResult, setTestResult] = useState<Record<string, any> | null>(null);
   const [testing, setTesting] = useState(false);
 
+  const [scopeFolderId, setScopeFolderId] = useState('');
+  const [scopeTriggerType, setScopeTriggerType] = useState<TriggerType>('DOCUMENT_CREATED');
+  const [scopeLimit, setScopeLimit] = useState(200);
+  const [scopeDryRunDataText, setScopeDryRunDataText] = useState(DEFAULT_FOLDER_DRY_RUN_DATA);
+  const [scopeRules, setScopeRules] = useState<RuleResponse[]>([]);
+  const [scopeRulesLoading, setScopeRulesLoading] = useState(false);
+  const [scopeReorderSaving, setScopeReorderSaving] = useState(false);
+  const [scopeDryRunLoading, setScopeDryRunLoading] = useState(false);
+  const [scopeDryRunResult, setScopeDryRunResult] = useState<FolderRuleDryRunResult | null>(null);
+
+  const [manualRuleId, setManualRuleId] = useState('');
+  const [manualDocumentId, setManualDocumentId] = useState('');
+  const [manualTriggerType, setManualTriggerType] = useState<TriggerType>('DOCUMENT_UPDATED');
+  const [manualIdempotencyKey, setManualIdempotencyKey] = useState('');
+  const [timelineRuleIdFilter, setTimelineRuleIdFilter] = useState('');
+  const [timelineActorFilter, setTimelineActorFilter] = useState('');
+  const [timelineSuccessFilter, setTimelineSuccessFilter] =
+    useState<TimelineSuccessFilter>('ALL');
+  const [timelineLimit, setTimelineLimit] = useState(20);
+  const [timelineFrom, setTimelineFrom] = useState('');
+  const [timelineTo, setTimelineTo] = useState('');
+  const [manualExecuting, setManualExecuting] = useState(false);
+  const [runLedgerLoading, setRunLedgerLoading] = useState(false);
+  const [runLedgerExporting, setRunLedgerExporting] = useState(false);
+  const [runLedger, setRunLedger] = useState<RuleRunRecord[]>([]);
+  const [lastExecutionResponse, setLastExecutionResponse] = useState<RuleExecutionCommandResponse | null>(null);
+  const [auditEventTypeFilter, setAuditEventTypeFilter] = useState('');
+  const [auditActorFilter, setAuditActorFilter] = useState('');
+  const [auditNodeIdFilter, setAuditNodeIdFilter] = useState('');
+  const [auditFrom, setAuditFrom] = useState('');
+  const [auditTo, setAuditTo] = useState('');
+  const [auditLimit, setAuditLimit] = useState(50);
+  const [auditTimelineLoading, setAuditTimelineLoading] = useState(false);
+  const [auditTimelineExporting, setAuditTimelineExporting] = useState(false);
+  const [auditTimeline, setAuditTimeline] = useState<RuleAuditTimelineItem[]>([]);
+
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [ruleList, templateList, statsData] = await Promise.all([
+      const [ruleList, templateList, statsData, actionDefinitionList] = await Promise.all([
         ruleService.getAllRules(),
         ruleService.getTemplates().catch(() => []),
         ruleService.getStats().catch(() => null),
+        ruleService.getActionDefinitions().catch(() => []),
       ]);
       setRules(ruleList);
       setTemplates(templateList);
       setStats(statsData);
+      setActionDefinitions(actionDefinitionList);
     } catch (error) {
       toast.error('Failed to load rules');
     } finally {
@@ -189,9 +257,14 @@ const RulesPage: React.FC = () => {
     }
   };
 
+  // load once on page mount
+  /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     loadAll();
+    loadRunLedger();
+    loadRuleAuditTimeline();
   }, []);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   const templateMap = useMemo(() => {
     const map: Record<string, RuleTemplate> = {};
@@ -460,6 +533,222 @@ const RulesPage: React.FC = () => {
     }
   };
 
+  const loadScopeRules = async () => {
+    const folderId = scopeFolderId.trim();
+    if (!folderId) {
+      toast.error('Scope folder ID is required');
+      return;
+    }
+    setScopeRulesLoading(true);
+    try {
+      const scoped = await ruleService.getScopeFolderRules(folderId);
+      setScopeRules(scoped);
+      toast.success(`Loaded ${scoped.length} scoped rules`);
+    } catch (error: any) {
+      setScopeRules([]);
+      if (!error?.response?.data?.message) {
+        toast.error('Failed to load scoped rules');
+      }
+    } finally {
+      setScopeRulesLoading(false);
+    }
+  };
+
+  const moveScopeRule = (index: number, direction: -1 | 1) => {
+    setScopeRules((prev) => {
+      const targetIndex = index + direction;
+      if (targetIndex < 0 || targetIndex >= prev.length) {
+        return prev;
+      }
+      const next = [...prev];
+      const temp = next[index];
+      next[index] = next[targetIndex];
+      next[targetIndex] = temp;
+      return next;
+    });
+  };
+
+  const saveScopeRuleOrder = async () => {
+    const folderId = scopeFolderId.trim();
+    if (!folderId) {
+      toast.error('Scope folder ID is required');
+      return;
+    }
+    if (scopeRules.length === 0) {
+      toast.error('No scoped rules loaded');
+      return;
+    }
+    setScopeReorderSaving(true);
+    try {
+      const response = await ruleService.reorderScopeFolderRules(folderId, {
+        ruleIds: scopeRules.map((rule) => rule.id),
+        basePriority: 100,
+        step: 10,
+      });
+      setScopeRules(response.rules || []);
+      toast.success(`Reordered ${response.updated ?? 0} scoped rules`);
+      loadAll();
+    } catch (error: any) {
+      if (!error?.response?.data?.message) {
+        toast.error('Failed to reorder scoped rules');
+      }
+    } finally {
+      setScopeReorderSaving(false);
+    }
+  };
+
+  const runScopeDryRun = async () => {
+    const folderId = scopeFolderId.trim();
+    if (!folderId) {
+      toast.error('Scope folder ID is required');
+      return;
+    }
+    let testData: Record<string, any> = {};
+    try {
+      testData = parseJsonOrThrow(scopeDryRunDataText, 'Folder dry-run test data');
+    } catch (err: any) {
+      toast.error(err.message || 'Invalid folder dry-run JSON');
+      return;
+    }
+
+    setScopeDryRunLoading(true);
+    try {
+      const result = await ruleService.dryRunScopeFolderRules(folderId, {
+        triggerType: scopeTriggerType,
+        testData,
+        limit: scopeLimit,
+      });
+      setScopeDryRunResult(result);
+      toast.success(`Dry-run completed: matched ${result.matched}/${result.scanned}`);
+    } catch (error: any) {
+      if (!error?.response?.data?.message) {
+        toast.error('Failed to run scoped dry-run');
+      }
+    } finally {
+      setScopeDryRunLoading(false);
+    }
+  };
+
+  const buildRunTimelineFilters = (): RuleExecutionTimelineFilters => {
+    const normalizedLimit = Number.isFinite(timelineLimit)
+      ? Math.max(1, Math.floor(timelineLimit))
+      : 20;
+    return {
+      ruleId: timelineRuleIdFilter.trim() || undefined,
+      actor: timelineActorFilter.trim() || undefined,
+      success:
+        timelineSuccessFilter === 'ALL' ? undefined : timelineSuccessFilter === 'SUCCESS',
+      from: timelineFrom || undefined,
+      to: timelineTo || undefined,
+      limit: normalizedLimit,
+    };
+  };
+
+  const loadRunLedger = async () => {
+    setRunLedgerLoading(true);
+    try {
+      const rows = await ruleService.listRuleExecutionTimeline(buildRunTimelineFilters());
+      setRunLedger(rows || []);
+    } catch (error: any) {
+      if (!error?.response?.data?.message) {
+        toast.error('Failed to load execution ledger');
+      }
+    } finally {
+      setRunLedgerLoading(false);
+    }
+  };
+
+  const exportRunLedgerCsv = async () => {
+    setRunLedgerExporting(true);
+    try {
+      await ruleService.exportRuleExecutionTimelineCsv(buildRunTimelineFilters());
+    } catch (error: any) {
+      if (!error?.response?.data?.message) {
+        toast.error('Failed to export execution timeline CSV');
+      }
+    } finally {
+      setRunLedgerExporting(false);
+    }
+  };
+
+  const buildRuleAuditTimelineFilters = (): RuleAuditTimelineFilters => {
+    const normalizedLimit = Number.isFinite(auditLimit)
+      ? Math.max(1, Math.floor(auditLimit))
+      : 50;
+    return {
+      eventType: auditEventTypeFilter.trim() || undefined,
+      actor: auditActorFilter.trim() || undefined,
+      nodeId: auditNodeIdFilter.trim() || undefined,
+      from: auditFrom || undefined,
+      to: auditTo || undefined,
+      limit: normalizedLimit,
+    };
+  };
+
+  const loadRuleAuditTimeline = async () => {
+    setAuditTimelineLoading(true);
+    try {
+      const rows = await ruleService.listRuleAuditTimeline(buildRuleAuditTimelineFilters());
+      setAuditTimeline(rows || []);
+    } catch (error: any) {
+      if (!error?.response?.data?.message) {
+        toast.error('Failed to load rule audit timeline');
+      }
+    } finally {
+      setAuditTimelineLoading(false);
+    }
+  };
+
+  const exportRuleAuditTimelineCsv = async () => {
+    setAuditTimelineExporting(true);
+    try {
+      await ruleService.exportRuleAuditTimelineCsv(buildRuleAuditTimelineFilters());
+    } catch (error: any) {
+      if (!error?.response?.data?.message) {
+        toast.error('Failed to export rule audit timeline CSV');
+      }
+    } finally {
+      setAuditTimelineExporting(false);
+    }
+  };
+
+  const executeRuleManually = async () => {
+    const ruleId = manualRuleId.trim();
+    const documentId = manualDocumentId.trim();
+    if (!ruleId) {
+      toast.error('Rule ID is required');
+      return;
+    }
+    if (!documentId) {
+      toast.error('Document ID is required');
+      return;
+    }
+
+    setManualExecuting(true);
+    try {
+      const response = await ruleService.executeRuleManually(ruleId, {
+        documentId,
+        triggerType: manualTriggerType,
+        idempotencyKey: manualIdempotencyKey.trim() || undefined,
+      });
+      setLastExecutionResponse(response);
+      if (response.deduplicated) {
+        toast.info(`Execution reused from run ${response.deduplicatedFromRunId}`);
+      } else {
+        toast.success(`Execution created: ${response.runId}`);
+      }
+      loadRunLedger();
+      loadRuleAuditTimeline();
+      loadAll();
+    } catch (error: any) {
+      if (!error?.response?.data?.message) {
+        toast.error('Manual execution failed');
+      }
+    } finally {
+      setManualExecuting(false);
+    }
+  };
+
   return (
     <Box>
       <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
@@ -501,6 +790,456 @@ const RulesPage: React.FC = () => {
           )}
         </Stack>
       )}
+
+      <Box
+        sx={{
+          mb: 2,
+          p: 2,
+          border: '1px solid',
+          borderColor: 'divider',
+          borderRadius: 1,
+          bgcolor: 'background.paper',
+        }}
+      >
+        <Typography variant="subtitle1" sx={{ mb: 1 }}>
+          Folder Rule Set (Dry-run & Reorder)
+        </Typography>
+        <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center', mb: 1.5 }}>
+          <TextField
+            label="Scope Folder ID"
+            size="small"
+            value={scopeFolderId}
+            onChange={(e) => setScopeFolderId(e.target.value)}
+            sx={{ minWidth: 320 }}
+          />
+          <FormControl size="small" sx={{ minWidth: 190 }}>
+            <InputLabel id="scope-trigger-label">Dry-run Trigger</InputLabel>
+            <Select
+              labelId="scope-trigger-label"
+              label="Dry-run Trigger"
+              value={scopeTriggerType}
+              onChange={(e) => setScopeTriggerType(e.target.value as TriggerType)}
+            >
+              {TRIGGER_TYPES.map((tt) => (
+                <MenuItem key={`scope-trigger-${tt}`} value={tt}>
+                  {tt}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <TextField
+            label="Dry-run Limit"
+            type="number"
+            size="small"
+            value={scopeLimit}
+            onChange={(e) => setScopeLimit(Number(e.target.value) || 200)}
+            inputProps={{ min: 1, max: 1000 }}
+            sx={{ width: 140 }}
+          />
+          <Button variant="outlined" onClick={loadScopeRules} disabled={scopeRulesLoading}>
+            {scopeRulesLoading ? 'Loading…' : 'Load Scoped Rules'}
+          </Button>
+          <Button variant="outlined" onClick={runScopeDryRun} disabled={scopeDryRunLoading}>
+            {scopeDryRunLoading ? 'Running…' : 'Run Dry-run'}
+          </Button>
+          <Button
+            variant="contained"
+            onClick={saveScopeRuleOrder}
+            disabled={scopeReorderSaving || scopeRules.length === 0}
+          >
+            {scopeReorderSaving ? 'Saving…' : 'Save Order'}
+          </Button>
+        </Box>
+        <TextField
+          label="Dry-run Test Data (JSON)"
+          value={scopeDryRunDataText}
+          onChange={(e) => setScopeDryRunDataText(e.target.value)}
+          fullWidth
+          multiline
+          minRows={4}
+          sx={{ fontFamily: 'monospace', mb: 1.5 }}
+        />
+
+        {scopeDryRunResult && (
+          <Box sx={{ mb: 1.5 }}>
+            <Stack direction="row" spacing={1} sx={{ mb: 1, flexWrap: 'wrap' }}>
+              <Chip label={`Found ${scopeDryRunResult.found}`} />
+              <Chip label={`Scanned ${scopeDryRunResult.scanned}`} />
+              <Chip color="success" label={`Matched ${scopeDryRunResult.matched}`} />
+              <Chip color="info" label={`Processable ${scopeDryRunResult.processable}`} />
+              <Chip label={`Skipped ${scopeDryRunResult.skipped}`} />
+              <Chip color={scopeDryRunResult.errors > 0 ? 'warning' : 'default'} label={`Errors ${scopeDryRunResult.errors}`} />
+            </Stack>
+            {!!scopeDryRunResult.skipReasons &&
+              Object.keys(scopeDryRunResult.skipReasons).length > 0 && (
+                <Stack direction="row" spacing={1} sx={{ mb: 1, flexWrap: 'wrap' }}>
+                  {Object.entries(scopeDryRunResult.skipReasons).map(([reason, count]) => (
+                    <Chip
+                      key={`scope-skip-${reason}`}
+                      size="small"
+                      variant="outlined"
+                      label={`${reason}: ${count}`}
+                    />
+                  ))}
+                </Stack>
+              )}
+
+            {scopeDryRunResult.results?.length > 0 && (
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Rule</TableCell>
+                    <TableCell>Priority</TableCell>
+                    <TableCell>Matched</TableCell>
+                    <TableCell>Processable</TableCell>
+                    <TableCell>Skip Reason</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {scopeDryRunResult.results.slice(0, 20).map((item) => (
+                    <TableRow key={`scope-dryrun-item-${item.ruleId}`}>
+                      <TableCell>{item.ruleName}</TableCell>
+                      <TableCell>{item.priority ?? '-'}</TableCell>
+                      <TableCell>{item.matched ? 'Yes' : 'No'}</TableCell>
+                      <TableCell>{item.processable ? 'Yes' : 'No'}</TableCell>
+                      <TableCell>{item.skipReason || '-'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </Box>
+        )}
+
+        {scopeRules.length > 0 && (
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>#</TableCell>
+                <TableCell>Name</TableCell>
+                <TableCell>Priority</TableCell>
+                <TableCell>Trigger</TableCell>
+                <TableCell>Enabled</TableCell>
+                <TableCell align="right">Order</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {scopeRules.map((rule, index) => (
+                <TableRow key={`scope-rule-${rule.id}`}>
+                  <TableCell>{index + 1}</TableCell>
+                  <TableCell>{rule.name}</TableCell>
+                  <TableCell>{rule.priority ?? '-'}</TableCell>
+                  <TableCell>{rule.triggerType}</TableCell>
+                  <TableCell>{rule.enabled ? 'Yes' : 'No'}</TableCell>
+                  <TableCell align="right">
+                    <IconButton
+                      size="small"
+                      onClick={() => moveScopeRule(index, -1)}
+                      disabled={index === 0}
+                      aria-label="Move up"
+                    >
+                      <ArrowUpward fontSize="small" />
+                    </IconButton>
+                    <IconButton
+                      size="small"
+                      onClick={() => moveScopeRule(index, 1)}
+                      disabled={index === scopeRules.length - 1}
+                      aria-label="Move down"
+                    >
+                      <ArrowDownward fontSize="small" />
+                    </IconButton>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </Box>
+
+      <Box
+        sx={{
+          mb: 2,
+          p: 2,
+          border: '1px solid',
+          borderColor: 'divider',
+          borderRadius: 1,
+          bgcolor: 'background.paper',
+        }}
+      >
+        <Typography variant="subtitle1" sx={{ mb: 1 }}>
+          Manual Execution Ledger (Idempotency)
+        </Typography>
+        <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center', mb: 1.5 }}>
+          <TextField
+            label="Rule ID"
+            size="small"
+            value={manualRuleId}
+            onChange={(e) => setManualRuleId(e.target.value)}
+            sx={{ minWidth: 280 }}
+          />
+          <TextField
+            label="Document ID"
+            size="small"
+            value={manualDocumentId}
+            onChange={(e) => setManualDocumentId(e.target.value)}
+            sx={{ minWidth: 280 }}
+          />
+          <FormControl size="small" sx={{ minWidth: 190 }}>
+            <InputLabel id="manual-trigger-label">Trigger</InputLabel>
+            <Select
+              labelId="manual-trigger-label"
+              label="Trigger"
+              value={manualTriggerType}
+              onChange={(e) => setManualTriggerType(e.target.value as TriggerType)}
+            >
+              {TRIGGER_TYPES.map((tt) => (
+                <MenuItem key={`manual-trigger-${tt}`} value={tt}>
+                  {tt}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <TextField
+            label="Idempotency Key (optional)"
+            size="small"
+            value={manualIdempotencyKey}
+            onChange={(e) => setManualIdempotencyKey(e.target.value)}
+            sx={{ minWidth: 260 }}
+          />
+          <Button variant="contained" onClick={executeRuleManually} disabled={manualExecuting}>
+            {manualExecuting ? 'Executing…' : 'Execute'}
+          </Button>
+        </Box>
+
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+          Timeline Filters
+        </Typography>
+        <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center', mb: 1.5 }}>
+          <TextField
+            label="Rule ID Filter"
+            size="small"
+            value={timelineRuleIdFilter}
+            onChange={(e) => setTimelineRuleIdFilter(e.target.value)}
+            sx={{ minWidth: 240 }}
+          />
+          <TextField
+            label="Actor Filter"
+            size="small"
+            value={timelineActorFilter}
+            onChange={(e) => setTimelineActorFilter(e.target.value)}
+            sx={{ minWidth: 200 }}
+          />
+          <FormControl size="small" sx={{ minWidth: 170 }}>
+            <InputLabel id="timeline-success-label">Success</InputLabel>
+            <Select
+              labelId="timeline-success-label"
+              label="Success"
+              value={timelineSuccessFilter}
+              onChange={(e) => setTimelineSuccessFilter(e.target.value as TimelineSuccessFilter)}
+            >
+              <MenuItem value="ALL">ALL</MenuItem>
+              <MenuItem value="SUCCESS">SUCCESS</MenuItem>
+              <MenuItem value="FAILED">FAILED</MenuItem>
+            </Select>
+          </FormControl>
+          <TextField
+            label="Limit"
+            type="number"
+            size="small"
+            value={timelineLimit}
+            onChange={(e) => setTimelineLimit(Number(e.target.value) || 20)}
+            inputProps={{ min: 1, max: 500 }}
+            sx={{ width: 120 }}
+          />
+          <TextField
+            label="From"
+            type="datetime-local"
+            size="small"
+            value={timelineFrom}
+            onChange={(e) => setTimelineFrom(e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            sx={{ minWidth: 220 }}
+          />
+          <TextField
+            label="To"
+            type="datetime-local"
+            size="small"
+            value={timelineTo}
+            onChange={(e) => setTimelineTo(e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            sx={{ minWidth: 220 }}
+          />
+          <Button variant="outlined" onClick={loadRunLedger} disabled={runLedgerLoading}>
+            {runLedgerLoading ? 'Refreshing…' : 'Refresh Timeline'}
+          </Button>
+          <Button variant="outlined" onClick={exportRunLedgerCsv} disabled={runLedgerExporting}>
+            {runLedgerExporting ? 'Exporting…' : 'Export CSV'}
+          </Button>
+        </Box>
+
+        {lastExecutionResponse && (
+          <Stack direction="row" spacing={1} sx={{ mb: 1, flexWrap: 'wrap' }}>
+            <Chip label={`Run ${lastExecutionResponse.runId}`} />
+            <Chip
+              color={lastExecutionResponse.deduplicated ? 'warning' : 'success'}
+              label={lastExecutionResponse.deduplicated ? 'Reused' : 'Executed'}
+            />
+            {lastExecutionResponse.deduplicatedFromRunId && (
+              <Chip label={`From ${lastExecutionResponse.deduplicatedFromRunId}`} />
+            )}
+          </Stack>
+        )}
+
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              <TableCell>Run</TableCell>
+              <TableCell>Rule</TableCell>
+              <TableCell>Document</TableCell>
+              <TableCell>Trigger</TableCell>
+              <TableCell>Matched</TableCell>
+              <TableCell>Success</TableCell>
+              <TableCell>Actions</TableCell>
+              <TableCell>Duration</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {runLedger.map((run) => (
+              <TableRow key={`rule-run-${run.runId}`}>
+                <TableCell>{run.runId.slice(0, 8)}</TableCell>
+                <TableCell>{run.ruleName}</TableCell>
+                <TableCell>{run.documentName}</TableCell>
+                <TableCell>{run.triggerType}</TableCell>
+                <TableCell>{run.conditionMatched ? 'Yes' : 'No'}</TableCell>
+                <TableCell>{run.success ? 'Yes' : 'No'}</TableCell>
+                <TableCell>
+                  {run.successfulActions}/{run.totalActions}
+                </TableCell>
+                <TableCell>{run.durationMs != null ? `${run.durationMs}ms` : '-'}</TableCell>
+              </TableRow>
+            ))}
+            {runLedger.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={8}>
+                  <Typography color="text.secondary">No execution runs found.</Typography>
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </Box>
+
+      <Box
+        sx={{
+          mb: 2,
+          p: 2,
+          border: '1px solid',
+          borderColor: 'divider',
+          borderRadius: 1,
+          bgcolor: 'background.paper',
+        }}
+      >
+        <Typography variant="subtitle1" sx={{ mb: 1 }}>
+          Rule Audit Timeline
+        </Typography>
+        <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center', mb: 1.5 }}>
+          <TextField
+            label="Event Type"
+            size="small"
+            value={auditEventTypeFilter}
+            onChange={(e) => setAuditEventTypeFilter(e.target.value)}
+            sx={{ minWidth: 220 }}
+          />
+          <TextField
+            label="Actor"
+            size="small"
+            value={auditActorFilter}
+            onChange={(e) => setAuditActorFilter(e.target.value)}
+            sx={{ minWidth: 180 }}
+          />
+          <TextField
+            label="Node ID"
+            size="small"
+            value={auditNodeIdFilter}
+            onChange={(e) => setAuditNodeIdFilter(e.target.value)}
+            sx={{ minWidth: 260 }}
+          />
+          <TextField
+            label="From"
+            type="datetime-local"
+            size="small"
+            value={auditFrom}
+            onChange={(e) => setAuditFrom(e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            sx={{ minWidth: 220 }}
+          />
+          <TextField
+            label="To"
+            type="datetime-local"
+            size="small"
+            value={auditTo}
+            onChange={(e) => setAuditTo(e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            sx={{ minWidth: 220 }}
+          />
+          <TextField
+            label="Limit"
+            type="number"
+            size="small"
+            value={auditLimit}
+            onChange={(e) => setAuditLimit(Number(e.target.value) || 50)}
+            inputProps={{ min: 1, max: 1000 }}
+            sx={{ width: 120 }}
+          />
+          <Button variant="outlined" onClick={loadRuleAuditTimeline} disabled={auditTimelineLoading}>
+            {auditTimelineLoading ? 'Refreshing…' : 'Refresh Audit'}
+          </Button>
+          <Button variant="outlined" onClick={exportRuleAuditTimelineCsv} disabled={auditTimelineExporting}>
+            {auditTimelineExporting ? 'Exporting…' : 'Export Audit CSV'}
+          </Button>
+        </Box>
+
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              <TableCell>Event Time</TableCell>
+              <TableCell>Event Type</TableCell>
+              <TableCell>Username</TableCell>
+              <TableCell>Node</TableCell>
+              <TableCell>Details</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {auditTimeline.map((item, index) => {
+              const eventTimeRaw = item.eventTime || '';
+              const parsedEventTime = eventTimeRaw ? new Date(eventTimeRaw) : null;
+              const eventTime = parsedEventTime && !Number.isNaN(parsedEventTime.getTime())
+                ? parsedEventTime.toLocaleString()
+                : eventTimeRaw || '-';
+              const nodeLabel = item.nodeName?.trim()
+                ? `${item.nodeName} (${item.nodeId || '-'})`
+                : item.nodeId || '-';
+              const username = item.username || item.actor || '-';
+              return (
+                <TableRow key={`rule-audit-${item.eventTime || 'none'}-${item.eventType || 'none'}-${index}`}>
+                  <TableCell>{eventTime}</TableCell>
+                  <TableCell>{item.eventType || '-'}</TableCell>
+                  <TableCell>{username}</TableCell>
+                  <TableCell>{nodeLabel}</TableCell>
+                  <TableCell>{item.details || '-'}</TableCell>
+                </TableRow>
+              );
+            })}
+            {auditTimeline.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={5}>
+                  <Typography color="text.secondary">No rule audit events found.</Typography>
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </Box>
 
       {loading ? (
         <CircularProgress />
@@ -829,6 +1568,32 @@ const RulesPage: React.FC = () => {
             minRows={6}
             sx={{ fontFamily: 'monospace' }}
           />
+          {actionDefinitions.length > 0 && (
+            <Box>
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.75 }}>
+                Available Action Definitions
+              </Typography>
+              <Box display="flex" flexWrap="wrap" gap={0.5}>
+                {actionDefinitions.map((definition) => {
+                  const required = definition.requiredParams?.length
+                    ? ` required: ${definition.requiredParams.join(',')}`
+                    : '';
+                  const constraints = definition.constraints?.length
+                    ? ` (${definition.constraints.join('; ')})`
+                    : '';
+                  return (
+                    <Chip
+                      key={`action-definition-${definition.type}`}
+                      size="small"
+                      variant={definition.supported ? 'outlined' : 'filled'}
+                      color={definition.supported ? 'default' : 'warning'}
+                      label={`${definition.type}${required}${constraints}`}
+                    />
+                  );
+                })}
+              </Box>
+            </Box>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={handleValidate}>Validate Condition</Button>

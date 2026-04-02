@@ -9,6 +9,14 @@ export interface SavedSearch {
   createdAt: string;
 }
 
+export interface SavedSearchTemplate {
+  id: string;
+  name: string;
+  description?: string;
+  queryParams: Record<string, any>;
+  tags: string[];
+}
+
 export interface FacetValue {
   value: string;
   count: number;
@@ -23,6 +31,10 @@ export interface SearchResultItem {
   parentId?: string;
   mimeType?: string;
   fileSize?: number;
+  locked?: boolean;
+  lockedBy?: string;
+  checkedOut?: boolean;
+  checkoutUser?: string;
   createdBy?: string;
   createdDate?: string;
   lastModifiedBy?: string;
@@ -50,6 +62,12 @@ class SavedSearchService {
 
   async list(): Promise<SavedSearch[]> {
     return api.get<SavedSearch[]>('/search/saved');
+  }
+
+  async listTemplates(tag?: string): Promise<SavedSearchTemplate[]> {
+    return api.get<SavedSearchTemplate[]>('/search/saved/templates', {
+      params: tag ? { tag } : undefined,
+    });
   }
 
   async get(id: string): Promise<SavedSearch> {

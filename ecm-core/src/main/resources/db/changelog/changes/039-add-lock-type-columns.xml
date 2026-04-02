@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="039-add-lock-type-columns" author="codex">
+        <comment>Add lock type, additional info, and deep flag to nodes table for enhanced lock service</comment>
+
+        <addColumn tableName="nodes">
+            <column name="lock_type" type="varchar(32)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+
+        <addColumn tableName="nodes">
+            <column name="lock_additional_info" type="varchar(1024)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+
+        <addColumn tableName="nodes">
+            <column name="lock_deep" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+
+        <createIndex tableName="nodes" indexName="idx_nodes_lock_type">
+            <column name="lock_type"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>

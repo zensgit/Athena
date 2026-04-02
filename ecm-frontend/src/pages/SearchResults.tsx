@@ -14,18 +14,24 @@ import {
   CardContent,
   CardActions,
   Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Menu,
   MenuItem,
   Pagination,
   CircularProgress,
   Alert,
   FormControl,
+  FormControlLabel,
   InputLabel,
   Select,
   Divider,
   Checkbox,
   ListItemIcon,
   ListItemText,
+  Switch,
   Tooltip,
 } from '@mui/material';
 import {
@@ -37,19 +43,25 @@ import {
   Visibility,
   Edit,
   AutoAwesome,
+  FolderOpen,
   FilterList,
   Refresh,
   Autorenew,
   InfoOutlined,
   Star,
   StarBorder,
+  CheckCircleOutline,
+  Publish,
+  Undo,
+  AccountTree,
+  Share as ShareIcon,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppSelector, useAppDispatch } from 'store';
 import { executeSavedSearch, fetchSearchFacets, searchNodes, setLastSearchCriteria } from 'store/slices/nodeSlice';
-import { setSearchOpen, setSearchPrefill, setSidebarOpen } from 'store/slices/uiSlice';
-import nodeService, { SearchDiagnostics, SearchIndexStats, SearchRebuildStatus } from 'services/nodeService';
+import { setSearchOpen, setSearchPrefill, setSidebarOpen, setSelectedNodeId, setShareLinkManagerOpen } from 'store/slices/uiSlice';
+import nodeService, { PreviewQueueStatus, SearchDiagnostics, SearchIndexStats, SearchRebuildStatus } from 'services/nodeService';
 import savedSearchService, { SavedSearch } from 'services/savedSearchService';
 import { Node, SearchCriteria } from 'types';
 import { toast } from 'react-toastify';
@@ -69,7 +81,18 @@ import {
   normalizePreviewFailureReason,
   summarizeFailedPreviews,
 } from 'utils/previewStatusUtils';
+import { buildPreviewQueueOverride, PreviewQueueOverride } from 'utils/previewQueueOverrideUtils';
 import { buildSearchErrorRecovery } from 'utils/searchErrorUtils';
+import {
+  getAdvancedSearchCancelCheckoutReason,
+  getAdvancedSearchCheckInActionReason,
+  getAdvancedSearchCheckoutActionReason,
+} from 'utils/advancedSearchActionUtils';
+import { getSearchResultCheckoutChip } from 'utils/advancedSearchCheckoutUtils';
+import { getSearchResultLockChip } from 'utils/advancedSearchLockUtils';
+import { getFileLockActionReason } from 'utils/fileLockBadgeUtils';
+import CheckoutGraphDialog from 'components/dialogs/CheckoutGraphDialog';
+import RenditionDefinitionDialog from 'components/dialogs/RenditionDefinitionDialog';
 const DocumentPreview = React.lazy(() => import('components/preview/DocumentPreview'));
 
 type FacetValue = { value: string; count: number };
@@ -107,6 +130,8 @@ const MATCH_FIELD_LABELS: Record<string, string> = {
 const FALLBACK_AUTO_RETRY_MAX = 3;
 const FALLBACK_AUTO_RETRY_BASE_DELAY_MS = 1500;
 const FALLBACK_AUTO_RETRY_MAX_DELAY_MS = 10000;
+type CheckoutFacetState = 'all' | 'checkedOut' | 'available';
+type LockFacetState = 'all' | 'locked' | 'unlocked';
 
 const getFallbackAutoRetryDelayMs = (attempt: number) => {
   if (attempt < 0) {
@@ -141,6 +166,10 @@ const buildFallbackCriteriaKey = (criteria?: SearchCriteria): string => {
     categories: normalizeCriteriaValues(criteria.categories),
     correspondents: normalizeCriteriaValues(criteria.correspondents),
     previewStatuses: normalizeCriteriaValues(criteria.previewStatuses),
+    locked: criteria.locked ?? null,
+    lockedBy: criteria.lockedBy?.trim() || '',
+    checkedOut: criteria.checkedOut ?? null,
+    checkoutUser: criteria.checkoutUser?.trim() || '',
     createdFrom: criteria.createdFrom || '',
     createdTo: criteria.createdTo || '',
     modifiedFrom: criteria.modifiedFrom || '',
@@ -183,6 +212,10 @@ const SearchResults: React.FC = () => {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedPreviewStatuses, setSelectedPreviewStatuses] = useState<string[]>([]);
+  const [selectedLockState, setSelectedLockState] = useState<LockFacetState>('all');
+  const [selectedLockOwner, setSelectedLockOwner] = useState('');
+  const [selectedCheckoutState, setSelectedCheckoutState] = useState<CheckoutFacetState>('all');
+  const [selectedCheckoutUser, setSelectedCheckoutUser] = useState('');
   const [previewNode, setPreviewNode] = useState<Node | null>(null);
   const [previewAnnotate, setPreviewAnnotate] = useState(false);
   const [hiddenNodeIds, setHiddenNodeIds] = useState<string[]>([]);
@@ -195,10 +228,7 @@ const SearchResults: React.FC = () => {
   const [fallbackLastRetryAt, setFallbackLastRetryAt] = useState<Date | null>(null);
   const fallbackAutoRetryTimerRef = useRef<number | null>(null);
   const [queueingPreviewId, setQueueingPreviewId] = useState<string | null>(null);
-  const [previewQueueStatusById, setPreviewQueueStatusById] = useState<Record<string, {
-    attempts?: number;
-    nextAttemptAt?: string;
-  }>>({});
+  const [previewQueueStatusById, setPreviewQueueStatusById] = useState<Record<string, PreviewQueueOverride>>({});
   const [batchRetrying, setBatchRetrying] = useState(false);
   const [similarResults, setSimilarResults] = useState<Node[] | null>(null);
   const [similarSource, setSimilarSource] = useState<{ id: string; name?: string } | null>(null);
@@ -225,6 +255,17 @@ const SearchResults: React.FC = () => {
   const previewOpen = Boolean(previewNode);
   const isAdmin = Boolean(user?.roles?.includes('ROLE_ADMIN'));
   const canWrite = Boolean(user?.roles?.includes('ROLE_ADMIN') || user?.roles?.includes('ROLE_EDITOR'));
+  const currentUsername = user?.username ?? null;
+  const [checkoutActionNodeId, setCheckoutActionNodeId] = useState<string | null>(null);
+  const [cancelCheckoutActionNodeId, setCancelCheckoutActionNodeId] = useState<string | null>(null);
+  const [checkInDialogNode, setCheckInDialogNode] = useState<Node | null>(null);
+  const [checkInFile, setCheckInFile] = useState<File | null>(null);
+  const [checkInComment, setCheckInComment] = useState('');
+  const [checkInMajorVersion, setCheckInMajorVersion] = useState(false);
+  const [checkInKeepCheckedOut, setCheckInKeepCheckedOut] = useState(false);
+  const [checkInSubmittingNodeId, setCheckInSubmittingNodeId] = useState<string | null>(null);
+  const [checkoutGraphDialogNode, setCheckoutGraphDialogNode] = useState<Node | null>(null);
+  const [renditionDialogNode, setRenditionDialogNode] = useState<Node | null>(null);
   const primarySearchErrorRecovery = useMemo(
     () => (error ? buildSearchErrorRecovery(error, 'Search failed') : null),
     [error]
@@ -451,6 +492,18 @@ const SearchResults: React.FC = () => {
       previewStatuses: selectedPreviewStatuses.length > 0
         ? selectedPreviewStatuses
         : (lastSearchCriteria?.previewStatuses || []),
+      locked: selectedLockState === 'locked'
+        ? true
+        : selectedLockState === 'unlocked'
+          ? false
+          : lastSearchCriteria?.locked,
+      lockedBy: selectedLockOwner.trim() || lastSearchCriteria?.lockedBy || '',
+      checkedOut: selectedCheckoutState === 'checkedOut'
+        ? true
+        : selectedCheckoutState === 'available'
+          ? false
+          : lastSearchCriteria?.checkedOut,
+      checkoutUser: selectedCheckoutUser.trim() || lastSearchCriteria?.checkoutUser || '',
       minSize: lastSearchCriteria?.minSize,
       maxSize: lastSearchCriteria?.maxSize,
       pathPrefix: lastSearchCriteria?.path || '',
@@ -550,6 +603,10 @@ const SearchResults: React.FC = () => {
     setSelectedTags([]);
     setSelectedCategories([]);
     setSelectedPreviewStatuses([]);
+    setSelectedLockState('all');
+    setSelectedLockOwner('');
+    setSelectedCheckoutState('all');
+    setSelectedCheckoutUser('');
   };
 
   const removeFacetValue = (
@@ -569,7 +626,11 @@ const SearchResults: React.FC = () => {
     selectedCreators.length > 0 ||
     selectedCorrespondents.length > 0 ||
     selectedTags.length > 0 ||
-    selectedCategories.length > 0;
+    selectedCategories.length > 0 ||
+    selectedLockState !== 'all' ||
+    selectedLockOwner.trim().length > 0 ||
+    selectedCheckoutState !== 'all' ||
+    selectedCheckoutUser.trim().length > 0;
   const previewStatusFilterApplied = selectedPreviewStatuses.length > 0;
   const filtersApplied = nonPreviewFiltersApplied || previewStatusFilterApplied;
 
@@ -589,6 +650,22 @@ const SearchResults: React.FC = () => {
     setSelectedTags(lastSearchCriteria.tags || []);
     setSelectedCategories(lastSearchCriteria.categories || []);
     setSelectedPreviewStatuses(lastSearchCriteria.previewStatuses || []);
+    setSelectedLockState(
+      lastSearchCriteria.locked === true
+        ? 'locked'
+        : lastSearchCriteria.locked === false
+          ? 'unlocked'
+          : 'all'
+    );
+    setSelectedLockOwner(lastSearchCriteria.lockedBy || '');
+    setSelectedCheckoutState(
+      lastSearchCriteria.checkedOut === true
+        ? 'checkedOut'
+        : lastSearchCriteria.checkedOut === false
+          ? 'available'
+          : 'all'
+    );
+    setSelectedCheckoutUser(lastSearchCriteria.checkoutUser || '');
     setPage(1);
 
     const timer = window.setTimeout(() => {
@@ -919,6 +996,20 @@ const SearchResults: React.FC = () => {
     const baseCategories = normalize(lastSearchCriteria.categories || []);
     const baseCorrespondents = normalize(lastSearchCriteria.correspondents || []);
     const basePreviewStatuses = normalize(lastSearchCriteria.previewStatuses || []);
+    const baseLockState: LockFacetState =
+      lastSearchCriteria.locked === true
+        ? 'locked'
+        : lastSearchCriteria.locked === false
+          ? 'unlocked'
+          : 'all';
+    const baseLockOwner = (lastSearchCriteria.lockedBy || '').trim();
+    const baseCheckoutState: CheckoutFacetState =
+      lastSearchCriteria.checkedOut === true
+        ? 'checkedOut'
+        : lastSearchCriteria.checkedOut === false
+          ? 'available'
+          : 'all';
+    const baseCheckoutUser = (lastSearchCriteria.checkoutUser || '').trim();
 
     const nextMimeTypes = normalize(selectedMimeTypes);
     const nextCreators = normalize(selectedCreators);
@@ -926,6 +1017,8 @@ const SearchResults: React.FC = () => {
     const nextCategories = normalize(selectedCategories);
     const nextCorrespondents = normalize(selectedCorrespondents);
     const nextPreviewStatuses = normalize(selectedPreviewStatuses);
+    const nextLockOwner = selectedLockOwner.trim();
+    const nextCheckoutUser = selectedCheckoutUser.trim();
 
     if (
       arraysEqual(baseMimeTypes, nextMimeTypes)
@@ -934,6 +1027,10 @@ const SearchResults: React.FC = () => {
       && arraysEqual(baseCategories, nextCategories)
       && arraysEqual(baseCorrespondents, nextCorrespondents)
       && arraysEqual(basePreviewStatuses, nextPreviewStatuses)
+      && baseLockState === selectedLockState
+      && baseLockOwner === nextLockOwner
+      && baseCheckoutState === selectedCheckoutState
+      && baseCheckoutUser === nextCheckoutUser
     ) {
       return;
     }
@@ -949,6 +1046,18 @@ const SearchResults: React.FC = () => {
       categories: nextCategories.length ? nextCategories : undefined,
       correspondents: nextCorrespondents.length ? nextCorrespondents : undefined,
       previewStatuses: nextPreviewStatuses.length ? nextPreviewStatuses : undefined,
+      locked: selectedLockState === 'locked'
+        ? true
+        : selectedLockState === 'unlocked'
+          ? false
+          : undefined,
+      lockedBy: nextLockOwner || undefined,
+      checkedOut: selectedCheckoutState === 'checkedOut'
+        ? true
+        : selectedCheckoutState === 'available'
+          ? false
+          : undefined,
+      checkoutUser: nextCheckoutUser || undefined,
       page: 0,
       size: pageSize,
       ...sortParams,
@@ -960,6 +1069,10 @@ const SearchResults: React.FC = () => {
     selectedTags,
     selectedCategories,
     selectedPreviewStatuses,
+    selectedLockState,
+    selectedLockOwner,
+    selectedCheckoutState,
+    selectedCheckoutUser,
     lastSearchCriteria,
     facetSyncSuppressed,
     pageSize,
@@ -969,7 +1082,18 @@ const SearchResults: React.FC = () => {
 
   useEffect(() => {
     setPage(1);
-  }, [selectedMimeTypes, selectedCreators, selectedCorrespondents, selectedTags, selectedCategories, selectedPreviewStatuses]);
+  }, [
+    selectedMimeTypes,
+    selectedCreators,
+    selectedCorrespondents,
+    selectedTags,
+    selectedCategories,
+    selectedPreviewStatuses,
+    selectedLockState,
+    selectedLockOwner,
+    selectedCheckoutState,
+    selectedCheckoutUser,
+  ]);
 
   useEffect(() => {
     if (!lastSearchCriteria) {
@@ -1089,6 +1213,11 @@ const SearchResults: React.FC = () => {
     navigate(`/editor/${node.id}?provider=wopi&permission=${permission}`);
   };
 
+  const handleOpenShareLink = (node: Node) => {
+    dispatch(setSelectedNodeId(node.id));
+    dispatch(setShareLinkManagerOpen(true));
+  };
+
   const handleDownload = async (node: Node) => {
     if (isDocumentNode(node)) {
       try {
@@ -1096,6 +1225,105 @@ const SearchResults: React.FC = () => {
       } catch (error) {
         toast.error('Failed to download file');
       }
+    }
+  };
+
+  const handleOpenCheckInTarget = async (node: Node) => {
+    try {
+      const graph = await nodeService.getNodeRelationCheckoutGraph(node.id);
+      const destinationId = graph.destinationNode?.id;
+      if (!destinationId) {
+        toast.info('No check-in target available for this document.');
+        return;
+      }
+      navigate(`/browse/${destinationId}`);
+    } catch {
+      toast.error('Failed to open check-in target');
+    }
+  };
+
+  const handleOpenCheckoutGraph = (node: Node) => {
+    setCheckoutGraphDialogNode(node);
+  };
+
+  const handleOpenRenditionRegistry = (node: Node) => {
+    setRenditionDialogNode(node);
+  };
+
+  const handleCheckoutNode = async (node: Node) => {
+    setCheckoutActionNodeId(node.id);
+    try {
+      await nodeService.checkoutDocument(node.id);
+      toast.success('Document checked out');
+      if (lastSearchCriteria) {
+        await runSearch(lastSearchCriteria);
+      }
+    } catch {
+      toast.error('Failed to check out document');
+    } finally {
+      setCheckoutActionNodeId(null);
+    }
+  };
+
+  const handleCancelCheckoutNode = async (node: Node) => {
+    setCancelCheckoutActionNodeId(node.id);
+    try {
+      await nodeService.cancelCheckoutDocument(node.id);
+      toast.success('Checkout cancelled');
+      if (lastSearchCriteria) {
+        await runSearch(lastSearchCriteria);
+      }
+    } catch {
+      toast.error('Failed to cancel checkout');
+    } finally {
+      setCancelCheckoutActionNodeId(null);
+    }
+  };
+
+  const openCheckInDialog = (node: Node) => {
+    setCheckInDialogNode(node);
+    setCheckInFile(null);
+    setCheckInComment('');
+    setCheckInMajorVersion(false);
+    setCheckInKeepCheckedOut(false);
+  };
+
+  const closeCheckInDialog = () => {
+    if (checkInSubmittingNodeId) {
+      return;
+    }
+    setCheckInDialogNode(null);
+    setCheckInFile(null);
+    setCheckInComment('');
+    setCheckInMajorVersion(false);
+    setCheckInKeepCheckedOut(false);
+  };
+
+  const handleCheckInNode = async () => {
+    if (!checkInDialogNode) {
+      return;
+    }
+    if (checkInKeepCheckedOut && !checkInFile) {
+      toast.error('Keep checked out requires a new version file');
+      return;
+    }
+    setCheckInSubmittingNodeId(checkInDialogNode.id);
+    try {
+      await nodeService.checkinDocument(checkInDialogNode.id, {
+        file: checkInFile,
+        comment: checkInComment,
+        majorVersion: checkInMajorVersion,
+        keepCheckedOut: checkInKeepCheckedOut,
+      });
+      toast.success(checkInFile ? 'Document checked in with new version' : 'Document checked in');
+      closeCheckInDialog();
+      if (lastSearchCriteria) {
+        await runSearch(lastSearchCriteria);
+      }
+    } catch {
+      toast.error('Failed to check in document');
+    } finally {
+      setCheckInSubmittingNodeId(null);
     }
   };
 
@@ -1289,18 +1517,22 @@ const SearchResults: React.FC = () => {
       return null;
     }
     const nodeMimeType = node.contentType || node.properties?.mimeType || node.properties?.contentType;
+    const queueStatus = previewQueueStatusById[node.id];
+    const previewStatusOverride = queueStatus?.previewStatus ?? node.previewStatus;
+    const previewFailureCategoryOverride = queueStatus?.previewFailureCategory ?? node.previewFailureCategory;
+    const previewFailureReasonOverride = queueStatus?.previewFailureReason ?? node.previewFailureReason;
     const effectiveStatus = getEffectivePreviewStatus(
-      node.previewStatus,
-      node.previewFailureCategory,
+      previewStatusOverride,
+      previewFailureCategoryOverride,
       nodeMimeType,
-      node.previewFailureReason
+      previewFailureReasonOverride
     );
     const failedPreviewMeta = getFailedPreviewMeta(
       nodeMimeType,
-      node.previewFailureCategory,
-      node.previewFailureReason
+      previewFailureCategoryOverride,
+      previewFailureReasonOverride
     );
-    const failureReason = node.previewFailureReason || '';
+    const failureReason = previewFailureReasonOverride || '';
     const label = effectiveStatus === 'READY'
       ? 'Preview ready'
       : effectiveStatus === 'FAILED' || effectiveStatus === 'UNSUPPORTED'
@@ -1321,27 +1553,32 @@ const SearchResults: React.FC = () => {
             : 'default';
     const failedPreviewUnsupported = (effectiveStatus === 'FAILED' || effectiveStatus === 'UNSUPPORTED') && failedPreviewMeta.unsupported;
     const failedPreviewRetryable = effectiveStatus === 'FAILED' && isRetryablePreviewFailure(
-      node.previewFailureCategory,
+      previewFailureCategoryOverride,
       nodeMimeType,
-      node.previewFailureReason
+      previewFailureReasonOverride
     );
-    const queueStatus = previewQueueStatusById[node.id];
     const queueDetail = (() => {
       if (!queueStatus) {
         return null;
       }
+      const queueStateLabel = queueStatus.queueState
+        ? `Queue state: ${queueStatus.queueState}`
+        : null;
       const attemptsLabel = queueStatus.attempts !== undefined
         ? `Attempts: ${queueStatus.attempts}`
         : null;
       const nextLabel = queueStatus.nextAttemptAt
         ? `Next retry: ${format(new Date(queueStatus.nextAttemptAt), 'PPp')}`
         : null;
-      if (!attemptsLabel && !nextLabel) {
+      const updatedLabel = queueStatus.previewLastUpdated
+        ? `Preview updated: ${format(new Date(queueStatus.previewLastUpdated), 'PPp')}`
+        : null;
+      if (!queueStateLabel && !attemptsLabel && !nextLabel && !updatedLabel) {
         return null;
       }
-      return [attemptsLabel, nextLabel].filter(Boolean).join(' • ');
+      return [queueStateLabel, attemptsLabel, nextLabel, updatedLabel].filter(Boolean).join(' • ');
     })();
-    const tooltipText = [failureReason, queueDetail].filter(Boolean).join(' • ');
+    const tooltipText = [failureReason, queueStatus?.message || '', queueDetail].filter(Boolean).join(' • ');
     return (
       <Box display="flex" flexDirection="column" alignItems="flex-start" gap={0.5}>
         <Box display="flex" alignItems="center" gap={0.5}>
@@ -1497,9 +1734,33 @@ const SearchResults: React.FC = () => {
     ? getFallbackAutoRetryDelayMs(fallbackAutoRetryCount)
     : null;
 
+  const previewAwareDisplayNodes = useMemo(
+    () => displayNodes.map((node) => {
+      if (node.nodeType === 'FOLDER') {
+        return node;
+      }
+      const queueStatus = previewQueueStatusById[node.id];
+      if (!queueStatus) {
+        return node;
+      }
+      return {
+        ...node,
+        previewStatus: queueStatus.previewStatus ?? node.previewStatus,
+        previewFailureReason: queueStatus.previewFailureReason ?? node.previewFailureReason,
+        previewFailureCategory: queueStatus.previewFailureCategory ?? node.previewFailureCategory,
+      };
+    }),
+    [displayNodes, previewQueueStatusById]
+  );
+
+  const hasPreviewQueueOverridesInDisplay = useMemo(
+    () => previewAwareDisplayNodes.some((node) => node.nodeType !== 'FOLDER' && Boolean(previewQueueStatusById[node.id])),
+    [previewAwareDisplayNodes, previewQueueStatusById]
+  );
+
   const failedPreviewSummary = useMemo(
     () => summarizeFailedPreviews(
-      displayNodes
+      previewAwareDisplayNodes
         .filter((node) => node.nodeType === 'DOCUMENT')
         .map((node) => ({
           previewStatus: node.previewStatus,
@@ -1508,20 +1769,30 @@ const SearchResults: React.FC = () => {
           mimeType: node.contentType || node.properties?.mimeType || node.properties?.contentType,
         }))
     ),
-    [displayNodes]
+    [previewAwareDisplayNodes]
   );
-  const failedPreviewNodes = displayNodes.filter((node) => node.nodeType === 'DOCUMENT'
-    && (node.previewStatus || '').toUpperCase() === 'FAILED'
-    && isRetryablePreviewFailure(
+  const failedPreviewNodes = previewAwareDisplayNodes.filter((node) => {
+    if (node.nodeType !== 'DOCUMENT') {
+      return false;
+    }
+    const nodeMimeType = node.contentType || node.properties?.mimeType || node.properties?.contentType;
+    return getEffectivePreviewStatus(
+      node.previewStatus,
       node.previewFailureCategory,
-      node.contentType || node.properties?.mimeType || node.properties?.contentType,
+      nodeMimeType,
       node.previewFailureReason
-    ));
+    ) === 'FAILED'
+      && isRetryablePreviewFailure(
+        node.previewFailureCategory,
+        nodeMimeType,
+        node.previewFailureReason
+      );
+  });
   const failedPreviewReasonSummary = useMemo(() => {
     return failedPreviewSummary.retryableReasons.slice(0, 6);
   }, [failedPreviewSummary]);
-	  const previewStatusCounts = useMemo(() => {
-	    const base = {
+  const previewStatusCounts = useMemo(() => {
+    const base = {
       READY: 0,
       PROCESSING: 0,
       QUEUED: 0,
@@ -1529,27 +1800,28 @@ const SearchResults: React.FC = () => {
       UNSUPPORTED: 0,
       PENDING: 0,
       other: 0,
-	      folders: 0,
-	    };
+      folders: 0,
+    };
 
-	    const previewStatusFacets = searchFacets?.previewStatus;
-	    const canUseSearchFacetsForPreview =
-	      !nonPreviewFiltersApplied
-	      && !previewStatusFilterApplied
-	      && Array.isArray(previewStatusFacets)
-	      && previewStatusFacets.length > 0;
+    const previewStatusFacets = searchFacets?.previewStatus;
+    const canUseSearchFacetsForPreview =
+      !hasPreviewQueueOverridesInDisplay
+      && !nonPreviewFiltersApplied
+      && !previewStatusFilterApplied
+      && Array.isArray(previewStatusFacets)
+      && previewStatusFacets.length > 0;
 
-	    if (canUseSearchFacetsForPreview) {
-	      for (const facet of previewStatusFacets) {
-	        const key = (facet.value || '').toUpperCase();
-	        if (key in base) {
-	          base[key as keyof typeof base] = facet.count;
-	        }
-	      }
+    if (canUseSearchFacetsForPreview) {
+      for (const facet of previewStatusFacets) {
+        const key = (facet.value || '').toUpperCase();
+        if (key in base) {
+          base[key as keyof typeof base] = facet.count;
+        }
+      }
       return base;
     }
 
-    return displayNodes.reduce((acc, node) => {
+    return previewAwareDisplayNodes.reduce((acc, node) => {
       if (node.nodeType === 'FOLDER') {
         acc.folders += 1;
         return acc;
@@ -1568,7 +1840,14 @@ const SearchResults: React.FC = () => {
       }
       return acc;
     }, base);
-  }, [displayNodes, nonPreviewFiltersApplied, previewStatusFilterApplied, searchFacets]);
+  }, [hasPreviewQueueOverridesInDisplay, nonPreviewFiltersApplied, previewAwareDisplayNodes, previewStatusFilterApplied, searchFacets]);
+
+  const applyPreviewQueueStatusOverride = useCallback((nodeId: string, status?: PreviewQueueStatus | null) => {
+    setPreviewQueueStatusById((prev) => ({
+      ...prev,
+      [nodeId]: buildPreviewQueueOverride(status),
+    }));
+  }, []);
 
   const handleRetryPreview = useCallback(async (node: Node, force = false) => {
     if (!node?.id || node.nodeType !== 'DOCUMENT') {
@@ -1577,13 +1856,7 @@ const SearchResults: React.FC = () => {
     setQueueingPreviewId(node.id);
     try {
       const status = await nodeService.queuePreview(node.id, force);
-      setPreviewQueueStatusById((prev) => ({
-        ...prev,
-        [node.id]: {
-          attempts: status?.attempts,
-          nextAttemptAt: status?.nextAttemptAt,
-        },
-      }));
+      applyPreviewQueueStatusOverride(node.id, status);
       if (status?.queued) {
         toast.success(status?.message || 'Preview queued');
       } else {
@@ -1594,7 +1867,7 @@ const SearchResults: React.FC = () => {
     } finally {
       setQueueingPreviewId(null);
     }
-  }, []);
+  }, [applyPreviewQueueStatusOverride]);
 
   const handleRetryFailedPreviews = async (force = false) => {
     const targets = failedPreviewNodes;
@@ -1608,13 +1881,7 @@ const SearchResults: React.FC = () => {
     for (const node of targets) {
       try {
         const status = await nodeService.queuePreview(node.id, force);
-        setPreviewQueueStatusById((prev) => ({
-          ...prev,
-          [node.id]: {
-            attempts: status?.attempts,
-            nextAttemptAt: status?.nextAttemptAt,
-          },
-        }));
+        applyPreviewQueueStatusOverride(node.id, status);
         if (status?.queued) {
           queued += 1;
         } else {
@@ -1646,13 +1913,7 @@ const SearchResults: React.FC = () => {
     for (const node of targets) {
       try {
         const status = await nodeService.queuePreview(node.id, force);
-        setPreviewQueueStatusById((prev) => ({
-          ...prev,
-          [node.id]: {
-            attempts: status?.attempts,
-            nextAttemptAt: status?.nextAttemptAt,
-          },
-        }));
+        applyPreviewQueueStatusOverride(node.id, status);
         if (status?.queued) {
           queued += 1;
         } else {
@@ -1681,10 +1942,10 @@ const SearchResults: React.FC = () => {
           id: node.id,
           name: node.name,
           status: getEffectivePreviewStatus(
-            node.previewStatus,
-            node.previewFailureCategory,
+            queueStatus.previewStatus ?? node.previewStatus,
+            queueStatus.previewFailureCategory ?? node.previewFailureCategory,
             node.contentType || node.properties?.mimeType || node.properties?.contentType,
-            node.previewFailureReason
+            queueStatus.previewFailureReason ?? node.previewFailureReason
           ),
           attempts: queueStatus.attempts,
           nextAttemptAt: queueStatus.nextAttemptAt,
@@ -2082,6 +2343,66 @@ const SearchResults: React.FC = () => {
                 Clear
               </Button>
             </Box>
+
+            <Typography variant="subtitle2" gutterBottom>
+              Lock
+            </Typography>
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+              Narrow ordinary search to locked or unlocked documents, and optionally by lock owner.
+            </Typography>
+            <FormControl fullWidth size="small" sx={{ mb: 1.5 }}>
+              <InputLabel id="facet-lock-state-label">Lock state</InputLabel>
+              <Select
+                id="facet-lock-state-select"
+                labelId="facet-lock-state-label"
+                value={selectedLockState}
+                label="Lock state"
+                onChange={(e) => setSelectedLockState(e.target.value as LockFacetState)}
+              >
+                <MenuItem value="all">All documents</MenuItem>
+                <MenuItem value="locked">Locked</MenuItem>
+                <MenuItem value="unlocked">Unlocked</MenuItem>
+              </Select>
+            </FormControl>
+            <TextField
+              fullWidth
+              size="small"
+              label="Lock owner"
+              value={selectedLockOwner}
+              onChange={(event) => setSelectedLockOwner(event.target.value)}
+              placeholder="alice"
+              sx={{ mb: 2 }}
+            />
+
+            <Typography variant="subtitle2" gutterBottom>
+              Checkout
+            </Typography>
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+              Narrow ordinary search to checked-out or available documents, and optionally by checkout owner.
+            </Typography>
+            <FormControl fullWidth size="small" sx={{ mb: 1.5 }}>
+              <InputLabel id="facet-checkout-state-label">Checkout state</InputLabel>
+              <Select
+                id="facet-checkout-state-select"
+                labelId="facet-checkout-state-label"
+                value={selectedCheckoutState}
+                label="Checkout state"
+                onChange={(e) => setSelectedCheckoutState(e.target.value as CheckoutFacetState)}
+              >
+                <MenuItem value="all">All documents</MenuItem>
+                <MenuItem value="checkedOut">Checked out</MenuItem>
+                <MenuItem value="available">Available</MenuItem>
+              </Select>
+            </FormControl>
+            <TextField
+              fullWidth
+              size="small"
+              label="Checkout user"
+              value={selectedCheckoutUser}
+              onChange={(event) => setSelectedCheckoutUser(event.target.value)}
+              placeholder="alice"
+              sx={{ mb: 2 }}
+            />
             {failedPreviewSummary.retryableFailed > 0 && (
               <Box display="flex" alignItems="center" gap={1} mb={2}>
                 <Button
@@ -2643,6 +2964,38 @@ const SearchResults: React.FC = () => {
                   onDelete={() => removeFacetValue(setSelectedPreviewStatuses, value)}
                 />
               ))}
+              {selectedLockState !== 'all' && (
+                <Chip
+                  key={`lock-state-${selectedLockState}`}
+                  label={`Lock: ${selectedLockState === 'locked' ? 'locked' : 'unlocked'}`}
+                  size="small"
+                  onDelete={() => setSelectedLockState('all')}
+                />
+              )}
+              {selectedLockOwner.trim() && (
+                <Chip
+                  key={`lock-owner-${selectedLockOwner.trim()}`}
+                  label={`Lock owner: ${selectedLockOwner.trim()}`}
+                  size="small"
+                  onDelete={() => setSelectedLockOwner('')}
+                />
+              )}
+              {selectedCheckoutState !== 'all' && (
+                <Chip
+                  key={`checkout-state-${selectedCheckoutState}`}
+                  label={`Checkout: ${selectedCheckoutState === 'checkedOut' ? 'checked out' : 'available'}`}
+                  size="small"
+                  onDelete={() => setSelectedCheckoutState('all')}
+                />
+              )}
+              {selectedCheckoutUser.trim() && (
+                <Chip
+                  key={`checkout-user-${selectedCheckoutUser.trim()}`}
+                  label={`Checkout user: ${selectedCheckoutUser.trim()}`}
+                  size="small"
+                  onDelete={() => setSelectedCheckoutUser('')}
+                />
+              )}
               <Button size="small" onClick={clearFacetFilters}>
                 Clear all
               </Button>
@@ -2679,19 +3032,41 @@ const SearchResults: React.FC = () => {
                       <CardContent sx={{ flex: 1 }}>
                         <Box display="flex" alignItems="center" mb={2}>
                           {getFileIcon(node)}
-                          <Box ml={2} flex={1} sx={{ minWidth: 0 }}>
-                            <Tooltip title={node.name} placement="top-start" arrow>
-                              <Typography
+                            <Box ml={2} flex={1} sx={{ minWidth: 0 }}>
+                              <Tooltip title={node.name} placement="top-start" arrow>
+                                <Typography
                                 variant="h6"
                                 sx={getNameTypographySx(node.name)}
                               >
                                 {node.name}
                               </Typography>
-                            </Tooltip>
-                            <Box display="flex" gap={1} mt={0.5}>
-                              {getFileTypeChip(node.contentType)}
-                              {node.currentVersionLabel && (
-                                <Chip label={`v${node.currentVersionLabel}`} size="small" variant="outlined" />
+                              </Tooltip>
+                              <Box display="flex" gap={1} mt={0.5}>
+                                {(() => {
+                                  const checkoutChip = getSearchResultCheckoutChip(node.checkedOut, node.checkoutUser);
+                                  if (!checkoutChip) {
+                                    return null;
+                                  }
+                                  return (
+                                    <Tooltip title={checkoutChip.tooltip} placement="top-start" arrow>
+                                      <Chip label={checkoutChip.label} size="small" variant="outlined" color={checkoutChip.color} />
+                                    </Tooltip>
+                                  );
+                                })()}
+                                {(() => {
+                                  const lockChip = getSearchResultLockChip(node.locked, node.lockedBy);
+                                  if (!lockChip) {
+                                    return null;
+                                  }
+                                  return (
+                                    <Tooltip title={lockChip.tooltip} placement="top-start" arrow>
+                                      <Chip label={lockChip.label} size="small" variant="outlined" color={lockChip.color} />
+                                    </Tooltip>
+                                  );
+                                })()}
+                                {getFileTypeChip(node.contentType)}
+                                {node.currentVersionLabel && (
+                                  <Chip label={`v${node.currentVersionLabel}`} size="small" variant="outlined" />
                               )}
                               {getPreviewStatusChip(node)}
                             </Box>
@@ -2798,23 +3173,128 @@ const SearchResults: React.FC = () => {
                           View
                         </Button>
                         {isDocumentNode(node) && isPdfDocument(node) && canWrite && (
-                          <Button size="small" startIcon={<Edit />} onClick={() => void handlePreviewNode(node, { annotate: true })}>
-                            Annotate (PDF)
-                          </Button>
+                          <Tooltip
+                            title={getFileLockActionReason(node, 'annotate this item', currentUsername) || ''}
+                            placement="top-start"
+                            arrow
+                            disableHoverListener={!getFileLockActionReason(node, 'annotate this item', currentUsername)}
+                          >
+                            <span>
+                              <Button
+                                size="small"
+                                startIcon={<Edit />}
+                                disabled={Boolean(getFileLockActionReason(node, 'annotate this item', currentUsername))}
+                                onClick={() => void handlePreviewNode(node, { annotate: true })}
+                              >
+                                Annotate (PDF)
+                              </Button>
+                            </span>
+                          </Tooltip>
                         )}
                         {isDocumentNode(node) && isOfficeDocument(node) && !isPdfDocument(node) && (
-                          <Button
-                            size="small"
-                            startIcon={canWrite ? <Edit /> : <Visibility />}
-                            onClick={() => handleEditOnline(node, canWrite ? 'write' : 'read')}
+                          <Tooltip
+                            title={canWrite ? (getFileLockActionReason(node, 'edit this item online', currentUsername) || '') : ''}
+                            placement="top-start"
+                            arrow
+                            disableHoverListener={!canWrite || !getFileLockActionReason(node, 'edit this item online', currentUsername)}
                           >
-                            {canWrite ? 'Edit Online' : 'View Online'}
-                          </Button>
+                            <span>
+                              <Button
+                                size="small"
+                                startIcon={canWrite ? <Edit /> : <Visibility />}
+                                disabled={canWrite && Boolean(getFileLockActionReason(node, 'edit this item online', currentUsername))}
+                                onClick={() => handleEditOnline(node, canWrite ? 'write' : 'read')}
+                              >
+                                {canWrite ? 'Edit Online' : 'View Online'}
+                              </Button>
+                            </span>
+                          </Tooltip>
                         )}
                         {isDocumentNode(node) && (
                           <Button size="small" startIcon={<Download />} onClick={() => handleDownload(node)}>
                             Download
                           </Button>
+                        )}
+                        {canWrite && isDocumentNode(node) && (
+                          <Button size="small" startIcon={<ShareIcon />} onClick={() => handleOpenShareLink(node)}>
+                            Share
+                          </Button>
+                        )}
+                        {isDocumentNode(node) && node.checkedOut && (
+                          <Button size="small" startIcon={<AccountTree />} onClick={() => handleOpenCheckoutGraph(node)}>
+                            Checkout Graph
+                          </Button>
+                        )}
+                        {isDocumentNode(node) && node.checkedOut && (
+                          <Button size="small" startIcon={<FolderOpen />} onClick={() => void handleOpenCheckInTarget(node)}>
+                            Open Check-In Target
+                          </Button>
+                        )}
+                        {isDocumentNode(node) && (
+                          <Button size="small" startIcon={<InfoOutlined />} onClick={() => handleOpenRenditionRegistry(node)}>
+                            Rendition Registry
+                          </Button>
+                        )}
+                        {canWrite && isDocumentNode(node) && !node.checkedOut && (
+                          <Tooltip
+                            title={getAdvancedSearchCheckoutActionReason(node, currentUsername) || ''}
+                            placement="top-start"
+                            arrow
+                            disableHoverListener={!getAdvancedSearchCheckoutActionReason(node, currentUsername)}
+                          >
+                            <span>
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                startIcon={<CheckCircleOutline />}
+                                disabled={checkoutActionNodeId === node.id || Boolean(getAdvancedSearchCheckoutActionReason(node, currentUsername))}
+                                onClick={() => void handleCheckoutNode(node)}
+                              >
+                                {checkoutActionNodeId === node.id ? 'Checking out...' : 'Check Out'}
+                              </Button>
+                            </span>
+                          </Tooltip>
+                        )}
+                        {canWrite && isDocumentNode(node) && node.checkedOut && (
+                          <Tooltip
+                            title={getAdvancedSearchCheckInActionReason(node, currentUsername, isAdmin) || ''}
+                            placement="top-start"
+                            arrow
+                            disableHoverListener={!getAdvancedSearchCheckInActionReason(node, currentUsername, isAdmin)}
+                          >
+                            <span>
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                startIcon={<Publish />}
+                                disabled={checkInSubmittingNodeId === node.id || Boolean(getAdvancedSearchCheckInActionReason(node, currentUsername, isAdmin))}
+                                onClick={() => openCheckInDialog(node)}
+                              >
+                                {checkInSubmittingNodeId === node.id ? 'Checking in...' : 'Check In'}
+                              </Button>
+                            </span>
+                          </Tooltip>
+                        )}
+                        {canWrite && isDocumentNode(node) && node.checkedOut && (
+                          <Tooltip
+                            title={getAdvancedSearchCancelCheckoutReason(node, currentUsername, isAdmin) || ''}
+                            placement="top-start"
+                            arrow
+                            disableHoverListener={!getAdvancedSearchCancelCheckoutReason(node, currentUsername, isAdmin)}
+                          >
+                            <span>
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                color="inherit"
+                                startIcon={<Undo />}
+                                disabled={cancelCheckoutActionNodeId === node.id || Boolean(getAdvancedSearchCancelCheckoutReason(node, currentUsername, isAdmin))}
+                                onClick={() => void handleCancelCheckoutNode(node)}
+                              >
+                                {cancelCheckoutActionNodeId === node.id ? 'Cancelling...' : 'Cancel Checkout'}
+                              </Button>
+                            </span>
+                          </Tooltip>
                         )}
                         {isDocumentNode(node) && (
                           <Button
@@ -2880,6 +3360,100 @@ const SearchResults: React.FC = () => {
           />
         </React.Suspense>
       )}
+
+      <Dialog
+        open={Boolean(checkInDialogNode)}
+        onClose={closeCheckInDialog}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Check In</DialogTitle>
+        <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <Typography variant="body2" color="text.secondary">
+            {checkInDialogNode ? `Check in "${checkInDialogNode.name}" with an optional new version file.` : ''}
+          </Typography>
+          <Alert severity="info">
+            Leave the file empty to release checkout without uploading a new version. Enable keep checked out only when uploading a new file.
+          </Alert>
+          <Button component="label" variant="outlined" sx={{ alignSelf: 'flex-start' }}>
+            {checkInFile ? `Selected: ${checkInFile.name}` : 'Choose New Version File'}
+            <input
+              hidden
+              type="file"
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null;
+                setCheckInFile(file);
+                if (!file) {
+                  setCheckInMajorVersion(false);
+                  setCheckInKeepCheckedOut(false);
+                }
+                event.currentTarget.value = '';
+              }}
+            />
+          </Button>
+          {checkInFile && (
+            <Button
+              color="inherit"
+              onClick={() => {
+                setCheckInFile(null);
+                setCheckInMajorVersion(false);
+                setCheckInKeepCheckedOut(false);
+              }}
+              sx={{ alignSelf: 'flex-start' }}
+            >
+              Clear File
+            </Button>
+          )}
+          <TextField
+            label="Version Comment"
+            value={checkInComment}
+            onChange={(event) => setCheckInComment(event.target.value)}
+            fullWidth
+            multiline
+            minRows={2}
+          />
+          <FormControlLabel
+            control={(
+              <Switch
+                checked={checkInMajorVersion}
+                onChange={(event) => setCheckInMajorVersion(event.target.checked)}
+                disabled={!checkInFile}
+              />
+            )}
+            label="Create major version"
+          />
+          <FormControlLabel
+            control={(
+              <Switch
+                checked={checkInKeepCheckedOut}
+                onChange={(event) => setCheckInKeepCheckedOut(event.target.checked)}
+                disabled={!checkInFile || (Boolean(checkInDialogNode?.checkoutUser) && checkInDialogNode?.checkoutUser !== currentUsername)}
+              />
+            )}
+            label="Keep checked out after check-in"
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeCheckInDialog} disabled={Boolean(checkInSubmittingNodeId)}>
+            Cancel
+          </Button>
+          <Button variant="contained" onClick={() => void handleCheckInNode()} disabled={Boolean(checkInSubmittingNodeId)}>
+            {checkInSubmittingNodeId ? 'Checking in...' : 'Check In'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <CheckoutGraphDialog
+        open={Boolean(checkoutGraphDialogNode)}
+        nodeId={checkoutGraphDialogNode?.id || null}
+        nodeName={checkoutGraphDialogNode?.name}
+        onClose={() => setCheckoutGraphDialogNode(null)}
+      />
+      <RenditionDefinitionDialog
+        open={Boolean(renditionDialogNode)}
+        nodeId={renditionDialogNode?.id || null}
+        nodeName={renditionDialogNode?.name}
+        onClose={() => setRenditionDialogNode(null)}
+      />
     </Box>
   );
 };

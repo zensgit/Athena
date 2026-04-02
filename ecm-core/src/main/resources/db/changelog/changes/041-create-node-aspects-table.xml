@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="041-create-node-aspects-table" author="codex">
+        <comment>Create node_aspects join table for runtime aspect attachment</comment>
+
+        <createTable tableName="node_aspects">
+            <column name="node_id" type="${uuid_type}">
+                <constraints nullable="false" foreignKeyName="fk_na_node" references="nodes(id)"/>
+            </column>
+            <column name="aspect_name" type="varchar(200)">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <addPrimaryKey tableName="node_aspects" columnNames="node_id, aspect_name" constraintName="pk_node_aspects"/>
+
+        <createIndex tableName="node_aspects" indexName="idx_node_aspects_node_id">
+            <column name="node_id"/>
+        </createIndex>
+
+        <createIndex tableName="node_aspects" indexName="idx_node_aspects_aspect_name">
+            <column name="aspect_name"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>

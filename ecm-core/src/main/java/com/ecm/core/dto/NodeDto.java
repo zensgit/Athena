@@ -1,10 +1,12 @@
 package com.ecm.core.dto;
 
 import com.ecm.core.entity.Document;
+import com.ecm.core.entity.LockLifetime;
 import com.ecm.core.entity.Node;
 import com.ecm.core.model.Category;
 import com.ecm.core.model.Tag;
 import com.ecm.core.preview.PreviewFailureClassifier;
+import com.ecm.core.preview.PreviewStatusSemantics;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -19,6 +21,7 @@ public record NodeDto(
     String description,
     String path,
     String nodeType,
+    String typeQName,
     UUID parentId,
     Long size,
     String contentType,
@@ -33,6 +36,14 @@ public record NodeDto(
     boolean inheritPermissions,
     boolean locked,
     String lockedBy,
+    LocalDateTime lockedDate,
+    LockLifetime lockLifetime,
+    LocalDateTime lockExpiresAt,
+    boolean checkedOut,
+    String checkoutUser,
+    LocalDateTime checkoutDate,
+    UUID workingCopyOf,
+    boolean isWorkingCopy,
     String createdBy,
     LocalDateTime createdDate,
     String lastModifiedBy,
@@ -71,11 +82,19 @@ public record NodeDto(
 
         String contentType = null;
         String currentVersionLabel = null;
+        boolean checkedOut = false;
+        String checkoutUser = null;
+        LocalDateTime checkoutDate = null;
+        UUID workingCopyOf = null;
+        boolean isWorkingCopy = false;
         String previewStatus = null;
         String previewFailureReason = null;
         String previewFailureCategory = null;
         LocalDateTime previewLastUpdated = null;
         List<String> aspects = new ArrayList<>();
+        if (node.getAspects() != null) {
+            aspects.addAll(node.getAspects());
+        }
         if (node instanceof Document document) {
             contentType = document.getMimeType();
             if (contentType == null) {
@@ -91,10 +110,13 @@ public record NodeDto(
             if (document.isVersioned()) {
                 aspects.add("cm:versionable");
             }
-            if (document.getPreviewStatus() != null) {
-                previewStatus = document.getPreviewStatus().name();
-            }
-            previewFailureReason = document.getPreviewFailureReason();
+            checkedOut = document.isCheckedOut();
+            checkoutUser = document.getCheckoutUser();
+            checkoutDate = document.getCheckoutDate();
+            workingCopyOf = document.getWorkingCopyOf();
+            isWorkingCopy = document.isWorkingCopy();
+            previewStatus = PreviewStatusSemantics.resolveEffectiveStatus(document);
+            previewFailureReason = PreviewStatusSemantics.resolveEffectiveFailureReason(document);
             previewFailureCategory = PreviewFailureClassifier.classify(previewStatus, contentType, previewFailureReason);
             previewLastUpdated = document.getPreviewLastUpdated();
         }
@@ -112,6 +134,7 @@ public record NodeDto(
             node.getDescription(),
             node.getPath(),
             node.getNodeType().name(),
+            node.getTypeQName(),
             parentId,
             node.getSize(),
             contentType,
@@ -124,12 +147,66 @@ public record NodeDto(
             tags,
             categories,
             node.isInheritPermissions(),
-            node.isLocked(),
+            node.isEffectivelyLocked(LocalDateTime.now()),
             node.getLockedBy(),
+            node.getLockedDate(),
+            node.getLockLifetime(),
+            node.getLockExpiresAt(),
+            checkedOut,
+            checkoutUser,
+            checkoutDate,
+            workingCopyOf,
+            isWorkingCopy,
             node.getCreatedBy(),
             node.getCreatedDate(),
             node.getLastModifiedBy(),
             node.getLastModifiedDate(),
+            previewStatus,
+            previewFailureReason,
+            previewFailureCategory,
+            previewLastUpdated
+        );
+    }
+
+    public NodeDto withPreviewSemantics(
+        String previewStatus,
+        String previewFailureReason,
+        String previewFailureCategory,
+        LocalDateTime previewLastUpdated
+    ) {
+        return new NodeDto(
+            id,
+            name,
+            description,
+            path,
+            nodeType,
+            typeQName,
+            parentId,
+            size,
+            contentType,
+            currentVersionLabel,
+            correspondentId,
+            correspondentName,
+            properties,
+            metadata,
+            aspects,
+            tags,
+            categories,
+            inheritPermissions,
+            locked,
+            lockedBy,
+            lockedDate,
+            lockLifetime,
+            lockExpiresAt,
+            checkedOut,
+            checkoutUser,
+            checkoutDate,
+            workingCopyOf,
+            isWorkingCopy,
+            createdBy,
+            createdDate,
+            lastModifiedBy,
+            lastModifiedDate,
             previewStatus,
             previewFailureReason,
             previewFailureCategory,

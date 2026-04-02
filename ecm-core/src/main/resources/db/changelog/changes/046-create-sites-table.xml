@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="046-create-sites-table" author="codex">
+        <comment>Create sites table for collaboration site registry</comment>
+
+        <createTable tableName="sites">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="site_id" type="varchar(100)">
+                <constraints nullable="false" unique="true" uniqueConstraintName="uq_sites_site_id"/>
+            </column>
+            <column name="title" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="description" type="text"/>
+            <column name="visibility" type="varchar(20)" defaultValue="PUBLIC">
+                <constraints nullable="false"/>
+            </column>
+            <column name="status" type="varchar(20)" defaultValue="ACTIVE">
+                <constraints nullable="false"/>
+            </column>
+            <column name="root_folder_id" type="${uuid_type}">
+                <constraints foreignKeyName="fk_site_root_folder" references="folders(id)"/>
+            </column>
+            <column name="created_date" type="timestamp" defaultValueComputed="${now}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_date" type="timestamp"/>
+            <column name="created_by" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_by" type="varchar(255)"/>
+            <column name="version" type="bigint" defaultValueNumeric="0"/>
+            <column name="is_deleted" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="deleted_at" type="timestamp"/>
+            <column name="deleted_by" type="varchar(255)"/>
+        </createTable>
+
+        <createIndex tableName="sites" indexName="idx_site_title">
+            <column name="title"/>
+        </createIndex>
+        <createIndex tableName="sites" indexName="idx_site_status">
+            <column name="status"/>
+        </createIndex>
+        <createIndex tableName="sites" indexName="idx_site_visibility">
+            <column name="visibility"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>

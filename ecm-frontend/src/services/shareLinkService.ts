@@ -58,6 +58,37 @@ class ShareLinkService {
   async deleteLink(token: string): Promise<void> {
     await api.delete<void>(`/share/${token}`);
   }
+
+  async reactivateLink(token: string): Promise<ShareLink> {
+    return api.post<ShareLink>(`/share/${token}/reactivate`);
+  }
+
+  async listAllLinks(): Promise<ShareLink[]> {
+    return api.get<ShareLink[]>('/share/admin/all');
+  }
+
+  async getAccessLog(token: string): Promise<AccessLogEntry[]> {
+    return api.get<AccessLogEntry[]>(`/share/${token}/access-log`);
+  }
+
+  async getAccessStats(token: string): Promise<AccessStats> {
+    return api.get<AccessStats>(`/share/${token}/access-stats`);
+  }
+}
+
+export interface AccessLogEntry {
+  id: string;
+  accessedAt: string;
+  clientIp?: string;
+  userAgent?: string;
+  success: boolean;
+  failureReason?: string;
+}
+
+export interface AccessStats {
+  totalAccesses: number;
+  successfulAccesses: number;
+  failedAccesses: number;
 }
 
 const shareLinkService = new ShareLinkService();

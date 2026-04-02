@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="048-create-activities-table" author="codex">
+        <comment>Create activities table for user/site activity feed</comment>
+
+        <createTable tableName="activities">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="activity_type" type="varchar(100)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="user_id" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="site_id" type="varchar(100)"/>
+            <column name="node_id" type="${uuid_type}"/>
+            <column name="node_name" type="varchar(255)"/>
+            <column name="summary" type="jsonb"/>
+            <column name="posted_at" type="timestamp" defaultValueComputed="${now}">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <createIndex tableName="activities" indexName="idx_activity_user_id">
+            <column name="user_id"/>
+        </createIndex>
+        <createIndex tableName="activities" indexName="idx_activity_site_id">
+            <column name="site_id"/>
+        </createIndex>
+        <createIndex tableName="activities" indexName="idx_activity_node_id">
+            <column name="node_id"/>
+        </createIndex>
+        <createIndex tableName="activities" indexName="idx_activity_type">
+            <column name="activity_type"/>
+        </createIndex>
+        <createIndex tableName="activities" indexName="idx_activity_posted_at">
+            <column name="posted_at"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>

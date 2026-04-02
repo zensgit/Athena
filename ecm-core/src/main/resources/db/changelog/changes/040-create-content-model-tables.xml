@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="040-create-content-model-tables" author="codex">
+        <comment>Create content model definition, type, aspect, property, and constraint tables</comment>
+
+        <!-- Content Model Definitions -->
+        <createTable tableName="content_model_definitions">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="namespace_uri" type="varchar(500)">
+                <constraints nullable="false" unique="true"/>
+            </column>
+            <column name="prefix" type="varchar(50)">
+                <constraints nullable="false" unique="true"/>
+            </column>
+            <column name="name" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="description" type="text"/>
+            <column name="author" type="varchar(255)"/>
+            <column name="status" type="varchar(32)" defaultValue="DRAFT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="version_label" type="varchar(50)" defaultValue="1.0"/>
+            <column name="created_by" type="varchar(255)"/>
+            <column name="created_date" type="timestamp" defaultValueComputed="${now}"/>
+            <column name="last_modified_by" type="varchar(255)"/>
+            <column name="last_modified_date" type="timestamp" defaultValueComputed="${now}"/>
+            <column name="entity_version" type="bigint" defaultValue="0"/>
+            <column name="is_deleted" type="boolean" defaultValueBoolean="false"/>
+            <column name="deleted_at" type="timestamp"/>
+            <column name="deleted_by" type="varchar(255)"/>
+        </createTable>
+
+        <createIndex tableName="content_model_definitions" indexName="idx_cmd_prefix">
+            <column name="prefix"/>
+        </createIndex>
+        <createIndex tableName="content_model_definitions" indexName="idx_cmd_status">
+            <column name="status"/>
+        </createIndex>
+
+        <!-- Type Definitions -->
+        <createTable tableName="type_definitions">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="name" type="varchar(200)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="title" type="varchar(500)"/>
+            <column name="description" type="text"/>
+            <column name="parent_name" type="varchar(200)"/>
+            <column name="model_id" type="${uuid_type}">
+                <constraints nullable="false" foreignKeyName="fk_td_model" references="content_model_definitions(id)"/>
+            </column>
+            <column name="mandatory_aspects" type="jsonb"/>
+            <column name="created_by" type="varchar(255)"/>
+            <column name="created_date" type="timestamp" defaultValueComputed="${now}"/>
+            <column name="last_modified_by" type="varchar(255)"/>
+            <column name="last_modified_date" type="timestamp" defaultValueComputed="${now}"/>
+            <column name="entity_version" type="bigint" defaultValue="0"/>
+            <column name="is_deleted" type="boolean" defaultValueBoolean="false"/>
+            <column name="deleted_at" type="timestamp"/>
+            <column name="deleted_by" type="varchar(255)"/>
+        </createTable>
+
+        <createIndex tableName="type_definitions" indexName="idx_td_model_id">
+            <column name="model_id"/>
+        </createIndex>
+        <createIndex tableName="type_definitions" indexName="idx_td_name">
+            <column name="name"/>
+        </createIndex>
+
+        <!-- Aspect Definitions -->
+        <createTable tableName="aspect_definitions">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="name" type="varchar(200)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="title" type="varchar(500)"/>
+            <column name="description" type="text"/>
+            <column name="parent_name" type="varchar(200)"/>
+            <column name="model_id" type="${uuid_type}">
+                <constraints nullable="false" foreignKeyName="fk_ad_model" references="content_model_definitions(id)"/>
+            </column>
+            <column name="created_by" type="varchar(255)"/>
+            <column name="created_date" type="timestamp" defaultValueComputed="${now}"/>
+            <column name="last_modified_by" type="varchar(255)"/>
+            <column name="last_modified_date" type="timestamp" defaultValueComputed="${now}"/>
+            <column name="entity_version" type="bigint" defaultValue="0"/>
+            <column name="is_deleted" type="boolean" defaultValueBoolean="false"/>
+            <column name="deleted_at" type="timestamp"/>
+            <column name="deleted_by" type="varchar(255)"/>
+        </createTable>
+
+        <createIndex tableName="aspect_definitions" indexName="idx_ad_model_id">
+            <column name="model_id"/>
+        </createIndex>
+        <createIndex tableName="aspect_definitions" indexName="idx_ad_name">
+            <column name="name"/>
+        </createIndex>
+
+        <!-- Property Definitions -->
+        <createTable tableName="property_definitions">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="name" type="varchar(200)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="title" type="varchar(500)"/>
+            <column name="description" type="text"/>
+            <column name="data_type" type="varchar(32)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="mandatory" type="boolean" defaultValueBoolean="false"/>
+            <column name="multi_valued" type="boolean" defaultValueBoolean="false"/>
+            <column name="default_value" type="varchar(1000)"/>
+            <column name="indexed" type="boolean" defaultValueBoolean="true"/>
+            <column name="protected_field" type="boolean" defaultValueBoolean="false"/>
+            <column name="type_definition_id" type="${uuid_type}">
+                <constraints foreignKeyName="fk_pd_type" references="type_definitions(id)"/>
+            </column>
+            <column name="aspect_definition_id" type="${uuid_type}">
+                <constraints foreignKeyName="fk_pd_aspect" references="aspect_definitions(id)"/>
+            </column>
+            <column name="created_by" type="varchar(255)"/>
+            <column name="created_date" type="timestamp" defaultValueComputed="${now}"/>
+            <column name="last_modified_by" type="varchar(255)"/>
+            <column name="last_modified_date" type="timestamp" defaultValueComputed="${now}"/>
+            <column name="entity_version" type="bigint" defaultValue="0"/>
+            <column name="is_deleted" type="boolean" defaultValueBoolean="false"/>
+            <column name="deleted_at" type="timestamp"/>
+            <column name="deleted_by" type="varchar(255)"/>
+        </createTable>
+
+        <createIndex tableName="property_definitions" indexName="idx_pd_name">
+            <column name="name"/>
+        </createIndex>
+
+        <!-- Constraint Definitions -->
+        <createTable tableName="constraint_definitions">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="constraint_type" type="varchar(32)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="parameters" type="jsonb"/>
+            <column name="property_definition_id" type="${uuid_type}">
+                <constraints nullable="false" foreignKeyName="fk_cd_property" references="property_definitions(id)"/>
+            </column>
+            <column name="created_by" type="varchar(255)"/>
+            <column name="created_date" type="timestamp" defaultValueComputed="${now}"/>
+            <column name="last_modified_by" type="varchar(255)"/>
+            <column name="last_modified_date" type="timestamp" defaultValueComputed="${now}"/>
+            <column name="entity_version" type="bigint" defaultValue="0"/>
+            <column name="is_deleted" type="boolean" defaultValueBoolean="false"/>
+            <column name="deleted_at" type="timestamp"/>
+            <column name="deleted_by" type="varchar(255)"/>
+        </createTable>
+    </changeSet>
+
+</databaseChangeLog>

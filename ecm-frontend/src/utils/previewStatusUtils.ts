@@ -119,6 +119,9 @@ export const getEffectivePreviewStatus = (
   if (!normalized) {
     return 'PENDING';
   }
+  if (normalized === 'REGISTERED') {
+    return 'PENDING';
+  }
   if (normalized === 'FAILED') {
     return isUnsupportedPreviewFailure(failureCategory, mimeType, failureReason)
       ? 'UNSUPPORTED'

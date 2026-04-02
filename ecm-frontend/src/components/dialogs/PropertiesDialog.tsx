@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Alert,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -39,7 +40,17 @@ import { updateNode } from 'store/slices/nodeSlice';
 import nodeService from 'services/nodeService';
 import correspondentService, { Correspondent } from 'services/correspondentService';
 import contentTypeService, { ContentTypeDefinition, ContentTypePropertyDefinition } from 'services/contentTypeService';
+import dictionaryService from 'services/dictionaryService';
+import { AspectDefinition, PropertyDefinition } from 'services/contentModelService';
 import { toast } from 'react-toastify';
+import { formatConstraintLabel } from 'utils/contentModelConstraintUtils';
+import { formatApiErrorMessage } from 'utils/apiErrorUtils';
+import NodeRatingPanel from 'components/ratings/NodeRatingPanel';
+import {
+  buildAspectInitialPropertyValues,
+  buildAspectPropertyPayload,
+  getAspectPropertyListOptions,
+} from 'utils/aspectPropertyFormUtils';
 
 interface PropertyField {
   key: string;
@@ -99,10 +110,18 @@ const PropertiesDialog: React.FC = () => {
   const [contentTypeLoading, setContentTypeLoading] = useState(false);
   const [selectedContentType, setSelectedContentType] = useState('');
   const [contentTypeValues, setContentTypeValues] = useState<Record<string, string>>({});
+  const [availableAspects, setAvailableAspects] = useState<AspectDefinition[]>([]);
+  const [aspectLoading, setAspectLoading] = useState(false);
+  const [selectedAspectToAdd, setSelectedAspectToAdd] = useState('');
+  const [aspectPropertyValues, setAspectPropertyValues] = useState<Record<string, string>>({});
+  const [aspectMutating, setAspectMutating] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const correspondentLabelId = 'correspondent-select-label';
   const correspondentSelectId = 'correspondent-select';
   const contentTypeLabelId = 'content-type-select-label';
   const contentTypeSelectId = 'content-type-select';
+  const aspectSelectLabelId = 'aspect-select-label';
+  const aspectSelectId = 'aspect-select';
 
   const loadDialogData = useCallback(async () => {
     if (!selectedNodeId) return;
@@ -110,12 +129,14 @@ const PropertiesDialog: React.FC = () => {
     setLoading(true);
     setCorrespondentLoading(true);
     setContentTypeLoading(true);
+    setAspectLoading(true);
 
     try {
-      const [nodeResult, correspondentsResult, typesResult] = await Promise.allSettled([
+      const [nodeResult, correspondentsResult, typesResult, aspectsResult] = await Promise.allSettled([
         nodeService.getNode(selectedNodeId),
         correspondentService.list(0, 500),
         contentTypeService.listTypes(),
+        dictionaryService.listAspects(),
       ]);
 
       if (nodeResult.status !== 'fulfilled') {
@@ -124,6 +145,7 @@ const PropertiesDialog: React.FC = () => {
       }
 
       const nodeData = nodeResult.value;
+      setActionError(null);
       setNode(nodeData);
       setEditedName(nodeData.name);
       setCorrespondentId(nodeData.correspondentId || '');
@@ -141,6 +163,13 @@ const PropertiesDialog: React.FC = () => {
         toast.error('Failed to load content types');
       }
 
+      if (aspectsResult.status === 'fulfilled') {
+        setAvailableAspects(aspectsResult.value);
+      } else {
+        setAvailableAspects([]);
+        toast.error('Failed to load dictionary aspects');
+      }
+
       const metadataType = nodeData.metadata?.['ecm:contentType'];
       const initialType = typeof metadataType === 'string' ? metadataType : '';
       const typeDefinition =
@@ -156,6 +185,7 @@ const PropertiesDialog: React.FC = () => {
       setLoading(false);
       setCorrespondentLoading(false);
       setContentTypeLoading(false);
+      setAspectLoading(false);
     }
   }, [selectedNodeId]);
 
@@ -209,12 +239,19 @@ const PropertiesDialog: React.FC = () => {
     setSelectedContentType('');
     setContentTypeValues({});
     setContentTypeLoading(false);
+    setAvailableAspects([]);
+    setAspectLoading(false);
+    setSelectedAspectToAdd('');
+    setAspectPropertyValues({});
+    setAspectMutating(false);
+    setActionError(null);
   };
 
   const handleSave = async () => {
     if (!node || !selectedNodeId) return;
 
     try {
+      setActionError(null);
       if (selectedContentType && selectedTypeDefinition) {
         const missingRequired: string[] = [];
         const payload: Record<string, any> = {};
@@ -284,7 +321,7 @@ const PropertiesDialog: React.FC = () => {
       setEditMode(false);
       await loadDialogData();
     } catch (error) {
-      toast.error('Failed to update properties');
+      setActionError(formatApiErrorMessage(error, 'Failed to update properties'));
     }
   };
 
@@ -310,6 +347,168 @@ const PropertiesDialog: React.FC = () => {
       customProperties.map((prop, i) =>
         i === index ? { ...prop, value } : prop
       )
+    );
+  };
+
+  const aspectChoices = availableAspects.filter((aspect) => !node?.aspects?.includes(aspect.qualifiedName));
+  const selectedAspectDefinition = useMemo(
+    () => aspectChoices.find((aspect) => aspect.qualifiedName === selectedAspectToAdd) || null,
+    [aspectChoices, selectedAspectToAdd]
+  );
+
+  useEffect(() => {
+    setAspectPropertyValues(buildAspectInitialPropertyValues(selectedAspectDefinition));
+    setActionError(null);
+  }, [selectedAspectDefinition]);
+
+  const resolveAspectLabel = (aspectName: string) => {
+    const match = availableAspects.find((aspect) => aspect.qualifiedName === aspectName);
+    if (!match) {
+      return aspectName;
+    }
+    return match.title ? `${match.title} (${match.qualifiedName})` : match.qualifiedName;
+  };
+
+  const handleAddAspect = async () => {
+    if (!selectedNodeId || !selectedAspectToAdd) {
+      return;
+    }
+    setAspectMutating(true);
+    try {
+      setActionError(null);
+      const aspectProperties = buildAspectPropertyPayload(selectedAspectDefinition, aspectPropertyValues);
+      await nodeService.addAspect(
+        selectedNodeId,
+        selectedAspectToAdd,
+        Object.keys(aspectProperties).length > 0 ? aspectProperties : undefined
+      );
+      toast.success(`Added ${selectedAspectToAdd}`);
+      setSelectedAspectToAdd('');
+      setAspectPropertyValues({});
+      await loadDialogData();
+    } catch (error) {
+      setActionError(formatApiErrorMessage(error, 'Failed to add aspect'));
+    } finally {
+      setAspectMutating(false);
+    }
+  };
+
+  const handleRemoveAspect = async (aspectName: string) => {
+    if (!selectedNodeId) {
+      return;
+    }
+    setAspectMutating(true);
+    try {
+      setActionError(null);
+      await nodeService.removeAspect(selectedNodeId, aspectName);
+      toast.success(`Removed ${aspectName}`);
+      await loadDialogData();
+    } catch (error) {
+      setActionError(formatApiErrorMessage(error, 'Failed to remove aspect'));
+    } finally {
+      setAspectMutating(false);
+    }
+  };
+
+  const handleAspectPropertyChange = (propertyName: string, value: string) => {
+    setAspectPropertyValues((prev) => ({
+      ...prev,
+      [propertyName]: value,
+    }));
+  };
+
+  const renderAspectPropertyField = (property: PropertyDefinition) => {
+    const propertyName = property.qualifiedName || property.name;
+    const value = aspectPropertyValues[propertyName] ?? '';
+    const disabled = aspectLoading || aspectMutating;
+    const label = property.title
+      ? `${property.title} (${propertyName})`
+      : propertyName;
+    const options = getAspectPropertyListOptions(property);
+    const helperParts = [
+      property.defaultValue ? `Default: ${property.defaultValue}` : null,
+      property.multiValued ? 'Use commas or new lines for multiple values' : null,
+      property.constraints.length
+        ? property.constraints.map((constraint) => formatConstraintLabel(constraint)).join(' | ')
+        : null,
+    ].filter(Boolean);
+    const helperText = helperParts.length > 0 ? helperParts.join(' · ') : undefined;
+    const isNumber = ['INT', 'LONG', 'FLOAT', 'DOUBLE'].includes(property.dataType);
+
+    if (property.dataType === 'BOOLEAN') {
+      return (
+        <FormControl size="small" fullWidth disabled={disabled}>
+          <InputLabel id={`aspect-property-${propertyName}-label`}>{label}</InputLabel>
+          <Select
+            labelId={`aspect-property-${propertyName}-label`}
+            value={value}
+            label={label}
+            displayEmpty
+            onChange={(event) => handleAspectPropertyChange(propertyName, event.target.value)}
+          >
+            <MenuItem value="">
+              <em>Unset</em>
+            </MenuItem>
+            <MenuItem value="true">True</MenuItem>
+            <MenuItem value="false">False</MenuItem>
+          </Select>
+        </FormControl>
+      );
+    }
+
+    if (options.length > 0 && !property.multiValued) {
+      return (
+        <FormControl size="small" fullWidth disabled={disabled}>
+          <InputLabel id={`aspect-property-${propertyName}-label`}>{label}</InputLabel>
+          <Select
+            labelId={`aspect-property-${propertyName}-label`}
+            value={value}
+            label={label}
+            displayEmpty
+            onChange={(event) => handleAspectPropertyChange(propertyName, event.target.value)}
+          >
+            <MenuItem value="">
+              <em>Unset</em>
+            </MenuItem>
+            {options.map((option) => (
+              <MenuItem key={option} value={option}>
+                {option}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+      );
+    }
+
+    const inputType = property.dataType === 'DATE'
+      ? 'date'
+      : property.dataType === 'DATETIME'
+        ? 'datetime-local'
+        : isNumber
+          ? 'number'
+          : property.dataType === 'URI'
+            ? 'url'
+            : 'text';
+
+    return (
+      <TextField
+        label={label}
+        value={value}
+        onChange={(event) => handleAspectPropertyChange(propertyName, event.target.value)}
+        size="small"
+        fullWidth
+        disabled={disabled}
+        type={inputType}
+        multiline={property.multiValued}
+        minRows={property.multiValued ? 3 : undefined}
+        InputLabelProps={
+          property.dataType === 'DATE' || property.dataType === 'DATETIME'
+            ? { shrink: true }
+            : undefined
+        }
+        required={property.mandatory}
+        helperText={helperText}
+      />
     );
   };
 
@@ -435,6 +634,11 @@ const PropertiesDialog: React.FC = () => {
           </Box>
         ) : (
           <>
+            {actionError && (
+              <Alert severity="error" sx={{ mb: 2, whiteSpace: 'pre-line' }}>
+                {actionError}
+              </Alert>
+            )}
             <Box mb={3}>
               <Typography variant="h6" gutterBottom>
                 General Information
@@ -561,20 +765,80 @@ const PropertiesDialog: React.FC = () => {
               </Grid>
             </Box>
 
-            {node.aspects && node.aspects.length > 0 && (
+            {((node.aspects && node.aspects.length > 0) || (editMode && canWrite)) && (
               <>
                 <Divider sx={{ my: 2 }} />
                 <Box mb={3}>
-                  <Typography variant="h6" gutterBottom>
-                    Aspects
-                  </Typography>
+                  <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+                    <Typography variant="h6">Aspects</Typography>
+                    {aspectLoading && <CircularProgress size={18} />}
+                  </Box>
                   <Box display="flex" gap={1} flexWrap="wrap">
-                    {node.aspects.map((aspect) => (
-                      <Chip key={aspect} label={aspect} size="small" />
+                    {(node.aspects || []).map((aspect) => (
+                      <Chip
+                        key={aspect}
+                        label={resolveAspectLabel(aspect)}
+                        size="small"
+                        onDelete={editMode && canWrite ? () => void handleRemoveAspect(aspect) : undefined}
+                      />
                     ))}
                   </Box>
+                  {editMode && canWrite && (
+                    <Box mt={2}>
+                      <Box display="flex" gap={1} alignItems="center" flexWrap="wrap">
+                        <FormControl size="small" sx={{ minWidth: 260 }} disabled={aspectLoading || aspectMutating}>
+                          <InputLabel id={aspectSelectLabelId}>Add Aspect</InputLabel>
+                          <Select
+                            id={aspectSelectId}
+                            labelId={aspectSelectLabelId}
+                            value={selectedAspectToAdd}
+                            label="Add Aspect"
+                            onChange={(event) => setSelectedAspectToAdd(event.target.value)}
+                          >
+                            <MenuItem value="">
+                              <em>Select an aspect</em>
+                            </MenuItem>
+                            {aspectChoices.map((aspect) => (
+                              <MenuItem key={aspect.id} value={aspect.qualifiedName}>
+                                {resolveAspectLabel(aspect.qualifiedName)}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                        <Button
+                          variant="outlined"
+                          onClick={() => void handleAddAspect()}
+                          disabled={!selectedAspectToAdd || aspectMutating}
+                        >
+                          Add
+                        </Button>
+                      </Box>
+                      {selectedAspectDefinition && selectedAspectDefinition.properties.length > 0 && (
+                        <Box mt={2}>
+                          <Typography variant="subtitle2" gutterBottom>
+                            Initial Aspect Properties
+                          </Typography>
+                          <Grid container spacing={2}>
+                            {selectedAspectDefinition.properties.map((property) => (
+                              <Grid item xs={12} sm={6} key={property.id}>
+                                {renderAspectPropertyField(property)}
+                              </Grid>
+                            ))}
+                          </Grid>
+                        </Box>
+                      )}
+                    </Box>
+                  )}
                 </Box>
               </>
+            )}
+
+            <Divider sx={{ my: 2 }} />
+
+            {selectedNodeId && (
+              <Box mb={3}>
+                <NodeRatingPanel nodeId={selectedNodeId} />
+              </Box>
             )}
 
             <Divider sx={{ my: 2 }} />

@@ -8,6 +8,7 @@ import lombok.ToString;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @Data
 @Entity
@@ -60,7 +61,19 @@ public class Document extends Node {
     
     @Column(name = "checkout_date")
     private LocalDateTime checkoutDate;
-    
+
+    @Column(name = "checkout_baseline_version_id")
+    private String checkoutBaselineVersionId;
+
+    @Column(name = "checkout_baseline_version_label")
+    private String checkoutBaselineVersionLabel;
+
+    @Column(name = "working_copy_of")
+    private UUID workingCopyOf;
+
+    @Column(name = "is_working_copy")
+    private boolean workingCopy = false;
+
     @Column(name = "content_hash")
     private String contentHash;
     
@@ -77,8 +90,23 @@ public class Document extends Node {
     @Column(name = "preview_failure_reason", columnDefinition = "TEXT")
     private String previewFailureReason;
 
+    @Column(name = "preview_failure_count")
+    private Integer previewFailureCount;
+
+    @Column(name = "preview_failed_at")
+    private LocalDateTime previewFailedAt;
+
+    @Column(name = "preview_last_failure_reason", columnDefinition = "TEXT")
+    private String previewLastFailureReason;
+
+    @Column(name = "preview_failure_content_hash")
+    private String previewFailureContentHash;
+
     @Column(name = "preview_last_updated")
     private LocalDateTime previewLastUpdated;
+
+    @Column(name = "preview_content_hash")
+    private String previewContentHash;
     
     @Column(name = "text_content", columnDefinition = "TEXT")
     private String textContent;
@@ -125,10 +153,18 @@ public class Document extends Node {
     public void checkout(String userId) {
         this.checkoutUser = userId;
         this.checkoutDate = LocalDateTime.now();
+        this.checkoutBaselineVersionId = currentVersion != null && currentVersion.getId() != null
+            ? currentVersion.getId().toString()
+            : null;
+        this.checkoutBaselineVersionLabel = versionLabel != null ? versionLabel : getVersionString();
     }
     
     public void checkin() {
         this.checkoutUser = null;
         this.checkoutDate = null;
+        this.checkoutBaselineVersionId = null;
+        this.checkoutBaselineVersionLabel = null;
+        this.workingCopyOf = null;
+        this.workingCopy = false;
     }
 }

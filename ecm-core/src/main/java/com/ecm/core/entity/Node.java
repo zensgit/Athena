@@ -30,9 +30,12 @@ public abstract class Node extends BaseEntity {
     
     @Column(name = "name", nullable = false)
     private String name;
-    
+
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;
+
+    @Column(name = "type_qname", length = 200)
+    private String typeQName;
     
     @Column(name = "path", nullable = false, length = 1000)
     private String path;
@@ -71,6 +74,11 @@ public abstract class Node extends BaseEntity {
     )
     private Set<Category> categories = new HashSet<>();
     
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(name = "node_aspects", joinColumns = @JoinColumn(name = "node_id"))
+    @Column(name = "aspect_name", length = 200)
+    private Set<String> aspects = new HashSet<>();
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "correspondent_id")
     private Correspondent correspondent;
@@ -87,6 +95,23 @@ public abstract class Node extends BaseEntity {
     
     @Column(name = "locked_date")
     private LocalDateTime lockedDate;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "lock_lifetime")
+    private LockLifetime lockLifetime;
+
+    @Column(name = "lock_expires_at")
+    private LocalDateTime lockExpiresAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "lock_type")
+    private LockType lockType;
+
+    @Column(name = "lock_additional_info")
+    private String lockAdditionalInfo;
+
+    @Column(name = "lock_deep")
+    private boolean lockDeep = false;
     
     @Column(name = "inherit_permissions", nullable = false)
     private boolean inheritPermissions = true;
@@ -173,5 +198,101 @@ public abstract class Node extends BaseEntity {
         PENDING_APPROVAL,
         APPROVED,
         REJECTED
+    }
+
+    public boolean hasAspect(String aspectName) {
+        return aspects != null && aspects.contains(aspectName);
+    }
+
+    public void addAspect(String aspectName) {
+        if (aspects == null) {
+            aspects = new HashSet<>();
+        }
+        aspects.add(aspectName);
+    }
+
+    public void removeAspect(String aspectName) {
+        if (aspects != null) {
+            aspects.remove(aspectName);
+        }
+    }
+
+    public boolean isLockExpired(LocalDateTime now) {
+        return locked && lockExpiresAt != null && !lockExpiresAt.isAfter(now);
+    }
+
+    public boolean isEffectivelyLocked(LocalDateTime now) {
+        return locked && !isLockExpired(now);
+    }
+
+    public void applyLock(String username, LocalDateTime now, LockLifetime lifetime, LocalDateTime expiresAt) {
+        applyLock(username, now, lifetime, expiresAt, LockType.WRITE_LOCK, null, false);
+    }
+
+    public void applyLock(String username, LocalDateTime now, LockLifetime lifetime,
+                          LocalDateTime expiresAt, LockType type, String additionalInfo, boolean deep) {
+        this.locked = true;
+        this.lockedBy = username;
+        this.lockedDate = now;
+        this.lockLifetime = lifetime;
+        this.lockExpiresAt = expiresAt;
+        this.lockType = type != null ? type : LockType.WRITE_LOCK;
+        this.lockAdditionalInfo = additionalInfo;
+        this.lockDeep = deep;
+    }
+
+    public void clearLock() {
+        this.locked = false;
+        this.lockedBy = null;
+        this.lockedDate = null;
+        this.lockLifetime = null;
+        this.lockExpiresAt = null;
+        this.lockType = null;
+        this.lockAdditionalInfo = null;
+        this.lockDeep = false;
+    }
+
+    public String describeActiveLock(LocalDateTime now) {
+        if (!isEffectivelyLocked(now)) {
+            return "Node is not locked";
+        }
+        StringBuilder message = new StringBuilder("locked");
+        if (lockedBy != null && !lockedBy.isBlank()) {
+            message.append(" by: ").append(lockedBy);
+        }
+        if (lockLifetime != null) {
+            message.append(" [").append(lockLifetime);
+            if (lockExpiresAt != null) {
+                message.append(", expires: ").append(lockExpiresAt);
+            }
+            message.append("]");
+        }
+        if (lockType != null && lockType != LockType.WRITE_LOCK) {
+            message.append(" (").append(lockType).append(")");
+        }
+        return message.toString();
+    }
+
+    /**
+     * Check whether the given user is allowed to write to this node under the
+     * current lock state. This respects lock type semantics:
+     * <ul>
+     *   <li>READ_ONLY_LOCK — no one can write (including owner)</li>
+     *   <li>WRITE_LOCK — owner can write, others cannot</li>
+     *   <li>NODE_LOCK — no one can update/delete, but adding children is allowed</li>
+     * </ul>
+     */
+    public boolean isWriteAllowed(String username, LocalDateTime now) {
+        if (!isEffectivelyLocked(now)) {
+            return true;
+        }
+        if (lockType == LockType.READ_ONLY_LOCK) {
+            return false;
+        }
+        if (lockType == LockType.NODE_LOCK) {
+            return false;
+        }
+        // WRITE_LOCK or null — owner can write
+        return lockedBy != null && lockedBy.equals(username);
     }
 }

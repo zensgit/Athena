@@ -1,5 +1,14 @@
 package com.ecm.core.controller;
 
+import com.ecm.core.asynctask.AsyncTaskAcknowledgementService;
+import com.ecm.core.asynctask.AsyncTaskGovernanceDomainSnapshot;
+import com.ecm.core.asynctask.AsyncTaskGovernanceOverviewSnapshot;
+import com.ecm.core.asynctask.AsyncTaskGovernanceService;
+import com.ecm.core.asynctask.AsyncTaskLifecycleListSnapshot;
+import com.ecm.core.asynctask.AsyncTaskLifecycleService;
+import com.ecm.core.asynctask.AsyncTaskStatusSnapshot;
+import com.ecm.core.asynctask.AsyncTaskSummarySnapshot;
+import com.ecm.core.entity.AsyncTaskAcknowledgement;
 import com.ecm.core.entity.AuditCategory;
 import com.ecm.core.entity.AuditCategorySetting;
 import com.ecm.core.entity.AuditLog;
@@ -8,6 +17,10 @@ import com.ecm.core.service.AnalyticsService.DailyActivityStats;
 import com.ecm.core.service.AnalyticsService.MimeTypeStats;
 import com.ecm.core.service.AnalyticsService.SystemSummaryStats;
 import com.ecm.core.service.AnalyticsService.UserActivityStats;
+import com.ecm.core.service.AuditExportAsyncTaskRegistry;
+import com.ecm.core.service.AuditExportAsyncTaskRegistry.AuditExportAsyncStatus;
+import com.ecm.core.service.AuditExportAsyncTaskRegistry.AuditExportAsyncSummary;
+import com.ecm.core.service.AuditExportAsyncTaskRegistry.AuditExportAsyncTask;
 import com.ecm.core.service.AuditService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -32,8 +45,10 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 /**
@@ -49,8 +64,14 @@ import java.util.stream.Collectors;
 @PreAuthorize("hasRole('ADMIN')")
 public class AnalyticsController {
 
+    private static final int MAX_AUDIT_EXPORT_ASYNC_LIST_LIMIT = 100;
+
     private final AnalyticsService analyticsService;
     private final AuditService auditService;
+    private final AuditExportAsyncTaskRegistry auditExportAsyncTaskRegistry;
+    private final AsyncTaskGovernanceService asyncTaskGovernanceService;
+    private final AsyncTaskLifecycleService asyncTaskLifecycleService;
+    private final AsyncTaskAcknowledgementService asyncTaskAcknowledgementService;
 
     @Value("${ecm.audit.export.max-range-days:90}")
     private int auditExportMaxRangeDays;
@@ -124,53 +145,176 @@ public class AnalyticsController {
             @RequestParam(required = false) String category,
             @RequestParam(required = false) UUID nodeId,
             @RequestParam(defaultValue = "30") int days) {
+        AuditExportRequest request = resolveAuditExportRequest(from, to, preset, username, eventType, category, nodeId, days);
+        AuditExportPayload payload = generateAuditExportPayload(request);
+        return buildAuditExportCsvResponse(payload.csvContent(), payload.filename(), payload.rowCount());
+    }
 
-        if (preset != null) {
-            if ("user".equalsIgnoreCase(preset) && (username == null || username.isBlank())) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "username is required for user preset");
-            }
-            if ("event".equalsIgnoreCase(preset) && (eventType == null || eventType.isBlank())) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "eventType is required for event preset");
-            }
-        }
+    @PostMapping("/audit/export-async")
+    @Operation(summary = "Start Async Audit Logs Export", description = "Create an asynchronous audit logs CSV export task")
+    public ResponseEntity<AuditExportAsyncCreateResponse> startAuditLogsExportAsync(
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to,
+            @RequestParam(required = false) String preset,
+            @RequestParam(required = false) String username,
+            @RequestParam(required = false) String eventType,
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) UUID nodeId,
+            @RequestParam(defaultValue = "30") int days) {
+        AuditExportRequest requestSnapshot = resolveAuditExportRequest(from, to, preset, username, eventType, category, nodeId, days);
+        AuditExportAsyncTask task = auditExportAsyncTaskRegistry.createTask();
 
-        AuditExportRange range = resolveAuditExportRange(from, to, preset, days);
-        LocalDateTime fromTime = range.from();
-        LocalDateTime toTime = range.to();
-        if (!fromTime.isBefore(toTime)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "from must be before to");
+        CompletableFuture.runAsync(() -> runAuditExportAsyncTask(task.taskId(), requestSnapshot));
+
+        return ResponseEntity.ok(new AuditExportAsyncCreateResponse(
+            task.taskId(),
+            task.status().name(),
+            task.createdAt()
+        ));
+    }
+
+    @GetMapping("/audit/export-async")
+    @Operation(summary = "List Async Audit Export Tasks", description = "List recent asynchronous audit export tasks")
+    public ResponseEntity<AuditExportAsyncListResponse> listAuditLogsExportAsyncTasks(
+            @RequestParam(defaultValue = "20") int limit,
+            @RequestParam(required = false) String status) {
+        int boundedLimit = clamp(limit, 1, MAX_AUDIT_EXPORT_ASYNC_LIST_LIMIT);
+        AuditExportAsyncStatus statusFilter = parseAuditExportAsyncStatus(status);
+        List<AuditExportAsyncStatusResponse> items = auditExportAsyncTaskRegistry.list(boundedLimit, statusFilter).stream()
+            .map(this::toAuditExportAsyncStatusResponse)
+            .toList();
+        return ResponseEntity.ok(new AuditExportAsyncListResponse(items.size(), items));
+    }
+
+    @GetMapping("/audit/export-async/{taskId}")
+    @Operation(summary = "Get Async Audit Export Task Status", description = "Get status/details for an asynchronous audit export task")
+    public ResponseEntity<AuditExportAsyncStatusResponse> getAuditLogsExportAsyncTaskStatus(
+            @PathVariable String taskId) {
+        AuditExportAsyncTask task = auditExportAsyncTaskRegistry.get(taskId);
+        if (task == null) {
+            return ResponseEntity.notFound().build();
         }
-        if (auditExportMaxRangeDays > 0
-            && Duration.between(fromTime, toTime).compareTo(Duration.ofDays(auditExportMaxRangeDays)) > 0) {
+        return ResponseEntity.ok(toAuditExportAsyncStatusResponse(task));
+    }
+
+    @GetMapping("/audit/export-async/summary")
+    @Operation(
+        summary = "Audit Async Export Task Summary",
+        description = "Get aggregate async audit export task counts by status and task lifecycle class."
+    )
+    public ResponseEntity<AuditExportAsyncSummaryResponse> getAuditLogsExportAsyncTaskSummary(
+            @RequestParam(required = false) String status) {
+        AuditExportAsyncStatus statusFilter = parseAuditExportAsyncStatus(status);
+        return ResponseEntity.ok(toAuditExportAsyncSummaryResponse(auditExportAsyncTaskRegistry.summary(statusFilter)));
+    }
+
+    @PostMapping("/audit/export-async/{taskId}/cancel")
+    @Operation(summary = "Cancel Async Audit Export Task", description = "Cancel a queued/running asynchronous audit export task")
+    public ResponseEntity<AuditExportAsyncStatusResponse> cancelAuditLogsExportAsyncTask(
+            @PathVariable String taskId) {
+        AuditExportAsyncTask existing = auditExportAsyncTaskRegistry.get(taskId);
+        if (existing == null) {
+            return ResponseEntity.notFound().build();
+        }
+        if (existing.isTerminal()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(toAuditExportAsyncStatusResponse(existing));
+        }
+        AuditExportAsyncTask updated = auditExportAsyncTaskRegistry.cancel(taskId, "Cancelled by user");
+        if (updated == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(toAuditExportAsyncStatusResponse(updated));
+    }
+
+    @PostMapping("/audit/export-async/cancel-active")
+    @Operation(
+        summary = "Cancel Active Async Audit Export Tasks",
+        description = "Cancel queued/running async export tasks, optionally filtered by QUEUED or RUNNING."
+    )
+    public ResponseEntity<AuditExportAsyncCancelActiveResponse> cancelActiveAuditLogsExportAsyncTasks(
+            @RequestParam(required = false) String status) {
+        AuditExportAsyncStatus statusFilter = parseAuditExportAsyncStatus(status);
+        if (statusFilter != null
+            && statusFilter != AuditExportAsyncStatus.QUEUED
+            && statusFilter != AuditExportAsyncStatus.RUNNING) {
             throw new ResponseStatusException(
                 HttpStatus.BAD_REQUEST,
-                "Range exceeds maximum of " + auditExportMaxRangeDays + " days"
+                "status filter only supports active states: QUEUED, RUNNING"
             );
         }
 
-        AuditCategory categoryFilter = AuditCategory.fromString(category);
-        AnalyticsService.AuditExportResult exportResult = analyticsService.exportAuditLogsCsv(
-            fromTime,
-            toTime,
-            username,
-            eventType,
-            nodeId,
-            categoryFilter
-        );
-        String filename = String.format("audit_logs_%s_to_%s.csv",
-            fromTime.format(DateTimeFormatter.ofPattern("yyyyMMdd")),
-            toTime.format(DateTimeFormatter.ofPattern("yyyyMMdd")));
+        long cancelledCount = auditExportAsyncTaskRegistry.cancelActive(statusFilter, "Cancelled by user");
+        long remainingActiveCount = auditExportAsyncTaskRegistry.activeCount();
 
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentDisposition(ContentDisposition.attachment()
-            .filename(filename, StandardCharsets.UTF_8)
-            .build());
-        headers.setContentType(MediaType.parseMediaType("text/csv; charset=UTF-8"));
-        headers.add("X-Audit-Export-Count", String.valueOf(exportResult.rowCount()));
+        String statusFilterName = statusFilter != null ? statusFilter.name() : null;
+        String message = cancelledCount > 0
+            ? statusFilterName == null
+                ? String.format("Cancelled %d active async audit export tasks", cancelledCount)
+                : String.format("Cancelled %d async audit export tasks with status %s", cancelledCount, statusFilterName)
+            : statusFilterName == null
+                ? "No active async audit export tasks to cancel"
+                : String.format("No active async audit export tasks with status %s to cancel", statusFilterName);
 
-        return ResponseEntity.ok()
-            .headers(headers)
-            .body(exportResult.csvContent().getBytes(StandardCharsets.UTF_8));
+        return ResponseEntity.ok(new AuditExportAsyncCancelActiveResponse(
+            cancelledCount,
+            remainingActiveCount,
+            statusFilterName,
+            message
+        ));
+    }
+
+    @GetMapping(value = "/audit/export-async/{taskId}/download", produces = "text/csv")
+    @Operation(summary = "Download Async Audit Export Result", description = "Download CSV attachment for a completed asynchronous export task")
+    public ResponseEntity<byte[]> downloadAuditLogsExportAsyncTaskResult(
+            @PathVariable String taskId) {
+        AuditExportAsyncTask task = auditExportAsyncTaskRegistry.get(taskId);
+        if (task == null) {
+            return ResponseEntity.notFound().build();
+        }
+        if (task.status() != AuditExportAsyncStatus.COMPLETED
+            || task.csvContent() == null
+            || task.filename() == null
+            || task.rowCount() == null) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        }
+
+        return buildAuditExportCsvResponse(task.csvContent().clone(), task.filename(), task.rowCount());
+    }
+
+    @PostMapping("/audit/export-async/cleanup")
+    @Operation(
+        summary = "Cleanup Async Audit Export Tasks",
+        description = "Delete async export tasks by terminal state or by a specific terminal status."
+    )
+    public ResponseEntity<AuditExportAsyncCleanupResponse> cleanupAuditLogsExportAsyncTasks(
+        @RequestParam(required = false) String status
+    ) {
+        AuditExportAsyncStatus statusFilter = parseAuditExportAsyncStatus(status);
+        if (statusFilter == AuditExportAsyncStatus.QUEUED || statusFilter == AuditExportAsyncStatus.RUNNING) {
+            throw new ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "status filter only supports terminal states: COMPLETED, CANCELLED, FAILED"
+            );
+        }
+
+        long deletedCount = auditExportAsyncTaskRegistry.cleanupTerminal(statusFilter);
+        int remainingCount = auditExportAsyncTaskRegistry.size();
+
+        String statusFilterName = statusFilter != null ? statusFilter.name() : null;
+        String message = deletedCount > 0
+            ? statusFilterName == null
+                ? String.format("Deleted %d terminal async audit export tasks", deletedCount)
+                : String.format("Deleted %d async audit export tasks with status %s", deletedCount, statusFilterName)
+            : statusFilterName == null
+                ? "No terminal async audit export tasks to delete"
+                : String.format("No async audit export tasks with status %s to delete", statusFilterName);
+
+        return ResponseEntity.ok(new AuditExportAsyncCleanupResponse(
+            deletedCount,
+            remainingCount,
+            statusFilterName,
+            message
+        ));
     }
 
     @GetMapping("/audit/search")
@@ -251,6 +395,87 @@ public class AnalyticsController {
         return parseAuditExportDateTime(value, paramName);
     }
 
+    private AuditExportRequest resolveAuditExportRequest(
+            String from,
+            String to,
+            String preset,
+            String username,
+            String eventType,
+            String category,
+            UUID nodeId,
+            int days) {
+        validateAuditExportPreset(preset, username, eventType);
+
+        AuditExportRange range = resolveAuditExportRange(from, to, preset, days);
+        validateAuditExportRange(range.from(), range.to());
+
+        return new AuditExportRequest(
+            range.from(),
+            range.to(),
+            username,
+            eventType,
+            nodeId,
+            AuditCategory.fromString(category)
+        );
+    }
+
+    private void validateAuditExportPreset(String preset, String username, String eventType) {
+        if (preset == null) {
+            return;
+        }
+        if ("user".equalsIgnoreCase(preset) && (username == null || username.isBlank())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "username is required for user preset");
+        }
+        if ("event".equalsIgnoreCase(preset) && (eventType == null || eventType.isBlank())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "eventType is required for event preset");
+        }
+    }
+
+    private void validateAuditExportRange(LocalDateTime fromTime, LocalDateTime toTime) {
+        if (!fromTime.isBefore(toTime)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "from must be before to");
+        }
+        if (auditExportMaxRangeDays > 0
+            && Duration.between(fromTime, toTime).compareTo(Duration.ofDays(auditExportMaxRangeDays)) > 0) {
+            throw new ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "Range exceeds maximum of " + auditExportMaxRangeDays + " days"
+            );
+        }
+    }
+
+    private AuditExportPayload generateAuditExportPayload(AuditExportRequest request) {
+        AnalyticsService.AuditExportResult exportResult = analyticsService.exportAuditLogsCsv(
+            request.from(),
+            request.to(),
+            request.username(),
+            request.eventType(),
+            request.nodeId(),
+            request.category()
+        );
+        String filename = String.format("audit_logs_%s_to_%s.csv",
+            request.from().format(DateTimeFormatter.ofPattern("yyyyMMdd")),
+            request.to().format(DateTimeFormatter.ofPattern("yyyyMMdd")));
+        return new AuditExportPayload(
+            filename,
+            exportResult.csvContent().getBytes(StandardCharsets.UTF_8),
+            exportResult.rowCount()
+        );
+    }
+
+    private ResponseEntity<byte[]> buildAuditExportCsvResponse(byte[] csvContent, String filename, long rowCount) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentDisposition(ContentDisposition.attachment()
+            .filename(filename, StandardCharsets.UTF_8)
+            .build());
+        headers.setContentType(MediaType.parseMediaType("text/csv; charset=UTF-8"));
+        headers.add("X-Audit-Export-Count", String.valueOf(rowCount));
+
+        return ResponseEntity.ok()
+            .headers(headers)
+            .body(csvContent);
+    }
+
     private AuditExportRange resolveAuditExportRange(String from, String to, String preset, int days) {
         if (preset == null || preset.isBlank()) {
             LocalDateTime fromTime = parseAuditExportDateTime(from, "from");
@@ -278,6 +503,260 @@ public class AnalyticsController {
     }
 
     private record AuditExportRange(LocalDateTime from, LocalDateTime to) {}
+
+    private void runAuditExportAsyncTask(String taskId, AuditExportRequest request) {
+        AuditExportAsyncTask current = auditExportAsyncTaskRegistry.markRunning(taskId);
+        if (current == null || current.status() == AuditExportAsyncStatus.CANCELLED) {
+            return;
+        }
+        try {
+            AuditExportPayload payload = generateAuditExportPayload(request);
+            auditExportAsyncTaskRegistry.complete(taskId, payload.filename(), payload.csvContent(), payload.rowCount());
+        } catch (Exception e) {
+            auditExportAsyncTaskRegistry.fail(taskId, resolveAsyncAuditExportErrorMessage(e));
+        }
+    }
+
+    private AuditExportAsyncSummaryResponse toAuditExportAsyncSummaryResponse(AuditExportAsyncSummary summary) {
+        return new AuditExportAsyncSummaryResponse(
+            summary.totalCount(),
+            summary.queuedCount(),
+            summary.runningCount(),
+            summary.completedCount(),
+            summary.cancelledCount(),
+            summary.failedCount(),
+            summary.activeCount(),
+            summary.terminalCount()
+        );
+    }
+
+    private AuditExportAsyncStatusResponse toAuditExportAsyncStatusResponse(AuditExportAsyncTask task) {
+        return new AuditExportAsyncStatusResponse(
+            task.taskId(),
+            task.status().name(),
+            task.error(),
+            task.createdAt(),
+            task.finishedAt(),
+            task.status() == AuditExportAsyncStatus.COMPLETED ? task.filename() : null,
+            task.status() == AuditExportAsyncStatus.COMPLETED ? task.rowCount() : null
+        );
+    }
+
+    private static String resolveAsyncAuditExportErrorMessage(Exception e) {
+        if (e == null) {
+            return "Unknown export error";
+        }
+        String message = e.getMessage();
+        return message == null || message.isBlank() ? e.getClass().getSimpleName() : message;
+    }
+
+    private AuditExportAsyncStatus parseAuditExportAsyncStatus(String status) {
+        if (status == null || status.isBlank()) {
+            return null;
+        }
+        try {
+            return AuditExportAsyncStatus.valueOf(status.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown async export status: " + status);
+        }
+    }
+
+    private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    @GetMapping("/async-governance/overview")
+    @Operation(
+        summary = "Async Task Governance Overview",
+        description = "Get a cross-center async task governance overview for audit, ops, search, preview, and batch download domains."
+    )
+    public ResponseEntity<AsyncExportGovernanceOverviewResponse> getAsyncExportGovernanceOverview() {
+        return ResponseEntity.ok(
+            toAsyncExportGovernanceOverviewResponse(asyncTaskGovernanceService.buildOverview())
+        );
+    }
+
+    @GetMapping("/async-governance/tasks")
+    @Operation(
+        summary = "Recent async task lifecycle list",
+        description = "List recent async tasks across audit, ops, search, preview, and batch download domains using a shared lifecycle contract."
+    )
+    public ResponseEntity<AsyncTaskLifecycleListResponse> listRecentAsyncGovernanceTasks(
+        @RequestParam(required = false) Integer maxItems,
+        @RequestParam(required = false) Integer skipCount,
+        @RequestParam(required = false) String domain,
+        @RequestParam(required = false) String status,
+        @RequestParam(defaultValue = "false") boolean includeAcknowledged
+    ) {
+        return ResponseEntity.ok(
+            toAsyncTaskLifecycleListResponse(
+                asyncTaskLifecycleService.listRecentTasks(maxItems, skipCount, domain, status, includeAcknowledged)
+            )
+        );
+    }
+
+    @PostMapping("/async-governance/tasks/acknowledge")
+    @Operation(
+        summary = "Acknowledge recent async task",
+        description = "Persist an acknowledgement for a recent async task so operator views can hide or restore it."
+    )
+    public ResponseEntity<AsyncTaskLifecycleAcknowledgementResponse> acknowledgeRecentAsyncGovernanceTask(
+        @RequestBody(required = false) AsyncTaskLifecycleAcknowledgementRequest request
+    ) {
+        AsyncTaskStatusSnapshot task = requireRecentAsyncGovernanceTask(request);
+        AsyncTaskAcknowledgement acknowledgement = asyncTaskAcknowledgementService.acknowledge(task);
+        AsyncTaskStatusSnapshot acknowledgedTask = asyncTaskAcknowledgementService.applyAcknowledgement(task, acknowledgement);
+        return ResponseEntity.ok(
+            new AsyncTaskLifecycleAcknowledgementResponse(
+                acknowledgedTask.domainKey(),
+                acknowledgedTask.taskId(),
+                acknowledgedTask.fingerprint(),
+                acknowledgedTask.acknowledged(),
+                acknowledgedTask.acknowledgedAt() != null ? acknowledgedTask.acknowledgedAt().toString() : null,
+                !task.acknowledged()
+            )
+        );
+    }
+
+    @PostMapping("/async-governance/tasks/unacknowledge")
+    @Operation(
+        summary = "Restore acknowledged async task",
+        description = "Remove a persisted acknowledgement so a recent async task is visible in operator views again."
+    )
+    public ResponseEntity<AsyncTaskLifecycleAcknowledgementResponse> unacknowledgeRecentAsyncGovernanceTask(
+        @RequestBody(required = false) AsyncTaskLifecycleAcknowledgementRequest request
+    ) {
+        String fingerprint = resolveRecentAsyncGovernanceFingerprint(request);
+        boolean changed = asyncTaskAcknowledgementService.unacknowledge(fingerprint);
+        return ResponseEntity.ok(
+            new AsyncTaskLifecycleAcknowledgementResponse(
+                request != null ? request.domainKey() : null,
+                request != null ? request.taskId() : null,
+                fingerprint,
+                false,
+                null,
+                changed
+            )
+        );
+    }
+
+    private AsyncExportGovernanceOverviewResponse toAsyncExportGovernanceOverviewResponse(
+        AsyncTaskGovernanceOverviewSnapshot overview
+    ) {
+        AsyncTaskSummarySnapshot summary = overview.summary();
+        List<AsyncExportGovernanceDomainResponse> domains = overview.domains().stream()
+            .map(this::toAsyncExportGovernanceDomainResponse)
+            .toList();
+        return new AsyncExportGovernanceOverviewResponse(
+            overview.generatedAt(),
+            overview.overallStatus().name(),
+            overview.overallRiskLevel().name(),
+            overview.totalDomains(),
+            overview.degradedDomainCount(),
+            summary.totalCount(),
+            summary.activeCount(),
+            summary.terminalCount(),
+            summary.queuedCount(),
+            summary.runningCount(),
+            summary.completedCount(),
+            summary.cancelledCount(),
+            summary.failedCount(),
+            summary.timedOutCount(),
+            summary.expiredCount(),
+            summary.failureRate(),
+            domains
+        );
+    }
+
+    private AsyncExportGovernanceDomainResponse toAsyncExportGovernanceDomainResponse(
+        AsyncTaskGovernanceDomainSnapshot domain
+    ) {
+        AsyncTaskSummarySnapshot summary = domain.summary();
+        return new AsyncExportGovernanceDomainResponse(
+            domain.key(),
+            domain.label(),
+            domain.status().name(),
+            domain.riskLevel().name(),
+            domain.error(),
+            summary.totalCount(),
+            summary.activeCount(),
+            summary.terminalCount(),
+            summary.queuedCount(),
+            summary.runningCount(),
+            summary.completedCount(),
+            summary.cancelledCount(),
+            summary.failedCount(),
+            summary.timedOutCount(),
+            summary.expiredCount(),
+            summary.failureRate()
+        );
+    }
+
+    private AsyncTaskLifecycleListResponse toAsyncTaskLifecycleListResponse(
+        AsyncTaskLifecycleListSnapshot snapshot
+    ) {
+        return new AsyncTaskLifecycleListResponse(
+            snapshot.generatedAt() != null ? snapshot.generatedAt().toString() : null,
+            snapshot.domainFilter(),
+            snapshot.statusFilter(),
+            snapshot.count(),
+            snapshot.totalCount(),
+            new AsyncTaskLifecyclePagingResponse(
+                snapshot.skipCount(),
+                snapshot.maxItems(),
+                snapshot.totalCount(),
+                snapshot.hasMoreItems()
+            ),
+            snapshot.items().stream()
+                .map(this::toAsyncTaskLifecycleItemResponse)
+                .toList()
+        );
+    }
+
+    private AsyncTaskLifecycleItemResponse toAsyncTaskLifecycleItemResponse(AsyncTaskStatusSnapshot task) {
+        return new AsyncTaskLifecycleItemResponse(
+            task.domainKey(),
+            task.domainLabel(),
+            task.taskId(),
+            task.status(),
+            task.error(),
+            task.createdAt() != null ? task.createdAt().toString() : null,
+            task.startedAt() != null ? task.startedAt().toString() : null,
+            task.updatedAt() != null ? task.updatedAt().toString() : null,
+            task.timeoutAt() != null ? task.timeoutAt().toString() : null,
+            task.expiresAt() != null ? task.expiresAt().toString() : null,
+            task.finishedAt() != null ? task.finishedAt().toString() : null,
+            task.filename(),
+            task.createdBy(),
+            task.updatedBy(),
+            task.fingerprint(),
+            task.acknowledged(),
+            task.acknowledgedAt() != null ? task.acknowledgedAt().toString() : null,
+            task.actions() != null ? task.actions().cancelUrl() : null,
+            task.actions() != null ? task.actions().downloadUrl() : null,
+            task.actions() != null ? task.actions().cleanupUrl() : null,
+            task.actions() != null && task.actions().cancellable(),
+            task.actions() != null && task.actions().cleanupEligible(),
+            task.actions() != null && task.actions().downloadReady()
+        );
+    }
+
+    private AsyncTaskStatusSnapshot requireRecentAsyncGovernanceTask(AsyncTaskLifecycleAcknowledgementRequest request) {
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Async lifecycle acknowledgement request body is required");
+        }
+        return asyncTaskLifecycleService.findRecentTask(request.domainKey(), request.taskId(), request.fingerprint());
+    }
+
+    private String resolveRecentAsyncGovernanceFingerprint(AsyncTaskLifecycleAcknowledgementRequest request) {
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Async lifecycle acknowledgement request body is required");
+        }
+        if (request.fingerprint() != null && !request.fingerprint().isBlank()) {
+            return request.fingerprint().trim();
+        }
+        return requireRecentAsyncGovernanceTask(request).fingerprint();
+    }
 
     @GetMapping("/audit/retention")
     @Operation(summary = "Audit Retention Info", description = "Get audit log retention policy information")
@@ -340,4 +819,162 @@ public class AnalyticsController {
     private record AuditCategoryRequest(String category, boolean enabled) {}
 
     private record AuditCategoryResponse(String category, boolean enabled) {}
+
+    private record AuditExportRequest(
+        LocalDateTime from,
+        LocalDateTime to,
+        String username,
+        String eventType,
+        UUID nodeId,
+        AuditCategory category
+    ) {}
+
+    private record AuditExportPayload(
+        String filename,
+        byte[] csvContent,
+        long rowCount
+    ) {}
+
+    private record AuditExportAsyncCreateResponse(
+        String taskId,
+        String status,
+        LocalDateTime createdAt
+    ) {}
+
+    private record AuditExportAsyncListResponse(
+        int count,
+        List<AuditExportAsyncStatusResponse> items
+    ) {}
+
+    private record AuditExportAsyncStatusResponse(
+        String taskId,
+        String status,
+        String error,
+        LocalDateTime createdAt,
+        LocalDateTime finishedAt,
+        String filename,
+        Long rowCount
+    ) {}
+
+    private record AuditExportAsyncSummaryResponse(
+        long totalCount,
+        long queuedCount,
+        long runningCount,
+        long completedCount,
+        long cancelledCount,
+        long failedCount,
+        long activeCount,
+        long terminalCount
+    ) {}
+
+    private record AuditExportAsyncCleanupResponse(
+        long deletedCount,
+        long remainingCount,
+        String statusFilter,
+        String message
+    ) {}
+
+    private record AuditExportAsyncCancelActiveResponse(
+        long cancelledCount,
+        long remainingActiveCount,
+        String statusFilter,
+        String message
+    ) {}
+
+    private record AsyncExportGovernanceOverviewResponse(
+        LocalDateTime generatedAt,
+        String overallStatus,
+        String overallRiskLevel,
+        int totalDomains,
+        int degradedDomainCount,
+        long totalCount,
+        long activeCount,
+        long terminalCount,
+        long queuedCount,
+        long runningCount,
+        long completedCount,
+        long cancelledCount,
+        long failedCount,
+        long timedOutCount,
+        long expiredCount,
+        double failureRate,
+        List<AsyncExportGovernanceDomainResponse> domains
+    ) {}
+
+    private record AsyncExportGovernanceDomainResponse(
+        String key,
+        String label,
+        String status,
+        String riskLevel,
+        String error,
+        long totalCount,
+        long activeCount,
+        long terminalCount,
+        long queuedCount,
+        long runningCount,
+        long completedCount,
+        long cancelledCount,
+        long failedCount,
+        long timedOutCount,
+        long expiredCount,
+        double failureRate
+    ) {}
+
+    private record AsyncTaskLifecycleListResponse(
+        String generatedAt,
+        String domainFilter,
+        String statusFilter,
+        int count,
+        long totalCount,
+        AsyncTaskLifecyclePagingResponse paging,
+        List<AsyncTaskLifecycleItemResponse> items
+    ) {}
+
+    private record AsyncTaskLifecyclePagingResponse(
+        int skipCount,
+        int maxItems,
+        long totalItems,
+        boolean hasMoreItems
+    ) {}
+
+    private record AsyncTaskLifecycleItemResponse(
+        String domainKey,
+        String domainLabel,
+        String taskId,
+        String status,
+        String error,
+        String createdAt,
+        String startedAt,
+        String updatedAt,
+        String timeoutAt,
+        String expiresAt,
+        String finishedAt,
+        String filename,
+        String createdBy,
+        String updatedBy,
+        String fingerprint,
+        boolean acknowledged,
+        String acknowledgedAt,
+        String cancelUrl,
+        String downloadUrl,
+        String cleanupUrl,
+        boolean cancellable,
+        boolean cleanupEligible,
+        boolean downloadReady
+    ) {}
+
+    private record AsyncTaskLifecycleAcknowledgementRequest(
+        String domainKey,
+        String taskId,
+        String fingerprint
+    ) {}
+
+    private record AsyncTaskLifecycleAcknowledgementResponse(
+        String domainKey,
+        String taskId,
+        String fingerprint,
+        boolean acknowledged,
+        String acknowledgedAt,
+        boolean changed
+    ) {}
 }

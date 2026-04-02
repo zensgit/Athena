@@ -14,11 +14,16 @@ import SearchResults from './pages/SearchResults';
 import AdminDashboard from './pages/AdminDashboard';
 import MailAutomationPage from './pages/MailAutomationPage';
 import ContentTypesPage from './pages/ContentTypesPage';
+import ContentModelsPage from './pages/ContentModelsPage';
+import SitesPage from './pages/SitesPage';
+import ActivityFeedPage from './pages/ActivityFeedPage';
 import WebhookSubscriptionsPage from './pages/WebhookSubscriptionsPage';
 import PermissionTemplatesPage from './pages/PermissionTemplatesPage';
 import EditorPage from './pages/EditorPage';
 import TasksPage from './pages/TasksPage';
+import WorkflowProcessesPage from './pages/WorkflowProcessesPage';
 import AdvancedSearchPage from './pages/AdvancedSearchPage';
+import PeopleDirectoryPage from './pages/PeopleDirectoryPage';
 import SystemStatusPage from './pages/SystemStatusPage';
 import TrashPage from './pages/TrashPage';
 import RulesPage from './pages/RulesPage';
@@ -160,6 +165,26 @@ const App: React.FC = () => {
               }
             />
             <Route
+              path="/workflow-processes"
+              element={
+                <PrivateRoute>
+                  <MainLayout>
+                    <WorkflowProcessesPage />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/people-directory"
+              element={
+                <PrivateRoute>
+                  <MainLayout>
+                    <PeopleDirectoryPage />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
               path="/status"
               element={
                 <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
@@ -235,6 +260,36 @@ const App: React.FC = () => {
                 <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
                   <MainLayout>
                     <ContentTypesPage />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/admin/content-models"
+              element={
+                <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
+                  <MainLayout>
+                    <ContentModelsPage />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/sites"
+              element={
+                <PrivateRoute>
+                  <MainLayout>
+                    <SitesPage />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/activities"
+              element={
+                <PrivateRoute>
+                  <MainLayout>
+                    <ActivityFeedPage />
                   </MainLayout>
                 </PrivateRoute>
               }

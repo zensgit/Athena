@@ -24,6 +24,8 @@ public class BulkOperationService {
     private final NodeService nodeService;
     private final NodeRepository nodeRepository;
     private final TrashService trashService;
+    private final AuditService auditService;
+    private final SecurityService securityService;
 
     /**
      * Bulk move nodes to a target folder
@@ -67,13 +69,14 @@ public class BulkOperationService {
      * Execute generic bulk operation
      */
     private BulkOperationResult executeBulk(String operation, List<UUID> ids, OperationExecutor executor) {
-        log.info("Starting bulk {} operation on {} items", operation, ids.size());
-        
+        List<UUID> safeIds = ids == null ? List.of() : ids.stream().filter(Objects::nonNull).toList();
+        log.info("Starting bulk {} operation on {} items", operation, safeIds.size());
+
         List<String> successes = new ArrayList<>();
         Map<String, String> failures = new HashMap<>();
         AtomicInteger processed = new AtomicInteger(0);
 
-        for (UUID id : ids) {
+        for (UUID id : safeIds) {
             try {
                 // Determine name for logging (try to fetch, might fail if not found)
                 String name = nodeRepository.findById(id)
@@ -92,14 +95,58 @@ public class BulkOperationService {
             }
         }
 
-        return BulkOperationResult.builder()
+        BulkOperationResult result = BulkOperationResult.builder()
             .operation(operation)
-            .totalRequested(ids.size())
+            .totalRequested(safeIds.size())
             .successCount(successes.size())
             .failureCount(failures.size())
             .successfulIds(successes)
             .failures(failures)
             .build();
+        auditBulkOperation(operation, result);
+        return result;
+    }
+
+    private void auditBulkOperation(String operation, BulkOperationResult result) {
+        if (operation == null || result == null) {
+            return;
+        }
+        String normalizedOperation = operation.trim().toUpperCase(Locale.ROOT);
+        int failureCount = result.getFailureCount();
+        int successCount = result.getSuccessCount();
+        String eventType = "BULK_" + normalizedOperation + (
+            failureCount == 0 ? "_COMPLETED" : (successCount == 0 ? "_FAILED" : "_PARTIAL")
+        );
+        String details = String.format(
+            "Bulk %s requested=%d success=%d failed=%d",
+            normalizedOperation,
+            result.getTotalRequested(),
+            successCount,
+            failureCount
+        );
+        if (failureCount > 0 && result.getFailures() != null && !result.getFailures().isEmpty()) {
+            List<String> failedIds = result.getFailures().keySet().stream().limit(5).toList();
+            details += ", failedSample=" + String.join("|", failedIds);
+        }
+        auditService.logEvent(
+            eventType,
+            null,
+            "BULK_OPERATIONS",
+            resolveAuditActor(),
+            details
+        );
+    }
+
+    private String resolveAuditActor() {
+        try {
+            String username = securityService.getCurrentUser();
+            if (username != null && !username.isBlank()) {
+                return username;
+            }
+        } catch (Exception ex) {
+            log.debug("Failed to resolve audit actor for bulk operation: {}", ex.getMessage());
+        }
+        return "system";
     }
 
     @FunctionalInterface

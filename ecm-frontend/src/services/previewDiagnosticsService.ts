@@ -176,6 +176,8 @@ export type PreviewRenditionResourcesExportTask = {
   status?: string | null;
   error?: string | null;
   message?: string | null;
+  deduplicated?: boolean;
+  deduplicatedFromTaskId?: string | null;
   createdAt?: string | null;
   startedAt?: string | null;
   updatedAt?: string | null;
@@ -200,8 +202,16 @@ export type PreviewRenditionResourcesExportTaskActiveStatusFilter =
   | 'QUEUED'
   | 'RUNNING';
 
+export type PreviewRenditionResourcesExportTaskTerminalStatusFilter =
+  | 'COMPLETED'
+  | 'CANCELLED'
+  | 'FAILED'
+  | 'TIMED_OUT'
+  | 'EXPIRED';
+
 export type PreviewRenditionResourcesExportTaskList = {
   count: number;
+  paging?: PreviewTaskCenterPaging | null;
   items: PreviewRenditionResourcesExportTask[];
 };
 
@@ -232,11 +242,63 @@ export type PreviewRenditionResourcesExportTaskCancelActiveResponse = {
   message: string;
 };
 
+export type PreviewRenditionResourcesExportTaskRetryTerminalItem = {
+  sourceTaskId?: string | null;
+  newTaskId?: string | null;
+  sourceStatus?: string | null;
+  outcome?: string | null;
+  message?: string | null;
+};
+
+export type PreviewRenditionResourcesExportTaskRetryTerminalResponse = {
+  requested: number;
+  retried: number;
+  reused: number;
+  skipped: number;
+  failed: number;
+  limit: number;
+  statusFilter?: string | null;
+  message: string;
+  results: PreviewRenditionResourcesExportTaskRetryTerminalItem[];
+};
+
+export type PreviewRenditionResourcesExportTaskRetryTerminalDryRunItem = {
+  sourceTaskId?: string | null;
+  sourceStatus?: string | null;
+  outcome?: string | null;
+  reasonCode?: string | null;
+  message?: string | null;
+};
+
+export type PreviewRenditionResourcesExportTaskRetryTerminalDryRunReasonCount = {
+  reasonCode?: string | null;
+  outcome?: string | null;
+  count: number;
+};
+
+export type PreviewRenditionResourcesExportTaskRetryTerminalDryRunResponse = {
+  requested: number;
+  retryable: number;
+  skipped: number;
+  limit: number;
+  statusFilter?: string | null;
+  message: string;
+  results: PreviewRenditionResourcesExportTaskRetryTerminalDryRunItem[];
+  reasonBreakdown?: PreviewRenditionResourcesExportTaskRetryTerminalDryRunReasonCount[];
+};
+
+export type PreviewRenditionResourcesExportTaskRetryTerminalByTaskIdsRequest = {
+  sourceTaskIds: string[];
+};
+
 export type PreviewQueueBatchItem = {
   documentId: string;
   outcome: 'QUEUED' | 'SKIPPED' | 'FAILED' | string;
   message: string | null;
   previewStatus: string | null;
+  previewFailureReason?: string | null;
+  previewFailureCategory?: string | null;
+  previewLastUpdated?: string | null;
   attempts: number;
   nextAttemptAt: string | null;
 };
@@ -256,6 +318,9 @@ export type PreviewQueueDiagnosticsItem = {
   path: string | null;
   mimeType: string | null;
   previewStatus: string | null;
+  previewFailureReason?: string | null;
+  previewFailureCategory?: string | null;
+  previewLastUpdated?: string | null;
   queueState: 'QUEUED' | 'RUNNING' | 'CANCEL_REQUESTED' | string;
   governanceKey: string | null;
   attempts: number;
@@ -289,6 +354,9 @@ export type PreviewQueueDeclinedItem = {
   path: string | null;
   mimeType: string | null;
   previewStatus: string | null;
+  previewFailureReason?: string | null;
+  previewFailureCategory?: string | null;
+  previewLastUpdated?: string | null;
   reason: string | null;
   category: string | null;
   governanceKey: string | null;
@@ -329,6 +397,9 @@ export type PreviewQueueDeclinedRequeueItem = {
   outcome: 'QUEUED' | 'SKIPPED' | 'FAILED' | string;
   message: string | null;
   previewStatus: string | null;
+  previewFailureReason?: string | null;
+  previewFailureCategory?: string | null;
+  previewLastUpdated?: string | null;
 };
 
 export type PreviewQueueDeclinedRequeueResult = {
@@ -353,6 +424,9 @@ export type PreviewQueueDeclinedRequeueDryRunItem = {
   reasonCode: string | null;
   message: string | null;
   previewStatus: string | null;
+  previewFailureReason?: string | null;
+  previewFailureCategory?: string | null;
+  previewLastUpdated?: string | null;
   nextAttemptAt: string | null;
   preflightStatus?: string | null;
   preflightSkipReason?: string | null;
@@ -663,6 +737,10 @@ export type PreviewQueueDeclinedRequeueDryRunExportTaskCancelActiveResponse = {
 
 export type PreviewQueueCancelActiveItem = {
   documentId: string | null;
+  previewStatus?: string | null;
+  previewFailureReason?: string | null;
+  previewFailureCategory?: string | null;
+  previewLastUpdated?: string | null;
   queueState: string | null;
   outcome: 'CANCELLED' | 'SKIPPED' | 'FAILED' | string;
   message: string | null;
@@ -1043,14 +1121,17 @@ class PreviewDiagnosticsService {
   }
 
   async listRenditionResourcesExportTasks(
-    limit = 20,
-    status?: PreviewRenditionResourcesExportTaskStatusFilter
+    maxItems = 20,
+    status?: PreviewRenditionResourcesExportTaskStatusFilter,
+    skipCount = 0
   ): Promise<PreviewRenditionResourcesExportTaskList> {
     return api.get<PreviewRenditionResourcesExportTaskList>(
       '/preview/diagnostics/renditions/resources/export-async',
       {
         params: {
-          limit,
+          maxItems,
+          limit: maxItems,
+          skipCount: Math.max(0, Math.floor(skipCount)),
           status: status || undefined,
         },
       }
@@ -1113,6 +1194,65 @@ class PreviewDiagnosticsService {
   async retryRenditionResourcesExportTask(taskId: string): Promise<PreviewRenditionResourcesExportTask> {
     return api.post<PreviewRenditionResourcesExportTask>(
       `/preview/diagnostics/renditions/resources/export-async/${encodeURIComponent(taskId)}/retry`
+    );
+  }
+
+  async retryTerminalRenditionResourcesExportTasks(
+    status?: PreviewRenditionResourcesExportTaskTerminalStatusFilter,
+    limit = 20
+  ): Promise<PreviewRenditionResourcesExportTaskRetryTerminalResponse> {
+    return api.post<PreviewRenditionResourcesExportTaskRetryTerminalResponse>(
+      '/preview/diagnostics/renditions/resources/export-async/retry-terminal',
+      {},
+      {
+        params: {
+          status: status || undefined,
+          limit,
+        },
+      }
+    );
+  }
+
+  async dryRunRetryTerminalRenditionResourcesExportTasks(
+    status?: PreviewRenditionResourcesExportTaskTerminalStatusFilter,
+    limit = 20
+  ): Promise<PreviewRenditionResourcesExportTaskRetryTerminalDryRunResponse> {
+    return api.post<PreviewRenditionResourcesExportTaskRetryTerminalDryRunResponse>(
+      '/preview/diagnostics/renditions/resources/export-async/retry-terminal/dry-run',
+      {},
+      {
+        params: {
+          status: status || undefined,
+          limit,
+        },
+      }
+    );
+  }
+
+  async exportDryRunRetryTerminalRenditionResourcesExportTasks(
+    status?: PreviewRenditionResourcesExportTaskTerminalStatusFilter,
+    limit = 20
+  ): Promise<void> {
+    const filename = `preview_rendition_resources_async_retry_dry_run_${new Date().toISOString().replace(/[:.]/g, '-')}.csv`;
+    return api.downloadFile('/preview/diagnostics/renditions/resources/export-async/retry-terminal/dry-run/export', filename, {
+      params: {
+        status: status || undefined,
+        limit,
+      },
+    });
+  }
+
+  async retryTerminalRenditionResourcesExportTasksByTaskIds(
+    sourceTaskIds: string[]
+  ): Promise<PreviewRenditionResourcesExportTaskRetryTerminalResponse> {
+    const payload: PreviewRenditionResourcesExportTaskRetryTerminalByTaskIdsRequest = {
+      sourceTaskIds: Array.from(new Set((sourceTaskIds || [])
+        .map((taskId) => String(taskId || '').trim())
+        .filter((taskId) => taskId.length > 0))),
+    };
+    return api.post<PreviewRenditionResourcesExportTaskRetryTerminalResponse>(
+      '/preview/diagnostics/renditions/resources/export-async/retry-terminal/by-task-ids',
+      payload
     );
   }
 

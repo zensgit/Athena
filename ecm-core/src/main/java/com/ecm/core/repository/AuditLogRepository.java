@@ -36,6 +36,94 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
 
     Page<AuditLog> findByEventTypeInOrderByEventTimeDesc(List<String> eventTypes, Pageable pageable);
 
+    @Query("""
+        SELECT a FROM AuditLog a
+        WHERE a.eventType LIKE CONCAT(:eventPrefix, '%')
+        ORDER BY a.eventTime DESC
+        """)
+    Page<AuditLog> findByEventTypePrefix(@Param("eventPrefix") String eventPrefix, Pageable pageable);
+
+    Page<AuditLog> findByEventTypeOrderByEventTimeDesc(String eventType, Pageable pageable);
+
+    Page<AuditLog> findByEventTypeAndUsernameOrderByEventTimeDesc(
+        String eventType,
+        String username,
+        Pageable pageable
+    );
+
+    @Query("""
+        SELECT a FROM AuditLog a
+        WHERE a.eventType LIKE CONCAT(:eventPrefix, '%')
+          AND a.eventTime >= :from
+        ORDER BY a.eventTime DESC
+        """)
+    Page<AuditLog> findByEventTypePrefixSince(@Param("eventPrefix") String eventPrefix,
+                                              @Param("from") LocalDateTime from,
+                                              Pageable pageable);
+
+    @Query("""
+        SELECT a FROM AuditLog a
+        WHERE a.eventType LIKE CONCAT(:eventPrefix, '%')
+          AND a.username = :username
+        ORDER BY a.eventTime DESC
+        """)
+    Page<AuditLog> findByEventTypePrefixAndUsername(@Param("eventPrefix") String eventPrefix,
+                                                     @Param("username") String username,
+                                                     Pageable pageable);
+
+    @Query("""
+        SELECT a FROM AuditLog a
+        WHERE a.eventType LIKE CONCAT(:eventPrefix, '%')
+          AND a.eventTime >= :from
+          AND a.username = :username
+        ORDER BY a.eventTime DESC
+        """)
+    Page<AuditLog> findByEventTypePrefixSinceAndUsername(@Param("eventPrefix") String eventPrefix,
+                                                          @Param("from") LocalDateTime from,
+                                                          @Param("username") String username,
+                                                          Pageable pageable);
+
+    Page<AuditLog> findByEventTypeAndEventTimeGreaterThanEqualOrderByEventTimeDesc(
+        String eventType,
+        LocalDateTime from,
+        Pageable pageable
+    );
+
+    Page<AuditLog> findByEventTypeAndUsernameAndEventTimeGreaterThanEqualOrderByEventTimeDesc(
+        String eventType,
+        String username,
+        LocalDateTime from,
+        Pageable pageable
+    );
+
+    @Query("""
+        SELECT a.eventType, COUNT(a) FROM AuditLog a
+        WHERE a.eventType LIKE CONCAT(:eventPrefix, '%')
+          AND (:from IS NULL OR a.eventTime >= :from)
+          AND (:username IS NULL OR a.username = :username)
+          AND (:eventType IS NULL OR a.eventType = :eventType)
+        GROUP BY a.eventType
+        ORDER BY COUNT(a) DESC
+        """)
+    List<Object[]> countByEventTypePrefixWithFilters(@Param("eventPrefix") String eventPrefix,
+                                                      @Param("from") LocalDateTime from,
+                                                      @Param("username") String username,
+                                                      @Param("eventType") String eventType);
+
+    @Query("""
+        SELECT a.username, COUNT(a) FROM AuditLog a
+        WHERE a.eventType LIKE CONCAT(:eventPrefix, '%')
+          AND (:from IS NULL OR a.eventTime >= :from)
+          AND (:username IS NULL OR a.username = :username)
+          AND (:eventType IS NULL OR a.eventType = :eventType)
+        GROUP BY a.username
+        ORDER BY COUNT(a) DESC
+        """)
+    List<Object[]> countByUsernamePrefixWithFilters(@Param("eventPrefix") String eventPrefix,
+                                                     @Param("from") LocalDateTime from,
+                                                     @Param("username") String username,
+                                                     @Param("eventType") String eventType);
+
     @Query("SELECT a.username, COUNT(a) FROM AuditLog a GROUP BY a.username ORDER BY COUNT(a) DESC")
     List<Object[]> findTopActiveUsers(Pageable pageable);
     
@@ -170,6 +258,92 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
         """)
     List<AuditLog> findByFiltersForExportNoNodeId(@Param("username") String username,
                                                   @Param("eventType") String eventType,
+                                                  @Param("from") LocalDateTime from,
+                                                  @Param("to") LocalDateTime to);
+
+    @Query("""
+        SELECT a FROM AuditLog a
+        WHERE (UPPER(a.eventType) LIKE 'RULE_%' OR UPPER(a.eventType) LIKE 'SCHEDULED_RULE%')
+          AND (:eventType IS NULL OR :eventType = '' OR a.eventType = :eventType)
+          AND (:username IS NULL OR :username = '' OR a.username = :username)
+          AND (:nodeId IS NULL OR a.nodeId = :nodeId)
+          AND (:from IS NULL OR a.eventTime >= :from)
+          AND (:to IS NULL OR a.eventTime <= :to)
+        ORDER BY a.eventTime DESC
+        """)
+    Page<AuditLog> findRuleAuditTimeline(@Param("eventType") String eventType,
+                                         @Param("username") String username,
+                                         @Param("nodeId") UUID nodeId,
+                                         @Param("from") LocalDateTime from,
+                                         @Param("to") LocalDateTime to,
+                                         Pageable pageable);
+
+    @Query("""
+        SELECT a FROM AuditLog a
+        WHERE UPPER(a.eventType) LIKE 'BULK_%'
+          AND (:eventType IS NULL OR :eventType = '' OR a.eventType = :eventType)
+          AND (:username IS NULL OR :username = '' OR a.username = :username)
+          AND (:nodeId IS NULL OR a.nodeId = :nodeId)
+          AND (:from IS NULL OR a.eventTime >= :from)
+          AND (:to IS NULL OR a.eventTime <= :to)
+        ORDER BY a.eventTime DESC
+        """)
+    Page<AuditLog> findBulkOperationTimeline(@Param("eventType") String eventType,
+                                             @Param("username") String username,
+                                             @Param("nodeId") UUID nodeId,
+                                             @Param("from") LocalDateTime from,
+                                             @Param("to") LocalDateTime to,
+                                             Pageable pageable);
+
+    /**
+     * Variant of {@link #findBulkOperationTimeline} without nodeId predicate to avoid NULL UUID inference issues.
+     */
+    @Query("""
+        SELECT a FROM AuditLog a
+        WHERE UPPER(a.eventType) LIKE 'BULK_%'
+          AND (:eventType IS NULL OR :eventType = '' OR a.eventType = :eventType)
+          AND (:username IS NULL OR :username = '' OR a.username = :username)
+          AND (:from IS NULL OR a.eventTime >= :from)
+          AND (:to IS NULL OR a.eventTime <= :to)
+        ORDER BY a.eventTime DESC
+        """)
+    Page<AuditLog> findBulkOperationTimelineNoNodeId(@Param("eventType") String eventType,
+                                                     @Param("username") String username,
+                                                     @Param("from") LocalDateTime from,
+                                                     @Param("to") LocalDateTime to,
+                                                     Pageable pageable);
+
+    @Query("""
+        SELECT a.eventType, COUNT(a) FROM AuditLog a
+        WHERE UPPER(a.eventType) LIKE 'BULK_%'
+          AND (:eventType IS NULL OR :eventType = '' OR a.eventType = :eventType)
+          AND (:username IS NULL OR :username = '' OR a.username = :username)
+          AND (:nodeId IS NULL OR a.nodeId = :nodeId)
+          AND (:from IS NULL OR a.eventTime >= :from)
+          AND (:to IS NULL OR a.eventTime <= :to)
+        GROUP BY a.eventType
+        ORDER BY COUNT(a) DESC
+        """)
+    List<Object[]> countBulkByEventTypeWithFilters(@Param("eventType") String eventType,
+                                                   @Param("username") String username,
+                                                   @Param("nodeId") UUID nodeId,
+                                                   @Param("from") LocalDateTime from,
+                                                   @Param("to") LocalDateTime to);
+
+    @Query("""
+        SELECT a.username, COUNT(a) FROM AuditLog a
+        WHERE UPPER(a.eventType) LIKE 'BULK_%'
+          AND (:eventType IS NULL OR :eventType = '' OR a.eventType = :eventType)
+          AND (:username IS NULL OR :username = '' OR a.username = :username)
+          AND (:nodeId IS NULL OR a.nodeId = :nodeId)
+          AND (:from IS NULL OR a.eventTime >= :from)
+          AND (:to IS NULL OR a.eventTime <= :to)
+        GROUP BY a.username
+        ORDER BY COUNT(a) DESC
+        """)
+    List<Object[]> countBulkByUsernameWithFilters(@Param("eventType") String eventType,
+                                                  @Param("username") String username,
+                                                  @Param("nodeId") UUID nodeId,
                                                   @Param("from") LocalDateTime from,
                                                   @Param("to") LocalDateTime to);
 

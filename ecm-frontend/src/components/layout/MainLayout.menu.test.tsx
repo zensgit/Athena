@@ -71,9 +71,12 @@ test('account menu shows Tags/Categories for admin/editor roles', async () => {
   expect(screen.getByRole('menuitem', { name: 'Admin Dashboard' })).toBeTruthy();
   expect(screen.getByRole('menuitem', { name: 'Mail Automation' })).toBeTruthy();
   expect(screen.getByRole('menuitem', { name: 'Content Types' })).toBeTruthy();
+  expect(screen.getByRole('menuitem', { name: 'Content Models' })).toBeTruthy();
   expect(screen.getByRole('menuitem', { name: 'Permission Templates' })).toBeTruthy();
   expect(screen.getByRole('menuitem', { name: 'Webhooks' })).toBeTruthy();
   expect(screen.getByRole('menuitem', { name: 'System Status' })).toBeTruthy();
+  expect(screen.getByRole('menuitem', { name: 'Workflow Processes' })).toBeTruthy();
+  expect(screen.getByRole('menuitem', { name: 'People Directory' })).toBeTruthy();
 });
 
 test('account menu hides Tags/Categories for viewer role', async () => {
@@ -86,12 +89,15 @@ test('account menu hides Tags/Categories for viewer role', async () => {
 
   fireEvent.click(screen.getByRole('button', { name: 'Account menu' }));
   expect(await screen.findByRole('menuitem', { name: 'Tasks' })).toBeTruthy();
+  expect(screen.getByRole('menuitem', { name: 'Workflow Processes' })).toBeTruthy();
   expect(screen.queryByRole('menuitem', { name: 'Tags' })).toBeNull();
   expect(screen.queryByRole('menuitem', { name: 'Categories' })).toBeNull();
   expect(screen.queryByRole('menuitem', { name: 'Admin Dashboard' })).toBeNull();
   expect(screen.queryByRole('menuitem', { name: 'Mail Automation' })).toBeNull();
   expect(screen.queryByRole('menuitem', { name: 'Content Types' })).toBeNull();
+  expect(screen.queryByRole('menuitem', { name: 'Content Models' })).toBeNull();
   expect(screen.queryByRole('menuitem', { name: 'Permission Templates' })).toBeNull();
   expect(screen.queryByRole('menuitem', { name: 'Webhooks' })).toBeNull();
   expect(screen.queryByRole('menuitem', { name: 'System Status' })).toBeNull();
+  expect(screen.getByRole('menuitem', { name: 'People Directory' })).toBeTruthy();
 });

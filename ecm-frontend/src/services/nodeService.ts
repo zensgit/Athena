@@ -1,6 +1,9 @@
 import api from './api';
 import {
   Node,
+  CheckoutInfo,
+  LockInfo,
+  LockType,
   SearchCriteria,
   Version,
   Permission,
@@ -44,6 +47,11 @@ interface ApiNodeResponse {
   contentType?: string;
   correspondentId?: string;
   correspondentName?: string;
+  locked?: boolean;
+  lockedBy?: string;
+  checkedOut?: boolean;
+  checkoutUser?: string;
+  checkoutDate?: string;
   previewStatus?: string;
   previewFailureReason?: string;
   previewFailureCategory?: string;
@@ -69,6 +77,9 @@ interface ApiNodeDetailsResponse {
   inheritPermissions?: boolean;
   locked?: boolean;
   lockedBy?: string;
+  checkedOut?: boolean;
+  checkoutUser?: string;
+  checkoutDate?: string;
   previewStatus?: string;
   previewFailureReason?: string;
   previewFailureCategory?: string;
@@ -91,6 +102,8 @@ interface ApiVersionResponse {
   contentHash?: string;
   contentId?: string;
   status?: string;
+  checkoutBaseline?: boolean;
+  checkoutCurrent?: boolean;
 }
 
 interface PageResponse<T> {
@@ -108,6 +121,524 @@ interface UploadResponse {
   filename?: string;
   processingTimeMs?: number;
   errors?: Record<string, string>;
+}
+
+interface SearchPagePayload {
+  content: any[];
+  totalElements?: number;
+  totalPages?: number;
+  number?: number;
+  size?: number;
+}
+
+interface SearchQueryEnvelopeResponse {
+  results?: SearchPagePayload | null;
+  facets?: Record<string, { value: string; count: number }[]> | null;
+  suggestions?: string[] | null;
+  stats?: AdvancedSearchStats | null;
+  pivot?: AdvancedSearchPivotStatsApiResponse | null;
+}
+
+export interface AdvancedSearchFacetStat {
+  value: string;
+  count: number;
+}
+
+export interface AdvancedSearchStats {
+  query: string | null;
+  normalizedQuery: string | null;
+  hasFilters: boolean;
+  totalHits: number;
+  facetFieldCount: number;
+  previewStatusStats: AdvancedSearchFacetStat[];
+  mimeTypeStats: AdvancedSearchFacetStat[];
+  createdByStats: AdvancedSearchFacetStat[];
+  fileSizeRangeStats: AdvancedSearchFacetStat[];
+  createdDateRangeStats: AdvancedSearchFacetStat[];
+  generatedAt?: string | null;
+}
+
+export interface AdvancedSearchPivotStatsCell {
+  rowValue: string;
+  columnValue: string;
+  count: number;
+}
+
+interface AdvancedSearchPivotStatsMatrixCellApi {
+  mimeType?: string | null;
+  count?: number | null;
+}
+
+interface AdvancedSearchPivotStatsMatrixRowApi {
+  previewStatus?: string | null;
+  mimeTypeCounts?: AdvancedSearchPivotStatsMatrixCellApi[] | null;
+}
+
+export interface AdvancedSearchPivotStatsRequest {
+  query?: string;
+  filters?: Record<string, any>;
+  rowField: string;
+  columnField: string;
+}
+
+export interface AdvancedSearchPivotStats {
+  query: string | null;
+  normalizedQuery: string | null;
+  hasFilters: boolean;
+  totalHits: number;
+  rowField: string;
+  columnField: string;
+  cells: AdvancedSearchPivotStatsCell[];
+  generatedAt?: string | null;
+}
+
+export interface UnifiedSearchEnvelopeResult {
+  nodes: Node[];
+  total: number;
+  facets?: Record<string, { value: string; count: number }[]>;
+  suggestions?: string[];
+  stats?: AdvancedSearchStats | null;
+  pivot?: AdvancedSearchPivotStats | null;
+}
+
+export interface NodeRelationsSummary {
+  nodeId: string;
+  nodeType: string;
+  parentCount: number;
+  childCount: number;
+  sourceRelationCount: number;
+  targetRelationCount: number;
+  versionCount: number;
+  previewStatus: string | null;
+  renditionAvailable: boolean;
+  checkedOut: boolean;
+  checkoutUser?: string | null;
+  checkoutDate?: string | null;
+}
+
+export interface NodeRelationNodeRef {
+  id: string;
+  name: string;
+  path: string;
+  nodeType: string;
+  parentId?: string | null;
+}
+
+export interface NodeRelationEdge {
+  relationId: string;
+  relationType: string;
+  source: NodeRelationNodeRef;
+  target: NodeRelationNodeRef;
+  createdDate?: string | null;
+}
+
+export interface NodeRenditionRelationSummary {
+  nodeId: string;
+  document: boolean;
+  previewStatus: string | null;
+  renditionAvailable: boolean;
+  previewFailureReason?: string | null;
+  previewFailureCategory?: string | null;
+  previewLastUpdated?: string | null;
+  currentVersionLabel?: string | null;
+}
+
+export interface NodeRenditionRelation {
+  nodeId: string;
+  renditionId: string;
+  label: string;
+  status: string;
+  available: boolean;
+  mimeType: string;
+  url: string;
+  downloadable: boolean;
+  failureReason?: string | null;
+  failureCategory?: string | null;
+  previewLastUpdated?: string | null;
+  currentVersionLabel?: string | null;
+}
+
+export interface NodeRenditionDefinitionStatus {
+  nodeId: string;
+  renditionKey: string;
+  label: string;
+  targetMimeType: string;
+  generationMode?: string | null;
+  downloadable: boolean;
+  sortOrder: number;
+  dependencyRenditionKey?: string | null;
+  registered: boolean;
+  applicable: boolean;
+  applicabilityReason?: string | null;
+  currentState?: string | null;
+  available: boolean;
+  contentUrl?: string | null;
+  canRequeue: boolean;
+  canInvalidate: boolean;
+  mutationBlockedReason?: string | null;
+}
+
+export interface NodeRenditionMutationResponse {
+  renditionKey: string;
+  action: string;
+  invalidated: boolean;
+  previewLinked: boolean;
+  message?: string | null;
+  queueStatus?: {
+    documentId: string;
+    previewStatus?: string | null;
+    queued: boolean;
+    attempts: number;
+    nextAttemptAt?: string | null;
+    message?: string | null;
+  } | null;
+  previewSummary?: NodeRenditionRelationSummary | null;
+  resource: {
+    id: string;
+    documentId: string;
+    renditionKey: string;
+    label: string;
+    mimeType: string;
+    state: string;
+    available: boolean;
+    downloadable: boolean;
+    applicable: boolean;
+    applicabilityReason?: string | null;
+    generationMode?: string | null;
+    dependencyRenditionKey?: string | null;
+    contentUrl?: string | null;
+    errorReason?: string | null;
+    errorCategory?: string | null;
+    sourceStatus?: string | null;
+    versionLabel?: string | null;
+    sourceUpdatedAt?: string | null;
+    lastSyncedAt?: string | null;
+    sortOrder: number;
+  };
+}
+
+export interface NodeCheckoutRelation {
+  nodeId: string;
+  document: boolean;
+  checkedOut: boolean;
+  checkoutUser?: string | null;
+  checkoutDate?: string | null;
+  checkoutBaselineVersionId?: string | null;
+  checkoutBaselineVersionLabel?: string | null;
+  currentVersionLabel?: string | null;
+  canCheckout: boolean;
+  canCheckIn: boolean;
+  canCancelCheckout: boolean;
+  canKeepCheckedOut: boolean;
+  requiresNewVersionFile: boolean;
+  blockingReason?: string | null;
+}
+
+export interface NodeCheckoutGraphNode {
+  id: string;
+  kind: string;
+  label: string;
+  focus: boolean;
+  virtualNode: boolean;
+  available: boolean;
+}
+
+export interface NodeCheckoutGraphEdge {
+  relationType: string;
+  sourceId: string;
+  targetId: string;
+  label: string;
+}
+
+export interface NodeCheckoutGraph {
+  nodeId: string;
+  document: boolean;
+  checkedOut: boolean;
+  checkoutUser?: string | null;
+  checkoutDate?: string | null;
+  documentNode?: NodeCheckoutGraphNode | null;
+  workingCopyNode?: NodeCheckoutGraphNode | null;
+  destinationNode?: NodeCheckoutGraphNode | null;
+  baselineVersion?: Version | null;
+  currentVersion?: Version | null;
+  nodes: NodeCheckoutGraphNode[];
+  edges: NodeCheckoutGraphEdge[];
+  canCheckIn: boolean;
+  canCancelCheckout: boolean;
+  canKeepCheckedOut: boolean;
+  blockingReason?: string | null;
+}
+
+export interface CheckoutLineage {
+  documentId: string;
+  checkout: CheckoutInfo;
+  baselineVersion?: Version | null;
+  currentVersion?: Version | null;
+}
+
+export type BatchDownloadAsyncStatus =
+  | 'QUEUED'
+  | 'RUNNING'
+  | 'CANCEL_REQUESTED'
+  | 'CANCELLED'
+  | 'COMPLETED'
+  | 'FAILED';
+
+export interface BatchDownloadAsyncTask {
+  taskId: string;
+  name: string;
+  createdBy?: string | null;
+  filename: string;
+  status: BatchDownloadAsyncStatus | string;
+  nodeIds: string[];
+  totalFiles: number;
+  filesAdded: number;
+  totalBytes: number;
+  bytesAdded: number;
+  createdAt: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  errorMessage?: string | null;
+  downloadUrl?: string | null;
+  cleanupUrl?: string | null;
+  archiveSizeBytes?: number | null;
+  retentionExpiresAt?: string | null;
+  cleanupEligible: boolean;
+  artifactPresent: boolean;
+  cancellable: boolean;
+  downloadReady: boolean;
+}
+
+export interface BatchDownloadAsyncTaskListResponse {
+  items: BatchDownloadAsyncTask[];
+  totalCount: number;
+  activeCount: number;
+  paging?: {
+    maxItems: number;
+    skipCount: number;
+    totalItems: number;
+    hasMoreItems: boolean;
+  };
+}
+
+export interface BatchDownloadAsyncTaskSummaryResponse {
+  totalCount: number;
+  activeCount: number;
+  terminalCount: number;
+  queuedCount: number;
+  runningCount: number;
+  cancelRequestedCount: number;
+  cancelledCount: number;
+  completedCount: number;
+  failedCount: number;
+}
+
+export interface BatchDownloadAsyncTaskCleanupResponse {
+  taskId?: string;
+  deletedCount: number;
+  remainingCount: number;
+  statusFilter?: string | null;
+  message: string;
+}
+
+export interface BatchDownloadAsyncTaskCancelActiveResponse {
+  cancelledCount: number;
+  remainingActiveCount: number;
+  statusFilter?: string | null;
+  message: string;
+}
+
+export type BatchDownloadPreflightOutcome =
+  | 'INCLUDED'
+  | 'MISSING'
+  | 'DELETED'
+  | 'FORBIDDEN'
+  | 'EMPTY_FOLDER';
+
+export type BatchDownloadPreflightDecision = 'READY' | 'PARTIAL' | 'BLOCKED';
+export type BatchDownloadPreflightPrimaryReason =
+  | 'NONE'
+  | 'DUPLICATE_REFERENCES'
+  | 'MISSING_NODES'
+  | 'DELETED_NODES'
+  | 'FORBIDDEN_NODES'
+  | 'EMPTY_FOLDERS'
+  | 'NO_READABLE_FILES';
+
+export interface BatchDownloadPreflightItem {
+  nodeId?: string | null;
+  nodeName?: string | null;
+  nodeType?: string | null;
+  outcome: BatchDownloadPreflightOutcome | string;
+  includedFiles: number;
+  includedBytes: number;
+  message: string;
+}
+
+export interface BatchDownloadPreflightResponse {
+  requestedCount: number;
+  distinctCount: number;
+  duplicateCount: number;
+  includedNodeIds: string[];
+  includedNodeCount: number;
+  includedFileCount: number;
+  includedBytes: number;
+  missingCount: number;
+  deletedCount: number;
+  forbiddenCount: number;
+  emptyFolderCount: number;
+  skippedCount: number;
+  executable: boolean;
+  decision: BatchDownloadPreflightDecision | string;
+  primaryReason: BatchDownloadPreflightPrimaryReason | string;
+  message: string;
+  warnings: string[];
+  items: BatchDownloadPreflightItem[];
+}
+
+interface AdvancedSearchPivotStatsApiResponse {
+  query?: string | null;
+  normalizedQuery?: string | null;
+  hasFilters?: boolean;
+  totalHits?: number;
+  rowField?: string | null;
+  columnField?: string | null;
+  cells?: AdvancedSearchPivotStatsCell[] | null;
+  matrix?: AdvancedSearchPivotStatsMatrixRowApi[] | null;
+  generatedAt?: string | null;
+}
+
+export interface PreviewQueueSearchBatchItem {
+  documentId: string | null;
+  outcome: string;
+  message: string | null;
+  previewStatus: string | null;
+  previewFailureReason?: string | null;
+  previewFailureCategory?: string | null;
+  previewLastUpdated?: string | null;
+  queueState?: string | null;
+  attempts: number;
+  nextAttemptAt: string | null;
+}
+
+export interface PreviewQueueSearchBatchResult {
+  query: string | null;
+  reason: string | null;
+  maxDocuments: number;
+  workerCount?: number;
+  totalCandidates: number;
+  scanned: number;
+  matched: number;
+  scanSkipped?: number;
+  truncated: boolean;
+  reasonBreakdown: PreviewQueueSearchReasonCount[];
+  skipBreakdown?: PreviewQueueSearchSkipCount[];
+  requested: number;
+  deduplicated: number;
+  queued: number;
+  skipped: number;
+  failed: number;
+  results: PreviewQueueSearchBatchItem[];
+}
+
+export interface PreviewQueueSearchCapabilities {
+  defaultMaxDocuments: number;
+  maxMaxDocuments: number;
+  scanPageSize: number;
+  scanLimit: number;
+  defaultWorkerCount: number;
+  maxWorkerCount: number;
+}
+
+export interface PreviewQueueSearchDryRunItem {
+  documentId: string | null;
+  name: string | null;
+  previewStatus: string | null;
+  previewFailureReason: string | null;
+  previewFailureCategory: string | null;
+  preflightStatus?: string | null;
+  preflightSkipReason?: string | null;
+  preflightRoute?: string | null;
+  preflightPolicyProfile?: string | null;
+  preflightPipeline?: string | null;
+}
+
+export interface PreviewQueueSearchReasonCount {
+  reason: string;
+  count: number;
+}
+
+export interface PreviewQueueSearchSkipCount {
+  reason: string;
+  count: number;
+}
+
+export interface PreviewQueueSearchDryRunResult {
+  query: string | null;
+  reason: string | null;
+  maxDocuments: number;
+  totalCandidates: number;
+  scanned: number;
+  matched: number;
+  scanSkipped?: number;
+  truncated: boolean;
+  reasonBreakdown: PreviewQueueSearchReasonCount[];
+  skipBreakdown?: PreviewQueueSearchSkipCount[];
+  workerCount?: number;
+  sampleCount: number;
+  samples: PreviewQueueSearchDryRunItem[];
+}
+
+export interface PreviewQueueSearchDryRunExportAsyncTask {
+  taskId: string;
+  status?: string | null;
+  error?: string | null;
+  message?: string | null;
+  createdAt?: string | null;
+  finishedAt?: string | null;
+  filename?: string | null;
+}
+
+export interface PreviewQueueSearchDryRunExportAsyncTaskStatus {
+  taskId: string;
+  status?: string | null;
+  error?: string | null;
+  message?: string | null;
+  createdAt?: string | null;
+  finishedAt?: string | null;
+  filename?: string | null;
+}
+
+export interface PreviewQueueSearchDryRunExportAsyncTaskList {
+  count: number;
+  items: PreviewQueueSearchDryRunExportAsyncTaskStatus[];
+}
+
+export interface PreviewQueueSearchDryRunExportAsyncTaskSummary {
+  total: number;
+  queued: number;
+  running: number;
+  completed: number;
+  cancelled: number;
+  failed: number;
+  terminal: number;
+  active: number;
+}
+
+export interface PreviewQueueSearchDryRunExportAsyncTaskCleanupResult {
+  deletedCount: number;
+  remainingCount: number;
+  status?: string | null;
+  message?: string | null;
+}
+
+export type PreviewQueueSearchDryRunExportAsyncTaskActiveStatusFilter = 'QUEUED' | 'RUNNING';
+
+export interface PreviewQueueSearchDryRunExportAsyncTaskCancelActiveResult {
+  cancelledCount: number;
+  remainingActiveCount: number;
+  status?: string | null;
+  message?: string | null;
 }
 
 export interface SearchDiagnostics {
@@ -134,10 +665,36 @@ export interface SearchRebuildStatus {
 
 export interface PreviewQueueStatus {
   documentId: string;
-  previewStatus: string;
+  previewStatus: string | null;
+  previewFailureReason?: string | null;
+  previewFailureCategory?: string | null;
+  previewLastUpdated?: string | null;
   queued: boolean;
   attempts?: number;
   nextAttemptAt?: string;
+  message?: string | null;
+}
+
+export interface PreviewRepairStatus {
+  documentId: string;
+  readinessState: string | null;
+  readinessReason: string | null;
+  invalidated: boolean;
+  invalidationReason: string | null;
+  queued: boolean;
+  queueMessage: string | null;
+  previewStatus?: string | null;
+  previewFailureReason?: string | null;
+  previewFailureCategory?: string | null;
+  previewLastUpdated?: string | null;
+}
+
+export interface PreviewQueueCancelStatus {
+  documentId: string;
+  queueState: string;
+  cancelled: boolean;
+  hadActiveTask: boolean;
+  running: boolean;
   message?: string | null;
 }
 
@@ -169,7 +726,87 @@ export interface PermissionSetMetadata {
   permissions: PermissionType[];
 }
 
+export interface LockNodeTypedRequest {
+  lockType?: LockType;
+  lifetime?: 'PERSISTENT' | 'EPHEMERAL' | string;
+  durationSeconds?: number;
+  deep?: boolean;
+  additionalInfo?: string;
+}
+
 class NodeService {
+  private buildSearchFilters(criteria: SearchCriteria): Record<string, any> {
+    const filters: Record<string, any> = {};
+
+    if (criteria.mimeTypes?.length) {
+      filters.mimeTypes = criteria.mimeTypes;
+    } else if (criteria.contentType) {
+      filters.mimeTypes = [criteria.contentType];
+    }
+    if (criteria.locked !== undefined) {
+      filters.locked = criteria.locked;
+    }
+    if (criteria.lockedBy?.trim()) {
+      filters.lockedBy = criteria.lockedBy.trim();
+    }
+    if (criteria.checkedOut !== undefined) {
+      filters.checkedOut = criteria.checkedOut;
+    }
+    if (criteria.checkoutUser?.trim()) {
+      filters.checkoutUser = criteria.checkoutUser.trim();
+    }
+    if (criteria.createdByList?.length) {
+      filters.createdByList = criteria.createdByList;
+    } else if (criteria.createdBy) {
+      filters.createdBy = criteria.createdBy;
+    }
+    if (criteria.tags?.length) {
+      filters.tags = criteria.tags;
+    }
+    if (criteria.aspects?.length) {
+      filters.aspects = criteria.aspects;
+    }
+    if (criteria.properties && Object.keys(criteria.properties).length > 0) {
+      filters.properties = criteria.properties;
+    }
+    if (criteria.categories?.length) {
+      filters.categories = criteria.categories;
+    }
+    if (criteria.correspondents?.length) {
+      filters.correspondents = criteria.correspondents;
+    }
+    if (criteria.minSize !== undefined) {
+      filters.minSize = criteria.minSize;
+    }
+    if (criteria.maxSize !== undefined) {
+      filters.maxSize = criteria.maxSize;
+    }
+    if (criteria.createdFrom) {
+      filters.dateFrom = criteria.createdFrom;
+    }
+    if (criteria.createdTo) {
+      filters.dateTo = criteria.createdTo;
+    }
+    if (criteria.modifiedFrom) {
+      filters.modifiedFrom = criteria.modifiedFrom;
+    }
+    if (criteria.modifiedTo) {
+      filters.modifiedTo = criteria.modifiedTo;
+    }
+    if (criteria.path) {
+      filters.path = criteria.path;
+    }
+    if (criteria.folderId) {
+      filters.folderId = criteria.folderId;
+      filters.includeChildren = criteria.includeChildren ?? true;
+    }
+    if (criteria.previewStatuses?.length) {
+      filters.previewStatuses = criteria.previewStatuses;
+    }
+
+    return filters;
+  }
+
   private pickPrimaryRoot(roots: FolderResponse[]): FolderResponse {
     if (!roots || roots.length === 0) {
       throw new Error('No root folder found');
@@ -237,6 +874,11 @@ class NodeService {
       contentType: apiNode.contentType,
       correspondentId: apiNode.correspondentId,
       correspondent: apiNode.correspondentName,
+      locked: apiNode.locked,
+      lockedBy: apiNode.lockedBy,
+      checkedOut: apiNode.checkedOut,
+      checkoutUser: apiNode.checkoutUser,
+      checkoutDate: apiNode.checkoutDate,
       previewStatus: apiNode.previewStatus,
       previewFailureReason: apiNode.previewFailureReason,
       previewFailureCategory: apiNode.previewFailureCategory,
@@ -268,6 +910,11 @@ class NodeService {
       correspondentId: apiNode.correspondentId,
       correspondent: apiNode.correspondentName,
       inheritPermissions: apiNode.inheritPermissions,
+      locked: apiNode.locked,
+      lockedBy: apiNode.lockedBy,
+      checkedOut: apiNode.checkedOut,
+      checkoutUser: apiNode.checkoutUser,
+      checkoutDate: apiNode.checkoutDate,
       previewStatus: apiNode.previewStatus,
       previewFailureReason: apiNode.previewFailureReason,
       previewFailureCategory: apiNode.previewFailureCategory,
@@ -287,6 +934,109 @@ class NodeService {
     }
     // /nodes/{id} works for both folders and documents; avoid noisy 404s from probing /folders/{id}.
     const node = await api.get<ApiNodeDetailsResponse>(`/nodes/${nodeId}`);
+    return this.apiNodeDetailsToNode(node);
+  }
+
+  async getLockInfo(nodeId: string): Promise<LockInfo> {
+    return await api.get<LockInfo>(`/nodes/${nodeId}/lock-info`);
+  }
+
+  async lockNodeTyped(nodeId: string, request: LockNodeTypedRequest): Promise<LockInfo> {
+    return api.post<LockInfo>(`/nodes/${nodeId}/lock-typed`, null, {
+      params: {
+        lockType: request.lockType ?? 'WRITE_LOCK',
+        lifetime: request.lifetime ?? 'PERSISTENT',
+        durationSeconds: request.durationSeconds,
+        deep: request.deep ?? false,
+        additionalInfo: request.additionalInfo?.trim() || undefined,
+      },
+    });
+  }
+
+  async unlockNode(nodeId: string): Promise<void> {
+    await api.post<void>(`/nodes/${nodeId}/unlock`);
+  }
+
+  async unlockNodeDeep(nodeId: string, unlockChildren = true): Promise<void> {
+    await api.post<void>(`/nodes/${nodeId}/unlock-deep`, null, {
+      params: { unlockChildren },
+    });
+  }
+
+  async getCheckoutInfo(nodeId: string): Promise<CheckoutInfo> {
+    return await api.get<CheckoutInfo>(`/documents/${nodeId}/checkout-info`);
+  }
+
+  async getCheckoutLineage(nodeId: string): Promise<CheckoutLineage> {
+    const response = await api.get<{
+      documentId: string;
+      checkout: CheckoutInfo;
+      baselineVersion?: ApiVersionResponse | null;
+      currentVersion?: ApiVersionResponse | null;
+    }>(`/documents/${nodeId}/checkout-lineage`);
+
+    const mapVersion = (version?: ApiVersionResponse | null): Version | null => {
+      if (!version) {
+        return null;
+      }
+      return {
+        id: version.id,
+        documentId: version.documentId || nodeId,
+        versionLabel: version.versionLabel,
+        comment: version.comment,
+        created: version.createdDate,
+        creator: version.creator,
+        size: version.size,
+        isMajor: version.major,
+        mimeType: version.mimeType,
+        contentHash: version.contentHash,
+        contentId: version.contentId,
+        status: version.status,
+        checkoutBaseline: version.checkoutBaseline,
+        checkoutCurrent: version.checkoutCurrent,
+      };
+    };
+
+    return {
+      documentId: response.documentId,
+      checkout: response.checkout,
+      baselineVersion: mapVersion(response.baselineVersion),
+      currentVersion: mapVersion(response.currentVersion),
+    };
+  }
+
+  async checkoutDocument(nodeId: string): Promise<Node> {
+    const node = await api.post<ApiNodeDetailsResponse>(`/documents/${nodeId}/checkout`);
+    return this.apiNodeDetailsToNode(node);
+  }
+
+  async cancelCheckoutDocument(nodeId: string): Promise<Node> {
+    const node = await api.post<ApiNodeDetailsResponse>(`/documents/${nodeId}/cancel-checkout`);
+    return this.apiNodeDetailsToNode(node);
+  }
+
+  async checkinDocument(
+    nodeId: string,
+    options?: {
+      file?: File | null;
+      comment?: string;
+      majorVersion?: boolean;
+      keepCheckedOut?: boolean;
+    },
+  ): Promise<Node> {
+    const formData = new FormData();
+    if (options?.file) {
+      formData.append('file', options.file);
+    }
+    if (options?.comment?.trim()) {
+      formData.append('comment', options.comment.trim());
+    }
+    formData.append('majorVersion', Boolean(options?.majorVersion).toString());
+    formData.append('keepCheckedOut', Boolean(options?.keepCheckedOut).toString());
+
+    const node = await api.post<ApiNodeDetailsResponse>(`/documents/${nodeId}/checkin`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
     return this.apiNodeDetailsToNode(node);
   }
 
@@ -402,6 +1152,78 @@ class NodeService {
     return api.downloadFile(url, filename);
   }
 
+  async startBatchDownloadAsync(nodeIds: string[], name = 'archive'): Promise<BatchDownloadAsyncTask> {
+    return api.post<BatchDownloadAsyncTask>('/nodes/download/batch-async', {
+      nodeIds,
+      name,
+    });
+  }
+
+  async preflightBatchDownloadAsync(nodeIds: string[], name = 'archive'): Promise<BatchDownloadPreflightResponse> {
+    return api.post<BatchDownloadPreflightResponse>('/nodes/download/batch-async/preflight', {
+      nodeIds,
+      name,
+    });
+  }
+
+  async listBatchDownloadAsyncTasks(
+    limit = 10,
+    status?: string,
+    skipCount = 0,
+    query?: string,
+    owner?: string
+  ): Promise<BatchDownloadAsyncTaskListResponse> {
+    return api.get<BatchDownloadAsyncTaskListResponse>('/nodes/download/batch-async', {
+      params: {
+        maxItems: limit,
+        skipCount,
+        status: status || undefined,
+        q: query || undefined,
+        owner: owner || undefined,
+      },
+    });
+  }
+
+  async getBatchDownloadAsyncTask(taskId: string): Promise<BatchDownloadAsyncTask> {
+    return api.get<BatchDownloadAsyncTask>(`/nodes/download/batch-async/${encodeURIComponent(taskId)}`);
+  }
+
+  async getBatchDownloadAsyncSummary(): Promise<BatchDownloadAsyncTaskSummaryResponse> {
+    return api.get<BatchDownloadAsyncTaskSummaryResponse>('/nodes/download/batch-async/summary');
+  }
+
+  async cancelBatchDownloadAsyncTask(taskId: string): Promise<BatchDownloadAsyncTask> {
+    return api.post<BatchDownloadAsyncTask>(`/nodes/download/batch-async/${encodeURIComponent(taskId)}/cancel`);
+  }
+
+  async cleanupBatchDownloadAsyncTasks(status?: string): Promise<BatchDownloadAsyncTaskCleanupResponse> {
+    return api.post<BatchDownloadAsyncTaskCleanupResponse>('/nodes/download/batch-async/cleanup', undefined, {
+      params: {
+        status: status || undefined,
+      },
+    });
+  }
+
+  async cancelActiveBatchDownloadAsyncTasks(status?: string): Promise<BatchDownloadAsyncTaskCancelActiveResponse> {
+    return api.post<BatchDownloadAsyncTaskCancelActiveResponse>('/nodes/download/batch-async/cancel-active', undefined, {
+      params: {
+        status: status || undefined,
+      },
+    });
+  }
+
+  async cleanupBatchDownloadAsyncTask(taskId: string): Promise<BatchDownloadAsyncTaskCleanupResponse> {
+    return api.post<BatchDownloadAsyncTaskCleanupResponse>(`/nodes/download/batch-async/${encodeURIComponent(taskId)}/cleanup`);
+  }
+
+  async downloadBatchDownloadAsyncTask(taskId: string, filename?: string): Promise<void> {
+    const effectiveFilename = filename || `download-${taskId}.zip`;
+    return api.downloadFile(
+      `/nodes/download/batch-async/${encodeURIComponent(taskId)}/download`,
+      effectiveFilename
+    );
+  }
+
   async updateNode(nodeId: string, updates: Record<string, any>): Promise<Node> {
     const updated = await api.patch<ApiNodeDetailsResponse>(`/nodes/${nodeId}`, updates);
     return this.apiNodeDetailsToNode(updated);
@@ -427,65 +1249,16 @@ class NodeService {
     return api.delete(`/nodes/${nodeId}`);
   }
 
-  async searchNodes(criteria: SearchCriteria): Promise<{ nodes: Node[]; total: number }> {
+  async searchNodes(criteria: SearchCriteria): Promise<{
+    nodes: Node[];
+    total: number;
+    facets?: Record<string, { value: string; count: number }[]>;
+    suggestions?: string[];
+  }> {
     const query = (criteria.name || '').trim();
-    const filters: Record<string, any> = {};
+    const filters = this.buildSearchFilters(criteria);
     const page = criteria.page ?? 0;
     const size = criteria.size ?? 50;
-
-    if (criteria.mimeTypes?.length) {
-      filters.mimeTypes = criteria.mimeTypes;
-    } else if (criteria.contentType) {
-      filters.mimeTypes = [criteria.contentType];
-    }
-    if (criteria.createdByList?.length) {
-      filters.createdByList = criteria.createdByList;
-    } else if (criteria.createdBy) {
-      filters.createdBy = criteria.createdBy;
-    }
-    if (criteria.tags?.length) {
-      filters.tags = criteria.tags;
-    }
-    if (criteria.aspects?.length) {
-      filters.aspects = criteria.aspects;
-    }
-    if (criteria.properties && Object.keys(criteria.properties).length > 0) {
-      filters.properties = criteria.properties;
-    }
-    if (criteria.categories?.length) {
-      filters.categories = criteria.categories;
-    }
-    if (criteria.correspondents?.length) {
-      filters.correspondents = criteria.correspondents;
-    }
-    if (criteria.minSize !== undefined) {
-      filters.minSize = criteria.minSize;
-    }
-    if (criteria.maxSize !== undefined) {
-      filters.maxSize = criteria.maxSize;
-    }
-    if (criteria.createdFrom) {
-      filters.dateFrom = criteria.createdFrom;
-    }
-    if (criteria.createdTo) {
-      filters.dateTo = criteria.createdTo;
-    }
-    if (criteria.modifiedFrom) {
-      filters.modifiedFrom = criteria.modifiedFrom;
-    }
-    if (criteria.modifiedTo) {
-      filters.modifiedTo = criteria.modifiedTo;
-    }
-    if (criteria.path) {
-      filters.path = criteria.path;
-    }
-    if (criteria.folderId) {
-      filters.folderId = criteria.folderId;
-      filters.includeChildren = criteria.includeChildren ?? true;
-    }
-    if (criteria.previewStatuses?.length) {
-      filters.previewStatuses = criteria.previewStatuses;
-    }
 
     const hasNonScopeFilters = Object.keys(filters).some(
       (key) => key !== 'folderId' && key !== 'includeChildren' && key !== 'previewStatuses'
@@ -494,8 +1267,8 @@ class NodeService {
 
     // Fast path: for simple name-only searches, use the dedicated full-text endpoint.
     // It handles punctuation (e.g. hyphens) more reliably than the Criteria-based advanced endpoint.
-    const response = canUseFullTextEndpoint
-      ? await api.get<{ content: any[]; totalElements?: number }>('/search', {
+    if (canUseFullTextEndpoint) {
+      const response = await api.get<SearchPagePayload>('/search', {
           params: {
             q: query,
             page,
@@ -506,18 +1279,358 @@ class NodeService {
             includeChildren: criteria.includeChildren ?? true,
             previewStatus: criteria.previewStatuses?.length ? criteria.previewStatuses.join(',') : undefined,
           },
-        })
-      : await api.post<{ content: any[]; totalElements?: number }>('/search/advanced', {
+        });
+
+      const nodes = (response.content || []).map((item) => this.mapSearchItemToNode(item));
+      return { nodes, total: response.totalElements ?? nodes.length };
+    }
+
+    const response = await api.post<SearchQueryEnvelopeResponse>('/search/query', {
           query,
           filters,
           sortBy: criteria.sortBy,
           sortDirection: criteria.sortDirection,
           pageable: { page, size },
+          include: ['results', 'facets', ...(query ? ['suggestions'] : [])],
         });
 
-    const nodes = (response.content || []).map((item) => this.mapSearchItemToNode(item));
+    const resultPage = response.results || { content: [] };
+    const nodes = (resultPage.content || []).map((item) => this.mapSearchItemToNode(item));
+    const total = resultPage.totalElements ?? nodes.length;
+    return {
+      nodes,
+      total,
+      facets: response.facets || undefined,
+      suggestions: response.suggestions || undefined,
+    };
+  }
 
-    return { nodes, total: response.totalElements ?? nodes.length };
+  async searchNodesEnvelope(
+    criteria: SearchCriteria,
+    options?: {
+      includeFacets?: boolean;
+      includeSuggestions?: boolean;
+      includeStats?: boolean;
+      includePivot?: boolean;
+    }
+  ): Promise<UnifiedSearchEnvelopeResult> {
+    const query = (criteria.name || '').trim();
+    const filters = this.buildSearchFilters(criteria);
+    const page = criteria.page ?? 0;
+    const size = criteria.size ?? 50;
+    const include = [
+      'results',
+      ...(options?.includeFacets ? ['facets'] : []),
+      ...(options?.includeSuggestions && query ? ['suggestions'] : []),
+      ...(options?.includeStats ? ['stats'] : []),
+      ...(options?.includePivot ? ['pivot'] : []),
+    ];
+
+    const payload: Record<string, unknown> = {
+      query,
+      filters,
+      sortBy: criteria.sortBy,
+      sortDirection: criteria.sortDirection,
+      pageable: { page, size },
+      include,
+    };
+
+    if (options?.includeFacets || options?.includeStats) {
+      payload.facets = ['previewStatus', 'mimeType', 'createdBy', 'fileSizeRange', 'createdDateRange'];
+    }
+
+    const response = await api.post<SearchQueryEnvelopeResponse>('/search/query', payload);
+    const resultPage = response.results || { content: [] };
+    const nodes = (resultPage.content || []).map((item) => this.mapSearchItemToNode(item));
+    const total = resultPage.totalElements ?? nodes.length;
+    const pivotResponse = response.pivot || null;
+    const pivotCells = ((pivotResponse?.matrix) || []).flatMap((row) => {
+      const rowValue = (row.previewStatus || '').trim();
+      return (row.mimeTypeCounts || []).map((cell) => ({
+        rowValue,
+        columnValue: ((cell.mimeType || '') as string).trim(),
+        count: Number(cell.count || 0),
+      }));
+    });
+    const pivotFallbackCells = ((pivotResponse?.cells) || []).map((cell) => ({
+      rowValue: (cell.rowValue || '').trim(),
+      columnValue: (cell.columnValue || '').trim(),
+      count: Number(cell.count || 0),
+    }));
+
+    return {
+      nodes,
+      total,
+      facets: response.facets || undefined,
+      suggestions: response.suggestions || undefined,
+      stats: response.stats || null,
+      pivot: pivotResponse
+        ? {
+            query: pivotResponse.query ?? (query || null),
+            normalizedQuery: pivotResponse.normalizedQuery ?? (query || null),
+            hasFilters: Boolean(pivotResponse.hasFilters),
+            totalHits: Number(pivotResponse.totalHits || 0),
+            rowField: ((pivotResponse.rowField) || 'previewStatus').trim(),
+            columnField: ((pivotResponse.columnField) || 'mimeType').trim(),
+            cells: pivotCells.length > 0 ? pivotCells : pivotFallbackCells,
+            generatedAt: pivotResponse.generatedAt ?? null,
+          }
+        : null,
+    };
+  }
+
+  async getAdvancedSearchStats(criteria: SearchCriteria): Promise<AdvancedSearchStats> {
+    const query = (criteria.name || '').trim();
+    const filters = this.buildSearchFilters(criteria);
+    const response = await api.post<SearchQueryEnvelopeResponse>('/search/query', {
+      query,
+      filters,
+      include: ['stats'],
+      facets: ['previewStatus', 'mimeType', 'createdBy', 'fileSizeRange', 'createdDateRange'],
+    });
+    return response.stats || {
+      query: query || null,
+      normalizedQuery: query || null,
+      hasFilters: false,
+      totalHits: 0,
+      facetFieldCount: 0,
+      previewStatusStats: [],
+      mimeTypeStats: [],
+      createdByStats: [],
+      fileSizeRangeStats: [],
+      createdDateRangeStats: [],
+      generatedAt: null,
+    };
+  }
+
+  async getAdvancedSearchPivotStats(criteria: SearchCriteria): Promise<AdvancedSearchPivotStats> {
+    const query = (criteria.name || '').trim();
+    const filters = this.buildSearchFilters(criteria);
+    const payload: AdvancedSearchPivotStatsRequest = {
+      query,
+      filters,
+      rowField: 'previewStatus',
+      columnField: 'mimeType',
+    };
+    const envelope = await api.post<SearchQueryEnvelopeResponse>('/search/query', {
+      query,
+      filters,
+      include: ['pivot'],
+    });
+    const response = envelope.pivot || null;
+    const matrixCells = ((response?.matrix) || []).flatMap((row) => {
+      const rowValue = (row.previewStatus || '').trim();
+      return (row.mimeTypeCounts || []).map((cell) => ({
+        rowValue,
+        columnValue: ((cell.mimeType || '') as string).trim(),
+        count: Number(cell.count || 0),
+      }));
+    });
+    const fallbackCells = ((response?.cells) || []).map((cell) => ({
+      rowValue: (cell.rowValue || '').trim(),
+      columnValue: (cell.columnValue || '').trim(),
+      count: Number(cell.count || 0),
+    }));
+    return {
+      query: response?.query ?? (query || null),
+      normalizedQuery: response?.normalizedQuery ?? (query || null),
+      hasFilters: Boolean(response?.hasFilters),
+      totalHits: Number(response?.totalHits || 0),
+      rowField: ((response?.rowField) || payload.rowField).trim(),
+      columnField: ((response?.columnField) || payload.columnField).trim(),
+      cells: matrixCells.length > 0 ? matrixCells : fallbackCells,
+      generatedAt: response?.generatedAt ?? null,
+    };
+  }
+
+  async getNodeRelationsSummary(nodeId: string): Promise<NodeRelationsSummary> {
+    return api.get<NodeRelationsSummary>(`/nodes/${encodeURIComponent(nodeId)}/relations/summary`);
+  }
+
+  async getNodeRelationParents(nodeId: string, maxDepth = 20): Promise<NodeRelationNodeRef[]> {
+    return api.get<NodeRelationNodeRef[]>(
+      `/nodes/${encodeURIComponent(nodeId)}/relations/parents`,
+      { params: { maxDepth } }
+    );
+  }
+
+  async getNodeRelationSources(
+    nodeId: string,
+    page = 0,
+    size = 5,
+    relationType?: string
+  ): Promise<PageResponse<NodeRelationEdge>> {
+    return api.get<PageResponse<NodeRelationEdge>>(
+      `/nodes/${encodeURIComponent(nodeId)}/relations/sources`,
+      { params: { page, size, relationType: relationType || undefined } }
+    );
+  }
+
+  async getNodeRelationTargets(
+    nodeId: string,
+    page = 0,
+    size = 5,
+    relationType?: string
+  ): Promise<PageResponse<NodeRelationEdge>> {
+    return api.get<PageResponse<NodeRelationEdge>>(
+      `/nodes/${encodeURIComponent(nodeId)}/relations/targets`,
+      { params: { page, size, relationType: relationType || undefined } }
+    );
+  }
+
+  async getNodeRelationVersions(
+    nodeId: string,
+    page = 0,
+    size = 5,
+    majorOnly = false
+  ): Promise<Version[]> {
+    const response = await api.get<PageResponse<ApiVersionResponse>>(
+      `/nodes/${encodeURIComponent(nodeId)}/relations/versions`,
+      { params: { page, size, majorOnly } }
+    );
+    return (response.content || []).map((version) => ({
+      id: version.id,
+      documentId: version.documentId || nodeId,
+      versionLabel: version.versionLabel,
+      comment: version.comment,
+      created: version.createdDate,
+      creator: version.creator,
+      size: version.size,
+      isMajor: version.major,
+      mimeType: version.mimeType,
+      contentHash: version.contentHash,
+      contentId: version.contentId,
+      status: version.status,
+      checkoutBaseline: version.checkoutBaseline,
+      checkoutCurrent: version.checkoutCurrent,
+    }));
+  }
+
+  async getNodeRelationCheckout(nodeId: string): Promise<NodeCheckoutRelation> {
+    return api.get<NodeCheckoutRelation>(`/nodes/${encodeURIComponent(nodeId)}/relations/checkout`);
+  }
+
+  async getNodeRelationCheckoutGraph(nodeId: string): Promise<NodeCheckoutGraph> {
+    const graph = await api.get<{
+      nodeId: string;
+      document: boolean;
+      checkedOut: boolean;
+      checkoutUser?: string | null;
+      checkoutDate?: string | null;
+      documentNode?: NodeCheckoutGraphNode | null;
+      workingCopyNode?: NodeCheckoutGraphNode | null;
+      destinationNode?: NodeCheckoutGraphNode | null;
+      baselineVersion?: ApiVersionResponse | null;
+      currentVersion?: ApiVersionResponse | null;
+      nodes?: NodeCheckoutGraphNode[] | null;
+      edges?: NodeCheckoutGraphEdge[] | null;
+      canCheckIn: boolean;
+      canCancelCheckout: boolean;
+      canKeepCheckedOut: boolean;
+      blockingReason?: string | null;
+    }>(`/nodes/${encodeURIComponent(nodeId)}/relations/checkout-graph`);
+    const mapVersion = (version?: ApiVersionResponse | null): Version | null => (version ? ({
+      id: version.id,
+      documentId: version.documentId || nodeId,
+      versionLabel: version.versionLabel,
+      comment: version.comment,
+      created: version.createdDate,
+      creator: version.creator,
+      size: version.size,
+      isMajor: version.major,
+      mimeType: version.mimeType,
+      contentHash: version.contentHash,
+      contentId: version.contentId,
+      status: version.status,
+      checkoutBaseline: version.checkoutBaseline,
+      checkoutCurrent: version.checkoutCurrent,
+    }) : null);
+
+    return {
+      nodeId: graph.nodeId,
+      document: graph.document,
+      checkedOut: graph.checkedOut,
+      checkoutUser: graph.checkoutUser,
+      checkoutDate: graph.checkoutDate,
+      documentNode: graph.documentNode ?? null,
+      workingCopyNode: graph.workingCopyNode ?? null,
+      destinationNode: graph.destinationNode ?? null,
+      baselineVersion: mapVersion(graph.baselineVersion),
+      currentVersion: mapVersion(graph.currentVersion),
+      nodes: graph.nodes || [],
+      edges: graph.edges || [],
+      canCheckIn: graph.canCheckIn,
+      canCancelCheckout: graph.canCancelCheckout,
+      canKeepCheckedOut: graph.canKeepCheckedOut,
+      blockingReason: graph.blockingReason,
+    };
+  }
+
+  async getNodeRelationRenditions(
+    nodeId: string,
+    page = 0,
+    size = 5
+  ): Promise<NodeRenditionRelation[]> {
+    const response = await api.get<PageResponse<NodeRenditionRelation>>(
+      `/nodes/${encodeURIComponent(nodeId)}/relations/renditions`,
+      { params: { page, size } }
+    );
+    return response.content || [];
+  }
+
+  async getNodeRelationRendition(
+    nodeId: string,
+    renditionId: string
+  ): Promise<NodeRenditionRelation> {
+    return api.get<NodeRenditionRelation>(
+      `/nodes/${encodeURIComponent(nodeId)}/relations/renditions/${encodeURIComponent(renditionId)}`
+    );
+  }
+
+  async getNodeRenditionRelationSummary(nodeId: string): Promise<NodeRenditionRelationSummary> {
+    return api.get<NodeRenditionRelationSummary>(
+      `/nodes/${encodeURIComponent(nodeId)}/relations/renditions/summary`
+    );
+  }
+
+  async getNodeRenditionDefinitions(nodeId: string): Promise<NodeRenditionDefinitionStatus[]> {
+    return api.get<NodeRenditionDefinitionStatus[]>(
+      `/nodes/${encodeURIComponent(nodeId)}/renditions/definitions`
+    );
+  }
+
+  async requeueNodeRendition(
+    nodeId: string,
+    renditionKey: string,
+    force = false
+  ): Promise<NodeRenditionMutationResponse> {
+    return api.post<NodeRenditionMutationResponse>(
+      `/nodes/${encodeURIComponent(nodeId)}/renditions/${encodeURIComponent(renditionKey)}/requeue`,
+      null,
+      { params: { force } }
+    );
+  }
+
+  async invalidateNodeRendition(
+    nodeId: string,
+    renditionKey: string,
+    options?: {
+      reason?: string;
+      requeue?: boolean;
+      forceQueue?: boolean;
+    }
+  ): Promise<NodeRenditionMutationResponse> {
+    return api.post<NodeRenditionMutationResponse>(
+      `/nodes/${encodeURIComponent(nodeId)}/renditions/${encodeURIComponent(renditionKey)}/invalidate`,
+      null,
+      {
+        params: {
+          reason: options?.reason,
+          requeue: options?.requeue ?? false,
+          forceQueue: options?.forceQueue ?? true,
+        },
+      }
+    );
   }
 
   async findSimilar(documentId: string, maxResults = 5): Promise<Node[]> {
@@ -568,10 +1681,153 @@ class NodeService {
     });
   }
 
+  async cancelQueuedPreview(nodeId: string): Promise<PreviewQueueCancelStatus> {
+    return api.post<PreviewQueueCancelStatus>(`/documents/${nodeId}/preview/queue/cancel`);
+  }
+
+  async repairPreview(
+    nodeId: string,
+    options?: {
+      forceInvalidate?: boolean;
+      requeue?: boolean;
+      forceQueue?: boolean;
+    }
+  ): Promise<PreviewRepairStatus> {
+    return api.post<PreviewRepairStatus>(`/documents/${nodeId}/preview/repair`, null, {
+      params: {
+        forceInvalidate: options?.forceInvalidate ?? true,
+        requeue: options?.requeue ?? true,
+        forceQueue: options?.forceQueue ?? true,
+      },
+    });
+  }
+
   async queueOcr(nodeId: string, force = false): Promise<OcrQueueStatus> {
     return api.post<OcrQueueStatus>(`/documents/${nodeId}/ocr/queue`, null, {
       params: { force },
     });
+  }
+
+  async getPreviewQueueBySearchCapabilities(): Promise<PreviewQueueSearchCapabilities> {
+    return api.get<PreviewQueueSearchCapabilities>('/search/preview/queue-failed/capabilities');
+  }
+
+  async queueFailedPreviewsBySearch(payload: {
+    query?: string;
+    filters?: SearchCriteria;
+    sortBy?: string;
+    sortDirection?: 'asc' | 'desc';
+    reason?: string;
+    maxDocuments?: number;
+    force?: boolean;
+    workerCount?: number;
+  }): Promise<PreviewQueueSearchBatchResult> {
+    return api.post<PreviewQueueSearchBatchResult>('/search/preview/queue-failed', payload);
+  }
+
+  async dryRunFailedPreviewsBySearch(payload: {
+    query?: string;
+    filters?: SearchCriteria;
+    sortBy?: string;
+    sortDirection?: 'asc' | 'desc';
+    reason?: string;
+    maxDocuments?: number;
+    force?: boolean;
+    workerCount?: number;
+  }): Promise<PreviewQueueSearchDryRunResult> {
+    return api.post<PreviewQueueSearchDryRunResult>('/search/preview/queue-failed/dry-run', payload);
+  }
+
+  async exportDryRunFailedPreviewsCsvBySearch(payload: {
+    query?: string;
+    filters?: SearchCriteria;
+    sortBy?: string;
+    sortDirection?: 'asc' | 'desc';
+    reason?: string;
+    maxDocuments?: number;
+    workerCount?: number;
+  }): Promise<Blob> {
+    return api.post<Blob>('/search/preview/queue-failed/dry-run/export', payload, {
+      responseType: 'blob',
+    });
+  }
+
+  async startDryRunFailedPreviewsCsvExportAsyncBySearch(payload: {
+    query?: string;
+    filters?: SearchCriteria;
+    sortBy?: string;
+    sortDirection?: 'asc' | 'desc';
+    reason?: string;
+    maxDocuments?: number;
+    workerCount?: number;
+  }): Promise<PreviewQueueSearchDryRunExportAsyncTask> {
+    return api.post<PreviewQueueSearchDryRunExportAsyncTask>('/search/preview/queue-failed/dry-run/export-async', payload);
+  }
+
+  async getDryRunFailedPreviewsCsvExportAsyncBySearchTask(taskId: string): Promise<PreviewQueueSearchDryRunExportAsyncTaskStatus> {
+    return api.get<PreviewQueueSearchDryRunExportAsyncTaskStatus>(
+      `/search/preview/queue-failed/dry-run/export-async/${encodeURIComponent(taskId)}`
+    );
+  }
+
+  async listDryRunFailedPreviewsCsvExportAsyncBySearchTasks(
+    limit = 20,
+    status?: string
+  ): Promise<PreviewQueueSearchDryRunExportAsyncTaskList> {
+    return api.get<PreviewQueueSearchDryRunExportAsyncTaskList>(
+      '/search/preview/queue-failed/dry-run/export-async',
+      {
+        params: {
+          limit,
+          ...(status ? { status } : {}),
+        },
+      }
+    );
+  }
+
+  async getDryRunFailedPreviewsCsvExportAsyncBySearchTasksSummary(
+    status?: string
+  ): Promise<PreviewQueueSearchDryRunExportAsyncTaskSummary> {
+    return api.get<PreviewQueueSearchDryRunExportAsyncTaskSummary>(
+      '/search/preview/queue-failed/dry-run/export-async/summary',
+      {
+        params: status ? { status } : undefined,
+      }
+    );
+  }
+
+  async cleanupDryRunFailedPreviewsCsvExportAsyncBySearchTasks(
+    status?: string
+  ): Promise<PreviewQueueSearchDryRunExportAsyncTaskCleanupResult> {
+    return api.post<PreviewQueueSearchDryRunExportAsyncTaskCleanupResult>(
+      '/search/preview/queue-failed/dry-run/export-async/cleanup',
+      null,
+      {
+        params: status ? { status } : undefined,
+      }
+    );
+  }
+
+  async cancelActiveDryRunFailedPreviewsCsvExportAsyncBySearchTasks(
+    status?: PreviewQueueSearchDryRunExportAsyncTaskActiveStatusFilter
+  ): Promise<PreviewQueueSearchDryRunExportAsyncTaskCancelActiveResult> {
+    return api.post<PreviewQueueSearchDryRunExportAsyncTaskCancelActiveResult>(
+      '/search/preview/queue-failed/dry-run/export-async/cancel-active',
+      {},
+      {
+        params: status ? { status } : undefined,
+      }
+    );
+  }
+
+  async cancelDryRunFailedPreviewsCsvExportAsyncBySearchTask(taskId: string): Promise<PreviewQueueSearchDryRunExportAsyncTaskStatus> {
+    return api.post<PreviewQueueSearchDryRunExportAsyncTaskStatus>(
+      `/search/preview/queue-failed/dry-run/export-async/${encodeURIComponent(taskId)}/cancel`
+    );
+  }
+
+  async downloadDryRunFailedPreviewsCsvExportAsyncBySearch(taskId: string): Promise<Blob> {
+    return api.getBlob(`/search/preview/queue-failed/dry-run/export-async/${encodeURIComponent(taskId)}/download`);
   }
 
   private mapSearchItemToNode(item: any): Node {
@@ -615,6 +1871,46 @@ class NodeService {
     return api.delete<Node>(`/nodes/${nodeId}/aspects/${aspect}`);
   }
 
+  // ---- peer / secondary-child associations --------------------------------
+
+  async getTargetAssociations(nodeId: string, assocType?: string): Promise<NodeRelationEdge[]> {
+    const params = assocType ? { assocType } : {};
+    return api.get<NodeRelationEdge[]>(`/nodes/${nodeId}/targets`, { params });
+  }
+
+  async createTargetAssociation(nodeId: string, targetId: string, assocType = 'cm:references'): Promise<NodeRelationEdge> {
+    return api.post<NodeRelationEdge>(`/nodes/${nodeId}/targets`, null, {
+      params: { targetId, assocType },
+    });
+  }
+
+  async removeTargetAssociation(nodeId: string, targetId: string): Promise<void> {
+    return api.delete(`/nodes/${nodeId}/targets/${targetId}`);
+  }
+
+  async getSourceAssociations(nodeId: string, assocType?: string): Promise<NodeRelationEdge[]> {
+    const params = assocType ? { assocType } : {};
+    return api.get<NodeRelationEdge[]>(`/nodes/${nodeId}/sources`, { params });
+  }
+
+  async addSecondaryChild(parentId: string, childId: string): Promise<NodeRelationEdge> {
+    return api.post<NodeRelationEdge>(`/nodes/${parentId}/secondary-children`, null, {
+      params: { childId },
+    });
+  }
+
+  async removeSecondaryChild(parentId: string, childId: string): Promise<void> {
+    return api.delete(`/nodes/${parentId}/secondary-children/${childId}`);
+  }
+
+  async getSecondaryChildren(nodeId: string): Promise<NodeRelationEdge[]> {
+    return api.get<NodeRelationEdge[]>(`/nodes/${nodeId}/secondary-children`);
+  }
+
+  async getSecondaryParents(nodeId: string): Promise<NodeRelationEdge[]> {
+    return api.get<NodeRelationEdge[]>(`/nodes/${nodeId}/secondary-parents`);
+  }
+
   async getVersionHistory(nodeId: string): Promise<Version[]> {
     const versions = await api.get<ApiVersionResponse[]>(`/documents/${nodeId}/versions`);
     return versions.map((version) => ({
@@ -630,6 +1926,8 @@ class NodeService {
       contentHash: version.contentHash,
       contentId: version.contentId,
       status: version.status,
+      checkoutBaseline: version.checkoutBaseline,
+      checkoutCurrent: version.checkoutCurrent,
     }));
   }
 
@@ -662,6 +1960,8 @@ class NodeService {
       contentHash: version.contentHash,
       contentId: version.contentId,
       status: version.status,
+      checkoutBaseline: version.checkoutBaseline,
+      checkoutCurrent: version.checkoutCurrent,
     }));
     return {
       versions,
@@ -672,11 +1972,18 @@ class NodeService {
     };
   }
 
-  async createVersion(nodeId: string, file: File, comment?: string, major = false): Promise<Version> {
+  async createVersion(
+    nodeId: string,
+    file: File,
+    comment?: string,
+    major = false,
+    keepCheckedOut = false,
+  ): Promise<Version> {
     const formData = new FormData();
     formData.append('file', file);
     if (comment) formData.append('comment', comment);
     formData.append('majorVersion', major.toString());
+    formData.append('keepCheckedOut', keepCheckedOut.toString());
 
     // Reuse check-in endpoint to create a new version (backend persists via VersionService).
     await api.post(`/documents/${nodeId}/checkin`, formData, {

@@ -1,4 +1,7 @@
-import { buildSearchCriteriaFromSavedSearch } from './savedSearchUtils';
+import {
+  buildAdvancedSearchStateFromSavedSearch,
+  buildSearchCriteriaFromSavedSearch,
+} from './savedSearchUtils';
 
 describe('savedSearchUtils', () => {
   it('maps previewStatuses, aspects, and properties from saved query filters into search criteria', () => {
@@ -63,6 +66,72 @@ describe('savedSearchUtils', () => {
     expect(criteria.maxSize).toBe(34);
     expect(criteria.folderId).toBe('00000000-0000-4000-8000-000000000999');
     expect(criteria.includeChildren).toBe(false);
+  });
+
+  it('builds advanced-search state from saved search using shared helper semantics', () => {
+    const state = buildAdvancedSearchStateFromSavedSearch({
+      id: 'saved-advanced-state',
+      userId: 'admin',
+      name: 'Advanced state',
+      createdAt: new Date().toISOString(),
+      queryParams: {
+        q: 'alpha',
+        filters: {
+          previewStatus: 'waiting,error',
+          locked: 'true',
+          lockedBy: 'carol',
+          checkedOut: 'true',
+          checkoutUser: 'alice',
+          dateRange: 'month',
+          mimeType: 'application/pdf',
+          createdByList: ['admin', 'editor'],
+          tags: 'tag-a,tag-b',
+          categories: ['cat-a'],
+          minSize: '8',
+          maxSize: 12,
+        },
+      },
+    });
+
+    expect(state).toEqual({
+      query: 'alpha',
+      previewStatuses: ['QUEUED', 'FAILED'],
+      lockState: 'locked',
+      lockOwner: 'carol',
+      checkoutState: 'checkedOut',
+      checkoutUser: 'alice',
+      dateRange: 'month',
+      mimeTypes: ['application/pdf'],
+      creators: ['admin', 'editor'],
+      tags: ['tag-a', 'tag-b'],
+      categories: ['cat-a'],
+      minSize: 8,
+      maxSize: 12,
+    });
+  });
+
+  it('maps lock and checkout filters from saved search into search criteria', () => {
+    const criteria = buildSearchCriteriaFromSavedSearch({
+      id: 'saved-lock-checkout',
+      userId: 'admin',
+      name: 'Locked and checked out',
+      createdAt: new Date().toISOString(),
+      queryParams: {
+        query: 'alpha',
+        filters: {
+          locked: 'true',
+          lockedBy: 'carol',
+          checkedOut: 'true',
+          checkoutUser: 'alice',
+        },
+      },
+    });
+
+    expect(criteria.name).toBe('alpha');
+    expect(criteria.locked).toBe(true);
+    expect(criteria.lockedBy).toBe('carol');
+    expect(criteria.checkedOut).toBe(true);
+    expect(criteria.checkoutUser).toBe('alice');
   });
 
   it('supports legacy aliases for pathPrefix, createdFrom/to, and previewStatus', () => {
@@ -198,6 +267,24 @@ describe('savedSearchUtils', () => {
     expect(criteria.tags).toEqual(['stable-tag', '42', 'true']);
     expect(criteria.folderId).toBeUndefined();
     expect(criteria.includeChildren).toBe(true);
+  });
+
+  it('maps saved-search dateRange to modifiedFrom when no explicit modified range exists', () => {
+    const criteria = buildSearchCriteriaFromSavedSearch({
+      id: 'saved-date-range',
+      userId: 'admin',
+      name: 'Date range fallback',
+      createdAt: new Date().toISOString(),
+      queryParams: {
+        query: 'recent',
+        filters: {
+          dateRange: 'week',
+        },
+      },
+    });
+
+    expect(criteria.name).toBe('recent');
+    expect(criteria.modifiedFrom).toBeTruthy();
   });
 
   it('degrades gracefully when queryParams JSON is malformed', () => {

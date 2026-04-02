@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="032-add-async-task-acknowledgements" author="codex">
+        <createTable tableName="async_task_acknowledgements">
+            <column name="id" type="${uuid_type}">
+                <constraints nullable="false" primaryKey="true" primaryKeyName="pk_async_task_acknowledgements"/>
+            </column>
+            <column name="user_id" type="varchar(128)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="domain_key" type="varchar(64)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="task_id" type="varchar(191)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="task_status" type="varchar(64)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="task_fingerprint" type="varchar(512)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="task_timestamp" type="timestamp"/>
+            <column name="acknowledged_at" type="timestamp" defaultValueComputed="${now}">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <addUniqueConstraint
+            tableName="async_task_acknowledgements"
+            columnNames="user_id, task_fingerprint"
+            constraintName="uk_async_task_acknowledgements_user_fingerprint"/>
+
+        <createIndex
+            tableName="async_task_acknowledgements"
+            indexName="idx_async_task_ack_user">
+            <column name="user_id"/>
+        </createIndex>
+
+        <createIndex
+            tableName="async_task_acknowledgements"
+            indexName="idx_async_task_ack_domain_task">
+            <column name="user_id"/>
+            <column name="domain_key"/>
+            <column name="task_id"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

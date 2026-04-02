@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -17,6 +17,7 @@ import {
   Alert,
   Switch,
   FormControlLabel,
+  Tooltip,
 } from '@mui/material';
 import { useDropzone } from 'react-dropzone';
 import {
@@ -36,7 +37,13 @@ import { toast } from 'react-toastify';
 import authService from 'services/authService';
 import nodeService from 'services/nodeService';
 import { Node } from 'types';
+import RenditionDefinitionDialog from 'components/dialogs/RenditionDefinitionDialog';
 import { getEffectivePreviewStatus, getFailedPreviewMeta, isRetryablePreviewFailure } from 'utils/previewStatusUtils';
+import { buildPreviewQueueOverride, PreviewQueueOverride } from 'utils/previewQueueOverrideUtils';
+import {
+  applyUploadPreviewQueueLocalOverrides,
+  UploadedNodeWithQueueOverride,
+} from 'utils/uploadDialogPreviewQueueOverrideUtils';
 
 interface UploadFile {
   file: File;
@@ -66,6 +73,8 @@ const UploadDialog: React.FC = () => {
   const [uploadedItems, setUploadedItems] = useState<Node[]>([]);
   const [refreshingUploads, setRefreshingUploads] = useState(false);
   const [queueingPreviewIds, setQueueingPreviewIds] = useState<string[]>([]);
+  const [previewQueueStatusById, setPreviewQueueStatusById] = useState<Record<string, PreviewQueueOverride>>({});
+  const [renditionDialogNode, setRenditionDialogNode] = useState<Node | null>(null);
   const [lastStatusRefreshAt, setLastStatusRefreshAt] = useState<Date | null>(null);
   const [autoRefreshUploads, setAutoRefreshUploads] = useState(() => {
     if (typeof window === 'undefined') {
@@ -84,6 +93,7 @@ const UploadDialog: React.FC = () => {
     setUploadSummary(null);
     setUploadedItems([]);
     setRefreshingUploads(false);
+    setPreviewQueueStatusById({});
   };
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
@@ -142,6 +152,14 @@ const UploadDialog: React.FC = () => {
       next[existingIndex] = { ...prev[existingIndex], ...node };
       return next;
     });
+    setPreviewQueueStatusById((prev) => {
+      if (!(node.id in prev)) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[node.id];
+      return next;
+    });
     setLastStatusRefreshAt(new Date());
   }, []);
 
@@ -154,13 +172,33 @@ const UploadDialog: React.FC = () => {
       const refreshed = await Promise.all(
         uploadedItems.map(async (item) => {
           try {
-            return await nodeService.getNode(item.id);
+            return {
+              item: await nodeService.getNode(item.id),
+              refreshed: true,
+            };
           } catch (err) {
-            return item;
+            return {
+              item,
+              refreshed: false,
+            };
           }
         })
       );
-      setUploadedItems(refreshed);
+      setUploadedItems(refreshed.map((entry) => entry.item));
+      setPreviewQueueStatusById((prev) => {
+        if (!Object.keys(prev).length) {
+          return prev;
+        }
+        const next = { ...prev };
+        let changed = false;
+        refreshed.forEach((entry) => {
+          if (entry.refreshed && entry.item.id in next) {
+            delete next[entry.item.id];
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
     } finally {
       setRefreshingUploads(false);
       setLastStatusRefreshAt(new Date());
@@ -190,12 +228,21 @@ const UploadDialog: React.FC = () => {
 
   const handleDismissUploadedItem = (nodeId: string) => {
     setUploadedItems((prev) => prev.filter((item) => item.id !== nodeId));
+    setPreviewQueueStatusById((prev) => {
+      if (!(nodeId in prev)) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[nodeId];
+      return next;
+    });
   };
 
   const handleClearUploadedItems = () => {
     setUploadedItems([]);
     setQueueingPreviewIds([]);
     setLastStatusRefreshAt(null);
+    setPreviewQueueStatusById({});
   };
 
   const handleQueuePreview = useCallback(async (nodeId: string, force: boolean) => {
@@ -205,12 +252,10 @@ const UploadDialog: React.FC = () => {
     setQueueingPreviewIds((prev) => [...prev, nodeId]);
     try {
       const status = await nodeService.queuePreview(nodeId, force);
-      const nextStatus = status?.queued ? 'PROCESSING' : status?.previewStatus;
-      if (nextStatus) {
-        setUploadedItems((prev) =>
-          prev.map((item) => (item.id === nodeId ? { ...item, previewStatus: nextStatus } : item))
-        );
-      }
+      setPreviewQueueStatusById((prev) => ({
+        ...prev,
+        [nodeId]: buildPreviewQueueOverride(status),
+      }));
       if (status?.queued) {
         toast.success(status?.message || 'Preview queued');
       } else {
@@ -349,7 +394,12 @@ const UploadDialog: React.FC = () => {
     return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
   };
 
-  const getPreviewStatusMeta = (node: Node) => {
+  const previewAwareUploadedItems = useMemo(
+    () => applyUploadPreviewQueueLocalOverrides(uploadedItems, previewQueueStatusById),
+    [previewQueueStatusById, uploadedItems]
+  );
+
+  const getPreviewStatusMeta = (node: UploadedNodeWithQueueOverride) => {
     const mimeType = node.contentType || node.properties?.mimeType || node.properties?.contentType;
     const status = getEffectivePreviewStatus(
       node.previewStatus,
@@ -364,7 +414,11 @@ const UploadDialog: React.FC = () => {
       return { label: 'Preview ready', color: 'success' as const };
     }
     if (status === 'FAILED' || status === 'UNSUPPORTED') {
-      return getFailedPreviewMeta(mimeType, node.previewFailureCategory, node.previewFailureReason);
+      return getFailedPreviewMeta(
+        mimeType,
+        node.previewFailureCategory,
+        node.previewFailureReason
+      );
     }
     if (status === 'PROCESSING') {
       return { label: 'Preview processing', color: 'warning' as const };
@@ -376,7 +430,7 @@ const UploadDialog: React.FC = () => {
   };
 
   const showUploadedItems = Boolean(uploadSummary || uploadedItems.length > 0);
-  const statusSummary = uploadedItems.reduce(
+  const statusSummary = previewAwareUploadedItems.reduce(
     (acc, item) => {
       const mimeType = item.contentType || item.properties?.mimeType || item.properties?.contentType;
       const status = getEffectivePreviewStatus(
@@ -553,7 +607,7 @@ const UploadDialog: React.FC = () => {
               </Typography>
             ) : (
               <List dense>
-                {uploadedItems.map((item) => {
+                {previewAwareUploadedItems.map((item) => {
                   const previewMeta = getPreviewStatusMeta(item);
                   const mimeType = item.contentType || item.properties?.mimeType || item.properties?.contentType;
                   const effectiveStatus = getEffectivePreviewStatus(
@@ -574,16 +628,42 @@ const UploadDialog: React.FC = () => {
                   const showQueuePreview = showPreviewActions;
                   const showForceRebuild = showPreviewActions;
                   const isQueueing = queueingPreviewIds.includes(item.id);
+                  const previewFailureReason = item.previewFailureReason;
+                  const previewUpdatedAt = item.previewLastUpdated;
+                  const previewTooltip = [
+                    item.message || '',
+                    item.queueState ? `Queue state: ${item.queueState}` : '',
+                    previewUpdatedAt ? `Preview updated: ${new Date(previewUpdatedAt).toLocaleString()}` : '',
+                  ].filter(Boolean).join(' • ');
+                  const previewSecondaryText = (() => {
+                    if (effectiveStatus === 'FAILED' || effectiveStatus === 'UNSUPPORTED') {
+                      return previewFailureReason || previewMeta.label;
+                    }
+                    if (previewUpdatedAt) {
+                      return `${previewMeta.label} • Updated ${new Date(previewUpdatedAt).toLocaleTimeString()}`;
+                    }
+                    return previewMeta.label;
+                  })();
                   return (
                     <ListItem
                       key={item.id}
                       secondaryAction={
                         <Box display="flex" alignItems="center" gap={1}>
-                          <Chip
-                            label={previewMeta.label}
-                            size="small"
-                            color={previewMeta.color}
-                          />
+                          <Tooltip title={previewTooltip} placement="top-start" arrow disableHoverListener={!previewTooltip}>
+                            <Chip
+                              label={previewMeta.label}
+                              size="small"
+                              color={previewMeta.color}
+                            />
+                          </Tooltip>
+                          {item.nodeType === 'DOCUMENT' && (
+                            <Button
+                              size="small"
+                              onClick={() => setRenditionDialogNode(item)}
+                            >
+                              Rendition Registry
+                            </Button>
+                          )}
                           {showForceRebuild && (
                             <>
                               {showQueuePreview && (
@@ -620,7 +700,7 @@ const UploadDialog: React.FC = () => {
                       </ListItemIcon>
                       <ListItemText
                         primary={item.name}
-                        secondary={item.previewFailureReason || item.previewStatus || 'Preview pending'}
+                        secondary={previewSecondaryText}
                       />
                     </ListItem>
                   );
@@ -713,6 +793,12 @@ const UploadDialog: React.FC = () => {
           Upload {files.length > 0 && `(${files.length})`}
         </Button>
       </DialogActions>
+      <RenditionDefinitionDialog
+        open={Boolean(renditionDialogNode)}
+        nodeId={renditionDialogNode?.id || null}
+        nodeName={renditionDialogNode?.name}
+        onClose={() => setRenditionDialogNode(null)}
+      />
     </Dialog>
   );
 };

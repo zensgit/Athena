@@ -36,6 +36,7 @@ interface UIState {
   tagManagerOpen: boolean;
   categoryManagerOpen: boolean;
   shareLinkManagerOpen: boolean;
+  associationManagerOpen: boolean;
   mlSuggestionsOpen: boolean;
   selectedNodeId: string | null;
 }
@@ -44,6 +45,10 @@ export interface SearchPrefill {
   name?: string;
   contentType?: string;
   previewStatuses?: string[];
+  locked?: boolean;
+  lockedBy?: string;
+  checkedOut?: boolean;
+  checkoutUser?: string;
   aspects?: string[];
   properties?: Record<string, any>;
   createdBy?: string;
@@ -78,6 +83,7 @@ const initialState: UIState = {
   tagManagerOpen: false,
   categoryManagerOpen: false,
   shareLinkManagerOpen: false,
+  associationManagerOpen: false,
   mlSuggestionsOpen: false,
   selectedNodeId: null,
 };
@@ -152,6 +158,9 @@ const uiSlice = createSlice({
     setShareLinkManagerOpen: (state, action: PayloadAction<boolean>) => {
       state.shareLinkManagerOpen = action.payload;
     },
+    setAssociationManagerOpen: (state, action: PayloadAction<boolean>) => {
+      state.associationManagerOpen = action.payload;
+    },
     setMlSuggestionsOpen: (state, action: PayloadAction<boolean>) => {
       state.mlSuggestionsOpen = action.payload;
     },
@@ -167,6 +176,7 @@ const uiSlice = createSlice({
       state.tagManagerOpen = false;
       state.categoryManagerOpen = false;
       state.shareLinkManagerOpen = false;
+      state.associationManagerOpen = false;
       state.mlSuggestionsOpen = false;
     },
   },
@@ -190,6 +200,7 @@ export const {
   setTagManagerOpen,
   setCategoryManagerOpen,
   setShareLinkManagerOpen,
+  setAssociationManagerOpen,
   setMlSuggestionsOpen,
   setSelectedNodeId,
   closeAllDialogs,

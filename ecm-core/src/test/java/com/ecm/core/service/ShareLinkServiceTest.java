@@ -4,6 +4,7 @@ import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Permission.PermissionType;
 import com.ecm.core.entity.ShareLink;
 import com.ecm.core.repository.NodeRepository;
+import com.ecm.core.repository.ShareLinkAccessLogRepository;
 import com.ecm.core.repository.ShareLinkRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -30,6 +31,9 @@ class ShareLinkServiceTest {
 
     @Mock
     private ShareLinkRepository shareLinkRepository;
+
+    @Mock
+    private ShareLinkAccessLogRepository accessLogRepository;
 
     @Mock
     private NodeRepository nodeRepository;

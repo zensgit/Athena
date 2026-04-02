@@ -17,7 +17,9 @@ public record VersionDto(
     String mimeType,
     String contentHash,
     String contentId,
-    String status
+    String status,
+    boolean checkoutBaseline,
+    boolean checkoutCurrent
 ) {
     public static VersionDto from(Version version) {
         if (version == null) {
@@ -25,6 +27,17 @@ public record VersionDto(
         }
 
         UUID documentId = version.getDocument() != null ? version.getDocument().getId() : null;
+        String checkoutBaselineVersionId = version.getDocument() != null
+            ? version.getDocument().getCheckoutBaselineVersionId()
+            : null;
+        boolean checkoutBaseline = version.getId() != null
+            && checkoutBaselineVersionId != null
+            && version.getId().toString().equals(checkoutBaselineVersionId);
+        boolean checkoutCurrent = version.getDocument() != null
+            && version.getDocument().getCurrentVersion() != null
+            && version.getDocument().getCurrentVersion().getId() != null
+            && version.getId() != null
+            && version.getId().equals(version.getDocument().getCurrentVersion().getId());
         return new VersionDto(
             version.getId(),
             documentId,
@@ -37,7 +50,9 @@ public record VersionDto(
             version.getMimeType(),
             version.getContentHash(),
             version.getContentId(),
-            version.getStatus() != null ? version.getStatus().name() : null
+            version.getStatus() != null ? version.getStatus().name() : null,
+            checkoutBaseline,
+            checkoutCurrent
         );
     }
 }
