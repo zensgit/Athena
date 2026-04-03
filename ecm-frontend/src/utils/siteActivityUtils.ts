@@ -9,10 +9,21 @@ export type ActivityTargetKind = 'USER' | 'SITE' | 'NODE';
 
 const ACTIVITY_LABELS: Record<string, string> = {
   'comment.added': 'Comment Added',
+  'calendar.created': 'Calendar Event Created',
+  'calendar.deleted': 'Calendar Event Deleted',
+  'calendar.updated': 'Calendar Event Updated',
+  'discussion.reply.created': 'Discussion Reply Added',
+  'discussion.reply.deleted': 'Discussion Reply Deleted',
+  'discussion.reply.updated': 'Discussion Reply Updated',
+  'discussion.topic.created': 'Discussion Topic Created',
+  'discussion.topic.deleted': 'Discussion Topic Deleted',
+  'discussion.topic.updated': 'Discussion Topic Updated',
+  'node.archived': 'Node Archived',
   'node.created': 'Node Created',
   'node.deleted': 'Node Deleted',
   'node.locked': 'Node Locked',
   'node.moved': 'Node Moved',
+  'node.restored': 'Node Restored',
   'node.unlocked': 'Node Unlocked',
   'node.updated': 'Node Updated',
   'site.archived': 'Site Archived',
@@ -73,6 +84,28 @@ export const formatActivitySummary = (activity: ActivityDto): string => {
       return `Rejected ${role?.toLowerCase() ?? 'membership'} request.`;
     case 'site.membership.withdrawn':
       return 'Withdrawn membership request.';
+    case 'discussion.topic.created':
+      return `Created discussion topic ${title ?? 'topic'}.`;
+    case 'discussion.topic.updated':
+      return `Updated discussion topic ${title ?? 'topic'}${status ? ` (${status.toLowerCase()})` : ''}.`;
+    case 'discussion.topic.deleted':
+      return `Deleted discussion topic ${title ?? 'topic'}.`;
+    case 'discussion.reply.created':
+      return `Added a reply to ${title ?? 'discussion topic'}.`;
+    case 'discussion.reply.updated':
+      return `Updated a reply in ${title ?? 'discussion topic'}.`;
+    case 'discussion.reply.deleted':
+      return `Deleted a reply from ${title ?? 'discussion topic'}.`;
+    case 'calendar.created':
+      return `Created calendar event ${title ?? 'event'}.`;
+    case 'calendar.updated':
+      return `Updated calendar event ${title ?? 'event'}.`;
+    case 'calendar.deleted':
+      return `Deleted calendar event ${title ?? 'event'}.`;
+    case 'node.archived':
+      return `Archived ${activity.nodeName ?? 'node'}${getSummaryString(summary, 'archiveStoreTier') ? ` to ${String(getSummaryString(summary, 'archiveStoreTier')).toLowerCase()} storage` : ''}.`;
+    case 'node.restored':
+      return `Restored ${activity.nodeName ?? 'node'} to hot storage.`;
     case 'version.created':
       return versionLabel ? `Created version ${versionLabel}.` : 'Created a new version.';
     default:

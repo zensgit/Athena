@@ -12,6 +12,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.UUID;
 
@@ -23,6 +24,7 @@ public class DiscussionService {
     private final DiscussionTopicRepository topicRepo;
     private final DiscussionReplyRepository replyRepo;
     private final SecurityService securityService;
+    private final ActivityEventListener activityEventListener;
 
     // ------------------------------------------------------------------ topics
 
@@ -36,7 +38,14 @@ public class DiscussionService {
         topic.setTitle(title.trim());
         topic.setContent(content);
         if (tags != null) topic.setTags(tags);
-        return topicRepo.save(topic);
+        DiscussionTopic saved = topicRepo.save(topic);
+        activityEventListener.postSiteActivity(
+            "discussion.topic.created",
+            securityService.getCurrentUser(),
+            siteId,
+            Map.of("topicId", saved.getId().toString(), "title", saved.getTitle())
+        );
+        return saved;
     }
 
     @Transactional(readOnly = true)
@@ -66,13 +75,26 @@ public class DiscussionService {
         }
         if (content != null) topic.setContent(content);
         if (status != null) topic.setStatus(status);
-        return topicRepo.save(topic);
+        DiscussionTopic saved = topicRepo.save(topic);
+        activityEventListener.postSiteActivity(
+            "discussion.topic.updated",
+            securityService.getCurrentUser(),
+            topic.getSiteId(),
+            Map.of("topicId", saved.getId().toString(), "title", saved.getTitle(), "status", saved.getStatus().name())
+        );
+        return saved;
     }
 
     @Transactional
     public void deleteTopic(UUID topicId) {
         DiscussionTopic topic = getTopic(topicId);
         requireTopicAuthorOrAdmin(topic);
+        activityEventListener.postSiteActivity(
+            "discussion.topic.deleted",
+            securityService.getCurrentUser(),
+            topic.getSiteId(),
+            Map.of("topicId", topic.getId().toString(), "title", topic.getTitle())
+        );
         topicRepo.delete(topic);
     }
 
@@ -98,7 +120,14 @@ public class DiscussionService {
         reply.setTopic(topic);
         reply.setContent(content.trim());
         reply.setParentReplyId(parentReplyId);
-        return replyRepo.save(reply);
+        DiscussionReply saved = replyRepo.save(reply);
+        activityEventListener.postSiteActivity(
+            "discussion.reply.created",
+            securityService.getCurrentUser(),
+            topic.getSiteId(),
+            Map.of("topicId", topic.getId().toString(), "replyId", saved.getId().toString(), "title", topic.getTitle())
+        );
+        return saved;
     }
 
     @Transactional(readOnly = true)
@@ -115,7 +144,14 @@ public class DiscussionService {
             throw new SecurityException("Only reply author or admin can edit");
         }
         reply.setContent(content.trim());
-        return replyRepo.save(reply);
+        DiscussionReply saved = replyRepo.save(reply);
+        activityEventListener.postSiteActivity(
+            "discussion.reply.updated",
+            securityService.getCurrentUser(),
+            saved.getTopic().getSiteId(),
+            Map.of("topicId", saved.getTopic().getId().toString(), "replyId", saved.getId().toString(), "title", saved.getTopic().getTitle())
+        );
+        return saved;
     }
 
     @Transactional
@@ -126,6 +162,12 @@ public class DiscussionService {
         if (!reply.getCreatedBy().equals(currentUser) && !securityService.hasRole("ROLE_ADMIN")) {
             throw new SecurityException("Only reply author or admin can delete");
         }
+        activityEventListener.postSiteActivity(
+            "discussion.reply.deleted",
+            securityService.getCurrentUser(),
+            reply.getTopic().getSiteId(),
+            Map.of("topicId", reply.getTopic().getId().toString(), "replyId", reply.getId().toString(), "title", reply.getTopic().getTitle())
+        );
         replyRepo.delete(reply);
     }
 }

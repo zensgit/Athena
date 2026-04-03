@@ -22,6 +22,7 @@ import DiscussionPage from './pages/DiscussionPage';
 import BlogPage from './pages/BlogPage';
 import CalendarPage from './pages/CalendarPage';
 import BulkImportPage from './pages/BulkImportPage';
+import ContentArchivePage from './pages/ContentArchivePage';
 import WebhookSubscriptionsPage from './pages/WebhookSubscriptionsPage';
 import PermissionTemplatesPage from './pages/PermissionTemplatesPage';
 import EditorPage from './pages/EditorPage';
@@ -365,6 +366,16 @@ const App: React.FC = () => {
                 <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
                   <MainLayout>
                     <BulkImportPage />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/admin/archive"
+              element={
+                <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
+                  <MainLayout>
+                    <ContentArchivePage />
                   </MainLayout>
                 </PrivateRoute>
               }

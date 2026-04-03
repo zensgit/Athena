@@ -3,6 +3,7 @@ package com.ecm.core.repository;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Node;
+import com.ecm.core.entity.Node.ArchiveStatus;
 import com.ecm.core.entity.Node.NodeStatus;
 import com.ecm.core.model.Category;
 import com.ecm.core.model.Tag;
@@ -65,6 +66,8 @@ public interface NodeRepository extends JpaRepository<Node, UUID>, JpaSpecificat
     
     @Query("SELECT n FROM Node n WHERE n.status = :status AND n.deleted = false")
     List<Node> findByStatus(@Param("status") NodeStatus status);
+
+    Page<Node> findByArchiveStatusAndDeletedFalseOrderByArchivedDateDesc(ArchiveStatus archiveStatus, Pageable pageable);
     
     @Query(value = "SELECT * FROM nodes WHERE metadata @> :metadata AND is_deleted = false", nativeQuery = true)
     List<Node> findByMetadata(@Param("metadata") String metadata);

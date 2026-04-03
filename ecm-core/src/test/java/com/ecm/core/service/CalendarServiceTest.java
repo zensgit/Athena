@@ -140,6 +140,7 @@ class CalendarServiceTest {
             when(securityService.getCurrentUser()).thenReturn("alice");
 
             service.deleteEvent(event.getId());
+            verify(activityEventListener).postSiteActivity(eq("calendar.deleted"), eq("alice"), eq("finance"), anyMap());
             verify(calendarRepo).delete(event);
         }
 

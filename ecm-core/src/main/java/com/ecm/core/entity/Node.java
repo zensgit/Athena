@@ -20,7 +20,8 @@ import java.util.*;
     @Index(name = "idx_node_path", columnList = "path"),
     @Index(name = "idx_node_parent", columnList = "parent_id"),
     @Index(name = "idx_node_type", columnList = "node_type"),
-    @Index(name = "idx_node_name", columnList = "name")
+    @Index(name = "idx_node_name", columnList = "name"),
+    @Index(name = "idx_node_archive_status", columnList = "archive_status")
 })
 @Inheritance(strategy = InheritanceType.JOINED)
 @DiscriminatorColumn(name = "node_type", discriminatorType = DiscriminatorType.STRING)
@@ -119,6 +120,20 @@ public abstract class Node extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
     private NodeStatus status = NodeStatus.ACTIVE;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "archive_status", nullable = false, length = 20)
+    private ArchiveStatus archiveStatus = ArchiveStatus.LIVE;
+
+    @Column(name = "archived_date")
+    private LocalDateTime archivedDate;
+
+    @Column(name = "archived_by")
+    private String archivedBy;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "archive_store_tier", nullable = false, length = 20)
+    private ArchiveStoreTier archiveStoreTier = ArchiveStoreTier.HOT;
     
     public abstract NodeType getNodeType();
     
@@ -198,6 +213,19 @@ public abstract class Node extends BaseEntity {
         PENDING_APPROVAL,
         APPROVED,
         REJECTED
+    }
+
+    public enum ArchiveStatus {
+        LIVE,
+        ARCHIVED,
+        RESTORING
+    }
+
+    public enum ArchiveStoreTier {
+        HOT,
+        WARM,
+        COLD,
+        GLACIER
     }
 
     public boolean hasAspect(String aspectName) {

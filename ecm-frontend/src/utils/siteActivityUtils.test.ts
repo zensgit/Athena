@@ -29,6 +29,40 @@ describe('siteActivityUtils', () => {
     expect(formatActivitySummary(buildActivity())).toBe('Changed alice to manager.');
   });
 
+  it('formats discussion and calendar summaries', () => {
+    expect(
+      formatActivitySummary(
+        buildActivity({
+          activityType: 'discussion.topic.created',
+          summary: { title: 'Q1 Planning' },
+          nodeId: null,
+          nodeName: null,
+        })
+      )
+    ).toBe('Created discussion topic Q1 Planning.');
+
+    expect(
+      formatActivitySummary(
+        buildActivity({
+          activityType: 'calendar.deleted',
+          summary: { title: 'Board Meeting' },
+          nodeId: null,
+          nodeName: null,
+        })
+      )
+    ).toBe('Deleted calendar event Board Meeting.');
+
+    expect(
+      formatActivitySummary(
+        buildActivity({
+          activityType: 'node.archived',
+          summary: { action: 'archived', archiveStoreTier: 'GLACIER' },
+          nodeName: 'spec.docx',
+        })
+      )
+    ).toBe('Archived spec.docx to glacier storage.');
+  });
+
   it('formats version activity summary from version label', () => {
     expect(
       formatActivitySummary(

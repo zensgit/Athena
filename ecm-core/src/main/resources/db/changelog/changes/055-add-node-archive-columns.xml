@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="055-add-node-archive-columns" author="codex">
+        <addColumn tableName="nodes">
+            <column name="archive_status" type="varchar(20)" defaultValue="LIVE">
+                <constraints nullable="false"/>
+            </column>
+            <column name="archived_date" type="timestamp"/>
+            <column name="archived_by" type="varchar(255)"/>
+            <column name="archive_store_tier" type="varchar(20)" defaultValue="HOT">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+
+        <createIndex tableName="nodes" indexName="idx_nodes_archive_status">
+            <column name="archive_status"/>
+        </createIndex>
+
+        <createIndex tableName="nodes" indexName="idx_nodes_archived_date">
+            <column name="archived_date"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

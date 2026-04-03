@@ -129,6 +129,10 @@ public class ActivityEventListener {
         }
     }
 
+    public void postNodeActivity(String activityType, String userId, Node node, Map<String, Object> summary) {
+        post(activityType, userId, node, summary);
+    }
+
     // ---- internal -----------------------------------------------------------
 
     private void post(String type, String username, Node node, Map<String, Object> summary) {

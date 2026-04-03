@@ -20,6 +20,8 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -28,12 +30,13 @@ class DiscussionServiceTest {
     @Mock private DiscussionTopicRepository topicRepo;
     @Mock private DiscussionReplyRepository replyRepo;
     @Mock private SecurityService securityService;
+    @Mock private ActivityEventListener activityEventListener;
 
     private DiscussionService service;
 
     @BeforeEach
     void setUp() {
-        service = new DiscussionService(topicRepo, replyRepo, securityService);
+        service = new DiscussionService(topicRepo, replyRepo, securityService, activityEventListener);
     }
 
     @Nested
@@ -43,6 +46,7 @@ class DiscussionServiceTest {
         @Test
         @DisplayName("creates topic with title and siteId")
         void createsTopic() {
+            when(securityService.getCurrentUser()).thenReturn("alice");
             when(topicRepo.save(any())).thenAnswer(inv -> {
                 DiscussionTopic t = inv.getArgument(0);
                 t.setId(UUID.randomUUID());
@@ -55,6 +59,12 @@ class DiscussionServiceTest {
             assertEquals("Q1 Planning", t.getTitle());
             assertEquals(TopicStatus.OPEN, t.getStatus());
             assertEquals(List.of("planning"), t.getTags());
+            verify(activityEventListener).postSiteActivity(
+                eq("discussion.topic.created"),
+                eq("alice"),
+                eq("finance"),
+                anyMap()
+            );
         }
 
         @Test
@@ -72,6 +82,7 @@ class DiscussionServiceTest {
             topic.setTitle("Old");
             topic.setStatus(TopicStatus.OPEN);
             topic.setCreatedBy("alice");
+            topic.setSiteId("finance");
             when(topicRepo.findById(topic.getId())).thenReturn(Optional.of(topic));
             when(securityService.getCurrentUser()).thenReturn("alice");
             when(topicRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -80,6 +91,12 @@ class DiscussionServiceTest {
 
             assertEquals("New Title", updated.getTitle());
             assertEquals(TopicStatus.PINNED, updated.getStatus());
+            verify(activityEventListener).postSiteActivity(
+                eq("discussion.topic.updated"),
+                eq("alice"),
+                eq("finance"),
+                anyMap()
+            );
         }
 
         @Test
@@ -130,11 +147,19 @@ class DiscussionServiceTest {
             DiscussionTopic topic = new DiscussionTopic();
             topic.setId(UUID.randomUUID());
             topic.setCreatedBy("alice");
+            topic.setSiteId("finance");
+            topic.setTitle("Q1 Planning");
             when(topicRepo.findById(topic.getId())).thenReturn(Optional.of(topic));
             when(securityService.getCurrentUser()).thenReturn("alice");
 
             service.deleteTopic(topic.getId());
 
+            verify(activityEventListener).postSiteActivity(
+                eq("discussion.topic.deleted"),
+                eq("alice"),
+                eq("finance"),
+                anyMap()
+            );
             verify(topicRepo).delete(topic);
         }
 
@@ -165,7 +190,10 @@ class DiscussionServiceTest {
             DiscussionTopic topic = new DiscussionTopic();
             topic.setId(topicId);
             topic.setStatus(TopicStatus.OPEN);
+            topic.setSiteId("finance");
+            topic.setTitle("Q1 Planning");
             when(topicRepo.findById(topicId)).thenReturn(Optional.of(topic));
+            when(securityService.getCurrentUser()).thenReturn("alice");
             when(replyRepo.save(any())).thenAnswer(inv -> {
                 DiscussionReply r = inv.getArgument(0);
                 r.setId(UUID.randomUUID());
@@ -176,6 +204,12 @@ class DiscussionServiceTest {
 
             assertEquals("Good idea!", reply.getContent());
             assertEquals(topicId, reply.getTopic().getId());
+            verify(activityEventListener).postSiteActivity(
+                eq("discussion.reply.created"),
+                eq("alice"),
+                eq("finance"),
+                anyMap()
+            );
         }
 
         @Test
@@ -205,6 +239,11 @@ class DiscussionServiceTest {
             reply.setId(UUID.randomUUID());
             reply.setCreatedBy("alice");
             reply.setContent("old");
+            DiscussionTopic topic = new DiscussionTopic();
+            topic.setId(UUID.randomUUID());
+            topic.setSiteId("finance");
+            topic.setTitle("Q1 Planning");
+            reply.setTopic(topic);
             when(replyRepo.findById(reply.getId())).thenReturn(Optional.of(reply));
             when(securityService.getCurrentUser()).thenReturn("alice");
             when(replyRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -212,6 +251,12 @@ class DiscussionServiceTest {
             DiscussionReply updated = service.updateReply(reply.getId(), "updated content");
 
             assertEquals("updated content", updated.getContent());
+            verify(activityEventListener).postSiteActivity(
+                eq("discussion.reply.updated"),
+                eq("alice"),
+                eq("finance"),
+                anyMap()
+            );
         }
 
         @Test
@@ -226,6 +271,31 @@ class DiscussionServiceTest {
 
             assertThrows(SecurityException.class,
                 () -> service.updateReply(reply.getId(), "hacked"));
+        }
+
+        @Test
+        @DisplayName("author can delete own reply and posts activity")
+        void authorDeletesReply() {
+            DiscussionReply reply = new DiscussionReply();
+            reply.setId(UUID.randomUUID());
+            reply.setCreatedBy("alice");
+            DiscussionTopic topic = new DiscussionTopic();
+            topic.setId(UUID.randomUUID());
+            topic.setSiteId("finance");
+            topic.setTitle("Q1 Planning");
+            reply.setTopic(topic);
+            when(replyRepo.findById(reply.getId())).thenReturn(Optional.of(reply));
+            when(securityService.getCurrentUser()).thenReturn("alice");
+
+            service.deleteReply(reply.getId());
+
+            verify(activityEventListener).postSiteActivity(
+                eq("discussion.reply.deleted"),
+                eq("alice"),
+                eq("finance"),
+                anyMap()
+            );
+            verify(replyRepo).delete(reply);
         }
     }
 }

@@ -78,6 +78,10 @@ public class CalendarService {
     public void deleteEvent(UUID eventId) {
         CalendarEvent event = getEvent(eventId);
         requireAuthorOrAdmin(event);
+        activityEventListener.postSiteActivity(
+            "calendar.deleted", securityService.getCurrentUser(), event.getSiteId(),
+            Map.of("eventId", event.getId().toString(), "title", event.getTitle())
+        );
         calendarRepo.delete(event);
     }
 

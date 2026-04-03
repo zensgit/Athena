@@ -22,6 +22,7 @@ import {
   CreateNewFolder,
   Search,
   AccountCircle,
+  Archive as ArchiveIcon,
   Logout,
   Settings,
   RestoreFromTrash,
@@ -479,6 +480,12 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                     <CloudUpload fontSize="small" />
                   </ListItemIcon>
                   <ListItemText>Bulk Import</ListItemText>
+                </MenuItem>
+                <MenuItem onClick={() => navigate('/admin/archive')}>
+                  <ListItemIcon>
+                    <ArchiveIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Content Archive</ListItemText>
                 </MenuItem>
               </>
             )}
