@@ -13,18 +13,29 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { CheckCircle, Delete, DoneAll, Refresh } from '@mui/icons-material';
+import { CheckCircle, Delete, DoneAll, OpenInNew, Refresh } from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import notificationService, { NotificationDto, NotificationPage } from 'services/notificationService';
+import {
+  formatNotificationLabel,
+  formatNotificationSummary,
+  getNotificationLinkTargets,
+} from 'utils/notificationUtils';
 
 type ViewMode = 'all' | 'unread';
 
 const NotificationsPage: React.FC = () => {
+  const navigate = useNavigate();
   const [mode, setMode] = useState<ViewMode>('unread');
   const [page, setPage] = useState(0);
   const [data, setData] = useState<NotificationPage | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
+
+  const notifyInboxChanged = () => {
+    window.dispatchEvent(new Event('athena:notifications-changed'));
+  };
 
   const load = async () => {
     setLoading(true);
@@ -47,6 +58,7 @@ const NotificationsPage: React.FC = () => {
     try {
       await notificationService.markRead(id);
       await load();
+      notifyInboxChanged();
     } catch { toast.error('Failed to mark as read'); }
   };
 
@@ -55,6 +67,7 @@ const NotificationsPage: React.FC = () => {
       const marked = await notificationService.markAllRead();
       toast.success(`${marked} notification${marked !== 1 ? 's' : ''} marked as read`);
       await load();
+      notifyInboxChanged();
     } catch { toast.error('Failed to mark all as read'); }
   };
 
@@ -62,7 +75,20 @@ const NotificationsPage: React.FC = () => {
     try {
       await notificationService.deleteNotification(id);
       await load();
+      notifyInboxChanged();
     } catch { toast.error('Failed to delete notification'); }
+  };
+
+  const handleOpenTarget = async (notification: NotificationDto, href: string) => {
+    if (!notification.read) {
+      try {
+        await notificationService.markRead(notification.id);
+        notifyInboxChanged();
+      } catch {
+        // Ignore mark-read failure and continue the drill-down action.
+      }
+    }
+    navigate(href);
   };
 
   const activityColor = (type: string) => {
@@ -126,14 +152,30 @@ const NotificationsPage: React.FC = () => {
                     <Box display="flex" gap={1.5} alignItems="center" flex={1}>
                       <Chip label={n.activityType || 'unknown'} size="small" color={activityColor(n.activityType)} variant="outlined" />
                       <Box>
+                        <Typography variant="body2" fontWeight={600}>
+                          {formatNotificationLabel(n)}
+                        </Typography>
                         <Typography variant="body2">
                           <strong>{n.actorUserId}</strong>
                           {n.nodeName && <> &middot; <em>{n.nodeName}</em></>}
                           {n.siteId && <> &middot; {n.siteId}</>}
                         </Typography>
-                        {n.summary?.action && (
-                          <Typography variant="caption" color="text.secondary">{String(n.summary.action)}</Typography>
-                        )}
+                        <Typography variant="caption" color="text.secondary" display="block">
+                          {formatNotificationSummary(n)}
+                        </Typography>
+                        <Stack direction="row" spacing={0.75} mt={0.75} flexWrap="wrap">
+                          {getNotificationLinkTargets(n).map((target) => (
+                            <Button
+                              key={`${n.id}-${target.label}`}
+                              size="small"
+                              variant="text"
+                              startIcon={<OpenInNew fontSize="small" />}
+                              onClick={() => void handleOpenTarget(n, target.href)}
+                            >
+                              {target.label}
+                            </Button>
+                          ))}
+                        </Stack>
                       </Box>
                     </Box>
                     <Box display="flex" alignItems="center" gap={0.5}>

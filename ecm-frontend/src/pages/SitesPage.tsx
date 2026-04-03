@@ -27,7 +27,8 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { Add, Delete, OpenInNew, Refresh, Archive, NotificationsActive, NotificationsOff } from '@mui/icons-material';
+import { Add, Delete, OpenInNew, Refresh, Archive, Notifications, NotificationsActive, NotificationsOff } from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import activityService, { ActivityDto } from 'services/activityService';
 import followingService from 'services/followingService';
@@ -50,6 +51,7 @@ import {
 const SITE_MEMBER_ROLE_OPTIONS: SiteMemberRole[] = ['MANAGER', 'COLLABORATOR', 'CONTRIBUTOR', 'CONSUMER'];
 
 const SitesPage: React.FC = () => {
+  const navigate = useNavigate();
   const { user } = useAppSelector((state) => state.auth);
   const effectiveUser = user ?? authService.getCurrentUser();
   const isAdmin = Boolean(effectiveUser?.roles?.includes('ROLE_ADMIN'));
@@ -520,13 +522,22 @@ const SitesPage: React.FC = () => {
                 <CardContent>
                   <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
                     <Typography variant="h6">Recent Activity</Typography>
-                    <Button
-                      size="small"
-                      startIcon={<OpenInNew />}
-                      onClick={() => window.open(`/activities?siteId=${encodeURIComponent(selectedSiteId)}`, '_blank')}
-                    >
-                      Open Feed
-                    </Button>
+                    <Stack direction="row" spacing={1}>
+                      <Button
+                        size="small"
+                        startIcon={<Notifications />}
+                        onClick={() => navigate('/notifications')}
+                      >
+                        Notifications
+                      </Button>
+                      <Button
+                        size="small"
+                        startIcon={<OpenInNew />}
+                        onClick={() => window.open(`/activities?siteId=${encodeURIComponent(selectedSiteId)}`, '_blank')}
+                      >
+                        Open Feed
+                      </Button>
+                    </Stack>
                   </Box>
                   {siteActivity.length === 0 ? (
                     <Typography variant="body2" color="text.secondary">No recent activity</Typography>

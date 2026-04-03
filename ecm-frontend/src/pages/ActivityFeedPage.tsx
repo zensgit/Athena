@@ -16,7 +16,8 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { Refresh } from '@mui/icons-material';
+import { Notifications, Refresh } from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import activityService, { ActivityPage } from 'services/activityService';
 import followingService, { FollowSubscriptionDto } from 'services/followingService';
@@ -35,6 +36,7 @@ import { getFollowTargetLink, groupFollowSubscriptions } from 'utils/followingUt
 type FeedScope = 'global' | 'mine' | 'site' | 'following';
 
 const ActivityFeedPage: React.FC = () => {
+  const navigate = useNavigate();
   const { user } = useAppSelector((state) => state.auth);
   const effectiveUser = user ?? authService.getCurrentUser();
 
@@ -209,6 +211,13 @@ const ActivityFeedPage: React.FC = () => {
               <MenuItem value="USER">Users</MenuItem>
             </Select>
           </FormControl>
+          <Button
+            variant="outlined"
+            startIcon={<Notifications />}
+            onClick={() => navigate('/notifications')}
+          >
+            Notifications
+          </Button>
           <Button variant="outlined" startIcon={<Refresh />} onClick={() => void load()} disabled={loading}>Refresh</Button>
         </Stack>
       </Box>

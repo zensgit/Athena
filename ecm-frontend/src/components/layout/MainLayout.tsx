@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
+  Badge,
   Box,
   AppBar,
   Toolbar,
@@ -42,6 +43,7 @@ import {
   PushPin,
   PushPinOutlined,
   People,
+  Notifications,
 } from '@mui/icons-material';
 import { alpha } from '@mui/material/styles';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -70,6 +72,7 @@ import ShareLinkManager from 'components/share/ShareLinkManager';
 import AssociationManager from 'components/dialogs/AssociationManager';
 import MLSuggestionsDialog from 'components/ml/MLSuggestionsDialog';
 import authService from 'services/authService';
+import notificationService from 'services/notificationService';
 import { buildSearchPrefillFromAdvancedSearchUrl } from 'utils/searchPrefillUtils';
 
 const DRAWER_WIDTH_STORAGE_KEY = 'athena.ecm.drawerWidth';
@@ -110,6 +113,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     return DEFAULT_DRAWER_WIDTH;
   });
   const [resizing, setResizing] = useState(false);
+  const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
 
   const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
@@ -240,6 +244,42 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     }
   }, [drawerWidth]);
 
+  useEffect(() => {
+    if (!effectiveUser?.username) {
+      setNotificationUnreadCount(0);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadNotificationUnreadCount = async () => {
+      try {
+        const count = await notificationService.getUnreadCount();
+        if (!cancelled) {
+          setNotificationUnreadCount(Number.isFinite(count) ? count : 0);
+        }
+      } catch {
+        if (!cancelled) {
+          setNotificationUnreadCount(0);
+        }
+      }
+    };
+
+    const handleNotificationRefresh = () => {
+      void loadNotificationUnreadCount();
+    };
+
+    void loadNotificationUnreadCount();
+    window.addEventListener('focus', handleNotificationRefresh);
+    window.addEventListener('athena:notifications-changed', handleNotificationRefresh);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', handleNotificationRefresh);
+      window.removeEventListener('athena:notifications-changed', handleNotificationRefresh);
+    };
+  }, [effectiveUser?.username, location.pathname, location.search]);
+
   return (
     <Box sx={{ display: 'flex', height: '100vh' }}>
       <AppBar
@@ -293,6 +333,17 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
 
           <IconButton color="inherit" aria-label="Search" onClick={handleSearch} sx={{ mr: 2 }}>
             <Search />
+          </IconButton>
+
+          <IconButton
+            color="inherit"
+            aria-label="Notifications"
+            onClick={() => navigate('/notifications')}
+            sx={{ mr: 1 }}
+          >
+            <Badge badgeContent={notificationUnreadCount} color="error" max={99}>
+              <Notifications />
+            </Badge>
           </IconButton>
 
           <IconButton
@@ -463,7 +514,9 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
             </MenuItem>
             <MenuItem onClick={() => navigate('/notifications')}>
               <ListItemIcon>
-                <People fontSize="small" />
+                <Badge badgeContent={notificationUnreadCount} color="error" max={99}>
+                  <Notifications fontSize="small" />
+                </Badge>
               </ListItemIcon>
               <ListItemText>Notifications</ListItemText>
             </MenuItem>
