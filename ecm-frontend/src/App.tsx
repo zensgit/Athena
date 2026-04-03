@@ -19,6 +19,7 @@ import SitesPage from './pages/SitesPage';
 import ActivityFeedPage from './pages/ActivityFeedPage';
 import NotificationsPage from './pages/NotificationsPage';
 import DiscussionPage from './pages/DiscussionPage';
+import BlogPage from './pages/BlogPage';
 import BulkImportPage from './pages/BulkImportPage';
 import WebhookSubscriptionsPage from './pages/WebhookSubscriptionsPage';
 import PermissionTemplatesPage from './pages/PermissionTemplatesPage';
@@ -313,6 +314,16 @@ const App: React.FC = () => {
                 <PrivateRoute>
                   <MainLayout>
                     <DiscussionPage />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/sites/:siteId/blog"
+              element={
+                <PrivateRoute>
+                  <MainLayout>
+                    <BlogPage />
                   </MainLayout>
                 </PrivateRoute>
               }

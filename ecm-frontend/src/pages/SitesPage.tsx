@@ -625,6 +625,15 @@ const SitesPage: React.FC = () => {
                   </Typography>
                 </CardContent>
               </Card>
+              <Card variant="outlined">
+                <CardContent>
+                  <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+                    <Typography variant="h6">Blog</Typography>
+                    <Button size="small" onClick={() => window.open(`/sites/${selectedSiteId}/blog`, '_blank')}>Open Blog</Button>
+                  </Box>
+                  <Typography variant="body2" color="text.secondary">Create and publish blog posts for this site.</Typography>
+                </CardContent>
+              </Card>
             </Stack>
           </Grid>
         </Grid>
