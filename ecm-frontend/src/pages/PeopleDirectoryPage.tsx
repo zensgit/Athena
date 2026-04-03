@@ -321,6 +321,7 @@ const PeopleDirectoryPage: React.FC = () => {
   const [selectedPreferences, setSelectedPreferences] = useState<PersonPreferences | null>(null);
   const [selectedPreferenceNamespace, setSelectedPreferenceNamespace] = useState('');
   const [selectedPreferenceNamespaces, setSelectedPreferenceNamespaces] = useState<string[]>([]);
+  const [followedUserIds, setFollowedUserIds] = useState<Set<string>>(new Set());
   const [isFollowingSelectedUser, setIsFollowingSelectedUser] = useState(false);
   const [followActionLoading, setFollowActionLoading] = useState(false);
   const [selectedActivities, setSelectedActivities] = useState<PersonActivityItem[]>([]);
@@ -416,6 +417,39 @@ const PeopleDirectoryPage: React.FC = () => {
       setSelectedUsername(authUser.username);
     }
   }, [authUser?.username, selectedUsername, selectedUsernameFromQuery]);
+
+  useEffect(() => {
+    if (!authUser?.username) {
+      setFollowedUserIds(new Set());
+      return;
+    }
+
+    let cancelled = false;
+
+    followingService
+      .list()
+      .then((subscriptions) => {
+        if (cancelled) {
+          return;
+        }
+        setFollowedUserIds(
+          new Set(
+            subscriptions
+              .filter((subscription) => subscription.targetType === 'USER')
+              .map((subscription) => subscription.targetId),
+          ),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setFollowedUserIds(new Set());
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authUser?.username]);
 
   useEffect(() => {
     let cancelled = false;
@@ -772,10 +806,20 @@ const PeopleDirectoryPage: React.FC = () => {
       if (isFollowingSelectedUser) {
         await followingService.unfollow('USER', activeUser.username);
         setIsFollowingSelectedUser(false);
+        setFollowedUserIds((previous) => {
+          const next = new Set(previous);
+          next.delete(activeUser.username);
+          return next;
+        });
         toast.success('User unfollowed');
       } else {
         await followingService.follow('USER', activeUser.username);
         setIsFollowingSelectedUser(true);
+        setFollowedUserIds((previous) => {
+          const next = new Set(previous);
+          next.add(activeUser.username);
+          return next;
+        });
         toast.success('User followed');
       }
     } catch {
@@ -1784,6 +1828,9 @@ const PeopleDirectoryPage: React.FC = () => {
                                   </Typography>
                                   {user.username === authUser?.username && (
                                     <Chip size="small" label="You" color="primary" variant="outlined" />
+                                  )}
+                                  {user.username !== authUser?.username && followedUserIds.has(user.username) && (
+                                    <Chip size="small" label="Following" color="primary" />
                                   )}
                                   {user.enabled === false && <Chip size="small" label="Disabled" color="default" />}
                                 </Stack>

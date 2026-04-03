@@ -455,6 +455,12 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
               </ListItemIcon>
               <ListItemText>Activity Feed</ListItemText>
             </MenuItem>
+            <MenuItem onClick={() => navigate('/activities?scope=following')}>
+              <ListItemIcon>
+                <PushPin fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>My Following</ListItemText>
+            </MenuItem>
             <MenuItem onClick={() => navigate('/saved-searches')}>
               <ListItemIcon>
                 <SavedSearchIcon fontSize="small" />

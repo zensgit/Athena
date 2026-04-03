@@ -77,6 +77,7 @@ test('account menu shows Tags/Categories for admin/editor roles', async () => {
   expect(screen.getByRole('menuitem', { name: 'System Status' })).toBeTruthy();
   expect(screen.getByRole('menuitem', { name: 'Workflow Processes' })).toBeTruthy();
   expect(screen.getByRole('menuitem', { name: 'People Directory' })).toBeTruthy();
+  expect(screen.getByRole('menuitem', { name: 'My Following' })).toBeTruthy();
 });
 
 test('account menu hides Tags/Categories for viewer role', async () => {
@@ -100,4 +101,5 @@ test('account menu hides Tags/Categories for viewer role', async () => {
   expect(screen.queryByRole('menuitem', { name: 'Webhooks' })).toBeNull();
   expect(screen.queryByRole('menuitem', { name: 'System Status' })).toBeNull();
   expect(screen.getByRole('menuitem', { name: 'People Directory' })).toBeTruthy();
+  expect(screen.getByRole('menuitem', { name: 'My Following' })).toBeTruthy();
 });

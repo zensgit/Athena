@@ -68,6 +68,7 @@ const SitesPage: React.FC = () => {
   const [members, setMembers] = useState<SiteMemberDto[]>([]);
   const [siteRequests, setSiteRequests] = useState<MembershipRequestDto[]>([]);
   const [siteActivity, setSiteActivity] = useState<ActivityDto[]>([]);
+  const [followedSiteIds, setFollowedSiteIds] = useState<Set<string>>(new Set());
   const [isFollowingSelectedSite, setIsFollowingSelectedSite] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
   const [addMemberName, setAddMemberName] = useState('');
@@ -89,13 +90,23 @@ const SitesPage: React.FC = () => {
   const load = async () => {
     setLoading(true);
     try {
-      const sitesData = await siteService.listSites(includeArchived);
+      const [sitesData, subscriptions] = await Promise.all([
+        siteService.listSites(includeArchived),
+        followingService.list().catch(() => []),
+      ]);
       // Load requests for all sites the user might care about
       const requestLists = await Promise.all(
         sitesData.map((s) => siteService.getMembershipRequests(s.siteId).catch(() => [] as MembershipRequestDto[]))
       );
       const requestsData = requestLists.flat().filter(
         (r) => !effectiveUser?.username || r.username === effectiveUser.username || isAdmin
+      );
+      setFollowedSiteIds(
+        new Set(
+          subscriptions
+            .filter((subscription) => subscription.targetType === 'SITE')
+            .map((subscription) => subscription.targetId),
+        ),
       );
       setSites(sitesData);
       setRequests(requestsData);
@@ -139,6 +150,15 @@ const SitesPage: React.FC = () => {
       setSiteRequests(r);
       setSiteActivity(a.content || []);
       setIsFollowingSelectedSite(following);
+      setFollowedSiteIds((previous) => {
+        const next = new Set(previous);
+        if (following) {
+          next.add(siteId);
+        } else {
+          next.delete(siteId);
+        }
+        return next;
+      });
     } catch {
       setIsFollowingSelectedSite(false);
     }
@@ -151,10 +171,20 @@ const SitesPage: React.FC = () => {
       if (isFollowingSelectedSite) {
         await followingService.unfollow('SITE', selectedSiteId);
         setIsFollowingSelectedSite(false);
+        setFollowedSiteIds((previous) => {
+          const next = new Set(previous);
+          next.delete(selectedSiteId);
+          return next;
+        });
         toast.success('Site unfollowed');
       } else {
         await followingService.follow('SITE', selectedSiteId);
         setIsFollowingSelectedSite(true);
+        setFollowedSiteIds((previous) => {
+          const next = new Set(previous);
+          next.add(selectedSiteId);
+          return next;
+        });
         toast.success('Site followed');
       }
     } catch {
@@ -317,7 +347,14 @@ const SitesPage: React.FC = () => {
                     {sites.map((site) => (
                       <TableRow key={site.siteId} hover selected={site.siteId === selectedSiteId} sx={{ cursor: 'pointer' }} onClick={() => void loadSiteDetail(site.siteId)}>
                         <TableCell><Typography variant="body2" fontWeight={500}>{site.siteId}</Typography></TableCell>
-                        <TableCell>{site.title}</TableCell>
+                        <TableCell>
+                          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                            <Typography variant="body2">{site.title}</Typography>
+                            {followedSiteIds.has(site.siteId) && (
+                              <Chip size="small" label="Following" color="primary" />
+                            )}
+                          </Stack>
+                        </TableCell>
                         <TableCell><Chip label={site.visibility} size="small" color={visibilityColor(site.visibility)} variant="outlined" /></TableCell>
                         <TableCell><Chip label={site.status} size="small" color={site.status === 'ACTIVE' ? 'success' : 'default'} /></TableCell>
                         <TableCell>
