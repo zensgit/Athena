@@ -394,6 +394,7 @@ public class FullTextSearchService {
             }
 
             b.filter(f -> f.term(t -> t.field("deleted").value(false)));
+            b.filter(f -> f.term(t -> t.field("archiveStatus").value("LIVE")));
             applyFolderScopeFilter(b, folderId, includeChildren);
             PreviewStatusFilterHelper.apply(b, previewStatuses);
             applyReadPermissionFilter(b);
@@ -434,6 +435,7 @@ public class FullTextSearchService {
             if (filters == null || !filters.isIncludeDeleted()) {
                 b.filter(f -> f.term(t -> t.field("deleted").value(false)));
             }
+            b.filter(f -> f.term(t -> t.field("archiveStatus").value("LIVE")));
 
             if (filters != null) {
                 addAnyOfTermsFilter(b, List.of("nodeType", "nodeType.keyword"), filters.getNodeTypes());
@@ -499,7 +501,7 @@ public class FullTextSearchService {
             return;
         }
 
-        Node folder = nodeRepository.findByIdAndDeletedFalse(id).orElse(null);
+        Node folder = nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(id, Node.ArchiveStatus.LIVE).orElse(null);
         if (folder == null || folder.getPath() == null || folder.getPath().isBlank()) {
             // Non-existent scope: return empty without leaking details.
             bool.filter(f -> f.term(t -> t.field("parentId").value("__none__")));

@@ -9,7 +9,6 @@ import {
   FormControl,
   Grid,
   InputLabel,
-  Link,
   MenuItem,
   Select,
   Stack,
@@ -22,8 +21,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { Archive, OpenInNew, Refresh, Restore } from '@mui/icons-material';
-import { Link as RouterLink } from 'react-router-dom';
+import { Archive, Refresh, Restore } from '@mui/icons-material';
 import { toast } from 'react-toastify';
 import contentArchiveService, {
   ArchivedNodeDto,
@@ -287,11 +285,6 @@ const ContentArchivePage: React.FC = () => {
                         <TableCell>{formatFileSize(node.size)}</TableCell>
                         <TableCell align="right">
                           <Stack direction="row" justifyContent="flex-end" spacing={1}>
-                            <Link component={RouterLink} to={`/browse/${node.nodeId}`} underline="none">
-                              <Button size="small" startIcon={<OpenInNew />}>
-                                Open
-                              </Button>
-                            </Link>
                             <Button size="small" color="success" startIcon={<Restore />} onClick={() => void handleRestoreNode(node.nodeId)}>
                               Restore
                             </Button>

@@ -6,6 +6,7 @@ import com.ecm.core.entity.Node;
 import com.ecm.core.entity.Node.ArchiveStatus;
 import com.ecm.core.entity.Node.ArchiveStoreTier;
 import com.ecm.core.repository.NodeRepository;
+import com.ecm.core.search.SearchIndexService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -33,12 +34,13 @@ class ContentArchiveServiceTest {
     @Mock private NodeRepository nodeRepository;
     @Mock private SecurityService securityService;
     @Mock private ActivityEventListener activityEventListener;
+    @Mock private SearchIndexService searchIndexService;
 
     private ContentArchiveService service;
 
     @BeforeEach
     void setUp() {
-        service = new ContentArchiveService(nodeRepository, securityService, activityEventListener);
+        service = new ContentArchiveService(nodeRepository, securityService, activityEventListener, searchIndexService);
     }
 
     @Test
@@ -58,6 +60,8 @@ class ContentArchiveServiceTest {
         assertEquals(ArchiveStatus.ARCHIVED, child.getArchiveStatus());
         assertEquals(ArchiveStoreTier.COLD, child.getArchiveStoreTier());
         assertEquals(2, result.affectedNodeCount());
+        verify(searchIndexService).updateNode(root);
+        verify(searchIndexService).updateDocument(child);
         verify(activityEventListener).postNodeActivity(eq("node.archived"), eq("alice"), eq(root), anyMap());
     }
 
@@ -99,6 +103,8 @@ class ContentArchiveServiceTest {
         assertEquals(ArchiveStatus.LIVE, child.getArchiveStatus());
         assertEquals(ArchiveStoreTier.HOT, child.getArchiveStoreTier());
         assertEquals(2, result.affectedNodeCount());
+        verify(searchIndexService).updateNode(root);
+        verify(searchIndexService).updateDocument(child);
         verify(activityEventListener).postNodeActivity(eq("node.restored"), eq("alice"), eq(root), anyMap());
     }
 

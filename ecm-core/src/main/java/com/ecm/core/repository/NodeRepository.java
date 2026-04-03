@@ -28,14 +28,24 @@ import java.util.stream.Stream;
 public interface NodeRepository extends JpaRepository<Node, UUID>, JpaSpecificationExecutor<Node> {
     
     Optional<Node> findFirstByPathAndDeletedFalseOrderByCreatedDateAsc(String path);
+
+    Optional<Node> findFirstByPathAndDeletedFalseAndArchiveStatusOrderByCreatedDateAsc(String path, ArchiveStatus archiveStatus);
     
     Optional<Node> findByIdAndDeletedFalse(UUID id);
+
+    Optional<Node> findByIdAndDeletedFalseAndArchiveStatus(UUID id, ArchiveStatus archiveStatus);
     
     List<Node> findByParentIdAndDeletedFalse(UUID parentId);
 
+    List<Node> findByParentIdAndDeletedFalseAndArchiveStatus(UUID parentId, ArchiveStatus archiveStatus);
+
     List<Node> findByParentIdAndDeletedFalse(UUID parentId, Sort sort);
+
+    List<Node> findByParentIdAndDeletedFalseAndArchiveStatus(UUID parentId, ArchiveStatus archiveStatus, Sort sort);
     
     Page<Node> findByParentIdAndDeletedFalse(UUID parentId, Pageable pageable);
+
+    Page<Node> findByParentIdAndDeletedFalseAndArchiveStatus(UUID parentId, ArchiveStatus archiveStatus, Pageable pageable);
     
     @Query("SELECT n FROM Node n WHERE n.parent.id = :parentId AND n.name = :name AND n.deleted = false")
     Optional<Node> findByParentIdAndName(@Param("parentId") UUID parentId, @Param("name") String name);
@@ -77,11 +87,15 @@ public interface NodeRepository extends JpaRepository<Node, UUID>, JpaSpecificat
 
     Page<Node> findByTagsContainingAndDeletedFalse(Tag tag, Pageable pageable);
 
+    Page<Node> findByTagsContainingAndDeletedFalseAndArchiveStatus(Tag tag, ArchiveStatus archiveStatus, Pageable pageable);
+
     @Query("SELECT n FROM Node n JOIN n.tags t WHERE t IN :tags AND n.deleted = false " +
            "GROUP BY n.id HAVING COUNT(DISTINCT t) = :tagCount")
     List<Node> findByAllTags(@Param("tags") List<Tag> tags, @Param("tagCount") long tagCount);
 
     List<Node> findByCategoriesInAndDeletedFalse(Set<Category> categories);
+
+    List<Node> findByCategoriesInAndDeletedFalseAndArchiveStatus(Set<Category> categories, ArchiveStatus archiveStatus);
     
     @Modifying
     @Query("UPDATE Node n SET n.deleted = true, n.status = 'DELETED', n.deletedAt = :deletedAt, n.deletedBy = :deletedBy " +
@@ -148,4 +162,6 @@ public interface NodeRepository extends JpaRepository<Node, UUID>, JpaSpecificat
     List<Folder> findRootFolders();
 
     Page<Node> findByNameContainingIgnoreCaseAndDeletedFalse(String name, Pageable pageable);
+
+    Page<Node> findByNameContainingIgnoreCaseAndDeletedFalseAndArchiveStatus(String name, ArchiveStatus archiveStatus, Pageable pageable);
 }

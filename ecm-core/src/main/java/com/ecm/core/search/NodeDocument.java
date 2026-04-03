@@ -114,6 +114,9 @@ public class NodeDocument {
     private String status;
 
     @Field(type = FieldType.Keyword)
+    private String archiveStatus;
+
+    @Field(type = FieldType.Keyword)
     private String previewStatus;
 
     @Field(type = FieldType.Text, analyzer = "standard")
@@ -144,6 +147,7 @@ public class NodeDocument {
         doc.setLockedBy(node.getLockedBy());
         doc.setDeleted(node.isDeleted());
         doc.setStatus(node.getStatus().toString());
+        doc.setArchiveStatus(node.getArchiveStatus().name());
 
         if (node instanceof com.ecm.core.entity.Document document) {
             doc.setMimeType(document.getMimeType());

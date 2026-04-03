@@ -29,7 +29,7 @@ public class RatingService {
      */
     @Transactional
     public Rating rate(UUID nodeId, RatingScheme scheme, int score) {
-        Node node = nodeRepository.findByIdAndDeletedFalse(nodeId)
+        Node node = nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(nodeId, Node.ArchiveStatus.LIVE)
             .orElseThrow(() -> new NoSuchElementException("Node not found: " + nodeId));
         String userId = securityService.getCurrentUser();
 

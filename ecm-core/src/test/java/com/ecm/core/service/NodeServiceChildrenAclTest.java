@@ -78,10 +78,10 @@ class NodeServiceChildrenAclTest {
 
         Pageable pageable = PageRequest.of(0, 1, Sort.by("name").ascending());
 
-        when(nodeRepository.findByIdAndDeletedFalse(parentId)).thenReturn(Optional.of(parent));
+        when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(parentId, Node.ArchiveStatus.LIVE)).thenReturn(Optional.of(parent));
         when(securityService.hasPermission(parent, PermissionType.READ)).thenReturn(true);
         when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
-        when(nodeRepository.findByParentIdAndDeletedFalse(parentId, pageable.getSort()))
+        when(nodeRepository.findByParentIdAndDeletedFalseAndArchiveStatus(parentId, Node.ArchiveStatus.LIVE, pageable.getSort()))
             .thenReturn(List.of(denied, allowed));
         when(securityService.hasPermission(denied, PermissionType.READ)).thenReturn(false);
         when(securityService.hasPermission(allowed, PermissionType.READ)).thenReturn(true);
@@ -91,6 +91,19 @@ class NodeServiceChildrenAclTest {
         assertEquals(1, result.getTotalElements());
         assertEquals(1, result.getContent().size());
         assertEquals("B-allowed", result.getContent().get(0).getName());
+    }
+
+    @Test
+    @DisplayName("Archived node is hidden from live getNode")
+    void getNodeRejectsArchivedNode() {
+        UUID nodeId = UUID.randomUUID();
+        when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(nodeId, Node.ArchiveStatus.LIVE))
+            .thenReturn(Optional.empty());
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+            java.util.NoSuchElementException.class,
+            () -> nodeService.getNode(nodeId)
+        );
     }
 
     private static Folder folder(UUID id, String name) {

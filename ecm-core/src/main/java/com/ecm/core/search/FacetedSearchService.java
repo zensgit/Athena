@@ -290,6 +290,7 @@ public class FacetedSearchService {
             }
             criteria = criteria.and("id").not().is(documentId);
             criteria = criteria.and("deleted").is(false);
+            criteria = criteria.and("archiveStatus").is("LIVE");
 
             CriteriaQuery similarQuery = new CriteriaQuery(criteria);
             similarQuery.setPageable(PageRequest.of(0, maxResults));
@@ -317,7 +318,8 @@ public class FacetedSearchService {
 
         try {
             Criteria criteria = new Criteria("name").startsWith(prefix.toLowerCase())
-                .and("deleted").is(false);
+                .and("deleted").is(false)
+                .and("archiveStatus").is("LIVE");
 
             CriteriaQuery query = new CriteriaQuery(criteria);
             query.setPageable(PageRequest.of(0, maxSuggestions));
@@ -440,6 +442,7 @@ public class FacetedSearchService {
             if (filters == null || !filters.isIncludeDeleted()) {
                 b.filter(f -> f.term(t -> t.field("deleted").value(false)));
             }
+            b.filter(f -> f.term(t -> t.field("archiveStatus").value("LIVE")));
 
             if (filters != null) {
                 applyFilters(b, filters);

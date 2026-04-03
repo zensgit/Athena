@@ -195,7 +195,7 @@ public class TagService {
         Tag tag = tagRepository.findByName(tagName.toLowerCase().trim())
             .orElseThrow(() -> new ResourceNotFoundException("Tag not found: " + tagName));
         
-        Page<Node> nodes = nodeRepository.findByTagsContainingAndDeletedFalse(tag, pageable);
+        Page<Node> nodes = nodeRepository.findByTagsContainingAndDeletedFalseAndArchiveStatus(tag, Node.ArchiveStatus.LIVE, pageable);
         
         // 过滤权限
         List<Node> filteredNodes = nodes.getContent().stream()
@@ -223,6 +223,7 @@ public class TagService {
         
         // 过滤权限
         return nodes.stream()
+            .filter(node -> node.getArchiveStatus() == Node.ArchiveStatus.LIVE)
             .filter(node -> securityService.hasPermission(node, PermissionType.READ))
             .collect(Collectors.toList());
     }
@@ -329,7 +330,7 @@ public class TagService {
     private Node loadActiveNode(String nodeId) {
         try {
             UUID id = UUID.fromString(nodeId);
-            return nodeRepository.findByIdAndDeletedFalse(id)
+            return nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(id, Node.ArchiveStatus.LIVE)
                 .orElseThrow(() -> new NodeNotFoundException("Node not found: " + nodeId));
         } catch (IllegalArgumentException ex) {
             throw new NodeNotFoundException("Invalid node id: " + nodeId, ex);

@@ -78,7 +78,7 @@ class FolderServiceContentsAclTest {
         when(folderRepository.findById(folderId)).thenReturn(Optional.of(folder));
         when(securityService.hasPermission(folder, PermissionType.READ)).thenReturn(true);
         when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
-        when(nodeRepository.findByParentIdAndDeletedFalse(folderId, pageable.getSort()))
+        when(nodeRepository.findByParentIdAndDeletedFalseAndArchiveStatus(folderId, Node.ArchiveStatus.LIVE, pageable.getSort()))
             .thenReturn(List.of(denied, allowed));
         when(securityService.hasPermission(denied, PermissionType.READ)).thenReturn(false);
         when(securityService.hasPermission(allowed, PermissionType.READ)).thenReturn(true);
@@ -88,6 +88,21 @@ class FolderServiceContentsAclTest {
         assertEquals(1, result.getTotalElements());
         assertEquals(1, result.getContent().size());
         assertEquals("B-allowed", result.getContent().get(0).getName());
+    }
+
+    @Test
+    @DisplayName("Archived folder is hidden from live folder lookup")
+    void getFolderRejectsArchivedFolder() {
+        UUID folderId = UUID.randomUUID();
+        Folder folder = folder(folderId, "Archived");
+        folder.setArchiveStatus(Node.ArchiveStatus.ARCHIVED);
+
+        when(folderRepository.findById(folderId)).thenReturn(Optional.of(folder));
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+            java.util.NoSuchElementException.class,
+            () -> folderService.getFolder(folderId)
+        );
     }
 
     private static Folder folder(UUID id, String name) {

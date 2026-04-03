@@ -26,6 +26,7 @@ public class ContentArchiveService {
     private final NodeRepository nodeRepository;
     private final SecurityService securityService;
     private final ActivityEventListener activityEventListener;
+    private final com.ecm.core.search.SearchIndexService searchIndexService;
 
     @Transactional
     public ArchiveMutationDto archiveNode(UUID nodeId, ArchiveStoreTier storageTier) {
@@ -49,6 +50,7 @@ public class ContentArchiveService {
         }
 
         nodeRepository.saveAll(scope);
+        syncSearchIndex(scope);
         activityEventListener.postNodeActivity(
             "node.archived",
             currentUser,
@@ -87,6 +89,7 @@ public class ContentArchiveService {
         }
 
         nodeRepository.saveAll(scope);
+        syncSearchIndex(scope);
         activityEventListener.postNodeActivity(
             "node.restored",
             currentUser,
@@ -126,6 +129,16 @@ public class ContentArchiveService {
             scope.addAll(nodeRepository.findByPathPrefix(root.getPath() + "/"));
         }
         return scope;
+    }
+
+    private void syncSearchIndex(List<Node> scope) {
+        for (Node candidate : scope) {
+            if (candidate instanceof com.ecm.core.entity.Document document) {
+                searchIndexService.updateDocument(document);
+            } else {
+                searchIndexService.updateNode(candidate);
+            }
+        }
     }
 
     private ArchiveStatusDto toStatusDto(Node node) {

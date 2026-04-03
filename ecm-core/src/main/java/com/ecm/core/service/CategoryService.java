@@ -177,7 +177,7 @@ public class CategoryService {
             categories.addAll(getAllSubcategories(category));
         }
         
-        List<Node> nodes = nodeRepository.findByCategoriesInAndDeletedFalse(categories);
+        List<Node> nodes = nodeRepository.findByCategoriesInAndDeletedFalseAndArchiveStatus(categories, Node.ArchiveStatus.LIVE);
         
         // 过滤权限
         return nodes.stream()
@@ -317,7 +317,7 @@ public class CategoryService {
     private Node loadActiveNode(String nodeId) {
         try {
             UUID id = UUID.fromString(nodeId);
-            return nodeRepository.findByIdAndDeletedFalse(id)
+            return nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(id, Node.ArchiveStatus.LIVE)
                 .orElseThrow(() -> new NodeNotFoundException("Node not found: " + nodeId));
         } catch (IllegalArgumentException ex) {
             throw new NodeNotFoundException("Invalid node id: " + nodeId, ex);

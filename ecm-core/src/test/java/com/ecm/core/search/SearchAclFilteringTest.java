@@ -147,6 +147,33 @@ class SearchAclFilteringTest {
     }
 
     @Test
+    @DisplayName("Full-text search excludes archived documents by default")
+    void fullTextSearchFiltersArchivedByDefault() {
+        Mockito.when(elasticsearchOperations.search(
+                Mockito.any(Query.class),
+                Mockito.eq(NodeDocument.class),
+                Mockito.any(IndexCoordinates.class)))
+            .thenReturn(searchHits());
+        Mockito.when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+
+        fullTextSearchService.search("query", 0, 10, null, null);
+
+        ArgumentCaptor<Query> queryCaptor = ArgumentCaptor.forClass(Query.class);
+        Mockito.verify(elasticsearchOperations).search(
+            queryCaptor.capture(),
+            Mockito.eq(NodeDocument.class),
+            Mockito.any(IndexCoordinates.class)
+        );
+
+        Query captured = queryCaptor.getValue();
+        assertTrue(captured instanceof NativeQuery);
+        NativeQuery nativeQuery = (NativeQuery) captured;
+        co.elastic.clients.elasticsearch._types.query_dsl.Query esQuery = nativeQuery.getQuery();
+
+        assertTrue(hasStringTermFilter(esQuery, "archiveStatus", "LIVE"));
+    }
+
+    @Test
     @DisplayName("Full-text search returns empty results when search is disabled")
     void fullTextSearchReturnsEmptyWhenDisabled() {
         ReflectionTestUtils.setField(fullTextSearchService, "searchEnabled", false);
@@ -526,6 +553,7 @@ class SearchAclFilteringTest {
                 && term.value().isBoolean()
                 && !term.value().booleanValue());
         assertTrue(hasDeletedFilter);
+        assertTrue(hasStringTermFilter(esQuery, "archiveStatus", "LIVE"));
     }
 
     @Test
@@ -679,6 +707,36 @@ class SearchAclFilteringTest {
         assertEquals(1, facets.get("mimeType").get(0).getCount());
     }
 
+    @Test
+    @DisplayName("Faceted search excludes archived documents by default")
+    void facetedSearchFiltersArchivedByDefault() {
+        Mockito.when(elasticsearchOperations.search(
+                Mockito.any(Query.class),
+                Mockito.eq(NodeDocument.class),
+                Mockito.any(IndexCoordinates.class)))
+            .thenReturn(searchHits());
+        Mockito.when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+
+        FacetedSearchService.FacetedSearchRequest request = new FacetedSearchService.FacetedSearchRequest();
+        request.setQuery("doc");
+
+        facetedSearchService.search(request);
+
+        ArgumentCaptor<Query> queryCaptor = ArgumentCaptor.forClass(Query.class);
+        Mockito.verify(elasticsearchOperations).search(
+            queryCaptor.capture(),
+            Mockito.eq(NodeDocument.class),
+            Mockito.any(IndexCoordinates.class)
+        );
+
+        Query captured = queryCaptor.getValue();
+        assertTrue(captured instanceof NativeQuery);
+        NativeQuery nativeQuery = (NativeQuery) captured;
+        co.elastic.clients.elasticsearch._types.query_dsl.Query esQuery = nativeQuery.getQuery();
+
+        assertTrue(hasStringTermFilter(esQuery, "archiveStatus", "LIVE"));
+    }
+
     private static SearchHit<NodeDocument> searchHit(NodeDocument doc) {
         return new SearchHit<>(
             "ecm_documents",
@@ -723,5 +781,22 @@ class SearchAclFilteringTest {
             .filter(term -> term.value().isString())
             .map(term -> term.value().stringValue())
             .collect(Collectors.toSet());
+    }
+
+    private static boolean hasStringTermFilter(
+        co.elastic.clients.elasticsearch._types.query_dsl.Query esQuery,
+        String field,
+        String value
+    ) {
+        if (!esQuery.isBool()) {
+            return false;
+        }
+
+        return esQuery.bool().filter().stream()
+            .filter(co.elastic.clients.elasticsearch._types.query_dsl.Query::isTerm)
+            .map(co.elastic.clients.elasticsearch._types.query_dsl.Query::term)
+            .anyMatch(term -> field.equals(term.field())
+                && term.value().isString()
+                && value.equals(term.value().stringValue()));
     }
 }

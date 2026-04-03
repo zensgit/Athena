@@ -360,7 +360,7 @@ public class CommentService {
     private Node loadActiveNode(String nodeId) {
         try {
             UUID id = UUID.fromString(nodeId);
-            return nodeRepository.findByIdAndDeletedFalse(id)
+            return nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(id, Node.ArchiveStatus.LIVE)
                 .orElseThrow(() -> new NodeNotFoundException("Node not found: " + nodeId));
         } catch (IllegalArgumentException ex) {
             throw new NodeNotFoundException("Invalid node id: " + nodeId, ex);

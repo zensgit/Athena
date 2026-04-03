@@ -143,8 +143,9 @@ public class SearchIndexService {
             return 0;
         }
         int pageSize = Math.min(Math.max(limit, 1), 200);
-        Page<Node> page = nodeRepository.findByNameContainingIgnoreCaseAndDeletedFalse(
+        Page<Node> page = nodeRepository.findByNameContainingIgnoreCaseAndDeletedFalseAndArchiveStatus(
             nameQuery,
+            Node.ArchiveStatus.LIVE,
             PageRequest.of(0, pageSize)
         );
         int indexed = 0;
@@ -329,8 +330,9 @@ public class SearchIndexService {
             }
         }
         
-        // Exclude deleted items
+        // Exclude deleted and archived items from live search results.
         query.addCriteria(new Criteria("deleted").is(false));
+        query.addCriteria(new Criteria("archiveStatus").is("LIVE"));
         
         // Add pagination
         if (request.getPageable() != null) {

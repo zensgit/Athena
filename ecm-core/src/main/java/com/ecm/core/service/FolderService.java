@@ -115,6 +115,10 @@ public class FolderService {
             throw new NoSuchElementException("Folder has been deleted: " + folderId);
         }
 
+        if (folder.getArchiveStatus() != Node.ArchiveStatus.LIVE) {
+            throw new NoSuchElementException("Folder not found: " + folderId);
+        }
+
         if (!securityService.hasPermission(folder, PermissionType.READ)) {
             throw new SecurityException("No permission to read folder: " + folder.getName());
         }
@@ -128,6 +132,7 @@ public class FolderService {
     @Transactional(readOnly = true)
     public Folder getFolderByPath(String path) {
         return folderRepository.findFirstByPathAndDeletedFalseOrderByCreatedDateAsc(path)
+            .filter(folder -> folder.getArchiveStatus() == Node.ArchiveStatus.LIVE)
             .orElseThrow(() -> new NoSuchElementException("Folder not found at path: " + path));
     }
 
@@ -137,6 +142,7 @@ public class FolderService {
     @Transactional(readOnly = true)
     public List<Folder> getRootFolders() {
         return folderRepository.findRootFolders().stream()
+            .filter(folder -> folder.getArchiveStatus() == Node.ArchiveStatus.LIVE)
             .filter(f -> securityService.hasPermission(f, PermissionType.READ))
             .collect(Collectors.toList());
     }
@@ -174,7 +180,7 @@ public class FolderService {
                 
                 // Preserve order from search result if possible, or just fetch
                 return nodeRepository.findAllById(ids).stream()
-                    .filter(n -> !n.isDeleted())
+                    .filter(n -> !n.isDeleted() && n.getArchiveStatus() == Node.ArchiveStatus.LIVE)
                     .collect(Collectors.collectingAndThen(Collectors.toList(), 
                         list -> new org.springframework.data.domain.PageImpl<>(list, pageable, results.getTotalHits())));
                         
@@ -185,10 +191,10 @@ public class FolderService {
         }
 
         if (isAdmin) {
-            return nodeRepository.findByParentIdAndDeletedFalse(folderId, pageable);
+            return nodeRepository.findByParentIdAndDeletedFalseAndArchiveStatus(folderId, Node.ArchiveStatus.LIVE, pageable);
         }
 
-        List<Node> children = nodeRepository.findByParentIdAndDeletedFalse(folderId, pageable.getSort());
+        List<Node> children = nodeRepository.findByParentIdAndDeletedFalseAndArchiveStatus(folderId, Node.ArchiveStatus.LIVE, pageable.getSort());
         List<Node> permitted = children.stream()
             .filter(child -> securityService.hasPermission(child, PermissionType.READ))
             .collect(Collectors.toList());
@@ -203,7 +209,7 @@ public class FolderService {
     public FolderContentsResponse getFolderContentsFiltered(UUID folderId, FolderContentsFilter filter) {
         Folder folder = getFolder(folderId);
 
-        List<Node> children = nodeRepository.findByParentIdAndDeletedFalse(folderId);
+        List<Node> children = nodeRepository.findByParentIdAndDeletedFalseAndArchiveStatus(folderId, Node.ArchiveStatus.LIVE);
 
         // Separate folders and documents
         List<Node> folders = new ArrayList<>();
@@ -513,7 +519,7 @@ public class FolderService {
     }
 
     private List<Node> loadReadableChildren(UUID folderId, boolean isAdmin) {
-        List<Node> children = nodeRepository.findByParentIdAndDeletedFalse(folderId);
+        List<Node> children = nodeRepository.findByParentIdAndDeletedFalseAndArchiveStatus(folderId, Node.ArchiveStatus.LIVE);
         if (isAdmin) {
             return children;
         }

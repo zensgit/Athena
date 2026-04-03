@@ -103,7 +103,7 @@ public class NodeService {
     }
     
     public Node getNode(UUID nodeId) {
-        Node node = nodeRepository.findByIdAndDeletedFalse(nodeId)
+        Node node = nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(nodeId, Node.ArchiveStatus.LIVE)
             .orElseThrow(() -> new NoSuchElementException("Node not found: " + nodeId));
         node = normalizeExpiredLock(node);
         
@@ -115,7 +115,7 @@ public class NodeService {
     }
     
     public Node getNodeByPath(String path) {
-        Node node = nodeRepository.findFirstByPathAndDeletedFalseOrderByCreatedDateAsc(path)
+        Node node = nodeRepository.findFirstByPathAndDeletedFalseAndArchiveStatusOrderByCreatedDateAsc(path, Node.ArchiveStatus.LIVE)
             .orElseThrow(() -> new NoSuchElementException("Node not found at path: " + path));
         node = normalizeExpiredLock(node);
         
@@ -129,10 +129,10 @@ public class NodeService {
     public Page<Node> getChildren(UUID parentId, Pageable pageable) {
         Node parent = getNode(parentId);
         if (securityService.hasRole("ROLE_ADMIN")) {
-            return nodeRepository.findByParentIdAndDeletedFalse(parentId, pageable);
+            return nodeRepository.findByParentIdAndDeletedFalseAndArchiveStatus(parentId, Node.ArchiveStatus.LIVE, pageable);
         }
 
-        List<Node> children = nodeRepository.findByParentIdAndDeletedFalse(parentId, pageable.getSort());
+        List<Node> children = nodeRepository.findByParentIdAndDeletedFalseAndArchiveStatus(parentId, Node.ArchiveStatus.LIVE, pageable.getSort());
         List<Node> permitted = children.stream()
             .filter(child -> securityService.hasPermission(child, PermissionType.READ))
             .collect(Collectors.toList());
@@ -383,7 +383,7 @@ public class NodeService {
     }
 
     public LockInfoDto getLockInfo(UUID nodeId) {
-        Node node = nodeRepository.findByIdAndDeletedFalse(nodeId)
+        Node node = nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(nodeId, Node.ArchiveStatus.LIVE)
             .orElseThrow(() -> new NoSuchElementException("Node not found: " + nodeId));
         if (!securityService.hasPermission(node, PermissionType.READ)) {
             throw new SecurityException("No permission to read node: " + node.getName());
@@ -866,7 +866,7 @@ public class NodeService {
         
         // Copy children if deep copy and source is folder
         if (deep && source instanceof Folder) {
-            List<Node> children = nodeRepository.findByParentIdAndDeletedFalse(source.getId());
+            List<Node> children = nodeRepository.findByParentIdAndDeletedFalseAndArchiveStatus(source.getId(), Node.ArchiveStatus.LIVE);
             for (Node child : children) {
                 copyNodeRecursive(child, (Folder) copy, child.getName(), true);
             }

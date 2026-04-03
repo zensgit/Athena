@@ -273,7 +273,7 @@ public class LockService {
     // ------------------------------------------------------------------ internals
 
     private Node loadNode(UUID nodeId) {
-        return nodeRepository.findByIdAndDeletedFalse(nodeId)
+        return nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(nodeId, Node.ArchiveStatus.LIVE)
             .orElseThrow(() -> new NoSuchElementException("Node not found: " + nodeId));
     }
 
