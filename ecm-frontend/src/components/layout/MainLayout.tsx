@@ -474,6 +474,12 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                   </ListItemIcon>
                   <ListItemText>Webhooks</ListItemText>
                 </MenuItem>
+                <MenuItem onClick={() => navigate('/admin/bulk-import')}>
+                  <ListItemIcon>
+                    <CloudUpload fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Bulk Import</ListItemText>
+                </MenuItem>
               </>
             )}
             <MenuItem onClick={() => navigate('/trash')}>

@@ -61,6 +61,7 @@
     <include file="db/changelog/changes/048-create-activities-table.xml"/>
     <include file="db/changelog/changes/049-create-follow-subscriptions-table.xml"/>
     <include file="db/changelog/changes/050-create-notifications-table.xml"/>
+    <include file="db/changelog/changes/051-create-import-jobs-table.xml"/>
     <include file="db/changelog/changes/007-insert-initial-data.xml"/>
 
 </databaseChangeLog>

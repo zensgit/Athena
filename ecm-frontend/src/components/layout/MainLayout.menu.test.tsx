@@ -75,6 +75,7 @@ test('account menu shows Tags/Categories for admin/editor roles', async () => {
   expect(screen.getByRole('menuitem', { name: 'Content Models' })).toBeTruthy();
   expect(screen.getByRole('menuitem', { name: 'Permission Templates' })).toBeTruthy();
   expect(screen.getByRole('menuitem', { name: 'Webhooks' })).toBeTruthy();
+  expect(screen.getByRole('menuitem', { name: 'Bulk Import' })).toBeTruthy();
   expect(screen.getByRole('menuitem', { name: 'System Status' })).toBeTruthy();
   expect(screen.getByRole('menuitem', { name: 'Workflow Processes' })).toBeTruthy();
   expect(screen.getByRole('menuitem', { name: 'People Directory' })).toBeTruthy();
@@ -101,6 +102,7 @@ test('account menu hides Tags/Categories for viewer role', async () => {
   expect(screen.queryByRole('menuitem', { name: 'Content Models' })).toBeNull();
   expect(screen.queryByRole('menuitem', { name: 'Permission Templates' })).toBeNull();
   expect(screen.queryByRole('menuitem', { name: 'Webhooks' })).toBeNull();
+  expect(screen.queryByRole('menuitem', { name: 'Bulk Import' })).toBeNull();
   expect(screen.queryByRole('menuitem', { name: 'System Status' })).toBeNull();
   expect(screen.getByRole('menuitem', { name: 'People Directory' })).toBeTruthy();
   expect(screen.getByRole('menuitem', { name: 'My Following' })).toBeTruthy();

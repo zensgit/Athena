@@ -18,6 +18,7 @@ import ContentModelsPage from './pages/ContentModelsPage';
 import SitesPage from './pages/SitesPage';
 import ActivityFeedPage from './pages/ActivityFeedPage';
 import NotificationsPage from './pages/NotificationsPage';
+import BulkImportPage from './pages/BulkImportPage';
 import WebhookSubscriptionsPage from './pages/WebhookSubscriptionsPage';
 import PermissionTemplatesPage from './pages/PermissionTemplatesPage';
 import EditorPage from './pages/EditorPage';
@@ -321,6 +322,16 @@ const App: React.FC = () => {
                 <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
                   <MainLayout>
                     <WebhookSubscriptionsPage />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/admin/bulk-import"
+              element={
+                <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
+                  <MainLayout>
+                    <BulkImportPage />
                   </MainLayout>
                 </PrivateRoute>
               }

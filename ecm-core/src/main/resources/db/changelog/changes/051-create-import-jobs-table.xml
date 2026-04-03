@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="051-create-import-jobs-table" author="codex">
+        <comment>Create import jobs table for bulk import tracking</comment>
+
+        <createTable tableName="import_jobs">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="user_id" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="status" type="varchar(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="target_folder_id" type="${uuid_type}"/>
+            <column name="conflict_policy" type="varchar(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="total_files" type="int" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <column name="processed_files" type="int" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <column name="imported_files" type="int" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <column name="skipped_files" type="int" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <column name="failed_files" type="int" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <column name="current_item_path" type="text"/>
+            <column name="last_message" type="text"/>
+            <column name="error_log" type="text"/>
+            <column name="started_at" type="timestamp"/>
+            <column name="completed_at" type="timestamp"/>
+            <column name="created_at" type="timestamp" defaultValueComputed="${now}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="timestamp" defaultValueComputed="${now}">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <createIndex tableName="import_jobs" indexName="idx_import_job_user_id">
+            <column name="user_id"/>
+        </createIndex>
+        <createIndex tableName="import_jobs" indexName="idx_import_job_status">
+            <column name="status"/>
+        </createIndex>
+        <createIndex tableName="import_jobs" indexName="idx_import_job_created_at">
+            <column name="created_at"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>

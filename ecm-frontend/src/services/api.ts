@@ -330,6 +330,27 @@ export class ApiService {
     ).then((response) => response.data);
   }
 
+  postFormData<T>(
+    url: string,
+    formData: FormData,
+    config?: AxiosRequestConfig
+  ): Promise<T> {
+    return this.api.post<T>(
+      url,
+      formData,
+      this.withTimeout(
+        {
+          ...config,
+          headers: {
+            ...(config?.headers || {}),
+            'Content-Type': 'multipart/form-data',
+          },
+        },
+        API_TIMEOUT_UPLOAD_MS
+      )
+    ).then((response) => response.data);
+  }
+
   downloadFile(url: string, filename: string, config?: AxiosRequestConfig): Promise<void> {
     return this.api.get(url, {
       ...this.withTimeout(config, API_TIMEOUT_DOWNLOAD_MS),
