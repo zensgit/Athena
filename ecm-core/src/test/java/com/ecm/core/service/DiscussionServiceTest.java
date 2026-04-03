@@ -65,13 +65,15 @@ class DiscussionServiceTest {
         }
 
         @Test
-        @DisplayName("updates topic fields")
-        void updatesTopic() {
+        @DisplayName("author can update topic fields")
+        void authorUpdatesTopic() {
             DiscussionTopic topic = new DiscussionTopic();
             topic.setId(UUID.randomUUID());
             topic.setTitle("Old");
             topic.setStatus(TopicStatus.OPEN);
+            topic.setCreatedBy("alice");
             when(topicRepo.findById(topic.getId())).thenReturn(Optional.of(topic));
+            when(securityService.getCurrentUser()).thenReturn("alice");
             when(topicRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             DiscussionTopic updated = service.updateTopic(topic.getId(), "New Title", null, TopicStatus.PINNED);
@@ -81,15 +83,74 @@ class DiscussionServiceTest {
         }
 
         @Test
-        @DisplayName("deletes topic")
-        void deletesTopic() {
+        @DisplayName("non-author non-admin cannot update topic")
+        void nonAuthorCannotUpdate() {
             DiscussionTopic topic = new DiscussionTopic();
             topic.setId(UUID.randomUUID());
+            topic.setCreatedBy("alice");
             when(topicRepo.findById(topic.getId())).thenReturn(Optional.of(topic));
+            when(securityService.getCurrentUser()).thenReturn("bob");
+            when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
+
+            assertThrows(SecurityException.class,
+                () -> service.updateTopic(topic.getId(), "Hacked", null, null));
+        }
+
+        @Test
+        @DisplayName("admin can update any topic")
+        void adminCanUpdate() {
+            DiscussionTopic topic = new DiscussionTopic();
+            topic.setId(UUID.randomUUID());
+            topic.setTitle("Old");
+            topic.setCreatedBy("alice");
+            when(topicRepo.findById(topic.getId())).thenReturn(Optional.of(topic));
+            when(securityService.getCurrentUser()).thenReturn("admin");
+            when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+            when(topicRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            assertDoesNotThrow(() -> service.updateTopic(topic.getId(), "Admin Edit", null, null));
+        }
+
+        @Test
+        @DisplayName("update rejects blank title after trim")
+        void updateRejectsBlankTitle() {
+            DiscussionTopic topic = new DiscussionTopic();
+            topic.setId(UUID.randomUUID());
+            topic.setCreatedBy("alice");
+            when(topicRepo.findById(topic.getId())).thenReturn(Optional.of(topic));
+            when(securityService.getCurrentUser()).thenReturn("alice");
+
+            assertThrows(IllegalArgumentException.class,
+                () -> service.updateTopic(topic.getId(), "   ", null, null));
+        }
+
+        @Test
+        @DisplayName("author can delete topic")
+        void authorDeletesTopic() {
+            DiscussionTopic topic = new DiscussionTopic();
+            topic.setId(UUID.randomUUID());
+            topic.setCreatedBy("alice");
+            when(topicRepo.findById(topic.getId())).thenReturn(Optional.of(topic));
+            when(securityService.getCurrentUser()).thenReturn("alice");
 
             service.deleteTopic(topic.getId());
 
             verify(topicRepo).delete(topic);
+        }
+
+        @Test
+        @DisplayName("non-author non-admin cannot delete topic")
+        void nonAuthorCannotDelete() {
+            DiscussionTopic topic = new DiscussionTopic();
+            topic.setId(UUID.randomUUID());
+            topic.setCreatedBy("alice");
+            when(topicRepo.findById(topic.getId())).thenReturn(Optional.of(topic));
+            when(securityService.getCurrentUser()).thenReturn("bob");
+            when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
+
+            assertThrows(SecurityException.class,
+                () -> service.deleteTopic(topic.getId()));
+            verify(topicRepo, never()).delete(any());
         }
     }
 

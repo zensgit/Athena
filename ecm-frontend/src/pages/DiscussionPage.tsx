@@ -4,13 +4,19 @@ import {
   DialogActions, DialogContent, DialogTitle, IconButton, Pagination,
   Paper, Stack, TextField, Tooltip, Typography,
 } from '@mui/material';
-import { Add, ChatBubbleOutline, Close, Delete, Lock, PushPin, Refresh } from '@mui/icons-material';
+import { Add, ChatBubbleOutline, Delete, Lock, PushPin, Refresh } from '@mui/icons-material';
 import { useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import discussionService, { ReplyDto, TopicDto, TopicPage } from 'services/discussionService';
+import { useAppSelector } from 'store';
+import authService from 'services/authService';
 
 const DiscussionPage: React.FC = () => {
   const { siteId } = useParams<{ siteId: string }>();
+  const { user } = useAppSelector((state) => state.auth);
+  const effectiveUser = user ?? authService.getCurrentUser();
+  const currentUsername = effectiveUser?.username;
+  const isAdmin = Boolean(effectiveUser?.roles?.includes('ROLE_ADMIN'));
   const [topics, setTopics] = useState<TopicPage | null>(null);
   const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -123,11 +129,13 @@ const DiscussionPage: React.FC = () => {
                           &middot; <ChatBubbleOutline sx={{ fontSize: 12, verticalAlign: 'middle' }} /> {topic.replyCount}
                         </Typography>
                       </Box>
-                      <Tooltip title="Delete">
-                        <IconButton size="small" color="error" onClick={(e) => { e.stopPropagation(); void handleDeleteTopic(topic.id); }}>
-                          <Delete fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
+                      {(topic.createdBy === currentUsername || isAdmin) && (
+                        <Tooltip title="Delete">
+                          <IconButton size="small" color="error" onClick={(e) => { e.stopPropagation(); void handleDeleteTopic(topic.id); }}>
+                            <Delete fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      )}
                     </Box>
                     {topic.tags.length > 0 && (
                       <Box mt={0.5}>{topic.tags.map((t) => <Chip key={t} label={t} size="small" sx={{ mr: 0.5 }} />)}</Box>

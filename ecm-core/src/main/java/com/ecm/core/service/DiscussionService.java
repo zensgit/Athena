@@ -56,7 +56,14 @@ public class DiscussionService {
     @Transactional
     public DiscussionTopic updateTopic(UUID topicId, String title, String content, TopicStatus status) {
         DiscussionTopic topic = getTopic(topicId);
-        if (title != null) topic.setTitle(title.trim());
+        requireTopicAuthorOrAdmin(topic);
+        if (title != null) {
+            String trimmed = title.trim();
+            if (trimmed.isEmpty()) {
+                throw new IllegalArgumentException("Topic title must not be blank");
+            }
+            topic.setTitle(trimmed);
+        }
         if (content != null) topic.setContent(content);
         if (status != null) topic.setStatus(status);
         return topicRepo.save(topic);
@@ -65,7 +72,15 @@ public class DiscussionService {
     @Transactional
     public void deleteTopic(UUID topicId) {
         DiscussionTopic topic = getTopic(topicId);
+        requireTopicAuthorOrAdmin(topic);
         topicRepo.delete(topic);
+    }
+
+    private void requireTopicAuthorOrAdmin(DiscussionTopic topic) {
+        String currentUser = securityService.getCurrentUser();
+        if (!currentUser.equals(topic.getCreatedBy()) && !securityService.hasRole("ROLE_ADMIN")) {
+            throw new SecurityException("Only topic author or admin can modify this topic");
+        }
     }
 
     // ------------------------------------------------------------------ replies
