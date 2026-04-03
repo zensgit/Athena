@@ -21,4 +21,6 @@ public interface FollowSubscriptionRepository extends JpaRepository<FollowSubscr
     Optional<FollowSubscription> findByUserIdAndTargetTypeAndTargetId(String userId, FollowTargetType targetType, String targetId);
 
     void deleteByUserIdAndTargetTypeAndTargetId(String userId, FollowTargetType targetType, String targetId);
+
+    List<FollowSubscription> findByTargetTypeAndTargetId(FollowTargetType targetType, String targetId);
 }

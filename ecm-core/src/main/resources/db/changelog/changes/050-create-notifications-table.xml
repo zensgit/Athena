@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="050-create-notifications-table" author="codex">
+        <comment>Create notifications inbox table</comment>
+
+        <createTable tableName="notifications">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="user_id" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="activity_id" type="${uuid_type}">
+                <constraints nullable="false" foreignKeyName="fk_notif_activity" references="activities(id)"/>
+            </column>
+            <column name="is_read" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="read_at" type="timestamp"/>
+            <column name="created_at" type="timestamp" defaultValueComputed="${now}">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <createIndex tableName="notifications" indexName="idx_notif_user_id">
+            <column name="user_id"/>
+        </createIndex>
+        <createIndex tableName="notifications" indexName="idx_notif_read">
+            <column name="is_read"/>
+        </createIndex>
+        <createIndex tableName="notifications" indexName="idx_notif_created_at">
+            <column name="created_at"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>

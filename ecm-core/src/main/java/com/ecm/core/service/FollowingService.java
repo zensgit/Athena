@@ -97,6 +97,18 @@ public class FollowingService {
         return new FollowingTargets(followedUsers, followedSites, followedNodes);
     }
 
+    /**
+     * Reverse lookup: find all userIds who follow a given target.
+     */
+    @Transactional(readOnly = true)
+    public List<String> getFollowersOf(String targetType, String targetId) {
+        FollowTargetType type = FollowTargetType.valueOf(targetType);
+        return followSubscriptionRepository.findByTargetTypeAndTargetId(type, targetId)
+            .stream()
+            .map(FollowSubscription::getUserId)
+            .toList();
+    }
+
     private void ensureTargetExists(FollowTargetType targetType, String targetId) {
         switch (targetType) {
             case USER -> userRepository.findByUsername(targetId)

@@ -17,6 +17,7 @@ import ContentTypesPage from './pages/ContentTypesPage';
 import ContentModelsPage from './pages/ContentModelsPage';
 import SitesPage from './pages/SitesPage';
 import ActivityFeedPage from './pages/ActivityFeedPage';
+import NotificationsPage from './pages/NotificationsPage';
 import WebhookSubscriptionsPage from './pages/WebhookSubscriptionsPage';
 import PermissionTemplatesPage from './pages/PermissionTemplatesPage';
 import EditorPage from './pages/EditorPage';
@@ -290,6 +291,16 @@ const App: React.FC = () => {
                 <PrivateRoute>
                   <MainLayout>
                     <ActivityFeedPage />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/notifications"
+              element={
+                <PrivateRoute>
+                  <MainLayout>
+                    <NotificationsPage />
                   </MainLayout>
                 </PrivateRoute>
               }

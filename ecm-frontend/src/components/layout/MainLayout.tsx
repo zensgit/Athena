@@ -461,6 +461,12 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
               </ListItemIcon>
               <ListItemText>My Following</ListItemText>
             </MenuItem>
+            <MenuItem onClick={() => navigate('/notifications')}>
+              <ListItemIcon>
+                <People fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Notifications</ListItemText>
+            </MenuItem>
             <MenuItem onClick={() => navigate('/saved-searches')}>
               <ListItemIcon>
                 <SavedSearchIcon fontSize="small" />

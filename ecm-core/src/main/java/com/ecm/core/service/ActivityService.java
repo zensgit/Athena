@@ -25,6 +25,10 @@ public class ActivityService {
     private final ActivityRepository activityRepository;
     private final FollowingService followingService;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private NotificationInboxService notificationInboxService;
+
     /**
      * Post a new activity entry.
      */
@@ -40,7 +44,16 @@ public class ActivityService {
         if (summary != null) {
             activity.setSummary(summary);
         }
-        return activityRepository.save(activity);
+        Activity saved = activityRepository.save(activity);
+        // route to follower inboxes
+        if (notificationInboxService != null) {
+            try {
+                notificationInboxService.routeActivityToFollowers(saved);
+            } catch (Exception e) {
+                log.warn("Failed to route notifications for activity {}: {}", saved.getId(), e.getMessage());
+            }
+        }
+        return saved;
     }
 
     /**
