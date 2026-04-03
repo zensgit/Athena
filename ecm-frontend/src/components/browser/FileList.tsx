@@ -58,6 +58,8 @@ import {
   Undo,
   Publish,
   AccountTree,
+  NotificationsActive,
+  NotificationsOff,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
@@ -77,6 +79,7 @@ import {
 } from 'store/slices/uiSlice';
 import nodeService from 'services/nodeService';
 import favoriteService from 'services/favoriteService';
+import followingService from 'services/followingService';
 import { toast } from 'react-toastify';
 import MoveCopyDialog from 'components/dialogs/MoveCopyDialog';
 import CheckoutGraphDialog from 'components/dialogs/CheckoutGraphDialog';
@@ -142,6 +145,7 @@ const FileList: React.FC<FileListProps> = ({
   const [checkoutGraphDialogNode, setCheckoutGraphDialogNode] = React.useState<Node | null>(null);
   const [renditionDialogNode, setRenditionDialogNode] = React.useState<Node | null>(null);
   const [favoriteIds, setFavoriteIds] = React.useState<Set<string>>(() => new Set());
+  const [followedNodeIds, setFollowedNodeIds] = React.useState<Set<string>>(() => new Set());
 
   React.useEffect(() => {
     let cancelled = false;
@@ -160,6 +164,37 @@ const FileList: React.FC<FileListProps> = ({
       cancelled = true;
     };
   }, [nodes]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    if (!user?.username) {
+      setFollowedNodeIds(new Set());
+      return () => {
+        cancelled = true;
+      };
+    }
+    void (async () => {
+      try {
+        const subscriptions = await followingService.list();
+        if (!cancelled) {
+          setFollowedNodeIds(
+            new Set(
+              subscriptions
+                .filter((subscription) => subscription.targetType === 'NODE')
+                .map((subscription) => subscription.targetId)
+            )
+          );
+        }
+      } catch {
+        if (!cancelled) {
+          setFollowedNodeIds(new Set());
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.username]);
 
   const formatFileSize = (bytes?: number): string => {
     if (!bytes) return '-';
@@ -429,6 +464,31 @@ const FileList: React.FC<FileListProps> = ({
       }
     } catch {
       toast.error(isFav ? 'Failed to remove from favorites' : 'Failed to add to favorites');
+    }
+  };
+
+  const toggleNodeFollow = async (node: Node) => {
+    const isFollowing = followedNodeIds.has(node.id);
+    try {
+      if (isFollowing) {
+        await followingService.unfollow('NODE', node.id);
+        toast.success('Node unfollowed');
+        setFollowedNodeIds((prev) => {
+          const next = new Set(prev);
+          next.delete(node.id);
+          return next;
+        });
+      } else {
+        await followingService.follow('NODE', node.id);
+        toast.success('Node followed');
+        setFollowedNodeIds((prev) => {
+          const next = new Set(prev);
+          next.add(node.id);
+          return next;
+        });
+      }
+    } catch {
+      toast.error(isFollowing ? 'Failed to unfollow node' : 'Failed to follow node');
     }
   };
 
@@ -775,6 +835,30 @@ const FileList: React.FC<FileListProps> = ({
       },
     },
     {
+      field: 'following',
+      headerName: '',
+      width: 44,
+      sortable: false,
+      filterable: false,
+      disableColumnMenu: true,
+      renderCell: (params: GridRenderCellParams<Node>) => {
+        const isFollowing = followedNodeIds.has(params.row.id);
+        return (
+          <IconButton
+            size="small"
+            aria-label={`${isFollowing ? 'Unfollow' : 'Follow'} ${params.row.name}`}
+            onClick={async (e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              await toggleNodeFollow(params.row);
+            }}
+          >
+            {isFollowing ? <NotificationsActive fontSize="small" /> : <NotificationsOff fontSize="small" />}
+          </IconButton>
+        );
+      },
+    },
+    {
       field: 'name',
       headerName: 'Name',
       flex: 2,
@@ -1042,6 +1126,16 @@ const FileList: React.FC<FileListProps> = ({
                       }}
                     >
                       {favoriteIds.has(node.id) ? <Star fontSize="small" /> : <StarBorder fontSize="small" />}
+                    </IconButton>
+                    <IconButton
+                      size="small"
+                      aria-label={`${followedNodeIds.has(node.id) ? 'Unfollow' : 'Follow'} ${node.name}`}
+                      onClick={async (event) => {
+                        event.stopPropagation();
+                        await toggleNodeFollow(node);
+                      }}
+                    >
+                      {followedNodeIds.has(node.id) ? <NotificationsActive fontSize="small" /> : <NotificationsOff fontSize="small" />}
                     </IconButton>
                     <IconButton
                       size="small"
@@ -1383,6 +1477,19 @@ const FileList: React.FC<FileListProps> = ({
             {contextMenu?.node && favoriteIds.has(contextMenu.node.id) ? <Star fontSize="small" /> : <StarBorder fontSize="small" />}
           </ListItemIcon>
           <ListItemText>{contextMenu?.node && favoriteIds.has(contextMenu.node.id) ? 'Unfavorite' : 'Add to Favorites'}</ListItemText>
+        </MenuItem>
+        <MenuItem
+          onClick={async () => {
+            if (contextMenu) {
+              await toggleNodeFollow(contextMenu.node);
+            }
+            handleCloseContextMenu();
+          }}
+        >
+          <ListItemIcon>
+            {contextMenu?.node && followedNodeIds.has(contextMenu.node.id) ? <NotificationsActive fontSize="small" /> : <NotificationsOff fontSize="small" />}
+          </ListItemIcon>
+          <ListItemText>{contextMenu?.node && followedNodeIds.has(contextMenu.node.id) ? 'Unfollow Node' : 'Follow Node'}</ListItemText>
         </MenuItem>
         {canWrite && contextMenu && (
           renderContextMenuItem({

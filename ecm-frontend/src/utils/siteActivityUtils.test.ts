@@ -1,8 +1,10 @@
 import {
   formatActivityLabel,
   formatActivitySummary,
+  getActivityTargetKind,
   getActivityLinkTargets,
   matchesActivityFilter,
+  matchesActivityTargetKind,
 } from './siteActivityUtils';
 import { ActivityDto } from 'services/activityService';
 
@@ -44,6 +46,19 @@ describe('siteActivityUtils', () => {
     expect(matchesActivityFilter(buildActivity(), 'manager')).toBe(true);
     expect(matchesActivityFilter(buildActivity(), 'role changed')).toBe(true);
     expect(matchesActivityFilter(buildActivity(), 'finance')).toBe(false);
+  });
+
+  it('classifies node, site, and user activity targets', () => {
+    expect(getActivityTargetKind(buildActivity())).toBe('NODE');
+    expect(getActivityTargetKind(buildActivity({ nodeId: null, nodeName: null }))).toBe('SITE');
+    expect(getActivityTargetKind(buildActivity({ nodeId: null, nodeName: null, siteId: null }))).toBe('USER');
+  });
+
+  it('matches activity target kind filters', () => {
+    expect(matchesActivityTargetKind(buildActivity(), 'NODE')).toBe(true);
+    expect(matchesActivityTargetKind(buildActivity({ nodeId: null, nodeName: null }), 'SITE')).toBe(true);
+    expect(matchesActivityTargetKind(buildActivity({ nodeId: null, nodeName: null, siteId: null }), 'USER')).toBe(true);
+    expect(matchesActivityTargetKind(buildActivity(), 'SITE')).toBe(false);
   });
 
   it('builds site and node drill-down links', () => {

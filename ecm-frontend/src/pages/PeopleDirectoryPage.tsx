@@ -36,6 +36,8 @@ import {
   Edit,
   Group as GroupIcon,
   LockOutlined,
+  NotificationsActive,
+  NotificationsOff,
   Person,
   Refresh,
   Search,
@@ -50,6 +52,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAppSelector } from 'store';
 import authService from 'services/authService';
 import commentService, { Comment as MentionedComment } from 'services/commentService';
+import followingService from 'services/followingService';
 import nodeService from 'services/nodeService';
 import peopleService, {
   PersonActivityItem,
@@ -318,6 +321,8 @@ const PeopleDirectoryPage: React.FC = () => {
   const [selectedPreferences, setSelectedPreferences] = useState<PersonPreferences | null>(null);
   const [selectedPreferenceNamespace, setSelectedPreferenceNamespace] = useState('');
   const [selectedPreferenceNamespaces, setSelectedPreferenceNamespaces] = useState<string[]>([]);
+  const [isFollowingSelectedUser, setIsFollowingSelectedUser] = useState(false);
+  const [followActionLoading, setFollowActionLoading] = useState(false);
   const [selectedActivities, setSelectedActivities] = useState<PersonActivityItem[]>([]);
   const [recentActivityScope, setRecentActivityScope] = useState<SectionNodeScope>('ALL');
   const [recentActivityFilter, setRecentActivityFilter] = useState('');
@@ -463,6 +468,8 @@ const PeopleDirectoryPage: React.FC = () => {
       setFavoriteSiteEditorOpen(false);
       setFavoriteDraftNodeId('');
       setFavoriteSiteDraftNodeId('');
+      setIsFollowingSelectedUser(false);
+      setFollowActionLoading(false);
       setSiteMembershipRequestDraft({
         siteId: '',
         siteTitle: '',
@@ -489,6 +496,9 @@ const PeopleDirectoryPage: React.FC = () => {
       peopleService.getSites(selectedUsername),
       peopleService.getFavoriteSites(selectedUsername),
       peopleService.getSiteMembershipRequests(selectedUsername),
+      selectedUsername !== authUser?.username
+        ? followingService.check('USER', selectedUsername).catch(() => false)
+        : Promise.resolve(false),
     ])
       .then(([
       user,
@@ -500,6 +510,7 @@ const PeopleDirectoryPage: React.FC = () => {
         sites,
         favoriteSites,
         siteMembershipRequests,
+        following,
       ]) => {
         if (cancelled) {
           return;
@@ -513,6 +524,7 @@ const PeopleDirectoryPage: React.FC = () => {
         setSelectedSites(sites);
         setSelectedFavoriteSites(favoriteSites);
         setSelectedSiteMembershipRequests(siteMembershipRequests);
+        setIsFollowingSelectedUser(following);
       })
       .catch(() => {
         if (!cancelled) {
@@ -530,6 +542,7 @@ const PeopleDirectoryPage: React.FC = () => {
           setSelectedSites([]);
           setSelectedFavoriteSites([]);
           setSelectedSiteMembershipRequests([]);
+          setIsFollowingSelectedUser(false);
           setSiteMembershipRequestEditorOpen(false);
           setSiteMembershipRequestEditingSiteId(null);
           setSiteMembershipRequestDraft({
@@ -549,7 +562,7 @@ const PeopleDirectoryPage: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [profileReloadToken, selectedUsername]);
+  }, [authUser?.username, profileReloadToken, selectedUsername]);
 
   useEffect(() => {
     if (!selectedUsername) {
@@ -749,6 +762,28 @@ const PeopleDirectoryPage: React.FC = () => {
     .sort(([left], [right]) => left.localeCompare(right));
   const preferenceGroups = groupPreferencesByNamespace(selectedPreferences?.preferences || {});
   const hasPreferenceNamespaceFilter = Boolean(selectedPreferenceNamespace);
+
+  const handleToggleUserFollow = async () => {
+    if (!activeUser?.username || activeUser.username === authUser?.username) {
+      return;
+    }
+    setFollowActionLoading(true);
+    try {
+      if (isFollowingSelectedUser) {
+        await followingService.unfollow('USER', activeUser.username);
+        setIsFollowingSelectedUser(false);
+        toast.success('User unfollowed');
+      } else {
+        await followingService.follow('USER', activeUser.username);
+        setIsFollowingSelectedUser(true);
+        toast.success('User followed');
+      }
+    } catch {
+      toast.error('Failed to update following');
+    } finally {
+      setFollowActionLoading(false);
+    }
+  };
 
   const openProfileEditor = () => {
     setProfileDraft({
@@ -1849,6 +1884,17 @@ const PeopleDirectoryPage: React.FC = () => {
                           >
                             Copy mention
                           </Button>
+                          {!isCurrentUser && (
+                            <Button
+                              size="small"
+                              variant={isFollowingSelectedUser ? 'contained' : 'outlined'}
+                              startIcon={isFollowingSelectedUser ? <NotificationsActive fontSize="small" /> : <NotificationsOff fontSize="small" />}
+                              onClick={() => void handleToggleUserFollow()}
+                              disabled={followActionLoading}
+                            >
+                              {isFollowingSelectedUser ? 'Following user' : 'Follow user'}
+                            </Button>
+                          )}
                           {canEditProfile && (
                             <>
                               <Button size="small" variant="outlined" onClick={openProfileEditor}>

@@ -5,6 +5,8 @@ export interface ActivityLinkTarget {
   label: string;
 }
 
+export type ActivityTargetKind = 'USER' | 'SITE' | 'NODE';
+
 const ACTIVITY_LABELS: Record<string, string> = {
   'comment.added': 'Comment Added',
   'node.created': 'Node Created',
@@ -102,6 +104,21 @@ export const matchesActivityFilter = (activity: ActivityDto, filter: string): bo
 
   return haystack.includes(normalizedFilter);
 };
+
+export const getActivityTargetKind = (activity: ActivityDto): ActivityTargetKind => {
+  if (activity.nodeId) {
+    return 'NODE';
+  }
+  if (activity.siteId) {
+    return 'SITE';
+  }
+  return 'USER';
+};
+
+export const matchesActivityTargetKind = (
+  activity: ActivityDto,
+  targetKind: ActivityTargetKind | 'ALL'
+): boolean => targetKind === 'ALL' || getActivityTargetKind(activity) === targetKind;
 
 export const getActivityLinkTargets = (activity: ActivityDto): ActivityLinkTarget[] => {
   const targets: ActivityLinkTarget[] = [];

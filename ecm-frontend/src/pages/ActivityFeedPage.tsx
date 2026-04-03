@@ -19,14 +19,18 @@ import {
 import { Refresh } from '@mui/icons-material';
 import { toast } from 'react-toastify';
 import activityService, { ActivityPage } from 'services/activityService';
+import followingService, { FollowSubscriptionDto } from 'services/followingService';
 import { useAppSelector } from 'store';
 import authService from 'services/authService';
 import {
+  ActivityTargetKind,
   formatActivityLabel,
   formatActivitySummary,
   getActivityLinkTargets,
   matchesActivityFilter,
+  matchesActivityTargetKind,
 } from 'utils/siteActivityUtils';
+import { getFollowTargetLink, groupFollowSubscriptions } from 'utils/followingUtils';
 
 type FeedScope = 'global' | 'mine' | 'site' | 'following';
 
@@ -37,8 +41,10 @@ const ActivityFeedPage: React.FC = () => {
   const [scope, setScope] = useState<FeedScope>('mine');
   const [siteId, setSiteId] = useState('');
   const [activityFilter, setActivityFilter] = useState('');
+  const [targetKind, setTargetKind] = useState<ActivityTargetKind | 'ALL'>('ALL');
   const [page, setPage] = useState(0);
   const [data, setData] = useState<ActivityPage | null>(null);
+  const [subscriptions, setSubscriptions] = useState<FollowSubscriptionDto[]>([]);
   const [loading, setLoading] = useState(false);
   const [queryApplied, setQueryApplied] = useState(false);
   const deferredActivityFilter = useDeferredValue(activityFilter.trim());
@@ -48,6 +54,7 @@ const ActivityFeedPage: React.FC = () => {
     const preselectedSiteId = params.get('siteId')?.trim();
     const preselectedScope = params.get('scope')?.trim();
     const preselectedFilter = params.get('type')?.trim();
+    const preselectedTarget = params.get('target')?.trim();
     if (preselectedSiteId) {
       setScope('site');
       setSiteId(preselectedSiteId);
@@ -56,6 +63,9 @@ const ActivityFeedPage: React.FC = () => {
     }
     if (preselectedFilter) {
       setActivityFilter(preselectedFilter);
+    }
+    if (preselectedTarget === 'ALL' || preselectedTarget === 'SITE' || preselectedTarget === 'NODE' || preselectedTarget === 'USER') {
+      setTargetKind(preselectedTarget);
     }
     setQueryApplied(true);
   }, []);
@@ -74,10 +84,15 @@ const ActivityFeedPage: React.FC = () => {
     } else {
       params.delete('type');
     }
+    if (targetKind !== 'ALL') {
+      params.set('target', targetKind);
+    } else {
+      params.delete('target');
+    }
     const nextSearch = params.toString();
     const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}`;
     window.history.replaceState(null, '', nextUrl);
-  }, [activityFilter, queryApplied, scope, siteId]);
+  }, [activityFilter, queryApplied, scope, siteId, targetKind]);
 
   const load = async () => {
     setLoading(true);
@@ -86,11 +101,21 @@ const ActivityFeedPage: React.FC = () => {
       if (scope === 'mine' && effectiveUser?.username) {
         result = await activityService.getUserFeed(effectiveUser.username, page);
       } else if (scope === 'following') {
-        result = await activityService.getFollowingFeed(page);
+        const [followingFeed, followingSubscriptions] = await Promise.all([
+          activityService.getFollowingFeed(page),
+          followingService.list(),
+        ]);
+        result = followingFeed;
+        setSubscriptions(followingSubscriptions);
       } else if (scope === 'site' && siteId.trim()) {
         result = await activityService.getSiteFeed(siteId.trim(), page);
+        setSubscriptions([]);
       } else {
         result = await activityService.getGlobalFeed(page);
+        setSubscriptions([]);
+      }
+      if (scope === 'mine') {
+        setSubscriptions([]);
       }
       setData(result);
     } catch { toast.error('Failed to load activity feed'); }
@@ -109,7 +134,27 @@ const ActivityFeedPage: React.FC = () => {
     return 'default' as const;
   };
 
-  const visibleActivities = data?.content.filter((activity) => matchesActivityFilter(activity, deferredActivityFilter)) ?? [];
+  const visibleActivities = data?.content.filter(
+    (activity) =>
+      matchesActivityFilter(activity, deferredActivityFilter)
+      && matchesActivityTargetKind(activity, targetKind)
+  ) ?? [];
+  const groupedSubscriptions = groupFollowSubscriptions(subscriptions, targetKind);
+
+  const handleUnfollow = async (subscription: FollowSubscriptionDto) => {
+    try {
+      await followingService.unfollow(subscription.targetType, subscription.targetId);
+      setSubscriptions((prev) =>
+        prev.filter((item) => item.id !== subscription.id)
+      );
+      toast.success('Subscription removed');
+      if (scope === 'following') {
+        void load();
+      }
+    } catch {
+      toast.error('Failed to remove subscription');
+    }
+  };
 
   return (
     <Box maxWidth={900}>
@@ -148,6 +193,22 @@ const ActivityFeedPage: React.FC = () => {
             }}
             sx={{ width: 180 }}
           />
+          <FormControl size="small" sx={{ minWidth: 130 }}>
+            <InputLabel>Target</InputLabel>
+            <Select
+              label="Target"
+              value={targetKind}
+              onChange={(event) => {
+                setTargetKind(event.target.value as ActivityTargetKind | 'ALL');
+                setPage(0);
+              }}
+            >
+              <MenuItem value="ALL">All Targets</MenuItem>
+              <MenuItem value="SITE">Sites</MenuItem>
+              <MenuItem value="NODE">Nodes</MenuItem>
+              <MenuItem value="USER">Users</MenuItem>
+            </Select>
+          </FormControl>
           <Button variant="outlined" startIcon={<Refresh />} onClick={() => void load()} disabled={loading}>Refresh</Button>
         </Stack>
       </Box>
@@ -156,6 +217,74 @@ const ActivityFeedPage: React.FC = () => {
         <Box display="flex" justifyContent="center" p={4}><CircularProgress /></Box>
       ) : (
           <>
+            {scope === 'following' && (
+              <Card variant="outlined" sx={{ mb: 2 }}>
+                <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
+                  <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+                    <Box>
+                      <Typography variant="h6">My Following</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {subscriptions.length} active subscriptions
+                      </Typography>
+                    </Box>
+                  </Box>
+                  {groupedSubscriptions.length === 0 ? (
+                    <Paper sx={{ p: 2, textAlign: 'center' }} variant="outlined">
+                      <Typography color="text.secondary">
+                        No followed targets match the current target filter.
+                      </Typography>
+                    </Paper>
+                  ) : (
+                    <Stack spacing={1.25}>
+                      {groupedSubscriptions.map((group) => (
+                        <Box key={group.targetType}>
+                          <Stack direction="row" spacing={1} alignItems="center" mb={0.75}>
+                            <Typography variant="subtitle2">{group.label}</Typography>
+                            <Chip size="small" label={group.subscriptions.length} variant="outlined" />
+                          </Stack>
+                          <Stack spacing={0.75}>
+                            {group.subscriptions.map((subscription) => {
+                              const targetLink = getFollowTargetLink(subscription);
+                              return (
+                                <Paper key={subscription.id} variant="outlined" sx={{ p: 1.25 }}>
+                                  <Box display="flex" justifyContent="space-between" alignItems="center" gap={1}>
+                                    <Box minWidth={0}>
+                                      <Typography variant="body2" fontWeight={500} noWrap>
+                                        {subscription.targetId}
+                                      </Typography>
+                                      <Typography variant="caption" color="text.secondary">
+                                        Following since {new Date(subscription.createdAt).toLocaleString()}
+                                      </Typography>
+                                    </Box>
+                                    <Stack direction="row" spacing={0.75}>
+                                      <Button
+                                        size="small"
+                                        variant="text"
+                                        onClick={() => window.open(targetLink.href, '_blank')}
+                                      >
+                                        {targetLink.label}
+                                      </Button>
+                                      <Button
+                                        size="small"
+                                        color="warning"
+                                        variant="outlined"
+                                        onClick={() => void handleUnfollow(subscription)}
+                                      >
+                                        Unfollow
+                                      </Button>
+                                    </Stack>
+                                  </Box>
+                                </Paper>
+                              );
+                            })}
+                          </Stack>
+                        </Box>
+                      ))}
+                    </Stack>
+                  )}
+                </CardContent>
+              </Card>
+            )}
             <Stack spacing={1.5}>
             {visibleActivities.map((activity) => (
               <Card key={activity.id} variant="outlined">
