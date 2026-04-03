@@ -634,6 +634,15 @@ const SitesPage: React.FC = () => {
                   <Typography variant="body2" color="text.secondary">Create and publish blog posts for this site.</Typography>
                 </CardContent>
               </Card>
+              <Card variant="outlined">
+                <CardContent>
+                  <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+                    <Typography variant="h6">Calendar</Typography>
+                    <Button size="small" onClick={() => window.open(`/sites/${selectedSiteId}/calendar`, '_blank')}>Open Calendar</Button>
+                  </Box>
+                  <Typography variant="body2" color="text.secondary">View and create calendar events for this site.</Typography>
+                </CardContent>
+              </Card>
             </Stack>
           </Grid>
         </Grid>

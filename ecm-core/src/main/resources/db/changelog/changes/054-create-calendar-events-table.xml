@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="054-create-calendar-events-table" author="codex">
+        <comment>Create calendar_events table for site calendar</comment>
+
+        <createTable tableName="calendar_events">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="site_id" type="varchar(100)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="title" type="varchar(500)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="description" type="text"/>
+            <column name="location" type="varchar(500)"/>
+            <column name="start_date" type="timestamp">
+                <constraints nullable="false"/>
+            </column>
+            <column name="end_date" type="timestamp">
+                <constraints nullable="false"/>
+            </column>
+            <column name="all_day" type="boolean" defaultValueBoolean="false"/>
+            <column name="recurrence" type="varchar(500)"/>
+            <column name="created_by" type="varchar(255)"/>
+            <column name="created_date" type="timestamp" defaultValueComputed="${now}"/>
+            <column name="last_modified_by" type="varchar(255)"/>
+            <column name="last_modified_date" type="timestamp" defaultValueComputed="${now}"/>
+            <column name="entity_version" type="bigint" defaultValue="0"/>
+            <column name="is_deleted" type="boolean" defaultValueBoolean="false"/>
+            <column name="deleted_at" type="timestamp"/>
+            <column name="deleted_by" type="varchar(255)"/>
+        </createTable>
+
+        <createIndex tableName="calendar_events" indexName="idx_ce_site_id">
+            <column name="site_id"/>
+        </createIndex>
+        <createIndex tableName="calendar_events" indexName="idx_ce_start_date">
+            <column name="start_date"/>
+        </createIndex>
+        <createIndex tableName="calendar_events" indexName="idx_ce_end_date">
+            <column name="end_date"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>

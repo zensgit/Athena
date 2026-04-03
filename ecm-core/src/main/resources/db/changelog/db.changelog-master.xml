@@ -64,6 +64,7 @@
     <include file="db/changelog/changes/051-create-import-jobs-table.xml"/>
     <include file="db/changelog/changes/052-create-discussion-tables.xml"/>
     <include file="db/changelog/changes/053-create-blog-posts-table.xml"/>
+    <include file="db/changelog/changes/054-create-calendar-events-table.xml"/>
     <include file="db/changelog/changes/007-insert-initial-data.xml"/>
 
 </databaseChangeLog>
