@@ -66,6 +66,7 @@
     <include file="db/changelog/changes/053-create-blog-posts-table.xml"/>
     <include file="db/changelog/changes/054-create-calendar-events-table.xml"/>
     <include file="db/changelog/changes/055-add-node-archive-columns.xml"/>
+    <include file="db/changelog/changes/056-create-archive-policies-table.xml"/>
     <include file="db/changelog/changes/007-insert-initial-data.xml"/>
 
 </databaseChangeLog>

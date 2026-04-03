@@ -25,6 +25,11 @@ import { Archive, Refresh, Restore } from '@mui/icons-material';
 import { toast } from 'react-toastify';
 import contentArchiveService, {
   ArchivedNodeDto,
+  ArchivePolicyBatchExecutionDto,
+  ArchivePolicyCandidateDto,
+  ArchivePolicyDryRunDto,
+  ArchivePolicyDto,
+  ArchivePolicyRequest,
   ArchiveStatus,
   ArchiveStatusDto,
   ArchiveStoreTier,
@@ -58,10 +63,22 @@ const formatFileSize = (bytes?: number | null): string => {
 const ContentArchivePage: React.FC = () => {
   const [nodeIdInput, setNodeIdInput] = useState('');
   const [storageTier, setStorageTier] = useState<ArchiveStoreTier>('COLD');
+  const [policyFolderId, setPolicyFolderId] = useState('');
+  const [policyForm, setPolicyForm] = useState<ArchivePolicyRequest>({
+    enabled: true,
+    inactivityDays: 90,
+    storageTier: 'COLD',
+    includeSubfolders: true,
+    maxCandidatesPerRun: 100,
+  });
+  const [policyList, setPolicyList] = useState<ArchivePolicyDto[]>([]);
+  const [dryRun, setDryRun] = useState<ArchivePolicyDryRunDto | null>(null);
+  const [runSummary, setRunSummary] = useState<ArchivePolicyBatchExecutionDto | null>(null);
   const [statusLookup, setStatusLookup] = useState<ArchiveStatusDto | null>(null);
   const [archivedNodes, setArchivedNodes] = useState<ArchivedNodeDto[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [policySubmitting, setPolicySubmitting] = useState(false);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [totalRows, setTotalRows] = useState(0);
@@ -79,9 +96,22 @@ const ContentArchivePage: React.FC = () => {
     }
   }, [page, rowsPerPage]);
 
+  const loadPolicies = useCallback(async () => {
+    try {
+      const result = await contentArchiveService.listArchivePolicies();
+      setPolicyList(result);
+    } catch {
+      toast.error('Failed to load archive policies');
+    }
+  }, []);
+
   useEffect(() => {
     void loadArchivedNodes();
   }, [loadArchivedNodes]);
+
+  useEffect(() => {
+    void loadPolicies();
+  }, [loadPolicies]);
 
   const refreshLookup = useCallback(async (nodeId: string) => {
     const trimmed = nodeId.trim();
@@ -145,6 +175,151 @@ const ContentArchivePage: React.FC = () => {
       setSubmitting(false);
     }
   };
+
+  const handlePolicyLoad = async () => {
+    const trimmed = policyFolderId.trim();
+    if (!trimmed) {
+      toast.error('Folder ID is required');
+      return;
+    }
+    setPolicySubmitting(true);
+    try {
+      const policy = await contentArchiveService.getArchivePolicy(trimmed);
+      setPolicyForm({
+        enabled: policy.enabled,
+        inactivityDays: policy.inactivityDays,
+        storageTier: policy.storageTier,
+        includeSubfolders: policy.includeSubfolders,
+        maxCandidatesPerRun: policy.maxCandidatesPerRun,
+      });
+      toast.success('Archive policy loaded');
+    } catch {
+      toast.error('Archive policy not found for folder');
+    } finally {
+      setPolicySubmitting(false);
+    }
+  };
+
+  const handlePolicySave = async () => {
+    const trimmed = policyFolderId.trim();
+    if (!trimmed) {
+      toast.error('Folder ID is required');
+      return;
+    }
+    setPolicySubmitting(true);
+    try {
+      await contentArchiveService.upsertArchivePolicy(trimmed, policyForm);
+      await loadPolicies();
+      toast.success('Archive policy saved');
+    } catch {
+      toast.error('Failed to save archive policy');
+    } finally {
+      setPolicySubmitting(false);
+    }
+  };
+
+  const handlePolicyDelete = async () => {
+    const trimmed = policyFolderId.trim();
+    if (!trimmed) {
+      toast.error('Folder ID is required');
+      return;
+    }
+    setPolicySubmitting(true);
+    try {
+      await contentArchiveService.deleteArchivePolicy(trimmed);
+      setDryRun(null);
+      await loadPolicies();
+      toast.success('Archive policy deleted');
+    } catch {
+      toast.error('Failed to delete archive policy');
+    } finally {
+      setPolicySubmitting(false);
+    }
+  };
+
+  const handlePolicyDryRun = async () => {
+    const trimmed = policyFolderId.trim();
+    if (!trimmed) {
+      toast.error('Folder ID is required');
+      return;
+    }
+    setPolicySubmitting(true);
+    try {
+      const result = await contentArchiveService.dryRunArchivePolicy(trimmed, policyForm);
+      setDryRun(result);
+      toast.success(`Dry-run found ${result.candidateCount} candidate(s)`);
+    } catch {
+      toast.error('Failed to run archive dry-run');
+    } finally {
+      setPolicySubmitting(false);
+    }
+  };
+
+  const handlePolicyExecute = async () => {
+    const trimmed = policyFolderId.trim();
+    if (!trimmed) {
+      toast.error('Folder ID is required');
+      return;
+    }
+    setPolicySubmitting(true);
+    try {
+      const result = await contentArchiveService.executeArchivePolicy(trimmed);
+      await Promise.all([loadPolicies(), loadArchivedNodes()]);
+      toast.success(`Archive policy archived ${result.archivedNodeCount} node(s)`);
+    } catch {
+      toast.error('Failed to execute archive policy');
+    } finally {
+      setPolicySubmitting(false);
+    }
+  };
+
+  const handleRunEnabledPolicies = async () => {
+    setPolicySubmitting(true);
+    try {
+      const result = await contentArchiveService.runArchivePolicies();
+      setRunSummary(result);
+      await Promise.all([loadPolicies(), loadArchivedNodes()]);
+      toast.success(`Executed ${result.executedPolicies} archive policy run(s)`);
+    } catch {
+      toast.error('Failed to run enabled archive policies');
+    } finally {
+      setPolicySubmitting(false);
+    }
+  };
+
+  const applyPolicyRow = (policy: ArchivePolicyDto) => {
+    setPolicyFolderId(policy.folderId);
+    setPolicyForm({
+      enabled: policy.enabled,
+      inactivityDays: policy.inactivityDays,
+      storageTier: policy.storageTier,
+      includeSubfolders: policy.includeSubfolders,
+      maxCandidatesPerRun: policy.maxCandidatesPerRun,
+    });
+  };
+
+  const renderCandidateRows = (candidates: ArchivePolicyCandidateDto[]) => (
+    candidates.length > 0 ? candidates.map((candidate) => (
+      <TableRow key={candidate.nodeId} hover>
+        <TableCell>{candidate.name}</TableCell>
+        <TableCell>{candidate.nodeType}</TableCell>
+        <TableCell sx={{ maxWidth: 260 }}>
+          <Typography variant="body2" noWrap title={candidate.path}>
+            {candidate.path}
+          </Typography>
+        </TableCell>
+        <TableCell>{formatDateTime(candidate.activityDate)}</TableCell>
+      </TableRow>
+    )) : (
+      <TableRow>
+        <TableCell colSpan={4}>
+          <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 2 }}>
+            No candidate nodes in the current dry-run.
+          </Typography>
+        </TableCell>
+      </TableRow>
+    )
+  );
 
   return (
     <Box sx={{ p: 3 }}>
@@ -235,88 +410,286 @@ const ContentArchivePage: React.FC = () => {
               </Stack>
             </CardContent>
           </Card>
-        </Grid>
 
-        <Grid item xs={12} lg={8}>
-          <Card>
+          <Card sx={{ mt: 3 }}>
             <CardContent>
-              <Stack spacing={2}>
-                <Typography variant="h6">Archived Nodes</Typography>
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Name</TableCell>
-                      <TableCell>Type</TableCell>
-                      <TableCell>Tier</TableCell>
-                      <TableCell>Archived</TableCell>
-                      <TableCell>Path</TableCell>
-                      <TableCell>Size</TableCell>
-                      <TableCell align="right">Actions</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {archivedNodes.length > 0 ? archivedNodes.map((node) => (
-                      <TableRow key={node.nodeId} hover>
-                        <TableCell>
-                          <Stack spacing={0.5}>
-                            <Typography variant="body2">{node.name}</Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              {node.createdBy || '—'}
-                            </Typography>
-                          </Stack>
-                        </TableCell>
-                        <TableCell>{node.nodeType}</TableCell>
-                        <TableCell>
-                          <Chip size="small" color={tierColor[node.archiveStoreTier]} label={node.archiveStoreTier} />
-                        </TableCell>
-                        <TableCell>
-                          <Stack spacing={0.5}>
-                            <Chip size="small" color={statusColor[node.archiveStatus]} label={node.archiveStatus} />
-                            <Typography variant="caption" color="text.secondary">
-                              {formatDateTime(node.archivedDate)}
-                            </Typography>
-                          </Stack>
-                        </TableCell>
-                        <TableCell sx={{ maxWidth: 260 }}>
-                          <Typography variant="body2" noWrap title={node.path}>
-                            {node.path}
-                          </Typography>
-                        </TableCell>
-                        <TableCell>{formatFileSize(node.size)}</TableCell>
-                        <TableCell align="right">
-                          <Stack direction="row" justifyContent="flex-end" spacing={1}>
-                            <Button size="small" color="success" startIcon={<Restore />} onClick={() => void handleRestoreNode(node.nodeId)}>
-                              Restore
-                            </Button>
-                          </Stack>
-                        </TableCell>
-                      </TableRow>
-                    )) : (
-                      <TableRow>
-                        <TableCell colSpan={7}>
-                          <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 3 }}>
-                            {loading ? 'Loading archived nodes…' : 'No archived nodes yet.'}
-                          </Typography>
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-                <TablePagination
-                  component="div"
-                  count={totalRows}
-                  page={page}
-                  onPageChange={(_, nextPage) => setPage(nextPage)}
-                  rowsPerPage={rowsPerPage}
-                  onRowsPerPageChange={(event) => {
-                    setRowsPerPage(Number(event.target.value));
-                    setPage(0);
-                  }}
-                  rowsPerPageOptions={[10, 20, 50]}
+              <Stack spacing={2.5}>
+                <Typography variant="h6">Archive Policy</Typography>
+                <Alert severity="info">
+                  Folder-level policies archive stale live content by inactivity window. First cut supports dry-run,
+                  manual execution, and scheduled enabled-policy runs.
+                </Alert>
+                <TextField
+                  label="Folder ID"
+                  value={policyFolderId}
+                  onChange={(event) => setPolicyFolderId(event.target.value)}
+                  placeholder="Paste a folder UUID"
+                  fullWidth
                 />
+                <TextField
+                  label="Inactivity Days"
+                  type="number"
+                  value={policyForm.inactivityDays}
+                  onChange={(event) => setPolicyForm((current) => ({
+                    ...current,
+                    inactivityDays: Number(event.target.value) || 0,
+                  }))}
+                  fullWidth
+                />
+                <TextField
+                  label="Max Candidates Per Run"
+                  type="number"
+                  value={policyForm.maxCandidatesPerRun}
+                  onChange={(event) => setPolicyForm((current) => ({
+                    ...current,
+                    maxCandidatesPerRun: Number(event.target.value) || 0,
+                  }))}
+                  fullWidth
+                />
+                <FormControl fullWidth>
+                  <InputLabel id="archive-policy-tier-label">Policy Storage Tier</InputLabel>
+                  <Select
+                    labelId="archive-policy-tier-label"
+                    label="Policy Storage Tier"
+                    value={policyForm.storageTier}
+                    onChange={(event) => setPolicyForm((current) => ({
+                      ...current,
+                      storageTier: event.target.value as ArchiveStoreTier,
+                    }))}
+                  >
+                    <MenuItem value="WARM">WARM</MenuItem>
+                    <MenuItem value="COLD">COLD</MenuItem>
+                    <MenuItem value="GLACIER">GLACIER</MenuItem>
+                  </Select>
+                </FormControl>
+                <FormControl fullWidth>
+                  <InputLabel id="archive-policy-enabled-label">Enabled</InputLabel>
+                  <Select
+                    labelId="archive-policy-enabled-label"
+                    label="Enabled"
+                    value={policyForm.enabled ? 'true' : 'false'}
+                    onChange={(event) => setPolicyForm((current) => ({
+                      ...current,
+                      enabled: event.target.value === 'true',
+                    }))}
+                  >
+                    <MenuItem value="true">Enabled</MenuItem>
+                    <MenuItem value="false">Disabled</MenuItem>
+                  </Select>
+                </FormControl>
+                <FormControl fullWidth>
+                  <InputLabel id="archive-policy-include-subfolders-label">Include Subfolders</InputLabel>
+                  <Select
+                    labelId="archive-policy-include-subfolders-label"
+                    label="Include Subfolders"
+                    value={policyForm.includeSubfolders ? 'true' : 'false'}
+                    onChange={(event) => setPolicyForm((current) => ({
+                      ...current,
+                      includeSubfolders: event.target.value === 'true',
+                    }))}
+                  >
+                    <MenuItem value="true">Yes</MenuItem>
+                    <MenuItem value="false">Direct Children Only</MenuItem>
+                  </Select>
+                </FormControl>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} flexWrap="wrap">
+                  <Button variant="outlined" onClick={() => void handlePolicyLoad()} disabled={policySubmitting}>
+                    Load Policy
+                  </Button>
+                  <Button variant="contained" onClick={() => void handlePolicySave()} disabled={policySubmitting}>
+                    Save Policy
+                  </Button>
+                  <Button variant="outlined" color="warning" onClick={() => void handlePolicyDryRun()} disabled={policySubmitting}>
+                    Dry Run
+                  </Button>
+                  <Button variant="outlined" color="success" onClick={() => void handlePolicyExecute()} disabled={policySubmitting}>
+                    Execute
+                  </Button>
+                  <Button variant="outlined" color="error" onClick={() => void handlePolicyDelete()} disabled={policySubmitting}>
+                    Delete
+                  </Button>
+                </Stack>
+                <Button variant="outlined" onClick={() => void handleRunEnabledPolicies()} disabled={policySubmitting}>
+                  Run Enabled Policies
+                </Button>
               </Stack>
             </CardContent>
           </Card>
+        </Grid>
+
+        <Grid item xs={12} lg={8}>
+          <Stack spacing={3}>
+            <Card>
+              <CardContent>
+                <Stack spacing={2}>
+                  <Typography variant="h6">Archived Nodes</Typography>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Name</TableCell>
+                        <TableCell>Type</TableCell>
+                        <TableCell>Tier</TableCell>
+                        <TableCell>Archived</TableCell>
+                        <TableCell>Path</TableCell>
+                        <TableCell>Size</TableCell>
+                        <TableCell align="right">Actions</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {archivedNodes.length > 0 ? archivedNodes.map((node) => (
+                        <TableRow key={node.nodeId} hover>
+                          <TableCell>
+                            <Stack spacing={0.5}>
+                              <Typography variant="body2">{node.name}</Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {node.createdBy || '—'}
+                              </Typography>
+                            </Stack>
+                          </TableCell>
+                          <TableCell>{node.nodeType}</TableCell>
+                          <TableCell>
+                            <Chip size="small" color={tierColor[node.archiveStoreTier]} label={node.archiveStoreTier} />
+                          </TableCell>
+                          <TableCell>
+                            <Stack spacing={0.5}>
+                              <Chip size="small" color={statusColor[node.archiveStatus]} label={node.archiveStatus} />
+                              <Typography variant="caption" color="text.secondary">
+                                {formatDateTime(node.archivedDate)}
+                              </Typography>
+                            </Stack>
+                          </TableCell>
+                          <TableCell sx={{ maxWidth: 260 }}>
+                            <Typography variant="body2" noWrap title={node.path}>
+                              {node.path}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>{formatFileSize(node.size)}</TableCell>
+                          <TableCell align="right">
+                            <Stack direction="row" justifyContent="flex-end" spacing={1}>
+                              <Button size="small" color="success" startIcon={<Restore />} onClick={() => void handleRestoreNode(node.nodeId)}>
+                                Restore
+                              </Button>
+                            </Stack>
+                          </TableCell>
+                        </TableRow>
+                      )) : (
+                        <TableRow>
+                          <TableCell colSpan={7}>
+                            <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 3 }}>
+                              {loading ? 'Loading archived nodes…' : 'No archived nodes yet.'}
+                            </Typography>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                  <TablePagination
+                    component="div"
+                    count={totalRows}
+                    page={page}
+                    onPageChange={(_, nextPage) => setPage(nextPage)}
+                    rowsPerPage={rowsPerPage}
+                    onRowsPerPageChange={(event) => {
+                      setRowsPerPage(Number(event.target.value));
+                      setPage(0);
+                    }}
+                    rowsPerPageOptions={[10, 20, 50]}
+                  />
+                </Stack>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent>
+                <Stack spacing={2}>
+                  <Typography variant="h6">Archive Policies</Typography>
+                  {runSummary ? (
+                    <Alert severity={runSummary.failureCount > 0 ? 'warning' : 'success'}>
+                      Executed {runSummary.executedPolicies} policy runs, archived {runSummary.archivedNodeCount} node(s),
+                      failures {runSummary.failureCount}.
+                    </Alert>
+                  ) : null}
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Folder</TableCell>
+                        <TableCell>Enabled</TableCell>
+                        <TableCell>Inactivity</TableCell>
+                        <TableCell>Tier</TableCell>
+                        <TableCell>Last Run</TableCell>
+                        <TableCell align="right">Actions</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {policyList.length > 0 ? policyList.map((policy) => (
+                        <TableRow key={policy.policyId} hover>
+                          <TableCell>
+                            <Stack spacing={0.5}>
+                              <Typography variant="body2">{policy.folderName}</Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {policy.folderPath}
+                              </Typography>
+                            </Stack>
+                          </TableCell>
+                          <TableCell>
+                            <Chip size="small" color={policy.enabled ? 'success' : 'default'} label={policy.enabled ? 'ENABLED' : 'DISABLED'} />
+                          </TableCell>
+                          <TableCell>{policy.inactivityDays} days</TableCell>
+                          <TableCell>
+                            <Chip size="small" color={tierColor[policy.storageTier]} label={policy.storageTier} />
+                          </TableCell>
+                          <TableCell>{formatDateTime(policy.lastExecutedAt)}</TableCell>
+                          <TableCell align="right">
+                            <Button size="small" onClick={() => applyPolicyRow(policy)}>
+                              Load
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      )) : (
+                        <TableRow>
+                          <TableCell colSpan={6}>
+                            <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 2 }}>
+                              No archive policies configured yet.
+                            </Typography>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </Stack>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent>
+                <Stack spacing={2}>
+                  <Typography variant="h6">Dry-Run Diagnostics</Typography>
+                  {dryRun ? (
+                    <Alert severity={dryRun.candidateCount > 0 ? 'warning' : 'success'}>
+                      {dryRun.folderName}: {dryRun.candidateCount} candidate(s) older than {formatDateTime(dryRun.cutoffDate)}.
+                    </Alert>
+                  ) : (
+                    <Typography variant="body2" color="text.secondary">
+                      Run a policy dry-run to preview archive candidates before execution.
+                    </Typography>
+                  )}
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Name</TableCell>
+                        <TableCell>Type</TableCell>
+                        <TableCell>Path</TableCell>
+                        <TableCell>Activity</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {renderCandidateRows(dryRun?.candidates ?? [])}
+                    </TableBody>
+                  </Table>
+                </Stack>
+              </CardContent>
+            </Card>
+          </Stack>
         </Grid>
       </Grid>
     </Box>

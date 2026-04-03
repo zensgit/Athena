@@ -32,35 +32,13 @@ public class ContentArchiveService {
     public ArchiveMutationDto archiveNode(UUID nodeId, ArchiveStoreTier storageTier) {
         Node node = loadActiveNode(nodeId);
         securityService.checkPermission(node, PermissionType.DELETE);
+        return archiveNodeInternal(node, storageTier, securityService.getCurrentUser(), "archived");
+    }
 
-        if (node.getArchiveStatus() == ArchiveStatus.ARCHIVED) {
-            throw new IllegalStateException("Node is already archived: " + nodeId);
-        }
-
-        String currentUser = securityService.getCurrentUser();
-        ArchiveStoreTier effectiveTier = storageTier != null ? storageTier : ArchiveStoreTier.COLD;
-        LocalDateTime now = LocalDateTime.now();
-        List<Node> scope = collectArchiveScope(node);
-
-        for (Node candidate : scope) {
-            candidate.setArchiveStatus(ArchiveStatus.ARCHIVED);
-            candidate.setArchivedDate(now);
-            candidate.setArchivedBy(currentUser);
-            candidate.setArchiveStoreTier(effectiveTier);
-        }
-
-        nodeRepository.saveAll(scope);
-        syncSearchIndex(scope);
-        activityEventListener.postNodeActivity(
-            "node.archived",
-            currentUser,
-            node,
-            Map.of(
-                "action", "archived",
-                "archiveStoreTier", effectiveTier.name()
-            )
-        );
-        return toMutationDto(node, scope.size());
+    @Transactional
+    public ArchiveMutationDto archiveNodeByPolicy(UUID nodeId, ArchiveStoreTier storageTier, String actor) {
+        Node node = loadActiveNode(nodeId);
+        return archiveNodeInternal(node, storageTier, actor, "policy_archived");
     }
 
     @Transactional
@@ -120,6 +98,41 @@ public class ContentArchiveService {
     private Node loadActiveNode(UUID nodeId) {
         return nodeRepository.findByIdAndDeletedFalse(nodeId)
             .orElseThrow(() -> new NoSuchElementException("Node not found: " + nodeId));
+    }
+
+    private ArchiveMutationDto archiveNodeInternal(
+        Node node,
+        ArchiveStoreTier storageTier,
+        String actor,
+        String action
+    ) {
+        if (node.getArchiveStatus() == ArchiveStatus.ARCHIVED) {
+            throw new IllegalStateException("Node is already archived: " + node.getId());
+        }
+
+        ArchiveStoreTier effectiveTier = storageTier != null ? storageTier : ArchiveStoreTier.COLD;
+        LocalDateTime now = LocalDateTime.now();
+        List<Node> scope = collectArchiveScope(node);
+
+        for (Node candidate : scope) {
+            candidate.setArchiveStatus(ArchiveStatus.ARCHIVED);
+            candidate.setArchivedDate(now);
+            candidate.setArchivedBy(actor);
+            candidate.setArchiveStoreTier(effectiveTier);
+        }
+
+        nodeRepository.saveAll(scope);
+        syncSearchIndex(scope);
+        activityEventListener.postNodeActivity(
+            "node.archived",
+            actor,
+            node,
+            Map.of(
+                "action", action,
+                "archiveStoreTier", effectiveTier.name()
+            )
+        );
+        return toMutationDto(node, scope.size());
     }
 
     private List<Node> collectArchiveScope(Node root) {

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="056-create-archive-policies-table" author="codex">
+        <createTable tableName="archive_policies">
+            <column name="id" type="${uuid_type}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="folder_id" type="${uuid_type}">
+                <constraints nullable="false" unique="true" foreignKeyName="fk_archive_policies_folder" references="folders(id)"/>
+            </column>
+            <column name="enabled" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="inactivity_days" type="integer" defaultValueNumeric="90">
+                <constraints nullable="false"/>
+            </column>
+            <column name="storage_tier" type="varchar(20)" defaultValue="COLD">
+                <constraints nullable="false"/>
+            </column>
+            <column name="include_subfolders" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="max_candidates_per_run" type="integer" defaultValueNumeric="100">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_dry_run_at" type="timestamp"/>
+            <column name="last_executed_at" type="timestamp"/>
+            <column name="last_candidate_count" type="integer"/>
+            <column name="last_archived_node_count" type="integer"/>
+            <column name="last_error" type="varchar(1000)"/>
+            <column name="created_date" type="timestamp" defaultValueComputed="${now}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_date" type="timestamp"/>
+            <column name="created_by" type="varchar(255)" defaultValue="system">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_by" type="varchar(255)"/>
+            <column name="version" type="bigint"/>
+            <column name="is_deleted" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="deleted_at" type="timestamp"/>
+            <column name="deleted_by" type="varchar(255)"/>
+        </createTable>
+
+        <createIndex indexName="idx_archive_policy_enabled" tableName="archive_policies">
+            <column name="enabled"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>
