@@ -18,6 +18,7 @@ import ContentModelsPage from './pages/ContentModelsPage';
 import SitesPage from './pages/SitesPage';
 import ActivityFeedPage from './pages/ActivityFeedPage';
 import NotificationsPage from './pages/NotificationsPage';
+import DiscussionPage from './pages/DiscussionPage';
 import BulkImportPage from './pages/BulkImportPage';
 import WebhookSubscriptionsPage from './pages/WebhookSubscriptionsPage';
 import PermissionTemplatesPage from './pages/PermissionTemplatesPage';
@@ -302,6 +303,16 @@ const App: React.FC = () => {
                 <PrivateRoute>
                   <MainLayout>
                     <NotificationsPage />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/sites/:siteId/discussions"
+              element={
+                <PrivateRoute>
+                  <MainLayout>
+                    <DiscussionPage />
                   </MainLayout>
                 </PrivateRoute>
               }

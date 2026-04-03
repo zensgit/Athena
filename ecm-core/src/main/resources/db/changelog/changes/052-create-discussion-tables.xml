@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="052-create-discussion-tables" author="codex">
+        <comment>Create discussion_topics and discussion_replies tables</comment>
+
+        <createTable tableName="discussion_topics">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="site_id" type="varchar(100)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="title" type="varchar(500)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="content" type="text"/>
+            <column name="status" type="varchar(20)" defaultValue="OPEN">
+                <constraints nullable="false"/>
+            </column>
+            <column name="tags" type="jsonb"/>
+            <column name="created_by" type="varchar(255)"/>
+            <column name="created_date" type="timestamp" defaultValueComputed="${now}"/>
+            <column name="last_modified_by" type="varchar(255)"/>
+            <column name="last_modified_date" type="timestamp" defaultValueComputed="${now}"/>
+            <column name="entity_version" type="bigint" defaultValue="0"/>
+            <column name="is_deleted" type="boolean" defaultValueBoolean="false"/>
+            <column name="deleted_at" type="timestamp"/>
+            <column name="deleted_by" type="varchar(255)"/>
+        </createTable>
+
+        <createIndex tableName="discussion_topics" indexName="idx_dt_site_id">
+            <column name="site_id"/>
+        </createIndex>
+        <createIndex tableName="discussion_topics" indexName="idx_dt_status">
+            <column name="status"/>
+        </createIndex>
+
+        <createTable tableName="discussion_replies">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="topic_id" type="${uuid_type}">
+                <constraints nullable="false" foreignKeyName="fk_reply_topic" references="discussion_topics(id)"/>
+            </column>
+            <column name="parent_reply_id" type="${uuid_type}"/>
+            <column name="content" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_by" type="varchar(255)"/>
+            <column name="created_date" type="timestamp" defaultValueComputed="${now}"/>
+            <column name="last_modified_by" type="varchar(255)"/>
+            <column name="last_modified_date" type="timestamp" defaultValueComputed="${now}"/>
+            <column name="entity_version" type="bigint" defaultValue="0"/>
+            <column name="is_deleted" type="boolean" defaultValueBoolean="false"/>
+            <column name="deleted_at" type="timestamp"/>
+            <column name="deleted_by" type="varchar(255)"/>
+        </createTable>
+
+        <createIndex tableName="discussion_replies" indexName="idx_dr2_topic_id">
+            <column name="topic_id"/>
+        </createIndex>
+        <createIndex tableName="discussion_replies" indexName="idx_dr2_parent_reply_id">
+            <column name="parent_reply_id"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>

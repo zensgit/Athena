@@ -610,6 +610,21 @@ const SitesPage: React.FC = () => {
                   )}
                 </CardContent>
               </Card>
+
+              {/* Discussions mini-panel */}
+              <Card variant="outlined">
+                <CardContent>
+                  <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+                    <Typography variant="h6">Discussions</Typography>
+                    <Button size="small" onClick={() => window.open(`/sites/${selectedSiteId}/discussions`, '_blank')}>
+                      Open Forum
+                    </Button>
+                  </Box>
+                  <Typography variant="body2" color="text.secondary">
+                    Visit the discussion forum to view and create topics for this site.
+                  </Typography>
+                </CardContent>
+              </Card>
             </Stack>
           </Grid>
         </Grid>
