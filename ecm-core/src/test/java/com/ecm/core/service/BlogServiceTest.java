@@ -39,8 +39,9 @@ class BlogServiceTest {
     class Create {
 
         @Test
-        @DisplayName("creates draft post with title and siteId")
+        @DisplayName("creates draft post and posts blog.created activity")
         void createsDraft() {
+            when(securityService.getCurrentUser()).thenReturn("alice");
             when(blogRepo.save(any())).thenAnswer(inv -> {
                 BlogPost p = inv.getArgument(0);
                 p.setId(UUID.randomUUID());
@@ -53,6 +54,7 @@ class BlogServiceTest {
             assertEquals("Q1 Report", p.getTitle());
             assertEquals(BlogStatus.DRAFT, p.getStatus());
             assertNull(p.getPublishedDate());
+            verify(activityEventListener).postSiteActivity(eq("blog.created"), eq("alice"), eq("finance"), anyMap());
         }
 
         @Test
@@ -168,6 +170,33 @@ class BlogServiceTest {
 
             assertThrows(IllegalArgumentException.class,
                 () -> service.updatePost(post.getId(), "  ", null, null));
+        }
+
+        @Test
+        @DisplayName("update posts blog.updated activity")
+        void updatePostsActivity() {
+            BlogPost post = draft("alice");
+            when(blogRepo.findById(post.getId())).thenReturn(Optional.of(post));
+            when(securityService.getCurrentUser()).thenReturn("alice");
+            when(blogRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            service.updatePost(post.getId(), "Updated Title", null, null);
+
+            verify(activityEventListener).postSiteActivity(eq("blog.updated"), eq("alice"), eq("finance"), anyMap());
+        }
+
+        @Test
+        @DisplayName("unpublish posts blog.unpublished activity")
+        void unpublishPostsActivity() {
+            BlogPost post = draft("alice");
+            post.setStatus(BlogStatus.PUBLISHED);
+            when(blogRepo.findById(post.getId())).thenReturn(Optional.of(post));
+            when(securityService.getCurrentUser()).thenReturn("alice");
+            when(blogRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            service.unpublish(post.getId());
+
+            verify(activityEventListener).postSiteActivity(eq("blog.unpublished"), eq("alice"), eq("finance"), anyMap());
         }
     }
 

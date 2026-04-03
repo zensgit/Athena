@@ -4,7 +4,7 @@ import {
   DialogActions, DialogContent, DialogTitle, IconButton, Pagination,
   Paper, Stack, TextField, Tooltip, Typography,
 } from '@mui/material';
-import { Add, Delete, Publish, Unpublished, Refresh } from '@mui/icons-material';
+import { Add, Delete, Edit, Publish, Unpublished, Refresh } from '@mui/icons-material';
 import { useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import blogService, { BlogPostDto, BlogPostPage } from 'services/blogService';
@@ -31,6 +31,13 @@ const BlogPage: React.FC = () => {
   const [createTitle, setCreateTitle] = useState('');
   const [createContent, setCreateContent] = useState('');
   const [createTags, setCreateTags] = useState('');
+
+  // edit dialog
+  const [editOpen, setEditOpen] = useState(false);
+  const [editPost, setEditPost] = useState<BlogPostDto | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editContent, setEditContent] = useState('');
+  const [editTags, setEditTags] = useState('');
 
   const load = async () => {
     if (!siteId) return;
@@ -94,6 +101,30 @@ const BlogPage: React.FC = () => {
     } catch { toast.error('Failed to delete'); }
   };
 
+  const openEdit = (post: BlogPostDto) => {
+    setEditPost(post);
+    setEditTitle(post.title);
+    setEditContent(post.content || '');
+    setEditTags(post.tags.join(', '));
+    setEditOpen(true);
+  };
+
+  const handleEdit = async () => {
+    if (!siteId || !editPost || !editTitle.trim()) { toast.warn('Title required'); return; }
+    try {
+      const tags = editTags.trim() ? editTags.split(',').map((t) => t.trim()).filter(Boolean) : undefined;
+      await blogService.updatePost(siteId, editPost.id, {
+        title: editTitle.trim(),
+        content: editContent.trim() || undefined,
+        tags,
+      });
+      setEditOpen(false);
+      setEditPost(null);
+      toast.success('Post updated');
+      await load();
+    } catch { toast.error('Failed to update'); }
+  };
+
   const canModify = (post: BlogPostDto) => post.createdBy === currentUsername || isAdmin;
 
   return (
@@ -135,6 +166,7 @@ const BlogPage: React.FC = () => {
                       </Box>
                       {canModify(post) && (
                         <Stack direction="row" spacing={0.5}>
+                          <Tooltip title="Edit"><IconButton size="small" onClick={(e) => { e.stopPropagation(); openEdit(post); }}><Edit fontSize="small" /></IconButton></Tooltip>
                           {post.status === 'DRAFT' && (
                             <Tooltip title="Publish"><IconButton size="small" color="success" onClick={(e) => { e.stopPropagation(); void handlePublish(post.id); }}><Publish fontSize="small" /></IconButton></Tooltip>
                           )}
@@ -187,6 +219,22 @@ const BlogPage: React.FC = () => {
         <DialogActions>
           <Button onClick={() => setCreateOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={() => void handleCreate()}>Create Draft</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Edit post dialog */}
+      <Dialog open={editOpen} onClose={() => setEditOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Edit Blog Post</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} mt={1}>
+            <TextField label="Title" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} required fullWidth />
+            <TextField label="Content" value={editContent} onChange={(e) => setEditContent(e.target.value)} fullWidth multiline minRows={4} />
+            <TextField label="Tags (comma-separated)" value={editTags} onChange={(e) => setEditTags(e.target.value)} fullWidth />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditOpen(false)}>Cancel</Button>
+          <Button variant="contained" onClick={() => void handleEdit()}>Save</Button>
         </DialogActions>
       </Dialog>
     </Box>

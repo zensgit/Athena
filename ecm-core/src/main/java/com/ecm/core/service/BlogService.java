@@ -38,6 +38,10 @@ public class BlogService {
         if (tags != null) post.setTags(tags);
         BlogPost saved = blogRepo.save(post);
         log.info("Blog post created: {} in site {}", saved.getId(), siteId);
+        activityEventListener.postSiteActivity(
+            "blog.created", securityService.getCurrentUser(), siteId,
+            Map.of("postId", saved.getId().toString(), "title", saved.getTitle(), "status", "DRAFT")
+        );
         return saved;
     }
 
@@ -64,7 +68,12 @@ public class BlogService {
         requireAuthorOrAdmin(post);
         post.setStatus(BlogStatus.DRAFT);
         post.setPublishedDate(null);
-        return blogRepo.save(post);
+        BlogPost saved = blogRepo.save(post);
+        activityEventListener.postSiteActivity(
+            "blog.unpublished", securityService.getCurrentUser(), post.getSiteId(),
+            Map.of("postId", saved.getId().toString(), "title", saved.getTitle())
+        );
+        return saved;
     }
 
     @Transactional
@@ -78,7 +87,12 @@ public class BlogService {
         }
         if (content != null) post.setContent(content);
         if (tags != null) post.setTags(tags);
-        return blogRepo.save(post);
+        BlogPost saved = blogRepo.save(post);
+        activityEventListener.postSiteActivity(
+            "blog.updated", securityService.getCurrentUser(), post.getSiteId(),
+            Map.of("postId", saved.getId().toString(), "title", saved.getTitle())
+        );
+        return saved;
     }
 
     @Transactional
@@ -104,7 +118,7 @@ public class BlogService {
 
     @Transactional(readOnly = true)
     public Page<BlogPost> listDrafts(String siteId, Pageable pageable) {
-        return blogRepo.findBySiteIdAndStatusOrderByPublishedDateDesc(siteId, BlogStatus.DRAFT, pageable);
+        return blogRepo.findBySiteIdAndStatusOrderByCreatedDateDesc(siteId, BlogStatus.DRAFT, pageable);
     }
 
     private void requireAuthorOrAdmin(BlogPost post) {
