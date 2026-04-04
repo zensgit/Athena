@@ -37,6 +37,7 @@ import {
   SavedSearch as SavedSearchIcon,
   MailOutline,
   Description,
+  Code,
   Schema,
   Link as LinkIcon,
   AdminPanelSettings,
@@ -486,6 +487,12 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                     <ArchiveIcon fontSize="small" />
                   </ListItemIcon>
                   <ListItemText>Content Archive</ListItemText>
+                </MenuItem>
+                <MenuItem onClick={() => navigate('/admin/templates')}>
+                  <ListItemIcon>
+                    <Code fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Template Engine</ListItemText>
                 </MenuItem>
               </>
             )}
