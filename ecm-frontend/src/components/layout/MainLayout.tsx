@@ -34,6 +34,7 @@ import {
   AccountTree,
   LocalOffer,
   Category as CategoryIcon,
+  Terminal,
   SavedSearch as SavedSearchIcon,
   MailOutline,
   Description,
@@ -493,6 +494,12 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                     <Code fontSize="small" />
                   </ListItemIcon>
                   <ListItemText>Template Engine</ListItemText>
+                </MenuItem>
+                <MenuItem onClick={() => navigate('/admin/scripts')}>
+                  <ListItemIcon>
+                    <Terminal fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Script Engine</ListItemText>
                 </MenuItem>
               </>
             )}

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd">
+
+    <changeSet id="058-create-script-definitions-table" author="codex">
+        <createTable tableName="script_definitions">
+            <column name="id" type="UUID">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="created_date" type="TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_date" type="TIMESTAMP"/>
+            <column name="created_by" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_by" type="VARCHAR(255)"/>
+            <column name="version" type="BIGINT"/>
+            <column name="is_deleted" type="BOOLEAN" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="deleted_at" type="TIMESTAMP"/>
+            <column name="deleted_by" type="VARCHAR(255)"/>
+            <column name="name" type="VARCHAR(120)">
+                <constraints nullable="false" unique="true" uniqueConstraintName="uk_script_definitions_name"/>
+            </column>
+            <column name="script_path" type="VARCHAR(255)">
+                <constraints nullable="false" unique="true" uniqueConstraintName="uk_script_definitions_path"/>
+            </column>
+            <column name="description" type="VARCHAR(1000)"/>
+            <column name="engine" type="VARCHAR(32)" defaultValue="GRAALJS">
+                <constraints nullable="false"/>
+            </column>
+            <column name="content" type="TEXT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="tags" type="jsonb"/>
+            <column name="active" type="BOOLEAN" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <createIndex tableName="script_definitions" indexName="idx_sd_script_path">
+            <column name="script_path"/>
+        </createIndex>
+
+        <createIndex tableName="script_definitions" indexName="idx_sd_active">
+            <column name="active"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

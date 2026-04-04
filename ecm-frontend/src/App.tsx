@@ -24,6 +24,7 @@ import CalendarPage from './pages/CalendarPage';
 import BulkImportPage from './pages/BulkImportPage';
 import ContentArchivePage from './pages/ContentArchivePage';
 import TemplateEnginePage from './pages/TemplateEnginePage';
+import ScriptEnginePage from './pages/ScriptEnginePage';
 import WebhookSubscriptionsPage from './pages/WebhookSubscriptionsPage';
 import PermissionTemplatesPage from './pages/PermissionTemplatesPage';
 import EditorPage from './pages/EditorPage';
@@ -387,6 +388,16 @@ const App: React.FC = () => {
                 <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
                   <MainLayout>
                     <TemplateEnginePage />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/admin/scripts"
+              element={
+                <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
+                  <MainLayout>
+                    <ScriptEnginePage />
                   </MainLayout>
                 </PrivateRoute>
               }

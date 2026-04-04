@@ -27,6 +27,7 @@
         <pdfbox.version>2.0.29</pdfbox.version>
         <jodconverter.version>4.4.6</jodconverter.version>
         <lombok.version>1.18.30</lombok.version>
+        <graalvm.polyglot.version>25.0.2</graalvm.polyglot.version>
     </properties>
     
     <dependencies>
@@ -232,6 +233,17 @@
             <groupId>org.freemarker</groupId>
             <artifactId>freemarker</artifactId>
             <version>2.3.32</version>
+        </dependency>
+        <dependency>
+            <groupId>org.graalvm.polyglot</groupId>
+            <artifactId>polyglot</artifactId>
+            <version>${graalvm.polyglot.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.graalvm.polyglot</groupId>
+            <artifactId>js-community</artifactId>
+            <version>${graalvm.polyglot.version}</version>
+            <type>pom</type>
         </dependency>
         <dependency>
             <groupId>org.apache.commons</groupId>
