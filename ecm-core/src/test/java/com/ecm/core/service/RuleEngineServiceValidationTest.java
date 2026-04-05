@@ -11,11 +11,13 @@ import com.ecm.core.repository.TagRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.security.access.AccessDeniedException;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Optional;
@@ -49,6 +51,9 @@ class RuleEngineServiceValidationTest {
     @Mock
     private FolderRepository folderRepository;
 
+    @Mock
+    private SecurityService securityService;
+
     @InjectMocks
     private RuleEngineService ruleEngineService;
 
@@ -58,6 +63,8 @@ class RuleEngineServiceValidationTest {
     @BeforeEach
     void setUp() {
         lenient().when(ruleRepository.findByName(anyString())).thenReturn(Optional.empty());
+        lenient().when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+        ReflectionTestUtils.setField(ruleEngineService, "securityService", securityService);
     }
 
     @Test
@@ -141,6 +148,55 @@ class RuleEngineServiceValidationTest {
         verify(ruleRepository).save(ruleCaptor.capture());
         assertEquals(30, ruleCaptor.getValue().getManualBackfillMinutes());
         assertEquals(30, saved.getManualBackfillMinutes());
+    }
+
+    @Test
+    void createRule_rejectsScriptActionForNonAdmin() {
+        when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
+        RuleEngineService.CreateRuleRequest request = RuleEngineService.CreateRuleRequest.builder()
+            .name("script-rule")
+            .triggerType(AutomationRule.TriggerType.DOCUMENT_CREATED)
+            .condition(RuleCondition.builder().type(RuleCondition.ConditionType.ALWAYS_TRUE).build())
+            .actions(List.of(RuleAction.builder()
+                .type(RuleAction.ActionType.EXECUTE_SCRIPT)
+                .params(java.util.Map.of(
+                    RuleAction.ParamKeys.SCRIPT, "documentName",
+                    RuleAction.ParamKeys.OUTPUT_PROPERTY, "derivedValue"
+                ))
+                .build()))
+            .build();
+
+        AccessDeniedException error = assertThrows(
+            AccessDeniedException.class,
+            () -> ruleEngineService.createRule(request)
+        );
+
+        assertTrue(error.getMessage().contains("Only administrators"));
+        verify(ruleRepository, never()).save(any(AutomationRule.class));
+    }
+
+    @Test
+    void updateRule_rejectsTemplateActionForNonAdmin() {
+        UUID ruleId = UUID.randomUUID();
+        when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
+        when(ruleRepository.findById(ruleId)).thenReturn(Optional.of(buildExistingRule(ruleId, 5)));
+
+        RuleEngineService.UpdateRuleRequest request = new RuleEngineService.UpdateRuleRequest();
+        request.setActions(List.of(RuleAction.builder()
+            .type(RuleAction.ActionType.RENDER_TEMPLATE)
+            .params(java.util.Map.of(
+                RuleAction.ParamKeys.TEMPLATE, "${documentName}",
+                RuleAction.ParamKeys.OUTPUT_PROPERTY, "summary"
+            ))
+            .build()));
+
+        AccessDeniedException error = assertThrows(
+            AccessDeniedException.class,
+            () -> ruleEngineService.updateRule(ruleId, request)
+        );
+
+        assertTrue(error.getMessage().contains("Only administrators"));
+        verify(ruleRepository, never()).save(any(AutomationRule.class));
     }
 
     private RuleEngineService.CreateRuleRequest buildScheduledRequest(Integer manualBackfillMinutes) {

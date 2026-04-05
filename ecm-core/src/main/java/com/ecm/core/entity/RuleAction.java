@@ -157,10 +157,16 @@ public class RuleAction implements Serializable {
         LOCK_DOCUMENT,
 
         /**
-         * Execute custom script (future)
-         * Params: script (String), language (String)
+         * Execute custom script and persist the result into document metadata
+         * Params: scriptPath (String) or script (String), outputProperty (String), timeoutMs (Number, optional)
          */
-        EXECUTE_SCRIPT
+        EXECUTE_SCRIPT,
+
+        /**
+         * Render a template and persist the output into document metadata
+         * Params: templatePath (String) or template (String), outputProperty (String)
+         */
+        RENDER_TEMPLATE
     }
 
     /**
@@ -199,6 +205,15 @@ public class RuleAction implements Serializable {
 
         // Status action
         public static final String STATUS = "status";
+
+        // Template/script actions
+        public static final String SCRIPT_PATH = "scriptPath";
+        public static final String SCRIPT = "script";
+        public static final String LANGUAGE = "language";
+        public static final String TIMEOUT_MS = "timeoutMs";
+        public static final String TEMPLATE_PATH = "templatePath";
+        public static final String TEMPLATE = "template";
+        public static final String OUTPUT_PROPERTY = "outputProperty";
     }
 
     /**

@@ -92,6 +92,15 @@ public class TemplateService {
     @Transactional(readOnly = true)
     public TemplateExecutionResult executeTemplate(TemplateExecutionRequest request) {
         requireAdmin();
+        return executeTemplateInternal(request);
+    }
+
+    @Transactional(readOnly = true)
+    TemplateExecutionResult executeTemplateForAutomation(TemplateExecutionRequest request) {
+        return executeTemplateInternal(request);
+    }
+
+    private TemplateExecutionResult executeTemplateInternal(TemplateExecutionRequest request) {
         Map<String, Object> model = request.model() != null ? request.model() : Map.of();
         if (request.templatePath() != null && !request.templatePath().isBlank()) {
             TemplateDefinition template = templateRepository.findByTemplatePathAndActiveTrue(request.templatePath().trim())

@@ -107,6 +107,15 @@ public class ScriptService {
     @Transactional(readOnly = true)
     public ScriptExecutionResult executeScript(ScriptExecutionRequest request) {
         requireAdmin();
+        return executeScriptInternal(request);
+    }
+
+    @Transactional(readOnly = true)
+    ScriptExecutionResult executeScriptForAutomation(ScriptExecutionRequest request) {
+        return executeScriptInternal(request);
+    }
+
+    private ScriptExecutionResult executeScriptInternal(ScriptExecutionRequest request) {
         ScriptSource source = resolveSource(request);
         Map<String, Object> model = request.model() != null ? request.model() : Map.of();
         long timeoutMs = request.timeoutMs() != null && request.timeoutMs() > 0 ? request.timeoutMs() : DEFAULT_TIMEOUT_MS;

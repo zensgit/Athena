@@ -15,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -79,6 +80,12 @@ public class RuleEngineService {
     @Autowired
     private NotificationService notificationService;
 
+    @Autowired
+    private ScriptService scriptService;
+
+    @Autowired
+    private TemplateService templateService;
+
     private final Map<UUID, RuleRunLedgerRecord> ruleRunLedgerById = new ConcurrentHashMap<>();
     private final Deque<UUID> ruleRunLedgerOrder = new ConcurrentLinkedDeque<>();
     private final Map<String, UUID> ruleRunIdempotencyIndex = new ConcurrentHashMap<>();
@@ -95,6 +102,7 @@ public class RuleEngineService {
             throw new DuplicateResourceException("Rule with name already exists: " + request.getName());
         }
         validateManualBackfillMinutes(request.getManualBackfillMinutes());
+        validateActionAuthoringPermissions(request.getActions());
 
         AutomationRule rule = AutomationRule.builder()
             .name(request.getName())
@@ -147,6 +155,7 @@ public class RuleEngineService {
             rule.setCondition(request.getCondition());
         }
         if (request.getActions() != null) {
+            validateActionAuthoringPermissions(request.getActions());
             rule.setActions(request.getActions());
         }
         if (request.getPriority() != null) {
@@ -350,7 +359,7 @@ public class RuleEngineService {
                 : rule.getActions().stream()
                     .map(RuleAction::getType)
                     .filter(Objects::nonNull)
-                    .filter(type -> type == ActionType.EXECUTE_SCRIPT)
+                    .filter(this::isDryRunUnsupportedAction)
                     .map(Enum::name)
                     .distinct()
                     .toList();
@@ -697,6 +706,27 @@ public class RuleEngineService {
         }
     }
 
+    private boolean isDryRunUnsupportedAction(ActionType actionType) {
+        return false;
+    }
+
+    private void validateActionAuthoringPermissions(List<RuleAction> actions) {
+        if (actions == null || actions.isEmpty()) {
+            return;
+        }
+        boolean containsAdminOnlyAction = actions.stream()
+            .map(RuleAction::getType)
+            .filter(Objects::nonNull)
+            .anyMatch(this::isAdminOnlyAuthoringAction);
+        if (containsAdminOnlyAction && !securityService.hasRole("ROLE_ADMIN")) {
+            throw new AccessDeniedException("Only administrators can configure template or script rule actions");
+        }
+    }
+
+    private boolean isAdminOnlyAuthoringAction(ActionType actionType) {
+        return actionType == ActionType.EXECUTE_SCRIPT || actionType == ActionType.RENDER_TEMPLATE;
+    }
+
     // ==================== Condition Evaluation ====================
 
     /**
@@ -926,6 +956,7 @@ public class RuleEngineService {
         long startTime = System.currentTimeMillis();
 
         try {
+            String details = null;
             switch (action.getType()) {
                 case ADD_TAG -> executeAddTag(action, document);
                 case REMOVE_TAG -> executeRemoveTag(action, document);
@@ -941,6 +972,8 @@ public class RuleEngineService {
                 case SEND_NOTIFICATION -> executeSendNotification(action, document);
                 case WEBHOOK -> executeWebhook(action, document);
                 case START_WORKFLOW -> executeStartWorkflow(action, document);
+                case EXECUTE_SCRIPT -> details = executeScriptAction(action, document);
+                case RENDER_TEMPLATE -> details = executeTemplateAction(action, document);
                 default -> throw new UnsupportedOperationException("Action type not supported: " + action.getType());
             }
 
@@ -948,6 +981,7 @@ public class RuleEngineService {
                 .actionType(action.getType())
                 .success(true)
                 .durationMs(System.currentTimeMillis() - startTime)
+                .details(details)
                 .build();
 
         } catch (Exception e) {
@@ -1209,6 +1243,118 @@ public class RuleEngineService {
                 workflowKey, document.getId(), e.getMessage(), e);
             throw new RuntimeException("Workflow start failed: " + e.getMessage(), e);
         }
+    }
+
+    private String executeScriptAction(RuleAction action, Document document) {
+        String outputProperty = normalizeOutputProperty(action.getParam(RuleAction.ParamKeys.OUTPUT_PROPERTY));
+        ScriptService.ScriptExecutionResult execution = scriptService.executeScriptForAutomation(
+            new ScriptService.ScriptExecutionRequest(
+                normalizeOptionalText(action.getParam(RuleAction.ParamKeys.SCRIPT_PATH)),
+                normalizeOptionalText(action.getParam(RuleAction.ParamKeys.SCRIPT)),
+                buildAutomationModel(document, action),
+                parseTimeoutMs(action.getParam(RuleAction.ParamKeys.TIMEOUT_MS))
+            )
+        );
+
+        Map<String, Object> metadata = ensureMetadata(document);
+        metadata.put(outputProperty, execution.result());
+        if (execution.logs() != null && !execution.logs().isEmpty()) {
+            metadata.put(outputProperty + "Logs", List.copyOf(execution.logs()));
+        }
+        nodeRepository.save(document);
+        log.info("Executed rule script for document {} into metadata '{}'", document.getId(), outputProperty);
+
+        return execution.storedScript()
+            ? "Stored script " + execution.scriptPath() + " wrote metadata." + outputProperty
+            : "Inline script wrote metadata." + outputProperty;
+    }
+
+    private String executeTemplateAction(RuleAction action, Document document) {
+        String outputProperty = normalizeOutputProperty(action.getParam(RuleAction.ParamKeys.OUTPUT_PROPERTY));
+        TemplateService.TemplateExecutionResult execution = templateService.executeTemplateForAutomation(
+            new TemplateService.TemplateExecutionRequest(
+                normalizeOptionalText(action.getParam(RuleAction.ParamKeys.TEMPLATE_PATH)),
+                normalizeOptionalText(action.getParam(RuleAction.ParamKeys.TEMPLATE)),
+                buildAutomationModel(document, action)
+            )
+        );
+
+        Map<String, Object> metadata = ensureMetadata(document);
+        metadata.put(outputProperty, execution.rendered());
+        nodeRepository.save(document);
+        log.info("Rendered rule template for document {} into metadata '{}'", document.getId(), outputProperty);
+
+        return execution.storedTemplate()
+            ? "Stored template " + execution.templatePath() + " wrote metadata." + outputProperty
+            : "Inline template wrote metadata." + outputProperty;
+    }
+
+    private Map<String, Object> buildAutomationModel(Document document, RuleAction action) {
+        Map<String, Object> model = new LinkedHashMap<>();
+        Map<String, Object> documentModel = new LinkedHashMap<>();
+        documentModel.put("id", document.getId() != null ? document.getId().toString() : null);
+        documentModel.put("name", document.getName());
+        documentModel.put("description", document.getDescription());
+        documentModel.put("path", document.getPath());
+        documentModel.put("mimeType", document.getMimeType());
+        documentModel.put("size", document.getFileSize());
+        documentModel.put("status", document.getStatus() != null ? document.getStatus().name() : null);
+        documentModel.put("metadata", document.getMetadata() != null ? new LinkedHashMap<>(document.getMetadata()) : Map.of());
+        documentModel.put("parentFolderId", document.getParent() != null && document.getParent().getId() != null
+            ? document.getParent().getId().toString()
+            : null);
+        documentModel.put("parentPath", document.getParent() != null ? document.getParent().getPath() : null);
+
+        model.put("document", documentModel);
+        model.put("documentId", documentModel.get("id"));
+        model.put("documentName", document.getName());
+        model.put("documentPath", document.getPath());
+        model.put("mimeType", document.getMimeType());
+        model.put("metadata", documentModel.get("metadata"));
+        model.put("actionParams", action.getParams() != null ? new LinkedHashMap<>(action.getParams()) : Map.of());
+        model.put("executedAt", LocalDateTime.now().toString());
+        return model;
+    }
+
+    private Map<String, Object> ensureMetadata(Document document) {
+        if (document.getMetadata() == null) {
+            document.setMetadata(new HashMap<>());
+        }
+        return document.getMetadata();
+    }
+
+    private String normalizeOutputProperty(String outputProperty) {
+        if (outputProperty == null || outputProperty.isBlank()) {
+            throw new IllegalArgumentException("Output property is required for template/script rule actions");
+        }
+        return outputProperty.trim();
+    }
+
+    private String normalizeOptionalText(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
+    }
+
+    private Long parseTimeoutMs(Object timeoutValue) {
+        if (timeoutValue == null) {
+            return null;
+        }
+        long timeoutMs;
+        if (timeoutValue instanceof Number number) {
+            timeoutMs = number.longValue();
+        } else {
+            try {
+                timeoutMs = Long.parseLong(timeoutValue.toString().trim());
+            } catch (NumberFormatException ex) {
+                throw new IllegalArgumentException("timeoutMs must be a positive number");
+            }
+        }
+        if (timeoutMs <= 0) {
+            throw new IllegalArgumentException("timeoutMs must be a positive number");
+        }
+        return timeoutMs;
     }
 
     /**

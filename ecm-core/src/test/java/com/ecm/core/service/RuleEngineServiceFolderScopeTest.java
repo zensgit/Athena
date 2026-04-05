@@ -48,6 +48,9 @@ class RuleEngineServiceFolderScopeTest {
     @Mock
     private FolderRepository folderRepository;
 
+    @Mock
+    private SecurityService securityService;
+
     @InjectMocks
     private RuleEngineService ruleEngineService;
 
@@ -104,7 +107,7 @@ class RuleEngineServiceFolderScopeTest {
     }
 
     @Test
-    @DisplayName("Scope folder dry-run reports matched, processable and skip reasons")
+    @DisplayName("Scope folder dry-run treats script actions as processable")
     void dryRunRulesByScopeFolderShouldReportSummaryAndReasons() {
         UUID folderId = UUID.randomUUID();
         AutomationRule matchedProcessable = buildRule(
@@ -113,15 +116,21 @@ class RuleEngineServiceFolderScopeTest {
             folderId,
             RuleAction.addTag("important")
         );
-        AutomationRule matchedUnsupported = buildRule(
-            "unsupported-rule",
+        AutomationRule matchedScript = buildRule(
+            "script-rule",
             110,
             folderId,
-            RuleAction.builder().type(RuleAction.ActionType.EXECUTE_SCRIPT).build()
+            RuleAction.builder()
+                .type(RuleAction.ActionType.EXECUTE_SCRIPT)
+                .params(Map.of(
+                    RuleAction.ParamKeys.SCRIPT, "documentName.toUpperCase()",
+                    RuleAction.ParamKeys.OUTPUT_PROPERTY, "scriptOutput"
+                ))
+                .build()
         );
 
         when(ruleRepository.findByScopeFolderIdActiveOrderByPriority(folderId))
-            .thenReturn(List.of(matchedProcessable, matchedUnsupported));
+            .thenReturn(List.of(matchedProcessable, matchedScript));
 
         RuleEngineService.FolderRuleDryRunResult result = ruleEngineService.dryRunRulesByScopeFolder(
             folderId,
@@ -139,11 +148,11 @@ class RuleEngineServiceFolderScopeTest {
         assertEquals(2, result.found());
         assertEquals(2, result.scanned());
         assertEquals(2, result.matched());
-        assertEquals(1, result.processable());
-        assertEquals(1, result.skipped());
+        assertEquals(2, result.processable());
+        assertEquals(0, result.skipped());
         assertEquals(0, result.errors());
-        assertEquals(1L, result.skipReasons().get("contains_unsupported_action"));
-        assertTrue(result.results().stream().anyMatch(item -> !item.processable()));
+        assertTrue(result.skipReasons() == null || result.skipReasons().isEmpty());
+        assertTrue(result.results().stream().allMatch(item -> item.processable()));
     }
 
     private AutomationRule buildRule(String name, int priority, UUID folderId, RuleAction action) {
@@ -160,4 +169,3 @@ class RuleEngineServiceFolderScopeTest {
             .build();
     }
 }
-

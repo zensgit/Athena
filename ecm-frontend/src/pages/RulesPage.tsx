@@ -1578,6 +1578,9 @@ const RulesPage: React.FC = () => {
                   const required = definition.requiredParams?.length
                     ? ` required: ${definition.requiredParams.join(',')}`
                     : '';
+                  const optional = definition.optionalParams?.length
+                    ? ` optional: ${definition.optionalParams.join(',')}`
+                    : '';
                   const constraints = definition.constraints?.length
                     ? ` (${definition.constraints.join('; ')})`
                     : '';
@@ -1587,7 +1590,7 @@ const RulesPage: React.FC = () => {
                       size="small"
                       variant={definition.supported ? 'outlined' : 'filled'}
                       color={definition.supported ? 'default' : 'warning'}
-                      label={`${definition.type}${required}${constraints}`}
+                      label={`${definition.type}${required}${optional}${constraints}`}
                     />
                   );
                 })}

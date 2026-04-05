@@ -759,14 +759,26 @@ public class RuleController {
                 // no params
             }
             case EXECUTE_SCRIPT -> {
-                optionalParams.add("script");
-                optionalParams.add("language");
+                requiredParams.add(RuleAction.ParamKeys.OUTPUT_PROPERTY);
+                optionalParams.add(RuleAction.ParamKeys.SCRIPT_PATH);
+                optionalParams.add(RuleAction.ParamKeys.SCRIPT);
+                optionalParams.add(RuleAction.ParamKeys.TIMEOUT_MS);
+                optionalParams.add(RuleAction.ParamKeys.LANGUAGE);
+                constraints.add("atLeastOneOf:scriptPath,script");
+                constraints.add("adminOnly");
+            }
+            case RENDER_TEMPLATE -> {
+                requiredParams.add(RuleAction.ParamKeys.OUTPUT_PROPERTY);
+                optionalParams.add(RuleAction.ParamKeys.TEMPLATE_PATH);
+                optionalParams.add(RuleAction.ParamKeys.TEMPLATE);
+                constraints.add("atLeastOneOf:templatePath,template");
+                constraints.add("adminOnly");
             }
         }
 
         return new RuleActionDefinition(
             actionType.name(),
-            actionType != RuleAction.ActionType.EXECUTE_SCRIPT,
+            true,
             requiredParams,
             optionalParams,
             constraints

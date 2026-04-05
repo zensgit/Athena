@@ -26,7 +26,6 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -98,7 +97,21 @@ class RuleControllerActionDefinitionsTest {
 
         JsonNode executeScript = actionsByType.get("EXECUTE_SCRIPT");
         assertNotNull(executeScript);
-        assertFalse(executeScript.get("supported").asBoolean());
+        assertTrue(executeScript.get("supported").asBoolean());
+        assertTrue(toStringList(executeScript.get("requiredParams")).contains(RuleAction.ParamKeys.OUTPUT_PROPERTY));
+        assertTrue(toStringList(executeScript.get("optionalParams")).contains(RuleAction.ParamKeys.SCRIPT_PATH));
+        assertTrue(toStringList(executeScript.get("optionalParams")).contains(RuleAction.ParamKeys.SCRIPT));
+        assertTrue(toStringList(executeScript.get("constraints")).contains("atLeastOneOf:scriptPath,script"));
+        assertTrue(toStringList(executeScript.get("constraints")).contains("adminOnly"));
+
+        JsonNode renderTemplate = actionsByType.get("RENDER_TEMPLATE");
+        assertNotNull(renderTemplate);
+        assertTrue(renderTemplate.get("supported").asBoolean());
+        assertTrue(toStringList(renderTemplate.get("requiredParams")).contains(RuleAction.ParamKeys.OUTPUT_PROPERTY));
+        assertTrue(toStringList(renderTemplate.get("optionalParams")).contains(RuleAction.ParamKeys.TEMPLATE_PATH));
+        assertTrue(toStringList(renderTemplate.get("optionalParams")).contains(RuleAction.ParamKeys.TEMPLATE));
+        assertTrue(toStringList(renderTemplate.get("constraints")).contains("atLeastOneOf:templatePath,template"));
+        assertTrue(toStringList(renderTemplate.get("constraints")).contains("adminOnly"));
     }
 
     private Map<String, JsonNode> toActionsByType(JsonNode actionsNode) {
