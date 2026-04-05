@@ -1,0 +1,80 @@
+package com.ecm.core.cmis;
+
+import com.ecm.core.entity.Document;
+import com.ecm.core.entity.Node;
+import org.springframework.stereotype.Component;
+
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+@Component
+public class CmisObjectFactory {
+
+    public static final String REPOSITORY_ID = "athena";
+    public static final String ROOT_OBJECT_ID = "root";
+
+    public CmisModels.ObjectEntry rootObject() {
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("cmis:objectId", ROOT_OBJECT_ID);
+        properties.put("cmis:name", "Company Home");
+        properties.put("cmis:baseTypeId", "cmis:folder");
+        properties.put("cmis:objectTypeId", "cmis:folder");
+        properties.put("cmis:path", "/");
+        properties.put("cmis:parentId", null);
+
+        return new CmisModels.ObjectEntry(
+            REPOSITORY_ID,
+            ROOT_OBJECT_ID,
+            "Company Home",
+            "cmis:folder",
+            "cmis:folder",
+            "/",
+            null,
+            true,
+            properties,
+            List.of("canGetFolderTree", "canGetDescendants", "canGetChildren")
+        );
+    }
+
+    public CmisModels.ObjectEntry fromNode(Node node) {
+        String baseTypeId = node.isFolder() ? "cmis:folder" : "cmis:document";
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("cmis:objectId", node.getId().toString());
+        properties.put("cmis:name", node.getName());
+        properties.put("cmis:baseTypeId", baseTypeId);
+        properties.put("cmis:objectTypeId", baseTypeId);
+        properties.put("cmis:path", node.getPath());
+        properties.put("cmis:parentId", node.getParent() != null && node.getParent().getId() != null
+            ? node.getParent().getId().toString()
+            : ROOT_OBJECT_ID);
+        properties.put("cmis:createdBy", node.getCreatedBy());
+        properties.put("cmis:creationDate", node.getCreatedDate());
+        properties.put("cmis:lastModifiedBy", node.getLastModifiedBy());
+        properties.put("cmis:lastModificationDate", node.getLastModifiedDate());
+        properties.put("athena:typeQName", node.getTypeQName());
+        properties.put("athena:archiveStatus", node.getArchiveStatus() != null ? node.getArchiveStatus().name() : null);
+
+        if (node instanceof Document document) {
+            properties.put("cmis:contentStreamMimeType", document.getMimeType());
+            properties.put("cmis:contentStreamLength", document.getFileSize());
+            properties.put("cmis:isVersionSeriesCheckedOut", document.isCheckedOut());
+            properties.put("cmis:versionLabel", document.getVersionLabel() != null ? document.getVersionLabel() : document.getVersionString());
+        }
+
+        return new CmisModels.ObjectEntry(
+            REPOSITORY_ID,
+            node.getId().toString(),
+            node.getName(),
+            baseTypeId,
+            baseTypeId,
+            node.getPath(),
+            node.getParent() != null && node.getParent().getId() != null ? node.getParent().getId().toString() : ROOT_OBJECT_ID,
+            false,
+            properties,
+            node.isFolder()
+                ? List.of("canGetProperties", "canGetChildren", "canGetObjectParents")
+                : List.of("canGetProperties", "canGetContentStream", "canGetObjectParents")
+        );
+    }
+}
