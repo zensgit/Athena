@@ -5,6 +5,7 @@ import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Node;
 import com.ecm.core.service.FolderService;
 import com.ecm.core.service.NodeService;
+import com.ecm.core.service.SecurityService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -23,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -34,14 +36,21 @@ class CmisBrowserServiceTest {
     @Mock
     private FolderService folderService;
 
+    @Mock
+    private SecurityService securityService;
+
     private final CmisTypeManager typeManager = new CmisTypeManager();
     private final CmisObjectFactory objectFactory = new CmisObjectFactory();
 
     private CmisBrowserService cmisBrowserService;
+    private CmisQueryService cmisQueryService;
 
     @org.junit.jupiter.api.BeforeEach
     void setUp() {
         cmisBrowserService = new CmisBrowserService(nodeService, folderService, typeManager, objectFactory);
+        cmisQueryService = new CmisQueryService(nodeRepository, folderService, securityService, objectFactory);
+        lenient().when(securityService.hasPermission(any(Node.class), eq(com.ecm.core.entity.Permission.PermissionType.READ)))
+            .thenReturn(true);
     }
 
     @Test
@@ -125,6 +134,51 @@ class CmisBrowserServiceTest {
         assertEquals(child.getId().toString(), response.objects().get(0).objectId());
         assertNotNull(response.objects().get(0).properties().get("cmis:name"));
     }
+
+    @Test
+    @DisplayName("Query returns repository-backed document matches by name")
+    void queryReturnsDocumentMatches() {
+        Document document = buildDocument();
+        when(nodeRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class), any(org.springframework.data.domain.Sort.class)))
+            .thenReturn(List.of(document));
+
+        CmisModels.QueryResponse response = cmisQueryService.query(
+            "SELECT * FROM cmis:document WHERE cmis:name = 'contract.pdf' ORDER BY cmis:name ASC",
+            0,
+            25
+        );
+
+        assertEquals(1, response.totalNumItems());
+        assertEquals(document.getId().toString(), response.objects().get(0).objectId());
+        assertEquals("contract.pdf", response.objects().get(0).name());
+    }
+
+    @Test
+    @DisplayName("Query resolves IN_FOLDER by path and supports pagination")
+    void querySupportsInFolderByPath() {
+        Folder folder = buildFolder("Contracts", "/Sites/contracts");
+        folder.setId(UUID.randomUUID());
+        Document first = buildDocument();
+        Document second = buildDocument();
+        second.setId(UUID.randomUUID());
+        second.setName("contract-2.pdf");
+        when(folderService.getFolderByPath("/Sites/contracts")).thenReturn(folder);
+        when(nodeRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class), any(org.springframework.data.domain.Sort.class)))
+            .thenReturn(List.of(first, second));
+
+        CmisModels.QueryResponse response = cmisQueryService.query(
+            "SELECT * FROM cmis:document WHERE IN_FOLDER('/Sites/contracts') AND cmis:name LIKE 'contract%' ORDER BY cmis:lastModificationDate DESC",
+            0,
+            1
+        );
+
+        assertEquals(2, response.totalNumItems());
+        assertEquals(1, response.objects().size());
+        assertTrue(response.hasMoreItems());
+    }
+
+    @Mock
+    private com.ecm.core.repository.NodeRepository nodeRepository;
 
     private Folder buildFolder(String name, String path) {
         Folder folder = new Folder();

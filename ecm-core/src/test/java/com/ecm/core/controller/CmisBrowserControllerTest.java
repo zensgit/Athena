@@ -3,6 +3,7 @@ package com.ecm.core.controller;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ecm.core.cmis.CmisBrowserService;
+import com.ecm.core.cmis.CmisQueryService;
 import com.ecm.core.cmis.CmisModels;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -32,6 +33,9 @@ class CmisBrowserControllerTest {
 
     @Mock
     private CmisBrowserService cmisBrowserService;
+
+    @Mock
+    private CmisQueryService cmisQueryService;
 
     @InjectMocks
     private CmisBrowserController cmisBrowserController;
@@ -130,10 +134,47 @@ class CmisBrowserControllerTest {
     }
 
     @Test
+    @DisplayName("Query selector returns CMIS query payload")
+    void browserQueryReturnsQueryResponse() throws Exception {
+        when(cmisQueryService.query("SELECT * FROM cmis:document", 0, 25)).thenReturn(new CmisModels.QueryResponse(
+            "athena",
+            "SELECT * FROM cmis:document",
+            List.of(new CmisModels.ObjectEntry(
+                "athena",
+                "doc-1",
+                "contract.pdf",
+                "cmis:document",
+                "cmis:document",
+                "/Sites/contracts/contract.pdf",
+                "folder-1",
+                false,
+                Map.of("cmis:objectId", "doc-1", "cmis:name", "contract.pdf"),
+                List.of("canGetProperties")
+            )),
+            0,
+            25,
+            1,
+            false
+        ));
+
+        MvcResult mvcResult = mockMvc.perform(get("/api/v1/cmis/browser")
+                .param("cmisselector", "query")
+                .param("statement", "SELECT * FROM cmis:document")
+                .param("skipCount", "0")
+                .param("maxItems", "25"))
+            .andExpect(status().isOk())
+            .andReturn();
+
+        JsonNode root = objectMapper.readTree(mvcResult.getResponse().getContentAsString());
+        assertEquals("SELECT * FROM cmis:document", root.get("statement").asText());
+        assertEquals("contract.pdf", root.get("objects").get(0).get("name").asText());
+    }
+
+    @Test
     @DisplayName("Unsupported selector returns bad request")
     void browserRejectsUnsupportedSelector() throws Exception {
         mockMvc.perform(get("/api/v1/cmis/browser")
-                .param("cmisselector", "query"))
+                .param("cmisselector", "bogus"))
             .andExpect(status().isBadRequest());
     }
 }

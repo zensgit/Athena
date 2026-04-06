@@ -1,7 +1,7 @@
 package com.ecm.core.controller;
 
 import com.ecm.core.cmis.CmisBrowserService;
-import com.ecm.core.cmis.CmisModels;
+import com.ecm.core.cmis.CmisQueryService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -21,6 +21,7 @@ import org.springframework.http.HttpStatus;
 public class CmisBrowserController {
 
     private final CmisBrowserService cmisBrowserService;
+    private final CmisQueryService cmisQueryService;
 
     @GetMapping
     @Operation(summary = "CMIS browser binding entrypoint")
@@ -29,6 +30,7 @@ public class CmisBrowserController {
         @RequestParam(name = "cmisselector", defaultValue = "repositoryInfo") String selector,
         @RequestParam(required = false) String objectId,
         @RequestParam(required = false) String path,
+        @RequestParam(required = false) String statement,
         @RequestParam(defaultValue = "0") int skipCount,
         @RequestParam(defaultValue = "50") int maxItems
     ) {
@@ -37,6 +39,7 @@ public class CmisBrowserController {
             case "typeChildren" -> ResponseEntity.ok(cmisBrowserService.getTypeChildren());
             case "object" -> ResponseEntity.ok(cmisBrowserService.getObject(objectId, path));
             case "children" -> ResponseEntity.ok(cmisBrowserService.getChildren(objectId, path, skipCount, maxItems));
+            case "query" -> ResponseEntity.ok(cmisQueryService.query(statement, skipCount, maxItems));
             default -> throw new ResponseStatusException(
                 HttpStatus.BAD_REQUEST,
                 "Unsupported cmisselector: " + selector

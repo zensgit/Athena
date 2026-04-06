@@ -62,4 +62,15 @@ public final class CmisModels {
         boolean hasMoreItems
     ) {
     }
+
+    public record QueryResponse(
+        String repositoryId,
+        String statement,
+        List<ObjectEntry> objects,
+        int skipCount,
+        int maxItems,
+        int totalNumItems,
+        boolean hasMoreItems
+    ) {
+    }
 }
