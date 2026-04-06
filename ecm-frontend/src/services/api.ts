@@ -15,6 +15,7 @@ import {
   API_TIMEOUT_WRITE_MS,
 } from 'constants/network';
 import { logAuthRecoveryEvent } from 'utils/authRecoveryDebug';
+import { getActiveTenantDomain } from 'utils/tenantContext';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL
   || process.env.REACT_APP_API_BASE_URL
@@ -54,6 +55,7 @@ export class ApiService {
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
         }
+        config.headers['X-Tenant-ID'] = getActiveTenantDomain();
         this.lastRequestConfig = {
           ...config,
           headers: {

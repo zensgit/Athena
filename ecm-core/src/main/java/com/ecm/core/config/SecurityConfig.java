@@ -86,7 +86,8 @@ public class SecurityConfig {
             "Authorization",
             "Link",
             "X-Total-Count",
-            "X-Audit-Export-Count"
+            "X-Audit-Export-Count",
+            "X-Tenant-ID"
         ));
         configuration.setMaxAge(3600L);
 

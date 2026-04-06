@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="059-create-tenants-table" author="codex">
+        <createTable tableName="tenants">
+            <column name="id" type="${uuid_type}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="created_date" type="timestamp">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_date" type="timestamp"/>
+            <column name="created_by" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_by" type="varchar(255)"/>
+            <column name="version" type="bigint"/>
+            <column name="is_deleted" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="deleted_at" type="timestamp"/>
+            <column name="deleted_by" type="varchar(255)"/>
+            <column name="tenant_domain" type="varchar(120)">
+                <constraints nullable="false" unique="true" uniqueConstraintName="uk_tenants_domain"/>
+            </column>
+            <column name="tenant_name" type="varchar(200)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="is_enabled" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="root_node_id" type="${uuid_type}"/>
+            <column name="quota_bytes" type="bigint"/>
+            <column name="is_system_default" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <createIndex tableName="tenants" indexName="idx_tenant_enabled">
+            <column name="is_enabled"/>
+        </createIndex>
+
+        <insert tableName="tenants">
+            <column name="id" valueComputed="${uuid_function}"/>
+            <column name="created_date" valueComputed="${now}"/>
+            <column name="created_by" value="system"/>
+            <column name="version" valueNumeric="0"/>
+            <column name="is_deleted" valueBoolean="false"/>
+            <column name="tenant_domain" value="default"/>
+            <column name="tenant_name" value="Default Tenant"/>
+            <column name="is_enabled" valueBoolean="true"/>
+            <column name="is_system_default" valueBoolean="true"/>
+        </insert>
+    </changeSet>
+</databaseChangeLog>

@@ -73,6 +73,7 @@ test('account menu shows Tags/Categories for admin/editor roles', async () => {
   expect(screen.getByRole('menuitem', { name: 'Mail Automation' })).toBeTruthy();
   expect(screen.getByRole('menuitem', { name: 'Content Types' })).toBeTruthy();
   expect(screen.getByRole('menuitem', { name: 'Content Models' })).toBeTruthy();
+  expect(screen.getByRole('menuitem', { name: 'Tenants' })).toBeTruthy();
   expect(screen.getByRole('menuitem', { name: 'Permission Templates' })).toBeTruthy();
   expect(screen.getByRole('menuitem', { name: 'Webhooks' })).toBeTruthy();
   expect(screen.getByRole('menuitem', { name: 'Bulk Import' })).toBeTruthy();
@@ -103,6 +104,7 @@ test('account menu hides Tags/Categories for viewer role', async () => {
   expect(screen.queryByRole('menuitem', { name: 'Mail Automation' })).toBeNull();
   expect(screen.queryByRole('menuitem', { name: 'Content Types' })).toBeNull();
   expect(screen.queryByRole('menuitem', { name: 'Content Models' })).toBeNull();
+  expect(screen.queryByRole('menuitem', { name: 'Tenants' })).toBeNull();
   expect(screen.queryByRole('menuitem', { name: 'Permission Templates' })).toBeNull();
   expect(screen.queryByRole('menuitem', { name: 'Webhooks' })).toBeNull();
   expect(screen.queryByRole('menuitem', { name: 'Bulk Import' })).toBeNull();

@@ -22,6 +22,7 @@ import {
   CreateNewFolder,
   Search,
   AccountCircle,
+  Apartment,
   Archive as ArchiveIcon,
   Logout,
   Settings,
@@ -464,6 +465,12 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                     <Schema fontSize="small" />
                   </ListItemIcon>
                   <ListItemText>Content Models</ListItemText>
+                </MenuItem>
+                <MenuItem onClick={() => navigate('/admin/tenants')}>
+                  <ListItemIcon>
+                    <Apartment fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Tenants</ListItemText>
                 </MenuItem>
                 <MenuItem onClick={() => navigate('/admin/permission-templates')}>
                   <ListItemIcon>
