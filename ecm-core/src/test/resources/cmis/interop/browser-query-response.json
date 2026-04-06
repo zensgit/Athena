@@ -1,0 +1,29 @@
+{
+  "repositoryId": "athena",
+  "statement": "SELECT * FROM cmis:document WHERE IN_FOLDER('folder-1')",
+  "objects": [
+    {
+      "repositoryId": "athena",
+      "objectId": "doc-1",
+      "name": "contract.pdf",
+      "baseTypeId": "cmis:document",
+      "objectTypeId": "cmis:document",
+      "path": "/Contracts/contract.pdf",
+      "parentId": "folder-1",
+      "root": false,
+      "properties": {
+        "cmis:objectId": "doc-1",
+        "cmis:name": "contract.pdf",
+        "cmis:baseTypeId": "cmis:document"
+      },
+      "allowableActions": [
+        "canGetProperties",
+        "canGetContentStream"
+      ]
+    }
+  ],
+  "skipCount": 0,
+  "maxItems": 25,
+  "totalNumItems": 1,
+  "hasMoreItems": false
+}

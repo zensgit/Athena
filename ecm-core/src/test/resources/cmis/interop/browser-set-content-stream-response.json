@@ -1,0 +1,25 @@
+{
+  "repositoryId": "athena",
+  "action": "setContentStream",
+  "object": {
+    "repositoryId": "athena",
+    "objectId": "doc-1",
+    "name": "contract.pdf",
+    "baseTypeId": "cmis:document",
+    "objectTypeId": "cmis:document",
+    "path": "/Contracts/contract.pdf",
+    "parentId": "folder-1",
+    "root": false,
+    "properties": {
+      "cmis:objectId": "doc-1",
+      "cmis:name": "contract.pdf",
+      "cmis:baseTypeId": "cmis:document"
+    },
+    "allowableActions": [
+      "canGetProperties",
+      "canGetContentStream"
+    ]
+  },
+  "deletedObjectId": null,
+  "message": "Content stream updated"
+}
