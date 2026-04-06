@@ -17,6 +17,8 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.io.IOException;
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -112,6 +114,27 @@ class CmisAtomPubControllerTest {
 
         mockMvc.perform(get("/api/v1/cmis/atom/object").param("objectId", "missing"))
             .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("Media endpoint streams document content")
+    void mediaStreamsDocumentContent() throws Exception {
+        when(contentVersioningService.getContentStream("doc-1", null)).thenReturn(
+            new CmisContentVersioningService.ContentStreamResponse(
+                new ByteArrayInputStream("hello atompub".getBytes(StandardCharsets.UTF_8)),
+                "text/plain",
+                "contract.txt",
+                13L
+            )
+        );
+
+        MvcResult result = mockMvc.perform(get("/api/v1/cmis/atom/media").param("objectId", "doc-1"))
+            .andExpect(status().isOk())
+            .andReturn();
+
+        assertEquals("text/plain", result.getResponse().getContentType());
+        assertEquals("hello atompub", result.getResponse().getContentAsString());
+        assertTrue(result.getResponse().getHeader("Content-Disposition").contains("contract.txt"));
     }
 
     @Test
@@ -259,5 +282,45 @@ class CmisAtomPubControllerTest {
         mockMvc.perform(post("/api/v1/cmis/atom/checkin")
                 .param("objectId", "wc-1"))
             .andExpect(status().isInternalServerError());
+    }
+
+    @Test
+    @DisplayName("Set media delegates to content versioning service and returns Atom entry")
+    void setMediaDelegatesToContentVersioningService() throws Exception {
+        when(contentVersioningService.setContentStream(any())).thenReturn(new CmisModels.MutationResponse(
+            "athena",
+            "setContentStream",
+            new CmisModels.ObjectEntry(
+                "athena",
+                "doc-1",
+                "contract.txt",
+                "cmis:document",
+                "cmis:document",
+                "/Contracts/contract.txt",
+                "root",
+                false,
+                Map.of("cmis:objectId", "doc-1", "cmis:name", "contract.txt"),
+                List.of("canGetProperties", "canGetContentStream")
+            ),
+            null,
+            "Content stream updated"
+        ));
+
+        mockMvc.perform(put("/api/v1/cmis/atom/media")
+                .param("objectId", "doc-1")
+                .param("filename", "contract.txt")
+                .param("comment", "atom upload")
+                .param("majorVersion", "true")
+                .contentType("text/plain")
+                .content("hello atompub"))
+            .andExpect(status().isOk());
+
+        ArgumentCaptor<CmisModels.MutationRequest> captor = ArgumentCaptor.forClass(CmisModels.MutationRequest.class);
+        verify(contentVersioningService).setContentStream(captor.capture());
+        assertEquals("doc-1", captor.getValue().objectId());
+        assertEquals("contract.txt", captor.getValue().filename());
+        assertEquals("atom upload", captor.getValue().comment());
+        assertEquals(Boolean.TRUE, captor.getValue().majorVersion());
+        assertEquals("aGVsbG8gYXRvbXB1Yg==", captor.getValue().contentBase64());
     }
 }

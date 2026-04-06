@@ -9,12 +9,17 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.NoSuchElementException;
 
 import static org.springframework.http.HttpStatus.BAD_REQUEST;
@@ -94,6 +99,14 @@ public class CmisAtomPubController {
         }
     }
 
+    @GetMapping(value = "/media")
+    @Operation(summary = "Get content stream", description = "Fetch a CMIS document content stream from the AtomPub binding")
+    public ResponseEntity<InputStreamResource> getMedia(
+            @RequestParam(required = false) String objectId,
+            @RequestParam(required = false) String path) {
+        return mediaResponse(objectId, path);
+    }
+
     // ---- mutations ----------------------------------------------------------
 
     @PostMapping(value = "/folder", consumes = "application/json", produces = "application/atom+xml")
@@ -141,6 +154,30 @@ public class CmisAtomPubController {
     @Operation(summary = "Cancel checkout")
     public ResponseEntity<String> cancelCheckOut(@RequestParam String objectId, HttpServletRequest httpRequest) {
         return atomMutationResponse(() -> contentVersioningService.cancelWorkingCopyCheckout(objectRequest(objectId)), httpRequest, 200);
+    }
+
+    @PutMapping(value = "/media", produces = "application/atom+xml")
+    @Operation(summary = "Set content stream", description = "Update a CMIS document content stream from raw request bytes")
+    public ResponseEntity<String> setMedia(
+            @RequestParam(required = false) String objectId,
+            @RequestParam(required = false) String path,
+            @RequestParam(required = false) String filename,
+            @RequestParam(required = false) String comment,
+            @RequestParam(defaultValue = "false") boolean majorVersion,
+            @RequestBody byte[] content,
+            HttpServletRequest httpRequest) {
+        return atomMutationResponse(
+            () -> contentVersioningService.setContentStream(setContentStreamRequest(
+                objectId,
+                path,
+                filename,
+                comment,
+                majorVersion,
+                content
+            )),
+            httpRequest,
+            200
+        );
     }
 
     private ResponseEntity<String> atomMutationResponse(ThrowingMutationSupplier supplier, HttpServletRequest request, int statusCode) {
@@ -201,9 +238,60 @@ public class CmisAtomPubController {
         );
     }
 
+    private CmisModels.MutationRequest setContentStreamRequest(
+            String objectId,
+            String path,
+            String filename,
+            String comment,
+            boolean majorVersion,
+            byte[] content) {
+        return new CmisModels.MutationRequest(
+            objectId,
+            path,
+            null,
+            null,
+            null,
+            null,
+            null,
+            content != null ? (long) content.length : null,
+            null,
+            null,
+            filename,
+            content != null ? Base64.getEncoder().encodeToString(content) : null,
+            comment,
+            majorVersion,
+            null
+        );
+    }
+
     @FunctionalInterface
     private interface ThrowingMutationSupplier {
         CmisModels.MutationResponse get() throws IOException;
+    }
+
+    private ResponseEntity<InputStreamResource> mediaResponse(String objectId, String path) {
+        try {
+            CmisContentVersioningService.ContentStreamResponse payload = contentVersioningService.getContentStream(objectId, path);
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentDisposition(ContentDisposition.inline()
+                .filename(payload.filename(), StandardCharsets.UTF_8)
+                .build());
+            headers.setContentType(MediaType.parseMediaType(payload.mimeType()));
+            if (payload.contentLength() != null) {
+                headers.setContentLength(payload.contentLength());
+            }
+            return ResponseEntity.ok()
+                .headers(headers)
+                .body(new InputStreamResource(payload.stream()));
+        } catch (IllegalArgumentException ex) {
+            throw new ResponseStatusException(BAD_REQUEST, ex.getMessage(), ex);
+        } catch (NoSuchElementException ex) {
+            throw new ResponseStatusException(NOT_FOUND, ex.getMessage(), ex);
+        } catch (SecurityException ex) {
+            throw new ResponseStatusException(FORBIDDEN, ex.getMessage(), ex);
+        } catch (IOException ex) {
+            throw new ResponseStatusException(INTERNAL_SERVER_ERROR, "CMIS AtomPub content endpoint failed", ex);
+        }
     }
 
     private String resolveBaseUrl(HttpServletRequest request) {
