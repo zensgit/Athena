@@ -73,4 +73,27 @@ public final class CmisModels {
         boolean hasMoreItems
     ) {
     }
+
+    public record MutationRequest(
+        String objectId,
+        String path,
+        String folderId,
+        String folderPath,
+        String name,
+        String description,
+        String mimeType,
+        Long contentLength,
+        Map<String, Object> properties,
+        Map<String, Object> metadata
+    ) {
+    }
+
+    public record MutationResponse(
+        String repositoryId,
+        String action,
+        ObjectEntry object,
+        String deletedObjectId,
+        String message
+    ) {
+    }
 }

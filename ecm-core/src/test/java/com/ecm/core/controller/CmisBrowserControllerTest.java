@@ -3,8 +3,9 @@ package com.ecm.core.controller;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ecm.core.cmis.CmisBrowserService;
-import com.ecm.core.cmis.CmisQueryService;
 import com.ecm.core.cmis.CmisModels;
+import com.ecm.core.cmis.CmisMutationService;
+import com.ecm.core.cmis.CmisQueryService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -23,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @ExtendWith(MockitoExtension.class)
@@ -36,6 +38,9 @@ class CmisBrowserControllerTest {
 
     @Mock
     private CmisQueryService cmisQueryService;
+
+    @Mock
+    private CmisMutationService cmisMutationService;
 
     @InjectMocks
     private CmisBrowserController cmisBrowserController;
@@ -176,5 +181,93 @@ class CmisBrowserControllerTest {
         mockMvc.perform(get("/api/v1/cmis/browser")
                 .param("cmisselector", "bogus"))
             .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("Create folder action returns mutation payload")
+    void mutateCreateFolderReturnsPayload() throws Exception {
+        when(cmisMutationService.createFolder(new CmisModels.MutationRequest(
+            null,
+            null,
+            "root",
+            null,
+            "Contracts",
+            "Contract folder",
+            null,
+            null,
+            null,
+            null
+        ))).thenReturn(new CmisModels.MutationResponse(
+            "athena",
+            "createFolder",
+            new CmisModels.ObjectEntry(
+                "athena",
+                "folder-1",
+                "Contracts",
+                "cmis:folder",
+                "cmis:folder",
+                "/Contracts",
+                "root",
+                false,
+                Map.of("cmis:objectId", "folder-1", "cmis:name", "Contracts"),
+                List.of("canGetChildren")
+            ),
+            null,
+            "Folder created"
+        ));
+
+        MvcResult mvcResult = mockMvc.perform(post("/api/v1/cmis/browser")
+                .param("cmisaction", "createFolder")
+                .contentType("application/json")
+                .content("""
+                    {
+                      "folderId": "root",
+                      "name": "Contracts",
+                      "description": "Contract folder"
+                    }
+                    """))
+            .andExpect(status().isOk())
+            .andReturn();
+
+        JsonNode root = objectMapper.readTree(mvcResult.getResponse().getContentAsString());
+        assertEquals("createFolder", root.get("action").asText());
+        assertEquals("Contracts", root.get("object").get("name").asText());
+    }
+
+    @Test
+    @DisplayName("Unsupported action returns bad request")
+    void mutateRejectsUnsupportedAction() throws Exception {
+        mockMvc.perform(post("/api/v1/cmis/browser")
+                .param("cmisaction", "bogus")
+                .contentType("application/json")
+                .content("{}"))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("Mutation security errors return forbidden")
+    void mutateMapsSecurityErrorsToForbidden() throws Exception {
+        when(cmisMutationService.deleteObject(new CmisModels.MutationRequest(
+            "4ff5bca6-62dc-4e10-ad75-3b3dce90395f",
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+        ))).thenThrow(new SecurityException("No permission to delete node"));
+
+        mockMvc.perform(post("/api/v1/cmis/browser")
+                .param("cmisaction", "deleteObject")
+                .contentType("application/json")
+                .content("""
+                    {
+                      "objectId": "4ff5bca6-62dc-4e10-ad75-3b3dce90395f"
+                    }
+                    """))
+            .andExpect(status().isForbidden());
     }
 }
