@@ -4,6 +4,7 @@ import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Node;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -60,6 +61,26 @@ public class CmisObjectFactory {
             properties.put("cmis:contentStreamLength", document.getFileSize());
             properties.put("cmis:isVersionSeriesCheckedOut", document.isCheckedOut());
             properties.put("cmis:versionLabel", document.getVersionLabel() != null ? document.getVersionLabel() : document.getVersionString());
+            properties.put("cmis:isLatestVersion", true);
+            properties.put("cmis:isMajorVersion", document.getCurrentVersion() == null || document.getCurrentVersion().isMajorVersionFlag());
+            properties.put("athena:checkoutUser", document.getCheckoutUser());
+            properties.put("athena:checkoutDate", document.getCheckoutDate());
+            properties.put("athena:workingCopy", document.isWorkingCopy());
+            properties.put("athena:workingCopyOf", document.getWorkingCopyOf() != null ? document.getWorkingCopyOf().toString() : null);
+            properties.put("athena:contentId", document.getContentId());
+            properties.put("athena:contentHash", document.getContentHash());
+        }
+
+        List<String> allowableActions = node.isFolder()
+            ? new ArrayList<>(List.of("canGetProperties", "canGetChildren", "canGetObjectParents"))
+            : new ArrayList<>(List.of("canGetProperties", "canGetContentStream", "canGetObjectParents", "canSetContentStream"));
+        if (node instanceof Document document) {
+            if (document.isCheckedOut()) {
+                allowableActions.add("canCheckIn");
+                allowableActions.add("canCancelCheckOut");
+            } else {
+                allowableActions.add("canCheckOut");
+            }
         }
 
         return new CmisModels.ObjectEntry(
@@ -72,9 +93,7 @@ public class CmisObjectFactory {
             node.getParent() != null && node.getParent().getId() != null ? node.getParent().getId().toString() : ROOT_OBJECT_ID,
             false,
             properties,
-            node.isFolder()
-                ? List.of("canGetProperties", "canGetChildren", "canGetObjectParents")
-                : List.of("canGetProperties", "canGetContentStream", "canGetObjectParents")
+            allowableActions
         );
     }
 }

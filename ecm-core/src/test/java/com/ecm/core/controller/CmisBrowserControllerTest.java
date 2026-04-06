@@ -3,6 +3,7 @@ package com.ecm.core.controller;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ecm.core.cmis.CmisBrowserService;
+import com.ecm.core.cmis.CmisContentVersioningService;
 import com.ecm.core.cmis.CmisModels;
 import com.ecm.core.cmis.CmisMutationService;
 import com.ecm.core.cmis.CmisQueryService;
@@ -22,6 +23,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -41,6 +43,9 @@ class CmisBrowserControllerTest {
 
     @Mock
     private CmisMutationService cmisMutationService;
+
+    @Mock
+    private CmisContentVersioningService cmisContentVersioningService;
 
     @InjectMocks
     private CmisBrowserController cmisBrowserController;
@@ -184,20 +189,30 @@ class CmisBrowserControllerTest {
     }
 
     @Test
+    @DisplayName("Content selector streams document payload")
+    void browserContentReturnsStream() throws Exception {
+        when(cmisContentVersioningService.getContentStream("doc-1", null))
+            .thenReturn(new CmisContentVersioningService.ContentStreamResponse(
+                new java.io.ByteArrayInputStream("hello".getBytes(java.nio.charset.StandardCharsets.UTF_8)),
+                "text/plain",
+                "hello.txt",
+                5L
+            ));
+
+        MvcResult mvcResult = mockMvc.perform(get("/api/v1/cmis/browser")
+                .param("cmisselector", "content")
+                .param("objectId", "doc-1"))
+            .andExpect(status().isOk())
+            .andReturn();
+
+        assertEquals("hello", mvcResult.getResponse().getContentAsString());
+        assertEquals("text/plain", mvcResult.getResponse().getContentType());
+    }
+
+    @Test
     @DisplayName("Create folder action returns mutation payload")
     void mutateCreateFolderReturnsPayload() throws Exception {
-        when(cmisMutationService.createFolder(new CmisModels.MutationRequest(
-            null,
-            null,
-            "root",
-            null,
-            "Contracts",
-            "Contract folder",
-            null,
-            null,
-            null,
-            null
-        ))).thenReturn(new CmisModels.MutationResponse(
+        when(cmisMutationService.createFolder(any())).thenReturn(new CmisModels.MutationResponse(
             "athena",
             "createFolder",
             new CmisModels.ObjectEntry(
@@ -247,18 +262,8 @@ class CmisBrowserControllerTest {
     @Test
     @DisplayName("Mutation security errors return forbidden")
     void mutateMapsSecurityErrorsToForbidden() throws Exception {
-        when(cmisMutationService.deleteObject(new CmisModels.MutationRequest(
-            "4ff5bca6-62dc-4e10-ad75-3b3dce90395f",
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null
-        ))).thenThrow(new SecurityException("No permission to delete node"));
+        when(cmisMutationService.deleteObject(any()))
+            .thenThrow(new SecurityException("No permission to delete node"));
 
         mockMvc.perform(post("/api/v1/cmis/browser")
                 .param("cmisaction", "deleteObject")
@@ -269,5 +274,47 @@ class CmisBrowserControllerTest {
                     }
                     """))
             .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("Check in action dispatches to content/versioning service")
+    void mutateCheckInReturnsPayload() throws Exception {
+        when(cmisContentVersioningService.checkIn(any())).thenReturn(new CmisModels.MutationResponse(
+            "athena",
+            "checkIn",
+            new CmisModels.ObjectEntry(
+                "athena",
+                "doc-1",
+                "contract.pdf",
+                "cmis:document",
+                "cmis:document",
+                "/Contracts/contract.pdf",
+                "root",
+                false,
+                Map.of("cmis:objectId", "doc-1", "cmis:name", "contract.pdf"),
+                List.of("canGetProperties")
+            ),
+            null,
+            "Document checked in"
+        ));
+
+        MvcResult mvcResult = mockMvc.perform(post("/api/v1/cmis/browser")
+                .param("cmisaction", "checkIn")
+                .contentType("application/json")
+                .content("""
+                    {
+                      "objectId": "doc-1",
+                      "contentBase64": "aGVsbG8=",
+                      "filename": "contract.pdf",
+                      "comment": "updated",
+                      "majorVersion": true
+                    }
+                    """))
+            .andExpect(status().isOk())
+            .andReturn();
+
+        JsonNode root = objectMapper.readTree(mvcResult.getResponse().getContentAsString());
+        assertEquals("checkIn", root.get("action").asText());
+        assertEquals("contract.pdf", root.get("object").get("name").asText());
     }
 }

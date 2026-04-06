@@ -47,17 +47,10 @@ class CmisMutationServiceTest {
         Folder folder = buildFolder("Contracts", "/Contracts");
         when(folderService.createFolder(any())).thenReturn(folder);
 
-        CmisModels.MutationResponse response = cmisMutationService.createFolder(new CmisModels.MutationRequest(
-            null,
-            null,
+        CmisModels.MutationResponse response = cmisMutationService.createFolder(folderRequest(
             CmisObjectFactory.ROOT_OBJECT_ID,
-            null,
             "Contracts",
-            "Contract folder",
-            null,
-            null,
-            null,
-            null
+            "Contract folder"
         ));
 
         ArgumentCaptor<FolderService.CreateFolderRequest> requestCaptor = ArgumentCaptor.forClass(FolderService.CreateFolderRequest.class);
@@ -83,11 +76,8 @@ class CmisMutationServiceTest {
         when(nodeService.createDocument("contract.pdf", "application/pdf", 128L, parentId)).thenReturn(created);
         when(nodeService.updateNode(eq(created.getId()), any())).thenReturn(updated);
 
-        CmisModels.MutationResponse response = cmisMutationService.createDocument(new CmisModels.MutationRequest(
-            null,
-            null,
+        CmisModels.MutationResponse response = cmisMutationService.createDocument(documentRequest(
             parentId.toString(),
-            null,
             "contract.pdf",
             "Imported contract",
             "application/pdf",
@@ -112,15 +102,8 @@ class CmisMutationServiceTest {
         when(nodeService.getNode(document.getId())).thenReturn(document);
         when(nodeService.updateNode(eq(document.getId()), any())).thenReturn(document);
 
-        cmisMutationService.updateProperties(new CmisModels.MutationRequest(
+        cmisMutationService.updateProperties(propertyRequest(
             document.getId().toString(),
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
             Map.of(
                 "cmis:name", "renamed-contract.pdf",
                 "cmis:description", "Updated contract",
@@ -144,15 +127,8 @@ class CmisMutationServiceTest {
         Document document = buildDocument(buildFolder("Contracts", "/Sites/contracts"), "contract.pdf");
         when(nodeService.getNode(document.getId())).thenReturn(document);
 
-        assertThrows(IllegalArgumentException.class, () -> cmisMutationService.updateProperties(new CmisModels.MutationRequest(
+        assertThrows(IllegalArgumentException.class, () -> cmisMutationService.updateProperties(propertyRequest(
             document.getId().toString(),
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
             Map.of("cmis:name", "   "),
             null
         )));
@@ -164,18 +140,7 @@ class CmisMutationServiceTest {
         Document document = buildDocument(buildFolder("Contracts", "/Sites/contracts"), "contract.pdf");
         when(nodeService.getNode(document.getId())).thenReturn(document);
 
-        CmisModels.MutationResponse response = cmisMutationService.deleteObject(new CmisModels.MutationRequest(
-            document.getId().toString(),
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null
-        ));
+        CmisModels.MutationResponse response = cmisMutationService.deleteObject(objectRequest(document.getId().toString()));
 
         verify(nodeService).deleteNode(document.getId(), false);
         assertEquals(document.getId().toString(), response.deletedObjectId());
@@ -208,5 +173,97 @@ class CmisMutationServiceTest {
         document.setLastModifiedDate(LocalDateTime.now());
         document.setArchiveStatus(Node.ArchiveStatus.LIVE);
         return document;
+    }
+
+    private CmisModels.MutationRequest folderRequest(String folderId, String name, String description) {
+        return new CmisModels.MutationRequest(
+            null,
+            null,
+            folderId,
+            null,
+            name,
+            description,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+        );
+    }
+
+    private CmisModels.MutationRequest documentRequest(
+        String folderId,
+        String name,
+        String description,
+        String mimeType,
+        Long contentLength,
+        Map<String, Object> properties,
+        Map<String, Object> metadata
+    ) {
+        return new CmisModels.MutationRequest(
+            null,
+            null,
+            folderId,
+            null,
+            name,
+            description,
+            mimeType,
+            contentLength,
+            properties,
+            metadata,
+            null,
+            null,
+            null,
+            null,
+            null
+        );
+    }
+
+    private CmisModels.MutationRequest propertyRequest(
+        String objectId,
+        Map<String, Object> properties,
+        Map<String, Object> metadata
+    ) {
+        return new CmisModels.MutationRequest(
+            objectId,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            properties,
+            metadata,
+            null,
+            null,
+            null,
+            null,
+            null
+        );
+    }
+
+    private CmisModels.MutationRequest objectRequest(String objectId) {
+        return new CmisModels.MutationRequest(
+            objectId,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+        );
     }
 }

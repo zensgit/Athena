@@ -84,7 +84,12 @@ public final class CmisModels {
         String mimeType,
         Long contentLength,
         Map<String, Object> properties,
-        Map<String, Object> metadata
+        Map<String, Object> metadata,
+        String filename,
+        String contentBase64,
+        String comment,
+        Boolean majorVersion,
+        Boolean keepCheckedOut
     ) {
     }
 
