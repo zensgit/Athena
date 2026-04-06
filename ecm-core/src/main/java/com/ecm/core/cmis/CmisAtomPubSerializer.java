@@ -98,6 +98,29 @@ public class CmisAtomPubSerializer {
         sb.append(indent).append("</cmisra:object>\n");
     }
 
+    public String serializeMutationResponse(CmisModels.MutationResponse response, String baseUrl) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+        if (response.object() != null) {
+            sb.append("<atom:entry xmlns:atom=\"").append(ATOM_NS)
+              .append("\" xmlns:cmisra=\"").append(CMISRA_NS)
+              .append("\" xmlns:cmis=\"").append(CMIS_NS).append("\">\n");
+            sb.append("  <atom:title>").append(esc(response.action())).append(": ").append(esc(response.message())).append("</atom:title>\n");
+            appendEntryBody(sb, response.object(), baseUrl, "  ");
+            sb.append("</atom:entry>\n");
+        } else {
+            sb.append("<cmisra:response xmlns:cmisra=\"").append(CMISRA_NS)
+              .append("\" xmlns:cmis=\"").append(CMIS_NS).append("\">\n");
+            sb.append("  <cmisra:action>").append(esc(response.action())).append("</cmisra:action>\n");
+            sb.append("  <cmisra:message>").append(esc(response.message())).append("</cmisra:message>\n");
+            if (response.deletedObjectId() != null) {
+                sb.append("  <cmisra:deletedObjectId>").append(esc(response.deletedObjectId())).append("</cmisra:deletedObjectId>\n");
+            }
+            sb.append("</cmisra:response>\n");
+        }
+        return sb.toString();
+    }
+
     private String esc(String value) {
         if (value == null) return "";
         return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");

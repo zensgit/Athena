@@ -136,4 +136,44 @@ class CmisAtomPubSerializerTest {
             assertFalse(xml.contains("R&D <report>"));
         }
     }
+
+    @Nested
+    @DisplayName("serializeMutationResponse")
+    class MutationResp {
+
+        @Test
+        @DisplayName("mutation with object produces Atom entry")
+        void withObject() {
+            Map<String, Object> props = new LinkedHashMap<>();
+            props.put("cmis:objectId", "new-1");
+            CmisModels.ObjectEntry entry = new CmisModels.ObjectEntry(
+                "athena", "new-1", "New Folder", "cmis:folder", "cmis:folder",
+                "/New Folder", "root", false, props, List.of()
+            );
+            CmisModels.MutationResponse response = new CmisModels.MutationResponse(
+                "athena", "createFolder", entry, null, "Folder created"
+            );
+
+            String xml = serializer.serializeMutationResponse(response, "http://localhost/api/cmis/atom");
+
+            assertTrue(xml.contains("<atom:entry"));
+            assertTrue(xml.contains("createFolder: Folder created"));
+            assertTrue(xml.contains("<cmis:value>new-1</cmis:value>"));
+        }
+
+        @Test
+        @DisplayName("delete produces response element without object")
+        void deleteWithoutObject() {
+            CmisModels.MutationResponse response = new CmisModels.MutationResponse(
+                "athena", "deleteObject", null, "del-123", "Object deleted"
+            );
+
+            String xml = serializer.serializeMutationResponse(response, "http://localhost/api/cmis/atom");
+
+            assertTrue(xml.contains("<cmisra:response"));
+            assertTrue(xml.contains("<cmisra:action>deleteObject</cmisra:action>"));
+            assertTrue(xml.contains("<cmisra:deletedObjectId>del-123</cmisra:deletedObjectId>"));
+            assertFalse(xml.contains("<atom:entry"));
+        }
+    }
 }
