@@ -3,6 +3,7 @@ package com.ecm.core.cmis;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Node;
 import com.ecm.core.entity.Version;
+import com.ecm.core.service.CheckOutCheckInService;
 import com.ecm.core.service.ContentService;
 import com.ecm.core.service.NodeService;
 import com.ecm.core.service.VersionService;
@@ -25,6 +26,7 @@ public class CmisContentVersioningService {
     private final NodeService nodeService;
     private final ContentService contentService;
     private final VersionService versionService;
+    private final CheckOutCheckInService checkOutCheckInService;
     private final CmisObjectFactory objectFactory;
 
     @Transactional(readOnly = true)
@@ -111,6 +113,58 @@ public class CmisContentVersioningService {
             objectFactory.fromNode(canceled),
             null,
             "Checkout canceled"
+        );
+    }
+
+    public CmisModels.MutationResponse checkOutWorkingCopy(CmisModels.MutationRequest request) {
+        Document document = resolveDocument(request.objectId(), request.path());
+        Document workingCopy = checkOutCheckInService.checkout(document.getId());
+        return new CmisModels.MutationResponse(
+            CmisObjectFactory.REPOSITORY_ID,
+            "checkOut",
+            objectFactory.fromNode(workingCopy),
+            null,
+            "Checked out"
+        );
+    }
+
+    public CmisModels.MutationResponse checkInWorkingCopy(CmisModels.MutationRequest request) throws IOException {
+        Document workingCopy = resolveDocument(request.objectId(), request.path());
+        if (!workingCopy.isWorkingCopy()) {
+            throw new IllegalArgumentException("Node is not a working copy: " + workingCopy.getId());
+        }
+
+        if (request.contentBase64() != null && !request.contentBase64().isBlank()) {
+            byte[] content = requireContent(request.contentBase64());
+            String filename = effectiveFilename(request, workingCopy);
+            versionService.createVersion(
+                workingCopy.getWorkingCopyOf(),
+                new ByteArrayInputStream(content),
+                filename,
+                blankToNull(request.comment()),
+                Boolean.TRUE.equals(request.majorVersion())
+            );
+        }
+
+        Document original = checkOutCheckInService.checkin(workingCopy.getId(), Boolean.TRUE.equals(request.keepCheckedOut()));
+        return new CmisModels.MutationResponse(
+            CmisObjectFactory.REPOSITORY_ID,
+            "checkIn",
+            objectFactory.fromNode(original),
+            null,
+            Boolean.TRUE.equals(request.keepCheckedOut()) ? "Checked in and kept checked out" : "Checked in"
+        );
+    }
+
+    public CmisModels.MutationResponse cancelWorkingCopyCheckout(CmisModels.MutationRequest request) {
+        Document document = resolveDocument(request.objectId(), request.path());
+        Document original = checkOutCheckInService.cancelCheckout(document.getId());
+        return new CmisModels.MutationResponse(
+            CmisObjectFactory.REPOSITORY_ID,
+            "cancelCheckOut",
+            objectFactory.fromNode(original),
+            null,
+            "Checkout cancelled"
         );
     }
 

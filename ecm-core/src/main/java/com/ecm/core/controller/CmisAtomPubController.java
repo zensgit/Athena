@@ -2,11 +2,9 @@ package com.ecm.core.controller;
 
 import com.ecm.core.cmis.CmisAtomPubSerializer;
 import com.ecm.core.cmis.CmisBrowserService;
+import com.ecm.core.cmis.CmisContentVersioningService;
 import com.ecm.core.cmis.CmisModels;
 import com.ecm.core.cmis.CmisMutationService;
-import com.ecm.core.entity.Document;
-import com.ecm.core.cmis.CmisObjectFactory;
-import com.ecm.core.service.CheckOutCheckInService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -14,15 +12,24 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.io.IOException;
+import java.util.NoSuchElementException;
+
+import static org.springframework.http.HttpStatus.BAD_REQUEST;
+import static org.springframework.http.HttpStatus.FORBIDDEN;
+import static org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR;
+import static org.springframework.http.HttpStatus.NOT_FOUND;
 
 /**
- * CMIS 1.1 AtomPub binding — read-only endpoints.
- * Reuses CmisBrowserService for data access and CmisAtomPubSerializer for XML output.
+ * CMIS 1.1 AtomPub binding.
+ * Reuses browser-side CMIS services so AtomPub and browser binding stay on the same contracts.
  */
 @RestController
 @RequiredArgsConstructor
 @RequestMapping({"/api/cmis/atom", "/api/v1/cmis/atom"})
-@Tag(name = "CMIS AtomPub", description = "CMIS 1.1 AtomPub binding (read-only)")
+@Tag(name = "CMIS AtomPub", description = "CMIS 1.1 AtomPub binding")
 public class CmisAtomPubController {
 
     private static final MediaType ATOM_XML = MediaType.valueOf("application/atom+xml;charset=UTF-8");
@@ -30,8 +37,7 @@ public class CmisAtomPubController {
 
     private final CmisBrowserService browserService;
     private final CmisMutationService mutationService;
-    private final CheckOutCheckInService checkOutCheckInService;
-    private final CmisObjectFactory objectFactory;
+    private final CmisContentVersioningService contentVersioningService;
     private final CmisAtomPubSerializer serializer;
 
     @GetMapping(produces = "application/atomsvc+xml")
@@ -50,11 +56,19 @@ public class CmisAtomPubController {
             @RequestParam(required = false) String objectId,
             @RequestParam(required = false) String path,
             HttpServletRequest request) {
-        CmisModels.ObjectEntry entry = browserService.getObject(objectId, path);
-        String baseUrl = resolveBaseUrl(request);
-        return ResponseEntity.ok()
-            .contentType(ATOM_XML)
-            .body(serializer.serializeObjectEntry(entry, baseUrl));
+        try {
+            CmisModels.ObjectEntry entry = browserService.getObject(objectId, path);
+            String baseUrl = resolveBaseUrl(request);
+            return ResponseEntity.ok()
+                .contentType(ATOM_XML)
+                .body(serializer.serializeObjectEntry(entry, baseUrl));
+        } catch (IllegalArgumentException ex) {
+            throw new ResponseStatusException(BAD_REQUEST, ex.getMessage(), ex);
+        } catch (NoSuchElementException ex) {
+            throw new ResponseStatusException(NOT_FOUND, ex.getMessage(), ex);
+        } catch (SecurityException ex) {
+            throw new ResponseStatusException(FORBIDDEN, ex.getMessage(), ex);
+        }
     }
 
     @GetMapping(value = "/children", produces = "application/atom+xml")
@@ -65,11 +79,19 @@ public class CmisAtomPubController {
             @RequestParam(defaultValue = "0") int skipCount,
             @RequestParam(defaultValue = "25") int maxItems,
             HttpServletRequest request) {
-        CmisModels.ChildrenResponse children = browserService.getChildren(objectId, path, skipCount, maxItems);
-        String baseUrl = resolveBaseUrl(request);
-        return ResponseEntity.ok()
-            .contentType(ATOM_XML)
-            .body(serializer.serializeChildrenFeed(children, baseUrl));
+        try {
+            CmisModels.ChildrenResponse children = browserService.getChildren(objectId, path, skipCount, maxItems);
+            String baseUrl = resolveBaseUrl(request);
+            return ResponseEntity.ok()
+                .contentType(ATOM_XML)
+                .body(serializer.serializeChildrenFeed(children, baseUrl));
+        } catch (IllegalArgumentException ex) {
+            throw new ResponseStatusException(BAD_REQUEST, ex.getMessage(), ex);
+        } catch (NoSuchElementException ex) {
+            throw new ResponseStatusException(NOT_FOUND, ex.getMessage(), ex);
+        } catch (SecurityException ex) {
+            throw new ResponseStatusException(FORBIDDEN, ex.getMessage(), ex);
+        }
     }
 
     // ---- mutations ----------------------------------------------------------
@@ -77,22 +99,19 @@ public class CmisAtomPubController {
     @PostMapping(value = "/folder", consumes = "application/json", produces = "application/atom+xml")
     @Operation(summary = "Create folder")
     public ResponseEntity<String> createFolder(@RequestBody CmisModels.MutationRequest request, HttpServletRequest httpRequest) {
-        CmisModels.MutationResponse response = mutationService.createFolder(request);
-        return ResponseEntity.status(201).contentType(ATOM_XML).body(serializer.serializeMutationResponse(response, resolveBaseUrl(httpRequest)));
+        return atomMutationResponse(() -> mutationService.createFolder(request), httpRequest, 201);
     }
 
     @PostMapping(value = "/document", consumes = "application/json", produces = "application/atom+xml")
     @Operation(summary = "Create document")
     public ResponseEntity<String> createDocument(@RequestBody CmisModels.MutationRequest request, HttpServletRequest httpRequest) {
-        CmisModels.MutationResponse response = mutationService.createDocument(request);
-        return ResponseEntity.status(201).contentType(ATOM_XML).body(serializer.serializeMutationResponse(response, resolveBaseUrl(httpRequest)));
+        return atomMutationResponse(() -> mutationService.createDocument(request), httpRequest, 201);
     }
 
     @PutMapping(value = "/object", consumes = "application/json", produces = "application/atom+xml")
     @Operation(summary = "Update properties")
     public ResponseEntity<String> updateProperties(@RequestBody CmisModels.MutationRequest request, HttpServletRequest httpRequest) {
-        CmisModels.MutationResponse response = mutationService.updateProperties(request);
-        return ResponseEntity.ok().contentType(ATOM_XML).body(serializer.serializeMutationResponse(response, resolveBaseUrl(httpRequest)));
+        return atomMutationResponse(() -> mutationService.updateProperties(request), httpRequest, 200);
     }
 
     @DeleteMapping(value = "/object", produces = "application/atom+xml")
@@ -100,19 +119,13 @@ public class CmisAtomPubController {
     public ResponseEntity<String> deleteObject(
             @RequestParam String objectId,
             HttpServletRequest httpRequest) {
-        CmisModels.MutationRequest request = new CmisModels.MutationRequest(objectId, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
-        CmisModels.MutationResponse response = mutationService.deleteObject(request);
-        return ResponseEntity.ok().contentType(ATOM_XML).body(serializer.serializeMutationResponse(response, resolveBaseUrl(httpRequest)));
+        return atomMutationResponse(() -> mutationService.deleteObject(objectRequest(objectId)), httpRequest, 200);
     }
 
     @PostMapping(value = "/checkout", produces = "application/atom+xml")
     @Operation(summary = "Check out document (creates working copy)")
     public ResponseEntity<String> checkOut(@RequestParam String objectId, HttpServletRequest httpRequest) {
-        java.util.UUID docId = java.util.UUID.fromString(objectId.trim());
-        Document wc = checkOutCheckInService.checkout(docId);
-        CmisModels.MutationResponse response = new CmisModels.MutationResponse(
-            CmisObjectFactory.REPOSITORY_ID, "checkOut", objectFactory.fromNode(wc), null, "Checked out");
-        return ResponseEntity.ok().contentType(ATOM_XML).body(serializer.serializeMutationResponse(response, resolveBaseUrl(httpRequest)));
+        return atomMutationResponse(() -> contentVersioningService.checkOutWorkingCopy(objectRequest(objectId)), httpRequest, 200);
     }
 
     @PostMapping(value = "/checkin", produces = "application/atom+xml")
@@ -121,21 +134,76 @@ public class CmisAtomPubController {
             @RequestParam String objectId,
             @RequestParam(defaultValue = "false") boolean keepCheckedOut,
             HttpServletRequest httpRequest) {
-        java.util.UUID wcId = java.util.UUID.fromString(objectId.trim());
-        Document original = checkOutCheckInService.checkin(wcId, keepCheckedOut);
-        CmisModels.MutationResponse response = new CmisModels.MutationResponse(
-            CmisObjectFactory.REPOSITORY_ID, "checkIn", objectFactory.fromNode(original), null, "Checked in");
-        return ResponseEntity.ok().contentType(ATOM_XML).body(serializer.serializeMutationResponse(response, resolveBaseUrl(httpRequest)));
+        return atomMutationResponse(() -> contentVersioningService.checkInWorkingCopy(checkInRequest(objectId, keepCheckedOut)), httpRequest, 200);
     }
 
     @PostMapping(value = "/cancel-checkout", produces = "application/atom+xml")
     @Operation(summary = "Cancel checkout")
     public ResponseEntity<String> cancelCheckOut(@RequestParam String objectId, HttpServletRequest httpRequest) {
-        java.util.UUID docId = java.util.UUID.fromString(objectId.trim());
-        Document original = checkOutCheckInService.cancelCheckout(docId);
-        CmisModels.MutationResponse response = new CmisModels.MutationResponse(
-            CmisObjectFactory.REPOSITORY_ID, "cancelCheckOut", objectFactory.fromNode(original), null, "Checkout cancelled");
-        return ResponseEntity.ok().contentType(ATOM_XML).body(serializer.serializeMutationResponse(response, resolveBaseUrl(httpRequest)));
+        return atomMutationResponse(() -> contentVersioningService.cancelWorkingCopyCheckout(objectRequest(objectId)), httpRequest, 200);
+    }
+
+    private ResponseEntity<String> atomMutationResponse(ThrowingMutationSupplier supplier, HttpServletRequest request, int statusCode) {
+        try {
+            String baseUrl = resolveBaseUrl(request);
+            CmisModels.MutationResponse response = supplier.get();
+            return ResponseEntity.status(statusCode)
+                .contentType(ATOM_XML)
+                .body(serializer.serializeMutationResponse(response, baseUrl));
+        } catch (IllegalArgumentException ex) {
+            throw new ResponseStatusException(BAD_REQUEST, ex.getMessage(), ex);
+        } catch (NoSuchElementException ex) {
+            throw new ResponseStatusException(NOT_FOUND, ex.getMessage(), ex);
+        } catch (SecurityException ex) {
+            throw new ResponseStatusException(FORBIDDEN, ex.getMessage(), ex);
+        } catch (IOException ex) {
+            throw new ResponseStatusException(INTERNAL_SERVER_ERROR, "CMIS AtomPub mutation failed", ex);
+        }
+    }
+
+    private CmisModels.MutationRequest objectRequest(String objectId) {
+        return new CmisModels.MutationRequest(
+            objectId,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+        );
+    }
+
+    private CmisModels.MutationRequest checkInRequest(String objectId, boolean keepCheckedOut) {
+        return new CmisModels.MutationRequest(
+            objectId,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            keepCheckedOut
+        );
+    }
+
+    @FunctionalInterface
+    private interface ThrowingMutationSupplier {
+        CmisModels.MutationResponse get() throws IOException;
     }
 
     private String resolveBaseUrl(HttpServletRequest request) {

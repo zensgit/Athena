@@ -3,6 +3,7 @@ package com.ecm.core.cmis;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Node;
+import com.ecm.core.service.CheckOutCheckInService;
 import com.ecm.core.service.ContentService;
 import com.ecm.core.service.NodeService;
 import com.ecm.core.service.VersionService;
@@ -37,11 +38,20 @@ class CmisContentVersioningServiceTest {
     @Mock
     private VersionService versionService;
 
+    @Mock
+    private CheckOutCheckInService checkOutCheckInService;
+
     private CmisContentVersioningService service;
 
     @BeforeEach
     void setUp() {
-        service = new CmisContentVersioningService(nodeService, contentService, versionService, new CmisObjectFactory());
+        service = new CmisContentVersioningService(
+            nodeService,
+            contentService,
+            versionService,
+            checkOutCheckInService,
+            new CmisObjectFactory()
+        );
     }
 
     @Test
@@ -204,6 +214,131 @@ class CmisContentVersioningServiceTest {
         )));
     }
 
+    @Test
+    @DisplayName("AtomPub checkout delegates to working-copy service")
+    void checkOutWorkingCopyDelegatesToWorkingCopyService() {
+        Document original = buildDocument("contract.pdf");
+        Document workingCopy = buildWorkingCopy("contract.pdf", original.getId());
+        when(nodeService.getNode(original.getId())).thenReturn(original);
+        when(checkOutCheckInService.checkout(original.getId())).thenReturn(workingCopy);
+
+        CmisModels.MutationResponse response = service.checkOutWorkingCopy(new CmisModels.MutationRequest(
+            original.getId().toString(),
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+        ));
+
+        verify(checkOutCheckInService).checkout(original.getId());
+        assertEquals("checkOut", response.action());
+        assertEquals(workingCopy.getId().toString(), response.object().objectId());
+    }
+
+    @Test
+    @DisplayName("AtomPub check in rejects non-working-copy nodes")
+    void checkInWorkingCopyRejectsNonWorkingCopy() {
+        Document original = buildDocument("contract.pdf");
+        when(nodeService.getNode(original.getId())).thenReturn(original);
+
+        assertThrows(IllegalArgumentException.class, () -> service.checkInWorkingCopy(new CmisModels.MutationRequest(
+            original.getId().toString(),
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            Boolean.FALSE
+        )));
+    }
+
+    @Test
+    @DisplayName("AtomPub check in versions content and delegates via working-copy service")
+    void checkInWorkingCopyCreatesVersionAndDelegates() throws Exception {
+        UUID originalId = UUID.randomUUID();
+        Document workingCopy = buildWorkingCopy("contract.pdf", originalId);
+        Document checkedIn = buildDocument("contract.pdf");
+        checkedIn.setId(originalId);
+
+        when(nodeService.getNode(workingCopy.getId())).thenReturn(workingCopy);
+        when(checkOutCheckInService.checkin(workingCopy.getId(), true)).thenReturn(checkedIn);
+
+        CmisModels.MutationResponse response = service.checkInWorkingCopy(new CmisModels.MutationRequest(
+            workingCopy.getId().toString(),
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            "contract.pdf",
+            "aGVsbG8=",
+            "checkin",
+            Boolean.TRUE,
+            Boolean.TRUE
+        ));
+
+        verify(versionService).createVersion(eq(originalId), any(ByteArrayInputStream.class), eq("contract.pdf"), eq("checkin"), eq(true));
+        verify(checkOutCheckInService).checkin(workingCopy.getId(), true);
+        assertEquals("checkIn", response.action());
+        assertEquals(originalId.toString(), response.object().objectId());
+    }
+
+    @Test
+    @DisplayName("AtomPub cancel checkout accepts working copy id")
+    void cancelWorkingCopyCheckoutDelegatesToWorkingCopyService() {
+        UUID originalId = UUID.randomUUID();
+        Document workingCopy = buildWorkingCopy("contract.pdf", originalId);
+        Document original = buildDocument("contract.pdf");
+        original.setId(originalId);
+
+        when(nodeService.getNode(workingCopy.getId())).thenReturn(workingCopy);
+        when(checkOutCheckInService.cancelCheckout(workingCopy.getId())).thenReturn(original);
+
+        CmisModels.MutationResponse response = service.cancelWorkingCopyCheckout(new CmisModels.MutationRequest(
+            workingCopy.getId().toString(),
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+        ));
+
+        verify(checkOutCheckInService).cancelCheckout(workingCopy.getId());
+        assertEquals("cancelCheckOut", response.action());
+        assertEquals(originalId.toString(), response.object().objectId());
+    }
+
     private Document buildDocument(String name) {
         Folder parent = new Folder();
         parent.setId(UUID.randomUUID());
@@ -224,5 +359,13 @@ class CmisContentVersioningServiceTest {
         document.setLastModifiedDate(LocalDateTime.now());
         document.setArchiveStatus(Node.ArchiveStatus.LIVE);
         return document;
+    }
+
+    private Document buildWorkingCopy(String name, UUID originalId) {
+        Document workingCopy = buildDocument("(Working Copy) " + name);
+        workingCopy.setWorkingCopy(true);
+        workingCopy.setWorkingCopyOf(originalId);
+        workingCopy.setCheckoutUser("alice");
+        return workingCopy;
     }
 }
