@@ -1,5 +1,6 @@
 package com.ecm.core.search;
 
+import com.ecm.core.config.TenantContext;
 import com.ecm.core.entity.Node;
 import com.ecm.core.entity.Permission.PermissionType;
 import com.ecm.core.repository.NodeRepository;
@@ -291,6 +292,7 @@ public class FacetedSearchService {
             criteria = criteria.and("id").not().is(documentId);
             criteria = criteria.and("deleted").is(false);
             criteria = criteria.and("archiveStatus").is("LIVE");
+            applyTenantWorkspaceScope(criteria);
 
             CriteriaQuery similarQuery = new CriteriaQuery(criteria);
             similarQuery.setPageable(PageRequest.of(0, maxResults));
@@ -320,6 +322,7 @@ public class FacetedSearchService {
             Criteria criteria = new Criteria("name").startsWith(prefix.toLowerCase())
                 .and("deleted").is(false)
                 .and("archiveStatus").is("LIVE");
+            applyTenantWorkspaceScope(criteria);
 
             CriteriaQuery query = new CriteriaQuery(criteria);
             query.setPageable(PageRequest.of(0, maxSuggestions));
@@ -363,7 +366,13 @@ public class FacetedSearchService {
             );
 
             NativeQuery queryBuilder = NativeQuery.builder()
-                .withQuery(q -> q.matchAll(m -> m))
+                .withQuery(q -> q.bool(b -> {
+                    b.must(m -> m.matchAll(ma -> ma));
+                    b.filter(f -> f.term(t -> t.field("deleted").value(false)));
+                    b.filter(f -> f.term(t -> t.field("archiveStatus").value("LIVE")));
+                    applyTenantWorkspaceScopeFilter(b);
+                    return b;
+                }))
                 .withSuggester(suggester)
                 .build();
 
@@ -443,6 +452,7 @@ public class FacetedSearchService {
                 b.filter(f -> f.term(t -> t.field("deleted").value(false)));
             }
             b.filter(f -> f.term(t -> t.field("archiveStatus").value("LIVE")));
+            applyTenantWorkspaceScopeFilter(b);
 
             if (filters != null) {
                 applyFilters(b, filters);
@@ -551,14 +561,14 @@ public class FacetedSearchService {
         }
 
         UUID id = UUID.fromString(folderId.trim());
-        if (!includeChildren) {
-            bool.filter(f -> f.term(t -> t.field("parentId").value(id.toString())));
+        Node folder = nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(id, Node.ArchiveStatus.LIVE).orElse(null);
+        if (folder == null || folder.getPath() == null || folder.getPath().isBlank() || !isTenantScopedPath(folder.getPath())) {
+            bool.filter(f -> f.term(t -> t.field("parentId").value("__none__")));
             return;
         }
 
-        Node folder = nodeRepository.findByIdAndDeletedFalse(id).orElse(null);
-        if (folder == null || folder.getPath() == null || folder.getPath().isBlank()) {
-            bool.filter(f -> f.term(t -> t.field("parentId").value("__none__")));
+        if (!includeChildren) {
+            bool.filter(f -> f.term(t -> t.field("parentId").value(id.toString())));
             return;
         }
 
@@ -567,6 +577,62 @@ public class FacetedSearchService {
             prefix += "/";
         }
         addAnyPrefixFilter(bool, List.of("path.keyword", "path"), prefix);
+    }
+
+    private void applyTenantWorkspaceScopeFilter(BoolQuery.Builder bool) {
+        String tenantRootPath = resolveTenantRootPath();
+        if (tenantRootPath == null) {
+            return;
+        }
+        if (tenantRootPath.isBlank()) {
+            bool.filter(f -> f.term(t -> t.field("parentId").value("__none__")));
+            return;
+        }
+
+        String descendantPrefix = tenantRootPath.endsWith("/") ? tenantRootPath : tenantRootPath + "/";
+        bool.filter(f -> f.bool(b -> {
+            b.should(s -> s.term(t -> t.field("path").value(tenantRootPath)));
+            b.should(s -> s.term(t -> t.field("path.keyword").value(tenantRootPath)));
+            b.should(s -> s.prefix(p -> p.field("path").value(descendantPrefix)));
+            b.should(s -> s.prefix(p -> p.field("path.keyword").value(descendantPrefix)));
+            b.minimumShouldMatch("1");
+            return b;
+        }));
+    }
+
+    private void applyTenantWorkspaceScope(Criteria criteria) {
+        String tenantRootPath = resolveTenantRootPath();
+        if (tenantRootPath == null) {
+            return;
+        }
+        if (tenantRootPath.isBlank()) {
+            criteria.and("parentId").is("__none__");
+            return;
+        }
+        criteria.and(new Criteria("path").is(tenantRootPath)
+            .or(new Criteria("path").startsWith(tenantRootPath + "/")));
+    }
+
+    private String resolveTenantRootPath() {
+        UUID tenantRootNodeId = TenantContext.getCurrentTenantRootNodeId();
+        if (tenantRootNodeId == null) {
+            return null;
+        }
+        return nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(tenantRootNodeId, Node.ArchiveStatus.LIVE)
+            .map(Node::getPath)
+            .filter(path -> path != null && !path.isBlank())
+            .orElse("");
+    }
+
+    private boolean isTenantScopedPath(String path) {
+        String tenantRootPath = resolveTenantRootPath();
+        if (tenantRootPath == null) {
+            return true;
+        }
+        if (tenantRootPath.isBlank() || path == null || path.isBlank()) {
+            return false;
+        }
+        return path.equals(tenantRootPath) || path.startsWith(tenantRootPath + "/");
     }
 
     private static void addAnyOfTermsFilter(BoolQuery.Builder bool, List<String> fields, List<String> values) {

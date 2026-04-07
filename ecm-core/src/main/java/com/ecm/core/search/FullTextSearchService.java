@@ -1,5 +1,6 @@
 package com.ecm.core.search;
 
+import com.ecm.core.config.TenantContext;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Node;
 import com.ecm.core.entity.Permission.PermissionType;
@@ -395,6 +396,7 @@ public class FullTextSearchService {
 
             b.filter(f -> f.term(t -> t.field("deleted").value(false)));
             b.filter(f -> f.term(t -> t.field("archiveStatus").value("LIVE")));
+            applyTenantWorkspaceScopeFilter(b);
             applyFolderScopeFilter(b, folderId, includeChildren);
             PreviewStatusFilterHelper.apply(b, previewStatuses);
             applyReadPermissionFilter(b);
@@ -436,6 +438,7 @@ public class FullTextSearchService {
                 b.filter(f -> f.term(t -> t.field("deleted").value(false)));
             }
             b.filter(f -> f.term(t -> t.field("archiveStatus").value("LIVE")));
+            applyTenantWorkspaceScopeFilter(b);
 
             if (filters != null) {
                 addAnyOfTermsFilter(b, List.of("nodeType", "nodeType.keyword"), filters.getNodeTypes());
@@ -496,15 +499,15 @@ public class FullTextSearchService {
         }
 
         UUID id = UUID.fromString(folderId.trim());
-        if (!includeChildren) {
-            bool.filter(f -> f.term(t -> t.field("parentId").value(id.toString())));
+        Node folder = nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(id, Node.ArchiveStatus.LIVE).orElse(null);
+        if (folder == null || folder.getPath() == null || folder.getPath().isBlank() || !isTenantScopedPath(folder.getPath())) {
+            // Non-existent or out-of-scope folder: return empty without leaking details.
+            bool.filter(f -> f.term(t -> t.field("parentId").value("__none__")));
             return;
         }
 
-        Node folder = nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(id, Node.ArchiveStatus.LIVE).orElse(null);
-        if (folder == null || folder.getPath() == null || folder.getPath().isBlank()) {
-            // Non-existent scope: return empty without leaking details.
-            bool.filter(f -> f.term(t -> t.field("parentId").value("__none__")));
+        if (!includeChildren) {
+            bool.filter(f -> f.term(t -> t.field("parentId").value(id.toString())));
             return;
         }
 
@@ -513,6 +516,49 @@ public class FullTextSearchService {
             prefix += "/";
         }
         addAnyPrefixFilter(bool, List.of("path.keyword", "path"), prefix);
+    }
+
+    private void applyTenantWorkspaceScopeFilter(BoolQuery.Builder bool) {
+        String tenantRootPath = resolveTenantRootPath();
+        if (tenantRootPath == null) {
+            return;
+        }
+        if (tenantRootPath.isBlank()) {
+            bool.filter(f -> f.term(t -> t.field("parentId").value("__none__")));
+            return;
+        }
+
+        String descendantPrefix = tenantRootPath.endsWith("/") ? tenantRootPath : tenantRootPath + "/";
+        bool.filter(f -> f.bool(b -> {
+            b.should(s -> s.term(t -> t.field("path").value(tenantRootPath)));
+            b.should(s -> s.term(t -> t.field("path.keyword").value(tenantRootPath)));
+            b.should(s -> s.prefix(p -> p.field("path").value(descendantPrefix)));
+            b.should(s -> s.prefix(p -> p.field("path.keyword").value(descendantPrefix)));
+            b.minimumShouldMatch("1");
+            return b;
+        }));
+    }
+
+    private String resolveTenantRootPath() {
+        UUID tenantRootNodeId = TenantContext.getCurrentTenantRootNodeId();
+        if (tenantRootNodeId == null) {
+            return null;
+        }
+        return nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(tenantRootNodeId, Node.ArchiveStatus.LIVE)
+            .map(Node::getPath)
+            .filter(path -> path != null && !path.isBlank())
+            .orElse("");
+    }
+
+    private boolean isTenantScopedPath(String path) {
+        String tenantRootPath = resolveTenantRootPath();
+        if (tenantRootPath == null) {
+            return true;
+        }
+        if (tenantRootPath.isBlank() || path == null || path.isBlank()) {
+            return false;
+        }
+        return path.equals(tenantRootPath) || path.startsWith(tenantRootPath + "/");
     }
 
     private void applyReadPermissionFilter(BoolQuery.Builder bool) {

@@ -1,6 +1,8 @@
 package com.ecm.core.search;
 
+import com.ecm.core.config.TenantContext;
 import com.ecm.core.entity.Document;
+import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Node;
 import com.ecm.core.entity.Permission.PermissionType;
 import com.ecm.core.repository.DocumentRepository;
@@ -9,6 +11,7 @@ import com.ecm.core.service.SecurityService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
@@ -71,6 +74,11 @@ class SearchAclFilteringTest {
 
         Mockito.lenient().when(securityService.getCurrentUser()).thenReturn("alice");
         Mockito.lenient().when(securityService.getUserAuthorities("alice")).thenReturn(Set.of("alice", "EVERYONE"));
+    }
+
+    @AfterEach
+    void tearDown() {
+        TenantContext.clear();
     }
 
     @Test
@@ -171,6 +179,37 @@ class SearchAclFilteringTest {
         co.elastic.clients.elasticsearch._types.query_dsl.Query esQuery = nativeQuery.getQuery();
 
         assertTrue(hasStringTermFilter(esQuery, "archiveStatus", "LIVE"));
+    }
+
+    @Test
+    @DisplayName("Full-text search applies tenant workspace path scope")
+    void fullTextSearchAppliesTenantWorkspacePathScope() {
+        UUID tenantRootId = UUID.randomUUID();
+        Folder tenantRoot = new Folder();
+        tenantRoot.setId(tenantRootId);
+        tenantRoot.setPath("/Acme Workspace [acme]");
+        TenantContext.setCurrentTenantRootNodeId(tenantRootId);
+
+        Mockito.when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(tenantRootId, Node.ArchiveStatus.LIVE))
+            .thenReturn(java.util.Optional.of(tenantRoot));
+        Mockito.when(elasticsearchOperations.search(
+                Mockito.any(Query.class),
+                Mockito.eq(NodeDocument.class),
+                Mockito.any(IndexCoordinates.class)))
+            .thenReturn(searchHits());
+        Mockito.when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+
+        fullTextSearchService.search("query", 0, 10, null, null);
+
+        ArgumentCaptor<Query> queryCaptor = ArgumentCaptor.forClass(Query.class);
+        Mockito.verify(elasticsearchOperations).search(
+            queryCaptor.capture(),
+            Mockito.eq(NodeDocument.class),
+            Mockito.any(IndexCoordinates.class)
+        );
+
+        NativeQuery nativeQuery = (NativeQuery) queryCaptor.getValue();
+        assertTrue(hasPathScopeFilter(nativeQuery.getQuery(), tenantRoot.getPath()));
     }
 
     @Test
@@ -737,6 +776,40 @@ class SearchAclFilteringTest {
         assertTrue(hasStringTermFilter(esQuery, "archiveStatus", "LIVE"));
     }
 
+    @Test
+    @DisplayName("Faceted search applies tenant workspace path scope")
+    void facetedSearchAppliesTenantWorkspacePathScope() {
+        UUID tenantRootId = UUID.randomUUID();
+        Folder tenantRoot = new Folder();
+        tenantRoot.setId(tenantRootId);
+        tenantRoot.setPath("/Acme Workspace [acme]");
+        TenantContext.setCurrentTenantRootNodeId(tenantRootId);
+
+        Mockito.when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(tenantRootId, Node.ArchiveStatus.LIVE))
+            .thenReturn(java.util.Optional.of(tenantRoot));
+        Mockito.when(elasticsearchOperations.search(
+                Mockito.any(Query.class),
+                Mockito.eq(NodeDocument.class),
+                Mockito.any(IndexCoordinates.class)))
+            .thenReturn(searchHits());
+        Mockito.when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+
+        FacetedSearchService.FacetedSearchRequest request = new FacetedSearchService.FacetedSearchRequest();
+        request.setQuery("doc");
+
+        facetedSearchService.search(request);
+
+        ArgumentCaptor<Query> queryCaptor = ArgumentCaptor.forClass(Query.class);
+        Mockito.verify(elasticsearchOperations).search(
+            queryCaptor.capture(),
+            Mockito.eq(NodeDocument.class),
+            Mockito.any(IndexCoordinates.class)
+        );
+
+        NativeQuery nativeQuery = (NativeQuery) queryCaptor.getValue();
+        assertTrue(hasPathScopeFilter(nativeQuery.getQuery(), tenantRoot.getPath()));
+    }
+
     private static SearchHit<NodeDocument> searchHit(NodeDocument doc) {
         return new SearchHit<>(
             "ecm_documents",
@@ -798,5 +871,40 @@ class SearchAclFilteringTest {
             .anyMatch(term -> field.equals(term.field())
                 && term.value().isString()
                 && value.equals(term.value().stringValue()));
+    }
+
+    private static boolean hasPathScopeFilter(
+        co.elastic.clients.elasticsearch._types.query_dsl.Query esQuery,
+        String rootPath
+    ) {
+        if (!esQuery.isBool()) {
+            return false;
+        }
+
+        String descendantPrefix = rootPath + "/";
+        return esQuery.bool().filter().stream()
+            .filter(co.elastic.clients.elasticsearch._types.query_dsl.Query::isBool)
+            .flatMap(filter -> filter.bool().should().stream())
+            .anyMatch(query -> matchesPathTerm(query, rootPath) || matchesPathPrefix(query, descendantPrefix));
+    }
+
+    private static boolean matchesPathTerm(co.elastic.clients.elasticsearch._types.query_dsl.Query query, String value) {
+        if (!query.isTerm()) {
+            return false;
+        }
+        var term = query.term();
+        return ("path".equals(term.field()) || "path.keyword".equals(term.field()))
+            && term.value().isString()
+            && value.equals(term.value().stringValue());
+    }
+
+    private static boolean matchesPathPrefix(co.elastic.clients.elasticsearch._types.query_dsl.Query query, String value) {
+        if (!query.isPrefix()) {
+            return false;
+        }
+        var prefix = query.prefix();
+        String prefixValue = prefix.value();
+        return ("path".equals(prefix.field()) || "path.keyword".equals(prefix.field()))
+            && value.equals(prefixValue);
     }
 }
