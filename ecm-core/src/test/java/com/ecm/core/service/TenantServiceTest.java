@@ -1,6 +1,7 @@
 package com.ecm.core.service;
 
 import com.ecm.core.config.TenantContext;
+import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Tenant;
 import com.ecm.core.repository.TenantRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -25,12 +26,13 @@ class TenantServiceTest {
 
     @Mock private TenantRepository tenantRepository;
     @Mock private SecurityService securityService;
+    @Mock private FolderService folderService;
 
     private TenantService tenantService;
 
     @BeforeEach
     void setUp() {
-        tenantService = new TenantService(tenantRepository, securityService);
+        tenantService = new TenantService(tenantRepository, securityService, folderService);
     }
 
     @AfterEach
@@ -42,6 +44,7 @@ class TenantServiceTest {
     @DisplayName("createTenant normalizes domain and saves tenant")
     void createTenantNormalizesDomain() {
         when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+        when(folderService.createFolder(any())).thenReturn(folder(UUID.fromString("00000000-0000-0000-0000-000000000123")));
         when(tenantRepository.existsByTenantDomainIgnoreCaseAndDeletedFalse("acme")).thenReturn(false);
         when(tenantRepository.save(any())).thenAnswer(invocation -> {
             Tenant tenant = invocation.getArgument(0);
@@ -56,6 +59,7 @@ class TenantServiceTest {
         assertEquals("acme", saved.tenantDomain());
         assertEquals("Acme Corp", saved.tenantName());
         assertEquals(1024L, saved.quotaBytes());
+        assertEquals(UUID.fromString("00000000-0000-0000-0000-000000000123"), saved.rootNodeId());
     }
 
     @Test
@@ -88,6 +92,52 @@ class TenantServiceTest {
     }
 
     @Test
+    @DisplayName("updateTenant rejects disabling the current request tenant")
+    void updateTenantRejectsDisablingCurrentRequestTenant() {
+        when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+        when(tenantRepository.findByTenantDomainIgnoreCaseAndDeletedFalse("acme"))
+            .thenReturn(Optional.of(tenant("acme", "Acme", true, false)));
+        TenantContext.setCurrentTenantDomain("acme");
+
+        assertThrows(IllegalArgumentException.class, () -> tenantService.updateTenant(
+            "acme",
+            new TenantService.TenantMutationRequest("acme", "Acme", false, null, null)
+        ));
+    }
+
+    @Test
+    @DisplayName("updateTenant bootstraps workspace when legacy tenant has no root")
+    void updateTenantBootstrapsWorkspaceWhenMissingRoot() {
+        when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+        when(folderService.createFolder(any())).thenReturn(folder(UUID.fromString("00000000-0000-0000-0000-000000000321")));
+        Tenant tenant = tenant("acme", "Acme", true, false);
+        when(tenantRepository.findByTenantDomainIgnoreCaseAndDeletedFalse("acme"))
+            .thenReturn(Optional.of(tenant));
+        when(tenantRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        TenantService.TenantDto updated = tenantService.updateTenant(
+            "acme",
+            new TenantService.TenantMutationRequest("acme", "Acme Updated", true, null, 2048L)
+        );
+
+        assertEquals("Acme Updated", updated.tenantName());
+        assertEquals(UUID.fromString("00000000-0000-0000-0000-000000000321"), updated.rootNodeId());
+        assertEquals(2048L, updated.quotaBytes());
+    }
+
+    @Test
+    @DisplayName("deleteTenant rejects tenants with provisioned workspace")
+    void deleteTenantRejectsProvisionedWorkspace() {
+        when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+        Tenant tenant = tenant("acme", "Acme", true, false);
+        tenant.setRootNodeId(UUID.randomUUID());
+        when(tenantRepository.findByTenantDomainIgnoreCaseAndDeletedFalse("acme"))
+            .thenReturn(Optional.of(tenant));
+
+        assertThrows(IllegalArgumentException.class, () -> tenantService.deleteTenant("acme"));
+    }
+
+    @Test
     @DisplayName("getCurrentTenant uses thread local fallback")
     void getCurrentTenantUsesThreadLocalFallback() {
         when(tenantRepository.findByTenantDomainIgnoreCaseAndDeletedFalse("default"))
@@ -115,5 +165,12 @@ class TenantServiceTest {
         tenant.setEnabled(enabled);
         tenant.setSystemDefault(systemDefault);
         return tenant;
+    }
+
+    private Folder folder(UUID id) {
+        Folder folder = new Folder();
+        folder.setId(id);
+        folder.setName("Workspace");
+        return folder;
     }
 }

@@ -16,7 +16,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { Add, CheckCircleOutline, Delete, Edit, Refresh } from '@mui/icons-material';
+import { Add, CheckCircleOutline, Delete, Edit, OpenInNew, Refresh } from '@mui/icons-material';
 import { toast } from 'react-toastify';
 import tenantService, { DEFAULT_TENANT_DOMAIN, TenantDto, TenantMutationRequest } from 'services/tenantService';
 
@@ -24,7 +24,6 @@ const EMPTY_FORM: TenantMutationRequest = {
   tenantDomain: '',
   tenantName: '',
   enabled: true,
-  rootNodeId: '',
   quotaBytes: null,
 };
 
@@ -68,7 +67,6 @@ const TenantAdminPage: React.FC = () => {
       tenantDomain: tenant.tenantDomain,
       tenantName: tenant.tenantName,
       enabled: tenant.enabled,
-      rootNodeId: tenant.rootNodeId || '',
       quotaBytes: tenant.quotaBytes ?? null,
     });
     setDialogOpen(true);
@@ -79,7 +77,6 @@ const TenantAdminPage: React.FC = () => {
       tenantDomain: form.tenantDomain.trim(),
       tenantName: form.tenantName.trim(),
       enabled: form.enabled,
-      rootNodeId: form.rootNodeId?.trim() ? form.rootNodeId.trim() : null,
       quotaBytes: form.quotaBytes == null || Number.isNaN(Number(form.quotaBytes)) ? null : Number(form.quotaBytes),
     };
     try {
@@ -140,7 +137,6 @@ const TenantAdminPage: React.FC = () => {
         tenantDomain: tenant.tenantDomain,
         tenantName: tenant.tenantName,
         enabled: !tenant.enabled,
-        rootNodeId: tenant.rootNodeId || null,
         quotaBytes: tenant.quotaBytes ?? null,
       });
       toast.success(tenant.enabled ? 'Tenant disabled' : 'Tenant enabled');
@@ -227,7 +223,7 @@ const TenantAdminPage: React.FC = () => {
                         Quota: {tenant.quotaBytes != null ? `${tenant.quotaBytes.toLocaleString()} bytes` : 'Not set'}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        Root Node: {tenant.rootNodeId || 'Not set'}
+                        Root Workspace: {tenant.rootNodeId || 'Provisioning pending'}
                       </Typography>
                     </Stack>
                     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
@@ -246,6 +242,15 @@ const TenantAdminPage: React.FC = () => {
                       <Button size="small" onClick={() => void handleToggleEnabled(tenant)} disabled={tenant.systemDefault}>
                         {tenant.enabled ? 'Disable' : 'Enable'}
                       </Button>
+                      {tenant.rootNodeId && (
+                        <Button
+                          size="small"
+                          startIcon={<OpenInNew />}
+                          onClick={() => window.open(`/browse/${tenant.rootNodeId}`, '_blank', 'noopener,noreferrer')}
+                        >
+                          Open Workspace
+                        </Button>
+                      )}
                       <Button
                         size="small"
                         color="error"
@@ -311,12 +316,10 @@ const TenantAdminPage: React.FC = () => {
               }))}
               fullWidth
             />
-            <TextField
-              label="Root Node ID"
-              value={form.rootNodeId || ''}
-              onChange={(event) => setForm((current) => ({ ...current, rootNodeId: event.target.value }))}
-              fullWidth
-            />
+            <Typography variant="body2" color="text.secondary">
+              Root workspace provisioning is automatic. New tenants get a dedicated workspace folder
+              on creation, and existing tenants keep their provisioned workspace.
+            </Typography>
           </Stack>
         </DialogContent>
         <DialogActions>

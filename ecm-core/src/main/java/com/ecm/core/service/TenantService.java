@@ -1,6 +1,8 @@
 package com.ecm.core.service;
 
 import com.ecm.core.config.TenantContext;
+import com.ecm.core.entity.Folder;
+import com.ecm.core.entity.Folder.FolderType;
 import com.ecm.core.entity.Tenant;
 import com.ecm.core.repository.TenantRepository;
 import lombok.RequiredArgsConstructor;
@@ -10,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -21,6 +24,7 @@ public class TenantService {
 
     private final TenantRepository tenantRepository;
     private final SecurityService securityService;
+    private final FolderService folderService;
 
     public List<TenantDto> listTenants() {
         requireAdmin();
@@ -38,17 +42,18 @@ public class TenantService {
     public TenantDto createTenant(TenantMutationRequest request) {
         requireAdmin();
         String tenantDomain = normalizeDomain(request.tenantDomain());
+        String tenantName = normalizeName(request.tenantName());
         if (tenantRepository.existsByTenantDomainIgnoreCaseAndDeletedFalse(tenantDomain)) {
             throw new IllegalArgumentException("Tenant already exists: " + tenantDomain);
         }
 
         Tenant tenant = new Tenant();
         tenant.setTenantDomain(tenantDomain);
-        tenant.setTenantName(normalizeName(request.tenantName()));
+        tenant.setTenantName(tenantName);
         tenant.setEnabled(request.enabled() == null || request.enabled());
-        tenant.setRootNodeId(request.rootNodeId());
         tenant.setQuotaBytes(request.quotaBytes());
         tenant.setSystemDefault(false);
+        tenant.setRootNodeId(bootstrapRootWorkspace(tenantDomain, tenantName).getId());
         return toDto(tenantRepository.save(tenant));
     }
 
@@ -56,15 +61,24 @@ public class TenantService {
     public TenantDto updateTenant(String tenantDomain, TenantMutationRequest request) {
         requireAdmin();
         Tenant tenant = getRequiredTenant(tenantDomain);
-        tenant.setTenantName(normalizeName(request.tenantName()));
-        tenant.setRootNodeId(request.rootNodeId());
-        tenant.setQuotaBytes(request.quotaBytes());
+        String tenantName = normalizeName(request.tenantName());
+        tenant.setTenantName(tenantName);
+        if (request.rootNodeId() != null && !Objects.equals(request.rootNodeId(), tenant.getRootNodeId())) {
+            throw new IllegalArgumentException("rootNodeId is managed automatically");
+        }
         if (request.enabled() != null) {
             if (tenant.isSystemDefault() && !request.enabled()) {
                 throw new IllegalArgumentException("Default tenant cannot be disabled");
             }
+            if (!request.enabled() && isCurrentRequestTenant(tenant.getTenantDomain())) {
+                throw new IllegalArgumentException("Current request tenant cannot be disabled");
+            }
             tenant.setEnabled(request.enabled());
         }
+        if (tenant.getRootNodeId() == null) {
+            tenant.setRootNodeId(bootstrapRootWorkspace(tenant.getTenantDomain(), tenantName).getId());
+        }
+        tenant.setQuotaBytes(request.quotaBytes());
         return toDto(tenantRepository.save(tenant));
     }
 
@@ -74,6 +88,12 @@ public class TenantService {
         Tenant tenant = getRequiredTenant(tenantDomain);
         if (tenant.isSystemDefault()) {
             throw new IllegalArgumentException("Default tenant cannot be deleted");
+        }
+        if (isCurrentRequestTenant(tenant.getTenantDomain())) {
+            throw new IllegalArgumentException("Current request tenant cannot be deleted");
+        }
+        if (tenant.getRootNodeId() != null) {
+            throw new IllegalArgumentException("Tenant workspace must be deprovisioned before deletion");
         }
         tenant.setDeleted(true);
         tenant.setDeletedAt(LocalDateTime.now());
@@ -130,6 +150,30 @@ public class TenantService {
             throw new IllegalArgumentException("tenantName is required");
         }
         return tenantName.trim();
+    }
+
+    private Folder bootstrapRootWorkspace(String tenantDomain, String tenantName) {
+        return folderService.createFolder(new FolderService.CreateFolderRequest(
+            buildWorkspaceName(tenantDomain, tenantName),
+            "Tenant workspace for " + tenantName + " (" + tenantDomain + ")",
+            null,
+            FolderType.WORKSPACE,
+            null,
+            null,
+            null,
+            null,
+            true,
+            false,
+            null
+        ));
+    }
+
+    private String buildWorkspaceName(String tenantDomain, String tenantName) {
+        return tenantName + " Workspace [" + tenantDomain + "]";
+    }
+
+    private boolean isCurrentRequestTenant(String tenantDomain) {
+        return normalizeRequestedDomain(TenantContext.getCurrentTenantDomain()).equals(normalizeRequestedDomain(tenantDomain));
     }
 
     private TenantDto toDto(Tenant tenant) {
