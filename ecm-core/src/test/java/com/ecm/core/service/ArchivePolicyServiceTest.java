@@ -4,6 +4,7 @@ import com.ecm.core.entity.ArchivePolicy;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Node;
+import com.ecm.core.exception.ResourceNotFoundException;
 import com.ecm.core.repository.ArchivePolicyRepository;
 import com.ecm.core.repository.FolderRepository;
 import com.ecm.core.repository.NodeRepository;
@@ -23,7 +24,10 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -35,6 +39,7 @@ class ArchivePolicyServiceTest {
     @Mock private NodeRepository nodeRepository;
     @Mock private SecurityService securityService;
     @Mock private ContentArchiveService contentArchiveService;
+    @Mock private TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     private ArchivePolicyService archivePolicyService;
 
@@ -45,8 +50,10 @@ class ArchivePolicyServiceTest {
             folderRepository,
             nodeRepository,
             securityService,
-            contentArchiveService
+            contentArchiveService,
+            tenantWorkspaceScopeService
         );
+        lenient().when(tenantWorkspaceScopeService.isPathVisible(anyString())).thenReturn(true);
     }
 
     @Test
@@ -126,6 +133,39 @@ class ArchivePolicyServiceTest {
         assertNotNull(policyCaptor.getValue().getLastExecutedAt());
         assertEquals(1, policyCaptor.getValue().getLastCandidateCount());
         assertEquals(1, policyCaptor.getValue().getLastArchivedNodeCount());
+    }
+
+    @Test
+    @DisplayName("getPolicy hides folders outside current tenant workspace")
+    void getPolicyHidesForeignTenantFolder() {
+        UUID folderId = UUID.randomUUID();
+        Folder folder = folder(folderId, "/Finance");
+
+        when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+        when(folderRepository.findById(folderId)).thenReturn(Optional.of(folder));
+        when(tenantWorkspaceScopeService.isPathVisible("/Finance")).thenReturn(false);
+
+        assertThrows(ResourceNotFoundException.class, () -> archivePolicyService.getPolicy(folderId));
+    }
+
+    @Test
+    @DisplayName("listPolicies filters out folders outside current tenant workspace")
+    void listPoliciesFiltersForeignTenantFolders() {
+        ArchivePolicy visible = new ArchivePolicy();
+        visible.setFolder(folder(UUID.randomUUID(), "/Finance"));
+        ArchivePolicy hidden = new ArchivePolicy();
+        hidden.setFolder(folder(UUID.randomUUID(), "/Legal"));
+
+        when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+        when(tenantWorkspaceScopeService.resolveCurrentTenantRootPath()).thenReturn("/Finance");
+        when(archivePolicyRepository.findByDeletedFalseOrderByCreatedDateDesc()).thenReturn(List.of(visible, hidden));
+        when(tenantWorkspaceScopeService.isPathVisible("/Finance", "/Finance")).thenReturn(true);
+        when(tenantWorkspaceScopeService.isPathVisible("/Legal", "/Finance")).thenReturn(false);
+
+        var result = archivePolicyService.listPolicies();
+
+        assertEquals(1, result.size());
+        assertEquals("/Finance", result.get(0).folderPath());
     }
 
     private static Folder folder(UUID id, String path) {

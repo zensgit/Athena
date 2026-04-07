@@ -6,9 +6,11 @@ import com.ecm.core.entity.ImportJob.ConflictPolicy;
 import com.ecm.core.entity.ImportJob.ImportJobStatus;
 import com.ecm.core.entity.Node;
 import com.ecm.core.pipeline.PipelineResult;
+import com.ecm.core.exception.ResourceNotFoundException;
 import com.ecm.core.repository.ImportJobRepository;
 import com.ecm.core.repository.NodeRepository;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -33,6 +35,7 @@ public class BulkImportService {
     private final NodeRepository nodeRepository;
     private final NodeService nodeService;
     private final SecurityService securityService;
+    private final TenantWorkspaceScopeService tenantWorkspaceScopeService;
     private final Executor importExecutor;
 
     public BulkImportService(
@@ -41,7 +44,8 @@ public class BulkImportService {
         FolderService folderService,
         NodeRepository nodeRepository,
         NodeService nodeService,
-        SecurityService securityService
+        SecurityService securityService,
+        TenantWorkspaceScopeService tenantWorkspaceScopeService
     ) {
         this(
             importJobRepository,
@@ -50,6 +54,7 @@ public class BulkImportService {
             nodeRepository,
             nodeService,
             securityService,
+            tenantWorkspaceScopeService,
             Executors.newCachedThreadPool()
         );
     }
@@ -61,6 +66,7 @@ public class BulkImportService {
         NodeRepository nodeRepository,
         NodeService nodeService,
         SecurityService securityService,
+        TenantWorkspaceScopeService tenantWorkspaceScopeService,
         Executor importExecutor
     ) {
         this.importJobRepository = importJobRepository;
@@ -69,6 +75,7 @@ public class BulkImportService {
         this.nodeRepository = nodeRepository;
         this.nodeService = nodeService;
         this.securityService = securityService;
+        this.tenantWorkspaceScopeService = tenantWorkspaceScopeService;
         this.importExecutor = importExecutor;
     }
 
@@ -83,9 +90,10 @@ public class BulkImportService {
         }
 
         String currentUser = securityService.getCurrentUser();
+        UUID effectiveTargetFolderId = resolveTargetFolderId(targetFolderId);
         ImportJob job = new ImportJob();
         job.setUserId(currentUser);
-        job.setTargetFolderId(targetFolderId);
+        job.setTargetFolderId(effectiveTargetFolderId);
         job.setConflictPolicy(conflictPolicy != null ? conflictPolicy : ConflictPolicy.SKIP);
         job.setStatus(ImportJobStatus.PENDING);
         job.setTotalFiles(files.length);
@@ -115,10 +123,23 @@ public class BulkImportService {
     }
 
     public Page<ImportJobDto> listJobs(Pageable pageable) {
+        boolean scopedTenant = tenantWorkspaceScopeService.hasScopedTenantWorkspace();
         Page<ImportJob> page = securityService.hasRole("ROLE_ADMIN")
-            ? importJobRepository.findAllByOrderByCreatedAtDesc(pageable)
-            : importJobRepository.findByUserIdOrderByCreatedAtDesc(securityService.getCurrentUser(), pageable);
-        return page.map(ImportJobDto::from);
+            ? importJobRepository.findAllByOrderByCreatedAtDesc(scopedTenant ? Pageable.unpaged() : pageable)
+            : importJobRepository.findByUserIdOrderByCreatedAtDesc(securityService.getCurrentUser(), scopedTenant ? Pageable.unpaged() : pageable);
+        if (!scopedTenant) {
+            return page.map(ImportJobDto::from);
+        }
+        List<ImportJobDto> visible = page.getContent().stream()
+            .filter(this::isJobVisible)
+            .map(ImportJobDto::from)
+            .toList();
+        if (!pageable.isPaged()) {
+            return new PageImpl<>(visible);
+        }
+        int start = Math.min((int) pageable.getOffset(), visible.size());
+        int end = Math.min(start + pageable.getPageSize(), visible.size());
+        return new PageImpl<>(visible.subList(start, end), pageable, visible.size());
     }
 
     public ImportJobDto cancelImport(UUID jobId) {
@@ -387,11 +408,39 @@ public class BulkImportService {
 
     private ImportJob requireAccessibleJob(UUID jobId) {
         ImportJob job = requireJob(jobId);
+        if (!isJobVisible(job)) {
+            throw new ResourceNotFoundException("Import job not found: " + jobId);
+        }
         String currentUser = securityService.getCurrentUser();
         if (!securityService.hasRole("ROLE_ADMIN") && !Objects.equals(job.getUserId(), currentUser)) {
             throw new SecurityException("Cannot access another user's import job");
         }
         return job;
+    }
+
+    private UUID resolveTargetFolderId(UUID targetFolderId) {
+        if (targetFolderId != null) {
+            if (tenantWorkspaceScopeService.hasScopedTenantWorkspace()
+                && !tenantWorkspaceScopeService.isNodeVisible(targetFolderId)) {
+                throw new ResourceNotFoundException("Target folder not found: " + targetFolderId);
+            }
+            return targetFolderId;
+        }
+        if (tenantWorkspaceScopeService.hasScopedTenantWorkspace()) {
+            UUID tenantRootNodeId = tenantWorkspaceScopeService.resolveCurrentTenantRootNodeId();
+            if (tenantRootNodeId == null || !tenantWorkspaceScopeService.isNodeVisible(tenantRootNodeId)) {
+                throw new ResourceNotFoundException("Target folder not found");
+            }
+            return tenantRootNodeId;
+        }
+        return null;
+    }
+
+    private boolean isJobVisible(ImportJob job) {
+        if (!tenantWorkspaceScopeService.hasScopedTenantWorkspace()) {
+            return true;
+        }
+        return job.getTargetFolderId() != null && tenantWorkspaceScopeService.isNodeVisible(job.getTargetFolderId());
     }
 
     private ImportJob requireJob(UUID jobId) {

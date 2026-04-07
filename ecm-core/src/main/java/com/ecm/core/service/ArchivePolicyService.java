@@ -3,6 +3,7 @@ package com.ecm.core.service;
 import com.ecm.core.entity.ArchivePolicy;
 import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Node;
+import com.ecm.core.exception.ResourceNotFoundException;
 import com.ecm.core.repository.ArchivePolicyRepository;
 import com.ecm.core.repository.FolderRepository;
 import com.ecm.core.repository.NodeRepository;
@@ -32,6 +33,7 @@ public class ArchivePolicyService {
     private final NodeRepository nodeRepository;
     private final SecurityService securityService;
     private final ContentArchiveService contentArchiveService;
+    private final TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     @Transactional(readOnly = true)
     public Optional<ArchivePolicyDto> getPolicy(UUID folderId) {
@@ -45,7 +47,11 @@ public class ArchivePolicyService {
     @Transactional(readOnly = true)
     public List<ArchivePolicyDto> listPolicies() {
         requireAdmin();
+        String tenantRootPath = tenantWorkspaceScopeService.resolveCurrentTenantRootPath();
         return archivePolicyRepository.findByDeletedFalseOrderByCreatedDateDesc().stream()
+            .filter(policy -> tenantRootPath == null
+                || (policy.getFolder() != null
+                && tenantWorkspaceScopeService.isPathVisible(policy.getFolder().getPath(), tenantRootPath)))
             .map(this::toDto)
             .toList();
     }
@@ -111,6 +117,9 @@ public class ArchivePolicyService {
         for (ArchivePolicy policy : archivePolicyRepository.findByEnabledTrueAndDeletedFalseOrderByCreatedDateAsc()) {
             Folder folder = policy.getFolder();
             if (folder == null || folder.isDeleted() || folder.getArchiveStatus() != Node.ArchiveStatus.LIVE) {
+                continue;
+            }
+            if (!tenantWorkspaceScopeService.isPathVisible(folder.getPath())) {
                 continue;
             }
             try {
@@ -287,6 +296,9 @@ public class ArchivePolicyService {
             .orElseThrow(() -> new NoSuchElementException("Folder not found: " + folderId));
         if (folder.isDeleted() || folder.getArchiveStatus() != Node.ArchiveStatus.LIVE) {
             throw new NoSuchElementException("Folder not found: " + folderId);
+        }
+        if (!tenantWorkspaceScopeService.isPathVisible(folder.getPath())) {
+            throw new ResourceNotFoundException("Folder not found: " + folderId);
         }
         return folder;
     }

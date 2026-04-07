@@ -111,7 +111,21 @@ public class TenantWorkspaceScopeService {
             .orElse(false);
     }
 
-    private boolean isPathVisible(String candidatePath, String tenantRootPath) {
+    public boolean isPathVisible(String candidatePath) {
+        String tenantRootPath = resolveCurrentTenantRootPath();
+        if (tenantRootPath == null) {
+            return true;
+        }
+        return isPathVisible(candidatePath, tenantRootPath);
+    }
+
+    public boolean isPathVisible(String candidatePath, String tenantRootPath) {
+        if (tenantRootPath == null) {
+            return true;
+        }
+        if (tenantRootPath.isBlank() || candidatePath == null || candidatePath.isBlank()) {
+            return false;
+        }
         return candidatePath.equals(tenantRootPath) || candidatePath.startsWith(tenantRootPath + "/");
     }
 }

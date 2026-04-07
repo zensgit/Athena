@@ -5,6 +5,7 @@ import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Node;
 import com.ecm.core.entity.Node.ArchiveStatus;
 import com.ecm.core.entity.Node.ArchiveStoreTier;
+import com.ecm.core.exception.ResourceNotFoundException;
 import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.search.SearchIndexService;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,7 +25,9 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -35,12 +38,20 @@ class ContentArchiveServiceTest {
     @Mock private SecurityService securityService;
     @Mock private ActivityEventListener activityEventListener;
     @Mock private SearchIndexService searchIndexService;
+    @Mock private TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     private ContentArchiveService service;
 
     @BeforeEach
     void setUp() {
-        service = new ContentArchiveService(nodeRepository, securityService, activityEventListener, searchIndexService);
+        service = new ContentArchiveService(
+            nodeRepository,
+            securityService,
+            activityEventListener,
+            searchIndexService,
+            tenantWorkspaceScopeService
+        );
+        lenient().when(tenantWorkspaceScopeService.isPathVisible(anyString())).thenReturn(true);
     }
 
     @Test
@@ -138,6 +149,45 @@ class ContentArchiveServiceTest {
         assertEquals(1, page.getTotalElements());
         assertEquals("finance", page.getContent().get(0).name());
         assertEquals(ArchiveStoreTier.WARM, page.getContent().get(0).archiveStoreTier());
+    }
+
+    @Test
+    @DisplayName("archiveNode hides nodes outside current tenant workspace")
+    void archiveNodeHidesForeignTenantNode() {
+        Folder root = folder("finance", "alice");
+        when(nodeRepository.findByIdAndDeletedFalse(root.getId())).thenReturn(Optional.of(root));
+        when(tenantWorkspaceScopeService.isPathVisible(root.getPath())).thenReturn(false);
+
+        assertThrows(ResourceNotFoundException.class, () -> service.archiveNode(root.getId(), ArchiveStoreTier.COLD));
+    }
+
+    @Test
+    @DisplayName("listArchivedNodes filters nodes outside current tenant workspace")
+    void listArchivedNodesFiltersForeignTenantNodes() {
+        Folder visible = folder("finance", "alice");
+        visible.setArchiveStatus(ArchiveStatus.ARCHIVED);
+        visible.setArchiveStoreTier(ArchiveStoreTier.WARM);
+        visible.setArchivedBy("admin");
+        visible.setArchivedDate(LocalDateTime.now());
+
+        Folder hidden = folder("legal", "alice");
+        hidden.setArchiveStatus(ArchiveStatus.ARCHIVED);
+        hidden.setArchiveStoreTier(ArchiveStoreTier.COLD);
+        hidden.setArchivedBy("admin");
+        hidden.setArchivedDate(LocalDateTime.now().minusDays(1));
+
+        when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+        when(tenantWorkspaceScopeService.hasScopedTenantWorkspace()).thenReturn(true);
+        when(tenantWorkspaceScopeService.resolveCurrentTenantRootPath()).thenReturn("/finance");
+        when(nodeRepository.findByArchiveStatusAndDeletedFalseOrderByArchivedDateDesc(eq(ArchiveStatus.ARCHIVED), eq(org.springframework.data.domain.Pageable.unpaged())))
+            .thenReturn(new PageImpl<>(List.of(visible, hidden)));
+        when(tenantWorkspaceScopeService.isPathVisible("/finance", "/finance")).thenReturn(true);
+        when(tenantWorkspaceScopeService.isPathVisible("/legal", "/finance")).thenReturn(false);
+
+        var page = service.listArchivedNodes(PageRequest.of(0, 20));
+
+        assertEquals(1, page.getTotalElements());
+        assertEquals("finance", page.getContent().get(0).name());
     }
 
     private Folder folder(String name, String createdBy) {

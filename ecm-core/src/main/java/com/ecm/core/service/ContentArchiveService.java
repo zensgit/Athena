@@ -4,9 +4,11 @@ import com.ecm.core.entity.Node;
 import com.ecm.core.entity.Node.ArchiveStatus;
 import com.ecm.core.entity.Node.ArchiveStoreTier;
 import com.ecm.core.entity.Permission.PermissionType;
+import com.ecm.core.exception.ResourceNotFoundException;
 import com.ecm.core.repository.NodeRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +29,7 @@ public class ContentArchiveService {
     private final SecurityService securityService;
     private final ActivityEventListener activityEventListener;
     private final com.ecm.core.search.SearchIndexService searchIndexService;
+    private final TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     @Transactional
     public ArchiveMutationDto archiveNode(UUID nodeId, ArchiveStoreTier storageTier) {
@@ -90,14 +93,33 @@ public class ContentArchiveService {
         if (!securityService.hasRole("ROLE_ADMIN")) {
             throw new SecurityException("Admin access required to list archived nodes");
         }
-        return nodeRepository
-            .findByArchiveStatusAndDeletedFalseOrderByArchivedDateDesc(ArchiveStatus.ARCHIVED, pageable)
-            .map(this::toArchivedNodeDto);
+        if (!tenantWorkspaceScopeService.hasScopedTenantWorkspace()) {
+            return nodeRepository
+                .findByArchiveStatusAndDeletedFalseOrderByArchivedDateDesc(ArchiveStatus.ARCHIVED, pageable)
+                .map(this::toArchivedNodeDto);
+        }
+        String tenantRootPath = tenantWorkspaceScopeService.resolveCurrentTenantRootPath();
+        List<ArchivedNodeDto> visible = nodeRepository
+            .findByArchiveStatusAndDeletedFalseOrderByArchivedDateDesc(ArchiveStatus.ARCHIVED, Pageable.unpaged())
+            .getContent().stream()
+            .filter(node -> tenantWorkspaceScopeService.isPathVisible(node.getPath(), tenantRootPath))
+            .map(this::toArchivedNodeDto)
+            .toList();
+        if (!pageable.isPaged()) {
+            return new PageImpl<>(visible);
+        }
+        int start = Math.min((int) pageable.getOffset(), visible.size());
+        int end = Math.min(start + pageable.getPageSize(), visible.size());
+        return new PageImpl<>(visible.subList(start, end), pageable, visible.size());
     }
 
     private Node loadActiveNode(UUID nodeId) {
-        return nodeRepository.findByIdAndDeletedFalse(nodeId)
+        Node node = nodeRepository.findByIdAndDeletedFalse(nodeId)
             .orElseThrow(() -> new NoSuchElementException("Node not found: " + nodeId));
+        if (!tenantWorkspaceScopeService.isPathVisible(node.getPath())) {
+            throw new ResourceNotFoundException("Node not found: " + nodeId);
+        }
+        return node;
     }
 
     private ArchiveMutationDto archiveNodeInternal(

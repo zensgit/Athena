@@ -9,6 +9,7 @@ import com.ecm.core.entity.Node;
 import com.ecm.core.pipeline.PipelineResult;
 import com.ecm.core.repository.ImportJobRepository;
 import com.ecm.core.repository.NodeRepository;
+import com.ecm.core.exception.ResourceNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,6 +37,7 @@ class BulkImportServiceTest {
     @Mock private NodeRepository nodeRepository;
     @Mock private NodeService nodeService;
     @Mock private SecurityService securityService;
+    @Mock private TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     private BulkImportService service;
     private Map<UUID, ImportJob> storedJobs;
@@ -49,13 +51,14 @@ class BulkImportServiceTest {
             nodeRepository,
             nodeService,
             securityService,
+            tenantWorkspaceScopeService,
             Runnable::run
         );
         storedJobs = new LinkedHashMap<>();
 
-        when(securityService.getCurrentUser()).thenReturn("alice");
+        lenient().when(securityService.getCurrentUser()).thenReturn("alice");
 
-        when(importJobRepository.save(any(ImportJob.class))).thenAnswer(invocation -> {
+        lenient().when(importJobRepository.save(any(ImportJob.class))).thenAnswer(invocation -> {
             ImportJob job = invocation.getArgument(0);
             if (job.getId() == null) {
                 job.setId(UUID.randomUUID());
@@ -67,7 +70,7 @@ class BulkImportServiceTest {
             storedJobs.put(job.getId(), job);
             return job;
         });
-        when(importJobRepository.findById(any(UUID.class))).thenAnswer(invocation ->
+        lenient().when(importJobRepository.findById(any(UUID.class))).thenAnswer(invocation ->
             Optional.ofNullable(storedJobs.get(invocation.getArgument(0)))
         );
     }
@@ -177,6 +180,45 @@ class BulkImportServiceTest {
         assertEquals("q1", requests.get(1).name());
         assertEquals(engineering.getId(), requests.get(1).parentId());
         verify(documentUploadService).uploadDocument(any(), eq(quarter.getId()), isNull());
+    }
+
+    @Test
+    @DisplayName("startImport without target folder defaults to current tenant root workspace")
+    void startImportWithoutTargetUsesTenantRootWorkspace() throws Exception {
+        UUID tenantRootId = UUID.randomUUID();
+        when(tenantWorkspaceScopeService.hasScopedTenantWorkspace()).thenReturn(true);
+        when(tenantWorkspaceScopeService.resolveCurrentTenantRootNodeId()).thenReturn(tenantRootId);
+        when(tenantWorkspaceScopeService.isNodeVisible(tenantRootId)).thenReturn(true);
+        when(nodeRepository.findByParentIdAndName(tenantRootId, "report.txt")).thenReturn(Optional.empty());
+        when(documentUploadService.uploadDocument(any(), eq(tenantRootId), isNull())).thenReturn(successResult());
+
+        BulkImportService.ImportJobDto result = service.startImport(
+            new MultipartFile[]{multipart("report.txt", "hello")},
+            List.of("report.txt"),
+            null,
+            ConflictPolicy.SKIP
+        );
+
+        assertEquals(tenantRootId, result.targetFolderId());
+        verify(documentUploadService).uploadDocument(any(), eq(tenantRootId), isNull());
+    }
+
+    @Test
+    @DisplayName("getJob hides import jobs outside current tenant workspace")
+    void getJobHidesForeignTenantJob() {
+        UUID jobId = UUID.randomUUID();
+        UUID foreignFolderId = UUID.randomUUID();
+        ImportJob job = new ImportJob();
+        job.setId(jobId);
+        job.setUserId("alice");
+        job.setTargetFolderId(foreignFolderId);
+        job.setStatus(ImportJobStatus.PENDING);
+        storedJobs.put(jobId, job);
+
+        when(tenantWorkspaceScopeService.hasScopedTenantWorkspace()).thenReturn(true);
+        when(tenantWorkspaceScopeService.isNodeVisible(foreignFolderId)).thenReturn(false);
+
+        assertThrows(ResourceNotFoundException.class, () -> service.getJob(jobId));
     }
 
     private MockMultipartFile multipart(String filename, String content) {
