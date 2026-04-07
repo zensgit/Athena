@@ -26,6 +26,7 @@ public class SiteService {
     private final FolderRepository folderRepository;
     private final SecurityService securityService;
     private final ActivityEventListener activityEventListener;
+    private final TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     public record CreateSiteRequest(
         String siteId,
@@ -96,11 +97,14 @@ public class SiteService {
     }
 
     public List<SiteDto> listSites(boolean includeArchived) {
+        String tenantRootPath = tenantWorkspaceScopeService.resolveCurrentTenantRootPath();
         List<Site> sites = includeArchived
             ? siteRepository.findAll(Sort.by(Sort.Order.asc("title"), Sort.Order.asc("siteId")))
             : siteRepository.findByDeletedFalseOrderByTitleAsc();
         return sites.stream()
             .filter(site -> includeArchived || !site.isDeleted())
+            .filter(site -> tenantRootPath == null
+                || tenantWorkspaceScopeService.isSiteVisible(site.getSiteId(), tenantRootPath))
             .map(this::toDto)
             .toList();
     }
@@ -163,8 +167,13 @@ public class SiteService {
 
     private Site loadSite(String siteId) {
         String normalizedSiteId = normalizeSiteId(siteId);
-        return siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse(normalizedSiteId)
+        Site site = siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse(normalizedSiteId)
             .orElseThrow(() -> new ResourceNotFoundException("Site not found: " + normalizedSiteId));
+        String tenantRootPath = tenantWorkspaceScopeService.resolveCurrentTenantRootPath();
+        if (tenantRootPath != null && !tenantWorkspaceScopeService.isSiteVisible(site.getSiteId(), tenantRootPath)) {
+            throw new ResourceNotFoundException("Site not found: " + normalizedSiteId);
+        }
+        return site;
     }
 
     private Folder resolveRootFolder(UUID rootFolderId) {
@@ -174,6 +183,10 @@ public class SiteService {
         Folder folder = folderRepository.findById(rootFolderId)
             .orElseThrow(() -> new ResourceNotFoundException("Root folder not found: " + rootFolderId));
         if (folder.isDeleted()) {
+            throw new ResourceNotFoundException("Root folder not found: " + rootFolderId);
+        }
+        String tenantRootPath = tenantWorkspaceScopeService.resolveCurrentTenantRootPath();
+        if (tenantRootPath != null && !tenantWorkspaceScopeService.isNodeVisible(rootFolderId, tenantRootPath)) {
             throw new ResourceNotFoundException("Root folder not found: " + rootFolderId);
         }
         return folder;

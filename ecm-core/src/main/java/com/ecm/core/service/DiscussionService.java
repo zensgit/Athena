@@ -3,8 +3,11 @@ package com.ecm.core.service;
 import com.ecm.core.entity.DiscussionReply;
 import com.ecm.core.entity.DiscussionTopic;
 import com.ecm.core.entity.DiscussionTopic.TopicStatus;
+import com.ecm.core.entity.Site;
+import com.ecm.core.exception.ResourceNotFoundException;
 import com.ecm.core.repository.DiscussionReplyRepository;
 import com.ecm.core.repository.DiscussionTopicRepository;
+import com.ecm.core.repository.SiteRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -12,6 +15,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.UUID;
@@ -23,8 +27,10 @@ public class DiscussionService {
 
     private final DiscussionTopicRepository topicRepo;
     private final DiscussionReplyRepository replyRepo;
+    private final SiteRepository siteRepository;
     private final SecurityService securityService;
     private final ActivityEventListener activityEventListener;
+    private final TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     // ------------------------------------------------------------------ topics
 
@@ -33,8 +39,9 @@ public class DiscussionService {
         if (title == null || title.isBlank()) {
             throw new IllegalArgumentException("Topic title is required");
         }
+        String visibleSiteId = requireVisibleSiteId(siteId);
         DiscussionTopic topic = new DiscussionTopic();
-        topic.setSiteId(siteId);
+        topic.setSiteId(visibleSiteId);
         topic.setTitle(title.trim());
         topic.setContent(content);
         if (tags != null) topic.setTags(tags);
@@ -42,7 +49,7 @@ public class DiscussionService {
         activityEventListener.postSiteActivity(
             "discussion.topic.created",
             securityService.getCurrentUser(),
-            siteId,
+            visibleSiteId,
             Map.of("topicId", saved.getId().toString(), "title", saved.getTitle())
         );
         return saved;
@@ -50,16 +57,19 @@ public class DiscussionService {
 
     @Transactional(readOnly = true)
     public Page<DiscussionTopic> listTopics(String siteId, TopicStatus status, Pageable pageable) {
+        String visibleSiteId = requireVisibleSiteId(siteId);
         if (status != null) {
-            return topicRepo.findBySiteIdAndStatusOrderByCreatedDateDesc(siteId, status, pageable);
+            return topicRepo.findBySiteIdAndStatusOrderByCreatedDateDesc(visibleSiteId, status, pageable);
         }
-        return topicRepo.findBySiteIdOrderByCreatedDateDesc(siteId, pageable);
+        return topicRepo.findBySiteIdOrderByCreatedDateDesc(visibleSiteId, pageable);
     }
 
     @Transactional(readOnly = true)
     public DiscussionTopic getTopic(UUID topicId) {
-        return topicRepo.findById(topicId)
+        DiscussionTopic topic = topicRepo.findById(topicId)
             .orElseThrow(() -> new NoSuchElementException("Topic not found: " + topicId));
+        requireVisibleSiteId(topic.getSiteId());
+        return topic;
     }
 
     @Transactional
@@ -132,6 +142,7 @@ public class DiscussionService {
 
     @Transactional(readOnly = true)
     public Page<DiscussionReply> listReplies(UUID topicId, Pageable pageable) {
+        getTopic(topicId);
         return replyRepo.findByTopicIdOrderByCreatedDateAsc(topicId, pageable);
     }
 
@@ -139,6 +150,7 @@ public class DiscussionService {
     public DiscussionReply updateReply(UUID replyId, String content) {
         DiscussionReply reply = replyRepo.findById(replyId)
             .orElseThrow(() -> new NoSuchElementException("Reply not found: " + replyId));
+        requireVisibleSiteId(reply.getTopic().getSiteId());
         String currentUser = securityService.getCurrentUser();
         if (!reply.getCreatedBy().equals(currentUser) && !securityService.hasRole("ROLE_ADMIN")) {
             throw new SecurityException("Only reply author or admin can edit");
@@ -158,6 +170,7 @@ public class DiscussionService {
     public void deleteReply(UUID replyId) {
         DiscussionReply reply = replyRepo.findById(replyId)
             .orElseThrow(() -> new NoSuchElementException("Reply not found: " + replyId));
+        requireVisibleSiteId(reply.getTopic().getSiteId());
         String currentUser = securityService.getCurrentUser();
         if (!reply.getCreatedBy().equals(currentUser) && !securityService.hasRole("ROLE_ADMIN")) {
             throw new SecurityException("Only reply author or admin can delete");
@@ -169,5 +182,16 @@ public class DiscussionService {
             Map.of("topicId", reply.getTopic().getId().toString(), "replyId", reply.getId().toString(), "title", reply.getTopic().getTitle())
         );
         replyRepo.delete(reply);
+    }
+
+    private String requireVisibleSiteId(String siteId) {
+        String normalizedSiteId = siteId != null ? siteId.trim().toLowerCase(Locale.ROOT) : "";
+        Site site = siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse(normalizedSiteId)
+            .orElseThrow(() -> new ResourceNotFoundException("Site not found: " + normalizedSiteId));
+        String tenantRootPath = tenantWorkspaceScopeService.resolveCurrentTenantRootPath();
+        if (tenantRootPath != null && !tenantWorkspaceScopeService.isSiteVisible(site.getSiteId(), tenantRootPath)) {
+            throw new ResourceNotFoundException("Site not found: " + normalizedSiteId);
+        }
+        return site.getSiteId();
     }
 }

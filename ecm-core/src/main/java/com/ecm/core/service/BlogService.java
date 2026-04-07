@@ -2,7 +2,10 @@ package com.ecm.core.service;
 
 import com.ecm.core.entity.BlogPost;
 import com.ecm.core.entity.BlogPost.BlogStatus;
+import com.ecm.core.entity.Site;
+import com.ecm.core.exception.ResourceNotFoundException;
 import com.ecm.core.repository.BlogPostRepository;
+import com.ecm.core.repository.SiteRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -12,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.UUID;
@@ -22,24 +26,27 @@ import java.util.UUID;
 public class BlogService {
 
     private final BlogPostRepository blogRepo;
+    private final SiteRepository siteRepository;
     private final SecurityService securityService;
     private final ActivityEventListener activityEventListener;
+    private final TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     @Transactional
     public BlogPost createPost(String siteId, String title, String content, List<String> tags) {
         if (title == null || title.isBlank()) {
             throw new IllegalArgumentException("Blog post title is required");
         }
+        String visibleSiteId = requireVisibleSiteId(siteId);
         BlogPost post = new BlogPost();
-        post.setSiteId(siteId);
+        post.setSiteId(visibleSiteId);
         post.setTitle(title.trim());
         post.setContent(content);
         post.setStatus(BlogStatus.DRAFT);
         if (tags != null) post.setTags(tags);
         BlogPost saved = blogRepo.save(post);
-        log.info("Blog post created: {} in site {}", saved.getId(), siteId);
+        log.info("Blog post created: {} in site {}", saved.getId(), visibleSiteId);
         activityEventListener.postSiteActivity(
-            "blog.created", securityService.getCurrentUser(), siteId,
+            "blog.created", securityService.getCurrentUser(), visibleSiteId,
             Map.of("postId", saved.getId().toString(), "title", saved.getTitle(), "status", "DRAFT")
         );
         return saved;
@@ -104,21 +111,25 @@ public class BlogService {
 
     @Transactional(readOnly = true)
     public BlogPost getPost(UUID postId) {
-        return blogRepo.findById(postId)
+        BlogPost post = blogRepo.findById(postId)
             .orElseThrow(() -> new NoSuchElementException("Blog post not found: " + postId));
+        requireVisibleSiteId(post.getSiteId());
+        return post;
     }
 
     @Transactional(readOnly = true)
     public Page<BlogPost> listPosts(String siteId, BlogStatus status, Pageable pageable) {
+        String visibleSiteId = requireVisibleSiteId(siteId);
         if (status != null) {
-            return blogRepo.findBySiteIdAndStatusOrderByPublishedDateDesc(siteId, status, pageable);
+            return blogRepo.findBySiteIdAndStatusOrderByPublishedDateDesc(visibleSiteId, status, pageable);
         }
-        return blogRepo.findBySiteIdOrderByCreatedDateDesc(siteId, pageable);
+        return blogRepo.findBySiteIdOrderByCreatedDateDesc(visibleSiteId, pageable);
     }
 
     @Transactional(readOnly = true)
     public Page<BlogPost> listDrafts(String siteId, Pageable pageable) {
-        return blogRepo.findBySiteIdAndStatusOrderByCreatedDateDesc(siteId, BlogStatus.DRAFT, pageable);
+        String visibleSiteId = requireVisibleSiteId(siteId);
+        return blogRepo.findBySiteIdAndStatusOrderByCreatedDateDesc(visibleSiteId, BlogStatus.DRAFT, pageable);
     }
 
     private void requireAuthorOrAdmin(BlogPost post) {
@@ -126,5 +137,16 @@ public class BlogService {
         if (!currentUser.equals(post.getCreatedBy()) && !securityService.hasRole("ROLE_ADMIN")) {
             throw new SecurityException("Only post author or admin can modify this post");
         }
+    }
+
+    private String requireVisibleSiteId(String siteId) {
+        String normalizedSiteId = siteId != null ? siteId.trim().toLowerCase(Locale.ROOT) : "";
+        Site site = siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse(normalizedSiteId)
+            .orElseThrow(() -> new ResourceNotFoundException("Site not found: " + normalizedSiteId));
+        String tenantRootPath = tenantWorkspaceScopeService.resolveCurrentTenantRootPath();
+        if (tenantRootPath != null && !tenantWorkspaceScopeService.isSiteVisible(site.getSiteId(), tenantRootPath)) {
+            throw new ResourceNotFoundException("Site not found: " + normalizedSiteId);
+        }
+        return site.getSiteId();
     }
 }

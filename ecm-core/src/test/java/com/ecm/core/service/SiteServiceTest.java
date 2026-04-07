@@ -4,6 +4,7 @@ import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Site;
 import com.ecm.core.entity.Site.SiteStatus;
 import com.ecm.core.entity.Site.SiteVisibility;
+import com.ecm.core.exception.ResourceNotFoundException;
 import com.ecm.core.repository.FolderRepository;
 import com.ecm.core.repository.SiteRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -28,12 +29,13 @@ class SiteServiceTest {
     @Mock private FolderRepository folderRepository;
     @Mock private SecurityService securityService;
     @Mock private ActivityEventListener activityEventListener;
+    @Mock private TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     private SiteService siteService;
 
     @BeforeEach
     void setUp() {
-        siteService = new SiteService(siteRepository, folderRepository, securityService, activityEventListener);
+        siteService = new SiteService(siteRepository, folderRepository, securityService, activityEventListener, tenantWorkspaceScopeService);
     }
 
     @Test
@@ -111,6 +113,17 @@ class SiteServiceTest {
 
         assertEquals(1, siteService.listSites(false).size());
         assertEquals(2, siteService.listSites(true).size());
+    }
+
+    @Test
+    @DisplayName("getSite hides sites outside current tenant workspace")
+    void getSiteHidesForeignTenantSite() {
+        Site site = site("finance", "Finance Workspace", SiteVisibility.PUBLIC, SiteStatus.ACTIVE, null);
+        when(siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse("finance")).thenReturn(Optional.of(site));
+        when(tenantWorkspaceScopeService.resolveCurrentTenantRootPath()).thenReturn("/Tenant Workspace");
+        when(tenantWorkspaceScopeService.isSiteVisible("finance", "/Tenant Workspace")).thenReturn(false);
+
+        assertThrows(ResourceNotFoundException.class, () -> siteService.getSite("finance"));
     }
 
     @Test

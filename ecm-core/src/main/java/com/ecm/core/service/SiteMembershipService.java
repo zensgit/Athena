@@ -4,6 +4,7 @@ import com.ecm.core.entity.Site;
 import com.ecm.core.entity.SiteMember;
 import com.ecm.core.entity.SiteMember.SiteMemberRole;
 import com.ecm.core.entity.User;
+import com.ecm.core.exception.ResourceNotFoundException;
 import com.ecm.core.repository.SiteMemberRepository;
 import com.ecm.core.repository.SiteRepository;
 import com.ecm.core.repository.UserRepository;
@@ -31,15 +32,17 @@ public class SiteMembershipService {
     private final SiteMemberRepository siteMemberRepository;
     private final SecurityService securityService;
     private final ActivityEventListener activityEventListener;
+    private final TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     // ------------------------------------------------------------------ read
 
     @Transactional(readOnly = true)
     public List<MembershipRequestDto> getRequestsForSite(String siteId) {
+        Site site = loadSite(siteId);
         List<MembershipRequestDto> result = new ArrayList<>();
         for (User user : userRepository.findAll()) {
             for (Map<String, Object> req : extractRequests(user)) {
-                if (siteId.equalsIgnoreCase(str(req, "siteId"))) {
+                if (site.getSiteId().equalsIgnoreCase(str(req, "siteId"))) {
                     result.add(toDto(user.getUsername(), req));
                 }
             }
@@ -51,7 +54,12 @@ public class SiteMembershipService {
     @Transactional(readOnly = true)
     public List<MembershipRequestDto> getRequestsForUser(String username) {
         User user = loadUser(username);
-        return extractRequests(user).stream().map(r -> toDto(username, r)).toList();
+        String tenantRootPath = tenantWorkspaceScopeService.resolveCurrentTenantRootPath();
+        return extractRequests(user).stream()
+            .filter(request -> tenantRootPath == null
+                || tenantWorkspaceScopeService.isSiteVisible(str(request, "siteId"), tenantRootPath))
+            .map(r -> toDto(username, r))
+            .toList();
     }
 
     // ------------------------------------------------------------------ write
@@ -59,16 +67,17 @@ public class SiteMembershipService {
     @Transactional
     public MembershipRequestDto createRequest(String siteId, CreateMembershipRequest request) {
         String username = securityService.getCurrentUser();
+        Site site = loadSite(siteId);
         User user = loadUser(username);
         List<Map<String, Object>> requests = mutableRequests(user);
 
-        if (findIndex(requests, siteId) >= 0) {
-            throw new IllegalArgumentException("Request already exists for site: " + siteId);
+        if (findIndex(requests, site.getSiteId()) >= 0) {
+            throw new IllegalArgumentException("Request already exists for site: " + site.getSiteId());
         }
 
         Map<String, Object> entry = new LinkedHashMap<>();
-        entry.put("siteId", siteId);
-        entry.put("siteTitle", request.siteTitle() != null ? request.siteTitle() : siteId);
+        entry.put("siteId", site.getSiteId());
+        entry.put("siteTitle", request.siteTitle() != null ? request.siteTitle() : site.getTitle());
         entry.put("role", request.role() != null ? request.role() : "CONSUMER");
         entry.put("message", request.message());
         entry.put("status", "PENDING");
@@ -76,8 +85,8 @@ public class SiteMembershipService {
         requests.add(entry);
         saveRequests(user, requests);
 
-        log.info("Membership request created: user={} site={}", username, siteId);
-        activityEventListener.postMembershipActivity("site.membership.requested", username, siteId, Map.of("role", request.role() != null ? request.role() : "CONSUMER"));
+        log.info("Membership request created: user={} site={}", username, site.getSiteId());
+        activityEventListener.postMembershipActivity("site.membership.requested", username, site.getSiteId(), Map.of("role", request.role() != null ? request.role() : "CONSUMER"));
         return toDto(username, entry);
     }
 
@@ -94,19 +103,20 @@ public class SiteMembershipService {
     @Transactional
     public void withdraw(String siteId) {
         String username = securityService.getCurrentUser();
+        Site site = loadSite(siteId);
         User user = loadUser(username);
         List<Map<String, Object>> requests = mutableRequests(user);
-        int idx = findIndex(requests, siteId);
+        int idx = findIndex(requests, site.getSiteId());
         if (idx < 0) {
-            throw new NoSuchElementException("Request not found for site: " + siteId);
+            throw new NoSuchElementException("Request not found for site: " + site.getSiteId());
         }
         requests.remove(idx);
         saveRequests(user, requests);
-        log.info("Membership request withdrawn: user={} site={}", username, siteId);
+        log.info("Membership request withdrawn: user={} site={}", username, site.getSiteId());
         activityEventListener.postMembershipActivity(
             "site.membership.withdrawn",
             username,
-            siteId,
+            site.getSiteId(),
             Map.of("status", "WITHDRAWN")
         );
     }
@@ -186,13 +196,24 @@ public class SiteMembershipService {
 
     @Transactional(readOnly = true)
     public List<SiteMemberDto> getUserSites(String username) {
+        String tenantRootPath = tenantWorkspaceScopeService.resolveCurrentTenantRootPath();
         return siteMemberRepository.findByUsername(username)
-            .stream().map(SiteMembershipService::toMemberDto).toList();
+            .stream()
+            .filter(member -> tenantRootPath == null
+                || tenantWorkspaceScopeService.isSiteVisible(member.getSite().getSiteId(), tenantRootPath))
+            .map(SiteMembershipService::toMemberDto)
+            .toList();
     }
 
     private Site loadSite(String siteId) {
-        return siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse(siteId)
-            .orElseThrow(() -> new NoSuchElementException("Site not found: " + siteId));
+        String normalizedSiteId = normalizeSiteId(siteId);
+        Site site = siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse(normalizedSiteId)
+            .orElseThrow(() -> new ResourceNotFoundException("Site not found: " + normalizedSiteId));
+        String tenantRootPath = tenantWorkspaceScopeService.resolveCurrentTenantRootPath();
+        if (tenantRootPath != null && !tenantWorkspaceScopeService.isSiteVisible(site.getSiteId(), tenantRootPath)) {
+            throw new ResourceNotFoundException("Site not found: " + normalizedSiteId);
+        }
+        return site;
     }
 
     private static SiteMemberDto toMemberDto(SiteMember m) {
@@ -233,11 +254,12 @@ public class SiteMembershipService {
         if (!securityService.hasRole("ROLE_ADMIN")) {
             throw new SecurityException("Only admin can moderate membership requests");
         }
+        Site site = loadSite(siteId);
         User user = loadUser(username);
         List<Map<String, Object>> requests = mutableRequests(user);
-        int idx = findIndex(requests, siteId);
+        int idx = findIndex(requests, site.getSiteId());
         if (idx < 0) {
-            throw new NoSuchElementException("Request not found: user=" + username + " site=" + siteId);
+            throw new NoSuchElementException("Request not found: user=" + username + " site=" + site.getSiteId());
         }
         Map<String, Object> entry = requests.get(idx);
         entry.put("status", status);
@@ -246,9 +268,13 @@ public class SiteMembershipService {
         entry.put("decisionComment", comment);
         requests.set(idx, entry);
         saveRequests(user, requests);
-        log.info("Membership request {}: user={} site={} by={}", status.toLowerCase(), username, siteId, securityService.getCurrentUser());
-        activityEventListener.postMembershipActivity("site.membership." + status.toLowerCase(), username, siteId, Map.of("decidedBy", securityService.getCurrentUser()));
+        log.info("Membership request {}: user={} site={} by={}", status.toLowerCase(), username, site.getSiteId(), securityService.getCurrentUser());
+        activityEventListener.postMembershipActivity("site.membership." + status.toLowerCase(), username, site.getSiteId(), Map.of("decidedBy", securityService.getCurrentUser()));
         return toDto(username, entry);
+    }
+
+    private String normalizeSiteId(String siteId) {
+        return siteId != null ? siteId.trim().toLowerCase(Locale.ROOT) : "";
     }
 
     private User loadUser(String username) {

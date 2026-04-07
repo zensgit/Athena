@@ -3,8 +3,11 @@ package com.ecm.core.service;
 import com.ecm.core.entity.DiscussionReply;
 import com.ecm.core.entity.DiscussionTopic;
 import com.ecm.core.entity.DiscussionTopic.TopicStatus;
+import com.ecm.core.entity.Site;
+import com.ecm.core.exception.ResourceNotFoundException;
 import com.ecm.core.repository.DiscussionReplyRepository;
 import com.ecm.core.repository.DiscussionTopicRepository;
+import com.ecm.core.repository.SiteRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -29,14 +32,23 @@ class DiscussionServiceTest {
 
     @Mock private DiscussionTopicRepository topicRepo;
     @Mock private DiscussionReplyRepository replyRepo;
+    @Mock private SiteRepository siteRepository;
     @Mock private SecurityService securityService;
     @Mock private ActivityEventListener activityEventListener;
+    @Mock private TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     private DiscussionService service;
 
     @BeforeEach
     void setUp() {
-        service = new DiscussionService(topicRepo, replyRepo, securityService, activityEventListener);
+        service = new DiscussionService(
+            topicRepo,
+            replyRepo,
+            siteRepository,
+            securityService,
+            activityEventListener,
+            tenantWorkspaceScopeService
+        );
     }
 
     @Nested
@@ -46,6 +58,7 @@ class DiscussionServiceTest {
         @Test
         @DisplayName("creates topic with title and siteId")
         void createsTopic() {
+            stubVisibleSite("finance");
             when(securityService.getCurrentUser()).thenReturn("alice");
             when(topicRepo.save(any())).thenAnswer(inv -> {
                 DiscussionTopic t = inv.getArgument(0);
@@ -83,6 +96,7 @@ class DiscussionServiceTest {
             topic.setStatus(TopicStatus.OPEN);
             topic.setCreatedBy("alice");
             topic.setSiteId("finance");
+            stubVisibleSite("finance");
             when(topicRepo.findById(topic.getId())).thenReturn(Optional.of(topic));
             when(securityService.getCurrentUser()).thenReturn("alice");
             when(topicRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -105,6 +119,8 @@ class DiscussionServiceTest {
             DiscussionTopic topic = new DiscussionTopic();
             topic.setId(UUID.randomUUID());
             topic.setCreatedBy("alice");
+            topic.setSiteId("finance");
+            stubVisibleSite("finance");
             when(topicRepo.findById(topic.getId())).thenReturn(Optional.of(topic));
             when(securityService.getCurrentUser()).thenReturn("bob");
             when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
@@ -120,6 +136,8 @@ class DiscussionServiceTest {
             topic.setId(UUID.randomUUID());
             topic.setTitle("Old");
             topic.setCreatedBy("alice");
+            topic.setSiteId("finance");
+            stubVisibleSite("finance");
             when(topicRepo.findById(topic.getId())).thenReturn(Optional.of(topic));
             when(securityService.getCurrentUser()).thenReturn("admin");
             when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
@@ -134,6 +152,8 @@ class DiscussionServiceTest {
             DiscussionTopic topic = new DiscussionTopic();
             topic.setId(UUID.randomUUID());
             topic.setCreatedBy("alice");
+            topic.setSiteId("finance");
+            stubVisibleSite("finance");
             when(topicRepo.findById(topic.getId())).thenReturn(Optional.of(topic));
             when(securityService.getCurrentUser()).thenReturn("alice");
 
@@ -149,6 +169,7 @@ class DiscussionServiceTest {
             topic.setCreatedBy("alice");
             topic.setSiteId("finance");
             topic.setTitle("Q1 Planning");
+            stubVisibleSite("finance");
             when(topicRepo.findById(topic.getId())).thenReturn(Optional.of(topic));
             when(securityService.getCurrentUser()).thenReturn("alice");
 
@@ -169,6 +190,8 @@ class DiscussionServiceTest {
             DiscussionTopic topic = new DiscussionTopic();
             topic.setId(UUID.randomUUID());
             topic.setCreatedBy("alice");
+            topic.setSiteId("finance");
+            stubVisibleSite("finance");
             when(topicRepo.findById(topic.getId())).thenReturn(Optional.of(topic));
             when(securityService.getCurrentUser()).thenReturn("bob");
             when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
@@ -192,6 +215,7 @@ class DiscussionServiceTest {
             topic.setStatus(TopicStatus.OPEN);
             topic.setSiteId("finance");
             topic.setTitle("Q1 Planning");
+            stubVisibleSite("finance");
             when(topicRepo.findById(topicId)).thenReturn(Optional.of(topic));
             when(securityService.getCurrentUser()).thenReturn("alice");
             when(replyRepo.save(any())).thenAnswer(inv -> {
@@ -219,6 +243,8 @@ class DiscussionServiceTest {
             DiscussionTopic topic = new DiscussionTopic();
             topic.setId(topicId);
             topic.setStatus(TopicStatus.CLOSED);
+            topic.setSiteId("finance");
+            stubVisibleSite("finance");
             when(topicRepo.findById(topicId)).thenReturn(Optional.of(topic));
 
             assertThrows(IllegalStateException.class,
@@ -244,6 +270,7 @@ class DiscussionServiceTest {
             topic.setSiteId("finance");
             topic.setTitle("Q1 Planning");
             reply.setTopic(topic);
+            stubVisibleSite("finance");
             when(replyRepo.findById(reply.getId())).thenReturn(Optional.of(reply));
             when(securityService.getCurrentUser()).thenReturn("alice");
             when(replyRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -265,6 +292,12 @@ class DiscussionServiceTest {
             DiscussionReply reply = new DiscussionReply();
             reply.setId(UUID.randomUUID());
             reply.setCreatedBy("alice");
+            DiscussionTopic topic = new DiscussionTopic();
+            topic.setId(UUID.randomUUID());
+            topic.setSiteId("finance");
+            topic.setTitle("Q1 Planning");
+            reply.setTopic(topic);
+            stubVisibleSite("finance");
             when(replyRepo.findById(reply.getId())).thenReturn(Optional.of(reply));
             when(securityService.getCurrentUser()).thenReturn("bob");
             when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
@@ -284,6 +317,7 @@ class DiscussionServiceTest {
             topic.setSiteId("finance");
             topic.setTitle("Q1 Planning");
             reply.setTopic(topic);
+            stubVisibleSite("finance");
             when(replyRepo.findById(reply.getId())).thenReturn(Optional.of(reply));
             when(securityService.getCurrentUser()).thenReturn("alice");
 
@@ -297,5 +331,33 @@ class DiscussionServiceTest {
             );
             verify(replyRepo).delete(reply);
         }
+
+        @Test
+        @DisplayName("getTopic hides topics outside current tenant workspace")
+        void getTopicHidesForeignTenantTopic() {
+            DiscussionTopic topic = new DiscussionTopic();
+            topic.setId(UUID.randomUUID());
+            topic.setSiteId("finance");
+            when(topicRepo.findById(topic.getId())).thenReturn(Optional.of(topic));
+            when(siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse("finance")).thenReturn(Optional.of(site("finance")));
+            when(tenantWorkspaceScopeService.resolveCurrentTenantRootPath()).thenReturn("/Tenant Workspace");
+            when(tenantWorkspaceScopeService.isSiteVisible("finance", "/Tenant Workspace")).thenReturn(false);
+
+            assertThrows(ResourceNotFoundException.class, () -> service.getTopic(topic.getId()));
+        }
+    }
+
+    private void stubVisibleSite(String siteId) {
+        when(siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse(siteId)).thenReturn(Optional.of(site(siteId)));
+    }
+
+    private Site site(String siteId) {
+        Site site = new Site();
+        site.setId(UUID.randomUUID());
+        site.setSiteId(siteId);
+        site.setTitle(siteId.toUpperCase());
+        site.setVisibility(Site.SiteVisibility.PUBLIC);
+        site.setStatus(Site.SiteStatus.ACTIVE);
+        return site;
     }
 }

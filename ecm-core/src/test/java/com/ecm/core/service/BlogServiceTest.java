@@ -2,7 +2,10 @@ package com.ecm.core.service;
 
 import com.ecm.core.entity.BlogPost;
 import com.ecm.core.entity.BlogPost.BlogStatus;
+import com.ecm.core.entity.Site;
+import com.ecm.core.exception.ResourceNotFoundException;
 import com.ecm.core.repository.BlogPostRepository;
+import com.ecm.core.repository.SiteRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -24,14 +27,16 @@ import static org.mockito.Mockito.*;
 class BlogServiceTest {
 
     @Mock private BlogPostRepository blogRepo;
+    @Mock private SiteRepository siteRepository;
     @Mock private SecurityService securityService;
     @Mock private ActivityEventListener activityEventListener;
+    @Mock private TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     private BlogService service;
 
     @BeforeEach
     void setUp() {
-        service = new BlogService(blogRepo, securityService, activityEventListener);
+        service = new BlogService(blogRepo, siteRepository, securityService, activityEventListener, tenantWorkspaceScopeService);
     }
 
     @Nested
@@ -41,6 +46,7 @@ class BlogServiceTest {
         @Test
         @DisplayName("creates draft post and posts blog.created activity")
         void createsDraft() {
+            stubVisibleSite("finance");
             when(securityService.getCurrentUser()).thenReturn("alice");
             when(blogRepo.save(any())).thenAnswer(inv -> {
                 BlogPost p = inv.getArgument(0);
@@ -73,6 +79,7 @@ class BlogServiceTest {
         @DisplayName("publish sets PUBLISHED status and publishedDate")
         void publishes() {
             BlogPost post = draft("alice");
+            stubVisibleSite("finance");
             when(blogRepo.findById(post.getId())).thenReturn(Optional.of(post));
             when(securityService.getCurrentUser()).thenReturn("alice");
             when(blogRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -89,6 +96,7 @@ class BlogServiceTest {
         void rejectsDoublePublish() {
             BlogPost post = draft("alice");
             post.setStatus(BlogStatus.PUBLISHED);
+            stubVisibleSite("finance");
             when(blogRepo.findById(post.getId())).thenReturn(Optional.of(post));
             when(securityService.getCurrentUser()).thenReturn("alice");
 
@@ -100,6 +108,7 @@ class BlogServiceTest {
         void unpublishes() {
             BlogPost post = draft("alice");
             post.setStatus(BlogStatus.PUBLISHED);
+            stubVisibleSite("finance");
             when(blogRepo.findById(post.getId())).thenReturn(Optional.of(post));
             when(securityService.getCurrentUser()).thenReturn("alice");
             when(blogRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -114,6 +123,7 @@ class BlogServiceTest {
         @DisplayName("non-author non-admin cannot publish")
         void nonAuthorCannotPublish() {
             BlogPost post = draft("alice");
+            stubVisibleSite("finance");
             when(blogRepo.findById(post.getId())).thenReturn(Optional.of(post));
             when(securityService.getCurrentUser()).thenReturn("bob");
             when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
@@ -130,6 +140,7 @@ class BlogServiceTest {
         @DisplayName("author can update")
         void authorUpdates() {
             BlogPost post = draft("alice");
+            stubVisibleSite("finance");
             when(blogRepo.findById(post.getId())).thenReturn(Optional.of(post));
             when(securityService.getCurrentUser()).thenReturn("alice");
             when(blogRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -142,6 +153,7 @@ class BlogServiceTest {
         @DisplayName("non-author non-admin cannot update")
         void nonAuthorCannotUpdate() {
             BlogPost post = draft("alice");
+            stubVisibleSite("finance");
             when(blogRepo.findById(post.getId())).thenReturn(Optional.of(post));
             when(securityService.getCurrentUser()).thenReturn("bob");
             when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
@@ -154,6 +166,7 @@ class BlogServiceTest {
         @DisplayName("author can delete")
         void authorDeletes() {
             BlogPost post = draft("alice");
+            stubVisibleSite("finance");
             when(blogRepo.findById(post.getId())).thenReturn(Optional.of(post));
             when(securityService.getCurrentUser()).thenReturn("alice");
 
@@ -165,6 +178,7 @@ class BlogServiceTest {
         @DisplayName("update rejects blank title")
         void rejectsBlankTitle() {
             BlogPost post = draft("alice");
+            stubVisibleSite("finance");
             when(blogRepo.findById(post.getId())).thenReturn(Optional.of(post));
             when(securityService.getCurrentUser()).thenReturn("alice");
 
@@ -176,6 +190,7 @@ class BlogServiceTest {
         @DisplayName("update posts blog.updated activity")
         void updatePostsActivity() {
             BlogPost post = draft("alice");
+            stubVisibleSite("finance");
             when(blogRepo.findById(post.getId())).thenReturn(Optional.of(post));
             when(securityService.getCurrentUser()).thenReturn("alice");
             when(blogRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -190,6 +205,7 @@ class BlogServiceTest {
         void unpublishPostsActivity() {
             BlogPost post = draft("alice");
             post.setStatus(BlogStatus.PUBLISHED);
+            stubVisibleSite("finance");
             when(blogRepo.findById(post.getId())).thenReturn(Optional.of(post));
             when(securityService.getCurrentUser()).thenReturn("alice");
             when(blogRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -198,6 +214,22 @@ class BlogServiceTest {
 
             verify(activityEventListener).postSiteActivity(eq("blog.unpublished"), eq("alice"), eq("finance"), anyMap());
         }
+
+        @Test
+        @DisplayName("getPost hides posts outside current tenant workspace")
+        void getPostHidesForeignTenantPost() {
+            BlogPost post = draft("alice");
+            when(blogRepo.findById(post.getId())).thenReturn(Optional.of(post));
+            when(siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse("finance")).thenReturn(Optional.of(site("finance")));
+            when(tenantWorkspaceScopeService.resolveCurrentTenantRootPath()).thenReturn("/Tenant Workspace");
+            when(tenantWorkspaceScopeService.isSiteVisible("finance", "/Tenant Workspace")).thenReturn(false);
+
+            assertThrows(ResourceNotFoundException.class, () -> service.getPost(post.getId()));
+        }
+    }
+
+    private void stubVisibleSite(String siteId) {
+        when(siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse(siteId)).thenReturn(Optional.of(site(siteId)));
     }
 
     private BlogPost draft(String author) {
@@ -208,5 +240,15 @@ class BlogServiceTest {
         p.setStatus(BlogStatus.DRAFT);
         p.setCreatedBy(author);
         return p;
+    }
+
+    private Site site(String siteId) {
+        Site site = new Site();
+        site.setId(UUID.randomUUID());
+        site.setSiteId(siteId);
+        site.setTitle(siteId.toUpperCase());
+        site.setVisibility(Site.SiteVisibility.PUBLIC);
+        site.setStatus(Site.SiteStatus.ACTIVE);
+        return site;
     }
 }

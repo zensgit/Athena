@@ -1,6 +1,8 @@
 package com.ecm.core.service;
 
+import com.ecm.core.entity.Site;
 import com.ecm.core.entity.User;
+import com.ecm.core.exception.ResourceNotFoundException;
 import com.ecm.core.repository.SiteMemberRepository;
 import com.ecm.core.repository.SiteRepository;
 import com.ecm.core.repository.UserRepository;
@@ -16,6 +18,7 @@ import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -26,12 +29,22 @@ class SiteMembershipServiceTest {
     @Mock private SiteMemberRepository siteMemberRepository;
     @Mock private SecurityService securityService;
     @Mock private ActivityEventListener activityEventListener;
+    @Mock private TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     private SiteMembershipService service;
 
     @BeforeEach
     void setUp() {
-        service = new SiteMembershipService(userRepository, siteRepository, siteMemberRepository, securityService, activityEventListener);
+        service = new SiteMembershipService(
+            userRepository,
+            siteRepository,
+            siteMemberRepository,
+            securityService,
+            activityEventListener,
+            tenantWorkspaceScopeService
+        );
+        lenient().when(siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse(anyString()))
+            .thenAnswer(invocation -> Optional.of(site(invocation.getArgument(0))));
     }
 
     @Nested
@@ -71,6 +84,17 @@ class SiteMembershipServiceTest {
             when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
 
             assertThrows(IllegalArgumentException.class,
+                () -> service.createRequest("finance",
+                    new SiteMembershipService.CreateMembershipRequest("Finance", "CONSUMER", null)));
+        }
+
+        @Test
+        @DisplayName("rejects request for site outside current tenant workspace")
+        void rejectsForeignTenantSite() {
+            when(tenantWorkspaceScopeService.resolveCurrentTenantRootPath()).thenReturn("/Tenant Workspace");
+            when(tenantWorkspaceScopeService.isSiteVisible("finance", "/Tenant Workspace")).thenReturn(false);
+
+            assertThrows(ResourceNotFoundException.class,
                 () -> service.createRequest("finance",
                     new SiteMembershipService.CreateMembershipRequest("Finance", "CONSUMER", null)));
         }
@@ -206,6 +230,26 @@ class SiteMembershipServiceTest {
             assertEquals(2, result.size());
             assertTrue(result.stream().allMatch(r -> "finance".equals(r.siteId())));
         }
+
+        @Test
+        @DisplayName("getRequestsForUser filters requests outside current tenant workspace")
+        void getRequestsForUserFiltersForeignTenantRequests() {
+            User alice = userWith("alice", new HashMap<>(Map.of(
+                "siteMembershipRequests", List.of(
+                    Map.of("siteId", "finance", "status", "PENDING"),
+                    Map.of("siteId", "hr", "status", "PENDING")
+                )
+            )));
+            when(userRepository.findByUsername("alice")).thenReturn(Optional.of(alice));
+            when(tenantWorkspaceScopeService.resolveCurrentTenantRootPath()).thenReturn("/Tenant Workspace");
+            when(tenantWorkspaceScopeService.isSiteVisible("finance", "/Tenant Workspace")).thenReturn(true);
+            when(tenantWorkspaceScopeService.isSiteVisible("hr", "/Tenant Workspace")).thenReturn(false);
+
+            var result = service.getRequestsForUser("alice");
+
+            assertEquals(1, result.size());
+            assertEquals("finance", result.get(0).siteId());
+        }
     }
 
     private User userWith(String username, Map<String, Object> prefs) {
@@ -213,5 +257,15 @@ class SiteMembershipServiceTest {
         user.setUsername(username);
         user.setPreferences(prefs);
         return user;
+    }
+
+    private Site site(String siteId) {
+        Site site = new Site();
+        site.setId(UUID.randomUUID());
+        site.setSiteId(siteId);
+        site.setTitle(siteId.toUpperCase());
+        site.setVisibility(Site.SiteVisibility.PUBLIC);
+        site.setStatus(Site.SiteStatus.ACTIVE);
+        return site;
     }
 }

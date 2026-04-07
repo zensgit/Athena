@@ -1,7 +1,10 @@
 package com.ecm.core.service;
 
 import com.ecm.core.entity.CalendarEvent;
+import com.ecm.core.entity.Site;
+import com.ecm.core.exception.ResourceNotFoundException;
 import com.ecm.core.repository.CalendarEventRepository;
+import com.ecm.core.repository.SiteRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -24,14 +27,16 @@ import static org.mockito.Mockito.*;
 class CalendarServiceTest {
 
     @Mock private CalendarEventRepository calendarRepo;
+    @Mock private SiteRepository siteRepository;
     @Mock private SecurityService securityService;
     @Mock private ActivityEventListener activityEventListener;
+    @Mock private TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     private CalendarService service;
 
     @BeforeEach
     void setUp() {
-        service = new CalendarService(calendarRepo, securityService, activityEventListener);
+        service = new CalendarService(calendarRepo, siteRepository, securityService, activityEventListener, tenantWorkspaceScopeService);
     }
 
     @Nested
@@ -41,6 +46,7 @@ class CalendarServiceTest {
         @Test
         @DisplayName("creates event and posts calendar.created activity")
         void createsEvent() {
+            stubVisibleSite("finance");
             when(securityService.getCurrentUser()).thenReturn("alice");
             when(calendarRepo.save(any())).thenAnswer(inv -> {
                 CalendarEvent e = inv.getArgument(0);
@@ -93,6 +99,7 @@ class CalendarServiceTest {
         @DisplayName("author can update and posts calendar.updated activity")
         void authorUpdates() {
             CalendarEvent event = event("alice");
+            stubVisibleSite("finance");
             when(calendarRepo.findById(event.getId())).thenReturn(Optional.of(event));
             when(securityService.getCurrentUser()).thenReturn("alice");
             when(calendarRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -108,6 +115,7 @@ class CalendarServiceTest {
         @DisplayName("non-author non-admin cannot update")
         void nonAuthorCannotUpdate() {
             CalendarEvent event = event("alice");
+            stubVisibleSite("finance");
             when(calendarRepo.findById(event.getId())).thenReturn(Optional.of(event));
             when(securityService.getCurrentUser()).thenReturn("bob");
             when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
@@ -120,6 +128,7 @@ class CalendarServiceTest {
         @DisplayName("rejects blank title on update")
         void rejectsBlankTitle() {
             CalendarEvent event = event("alice");
+            stubVisibleSite("finance");
             when(calendarRepo.findById(event.getId())).thenReturn(Optional.of(event));
             when(securityService.getCurrentUser()).thenReturn("alice");
 
@@ -136,6 +145,7 @@ class CalendarServiceTest {
         @DisplayName("author can delete")
         void authorDeletes() {
             CalendarEvent event = event("alice");
+            stubVisibleSite("finance");
             when(calendarRepo.findById(event.getId())).thenReturn(Optional.of(event));
             when(securityService.getCurrentUser()).thenReturn("alice");
 
@@ -148,12 +158,29 @@ class CalendarServiceTest {
         @DisplayName("non-author non-admin cannot delete")
         void nonAuthorCannotDelete() {
             CalendarEvent event = event("alice");
+            stubVisibleSite("finance");
             when(calendarRepo.findById(event.getId())).thenReturn(Optional.of(event));
             when(securityService.getCurrentUser()).thenReturn("bob");
             when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
 
             assertThrows(SecurityException.class, () -> service.deleteEvent(event.getId()));
         }
+
+        @Test
+        @DisplayName("getEvent hides events outside current tenant workspace")
+        void getEventHidesForeignTenantEvent() {
+            CalendarEvent event = event("alice");
+            when(calendarRepo.findById(event.getId())).thenReturn(Optional.of(event));
+            when(siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse("finance")).thenReturn(Optional.of(site("finance")));
+            when(tenantWorkspaceScopeService.resolveCurrentTenantRootPath()).thenReturn("/Tenant Workspace");
+            when(tenantWorkspaceScopeService.isSiteVisible("finance", "/Tenant Workspace")).thenReturn(false);
+
+            assertThrows(ResourceNotFoundException.class, () -> service.getEvent(event.getId()));
+        }
+    }
+
+    private void stubVisibleSite(String siteId) {
+        when(siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse(siteId)).thenReturn(Optional.of(site(siteId)));
     }
 
     private CalendarEvent event(String author) {
@@ -165,5 +192,15 @@ class CalendarServiceTest {
         e.setEndDate(LocalDateTime.of(2026, 4, 10, 17, 0));
         e.setCreatedBy(author);
         return e;
+    }
+
+    private Site site(String siteId) {
+        Site site = new Site();
+        site.setId(UUID.randomUUID());
+        site.setSiteId(siteId);
+        site.setTitle(siteId.toUpperCase());
+        site.setVisibility(Site.SiteVisibility.PUBLIC);
+        site.setStatus(Site.SiteStatus.ACTIVE);
+        return site;
     }
 }

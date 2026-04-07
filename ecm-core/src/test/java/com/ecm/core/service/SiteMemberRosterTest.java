@@ -32,12 +32,20 @@ class SiteMemberRosterTest {
     @Mock private SiteMemberRepository siteMemberRepository;
     @Mock private SecurityService securityService;
     @Mock private ActivityEventListener activityEventListener;
+    @Mock private TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     private SiteMembershipService service;
 
     @BeforeEach
     void setUp() {
-        service = new SiteMembershipService(userRepository, siteRepository, siteMemberRepository, securityService, activityEventListener);
+        service = new SiteMembershipService(
+            userRepository,
+            siteRepository,
+            siteMemberRepository,
+            securityService,
+            activityEventListener,
+            tenantWorkspaceScopeService
+        );
     }
 
     @Nested
@@ -203,6 +211,25 @@ class SiteMemberRosterTest {
             var result = service.getUserSites("alice");
 
             assertEquals(2, result.size());
+        }
+
+        @Test
+        @DisplayName("filters user sites outside current tenant workspace")
+        void filtersForeignTenantSites() {
+            Site s1 = site("finance");
+            Site s2 = site("hr");
+            SiteMember m1 = member(s1, "alice", SiteMemberRole.MANAGER);
+            SiteMember m2 = member(s2, "alice", SiteMemberRole.CONSUMER);
+
+            when(siteMemberRepository.findByUsername("alice")).thenReturn(List.of(m1, m2));
+            when(tenantWorkspaceScopeService.resolveCurrentTenantRootPath()).thenReturn("/Tenant Workspace");
+            when(tenantWorkspaceScopeService.isSiteVisible("finance", "/Tenant Workspace")).thenReturn(true);
+            when(tenantWorkspaceScopeService.isSiteVisible("hr", "/Tenant Workspace")).thenReturn(false);
+
+            var result = service.getUserSites("alice");
+
+            assertEquals(1, result.size());
+            assertEquals("finance", result.get(0).siteId());
         }
     }
 
