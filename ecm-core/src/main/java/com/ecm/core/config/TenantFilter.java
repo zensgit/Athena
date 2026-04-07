@@ -25,6 +25,7 @@ public class TenantFilter extends OncePerRequestFilter {
         try {
             TenantService.TenantDto tenant = tenantService.resolveCurrentTenant(requestedTenant);
             TenantContext.setCurrentTenantDomain(tenant.tenantDomain());
+            TenantContext.setCurrentTenantRootNodeId(tenant.rootNodeId());
             response.setHeader(TENANT_HEADER, tenant.tenantDomain());
             filterChain.doFilter(request, response);
         } catch (NoSuchElementException ex) {

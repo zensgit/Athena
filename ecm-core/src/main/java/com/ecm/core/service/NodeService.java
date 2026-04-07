@@ -2,6 +2,7 @@ package com.ecm.core.service;
 
 import com.ecm.core.dto.CheckoutInfoDto;
 import com.ecm.core.dto.LockInfoDto;
+import com.ecm.core.config.TenantContext;
 import com.ecm.core.entity.*;
 import com.ecm.core.entity.Node.NodeStatus;
 import com.ecm.core.entity.Node.NodeType;
@@ -58,11 +59,13 @@ public class NodeService {
     private boolean rulesEnabled;
     
     public Node createNode(Node node, UUID parentId) {
-        log.debug("Creating node: {} under parent: {}", node.getName(), parentId);
+        UUID effectiveParentId = resolveScopedParentId(parentId);
+        log.debug("Creating node: {} under parent: {}", node.getName(), effectiveParentId);
         
-        if (parentId != null) {
-            Folder parent = folderRepository.findById(parentId)
-                .orElseThrow(() -> new IllegalArgumentException("Parent folder not found: " + parentId));
+        if (effectiveParentId != null) {
+            Folder parent = folderRepository.findById(effectiveParentId)
+                .orElseThrow(() -> new IllegalArgumentException("Parent folder not found: " + effectiveParentId));
+            assertTenantScoped(parent);
             
             // Check permissions
             if (!securityService.hasPermission(parent, PermissionType.CREATE_CHILDREN)) {
@@ -71,7 +74,7 @@ public class NodeService {
             
             // Check if folder is full
             if (parent.getMaxItems() != null) {
-                long childCount = nodeRepository.countByParentId(parentId);
+                long childCount = nodeRepository.countByParentId(effectiveParentId);
                 if (childCount >= parent.getMaxItems()) {
                     throw new IllegalStateException("Folder is full: " + parent.getName());
                 }
@@ -81,7 +84,7 @@ public class NodeService {
         }
         
         // Check for duplicate names
-        if (nodeRepository.findByParentIdAndName(parentId, node.getName()).isPresent()) {
+        if (nodeRepository.findByParentIdAndName(effectiveParentId, node.getName()).isPresent()) {
             throw new IllegalArgumentException("Node with name already exists: " + node.getName());
         }
 
@@ -105,6 +108,7 @@ public class NodeService {
     public Node getNode(UUID nodeId) {
         Node node = nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(nodeId, Node.ArchiveStatus.LIVE)
             .orElseThrow(() -> new NoSuchElementException("Node not found: " + nodeId));
+        assertTenantScoped(node);
         node = normalizeExpiredLock(node);
         
         if (!securityService.hasPermission(node, PermissionType.READ)) {
@@ -117,6 +121,7 @@ public class NodeService {
     public Node getNodeByPath(String path) {
         Node node = nodeRepository.findFirstByPathAndDeletedFalseAndArchiveStatusOrderByCreatedDateAsc(path, Node.ArchiveStatus.LIVE)
             .orElseThrow(() -> new NoSuchElementException("Node not found at path: " + path));
+        assertTenantScoped(node);
         node = normalizeExpiredLock(node);
         
         if (!securityService.hasPermission(node, PermissionType.READ)) {
@@ -229,6 +234,7 @@ public class NodeService {
         Node node = getNode(nodeId);
         Folder targetParent = folderRepository.findById(targetParentId)
             .orElseThrow(() -> new IllegalArgumentException("Target parent not found: " + targetParentId));
+        assertTenantScoped(targetParent);
         
         // Check permissions
         if (!securityService.hasPermission(node, PermissionType.DELETE)) {
@@ -267,21 +273,23 @@ public class NodeService {
      * Content storage should be handled separately via ContentService.
      */
     public Document createDocument(String name, String mimeType, long size, UUID parentId) {
+        UUID effectiveParentId = resolveScopedParentId(parentId);
         Document document = new Document();
         document.setName(name);
         document.setMimeType(mimeType);
         document.setFileSize(size);
 
-        if (parentId != null) {
-            Folder parent = folderRepository.findById(parentId)
-                .orElseThrow(() -> new IllegalArgumentException("Parent folder not found: " + parentId));
+        if (effectiveParentId != null) {
+            Folder parent = folderRepository.findById(effectiveParentId)
+                .orElseThrow(() -> new IllegalArgumentException("Parent folder not found: " + effectiveParentId));
+            assertTenantScoped(parent);
             document.setParent(parent);
             document.setPath(parent.getPath() + "/" + name);
         } else {
             document.setPath("/" + name);
         }
 
-        Node saved = createNode(document, parentId);
+        Node saved = createNode(document, effectiveParentId);
         return (Document) saved;
     }
     
@@ -289,6 +297,7 @@ public class NodeService {
         Node source = getNode(nodeId);
         Folder targetParent = folderRepository.findById(targetParentId)
             .orElseThrow(() -> new IllegalArgumentException("Target parent not found: " + targetParentId));
+        assertTenantScoped(targetParent);
         
         // Check permissions
         if (!securityService.hasPermission(source, PermissionType.READ)) {
@@ -893,6 +902,37 @@ public class NodeService {
         String currentUser = securityService.getCurrentUser();
         LocalDateTime deletedAt = LocalDateTime.now();
         nodeRepository.softDeleteByPathPrefix(node.getPath(), deletedAt, currentUser);
+    }
+
+    private UUID resolveScopedParentId(UUID requestedParentId) {
+        return requestedParentId != null ? requestedParentId : TenantContext.getCurrentTenantRootNodeId();
+    }
+
+    private Node getScopedTenantRootNode() {
+        UUID tenantRootNodeId = TenantContext.getCurrentTenantRootNodeId();
+        if (tenantRootNodeId == null) {
+            return null;
+        }
+        return nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(tenantRootNodeId, Node.ArchiveStatus.LIVE)
+            .orElseThrow(() -> new NoSuchElementException("Tenant root workspace not found"));
+    }
+
+    private boolean isTenantScoped(Node node) {
+        UUID tenantRootNodeId = TenantContext.getCurrentTenantRootNodeId();
+        if (tenantRootNodeId == null) {
+            return true;
+        }
+        if (tenantRootNodeId.equals(node.getId())) {
+            return true;
+        }
+        Node root = getScopedTenantRootNode();
+        return node.getPath() != null && node.getPath().startsWith(root.getPath() + "/");
+    }
+
+    private void assertTenantScoped(Node node) {
+        if (!isTenantScoped(node)) {
+            throw new NoSuchElementException("Node not found: " + node.getId());
+        }
     }
 
     /**

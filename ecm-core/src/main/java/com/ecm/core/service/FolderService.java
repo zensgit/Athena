@@ -1,5 +1,6 @@
 package com.ecm.core.service;
 
+import com.ecm.core.config.TenantContext;
 import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Folder.FolderType;
 import com.ecm.core.entity.Node;
@@ -45,7 +46,8 @@ public class FolderService {
      * Create a new folder
      */
     public Folder createFolder(CreateFolderRequest request) {
-        log.debug("Creating folder: {} under parent: {}", request.name(), request.parentId());
+        UUID effectiveParentId = resolveScopedParentId(request.parentId());
+        log.debug("Creating folder: {} under parent: {}", request.name(), effectiveParentId);
 
         Folder folder = new Folder();
         folder.setName(request.name());
@@ -63,9 +65,10 @@ public class FolderService {
             // Smart folders typically don't have children in the DB sense
         }
 
-        if (request.parentId() != null) {
-            Folder parent = folderRepository.findById(request.parentId())
-                .orElseThrow(() -> new NoSuchElementException("Parent folder not found: " + request.parentId()));
+        if (effectiveParentId != null) {
+            Folder parent = folderRepository.findById(effectiveParentId)
+                .orElseThrow(() -> new NoSuchElementException("Parent folder not found: " + effectiveParentId));
+            assertTenantScoped(parent);
 
             // Check permission to create children
             if (!securityService.hasPermission(parent, PermissionType.CREATE_CHILDREN)) {
@@ -84,7 +87,7 @@ public class FolderService {
         }
 
         // Check for duplicate names
-        if (nodeRepository.findByParentIdAndName(request.parentId(), request.name()).isPresent()) {
+        if (nodeRepository.findByParentIdAndName(effectiveParentId, request.name()).isPresent()) {
             throw new IllegalArgumentException("Folder with name already exists: " + request.name());
         }
 
@@ -119,6 +122,8 @@ public class FolderService {
             throw new NoSuchElementException("Folder not found: " + folderId);
         }
 
+        assertTenantScoped(folder);
+
         if (!securityService.hasPermission(folder, PermissionType.READ)) {
             throw new SecurityException("No permission to read folder: " + folder.getName());
         }
@@ -131,9 +136,11 @@ public class FolderService {
      */
     @Transactional(readOnly = true)
     public Folder getFolderByPath(String path) {
-        return folderRepository.findFirstByPathAndDeletedFalseOrderByCreatedDateAsc(path)
-            .filter(folder -> folder.getArchiveStatus() == Node.ArchiveStatus.LIVE)
+        Folder folder = folderRepository.findFirstByPathAndDeletedFalseOrderByCreatedDateAsc(path)
+            .filter(candidate -> candidate.getArchiveStatus() == Node.ArchiveStatus.LIVE)
             .orElseThrow(() -> new NoSuchElementException("Folder not found at path: " + path));
+        assertTenantScoped(folder);
+        return folder;
     }
 
     /**
@@ -141,6 +148,14 @@ public class FolderService {
      */
     @Transactional(readOnly = true)
     public List<Folder> getRootFolders() {
+        Optional<Folder> tenantRoot = getScopedTenantRootFolder();
+        if (tenantRoot.isPresent()) {
+            Folder root = tenantRoot.get();
+            if (securityService.hasPermission(root, PermissionType.READ)) {
+                return List.of(root);
+            }
+            return List.of();
+        }
         return folderRepository.findRootFolders().stream()
             .filter(folder -> folder.getArchiveStatus() == Node.ArchiveStatus.LIVE)
             .filter(f -> securityService.hasPermission(f, PermissionType.READ))
@@ -386,6 +401,7 @@ public class FolderService {
     @Transactional(readOnly = true)
     public List<Folder> getFoldersByType(FolderType type) {
         return folderRepository.findActiveFoldersByType(type).stream()
+            .filter(this::isTenantScoped)
             .filter(f -> securityService.hasPermission(f, PermissionType.READ))
             .collect(Collectors.toList());
     }
@@ -521,11 +537,47 @@ public class FolderService {
     private List<Node> loadReadableChildren(UUID folderId, boolean isAdmin) {
         List<Node> children = nodeRepository.findByParentIdAndDeletedFalseAndArchiveStatus(folderId, Node.ArchiveStatus.LIVE);
         if (isAdmin) {
-            return children;
+            return children.stream()
+                .filter(this::isTenantScoped)
+                .collect(Collectors.toList());
         }
         return children.stream()
+            .filter(this::isTenantScoped)
             .filter(child -> securityService.hasPermission(child, PermissionType.READ))
             .collect(Collectors.toList());
+    }
+
+    private UUID resolveScopedParentId(UUID requestedParentId) {
+        return requestedParentId != null ? requestedParentId : TenantContext.getCurrentTenantRootNodeId();
+    }
+
+    private Optional<Folder> getScopedTenantRootFolder() {
+        UUID tenantRootNodeId = TenantContext.getCurrentTenantRootNodeId();
+        if (tenantRootNodeId == null) {
+            return Optional.empty();
+        }
+        return folderRepository.findById(tenantRootNodeId)
+            .filter(folder -> !folder.isDeleted())
+            .filter(folder -> folder.getArchiveStatus() == Node.ArchiveStatus.LIVE);
+    }
+
+    private boolean isTenantScoped(Node node) {
+        UUID tenantRootNodeId = TenantContext.getCurrentTenantRootNodeId();
+        if (tenantRootNodeId == null) {
+            return true;
+        }
+        Folder root = getScopedTenantRootFolder()
+            .orElseThrow(() -> new NoSuchElementException("Tenant root workspace not found"));
+        if (tenantRootNodeId.equals(node.getId())) {
+            return true;
+        }
+        return node.getPath() != null && node.getPath().startsWith(root.getPath() + "/");
+    }
+
+    private void assertTenantScoped(Node node) {
+        if (!isTenantScoped(node)) {
+            throw new NoSuchElementException("Folder not found: " + node.getId());
+        }
     }
 
     private int[] countDescendantsRecursive(UUID folderId, boolean isAdmin) {
