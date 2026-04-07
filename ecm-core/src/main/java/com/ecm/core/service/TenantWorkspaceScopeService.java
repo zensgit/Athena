@@ -25,6 +25,10 @@ public class TenantWorkspaceScopeService {
         return TenantContext.getCurrentTenantRootNodeId() != null;
     }
 
+    public UUID resolveCurrentTenantRootNodeId() {
+        return TenantContext.getCurrentTenantRootNodeId();
+    }
+
     public String resolveCurrentTenantRootPath() {
         UUID tenantRootNodeId = TenantContext.getCurrentTenantRootNodeId();
         if (tenantRootNodeId == null) {
@@ -42,6 +46,22 @@ public class TenantWorkspaceScopeService {
             return true;
         }
         return isActivityVisible(activity, tenantRootPath);
+    }
+
+    public boolean isNodeVisible(UUID nodeId) {
+        String tenantRootPath = resolveCurrentTenantRootPath();
+        if (tenantRootPath == null) {
+            return true;
+        }
+        return isNodeVisible(nodeId, tenantRootPath);
+    }
+
+    public boolean isSiteVisible(String siteId) {
+        String tenantRootPath = resolveCurrentTenantRootPath();
+        if (tenantRootPath == null) {
+            return true;
+        }
+        return isSiteVisible(siteId, tenantRootPath);
     }
 
     public boolean isActivityVisible(Activity activity, String tenantRootPath) {

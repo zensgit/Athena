@@ -53,6 +53,9 @@ class RuleEngineServiceExecutionLedgerTest {
     @Mock
     private AuditService auditService;
 
+    @Mock
+    private TenantWorkspaceScopeService tenantWorkspaceScopeService;
+
     @InjectMocks
     private RuleEngineService ruleEngineService;
 

@@ -14,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -52,6 +53,7 @@ public class RuleEngineService {
     private final TagRepository tagRepository;
     private final CategoryRepository categoryRepository;
     private final FolderRepository folderRepository;
+    private final TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     @Autowired
     private TagService tagService;
@@ -113,7 +115,7 @@ public class RuleEngineService {
             .priority(request.getPriority() != null ? request.getPriority() : 100)
             .enabled(request.getEnabled() != null ? request.getEnabled() : true)
             .owner(request.getOwner())
-            .scopeFolderId(request.getScopeFolderId())
+            .scopeFolderId(resolveRequestedScopeFolderId(request.getScopeFolderId()))
             .scopeMimeTypes(request.getScopeMimeTypes())
             .stopOnMatch(request.getStopOnMatch() != null ? request.getStopOnMatch() : false)
             // Scheduled rule fields
@@ -134,8 +136,7 @@ public class RuleEngineService {
      */
     @Transactional
     public AutomationRule updateRule(UUID ruleId, UpdateRuleRequest request) {
-        AutomationRule rule = ruleRepository.findById(ruleId)
-            .orElseThrow(() -> new ResourceNotFoundException("Rule not found: " + ruleId));
+        AutomationRule rule = getVisibleRule(ruleId);
 
         // Check for duplicate name (excluding current rule)
         if (request.getName() != null && !request.getName().equals(rule.getName())) {
@@ -165,7 +166,7 @@ public class RuleEngineService {
             rule.setEnabled(request.getEnabled());
         }
         if (request.getScopeFolderId() != null) {
-            rule.setScopeFolderId(request.getScopeFolderId());
+            rule.setScopeFolderId(resolveRequestedScopeFolderId(request.getScopeFolderId()));
         }
         if (request.getScopeMimeTypes() != null) {
             rule.setScopeMimeTypes(request.getScopeMimeTypes());
@@ -196,8 +197,7 @@ public class RuleEngineService {
      */
     @Transactional
     public void deleteRule(UUID ruleId) {
-        AutomationRule rule = ruleRepository.findById(ruleId)
-            .orElseThrow(() -> new ResourceNotFoundException("Rule not found: " + ruleId));
+        AutomationRule rule = getVisibleRule(ruleId);
 
         rule.setDeleted(true);
         rule.setDeletedAt(LocalDateTime.now());
@@ -211,6 +211,7 @@ public class RuleEngineService {
      */
     @Transactional
     public AutomationRule setRuleEnabled(UUID ruleId, boolean enabled) {
+        getVisibleRule(ruleId);
         ruleRepository.updateEnabled(ruleId, enabled);
         return ruleRepository.findById(ruleId)
             .orElseThrow(() -> new ResourceNotFoundException("Rule not found: " + ruleId));
@@ -220,35 +221,35 @@ public class RuleEngineService {
      * Get a rule by ID
      */
     public AutomationRule getRule(UUID ruleId) {
-        return ruleRepository.findById(ruleId)
-            .orElseThrow(() -> new ResourceNotFoundException("Rule not found: " + ruleId));
+        return getVisibleRule(ruleId);
     }
 
     /**
      * Get all rules (paged)
      */
     public Page<AutomationRule> getAllRules(Pageable pageable) {
-        return ruleRepository.findAllActive(pageable);
+        return filterVisibleRules(ruleRepository.findAllActive(Pageable.unpaged()), pageable);
     }
 
     /**
      * Get rules by owner
      */
     public Page<AutomationRule> getRulesByOwner(String owner, Pageable pageable) {
-        return ruleRepository.findByOwner(owner, pageable);
+        return filterVisibleRules(ruleRepository.findByOwner(owner, Pageable.unpaged()), pageable);
     }
 
     /**
      * Search rules
      */
     public Page<AutomationRule> searchRules(String query, Pageable pageable) {
-        return ruleRepository.searchRules(query, pageable);
+        return filterVisibleRules(ruleRepository.searchRules(query, Pageable.unpaged()), pageable);
     }
 
     /**
      * Get rules scoped to a specific folder.
      */
     public Page<AutomationRule> getRulesByScopeFolder(UUID scopeFolderId, Pageable pageable) {
+        assertScopeFolderVisible(scopeFolderId);
         return ruleRepository.findByScopeFolderIdActive(scopeFolderId, pageable);
     }
 
@@ -261,6 +262,7 @@ public class RuleEngineService {
         UUID scopeFolderId,
         FolderRuleReorderRequest request
     ) {
+        assertScopeFolderVisible(scopeFolderId);
         List<AutomationRule> scopedRules = ruleRepository.findByScopeFolderIdActiveOrderByPriority(scopeFolderId);
         if (scopedRules.isEmpty()) {
             return List.of();
@@ -312,6 +314,7 @@ public class RuleEngineService {
         UUID scopeFolderId,
         FolderRuleDryRunRequest request
     ) {
+        assertScopeFolderVisible(scopeFolderId);
         TriggerType triggerType = request != null && request.triggerType() != null
             ? request.triggerType()
             : TriggerType.DOCUMENT_CREATED;
@@ -530,6 +533,9 @@ public class RuleEngineService {
             if (record == null) {
                 continue;
             }
+            if (!isRuleRunVisible(record)) {
+                continue;
+            }
             if (safeQuery.ruleId() != null && !safeQuery.ruleId().equals(record.ruleId())) {
                 continue;
             }
@@ -567,7 +573,11 @@ public class RuleEngineService {
      * Get a single manual rule run ledger record.
      */
     public Optional<RuleRunLedgerRecord> getRuleRun(UUID runId) {
-        return Optional.ofNullable(ruleRunLedgerById.get(runId));
+        RuleRunLedgerRecord record = ruleRunLedgerById.get(runId);
+        if (record == null || !isRuleRunVisible(record)) {
+            return Optional.empty();
+        }
+        return Optional.of(record);
     }
 
     // ==================== Rule Execution ====================
@@ -1534,6 +1544,80 @@ public class RuleEngineService {
             document.setParent(parent);
         }
         return document;
+    }
+
+    private AutomationRule getVisibleRule(UUID ruleId) {
+        AutomationRule rule = ruleRepository.findById(ruleId)
+            .orElseThrow(() -> new ResourceNotFoundException("Rule not found: " + ruleId));
+        if (!isRuleVisible(rule, tenantWorkspaceScopeService.resolveCurrentTenantRootPath())) {
+            throw new ResourceNotFoundException("Rule not found: " + ruleId);
+        }
+        return rule;
+    }
+
+    private UUID resolveRequestedScopeFolderId(UUID requestedScopeFolderId) {
+        if (!tenantWorkspaceScopeService.hasScopedTenantWorkspace()) {
+            return requestedScopeFolderId;
+        }
+        UUID effectiveScopeFolderId = requestedScopeFolderId != null
+            ? requestedScopeFolderId
+            : tenantWorkspaceScopeService.resolveCurrentTenantRootNodeId();
+        assertScopeFolderVisible(effectiveScopeFolderId);
+        return effectiveScopeFolderId;
+    }
+
+    private void assertScopeFolderVisible(UUID scopeFolderId) {
+        if (!tenantWorkspaceScopeService.hasScopedTenantWorkspace()) {
+            return;
+        }
+        if (!tenantWorkspaceScopeService.isNodeVisible(scopeFolderId)) {
+            throw new ResourceNotFoundException("Scope folder not found: " + scopeFolderId);
+        }
+    }
+
+    private Page<AutomationRule> filterVisibleRules(Page<AutomationRule> source, Pageable pageable) {
+        String tenantRootPath = tenantWorkspaceScopeService.resolveCurrentTenantRootPath();
+        List<AutomationRule> visible = source.getContent().stream()
+            .filter(rule -> isRuleVisible(rule, tenantRootPath))
+            .toList();
+        return sliceRules(visible, pageable);
+    }
+
+    private boolean isRuleVisible(AutomationRule rule, String tenantRootPath) {
+        if (tenantRootPath == null) {
+            return true;
+        }
+        if (tenantRootPath.isBlank() || rule == null || rule.getScopeFolderId() == null) {
+            return false;
+        }
+        return tenantWorkspaceScopeService.isNodeVisible(rule.getScopeFolderId(), tenantRootPath);
+    }
+
+    private boolean isRuleRunVisible(RuleRunLedgerRecord record) {
+        if (!tenantWorkspaceScopeService.hasScopedTenantWorkspace()) {
+            return true;
+        }
+        if (record == null || record.documentId() == null || !tenantWorkspaceScopeService.isNodeVisible(record.documentId())) {
+            return false;
+        }
+        if (record.ruleId() == null) {
+            return true;
+        }
+        return ruleRepository.findById(record.ruleId())
+            .map(rule -> isRuleVisible(rule, tenantWorkspaceScopeService.resolveCurrentTenantRootPath()))
+            .orElse(false);
+    }
+
+    private Page<AutomationRule> sliceRules(List<AutomationRule> rules, Pageable pageable) {
+        if (pageable == null || pageable.isUnpaged()) {
+            return new PageImpl<>(rules);
+        }
+        int fromIndex = Math.toIntExact(pageable.getOffset());
+        if (fromIndex >= rules.size()) {
+            return new PageImpl<>(List.of(), pageable, rules.size());
+        }
+        int toIndex = Math.min(fromIndex + pageable.getPageSize(), rules.size());
+        return new PageImpl<>(rules.subList(fromIndex, toIndex), pageable, rules.size());
     }
 
     // ==================== DTO Classes ====================

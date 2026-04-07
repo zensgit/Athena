@@ -58,12 +58,14 @@ public class WorkflowService {
     private final UserRepository userRepository;
     private final SecurityService securityService;
     private final AuditService auditService;
+    private final TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     /**
      * Start document approval workflow
      */
     @Transactional
     public ProcessInstance startDocumentApproval(UUID documentId, List<String> approvers, String comment) {
+        assertNodeVisible(documentId, "Node not found: " + documentId);
         Node node = nodeRepository.findById(documentId)
             .orElseThrow(() -> new IllegalArgumentException("Node not found: " + documentId));
 
@@ -144,6 +146,7 @@ public class WorkflowService {
         if (normalizedBusinessKey == null && items.size() == 1) {
             normalizedBusinessKey = items.get(0).getId().toString();
         }
+        assertWorkflowStartVisible(normalizedBusinessKey, normalizedVariables, items);
 
         ProcessInstance instance = processDefinitionId != null && !processDefinitionId.isBlank()
             ? runtimeService.startProcessInstanceById(definition.getId(), normalizedBusinessKey, normalizedVariables)
@@ -172,7 +175,10 @@ public class WorkflowService {
         return taskService.createTaskQuery()
             .taskAssignee(currentUser)
             .orderByTaskCreateTime().desc()
-            .list();
+            .list()
+            .stream()
+            .filter(this::isTaskVisible)
+            .toList();
     }
 
     public List<WorkflowTaskSummary> listTasks(
@@ -307,6 +313,7 @@ public class WorkflowService {
         }
 
         return summaries.stream()
+            .filter(summary -> isProcessVisible(summary.processInstanceId(), summary.businessKey()))
             .filter(summary -> matchesTaskSummary(summary, normalizedQuery, normalizedBusinessKey, normalizedOwner))
             .sorted(Comparator.comparing(WorkflowTaskSummary::sortTime, Comparator.nullsLast(Date::compareTo)).reversed())
             .toList();
@@ -316,6 +323,7 @@ public class WorkflowService {
      * Get tasks for a specific process instance
      */
     public List<Task> getProcessTasks(String processInstanceId) {
+        assertProcessVisible(processInstanceId);
         return taskService.createTaskQuery()
             .processInstanceId(processInstanceId)
             .list();
@@ -323,6 +331,11 @@ public class WorkflowService {
 
     @Transactional
     public void updateTask(String taskId, String state, String assignee, Map<String, Object> values) {
+        Task task = taskService.createTaskQuery().taskId(taskId).singleResult();
+        if (task == null) {
+            throw new ResourceNotFoundException("Task not found: " + taskId);
+        }
+        assertTaskVisible(task);
         switch (normalizeTaskTransition(state)) {
             case "COMPLETED" -> completeTask(taskId, values);
             case "CLAIMED" -> claimTask(taskId);
@@ -343,6 +356,7 @@ public class WorkflowService {
         if (task == null) {
             throw new IllegalArgumentException("Task not found: " + taskId);
         }
+        assertTaskVisible(task);
 
         // Verify assignee (optional, but good practice)
         String currentUser = securityService.getCurrentUser();
@@ -369,6 +383,7 @@ public class WorkflowService {
         if (task == null) {
             throw new ResourceNotFoundException("Task not found: " + taskId);
         }
+        assertTaskVisible(task);
 
         String currentUser = securityService.getCurrentUser();
         if (task.getAssignee() != null && !task.getAssignee().isBlank()) {
@@ -391,6 +406,7 @@ public class WorkflowService {
         if (task == null) {
             throw new ResourceNotFoundException("Task not found: " + taskId);
         }
+        assertTaskVisible(task);
 
         String currentUser = securityService.getCurrentUser();
         String assignee = normalizeOptionalString(task.getAssignee());
@@ -411,6 +427,7 @@ public class WorkflowService {
         if (task == null) {
             throw new ResourceNotFoundException("Task not found: " + taskId);
         }
+        assertTaskVisible(task);
 
         String normalizedAssignee = normalizeOptionalString(assignee);
         if (normalizedAssignee == null) {
@@ -446,6 +463,7 @@ public class WorkflowService {
         if (task == null) {
             throw new ResourceNotFoundException("Task not found: " + taskId);
         }
+        assertTaskVisible(task);
 
         String normalizedAssignee = normalizeOptionalString(assignee);
         if (normalizedAssignee == null) {
@@ -478,6 +496,7 @@ public class WorkflowService {
         if (task == null) {
             throw new ResourceNotFoundException("Task not found: " + taskId);
         }
+        assertTaskVisible(task);
 
         String currentUser = securityService.getCurrentUser();
         String currentAssignee = normalizeOptionalString(task.getAssignee());
@@ -542,6 +561,7 @@ public class WorkflowService {
      * Get active process instances for a document
      */
     public List<ProcessInstance> getDocumentWorkflows(UUID documentId) {
+        assertNodeVisible(documentId, "Node not found: " + documentId);
         return runtimeService.createProcessInstanceQuery()
             .processInstanceBusinessKey(documentId.toString())
             .list();
@@ -551,6 +571,7 @@ public class WorkflowService {
      * Get workflow history for a document
      */
     public List<WorkflowDocumentHistoryItem> getDocumentHistory(UUID documentId) {
+        assertNodeVisible(documentId, "Node not found: " + documentId);
         return historyService.createHistoricProcessInstanceQuery()
             .processInstanceBusinessKey(documentId.toString())
             .finished()
@@ -595,6 +616,7 @@ public class WorkflowService {
             .orderByProcessInstanceStartTime().desc()
             .list()
             .stream()
+            .filter(this::isHistoricProcessVisible)
             .map(this::buildProcessBrowserItem)
             .filter(item -> matchesProcessBrowserItem(
                 item,
@@ -643,6 +665,7 @@ public class WorkflowService {
         Map<String, Object> variables = runtimeInstance != null
             ? runtimeService.getVariables(processInstanceId)
             : getHistoricProcessVariables(processInstanceId);
+        assertProcessVisible(processInstanceId, runtimeInstance != null ? runtimeInstance.getBusinessKey() : historicInstance.getBusinessKey(), variables);
         WorkflowSubmissionSummary submissionSummary = buildSubmissionSummary(
             variables,
             historicInstance != null ? normalizeOptionalString(historicInstance.getStartUserId()) : null,
@@ -668,6 +691,7 @@ public class WorkflowService {
     }
 
     public List<WorkflowProcessTask> getProcessTaskDetails(String processInstanceId) {
+        assertProcessVisible(processInstanceId);
         ProcessInstance runtimeInstance = runtimeService.createProcessInstanceQuery()
             .processInstanceId(processInstanceId)
             .singleResult();
@@ -705,6 +729,7 @@ public class WorkflowService {
         String assignee,
         String taskDefinitionKey
     ) {
+        assertProcessVisible(processInstanceId);
         ProcessInstance runtimeInstance = runtimeService.createProcessInstanceQuery()
             .processInstanceId(processInstanceId)
             .singleResult();
@@ -742,6 +767,7 @@ public class WorkflowService {
         String assignee,
         String activityType
     ) {
+        assertProcessVisible(processInstanceId);
         ProcessInstance runtimeInstance = runtimeService.createProcessInstanceQuery()
             .processInstanceId(processInstanceId)
             .singleResult();
@@ -767,6 +793,7 @@ public class WorkflowService {
     }
 
     public List<WorkflowInvolvedActor> getProcessInvolvedActors(String processInstanceId) {
+        assertProcessVisible(processInstanceId);
         ProcessInstance runtimeInstance = runtimeService.createProcessInstanceQuery()
             .processInstanceId(processInstanceId)
             .singleResult();
@@ -805,6 +832,7 @@ public class WorkflowService {
         if (task == null) {
             throw new ResourceNotFoundException("Task not found: " + taskId);
         }
+        assertTaskVisible(task);
 
         return taskService.getIdentityLinksForTask(taskId).stream()
             .filter(link -> "candidate".equalsIgnoreCase(link.getType()))
@@ -818,6 +846,7 @@ public class WorkflowService {
         if (task == null) {
             throw new ResourceNotFoundException("Task not found: " + taskId);
         }
+        assertTaskVisible(task);
 
         HistoricProcessInstance historicInstance = historyService.createHistoricProcessInstanceQuery()
             .processInstanceId(task.getProcessInstanceId())
@@ -845,6 +874,7 @@ public class WorkflowService {
         if (task == null) {
             throw new IllegalArgumentException("Task not found: " + taskId);
         }
+        assertTaskVisible(task);
 
         ProcessInstance processInstance = runtimeService.createProcessInstanceQuery()
             .processInstanceId(task.getProcessInstanceId())
@@ -892,6 +922,7 @@ public class WorkflowService {
 
     @Transactional
     public void upsertProcessVariable(String processInstanceId, String variableName, Object value) {
+        assertProcessVisible(processInstanceId);
         ProcessInstance runtimeInstance = requireRuntimeProcessInstance(processInstanceId);
         HistoricProcessInstance historicInstance = historyService.createHistoricProcessInstanceQuery()
             .processInstanceId(processInstanceId)
@@ -909,6 +940,7 @@ public class WorkflowService {
 
     @Transactional
     public void deleteProcessVariable(String processInstanceId, String variableName) {
+        assertProcessVisible(processInstanceId);
         ProcessInstance runtimeInstance = requireRuntimeProcessInstance(processInstanceId);
         HistoricProcessInstance historicInstance = historyService.createHistoricProcessInstanceQuery()
             .processInstanceId(processInstanceId)
@@ -941,6 +973,7 @@ public class WorkflowService {
 
     @Transactional
     public void deleteProcess(String processInstanceId) {
+        assertProcessVisible(processInstanceId);
         ProcessInstance runtimeInstance = runtimeService.createProcessInstanceQuery()
             .processInstanceId(processInstanceId)
             .singleResult();
@@ -954,6 +987,7 @@ public class WorkflowService {
 
     @Transactional
     public void cancelProcess(String processInstanceId, String reason) {
+        assertProcessVisible(processInstanceId);
         ProcessInstance runtimeInstance = runtimeService.createProcessInstanceQuery()
             .processInstanceId(processInstanceId)
             .singleResult();
@@ -1254,6 +1288,150 @@ public class WorkflowService {
             reviewedAt,
             normalizeOptionalString(safeVariables.get("comment"))
         );
+    }
+
+    private void assertNodeVisible(UUID nodeId, String notFoundMessage) {
+        if (!tenantWorkspaceScopeService.isNodeVisible(nodeId)) {
+            throw new ResourceNotFoundException(notFoundMessage);
+        }
+    }
+
+    private void assertTaskVisible(Task task) {
+        if (task == null || !isProcessVisible(task.getProcessInstanceId(), null)) {
+            throw new ResourceNotFoundException("Task not found: " + (task != null ? task.getId() : null));
+        }
+    }
+
+    private void assertProcessVisible(String processInstanceId) {
+        ProcessInstance runtimeInstance = runtimeService.createProcessInstanceQuery()
+            .processInstanceId(processInstanceId)
+            .singleResult();
+        HistoricProcessInstance historicInstance = historyService.createHistoricProcessInstanceQuery()
+            .processInstanceId(processInstanceId)
+            .singleResult();
+        if (runtimeInstance == null && historicInstance == null) {
+            throw new ResourceNotFoundException("Process instance not found: " + processInstanceId);
+        }
+
+        Map<String, Object> variables = runtimeInstance != null
+            ? runtimeService.getVariables(processInstanceId)
+            : getHistoricProcessVariables(processInstanceId);
+        String businessKey = runtimeInstance != null
+            ? runtimeInstance.getBusinessKey()
+            : historicInstance.getBusinessKey();
+        assertProcessVisible(processInstanceId, businessKey, variables);
+    }
+
+    private void assertProcessVisible(String processInstanceId, String businessKey, Map<String, Object> variables) {
+        if (!isProcessVisible(processInstanceId, businessKey, variables)) {
+            throw new ResourceNotFoundException("Process instance not found: " + processInstanceId);
+        }
+    }
+
+    private boolean isTaskVisible(Task task) {
+        return task != null && isProcessVisible(task.getProcessInstanceId(), null);
+    }
+
+    private boolean isHistoricProcessVisible(HistoricProcessInstance historicInstance) {
+        if (historicInstance == null) {
+            return false;
+        }
+        return isProcessVisible(historicInstance.getId(), historicInstance.getBusinessKey(), getHistoricProcessVariables(historicInstance.getId()));
+    }
+
+    private boolean isProcessVisible(String processInstanceId, String businessKey) {
+        Map<String, Object> variables = processInstanceId != null ? resolveProcessVariables(processInstanceId) : Map.of();
+        return isProcessVisible(processInstanceId, businessKey, variables);
+    }
+
+    private boolean isProcessVisible(String processInstanceId, String businessKey, Map<String, Object> variables) {
+        if (!tenantWorkspaceScopeService.hasScopedTenantWorkspace()) {
+            return true;
+        }
+
+        String tenantRootPath = tenantWorkspaceScopeService.resolveCurrentTenantRootPath();
+        if (tenantRootPath == null) {
+            return true;
+        }
+        if (tenantRootPath.isBlank()) {
+            return false;
+        }
+
+        Set<UUID> candidateNodeIds = resolveWorkflowBusinessNodeIds(businessKey, variables);
+        if (candidateNodeIds.isEmpty()) {
+            return false;
+        }
+
+        return candidateNodeIds.stream()
+            .anyMatch(nodeId -> tenantWorkspaceScopeService.isNodeVisible(nodeId, tenantRootPath));
+    }
+
+    private void assertWorkflowStartVisible(String businessKey, Map<String, Object> variables, List<Node> items) {
+        if (!tenantWorkspaceScopeService.hasScopedTenantWorkspace()) {
+            return;
+        }
+
+        String tenantRootPath = tenantWorkspaceScopeService.resolveCurrentTenantRootPath();
+        if (tenantRootPath == null) {
+            return;
+        }
+        if (tenantRootPath.isBlank()) {
+            throw new ResourceNotFoundException("Workflow start payload is outside current tenant workspace");
+        }
+
+        if (items != null && !items.isEmpty()) {
+            for (Node item : items) {
+                if (item == null || item.getId() == null || !tenantWorkspaceScopeService.isNodeVisible(item.getId(), tenantRootPath)) {
+                    throw new ResourceNotFoundException("Workflow item not found: " + (item != null ? item.getId() : null));
+                }
+            }
+            return;
+        }
+
+        if (!isProcessVisible(null, businessKey, variables)) {
+            throw new ResourceNotFoundException("Workflow start payload is outside current tenant workspace");
+        }
+    }
+
+    private Map<String, Object> resolveProcessVariables(String processInstanceId) {
+        if (processInstanceId == null || processInstanceId.isBlank()) {
+            return Map.of();
+        }
+        ProcessInstance runtimeInstance = runtimeService.createProcessInstanceQuery()
+            .processInstanceId(processInstanceId)
+            .singleResult();
+        return runtimeInstance != null
+            ? runtimeService.getVariables(processInstanceId)
+            : getHistoricProcessVariables(processInstanceId);
+    }
+
+    private Set<UUID> resolveWorkflowBusinessNodeIds(String businessKey, Map<String, Object> variables) {
+        LinkedHashSet<UUID> candidateIds = new LinkedHashSet<>();
+        addWorkflowBusinessNodeId(candidateIds, businessKey);
+        if (variables == null || variables.isEmpty()) {
+            return candidateIds;
+        }
+        addWorkflowBusinessNodeId(candidateIds, variables.get("documentId"));
+        addWorkflowBusinessNodeId(candidateIds, variables.get("nodeId"));
+        Object attachedItemIds = variables.get("attachedItemIds");
+        if (attachedItemIds instanceof List<?> listValue) {
+            listValue.forEach(itemId -> addWorkflowBusinessNodeId(candidateIds, itemId));
+        } else {
+            addWorkflowBusinessNodeId(candidateIds, attachedItemIds);
+        }
+        return candidateIds;
+    }
+
+    private void addWorkflowBusinessNodeId(Set<UUID> candidateIds, Object candidate) {
+        String normalized = normalizeOptionalString(candidate);
+        if (normalized == null) {
+            return;
+        }
+        try {
+            candidateIds.add(UUID.fromString(normalized));
+        } catch (IllegalArgumentException ignored) {
+            // Ignore non-node business keys in tenant scoped process visibility checks.
+        }
     }
 
     private WorkflowProcessActivity buildProcessActivity(HistoricActivityInstance activity) {

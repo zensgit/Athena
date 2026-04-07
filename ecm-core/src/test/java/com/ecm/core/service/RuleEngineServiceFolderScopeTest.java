@@ -51,6 +51,9 @@ class RuleEngineServiceFolderScopeTest {
     @Mock
     private SecurityService securityService;
 
+    @Mock
+    private TenantWorkspaceScopeService tenantWorkspaceScopeService;
+
     @InjectMocks
     private RuleEngineService ruleEngineService;
 
