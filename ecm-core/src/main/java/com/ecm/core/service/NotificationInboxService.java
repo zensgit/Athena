@@ -6,6 +6,7 @@ import com.ecm.core.repository.NotificationRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -26,6 +27,7 @@ public class NotificationInboxService {
     private final NotificationRepository notificationRepository;
     private final FollowingService followingService;
     private final SecurityService securityService;
+    private final TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     // ------------------------------------------------------------------ routing
 
@@ -35,6 +37,10 @@ public class NotificationInboxService {
      */
     @Transactional
     public void routeActivityToFollowers(Activity activity) {
+        if (!tenantWorkspaceScopeService.isActivityVisible(activity)) {
+            log.debug("Skipping notification routing for out-of-scope activity {}", activity != null ? activity.getId() : null);
+            return;
+        }
         Set<String> recipients = resolveRecipients(activity);
         // don't notify the actor about their own action
         recipients.remove(activity.getUserId());
@@ -55,19 +61,25 @@ public class NotificationInboxService {
     @Transactional(readOnly = true)
     public Page<Notification> getInbox(Pageable pageable) {
         String userId = securityService.getCurrentUser();
-        return notificationRepository.findByUserIdOrderByCreatedAtDesc(userId, pageable);
+        return filterVisibleNotifications(notificationRepository.findByUserIdOrderByCreatedAtDesc(userId, Pageable.unpaged()), pageable);
     }
 
     @Transactional(readOnly = true)
     public Page<Notification> getUnread(Pageable pageable) {
         String userId = securityService.getCurrentUser();
-        return notificationRepository.findByUserIdAndReadOrderByCreatedAtDesc(userId, false, pageable);
+        return filterVisibleNotifications(notificationRepository.findByUserIdAndReadOrderByCreatedAtDesc(userId, false, Pageable.unpaged()), pageable);
     }
 
     @Transactional(readOnly = true)
     public long getUnreadCount() {
         String userId = securityService.getCurrentUser();
-        return notificationRepository.countByUserIdAndReadFalse(userId);
+        if (!tenantWorkspaceScopeService.hasScopedTenantWorkspace()) {
+            return notificationRepository.countByUserIdAndReadFalse(userId);
+        }
+        return notificationRepository.findByUserIdAndReadOrderByCreatedAtDesc(userId, false, Pageable.unpaged())
+            .getContent().stream()
+            .filter(this::isVisible)
+            .count();
     }
 
     // ------------------------------------------------------------------ inbox write
@@ -77,6 +89,7 @@ public class NotificationInboxService {
         Notification n = notificationRepository.findById(notificationId)
             .orElseThrow(() -> new NoSuchElementException("Notification not found: " + notificationId));
         checkOwner(n);
+        assertVisible(n);
         n.setRead(true);
         n.setReadAt(LocalDateTime.now());
         return notificationRepository.save(n);
@@ -85,7 +98,21 @@ public class NotificationInboxService {
     @Transactional
     public int markAllRead() {
         String userId = securityService.getCurrentUser();
-        return notificationRepository.markAllRead(userId, LocalDateTime.now());
+        if (!tenantWorkspaceScopeService.hasScopedTenantWorkspace()) {
+            return notificationRepository.markAllRead(userId, LocalDateTime.now());
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        List<Notification> unread = notificationRepository.findByUserIdAndReadOrderByCreatedAtDesc(userId, false, Pageable.unpaged())
+            .getContent().stream()
+            .filter(this::isVisible)
+            .toList();
+        unread.forEach(notification -> {
+            notification.setRead(true);
+            notification.setReadAt(now);
+            notificationRepository.save(notification);
+        });
+        return unread.size();
     }
 
     @Transactional
@@ -93,6 +120,7 @@ public class NotificationInboxService {
         Notification n = notificationRepository.findById(notificationId)
             .orElseThrow(() -> new NoSuchElementException("Notification not found: " + notificationId));
         checkOwner(n);
+        assertVisible(n);
         notificationRepository.delete(n);
     }
 
@@ -143,5 +171,35 @@ public class NotificationInboxService {
         if (!n.getUserId().equals(currentUser)) {
             throw new SecurityException("Cannot access another user's notification");
         }
+    }
+
+    private Page<Notification> filterVisibleNotifications(Page<Notification> source, Pageable pageable) {
+        List<Notification> visible = source.getContent().stream()
+            .filter(this::isVisible)
+            .toList();
+        return slice(visible, pageable);
+    }
+
+    private boolean isVisible(Notification notification) {
+        return tenantWorkspaceScopeService.isActivityVisible(notification.getActivity());
+    }
+
+    private void assertVisible(Notification notification) {
+        if (!isVisible(notification)) {
+            throw new NoSuchElementException("Notification not found: " + notification.getId());
+        }
+    }
+
+    private Page<Notification> slice(List<Notification> notifications, Pageable pageable) {
+        if (pageable == null || pageable.isUnpaged()) {
+            return new PageImpl<>(notifications);
+        }
+
+        int fromIndex = Math.toIntExact(pageable.getOffset());
+        if (fromIndex >= notifications.size()) {
+            return new PageImpl<>(List.of(), pageable, notifications.size());
+        }
+        int toIndex = Math.min(fromIndex + pageable.getPageSize(), notifications.size());
+        return new PageImpl<>(notifications.subList(fromIndex, toIndex), pageable, notifications.size());
     }
 }

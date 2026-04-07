@@ -5,6 +5,7 @@ import com.ecm.core.repository.ActivityRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -24,6 +25,7 @@ public class ActivityService {
 
     private final ActivityRepository activityRepository;
     private final FollowingService followingService;
+    private final TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     @org.springframework.beans.factory.annotation.Autowired
     @org.springframework.context.annotation.Lazy
@@ -61,7 +63,7 @@ public class ActivityService {
      */
     @Transactional(readOnly = true)
     public Page<Activity> getUserFeed(String userId, Pageable pageable) {
-        return activityRepository.findByUserIdOrderByPostedAtDesc(userId, pageable);
+        return filterVisibleActivities(activityRepository.findByUserIdOrderByPostedAtDesc(userId, Pageable.unpaged()), pageable);
     }
 
     /**
@@ -69,7 +71,7 @@ public class ActivityService {
      */
     @Transactional(readOnly = true)
     public Page<Activity> getSiteFeed(String siteId, Pageable pageable) {
-        return activityRepository.findBySiteIdOrderByPostedAtDesc(siteId, pageable);
+        return filterVisibleActivities(activityRepository.findBySiteIdOrderByPostedAtDesc(siteId, Pageable.unpaged()), pageable);
     }
 
     /**
@@ -86,15 +88,15 @@ public class ActivityService {
             return Page.empty(pageable);
         }
 
-        return activityRepository.findFollowingFeed(
+        return filterVisibleActivities(activityRepository.findFollowingFeed(
             includeUsers,
             includeUsers ? targets.userIds() : List.of("__no-followed-user__"),
             includeSites,
             includeSites ? targets.siteIds() : List.of("__no-followed-site__"),
             includeNodes,
             includeNodes ? targets.nodeIds() : List.of(EMPTY_NODE_SENTINEL),
-            pageable
-        );
+            Pageable.unpaged()
+        ), pageable);
     }
 
     /**
@@ -102,7 +104,7 @@ public class ActivityService {
      */
     @Transactional(readOnly = true)
     public Page<Activity> getGlobalFeed(Pageable pageable) {
-        return activityRepository.findAllByOrderByPostedAtDesc(pageable);
+        return filterVisibleActivities(activityRepository.findAllByOrderByPostedAtDesc(Pageable.unpaged()), pageable);
     }
 
     /**
@@ -110,7 +112,7 @@ public class ActivityService {
      */
     @Transactional(readOnly = true)
     public Page<Activity> getNodeFeed(UUID nodeId, Pageable pageable) {
-        return activityRepository.findByNodeIdOrderByPostedAtDesc(nodeId, pageable);
+        return filterVisibleActivities(activityRepository.findByNodeIdOrderByPostedAtDesc(nodeId, Pageable.unpaged()), pageable);
     }
 
     /**
@@ -124,5 +126,26 @@ public class ActivityService {
         if (deleted > 0) {
             log.info("Cleaned up {} activities older than {}", deleted, cutoff);
         }
+    }
+
+    private Page<Activity> filterVisibleActivities(Page<Activity> source, Pageable pageable) {
+        String tenantRootPath = tenantWorkspaceScopeService.resolveCurrentTenantRootPath();
+        List<Activity> visible = source.getContent().stream()
+            .filter(activity -> tenantWorkspaceScopeService.isActivityVisible(activity, tenantRootPath))
+            .toList();
+        return slice(visible, pageable);
+    }
+
+    private Page<Activity> slice(List<Activity> activities, Pageable pageable) {
+        if (pageable == null || pageable.isUnpaged()) {
+            return new PageImpl<>(activities);
+        }
+
+        int fromIndex = Math.toIntExact(pageable.getOffset());
+        if (fromIndex >= activities.size()) {
+            return new PageImpl<>(List.of(), pageable, activities.size());
+        }
+        int toIndex = Math.min(fromIndex + pageable.getPageSize(), activities.size());
+        return new PageImpl<>(activities.subList(fromIndex, toIndex), pageable, activities.size());
     }
 }

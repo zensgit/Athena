@@ -12,6 +12,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.PageRequest;
 
 import java.util.List;
@@ -27,12 +28,13 @@ class ActivityServiceTest {
 
     @Mock private ActivityRepository activityRepository;
     @Mock private FollowingService followingService;
+    @Mock private TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     private ActivityService service;
 
     @BeforeEach
     void setUp() {
-        service = new ActivityService(activityRepository, followingService);
+        service = new ActivityService(activityRepository, followingService, tenantWorkspaceScopeService);
     }
 
     @Nested
@@ -83,8 +85,10 @@ class ActivityServiceTest {
         @DisplayName("getUserFeed delegates to repository")
         void getUserFeed() {
             Page<Activity> page = new PageImpl<>(List.of(new Activity()));
-            when(activityRepository.findByUserIdOrderByPostedAtDesc("alice", PageRequest.of(0, 20)))
+            when(activityRepository.findByUserIdOrderByPostedAtDesc("alice", Pageable.unpaged()))
                 .thenReturn(page);
+            when(tenantWorkspaceScopeService.resolveCurrentTenantRootPath()).thenReturn(null);
+            when(tenantWorkspaceScopeService.isActivityVisible(any(), eq((String) null))).thenReturn(true);
 
             Page<Activity> result = service.getUserFeed("alice", PageRequest.of(0, 20));
 
@@ -94,7 +98,7 @@ class ActivityServiceTest {
         @Test
         @DisplayName("getSiteFeed delegates to repository")
         void getSiteFeed() {
-            when(activityRepository.findBySiteIdOrderByPostedAtDesc(eq("finance"), any()))
+            when(activityRepository.findBySiteIdOrderByPostedAtDesc(eq("finance"), eq(Pageable.unpaged())))
                 .thenReturn(new PageImpl<>(List.of()));
 
             assertEquals(0, service.getSiteFeed("finance", PageRequest.of(0, 10)).getContent().size());
@@ -128,8 +132,10 @@ class ActivityServiceTest {
                 eq(List.of("finance")),
                 eq(true),
                 eq(List.of(nodeId)),
-                eq(pageable)
+                eq(Pageable.unpaged())
             )).thenReturn(page);
+            when(tenantWorkspaceScopeService.resolveCurrentTenantRootPath()).thenReturn(null);
+            when(tenantWorkspaceScopeService.isActivityVisible(any(), eq((String) null))).thenReturn(true);
 
             Page<Activity> result = service.getFollowingFeed("alice", pageable);
 
@@ -139,8 +145,10 @@ class ActivityServiceTest {
         @Test
         @DisplayName("getGlobalFeed delegates to repository")
         void getGlobalFeed() {
-            when(activityRepository.findAllByOrderByPostedAtDesc(any()))
+            when(activityRepository.findAllByOrderByPostedAtDesc(eq(Pageable.unpaged())))
                 .thenReturn(new PageImpl<>(List.of(new Activity(), new Activity())));
+            when(tenantWorkspaceScopeService.resolveCurrentTenantRootPath()).thenReturn(null);
+            when(tenantWorkspaceScopeService.isActivityVisible(any(), eq((String) null))).thenReturn(true);
 
             assertEquals(2, service.getGlobalFeed(PageRequest.of(0, 20)).getContent().size());
         }
@@ -149,10 +157,31 @@ class ActivityServiceTest {
         @DisplayName("getNodeFeed delegates to repository")
         void getNodeFeed() {
             UUID nodeId = UUID.randomUUID();
-            when(activityRepository.findByNodeIdOrderByPostedAtDesc(eq(nodeId), any()))
+            when(activityRepository.findByNodeIdOrderByPostedAtDesc(eq(nodeId), eq(Pageable.unpaged())))
                 .thenReturn(new PageImpl<>(List.of(new Activity())));
+            when(tenantWorkspaceScopeService.resolveCurrentTenantRootPath()).thenReturn(null);
+            when(tenantWorkspaceScopeService.isActivityVisible(any(), eq((String) null))).thenReturn(true);
 
             assertEquals(1, service.getNodeFeed(nodeId, PageRequest.of(0, 10)).getContent().size());
+        }
+
+        @Test
+        @DisplayName("scoped tenant filters cross-workspace activities from global feed")
+        void getGlobalFeedFiltersCrossWorkspaceActivities() {
+            Activity visible = new Activity();
+            visible.setId(UUID.randomUUID());
+            Activity hidden = new Activity();
+            hidden.setId(UUID.randomUUID());
+            when(activityRepository.findAllByOrderByPostedAtDesc(Pageable.unpaged()))
+                .thenReturn(new PageImpl<>(List.of(visible, hidden)));
+            when(tenantWorkspaceScopeService.resolveCurrentTenantRootPath()).thenReturn("/Acme Workspace [acme]");
+            when(tenantWorkspaceScopeService.isActivityVisible(visible, "/Acme Workspace [acme]")).thenReturn(true);
+            when(tenantWorkspaceScopeService.isActivityVisible(hidden, "/Acme Workspace [acme]")).thenReturn(false);
+
+            Page<Activity> result = service.getGlobalFeed(PageRequest.of(0, 20));
+
+            assertEquals(1, result.getTotalElements());
+            assertEquals(visible.getId(), result.getContent().get(0).getId());
         }
     }
 }
