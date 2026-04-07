@@ -97,6 +97,12 @@ const TenantAdminPage: React.FC = () => {
     }
   };
 
+  const notifyActiveTenantChanged = () => {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('athena:tenant-changed'));
+    }
+  };
+
   const handleDelete = async (tenant: TenantDto) => {
     if (!window.confirm(`Delete tenant ${tenant.tenantDomain}?`)) {
       return;
@@ -105,6 +111,7 @@ const TenantAdminPage: React.FC = () => {
       await tenantService.deleteTenant(tenant.tenantDomain);
       if (tenantService.getActiveTenantDomain() === tenant.tenantDomain) {
         tenantService.setActiveTenantDomain(DEFAULT_TENANT_DOMAIN);
+        notifyActiveTenantChanged();
       }
       toast.success('Tenant deleted');
       await loadTenants();
@@ -115,7 +122,15 @@ const TenantAdminPage: React.FC = () => {
 
   const handleSetActiveTenant = async (tenant: TenantDto) => {
     tenantService.setActiveTenantDomain(tenant.tenantDomain);
+    notifyActiveTenantChanged();
     toast.success(`Active tenant set to ${tenant.tenantDomain}`);
+    await loadTenants();
+  };
+
+  const handleResetActiveTenant = async () => {
+    tenantService.setActiveTenantDomain(DEFAULT_TENANT_DOMAIN);
+    notifyActiveTenantChanged();
+    toast.success(`Active tenant reset to ${DEFAULT_TENANT_DOMAIN}`);
     await loadTenants();
   };
 
@@ -164,9 +179,19 @@ const TenantAdminPage: React.FC = () => {
               Server-resolved tenant for this session&apos;s current `X-Tenant-ID` header.
             </Typography>
           </Box>
-          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
             <Chip label={`Client active: ${activeTenantDomain}`} color="primary" variant="outlined" />
             {currentTenant && <Chip label={`Server current: ${currentTenant.tenantDomain}`} color="success" />}
+            {activeTenantDomain !== DEFAULT_TENANT_DOMAIN && (
+              <Button
+                size="small"
+                variant="text"
+                onClick={() => void handleResetActiveTenant()}
+                aria-label="Reset active tenant to default"
+              >
+                Reset to {DEFAULT_TENANT_DOMAIN}
+              </Button>
+            )}
           </Stack>
         </Stack>
       </Paper>
@@ -238,7 +263,21 @@ const TenantAdminPage: React.FC = () => {
           })}
           {tenants.length === 0 && (
             <Paper variant="outlined" sx={{ p: 4, textAlign: 'center' }}>
-              <Typography color="text.secondary">No tenants defined.</Typography>
+              <Stack spacing={1.5} alignItems="center">
+                <Typography variant="h6">No tenants defined</Typography>
+                <Typography color="text.secondary" maxWidth={520}>
+                  Tenants control which content namespace requests resolve to. Create a tenant to
+                  start routing this browser session through a different `X-Tenant-ID` header.
+                </Typography>
+                <Button
+                  variant="contained"
+                  startIcon={<Add />}
+                  onClick={openCreateDialog}
+                  aria-label="Create first tenant"
+                >
+                  Create Tenant
+                </Button>
+              </Stack>
             </Paper>
           )}
         </Stack>

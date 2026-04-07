@@ -15,6 +15,7 @@ import {
   Divider,
   Avatar,
   Tooltip,
+  Chip,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -77,6 +78,7 @@ import AssociationManager from 'components/dialogs/AssociationManager';
 import MLSuggestionsDialog from 'components/ml/MLSuggestionsDialog';
 import authService from 'services/authService';
 import notificationService from 'services/notificationService';
+import tenantService, { DEFAULT_TENANT_DOMAIN } from 'services/tenantService';
 import { buildSearchPrefillFromAdvancedSearchUrl } from 'utils/searchPrefillUtils';
 
 const DRAWER_WIDTH_STORAGE_KEY = 'athena.ecm.drawerWidth';
@@ -118,6 +120,10 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   });
   const [resizing, setResizing] = useState(false);
   const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
+  const [activeTenantDomain, setActiveTenantDomainState] = useState<string>(() =>
+    tenantService.getActiveTenantDomain()
+  );
+  const isAdmin = Boolean(effectiveUser?.roles?.includes('ROLE_ADMIN'));
 
   const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
@@ -249,6 +255,23 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   }, [drawerWidth]);
 
   useEffect(() => {
+    const refreshActiveTenant = () => {
+      setActiveTenantDomainState(tenantService.getActiveTenantDomain());
+    };
+
+    refreshActiveTenant();
+    window.addEventListener('focus', refreshActiveTenant);
+    window.addEventListener('storage', refreshActiveTenant);
+    window.addEventListener('athena:tenant-changed', refreshActiveTenant);
+
+    return () => {
+      window.removeEventListener('focus', refreshActiveTenant);
+      window.removeEventListener('storage', refreshActiveTenant);
+      window.removeEventListener('athena:tenant-changed', refreshActiveTenant);
+    };
+  }, [location.pathname]);
+
+  useEffect(() => {
     if (!effectiveUser?.username) {
       setNotificationUnreadCount(0);
       return;
@@ -349,6 +372,36 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
               <Notifications />
             </Badge>
           </IconButton>
+
+          {effectiveUser && (
+            <Tooltip
+              title={
+                isAdmin
+                  ? `Active tenant: ${activeTenantDomain}. Click to manage tenants.`
+                  : `Active tenant: ${activeTenantDomain}`
+              }
+            >
+              <Chip
+                icon={<Apartment sx={{ color: 'inherit !important' }} />}
+                label={activeTenantDomain}
+                size="small"
+                aria-label={`Active tenant ${activeTenantDomain}`}
+                onClick={isAdmin ? () => navigate('/admin/tenants') : undefined}
+                clickable={isAdmin}
+                color={activeTenantDomain === DEFAULT_TENANT_DOMAIN ? 'default' : 'secondary'}
+                sx={{
+                  mr: 1,
+                  color: 'inherit',
+                  borderColor: 'rgba(255,255,255,0.5)',
+                  bgcolor:
+                    activeTenantDomain === DEFAULT_TENANT_DOMAIN
+                      ? 'rgba(255,255,255,0.16)'
+                      : undefined,
+                  '& .MuiChip-icon': { color: 'inherit' },
+                }}
+              />
+            </Tooltip>
+          )}
 
           <IconButton
             onClick={handleMenuOpen}
