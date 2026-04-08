@@ -4,6 +4,7 @@ import com.ecm.core.dto.UserDto;
 import com.ecm.core.repository.CommentRepository;
 import com.ecm.core.repository.FavoriteRepository;
 import com.ecm.core.repository.UserRepository;
+import com.ecm.core.service.CommentService;
 import com.ecm.core.service.FavoriteService;
 import com.ecm.core.service.PreferenceService;
 import com.ecm.core.service.SecurityService;
@@ -61,6 +62,9 @@ class PeopleControllerSecurityTest {
 
     @MockBean
     private CommentRepository commentRepository;
+
+    @MockBean
+    private CommentService commentService;
 
     @MockBean
     private SecurityService securityService;

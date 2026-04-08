@@ -12,6 +12,7 @@ import com.ecm.core.model.Comment;
 import com.ecm.core.repository.FavoriteRepository;
 import com.ecm.core.repository.CommentRepository;
 import com.ecm.core.repository.UserRepository;
+import com.ecm.core.service.CommentService;
 import com.ecm.core.service.FavoriteService;
 import com.ecm.core.service.SecurityService;
 import com.ecm.core.service.UserGroupService;
@@ -65,6 +66,7 @@ public class PeopleController {
     private final FavoriteService favoriteService;
     private final FavoriteRepository favoriteRepository;
     private final CommentRepository commentRepository;
+    private final CommentService commentService;
     private final SecurityService securityService;
     private final PreferenceService preferenceService;
 
@@ -581,10 +583,7 @@ public class PeopleController {
     }
 
     private Page<Favorite> loadFavorites(String username, Pageable pageable) {
-        String currentUser = securityService.getCurrentUser();
-        return Objects.equals(currentUser, username)
-            ? favoriteService.getMyFavorites(pageable)
-            : favoriteRepository.findByUserIdOrderByCreatedAtDesc(username, pageable);
+        return favoriteService.getFavoritesForUser(username, pageable);
     }
 
     private Favorite loadFavorite(String username, String nodeId) {
@@ -605,7 +604,7 @@ public class PeopleController {
     }
 
     private List<PersonActivityDto> loadRecentCommentActivities(String username) {
-        return commentRepository.findByAuthorAndDeletedFalseOrderByCreatedDesc(username, PageRequest.of(0, MAX_RECENT_COMMENTS))
+        return commentService.getUserComments(username, PageRequest.of(0, MAX_RECENT_COMMENTS))
             .stream()
             .map(PersonActivityDto::fromComment)
             .toList();

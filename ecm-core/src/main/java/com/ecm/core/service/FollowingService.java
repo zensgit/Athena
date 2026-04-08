@@ -24,21 +24,27 @@ public class FollowingService {
     private final UserRepository userRepository;
     private final SiteRepository siteRepository;
     private final NodeRepository nodeRepository;
+    private final TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     @Transactional(readOnly = true)
     public List<FollowSubscriptionDto> listCurrentUserSubscriptions() {
         return followSubscriptionRepository.findByUserIdOrderByCreatedAtDesc(securityService.getCurrentUser())
             .stream()
+            .filter(this::isSubscriptionVisible)
             .map(FollowingService::toDto)
             .toList();
     }
 
     @Transactional(readOnly = true)
     public boolean isFollowing(FollowTargetType targetType, String targetId) {
+        String normalizedTargetId = normalizeTargetId(targetType, targetId);
+        if (!isTargetVisible(targetType, normalizedTargetId)) {
+            return false;
+        }
         return followSubscriptionRepository.existsByUserIdAndTargetTypeAndTargetId(
             securityService.getCurrentUser(),
             targetType,
-            normalizeTargetId(targetType, targetId)
+            normalizedTargetId
         );
     }
 
@@ -46,7 +52,7 @@ public class FollowingService {
     public FollowSubscriptionDto follow(FollowTargetType targetType, String targetId) {
         String userId = securityService.getCurrentUser();
         String normalizedTargetId = normalizeTargetId(targetType, targetId);
-        ensureTargetExists(targetType, normalizedTargetId);
+        ensureTargetExistsAndVisible(targetType, normalizedTargetId);
 
         followSubscriptionRepository.findByUserIdAndTargetTypeAndTargetId(userId, targetType, normalizedTargetId)
             .ifPresent(existing -> {
@@ -77,18 +83,21 @@ public class FollowingService {
         List<FollowSubscription> subscriptions = followSubscriptionRepository.findByUserIdOrderByCreatedAtDesc(userId);
 
         List<String> followedUsers = subscriptions.stream()
+            .filter(this::isSubscriptionVisible)
             .filter(subscription -> subscription.getTargetType() == FollowTargetType.USER)
             .map(FollowSubscription::getTargetId)
             .distinct()
             .toList();
 
         List<String> followedSites = subscriptions.stream()
+            .filter(this::isSubscriptionVisible)
             .filter(subscription -> subscription.getTargetType() == FollowTargetType.SITE)
             .map(FollowSubscription::getTargetId)
             .distinct()
             .toList();
 
         List<UUID> followedNodes = subscriptions.stream()
+            .filter(this::isSubscriptionVisible)
             .filter(subscription -> subscription.getTargetType() == FollowTargetType.NODE)
             .map(subscription -> UUID.fromString(subscription.getTargetId()))
             .distinct()
@@ -109,15 +118,41 @@ public class FollowingService {
             .toList();
     }
 
-    private void ensureTargetExists(FollowTargetType targetType, String targetId) {
+    private void ensureTargetExistsAndVisible(FollowTargetType targetType, String targetId) {
         switch (targetType) {
             case USER -> userRepository.findByUsername(targetId)
                 .orElseThrow(() -> new NoSuchElementException("User not found: " + targetId));
-            case SITE -> siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse(targetId)
-                .orElseThrow(() -> new NoSuchElementException("Site not found: " + targetId));
-            case NODE -> nodeRepository.findById(UUID.fromString(targetId))
-                .orElseThrow(() -> new NoSuchElementException("Node not found: " + targetId));
+            case SITE -> {
+                siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse(targetId)
+                    .orElseThrow(() -> new NoSuchElementException("Site not found: " + targetId));
+                if (!tenantWorkspaceScopeService.isSiteVisible(targetId)) {
+                    throw new NoSuchElementException("Site not found: " + targetId);
+                }
+            }
+            case NODE -> {
+                UUID nodeId = UUID.fromString(targetId);
+                nodeRepository.findById(nodeId)
+                    .orElseThrow(() -> new NoSuchElementException("Node not found: " + targetId));
+                if (!tenantWorkspaceScopeService.isNodeVisible(nodeId)) {
+                    throw new NoSuchElementException("Node not found: " + targetId);
+                }
+            }
         }
+    }
+
+    private boolean isSubscriptionVisible(FollowSubscription subscription) {
+        if (subscription == null) {
+            return false;
+        }
+        return isTargetVisible(subscription.getTargetType(), subscription.getTargetId());
+    }
+
+    private boolean isTargetVisible(FollowTargetType targetType, String targetId) {
+        return switch (targetType) {
+            case USER -> true;
+            case SITE -> tenantWorkspaceScopeService.isSiteVisible(targetId);
+            case NODE -> tenantWorkspaceScopeService.isNodeVisible(UUID.fromString(targetId));
+        };
     }
 
     private String normalizeTargetId(FollowTargetType targetType, String targetId) {

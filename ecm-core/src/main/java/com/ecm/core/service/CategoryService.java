@@ -25,6 +25,9 @@ public class CategoryService {
     
     @Autowired
     private SecurityService securityService;
+
+    @Autowired
+    private TenantWorkspaceScopeService tenantWorkspaceScopeService;
     
     /**
      * 创建分类
@@ -181,6 +184,7 @@ public class CategoryService {
         
         // 过滤权限
         return nodes.stream()
+            .filter(node -> tenantWorkspaceScopeService.isPathVisible(node.getPath()))
             .filter(node -> securityService.hasPermission(node, PermissionType.READ))
             .collect(Collectors.toList());
     }
@@ -317,8 +321,12 @@ public class CategoryService {
     private Node loadActiveNode(String nodeId) {
         try {
             UUID id = UUID.fromString(nodeId);
-            return nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(id, Node.ArchiveStatus.LIVE)
+            Node node = nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(id, Node.ArchiveStatus.LIVE)
                 .orElseThrow(() -> new NodeNotFoundException("Node not found: " + nodeId));
+            if (!tenantWorkspaceScopeService.isPathVisible(node.getPath())) {
+                throw new NodeNotFoundException("Node not found: " + nodeId);
+            }
+            return node;
         } catch (IllegalArgumentException ex) {
             throw new NodeNotFoundException("Invalid node id: " + nodeId, ex);
         }

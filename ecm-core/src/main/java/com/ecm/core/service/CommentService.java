@@ -16,6 +16,7 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.PageRequest;
 
@@ -48,6 +49,9 @@ public class CommentService {
     @Autowired
     @Lazy
     private RuleEngineService ruleEngineService;
+
+    @Autowired
+    private TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     @Value("${ecm.rules.enabled:true}")
     private boolean rulesEnabled;
@@ -247,14 +251,16 @@ public class CommentService {
      * 获取用户的评论
      */
     public Page<Comment> getUserComments(String username, Pageable pageable) {
-        return commentRepository.findByAuthorAndDeletedFalseOrderByCreatedDesc(username, pageable);
+        Page<Comment> page = commentRepository.findByAuthorAndDeletedFalseOrderByCreatedDesc(username, pageable);
+        return filterVisibleComments(page, pageable);
     }
     
     /**
      * 获取提及用户的评论
      */
     public Page<Comment> getMentionedComments(String username, Pageable pageable) {
-        return commentRepository.findByMentionedUsersContainingAndDeletedFalse(username, pageable);
+        Page<Comment> page = commentRepository.findByMentionedUsersContainingAndDeletedFalse(username, pageable);
+        return filterVisibleComments(page, pageable);
     }
     
     /**
@@ -360,8 +366,12 @@ public class CommentService {
     private Node loadActiveNode(String nodeId) {
         try {
             UUID id = UUID.fromString(nodeId);
-            return nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(id, Node.ArchiveStatus.LIVE)
+            Node node = nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(id, Node.ArchiveStatus.LIVE)
                 .orElseThrow(() -> new NodeNotFoundException("Node not found: " + nodeId));
+            if (!tenantWorkspaceScopeService.isPathVisible(node.getPath())) {
+                throw new NodeNotFoundException("Node not found: " + nodeId);
+            }
+            return node;
         } catch (IllegalArgumentException ex) {
             throw new NodeNotFoundException("Invalid node id: " + nodeId, ex);
         }
@@ -370,11 +380,31 @@ public class CommentService {
     private Comment loadComment(String commentId) {
         try {
             UUID id = UUID.fromString(commentId);
-            return commentRepository.findById(id)
+            Comment comment = commentRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Comment not found"));
+            if (!isCommentVisible(comment)) {
+                throw new ResourceNotFoundException("Comment not found");
+            }
+            return comment;
         } catch (IllegalArgumentException ex) {
             throw new ResourceNotFoundException("Invalid comment id: " + commentId, ex);
         }
+    }
+
+    private Page<Comment> filterVisibleComments(Page<Comment> page, Pageable pageable) {
+        if (page == null || !tenantWorkspaceScopeService.hasScopedTenantWorkspace()) {
+            return page;
+        }
+        List<Comment> visible = page.getContent().stream()
+            .filter(this::isCommentVisible)
+            .toList();
+        return new PageImpl<>(visible, pageable, visible.size());
+    }
+
+    private boolean isCommentVisible(Comment comment) {
+        return comment != null
+            && comment.getNode() != null
+            && tenantWorkspaceScopeService.isPathVisible(comment.getNode().getPath());
     }
 
     /**

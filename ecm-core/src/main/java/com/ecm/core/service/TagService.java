@@ -40,6 +40,9 @@ public class TagService {
     @Lazy
     private RuleEngineService ruleEngineService;
 
+    @Autowired
+    private TenantWorkspaceScopeService tenantWorkspaceScopeService;
+
     @Value("${ecm.rules.enabled:true}")
     private boolean rulesEnabled;
     
@@ -199,6 +202,7 @@ public class TagService {
         
         // 过滤权限
         List<Node> filteredNodes = nodes.getContent().stream()
+            .filter(node -> tenantWorkspaceScopeService.isPathVisible(node.getPath()))
             .filter(node -> securityService.hasPermission(node, PermissionType.READ))
             .collect(Collectors.toList());
         
@@ -224,6 +228,7 @@ public class TagService {
         // 过滤权限
         return nodes.stream()
             .filter(node -> node.getArchiveStatus() == Node.ArchiveStatus.LIVE)
+            .filter(node -> tenantWorkspaceScopeService.isPathVisible(node.getPath()))
             .filter(node -> securityService.hasPermission(node, PermissionType.READ))
             .collect(Collectors.toList());
     }
@@ -330,8 +335,12 @@ public class TagService {
     private Node loadActiveNode(String nodeId) {
         try {
             UUID id = UUID.fromString(nodeId);
-            return nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(id, Node.ArchiveStatus.LIVE)
+            Node node = nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(id, Node.ArchiveStatus.LIVE)
                 .orElseThrow(() -> new NodeNotFoundException("Node not found: " + nodeId));
+            if (!tenantWorkspaceScopeService.isPathVisible(node.getPath())) {
+                throw new NodeNotFoundException("Node not found: " + nodeId);
+            }
+            return node;
         } catch (IllegalArgumentException ex) {
             throw new NodeNotFoundException("Invalid node id: " + nodeId, ex);
         }

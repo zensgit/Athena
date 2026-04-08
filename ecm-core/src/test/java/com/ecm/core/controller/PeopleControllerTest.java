@@ -11,6 +11,7 @@ import com.ecm.core.model.Comment;
 import com.ecm.core.repository.FavoriteRepository;
 import com.ecm.core.repository.CommentRepository;
 import com.ecm.core.repository.UserRepository;
+import com.ecm.core.service.CommentService;
 import com.ecm.core.service.FavoriteService;
 import com.ecm.core.service.PreferenceService;
 import com.ecm.core.service.SecurityService;
@@ -68,6 +69,9 @@ class PeopleControllerTest {
 
     @Mock
     private CommentRepository commentRepository;
+
+    @Mock
+    private CommentService commentService;
 
     @Mock
     private SecurityService securityService;
@@ -185,8 +189,7 @@ class PeopleControllerTest {
         Pageable pageable = PageRequest.of(0, 5);
 
         Mockito.when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
-        Mockito.when(securityService.getCurrentUser()).thenReturn("alice");
-        Mockito.when(favoriteService.getMyFavorites(pageable))
+        Mockito.when(favoriteService.getFavoritesForUser("alice", pageable))
             .thenReturn(new PageImpl<>(List.of(favorite), pageable, 1));
 
         mockMvc.perform(get("/api/v1/people/alice/favorites")
@@ -196,13 +199,13 @@ class PeopleControllerTest {
             .andExpect(jsonPath("$.content[0].nodeName").value("Quarterly Report"))
             .andExpect(jsonPath("$.content[0].nodeType").value("DOCUMENT"));
 
-        Mockito.verify(favoriteService).getMyFavorites(pageable);
+        Mockito.verify(favoriteService).getFavoritesForUser("alice", pageable);
         Mockito.verify(favoriteRepository, Mockito.never()).findByUserIdOrderByCreatedAtDesc(Mockito.anyString(), Mockito.any());
     }
 
     @Test
-    @DisplayName("Other user favorites use the repository lookup")
-    void getPersonFavoritesUsesRepositoryForOtherUser() throws Exception {
+    @DisplayName("Other user favorites also use FavoriteService")
+    void getPersonFavoritesUsesFavoriteServiceForOtherUser() throws Exception {
         User user = new User();
         user.setId(UUID.randomUUID());
         user.setUsername("bob");
@@ -213,8 +216,7 @@ class PeopleControllerTest {
         Pageable pageable = PageRequest.of(0, 10);
 
         Mockito.when(userRepository.findByUsername("bob")).thenReturn(Optional.of(user));
-        Mockito.when(securityService.getCurrentUser()).thenReturn("alice");
-        Mockito.when(favoriteRepository.findByUserIdOrderByCreatedAtDesc("bob", pageable))
+        Mockito.when(favoriteService.getFavoritesForUser("bob", pageable))
             .thenReturn(new PageImpl<>(List.of(favorite), pageable, 1));
 
         mockMvc.perform(get("/api/v1/people/bob/favorites")
@@ -224,7 +226,7 @@ class PeopleControllerTest {
             .andExpect(jsonPath("$.content[0].nodeId").value(nodeId.toString()))
             .andExpect(jsonPath("$.content[0].nodeName").value("Specs"));
 
-        Mockito.verify(favoriteRepository).findByUserIdOrderByCreatedAtDesc("bob", pageable);
+        Mockito.verify(favoriteService).getFavoritesForUser("bob", pageable);
     }
 
     @Test
@@ -559,10 +561,9 @@ class PeopleControllerTest {
 
         Pageable pageable = PageRequest.of(0, 10);
         Mockito.when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
-        Mockito.when(securityService.getCurrentUser()).thenReturn("alice");
-        Mockito.when(favoriteService.getMyFavorites(pageable))
+        Mockito.when(favoriteService.getFavoritesForUser("alice", pageable))
             .thenReturn(new PageImpl<>(List.of(favorite), pageable, 1));
-        Mockito.when(commentRepository.findByAuthorAndDeletedFalseOrderByCreatedDesc("alice", PageRequest.of(0, 10)))
+        Mockito.when(commentService.getUserComments("alice", PageRequest.of(0, 10)))
             .thenReturn(new PageImpl<>(List.of(comment), PageRequest.of(0, 10), 1));
 
         mockMvc.perform(get("/api/v1/people/alice/activities"))
@@ -610,8 +611,7 @@ class PeopleControllerTest {
         Pageable pageable = PageRequest.of(0, 10);
 
         Mockito.when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
-        Mockito.when(securityService.getCurrentUser()).thenReturn("alice");
-        Mockito.when(favoriteService.getMyFavorites(pageable))
+        Mockito.when(favoriteService.getFavoritesForUser("alice", pageable))
             .thenReturn(new PageImpl<>(List.of(folderFavorite, documentFavorite), pageable, 2));
 
         mockMvc.perform(get("/api/v1/people/alice/favorite-sites"))

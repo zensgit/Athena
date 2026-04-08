@@ -34,6 +34,7 @@ class FollowingServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private SiteRepository siteRepository;
     @Mock private NodeRepository nodeRepository;
+    @Mock private TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     private FollowingService service;
 
@@ -44,7 +45,8 @@ class FollowingServiceTest {
             securityService,
             userRepository,
             siteRepository,
-            nodeRepository
+            nodeRepository,
+            tenantWorkspaceScopeService
         );
     }
 
@@ -53,6 +55,7 @@ class FollowingServiceTest {
     void followValidatesSiteTargetAndSavesSubscription() {
         when(securityService.getCurrentUser()).thenReturn("alice");
         when(siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse("engineering")).thenReturn(Optional.of(new Site()));
+        when(tenantWorkspaceScopeService.isSiteVisible("engineering")).thenReturn(true);
         when(followSubscriptionRepository.findByUserIdAndTargetTypeAndTargetId("alice", FollowTargetType.SITE, "engineering"))
             .thenReturn(Optional.empty());
         when(followSubscriptionRepository.save(any(FollowSubscription.class))).thenAnswer(invocation -> {
@@ -96,6 +99,8 @@ class FollowingServiceTest {
     @DisplayName("getFollowingTargets splits subscriptions by target type")
     void getFollowingTargetsSplitsSubscriptionsByTargetType() {
         UUID nodeId = UUID.randomUUID();
+        when(tenantWorkspaceScopeService.isSiteVisible("engineering")).thenReturn(true);
+        when(tenantWorkspaceScopeService.isNodeVisible(nodeId)).thenReturn(true);
         when(followSubscriptionRepository.findByUserIdOrderByCreatedAtDesc("alice")).thenReturn(List.of(
             subscription("alice", FollowTargetType.USER, "bob"),
             subscription("alice", FollowTargetType.SITE, "engineering"),
@@ -115,6 +120,7 @@ class FollowingServiceTest {
         UUID nodeId = UUID.randomUUID();
         when(securityService.getCurrentUser()).thenReturn("alice");
         when(nodeRepository.findById(nodeId)).thenReturn(Optional.of(new Document()));
+        when(tenantWorkspaceScopeService.isNodeVisible(nodeId)).thenReturn(true);
         when(followSubscriptionRepository.findByUserIdAndTargetTypeAndTargetId("alice", FollowTargetType.NODE, nodeId.toString()))
             .thenReturn(Optional.empty());
         when(followSubscriptionRepository.save(any(FollowSubscription.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -122,6 +128,65 @@ class FollowingServiceTest {
         FollowingService.FollowSubscriptionDto result = service.follow(FollowTargetType.NODE, nodeId.toString());
 
         assertEquals(nodeId.toString(), result.targetId());
+    }
+
+    @Test
+    @DisplayName("follow rejects site outside current tenant workspace")
+    void followRejectsHiddenSiteTarget() {
+        when(securityService.getCurrentUser()).thenReturn("alice");
+        when(siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse("engineering")).thenReturn(Optional.of(new Site()));
+        when(tenantWorkspaceScopeService.isSiteVisible("engineering")).thenReturn(false);
+
+        assertThrows(NoSuchElementException.class, () -> service.follow(FollowTargetType.SITE, "engineering"));
+        verify(followSubscriptionRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("listCurrentUserSubscriptions filters hidden site and node targets")
+    void listCurrentUserSubscriptionsFiltersHiddenTargets() {
+        UUID visibleNodeId = UUID.randomUUID();
+        UUID hiddenNodeId = UUID.randomUUID();
+        when(securityService.getCurrentUser()).thenReturn("alice");
+        when(tenantWorkspaceScopeService.isSiteVisible("engineering")).thenReturn(true);
+        when(tenantWorkspaceScopeService.isSiteVisible("legal")).thenReturn(false);
+        when(tenantWorkspaceScopeService.isNodeVisible(visibleNodeId)).thenReturn(true);
+        when(tenantWorkspaceScopeService.isNodeVisible(hiddenNodeId)).thenReturn(false);
+        when(followSubscriptionRepository.findByUserIdOrderByCreatedAtDesc("alice")).thenReturn(List.of(
+            subscription("alice", FollowTargetType.SITE, "engineering"),
+            subscription("alice", FollowTargetType.SITE, "legal"),
+            subscription("alice", FollowTargetType.NODE, visibleNodeId.toString()),
+            subscription("alice", FollowTargetType.NODE, hiddenNodeId.toString())
+        ));
+
+        List<FollowingService.FollowSubscriptionDto> result = service.listCurrentUserSubscriptions();
+
+        assertEquals(2, result.size());
+        assertEquals(List.of("engineering", visibleNodeId.toString()),
+            result.stream().map(FollowingService.FollowSubscriptionDto::targetId).toList());
+    }
+
+    @Test
+    @DisplayName("getFollowingTargets filters hidden site and node targets")
+    void getFollowingTargetsFiltersHiddenTargets() {
+        UUID visibleNodeId = UUID.randomUUID();
+        UUID hiddenNodeId = UUID.randomUUID();
+        when(tenantWorkspaceScopeService.isSiteVisible("engineering")).thenReturn(true);
+        when(tenantWorkspaceScopeService.isSiteVisible("legal")).thenReturn(false);
+        when(tenantWorkspaceScopeService.isNodeVisible(visibleNodeId)).thenReturn(true);
+        when(tenantWorkspaceScopeService.isNodeVisible(hiddenNodeId)).thenReturn(false);
+        when(followSubscriptionRepository.findByUserIdOrderByCreatedAtDesc("alice")).thenReturn(List.of(
+            subscription("alice", FollowTargetType.USER, "bob"),
+            subscription("alice", FollowTargetType.SITE, "engineering"),
+            subscription("alice", FollowTargetType.SITE, "legal"),
+            subscription("alice", FollowTargetType.NODE, visibleNodeId.toString()),
+            subscription("alice", FollowTargetType.NODE, hiddenNodeId.toString())
+        ));
+
+        FollowingService.FollowingTargets result = service.getFollowingTargets("alice");
+
+        assertEquals(List.of("bob"), result.userIds());
+        assertEquals(List.of("engineering"), result.siteIds());
+        assertEquals(List.of(visibleNodeId), result.nodeIds());
     }
 
     private FollowSubscription subscription(String userId, FollowTargetType targetType, String targetId) {
