@@ -6,6 +6,7 @@ import com.ecm.core.entity.Node;
 import com.ecm.core.service.FolderService;
 import com.ecm.core.service.NodeService;
 import com.ecm.core.service.SecurityService;
+import com.ecm.core.service.TenantWorkspaceScopeService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -39,6 +40,9 @@ class CmisBrowserServiceTest {
     @Mock
     private SecurityService securityService;
 
+    @Mock
+    private TenantWorkspaceScopeService tenantWorkspaceScopeService;
+
     private final CmisTypeManager typeManager = new CmisTypeManager();
     private final CmisObjectFactory objectFactory = new CmisObjectFactory();
 
@@ -48,9 +52,10 @@ class CmisBrowserServiceTest {
     @org.junit.jupiter.api.BeforeEach
     void setUp() {
         cmisBrowserService = new CmisBrowserService(nodeService, folderService, typeManager, objectFactory);
-        cmisQueryService = new CmisQueryService(nodeRepository, folderService, securityService, objectFactory);
+        cmisQueryService = new CmisQueryService(nodeRepository, folderService, securityService, tenantWorkspaceScopeService, objectFactory);
         lenient().when(securityService.hasPermission(any(Node.class), eq(com.ecm.core.entity.Permission.PermissionType.READ)))
             .thenReturn(true);
+        lenient().when(tenantWorkspaceScopeService.hasScopedTenantWorkspace()).thenReturn(false);
     }
 
     @Test
@@ -177,6 +182,29 @@ class CmisBrowserServiceTest {
         assertTrue(response.hasMoreItems());
     }
 
+    @Test
+    @DisplayName("Query filters out nodes outside the current tenant workspace")
+    void queryFiltersOutForeignTenantNodes() {
+        Document visible = buildDocument("/tenant-a/contracts/contract.pdf", "contract.pdf");
+        Document hidden = buildDocument("/tenant-b/contracts/secret.pdf", "secret.pdf");
+        when(tenantWorkspaceScopeService.hasScopedTenantWorkspace()).thenReturn(true);
+        when(tenantWorkspaceScopeService.isPathVisible(visible.getPath())).thenReturn(true);
+        when(tenantWorkspaceScopeService.isPathVisible(hidden.getPath())).thenReturn(false);
+        when(nodeRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class), any(org.springframework.data.domain.Sort.class)))
+            .thenReturn(List.of(visible, hidden));
+
+        CmisModels.QueryResponse response = cmisQueryService.query(
+            "SELECT * FROM cmis:document ORDER BY cmis:name ASC",
+            0,
+            25
+        );
+
+        assertEquals(1, response.totalNumItems());
+        assertEquals(1, response.objects().size());
+        assertEquals(visible.getId().toString(), response.objects().get(0).objectId());
+        assertEquals("contract.pdf", response.objects().get(0).name());
+    }
+
     @Mock
     private com.ecm.core.repository.NodeRepository nodeRepository;
 
@@ -193,10 +221,14 @@ class CmisBrowserServiceTest {
     }
 
     private Document buildDocument() {
+        return buildDocument("/Sites/contracts/contract.pdf", "contract.pdf");
+    }
+
+    private Document buildDocument(String path, String name) {
         Document document = new Document();
         document.setId(UUID.randomUUID());
-        document.setName("contract.pdf");
-        document.setPath("/Sites/contracts/contract.pdf");
+        document.setName(name);
+        document.setPath(path);
         document.setMimeType("application/pdf");
         document.setFileSize(4096L);
         document.setVersionLabel("1.0");
@@ -204,8 +236,20 @@ class CmisBrowserServiceTest {
         document.setCreatedDate(LocalDateTime.now());
         document.setLastModifiedBy("alice");
         document.setLastModifiedDate(LocalDateTime.now());
-        Folder parent = buildFolder("contracts", "/Sites/contracts");
+        String parentPath = deriveParentPath(path);
+        Folder parent = buildFolder("contracts", parentPath != null ? parentPath : "/Sites/contracts");
         document.setParent(parent);
         return document;
+    }
+
+    private String deriveParentPath(String path) {
+        if (path == null || path.isBlank()) {
+            return null;
+        }
+        int lastSlash = path.lastIndexOf('/');
+        if (lastSlash <= 0) {
+            return "/";
+        }
+        return path.substring(0, lastSlash);
     }
 }

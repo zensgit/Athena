@@ -147,11 +147,8 @@ public class PeopleController {
             @PathVariable String username,
             @RequestParam(required = false) String filter) {
         User user = requireUser(username);
-        if (filter != null && !filter.isBlank()) {
-            Map<String, Object> filtered = preferenceService.getPreferences(username, filter);
-            return ResponseEntity.ok(PeoplePreferencesDto.fromFiltered(user, filtered));
-        }
-        return ResponseEntity.ok(PeoplePreferencesDto.from(user));
+        Map<String, Object> filtered = preferenceService.getPreferences(username, filter);
+        return ResponseEntity.ok(PeoplePreferencesDto.fromFiltered(user, filtered));
     }
 
     @GetMapping("/{username}/preferences/export")
@@ -197,14 +194,9 @@ public class PeopleController {
         @PathVariable String username,
         @PathVariable String preferenceName
     ) {
-        User user = requireUser(username);
-        Map<String, Object> preferences = user.getPreferences() == null
-            ? Map.of()
-            : new LinkedHashMap<>(user.getPreferences());
-        if (!preferences.containsKey(preferenceName)) {
-            throw new ResourceNotFoundException("Preference not found: " + preferenceName);
-        }
-        return ResponseEntity.ok(new PreferenceEntryDto(preferenceName, preferences.get(preferenceName)));
+        requireUser(username);
+        Object value = preferenceService.getPreference(username, preferenceName);
+        return ResponseEntity.ok(new PreferenceEntryDto(preferenceName, value));
     }
 
     @PutMapping("/{username}/preferences")

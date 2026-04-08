@@ -253,6 +253,7 @@ class PeopleControllerTest {
         user.setPreferences(preferences);
 
         Mockito.when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
+        Mockito.when(preferenceService.getPreferences("alice", null)).thenReturn(preferences);
 
         mockMvc.perform(get("/api/v1/people/alice/preferences"))
             .andExpect(status().isOk())
@@ -518,9 +519,9 @@ class PeopleControllerTest {
         user.setId(UUID.randomUUID());
         user.setUsername("alice");
         user.setEmail("alice@example.com");
-        user.setPreferences(new HashMap<>(Map.of("theme", "dark")));
 
         Mockito.when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
+        Mockito.when(preferenceService.getPreference("alice", "theme")).thenReturn("dark");
 
         mockMvc.perform(get("/api/v1/people/alice/preferences/theme"))
             .andExpect(status().isOk())

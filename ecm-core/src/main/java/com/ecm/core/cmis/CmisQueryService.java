@@ -5,6 +5,7 @@ import com.ecm.core.entity.Permission;
 import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.service.FolderService;
 import com.ecm.core.service.SecurityService;
+import com.ecm.core.service.TenantWorkspaceScopeService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
@@ -32,6 +33,7 @@ public class CmisQueryService {
     private final NodeRepository nodeRepository;
     private final FolderService folderService;
     private final SecurityService securityService;
+    private final TenantWorkspaceScopeService tenantWorkspaceScopeService;
     private final CmisObjectFactory objectFactory;
 
     public CmisModels.QueryResponse query(String statement, int skipCount, int maxItems) {
@@ -40,6 +42,7 @@ public class CmisQueryService {
         int normalizedMax = Math.max(Math.min(maxItems, 200), 1);
 
         List<Node> matched = nodeRepository.findAll(buildSpecification(parsed), resolveSort(parsed)).stream()
+            .filter(this::isVisibleToCurrentTenant)
             .filter(node -> securityService.hasPermission(node, Permission.PermissionType.READ))
             .toList();
 
@@ -178,6 +181,19 @@ public class CmisQueryService {
             return Sort.by(direction, "createdDate");
         }
         return Sort.by(direction, "name");
+    }
+
+    private boolean isVisibleToCurrentTenant(Node node) {
+        if (node == null) {
+            return false;
+        }
+        if (!tenantWorkspaceScopeService.hasScopedTenantWorkspace()) {
+            return true;
+        }
+        String path = node.getPath();
+        return path != null
+            && !path.isBlank()
+            && tenantWorkspaceScopeService.isPathVisible(path);
     }
 
     private record ParsedQuery(
