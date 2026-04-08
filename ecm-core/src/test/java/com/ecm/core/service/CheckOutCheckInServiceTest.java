@@ -30,13 +30,14 @@ class CheckOutCheckInServiceTest {
     @Mock private FolderRepository folderRepository;
     @Mock private NodeRepository nodeRepository;
     @Mock private SecurityService securityService;
+    @Mock private TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     private CheckOutCheckInService service;
 
     @BeforeEach
     void setUp() {
         service = new CheckOutCheckInService(
-            documentRepository, folderRepository, nodeRepository, securityService
+            documentRepository, folderRepository, nodeRepository, securityService, tenantWorkspaceScopeService
         );
     }
 
@@ -168,6 +169,19 @@ class CheckOutCheckInServiceTest {
         }
 
         @Test
+        @DisplayName("rejects checkout of hidden tenant document")
+        void rejectsHiddenTenantDocument() {
+            UUID docId = UUID.randomUUID();
+            Document original = document(docId, "report.docx", folder(UUID.randomUUID(), "/foreign"));
+
+            when(documentRepository.findById(docId)).thenReturn(Optional.of(original));
+            when(tenantWorkspaceScopeService.hasScopedTenantWorkspace()).thenReturn(true);
+            when(tenantWorkspaceScopeService.isPathVisible(original.getPath())).thenReturn(false);
+
+            assertThrows(NoSuchElementException.class, () -> service.checkout(docId));
+        }
+
+        @Test
         @DisplayName("rejects checkout when locked by another user")
         void rejectsLockedByOther() {
             UUID docId = UUID.randomUUID();
@@ -204,6 +218,25 @@ class CheckOutCheckInServiceTest {
 
             assertEquals("legal", wc.getProperties().get("dept"));
             assertEquals(true, wc.getMetadata().get("extracted"));
+        }
+
+        @Test
+        @DisplayName("rejects hidden tenant destination folder")
+        void rejectsHiddenTenantDestinationFolder() {
+            UUID docId = UUID.randomUUID();
+            Folder parent = folder(UUID.randomUUID(), "/reports");
+            Document original = document(docId, "report.docx", parent);
+            UUID destId = UUID.randomUUID();
+            Folder hiddenDestination = folder(destId, "/foreign");
+
+            when(documentRepository.findById(docId)).thenReturn(Optional.of(original));
+            when(folderRepository.findById(destId)).thenReturn(Optional.of(hiddenDestination));
+            when(securityService.hasPermission(original, PermissionType.WRITE)).thenReturn(true);
+            when(tenantWorkspaceScopeService.hasScopedTenantWorkspace()).thenReturn(true);
+            when(tenantWorkspaceScopeService.isPathVisible(original.getPath())).thenReturn(true);
+            when(tenantWorkspaceScopeService.isPathVisible(hiddenDestination.getPath())).thenReturn(false);
+
+            assertThrows(NoSuchElementException.class, () -> service.checkout(docId, destId));
         }
     }
 
@@ -343,6 +376,23 @@ class CheckOutCheckInServiceTest {
             Document result = service.checkin(wcId, false);
             assertEquals("same-content", result.getContentId());
         }
+    }
+
+    @Test
+    @DisplayName("getCheckedOutWorkingCopies filters hidden tenant working copies")
+    void getCheckedOutWorkingCopiesFiltersHiddenTenantWorkingCopies() {
+        Document visible = document(UUID.randomUUID(), "visible.docx", folder(UUID.randomUUID(), "/tenant-a"));
+        visible.setWorkingCopy(true);
+        Document hidden = document(UUID.randomUUID(), "hidden.docx", folder(UUID.randomUUID(), "/tenant-b"));
+        hidden.setWorkingCopy(true);
+
+        when(documentRepository.findWorkingCopiesByUser("alice")).thenReturn(java.util.List.of(visible, hidden));
+        when(tenantWorkspaceScopeService.hasScopedTenantWorkspace()).thenReturn(true);
+        when(tenantWorkspaceScopeService.isPathVisible(visible.getPath())).thenReturn(true);
+        when(tenantWorkspaceScopeService.isPathVisible(hidden.getPath())).thenReturn(false);
+
+        assertEquals(1, service.getCheckedOutWorkingCopies("alice").size());
+        assertEquals(visible.getId(), service.getCheckedOutWorkingCopies("alice").get(0).getId());
     }
 
     // ===================================================================== cancel

@@ -30,12 +30,13 @@ class LockServiceTest {
     @Mock private NodeRepository nodeRepository;
     @Mock private SecurityService securityService;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     private LockService lockService;
 
     @BeforeEach
     void setUp() {
-        lockService = new LockService(nodeRepository, securityService, eventPublisher);
+        lockService = new LockService(nodeRepository, securityService, eventPublisher, tenantWorkspaceScopeService);
     }
 
     // ===================================================================== lock types
@@ -80,6 +81,18 @@ class LockServiceTest {
         }
     }
 
+    @Test
+    @DisplayName("scoped tenant cannot lock hidden node")
+    void hiddenTenantNodeLooksMissing() {
+        Folder folder = folder("workspace");
+        when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(folder.getId(), Node.ArchiveStatus.LIVE))
+            .thenReturn(Optional.of(folder));
+        when(tenantWorkspaceScopeService.hasScopedTenantWorkspace()).thenReturn(true);
+        when(tenantWorkspaceScopeService.isPathVisible(folder.getPath())).thenReturn(false);
+
+        assertThrows(NoSuchElementException.class, () -> lockService.lock(folder.getId(), LockType.WRITE_LOCK));
+    }
+
     // ===================================================================== lifetime & expiry
 
     @Nested
@@ -114,7 +127,8 @@ class LockServiceTest {
         @DisplayName("rejects zero or negative duration")
         void rejectsNegativeDuration() {
             Folder folder = folder("workspace");
-            when(nodeRepository.findByIdAndDeletedFalse(folder.getId())).thenReturn(Optional.of(folder));
+            when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(folder.getId(), Node.ArchiveStatus.LIVE))
+                .thenReturn(Optional.of(folder));
             when(securityService.hasPermission(folder, PermissionType.WRITE)).thenReturn(true);
 
             assertThrows(IllegalArgumentException.class,
@@ -145,7 +159,8 @@ class LockServiceTest {
         void getsAdditionalInfo() {
             Folder folder = folder("workspace");
             folder.setLockAdditionalInfo("Editing in Collabora");
-            when(nodeRepository.findByIdAndDeletedFalse(folder.getId())).thenReturn(Optional.of(folder));
+            when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(folder.getId(), Node.ArchiveStatus.LIVE))
+                .thenReturn(Optional.of(folder));
 
             assertEquals("Editing in Collabora", lockService.getAdditionalInfo(folder.getId()));
         }
@@ -165,7 +180,8 @@ class LockServiceTest {
             child1.setParent(parent);
             parent.getChildren().add(child1);
 
-            when(nodeRepository.findByIdAndDeletedFalse(parent.getId())).thenReturn(Optional.of(parent));
+            when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(parent.getId(), Node.ArchiveStatus.LIVE))
+                .thenReturn(Optional.of(parent));
             when(securityService.hasPermission(parent, PermissionType.WRITE)).thenReturn(true);
             when(securityService.getCurrentUser()).thenReturn("alice");
             when(nodeRepository.save(any(Node.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -208,7 +224,8 @@ class LockServiceTest {
         void ownerCanUnlock() {
             Folder folder = folder("workspace");
             folder.applyLock("alice", LocalDateTime.now(), LockLifetime.PERSISTENT, null);
-            when(nodeRepository.findByIdAndDeletedFalse(folder.getId())).thenReturn(Optional.of(folder));
+            when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(folder.getId(), Node.ArchiveStatus.LIVE))
+                .thenReturn(Optional.of(folder));
             when(securityService.getCurrentUser()).thenReturn("alice");
             when(nodeRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
@@ -222,7 +239,8 @@ class LockServiceTest {
         void adminCanUnlockOthers() {
             Folder folder = folder("workspace");
             folder.applyLock("bob", LocalDateTime.now(), LockLifetime.PERSISTENT, null);
-            when(nodeRepository.findByIdAndDeletedFalse(folder.getId())).thenReturn(Optional.of(folder));
+            when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(folder.getId(), Node.ArchiveStatus.LIVE))
+                .thenReturn(Optional.of(folder));
             when(securityService.getCurrentUser()).thenReturn("admin");
             when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
             when(nodeRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -237,7 +255,8 @@ class LockServiceTest {
         void nonOwnerCannotUnlock() {
             Folder folder = folder("workspace");
             folder.applyLock("bob", LocalDateTime.now(), LockLifetime.PERSISTENT, null);
-            when(nodeRepository.findByIdAndDeletedFalse(folder.getId())).thenReturn(Optional.of(folder));
+            when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(folder.getId(), Node.ArchiveStatus.LIVE))
+                .thenReturn(Optional.of(folder));
             when(securityService.getCurrentUser()).thenReturn("alice");
             when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
 
@@ -254,7 +273,8 @@ class LockServiceTest {
             parent.applyLock("alice", LocalDateTime.now(), LockLifetime.PERSISTENT, null);
             child.applyLock("alice", LocalDateTime.now(), LockLifetime.PERSISTENT, null);
 
-            when(nodeRepository.findByIdAndDeletedFalse(parent.getId())).thenReturn(Optional.of(parent));
+            when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(parent.getId(), Node.ArchiveStatus.LIVE))
+                .thenReturn(Optional.of(parent));
             when(securityService.getCurrentUser()).thenReturn("alice");
             when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
             when(nodeRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -277,8 +297,8 @@ class LockServiceTest {
         void batchLockLocksMultiple() {
             Folder f1 = folder("f1");
             Folder f2 = folder("f2");
-            when(nodeRepository.findByIdAndDeletedFalse(f1.getId())).thenReturn(Optional.of(f1));
-            when(nodeRepository.findByIdAndDeletedFalse(f2.getId())).thenReturn(Optional.of(f2));
+            when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(f1.getId(), Node.ArchiveStatus.LIVE)).thenReturn(Optional.of(f1));
+            when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(f2.getId(), Node.ArchiveStatus.LIVE)).thenReturn(Optional.of(f2));
             when(securityService.hasPermission(any(Node.class), eq(PermissionType.WRITE))).thenReturn(true);
             when(securityService.getCurrentUser()).thenReturn("alice");
             when(nodeRepository.save(any(Node.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -296,8 +316,8 @@ class LockServiceTest {
             Folder f2 = folder("f2");
             f1.applyLock("alice", LocalDateTime.now(), LockLifetime.PERSISTENT, null);
             f2.applyLock("alice", LocalDateTime.now(), LockLifetime.PERSISTENT, null);
-            when(nodeRepository.findByIdAndDeletedFalse(f1.getId())).thenReturn(Optional.of(f1));
-            when(nodeRepository.findByIdAndDeletedFalse(f2.getId())).thenReturn(Optional.of(f2));
+            when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(f1.getId(), Node.ArchiveStatus.LIVE)).thenReturn(Optional.of(f1));
+            when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(f2.getId(), Node.ArchiveStatus.LIVE)).thenReturn(Optional.of(f2));
             when(securityService.getCurrentUser()).thenReturn("alice");
             when(nodeRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
@@ -319,7 +339,8 @@ class LockServiceTest {
         void isLockedReturnsTrueForLocked() {
             Folder folder = folder("workspace");
             folder.applyLock("alice", LocalDateTime.now(), LockLifetime.PERSISTENT, null);
-            when(nodeRepository.findByIdAndDeletedFalse(folder.getId())).thenReturn(Optional.of(folder));
+            when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(folder.getId(), Node.ArchiveStatus.LIVE))
+                .thenReturn(Optional.of(folder));
 
             assertTrue(lockService.isLocked(folder.getId()));
         }
@@ -330,7 +351,8 @@ class LockServiceTest {
             Folder folder = folder("workspace");
             folder.applyLock("alice", LocalDateTime.now(), LockLifetime.PERSISTENT, null,
                 LockType.READ_ONLY_LOCK, null, false);
-            when(nodeRepository.findByIdAndDeletedFalse(folder.getId())).thenReturn(Optional.of(folder));
+            when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(folder.getId(), Node.ArchiveStatus.LIVE))
+                .thenReturn(Optional.of(folder));
 
             assertTrue(lockService.isLockedAndReadOnly(folder.getId()));
         }
@@ -341,7 +363,8 @@ class LockServiceTest {
             Folder folder = folder("workspace");
             folder.applyLock("alice", LocalDateTime.now(), LockLifetime.PERSISTENT, null,
                 LockType.WRITE_LOCK, null, false);
-            when(nodeRepository.findByIdAndDeletedFalse(folder.getId())).thenReturn(Optional.of(folder));
+            when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(folder.getId(), Node.ArchiveStatus.LIVE))
+                .thenReturn(Optional.of(folder));
 
             assertFalse(lockService.isLockedAndReadOnly(folder.getId()));
         }
@@ -351,7 +374,8 @@ class LockServiceTest {
         void checkForLockThrowsWhenLockedByOther() {
             Folder folder = folder("workspace");
             folder.applyLock("bob", LocalDateTime.now(), LockLifetime.PERSISTENT, null);
-            when(nodeRepository.findByIdAndDeletedFalse(folder.getId())).thenReturn(Optional.of(folder));
+            when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(folder.getId(), Node.ArchiveStatus.LIVE))
+                .thenReturn(Optional.of(folder));
             when(securityService.getCurrentUser()).thenReturn("alice");
 
             assertThrows(SecurityException.class, () -> lockService.checkForLock(folder.getId()));
@@ -455,7 +479,8 @@ class LockServiceTest {
         void rejectsAlreadyLocked() {
             Folder folder = folder("workspace");
             folder.applyLock("bob", LocalDateTime.now(), LockLifetime.PERSISTENT, null);
-            when(nodeRepository.findByIdAndDeletedFalse(folder.getId())).thenReturn(Optional.of(folder));
+            when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(folder.getId(), Node.ArchiveStatus.LIVE))
+                .thenReturn(Optional.of(folder));
             when(securityService.hasPermission(folder, PermissionType.WRITE)).thenReturn(true);
 
             assertThrows(IllegalStateException.class,
@@ -466,7 +491,8 @@ class LockServiceTest {
         @DisplayName("lock rejects without write permission")
         void rejectsWithoutPermission() {
             Folder folder = folder("workspace");
-            when(nodeRepository.findByIdAndDeletedFalse(folder.getId())).thenReturn(Optional.of(folder));
+            when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(folder.getId(), Node.ArchiveStatus.LIVE))
+                .thenReturn(Optional.of(folder));
             when(securityService.hasPermission(folder, PermissionType.WRITE)).thenReturn(false);
 
             assertThrows(SecurityException.class,
@@ -477,7 +503,7 @@ class LockServiceTest {
         @DisplayName("lock rejects missing node")
         void rejectsMissingNode() {
             UUID id = UUID.randomUUID();
-            when(nodeRepository.findByIdAndDeletedFalse(id)).thenReturn(Optional.empty());
+            when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(id, Node.ArchiveStatus.LIVE)).thenReturn(Optional.empty());
 
             assertThrows(NoSuchElementException.class,
                 () -> lockService.lock(id, LockType.WRITE_LOCK));
@@ -487,7 +513,8 @@ class LockServiceTest {
         @DisplayName("unlock silently returns for unlocked node")
         void unlockSilentForUnlocked() {
             Folder folder = folder("workspace");
-            when(nodeRepository.findByIdAndDeletedFalse(folder.getId())).thenReturn(Optional.of(folder));
+            when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(folder.getId(), Node.ArchiveStatus.LIVE))
+                .thenReturn(Optional.of(folder));
 
             assertDoesNotThrow(() -> lockService.unlock(folder.getId()));
             verify(nodeRepository, never()).save(any());
@@ -501,11 +528,13 @@ class LockServiceTest {
         f.setId(UUID.randomUUID());
         f.setName(name);
         f.setPath("/" + name);
+        f.setArchiveStatus(Node.ArchiveStatus.LIVE);
         return f;
     }
 
     private void stubLockable(Folder folder) {
-        when(nodeRepository.findByIdAndDeletedFalse(folder.getId())).thenReturn(Optional.of(folder));
+        when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(folder.getId(), Node.ArchiveStatus.LIVE))
+            .thenReturn(Optional.of(folder));
         when(securityService.hasPermission(folder, PermissionType.WRITE)).thenReturn(true);
         when(securityService.getCurrentUser()).thenReturn("alice");
         when(nodeRepository.save(any(Node.class))).thenAnswer(inv -> inv.getArgument(0));

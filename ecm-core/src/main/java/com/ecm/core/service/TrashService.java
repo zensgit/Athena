@@ -31,6 +31,7 @@ public class TrashService {
 
     private final NodeRepository nodeRepository;
     private final SecurityService securityService;
+    private final TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     @Value("${ecm.trash.retention-days:30}")
     private int retentionDays;
@@ -43,8 +44,7 @@ public class TrashService {
      */
     @Transactional
     public void moveToTrash(UUID nodeId) {
-        Node node = nodeRepository.findById(nodeId)
-            .orElseThrow(() -> new NoSuchElementException("Node not found: " + nodeId));
+        Node node = requireVisibleNode(nodeId);
 
         // Check delete permission
         if (!securityService.hasPermission(node, PermissionType.DELETE)) {
@@ -72,8 +72,7 @@ public class TrashService {
      */
     @Transactional
     public void restore(UUID nodeId) {
-        Node node = nodeRepository.findById(nodeId)
-            .orElseThrow(() -> new NoSuchElementException("Node not found: " + nodeId));
+        Node node = requireVisibleNode(nodeId);
 
         if (!node.isDeleted()) {
             throw new IllegalStateException("Node is not in trash: " + nodeId);
@@ -113,8 +112,7 @@ public class TrashService {
      */
     @Transactional
     public void permanentDelete(UUID nodeId) {
-        Node node = nodeRepository.findById(nodeId)
-            .orElseThrow(() -> new NoSuchElementException("Node not found: " + nodeId));
+        Node node = requireVisibleNode(nodeId);
 
         if (!node.isDeleted()) {
             throw new IllegalStateException("Node must be in trash before permanent deletion. Move to trash first.");
@@ -146,11 +144,15 @@ public class TrashService {
 
         if (securityService.isAdmin(currentUser)) {
             // Admin sees all trash items
-            return nodeRepository.findDeletedNodes();
+            return nodeRepository.findDeletedNodes().stream()
+                .filter(this::isNodeVisible)
+                .toList();
         }
 
         // Regular user sees only their deleted items
-        return nodeRepository.findDeletedByUser(currentUser);
+        return nodeRepository.findDeletedByUser(currentUser).stream()
+            .filter(this::isNodeVisible)
+            .toList();
     }
 
     /**
@@ -163,7 +165,9 @@ public class TrashService {
             throw new SecurityException("No permission to view other users' trash");
         }
 
-        return nodeRepository.findDeletedByUser(username);
+        return nodeRepository.findDeletedByUser(username).stream()
+            .filter(this::isNodeVisible)
+            .toList();
     }
 
     /**
@@ -176,10 +180,14 @@ public class TrashService {
 
         if (securityService.isAdmin(currentUser)) {
             // Admin can empty all trash
-            trashItems = nodeRepository.findDeletedNodes();
+            trashItems = nodeRepository.findDeletedNodes().stream()
+                .filter(this::isNodeVisible)
+                .toList();
         } else {
             // Regular user can only empty their own trash
-            trashItems = nodeRepository.findDeletedByUser(currentUser);
+            trashItems = nodeRepository.findDeletedByUser(currentUser).stream()
+                .filter(this::isNodeVisible)
+                .toList();
         }
 
         int count = 0;
@@ -205,9 +213,13 @@ public class TrashService {
         List<Node> trashItems;
 
         if (securityService.isAdmin(currentUser)) {
-            trashItems = nodeRepository.findDeletedNodes();
+            trashItems = nodeRepository.findDeletedNodes().stream()
+                .filter(this::isNodeVisible)
+                .toList();
         } else {
-            trashItems = nodeRepository.findDeletedByUser(currentUser);
+            trashItems = nodeRepository.findDeletedByUser(currentUser).stream()
+                .filter(this::isNodeVisible)
+                .toList();
         }
 
         long totalSize = 0;
@@ -273,7 +285,25 @@ public class TrashService {
      */
     public List<Node> getItemsNearingPurge(int daysBeforePurge) {
         LocalDateTime warningDate = LocalDateTime.now().minusDays(retentionDays - daysBeforePurge);
-        return nodeRepository.findDeletedBefore(warningDate);
+        return nodeRepository.findDeletedBefore(warningDate).stream()
+            .filter(this::isNodeVisible)
+            .toList();
+    }
+
+    private Node requireVisibleNode(UUID nodeId) {
+        return nodeRepository.findById(nodeId)
+            .filter(this::isNodeVisible)
+            .orElseThrow(() -> new NoSuchElementException("Node not found: " + nodeId));
+    }
+
+    private boolean isNodeVisible(Node node) {
+        if (node == null) {
+            return false;
+        }
+        if (!tenantWorkspaceScopeService.hasScopedTenantWorkspace()) {
+            return true;
+        }
+        return tenantWorkspaceScopeService.isPathVisible(node.getPath());
     }
 
     // Helper methods

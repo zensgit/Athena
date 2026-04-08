@@ -32,6 +32,7 @@ public class BatchDownloadService {
     private final ContentService contentService;
     private final SecurityService securityService;
     private final FolderService folderService;
+    private final TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     /**
      * Streams multiple nodes (documents and folders) into a ZIP output stream.
@@ -73,6 +74,19 @@ public class BatchDownloadService {
         for (UUID nodeId : distinctNodeIds) {
             Node node = nodeRepository.findById(nodeId).orElse(null);
             if (node == null) {
+                missingCount += 1;
+                items.add(new BatchDownloadPreflightItem(
+                    nodeId,
+                    null,
+                    null,
+                    BatchDownloadPreflightOutcome.MISSING,
+                    0,
+                    0L,
+                    "Node not found"
+                ));
+                continue;
+            }
+            if (!isNodeVisible(node)) {
                 missingCount += 1;
                 items.add(new BatchDownloadPreflightItem(
                     nodeId,
@@ -287,7 +301,7 @@ public class BatchDownloadService {
             }
             try {
                 Node node = nodeRepository.findById(id).orElse(null);
-                if (node == null || node.isDeleted()) {
+                if (node == null || node.isDeleted() || !isNodeVisible(node)) {
                     continue;
                 }
 
@@ -317,7 +331,7 @@ public class BatchDownloadService {
         if (node instanceof Folder folder) {
             List<Node> children = nodeRepository.findByParentIdAndDeletedFalse(folder.getId());
             for (Node child : children) {
-                if (securityService.hasPermission(child, Permission.PermissionType.READ)) {
+                if (isNodeVisible(child) && securityService.hasPermission(child, Permission.PermissionType.READ)) {
                     inspectNode(child, accumulator);
                 }
             }
@@ -402,10 +416,20 @@ public class BatchDownloadService {
             if (progressListener.isCancellationRequested()) {
                 return;
             }
-            if (securityService.hasPermission(child, Permission.PermissionType.READ)) {
+            if (isNodeVisible(child) && securityService.hasPermission(child, Permission.PermissionType.READ)) {
                 processNode(child, folderPath, zipOut, usedPaths, progress, progressListener);
             }
         }
+    }
+
+    private boolean isNodeVisible(Node node) {
+        if (node == null) {
+            return false;
+        }
+        if (!tenantWorkspaceScopeService.hasScopedTenantWorkspace()) {
+            return true;
+        }
+        return tenantWorkspaceScopeService.isPathVisible(node.getPath());
     }
 
     private String ensureUniquePath(String path, Set<String> usedPaths) {

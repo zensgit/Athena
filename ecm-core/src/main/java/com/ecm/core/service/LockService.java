@@ -31,6 +31,7 @@ public class LockService {
     private final NodeRepository nodeRepository;
     private final SecurityService securityService;
     private final ApplicationEventPublisher eventPublisher;
+    private final TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     private static final int DEFAULT_EPHEMERAL_MINUTES = 30;
 
@@ -274,7 +275,18 @@ public class LockService {
 
     private Node loadNode(UUID nodeId) {
         return nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(nodeId, Node.ArchiveStatus.LIVE)
+            .filter(this::isNodeVisible)
             .orElseThrow(() -> new NoSuchElementException("Node not found: " + nodeId));
+    }
+
+    private boolean isNodeVisible(Node node) {
+        if (node == null) {
+            return false;
+        }
+        if (!tenantWorkspaceScopeService.hasScopedTenantWorkspace()) {
+            return true;
+        }
+        return tenantWorkspaceScopeService.isPathVisible(node.getPath());
     }
 
     private void normalizeExpiredLock(Node node) {

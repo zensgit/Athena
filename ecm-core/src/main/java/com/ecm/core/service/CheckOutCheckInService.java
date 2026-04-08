@@ -37,6 +37,7 @@ public class CheckOutCheckInService {
     private final FolderRepository folderRepository;
     private final NodeRepository nodeRepository;
     private final SecurityService securityService;
+    private final TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     // ------------------------------------------------------------------ checkout
 
@@ -218,7 +219,8 @@ public class CheckOutCheckInService {
      * Return the working copy of a checked-out document, or empty.
      */
     public Optional<Document> getWorkingCopy(UUID originalDocumentId) {
-        return documentRepository.findWorkingCopyOf(originalDocumentId);
+        return documentRepository.findWorkingCopyOf(originalDocumentId)
+            .filter(this::isNodeVisible);
     }
 
     /**
@@ -230,14 +232,17 @@ public class CheckOutCheckInService {
             return Optional.empty();
         }
         return documentRepository.findById(wc.getWorkingCopyOf())
-                .filter(d -> !d.isDeleted());
+                .filter(d -> !d.isDeleted())
+                .filter(this::isNodeVisible);
     }
 
     /**
      * List all working copies owned by the given user.
      */
     public List<Document> getCheckedOutWorkingCopies(String userId) {
-        return documentRepository.findWorkingCopiesByUser(userId);
+        return documentRepository.findWorkingCopiesByUser(userId).stream()
+            .filter(this::isNodeVisible)
+            .toList();
     }
 
     // ------------------------------------------------------------------ helpers
@@ -245,7 +250,7 @@ public class CheckOutCheckInService {
     private Document loadLiveDocument(UUID id) {
         Document doc = documentRepository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Document not found: " + id));
-        if (doc.isDeleted()) {
+        if (doc.isDeleted() || !isNodeVisible(doc)) {
             throw new NoSuchElementException("Document not found: " + id);
         }
         return doc;
@@ -255,6 +260,9 @@ public class CheckOutCheckInService {
         if (destinationFolderId != null) {
             Folder dest = folderRepository.findById(destinationFolderId)
                     .orElseThrow(() -> new NoSuchElementException("Destination folder not found: " + destinationFolderId));
+            if (!isNodeVisible(dest)) {
+                throw new NoSuchElementException("Destination folder not found: " + destinationFolderId);
+            }
             if (!securityService.hasPermission(dest, PermissionType.CREATE_CHILDREN)) {
                 throw new SecurityException("No permission to create children in destination folder");
             }
@@ -264,5 +272,15 @@ public class CheckOutCheckInService {
             return parentFolder;
         }
         throw new IllegalStateException("Document has no parent folder");
+    }
+
+    private boolean isNodeVisible(com.ecm.core.entity.Node node) {
+        if (node == null) {
+            return false;
+        }
+        if (!tenantWorkspaceScopeService.hasScopedTenantWorkspace()) {
+            return true;
+        }
+        return tenantWorkspaceScopeService.isPathVisible(node.getPath());
     }
 }

@@ -15,6 +15,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.zip.ZipOutputStream;
+import java.io.ByteArrayOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -36,6 +38,9 @@ class BatchDownloadServiceTest {
     @Mock
     private FolderService folderService;
 
+    @Mock
+    private TenantWorkspaceScopeService tenantWorkspaceScopeService;
+
     private BatchDownloadService batchDownloadService;
 
     @BeforeEach
@@ -44,7 +49,8 @@ class BatchDownloadServiceTest {
             nodeRepository,
             contentService,
             securityService,
-            folderService
+            folderService,
+            tenantWorkspaceScopeService
         );
     }
 
@@ -131,6 +137,43 @@ class BatchDownloadServiceTest {
         assertEquals(BatchDownloadService.BatchDownloadPreflightPrimaryReason.EMPTY_FOLDERS, summary.primaryReason());
         assertEquals("No readable files available for batch download", summary.message());
         assertEquals(BatchDownloadService.BatchDownloadPreflightOutcome.EMPTY_FOLDER, summary.items().get(0).outcome());
+    }
+
+    @Test
+    @DisplayName("Preflight treats hidden tenant node as missing")
+    void inspectNodesPreflightTreatsHiddenTenantNodeAsMissing() {
+        UUID documentId = UUID.randomUUID();
+        Document hiddenDocument = document(documentId, "hidden.txt", 100L, false);
+
+        when(nodeRepository.findById(documentId)).thenReturn(Optional.of(hiddenDocument));
+        when(tenantWorkspaceScopeService.hasScopedTenantWorkspace()).thenReturn(true);
+        when(tenantWorkspaceScopeService.isPathVisible(hiddenDocument.getPath())).thenReturn(false);
+
+        BatchDownloadService.BatchDownloadPreflightSummary summary =
+            batchDownloadService.inspectNodesPreflight(List.of(documentId));
+
+        assertEquals(1, summary.missingCount());
+        assertEquals(0, summary.includedNodeCount());
+        assertEquals(BatchDownloadService.BatchDownloadPreflightOutcome.MISSING, summary.items().get(0).outcome());
+    }
+
+    @Test
+    @DisplayName("ZIP streaming skips hidden tenant nodes")
+    void writeNodesAsZipSkipsHiddenTenantNode() {
+        UUID documentId = UUID.randomUUID();
+        Document hiddenDocument = document(documentId, "hidden.txt", 100L, false);
+
+        when(nodeRepository.findById(documentId)).thenReturn(Optional.of(hiddenDocument));
+        when(tenantWorkspaceScopeService.hasScopedTenantWorkspace()).thenReturn(true);
+        when(tenantWorkspaceScopeService.isPathVisible(hiddenDocument.getPath())).thenReturn(false);
+
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        BatchDownloadService.BatchDownloadArchiveSummary summary =
+            batchDownloadService.writeNodesAsZip(List.of(documentId), new ZipOutputStream(bytes), BatchDownloadService.BatchDownloadProgressListener.noop());
+
+        assertEquals(0, summary.filesAdded());
+        assertEquals(0L, summary.bytesAdded());
+        assertFalse(summary.cancelled());
     }
 
     private Document document(UUID id, String name, long size, boolean deleted) {
