@@ -3,6 +3,7 @@ package com.ecm.core.service;
 import com.ecm.core.entity.Node;
 import com.ecm.core.entity.Rating;
 import com.ecm.core.entity.Rating.RatingScheme;
+import com.ecm.core.exception.ResourceNotFoundException;
 import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.repository.RatingRepository;
 import lombok.RequiredArgsConstructor;
@@ -23,14 +24,14 @@ public class RatingService {
     private final RatingRepository ratingRepository;
     private final NodeRepository nodeRepository;
     private final SecurityService securityService;
+    private final TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     /**
      * Rate a node (create or update). For LIKES scheme, score is always 1.
      */
     @Transactional
     public Rating rate(UUID nodeId, RatingScheme scheme, int score) {
-        Node node = nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(nodeId, Node.ArchiveStatus.LIVE)
-            .orElseThrow(() -> new NoSuchElementException("Node not found: " + nodeId));
+        Node node = loadVisibleNode(nodeId);
         String userId = securityService.getCurrentUser();
 
         if (scheme == RatingScheme.LIKES) {
@@ -59,6 +60,7 @@ public class RatingService {
      */
     @Transactional
     public void removeRating(UUID nodeId, RatingScheme scheme) {
+        loadVisibleNode(nodeId);
         String userId = securityService.getCurrentUser();
         ratingRepository.deleteByNodeIdAndUserIdAndScheme(nodeId, userId, scheme);
     }
@@ -68,6 +70,7 @@ public class RatingService {
      */
     @Transactional(readOnly = true)
     public List<Rating> getRatings(UUID nodeId) {
+        loadVisibleNode(nodeId);
         return ratingRepository.findByNodeId(nodeId);
     }
 
@@ -76,6 +79,7 @@ public class RatingService {
      */
     @Transactional(readOnly = true)
     public Optional<Rating> getUserRating(UUID nodeId, RatingScheme scheme) {
+        loadVisibleNode(nodeId);
         String userId = securityService.getCurrentUser();
         return ratingRepository.findByNodeIdAndUserIdAndScheme(nodeId, userId, scheme);
     }
@@ -85,10 +89,20 @@ public class RatingService {
      */
     @Transactional(readOnly = true)
     public RatingSummary getSummary(UUID nodeId, RatingScheme scheme) {
+        loadVisibleNode(nodeId);
         long count = ratingRepository.countByNodeIdAndScheme(nodeId, scheme);
         double average = count > 0 ? ratingRepository.averageScoreByNodeIdAndScheme(nodeId, scheme) : 0;
         long total = ratingRepository.sumScoreByNodeIdAndScheme(nodeId, scheme);
         return new RatingSummary(scheme, count, average, total);
+    }
+
+    private Node loadVisibleNode(UUID nodeId) {
+        Node node = nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(nodeId, Node.ArchiveStatus.LIVE)
+            .orElseThrow(() -> new NoSuchElementException("Node not found: " + nodeId));
+        if (!tenantWorkspaceScopeService.isPathVisible(node.getPath())) {
+            throw new ResourceNotFoundException("Node not found: " + nodeId);
+        }
+        return node;
     }
 
     public record RatingSummary(RatingScheme scheme, long count, double average, long total) {}

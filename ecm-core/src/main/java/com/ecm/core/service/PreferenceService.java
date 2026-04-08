@@ -21,6 +21,7 @@ public class PreferenceService {
 
     private final UserRepository userRepository;
     private final SecurityService securityService;
+    private final TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     /** Keys must be dot-separated alphanumeric segments (e.g. "org.athena.ui.theme") */
     private static final Pattern KEY_PATTERN = Pattern.compile("^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$");
@@ -39,11 +40,12 @@ public class PreferenceService {
         Map<String, Object> all = user.getPreferences() != null
             ? new LinkedHashMap<>(user.getPreferences())
             : new LinkedHashMap<>();
+        Map<String, Object> sanitized = sanitizePreferences(all);
         if (filter == null || filter.isBlank()) {
-            return all;
+            return sanitized;
         }
         Map<String, Object> filtered = new LinkedHashMap<>();
-        for (var entry : all.entrySet()) {
+        for (var entry : sanitized.entrySet()) {
             if (entry.getKey().startsWith(filter)) {
                 filtered.put(entry.getKey(), entry.getValue());
             }
@@ -69,7 +71,8 @@ public class PreferenceService {
         if (prefs == null || !prefs.containsKey(key)) {
             throw new NoSuchElementException("Preference not found: " + key);
         }
-        return prefs.get(key);
+        return sanitizePreferenceEntry(key, prefs.get(key))
+            .orElseThrow(() -> new NoSuchElementException("Preference not found: " + key));
     }
 
     /**
@@ -77,8 +80,7 @@ public class PreferenceService {
      */
     @Transactional(readOnly = true)
     public List<String> listNamespaces(String username) {
-        User user = loadUser(username);
-        Map<String, Object> prefs = user.getPreferences();
+        Map<String, Object> prefs = getPreferences(username, null);
         if (prefs == null || prefs.isEmpty()) return List.of();
         Set<String> namespaces = new TreeSet<>();
         for (String key : prefs.keySet()) {
@@ -210,5 +212,107 @@ public class PreferenceService {
             throw new SecurityException("Only the user or an admin can modify preferences");
         }
         return user;
+    }
+
+    private Map<String, Object> sanitizePreferences(Map<String, Object> preferences) {
+        if (preferences == null || preferences.isEmpty() || !tenantWorkspaceScopeService.hasScopedTenantWorkspace()) {
+            return preferences != null ? preferences : new LinkedHashMap<>();
+        }
+        Map<String, Object> sanitized = new LinkedHashMap<>();
+        for (var entry : preferences.entrySet()) {
+            sanitizePreferenceEntry(entry.getKey(), entry.getValue())
+                .ifPresent(value -> sanitized.put(entry.getKey(), value));
+        }
+        return sanitized;
+    }
+
+    private Optional<Object> sanitizePreferenceEntry(String key, Object value) {
+        if (!tenantWorkspaceScopeService.hasScopedTenantWorkspace()) {
+            return Optional.ofNullable(value);
+        }
+        if (isSiteReferenceKey(key) && !isSiteVisible(value)) {
+            return Optional.empty();
+        }
+        if (isNodeReferenceKey(key) && !isNodeVisible(value)) {
+            return Optional.empty();
+        }
+        return sanitizeValue(value);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Optional<Object> sanitizeValue(Object value) {
+        if (value instanceof Map<?, ?> rawMap) {
+            Map<String, Object> map = new LinkedHashMap<>();
+            rawMap.forEach((k, v) -> map.put(String.valueOf(k), v));
+            if (map.containsKey("siteId") && !isSiteVisible(map.get("siteId"))) {
+                return Optional.empty();
+            }
+            if (containsHiddenNodeReference(map)) {
+                return Optional.empty();
+            }
+            Map<String, Object> sanitized = new LinkedHashMap<>();
+            for (var entry : map.entrySet()) {
+                sanitizePreferenceEntry(entry.getKey(), entry.getValue())
+                    .ifPresent(next -> sanitized.put(entry.getKey(), next));
+            }
+            return Optional.of(sanitized);
+        }
+        if (value instanceof List<?> rawList) {
+            List<Object> sanitized = new ArrayList<>();
+            for (Object item : rawList) {
+                sanitizeValue(item).ifPresent(sanitized::add);
+            }
+            return Optional.of(sanitized);
+        }
+        return Optional.ofNullable(value);
+    }
+
+    private boolean containsHiddenNodeReference(Map<String, Object> map) {
+        for (String key : List.of("nodeId", "folderId", "rootFolderId", "rootNodeId", "targetFolderId", "workspaceId")) {
+            if (map.containsKey(key) && !isNodeVisible(map.get(key))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isSiteReferenceKey(String key) {
+        return key != null && (key.equals("siteId") || key.endsWith(".siteId"));
+    }
+
+    private boolean isNodeReferenceKey(String key) {
+        return key != null && (
+            key.equals("nodeId")
+                || key.equals("folderId")
+                || key.equals("rootFolderId")
+                || key.equals("rootNodeId")
+                || key.equals("targetFolderId")
+                || key.equals("workspaceId")
+                || key.endsWith(".nodeId")
+                || key.endsWith(".folderId")
+                || key.endsWith(".rootFolderId")
+                || key.endsWith(".rootNodeId")
+                || key.endsWith(".targetFolderId")
+                || key.endsWith(".workspaceId")
+        );
+    }
+
+    private boolean isSiteVisible(Object value) {
+        if (value == null) {
+            return false;
+        }
+        String siteId = value.toString().trim();
+        return !siteId.isEmpty() && tenantWorkspaceScopeService.isSiteVisible(siteId);
+    }
+
+    private boolean isNodeVisible(Object value) {
+        if (value == null) {
+            return false;
+        }
+        try {
+            return tenantWorkspaceScopeService.isNodeVisible(UUID.fromString(value.toString()));
+        } catch (IllegalArgumentException ex) {
+            return false;
+        }
     }
 }

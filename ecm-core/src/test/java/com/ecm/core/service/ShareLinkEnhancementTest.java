@@ -1,6 +1,7 @@
 package com.ecm.core.service;
 
 import com.ecm.core.entity.Node;
+import com.ecm.core.entity.Document;
 import com.ecm.core.entity.ShareLink;
 import com.ecm.core.entity.ShareLink.SharePermission;
 import com.ecm.core.entity.ShareLinkAccessLog;
@@ -34,12 +35,21 @@ class ShareLinkEnhancementTest {
     @Mock private NodeRepository nodeRepository;
     @Mock private SecurityService securityService;
     @Mock private PasswordEncoder passwordEncoder;
+    @Mock private TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     private ShareLinkService service;
 
     @BeforeEach
     void setUp() {
-        service = new ShareLinkService(shareLinkRepo, accessLogRepo, nodeRepository, securityService, passwordEncoder);
+        lenient().when(tenantWorkspaceScopeService.isPathVisible("/doc")).thenReturn(true);
+        service = new ShareLinkService(
+            shareLinkRepo,
+            accessLogRepo,
+            nodeRepository,
+            securityService,
+            passwordEncoder,
+            tenantWorkspaceScopeService
+        );
     }
 
     // ================================================================= access logging
@@ -210,6 +220,15 @@ class ShareLinkEnhancementTest {
         link.setCreatedBy("alice");
         link.setPermissionLevel(SharePermission.VIEW);
         link.setAccessCount(0);
+        link.setNode(document());
         return link;
+    }
+
+    private Document document() {
+        Document doc = new Document();
+        doc.setId(UUID.randomUUID());
+        doc.setName("test.txt");
+        doc.setPath("/doc");
+        return doc;
     }
 }

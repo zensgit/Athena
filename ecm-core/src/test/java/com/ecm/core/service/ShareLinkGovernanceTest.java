@@ -34,12 +34,21 @@ class ShareLinkGovernanceTest {
     @Mock private NodeRepository nodeRepository;
     @Mock private SecurityService securityService;
     @Mock private PasswordEncoder passwordEncoder;
+    @Mock private TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     private ShareLinkService service;
 
     @BeforeEach
     void setUp() {
-        service = new ShareLinkService(shareLinkRepo, accessLogRepo, nodeRepository, securityService, passwordEncoder);
+        lenient().when(tenantWorkspaceScopeService.isPathVisible("/doc")).thenReturn(true);
+        service = new ShareLinkService(
+            shareLinkRepo,
+            accessLogRepo,
+            nodeRepository,
+            securityService,
+            passwordEncoder,
+            tenantWorkspaceScopeService
+        );
     }
 
     // ================================================================= deactivate → reactivate cycle
@@ -240,6 +249,7 @@ class ShareLinkGovernanceTest {
         link.setCreatedBy("alice");
         link.setPermissionLevel(SharePermission.VIEW);
         link.setAccessCount(0);
+        link.setNode(document());
         return link;
     }
 
@@ -248,7 +258,7 @@ class ShareLinkGovernanceTest {
         doc.setId(UUID.randomUUID());
         doc.setName("report.pdf");
         doc.setMimeType("application/pdf");
-        doc.setPath("/report.pdf");
+        doc.setPath("/doc");
         return doc;
     }
 

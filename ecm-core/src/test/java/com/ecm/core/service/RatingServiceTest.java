@@ -3,6 +3,7 @@ package com.ecm.core.service;
 import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Rating;
 import com.ecm.core.entity.Rating.RatingScheme;
+import com.ecm.core.exception.ResourceNotFoundException;
 import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.repository.RatingRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -28,12 +29,13 @@ class RatingServiceTest {
     @Mock private RatingRepository ratingRepository;
     @Mock private NodeRepository nodeRepository;
     @Mock private SecurityService securityService;
+    @Mock private TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     private RatingService service;
 
     @BeforeEach
     void setUp() {
-        service = new RatingService(ratingRepository, nodeRepository, securityService);
+        service = new RatingService(ratingRepository, nodeRepository, securityService, tenantWorkspaceScopeService);
     }
 
     @Nested
@@ -108,6 +110,15 @@ class RatingServiceTest {
             assertEquals(5, r.getScore());
             assertNotNull(r.getId()); // same object updated
         }
+
+        @Test
+        @DisplayName("hides nodes outside current tenant workspace")
+        void hidesForeignTenantNode() {
+            UUID nodeId = stubNode(false);
+
+            assertThrows(ResourceNotFoundException.class,
+                () -> service.rate(nodeId, RatingScheme.LIKES, 1));
+        }
     }
 
     @Nested
@@ -118,7 +129,7 @@ class RatingServiceTest {
         @DisplayName("delegates to repository delete")
         void delegates() {
             when(securityService.getCurrentUser()).thenReturn("alice");
-            UUID nodeId = UUID.randomUUID();
+            UUID nodeId = stubNode();
 
             service.removeRating(nodeId, RatingScheme.LIKES);
 
@@ -133,7 +144,7 @@ class RatingServiceTest {
         @Test
         @DisplayName("returns count, average, and total for scheme")
         void returnsSummary() {
-            UUID nodeId = UUID.randomUUID();
+            UUID nodeId = stubNode();
             when(ratingRepository.countByNodeIdAndScheme(nodeId, RatingScheme.FIVE_STAR)).thenReturn(10L);
             when(ratingRepository.averageScoreByNodeIdAndScheme(nodeId, RatingScheme.FIVE_STAR)).thenReturn(3.5);
             when(ratingRepository.sumScoreByNodeIdAndScheme(nodeId, RatingScheme.FIVE_STAR)).thenReturn(35L);
@@ -148,7 +159,7 @@ class RatingServiceTest {
         @Test
         @DisplayName("returns zero average when no ratings")
         void zeroWhenEmpty() {
-            UUID nodeId = UUID.randomUUID();
+            UUID nodeId = stubNode();
             when(ratingRepository.countByNodeIdAndScheme(nodeId, RatingScheme.FIVE_STAR)).thenReturn(0L);
 
             RatingService.RatingSummary summary = service.getSummary(nodeId, RatingScheme.FIVE_STAR);
@@ -165,7 +176,7 @@ class RatingServiceTest {
         @Test
         @DisplayName("returns existing user rating")
         void returnsExisting() {
-            UUID nodeId = UUID.randomUUID();
+            UUID nodeId = stubNode();
             when(securityService.getCurrentUser()).thenReturn("alice");
             Rating r = new Rating();
             r.setScore(4);
@@ -181,7 +192,7 @@ class RatingServiceTest {
         @Test
         @DisplayName("returns empty when no rating")
         void returnsEmpty() {
-            UUID nodeId = UUID.randomUUID();
+            UUID nodeId = stubNode();
             when(securityService.getCurrentUser()).thenReturn("alice");
             when(ratingRepository.findByNodeIdAndUserIdAndScheme(nodeId, "alice", RatingScheme.LIKES))
                 .thenReturn(Optional.empty());
@@ -193,12 +204,18 @@ class RatingServiceTest {
     // ================================================================= helpers
 
     private UUID stubNode() {
+        return stubNode(true);
+    }
+
+    private UUID stubNode(boolean visible) {
         Folder folder = new Folder();
         UUID nodeId = UUID.randomUUID();
         folder.setId(nodeId);
         folder.setName("test");
         folder.setPath("/test");
-        when(nodeRepository.findByIdAndDeletedFalse(nodeId)).thenReturn(Optional.of(folder));
+        when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(nodeId, com.ecm.core.entity.Node.ArchiveStatus.LIVE))
+            .thenReturn(Optional.of(folder));
+        when(tenantWorkspaceScopeService.isPathVisible("/test")).thenReturn(visible);
         return nodeId;
     }
 }

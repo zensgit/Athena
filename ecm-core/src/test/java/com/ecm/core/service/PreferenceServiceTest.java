@@ -21,12 +21,13 @@ class PreferenceServiceTest {
 
     @Mock private UserRepository userRepository;
     @Mock private SecurityService securityService;
+    @Mock private TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     private PreferenceService service;
 
     @BeforeEach
     void setUp() {
-        service = new PreferenceService(userRepository, securityService);
+        service = new PreferenceService(userRepository, securityService, tenantWorkspaceScopeService);
     }
 
     // ================================================================= namespace filter
@@ -69,6 +70,28 @@ class PreferenceServiceTest {
             Map<String, Object> result = service.getPreferences("alice", "org.");
 
             assertTrue(result.isEmpty());
+        }
+
+        @Test
+        @DisplayName("filters structured site preferences outside current tenant workspace")
+        void filtersStructuredSitePreferencesOutsideCurrentTenantWorkspace() {
+            User user = userWith(Map.of(
+                "siteMembershipRequests", List.of(
+                    Map.of("siteId", "finance", "status", "PENDING"),
+                    Map.of("siteId", "legal", "status", "PENDING")
+                )
+            ));
+            when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
+            when(tenantWorkspaceScopeService.hasScopedTenantWorkspace()).thenReturn(true);
+            when(tenantWorkspaceScopeService.isSiteVisible("finance")).thenReturn(true);
+            when(tenantWorkspaceScopeService.isSiteVisible("legal")).thenReturn(false);
+
+            Map<String, Object> result = service.getPreferences("alice", null);
+
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> requests = (List<Map<String, Object>>) result.get("siteMembershipRequests");
+            assertEquals(1, requests.size());
+            assertEquals("finance", requests.get(0).get("siteId"));
         }
     }
 
@@ -268,6 +291,24 @@ class PreferenceServiceTest {
             assertEquals(1, result.size());
             assertEquals("dark", result.get("ui.theme"));
             assertFalse(result.containsKey("old.key"));
+        }
+    }
+
+    @Nested
+    @DisplayName("getPreference")
+    class GetPreference {
+
+        @Test
+        @DisplayName("hides foreign-tenant node reference preference")
+        void hidesForeignTenantNodeReference() {
+            UUID foreignNodeId = UUID.randomUUID();
+            User user = userWith(new HashMap<>(Map.of("workspace.rootNodeId", foreignNodeId.toString())));
+            when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
+            when(tenantWorkspaceScopeService.hasScopedTenantWorkspace()).thenReturn(true);
+            when(tenantWorkspaceScopeService.isNodeVisible(foreignNodeId)).thenReturn(false);
+
+            assertThrows(NoSuchElementException.class,
+                () -> service.getPreference("alice", "workspace.rootNodeId"));
         }
     }
 

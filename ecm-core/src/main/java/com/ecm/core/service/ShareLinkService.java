@@ -5,6 +5,7 @@ import com.ecm.core.entity.Permission.PermissionType;
 import com.ecm.core.entity.ShareLink;
 import com.ecm.core.entity.ShareLink.SharePermission;
 import com.ecm.core.entity.ShareLinkAccessLog;
+import com.ecm.core.exception.ResourceNotFoundException;
 import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.repository.ShareLinkAccessLogRepository;
 import com.ecm.core.repository.ShareLinkRepository;
@@ -42,6 +43,7 @@ public class ShareLinkService {
     private final NodeRepository nodeRepository;
     private final SecurityService securityService;
     private final PasswordEncoder passwordEncoder;
+    private final TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final int TOKEN_LENGTH = 32;
@@ -51,8 +53,7 @@ public class ShareLinkService {
      */
     @Transactional
     public ShareLink createShareLink(UUID nodeId, CreateShareLinkRequest request) {
-        Node node = nodeRepository.findById(nodeId)
-            .orElseThrow(() -> new NoSuchElementException("Node not found: " + nodeId));
+        Node node = loadVisibleNode(nodeId);
 
         // Check if user has permission to share
         if (!securityService.hasPermission(node, PermissionType.READ)) {
@@ -92,8 +93,7 @@ public class ShareLinkService {
      */
     @Transactional
     public ShareLinkAccessResult accessShareLink(String token, String password, String clientIp) {
-        ShareLink shareLink = shareLinkRepository.findByToken(token)
-            .orElseThrow(() -> new NoSuchElementException("Share link not found"));
+        ShareLink shareLink = requireVisibleShareLink(token);
 
         // Check if link is valid
         if (!shareLink.isValid()) {
@@ -132,16 +132,14 @@ public class ShareLinkService {
      * Get share link by token (without recording access)
      */
     public ShareLink getByToken(String token) {
-        return shareLinkRepository.findByToken(token)
-            .orElseThrow(() -> new NoSuchElementException("Share link not found: " + token));
+        return requireVisibleShareLink(token);
     }
 
     /**
      * Get all share links for a node
      */
     public List<ShareLink> getShareLinksForNode(UUID nodeId) {
-        Node node = nodeRepository.findById(nodeId)
-            .orElseThrow(() -> new NoSuchElementException("Node not found: " + nodeId));
+        Node node = loadVisibleNode(nodeId);
 
         // Check if user has permission to view share links
         if (!securityService.hasPermission(node, PermissionType.READ)) {
@@ -156,7 +154,9 @@ public class ShareLinkService {
      */
     public List<ShareLink> getMyShareLinks() {
         String currentUser = securityService.getCurrentUser();
-        return shareLinkRepository.findByCreatedBy(currentUser);
+        return shareLinkRepository.findByCreatedBy(currentUser).stream()
+            .filter(link -> isNodeVisible(link.getNode()))
+            .toList();
     }
 
     /**
@@ -164,8 +164,7 @@ public class ShareLinkService {
      */
     @Transactional
     public void deactivateShareLink(String token) {
-        ShareLink shareLink = shareLinkRepository.findByToken(token)
-            .orElseThrow(() -> new NoSuchElementException("Share link not found: " + token));
+        ShareLink shareLink = requireVisibleShareLink(token);
 
         // Check if user has permission (must be creator or have CHANGE_PERMISSIONS)
         String currentUser = securityService.getCurrentUser();
@@ -186,8 +185,7 @@ public class ShareLinkService {
      */
     @Transactional
     public void deleteShareLink(String token) {
-        ShareLink shareLink = shareLinkRepository.findByToken(token)
-            .orElseThrow(() -> new NoSuchElementException("Share link not found: " + token));
+        ShareLink shareLink = requireVisibleShareLink(token);
 
         // Check if user has permission (must be creator or have CHANGE_PERMISSIONS)
         String currentUser = securityService.getCurrentUser();
@@ -207,8 +205,7 @@ public class ShareLinkService {
      */
     @Transactional
     public ShareLink updateShareLink(String token, UpdateShareLinkRequest request) {
-        ShareLink shareLink = shareLinkRepository.findByToken(token)
-            .orElseThrow(() -> new NoSuchElementException("Share link not found: " + token));
+        ShareLink shareLink = requireVisibleShareLink(token);
 
         // Check if user has permission
         String currentUser = securityService.getCurrentUser();
@@ -466,7 +463,9 @@ public class ShareLinkService {
         if (!securityService.hasRole("ROLE_ADMIN")) {
             throw new SecurityException("Only admin can list all share links");
         }
-        return shareLinkRepository.findAll();
+        return shareLinkRepository.findAll().stream()
+            .filter(link -> isNodeVisible(link.getNode()))
+            .toList();
     }
 
     /**
@@ -490,6 +489,28 @@ public class ShareLinkService {
         long successful = accessLogRepository.countByShareLinkIdAndSuccessTrue(shareLink.getId());
         long failed = accessLogRepository.countByShareLinkIdAndSuccessFalse(shareLink.getId());
         return new ShareLinkAccessStats(total, successful, failed);
+    }
+
+    private Node loadVisibleNode(UUID nodeId) {
+        Node node = nodeRepository.findById(nodeId)
+            .orElseThrow(() -> new NoSuchElementException("Node not found: " + nodeId));
+        if (!isNodeVisible(node)) {
+            throw new ResourceNotFoundException("Node not found: " + nodeId);
+        }
+        return node;
+    }
+
+    private ShareLink requireVisibleShareLink(String token) {
+        ShareLink shareLink = shareLinkRepository.findByToken(token)
+            .orElseThrow(() -> new NoSuchElementException("Share link not found: " + token));
+        if (!isNodeVisible(shareLink.getNode())) {
+            throw new ResourceNotFoundException("Share link not found: " + token);
+        }
+        return shareLink;
+    }
+
+    private boolean isNodeVisible(Node node) {
+        return node != null && tenantWorkspaceScopeService.isPathVisible(node.getPath());
     }
 
     private void recordAccessLog(ShareLink shareLink, String clientIp, String userAgent,

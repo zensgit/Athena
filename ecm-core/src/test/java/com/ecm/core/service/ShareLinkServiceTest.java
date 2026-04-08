@@ -3,11 +3,13 @@ package com.ecm.core.service;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Permission.PermissionType;
 import com.ecm.core.entity.ShareLink;
+import com.ecm.core.exception.ResourceNotFoundException;
 import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.repository.ShareLinkAccessLogRepository;
 import com.ecm.core.repository.ShareLinkRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -22,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -44,8 +47,16 @@ class ShareLinkServiceTest {
     @Mock
     private PasswordEncoder passwordEncoder;
 
+    @Mock
+    private TenantWorkspaceScopeService tenantWorkspaceScopeService;
+
     @InjectMocks
     private ShareLinkService shareLinkService;
+
+    @BeforeEach
+    void setUp() {
+        lenient().when(tenantWorkspaceScopeService.isPathVisible("/doc")).thenReturn(true);
+    }
 
     @Test
     @DisplayName("Allows IPv4 addresses within CIDR range")
@@ -154,6 +165,7 @@ class ShareLinkServiceTest {
         when(nodeRepository.findById(any(UUID.class))).thenReturn(Optional.of(document));
         when(securityService.hasPermission(document, PermissionType.READ)).thenReturn(true);
         when(securityService.getCurrentUser()).thenReturn("tester");
+        when(tenantWorkspaceScopeService.isPathVisible("/doc")).thenReturn(true);
         when(shareLinkRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         ShareLinkService.CreateShareLinkRequest request = new ShareLinkService.CreateShareLinkRequest(
@@ -171,6 +183,26 @@ class ShareLinkServiceTest {
     }
 
     @Test
+    @DisplayName("Create share link hides foreign-tenant node")
+    void createShareLinkHidesForeignTenantNode() {
+        Document document = buildDocument();
+        UUID nodeId = UUID.randomUUID();
+        when(nodeRepository.findById(nodeId)).thenReturn(Optional.of(document));
+        when(tenantWorkspaceScopeService.isPathVisible("/doc")).thenReturn(false);
+
+        ShareLinkService.CreateShareLinkRequest request = new ShareLinkService.CreateShareLinkRequest(
+            "share",
+            null,
+            null,
+            ShareLink.SharePermission.VIEW,
+            null,
+            null
+        );
+
+        assertThrows(ResourceNotFoundException.class, () -> shareLinkService.createShareLink(nodeId, request));
+    }
+
+    @Test
     @DisplayName("Update share link clears allowed IPs on blank input")
     void updateShareLinkClearsAllowedIpsOnBlankInput() {
         ShareLink shareLink = buildShareLink("10.0.0.1/32");
@@ -178,6 +210,7 @@ class ShareLinkServiceTest {
         when(securityService.getCurrentUser()).thenReturn("tester");
         when(securityService.hasPermission(shareLink.getNode(), PermissionType.CHANGE_PERMISSIONS))
             .thenReturn(true);
+        when(tenantWorkspaceScopeService.isPathVisible("/doc")).thenReturn(true);
         when(shareLinkRepository.save(shareLink)).thenReturn(shareLink);
 
         ShareLinkService.UpdateShareLinkRequest request = new ShareLinkService.UpdateShareLinkRequest(
@@ -195,8 +228,19 @@ class ShareLinkServiceTest {
         assertEquals(null, updated.getAllowedIps());
     }
 
+    @Test
+    @DisplayName("Get share link hides token outside current tenant workspace")
+    void getShareLinkHidesForeignTenantToken() {
+        ShareLink shareLink = buildShareLink("192.168.1.0/24");
+        when(shareLinkRepository.findByToken("token")).thenReturn(Optional.of(shareLink));
+        when(tenantWorkspaceScopeService.isPathVisible("/doc")).thenReturn(false);
+
+        assertThrows(ResourceNotFoundException.class, () -> shareLinkService.getByToken("token"));
+    }
+
     private Document buildDocument() {
         Document document = new Document();
+        document.setId(UUID.randomUUID());
         document.setName("doc");
         document.setPath("/doc");
         document.setMimeType("application/pdf");
