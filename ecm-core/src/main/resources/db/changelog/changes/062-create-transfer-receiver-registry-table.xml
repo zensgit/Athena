@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.17.xsd">
+
+    <changeSet id="062-create-transfer-receiver-registry-table" author="codex">
+        <createTable tableName="transfer_receivers">
+            <column name="id" type="UUID">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="name" type="VARCHAR(200)">
+                <constraints nullable="false" unique="true"/>
+            </column>
+            <column name="description" type="TEXT"/>
+            <column name="root_folder_id" type="UUID">
+                <constraints nullable="false"/>
+            </column>
+            <column name="auth_type" type="VARCHAR(20)" defaultValue="NONE">
+                <constraints nullable="false"/>
+            </column>
+            <column name="auth_username" type="VARCHAR(255)"/>
+            <column name="auth_secret" type="TEXT"/>
+            <column name="enabled" type="BOOLEAN" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="verification_status" type="VARCHAR(30)" defaultValue="NEVER_VERIFIED">
+                <constraints nullable="false"/>
+            </column>
+            <column name="verification_message" type="TEXT"/>
+            <column name="last_verified_at" type="TIMESTAMP"/>
+            <column name="last_access_status" type="VARCHAR(20)" defaultValue="NEVER_USED">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_access_message" type="TEXT"/>
+            <column name="last_accessed_at" type="TIMESTAMP"/>
+            <column name="created_at" type="TIMESTAMP"/>
+            <column name="updated_at" type="TIMESTAMP"/>
+        </createTable>
+
+        <createIndex tableName="transfer_receivers" indexName="idx_transfer_receiver_name">
+            <column name="name"/>
+        </createIndex>
+        <createIndex tableName="transfer_receivers" indexName="idx_transfer_receiver_root_folder">
+            <column name="root_folder_id"/>
+        </createIndex>
+        <createIndex tableName="transfer_receivers" indexName="idx_transfer_receiver_enabled">
+            <column name="enabled"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

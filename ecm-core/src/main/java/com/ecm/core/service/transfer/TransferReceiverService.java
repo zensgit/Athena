@@ -2,10 +2,10 @@ package com.ecm.core.service.transfer;
 
 import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Node;
-import com.ecm.core.entity.TransferTarget;
+import com.ecm.core.entity.TransferReceiverRegistration;
 import com.ecm.core.pipeline.PipelineResult;
 import com.ecm.core.repository.NodeRepository;
-import com.ecm.core.repository.TransferTargetRepository;
+import com.ecm.core.repository.TransferReceiverRegistrationRepository;
 import com.ecm.core.service.DocumentUploadService;
 import com.ecm.core.service.FolderService;
 import lombok.RequiredArgsConstructor;
@@ -31,14 +31,16 @@ public class TransferReceiverService {
 
     private static final String TRANSFER_RECEIVER_PRINCIPAL = "transfer-receiver";
 
-    private final TransferTargetRepository transferTargetRepository;
+    private final TransferReceiverRegistrationRepository receiverRepository;
     private final NodeRepository nodeRepository;
     private final FolderService folderService;
     private final DocumentUploadService documentUploadService;
 
-    @Transactional(readOnly = true)
+    @Transactional
     public VerifyFolderResponse verifyFolder(UUID folderId, String authUsername, String authSecret) {
-        Folder folder = resolveAuthorizedFolder(folderId, authUsername, authSecret);
+        AuthorizedFolder authorized = resolveAuthorizedFolder(folderId, authUsername, authSecret);
+        recordAccessSuccess(authorized.receiver(), "Verified receiver folder access: " + authorized.folder().getName());
+        Folder folder = authorized.folder();
         return new VerifyFolderResponse(folder.getId(), folder.getName());
     }
 
@@ -48,7 +50,8 @@ public class TransferReceiverService {
             throw new IllegalArgumentException("Transfer receiver folder request is required");
         }
         String requestedName = normalizeRequired(request.name(), "Folder name is required");
-        Folder parent = resolveAuthorizedFolder(request.parentFolderId(), authUsername, authSecret);
+        AuthorizedFolder authorized = resolveAuthorizedFolder(request.parentFolderId(), authUsername, authSecret);
+        Folder parent = authorized.folder();
         String resolvedName = resolveReplicaName(parent.getId(), requestedName);
 
         SecurityContext previous = pushTransferAuthentication();
@@ -66,6 +69,7 @@ public class TransferReceiverService {
                 false,
                 null
             ));
+            recordAccessSuccess(authorized.receiver(), "Created receiver folder: " + created.getName());
             return new CreateFolderResponse(created.getId(), created.getName());
         } finally {
             popTransferAuthentication(previous);
@@ -84,7 +88,8 @@ public class TransferReceiverService {
             throw new IllegalArgumentException("A non-empty file is required");
         }
 
-        Folder parent = resolveAuthorizedFolder(parentFolderId, authUsername, authSecret);
+        AuthorizedFolder authorized = resolveAuthorizedFolder(parentFolderId, authUsername, authSecret);
+        Folder parent = authorized.folder();
         String filename = normalizeRequired(file.getOriginalFilename(), "File name is required");
         String resolvedName = resolveReplicaName(parent.getId(), filename);
         MultipartFile effectiveFile = Objects.equals(resolvedName, filename)
@@ -103,43 +108,66 @@ public class TransferReceiverService {
             if (!result.isSuccess() || result.getDocumentId() == null) {
                 throw new IllegalStateException("Transfer receiver document upload failed");
             }
+            recordAccessSuccess(authorized.receiver(), "Uploaded receiver document: " + effectiveFile.getOriginalFilename());
             return new UploadDocumentResponse(result.getDocumentId(), effectiveFile.getOriginalFilename());
         } finally {
             popTransferAuthentication(previous);
         }
     }
 
-    private Folder resolveAuthorizedFolder(UUID folderId, String authUsername, String authSecret) {
+    private AuthorizedFolder resolveAuthorizedFolder(UUID folderId, String authUsername, String authSecret) {
         if (folderId == null) {
             throw new IllegalArgumentException("folderId is required");
         }
 
         Folder requestedFolder = loadFolder(folderId);
-        List<TransferTarget> matchingTargets = transferTargetRepository.findAll().stream()
-            .filter(TransferTarget::isEnabled)
-            .filter(target -> target.getTransportType() == TransferTarget.TransportType.ATHENA_HTTP)
-            .filter(target -> matchesCredentials(target, normalizeOptional(authUsername), normalizeOptional(authSecret)))
+        String normalizedUsername = normalizeOptional(authUsername);
+        String normalizedSecret = normalizeOptional(authSecret);
+        List<TransferReceiverRegistration> matchingReceivers = receiverRepository.findAll().stream()
+            .filter(TransferReceiverRegistration::isEnabled)
+            .filter(receiver -> matchesCredentials(receiver, normalizedUsername, normalizedSecret))
             .toList();
 
-        for (TransferTarget target : matchingTargets) {
-            Folder rootFolder = tryLoadFolder(target.getTargetFolderId());
+        TransferReceiverRegistration wrongScopeMatch = null;
+        for (TransferReceiverRegistration receiver : matchingReceivers) {
+            Folder rootFolder = tryLoadFolder(receiver.getRootFolderId());
             if (rootFolder != null && isWithinRoot(requestedFolder, rootFolder)) {
-                return requestedFolder;
+                return new AuthorizedFolder(receiver, requestedFolder);
             }
+            wrongScopeMatch = receiver;
         }
 
+        if (wrongScopeMatch != null) {
+            recordAccessFailure(wrongScopeMatch, "Transfer receiver credentials do not permit folder: " + folderId);
+        }
         throw new SecurityException("Transfer receiver credentials do not permit folder: " + folderId);
     }
 
-    private boolean matchesCredentials(TransferTarget target, String authUsername, String authSecret) {
-        TransferTarget.AuthType authType = target.getAuthType() != null ? target.getAuthType() : TransferTarget.AuthType.NONE;
-        String targetUsername = normalizeOptional(target.getAuthUsername());
-        String targetSecret = normalizeOptional(target.getAuthSecret());
+    private boolean matchesCredentials(TransferReceiverRegistration receiver, String authUsername, String authSecret) {
+        com.ecm.core.entity.TransferTarget.AuthType authType = receiver.getAuthType() != null
+            ? receiver.getAuthType()
+            : com.ecm.core.entity.TransferTarget.AuthType.NONE;
+        String targetUsername = normalizeOptional(receiver.getAuthUsername());
+        String targetSecret = normalizeOptional(receiver.getAuthSecret());
         return switch (authType) {
             case NONE -> authUsername == null && authSecret == null;
             case BASIC -> Objects.equals(targetUsername, authUsername) && Objects.equals(targetSecret, authSecret);
             case BEARER -> authUsername == null && Objects.equals(targetSecret, authSecret);
         };
+    }
+
+    private void recordAccessSuccess(TransferReceiverRegistration receiver, String message) {
+        receiver.setLastAccessStatus(TransferReceiverRegistration.AccessStatus.SUCCESS);
+        receiver.setLastAccessMessage(message);
+        receiver.setLastAccessedAt(java.time.LocalDateTime.now());
+        receiverRepository.save(receiver);
+    }
+
+    private void recordAccessFailure(TransferReceiverRegistration receiver, String message) {
+        receiver.setLastAccessStatus(TransferReceiverRegistration.AccessStatus.FAILED);
+        receiver.setLastAccessMessage(message);
+        receiver.setLastAccessedAt(java.time.LocalDateTime.now());
+        receiverRepository.save(receiver);
     }
 
     private Folder tryLoadFolder(UUID folderId) {
@@ -256,4 +284,6 @@ public class TransferReceiverService {
     public record CreateFolderResponse(UUID folderId, String folderName) {}
 
     public record UploadDocumentResponse(UUID documentId, String documentName) {}
+
+    private record AuthorizedFolder(TransferReceiverRegistration receiver, Folder folder) {}
 }

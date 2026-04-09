@@ -72,6 +72,7 @@
     <include file="db/changelog/changes/059-create-tenants-table.xml"/>
     <include file="db/changelog/changes/060-create-transfer-replication-tables.xml"/>
     <include file="db/changelog/changes/061-add-transfer-target-remote-fields.xml"/>
+    <include file="db/changelog/changes/062-create-transfer-receiver-registry-table.xml"/>
     <include file="db/changelog/changes/007-insert-initial-data.xml"/>
 
 </databaseChangeLog>

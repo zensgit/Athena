@@ -2,10 +2,11 @@ package com.ecm.core.service.transfer;
 
 import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Node;
+import com.ecm.core.entity.TransferReceiverRegistration;
 import com.ecm.core.entity.TransferTarget;
 import com.ecm.core.pipeline.PipelineResult;
 import com.ecm.core.repository.NodeRepository;
-import com.ecm.core.repository.TransferTargetRepository;
+import com.ecm.core.repository.TransferReceiverRegistrationRepository;
 import com.ecm.core.service.DocumentUploadService;
 import com.ecm.core.service.FolderService;
 import org.junit.jupiter.api.AfterEach;
@@ -37,7 +38,7 @@ import static org.mockito.Mockito.when;
 class TransferReceiverServiceTest {
 
     @Mock
-    private TransferTargetRepository transferTargetRepository;
+    private TransferReceiverRegistrationRepository receiverRepository;
 
     @Mock
     private NodeRepository nodeRepository;
@@ -58,10 +59,11 @@ class TransferReceiverServiceTest {
     void verifyFolderAcceptsMatchingBearerSecret() {
         UUID rootId = UUID.randomUUID();
         Folder root = folder(rootId, "Outbound", "/Company Home/Outbound");
-        TransferTarget target = remoteTarget(rootId);
+        TransferReceiverRegistration receiver = receiver(rootId);
 
-        when(transferTargetRepository.findAll()).thenReturn(List.of(target));
+        when(receiverRepository.findAll()).thenReturn(List.of(receiver));
         when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(rootId, Node.ArchiveStatus.LIVE)).thenReturn(Optional.of(root));
+        when(receiverRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         TransferReceiverService service = service();
 
@@ -69,6 +71,7 @@ class TransferReceiverServiceTest {
 
         assertEquals(rootId, response.folderId());
         assertEquals("Outbound", response.folderName());
+        assertEquals(TransferReceiverRegistration.AccessStatus.SUCCESS, receiver.getLastAccessStatus());
     }
 
     @Test
@@ -76,16 +79,17 @@ class TransferReceiverServiceTest {
     void createFolderRenamesDuplicateAndRunsAsTransferAdmin() {
         UUID rootId = UUID.randomUUID();
         Folder root = folder(rootId, "Outbound", "/Company Home/Outbound");
-        TransferTarget target = remoteTarget(rootId);
+        TransferReceiverRegistration receiver = receiver(rootId);
         Folder created = folder(UUID.randomUUID(), "Contracts (Replica 1)", "/Company Home/Outbound/Contracts (Replica 1)");
         Node existing = folder(UUID.randomUUID(), "Contracts", "/Company Home/Outbound/Contracts");
 
-        when(transferTargetRepository.findAll()).thenReturn(List.of(target));
+        when(receiverRepository.findAll()).thenReturn(List.of(receiver));
         when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(rootId, Node.ArchiveStatus.LIVE)).thenReturn(Optional.of(root));
         when(nodeRepository.findByParentIdAndName(rootId, "Contracts"))
             .thenReturn(Optional.of(existing));
         when(nodeRepository.findByParentIdAndName(rootId, "Contracts (Replica 1)"))
             .thenReturn(Optional.empty());
+        when(receiverRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(folderService.createFolder(any())).thenAnswer(invocation -> {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             assertEquals("transfer-receiver", auth.getPrincipal());
@@ -114,14 +118,15 @@ class TransferReceiverServiceTest {
     void uploadDocumentRenamesDuplicateFilesAndPreservesDescription() throws IOException {
         UUID rootId = UUID.randomUUID();
         Folder root = folder(rootId, "Outbound", "/Company Home/Outbound");
-        TransferTarget target = remoteTarget(rootId);
+        TransferReceiverRegistration receiver = receiver(rootId);
         Node existing = folder(UUID.randomUUID(), "contract.pdf", "/Company Home/Outbound/contract.pdf");
         UUID documentId = UUID.randomUUID();
 
-        when(transferTargetRepository.findAll()).thenReturn(List.of(target));
+        when(receiverRepository.findAll()).thenReturn(List.of(receiver));
         when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(rootId, Node.ArchiveStatus.LIVE)).thenReturn(Optional.of(root));
         when(nodeRepository.findByParentIdAndName(rootId, "contract.pdf")).thenReturn(Optional.of(existing));
         when(nodeRepository.findByParentIdAndName(rootId, "contract (Replica 1).pdf")).thenReturn(Optional.empty());
+        when(receiverRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(documentUploadService.uploadDocument(any(), eq(rootId), eq(Map.of("description", "Signed")))).thenAnswer(invocation -> {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             assertEquals("transfer-receiver", auth.getPrincipal());
@@ -154,34 +159,36 @@ class TransferReceiverServiceTest {
         UUID foreignFolderId = UUID.randomUUID();
         Folder root = folder(rootId, "Outbound", "/Company Home/Outbound");
         Folder foreign = folder(foreignFolderId, "Secret", "/Company Home/Secret");
-        TransferTarget target = remoteTarget(rootId);
+        TransferReceiverRegistration receiver = receiver(rootId);
 
-        when(transferTargetRepository.findAll()).thenReturn(List.of(target));
+        when(receiverRepository.findAll()).thenReturn(List.of(receiver));
         when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(foreignFolderId, Node.ArchiveStatus.LIVE)).thenReturn(Optional.of(foreign));
         when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(rootId, Node.ArchiveStatus.LIVE)).thenReturn(Optional.of(root));
+        when(receiverRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         TransferReceiverService service = service();
 
         assertThrows(SecurityException.class, () -> service.verifyFolder(foreignFolderId, null, "shared-secret"));
+        assertEquals(TransferReceiverRegistration.AccessStatus.FAILED, receiver.getLastAccessStatus());
     }
 
     private TransferReceiverService service() {
         return new TransferReceiverService(
-            transferTargetRepository,
+            receiverRepository,
             nodeRepository,
             folderService,
             documentUploadService
         );
     }
 
-    private TransferTarget remoteTarget(UUID folderId) {
-        TransferTarget target = new TransferTarget();
-        target.setTransportType(TransferTarget.TransportType.ATHENA_HTTP);
-        target.setEnabled(true);
-        target.setTargetFolderId(folderId);
-        target.setAuthType(TransferTarget.AuthType.BEARER);
-        target.setAuthSecret("shared-secret");
-        return target;
+    private TransferReceiverRegistration receiver(UUID folderId) {
+        TransferReceiverRegistration receiver = new TransferReceiverRegistration();
+        receiver.setRootFolderId(folderId);
+        receiver.setEnabled(true);
+        receiver.setAuthType(TransferTarget.AuthType.BEARER);
+        receiver.setAuthSecret("shared-secret");
+        receiver.setLastAccessStatus(TransferReceiverRegistration.AccessStatus.NEVER_USED);
+        return receiver;
     }
 
     private Folder folder(UUID id, String name, String path) {
