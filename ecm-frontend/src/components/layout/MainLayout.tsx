@@ -49,6 +49,7 @@ import {
   PushPinOutlined,
   People,
   Notifications,
+  SyncAlt,
 } from '@mui/icons-material';
 import { alpha } from '@mui/material/styles';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -536,6 +537,12 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                     <LinkIcon fontSize="small" />
                   </ListItemIcon>
                   <ListItemText>Webhooks</ListItemText>
+                </MenuItem>
+                <MenuItem onClick={() => navigate('/admin/transfer-replication')}>
+                  <ListItemIcon>
+                    <SyncAlt fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Transfer Replication</ListItemText>
                 </MenuItem>
                 <MenuItem onClick={() => navigate('/admin/bulk-import')}>
                   <ListItemIcon>

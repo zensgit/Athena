@@ -26,6 +26,7 @@ import ContentArchivePage from './pages/ContentArchivePage';
 import TemplateEnginePage from './pages/TemplateEnginePage';
 import ScriptEnginePage from './pages/ScriptEnginePage';
 import TenantAdminPage from './pages/TenantAdminPage';
+import TransferReplicationPage from './pages/TransferReplicationPage';
 import WebhookSubscriptionsPage from './pages/WebhookSubscriptionsPage';
 import PermissionTemplatesPage from './pages/PermissionTemplatesPage';
 import EditorPage from './pages/EditorPage';
@@ -359,6 +360,16 @@ const App: React.FC = () => {
                 <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
                   <MainLayout>
                     <TenantAdminPage />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/admin/transfer-replication"
+              element={
+                <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
+                  <MainLayout>
+                    <TransferReplicationPage />
                   </MainLayout>
                 </PrivateRoute>
               }

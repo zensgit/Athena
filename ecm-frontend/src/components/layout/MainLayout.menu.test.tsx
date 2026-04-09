@@ -86,6 +86,13 @@ test('account menu shows Tags/Categories for admin/editor roles', async () => {
   expect(screen.getByRole('menuitem', { name: 'My Following' })).toBeTruthy();
 });
 
+test('account menu shows Transfer Replication for admin roles', async () => {
+  renderLayoutWithRoles(['ROLE_ADMIN']);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Account menu' }));
+  expect(await screen.findByRole('menuitem', { name: 'Transfer Replication' })).toBeTruthy();
+});
+
 test('account menu hides Tags/Categories for viewer role', async () => {
   renderLayoutWithRoles(['ROLE_VIEWER']);
 
