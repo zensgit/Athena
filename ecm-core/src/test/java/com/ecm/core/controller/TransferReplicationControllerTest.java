@@ -1,6 +1,7 @@
 package com.ecm.core.controller;
 
 import com.ecm.core.entity.ReplicationJob;
+import com.ecm.core.entity.TransferTarget;
 import com.ecm.core.service.TransferReplicationService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -50,27 +51,58 @@ class TransferReplicationControllerTest {
     }
 
     @Test
-    @DisplayName("GET /transfer/targets lists transfer targets")
+    @DisplayName("GET /transfer/targets lists expanded transfer targets")
     void listTargetsReturnsTargets() throws Exception {
-        when(transferReplicationService.listTargets()).thenReturn(List.of(targetDto(UUID.randomUUID(), "loopback")));
+        when(transferReplicationService.listTargets()).thenReturn(List.of(
+            targetDto(
+                UUID.randomUUID(),
+                "loopback",
+                "Local loopback target",
+                TransferTarget.TransportType.LOOPBACK,
+                UUID.randomUUID(),
+                "Outbound",
+                null,
+                "/api/v1",
+                TransferTarget.AuthType.NONE,
+                null,
+                false,
+                true,
+                TransferTarget.VerificationStatus.NEVER_VERIFIED,
+                null,
+                null,
+                LocalDateTime.now(),
+                LocalDateTime.now()
+            )
+        ));
 
         mockMvc.perform(get("/api/v1/transfer/targets"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$[0].name").value("loopback"));
+            .andExpect(jsonPath("$[0].name").value("loopback"))
+            .andExpect(jsonPath("$[0].transportType").value("LOOPBACK"))
+            .andExpect(jsonPath("$[0].verificationStatus").value("NEVER_VERIFIED"));
     }
 
     @Test
-    @DisplayName("POST /transfer/targets creates transfer target")
+    @DisplayName("POST /transfer/targets creates transfer target with remote contract")
     void createTargetReturnsCreated() throws Exception {
         UUID targetFolderId = UUID.randomUUID();
         when(transferReplicationService.createTarget(any())).thenReturn(
-            new TransferReplicationService.TransferTargetDto(
+            targetDto(
                 UUID.randomUUID(),
                 "loopback",
                 "Local target",
+                TransferTarget.TransportType.ATHENA_HTTP,
                 targetFolderId,
                 "Outbound",
+                "https://replica.example.com",
+                "/api/v1",
+                TransferTarget.AuthType.BASIC,
+                "replicator",
                 true,
+                true,
+                TransferTarget.VerificationStatus.NEVER_VERIFIED,
+                "Pending verification",
+                null,
                 LocalDateTime.now(),
                 LocalDateTime.now()
             )
@@ -82,13 +114,56 @@ class TransferReplicationControllerTest {
                     {
                       "name": "loopback",
                       "description": "Local target",
+                      "transportType": "ATHENA_HTTP",
                       "targetFolderId": "%s",
+                      "endpointUrl": "https://replica.example.com",
+                      "endpointPath": "/api/v1",
+                      "authType": "BASIC",
+                      "authUsername": "replicator",
+                      "authSecret": "top-secret",
                       "enabled": true
                     }
                     """.formatted(targetFolderId)))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.name").value("loopback"))
-            .andExpect(jsonPath("$.targetFolderName").value("Outbound"));
+            .andExpect(jsonPath("$.transportType").value("ATHENA_HTTP"))
+            .andExpect(jsonPath("$.targetFolderName").value("Outbound"))
+            .andExpect(jsonPath("$.endpointUrl").value("https://replica.example.com"))
+            .andExpect(jsonPath("$.endpointPath").value("/api/v1"))
+            .andExpect(jsonPath("$.authType").value("BASIC"))
+            .andExpect(jsonPath("$.verificationStatus").value("NEVER_VERIFIED"));
+    }
+
+    @Test
+    @DisplayName("POST /transfer/targets/{id}/verify verifies transfer target")
+    void verifyTargetReturnsVerifiedTarget() throws Exception {
+        UUID targetId = UUID.randomUUID();
+        when(transferReplicationService.verifyTarget(targetId)).thenReturn(targetDto(
+            targetId,
+            "remote",
+            "Remote Athena target",
+            TransferTarget.TransportType.ATHENA_HTTP,
+            UUID.randomUUID(),
+            "Remote Outbound",
+            "https://replica.example.com",
+            "/api/v1",
+            TransferTarget.AuthType.BASIC,
+            "replicator",
+            true,
+            true,
+            TransferTarget.VerificationStatus.VERIFIED,
+            "Verification succeeded",
+            LocalDateTime.now(),
+            LocalDateTime.now(),
+            LocalDateTime.now()
+        ));
+
+        mockMvc.perform(post("/api/v1/transfer/targets/{targetId}/verify", targetId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id").value(targetId.toString()))
+            .andExpect(jsonPath("$.transportType").value("ATHENA_HTTP"))
+            .andExpect(jsonPath("$.verificationStatus").value("VERIFIED"))
+            .andExpect(jsonPath("$.verificationMessage").value("Verification succeeded"));
     }
 
     @Test
@@ -129,16 +204,43 @@ class TransferReplicationControllerTest {
             .andExpect(jsonPath("$.status").value("RUNNING"));
     }
 
-    private TransferReplicationService.TransferTargetDto targetDto(UUID id, String name) {
+    private TransferReplicationService.TransferTargetDto targetDto(
+        UUID id,
+        String name,
+        String description,
+        TransferTarget.TransportType transportType,
+        UUID targetFolderId,
+        String targetFolderName,
+        String endpointUrl,
+        String endpointPath,
+        TransferTarget.AuthType authType,
+        String authUsername,
+        boolean authSecretConfigured,
+        boolean enabled,
+        TransferTarget.VerificationStatus verificationStatus,
+        String verificationMessage,
+        LocalDateTime lastVerifiedAt,
+        LocalDateTime createdAt,
+        LocalDateTime updatedAt
+    ) {
         return new TransferReplicationService.TransferTargetDto(
             id,
             name,
-            "Local loopback target",
-            UUID.randomUUID(),
-            "Outbound",
-            true,
-            LocalDateTime.now(),
-            LocalDateTime.now()
+            description,
+            transportType,
+            targetFolderId,
+            targetFolderName,
+            endpointUrl,
+            endpointPath,
+            authType,
+            authUsername,
+            authSecretConfigured,
+            enabled,
+            verificationStatus,
+            verificationMessage,
+            lastVerifiedAt,
+            createdAt,
+            updatedAt
         );
     }
 

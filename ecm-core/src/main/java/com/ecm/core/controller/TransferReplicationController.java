@@ -17,7 +17,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @RequestMapping("/api/v1")
 @PreAuthorize("hasRole('ADMIN')")
-@Tag(name = "Transfer Replication", description = "Local transfer target and replication backbone")
+@Tag(name = "Transfer Replication", description = "Local and remote outbound transfer replication backbone")
 public class TransferReplicationController {
 
     private final TransferReplicationService transferReplicationService;
@@ -49,6 +49,12 @@ public class TransferReplicationController {
         @RequestBody TransferReplicationService.TransferTargetMutationRequest request
     ) {
         return ResponseEntity.ok(transferReplicationService.updateTarget(targetId, request));
+    }
+
+    @PostMapping("/transfer/targets/{targetId}/verify")
+    @Operation(summary = "Verify transfer target")
+    public ResponseEntity<TransferReplicationService.TransferTargetDto> verifyTarget(@PathVariable UUID targetId) {
+        return ResponseEntity.ok(transferReplicationService.verifyTarget(targetId));
     }
 
     @DeleteMapping("/transfer/targets/{targetId}")

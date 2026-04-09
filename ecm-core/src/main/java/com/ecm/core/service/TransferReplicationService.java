@@ -6,6 +6,7 @@ import com.ecm.core.entity.ReplicationDefinition;
 import com.ecm.core.entity.ReplicationJob;
 import com.ecm.core.entity.ReplicationJob.ReplicationJobStatus;
 import com.ecm.core.entity.TransferTarget;
+import com.ecm.core.service.transfer.TransferClient;
 import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.repository.ReplicationDefinitionRepository;
 import com.ecm.core.repository.ReplicationJobRepository;
@@ -16,10 +17,14 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -33,6 +38,7 @@ public class TransferReplicationService {
     private final NodeRepository nodeRepository;
     private final SecurityService securityService;
     private final Executor executor;
+    private final Map<TransferTarget.TransportType, TransferClient> transferClients;
 
     public TransferReplicationService(
         TransferTargetRepository transferTargetRepository,
@@ -41,7 +47,8 @@ public class TransferReplicationService {
         FolderService folderService,
         NodeService nodeService,
         NodeRepository nodeRepository,
-        SecurityService securityService
+        SecurityService securityService,
+        List<TransferClient> transferClients
     ) {
         this(
             transferTargetRepository,
@@ -51,6 +58,7 @@ public class TransferReplicationService {
             nodeService,
             nodeRepository,
             securityService,
+            transferClients,
             Executors.newCachedThreadPool()
         );
     }
@@ -63,6 +71,7 @@ public class TransferReplicationService {
         NodeService nodeService,
         NodeRepository nodeRepository,
         SecurityService securityService,
+        List<TransferClient> transferClients,
         Executor executor
     ) {
         this.transferTargetRepository = transferTargetRepository;
@@ -73,6 +82,8 @@ public class TransferReplicationService {
         this.nodeRepository = nodeRepository;
         this.securityService = securityService;
         this.executor = executor;
+        this.transferClients = transferClients.stream()
+            .collect(Collectors.toMap(TransferClient::transportType, Function.identity()));
     }
 
     public java.util.List<TransferTargetDto> listTargets() {
@@ -93,12 +104,10 @@ public class TransferReplicationService {
         if (transferTargetRepository.existsByNameIgnoreCase(name)) {
             throw new IllegalArgumentException("Transfer target already exists: " + name);
         }
-        Folder folder = folderService.getFolder(requiredId(request.targetFolderId(), "targetFolderId"));
         TransferTarget target = new TransferTarget();
         target.setName(name);
         target.setDescription(normalizeOptional(request.description()));
-        target.setTargetFolderId(folder.getId());
-        target.setEnabled(request.enabled() == null || request.enabled());
+        applyTargetConfiguration(target, request, true);
         return toDto(transferTargetRepository.save(target));
     }
 
@@ -110,11 +119,27 @@ public class TransferReplicationService {
         if (renamed && transferTargetRepository.existsByNameIgnoreCase(nextName)) {
             throw new IllegalArgumentException("Transfer target already exists: " + nextName);
         }
-        Folder folder = folderService.getFolder(requiredId(request.targetFolderId(), "targetFolderId"));
         target.setName(nextName);
         target.setDescription(normalizeOptional(request.description()));
-        target.setTargetFolderId(folder.getId());
-        target.setEnabled(request.enabled() == null || request.enabled());
+        applyTargetConfiguration(target, request, false);
+        return toDto(transferTargetRepository.save(target));
+    }
+
+    public TransferTargetDto verifyTarget(UUID targetId) {
+        requireAdmin();
+        TransferTarget target = requireTarget(targetId);
+        try {
+            TransferClient.TransferVerificationResult verification = clientFor(target).verifyTarget(target);
+            target.setVerificationStatus(TransferTarget.VerificationStatus.VERIFIED);
+            target.setVerificationMessage(verification.message());
+        } catch (RuntimeException ex) {
+            target.setVerificationStatus(TransferTarget.VerificationStatus.FAILED);
+            target.setVerificationMessage(ex.getMessage());
+            target.setLastVerifiedAt(LocalDateTime.now());
+            transferTargetRepository.save(target);
+            throw ex;
+        }
+        target.setLastVerifiedAt(LocalDateTime.now());
         return toDto(transferTargetRepository.save(target));
     }
 
@@ -226,18 +251,16 @@ public class TransferReplicationService {
             ReplicationDefinition definition = requireDefinition(job.getDefinitionId());
             TransferTarget target = requireEnabledTarget(job.getTransferTargetId(), true);
             Node source = nodeService.getNode(job.getSourceNodeId());
-            folderService.getFolder(target.getTargetFolderId());
-
-            String replicaName = resolveReplicaName(target.getTargetFolderId(), source.getName());
-            Node copied = nodeService.copyNode(source.getId(), target.getTargetFolderId(), replicaName, definition.isIncludeChildren());
+            TransferClient.TransferExecutionResult result = clientFor(target)
+                .replicate(target, source, definition.isIncludeChildren());
 
             definition.setLastRunAt(LocalDateTime.now());
             replicationDefinitionRepository.save(definition);
 
-            job.setCopiedNodeId(copied.getId());
+            job.setCopiedNodeId(result.copiedNodeId());
             job.setStatus(ReplicationJobStatus.COMPLETED);
             job.setCompletedAt(LocalDateTime.now());
-            job.setLastMessage("Replication completed");
+            job.setLastMessage(result.message());
             replicationJobRepository.save(job);
         } catch (RuntimeException ex) {
             log.warn("Replication job {} failed: {}", jobId, ex.getMessage());
@@ -247,23 +270,6 @@ public class TransferReplicationService {
             job.setErrorLog(ex.getMessage());
             replicationJobRepository.save(job);
         }
-    }
-
-    private String resolveReplicaName(UUID targetFolderId, String requestedName) {
-        String baseName = requestedName;
-        String extension = "";
-        int dotIndex = requestedName.lastIndexOf('.');
-        if (dotIndex > 0) {
-            baseName = requestedName.substring(0, dotIndex);
-            extension = requestedName.substring(dotIndex);
-        }
-        String candidate = requestedName;
-        int attempt = 1;
-        while (nodeRepository.findByParentIdAndName(targetFolderId, candidate).isPresent()) {
-            candidate = baseName + " (Replica " + attempt + ")" + extension;
-            attempt++;
-        }
-        return candidate;
     }
 
     private void requireAdmin() {
@@ -282,7 +288,12 @@ public class TransferReplicationService {
         if (requireEnabled && !target.isEnabled()) {
             throw new IllegalStateException("Transfer target is disabled");
         }
-        folderService.getFolder(target.getTargetFolderId());
+        if (target.getTransportType() == TransferTarget.TransportType.LOOPBACK) {
+            folderService.getFolder(target.getTargetFolderId());
+        } else {
+            requiredId(target.getTargetFolderId(), "targetFolderId");
+            normalizeRequired(target.getEndpointUrl(), "endpointUrl is required for ATHENA_HTTP targets");
+        }
         return target;
     }
 
@@ -298,18 +309,29 @@ public class TransferReplicationService {
 
     private TransferTargetDto toDto(TransferTarget target) {
         String folderName = null;
-        try {
-            folderName = folderService.getFolder(target.getTargetFolderId()).getName();
-        } catch (RuntimeException ignored) {
-            // Keep DTO stable even if the folder became unavailable.
+        if (target.getTransportType() == TransferTarget.TransportType.LOOPBACK) {
+            try {
+                folderName = folderService.getFolder(target.getTargetFolderId()).getName();
+            } catch (RuntimeException ignored) {
+                // Keep DTO stable even if the folder became unavailable.
+            }
         }
         return new TransferTargetDto(
             target.getId(),
             target.getName(),
             target.getDescription(),
+            target.getTransportType(),
             target.getTargetFolderId(),
             folderName,
+            target.getEndpointUrl(),
+            target.getEndpointPath(),
+            target.getAuthType(),
+            target.getAuthUsername(),
+            target.getAuthSecret() != null && !target.getAuthSecret().isBlank(),
             target.isEnabled(),
+            target.getVerificationStatus(),
+            target.getVerificationMessage(),
+            target.getLastVerifiedAt(),
             target.getCreatedAt(),
             target.getUpdatedAt()
         );
@@ -383,10 +405,116 @@ public class TransferReplicationService {
         return value;
     }
 
+    private void applyTargetConfiguration(TransferTarget target, TransferTargetMutationRequest request, boolean creating) {
+        TransferTarget.TransportType transportType = request.transportType() != null
+            ? request.transportType()
+            : TransferTarget.TransportType.LOOPBACK;
+        UUID targetFolderId = requiredId(request.targetFolderId(), "targetFolderId");
+        TransferTarget.AuthType authType = request.authType() != null
+            ? request.authType()
+            : TransferTarget.AuthType.NONE;
+
+        TransferTarget.TransportType previousTransportType = target.getTransportType();
+        UUID previousTargetFolderId = target.getTargetFolderId();
+        String previousEndpointUrl = target.getEndpointUrl();
+        String previousEndpointPath = target.getEndpointPath();
+        TransferTarget.AuthType previousAuthType = target.getAuthType();
+        String previousAuthUsername = target.getAuthUsername();
+        String previousAuthSecret = target.getAuthSecret();
+
+        target.setTransportType(transportType);
+        target.setTargetFolderId(targetFolderId);
+        target.setEnabled(request.enabled() == null || request.enabled());
+
+        if (transportType == TransferTarget.TransportType.LOOPBACK) {
+            Folder folder = folderService.getFolder(targetFolderId);
+            target.setTargetFolderId(folder.getId());
+            target.setEndpointUrl(null);
+            target.setEndpointPath("/api/v1");
+            target.setAuthType(TransferTarget.AuthType.NONE);
+            target.setAuthUsername(null);
+            target.setAuthSecret(null);
+        } else {
+            target.setEndpointUrl(normalizeEndpointUrl(request.endpointUrl()));
+            target.setEndpointPath(normalizeEndpointPath(request.endpointPath()));
+            target.setAuthType(authType);
+            String username = request.authUsername() != null
+                ? normalizeOptional(request.authUsername())
+                : target.getAuthUsername();
+            String secret = request.authSecret() != null
+                ? normalizeOptional(request.authSecret())
+                : target.getAuthSecret();
+            if (authType == TransferTarget.AuthType.NONE) {
+                username = null;
+                secret = null;
+            } else if (authType == TransferTarget.AuthType.BASIC) {
+                if (username == null) {
+                    throw new IllegalArgumentException("authUsername is required for BASIC auth");
+                }
+                if (secret == null) {
+                    throw new IllegalArgumentException("authSecret is required for BASIC auth");
+                }
+            } else if (secret == null) {
+                throw new IllegalArgumentException("authSecret is required for BEARER auth");
+            }
+            target.setAuthUsername(username);
+            target.setAuthSecret(secret);
+        }
+
+        boolean verificationInputsChanged = creating
+            || !Objects.equals(previousTransportType, target.getTransportType())
+            || !Objects.equals(previousTargetFolderId, target.getTargetFolderId())
+            || !Objects.equals(previousEndpointUrl, target.getEndpointUrl())
+            || !Objects.equals(previousEndpointPath, target.getEndpointPath())
+            || !Objects.equals(previousAuthType, target.getAuthType())
+            || !Objects.equals(previousAuthUsername, target.getAuthUsername())
+            || !Objects.equals(previousAuthSecret, target.getAuthSecret());
+
+        if (verificationInputsChanged) {
+            target.setVerificationStatus(TransferTarget.VerificationStatus.NEVER_VERIFIED);
+            target.setVerificationMessage(null);
+            target.setLastVerifiedAt(null);
+        }
+    }
+
+    private String normalizeEndpointUrl(String endpointUrl) {
+        String normalized = normalizeRequired(endpointUrl, "endpointUrl is required for ATHENA_HTTP targets");
+        return normalized.replaceAll("/+$", "");
+    }
+
+    private String normalizeEndpointPath(String endpointPath) {
+        String normalized = normalizeOptional(endpointPath);
+        if (normalized == null) {
+            return "/api/v1";
+        }
+        if (!normalized.startsWith("/")) {
+            normalized = "/" + normalized;
+        }
+        normalized = normalized.replaceAll("/+$", "");
+        return normalized.isBlank() ? "/api/v1" : normalized;
+    }
+
+    private TransferClient clientFor(TransferTarget target) {
+        TransferTarget.TransportType type = target.getTransportType() != null
+            ? target.getTransportType()
+            : TransferTarget.TransportType.LOOPBACK;
+        TransferClient client = transferClients.get(type);
+        if (client == null) {
+            throw new IllegalStateException("No transfer client registered for transport type: " + type);
+        }
+        return client;
+    }
+
     public record TransferTargetMutationRequest(
         String name,
         String description,
+        TransferTarget.TransportType transportType,
         UUID targetFolderId,
+        String endpointUrl,
+        String endpointPath,
+        TransferTarget.AuthType authType,
+        String authUsername,
+        String authSecret,
         Boolean enabled
     ) {}
 
@@ -394,9 +522,18 @@ public class TransferReplicationService {
         UUID id,
         String name,
         String description,
+        TransferTarget.TransportType transportType,
         UUID targetFolderId,
         String targetFolderName,
+        String endpointUrl,
+        String endpointPath,
+        TransferTarget.AuthType authType,
+        String authUsername,
+        boolean authSecretConfigured,
         boolean enabled,
+        TransferTarget.VerificationStatus verificationStatus,
+        String verificationMessage,
+        LocalDateTime lastVerifiedAt,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
     ) {}

@@ -9,6 +9,7 @@ import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.repository.ReplicationDefinitionRepository;
 import com.ecm.core.repository.ReplicationJobRepository;
 import com.ecm.core.repository.TransferTargetRepository;
+import com.ecm.core.service.transfer.TransferClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -40,6 +41,8 @@ class TransferReplicationServiceTest {
     @Mock private NodeService nodeService;
     @Mock private NodeRepository nodeRepository;
     @Mock private SecurityService securityService;
+    @Mock private TransferClient loopbackTransferClient;
+    @Mock private TransferClient athenaTransferClient;
 
     private TransferReplicationService service;
     private Map<UUID, TransferTarget> storedTargets;
@@ -48,6 +51,8 @@ class TransferReplicationServiceTest {
 
     @BeforeEach
     void setUp() {
+        lenient().when(loopbackTransferClient.transportType()).thenReturn(TransferTarget.TransportType.LOOPBACK);
+        lenient().when(athenaTransferClient.transportType()).thenReturn(TransferTarget.TransportType.ATHENA_HTTP);
         service = new TransferReplicationService(
             transferTargetRepository,
             replicationDefinitionRepository,
@@ -56,6 +61,7 @@ class TransferReplicationServiceTest {
             nodeService,
             nodeRepository,
             securityService,
+            List.of(loopbackTransferClient, athenaTransferClient),
             Runnable::run
         );
         storedTargets = new LinkedHashMap<>();
@@ -129,7 +135,13 @@ class TransferReplicationServiceTest {
             new TransferReplicationService.TransferTargetMutationRequest(
                 "loopback",
                 "Local transfer target",
+                TransferTarget.TransportType.LOOPBACK,
                 folderId,
+                null,
+                null,
+                null,
+                null,
+                null,
                 true
             )
         );
@@ -137,6 +149,7 @@ class TransferReplicationServiceTest {
         assertEquals("loopback", target.name());
         assertEquals(folderId, target.targetFolderId());
         assertEquals("Outbound", target.targetFolderName());
+        assertEquals(TransferTarget.TransportType.LOOPBACK, target.transportType());
         assertTrue(target.enabled());
     }
 
@@ -147,7 +160,18 @@ class TransferReplicationServiceTest {
         when(transferTargetRepository.existsByNameIgnoreCase("loopback")).thenReturn(true);
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> service.createTarget(
-            new TransferReplicationService.TransferTargetMutationRequest("loopback", null, folderId, true)
+            new TransferReplicationService.TransferTargetMutationRequest(
+                "loopback",
+                null,
+                TransferTarget.TransportType.LOOPBACK,
+                folderId,
+                null,
+                null,
+                null,
+                null,
+                null,
+                true
+            )
         ));
 
         assertTrue(ex.getMessage().contains("Transfer target already exists"));
@@ -162,6 +186,7 @@ class TransferReplicationServiceTest {
         TransferTarget target = new TransferTarget();
         target.setId(UUID.randomUUID());
         target.setName("loopback");
+        target.setTransportType(TransferTarget.TransportType.LOOPBACK);
         target.setTargetFolderId(targetFolderId);
         target.setEnabled(true);
         target.setCreatedAt(LocalDateTime.now());
@@ -178,16 +203,70 @@ class TransferReplicationServiceTest {
         storedDefinitions.put(definition.getId(), definition);
 
         Node source = node(sourceNodeId, "Contracts");
-        Node copied = node(UUID.randomUUID(), "Contracts");
+        UUID copiedNodeId = UUID.randomUUID();
         when(folderService.getFolder(targetFolderId)).thenReturn(folder(targetFolderId, "Outbound"));
         when(nodeService.getNode(sourceNodeId)).thenReturn(source);
-        when(nodeService.copyNode(sourceNodeId, targetFolderId, "Contracts", true)).thenReturn(copied);
+        when(loopbackTransferClient.replicate(target, source, true))
+            .thenReturn(new TransferClient.TransferExecutionResult(copiedNodeId, "Loopback replication completed"));
 
         TransferReplicationService.ReplicationJobDto job = service.runDefinition(definition.getId());
 
         assertEquals(ReplicationJob.ReplicationJobStatus.COMPLETED, job.status());
-        assertEquals(copied.getId(), job.copiedNodeId());
+        assertEquals(copiedNodeId, job.copiedNodeId());
         assertNotNull(storedDefinitions.get(definition.getId()).getLastRunAt());
+    }
+
+    @Test
+    @DisplayName("verifyTarget stores successful ATHENA_HTTP verification metadata")
+    void verifyTargetStoresSuccessfulRemoteVerificationMetadata() {
+        TransferTarget target = new TransferTarget();
+        target.setId(UUID.randomUUID());
+        target.setName("remote-athena");
+        target.setTransportType(TransferTarget.TransportType.ATHENA_HTTP);
+        target.setTargetFolderId(UUID.randomUUID());
+        target.setEndpointUrl("https://remote.example");
+        target.setEndpointPath("/api/v1");
+        target.setEnabled(true);
+        target.setCreatedAt(LocalDateTime.now());
+        storedTargets.put(target.getId(), target);
+
+        when(athenaTransferClient.verifyTarget(target))
+            .thenReturn(new TransferClient.TransferVerificationResult("Verified remote Athena folder: Contracts"));
+
+        TransferReplicationService.TransferTargetDto verified = service.verifyTarget(target.getId());
+
+        assertEquals(TransferTarget.VerificationStatus.VERIFIED, verified.verificationStatus());
+        assertEquals("Verified remote Athena folder: Contracts", verified.verificationMessage());
+        assertNotNull(verified.lastVerifiedAt());
+    }
+
+    @Test
+    @DisplayName("createTarget supports ATHENA_HTTP transport targets")
+    void createTargetSupportsRemoteAthenaTarget() {
+        UUID remoteFolderId = UUID.randomUUID();
+        when(transferTargetRepository.existsByNameIgnoreCase("remote-athena")).thenReturn(false);
+
+        TransferReplicationService.TransferTargetDto target = service.createTarget(
+            new TransferReplicationService.TransferTargetMutationRequest(
+                "remote-athena",
+                "Remote transfer target",
+                TransferTarget.TransportType.ATHENA_HTTP,
+                remoteFolderId,
+                "https://remote.example",
+                "/api/v1",
+                TransferTarget.AuthType.BEARER,
+                null,
+                "secret-token",
+                true
+            )
+        );
+
+        assertEquals(TransferTarget.TransportType.ATHENA_HTTP, target.transportType());
+        assertEquals("https://remote.example", target.endpointUrl());
+        assertEquals("/api/v1", target.endpointPath());
+        assertEquals(TransferTarget.AuthType.BEARER, target.authType());
+        assertTrue(target.authSecretConfigured());
+        assertNull(target.targetFolderName());
     }
 
     @Test
@@ -196,6 +275,7 @@ class TransferReplicationServiceTest {
         TransferTarget target = new TransferTarget();
         target.setId(UUID.randomUUID());
         target.setName("loopback");
+        target.setTransportType(TransferTarget.TransportType.LOOPBACK);
         target.setTargetFolderId(UUID.randomUUID());
         storedTargets.put(target.getId(), target);
 

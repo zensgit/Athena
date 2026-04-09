@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.17.xsd">
+
+    <changeSet id="061-add-transfer-target-remote-fields" author="codex">
+        <addColumn tableName="transfer_targets">
+            <column name="transport_type" type="VARCHAR(30)" defaultValue="LOOPBACK">
+                <constraints nullable="false"/>
+            </column>
+            <column name="endpoint_url" type="TEXT"/>
+            <column name="endpoint_path" type="VARCHAR(255)" defaultValue="/api/v1"/>
+            <column name="auth_type" type="VARCHAR(20)" defaultValue="NONE">
+                <constraints nullable="false"/>
+            </column>
+            <column name="auth_username" type="VARCHAR(255)"/>
+            <column name="auth_secret" type="TEXT"/>
+            <column name="last_verified_at" type="TIMESTAMP"/>
+            <column name="verification_status" type="VARCHAR(30)" defaultValue="NEVER_VERIFIED">
+                <constraints nullable="false"/>
+            </column>
+            <column name="verification_message" type="TEXT"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>
