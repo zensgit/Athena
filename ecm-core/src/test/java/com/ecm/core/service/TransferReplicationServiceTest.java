@@ -231,12 +231,12 @@ class TransferReplicationServiceTest {
         storedTargets.put(target.getId(), target);
 
         when(athenaTransferClient.verifyTarget(target))
-            .thenReturn(new TransferClient.TransferVerificationResult("Verified remote Athena folder: Contracts"));
+            .thenReturn(new TransferClient.TransferVerificationResult("Verified remote Athena transfer receiver folder: Contracts"));
 
         TransferReplicationService.TransferTargetDto verified = service.verifyTarget(target.getId());
 
         assertEquals(TransferTarget.VerificationStatus.VERIFIED, verified.verificationStatus());
-        assertEquals("Verified remote Athena folder: Contracts", verified.verificationMessage());
+        assertEquals("Verified remote Athena transfer receiver folder: Contracts", verified.verificationMessage());
         assertNotNull(verified.lastVerifiedAt());
     }
 

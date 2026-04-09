@@ -50,6 +50,8 @@ public class SecurityConfig {
                 .requestMatchers("/error").permitAll()
                 .requestMatchers("/api/v1/ml/health").permitAll()
                 .requestMatchers("/api/v1/share/access/**", "/api/share/access/**").permitAll()
+                // Transfer receiver endpoints validate dedicated opaque headers in the controller/service layer.
+                .requestMatchers("/api/v1/transfer/receiver/**").permitAll()
                 // WOPI host endpoints are validated via opaque access_token query param
                 .requestMatchers("/wopi/**").permitAll()
                 // All other API endpoints require authentication
@@ -100,8 +102,9 @@ public class SecurityConfig {
     public BearerTokenResolver bearerTokenResolver() {
         return request -> {
             String uri = request.getRequestURI();
-            if (uri != null && uri.startsWith("/wopi/")) {
+            if (uri != null && (uri.startsWith("/wopi/") || uri.startsWith("/api/v1/transfer/receiver/"))) {
                 // Ignore WOPI access_token; it is not a JWT and must not be fed to the resource server.
+                // Transfer receiver uses dedicated opaque headers and must not be decoded as JWT either.
                 return null;
             }
 
