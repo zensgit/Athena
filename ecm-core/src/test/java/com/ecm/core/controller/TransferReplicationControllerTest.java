@@ -178,6 +178,18 @@ class TransferReplicationControllerTest {
     }
 
     @Test
+    @DisplayName("POST /replication/jobs/{id}/retry queues retry job")
+    void retryJobReturnsAccepted() throws Exception {
+        UUID jobId = UUID.randomUUID();
+        when(transferReplicationService.retryJob(jobId)).thenReturn(jobDto(jobId, ReplicationJob.ReplicationJobStatus.PENDING));
+
+        mockMvc.perform(post("/api/v1/replication/jobs/{jobId}/retry", jobId))
+            .andExpect(status().isAccepted())
+            .andExpect(jsonPath("$.status").value("PENDING"))
+            .andExpect(jsonPath("$.attemptNumber").value(1));
+    }
+
+    @Test
     @DisplayName("GET /replication/jobs lists jobs")
     void listJobsReturnsPage() throws Exception {
         when(transferReplicationService.listJobs(any())).thenReturn(new PageImpl<>(
@@ -250,11 +262,20 @@ class TransferReplicationControllerTest {
             UUID.randomUUID(),
             UUID.randomUUID(),
             UUID.randomUUID(),
+            null,
+            1,
             UUID.randomUUID(),
             "alice",
             status,
             "Replication job",
+            status == ReplicationJob.ReplicationJobStatus.FAILED
+                ? ReplicationJob.TransportStatus.FAILED
+                : status == ReplicationJob.ReplicationJobStatus.COMPLETED
+                    ? ReplicationJob.TransportStatus.SUCCESS
+                    : ReplicationJob.TransportStatus.NEVER_RUN,
+            "Transport diagnostics",
             null,
+            LocalDateTime.now(),
             LocalDateTime.now(),
             null,
             LocalDateTime.now(),

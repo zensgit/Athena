@@ -3,7 +3,9 @@ import api from './api';
 export type TransportType = 'LOOPBACK' | 'ATHENA_HTTP';
 export type AuthType = 'NONE' | 'BASIC' | 'BEARER';
 export type VerificationStatus = 'NEVER_VERIFIED' | 'VERIFIED' | 'FAILED';
-export type ReplicationJobStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
+export type ReplicationJobStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELED';
+export type ReplicationTransportStatus = 'NEVER_RUN' | 'RUNNING' | 'SUCCESS' | 'FAILED';
+export type ReceiverAccessStatus = 'NEVER_USED' | 'SUCCESS' | 'FAILED';
 
 export interface TransferTargetDto {
   id: string;
@@ -67,11 +69,16 @@ export interface ReplicationJobDto {
   definitionId: string;
   transferTargetId: string;
   sourceNodeId: string;
+  retryOfJobId?: string | null;
+  attemptNumber: number;
   copiedNodeId?: string | null;
   userId: string;
   status: ReplicationJobStatus;
   lastMessage?: string | null;
+  transportStatus: ReplicationTransportStatus;
+  transportMessage?: string | null;
   errorLog?: string | null;
+  lastAttemptedAt?: string | null;
   startedAt?: string | null;
   completedAt?: string | null;
   createdAt: string;
@@ -84,6 +91,36 @@ export interface PageResponse<T> {
   totalPages: number;
   number: number;
   size: number;
+}
+
+export interface TransferReceiverDto {
+  id: string;
+  name: string;
+  description?: string | null;
+  rootFolderId: string;
+  rootFolderName?: string | null;
+  authType: AuthType;
+  authUsername?: string | null;
+  authSecretConfigured: boolean;
+  enabled: boolean;
+  verificationStatus: VerificationStatus;
+  verificationMessage?: string | null;
+  lastVerifiedAt?: string | null;
+  lastAccessStatus: ReceiverAccessStatus;
+  lastAccessMessage?: string | null;
+  lastAccessedAt?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
+}
+
+export interface TransferReceiverMutationRequest {
+  name: string;
+  description?: string;
+  rootFolderId: string;
+  authType?: AuthType;
+  authUsername?: string;
+  authSecret?: string;
+  enabled?: boolean;
 }
 
 class TransferReplicationService {
@@ -132,6 +169,30 @@ class TransferReplicationService {
 
   async listJobs(page = 0, size = 10): Promise<PageResponse<ReplicationJobDto>> {
     return api.get<PageResponse<ReplicationJobDto>>('/replication/jobs', { params: { page, size } });
+  }
+
+  async retryJob(jobId: string): Promise<ReplicationJobDto> {
+    return api.post<ReplicationJobDto>(`/replication/jobs/${jobId}/retry`);
+  }
+
+  async listReceivers(): Promise<TransferReceiverDto[]> {
+    return api.get<TransferReceiverDto[]>('/transfer/receivers');
+  }
+
+  async createReceiver(payload: TransferReceiverMutationRequest): Promise<TransferReceiverDto> {
+    return api.post<TransferReceiverDto>('/transfer/receivers', payload);
+  }
+
+  async updateReceiver(receiverId: string, payload: TransferReceiverMutationRequest): Promise<TransferReceiverDto> {
+    return api.put<TransferReceiverDto>(`/transfer/receivers/${receiverId}`, payload);
+  }
+
+  async verifyReceiver(receiverId: string): Promise<TransferReceiverDto> {
+    return api.post<TransferReceiverDto>(`/transfer/receivers/${receiverId}/verify`);
+  }
+
+  async deleteReceiver(receiverId: string): Promise<void> {
+    return api.delete(`/transfer/receivers/${receiverId}`);
   }
 }
 

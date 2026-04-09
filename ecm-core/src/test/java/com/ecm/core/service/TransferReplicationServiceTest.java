@@ -212,8 +212,60 @@ class TransferReplicationServiceTest {
         TransferReplicationService.ReplicationJobDto job = service.runDefinition(definition.getId());
 
         assertEquals(ReplicationJob.ReplicationJobStatus.COMPLETED, job.status());
+        assertEquals(ReplicationJob.TransportStatus.SUCCESS, job.transportStatus());
         assertEquals(copiedNodeId, job.copiedNodeId());
+        assertEquals(1, job.attemptNumber());
         assertNotNull(storedDefinitions.get(definition.getId()).getLastRunAt());
+    }
+
+    @Test
+    @DisplayName("failed replication stores transport diagnostics and retry can requeue it")
+    void failedReplicationStoresDiagnosticsAndSupportsRetry() {
+        UUID targetFolderId = UUID.randomUUID();
+        UUID sourceNodeId = UUID.randomUUID();
+
+        TransferTarget target = new TransferTarget();
+        target.setId(UUID.randomUUID());
+        target.setName("remote-athena");
+        target.setTransportType(TransferTarget.TransportType.ATHENA_HTTP);
+        target.setTargetFolderId(targetFolderId);
+        target.setEndpointUrl("https://remote.example");
+        target.setEndpointPath("/api/v1");
+        target.setEnabled(true);
+        target.setCreatedAt(LocalDateTime.now());
+        storedTargets.put(target.getId(), target);
+
+        ReplicationDefinition definition = new ReplicationDefinition();
+        definition.setId(UUID.randomUUID());
+        definition.setName("contracts");
+        definition.setSourceNodeId(sourceNodeId);
+        definition.setTransferTargetId(target.getId());
+        definition.setIncludeChildren(true);
+        definition.setEnabled(true);
+        definition.setCreatedAt(LocalDateTime.now());
+        storedDefinitions.put(definition.getId(), definition);
+
+        Node source = node(sourceNodeId, "Contracts");
+        UUID copiedNodeId = UUID.randomUUID();
+        when(nodeService.getNode(sourceNodeId)).thenReturn(source);
+        when(athenaTransferClient.replicate(target, source, true))
+            .thenThrow(new IllegalStateException("Remote receiver rejected upload"))
+            .thenReturn(new TransferClient.TransferExecutionResult(copiedNodeId, "Remote transfer completed after retry"));
+
+        TransferReplicationService.ReplicationJobDto failedJob = service.runDefinition(definition.getId());
+
+        assertEquals(ReplicationJob.ReplicationJobStatus.FAILED, failedJob.status());
+        assertEquals(ReplicationJob.TransportStatus.FAILED, failedJob.transportStatus());
+        assertEquals("Remote receiver rejected upload", failedJob.transportMessage());
+        assertNotNull(failedJob.lastAttemptedAt());
+
+        TransferReplicationService.ReplicationJobDto retriedJob = service.retryJob(failedJob.id());
+
+        assertEquals(ReplicationJob.ReplicationJobStatus.COMPLETED, retriedJob.status());
+        assertEquals(ReplicationJob.TransportStatus.SUCCESS, retriedJob.transportStatus());
+        assertEquals(failedJob.id(), retriedJob.retryOfJobId());
+        assertEquals(2, retriedJob.attemptNumber());
+        assertEquals(copiedNodeId, retriedJob.copiedNodeId());
     }
 
     @Test

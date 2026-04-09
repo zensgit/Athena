@@ -117,4 +117,10 @@ public class TransferReplicationController {
     public ResponseEntity<TransferReplicationService.ReplicationJobDto> getJob(@PathVariable UUID jobId) {
         return ResponseEntity.ok(transferReplicationService.getJob(jobId));
     }
+
+    @PostMapping("/replication/jobs/{jobId}/retry")
+    @Operation(summary = "Retry failed replication job")
+    public ResponseEntity<TransferReplicationService.ReplicationJobDto> retryJob(@PathVariable UUID jobId) {
+        return ResponseEntity.accepted().body(transferReplicationService.retryJob(jobId));
+    }
 }

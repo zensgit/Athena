@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd">
+
+    <changeSet id="063-add-replication-job-diagnostics-columns" author="codex">
+        <addColumn tableName="replication_jobs">
+            <column name="retry_of_job_id" type="UUID"/>
+            <column name="attempt_number" type="INT" defaultValueNumeric="1">
+                <constraints nullable="false"/>
+            </column>
+            <column name="transport_status" type="VARCHAR(20)" defaultValue="NEVER_RUN">
+                <constraints nullable="false"/>
+            </column>
+            <column name="transport_message" type="TEXT"/>
+            <column name="last_attempted_at" type="TIMESTAMP"/>
+        </addColumn>
+
+        <createIndex indexName="idx_replication_job_retry_of_job_id" tableName="replication_jobs">
+            <column name="retry_of_job_id"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

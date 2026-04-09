@@ -34,15 +34,20 @@ import {
   PlayArrow,
   PublishedWithChanges,
   Refresh,
+  Replay,
   Save,
 } from '@mui/icons-material';
 import { toast } from 'react-toastify';
 import transferReplicationService, {
   AuthType,
+  ReceiverAccessStatus,
   ReplicationDefinitionDto,
   ReplicationDefinitionMutationRequest,
   ReplicationJobDto,
+  ReplicationTransportStatus,
   TransportType,
+  TransferReceiverDto,
+  TransferReceiverMutationRequest,
   TransferTargetDto,
   TransferTargetMutationRequest,
   VerificationStatus,
@@ -70,16 +75,40 @@ const EMPTY_DEFINITION_FORM: ReplicationDefinitionMutationRequest = {
   enabled: true,
 };
 
+const EMPTY_RECEIVER_FORM: TransferReceiverMutationRequest = {
+  name: '',
+  description: '',
+  rootFolderId: '',
+  authType: 'NONE',
+  authUsername: '',
+  authSecret: '',
+  enabled: true,
+};
+
 const verificationColor: Record<VerificationStatus, 'default' | 'success' | 'warning' | 'error'> = {
   NEVER_VERIFIED: 'warning',
   VERIFIED: 'success',
   FAILED: 'error',
 };
 
-const jobColor: Record<ReplicationJobDto['status'], 'default' | 'primary' | 'success' | 'error'> = {
+const jobColor: Record<ReplicationJobDto['status'], 'default' | 'primary' | 'success' | 'error' | 'warning'> = {
   PENDING: 'default',
   RUNNING: 'primary',
   COMPLETED: 'success',
+  FAILED: 'error',
+  CANCELED: 'warning',
+};
+
+const transportColor: Record<ReplicationTransportStatus, 'default' | 'primary' | 'success' | 'error'> = {
+  NEVER_RUN: 'default',
+  RUNNING: 'primary',
+  SUCCESS: 'success',
+  FAILED: 'error',
+};
+
+const receiverAccessColor: Record<ReceiverAccessStatus, 'default' | 'success' | 'error'> = {
+  NEVER_USED: 'default',
+  SUCCESS: 'success',
   FAILED: 'error',
 };
 
@@ -94,6 +123,7 @@ const formatTimestamp = (value?: string | null) => {
 
 const TransferReplicationPage: React.FC = () => {
   const [targets, setTargets] = useState<TransferTargetDto[]>([]);
+  const [receivers, setReceivers] = useState<TransferReceiverDto[]>([]);
   const [definitions, setDefinitions] = useState<ReplicationDefinitionDto[]>([]);
   const [jobs, setJobs] = useState<ReplicationJobDto[]>([]);
   const [jobsTotal, setJobsTotal] = useState(0);
@@ -101,13 +131,17 @@ const TransferReplicationPage: React.FC = () => {
   const [jobsRowsPerPage, setJobsRowsPerPage] = useState(10);
   const [loading, setLoading] = useState(false);
   const [targetDialogOpen, setTargetDialogOpen] = useState(false);
+  const [receiverDialogOpen, setReceiverDialogOpen] = useState(false);
   const [definitionDialogOpen, setDefinitionDialogOpen] = useState(false);
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
+  const [selectedReceiverId, setSelectedReceiverId] = useState<string | null>(null);
   const [selectedDefinitionId, setSelectedDefinitionId] = useState<string | null>(null);
   const [targetForm, setTargetForm] = useState<TransferTargetMutationRequest>(EMPTY_TARGET_FORM);
+  const [receiverForm, setReceiverForm] = useState<TransferReceiverMutationRequest>(EMPTY_RECEIVER_FORM);
   const [definitionForm, setDefinitionForm] = useState<ReplicationDefinitionMutationRequest>(EMPTY_DEFINITION_FORM);
   const [refreshTick, setRefreshTick] = useState(0);
   const [savingTarget, setSavingTarget] = useState(false);
+  const [savingReceiver, setSavingReceiver] = useState(false);
   const [savingDefinition, setSavingDefinition] = useState(false);
 
   const hasRunningJobs = useMemo(() => jobs.some((job) => runningStatuses.has(job.status)), [jobs]);
@@ -115,12 +149,14 @@ const TransferReplicationPage: React.FC = () => {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [nextTargets, nextDefinitions, jobsPageResult] = await Promise.all([
+      const [nextTargets, nextReceivers, nextDefinitions, jobsPageResult] = await Promise.all([
         transferReplicationService.listTargets(),
+        transferReplicationService.listReceivers(),
         transferReplicationService.listDefinitions(),
         transferReplicationService.listJobs(jobsPage, jobsRowsPerPage),
       ]);
       setTargets(nextTargets);
+      setReceivers(nextReceivers);
       setDefinitions(nextDefinitions);
       setJobs(jobsPageResult.content);
       setJobsTotal(jobsPageResult.totalElements);
@@ -165,6 +201,25 @@ const TransferReplicationPage: React.FC = () => {
     setTargetDialogOpen(true);
   };
 
+  const openReceiverDialog = (receiver?: TransferReceiverDto) => {
+    if (receiver) {
+      setSelectedReceiverId(receiver.id);
+      setReceiverForm({
+        name: receiver.name,
+        description: receiver.description || '',
+        rootFolderId: receiver.rootFolderId,
+        authType: receiver.authType,
+        authUsername: receiver.authUsername || '',
+        authSecret: '',
+        enabled: receiver.enabled,
+      });
+    } else {
+      setSelectedReceiverId(null);
+      setReceiverForm(EMPTY_RECEIVER_FORM);
+    }
+    setReceiverDialogOpen(true);
+  };
+
   const openDefinitionDialog = (definition?: ReplicationDefinitionDto) => {
     if (definition) {
       setSelectedDefinitionId(definition.id);
@@ -190,6 +245,12 @@ const TransferReplicationPage: React.FC = () => {
     setTargetDialogOpen(false);
     setSelectedTargetId(null);
     setTargetForm(EMPTY_TARGET_FORM);
+  };
+
+  const closeReceiverDialog = () => {
+    setReceiverDialogOpen(false);
+    setSelectedReceiverId(null);
+    setReceiverForm(EMPTY_RECEIVER_FORM);
   };
 
   const closeDefinitionDialog = () => {
@@ -220,6 +281,16 @@ const TransferReplicationPage: React.FC = () => {
     return base;
   };
 
+  const buildReceiverPayload = (): TransferReceiverMutationRequest => ({
+    name: receiverForm.name.trim(),
+    description: receiverForm.description?.trim() || undefined,
+    rootFolderId: receiverForm.rootFolderId.trim(),
+    authType: receiverForm.authType,
+    authUsername: receiverForm.authUsername?.trim() || undefined,
+    authSecret: receiverForm.authSecret?.trim() || undefined,
+    enabled: receiverForm.enabled,
+  });
+
   const handleSaveTarget = async () => {
     setSavingTarget(true);
     try {
@@ -237,6 +308,50 @@ const TransferReplicationPage: React.FC = () => {
       toast.error(error?.response?.data?.message || 'Failed to save transfer target');
     } finally {
       setSavingTarget(false);
+    }
+  };
+
+  const handleSaveReceiver = async () => {
+    setSavingReceiver(true);
+    try {
+      const payload = buildReceiverPayload();
+      if (selectedReceiverId) {
+        await transferReplicationService.updateReceiver(selectedReceiverId, payload);
+        toast.success('Receiver registry entry updated');
+      } else {
+        await transferReplicationService.createReceiver(payload);
+        toast.success('Receiver registry entry created');
+      }
+      closeReceiverDialog();
+      setRefreshTick((value) => value + 1);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || 'Failed to save receiver registry entry');
+    } finally {
+      setSavingReceiver(false);
+    }
+  };
+
+  const handleVerifyReceiver = async (receiverId: string) => {
+    try {
+      await transferReplicationService.verifyReceiver(receiverId);
+      toast.success('Receiver registry entry verified');
+      setRefreshTick((value) => value + 1);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || 'Receiver verification failed');
+      setRefreshTick((value) => value + 1);
+    }
+  };
+
+  const handleDeleteReceiver = async (receiverId: string) => {
+    if (!window.confirm('Delete this receiver registry entry?')) {
+      return;
+    }
+    try {
+      await transferReplicationService.deleteReceiver(receiverId);
+      toast.success('Receiver registry entry deleted');
+      setRefreshTick((value) => value + 1);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || 'Failed to delete receiver registry entry');
     }
   };
 
@@ -312,6 +427,17 @@ const TransferReplicationPage: React.FC = () => {
       setRefreshTick((value) => value + 1);
     } catch (error: any) {
       toast.error(error?.response?.data?.message || 'Failed to start replication job');
+    }
+  };
+
+  const handleRetryJob = async (jobId: string) => {
+    try {
+      await transferReplicationService.retryJob(jobId);
+      toast.success('Replication retry queued');
+      setJobsPage(0);
+      setRefreshTick((value) => value + 1);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || 'Failed to retry replication job');
     }
   };
 
@@ -533,6 +659,121 @@ const TransferReplicationPage: React.FC = () => {
               </CardContent>
             </Card>
           </Grid>
+
+          <Grid item xs={12}>
+            <Card>
+              <CardContent>
+                <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+                  <Box>
+                    <Typography variant="h6">Receiver Registry</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Manage inbound receiver roots, auth mode, verification, and last access diagnostics.
+                    </Typography>
+                  </Box>
+                  <Button variant="contained" startIcon={<Add />} onClick={() => openReceiverDialog()}>
+                    New Receiver
+                  </Button>
+                </Stack>
+
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Name</TableCell>
+                      <TableCell>Root Folder</TableCell>
+                      <TableCell>Auth</TableCell>
+                      <TableCell>Verification</TableCell>
+                      <TableCell>Last Access</TableCell>
+                      <TableCell align="right">Actions</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {receivers.map((receiver) => (
+                      <TableRow key={receiver.id} hover>
+                        <TableCell>
+                          <Stack spacing={0.5}>
+                            <Typography variant="body2" fontWeight={600}>
+                              {receiver.name}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {receiver.description || 'No description'}
+                            </Typography>
+                          </Stack>
+                        </TableCell>
+                        <TableCell sx={{ maxWidth: 180 }}>
+                          <Typography variant="body2" noWrap title={receiver.rootFolderName || receiver.rootFolderId}>
+                            {receiver.rootFolderName || receiver.rootFolderId}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Stack spacing={0.5}>
+                            <Chip size="small" label={receiver.authType} />
+                            <Typography variant="caption" color="text.secondary">
+                              {receiver.authSecretConfigured ? 'Secret configured' : 'No secret configured'}
+                            </Typography>
+                          </Stack>
+                        </TableCell>
+                        <TableCell>
+                          <Stack spacing={0.5}>
+                            <Chip
+                              size="small"
+                              label={receiver.verificationStatus}
+                              color={verificationColor[receiver.verificationStatus]}
+                            />
+                            <Typography variant="caption" color="text.secondary">
+                              {receiver.verificationMessage || formatTimestamp(receiver.lastVerifiedAt)}
+                            </Typography>
+                          </Stack>
+                        </TableCell>
+                        <TableCell>
+                          <Stack spacing={0.5}>
+                            <Chip
+                              size="small"
+                              label={receiver.lastAccessStatus}
+                              color={receiverAccessColor[receiver.lastAccessStatus]}
+                            />
+                            <Typography variant="caption" color="text.secondary">
+                              {receiver.lastAccessMessage || formatTimestamp(receiver.lastAccessedAt)}
+                            </Typography>
+                          </Stack>
+                        </TableCell>
+                        <TableCell align="right">
+                          <Stack direction="row" justifyContent="flex-end" spacing={1}>
+                            <Button size="small" onClick={() => openReceiverDialog(receiver)}>
+                              Edit
+                            </Button>
+                            <Button
+                              size="small"
+                              startIcon={<PublishedWithChanges />}
+                              onClick={() => void handleVerifyReceiver(receiver.id)}
+                            >
+                              Verify
+                            </Button>
+                            <Button
+                              size="small"
+                              color="error"
+                              startIcon={<Delete />}
+                              onClick={() => void handleDeleteReceiver(receiver.id)}
+                            >
+                              Delete
+                            </Button>
+                          </Stack>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {receivers.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={6}>
+                          <Typography variant="body2" color="text.secondary">
+                            No receiver registry entries configured yet.
+                          </Typography>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </Grid>
         </Grid>
 
         <Card>
@@ -541,7 +782,7 @@ const TransferReplicationPage: React.FC = () => {
               <Box>
                 <Typography variant="h6">Replication Jobs</Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Monitor queued, running, completed, and failed outbound replication jobs.
+                  Monitor queued, running, completed, and failed outbound replication jobs, including transport diagnostics and manual retry.
                 </Typography>
               </Box>
               <Chip
@@ -556,12 +797,16 @@ const TransferReplicationPage: React.FC = () => {
                 <TableHead>
                   <TableRow>
                     <TableCell>Status</TableCell>
+                    <TableCell>Attempt</TableCell>
+                    <TableCell>Transport</TableCell>
                     <TableCell>User</TableCell>
                     <TableCell>Source Node</TableCell>
                     <TableCell>Target</TableCell>
                     <TableCell>Message</TableCell>
+                    <TableCell>Last Attempt</TableCell>
                     <TableCell>Started</TableCell>
                     <TableCell>Completed</TableCell>
+                    <TableCell align="right">Actions</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -569,6 +814,22 @@ const TransferReplicationPage: React.FC = () => {
                     <TableRow key={job.id} hover>
                       <TableCell>
                         <Chip size="small" label={job.status} color={jobColor[job.status]} />
+                      </TableCell>
+                      <TableCell>
+                        <Stack spacing={0.5}>
+                          <Typography variant="body2">{job.attemptNumber}</Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {job.retryOfJobId ? 'Retry' : 'Initial run'}
+                          </Typography>
+                        </Stack>
+                      </TableCell>
+                      <TableCell>
+                        <Stack spacing={0.5}>
+                          <Chip size="small" label={job.transportStatus} color={transportColor[job.transportStatus]} />
+                          <Typography variant="caption" color="text.secondary" noWrap title={job.transportMessage || ''}>
+                            {job.transportMessage || '—'}
+                          </Typography>
+                        </Stack>
                       </TableCell>
                       <TableCell>{job.userId}</TableCell>
                       <TableCell sx={{ maxWidth: 180 }}>
@@ -586,13 +847,25 @@ const TransferReplicationPage: React.FC = () => {
                           {job.errorLog || job.lastMessage || '—'}
                         </Typography>
                       </TableCell>
+                      <TableCell>{formatTimestamp(job.lastAttemptedAt)}</TableCell>
                       <TableCell>{formatTimestamp(job.startedAt)}</TableCell>
                       <TableCell>{formatTimestamp(job.completedAt)}</TableCell>
+                      <TableCell align="right">
+                        {job.status === 'FAILED' || job.status === 'CANCELED' ? (
+                          <Button size="small" startIcon={<Replay />} onClick={() => void handleRetryJob(job.id)}>
+                            Retry
+                          </Button>
+                        ) : (
+                          <Typography variant="caption" color="text.secondary">
+                            —
+                          </Typography>
+                        )}
+                      </TableCell>
                     </TableRow>
                   ))}
                   {jobs.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={7}>
+                      <TableCell colSpan={11}>
                         <Typography variant="body2" color="text.secondary">
                           No replication jobs yet.
                         </Typography>
@@ -803,6 +1076,88 @@ const TransferReplicationPage: React.FC = () => {
             disabled={savingDefinition}
           >
             {selectedDefinitionId ? 'Save Definition' : 'Create Definition'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={receiverDialogOpen} onClose={closeReceiverDialog} fullWidth maxWidth="sm">
+        <DialogTitle>{selectedReceiverId ? 'Edit Receiver Registry Entry' : 'New Receiver Registry Entry'}</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <TextField
+              label="Name"
+              value={receiverForm.name}
+              onChange={(event) => setReceiverForm((current) => ({ ...current, name: event.target.value }))}
+              fullWidth
+            />
+            <TextField
+              label="Description"
+              value={receiverForm.description || ''}
+              onChange={(event) => setReceiverForm((current) => ({ ...current, description: event.target.value }))}
+              fullWidth
+            />
+            <TextField
+              label="Root Folder ID"
+              value={receiverForm.rootFolderId}
+              onChange={(event) => setReceiverForm((current) => ({ ...current, rootFolderId: event.target.value }))}
+              helperText="The receiver can only accept uploads under this root folder subtree."
+              fullWidth
+            />
+            <FormControl fullWidth>
+              <InputLabel id="receiver-auth-label">Auth Type</InputLabel>
+              <Select
+                labelId="receiver-auth-label"
+                label="Auth Type"
+                value={receiverForm.authType || 'NONE'}
+                onChange={(event) =>
+                  setReceiverForm((current) => ({
+                    ...current,
+                    authType: event.target.value as AuthType,
+                  }))
+                }
+              >
+                <MenuItem value="NONE">NONE</MenuItem>
+                <MenuItem value="BASIC">BASIC</MenuItem>
+                <MenuItem value="BEARER">BEARER</MenuItem>
+              </Select>
+            </FormControl>
+            {receiverForm.authType === 'BASIC' && (
+              <TextField
+                label="Auth Username"
+                value={receiverForm.authUsername || ''}
+                onChange={(event) => setReceiverForm((current) => ({ ...current, authUsername: event.target.value }))}
+                fullWidth
+              />
+            )}
+            {receiverForm.authType !== 'NONE' && (
+              <TextField
+                label={selectedReceiverId ? 'Auth Secret (leave blank to keep current)' : 'Auth Secret'}
+                type="password"
+                value={receiverForm.authSecret || ''}
+                onChange={(event) => setReceiverForm((current) => ({ ...current, authSecret: event.target.value }))}
+                fullWidth
+              />
+            )}
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={Boolean(receiverForm.enabled)}
+                  onChange={(event) => setReceiverForm((current) => ({ ...current, enabled: event.target.checked }))}
+                />
+              }
+              label="Enabled"
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeReceiverDialog}>Cancel</Button>
+          <Button
+            variant="contained"
+            startIcon={<Save />}
+            onClick={() => void handleSaveReceiver()}
+            disabled={savingReceiver}
+          >
+            {selectedReceiverId ? 'Save Receiver' : 'Create Receiver'}
           </Button>
         </DialogActions>
       </Dialog>

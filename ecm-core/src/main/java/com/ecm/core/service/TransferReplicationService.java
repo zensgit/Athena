@@ -216,18 +216,7 @@ public class TransferReplicationService {
         }
         TransferTarget target = requireEnabledTarget(definition.getTransferTargetId(), true);
         Node source = nodeService.getNode(definition.getSourceNodeId());
-
-        ReplicationJob job = new ReplicationJob();
-        job.setDefinitionId(definition.getId());
-        job.setTransferTargetId(target.getId());
-        job.setSourceNodeId(source.getId());
-        job.setUserId(securityService.getCurrentUser());
-        job.setStatus(ReplicationJobStatus.PENDING);
-        job.setLastMessage("Queued replication");
-        ReplicationJob saved = replicationJobRepository.save(job);
-
-        executor.execute(() -> processJob(saved.getId()));
-        return toDto(saved);
+        return queueJob(definition, target, source, null, 1, "Queued replication");
     }
 
     public Page<ReplicationJobDto> listJobs(Pageable pageable) {
@@ -240,10 +229,35 @@ public class TransferReplicationService {
         return toDto(requireJob(jobId));
     }
 
+    public ReplicationJobDto retryJob(UUID jobId) {
+        requireAdmin();
+        ReplicationJob previousJob = requireJob(jobId);
+        if (previousJob.getStatus() != ReplicationJobStatus.FAILED && previousJob.getStatus() != ReplicationJobStatus.CANCELED) {
+            throw new IllegalStateException("Only failed or canceled replication jobs can be retried");
+        }
+        ReplicationDefinition definition = requireDefinition(previousJob.getDefinitionId());
+        if (!definition.isEnabled()) {
+            throw new IllegalStateException("Replication definition is disabled");
+        }
+        TransferTarget target = requireEnabledTarget(previousJob.getTransferTargetId(), true);
+        Node source = nodeService.getNode(previousJob.getSourceNodeId());
+        return queueJob(
+            definition,
+            target,
+            source,
+            previousJob.getId(),
+            Math.max(previousJob.getAttemptNumber(), 1) + 1,
+            "Queued retry for job " + previousJob.getId()
+        );
+    }
+
     void processJob(UUID jobId) {
         ReplicationJob job = requireJob(jobId);
         job.setStatus(ReplicationJobStatus.RUNNING);
         job.setStartedAt(LocalDateTime.now());
+        job.setLastAttemptedAt(LocalDateTime.now());
+        job.setTransportStatus(ReplicationJob.TransportStatus.RUNNING);
+        job.setTransportMessage("Transport replication started");
         job.setLastMessage("Replication started");
         job = replicationJobRepository.save(job);
 
@@ -261,15 +275,43 @@ public class TransferReplicationService {
             job.setStatus(ReplicationJobStatus.COMPLETED);
             job.setCompletedAt(LocalDateTime.now());
             job.setLastMessage(result.message());
+            job.setTransportStatus(ReplicationJob.TransportStatus.SUCCESS);
+            job.setTransportMessage(result.message());
+            job.setErrorLog(null);
             replicationJobRepository.save(job);
         } catch (RuntimeException ex) {
             log.warn("Replication job {} failed: {}", jobId, ex.getMessage());
             job.setStatus(ReplicationJobStatus.FAILED);
             job.setCompletedAt(LocalDateTime.now());
             job.setLastMessage("Replication failed");
+            job.setTransportStatus(ReplicationJob.TransportStatus.FAILED);
+            job.setTransportMessage(ex.getMessage());
             job.setErrorLog(ex.getMessage());
             replicationJobRepository.save(job);
         }
+    }
+
+    private ReplicationJobDto queueJob(
+        ReplicationDefinition definition,
+        TransferTarget target,
+        Node source,
+        UUID retryOfJobId,
+        int attemptNumber,
+        String queuedMessage
+    ) {
+        ReplicationJob job = new ReplicationJob();
+        job.setDefinitionId(definition.getId());
+        job.setTransferTargetId(target.getId());
+        job.setSourceNodeId(source.getId());
+        job.setRetryOfJobId(retryOfJobId);
+        job.setAttemptNumber(attemptNumber);
+        job.setUserId(securityService.getCurrentUser());
+        job.setStatus(ReplicationJobStatus.PENDING);
+        job.setTransportStatus(ReplicationJob.TransportStatus.NEVER_RUN);
+        job.setLastMessage(queuedMessage);
+        ReplicationJob saved = replicationJobRepository.save(job);
+        executor.execute(() -> processJob(saved.getId()));
+        return toDto(saved);
     }
 
     private void requireAdmin() {
@@ -370,11 +412,16 @@ public class TransferReplicationService {
             job.getDefinitionId(),
             job.getTransferTargetId(),
             job.getSourceNodeId(),
+            job.getRetryOfJobId(),
+            job.getAttemptNumber(),
             job.getCopiedNodeId(),
             job.getUserId(),
             job.getStatus(),
             job.getLastMessage(),
+            job.getTransportStatus(),
+            job.getTransportMessage(),
             job.getErrorLog(),
+            job.getLastAttemptedAt(),
             job.getStartedAt(),
             job.getCompletedAt(),
             job.getCreatedAt(),
@@ -567,11 +614,16 @@ public class TransferReplicationService {
         UUID definitionId,
         UUID transferTargetId,
         UUID sourceNodeId,
+        UUID retryOfJobId,
+        int attemptNumber,
         UUID copiedNodeId,
         String userId,
         ReplicationJobStatus status,
         String lastMessage,
+        ReplicationJob.TransportStatus transportStatus,
+        String transportMessage,
         String errorLog,
+        LocalDateTime lastAttemptedAt,
         LocalDateTime startedAt,
         LocalDateTime completedAt,
         LocalDateTime createdAt,
