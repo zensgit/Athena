@@ -330,6 +330,8 @@ public class FolderService {
      */
     public void deleteFolder(UUID folderId, boolean permanent, boolean recursive) {
         Folder folder = getFolder(folderId);
+        String deletedPath = folder.getPath();
+        java.util.Set<String> readableAuthorities = securityService.resolveReadAuthorities(folder);
 
         if (!securityService.hasPermission(folder, PermissionType.DELETE)) {
             throw new SecurityException("No permission to delete folder: " + folder.getName());
@@ -348,7 +350,8 @@ public class FolderService {
         }
 
         log.info("Deleted folder: {} (permanent: {})", folder.getName(), permanent);
-        eventPublisher.publishEvent(new NodeDeletedEvent(folder, securityService.getCurrentUser(), permanent));
+        eventPublisher.publishEvent(new NodeDeletedEvent(
+            folder, securityService.getCurrentUser(), permanent, deletedPath, readableAuthorities));
     }
 
     /**

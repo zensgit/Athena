@@ -1,5 +1,7 @@
 package com.ecm.core.cmis;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ecm.core.entity.AuditLog;
 import com.ecm.core.entity.Node;
 import com.ecm.core.repository.NodeRepository;
@@ -13,13 +15,21 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 public class CmisChangeLogService {
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final int MAX_SCAN_MULTIPLIER = 20;
+    private static final int MIN_SCAN_LIMIT = 500;
+    private static final int MAX_SCAN_LIMIT = 5000;
 
     private static final List<String> CMIS_EVENT_TYPES = List.of(
         "NODE_CREATED", "NODE_UPDATED", "NODE_DELETED", "VERSION_CREATED"
@@ -40,10 +50,14 @@ public class CmisChangeLogService {
     public CmisModels.ContentChangesResponse getContentChanges(String changeLogToken, int maxItems) {
         int normalizedMax = Math.max(Math.min(maxItems, 1000), 1);
         int batchSize = Math.min(Math.max(normalizedMax * 3, 50), 1000);
+        int maxScannedEntries = Math.min(Math.max(normalizedMax * MAX_SCAN_MULTIPLIER, MIN_SCAN_LIMIT), MAX_SCAN_LIMIT);
         ChangeCursor cursor = ChangeCursor.parse(changeLogToken);
         String latestToken = normalizeToken(changeLogToken);
         List<CmisModels.ChangeEntry> changes = new java.util.ArrayList<>();
         boolean hasMoreItems = false;
+        int scannedEntries = 0;
+        boolean tenantScoped = tenantWorkspaceScopeService.hasScopedTenantWorkspace();
+        Set<String> currentAuthorities = securityService.getUserAuthorities(securityService.getCurrentUser());
 
         while (changes.size() < normalizedMax) {
             Page<AuditLog> page = fetchPage(cursor, batchSize);
@@ -52,11 +66,13 @@ public class CmisChangeLogService {
             }
 
             List<AuditLog> logs = page.getContent();
+            scannedEntries += logs.size();
+            VisibilityContext visibilityContext = buildVisibilityContext(logs);
             for (int index = 0; index < logs.size(); index++) {
                 AuditLog log = logs.get(index);
                 cursor = ChangeCursor.from(log);
                 latestToken = cursor.serialize();
-                if (!isVisible(log)) {
+                if (!isVisible(log, visibilityContext, tenantScoped, currentAuthorities)) {
                     continue;
                 }
                 changes.add(toChangeEntry(log));
@@ -64,6 +80,10 @@ public class CmisChangeLogService {
                     hasMoreItems = index < logs.size() - 1 || page.hasNext();
                     break;
                 }
+            }
+
+            if (changes.size() < normalizedMax && scannedEntries >= maxScannedEntries) {
+                return new CmisModels.ContentChangesResponse(changes, latestToken, page.hasNext());
             }
 
             if (changes.size() == normalizedMax || !page.hasNext()) {
@@ -96,21 +116,44 @@ public class CmisChangeLogService {
         );
     }
 
-    private boolean isVisible(AuditLog auditLog) {
+    private boolean isVisible(AuditLog auditLog,
+                              VisibilityContext visibilityContext,
+                              boolean tenantScoped,
+                              Set<String> currentAuthorities) {
         if (auditLog.getNodeId() == null) {
             return false;
         }
-        Node node = nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(
-            auditLog.getNodeId(), Node.ArchiveStatus.LIVE
-        ).orElse(null);
-        if (node == null) {
+
+        Node node = visibilityContext.nodesById().get(auditLog.getNodeId());
+        if (node != null) {
+            if (tenantScoped && !tenantWorkspaceScopeService.isPathVisible(node.getPath())) {
+                return false;
+            }
+            if (!"NODE_DELETED".equals(auditLog.getEventType())
+                && (node.isDeleted() || node.getArchiveStatus() != Node.ArchiveStatus.LIVE)) {
+                return false;
+            }
+            return securityService.hasPermission(node, com.ecm.core.entity.Permission.PermissionType.READ);
+        }
+
+        if (!"NODE_DELETED".equals(auditLog.getEventType())) {
             return false;
         }
-        if (tenantWorkspaceScopeService.hasScopedTenantWorkspace()
-            && !tenantWorkspaceScopeService.isPathVisible(node.getPath())) {
+
+        DeletedNodeMetadata metadata = visibilityContext.deletedMetadataByAuditId().get(auditLog.getId());
+        if (metadata == null || metadata.path() == null || metadata.path().isBlank()) {
+            return securityService.hasRole("ROLE_ADMIN");
+        }
+        if (tenantScoped && !tenantWorkspaceScopeService.isPathVisible(metadata.path())) {
             return false;
         }
-        return securityService.hasPermission(node, com.ecm.core.entity.Permission.PermissionType.READ);
+        if (securityService.hasRole("ROLE_ADMIN")) {
+            return true;
+        }
+        if (metadata.readableAuthorities().isEmpty()) {
+            return false;
+        }
+        return currentAuthorities.stream().anyMatch(metadata.readableAuthorities()::contains);
     }
 
     private String normalizeToken(String changeLogToken) {
@@ -118,6 +161,59 @@ public class CmisChangeLogService {
             return null;
         }
         return changeLogToken.trim();
+    }
+
+    private VisibilityContext buildVisibilityContext(List<AuditLog> logs) {
+        Set<UUID> nodeIds = new HashSet<>();
+        for (AuditLog log : logs) {
+            if (log.getNodeId() != null) {
+                nodeIds.add(log.getNodeId());
+            }
+        }
+
+        Map<UUID, Node> nodesById = new HashMap<>();
+        for (Node node : nodeRepository.findAllById(nodeIds)) {
+            nodesById.put(node.getId(), node);
+        }
+
+        Map<UUID, DeletedNodeMetadata> deletedMetadataByAuditId = new HashMap<>();
+        for (AuditLog log : logs) {
+            if ("NODE_DELETED".equals(log.getEventType())) {
+                DeletedNodeMetadata metadata = parseDeletedMetadata(log.getMetadata());
+                if (metadata != null) {
+                    deletedMetadataByAuditId.put(log.getId(), metadata);
+                }
+            }
+        }
+        return new VisibilityContext(nodesById, deletedMetadataByAuditId);
+    }
+
+    private DeletedNodeMetadata parseDeletedMetadata(String metadata) {
+        if (metadata == null || metadata.isBlank()) {
+            return null;
+        }
+        try {
+            JsonNode root = OBJECT_MAPPER.readTree(metadata);
+            String path = root.path("path").asText(null);
+            Set<String> readableAuthorities = new HashSet<>();
+            JsonNode readableNode = root.path("readableAuthorities");
+            if (readableNode.isArray()) {
+                readableNode.forEach(value -> {
+                    if (value != null && value.isTextual()) {
+                        readableAuthorities.add(value.asText());
+                    }
+                });
+            }
+            return new DeletedNodeMetadata(path, readableAuthorities);
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private record VisibilityContext(Map<UUID, Node> nodesById, Map<UUID, DeletedNodeMetadata> deletedMetadataByAuditId) {
+    }
+
+    private record DeletedNodeMetadata(String path, Set<String> readableAuthorities) {
     }
 
     private record ChangeCursor(LocalDateTime eventTime, UUID auditLogId, boolean legacy) {

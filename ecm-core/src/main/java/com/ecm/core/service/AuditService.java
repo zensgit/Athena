@@ -1,5 +1,7 @@
 package com.ecm.core.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ecm.core.entity.AuditCategory;
 import com.ecm.core.entity.AuditCategorySetting;
 import com.ecm.core.entity.AuditLog;
@@ -33,6 +35,8 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class AuditService {
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     
     private final AuditLogRepository auditLogRepository;
     private final AuditCategorySettingRepository auditCategorySettingRepository;
@@ -68,6 +72,11 @@ public class AuditService {
     
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void logEvent(String eventType, UUID nodeId, String nodeName, String username, String details) {
+        logEvent(eventType, nodeId, nodeName, username, details, null);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void logEvent(String eventType, UUID nodeId, String nodeName, String username, String details, String metadata) {
         try {
             if (!isCategoryEnabled(eventType)) {
                 return;
@@ -79,6 +88,7 @@ public class AuditService {
                 .username(username)
                 .eventTime(LocalDateTime.now())
                 .details(details)
+                .metadata(metadata)
                 .build();
             
             auditLogRepository.save(logEntry);
@@ -198,9 +208,23 @@ public class AuditService {
     }
     
     public void logNodeDeleted(Node node, String username, boolean permanent) {
-        logEvent(permanent ? "NODE_DELETED" : "NODE_SOFT_DELETED", 
-            node.getId(), node.getName(), username, 
-            String.format("%s deleted %s: %s", permanent ? "Permanently" : "Soft", node.getNodeType(), node.getName()));
+        logNodeDeleted(node, username, permanent, node != null ? node.getPath() : null, Set.of());
+    }
+
+    public void logNodeDeleted(Node node, String username, boolean permanent, String nodePath, Set<String> readableAuthorities) {
+        logEvent(
+            permanent ? "NODE_DELETED" : "NODE_SOFT_DELETED",
+            node.getId(),
+            node.getName(),
+            username,
+            String.format("%s deleted %s: %s", permanent ? "Permanently" : "Soft", node.getNodeType(), node.getName()),
+            serializeMetadata(Map.of(
+                "path", nodePath != null ? nodePath : "",
+                "nodeType", node.getNodeType().name(),
+                "permanent", permanent,
+                "readableAuthorities", readableAuthorities != null ? readableAuthorities : Set.of()
+            ))
+        );
     }
     
     public void logNodeMoved(Node node, Node oldParent, Node newParent, String username) {
@@ -293,5 +317,17 @@ public class AuditService {
 
         // Use rule ID as nodeId for batch operations (no single document)
         logEvent(eventType, rule.getId(), rule.getName(), username, details);
+    }
+
+    private String serializeMetadata(Map<String, ?> metadata) {
+        if (metadata == null || metadata.isEmpty()) {
+            return null;
+        }
+        try {
+            return OBJECT_MAPPER.writeValueAsString(metadata);
+        } catch (JsonProcessingException ex) {
+            log.warn("Failed to serialize audit metadata", ex);
+            return null;
+        }
     }
 }

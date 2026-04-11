@@ -59,7 +59,13 @@ public class EcmEventListener {
         log.info("Node deleted: {}", event.getNode().getName());
         
         // Audit
-        auditService.logNodeDeleted(event.getNode(), event.getUsername(), event.isPermanent());
+        auditService.logNodeDeleted(
+            event.getNode(),
+            event.getUsername(),
+            event.isPermanent(),
+            event.getNodePath(),
+            event.getReadableAuthorities()
+        );
         
         // Remove from search index if permanent
         if (event.isPermanent()) {

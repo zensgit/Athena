@@ -323,6 +323,8 @@ public class NodeService {
     
     public void deleteNode(UUID nodeId, boolean permanent) {
         Node node = getNode(nodeId);
+        String deletedPath = node.getPath();
+        java.util.Set<String> readableAuthorities = securityService.resolveReadAuthorities(node);
         
         if (!securityService.hasPermission(node, PermissionType.DELETE)) {
             throw new SecurityException("No permission to delete node: " + node.getName());
@@ -335,7 +337,7 @@ public class NodeService {
         }
         
         eventPublisher.publishEvent(new NodeDeletedEvent(
-            node, securityService.getCurrentUser(), permanent));
+            node, securityService.getCurrentUser(), permanent, deletedPath, readableAuthorities));
     }
     
     public void lockNode(UUID nodeId) {
