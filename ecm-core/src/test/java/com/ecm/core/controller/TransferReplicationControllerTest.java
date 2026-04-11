@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
@@ -23,9 +24,11 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -178,6 +181,144 @@ class TransferReplicationControllerTest {
     }
 
     @Test
+    @DisplayName("POST /replication/definitions creates replication definition with schedule and failure policy fields")
+    void createDefinitionReturnsCreatedWithScheduleAndFailurePolicy() throws Exception {
+        UUID sourceNodeId = UUID.randomUUID();
+        UUID transferTargetId = UUID.randomUUID();
+        when(transferReplicationService.createDefinition(any())).thenReturn(definitionDto(
+            UUID.randomUUID(),
+            "nightly",
+            "Nightly replication",
+            sourceNodeId,
+            "Contracts",
+            transferTargetId,
+            "Remote Outbound",
+            true,
+            true,
+            "0 0 2 * * *",
+            "UTC",
+            true,
+            3,
+            15,
+            14
+        ));
+
+        mockMvc.perform(post("/api/v1/replication/definitions")
+                .contentType("application/json")
+                .content("""
+                    {
+                      "name": "nightly",
+                      "description": "Nightly replication",
+                      "sourceNodeId": "%s",
+                      "transferTargetId": "%s",
+                      "includeChildren": true,
+                      "enabled": true,
+                      "cronExpression": "0 0 2 * * *",
+                      "scheduleTimezone": "UTC",
+                      "autoRetryEnabled": true,
+                      "maxRetryAttempts": 3,
+                      "retryBackoffMinutes": 15,
+                      "jobRetentionDays": 14
+                    }
+                    """.formatted(sourceNodeId, transferTargetId)))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.name").value("nightly"))
+            .andExpect(jsonPath("$.cronExpression").value("0 0 2 * * *"))
+            .andExpect(jsonPath("$.scheduleTimezone").value("UTC"))
+            .andExpect(jsonPath("$.autoRetryEnabled").value(true))
+            .andExpect(jsonPath("$.maxRetryAttempts").value(3))
+            .andExpect(jsonPath("$.retryBackoffMinutes").value(15))
+            .andExpect(jsonPath("$.jobRetentionDays").value(14));
+
+        ArgumentCaptor<TransferReplicationService.ReplicationDefinitionMutationRequest> requestCaptor =
+            ArgumentCaptor.forClass(TransferReplicationService.ReplicationDefinitionMutationRequest.class);
+        verify(transferReplicationService).createDefinition(requestCaptor.capture());
+        TransferReplicationService.ReplicationDefinitionMutationRequest request = requestCaptor.getValue();
+        org.junit.jupiter.api.Assertions.assertEquals("nightly", request.name());
+        org.junit.jupiter.api.Assertions.assertEquals("Nightly replication", request.description());
+        org.junit.jupiter.api.Assertions.assertEquals(sourceNodeId, request.sourceNodeId());
+        org.junit.jupiter.api.Assertions.assertEquals(transferTargetId, request.transferTargetId());
+        org.junit.jupiter.api.Assertions.assertEquals(true, request.includeChildren());
+        org.junit.jupiter.api.Assertions.assertEquals(true, request.enabled());
+        org.junit.jupiter.api.Assertions.assertEquals("0 0 2 * * *", request.cronExpression());
+        org.junit.jupiter.api.Assertions.assertEquals("UTC", request.scheduleTimezone());
+        org.junit.jupiter.api.Assertions.assertEquals(true, request.autoRetryEnabled());
+        org.junit.jupiter.api.Assertions.assertEquals(3, request.maxRetryAttempts());
+        org.junit.jupiter.api.Assertions.assertEquals(15, request.retryBackoffMinutes());
+        org.junit.jupiter.api.Assertions.assertEquals(14, request.jobRetentionDays());
+    }
+
+    @Test
+    @DisplayName("PUT /replication/definitions/{id} updates replication definition with schedule and failure policy fields")
+    void updateDefinitionReturnsOkWithScheduleAndFailurePolicy() throws Exception {
+        UUID definitionId = UUID.randomUUID();
+        UUID sourceNodeId = UUID.randomUUID();
+        UUID transferTargetId = UUID.randomUUID();
+        when(transferReplicationService.updateDefinition(any(), any())).thenReturn(definitionDto(
+            definitionId,
+            "nightly",
+            "Nightly replication updated",
+            sourceNodeId,
+            "Contracts",
+            transferTargetId,
+            "Remote Outbound",
+            false,
+            true,
+            "0 30 2 * * *",
+            "Asia/Shanghai",
+            true,
+            5,
+            20,
+            30
+        ));
+
+        mockMvc.perform(put("/api/v1/replication/definitions/{definitionId}", definitionId)
+                .contentType("application/json")
+                .content("""
+                    {
+                      "name": "nightly",
+                      "description": "Nightly replication updated",
+                      "sourceNodeId": "%s",
+                      "transferTargetId": "%s",
+                      "includeChildren": false,
+                      "enabled": true,
+                      "cronExpression": "0 30 2 * * *",
+                      "scheduleTimezone": "Asia/Shanghai",
+                      "autoRetryEnabled": true,
+                      "maxRetryAttempts": 5,
+                      "retryBackoffMinutes": 20,
+                      "jobRetentionDays": 30
+                    }
+                    """.formatted(sourceNodeId, transferTargetId)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.description").value("Nightly replication updated"))
+            .andExpect(jsonPath("$.includeChildren").value(false))
+            .andExpect(jsonPath("$.cronExpression").value("0 30 2 * * *"))
+            .andExpect(jsonPath("$.scheduleTimezone").value("Asia/Shanghai"))
+            .andExpect(jsonPath("$.autoRetryEnabled").value(true))
+            .andExpect(jsonPath("$.maxRetryAttempts").value(5))
+            .andExpect(jsonPath("$.retryBackoffMinutes").value(20))
+            .andExpect(jsonPath("$.jobRetentionDays").value(30));
+
+        ArgumentCaptor<TransferReplicationService.ReplicationDefinitionMutationRequest> requestCaptor =
+            ArgumentCaptor.forClass(TransferReplicationService.ReplicationDefinitionMutationRequest.class);
+        verify(transferReplicationService).updateDefinition(org.mockito.ArgumentMatchers.eq(definitionId), requestCaptor.capture());
+        TransferReplicationService.ReplicationDefinitionMutationRequest request = requestCaptor.getValue();
+        org.junit.jupiter.api.Assertions.assertEquals("nightly", request.name());
+        org.junit.jupiter.api.Assertions.assertEquals("Nightly replication updated", request.description());
+        org.junit.jupiter.api.Assertions.assertEquals(sourceNodeId, request.sourceNodeId());
+        org.junit.jupiter.api.Assertions.assertEquals(transferTargetId, request.transferTargetId());
+        org.junit.jupiter.api.Assertions.assertEquals(false, request.includeChildren());
+        org.junit.jupiter.api.Assertions.assertEquals(true, request.enabled());
+        org.junit.jupiter.api.Assertions.assertEquals("0 30 2 * * *", request.cronExpression());
+        org.junit.jupiter.api.Assertions.assertEquals("Asia/Shanghai", request.scheduleTimezone());
+        org.junit.jupiter.api.Assertions.assertEquals(true, request.autoRetryEnabled());
+        org.junit.jupiter.api.Assertions.assertEquals(5, request.maxRetryAttempts());
+        org.junit.jupiter.api.Assertions.assertEquals(20, request.retryBackoffMinutes());
+        org.junit.jupiter.api.Assertions.assertEquals(30, request.jobRetentionDays());
+    }
+
+    @Test
     @DisplayName("POST /replication/jobs/{id}/retry queues retry job")
     void retryJobReturnsAccepted() throws Exception {
         UUID jobId = UUID.randomUUID();
@@ -201,6 +342,9 @@ class TransferReplicationControllerTest {
         mockMvc.perform(get("/api/v1/replication/jobs").param("page", "0").param("size", "20"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.content[0].status").value("COMPLETED"))
+            .andExpect(jsonPath("$.content[0].transportStatus").value("SUCCESS"))
+            .andExpect(jsonPath("$.content[0].attemptNumber").value(1))
+            .andExpect(jsonPath("$.content[0].scheduledFor").exists())
             .andExpect(jsonPath("$.totalElements").value(1));
     }
 
@@ -264,6 +408,7 @@ class TransferReplicationControllerTest {
             UUID.randomUUID(),
             null,
             1,
+            LocalDateTime.now(),
             UUID.randomUUID(),
             "alice",
             status,
@@ -280,6 +425,47 @@ class TransferReplicationControllerTest {
             null,
             LocalDateTime.now(),
             LocalDateTime.now()
+        );
+    }
+
+    private TransferReplicationService.ReplicationDefinitionDto definitionDto(
+        UUID id,
+        String name,
+        String description,
+        UUID sourceNodeId,
+        String sourceNodeName,
+        UUID transferTargetId,
+        String transferTargetName,
+        boolean includeChildren,
+        boolean enabled,
+        String cronExpression,
+        String scheduleTimezone,
+        boolean autoRetryEnabled,
+        int maxRetryAttempts,
+        int retryBackoffMinutes,
+        int jobRetentionDays
+    ) {
+        LocalDateTime now = LocalDateTime.now();
+        return new TransferReplicationService.ReplicationDefinitionDto(
+            id,
+            name,
+            description,
+            sourceNodeId,
+            sourceNodeName,
+            transferTargetId,
+            transferTargetName,
+            includeChildren,
+            enabled,
+            cronExpression,
+            scheduleTimezone,
+            now,
+            autoRetryEnabled,
+            maxRetryAttempts,
+            retryBackoffMinutes,
+            jobRetentionDays,
+            now,
+            now,
+            now
         );
     }
 }

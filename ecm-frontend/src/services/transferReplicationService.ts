@@ -50,6 +50,13 @@ export interface ReplicationDefinitionDto {
   transferTargetName?: string | null;
   includeChildren: boolean;
   enabled: boolean;
+  cronExpression?: string | null;
+  scheduleTimezone?: string | null;
+  nextRunAt?: string | null;
+  autoRetryEnabled: boolean;
+  maxRetryAttempts: number;
+  retryBackoffMinutes: number;
+  jobRetentionDays: number;
   lastRunAt?: string | null;
   createdAt: string;
   updatedAt?: string | null;
@@ -62,7 +69,64 @@ export interface ReplicationDefinitionMutationRequest {
   transferTargetId: string;
   includeChildren?: boolean;
   enabled?: boolean;
+  cronExpression?: string;
+  scheduleTimezone?: string;
+  autoRetryEnabled?: boolean;
+  maxRetryAttempts?: number;
+  retryBackoffMinutes?: number;
+  jobRetentionDays?: number;
 }
+
+export interface ReplicationDefinitionDraft {
+  name: string;
+  description?: string;
+  sourceNodeId: string;
+  transferTargetId: string;
+  includeChildren?: boolean;
+  enabled?: boolean;
+  cronExpression?: string;
+  scheduleTimezone?: string;
+  autoRetryEnabled?: boolean;
+  maxRetryAttempts?: string | number | null;
+  retryBackoffMinutes?: string | number | null;
+  jobRetentionDays?: string | number | null;
+}
+
+const toOptionalNumber = (value: string | number | null | undefined): number | undefined => {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : undefined;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+export const buildReplicationDefinitionRequest = (
+  draft: ReplicationDefinitionDraft
+): ReplicationDefinitionMutationRequest => {
+  const payload: ReplicationDefinitionMutationRequest = {
+    name: draft.name.trim(),
+    description: draft.description?.trim() || undefined,
+    sourceNodeId: draft.sourceNodeId.trim(),
+    transferTargetId: draft.transferTargetId,
+    includeChildren: draft.includeChildren,
+    enabled: draft.enabled,
+    cronExpression: draft.cronExpression?.trim() || undefined,
+    scheduleTimezone: draft.scheduleTimezone?.trim() || undefined,
+    autoRetryEnabled: draft.autoRetryEnabled,
+    maxRetryAttempts: toOptionalNumber(draft.maxRetryAttempts),
+    retryBackoffMinutes: toOptionalNumber(draft.retryBackoffMinutes),
+    jobRetentionDays: toOptionalNumber(draft.jobRetentionDays),
+  };
+
+  return payload;
+};
 
 export interface ReplicationJobDto {
   id: string;
@@ -71,6 +135,7 @@ export interface ReplicationJobDto {
   sourceNodeId: string;
   retryOfJobId?: string | null;
   attemptNumber: number;
+  scheduledFor?: string | null;
   copiedNodeId?: string | null;
   userId: string;
   status: ReplicationJobStatus;
@@ -196,5 +261,5 @@ class TransferReplicationService {
   }
 }
 
-const transferReplicationService = new TransferReplicationService();
+export const transferReplicationService = new TransferReplicationService();
 export default transferReplicationService;

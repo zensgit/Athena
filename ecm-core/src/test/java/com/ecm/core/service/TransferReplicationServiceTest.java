@@ -114,6 +114,16 @@ class TransferReplicationServiceTest {
         );
         lenient().when(replicationDefinitionRepository.findAll()).thenAnswer(invocation -> List.copyOf(storedDefinitions.values()));
         lenient().when(transferTargetRepository.findAll()).thenAnswer(invocation -> List.copyOf(storedTargets.values()));
+        lenient().when(replicationJobRepository.findAll()).thenAnswer(invocation -> List.copyOf(storedJobs.values()));
+        lenient().when(replicationDefinitionRepository.findByEnabledTrueAndCronExpressionIsNotNullAndNextRunAtIsNotNullAndNextRunAtLessThanEqual(any(LocalDateTime.class)))
+            .thenAnswer(invocation -> {
+                LocalDateTime cutoff = invocation.getArgument(0);
+                return storedDefinitions.values().stream()
+                    .filter(ReplicationDefinition::isEnabled)
+                    .filter(definition -> definition.getCronExpression() != null && !definition.getCronExpression().isBlank())
+                    .filter(definition -> definition.getNextRunAt() != null && !definition.getNextRunAt().isAfter(cutoff))
+                    .toList();
+            });
         lenient().when(replicationJobRepository.findAllByOrderByCreatedAtDesc(any())).thenAnswer(invocation -> {
             PageRequest pageable = invocation.getArgument(0);
             List<ReplicationJob> jobs = storedJobs.values().stream()
@@ -121,6 +131,33 @@ class TransferReplicationServiceTest {
                 .toList();
             return new PageImpl<>(jobs, pageable, jobs.size());
         });
+        lenient().when(replicationJobRepository.findByStatusAndScheduledForLessThanEqual(any(), any(LocalDateTime.class)))
+            .thenAnswer(invocation -> {
+                ReplicationJob.ReplicationJobStatus status = invocation.getArgument(0);
+                LocalDateTime cutoff = invocation.getArgument(1);
+                return storedJobs.values().stream()
+                    .filter(job -> job.getStatus() == status)
+                    .filter(job -> job.getScheduledFor() != null && !job.getScheduledFor().isAfter(cutoff))
+                    .toList();
+            });
+        lenient().when(replicationJobRepository.findByDefinitionIdAndStatusInAndCompletedAtBefore(any(), any(), any(LocalDateTime.class)))
+            .thenAnswer(invocation -> {
+                UUID definitionId = invocation.getArgument(0);
+                @SuppressWarnings("unchecked")
+                java.util.Collection<ReplicationJob.ReplicationJobStatus> statuses = invocation.getArgument(1);
+                LocalDateTime cutoff = invocation.getArgument(2);
+                return storedJobs.values().stream()
+                    .filter(job -> java.util.Objects.equals(job.getDefinitionId(), definitionId))
+                    .filter(job -> statuses.contains(job.getStatus()))
+                    .filter(job -> job.getCompletedAt() != null && job.getCompletedAt().isBefore(cutoff))
+                    .toList();
+            });
+        lenient().doAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            java.util.Collection<ReplicationJob> jobs = invocation.getArgument(0);
+            jobs.forEach(job -> storedJobs.remove(job.getId()));
+            return null;
+        }).when(replicationJobRepository).deleteAll(any(java.util.Collection.class));
     }
 
     @Test
@@ -219,6 +256,88 @@ class TransferReplicationServiceTest {
     }
 
     @Test
+    @DisplayName("createDefinition validates cron and computes next run plus failure policy")
+    void createDefinitionStoresScheduleAndFailurePolicy() {
+        UUID sourceNodeId = UUID.randomUUID();
+        UUID targetId = UUID.randomUUID();
+        Node source = node(sourceNodeId, "Contracts");
+        TransferTarget target = new TransferTarget();
+        target.setId(targetId);
+        target.setName("remote");
+        target.setTransportType(TransferTarget.TransportType.ATHENA_HTTP);
+        target.setTargetFolderId(UUID.randomUUID());
+        target.setEndpointUrl("https://remote.example");
+        target.setEnabled(true);
+        storedTargets.put(targetId, target);
+
+        when(replicationDefinitionRepository.existsByNameIgnoreCase("nightly")).thenReturn(false);
+        when(nodeService.getNode(sourceNodeId)).thenReturn(source);
+
+        TransferReplicationService.ReplicationDefinitionDto definition = service.createDefinition(
+            new TransferReplicationService.ReplicationDefinitionMutationRequest(
+                "nightly",
+                "Nightly replication",
+                sourceNodeId,
+                targetId,
+                true,
+                true,
+                "0 0 2 * * *",
+                "UTC",
+                true,
+                3,
+                15,
+                14
+            )
+        );
+
+        assertEquals("0 0 2 * * *", definition.cronExpression());
+        assertEquals("UTC", definition.scheduleTimezone());
+        assertNotNull(definition.nextRunAt());
+        assertTrue(definition.autoRetryEnabled());
+        assertEquals(3, definition.maxRetryAttempts());
+        assertEquals(15, definition.retryBackoffMinutes());
+        assertEquals(14, definition.jobRetentionDays());
+    }
+
+    @Test
+    @DisplayName("createDefinition rejects invalid cron expressions")
+    void createDefinitionRejectsInvalidCronExpressions() {
+        UUID sourceNodeId = UUID.randomUUID();
+        UUID targetId = UUID.randomUUID();
+        Node source = node(sourceNodeId, "Contracts");
+        TransferTarget target = new TransferTarget();
+        target.setId(targetId);
+        target.setName("remote");
+        target.setTransportType(TransferTarget.TransportType.ATHENA_HTTP);
+        target.setTargetFolderId(UUID.randomUUID());
+        target.setEndpointUrl("https://remote.example");
+        target.setEnabled(true);
+        storedTargets.put(targetId, target);
+
+        when(replicationDefinitionRepository.existsByNameIgnoreCase("nightly")).thenReturn(false);
+        when(nodeService.getNode(sourceNodeId)).thenReturn(source);
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> service.createDefinition(
+            new TransferReplicationService.ReplicationDefinitionMutationRequest(
+                "nightly",
+                "Nightly replication",
+                sourceNodeId,
+                targetId,
+                true,
+                true,
+                "not-a-cron",
+                "UTC",
+                true,
+                3,
+                15,
+                14
+            )
+        ));
+
+        assertTrue(ex.getMessage().contains("Invalid replication cron expression"));
+    }
+
+    @Test
     @DisplayName("failed replication stores transport diagnostics and retry can requeue it")
     void failedReplicationStoresDiagnosticsAndSupportsRetry() {
         UUID targetFolderId = UUID.randomUUID();
@@ -266,6 +385,128 @@ class TransferReplicationServiceTest {
         assertEquals(failedJob.id(), retriedJob.retryOfJobId());
         assertEquals(2, retriedJob.attemptNumber());
         assertEquals(copiedNodeId, retriedJob.copiedNodeId());
+    }
+
+    @Test
+    @DisplayName("failed replication queues automatic retry with backoff when policy allows")
+    void failedReplicationQueuesAutomaticRetryWithBackoff() {
+        UUID targetFolderId = UUID.randomUUID();
+        UUID sourceNodeId = UUID.randomUUID();
+
+        TransferTarget target = new TransferTarget();
+        target.setId(UUID.randomUUID());
+        target.setName("remote-athena");
+        target.setTransportType(TransferTarget.TransportType.ATHENA_HTTP);
+        target.setTargetFolderId(targetFolderId);
+        target.setEndpointUrl("https://remote.example");
+        target.setEndpointPath("/api/v1");
+        target.setEnabled(true);
+        target.setCreatedAt(LocalDateTime.now());
+        storedTargets.put(target.getId(), target);
+
+        ReplicationDefinition definition = new ReplicationDefinition();
+        definition.setId(UUID.randomUUID());
+        definition.setName("contracts");
+        definition.setSourceNodeId(sourceNodeId);
+        definition.setTransferTargetId(target.getId());
+        definition.setIncludeChildren(true);
+        definition.setEnabled(true);
+        definition.setAutoRetryEnabled(true);
+        definition.setMaxRetryAttempts(2);
+        definition.setRetryBackoffMinutes(10);
+        definition.setCreatedAt(LocalDateTime.now());
+        storedDefinitions.put(definition.getId(), definition);
+
+        Node source = node(sourceNodeId, "Contracts");
+        when(nodeService.getNode(sourceNodeId)).thenReturn(source);
+        when(athenaTransferClient.replicate(target, source, true))
+            .thenThrow(new IllegalStateException("Remote receiver rejected upload"));
+
+        TransferReplicationService.ReplicationJobDto failedJob = service.runDefinition(definition.getId());
+
+        assertEquals(ReplicationJob.ReplicationJobStatus.FAILED, failedJob.status());
+        ReplicationJob queuedRetry = storedJobs.values().stream()
+            .filter(job -> failedJob.id().equals(job.getRetryOfJobId()))
+            .findFirst()
+            .orElseThrow();
+        assertEquals(ReplicationJob.ReplicationJobStatus.PENDING, queuedRetry.getStatus());
+        assertEquals(2, queuedRetry.getAttemptNumber());
+        assertNotNull(queuedRetry.getScheduledFor());
+    }
+
+    @Test
+    @DisplayName("runScheduledDefinitions queues due definitions and skips active jobs")
+    void runScheduledDefinitionsQueuesDueDefinitionsAndSkipsActiveJobs() {
+        UUID targetId = UUID.randomUUID();
+        UUID sourceNodeId = UUID.randomUUID();
+        TransferTarget target = new TransferTarget();
+        target.setId(targetId);
+        target.setName("remote");
+        target.setTransportType(TransferTarget.TransportType.ATHENA_HTTP);
+        target.setTargetFolderId(UUID.randomUUID());
+        target.setEndpointUrl("https://remote.example");
+        target.setEnabled(true);
+        storedTargets.put(targetId, target);
+
+        ReplicationDefinition dueDefinition = new ReplicationDefinition();
+        dueDefinition.setId(UUID.randomUUID());
+        dueDefinition.setName("nightly");
+        dueDefinition.setSourceNodeId(sourceNodeId);
+        dueDefinition.setTransferTargetId(targetId);
+        dueDefinition.setEnabled(true);
+        dueDefinition.setCronExpression("0 0 2 * * *");
+        dueDefinition.setScheduleTimezone("UTC");
+        dueDefinition.setNextRunAt(LocalDateTime.now().minusMinutes(1));
+        storedDefinitions.put(dueDefinition.getId(), dueDefinition);
+
+        ReplicationJob activeJob = new ReplicationJob();
+        activeJob.setId(UUID.randomUUID());
+        activeJob.setDefinitionId(dueDefinition.getId());
+        activeJob.setTransferTargetId(targetId);
+        activeJob.setSourceNodeId(sourceNodeId);
+        activeJob.setStatus(ReplicationJob.ReplicationJobStatus.RUNNING);
+        activeJob.setCreatedAt(LocalDateTime.now());
+        storedJobs.put(activeJob.getId(), activeJob);
+
+        TransferReplicationService.ScheduledReplicationBatchDto result = service.runScheduledDefinitions();
+
+        assertEquals(1, result.dueDefinitions());
+        assertEquals(0, result.queuedDefinitions());
+        assertEquals(1, result.skippedDefinitions());
+    }
+
+    @Test
+    @DisplayName("cleanupExpiredJobs removes terminal jobs older than definition retention")
+    void cleanupExpiredJobsRemovesTerminalJobsOlderThanRetention() {
+        UUID definitionId = UUID.randomUUID();
+        ReplicationDefinition definition = new ReplicationDefinition();
+        definition.setId(definitionId);
+        definition.setName("nightly");
+        definition.setJobRetentionDays(7);
+        storedDefinitions.put(definitionId, definition);
+
+        ReplicationJob expired = new ReplicationJob();
+        expired.setId(UUID.randomUUID());
+        expired.setDefinitionId(definitionId);
+        expired.setStatus(ReplicationJob.ReplicationJobStatus.COMPLETED);
+        expired.setCompletedAt(LocalDateTime.now().minusDays(10));
+        expired.setCreatedAt(LocalDateTime.now().minusDays(10));
+        storedJobs.put(expired.getId(), expired);
+
+        ReplicationJob fresh = new ReplicationJob();
+        fresh.setId(UUID.randomUUID());
+        fresh.setDefinitionId(definitionId);
+        fresh.setStatus(ReplicationJob.ReplicationJobStatus.COMPLETED);
+        fresh.setCompletedAt(LocalDateTime.now().minusDays(1));
+        fresh.setCreatedAt(LocalDateTime.now().minusDays(1));
+        storedJobs.put(fresh.getId(), fresh);
+
+        TransferReplicationService.ReplicationJobRetentionCleanupDto cleanup = service.cleanupExpiredJobs();
+
+        assertEquals(1, cleanup.affectedDefinitions());
+        assertEquals(1, cleanup.deletedJobs());
+        assertFalse(storedJobs.containsKey(expired.getId()));
+        assertTrue(storedJobs.containsKey(fresh.getId()));
     }
 
     @Test

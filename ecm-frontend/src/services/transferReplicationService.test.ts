@@ -1,5 +1,8 @@
 import api from './api';
-import transferReplicationService from './transferReplicationService';
+import {
+  buildReplicationDefinitionRequest,
+  transferReplicationService,
+} from './transferReplicationService';
 
 jest.mock('./api', () => ({
   __esModule: true,
@@ -68,5 +71,39 @@ describe('transferReplicationService receiver registry wrappers', () => {
     await transferReplicationService.retryJob('job-id');
 
     expect(mockedApi.post).toHaveBeenCalledWith('/replication/jobs/job-id/retry');
+  });
+});
+
+describe('transferReplicationService replication definition builder', () => {
+  test('trims and preserves schedule and failure policy fields', () => {
+    expect(
+      buildReplicationDefinitionRequest({
+        name: '  nightly export  ',
+        description: '  exports all documents  ',
+        sourceNodeId: '  node-id  ',
+        transferTargetId: 'target-id',
+        includeChildren: true,
+        enabled: false,
+        cronExpression: ' 0 0 * * * ',
+        scheduleTimezone: '  UTC ',
+        autoRetryEnabled: true,
+        maxRetryAttempts: ' 5 ',
+        retryBackoffMinutes: ' 15 ',
+        jobRetentionDays: ' 45 ',
+      })
+    ).toEqual({
+      name: 'nightly export',
+      description: 'exports all documents',
+      sourceNodeId: 'node-id',
+      transferTargetId: 'target-id',
+      includeChildren: true,
+      enabled: false,
+      cronExpression: '0 0 * * *',
+      scheduleTimezone: 'UTC',
+      autoRetryEnabled: true,
+      maxRetryAttempts: 5,
+      retryBackoffMinutes: 15,
+      jobRetentionDays: 45,
+    });
   });
 });

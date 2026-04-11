@@ -39,6 +39,27 @@ public class ReplicationDefinition {
     @Column(name = "enabled", nullable = false)
     private boolean enabled = true;
 
+    @Column(name = "cron_expression", length = 100)
+    private String cronExpression;
+
+    @Column(name = "schedule_timezone", length = 64)
+    private String scheduleTimezone = "UTC";
+
+    @Column(name = "next_run_at")
+    private LocalDateTime nextRunAt;
+
+    @Column(name = "auto_retry_enabled", nullable = false)
+    private boolean autoRetryEnabled = false;
+
+    @Column(name = "max_retry_attempts", nullable = false)
+    private Integer maxRetryAttempts = 0;
+
+    @Column(name = "retry_backoff_minutes", nullable = false)
+    private Integer retryBackoffMinutes = 0;
+
+    @Column(name = "job_retention_days", nullable = false)
+    private Integer jobRetentionDays = 30;
+
     @Column(name = "last_run_at")
     private LocalDateTime lastRunAt;
 

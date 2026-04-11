@@ -44,6 +44,9 @@ public class ReplicationJob {
     @Column(name = "attempt_number", nullable = false)
     private int attemptNumber = 1;
 
+    @Column(name = "scheduled_for")
+    private LocalDateTime scheduledFor;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
     private ReplicationJobStatus status = ReplicationJobStatus.PENDING;

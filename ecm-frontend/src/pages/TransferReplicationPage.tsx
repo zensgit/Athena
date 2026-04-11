@@ -41,8 +41,8 @@ import { toast } from 'react-toastify';
 import transferReplicationService, {
   AuthType,
   ReceiverAccessStatus,
+  buildReplicationDefinitionRequest,
   ReplicationDefinitionDto,
-  ReplicationDefinitionMutationRequest,
   ReplicationJobDto,
   ReplicationTransportStatus,
   TransportType,
@@ -66,13 +66,34 @@ const EMPTY_TARGET_FORM: TransferTargetMutationRequest = {
   enabled: true,
 };
 
-const EMPTY_DEFINITION_FORM: ReplicationDefinitionMutationRequest = {
+interface ReplicationDefinitionFormState {
+  name: string;
+  description: string;
+  sourceNodeId: string;
+  transferTargetId: string;
+  includeChildren: boolean;
+  enabled: boolean;
+  cronExpression: string;
+  scheduleTimezone: string;
+  autoRetryEnabled: boolean;
+  maxRetryAttempts: string;
+  retryBackoffMinutes: string;
+  jobRetentionDays: string;
+}
+
+const EMPTY_DEFINITION_FORM: ReplicationDefinitionFormState = {
   name: '',
   description: '',
   sourceNodeId: '',
   transferTargetId: '',
   includeChildren: true,
   enabled: true,
+  cronExpression: '',
+  scheduleTimezone: 'UTC',
+  autoRetryEnabled: false,
+  maxRetryAttempts: '',
+  retryBackoffMinutes: '',
+  jobRetentionDays: '30',
 };
 
 const EMPTY_RECEIVER_FORM: TransferReceiverMutationRequest = {
@@ -121,6 +142,29 @@ const formatTimestamp = (value?: string | null) => {
   return new Date(value).toLocaleString();
 };
 
+const formatScheduleSummary = (definition: ReplicationDefinitionDto) => {
+  if (!definition.cronExpression) {
+    return 'Ad hoc';
+  }
+  return definition.scheduleTimezone
+    ? `${definition.cronExpression} (${definition.scheduleTimezone})`
+    : definition.cronExpression;
+};
+
+const formatFailurePolicySummary = (definition: ReplicationDefinitionDto) => {
+  const summary: string[] = [];
+  if (definition.autoRetryEnabled) {
+    summary.push(`Auto retry (${definition.maxRetryAttempts} max)`);
+    summary.push(`${definition.retryBackoffMinutes} min backoff`);
+  } else {
+    summary.push('Manual retry only');
+  }
+  summary.push(`Retain ${definition.jobRetentionDays}d`);
+  return summary.join(' · ');
+};
+
+const toTextValue = (value?: string | null) => value || '';
+
 const TransferReplicationPage: React.FC = () => {
   const [targets, setTargets] = useState<TransferTargetDto[]>([]);
   const [receivers, setReceivers] = useState<TransferReceiverDto[]>([]);
@@ -138,7 +182,7 @@ const TransferReplicationPage: React.FC = () => {
   const [selectedDefinitionId, setSelectedDefinitionId] = useState<string | null>(null);
   const [targetForm, setTargetForm] = useState<TransferTargetMutationRequest>(EMPTY_TARGET_FORM);
   const [receiverForm, setReceiverForm] = useState<TransferReceiverMutationRequest>(EMPTY_RECEIVER_FORM);
-  const [definitionForm, setDefinitionForm] = useState<ReplicationDefinitionMutationRequest>(EMPTY_DEFINITION_FORM);
+  const [definitionForm, setDefinitionForm] = useState<ReplicationDefinitionFormState>(EMPTY_DEFINITION_FORM);
   const [refreshTick, setRefreshTick] = useState(0);
   const [savingTarget, setSavingTarget] = useState(false);
   const [savingReceiver, setSavingReceiver] = useState(false);
@@ -230,6 +274,12 @@ const TransferReplicationPage: React.FC = () => {
         transferTargetId: definition.transferTargetId,
         includeChildren: definition.includeChildren,
         enabled: definition.enabled,
+        cronExpression: definition.cronExpression || '',
+        scheduleTimezone: definition.scheduleTimezone || 'UTC',
+        autoRetryEnabled: definition.autoRetryEnabled,
+        maxRetryAttempts: String(definition.maxRetryAttempts),
+        retryBackoffMinutes: String(definition.retryBackoffMinutes),
+        jobRetentionDays: String(definition.jobRetentionDays),
       });
     } else {
       setSelectedDefinitionId(null);
@@ -382,14 +432,7 @@ const TransferReplicationPage: React.FC = () => {
   const handleSaveDefinition = async () => {
     setSavingDefinition(true);
     try {
-      const payload: ReplicationDefinitionMutationRequest = {
-        name: definitionForm.name.trim(),
-        description: definitionForm.description?.trim() || undefined,
-        sourceNodeId: definitionForm.sourceNodeId.trim(),
-        transferTargetId: definitionForm.transferTargetId,
-        includeChildren: definitionForm.includeChildren,
-        enabled: definitionForm.enabled,
-      };
+      const payload = buildReplicationDefinitionRequest(definitionForm);
       if (selectedDefinitionId) {
         await transferReplicationService.updateDefinition(selectedDefinitionId, payload);
         toast.success('Replication definition updated');
@@ -567,8 +610,8 @@ const TransferReplicationPage: React.FC = () => {
                 <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
                   <Box>
                     <Typography variant="h6">Replication Definitions</Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      Bind source nodes to transfer targets and queue outbound replication jobs.
+                <Typography variant="body2" color="text.secondary">
+                      Bind source nodes to transfer targets, author schedule/failure policy, and queue outbound replication jobs.
                     </Typography>
                   </Box>
                   <Button
@@ -586,6 +629,10 @@ const TransferReplicationPage: React.FC = () => {
                     Create at least one transfer target before adding replication definitions.
                   </Alert>
                 )}
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  Schedule, retry, and retention policy are authored on replication definitions and consumed by the backend
+                  scheduler, retry queue, and retention cleanup.
+                </Alert>
 
                 <Table size="small">
                   <TableHead>
@@ -593,6 +640,8 @@ const TransferReplicationPage: React.FC = () => {
                       <TableCell>Name</TableCell>
                       <TableCell>Source</TableCell>
                       <TableCell>Target</TableCell>
+                      <TableCell>Schedule</TableCell>
+                      <TableCell>Failure Policy</TableCell>
                       <TableCell>Last Run</TableCell>
                       <TableCell align="right">Actions</TableCell>
                     </TableRow>
@@ -608,6 +657,14 @@ const TransferReplicationPage: React.FC = () => {
                             <Typography variant="caption" color="text.secondary">
                               {definition.includeChildren ? 'Deep copy enabled' : 'Single node only'}
                             </Typography>
+                            <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+                              <Chip size="small" variant="outlined" label={`Schedule: ${formatScheduleSummary(definition)}`} />
+                              <Chip
+                                size="small"
+                                variant="outlined"
+                                label={`Policy: ${formatFailurePolicySummary(definition)}`}
+                              />
+                            </Stack>
                           </Stack>
                         </TableCell>
                         <TableCell>
@@ -618,6 +675,30 @@ const TransferReplicationPage: React.FC = () => {
                         <TableCell>
                           <Typography variant="body2" noWrap title={definition.transferTargetName || definition.transferTargetId}>
                             {definition.transferTargetName || definition.transferTargetId}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2" noWrap title={definition.cronExpression || ''}>
+                            {definition.cronExpression ? definition.cronExpression : 'Ad hoc'}
+                          </Typography>
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            noWrap
+                            title={definition.scheduleTimezone || ''}
+                          >
+                            {definition.scheduleTimezone || 'UTC'}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary" display="block">
+                            Next: {formatTimestamp(definition.nextRunAt)}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2" noWrap title={formatFailurePolicySummary(definition)}>
+                            {formatFailurePolicySummary(definition)}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            Auto retry and retention are enforced server-side.
                           </Typography>
                         </TableCell>
                         <TableCell>{formatTimestamp(definition.lastRunAt)}</TableCell>
@@ -645,13 +726,13 @@ const TransferReplicationPage: React.FC = () => {
                         </TableCell>
                       </TableRow>
                     ))}
-                    {definitions.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={5}>
-                          <Typography variant="body2" color="text.secondary">
-                            No replication definitions configured yet.
-                          </Typography>
-                        </TableCell>
+                  {definitions.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={7}>
+                        <Typography variant="body2" color="text.secondary">
+                          No replication definitions configured yet.
+                        </Typography>
+                      </TableCell>
                       </TableRow>
                     )}
                   </TableBody>
@@ -848,7 +929,16 @@ const TransferReplicationPage: React.FC = () => {
                         </Typography>
                       </TableCell>
                       <TableCell>{formatTimestamp(job.lastAttemptedAt)}</TableCell>
-                      <TableCell>{formatTimestamp(job.startedAt)}</TableCell>
+                      <TableCell>
+                        <Stack spacing={0.5}>
+                          <Typography variant="body2">{formatTimestamp(job.startedAt)}</Typography>
+                          {job.scheduledFor && (
+                            <Typography variant="caption" color="text.secondary">
+                              Scheduled {formatTimestamp(job.scheduledFor)}
+                            </Typography>
+                          )}
+                        </Stack>
+                      </TableCell>
                       <TableCell>{formatTimestamp(job.completedAt)}</TableCell>
                       <TableCell align="right">
                         {job.status === 'FAILED' || job.status === 'CANCELED' ? (
@@ -1003,7 +1093,7 @@ const TransferReplicationPage: React.FC = () => {
         </DialogActions>
       </Dialog>
 
-      <Dialog open={definitionDialogOpen} onClose={closeDefinitionDialog} fullWidth maxWidth="sm">
+      <Dialog open={definitionDialogOpen} onClose={closeDefinitionDialog} fullWidth maxWidth="md">
         <DialogTitle>{selectedDefinitionId ? 'Edit Replication Definition' : 'New Replication Definition'}</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
@@ -1065,6 +1155,80 @@ const TransferReplicationPage: React.FC = () => {
               }
               label="Enabled"
             />
+            <Box>
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                Schedule & Failure Policy
+              </Typography>
+              <Stack spacing={2}>
+                <TextField
+                  label="Cron Expression"
+                  value={toTextValue(definitionForm.cronExpression)}
+                  onChange={(event) => setDefinitionForm((current) => ({ ...current, cronExpression: event.target.value }))}
+                  helperText="Leave blank for ad hoc execution only. Example: 0 0 * * *"
+                  fullWidth
+                />
+                <TextField
+                  label="Schedule Timezone"
+                  value={toTextValue(definitionForm.scheduleTimezone)}
+                  onChange={(event) =>
+                    setDefinitionForm((current) => ({ ...current, scheduleTimezone: event.target.value }))
+                  }
+                  helperText="Defaults to UTC when a cron expression is set."
+                  fullWidth
+                />
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={Boolean(definitionForm.autoRetryEnabled)}
+                      onChange={(event) =>
+                        setDefinitionForm((current) => ({ ...current, autoRetryEnabled: event.target.checked }))
+                      }
+                    />
+                  }
+                  label="Enable automatic retry"
+                />
+                <Grid container spacing={2}>
+                  <Grid item xs={12} md={6}>
+                    <TextField
+                      label="Max Retry Attempts"
+                      type="number"
+                      value={toTextValue(definitionForm.maxRetryAttempts)}
+                      onChange={(event) =>
+                        setDefinitionForm((current) => ({ ...current, maxRetryAttempts: event.target.value }))
+                      }
+                      helperText="Used only when automatic retry is enabled."
+                      disabled={!definitionForm.autoRetryEnabled}
+                      fullWidth
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <TextField
+                      label="Retry Backoff (minutes)"
+                      type="number"
+                      value={toTextValue(definitionForm.retryBackoffMinutes)}
+                      onChange={(event) =>
+                        setDefinitionForm((current) => ({ ...current, retryBackoffMinutes: event.target.value }))
+                      }
+                      helperText="Delay before a scheduled retry job becomes runnable."
+                      disabled={!definitionForm.autoRetryEnabled}
+                      fullWidth
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <TextField
+                      label="Job Retention (days)"
+                      type="number"
+                      value={toTextValue(definitionForm.jobRetentionDays)}
+                      onChange={(event) =>
+                        setDefinitionForm((current) => ({ ...current, jobRetentionDays: event.target.value }))
+                      }
+                      helperText="Completed, failed, and canceled jobs older than this are cleaned up."
+                      fullWidth
+                    />
+                  </Grid>
+                </Grid>
+              </Stack>
+            </Box>
           </Stack>
         </DialogContent>
         <DialogActions>

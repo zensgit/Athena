@@ -14,9 +14,12 @@ import com.ecm.core.repository.TransferTargetRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.scheduling.support.CronExpression;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -181,6 +184,7 @@ public class TransferReplicationService {
         definition.setTransferTargetId(target.getId());
         definition.setIncludeChildren(request.includeChildren() == null || request.includeChildren());
         definition.setEnabled(request.enabled() == null || request.enabled());
+        applyDefinitionScheduleAndFailurePolicy(definition, request);
         return toDto(replicationDefinitionRepository.save(definition));
     }
 
@@ -200,6 +204,7 @@ public class TransferReplicationService {
         definition.setTransferTargetId(target.getId());
         definition.setIncludeChildren(request.includeChildren() == null || request.includeChildren());
         definition.setEnabled(request.enabled() == null || request.enabled());
+        applyDefinitionScheduleAndFailurePolicy(definition, request);
         return toDto(replicationDefinitionRepository.save(definition));
     }
 
@@ -231,24 +236,75 @@ public class TransferReplicationService {
 
     public ReplicationJobDto retryJob(UUID jobId) {
         requireAdmin();
-        ReplicationJob previousJob = requireJob(jobId);
-        if (previousJob.getStatus() != ReplicationJobStatus.FAILED && previousJob.getStatus() != ReplicationJobStatus.CANCELED) {
-            throw new IllegalStateException("Only failed or canceled replication jobs can be retried");
+        return toDto(queueRetryJob(requireJob(jobId), false));
+    }
+
+    public ScheduledReplicationBatchDto runScheduledDefinitions() {
+        List<ReplicationDefinition> dueDefinitions = replicationDefinitionRepository
+            .findByEnabledTrueAndCronExpressionIsNotNullAndNextRunAtIsNotNullAndNextRunAtLessThanEqual(LocalDateTime.now());
+        int queuedCount = 0;
+        int skippedCount = 0;
+        for (ReplicationDefinition definition : dueDefinitions) {
+            try {
+                if (hasActiveJob(definition.getId())) {
+                    skippedCount++;
+                    continue;
+                }
+                TransferTarget target = requireEnabledTarget(definition.getTransferTargetId(), true);
+                Node source = nodeService.getNode(definition.getSourceNodeId());
+                queueJob(definition, target, source, null, 1, "Queued scheduled replication", true, null);
+                definition.setNextRunAt(computeNextRunAt(definition, LocalDateTime.now()));
+                replicationDefinitionRepository.save(definition);
+                queuedCount++;
+            } catch (RuntimeException ex) {
+                log.warn("Scheduled replication definition {} skipped: {}", definition.getId(), ex.getMessage());
+                skippedCount++;
+            }
         }
-        ReplicationDefinition definition = requireDefinition(previousJob.getDefinitionId());
-        if (!definition.isEnabled()) {
-            throw new IllegalStateException("Replication definition is disabled");
-        }
-        TransferTarget target = requireEnabledTarget(previousJob.getTransferTargetId(), true);
-        Node source = nodeService.getNode(previousJob.getSourceNodeId());
-        return queueJob(
-            definition,
-            target,
-            source,
-            previousJob.getId(),
-            Math.max(previousJob.getAttemptNumber(), 1) + 1,
-            "Queued retry for job " + previousJob.getId()
+        return new ScheduledReplicationBatchDto(dueDefinitions.size(), queuedCount, skippedCount);
+    }
+
+    public RetriedReplicationBatchDto runDueRetries() {
+        List<ReplicationJob> dueRetries = replicationJobRepository.findByStatusAndScheduledForLessThanEqual(
+            ReplicationJobStatus.PENDING,
+            LocalDateTime.now()
         );
+        int startedCount = 0;
+        int skippedCount = 0;
+        for (ReplicationJob job : dueRetries) {
+            if (job.getRetryOfJobId() == null) {
+                continue;
+            }
+            try {
+                executor.execute(() -> processJob(job.getId()));
+                startedCount++;
+            } catch (RuntimeException ex) {
+                log.warn("Retry job {} could not be started: {}", job.getId(), ex.getMessage());
+                skippedCount++;
+            }
+        }
+        return new RetriedReplicationBatchDto(dueRetries.size(), startedCount, skippedCount);
+    }
+
+    public ReplicationJobRetentionCleanupDto cleanupExpiredJobs() {
+        LocalDateTime now = LocalDateTime.now();
+        int deletedJobs = 0;
+        int affectedDefinitions = 0;
+        for (ReplicationDefinition definition : replicationDefinitionRepository.findAll()) {
+            int retentionDays = normalizePositive(definition.getJobRetentionDays(), 30);
+            LocalDateTime cutoff = now.minusDays(retentionDays);
+            List<ReplicationJob> expiredJobs = replicationJobRepository.findByDefinitionIdAndStatusInAndCompletedAtBefore(
+                definition.getId(),
+                List.of(ReplicationJobStatus.COMPLETED, ReplicationJobStatus.FAILED, ReplicationJobStatus.CANCELED),
+                cutoff
+            );
+            if (!expiredJobs.isEmpty()) {
+                replicationJobRepository.deleteAll(expiredJobs);
+                deletedJobs += expiredJobs.size();
+                affectedDefinitions++;
+            }
+        }
+        return new ReplicationJobRetentionCleanupDto(affectedDefinitions, deletedJobs);
     }
 
     void processJob(UUID jobId) {
@@ -288,6 +344,7 @@ public class TransferReplicationService {
             job.setTransportMessage(ex.getMessage());
             job.setErrorLog(ex.getMessage());
             replicationJobRepository.save(job);
+            tryQueueAutomaticRetry(job);
         }
     }
 
@@ -299,19 +356,90 @@ public class TransferReplicationService {
         int attemptNumber,
         String queuedMessage
     ) {
+        return toDto(queueJob(definition, target, source, retryOfJobId, attemptNumber, queuedMessage, true, null));
+    }
+
+    private ReplicationJob queueRetryJob(ReplicationJob originalJob, boolean automatic) {
+        if (!automatic
+            && originalJob.getStatus() != ReplicationJobStatus.FAILED
+            && originalJob.getStatus() != ReplicationJobStatus.CANCELED) {
+            throw new IllegalStateException("Only failed or canceled replication jobs can be retried");
+        }
+        ReplicationDefinition definition = requireDefinition(originalJob.getDefinitionId());
+        TransferTarget target = requireEnabledTarget(originalJob.getTransferTargetId(), true);
+        Node source = nodeService.getNode(originalJob.getSourceNodeId());
+        String queuedMessage = automatic
+            ? "Queued automatic retry for job " + originalJob.getId()
+            : "Queued manual retry for job " + originalJob.getId();
+        return queueJob(
+            definition,
+            target,
+            source,
+            originalJob.getId(),
+            originalJob.getAttemptNumber() + 1,
+            queuedMessage,
+            true,
+            null
+        );
+    }
+
+    private ReplicationJob queueJob(
+        ReplicationDefinition definition,
+        TransferTarget target,
+        Node source,
+        UUID retryOfJobId,
+        int attemptNumber,
+        String queuedMessage,
+        boolean autoStart,
+        LocalDateTime scheduledFor
+    ) {
         ReplicationJob job = new ReplicationJob();
         job.setDefinitionId(definition.getId());
         job.setTransferTargetId(target.getId());
         job.setSourceNodeId(source.getId());
         job.setRetryOfJobId(retryOfJobId);
         job.setAttemptNumber(attemptNumber);
+        job.setScheduledFor(scheduledFor);
         job.setUserId(securityService.getCurrentUser());
         job.setStatus(ReplicationJobStatus.PENDING);
         job.setTransportStatus(ReplicationJob.TransportStatus.NEVER_RUN);
         job.setLastMessage(queuedMessage);
         ReplicationJob saved = replicationJobRepository.save(job);
-        executor.execute(() -> processJob(saved.getId()));
-        return toDto(saved);
+        if (autoStart) {
+            executor.execute(() -> processJob(saved.getId()));
+        }
+        return saved;
+    }
+
+    private void tryQueueAutomaticRetry(ReplicationJob failedJob) {
+        ReplicationDefinition definition = requireDefinition(failedJob.getDefinitionId());
+        if (!definition.isAutoRetryEnabled()) {
+            return;
+        }
+        int maxAttempts = normalizeNonNegative(definition.getMaxRetryAttempts());
+        if (maxAttempts <= 0 || failedJob.getAttemptNumber() > maxAttempts) {
+            return;
+        }
+        TransferTarget target = requireEnabledTarget(failedJob.getTransferTargetId(), true);
+        Node source = nodeService.getNode(failedJob.getSourceNodeId());
+        int backoffMinutes = normalizeNonNegative(definition.getRetryBackoffMinutes());
+        LocalDateTime scheduledFor = LocalDateTime.now().plusMinutes(backoffMinutes);
+        ReplicationJob retryJob = queueJob(
+            definition,
+            target,
+            source,
+            failedJob.getId(),
+            failedJob.getAttemptNumber() + 1,
+            "Queued automatic retry for job " + failedJob.getId(),
+            backoffMinutes == 0,
+            backoffMinutes == 0 ? null : scheduledFor
+        );
+        log.info(
+            "Queued automatic replication retry {} for failed job {} at {}",
+            retryJob.getId(),
+            failedJob.getId(),
+            scheduledFor
+        );
     }
 
     private void requireAdmin() {
@@ -400,6 +528,13 @@ public class TransferReplicationService {
             targetName,
             definition.isIncludeChildren(),
             definition.isEnabled(),
+            definition.getCronExpression(),
+            definition.getScheduleTimezone(),
+            definition.getNextRunAt(),
+            definition.isAutoRetryEnabled(),
+            normalizeNonNegative(definition.getMaxRetryAttempts()),
+            normalizeNonNegative(definition.getRetryBackoffMinutes()),
+            normalizePositive(definition.getJobRetentionDays(), 30),
             definition.getLastRunAt(),
             definition.getCreatedAt(),
             definition.getUpdatedAt()
@@ -414,6 +549,7 @@ public class TransferReplicationService {
             job.getSourceNodeId(),
             job.getRetryOfJobId(),
             job.getAttemptNumber(),
+            job.getScheduledFor(),
             job.getCopiedNodeId(),
             job.getUserId(),
             job.getStatus(),
@@ -427,6 +563,72 @@ public class TransferReplicationService {
             job.getCreatedAt(),
             job.getUpdatedAt()
         );
+    }
+
+    private void applyDefinitionScheduleAndFailurePolicy(
+        ReplicationDefinition definition,
+        ReplicationDefinitionMutationRequest request
+    ) {
+        String cronExpression = normalizeOptional(request.cronExpression());
+        String scheduleTimezone = normalizeOptional(request.scheduleTimezone());
+        if (scheduleTimezone == null) {
+            scheduleTimezone = "UTC";
+        }
+        if (cronExpression != null) {
+            validateCronExpression(cronExpression, scheduleTimezone);
+            definition.setCronExpression(cronExpression);
+            definition.setScheduleTimezone(scheduleTimezone);
+            definition.setNextRunAt(computeNextRunAt(cronExpression, scheduleTimezone, LocalDateTime.now()));
+        } else {
+            definition.setCronExpression(null);
+            definition.setScheduleTimezone(scheduleTimezone);
+            definition.setNextRunAt(null);
+        }
+
+        boolean autoRetryEnabled = request.autoRetryEnabled() != null && request.autoRetryEnabled();
+        definition.setAutoRetryEnabled(autoRetryEnabled);
+        definition.setMaxRetryAttempts(autoRetryEnabled ? normalizeNonNegative(request.maxRetryAttempts()) : 0);
+        definition.setRetryBackoffMinutes(autoRetryEnabled ? normalizeNonNegative(request.retryBackoffMinutes()) : 0);
+        definition.setJobRetentionDays(normalizePositive(request.jobRetentionDays(), 30));
+    }
+
+    private void validateCronExpression(String cronExpression, String timezone) {
+        try {
+            CronExpression.parse(cronExpression);
+            ZoneId.of(timezone);
+        } catch (Exception ex) {
+            throw new IllegalArgumentException("Invalid replication cron expression: " + cronExpression, ex);
+        }
+    }
+
+    private LocalDateTime computeNextRunAt(ReplicationDefinition definition, LocalDateTime reference) {
+        if (definition.getCronExpression() == null || definition.getCronExpression().isBlank()) {
+            return null;
+        }
+        return computeNextRunAt(definition.getCronExpression(), definition.getScheduleTimezone(), reference);
+    }
+
+    private LocalDateTime computeNextRunAt(String cronExpression, String timezone, LocalDateTime reference) {
+        CronExpression cron = CronExpression.parse(cronExpression);
+        ZoneId scheduleZone = ZoneId.of(timezone != null ? timezone : "UTC");
+        ZoneId systemZone = ZoneId.systemDefault();
+        ZonedDateTime base = reference.atZone(systemZone).withZoneSameInstant(scheduleZone);
+        ZonedDateTime next = cron.next(base);
+        return next == null ? null : next.withZoneSameInstant(systemZone).toLocalDateTime();
+    }
+
+    private boolean hasActiveJob(UUID definitionId) {
+        return replicationJobRepository.findAll().stream()
+            .anyMatch(job -> Objects.equals(job.getDefinitionId(), definitionId)
+                && (job.getStatus() == ReplicationJobStatus.PENDING || job.getStatus() == ReplicationJobStatus.RUNNING));
+    }
+
+    private int normalizeNonNegative(Integer value) {
+        return value == null || value < 0 ? 0 : value;
+    }
+
+    private int normalizePositive(Integer value, int fallback) {
+        return value == null || value <= 0 ? fallback : value;
     }
 
     private String normalizeRequired(String value, String message) {
@@ -591,7 +793,13 @@ public class TransferReplicationService {
         UUID sourceNodeId,
         UUID transferTargetId,
         Boolean includeChildren,
-        Boolean enabled
+        Boolean enabled,
+        String cronExpression,
+        String scheduleTimezone,
+        Boolean autoRetryEnabled,
+        Integer maxRetryAttempts,
+        Integer retryBackoffMinutes,
+        Integer jobRetentionDays
     ) {}
 
     public record ReplicationDefinitionDto(
@@ -604,6 +812,13 @@ public class TransferReplicationService {
         String transferTargetName,
         boolean includeChildren,
         boolean enabled,
+        String cronExpression,
+        String scheduleTimezone,
+        LocalDateTime nextRunAt,
+        boolean autoRetryEnabled,
+        int maxRetryAttempts,
+        int retryBackoffMinutes,
+        int jobRetentionDays,
         LocalDateTime lastRunAt,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
@@ -616,6 +831,7 @@ public class TransferReplicationService {
         UUID sourceNodeId,
         UUID retryOfJobId,
         int attemptNumber,
+        LocalDateTime scheduledFor,
         UUID copiedNodeId,
         String userId,
         ReplicationJobStatus status,
@@ -628,5 +844,22 @@ public class TransferReplicationService {
         LocalDateTime completedAt,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
+    ) {}
+
+    public record ScheduledReplicationBatchDto(
+        int dueDefinitions,
+        int queuedDefinitions,
+        int skippedDefinitions
+    ) {}
+
+    public record RetriedReplicationBatchDto(
+        int dueRetryJobs,
+        int startedRetryJobs,
+        int skippedRetryJobs
+    ) {}
+
+    public record ReplicationJobRetentionCleanupDto(
+        int affectedDefinitions,
+        int deletedJobs
     ) {}
 }

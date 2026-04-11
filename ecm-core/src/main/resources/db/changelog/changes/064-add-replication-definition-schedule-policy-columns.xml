@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd">
+
+    <changeSet id="064-add-replication-definition-schedule-policy-columns" author="codex">
+        <addColumn tableName="replication_definitions">
+            <column name="cron_expression" type="VARCHAR(100)"/>
+            <column name="schedule_timezone" type="VARCHAR(64)" defaultValue="UTC"/>
+            <column name="next_run_at" type="TIMESTAMP"/>
+            <column name="auto_retry_enabled" type="BOOLEAN" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="max_retry_attempts" type="INT" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <column name="retry_backoff_minutes" type="INT" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <column name="job_retention_days" type="INT" defaultValueNumeric="30">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+
+        <createIndex indexName="idx_replication_definition_next_run_at" tableName="replication_definitions">
+            <column name="next_run_at"/>
+        </createIndex>
+
+        <addColumn tableName="replication_jobs">
+            <column name="scheduled_for" type="TIMESTAMP"/>
+        </addColumn>
+
+        <createIndex indexName="idx_replication_job_scheduled_for" tableName="replication_jobs">
+            <column name="scheduled_for"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>
