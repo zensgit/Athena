@@ -1,7 +1,15 @@
 import React from 'react';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { toast } from 'react-toastify';
 import TenantAdminPage from './TenantAdminPage';
 import tenantService from 'services/tenantService';
+
+jest.mock('react-toastify', () => ({
+  toast: {
+    error: jest.fn(),
+    success: jest.fn(),
+  },
+}));
 
 jest.mock('services/tenantService', () => ({
   __esModule: true,
@@ -51,6 +59,7 @@ class MockIntersectionObserver {
 }
 
 const mockedTenantService = tenantService as jest.Mocked<typeof tenantService>;
+const toastErrorMock = toast.error as jest.Mock;
 
 const tenants = [
   {
@@ -76,6 +85,9 @@ const tenants = [
     lastModifiedDate: null,
   },
 ];
+
+const getObservedTenantCard = (instance: MockIntersectionObserver, tenantDomain: string) =>
+  [...instance.observed].find((element) => (element as HTMLElement).dataset.tenantDomain === tenantDomain);
 
 beforeAll(() => {
   Object.defineProperty(window, 'IntersectionObserver', {
@@ -124,28 +136,105 @@ test('loads tenant metrics when a tenant card becomes visible', async () => {
 
   await screen.findByText('Acme');
 
-  await waitFor(() => {
-    expect(MockIntersectionObserver.instances).toHaveLength(1);
-    expect(MockIntersectionObserver.instances[0].observed.size).toBe(2);
-  });
+  await waitFor(() => expect(MockIntersectionObserver.instances).toHaveLength(1));
+  await waitFor(() => expect(MockIntersectionObserver.instances[0].observed.size).toBe(2));
 
   const observer = MockIntersectionObserver.instances[0];
-  const acmeCard = [...observer.observed].find(
-    (element) => (element as HTMLElement).dataset.tenantDomain === 'acme'
-  );
+  const acmeCard = getObservedTenantCard(observer, 'acme');
   expect(acmeCard).toBeTruthy();
 
   act(() => {
     observer.trigger(acmeCard as Element);
   });
 
-  await waitFor(() => {
-    expect(mockedTenantService.getTenantMetrics).toHaveBeenCalledWith('acme');
+  await waitFor(() => expect(mockedTenantService.getTenantMetrics).toHaveBeenCalledWith('acme'));
+
+  expect(screen.getByText('250 bytes')).toBeInTheDocument();
+  expect(screen.getByText('1,000 bytes')).toBeInTheDocument();
+  expect(screen.getByText('750 bytes')).toBeInTheDocument();
+  expect(screen.getByText('25% used')).toBeInTheDocument();
+  expect(mockedTenantService.getTenantMetrics).not.toHaveBeenCalledWith('beta');
+});
+
+test('invalidates cached tenant metrics when the page refreshes', async () => {
+  render(<TenantAdminPage />);
+
+  await screen.findByText('Acme');
+  await waitFor(() => expect(MockIntersectionObserver.instances).toHaveLength(1));
+
+  const firstObserver = MockIntersectionObserver.instances[0];
+  const firstAcmeCard = getObservedTenantCard(firstObserver, 'acme');
+  expect(firstAcmeCard).toBeTruthy();
+
+  act(() => {
+    firstObserver.trigger(firstAcmeCard as Element);
   });
 
-  expect(screen.getByText('250 bytes')).toBeTruthy();
-  expect(screen.getByText('1,000 bytes')).toBeTruthy();
-  expect(screen.getByText('750 bytes')).toBeTruthy();
-  expect(screen.getByText('25% used')).toBeTruthy();
-  expect(mockedTenantService.getTenantMetrics).not.toHaveBeenCalledWith('beta');
+  await waitFor(() => expect(screen.getByText('250 bytes')).toBeInTheDocument());
+
+  mockedTenantService.getTenantMetrics.mockResolvedValueOnce({
+    tenantDomain: 'acme',
+    tenantName: 'Acme',
+    enabled: true,
+    storageUsedBytes: 400,
+    quotaBytes: 1000,
+    storageAvailableBytes: 600,
+    nodeCount: 11,
+    documentCount: 5,
+    folderCount: 6,
+  });
+
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+
+  await waitFor(() => expect(mockedTenantService.listTenants).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(MockIntersectionObserver.instances.length).toBeGreaterThan(1));
+
+  const nextObserver = MockIntersectionObserver.instances[MockIntersectionObserver.instances.length - 1];
+  const nextAcmeCard = getObservedTenantCard(nextObserver, 'acme');
+  expect(nextAcmeCard).toBeTruthy();
+
+  act(() => {
+    nextObserver.trigger(nextAcmeCard as Element);
+  });
+
+  await waitFor(() => expect(mockedTenantService.getTenantMetrics).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(screen.getByText('400 bytes')).toBeInTheDocument());
+});
+
+test('shows a retry action when tenant metrics loading fails and reloads successfully', async () => {
+  mockedTenantService.getTenantMetrics
+    .mockRejectedValueOnce({ response: { data: { message: 'Metrics temporarily unavailable' } } })
+    .mockResolvedValueOnce({
+      tenantDomain: 'acme',
+      tenantName: 'Acme',
+      enabled: true,
+      storageUsedBytes: 300,
+      quotaBytes: 1000,
+      storageAvailableBytes: 700,
+      nodeCount: 10,
+      documentCount: 4,
+      folderCount: 6,
+    });
+
+  render(<TenantAdminPage />);
+
+  await screen.findByText('Acme');
+  await waitFor(() => expect(MockIntersectionObserver.instances).toHaveLength(1));
+
+  const observer = MockIntersectionObserver.instances[0];
+  const acmeCard = getObservedTenantCard(observer, 'acme');
+  expect(acmeCard).toBeTruthy();
+
+  act(() => {
+    observer.trigger(acmeCard as Element);
+  });
+
+  await waitFor(() => expect(screen.getByText('Metrics temporarily unavailable')).toBeInTheDocument());
+  expect(screen.getByText('Load failed')).toBeInTheDocument();
+  expect(toastErrorMock).toHaveBeenCalledWith('Metrics temporarily unavailable');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+
+  await waitFor(() => expect(mockedTenantService.getTenantMetrics).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(screen.getByText('300 bytes')).toBeInTheDocument());
 });

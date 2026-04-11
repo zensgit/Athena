@@ -1403,11 +1403,7 @@ const TransferReplicationPage: React.FC = () => {
                                       <TableBody>
                                         {entryRows.map((entry, index) => (
                                           <TableRow
-                                            key={`${job.id}-${
-                                              entry.sourceNodeId ||
-                                              entry.sourcePath ||
-                                              index
-                                            }`}
+                                            key={`${job.id}-${entry.sourceNodeId || "source"}-${entry.sourcePath || "path"}-${index}`}
                                           >
                                             <TableCell sx={{ width: 140 }}>
                                               <Stack spacing={0.25}>

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
+  Alert,
   Box,
   Button,
   Card,
@@ -54,6 +55,7 @@ const TenantAdminPage: React.FC = () => {
   const [tenants, setTenants] = useState<TenantDto[]>([]);
   const [currentTenant, setCurrentTenant] = useState<TenantDto | null>(null);
   const [tenantMetricsByDomain, setTenantMetricsByDomain] = useState<Record<string, TenantMetricsDto>>({});
+  const [tenantMetricsErrorsByDomain, setTenantMetricsErrorsByDomain] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingTenant, setEditingTenant] = useState<TenantDto | null>(null);
@@ -62,7 +64,17 @@ const TenantAdminPage: React.FC = () => {
   const loadedMetricsDomains = React.useRef<Set<string>>(new Set());
   const loadingMetricsDomains = React.useRef<Set<string>>(new Set());
 
-  const loadTenants = async () => {
+  const resetTenantMetricsState = React.useCallback(() => {
+    loadedMetricsDomains.current = new Set();
+    loadingMetricsDomains.current = new Set();
+    setTenantMetricsByDomain({});
+    setTenantMetricsErrorsByDomain({});
+  }, []);
+
+  const loadTenants = async (options?: { invalidateMetrics?: boolean }) => {
+    if (options?.invalidateMetrics) {
+      resetTenantMetricsState();
+    }
     setLoading(true);
     try {
       const [tenantList, current] = await Promise.all([
@@ -78,17 +90,29 @@ const TenantAdminPage: React.FC = () => {
     }
   };
 
-  const loadTenantMetrics = React.useCallback(async (tenantDomain: string) => {
+  const loadTenantMetrics = React.useCallback(async (tenantDomain: string, options?: { force?: boolean }) => {
     const normalizedDomain = normalizeTenantDomain(tenantDomain);
+    const force = options?.force ?? false;
     if (
       !normalizedDomain ||
-      loadedMetricsDomains.current.has(normalizedDomain) ||
+      (!force && loadedMetricsDomains.current.has(normalizedDomain)) ||
       loadingMetricsDomains.current.has(normalizedDomain)
     ) {
       return;
     }
 
+    if (force) {
+      loadedMetricsDomains.current.delete(normalizedDomain);
+    }
     loadingMetricsDomains.current.add(normalizedDomain);
+    setTenantMetricsErrorsByDomain((current) => {
+      if (!current[normalizedDomain]) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[normalizedDomain];
+      return next;
+    });
     try {
       const metrics = await tenantService.getTenantMetrics(tenantDomain);
       loadedMetricsDomains.current.add(normalizedDomain);
@@ -97,7 +121,12 @@ const TenantAdminPage: React.FC = () => {
         [normalizedDomain]: metrics,
       }));
     } catch (error: any) {
-      toast.error(error?.response?.data?.message || `Failed to load metrics for ${tenantDomain}`);
+      const message = error?.response?.data?.message || `Failed to load metrics for ${tenantDomain}`;
+      setTenantMetricsErrorsByDomain((current) => ({
+        ...current,
+        [normalizedDomain]: message,
+      }));
+      toast.error(message);
     } finally {
       loadingMetricsDomains.current.delete(normalizedDomain);
     }
@@ -179,7 +208,7 @@ const TenantAdminPage: React.FC = () => {
         toast.success('Tenant created');
       }
       setDialogOpen(false);
-      await loadTenants();
+      await loadTenants({ invalidateMetrics: true });
     } catch (error: any) {
       toast.error(error?.response?.data?.message || 'Failed to save tenant');
     }
@@ -202,7 +231,7 @@ const TenantAdminPage: React.FC = () => {
         notifyActiveTenantChanged();
       }
       toast.success('Tenant deleted');
-      await loadTenants();
+      await loadTenants({ invalidateMetrics: true });
     } catch (error: any) {
       toast.error(error?.response?.data?.message || 'Failed to delete tenant');
     }
@@ -231,7 +260,7 @@ const TenantAdminPage: React.FC = () => {
         quotaBytes: tenant.quotaBytes ?? null,
       });
       toast.success(tenant.enabled ? 'Tenant disabled' : 'Tenant enabled');
-      await loadTenants();
+      await loadTenants({ invalidateMetrics: true });
     } catch (error: any) {
       toast.error(error?.response?.data?.message || 'Failed to update tenant');
     }
@@ -249,7 +278,7 @@ const TenantAdminPage: React.FC = () => {
           </Typography>
         </Box>
         <Stack direction="row" spacing={1}>
-          <Button variant="outlined" startIcon={<Refresh />} onClick={() => void loadTenants()} disabled={loading}>
+          <Button variant="outlined" startIcon={<Refresh />} onClick={() => void loadTenants({ invalidateMetrics: true })} disabled={loading}>
             Refresh
           </Button>
           <Button variant="contained" startIcon={<Add />} onClick={openCreateDialog}>
@@ -291,14 +320,16 @@ const TenantAdminPage: React.FC = () => {
         <Stack spacing={2}>
           {tenants.map((tenant) => {
             const isActive = activeTenantDomain === tenant.tenantDomain;
-            const tenantMetrics = tenantMetricsByDomain[normalizeTenantDomain(tenant.tenantDomain)];
+            const normalizedTenantDomain = normalizeTenantDomain(tenant.tenantDomain);
+            const tenantMetrics = tenantMetricsByDomain[normalizedTenantDomain];
+            const tenantMetricsError = tenantMetricsErrorsByDomain[normalizedTenantDomain];
             const usagePercent = tenantMetrics ? getUsagePercent(tenantMetrics) : 0;
             return (
               <Card
                 key={tenant.id}
                 variant="outlined"
                 ref={(node) => {
-                  tenantCardRefs.current[normalizeTenantDomain(tenant.tenantDomain)] = node;
+                  tenantCardRefs.current[normalizedTenantDomain] = node;
                 }}
                 data-tenant-domain={tenant.tenantDomain}
               >
@@ -332,7 +363,8 @@ const TenantAdminPage: React.FC = () => {
                           <Typography variant="subtitle2">Storage metrics</Typography>
                           <Chip
                             size="small"
-                            label={tenantMetrics ? 'Loaded' : 'Loading on view'}
+                            color={tenantMetrics ? 'success' : tenantMetricsError ? 'error' : 'default'}
+                            label={tenantMetrics ? 'Loaded' : tenantMetricsError ? 'Load failed' : 'Loading on view'}
                             variant={tenantMetrics ? 'filled' : 'outlined'}
                           />
                         </Box>
@@ -371,6 +403,15 @@ const TenantAdminPage: React.FC = () => {
                               </Typography>
                             </Box>
                           </>
+                        ) : tenantMetricsError ? (
+                          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }}>
+                            <Alert severity="error" sx={{ flex: 1 }}>
+                              {tenantMetricsError}
+                            </Alert>
+                            <Button size="small" variant="outlined" onClick={() => void loadTenantMetrics(tenant.tenantDomain, { force: true })}>
+                              Retry
+                            </Button>
+                          </Stack>
                         ) : (
                           <Typography variant="body2" color="text.secondary">
                             Metrics load as tenant cards enter view.
