@@ -17,31 +17,31 @@ test.describe('Athena frontend acceptance smoke', () => {
     await page.goto('/admin/tenants', { waitUntil: 'domcontentloaded' });
 
     await expect(page).toHaveURL(/\/admin\/tenants$/);
-    await expect(page.getByRole('heading', { name: 'Tenant Admin' })).toBeVisible();
-    await expect(page.getByText('Current Request Tenant')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'New Tenant' })).toBeVisible();
+    await expect(page.locator('h5', { hasText: 'Tenant Admin' })).toBeVisible();
+    await expect(page.locator('text=Current Request Tenant')).toBeVisible();
+    await expect(page.locator('button', { hasText: 'New Tenant' })).toBeVisible();
   });
 
   test('renders Transfer Replication after authenticated navigation', async ({ page }) => {
     await page.goto('/admin/transfer-replication', { waitUntil: 'domcontentloaded' });
 
     await expect(page).toHaveURL(/\/admin\/transfer-replication$/);
-    await expect(page.getByRole('heading', { name: 'Transfer Replication' })).toBeVisible();
-    await expect(page.getByText('Transfer Targets')).toBeVisible();
-    await expect(page.getByText('Replication Jobs')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Refresh' })).toBeVisible();
+    await expect(page.locator('h4', { hasText: 'Transfer Replication' })).toBeVisible();
+    await expect(page.locator('text=Transfer Targets')).toBeVisible();
+    await expect(page.locator('text=Replication Jobs')).toBeVisible();
+    await expect(page.locator('text=LOOPBACK keeps local same-repo replication.')).toBeVisible();
   });
 
   test('renders CMIS Explorer after authenticated navigation', async ({ page }) => {
     await page.goto('/admin/cmis-explorer', { waitUntil: 'domcontentloaded' });
 
     await expect(page).toHaveURL(/\/admin\/cmis-explorer$/);
-    await expect(page.getByRole('heading', { name: 'CMIS Explorer' })).toBeVisible();
-    await expect(page.getByRole('tab', { name: 'Repository Info' })).toBeVisible();
-    await expect(page.getByText('Repository ID')).toBeVisible();
+    await expect(page.locator('h5', { hasText: 'CMIS Explorer' })).toBeVisible();
+    await expect(page.locator('[role="tab"]', { hasText: 'Repository Info' })).toBeVisible();
+    await expect(page.locator('text=Repository ID')).toBeVisible();
 
-    await page.getByRole('tab', { name: 'Type Browser' }).click();
-    await expect(page.getByText('Display Name')).toBeVisible();
-    await expect(page.getByRole('tab', { name: 'Query Console' })).toBeVisible();
+    await page.locator('[role="tab"]', { hasText: 'Type Browser' }).click();
+    await expect(page.locator('text=Display Name')).toBeVisible();
+    await expect(page.locator('[role="tab"]', { hasText: 'Query Console' })).toBeVisible();
   });
 });
