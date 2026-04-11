@@ -8,6 +8,7 @@ import com.ecm.core.cmis.CmisMutationService;
 import com.ecm.core.cmis.CmisModels;
 import com.ecm.core.cmis.CmisQueryService;
 import com.ecm.core.cmis.CmisRelationshipService;
+import com.ecm.core.cmis.CmisRenditionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -43,6 +44,7 @@ public class CmisBrowserController {
     private final CmisMutationService cmisMutationService;
     private final CmisContentVersioningService cmisContentVersioningService;
     private final CmisRelationshipService cmisRelationshipService;
+    private final CmisRenditionService cmisRenditionService;
 
     @GetMapping
     @Operation(summary = "CMIS browser binding read entrypoint")
@@ -55,6 +57,7 @@ public class CmisBrowserController {
         @RequestParam(required = false) String changeLogToken,
         @RequestParam(required = false) String direction,
         @RequestParam(required = false) String typeId,
+        @RequestParam(required = false) String renditionFilter,
         @RequestParam(defaultValue = "0") int skipCount,
         @RequestParam(defaultValue = "50") int maxItems
     ) {
@@ -70,6 +73,7 @@ public class CmisBrowserController {
             case "contentChanges" -> ResponseEntity.ok(cmisChangeLogService.getContentChanges(changeLogToken, maxItems));
             case "acl" -> ResponseEntity.ok(cmisAclService.getAcl(objectId));
             case "relationships" -> ResponseEntity.ok(cmisRelationshipService.getObjectRelationships(objectId, direction, typeId));
+            case "renditions" -> ResponseEntity.ok(cmisRenditionService.getRenditions(objectId, renditionFilter));
             default -> throw new ResponseStatusException(
                 HttpStatus.BAD_REQUEST,
                 "Unsupported cmisselector: " + selector

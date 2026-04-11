@@ -54,6 +54,9 @@ class CmisInteropSmokePackTest {
     @Mock
     private CmisRelationshipService relationshipService;
 
+    @Mock
+    private CmisRenditionService renditionService;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private MockMvc browserMvc;
@@ -62,7 +65,7 @@ class CmisInteropSmokePackTest {
     @BeforeEach
     void setUp() {
         browserMvc = MockMvcBuilders.standaloneSetup(
-            new CmisBrowserController(aclService, browserService, changeLogService, queryService, mutationService, contentVersioningService, relationshipService)
+            new CmisBrowserController(aclService, browserService, changeLogService, queryService, mutationService, contentVersioningService, relationshipService, renditionService)
         ).build();
         atomMvc = MockMvcBuilders.standaloneSetup(
             new CmisAtomPubController(browserService, mutationService, contentVersioningService, new CmisAtomPubSerializer())

@@ -10,6 +10,7 @@ import com.ecm.core.cmis.CmisModels;
 import com.ecm.core.cmis.CmisMutationService;
 import com.ecm.core.cmis.CmisQueryService;
 import com.ecm.core.cmis.CmisRelationshipService;
+import com.ecm.core.cmis.CmisRenditionService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -58,6 +59,9 @@ class CmisBrowserControllerTest {
 
     @Mock
     private CmisRelationshipService cmisRelationshipService;
+
+    @Mock
+    private CmisRenditionService cmisRenditionService;
 
     @InjectMocks
     private CmisBrowserController cmisBrowserController;

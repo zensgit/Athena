@@ -159,4 +159,19 @@ public final class CmisModels {
         String relationshipType
     ) {
     }
+
+    public record RenditionsResponse(
+        String objectId,
+        List<RenditionEntry> renditions
+    ) {
+    }
+
+    public record RenditionEntry(
+        String streamId,
+        String kind,
+        String mimeType,
+        String title,
+        String contentUrl
+    ) {
+    }
 }
