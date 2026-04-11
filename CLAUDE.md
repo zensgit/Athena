@@ -74,3 +74,32 @@ All items delivered in 24 commits, 115 files, ~11,500 lines.
 - Change the CMIS ACL mapping without re-opening the design discussion
 - Implement delete propagation or alien node handling without explicit scope approval
 - Add storage routing without resolving ADR-001 dedup tradeoff
+
+## Current Handoff (2026-04-11)
+
+- Branch: `main`
+- Primary remote: `origin https://github.com/zensgit/Athena.git`
+- Latest cross-device handoff note:
+  - `docs/HANDOFF_20260411.md`
+- Latest acceptance smoke:
+  - `ecm-frontend/e2e/frontend-acceptance-smoke.spec.ts`
+- Latest acceptance verification doc:
+  - `docs/DEVELOPMENT_AND_VERIFICATION_FRONTEND_ACCEPTANCE_20260411.md`
+
+### Most Recent Status
+
+- Frontend acceptance surfaces are hardened and documented.
+- A Playwright smoke spec exists for:
+  - `/admin/tenants`
+  - `/admin/transfer-replication`
+  - `/admin/cmis-explorer`
+- The current machine could not complete live full-stack smoke because Docker image pulls failed with upstream EOF errors and no local cache was available.
+
+### Recommended Next Step
+
+On a machine with working Docker/image access or an already running Athena stack, execute:
+
+```bash
+cd ecm-frontend
+npx playwright test e2e/frontend-acceptance-smoke.spec.ts --project=chromium
+```
