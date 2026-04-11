@@ -101,4 +101,62 @@ public final class CmisModels {
         String message
     ) {
     }
+
+    public record ContentChangesResponse(
+        List<ChangeEntry> changes,
+        String latestChangeLogToken,
+        boolean hasMoreItems
+    ) {
+    }
+
+    public record ChangeEntry(
+        String objectId,
+        String changeType,
+        String changeTime,
+        String user
+    ) {
+    }
+
+    public record AclResponse(
+        String objectId,
+        List<AceEntry> aces,
+        boolean isExact
+    ) {
+    }
+
+    public record AceEntry(
+        String principalId,
+        List<String> permissions,
+        boolean isDirect
+    ) {
+    }
+
+    public record ApplyAclRequest(
+        String objectId,
+        List<AceEntry> addAces,
+        List<AceEntry> removeAces
+    ) {
+    }
+
+    public record RelationshipsResponse(
+        String objectId,
+        List<RelationshipEntry> relationships
+    ) {
+    }
+
+    public record RelationshipEntry(
+        String relationshipId,
+        String sourceId,
+        String targetId,
+        String relationshipType,
+        String createdAt
+    ) {
+    }
+
+    public record CreateRelationshipRequest(
+        String sourceId,
+        String targetId,
+        String relationshipType
+    ) {
+    }
 }

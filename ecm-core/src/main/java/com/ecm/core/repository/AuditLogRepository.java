@@ -422,6 +422,10 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
                                                              @Param("from") LocalDateTime from,
                                                              @Param("to") LocalDateTime to);
 
+    Page<AuditLog> findByEventTypeInOrderByEventTimeAsc(List<String> eventTypes, Pageable pageable);
+
+    Page<AuditLog> findByEventTypeInAndEventTimeAfterOrderByEventTimeAsc(List<String> eventTypes, LocalDateTime after, Pageable pageable);
+
     /**
      * Delete audit logs older than the specified date (for retention policy)
      */
