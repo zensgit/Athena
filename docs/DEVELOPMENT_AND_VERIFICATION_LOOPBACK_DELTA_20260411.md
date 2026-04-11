@@ -30,8 +30,9 @@
 
 ### Passed
 
-1. `mvn -q -Dtest=LoopbackTransferClientTest test`
-2. `git diff --check`
+1. `mvn -q -DskipTests compile`
+2. `mvn -q -Dtest=LoopbackTransferClientTest test`
+3. `git diff --check`
 
 ### Focused Coverage Added
 
@@ -45,5 +46,6 @@ Broader backend regression could not be completed from the current working tree 
 
 - `ecm-core/src/test/java/com/ecm/core/cmis/CmisInteropSmokePackTest.java`
 - failure mode: `CmisBrowserController` constructor signature mismatch
+- observed while running: `mvn -q -Dtest=TransferReplicationServiceTest test`
 
 This blocker is outside the files changed for the loopback fix and was not modified in this batch.
