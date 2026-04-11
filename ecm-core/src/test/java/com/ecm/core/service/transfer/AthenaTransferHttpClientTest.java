@@ -57,12 +57,13 @@ class AthenaTransferHttpClientTest {
             .andExpect(method(HttpMethod.GET))
             .andExpect(header(TransferReceiverHeaders.SECRET_HEADER, "token-123"))
             .andRespond(withSuccess("""
-                {"folderId":"%s","folderName":"Outbound Remote"}
+                {"folderId":"%s","folderName":"Outbound Remote","repositoryId":"remote-athena"}
                 """.formatted(target.getTargetFolderId()), MediaType.APPLICATION_JSON));
 
         TransferClient.TransferVerificationResult result = client.verifyTarget(target);
 
         assertEquals("Verified remote Athena transfer receiver folder: Outbound Remote", result.message());
+        assertEquals("remote-athena", result.remoteRepositoryId());
         server.verify();
     }
 

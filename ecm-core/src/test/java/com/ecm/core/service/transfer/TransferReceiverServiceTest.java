@@ -1,5 +1,6 @@
 package com.ecm.core.service.transfer;
 
+import com.ecm.core.config.RepositoryIdentityProvider;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Node;
@@ -82,6 +83,7 @@ class TransferReceiverServiceTest {
 
         assertEquals(rootId, response.folderId());
         assertEquals("Outbound", response.folderName());
+        assertEquals("athena", response.repositoryId());
         assertEquals(TransferReceiverRegistration.AccessStatus.SUCCESS, receiver.getLastAccessStatus());
     }
 
@@ -277,7 +279,8 @@ class TransferReceiverServiceTest {
             folderService,
             documentUploadService,
             nodeService,
-            versionService
+            versionService,
+            new RepositoryIdentityProvider("athena", "athena")
         );
     }
 

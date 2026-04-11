@@ -13,6 +13,8 @@ public interface ReplicationDefinitionRepository extends JpaRepository<Replicati
 
     boolean existsByNameIgnoreCase(String name);
 
+    boolean existsByTransferTargetId(UUID transferTargetId);
+
     List<ReplicationDefinition> findByEnabledTrueAndCronExpressionIsNotNullAndNextRunAtIsNotNullAndNextRunAtLessThanEqual(
         LocalDateTime now
     );

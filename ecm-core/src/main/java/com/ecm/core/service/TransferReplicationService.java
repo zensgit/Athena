@@ -18,6 +18,8 @@ import org.springframework.scheduling.support.CronExpression;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.List;
@@ -32,6 +34,8 @@ import java.util.stream.Collectors;
 @Service
 @Slf4j
 public class TransferReplicationService {
+
+    private static final int MAX_ENTRY_REPORT_ITEMS = 5000;
 
     private final TransferTargetRepository transferTargetRepository;
     private final ReplicationDefinitionRepository replicationDefinitionRepository;
@@ -135,6 +139,9 @@ public class TransferReplicationService {
             TransferClient.TransferVerificationResult verification = clientFor(target).verifyTarget(target);
             target.setVerificationStatus(TransferTarget.VerificationStatus.VERIFIED);
             target.setVerificationMessage(verification.message());
+            if (verification.remoteRepositoryId() != null) {
+                target.setRemoteRepositoryId(verification.remoteRepositoryId());
+            }
         } catch (RuntimeException ex) {
             target.setVerificationStatus(TransferTarget.VerificationStatus.FAILED);
             target.setVerificationMessage(ex.getMessage());
@@ -149,8 +156,7 @@ public class TransferReplicationService {
     public void deleteTarget(UUID targetId) {
         requireAdmin();
         TransferTarget target = requireTarget(targetId);
-        boolean inUse = replicationDefinitionRepository.findAll().stream()
-            .anyMatch(definition -> Objects.equals(definition.getTransferTargetId(), targetId));
+        boolean inUse = replicationDefinitionRepository.existsByTransferTargetId(targetId);
         if (inUse) {
             throw new IllegalStateException("Transfer target is still referenced by a replication definition");
         }
@@ -309,9 +315,10 @@ public class TransferReplicationService {
 
     void processJob(UUID jobId) {
         ReplicationJob job = requireJob(jobId);
+        LocalDateTime startedAt = LocalDateTime.now();
         job.setStatus(ReplicationJobStatus.RUNNING);
-        job.setStartedAt(LocalDateTime.now());
-        job.setLastAttemptedAt(LocalDateTime.now());
+        job.setStartedAt(startedAt);
+        job.setLastAttemptedAt(startedAt);
         job.setTransportStatus(ReplicationJob.TransportStatus.RUNNING);
         job.setTransportMessage("Transport replication started");
         job.setLastMessage("Replication started");
@@ -331,25 +338,39 @@ public class TransferReplicationService {
                         : ReplicationDefinition.ConflictPolicy.RENAME
                 );
 
-            definition.setLastRunAt(LocalDateTime.now());
+            LocalDateTime completedAt = LocalDateTime.now();
+            definition.setLastRunAt(completedAt);
             replicationDefinitionRepository.save(definition);
+            JobEntryReportPayload entryReportPayload = buildSuccessEntryReport(source, result, startedAt, completedAt);
 
             job.setCopiedNodeId(result.copiedNodeId());
             job.setStatus(ReplicationJobStatus.COMPLETED);
-            job.setCompletedAt(LocalDateTime.now());
+            job.setCompletedAt(completedAt);
             job.setLastMessage(result.message());
             job.setTransportStatus(ReplicationJob.TransportStatus.SUCCESS);
             job.setTransportMessage(result.message());
             job.setErrorLog(null);
+            job.setEntryReport(entryReportPayload.entryReport());
+            job.setReportTruncated(entryReportPayload.reportTruncated());
             replicationJobRepository.save(job);
         } catch (RuntimeException ex) {
             log.warn("Replication job {} failed: {}", jobId, ex.getMessage());
+            LocalDateTime completedAt = LocalDateTime.now();
+            Node source = null;
+            try {
+                source = nodeService.getNode(job.getSourceNodeId());
+            } catch (RuntimeException ignored) {
+                // Keep failure reporting best-effort.
+            }
+            JobEntryReportPayload entryReportPayload = buildFailureEntryReport(source, ex.getMessage(), startedAt, completedAt);
             job.setStatus(ReplicationJobStatus.FAILED);
-            job.setCompletedAt(LocalDateTime.now());
+            job.setCompletedAt(completedAt);
             job.setLastMessage("Replication failed");
             job.setTransportStatus(ReplicationJob.TransportStatus.FAILED);
             job.setTransportMessage(ex.getMessage());
             job.setErrorLog(ex.getMessage());
+            job.setEntryReport(entryReportPayload.entryReport());
+            job.setReportTruncated(entryReportPayload.reportTruncated());
             replicationJobRepository.save(job);
             tryQueueAutomaticRetry(job);
         }
@@ -508,6 +529,7 @@ public class TransferReplicationService {
             target.isEnabled(),
             target.getVerificationStatus(),
             target.getVerificationMessage(),
+            target.getRemoteRepositoryId(),
             target.getLastVerifiedAt(),
             target.getCreatedAt(),
             target.getUpdatedAt()
@@ -567,6 +589,8 @@ public class TransferReplicationService {
             job.getTransportStatus(),
             job.getTransportMessage(),
             job.getErrorLog(),
+            job.getEntryReport(),
+            job.isReportTruncated(),
             job.getLastAttemptedAt(),
             job.getStartedAt(),
             job.getCompletedAt(),
@@ -631,9 +655,8 @@ public class TransferReplicationService {
     }
 
     private boolean hasActiveJob(UUID definitionId) {
-        return replicationJobRepository.findAll().stream()
-            .anyMatch(job -> Objects.equals(job.getDefinitionId(), definitionId)
-                && (job.getStatus() == ReplicationJobStatus.PENDING || job.getStatus() == ReplicationJobStatus.RUNNING));
+        return replicationJobRepository.existsByDefinitionIdAndStatusIn(
+            definitionId, List.of(ReplicationJobStatus.PENDING, ReplicationJobStatus.RUNNING));
     }
 
     private int normalizeNonNegative(Integer value) {
@@ -735,8 +758,83 @@ public class TransferReplicationService {
         if (verificationInputsChanged) {
             target.setVerificationStatus(TransferTarget.VerificationStatus.NEVER_VERIFIED);
             target.setVerificationMessage(null);
+            target.setRemoteRepositoryId(null);
             target.setLastVerifiedAt(null);
         }
+    }
+
+    private JobEntryReportPayload buildSuccessEntryReport(
+        Node source,
+        TransferClient.TransferExecutionResult result,
+        LocalDateTime startedAt,
+        LocalDateTime completedAt
+    ) {
+        List<TransferClient.TransferExecutionEntry> entries = result.entries() != null && !result.entries().isEmpty()
+            ? result.entries()
+            : List.of(defaultEntry(source, result.copiedNodeId(), "COMPLETED", result.message(), startedAt, completedAt));
+        return toEntryReport(entries);
+    }
+
+    private JobEntryReportPayload buildFailureEntryReport(
+        Node source,
+        String message,
+        LocalDateTime startedAt,
+        LocalDateTime completedAt
+    ) {
+        return toEntryReport(List.of(defaultEntry(source, null, "FAILED", message, startedAt, completedAt)));
+    }
+
+    private JobEntryReportPayload toEntryReport(List<TransferClient.TransferExecutionEntry> rawEntries) {
+        List<TransferClient.TransferExecutionEntry> entries = rawEntries != null ? rawEntries : List.of();
+        boolean reportTruncated = entries.size() > MAX_ENTRY_REPORT_ITEMS;
+        List<Map<String, Object>> storedEntries = entries.stream()
+            .limit(MAX_ENTRY_REPORT_ITEMS)
+            .map(this::toEntryReportItem)
+            .toList();
+
+        long failureCount = entries.stream()
+            .filter(entry -> entry.action() != null && "FAILED".equalsIgnoreCase(entry.action()))
+            .count();
+
+        Map<String, Object> entryReport = new LinkedHashMap<>();
+        entryReport.put("totalEntries", entries.size());
+        entryReport.put("successCount", entries.size() - failureCount);
+        entryReport.put("failureCount", failureCount);
+        entryReport.put("entries", storedEntries);
+        return new JobEntryReportPayload(entryReport, reportTruncated);
+    }
+
+    private Map<String, Object> toEntryReportItem(TransferClient.TransferExecutionEntry entry) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("sourceNodeId", entry.sourceNodeId() != null ? entry.sourceNodeId().toString() : null);
+        item.put("sourcePath", entry.sourcePath());
+        item.put("sourceType", entry.sourceType());
+        item.put("targetNodeId", entry.targetNodeId() != null ? entry.targetNodeId().toString() : null);
+        item.put("action", entry.action());
+        item.put("message", entry.message());
+        item.put("startedAt", entry.startedAt() != null ? entry.startedAt().toString() : null);
+        item.put("completedAt", entry.completedAt() != null ? entry.completedAt().toString() : null);
+        return item;
+    }
+
+    private TransferClient.TransferExecutionEntry defaultEntry(
+        Node source,
+        UUID targetNodeId,
+        String action,
+        String message,
+        LocalDateTime startedAt,
+        LocalDateTime completedAt
+    ) {
+        return new TransferClient.TransferExecutionEntry(
+            source != null ? source.getId() : null,
+            source != null ? source.getPath() : null,
+            source != null && source.getNodeType() != null ? source.getNodeType().name() : null,
+            targetNodeId,
+            action,
+            message,
+            startedAt,
+            completedAt
+        );
     }
 
     private String normalizeEndpointUrl(String endpointUrl) {
@@ -795,6 +893,7 @@ public class TransferReplicationService {
         boolean enabled,
         TransferTarget.VerificationStatus verificationStatus,
         String verificationMessage,
+        String remoteRepositoryId,
         LocalDateTime lastVerifiedAt,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
@@ -854,6 +953,8 @@ public class TransferReplicationService {
         ReplicationJob.TransportStatus transportStatus,
         String transportMessage,
         String errorLog,
+        Map<String, Object> entryReport,
+        boolean reportTruncated,
         LocalDateTime lastAttemptedAt,
         LocalDateTime startedAt,
         LocalDateTime completedAt,
@@ -877,4 +978,10 @@ public class TransferReplicationService {
         int affectedDefinitions,
         int deletedJobs
     ) {}
+
+    private record JobEntryReportPayload(
+        Map<String, Object> entryReport,
+        boolean reportTruncated
+    ) {
+    }
 }

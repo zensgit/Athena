@@ -20,7 +20,9 @@ import org.springframework.web.util.UriComponentsBuilder;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.time.LocalDateTime;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -56,7 +58,8 @@ public class AthenaTransferHttpClient implements TransferClient {
             throw new IllegalStateException("Remote transfer receiver verification returned an empty response");
         }
         String name = body.path("folderName").asText(target.getTargetFolderId().toString());
-        return new TransferVerificationResult("Verified remote Athena transfer receiver folder: " + name);
+        String remoteRepoId = body.has("repositoryId") ? body.path("repositoryId").asText(null) : null;
+        return new TransferVerificationResult("Verified remote Athena transfer receiver folder: " + name, remoteRepoId);
     }
 
     @Override
@@ -68,6 +71,7 @@ public class AthenaTransferHttpClient implements TransferClient {
     ) {
         UUID remoteId;
         String message;
+        List<TransferExecutionEntry> entries = new ArrayList<>();
         if (source instanceof Folder folder) {
             TransferReceiverFolderResult folderResult = createRemoteFolder(
                 target,
@@ -78,8 +82,9 @@ public class AthenaTransferHttpClient implements TransferClient {
             );
             remoteId = folderResult.folderId();
             message = folderResult.message();
+            entries.add(entryFor(source, remoteId, folderResult.disposition().name(), folderResult.message()));
             if (includeChildren && folderResult.disposition() != TransferReceiverService.ConflictDisposition.SKIPPED) {
-                replicateChildren(target, folder, remoteId, conflictPolicy);
+                replicateChildren(target, folder, remoteId, conflictPolicy, entries);
             }
         } else if (source instanceof Document document) {
             TransferReceiverDocumentResult documentResult = uploadRemoteDocument(
@@ -91,17 +96,23 @@ public class AthenaTransferHttpClient implements TransferClient {
             );
             remoteId = documentResult.documentId();
             message = documentResult.message();
+            entries.add(entryFor(source, remoteId, documentResult.disposition().name(), documentResult.message()));
         } else {
             throw new IllegalArgumentException("Unsupported node type for remote replication: " + source.getNodeType());
         }
-        return new TransferExecutionResult(remoteId, message != null ? message : "Remote Athena HTTP replication completed");
+        return new TransferExecutionResult(
+            remoteId,
+            message != null ? message : "Remote Athena HTTP replication completed",
+            entries
+        );
     }
 
     private void replicateChildren(
         TransferTarget target,
         Folder sourceFolder,
         UUID remoteParentId,
-        ReplicationDefinition.ConflictPolicy conflictPolicy
+        ReplicationDefinition.ConflictPolicy conflictPolicy,
+        List<TransferExecutionEntry> entries
     ) {
         List<Node> children = nodeRepository.findByParentIdAndDeletedFalseAndArchiveStatus(
             sourceFolder.getId(),
@@ -117,11 +128,19 @@ public class AthenaTransferHttpClient implements TransferClient {
                     folder.getDescription(),
                     conflictPolicy
                 );
+                entries.add(entryFor(folder, folderResult.folderId(), folderResult.disposition().name(), folderResult.message()));
                 if (folderResult.disposition() != TransferReceiverService.ConflictDisposition.SKIPPED) {
-                    replicateChildren(target, folder, folderResult.folderId(), conflictPolicy);
+                    replicateChildren(target, folder, folderResult.folderId(), conflictPolicy, entries);
                 }
             } else if (child instanceof Document document) {
-                uploadRemoteDocument(target, remoteParentId, document, document.getName(), conflictPolicy);
+                TransferReceiverDocumentResult documentResult = uploadRemoteDocument(
+                    target,
+                    remoteParentId,
+                    document,
+                    document.getName(),
+                    conflictPolicy
+                );
+                entries.add(entryFor(document, documentResult.documentId(), documentResult.disposition().name(), documentResult.message()));
             }
         }
     }
@@ -280,6 +299,20 @@ public class AthenaTransferHttpClient implements TransferClient {
             return fallback;
         }
         return body.path("message").asText();
+    }
+
+    private TransferExecutionEntry entryFor(Node source, UUID targetNodeId, String action, String message) {
+        LocalDateTime now = LocalDateTime.now();
+        return new TransferExecutionEntry(
+            source.getId(),
+            source.getPath(),
+            source.getNodeType() != null ? source.getNodeType().name() : source.getClass().getSimpleName(),
+            targetNodeId,
+            action,
+            message,
+            now,
+            now
+        );
     }
 
     private record TransferReceiverFolderResult(

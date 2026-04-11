@@ -1,5 +1,6 @@
 package com.ecm.core.cmis;
 
+import com.ecm.core.config.RepositoryIdentityProvider;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Node;
@@ -38,7 +39,7 @@ class CmisMutationServiceTest {
 
     @BeforeEach
     void setUp() {
-        cmisMutationService = new CmisMutationService(folderService, nodeService, new CmisObjectFactory());
+        cmisMutationService = new CmisMutationService(folderService, nodeService, new CmisObjectFactory(new RepositoryIdentityProvider("athena", "athena")));
     }
 
     @Test

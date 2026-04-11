@@ -79,6 +79,9 @@ public class TransferTarget {
     @Column(name = "verification_message", columnDefinition = "TEXT")
     private String verificationMessage;
 
+    @Column(name = "remote_repository_id", length = 255)
+    private String remoteRepositoryId;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

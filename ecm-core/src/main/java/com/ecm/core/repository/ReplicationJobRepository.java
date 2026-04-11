@@ -23,4 +23,8 @@ public interface ReplicationJobRepository extends JpaRepository<ReplicationJob, 
         Collection<ReplicationJob.ReplicationJobStatus> statuses,
         LocalDateTime completedAt
     );
+
+    boolean existsByDefinitionIdAndStatusIn(UUID definitionId, Collection<ReplicationJob.ReplicationJobStatus> statuses);
+
+    boolean existsByTransferTargetId(UUID transferTargetId);
 }

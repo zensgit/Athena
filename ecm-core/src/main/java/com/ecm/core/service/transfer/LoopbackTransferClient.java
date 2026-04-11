@@ -1,5 +1,6 @@
 package com.ecm.core.service.transfer;
 
+import com.ecm.core.config.RepositoryIdentityProvider;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Node;
@@ -16,6 +17,8 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -28,6 +31,7 @@ public class LoopbackTransferClient implements TransferClient {
     private final NodeRepository nodeRepository;
     private final ContentService contentService;
     private final VersionService versionService;
+    private final RepositoryIdentityProvider repositoryIdentityProvider;
 
     @Override
     public TransferTarget.TransportType transportType() {
@@ -37,7 +41,7 @@ public class LoopbackTransferClient implements TransferClient {
     @Override
     public TransferVerificationResult verifyTarget(TransferTarget target) {
         String folderName = folderService.getFolder(target.getTargetFolderId()).getName();
-        return new TransferVerificationResult("Verified local target folder: " + folderName);
+        return new TransferVerificationResult("Verified local target folder: " + folderName, repositoryIdentityProvider.getTransferRepositoryId());
     }
 
     @Override
@@ -51,16 +55,25 @@ public class LoopbackTransferClient implements TransferClient {
         ReplicationDefinition.ConflictPolicy effectivePolicy = conflictPolicy != null
             ? conflictPolicy
             : ReplicationDefinition.ConflictPolicy.RENAME;
-        Node replicated = replicateToParent(target.getTargetFolderId(), source, includeChildren, effectivePolicy);
-        String message = switch (effectivePolicy) {
-            case SKIP -> "Loopback replication applied with SKIP policy";
-            case RENAME -> "Loopback replication applied with RENAME policy";
-            case OVERWRITE -> "Loopback replication applied with OVERWRITE policy";
-        };
-        return new TransferExecutionResult(replicated.getId(), message);
+        LoopbackReplicationResult replicated = replicateToParent(target.getTargetFolderId(), source, includeChildren, effectivePolicy);
+        LocalDateTime now = LocalDateTime.now();
+        return new TransferExecutionResult(
+            replicated.node().getId(),
+            replicated.message(),
+            List.of(new TransferExecutionEntry(
+                source.getId(),
+                source.getPath(),
+                source.getNodeType() != null ? source.getNodeType().name() : source.getClass().getSimpleName(),
+                replicated.node().getId(),
+                replicated.action(),
+                replicated.message(),
+                now,
+                now
+            ))
+        );
     }
 
-    private Node replicateToParent(
+    private LoopbackReplicationResult replicateToParent(
         UUID targetParentId,
         Node source,
         boolean includeChildren,
@@ -68,18 +81,30 @@ public class LoopbackTransferClient implements TransferClient {
     ) {
         Optional<Node> existing = nodeRepository.findByParentIdAndName(targetParentId, source.getName());
         if (existing.isEmpty()) {
-            return nodeService.copyNode(source.getId(), targetParentId, source.getName(), includeChildren);
+            return new LoopbackReplicationResult(
+                nodeService.copyNode(source.getId(), targetParentId, source.getName(), includeChildren),
+                "CREATED",
+                "Loopback replication created target node"
+            );
         }
 
         return switch (conflictPolicy) {
-            case SKIP -> existing.get();
-            case RENAME -> nodeService.copyNode(
-                source.getId(),
-                targetParentId,
-                generateReplicaName(targetParentId, source.getName()),
-                includeChildren
+            case SKIP -> new LoopbackReplicationResult(existing.get(), "SKIPPED", "Loopback replication skipped existing node");
+            case RENAME -> new LoopbackReplicationResult(
+                nodeService.copyNode(
+                    source.getId(),
+                    targetParentId,
+                    generateReplicaName(targetParentId, source.getName()),
+                    includeChildren
+                ),
+                "RENAMED",
+                "Loopback replication created renamed target node"
             );
-            case OVERWRITE -> overwriteExisting(targetParentId, source, includeChildren, existing.get());
+            case OVERWRITE -> new LoopbackReplicationResult(
+                overwriteExisting(targetParentId, source, includeChildren, existing.get()),
+                "OVERWRITTEN",
+                "Loopback replication overwrote existing target node"
+            );
         };
     }
 
@@ -130,5 +155,8 @@ public class LoopbackTransferClient implements TransferClient {
             existing = nodeRepository.findByParentIdAndName(targetFolderId, candidate);
         }
         return candidate;
+    }
+
+    private record LoopbackReplicationResult(Node node, String action, String message) {
     }
 }

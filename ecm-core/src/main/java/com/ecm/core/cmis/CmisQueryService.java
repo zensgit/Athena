@@ -53,7 +53,7 @@ public class CmisQueryService {
             .toList();
 
         return new CmisModels.QueryResponse(
-            CmisObjectFactory.REPOSITORY_ID,
+            objectFactory.getRepositoryId(),
             statement,
             entries,
             normalizedSkip,

@@ -1,5 +1,6 @@
 package com.ecm.core.cmis;
 
+import com.ecm.core.config.RepositoryIdentityProvider;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Node;
@@ -50,7 +51,7 @@ class CmisContentVersioningServiceTest {
             contentService,
             versionService,
             checkOutCheckInService,
-            new CmisObjectFactory()
+            new CmisObjectFactory(new RepositoryIdentityProvider("athena", "athena"))
         );
     }
 

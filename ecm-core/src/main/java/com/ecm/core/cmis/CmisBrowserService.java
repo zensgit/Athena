@@ -23,7 +23,7 @@ public class CmisBrowserService {
 
     public CmisModels.RepositoryInfo getRepositoryInfo() {
         return new CmisModels.RepositoryInfo(
-            CmisObjectFactory.REPOSITORY_ID,
+            objectFactory.getRepositoryId(),
             "Athena Repository",
             "Athena",
             "Athena ECM",
@@ -70,7 +70,7 @@ public class CmisBrowserService {
                 .toList();
             int total = folderService.getRootFolders().size();
             return new CmisModels.ChildrenResponse(
-                CmisObjectFactory.REPOSITORY_ID,
+                objectFactory.getRepositoryId(),
                 CmisObjectFactory.ROOT_OBJECT_ID,
                 rootChildren,
                 normalizedSkip,
@@ -92,7 +92,7 @@ public class CmisBrowserService {
             .map(objectFactory::fromNode)
             .toList();
         return new CmisModels.ChildrenResponse(
-            CmisObjectFactory.REPOSITORY_ID,
+            objectFactory.getRepositoryId(),
             parent.getId().toString(),
             entries,
             normalizedSkip,

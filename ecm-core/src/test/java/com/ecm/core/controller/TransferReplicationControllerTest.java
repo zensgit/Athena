@@ -403,6 +403,7 @@ class TransferReplicationControllerTest {
             enabled,
             verificationStatus,
             verificationMessage,
+            null,
             lastVerifiedAt,
             createdAt,
             updatedAt
@@ -429,6 +430,8 @@ class TransferReplicationControllerTest {
                     : ReplicationJob.TransportStatus.NEVER_RUN,
             "Transport diagnostics",
             null,
+            null,
+            false,
             LocalDateTime.now(),
             LocalDateTime.now(),
             null,

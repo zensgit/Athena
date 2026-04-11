@@ -23,9 +23,28 @@ export interface TransferTargetDto {
   enabled: boolean;
   verificationStatus: VerificationStatus;
   verificationMessage?: string | null;
+  remoteRepositoryId?: string | null;
   lastVerifiedAt?: string | null;
   createdAt: string;
   updatedAt?: string | null;
+}
+
+export interface ReplicationJobEntryReportItem {
+  sourceNodeId?: string | null;
+  sourcePath?: string | null;
+  sourceType?: string | null;
+  targetNodeId?: string | null;
+  action?: string | null;
+  message?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+}
+
+export interface ReplicationJobEntryReport {
+  totalEntries: number;
+  successCount: number;
+  failureCount: number;
+  entries: ReplicationJobEntryReportItem[];
 }
 
 export interface TransferTargetMutationRequest {
@@ -148,6 +167,8 @@ export interface ReplicationJobDto {
   transportStatus: ReplicationTransportStatus;
   transportMessage?: string | null;
   errorLog?: string | null;
+  entryReport?: ReplicationJobEntryReport | null;
+  reportTruncated: boolean;
   lastAttemptedAt?: string | null;
   startedAt?: string | null;
   completedAt?: string | null;

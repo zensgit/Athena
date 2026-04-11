@@ -1,5 +1,6 @@
 package com.ecm.core.cmis;
 
+import com.ecm.core.config.RepositoryIdentityProvider;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Node;
@@ -44,7 +45,7 @@ class CmisBrowserServiceTest {
     private TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
     private final CmisTypeManager typeManager = new CmisTypeManager();
-    private final CmisObjectFactory objectFactory = new CmisObjectFactory();
+    private final CmisObjectFactory objectFactory = new CmisObjectFactory(new RepositoryIdentityProvider("athena", "athena"));
 
     private CmisBrowserService cmisBrowserService;
     private CmisQueryService cmisQueryService;

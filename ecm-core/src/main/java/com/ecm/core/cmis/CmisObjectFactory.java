@@ -1,7 +1,9 @@
 package com.ecm.core.cmis;
 
+import com.ecm.core.config.RepositoryIdentityProvider;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Node;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -10,10 +12,23 @@ import java.util.List;
 import java.util.Map;
 
 @Component
+@RequiredArgsConstructor
 public class CmisObjectFactory {
 
-    public static final String REPOSITORY_ID = "athena";
     public static final String ROOT_OBJECT_ID = "root";
+
+    private final RepositoryIdentityProvider repositoryIdentityProvider;
+
+    public CmisObjectFactory() {
+        this(new RepositoryIdentityProvider(
+            RepositoryIdentityProvider.DEFAULT_CMIS_REPOSITORY_ID,
+            RepositoryIdentityProvider.DEFAULT_CMIS_REPOSITORY_ID
+        ));
+    }
+
+    public String getRepositoryId() {
+        return repositoryIdentityProvider.getCmisRepositoryId();
+    }
 
     public CmisModels.ObjectEntry rootObject() {
         Map<String, Object> properties = new LinkedHashMap<>();
@@ -25,7 +40,7 @@ public class CmisObjectFactory {
         properties.put("cmis:parentId", null);
 
         return new CmisModels.ObjectEntry(
-            REPOSITORY_ID,
+            getRepositoryId(),
             ROOT_OBJECT_ID,
             "Company Home",
             "cmis:folder",
@@ -84,7 +99,7 @@ public class CmisObjectFactory {
         }
 
         return new CmisModels.ObjectEntry(
-            REPOSITORY_ID,
+            getRepositoryId(),
             node.getId().toString(),
             node.getName(),
             baseTypeId,

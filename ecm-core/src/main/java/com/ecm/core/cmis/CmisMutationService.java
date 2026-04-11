@@ -37,7 +37,7 @@ public class CmisMutationService {
             null
         ));
         return new CmisModels.MutationResponse(
-            CmisObjectFactory.REPOSITORY_ID,
+            objectFactory.getRepositoryId(),
             "createFolder",
             objectFactory.fromNode(folder),
             null,
@@ -68,7 +68,7 @@ public class CmisMutationService {
         }
 
         return new CmisModels.MutationResponse(
-            CmisObjectFactory.REPOSITORY_ID,
+            objectFactory.getRepositoryId(),
             "createDocument",
             objectFactory.fromNode(document),
             null,
@@ -117,7 +117,7 @@ public class CmisMutationService {
 
         Node updated = nodeService.updateNode(node.getId(), updates);
         return new CmisModels.MutationResponse(
-            CmisObjectFactory.REPOSITORY_ID,
+            objectFactory.getRepositoryId(),
             "updateProperties",
             objectFactory.fromNode(updated),
             null,
@@ -129,7 +129,7 @@ public class CmisMutationService {
         Node node = resolveNode(request.objectId(), request.path());
         nodeService.deleteNode(node.getId(), false);
         return new CmisModels.MutationResponse(
-            CmisObjectFactory.REPOSITORY_ID,
+            objectFactory.getRepositoryId(),
             "deleteObject",
             null,
             node.getId().toString(),

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd">
+
+    <changeSet id="068-create-transfer-node-mappings-table" author="codex">
+        <createTable tableName="transfer_node_mappings">
+            <column name="id" type="UUID">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="root_folder_id" type="UUID">
+                <constraints nullable="false"/>
+            </column>
+            <column name="source_repository_id" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="source_node_id" type="UUID">
+                <constraints nullable="false"/>
+            </column>
+            <column name="local_node_id" type="UUID">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_source_modified_at" type="TIMESTAMP"/>
+            <column name="last_synced_at" type="TIMESTAMP"/>
+            <column name="created_at" type="TIMESTAMP"/>
+            <column name="updated_at" type="TIMESTAMP"/>
+        </createTable>
+
+        <addUniqueConstraint
+            tableName="transfer_node_mappings"
+            columnNames="root_folder_id, source_repository_id, source_node_id"
+            constraintName="uk_transfer_node_mapping_source_scope"/>
+
+        <createIndex tableName="transfer_node_mappings" indexName="idx_transfer_node_mapping_root_folder">
+            <column name="root_folder_id"/>
+        </createIndex>
+        <createIndex tableName="transfer_node_mappings" indexName="idx_transfer_node_mapping_local_node">
+            <column name="local_node_id"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

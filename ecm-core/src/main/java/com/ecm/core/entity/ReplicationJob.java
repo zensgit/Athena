@@ -1,11 +1,15 @@
 package com.ecm.core.entity;
 
+import com.vladmihalcea.hibernate.type.json.JsonType;
 import jakarta.persistence.*;
 import lombok.Data;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.Type;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
 
 @Data
@@ -63,6 +67,13 @@ public class ReplicationJob {
 
     @Column(name = "error_log", columnDefinition = "TEXT")
     private String errorLog;
+
+    @Type(JsonType.class)
+    @Column(name = "entry_report", columnDefinition = "jsonb")
+    private Map<String, Object> entryReport = new LinkedHashMap<>();
+
+    @Column(name = "report_truncated", nullable = false)
+    private boolean reportTruncated = false;
 
     @Column(name = "last_attempted_at")
     private LocalDateTime lastAttemptedAt;

@@ -61,7 +61,7 @@ public class CmisContentVersioningService {
 
         Document refreshed = resolveDocument(document.getId().toString(), null);
         return new CmisModels.MutationResponse(
-            CmisObjectFactory.REPOSITORY_ID,
+            objectFactory.getRepositoryId(),
             "setContentStream",
             objectFactory.fromNode(refreshed),
             null,
@@ -73,7 +73,7 @@ public class CmisContentVersioningService {
         Document document = resolveDocument(request.objectId(), request.path());
         Document checkedOut = nodeService.checkoutDocument(document.getId());
         return new CmisModels.MutationResponse(
-            CmisObjectFactory.REPOSITORY_ID,
+            objectFactory.getRepositoryId(),
             "checkOut",
             objectFactory.fromNode(checkedOut),
             null,
@@ -96,7 +96,7 @@ public class CmisContentVersioningService {
         }
         Document checkedIn = nodeService.checkinDocument(document.getId(), Boolean.TRUE.equals(request.keepCheckedOut()));
         return new CmisModels.MutationResponse(
-            CmisObjectFactory.REPOSITORY_ID,
+            objectFactory.getRepositoryId(),
             "checkIn",
             objectFactory.fromNode(checkedIn),
             null,
@@ -108,7 +108,7 @@ public class CmisContentVersioningService {
         Document document = resolveDocument(request.objectId(), request.path());
         Document canceled = nodeService.cancelCheckoutDocument(document.getId());
         return new CmisModels.MutationResponse(
-            CmisObjectFactory.REPOSITORY_ID,
+            objectFactory.getRepositoryId(),
             "cancelCheckOut",
             objectFactory.fromNode(canceled),
             null,
@@ -120,7 +120,7 @@ public class CmisContentVersioningService {
         Document document = resolveDocument(request.objectId(), request.path());
         Document workingCopy = checkOutCheckInService.checkout(document.getId());
         return new CmisModels.MutationResponse(
-            CmisObjectFactory.REPOSITORY_ID,
+            objectFactory.getRepositoryId(),
             "checkOut",
             objectFactory.fromNode(workingCopy),
             null,
@@ -148,7 +148,7 @@ public class CmisContentVersioningService {
 
         Document original = checkOutCheckInService.checkin(workingCopy.getId(), Boolean.TRUE.equals(request.keepCheckedOut()));
         return new CmisModels.MutationResponse(
-            CmisObjectFactory.REPOSITORY_ID,
+            objectFactory.getRepositoryId(),
             "checkIn",
             objectFactory.fromNode(original),
             null,
@@ -160,7 +160,7 @@ public class CmisContentVersioningService {
         Document document = resolveDocument(request.objectId(), request.path());
         Document original = checkOutCheckInService.cancelCheckout(document.getId());
         return new CmisModels.MutationResponse(
-            CmisObjectFactory.REPOSITORY_ID,
+            objectFactory.getRepositoryId(),
             "cancelCheckOut",
             objectFactory.fromNode(original),
             null,

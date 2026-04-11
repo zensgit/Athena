@@ -28,6 +28,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
@@ -116,6 +117,18 @@ class TransferReplicationServiceTest {
         lenient().when(replicationDefinitionRepository.findAll()).thenAnswer(invocation -> List.copyOf(storedDefinitions.values()));
         lenient().when(transferTargetRepository.findAll()).thenAnswer(invocation -> List.copyOf(storedTargets.values()));
         lenient().when(replicationJobRepository.findAll()).thenAnswer(invocation -> List.copyOf(storedJobs.values()));
+        lenient().when(replicationJobRepository.existsByDefinitionIdAndStatusIn(any(UUID.class), anyCollection())).thenAnswer(invocation -> {
+            UUID defId = invocation.getArgument(0);
+            @SuppressWarnings("unchecked")
+            java.util.Collection<ReplicationJob.ReplicationJobStatus> statuses = invocation.getArgument(1);
+            return storedJobs.values().stream()
+                .anyMatch(job -> java.util.Objects.equals(job.getDefinitionId(), defId) && statuses.contains(job.getStatus()));
+        });
+        lenient().when(replicationDefinitionRepository.existsByTransferTargetId(any(UUID.class))).thenAnswer(invocation -> {
+            UUID targetId = invocation.getArgument(0);
+            return storedDefinitions.values().stream()
+                .anyMatch(def -> java.util.Objects.equals(def.getTransferTargetId(), targetId));
+        });
         lenient().when(replicationDefinitionRepository.findByEnabledTrueAndCronExpressionIsNotNullAndNextRunAtIsNotNullAndNextRunAtLessThanEqual(any(LocalDateTime.class)))
             .thenAnswer(invocation -> {
                 LocalDateTime cutoff = invocation.getArgument(0);
@@ -566,12 +579,13 @@ class TransferReplicationServiceTest {
         storedTargets.put(target.getId(), target);
 
         when(athenaTransferClient.verifyTarget(target))
-            .thenReturn(new TransferClient.TransferVerificationResult("Verified remote Athena transfer receiver folder: Contracts"));
+            .thenReturn(new TransferClient.TransferVerificationResult("Verified remote Athena transfer receiver folder: Contracts", "athena"));
 
         TransferReplicationService.TransferTargetDto verified = service.verifyTarget(target.getId());
 
         assertEquals(TransferTarget.VerificationStatus.VERIFIED, verified.verificationStatus());
         assertEquals("Verified remote Athena transfer receiver folder: Contracts", verified.verificationMessage());
+        assertEquals("athena", verified.remoteRepositoryId());
         assertNotNull(verified.lastVerifiedAt());
     }
 
@@ -621,6 +635,70 @@ class TransferReplicationServiceTest {
 
         IllegalStateException ex = assertThrows(IllegalStateException.class, () -> service.deleteTarget(target.getId()));
         assertTrue(ex.getMessage().contains("still referenced"));
+    }
+
+    @Test
+    @DisplayName("hasActiveJob uses indexed DB query, not in-memory findAll scan")
+    void hasActiveJobUsesDbQueryNotFindAllScan() {
+        UUID targetId = UUID.randomUUID();
+        UUID sourceNodeId = UUID.randomUUID();
+        TransferTarget target = new TransferTarget();
+        target.setId(targetId);
+        target.setName("remote");
+        target.setTransportType(TransferTarget.TransportType.ATHENA_HTTP);
+        target.setTargetFolderId(UUID.randomUUID());
+        target.setEndpointUrl("https://remote.example");
+        target.setEnabled(true);
+        storedTargets.put(targetId, target);
+
+        ReplicationDefinition dueDefinition = new ReplicationDefinition();
+        dueDefinition.setId(UUID.randomUUID());
+        dueDefinition.setName("nightly");
+        dueDefinition.setSourceNodeId(sourceNodeId);
+        dueDefinition.setTransferTargetId(targetId);
+        dueDefinition.setEnabled(true);
+        dueDefinition.setCronExpression("0 0 2 * * *");
+        dueDefinition.setScheduleTimezone("UTC");
+        dueDefinition.setNextRunAt(LocalDateTime.now().minusMinutes(1));
+        storedDefinitions.put(dueDefinition.getId(), dueDefinition);
+
+        // Place a RUNNING job for this definition
+        ReplicationJob activeJob = new ReplicationJob();
+        activeJob.setId(UUID.randomUUID());
+        activeJob.setDefinitionId(dueDefinition.getId());
+        activeJob.setTransferTargetId(targetId);
+        activeJob.setSourceNodeId(sourceNodeId);
+        activeJob.setUserId("alice");
+        activeJob.setStatus(ReplicationJob.ReplicationJobStatus.RUNNING);
+        activeJob.setCreatedAt(LocalDateTime.now());
+        storedJobs.put(activeJob.getId(), activeJob);
+
+        // Run the scheduler — it should skip because of the active job
+        TransferReplicationService.ScheduledReplicationBatchDto result = service.runScheduledDefinitions();
+        assertEquals(1, result.skippedDefinitions());
+
+        // Verify the DB existence query was used
+        verify(replicationJobRepository).existsByDefinitionIdAndStatusIn(
+            eq(dueDefinition.getId()),
+            eq(List.of(ReplicationJob.ReplicationJobStatus.PENDING, ReplicationJob.ReplicationJobStatus.RUNNING))
+        );
+    }
+
+    @Test
+    @DisplayName("deleteTarget uses indexed DB query for reference check, not findAll scan")
+    void deleteTargetUsesDbQueryNotFindAllScan() {
+        TransferTarget target = new TransferTarget();
+        target.setId(UUID.randomUUID());
+        target.setName("loopback");
+        target.setTransportType(TransferTarget.TransportType.LOOPBACK);
+        target.setTargetFolderId(UUID.randomUUID());
+        storedTargets.put(target.getId(), target);
+
+        // No definitions reference this target
+        service.deleteTarget(target.getId());
+
+        verify(replicationDefinitionRepository).existsByTransferTargetId(target.getId());
+        verify(transferTargetRepository).delete(target);
     }
 
     private Folder folder(UUID id, String name) {

@@ -52,7 +52,7 @@ class TransferReceiverControllerTest {
     void verifyFolderReturnsVerifiedFolderPayload() throws Exception {
         UUID folderId = UUID.randomUUID();
         when(transferReceiverService.verifyFolder(folderId, "replicator", "top-secret"))
-            .thenReturn(new TransferReceiverService.VerifyFolderResponse(folderId, "Outbound"));
+            .thenReturn(new TransferReceiverService.VerifyFolderResponse(folderId, "Outbound", "athena"));
 
         mockMvc.perform(get("/api/v1/transfer/receiver/verify")
                 .param("folderId", folderId.toString())
@@ -60,7 +60,8 @@ class TransferReceiverControllerTest {
                 .header(TransferReceiverHeaders.SECRET_HEADER, "top-secret"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.folderId").value(folderId.toString()))
-            .andExpect(jsonPath("$.folderName").value("Outbound"));
+            .andExpect(jsonPath("$.folderName").value("Outbound"))
+            .andExpect(jsonPath("$.repositoryId").value("athena"));
     }
 
     @Test

@@ -76,6 +76,10 @@
     <include file="db/changelog/changes/063-add-replication-job-diagnostics-columns.xml"/>
     <include file="db/changelog/changes/064-add-replication-definition-schedule-policy-columns.xml"/>
     <include file="db/changelog/changes/065-add-replication-conflict-policy-column.xml"/>
+    <include file="db/changelog/changes/066-add-replication-job-definition-status-index.xml"/>
+    <include file="db/changelog/changes/067-add-transfer-target-remote-repository-id.xml"/>
+    <include file="db/changelog/changes/068-create-transfer-node-mappings-table.xml"/>
+    <include file="db/changelog/changes/069-add-replication-job-entry-report-columns.xml"/>
     <include file="db/changelog/changes/007-insert-initial-data.xml"/>
 
 </databaseChangeLog>

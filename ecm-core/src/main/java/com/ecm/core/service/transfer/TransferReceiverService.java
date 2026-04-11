@@ -1,5 +1,6 @@
 package com.ecm.core.service.transfer;
 
+import com.ecm.core.config.RepositoryIdentityProvider;
 import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Node;
 import com.ecm.core.entity.ReplicationDefinition;
@@ -41,13 +42,14 @@ public class TransferReceiverService {
     private final DocumentUploadService documentUploadService;
     private final NodeService nodeService;
     private final VersionService versionService;
+    private final RepositoryIdentityProvider repositoryIdentityProvider;
 
     @Transactional
     public VerifyFolderResponse verifyFolder(UUID folderId, String authUsername, String authSecret) {
         AuthorizedFolder authorized = resolveAuthorizedFolder(folderId, authUsername, authSecret);
         recordAccessSuccess(authorized.receiver(), "Verified receiver folder access: " + authorized.folder().getName());
         Folder folder = authorized.folder();
-        return new VerifyFolderResponse(folder.getId(), folder.getName());
+        return new VerifyFolderResponse(folder.getId(), folder.getName(), repositoryIdentityProvider.getTransferRepositoryId());
     }
 
     @Transactional
@@ -434,7 +436,7 @@ public class TransferReceiverService {
         return trimmed.replaceAll("/+$", "");
     }
 
-    public record VerifyFolderResponse(UUID folderId, String folderName) {}
+    public record VerifyFolderResponse(UUID folderId, String folderName, String repositoryId) {}
 
     public record CreateFolderRequest(
         UUID parentFolderId,
