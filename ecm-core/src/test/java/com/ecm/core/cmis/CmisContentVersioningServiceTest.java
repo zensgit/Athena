@@ -4,6 +4,7 @@ import com.ecm.core.config.RepositoryIdentityProvider;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Node;
+import com.ecm.core.entity.Version;
 import com.ecm.core.service.CheckOutCheckInService;
 import com.ecm.core.service.ContentService;
 import com.ecm.core.service.NodeService;
@@ -69,6 +70,30 @@ class CmisContentVersioningServiceTest {
         assertEquals("application/pdf", response.mimeType());
         assertEquals("contract.pdf", response.filename());
         assertEquals(1024L, response.contentLength());
+    }
+
+    @Test
+    @DisplayName("Version-specific objectId returns frozen version content")
+    void getContentStreamReturnsVersionPayload() throws Exception {
+        Document document = buildDocument("contract.pdf");
+        Version version = new Version();
+        version.setId(UUID.randomUUID());
+        version.setDocument(document);
+        version.setVersionLabel("2.0");
+        version.setMimeType("application/pdf");
+        version.setFileSize(2048L);
+
+        when(nodeService.getNode(document.getId())).thenReturn(document);
+        when(versionService.getVersionByLabel(document.getId(), "2.0")).thenReturn(version);
+        when(versionService.getVersionContent(version.getId()))
+            .thenReturn(new ByteArrayInputStream("frozen".getBytes(StandardCharsets.UTF_8)));
+
+        CmisContentVersioningService.ContentStreamResponse response =
+            service.getContentStream(document.getId() + ";v2.0", null);
+
+        assertEquals("application/pdf", response.mimeType());
+        assertEquals("contract.pdf", response.filename());
+        assertEquals(2048L, response.contentLength());
     }
 
     @Test

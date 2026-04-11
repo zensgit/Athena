@@ -182,7 +182,7 @@ public class CmisMutationService {
         if (objectId == null || objectId.isBlank() || CmisObjectFactory.ROOT_OBJECT_ID.equalsIgnoreCase(objectId.trim())) {
             throw new IllegalArgumentException("A non-root objectId or path is required");
         }
-        return nodeService.getNode(UUID.fromString(objectId.trim()));
+        return nodeService.getNode(CmisObjectReference.parse(objectId).nodeId());
     }
 
     private UUID resolveFolderTarget(String folderId, String folderPath) {

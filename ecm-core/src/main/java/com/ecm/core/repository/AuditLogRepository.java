@@ -426,6 +426,24 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
 
     Page<AuditLog> findByEventTypeInAndEventTimeAfterOrderByEventTimeAsc(List<String> eventTypes, LocalDateTime after, Pageable pageable);
 
+    @Query("""
+        SELECT a FROM AuditLog a
+        WHERE a.eventType IN :eventTypes
+        ORDER BY a.eventTime ASC, a.id ASC
+        """)
+    Page<AuditLog> findByEventTypeInOrderByEventTimeAscIdAsc(@Param("eventTypes") List<String> eventTypes, Pageable pageable);
+
+    @Query("""
+        SELECT a FROM AuditLog a
+        WHERE a.eventType IN :eventTypes
+          AND (a.eventTime > :afterTime OR (a.eventTime = :afterTime AND a.id > :afterId))
+        ORDER BY a.eventTime ASC, a.id ASC
+        """)
+    Page<AuditLog> findByEventTypeInAfterCursorOrderByEventTimeAscIdAsc(@Param("eventTypes") List<String> eventTypes,
+                                                                        @Param("afterTime") LocalDateTime afterTime,
+                                                                        @Param("afterId") UUID afterId,
+                                                                        Pageable pageable);
+
     /**
      * Delete audit logs older than the specified date (for retention policy)
      */

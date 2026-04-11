@@ -6,6 +6,8 @@ import com.ecm.core.entity.Node;
 import com.ecm.core.entity.Permission;
 import com.ecm.core.entity.Permission.AuthorityType;
 import com.ecm.core.entity.Permission.PermissionType;
+import com.ecm.core.repository.GroupRepository;
+import com.ecm.core.repository.RoleRepository;
 import com.ecm.core.service.NodeService;
 import com.ecm.core.service.SecurityService;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,13 +36,19 @@ class CmisAclServiceTest {
     @Mock
     private NodeService nodeService;
 
+    @Mock
+    private GroupRepository groupRepository;
+
+    @Mock
+    private RoleRepository roleRepository;
+
     private CmisAclService cmisAclService;
 
     private Folder folder;
 
     @BeforeEach
     void setUp() {
-        cmisAclService = new CmisAclService(securityService, nodeService);
+        cmisAclService = new CmisAclService(securityService, nodeService, groupRepository, roleRepository);
         folder = new Folder();
         folder.setId(UUID.randomUUID());
         folder.setName("Contracts");
@@ -162,6 +170,20 @@ class CmisAclServiceTest {
     }
 
     @Test
+    @DisplayName("applyAcl preserves group authority types")
+    void applyAclPreservesGroupAuthorityTypes() {
+        when(nodeService.getNode(folder.getId())).thenReturn(folder);
+        when(securityService.getNodePermissions(folder)).thenReturn(List.of());
+        when(groupRepository.findByName("editors")).thenReturn(java.util.Optional.of(new com.ecm.core.entity.Group()));
+
+        CmisModels.AceEntry addAce = new CmisModels.AceEntry("editors", List.of("cmis:write"), true);
+        cmisAclService.applyAcl(folder.getId().toString(), List.of(addAce), null);
+
+        verify(securityService).setPermission(folder, "editors", AuthorityType.GROUP, PermissionType.WRITE, true);
+        verify(securityService).setPermission(folder, "editors", AuthorityType.GROUP, PermissionType.CREATE_CHILDREN, true);
+    }
+
+    @Test
     @DisplayName("applyAcl removes mapped Athena permissions for removed CMIS ACEs")
     void applyAclRemovesPermissions() {
         when(nodeService.getNode(folder.getId())).thenReturn(folder);
@@ -172,6 +194,38 @@ class CmisAclServiceTest {
 
         verify(securityService).removePermission(folder, "bob", PermissionType.WRITE);
         verify(securityService).removePermission(folder, "bob", PermissionType.CREATE_CHILDREN);
+    }
+
+    @Test
+    @DisplayName("cmis:all expands to the full Athena admin permission set")
+    void applyAclExpandsCmisAllToFullAdminSet() {
+        when(nodeService.getNode(folder.getId())).thenReturn(folder);
+        when(securityService.getNodePermissions(folder)).thenReturn(List.of());
+
+        CmisModels.AceEntry addAce = new CmisModels.AceEntry("alice", List.of("cmis:all"), true);
+        cmisAclService.applyAcl(folder.getId().toString(), List.of(addAce), null);
+
+        verify(securityService).setPermission(folder, "alice", AuthorityType.USER, PermissionType.DELETE, true);
+        verify(securityService).setPermission(folder, "alice", AuthorityType.USER, PermissionType.DELETE_CHILDREN, true);
+        verify(securityService).setPermission(folder, "alice", AuthorityType.USER, PermissionType.CHANGE_PERMISSIONS, true);
+        verify(securityService).setPermission(folder, "alice", AuthorityType.USER, PermissionType.TAKE_OWNERSHIP, true);
+        verify(securityService).setPermission(folder, "alice", AuthorityType.USER, PermissionType.EXECUTE, true);
+        verify(securityService).setPermission(folder, "alice", AuthorityType.USER, PermissionType.APPROVE, true);
+        verify(securityService).setPermission(folder, "alice", AuthorityType.USER, PermissionType.REJECT, true);
+    }
+
+    @Test
+    @DisplayName("Version-specific objectId resolves against the live node ACL")
+    void versionSpecificObjectIdResolvesAgainstLiveNodeAcl() {
+        when(nodeService.getNode(folder.getId())).thenReturn(folder);
+        when(securityService.getNodePermissions(folder)).thenReturn(List.of(
+            buildPermission(folder, "alice", PermissionType.READ, false)
+        ));
+
+        CmisModels.AclResponse response = cmisAclService.getAcl(folder.getId() + ";v2.0");
+
+        assertEquals(folder.getId() + ";v2.0", response.objectId());
+        assertEquals(List.of("cmis:read"), response.aces().get(0).permissions());
     }
 
     @Test

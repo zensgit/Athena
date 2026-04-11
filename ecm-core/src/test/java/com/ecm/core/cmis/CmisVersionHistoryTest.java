@@ -165,6 +165,25 @@ class CmisVersionHistoryTest {
         assertEquals(1024L, entries.get(0).properties().get("cmis:contentStreamLength"));
     }
 
+    @Test
+    @DisplayName("getObject resolves version-specific objectId to the matching version entry")
+    void getObjectResolvesVersionSpecificObjectId() {
+        Document document = buildDocument();
+        UUID docId = document.getId();
+        Version v1 = buildVersion(document, 1, 1, 0, true, "Initial upload");
+        Version v2 = buildVersion(document, 2, 2, 0, true, "Major update");
+
+        when(nodeService.getNode(docId)).thenReturn(document);
+        when(versionService.getVersionByLabel(docId, "1.0")).thenReturn(v1);
+        when(versionService.getVersionHistory(docId)).thenReturn(List.of(v2, v1));
+
+        CmisModels.ObjectEntry entry = cmisBrowserService.getObject(docId + ";v1.0", null);
+
+        assertEquals(docId + ";v1.0", entry.objectId());
+        assertEquals("1.0", entry.properties().get("cmis:versionLabel"));
+        assertEquals(false, entry.properties().get("cmis:isLatestVersion"));
+    }
+
     private Document buildDocument() {
         Document document = new Document();
         document.setId(UUID.randomUUID());

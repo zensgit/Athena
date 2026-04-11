@@ -101,6 +101,19 @@ public class NodeRelationService {
         return relationRepository.save(rel);
     }
 
+    @Transactional
+    public NodeRelation saveRelation(NodeRelation relation) {
+        if (relation == null || relation.getSource() == null || relation.getTarget() == null) {
+            throw new IllegalArgumentException("Relation source and target are required");
+        }
+        requireWritableNode(relation.getSource().getId(), "Source node not found");
+        requireReadableNode(relation.getTarget().getId(), "Target node not found");
+        if (relation.getSource().getId().equals(relation.getTarget().getId())) {
+            throw new IllegalArgumentException("Cannot associate a node with itself");
+        }
+        return relationRepository.save(relation);
+    }
+
     @Transactional(readOnly = true)
     public List<NodeRelation> getTargetAssociations(UUID nodeId, String assocType) {
         requireReadableNode(nodeId, "Node not found");
@@ -108,6 +121,18 @@ public class NodeRelationService {
             relationRepository.findBySourceIdAndDirection(nodeId, AssocDirection.PEER));
         if (assocType == null || assocType.isBlank()) return all;
         return all.stream().filter(r -> assocType.equals(r.getAssocType())).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<NodeRelation> getSourceRelationsByDirection(UUID nodeId, AssocDirection direction) {
+        requireReadableNode(nodeId, "Node not found");
+        return filterVisible(relationRepository.findBySourceIdAndDirection(nodeId, direction));
+    }
+
+    @Transactional(readOnly = true)
+    public List<NodeRelation> getTargetRelationsByDirection(UUID nodeId, AssocDirection direction) {
+        requireReadableNode(nodeId, "Node not found");
+        return filterVisible(relationRepository.findByTargetIdAndDirection(nodeId, direction));
     }
 
     @Transactional(readOnly = true)

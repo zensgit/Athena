@@ -13,7 +13,6 @@ import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -60,7 +59,11 @@ public class CmisBrowserService {
         if (objectId == null || objectId.isBlank() || CmisObjectFactory.ROOT_OBJECT_ID.equalsIgnoreCase(objectId.trim())) {
             return objectFactory.rootObject();
         }
-        return objectFactory.fromNode(nodeService.getNode(UUID.fromString(objectId.trim())));
+        CmisObjectReference reference = CmisObjectReference.parse(objectId);
+        if (reference.isVersionSpecific()) {
+            return resolveVersionEntry(reference);
+        }
+        return objectFactory.fromNode(nodeService.getNode(reference.nodeId()));
     }
 
     public CmisModels.ChildrenResponse getChildren(String objectId, String path, int skipCount, int maxItems) {
@@ -109,7 +112,7 @@ public class CmisBrowserService {
     }
 
     public List<CmisModels.ObjectEntry> getAllVersions(String objectId) {
-        UUID documentId = UUID.fromString(objectId.trim());
+        UUID documentId = CmisObjectReference.parse(objectId).nodeId();
         Node node = nodeService.getNode(documentId);
         if (!(node instanceof Document document)) {
             throw new IllegalArgumentException("getAllVersions requires a document, not a folder");
@@ -128,7 +131,7 @@ public class CmisBrowserService {
     }
 
     public CmisModels.ObjectEntry getLatestVersion(String objectId, boolean major) {
-        UUID documentId = UUID.fromString(objectId.trim());
+        UUID documentId = CmisObjectReference.parse(objectId).nodeId();
         Node node = nodeService.getNode(documentId);
         if (!(node instanceof Document document)) {
             throw new IllegalArgumentException("getLatestVersion requires a document, not a folder");
@@ -193,13 +196,26 @@ public class CmisBrowserService {
             virtualRoot.setPath("/");
             return virtualRoot;
         }
-        return nodeService.getNode(UUID.fromString(normalizedObjectId));
+        return nodeService.getNode(CmisObjectReference.parse(normalizedObjectId).nodeId());
     }
 
     private String defaultSelectorTarget(String objectId) {
         if (objectId == null || objectId.isBlank()) {
             return CmisObjectFactory.ROOT_OBJECT_ID;
         }
-        return objectId.trim().toLowerCase(Locale.ROOT);
+        return objectId.trim();
+    }
+
+    private CmisModels.ObjectEntry resolveVersionEntry(CmisObjectReference reference) {
+        Node node = nodeService.getNode(reference.nodeId());
+        if (!(node instanceof Document document)) {
+            throw new IllegalArgumentException("Version-specific objectId requires a document, not a folder");
+        }
+        Version version = versionService.getVersionByLabel(reference.nodeId(), reference.versionLabel());
+        int latestVersionNumber = versionService.getVersionHistory(reference.nodeId()).stream()
+            .mapToInt(Version::getVersionNumber)
+            .max()
+            .orElse(version.getVersionNumber());
+        return versionToObjectEntry(version, document, latestVersionNumber);
     }
 }

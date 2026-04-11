@@ -121,6 +121,20 @@ class CmisRelationshipServiceTest {
         verify(nodeRelationService).deleteRelation(nodeA, nodeB, "REFERENCES");
     }
 
+    @Test
+    @DisplayName("Version-specific objectIds are resolved to the live node ids")
+    void versionSpecificObjectIdsResolveToLiveNodeIds() {
+        NodeRelation created = buildRelation(nodeA, nodeB, "REFERENCES");
+        when(nodeRelationService.createRelation(nodeA, nodeB, "REFERENCES")).thenReturn(created);
+
+        CmisModels.RelationshipEntry entry =
+            cmisRelationshipService.createRelationship(nodeA + ";v2.0", nodeB + ";v1.0", "REFERENCES");
+
+        assertEquals(nodeA.toString(), entry.sourceId());
+        assertEquals(nodeB.toString(), entry.targetId());
+        verify(nodeRelationService).createRelation(nodeA, nodeB, "REFERENCES");
+    }
+
     private NodeRelation buildRelation(UUID sourceId, UUID targetId, String relationType) {
         Folder source = new Folder();
         source.setId(sourceId);

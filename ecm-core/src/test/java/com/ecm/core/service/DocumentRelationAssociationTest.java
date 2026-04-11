@@ -3,15 +3,14 @@ package com.ecm.core.service;
 import com.ecm.core.entity.AssocDirection;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.DocumentRelation;
+import com.ecm.core.entity.NodeRelation;
 import com.ecm.core.entity.Permission.PermissionType;
-import com.ecm.core.repository.DocumentRelationRepository;
 import com.ecm.core.repository.NodeRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -26,7 +25,7 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class DocumentRelationAssociationTest {
 
-    @Mock private DocumentRelationRepository relationRepo;
+    @Mock private NodeRelationService nodeRelationService;
     @Mock private NodeRepository nodeRepository;
     @Mock private SecurityService securityService;
     @Mock private TenantWorkspaceScopeService tenantWorkspaceScopeService;
@@ -35,7 +34,7 @@ class DocumentRelationAssociationTest {
 
     @BeforeEach
     void setUp() {
-        service = new DocumentRelationService(relationRepo, nodeRepository, securityService, tenantWorkspaceScopeService);
+        service = new DocumentRelationService(nodeRelationService, nodeRepository, securityService, tenantWorkspaceScopeService);
     }
 
     // ================================================================= peer associations
@@ -55,8 +54,9 @@ class DocumentRelationAssociationTest {
             when(nodeRepository.findById(srcId)).thenReturn(Optional.of(src));
             when(nodeRepository.findById(tgtId)).thenReturn(Optional.of(tgt));
             when(securityService.hasPermission(src, PermissionType.WRITE)).thenReturn(true);
+            when(securityService.hasPermission(src, PermissionType.READ)).thenReturn(true);
             when(securityService.hasPermission(tgt, PermissionType.READ)).thenReturn(true);
-            when(relationRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(nodeRelationService.saveRelation(any())).thenAnswer(inv -> inv.getArgument(0));
 
             DocumentRelation rel = service.createPeerAssociation(srcId, tgtId, "cm:references");
 
@@ -99,9 +99,8 @@ class DocumentRelationAssociationTest {
             when(nodeRepository.findById(nodeId)).thenReturn(Optional.of(source));
             when(securityService.hasPermission(source, PermissionType.READ)).thenReturn(true);
             when(securityService.hasPermission(target1, PermissionType.READ)).thenReturn(true);
-            when(securityService.hasPermission(target2, PermissionType.READ)).thenReturn(true);
-            when(relationRepo.findBySourceIdAndDirection(nodeId, AssocDirection.PEER))
-                .thenReturn(List.of(r1, r2));
+            when(nodeRelationService.getTargetAssociations(nodeId, "cm:references"))
+                .thenReturn(List.of(nodeRelation(source, target1, AssocDirection.PEER, "cm:references")));
 
             List<DocumentRelation> result = service.getTargetAssociations(nodeId, "cm:references");
             assertEquals(1, result.size());
@@ -115,13 +114,13 @@ class DocumentRelationAssociationTest {
             Document source = document(nodeId, "source.pdf");
             Document target1 = document(UUID.randomUUID(), "target1.pdf");
             Document target2 = document(UUID.randomUUID(), "target2.pdf");
-            DocumentRelation r1 = relation(source, target1, AssocDirection.PEER, "cm:references");
-            DocumentRelation r2 = relation(source, target2, AssocDirection.PEER, "cm:related");
+            NodeRelation r1 = nodeRelation(source, target1, AssocDirection.PEER, "cm:references");
+            NodeRelation r2 = nodeRelation(source, target2, AssocDirection.PEER, "cm:related");
             when(nodeRepository.findById(nodeId)).thenReturn(Optional.of(source));
             when(securityService.hasPermission(source, PermissionType.READ)).thenReturn(true);
             when(securityService.hasPermission(target1, PermissionType.READ)).thenReturn(true);
             when(securityService.hasPermission(target2, PermissionType.READ)).thenReturn(true);
-            when(relationRepo.findBySourceIdAndDirection(nodeId, AssocDirection.PEER))
+            when(nodeRelationService.getTargetAssociations(nodeId, null))
                 .thenReturn(List.of(r1, r2));
 
             assertEquals(2, service.getTargetAssociations(nodeId, null).size());
@@ -133,11 +132,11 @@ class DocumentRelationAssociationTest {
             UUID nodeId = UUID.randomUUID();
             Document target = document(nodeId, "target.pdf");
             Document source = document(UUID.randomUUID(), "source.pdf");
-            DocumentRelation relation = relation(source, target, AssocDirection.PEER, "cm:references");
+            NodeRelation relation = nodeRelation(source, target, AssocDirection.PEER, "cm:references");
             when(nodeRepository.findById(nodeId)).thenReturn(Optional.of(target));
             when(securityService.hasPermission(target, PermissionType.READ)).thenReturn(true);
             when(securityService.hasPermission(source, PermissionType.READ)).thenReturn(true);
-            when(relationRepo.findByTargetIdAndDirection(nodeId, AssocDirection.PEER))
+            when(nodeRelationService.getSourceAssociations(nodeId, null))
                 .thenReturn(List.of(relation));
 
             assertEquals(1, service.getSourceAssociations(nodeId, null).size());
@@ -155,7 +154,7 @@ class DocumentRelationAssociationTest {
             when(securityService.hasPermission(source, PermissionType.WRITE)).thenReturn(true);
             when(securityService.hasPermission(target, PermissionType.READ)).thenReturn(true);
             service.removePeerAssociation(src, tgt);
-            verify(relationRepo).deleteBySourceIdAndTargetId(src, tgt);
+            verify(nodeRelationService).removeAssociation(src, tgt);
         }
     }
 
@@ -176,8 +175,9 @@ class DocumentRelationAssociationTest {
             when(nodeRepository.findById(parentId)).thenReturn(Optional.of(parent));
             when(nodeRepository.findById(childId)).thenReturn(Optional.of(child));
             when(securityService.hasPermission(parent, PermissionType.WRITE)).thenReturn(true);
+            when(securityService.hasPermission(parent, PermissionType.READ)).thenReturn(true);
             when(securityService.hasPermission(child, PermissionType.READ)).thenReturn(true);
-            when(relationRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(nodeRelationService.saveRelation(any())).thenAnswer(inv -> inv.getArgument(0));
 
             DocumentRelation rel = service.addSecondaryChild(parentId, childId);
 
@@ -191,11 +191,11 @@ class DocumentRelationAssociationTest {
             UUID parentId = UUID.randomUUID();
             Document parent = document(parentId, "parent.pdf");
             Document child = document(UUID.randomUUID(), "child.pdf");
-            DocumentRelation relation = relation(parent, child, AssocDirection.CHILD_SECONDARY, "cm:contains");
+            NodeRelation relation = nodeRelation(parent, child, AssocDirection.CHILD_SECONDARY, "cm:contains");
             when(nodeRepository.findById(parentId)).thenReturn(Optional.of(parent));
             when(securityService.hasPermission(parent, PermissionType.READ)).thenReturn(true);
             when(securityService.hasPermission(child, PermissionType.READ)).thenReturn(true);
-            when(relationRepo.findBySourceIdAndDirection(parentId, AssocDirection.CHILD_SECONDARY))
+            when(nodeRelationService.getSourceRelationsByDirection(parentId, AssocDirection.CHILD_SECONDARY))
                 .thenReturn(List.of(relation));
 
             assertEquals(1, service.getSecondaryChildren(parentId).size());
@@ -207,11 +207,11 @@ class DocumentRelationAssociationTest {
             UUID childId = UUID.randomUUID();
             Document child = document(childId, "child.pdf");
             Document parent = document(UUID.randomUUID(), "parent.pdf");
-            DocumentRelation relation = relation(parent, child, AssocDirection.CHILD_SECONDARY, "cm:contains");
+            NodeRelation relation = nodeRelation(parent, child, AssocDirection.CHILD_SECONDARY, "cm:contains");
             when(nodeRepository.findById(childId)).thenReturn(Optional.of(child));
             when(securityService.hasPermission(child, PermissionType.READ)).thenReturn(true);
             when(securityService.hasPermission(parent, PermissionType.READ)).thenReturn(true);
-            when(relationRepo.findByTargetIdAndDirection(childId, AssocDirection.CHILD_SECONDARY))
+            when(nodeRelationService.getTargetRelationsByDirection(childId, AssocDirection.CHILD_SECONDARY))
                 .thenReturn(List.of(relation));
 
             assertEquals(1, service.getSecondaryParents(childId).size());
@@ -229,7 +229,7 @@ class DocumentRelationAssociationTest {
             when(securityService.hasPermission(parent, PermissionType.WRITE)).thenReturn(true);
             when(securityService.hasPermission(child, PermissionType.READ)).thenReturn(true);
             service.removeSecondaryChild(p, c);
-            verify(relationRepo).deleteBySourceIdAndTargetId(p, c);
+            verify(nodeRelationService).removeAssociation(p, c);
         }
     }
 
@@ -258,8 +258,8 @@ class DocumentRelationAssociationTest {
         Document target = document(targetId, "target.pdf");
         Document visibleSource = document(UUID.randomUUID(), "visible-source.pdf");
         Document hiddenSource = document(UUID.randomUUID(), "hidden-source.pdf");
-        DocumentRelation visibleRelation = relation(visibleSource, target, AssocDirection.PEER, "cm:references");
-        DocumentRelation hiddenRelation = relation(hiddenSource, target, AssocDirection.PEER, "cm:references");
+        NodeRelation visibleRelation = nodeRelation(visibleSource, target, AssocDirection.PEER, "cm:references");
+        NodeRelation hiddenRelation = nodeRelation(hiddenSource, target, AssocDirection.PEER, "cm:references");
 
         when(nodeRepository.findById(targetId)).thenReturn(Optional.of(target));
         when(securityService.hasPermission(target, PermissionType.READ)).thenReturn(true);
@@ -268,7 +268,7 @@ class DocumentRelationAssociationTest {
         when(tenantWorkspaceScopeService.isPathVisible(target.getPath())).thenReturn(true);
         when(tenantWorkspaceScopeService.isPathVisible(visibleSource.getPath())).thenReturn(true);
         when(tenantWorkspaceScopeService.isPathVisible(hiddenSource.getPath())).thenReturn(false);
-        when(relationRepo.findByTargetId(targetId)).thenReturn(List.of(visibleRelation, hiddenRelation));
+        when(nodeRelationService.getIncomingRelations(targetId)).thenReturn(List.of(visibleRelation, hiddenRelation));
 
         List<DocumentRelation> result = service.getIncomingRelations(targetId);
 
@@ -288,8 +288,8 @@ class DocumentRelationAssociationTest {
         return d;
     }
 
-    private DocumentRelation relation(Document source, Document target, AssocDirection direction, String assocType) {
-        DocumentRelation relation = new DocumentRelation();
+    private NodeRelation nodeRelation(Document source, Document target, AssocDirection direction, String assocType) {
+        NodeRelation relation = new NodeRelation();
         relation.setSource(source);
         relation.setTarget(target);
         relation.setDirection(direction);

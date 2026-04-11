@@ -16,7 +16,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.Base64;
 import java.util.NoSuchElementException;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -31,18 +30,26 @@ public class CmisContentVersioningService {
 
     @Transactional(readOnly = true)
     public ContentStreamResponse getContentStream(String objectId, String path) throws IOException {
-        Document document = resolveDocument(objectId, path);
-        if (document.getContentId() == null || document.getContentId().isBlank()) {
-            throw new IllegalArgumentException("Document has no content stream: " + document.getId());
+        if (path != null && !path.isBlank()) {
+            Document document = resolveDocument(null, path);
+            return currentDocumentContent(document);
         }
-        return new ContentStreamResponse(
-            contentService.getContent(document.getContentId()),
-            document.getMimeType() != null && !document.getMimeType().isBlank()
-                ? document.getMimeType()
-                : "application/octet-stream",
-            document.getName(),
-            document.getFileSize()
-        );
+
+        CmisObjectReference reference = CmisObjectReference.parse(objectId);
+        if (reference.isVersionSpecific()) {
+            Version version = versionService.getVersionByLabel(reference.nodeId(), reference.versionLabel());
+            Document document = resolveDocument(reference.rawNodeId(), null);
+            return new ContentStreamResponse(
+                versionService.getVersionContent(version.getId()),
+                version.getMimeType() != null && !version.getMimeType().isBlank()
+                    ? version.getMimeType()
+                    : "application/octet-stream",
+                document.getName(),
+                version.getFileSize()
+            );
+        }
+
+        return currentDocumentContent(resolveDocument(reference.rawNodeId(), null));
     }
 
     public CmisModels.MutationResponse setContentStream(CmisModels.MutationRequest request) throws IOException {
@@ -173,7 +180,7 @@ public class CmisContentVersioningService {
         if (path != null && !path.isBlank()) {
             node = nodeService.getNodeByPath(path.trim());
         } else if (objectId != null && !objectId.isBlank() && !CmisObjectFactory.ROOT_OBJECT_ID.equalsIgnoreCase(objectId.trim())) {
-            node = nodeService.getNode(UUID.fromString(objectId.trim()));
+            node = nodeService.getNode(CmisObjectReference.parse(objectId).nodeId());
         } else {
             throw new IllegalArgumentException("A non-root document objectId or path is required");
         }
@@ -182,6 +189,20 @@ public class CmisContentVersioningService {
             throw new IllegalArgumentException("Node is not a document: " + node.getId());
         }
         return document;
+    }
+
+    private ContentStreamResponse currentDocumentContent(Document document) throws IOException {
+        if (document.getContentId() == null || document.getContentId().isBlank()) {
+            throw new IllegalArgumentException("Document has no content stream: " + document.getId());
+        }
+        return new ContentStreamResponse(
+            contentService.getContent(document.getContentId()),
+            document.getMimeType() != null && !document.getMimeType().isBlank()
+                ? document.getMimeType()
+                : "application/octet-stream",
+            document.getName(),
+            document.getFileSize()
+        );
     }
 
     private byte[] requireContent(String contentBase64) {

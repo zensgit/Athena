@@ -4,8 +4,8 @@ import com.ecm.core.entity.AssocDirection;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.DocumentRelation;
 import com.ecm.core.entity.Node;
+import com.ecm.core.entity.NodeRelation;
 import com.ecm.core.entity.Permission.PermissionType;
-import com.ecm.core.repository.DocumentRelationRepository;
 import com.ecm.core.repository.NodeRepository;
 import org.springframework.data.domain.PageImpl;
 import lombok.RequiredArgsConstructor;
@@ -28,7 +28,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class DocumentRelationService {
 
-    private final DocumentRelationRepository relationRepository;
+    private final NodeRelationService nodeRelationService;
     private final NodeRepository nodeRepository;
     private final SecurityService securityService;
     private final TenantWorkspaceScopeService tenantWorkspaceScopeService;
@@ -42,66 +42,51 @@ public class DocumentRelationService {
             throw new IllegalArgumentException("Cannot relate document to itself");
         }
 
-        DocumentRelation relation = new DocumentRelation();
-        relation.setSource(source);
-        relation.setTarget(target);
-        relation.setRelationType(type.toUpperCase());
-        
-        return relationRepository.save(relation);
+        return toDocumentRelation(nodeRelationService.createRelation(sourceId, targetId, type));
     }
 
     @Transactional
     public void deleteRelation(UUID sourceId, UUID targetId, String type) {
         requireWritableDocument(sourceId, "Source document not found");
         requireReadableDocument(targetId, "Target document not found");
-        relationRepository.deleteBySourceIdAndTargetIdAndRelationType(sourceId, targetId, type.toUpperCase());
+        nodeRelationService.deleteRelation(sourceId, targetId, type);
     }
 
     @Transactional(readOnly = true)
     public List<DocumentRelation> getRelations(UUID documentId) {
         requireReadableDocument(documentId, "Document not found");
-        return filterVisibleRelations(relationRepository.findBySourceId(documentId));
+        return toDocumentRelations(nodeRelationService.getRelations(documentId));
     }
     
     @Transactional(readOnly = true)
     public List<DocumentRelation> getIncomingRelations(UUID documentId) {
         requireReadableDocument(documentId, "Document not found");
-        return filterVisibleRelations(relationRepository.findByTargetId(documentId));
+        return toDocumentRelations(nodeRelationService.getIncomingRelations(documentId));
     }
 
     @Transactional(readOnly = true)
     public Page<DocumentRelation> getOutgoingRelationsPage(UUID documentId, Pageable pageable, String relationType) {
         requireReadableDocument(documentId, "Document not found");
-        String normalizedType = normalizeRelationType(relationType);
-        Page<DocumentRelation> page = normalizedType == null
-            ? relationRepository.findBySourceId(documentId, pageable)
-            : relationRepository.findBySourceIdAndRelationTypeIgnoreCase(documentId, normalizedType, pageable);
-        return filterVisibleRelations(page, pageable);
+        return toDocumentRelations(nodeRelationService.getRelationsPage(documentId, pageable, relationType), pageable);
     }
 
     @Transactional(readOnly = true)
     public Page<DocumentRelation> getIncomingRelationsPage(UUID documentId, Pageable pageable, String relationType) {
         requireReadableDocument(documentId, "Document not found");
-        String normalizedType = normalizeRelationType(relationType);
-        Page<DocumentRelation> page = normalizedType == null
-            ? relationRepository.findByTargetId(documentId, pageable)
-            : relationRepository.findByTargetIdAndRelationTypeIgnoreCase(documentId, normalizedType, pageable);
-        return filterVisibleRelations(page, pageable);
+        return toDocumentRelations(nodeRelationService.getIncomingRelationsPage(documentId, pageable, relationType), pageable);
     }
 
     // ---- peer associations --------------------------------------------------
 
     @Transactional
     public DocumentRelation createPeerAssociation(UUID sourceId, UUID targetId, String assocType) {
-        return createAssociation(sourceId, targetId, assocType, AssocDirection.PEER);
+        return toDocumentRelation(createAssociation(sourceId, targetId, assocType, AssocDirection.PEER));
     }
 
     @Transactional(readOnly = true)
     public List<DocumentRelation> getTargetAssociations(UUID nodeId, String assocType) {
         requireReadableDocument(nodeId, "Source node not found");
-        List<DocumentRelation> all = filterVisibleRelations(
-            relationRepository.findBySourceIdAndDirection(nodeId, AssocDirection.PEER)
-        );
+        List<DocumentRelation> all = toDocumentRelations(nodeRelationService.getTargetAssociations(nodeId, assocType));
         if (assocType == null || assocType.isBlank()) return all;
         return all.stream().filter(r -> assocType.equals(r.getAssocType())).toList();
     }
@@ -109,9 +94,7 @@ public class DocumentRelationService {
     @Transactional(readOnly = true)
     public List<DocumentRelation> getSourceAssociations(UUID nodeId, String assocType) {
         requireReadableDocument(nodeId, "Target node not found");
-        List<DocumentRelation> all = filterVisibleRelations(
-            relationRepository.findByTargetIdAndDirection(nodeId, AssocDirection.PEER)
-        );
+        List<DocumentRelation> all = toDocumentRelations(nodeRelationService.getSourceAssociations(nodeId, assocType));
         if (assocType == null || assocType.isBlank()) return all;
         return all.stream().filter(r -> assocType.equals(r.getAssocType())).toList();
     }
@@ -120,38 +103,38 @@ public class DocumentRelationService {
     public void removePeerAssociation(UUID sourceId, UUID targetId) {
         requireWritableDocument(sourceId, "Source node not found");
         requireReadableDocument(targetId, "Target node not found");
-        relationRepository.deleteBySourceIdAndTargetId(sourceId, targetId);
+        nodeRelationService.removeAssociation(sourceId, targetId);
     }
 
     // ---- secondary children -------------------------------------------------
 
     @Transactional
     public DocumentRelation addSecondaryChild(UUID parentId, UUID childId) {
-        return createAssociation(parentId, childId, "cm:contains", AssocDirection.CHILD_SECONDARY);
+        return toDocumentRelation(createAssociation(parentId, childId, "cm:contains", AssocDirection.CHILD_SECONDARY));
     }
 
     @Transactional
     public void removeSecondaryChild(UUID parentId, UUID childId) {
         requireWritableDocument(parentId, "Source node not found");
         requireReadableDocument(childId, "Target node not found");
-        relationRepository.deleteBySourceIdAndTargetId(parentId, childId);
+        nodeRelationService.removeAssociation(parentId, childId);
     }
 
     @Transactional(readOnly = true)
     public List<DocumentRelation> getSecondaryChildren(UUID parentId) {
         requireReadableDocument(parentId, "Source node not found");
-        return filterVisibleRelations(relationRepository.findBySourceIdAndDirection(parentId, AssocDirection.CHILD_SECONDARY));
+        return toDocumentRelations(nodeRelationService.getSourceRelationsByDirection(parentId, AssocDirection.CHILD_SECONDARY));
     }
 
     @Transactional(readOnly = true)
     public List<DocumentRelation> getSecondaryParents(UUID childId) {
         requireReadableDocument(childId, "Target node not found");
-        return filterVisibleRelations(relationRepository.findByTargetIdAndDirection(childId, AssocDirection.CHILD_SECONDARY));
+        return toDocumentRelations(nodeRelationService.getTargetRelationsByDirection(childId, AssocDirection.CHILD_SECONDARY));
     }
 
     // ---- internal -----------------------------------------------------------
 
-    private DocumentRelation createAssociation(UUID sourceId, UUID targetId, String assocType, AssocDirection direction) {
+    private NodeRelation createAssociation(UUID sourceId, UUID targetId, String assocType, AssocDirection direction) {
         Document source = requireWritableDocument(sourceId, "Source node not found: " + sourceId);
         Document target = requireReadableDocument(targetId, "Target node not found: " + targetId);
 
@@ -159,13 +142,13 @@ public class DocumentRelationService {
             throw new IllegalArgumentException("Cannot associate a node with itself");
         }
 
-        DocumentRelation rel = new DocumentRelation();
+        NodeRelation rel = new NodeRelation();
         rel.setSource(source);
         rel.setTarget(target);
         rel.setRelationType(assocType != null ? assocType.toUpperCase() : "RELATED");
         rel.setAssocType(assocType);
         rel.setDirection(direction);
-        return relationRepository.save(rel);
+        return nodeRelationService.saveRelation(rel);
     }
 
     private Document requireWritableDocument(UUID nodeId, String notFoundMessage) {
@@ -194,23 +177,40 @@ public class DocumentRelationService {
         return document;
     }
 
-    private List<DocumentRelation> filterVisibleRelations(List<DocumentRelation> relations) {
+    private List<DocumentRelation> toDocumentRelations(List<NodeRelation> relations) {
         return relations.stream()
-            .filter(this::isRelationVisible)
+            .map(this::toDocumentRelation)
+            .filter(java.util.Objects::nonNull)
             .toList();
     }
 
-    private Page<DocumentRelation> filterVisibleRelations(Page<DocumentRelation> page, Pageable pageable) {
-        List<DocumentRelation> visible = page.getContent().stream()
-            .filter(this::isRelationVisible)
-            .toList();
+    private Page<DocumentRelation> toDocumentRelations(Page<NodeRelation> page, Pageable pageable) {
+        List<DocumentRelation> visible = toDocumentRelations(page.getContent());
         return new PageImpl<>(visible, pageable, visible.size());
     }
 
-    private boolean isRelationVisible(DocumentRelation relation) {
-        return relation != null
-            && isReadable(relation.getSource())
-            && isReadable(relation.getTarget());
+    private DocumentRelation toDocumentRelation(NodeRelation relation) {
+        if (relation == null
+            || !(relation.getSource() instanceof Document source)
+            || !(relation.getTarget() instanceof Document target)
+            || !isReadable(source)
+            || !isReadable(target)) {
+            return null;
+        }
+
+        DocumentRelation documentRelation = new DocumentRelation();
+        documentRelation.setId(relation.getId());
+        documentRelation.setSource(source);
+        documentRelation.setTarget(target);
+        documentRelation.setRelationType(relation.getRelationType());
+        documentRelation.setAssocType(relation.getAssocType());
+        documentRelation.setDirection(relation.getDirection());
+        documentRelation.setOrderIndex(relation.getOrderIndex());
+        documentRelation.setCreatedBy(relation.getCreatedBy());
+        documentRelation.setCreatedDate(relation.getCreatedDate());
+        documentRelation.setLastModifiedBy(relation.getLastModifiedBy());
+        documentRelation.setLastModifiedDate(relation.getLastModifiedDate());
+        return documentRelation;
     }
 
     private boolean isReadable(Document document) {
@@ -229,11 +229,4 @@ public class DocumentRelationService {
         return tenantWorkspaceScopeService.isPathVisible(node.getPath());
     }
 
-    private String normalizeRelationType(String relationType) {
-        if (relationType == null) {
-            return null;
-        }
-        String trimmed = relationType.trim();
-        return trimmed.isEmpty() ? null : trimmed;
-    }
 }

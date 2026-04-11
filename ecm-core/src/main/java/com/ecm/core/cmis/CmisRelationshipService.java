@@ -26,7 +26,7 @@ public class CmisRelationshipService {
      * @param typeId    optional relationship-type filter (case-insensitive)
      */
     public CmisModels.RelationshipsResponse getObjectRelationships(String objectId, String direction, String typeId) {
-        UUID nodeId = UUID.fromString(objectId.trim());
+        UUID nodeId = CmisObjectReference.parse(objectId).nodeId();
         List<NodeRelation> relations;
 
         if ("source".equals(direction)) {
@@ -59,8 +59,8 @@ public class CmisRelationshipService {
      */
     public CmisModels.RelationshipEntry createRelationship(String sourceId, String targetId, String relationshipType) {
         NodeRelation relation = nodeRelationService.createRelation(
-            UUID.fromString(sourceId.trim()),
-            UUID.fromString(targetId.trim()),
+            CmisObjectReference.parse(sourceId).nodeId(),
+            CmisObjectReference.parse(targetId).nodeId(),
             relationshipType != null ? relationshipType : "RELATED"
         );
         return toRelationshipEntry(relation);
@@ -71,8 +71,8 @@ public class CmisRelationshipService {
      */
     public void deleteRelationship(String sourceId, String targetId, String relationshipType) {
         nodeRelationService.deleteRelation(
-            UUID.fromString(sourceId.trim()),
-            UUID.fromString(targetId.trim()),
+            CmisObjectReference.parse(sourceId).nodeId(),
+            CmisObjectReference.parse(targetId).nodeId(),
             relationshipType
         );
     }

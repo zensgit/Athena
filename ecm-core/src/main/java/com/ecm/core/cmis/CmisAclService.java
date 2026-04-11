@@ -4,6 +4,8 @@ import com.ecm.core.entity.Node;
 import com.ecm.core.entity.Permission;
 import com.ecm.core.entity.Permission.AuthorityType;
 import com.ecm.core.entity.Permission.PermissionType;
+import com.ecm.core.repository.GroupRepository;
+import com.ecm.core.repository.RoleRepository;
 import com.ecm.core.service.NodeService;
 import com.ecm.core.service.SecurityService;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +20,8 @@ public class CmisAclService {
 
     private final SecurityService securityService;
     private final NodeService nodeService;
+    private final GroupRepository groupRepository;
+    private final RoleRepository roleRepository;
 
     private static final Map<PermissionType, String> PERMISSION_TO_CMIS;
     private static final Map<String, List<PermissionType>> CMIS_TO_PERMISSIONS;
@@ -41,8 +45,22 @@ public class CmisAclService {
 
         Map<String, List<PermissionType>> reverse = new LinkedHashMap<>();
         reverse.put("cmis:read", List.of(PermissionType.READ));
-        reverse.put("cmis:write", List.of(PermissionType.WRITE, PermissionType.CREATE_CHILDREN));
-        reverse.put("cmis:all", List.of(PermissionType.DELETE, PermissionType.CHANGE_PERMISSIONS, PermissionType.EXECUTE));
+        reverse.put("cmis:write", List.of(
+            PermissionType.WRITE,
+            PermissionType.CREATE_CHILDREN,
+            PermissionType.CHECKOUT,
+            PermissionType.CHECKIN,
+            PermissionType.CANCEL_CHECKOUT
+        ));
+        reverse.put("cmis:all", List.of(
+            PermissionType.DELETE,
+            PermissionType.DELETE_CHILDREN,
+            PermissionType.CHANGE_PERMISSIONS,
+            PermissionType.TAKE_OWNERSHIP,
+            PermissionType.EXECUTE,
+            PermissionType.APPROVE,
+            PermissionType.REJECT
+        ));
         CMIS_TO_PERMISSIONS = Collections.unmodifiableMap(reverse);
     }
 
@@ -50,7 +68,7 @@ public class CmisAclService {
         if (objectId == null || objectId.isBlank()) {
             throw new IllegalArgumentException("objectId is required");
         }
-        Node node = nodeService.getNode(UUID.fromString(objectId.trim()));
+        Node node = nodeService.getNode(CmisObjectReference.parse(objectId).nodeId());
         List<Permission> permissions = securityService.getNodePermissions(node);
 
         List<CmisModels.AceEntry> aces = buildAceEntries(permissions);
@@ -63,7 +81,7 @@ public class CmisAclService {
         if (objectId == null || objectId.isBlank()) {
             throw new IllegalArgumentException("objectId is required");
         }
-        Node node = nodeService.getNode(UUID.fromString(objectId.trim()));
+        Node node = nodeService.getNode(CmisObjectReference.parse(objectId).nodeId());
 
         if (removeAces != null) {
             for (CmisModels.AceEntry ace : removeAces) {
@@ -80,12 +98,13 @@ public class CmisAclService {
 
         if (addAces != null) {
             for (CmisModels.AceEntry ace : addAces) {
+                AuthorityType authorityType = resolveAuthorityType(ace.principalId());
                 for (String cmisPermission : ace.permissions()) {
                     List<PermissionType> types = CMIS_TO_PERMISSIONS.get(cmisPermission);
                     if (types != null) {
                         for (PermissionType type : types) {
                             securityService.setPermission(node, ace.principalId(),
-                                    AuthorityType.USER, type, true);
+                                authorityType, type, true);
                         }
                     }
                 }
@@ -129,5 +148,25 @@ public class CmisAclService {
 
     static List<PermissionType> mapCmisToPermissions(String cmisPermission) {
         return CMIS_TO_PERMISSIONS.getOrDefault(cmisPermission, List.of());
+    }
+
+    private AuthorityType resolveAuthorityType(String principalId) {
+        if (principalId == null || principalId.isBlank()) {
+            return AuthorityType.USER;
+        }
+        String normalized = principalId.trim();
+        if ("EVERYONE".equalsIgnoreCase(normalized)) {
+            return AuthorityType.EVERYONE;
+        }
+        if (roleRepository.findByName(normalized).isPresent()) {
+            return AuthorityType.ROLE;
+        }
+        if (normalized.startsWith("ROLE_")) {
+            return AuthorityType.ROLE;
+        }
+        if (groupRepository.findByName(normalized).isPresent()) {
+            return AuthorityType.GROUP;
+        }
+        return AuthorityType.USER;
     }
 }
