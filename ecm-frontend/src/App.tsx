@@ -26,6 +26,7 @@ import ContentArchivePage from './pages/ContentArchivePage';
 import TemplateEnginePage from './pages/TemplateEnginePage';
 import ScriptEnginePage from './pages/ScriptEnginePage';
 import TenantAdminPage from './pages/TenantAdminPage';
+import TenantMetricsDashboardPage from './pages/TenantMetricsDashboardPage';
 import TransferReplicationPage from './pages/TransferReplicationPage';
 import WebhookSubscriptionsPage from './pages/WebhookSubscriptionsPage';
 import PermissionTemplatesPage from './pages/PermissionTemplatesPage';
@@ -42,6 +43,7 @@ import CorrespondentsPage from './pages/CorrespondentsPage';
 import FavoritesPage from './pages/FavoritesPage';
 import SavedSearchesPage from './pages/SavedSearchesPage';
 import PreviewDiagnosticsPage from './pages/PreviewDiagnosticsPage';
+import CmisExplorerPage from './pages/CmisExplorerPage';
 import VersionHistoryDialog from './components/dialogs/VersionHistoryDialog';
 import PermissionsDialog from './components/dialogs/PermissionsDialog';
 import PropertiesDialog from './components/dialogs/PropertiesDialog';
@@ -365,6 +367,16 @@ const App: React.FC = () => {
               }
             />
             <Route
+              path="/admin/tenant-metrics"
+              element={
+                <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
+                  <MainLayout>
+                    <TenantMetricsDashboardPage />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
               path="/admin/transfer-replication"
               element={
                 <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
@@ -430,6 +442,16 @@ const App: React.FC = () => {
                 <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
                   <MainLayout>
                     <PreviewDiagnosticsPage />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/admin/cmis-explorer"
+              element={
+                <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
+                  <MainLayout>
+                    <CmisExplorerPage />
                   </MainLayout>
                 </PrivateRoute>
               }

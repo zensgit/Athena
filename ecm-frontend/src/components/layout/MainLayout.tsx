@@ -50,6 +50,8 @@ import {
   People,
   Notifications,
   SyncAlt,
+  BarChart as BarChartIcon,
+  Storage as StorageIcon,
 } from '@mui/icons-material';
 import { alpha } from '@mui/material/styles';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -526,6 +528,12 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                   </ListItemIcon>
                   <ListItemText>Tenants</ListItemText>
                 </MenuItem>
+                <MenuItem onClick={() => navigate('/admin/tenant-metrics')}>
+                  <ListItemIcon>
+                    <BarChartIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Tenant Metrics</ListItemText>
+                </MenuItem>
                 <MenuItem onClick={() => navigate('/admin/permission-templates')}>
                   <ListItemIcon>
                     <AdminPanelSettings fontSize="small" />
@@ -567,6 +575,12 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                     <Terminal fontSize="small" />
                   </ListItemIcon>
                   <ListItemText>Script Engine</ListItemText>
+                </MenuItem>
+                <MenuItem onClick={() => navigate('/admin/cmis-explorer')}>
+                  <ListItemIcon>
+                    <StorageIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>CMIS Explorer</ListItemText>
                 </MenuItem>
               </>
             )}
