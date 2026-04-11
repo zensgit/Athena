@@ -26,6 +26,18 @@ export interface TenantMutationRequest {
   quotaBytes?: number | null;
 }
 
+export interface TenantMetricsDto {
+  tenantDomain: string;
+  tenantName: string;
+  enabled: boolean;
+  storageUsedBytes: number;
+  quotaBytes: number | null;
+  storageAvailableBytes: number | null;
+  nodeCount: number;
+  documentCount: number;
+  folderCount: number;
+}
+
 class TenantService {
   async listTenants(): Promise<TenantDto[]> {
     return api.get<TenantDto[]>('/admin/tenants');
@@ -37,6 +49,10 @@ class TenantService {
 
   async getTenant(tenantDomain: string): Promise<TenantDto> {
     return api.get<TenantDto>(`/admin/tenants/${encodeURIComponent(tenantDomain)}`);
+  }
+
+  async getTenantMetrics(tenantDomain: string): Promise<TenantMetricsDto> {
+    return api.get<TenantMetricsDto>(`/admin/tenants/${encodeURIComponent(tenantDomain)}/metrics`);
   }
 
   async createTenant(payload: TenantMutationRequest): Promise<TenantDto> {

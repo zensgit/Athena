@@ -11,6 +11,7 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
+  LinearProgress,
   Paper,
   Stack,
   TextField,
@@ -18,7 +19,12 @@ import {
 } from '@mui/material';
 import { Add, CheckCircleOutline, Delete, Edit, OpenInNew, Refresh } from '@mui/icons-material';
 import { toast } from 'react-toastify';
-import tenantService, { DEFAULT_TENANT_DOMAIN, TenantDto, TenantMutationRequest } from 'services/tenantService';
+import tenantService, {
+  DEFAULT_TENANT_DOMAIN,
+  TenantDto,
+  TenantMetricsDto,
+  TenantMutationRequest,
+} from 'services/tenantService';
 
 const EMPTY_FORM: TenantMutationRequest = {
   tenantDomain: '',
@@ -27,13 +33,34 @@ const EMPTY_FORM: TenantMutationRequest = {
   quotaBytes: null,
 };
 
+const normalizeTenantDomain = (tenantDomain: string) => tenantDomain.trim().toLowerCase();
+
+const formatBytes = (value: number | null | undefined) => {
+  if (value == null) {
+    return '—';
+  }
+  return `${value.toLocaleString()} bytes`;
+};
+
+const getUsagePercent = (metrics: TenantMetricsDto) => {
+  if (metrics.quotaBytes == null || metrics.quotaBytes <= 0) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(100, (metrics.storageUsedBytes / metrics.quotaBytes) * 100));
+};
+
 const TenantAdminPage: React.FC = () => {
   const [tenants, setTenants] = useState<TenantDto[]>([]);
   const [currentTenant, setCurrentTenant] = useState<TenantDto | null>(null);
+  const [tenantMetricsByDomain, setTenantMetricsByDomain] = useState<Record<string, TenantMetricsDto>>({});
   const [loading, setLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingTenant, setEditingTenant] = useState<TenantDto | null>(null);
   const [form, setForm] = useState<TenantMutationRequest>(EMPTY_FORM);
+  const tenantCardRefs = React.useRef<Record<string, HTMLDivElement | null>>({});
+  const loadedMetricsDomains = React.useRef<Set<string>>(new Set());
+  const loadingMetricsDomains = React.useRef<Set<string>>(new Set());
 
   const loadTenants = async () => {
     setLoading(true);
@@ -51,9 +78,73 @@ const TenantAdminPage: React.FC = () => {
     }
   };
 
+  const loadTenantMetrics = React.useCallback(async (tenantDomain: string) => {
+    const normalizedDomain = normalizeTenantDomain(tenantDomain);
+    if (
+      !normalizedDomain ||
+      loadedMetricsDomains.current.has(normalizedDomain) ||
+      loadingMetricsDomains.current.has(normalizedDomain)
+    ) {
+      return;
+    }
+
+    loadingMetricsDomains.current.add(normalizedDomain);
+    try {
+      const metrics = await tenantService.getTenantMetrics(tenantDomain);
+      loadedMetricsDomains.current.add(normalizedDomain);
+      setTenantMetricsByDomain((current) => ({
+        ...current,
+        [normalizedDomain]: metrics,
+      }));
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || `Failed to load metrics for ${tenantDomain}`);
+    } finally {
+      loadingMetricsDomains.current.delete(normalizedDomain);
+    }
+  }, []);
+
   useEffect(() => {
     void loadTenants();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (tenants.length === 0) {
+      return;
+    }
+
+    if (typeof IntersectionObserver === 'undefined') {
+      void Promise.all(tenants.map((tenant) => loadTenantMetrics(tenant.tenantDomain)));
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) {
+            return;
+          }
+
+          const tenantDomain = (entry.target as HTMLElement).dataset.tenantDomain;
+          if (tenantDomain) {
+            void loadTenantMetrics(tenantDomain);
+          }
+          observer.unobserve(entry.target);
+        });
+      },
+      { rootMargin: '160px 0px' }
+    );
+
+    tenants.forEach((tenant) => {
+      const node = tenantCardRefs.current[normalizeTenantDomain(tenant.tenantDomain)];
+      if (node) {
+        observer.observe(node);
+      }
+    });
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [loadTenantMetrics, tenants]);
 
   const openCreateDialog = () => {
     setEditingTenant(null);
@@ -200,8 +291,17 @@ const TenantAdminPage: React.FC = () => {
         <Stack spacing={2}>
           {tenants.map((tenant) => {
             const isActive = activeTenantDomain === tenant.tenantDomain;
+            const tenantMetrics = tenantMetricsByDomain[normalizeTenantDomain(tenant.tenantDomain)];
+            const usagePercent = tenantMetrics ? getUsagePercent(tenantMetrics) : 0;
             return (
-              <Card key={tenant.id} variant="outlined">
+              <Card
+                key={tenant.id}
+                variant="outlined"
+                ref={(node) => {
+                  tenantCardRefs.current[normalizeTenantDomain(tenant.tenantDomain)] = node;
+                }}
+                data-tenant-domain={tenant.tenantDomain}
+              >
                 <CardContent>
                   <Stack spacing={1.5}>
                     <Box display="flex" justifyContent="space-between" alignItems="flex-start" gap={2}>
@@ -226,6 +326,58 @@ const TenantAdminPage: React.FC = () => {
                         Root Workspace: {tenant.rootNodeId || 'Provisioning pending'}
                       </Typography>
                     </Stack>
+                    <Paper variant="outlined" sx={{ p: 1.5, bgcolor: 'background.default' }}>
+                      <Stack spacing={1}>
+                        <Box display="flex" justifyContent="space-between" alignItems="center" gap={2}>
+                          <Typography variant="subtitle2">Storage metrics</Typography>
+                          <Chip
+                            size="small"
+                            label={tenantMetrics ? 'Loaded' : 'Loading on view'}
+                            variant={tenantMetrics ? 'filled' : 'outlined'}
+                          />
+                        </Box>
+                        {tenantMetrics ? (
+                          <>
+                            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                              <Box>
+                                <Typography variant="caption" color="text.secondary">
+                                  Used
+                                </Typography>
+                                <Typography variant="body2">{formatBytes(tenantMetrics.storageUsedBytes)}</Typography>
+                              </Box>
+                              <Box>
+                                <Typography variant="caption" color="text.secondary">
+                                  Quota
+                                </Typography>
+                                <Typography variant="body2">{formatBytes(tenantMetrics.quotaBytes)}</Typography>
+                              </Box>
+                              <Box>
+                                <Typography variant="caption" color="text.secondary">
+                                  Available
+                                </Typography>
+                                <Typography variant="body2">{formatBytes(tenantMetrics.storageAvailableBytes)}</Typography>
+                              </Box>
+                            </Stack>
+                            <Box>
+                              <LinearProgress
+                                variant={tenantMetrics.quotaBytes != null ? 'determinate' : 'indeterminate'}
+                                value={usagePercent}
+                                sx={{ height: 8, borderRadius: 999 }}
+                              />
+                              <Typography variant="caption" color="text.secondary">
+                                {tenantMetrics.quotaBytes != null
+                                  ? `${usagePercent.toFixed(0)}% used`
+                                  : 'No quota configured'}
+                              </Typography>
+                            </Box>
+                          </>
+                        ) : (
+                          <Typography variant="body2" color="text.secondary">
+                            Metrics load as tenant cards enter view.
+                          </Typography>
+                        )}
+                      </Stack>
+                    </Paper>
                     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                       <Button
                         size="small"
