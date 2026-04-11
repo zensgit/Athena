@@ -1,6 +1,7 @@
 package com.ecm.core.controller;
 
 import com.ecm.core.entity.ReplicationJob;
+import com.ecm.core.entity.ReplicationDefinition;
 import com.ecm.core.entity.TransferTarget;
 import com.ecm.core.service.TransferReplicationService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -200,7 +201,8 @@ class TransferReplicationControllerTest {
             true,
             3,
             15,
-            14
+            14,
+            ReplicationDefinition.ConflictPolicy.OVERWRITE
         ));
 
         mockMvc.perform(post("/api/v1/replication/definitions")
@@ -218,7 +220,8 @@ class TransferReplicationControllerTest {
                       "autoRetryEnabled": true,
                       "maxRetryAttempts": 3,
                       "retryBackoffMinutes": 15,
-                      "jobRetentionDays": 14
+                      "jobRetentionDays": 14,
+                      "conflictPolicy": "OVERWRITE"
                     }
                     """.formatted(sourceNodeId, transferTargetId)))
             .andExpect(status().isCreated())
@@ -228,7 +231,8 @@ class TransferReplicationControllerTest {
             .andExpect(jsonPath("$.autoRetryEnabled").value(true))
             .andExpect(jsonPath("$.maxRetryAttempts").value(3))
             .andExpect(jsonPath("$.retryBackoffMinutes").value(15))
-            .andExpect(jsonPath("$.jobRetentionDays").value(14));
+            .andExpect(jsonPath("$.jobRetentionDays").value(14))
+            .andExpect(jsonPath("$.conflictPolicy").value("OVERWRITE"));
 
         ArgumentCaptor<TransferReplicationService.ReplicationDefinitionMutationRequest> requestCaptor =
             ArgumentCaptor.forClass(TransferReplicationService.ReplicationDefinitionMutationRequest.class);
@@ -246,6 +250,7 @@ class TransferReplicationControllerTest {
         org.junit.jupiter.api.Assertions.assertEquals(3, request.maxRetryAttempts());
         org.junit.jupiter.api.Assertions.assertEquals(15, request.retryBackoffMinutes());
         org.junit.jupiter.api.Assertions.assertEquals(14, request.jobRetentionDays());
+        org.junit.jupiter.api.Assertions.assertEquals(ReplicationDefinition.ConflictPolicy.OVERWRITE, request.conflictPolicy());
     }
 
     @Test
@@ -269,7 +274,8 @@ class TransferReplicationControllerTest {
             true,
             5,
             20,
-            30
+            30,
+            ReplicationDefinition.ConflictPolicy.SKIP
         ));
 
         mockMvc.perform(put("/api/v1/replication/definitions/{definitionId}", definitionId)
@@ -287,7 +293,8 @@ class TransferReplicationControllerTest {
                       "autoRetryEnabled": true,
                       "maxRetryAttempts": 5,
                       "retryBackoffMinutes": 20,
-                      "jobRetentionDays": 30
+                      "jobRetentionDays": 30,
+                      "conflictPolicy": "SKIP"
                     }
                     """.formatted(sourceNodeId, transferTargetId)))
             .andExpect(status().isOk())
@@ -298,7 +305,8 @@ class TransferReplicationControllerTest {
             .andExpect(jsonPath("$.autoRetryEnabled").value(true))
             .andExpect(jsonPath("$.maxRetryAttempts").value(5))
             .andExpect(jsonPath("$.retryBackoffMinutes").value(20))
-            .andExpect(jsonPath("$.jobRetentionDays").value(30));
+            .andExpect(jsonPath("$.jobRetentionDays").value(30))
+            .andExpect(jsonPath("$.conflictPolicy").value("SKIP"));
 
         ArgumentCaptor<TransferReplicationService.ReplicationDefinitionMutationRequest> requestCaptor =
             ArgumentCaptor.forClass(TransferReplicationService.ReplicationDefinitionMutationRequest.class);
@@ -316,6 +324,7 @@ class TransferReplicationControllerTest {
         org.junit.jupiter.api.Assertions.assertEquals(5, request.maxRetryAttempts());
         org.junit.jupiter.api.Assertions.assertEquals(20, request.retryBackoffMinutes());
         org.junit.jupiter.api.Assertions.assertEquals(30, request.jobRetentionDays());
+        org.junit.jupiter.api.Assertions.assertEquals(ReplicationDefinition.ConflictPolicy.SKIP, request.conflictPolicy());
     }
 
     @Test
@@ -443,7 +452,8 @@ class TransferReplicationControllerTest {
         boolean autoRetryEnabled,
         int maxRetryAttempts,
         int retryBackoffMinutes,
-        int jobRetentionDays
+        int jobRetentionDays,
+        ReplicationDefinition.ConflictPolicy conflictPolicy
     ) {
         LocalDateTime now = LocalDateTime.now();
         return new TransferReplicationService.ReplicationDefinitionDto(
@@ -463,6 +473,7 @@ class TransferReplicationControllerTest {
             maxRetryAttempts,
             retryBackoffMinutes,
             jobRetentionDays,
+            conflictPolicy,
             now,
             now,
             now

@@ -1,7 +1,9 @@
 package com.ecm.core.service.transfer;
 
+import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Node;
+import com.ecm.core.entity.ReplicationDefinition;
 import com.ecm.core.entity.TransferReceiverRegistration;
 import com.ecm.core.entity.TransferTarget;
 import com.ecm.core.pipeline.PipelineResult;
@@ -9,6 +11,8 @@ import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.repository.TransferReceiverRegistrationRepository;
 import com.ecm.core.service.DocumentUploadService;
 import com.ecm.core.service.FolderService;
+import com.ecm.core.service.NodeService;
+import com.ecm.core.service.VersionService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -31,6 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -48,6 +53,12 @@ class TransferReceiverServiceTest {
 
     @Mock
     private DocumentUploadService documentUploadService;
+
+    @Mock
+    private NodeService nodeService;
+
+    @Mock
+    private VersionService versionService;
 
     @AfterEach
     void tearDown() {
@@ -100,7 +111,12 @@ class TransferReceiverServiceTest {
         TransferReceiverService service = service();
 
         TransferReceiverService.CreateFolderResponse response = service.createFolder(
-            new TransferReceiverService.CreateFolderRequest(rootId, "Contracts", "Synced"),
+            new TransferReceiverService.CreateFolderRequest(
+                rootId,
+                "Contracts",
+                "Synced",
+                ReplicationDefinition.ConflictPolicy.RENAME
+            ),
             null,
             "shared-secret"
         );
@@ -111,6 +127,41 @@ class TransferReceiverServiceTest {
         assertEquals(rootId, requestCaptor.getValue().parentId());
         assertEquals(created.getId(), response.folderId());
         assertEquals("Contracts (Replica 1)", response.folderName());
+        assertEquals(TransferReceiverService.ConflictDisposition.RENAMED, response.disposition());
+        assertEquals("Created renamed receiver folder", response.message());
+    }
+
+    @Test
+    @DisplayName("createFolder skips existing folder when policy is skip")
+    void createFolderSkipsExistingFolderWhenPolicySkip() {
+        UUID rootId = UUID.randomUUID();
+        Folder root = folder(rootId, "Outbound", "/Company Home/Outbound");
+        Folder existing = folder(UUID.randomUUID(), "Contracts", "/Company Home/Outbound/Contracts");
+        TransferReceiverRegistration receiver = receiver(rootId);
+
+        when(receiverRepository.findAll()).thenReturn(List.of(receiver));
+        when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(rootId, Node.ArchiveStatus.LIVE)).thenReturn(Optional.of(root));
+        when(nodeRepository.findByParentIdAndName(rootId, "Contracts")).thenReturn(Optional.of(existing));
+        when(receiverRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        TransferReceiverService service = service();
+
+        TransferReceiverService.CreateFolderResponse response = service.createFolder(
+            new TransferReceiverService.CreateFolderRequest(
+                rootId,
+                "Contracts",
+                "Synced",
+                ReplicationDefinition.ConflictPolicy.SKIP
+            ),
+            null,
+            "shared-secret"
+        );
+
+        verify(folderService, never()).createFolder(any());
+        assertEquals(existing.getId(), response.folderId());
+        assertEquals(existing.getName(), response.folderName());
+        assertEquals(TransferReceiverService.ConflictDisposition.SKIPPED, response.disposition());
+        assertEquals("Skipped existing receiver folder", response.message());
     }
 
     @Test
@@ -144,12 +195,59 @@ class TransferReceiverServiceTest {
             new org.springframework.mock.web.MockMultipartFile("file", "contract.pdf", "application/pdf", "pdf".getBytes()),
             rootId,
             "Signed",
+            ReplicationDefinition.ConflictPolicy.RENAME,
             null,
             "shared-secret"
         );
 
         assertEquals(documentId, response.documentId());
         assertEquals("contract (Replica 1).pdf", response.documentName());
+        assertEquals(TransferReceiverService.ConflictDisposition.RENAMED, response.disposition());
+        assertEquals("Uploaded renamed receiver document", response.message());
+    }
+
+    @Test
+    @DisplayName("uploadDocument overwrites existing document as a new version")
+    void uploadDocumentOverwritesExistingDocumentAsVersionWhenPolicyOverwrite() throws IOException {
+        UUID rootId = UUID.randomUUID();
+        Folder root = folder(rootId, "Outbound", "/Company Home/Outbound");
+        TransferReceiverRegistration receiver = receiver(rootId);
+        Document existing = document(UUID.randomUUID(), "contract.pdf", "/Company Home/Outbound/contract.pdf");
+
+        when(receiverRepository.findAll()).thenReturn(List.of(receiver));
+        when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(rootId, Node.ArchiveStatus.LIVE)).thenReturn(Optional.of(root));
+        when(nodeRepository.findByParentIdAndName(rootId, "contract.pdf")).thenReturn(Optional.of(existing));
+        when(receiverRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(versionService.createVersion(
+            eq(existing.getId()),
+            any(MultipartFile.class),
+            eq("Replicated overwrite via transfer receiver"),
+            eq(false)
+        )).thenAnswer(invocation -> {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            assertEquals("transfer-receiver", auth.getPrincipal());
+            MultipartFile uploaded = invocation.getArgument(1);
+            assertEquals("contract.pdf", uploaded.getOriginalFilename());
+            return null;
+        });
+
+        TransferReceiverService service = service();
+
+        TransferReceiverService.UploadDocumentResponse response = service.uploadDocument(
+            new org.springframework.mock.web.MockMultipartFile("file", "contract.pdf", "application/pdf", "pdf".getBytes()),
+            rootId,
+            "Signed",
+            ReplicationDefinition.ConflictPolicy.OVERWRITE,
+            null,
+            "shared-secret"
+        );
+
+        verify(documentUploadService, never()).uploadDocument(any(), any(), any());
+        verify(nodeService).updateNode(existing.getId(), Map.of("description", "Signed"));
+        assertEquals(existing.getId(), response.documentId());
+        assertEquals(existing.getName(), response.documentName());
+        assertEquals(TransferReceiverService.ConflictDisposition.OVERWRITTEN, response.disposition());
+        assertEquals("Overwrote receiver document", response.message());
     }
 
     @Test
@@ -177,7 +275,9 @@ class TransferReceiverServiceTest {
             receiverRepository,
             nodeRepository,
             folderService,
-            documentUploadService
+            documentUploadService,
+            nodeService,
+            versionService
         );
     }
 
@@ -201,5 +301,17 @@ class TransferReceiverServiceTest {
         folder.setCreatedDate(java.time.LocalDateTime.now());
         folder.setLastModifiedDate(java.time.LocalDateTime.now());
         return folder;
+    }
+
+    private Document document(UUID id, String name, String path) {
+        Document document = new Document();
+        document.setId(id);
+        document.setName(name);
+        document.setPath(path);
+        document.setArchiveStatus(Node.ArchiveStatus.LIVE);
+        document.setDeleted(false);
+        document.setCreatedDate(java.time.LocalDateTime.now());
+        document.setLastModifiedDate(java.time.LocalDateTime.now());
+        return document;
     }
 }

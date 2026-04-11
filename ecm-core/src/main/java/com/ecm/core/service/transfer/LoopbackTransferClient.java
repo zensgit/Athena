@@ -1,13 +1,21 @@
 package com.ecm.core.service.transfer;
 
+import com.ecm.core.entity.Document;
+import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Node;
+import com.ecm.core.entity.ReplicationDefinition;
 import com.ecm.core.entity.TransferTarget;
 import com.ecm.core.repository.NodeRepository;
+import com.ecm.core.service.ContentService;
 import com.ecm.core.service.FolderService;
 import com.ecm.core.service.NodeService;
+import com.ecm.core.service.VersionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -18,6 +26,8 @@ public class LoopbackTransferClient implements TransferClient {
     private final FolderService folderService;
     private final NodeService nodeService;
     private final NodeRepository nodeRepository;
+    private final ContentService contentService;
+    private final VersionService versionService;
 
     @Override
     public TransferTarget.TransportType transportType() {
@@ -31,14 +41,79 @@ public class LoopbackTransferClient implements TransferClient {
     }
 
     @Override
-    public TransferExecutionResult replicate(TransferTarget target, Node source, boolean includeChildren) {
+    public TransferExecutionResult replicate(
+        TransferTarget target,
+        Node source,
+        boolean includeChildren,
+        ReplicationDefinition.ConflictPolicy conflictPolicy
+    ) {
         folderService.getFolder(target.getTargetFolderId());
-        String replicaName = resolveReplicaName(target.getTargetFolderId(), source.getName());
-        Node copied = nodeService.copyNode(source.getId(), target.getTargetFolderId(), replicaName, includeChildren);
-        return new TransferExecutionResult(copied.getId(), "Loopback replication completed");
+        ReplicationDefinition.ConflictPolicy effectivePolicy = conflictPolicy != null
+            ? conflictPolicy
+            : ReplicationDefinition.ConflictPolicy.RENAME;
+        Node replicated = replicateToParent(target.getTargetFolderId(), source, includeChildren, effectivePolicy);
+        String message = switch (effectivePolicy) {
+            case SKIP -> "Loopback replication applied with SKIP policy";
+            case RENAME -> "Loopback replication applied with RENAME policy";
+            case OVERWRITE -> "Loopback replication applied with OVERWRITE policy";
+        };
+        return new TransferExecutionResult(replicated.getId(), message);
     }
 
-    private String resolveReplicaName(UUID targetFolderId, String requestedName) {
+    private Node replicateToParent(
+        UUID targetParentId,
+        Node source,
+        boolean includeChildren,
+        ReplicationDefinition.ConflictPolicy conflictPolicy
+    ) {
+        Optional<Node> existing = nodeRepository.findByParentIdAndName(targetParentId, source.getName());
+        if (existing.isEmpty()) {
+            return nodeService.copyNode(source.getId(), targetParentId, source.getName(), includeChildren);
+        }
+
+        return switch (conflictPolicy) {
+            case SKIP -> existing.get();
+            case RENAME -> nodeService.copyNode(
+                source.getId(),
+                targetParentId,
+                generateReplicaName(targetParentId, source.getName()),
+                includeChildren
+            );
+            case OVERWRITE -> overwriteExisting(targetParentId, source, includeChildren, existing.get());
+        };
+    }
+
+    private Node overwriteExisting(UUID targetParentId, Node source, boolean includeChildren, Node existing) {
+        if (source instanceof Document documentSource && existing instanceof Document documentTarget) {
+            overwriteDocument(documentSource, documentTarget);
+            return documentTarget;
+        }
+
+        nodeService.deleteNode(existing.getId(), false);
+        return nodeService.copyNode(source.getId(), targetParentId, source.getName(), includeChildren);
+    }
+
+    private void overwriteDocument(Document source, Document target) {
+        if (source.getContentId() == null || source.getContentId().isBlank()) {
+            throw new IllegalStateException("Source document has no content for overwrite: " + source.getId());
+        }
+        try (InputStream content = contentService.getContent(source.getContentId())) {
+            versionService.createVersion(
+                target.getId(),
+                content,
+                source.getName(),
+                "Replicated overwrite from " + source.getId(),
+                false
+            );
+        } catch (IOException ex) {
+            throw new UncheckedIOException("Failed to read source content for loopback overwrite: " + source.getId(), ex);
+        }
+        if (source.getDescription() != null) {
+            nodeService.updateNode(target.getId(), java.util.Map.of("description", source.getDescription()));
+        }
+    }
+
+    private String generateReplicaName(UUID targetFolderId, String requestedName) {
         String baseName = requestedName;
         String extension = "";
         int dotIndex = requestedName.lastIndexOf('.');

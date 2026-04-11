@@ -60,6 +60,10 @@ public class ReplicationDefinition {
     @Column(name = "job_retention_days", nullable = false)
     private Integer jobRetentionDays = 30;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "conflict_policy", nullable = false, length = 32)
+    private ConflictPolicy conflictPolicy = ConflictPolicy.RENAME;
+
     @Column(name = "last_run_at")
     private LocalDateTime lastRunAt;
 
@@ -70,4 +74,10 @@ public class ReplicationDefinition {
     @UpdateTimestamp
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+
+    public enum ConflictPolicy {
+        RENAME,
+        SKIP,
+        OVERWRITE
+    }
 }

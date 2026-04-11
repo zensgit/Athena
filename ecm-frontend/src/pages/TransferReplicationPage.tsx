@@ -42,6 +42,7 @@ import transferReplicationService, {
   AuthType,
   ReceiverAccessStatus,
   buildReplicationDefinitionRequest,
+  ReplicationConflictPolicy,
   ReplicationDefinitionDto,
   ReplicationJobDto,
   ReplicationTransportStatus,
@@ -73,6 +74,7 @@ interface ReplicationDefinitionFormState {
   transferTargetId: string;
   includeChildren: boolean;
   enabled: boolean;
+  conflictPolicy: ReplicationConflictPolicy;
   cronExpression: string;
   scheduleTimezone: string;
   autoRetryEnabled: boolean;
@@ -88,6 +90,7 @@ const EMPTY_DEFINITION_FORM: ReplicationDefinitionFormState = {
   transferTargetId: '',
   includeChildren: true,
   enabled: true,
+  conflictPolicy: 'RENAME',
   cronExpression: '',
   scheduleTimezone: 'UTC',
   autoRetryEnabled: false,
@@ -161,6 +164,17 @@ const formatFailurePolicySummary = (definition: ReplicationDefinitionDto) => {
   }
   summary.push(`Retain ${definition.jobRetentionDays}d`);
   return summary.join(' · ');
+};
+
+const formatConflictPolicySummary = (definition: ReplicationDefinitionDto) => {
+  switch (definition.conflictPolicy || 'RENAME') {
+    case 'RENAME':
+      return 'Rename conflicting content';
+    case 'OVERWRITE':
+      return 'Overwrite conflicting content';
+    default:
+      return 'Skip existing content';
+  }
 };
 
 const toTextValue = (value?: string | null) => value || '';
@@ -274,6 +288,7 @@ const TransferReplicationPage: React.FC = () => {
         transferTargetId: definition.transferTargetId,
         includeChildren: definition.includeChildren,
         enabled: definition.enabled,
+        conflictPolicy: definition.conflictPolicy || 'RENAME',
         cronExpression: definition.cronExpression || '',
         scheduleTimezone: definition.scheduleTimezone || 'UTC',
         autoRetryEnabled: definition.autoRetryEnabled,
@@ -286,6 +301,7 @@ const TransferReplicationPage: React.FC = () => {
       setDefinitionForm({
         ...EMPTY_DEFINITION_FORM,
         transferTargetId: targets[0]?.id || '',
+        conflictPolicy: 'RENAME',
       });
     }
     setDefinitionDialogOpen(true);
@@ -610,8 +626,9 @@ const TransferReplicationPage: React.FC = () => {
                 <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
                   <Box>
                     <Typography variant="h6">Replication Definitions</Typography>
-                <Typography variant="body2" color="text.secondary">
-                      Bind source nodes to transfer targets, author schedule/failure policy, and queue outbound replication jobs.
+                    <Typography variant="body2" color="text.secondary">
+                      Bind source nodes to transfer targets, author conflict/schedule/failure policy, and queue outbound
+                      replication jobs.
                     </Typography>
                   </Box>
                   <Button
@@ -630,8 +647,9 @@ const TransferReplicationPage: React.FC = () => {
                   </Alert>
                 )}
                 <Alert severity="info" sx={{ mb: 2 }}>
-                  Schedule, retry, and retention policy are authored on replication definitions and consumed by the backend
-                  scheduler, retry queue, and retention cleanup.
+                  Conflict, schedule, retry, and retention policy are authored on replication definitions. Conflict
+                  policy is surfaced for operator intent and sent with definition requests; the backend currently uses
+                  the existing schedule and retry fields.
                 </Alert>
 
                 <Table size="small">
@@ -659,6 +677,11 @@ const TransferReplicationPage: React.FC = () => {
                             </Typography>
                             <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
                               <Chip size="small" variant="outlined" label={`Schedule: ${formatScheduleSummary(definition)}`} />
+                              <Chip
+                                size="small"
+                                variant="outlined"
+                                label={`Conflict: ${formatConflictPolicySummary(definition)}`}
+                              />
                               <Chip
                                 size="small"
                                 variant="outlined"
@@ -1144,6 +1167,28 @@ const TransferReplicationPage: React.FC = () => {
               }
               label="Include children"
             />
+            <FormControl fullWidth>
+              <InputLabel id="replication-definition-conflict-policy-label">Conflict Policy</InputLabel>
+              <Select
+                labelId="replication-definition-conflict-policy-label"
+                label="Conflict Policy"
+                value={definitionForm.conflictPolicy}
+                onChange={(event) =>
+                  setDefinitionForm((current) => ({
+                    ...current,
+                    conflictPolicy: event.target.value as ReplicationConflictPolicy,
+                  }))
+                }
+              >
+                <MenuItem value="RENAME">Rename conflicting content</MenuItem>
+                <MenuItem value="SKIP">Skip existing content</MenuItem>
+                <MenuItem value="OVERWRITE">Overwrite conflicting content</MenuItem>
+              </Select>
+            </FormControl>
+            <Typography variant="caption" color="text.secondary">
+              This policy is sent with the definition request so operators can capture intent even before the backend
+              persists it.
+            </Typography>
             <FormControlLabel
               control={
                 <Checkbox

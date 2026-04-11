@@ -75,7 +75,7 @@ describe('transferReplicationService receiver registry wrappers', () => {
 });
 
 describe('transferReplicationService replication definition builder', () => {
-  test('trims and preserves schedule and failure policy fields', () => {
+  test('trims and preserves schedule, conflict, and failure policy fields', () => {
     expect(
       buildReplicationDefinitionRequest({
         name: '  nightly export  ',
@@ -84,6 +84,7 @@ describe('transferReplicationService replication definition builder', () => {
         transferTargetId: 'target-id',
         includeChildren: true,
         enabled: false,
+        conflictPolicy: 'RENAME',
         cronExpression: ' 0 0 * * * ',
         scheduleTimezone: '  UTC ',
         autoRetryEnabled: true,
@@ -98,12 +99,25 @@ describe('transferReplicationService replication definition builder', () => {
       transferTargetId: 'target-id',
       includeChildren: true,
       enabled: false,
+      conflictPolicy: 'RENAME',
       cronExpression: '0 0 * * *',
       scheduleTimezone: 'UTC',
       autoRetryEnabled: true,
       maxRetryAttempts: 5,
       retryBackoffMinutes: 15,
       jobRetentionDays: 45,
+    });
+  });
+
+  test('defaults conflict policy to rename when omitted', () => {
+    expect(
+      buildReplicationDefinitionRequest({
+        name: 'nightly export',
+        sourceNodeId: 'node-id',
+        transferTargetId: 'target-id',
+      })
+    ).toMatchObject({
+      conflictPolicy: 'RENAME',
     });
   });
 });

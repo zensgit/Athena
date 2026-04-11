@@ -6,6 +6,7 @@ export type VerificationStatus = 'NEVER_VERIFIED' | 'VERIFIED' | 'FAILED';
 export type ReplicationJobStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELED';
 export type ReplicationTransportStatus = 'NEVER_RUN' | 'RUNNING' | 'SUCCESS' | 'FAILED';
 export type ReceiverAccessStatus = 'NEVER_USED' | 'SUCCESS' | 'FAILED';
+export type ReplicationConflictPolicy = 'SKIP' | 'RENAME' | 'OVERWRITE';
 
 export interface TransferTargetDto {
   id: string;
@@ -50,6 +51,7 @@ export interface ReplicationDefinitionDto {
   transferTargetName?: string | null;
   includeChildren: boolean;
   enabled: boolean;
+  conflictPolicy?: ReplicationConflictPolicy | null;
   cronExpression?: string | null;
   scheduleTimezone?: string | null;
   nextRunAt?: string | null;
@@ -69,6 +71,7 @@ export interface ReplicationDefinitionMutationRequest {
   transferTargetId: string;
   includeChildren?: boolean;
   enabled?: boolean;
+  conflictPolicy?: ReplicationConflictPolicy;
   cronExpression?: string;
   scheduleTimezone?: string;
   autoRetryEnabled?: boolean;
@@ -84,6 +87,7 @@ export interface ReplicationDefinitionDraft {
   transferTargetId: string;
   includeChildren?: boolean;
   enabled?: boolean;
+  conflictPolicy?: ReplicationConflictPolicy;
   cronExpression?: string;
   scheduleTimezone?: string;
   autoRetryEnabled?: boolean;
@@ -117,6 +121,7 @@ export const buildReplicationDefinitionRequest = (
     transferTargetId: draft.transferTargetId,
     includeChildren: draft.includeChildren,
     enabled: draft.enabled,
+    conflictPolicy: draft.conflictPolicy ?? 'RENAME',
     cronExpression: draft.cronExpression?.trim() || undefined,
     scheduleTimezone: draft.scheduleTimezone?.trim() || undefined,
     autoRetryEnabled: draft.autoRetryEnabled,

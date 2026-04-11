@@ -1,5 +1,6 @@
 package com.ecm.core.controller;
 
+import com.ecm.core.entity.ReplicationDefinition;
 import com.ecm.core.service.transfer.TransferReceiverHeaders;
 import com.ecm.core.service.transfer.TransferReceiverService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -47,10 +48,11 @@ public class TransferReceiverController {
         @RequestParam("file") MultipartFile file,
         @RequestParam UUID parentFolderId,
         @RequestParam(required = false) String description,
+        @RequestParam(defaultValue = "RENAME") ReplicationDefinition.ConflictPolicy conflictPolicy,
         @RequestHeader(value = TransferReceiverHeaders.USER_HEADER, required = false) String authUsername,
         @RequestHeader(value = TransferReceiverHeaders.SECRET_HEADER, required = false) String authSecret
     ) throws IOException {
         return ResponseEntity.status(201)
-            .body(transferReceiverService.uploadDocument(file, parentFolderId, description, authUsername, authSecret));
+            .body(transferReceiverService.uploadDocument(file, parentFolderId, description, conflictPolicy, authUsername, authSecret));
     }
 }

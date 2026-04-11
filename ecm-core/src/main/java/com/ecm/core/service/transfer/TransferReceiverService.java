@@ -2,12 +2,15 @@ package com.ecm.core.service.transfer;
 
 import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Node;
+import com.ecm.core.entity.ReplicationDefinition;
 import com.ecm.core.entity.TransferReceiverRegistration;
 import com.ecm.core.pipeline.PipelineResult;
 import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.repository.TransferReceiverRegistrationRepository;
 import com.ecm.core.service.DocumentUploadService;
 import com.ecm.core.service.FolderService;
+import com.ecm.core.service.NodeService;
+import com.ecm.core.service.VersionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -23,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -35,6 +39,8 @@ public class TransferReceiverService {
     private final NodeRepository nodeRepository;
     private final FolderService folderService;
     private final DocumentUploadService documentUploadService;
+    private final NodeService nodeService;
+    private final VersionService versionService;
 
     @Transactional
     public VerifyFolderResponse verifyFolder(UUID folderId, String authUsername, String authSecret) {
@@ -52,12 +58,26 @@ public class TransferReceiverService {
         String requestedName = normalizeRequired(request.name(), "Folder name is required");
         AuthorizedFolder authorized = resolveAuthorizedFolder(request.parentFolderId(), authUsername, authSecret);
         Folder parent = authorized.folder();
-        String resolvedName = resolveReplicaName(parent.getId(), requestedName);
+        ConflictResolution resolution = resolveFolderConflict(
+            parent.getId(),
+            requestedName,
+            request.conflictPolicy() != null ? request.conflictPolicy() : ReplicationDefinition.ConflictPolicy.RENAME
+        );
+        if (resolution.disposition() == ConflictDisposition.SKIPPED) {
+            Folder existingFolder = requireFolder(resolution.existingNode());
+            recordAccessSuccess(authorized.receiver(), "Skipped existing receiver folder: " + existingFolder.getName());
+            return new CreateFolderResponse(
+                existingFolder.getId(),
+                existingFolder.getName(),
+                resolution.disposition(),
+                "Skipped existing receiver folder"
+            );
+        }
 
         SecurityContext previous = pushTransferAuthentication();
         try {
             Folder created = folderService.createFolder(new FolderService.CreateFolderRequest(
-                resolvedName,
+                resolution.resolvedName(),
                 normalizeOptional(request.description()),
                 parent.getId(),
                 Folder.FolderType.GENERAL,
@@ -69,8 +89,14 @@ public class TransferReceiverService {
                 false,
                 null
             ));
-            recordAccessSuccess(authorized.receiver(), "Created receiver folder: " + created.getName());
-            return new CreateFolderResponse(created.getId(), created.getName());
+            String message = switch (resolution.disposition()) {
+                case CREATED -> "Created receiver folder";
+                case RENAMED -> "Created renamed receiver folder";
+                case OVERWRITTEN -> "Overwrote receiver folder";
+                case SKIPPED -> "Skipped existing receiver folder";
+            };
+            recordAccessSuccess(authorized.receiver(), message + ": " + created.getName());
+            return new CreateFolderResponse(created.getId(), created.getName(), resolution.disposition(), message);
         } finally {
             popTransferAuthentication(previous);
         }
@@ -84,6 +110,25 @@ public class TransferReceiverService {
         String authUsername,
         String authSecret
     ) throws IOException {
+        return uploadDocument(
+            file,
+            parentFolderId,
+            description,
+            ReplicationDefinition.ConflictPolicy.RENAME,
+            authUsername,
+            authSecret
+        );
+    }
+
+    @Transactional
+    public UploadDocumentResponse uploadDocument(
+        MultipartFile file,
+        UUID parentFolderId,
+        String description,
+        ReplicationDefinition.ConflictPolicy conflictPolicy,
+        String authUsername,
+        String authSecret
+    ) throws IOException {
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("A non-empty file is required");
         }
@@ -91,10 +136,25 @@ public class TransferReceiverService {
         AuthorizedFolder authorized = resolveAuthorizedFolder(parentFolderId, authUsername, authSecret);
         Folder parent = authorized.folder();
         String filename = normalizeRequired(file.getOriginalFilename(), "File name is required");
-        String resolvedName = resolveReplicaName(parent.getId(), filename);
-        MultipartFile effectiveFile = Objects.equals(resolvedName, filename)
+        ConflictResolution resolution = resolveDocumentConflict(
+            parent.getId(),
+            filename,
+            conflictPolicy != null ? conflictPolicy : ReplicationDefinition.ConflictPolicy.RENAME
+        );
+        if (resolution.disposition() == ConflictDisposition.SKIPPED) {
+            com.ecm.core.entity.Document existingDocument = requireDocument(resolution.existingNode());
+            recordAccessSuccess(authorized.receiver(), "Skipped existing receiver document: " + existingDocument.getName());
+            return new UploadDocumentResponse(
+                existingDocument.getId(),
+                existingDocument.getName(),
+                resolution.disposition(),
+                "Skipped existing receiver document"
+            );
+        }
+
+        MultipartFile effectiveFile = Objects.equals(resolution.resolvedName(), filename)
             ? file
-            : renamedFile(file, resolvedName);
+            : renamedFile(file, resolution.resolvedName());
 
         Map<String, Object> properties = null;
         String normalizedDescription = normalizeOptional(description);
@@ -104,12 +164,41 @@ public class TransferReceiverService {
 
         SecurityContext previous = pushTransferAuthentication();
         try {
+            if (resolution.disposition() == ConflictDisposition.OVERWRITTEN && resolution.existingNode() instanceof com.ecm.core.entity.Document existingDocument) {
+                versionService.createVersion(
+                    existingDocument.getId(),
+                    effectiveFile,
+                    "Replicated overwrite via transfer receiver",
+                    false
+                );
+                if (normalizedDescription != null) {
+                    nodeService.updateNode(existingDocument.getId(), Map.of("description", normalizedDescription));
+                }
+                recordAccessSuccess(authorized.receiver(), "Overwrote receiver document: " + existingDocument.getName());
+                return new UploadDocumentResponse(
+                    existingDocument.getId(),
+                    existingDocument.getName(),
+                    resolution.disposition(),
+                    "Overwrote receiver document"
+                );
+            }
             PipelineResult result = documentUploadService.uploadDocument(effectiveFile, parent.getId(), properties);
             if (!result.isSuccess() || result.getDocumentId() == null) {
                 throw new IllegalStateException("Transfer receiver document upload failed");
             }
-            recordAccessSuccess(authorized.receiver(), "Uploaded receiver document: " + effectiveFile.getOriginalFilename());
-            return new UploadDocumentResponse(result.getDocumentId(), effectiveFile.getOriginalFilename());
+            String message = switch (resolution.disposition()) {
+                case CREATED -> "Uploaded receiver document";
+                case RENAMED -> "Uploaded renamed receiver document";
+                case OVERWRITTEN -> "Overwrote receiver document";
+                case SKIPPED -> "Skipped existing receiver document";
+            };
+            recordAccessSuccess(authorized.receiver(), message + ": " + effectiveFile.getOriginalFilename());
+            return new UploadDocumentResponse(
+                result.getDocumentId(),
+                effectiveFile.getOriginalFilename(),
+                resolution.disposition(),
+                message
+            );
         } finally {
             popTransferAuthentication(previous);
         }
@@ -202,7 +291,61 @@ public class TransferReceiverService {
         return candidatePath.startsWith(rootPath + "/");
     }
 
-    private String resolveReplicaName(UUID parentFolderId, String requestedName) {
+    private ConflictResolution resolveFolderConflict(
+        UUID parentFolderId,
+        String requestedName,
+        ReplicationDefinition.ConflictPolicy conflictPolicy
+    ) {
+        Optional<Node> existing = nodeRepository.findByParentIdAndName(parentFolderId, requestedName);
+        if (existing.isEmpty()) {
+            return new ConflictResolution(requestedName, null, ConflictDisposition.CREATED);
+        }
+        return switch (conflictPolicy) {
+            case SKIP -> {
+                if (!(existing.get() instanceof Folder)) {
+                    throw new IllegalStateException("Cannot skip folder creation because a non-folder already exists: " + requestedName);
+                }
+                yield new ConflictResolution(requestedName, existing.get(), ConflictDisposition.SKIPPED);
+            }
+            case RENAME -> new ConflictResolution(generateReplicaName(parentFolderId, requestedName), existing.get(), ConflictDisposition.RENAMED);
+            case OVERWRITE -> {
+                deleteExistingConflict(existing.get());
+                yield new ConflictResolution(requestedName, existing.get(), ConflictDisposition.OVERWRITTEN);
+            }
+        };
+    }
+
+    private ConflictResolution resolveDocumentConflict(
+        UUID parentFolderId,
+        String requestedName,
+        ReplicationDefinition.ConflictPolicy conflictPolicy
+    ) {
+        Optional<Node> existing = nodeRepository.findByParentIdAndName(parentFolderId, requestedName);
+        if (existing.isEmpty()) {
+            return new ConflictResolution(requestedName, null, ConflictDisposition.CREATED);
+        }
+        return switch (conflictPolicy) {
+            case SKIP -> {
+                if (!(existing.get() instanceof com.ecm.core.entity.Document)) {
+                    throw new IllegalStateException("Cannot skip document upload because a non-document already exists: " + requestedName);
+                }
+                yield new ConflictResolution(requestedName, existing.get(), ConflictDisposition.SKIPPED);
+            }
+            case RENAME -> new ConflictResolution(generateReplicaName(parentFolderId, requestedName), existing.get(), ConflictDisposition.RENAMED);
+            case OVERWRITE -> {
+                if (existing.get() instanceof Folder) {
+                    deleteExistingConflict(existing.get());
+                }
+                yield new ConflictResolution(requestedName, existing.get(), ConflictDisposition.OVERWRITTEN);
+            }
+        };
+    }
+
+    private void deleteExistingConflict(Node existing) {
+        nodeService.deleteNode(existing.getId(), false);
+    }
+
+    private String generateReplicaName(UUID parentFolderId, String requestedName) {
         String baseName = requestedName;
         String extension = "";
         int dotIndex = requestedName.lastIndexOf('.');
@@ -218,6 +361,20 @@ public class TransferReceiverService {
             attempt++;
         }
         return candidate;
+    }
+
+    private Folder requireFolder(Node node) {
+        if (!(node instanceof Folder folder)) {
+            throw new IllegalStateException("Expected existing folder conflict");
+        }
+        return folder;
+    }
+
+    private com.ecm.core.entity.Document requireDocument(Node node) {
+        if (!(node instanceof com.ecm.core.entity.Document document)) {
+            throw new IllegalStateException("Expected existing document conflict");
+        }
+        return document;
     }
 
     private MultipartFile renamedFile(MultipartFile file, String filename) throws IOException {
@@ -279,11 +436,35 @@ public class TransferReceiverService {
 
     public record VerifyFolderResponse(UUID folderId, String folderName) {}
 
-    public record CreateFolderRequest(UUID parentFolderId, String name, String description) {}
+    public record CreateFolderRequest(
+        UUID parentFolderId,
+        String name,
+        String description,
+        ReplicationDefinition.ConflictPolicy conflictPolicy
+    ) {}
 
-    public record CreateFolderResponse(UUID folderId, String folderName) {}
+    public record CreateFolderResponse(
+        UUID folderId,
+        String folderName,
+        ConflictDisposition disposition,
+        String message
+    ) {}
 
-    public record UploadDocumentResponse(UUID documentId, String documentName) {}
+    public record UploadDocumentResponse(
+        UUID documentId,
+        String documentName,
+        ConflictDisposition disposition,
+        String message
+    ) {}
 
     private record AuthorizedFolder(TransferReceiverRegistration receiver, Folder folder) {}
+
+    private record ConflictResolution(String resolvedName, Node existingNode, ConflictDisposition disposition) {}
+
+    public enum ConflictDisposition {
+        CREATED,
+        RENAMED,
+        SKIPPED,
+        OVERWRITTEN
+    }
 }

@@ -1,6 +1,7 @@
 package com.ecm.core.service.transfer;
 
 import com.ecm.core.entity.Document;
+import com.ecm.core.entity.ReplicationDefinition;
 import com.ecm.core.entity.TransferTarget;
 import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.service.ContentService;
@@ -21,6 +22,8 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.when;
+import static org.hamcrest.Matchers.containsString;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
@@ -79,14 +82,21 @@ class AthenaTransferHttpClientTest {
         server.expect(requestTo("https://remote.example/api/v1/transfer/receiver/documents"))
             .andExpect(method(HttpMethod.POST))
             .andExpect(header(TransferReceiverHeaders.SECRET_HEADER, "token-123"))
+            .andExpect(content().string(containsString("name=\"conflictPolicy\"")))
+            .andExpect(content().string(containsString("OVERWRITE")))
             .andRespond(withSuccess("""
-                {"documentId":"%s"}
+                {"documentId":"%s","documentName":"contract.pdf","disposition":"OVERWRITTEN","message":"Overwrote remote document"}
                 """.formatted(UUID.randomUUID()), MediaType.APPLICATION_JSON));
 
-        TransferClient.TransferExecutionResult result = client.replicate(target, document, false);
+        TransferClient.TransferExecutionResult result = client.replicate(
+            target,
+            document,
+            false,
+            ReplicationDefinition.ConflictPolicy.OVERWRITE
+        );
 
         assertNotNull(result.copiedNodeId());
-        assertEquals("Remote Athena HTTP replication completed", result.message());
+        assertEquals("Overwrote remote document", result.message());
         server.verify();
     }
 

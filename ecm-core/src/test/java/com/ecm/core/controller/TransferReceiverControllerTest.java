@@ -1,5 +1,6 @@
 package com.ecm.core.controller;
 
+import com.ecm.core.entity.ReplicationDefinition;
 import com.ecm.core.service.transfer.TransferReceiverHeaders;
 import com.ecm.core.service.transfer.TransferReceiverService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -68,10 +69,20 @@ class TransferReceiverControllerTest {
         UUID parentFolderId = UUID.randomUUID();
         UUID folderId = UUID.randomUUID();
         when(transferReceiverService.createFolder(
-            eq(new TransferReceiverService.CreateFolderRequest(parentFolderId, "Contracts", "Replica")),
+            eq(new TransferReceiverService.CreateFolderRequest(
+                parentFolderId,
+                "Contracts",
+                "Replica",
+                ReplicationDefinition.ConflictPolicy.SKIP
+            )),
             eq(null),
             eq("shared-secret")
-        )).thenReturn(new TransferReceiverService.CreateFolderResponse(folderId, "Contracts"));
+        )).thenReturn(new TransferReceiverService.CreateFolderResponse(
+            folderId,
+            "Contracts",
+            TransferReceiverService.ConflictDisposition.SKIPPED,
+            "Skipped existing receiver folder"
+        ));
 
         mockMvc.perform(post("/api/v1/transfer/receiver/folders")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -80,12 +91,15 @@ class TransferReceiverControllerTest {
                     {
                       "parentFolderId": "%s",
                       "name": "Contracts",
-                      "description": "Replica"
+                      "description": "Replica",
+                      "conflictPolicy": "SKIP"
                     }
                     """.formatted(parentFolderId)))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.folderId").value(folderId.toString()))
-            .andExpect(jsonPath("$.folderName").value("Contracts"));
+            .andExpect(jsonPath("$.folderName").value("Contracts"))
+            .andExpect(jsonPath("$.disposition").value("SKIPPED"))
+            .andExpect(jsonPath("$.message").value("Skipped existing receiver folder"));
     }
 
     @Test
@@ -94,18 +108,32 @@ class TransferReceiverControllerTest {
         UUID parentFolderId = UUID.randomUUID();
         UUID documentId = UUID.randomUUID();
         MockMultipartFile file = new MockMultipartFile("file", "contract.pdf", "application/pdf", "pdf".getBytes());
-        when(transferReceiverService.uploadDocument(anyMultipart(), eq(parentFolderId), eq("Signed"), eq("replicator"), eq("top-secret")))
-            .thenReturn(new TransferReceiverService.UploadDocumentResponse(documentId, "contract.pdf"));
+        when(transferReceiverService.uploadDocument(
+            anyMultipart(),
+            eq(parentFolderId),
+            eq("Signed"),
+            eq(ReplicationDefinition.ConflictPolicy.OVERWRITE),
+            eq("replicator"),
+            eq("top-secret")
+        )).thenReturn(new TransferReceiverService.UploadDocumentResponse(
+            documentId,
+            "contract.pdf",
+            TransferReceiverService.ConflictDisposition.OVERWRITTEN,
+            "Overwrote receiver document"
+        ));
 
         mockMvc.perform(multipart("/api/v1/transfer/receiver/documents")
                 .file(file)
                 .param("parentFolderId", parentFolderId.toString())
                 .param("description", "Signed")
+                .param("conflictPolicy", "OVERWRITE")
                 .header(TransferReceiverHeaders.USER_HEADER, "replicator")
                 .header(TransferReceiverHeaders.SECRET_HEADER, "top-secret"))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.documentId").value(documentId.toString()))
-            .andExpect(jsonPath("$.documentName").value("contract.pdf"));
+            .andExpect(jsonPath("$.documentName").value("contract.pdf"))
+            .andExpect(jsonPath("$.disposition").value("OVERWRITTEN"))
+            .andExpect(jsonPath("$.message").value("Overwrote receiver document"));
     }
 
     @Test

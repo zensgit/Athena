@@ -322,7 +322,14 @@ public class TransferReplicationService {
             TransferTarget target = requireEnabledTarget(job.getTransferTargetId(), true);
             Node source = nodeService.getNode(job.getSourceNodeId());
             TransferClient.TransferExecutionResult result = clientFor(target)
-                .replicate(target, source, definition.isIncludeChildren());
+                .replicate(
+                    target,
+                    source,
+                    definition.isIncludeChildren(),
+                    definition.getConflictPolicy() != null
+                        ? definition.getConflictPolicy()
+                        : ReplicationDefinition.ConflictPolicy.RENAME
+                );
 
             definition.setLastRunAt(LocalDateTime.now());
             replicationDefinitionRepository.save(definition);
@@ -535,6 +542,9 @@ public class TransferReplicationService {
             normalizeNonNegative(definition.getMaxRetryAttempts()),
             normalizeNonNegative(definition.getRetryBackoffMinutes()),
             normalizePositive(definition.getJobRetentionDays(), 30),
+            definition.getConflictPolicy() != null
+                ? definition.getConflictPolicy()
+                : ReplicationDefinition.ConflictPolicy.RENAME,
             definition.getLastRunAt(),
             definition.getCreatedAt(),
             definition.getUpdatedAt()
@@ -590,6 +600,9 @@ public class TransferReplicationService {
         definition.setMaxRetryAttempts(autoRetryEnabled ? normalizeNonNegative(request.maxRetryAttempts()) : 0);
         definition.setRetryBackoffMinutes(autoRetryEnabled ? normalizeNonNegative(request.retryBackoffMinutes()) : 0);
         definition.setJobRetentionDays(normalizePositive(request.jobRetentionDays(), 30));
+        definition.setConflictPolicy(request.conflictPolicy() != null
+            ? request.conflictPolicy()
+            : ReplicationDefinition.ConflictPolicy.RENAME);
     }
 
     private void validateCronExpression(String cronExpression, String timezone) {
@@ -799,7 +812,8 @@ public class TransferReplicationService {
         Boolean autoRetryEnabled,
         Integer maxRetryAttempts,
         Integer retryBackoffMinutes,
-        Integer jobRetentionDays
+        Integer jobRetentionDays,
+        ReplicationDefinition.ConflictPolicy conflictPolicy
     ) {}
 
     public record ReplicationDefinitionDto(
@@ -819,6 +833,7 @@ public class TransferReplicationService {
         int maxRetryAttempts,
         int retryBackoffMinutes,
         int jobRetentionDays,
+        ReplicationDefinition.ConflictPolicy conflictPolicy,
         LocalDateTime lastRunAt,
         LocalDateTime createdAt,
         LocalDateTime updatedAt

@@ -1,6 +1,7 @@
 package com.ecm.core.service.transfer;
 
 import com.ecm.core.entity.Node;
+import com.ecm.core.entity.ReplicationDefinition;
 import com.ecm.core.entity.TransferTarget;
 
 import java.util.UUID;
@@ -11,7 +12,12 @@ public interface TransferClient {
 
     TransferVerificationResult verifyTarget(TransferTarget target);
 
-    TransferExecutionResult replicate(TransferTarget target, Node source, boolean includeChildren);
+    TransferExecutionResult replicate(
+        TransferTarget target,
+        Node source,
+        boolean includeChildren,
+        ReplicationDefinition.ConflictPolicy conflictPolicy
+    );
 
     record TransferVerificationResult(String message) {}
 
