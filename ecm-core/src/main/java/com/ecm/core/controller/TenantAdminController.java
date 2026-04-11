@@ -1,5 +1,6 @@
 package com.ecm.core.controller;
 
+import com.ecm.core.service.TenantMetricsService;
 import com.ecm.core.service.TenantService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
 public class TenantAdminController {
 
     private final TenantService tenantService;
+    private final TenantMetricsService tenantMetricsService;
 
     @GetMapping({"/api/admin/tenants", "/api/v1/admin/tenants"})
     @Operation(summary = "List tenants")
@@ -52,5 +54,11 @@ public class TenantAdminController {
     public ResponseEntity<Void> deleteTenant(@PathVariable String tenantDomain) {
         tenantService.deleteTenant(tenantDomain);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping({"/api/admin/tenants/{tenantDomain}/metrics", "/api/v1/admin/tenants/{tenantDomain}/metrics"})
+    @Operation(summary = "Get tenant resource metrics")
+    public ResponseEntity<TenantMetricsService.TenantMetrics> getTenantMetrics(@PathVariable String tenantDomain) {
+        return ResponseEntity.ok(tenantMetricsService.getMetrics(tenantDomain));
     }
 }

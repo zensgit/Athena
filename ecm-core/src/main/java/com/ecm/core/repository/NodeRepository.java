@@ -164,4 +164,7 @@ public interface NodeRepository extends JpaRepository<Node, UUID>, JpaSpecificat
     Page<Node> findByNameContainingIgnoreCaseAndDeletedFalse(String name, Pageable pageable);
 
     Page<Node> findByNameContainingIgnoreCaseAndDeletedFalseAndArchiveStatus(String name, ArchiveStatus archiveStatus, Pageable pageable);
+
+    @Query("SELECT COUNT(n) FROM Node n WHERE n.deleted = false AND n.path LIKE :pathPattern")
+    long countByDeletedFalseAndPathLike(@Param("pathPattern") String pathPattern);
 }

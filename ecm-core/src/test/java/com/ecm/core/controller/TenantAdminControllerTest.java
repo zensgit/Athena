@@ -1,5 +1,6 @@
 package com.ecm.core.controller;
 
+import com.ecm.core.service.TenantMetricsService;
 import com.ecm.core.service.TenantService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -32,13 +33,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class TenantAdminControllerTest {
 
     @Mock private TenantService tenantService;
+    @Mock private TenantMetricsService tenantMetricsService;
 
     private MockMvc mockMvc;
     private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() {
-        TenantAdminController controller = new TenantAdminController(tenantService);
+        TenantAdminController controller = new TenantAdminController(tenantService, tenantMetricsService);
         objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
@@ -110,6 +112,28 @@ class TenantAdminControllerTest {
     void deleteTenantReturnsNoContent() throws Exception {
         mockMvc.perform(delete("/api/v1/admin/tenants/{tenantDomain}", "acme"))
             .andExpect(status().isNoContent());
+    }
+
+    @Test
+    @DisplayName("GET /admin/tenants/{domain}/metrics returns tenant metrics")
+    void getTenantMetricsReturnsMetrics() throws Exception {
+        when(tenantMetricsService.getMetrics("acme")).thenReturn(
+            new TenantMetricsService.TenantMetrics(
+                "acme", "Acme Corp", true,
+                500L, 1024L, 524L,
+                10L, 7L, 3L
+            )
+        );
+
+        mockMvc.perform(get("/api/v1/admin/tenants/{tenantDomain}/metrics", "acme"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.tenantDomain").value("acme"))
+            .andExpect(jsonPath("$.storageUsedBytes").value(500))
+            .andExpect(jsonPath("$.quotaBytes").value(1024))
+            .andExpect(jsonPath("$.storageAvailableBytes").value(524))
+            .andExpect(jsonPath("$.nodeCount").value(10))
+            .andExpect(jsonPath("$.documentCount").value(7))
+            .andExpect(jsonPath("$.folderCount").value(3));
     }
 
     private TenantService.TenantDto dto(String domain, String name, boolean enabled, boolean systemDefault) {
