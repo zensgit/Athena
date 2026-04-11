@@ -1,10 +1,13 @@
 package com.ecm.core.controller;
 
+import com.ecm.core.cmis.CmisAclService;
 import com.ecm.core.cmis.CmisBrowserService;
+import com.ecm.core.cmis.CmisChangeLogService;
 import com.ecm.core.cmis.CmisContentVersioningService;
 import com.ecm.core.cmis.CmisMutationService;
 import com.ecm.core.cmis.CmisModels;
 import com.ecm.core.cmis.CmisQueryService;
+import com.ecm.core.cmis.CmisRelationshipService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -13,6 +16,7 @@ import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -32,10 +36,13 @@ import java.util.NoSuchElementException;
 @Tag(name = "CMIS Browser Binding", description = "Minimal CMIS browser binding backbone")
 public class CmisBrowserController {
 
+    private final CmisAclService cmisAclService;
     private final CmisBrowserService cmisBrowserService;
+    private final CmisChangeLogService cmisChangeLogService;
     private final CmisQueryService cmisQueryService;
     private final CmisMutationService cmisMutationService;
     private final CmisContentVersioningService cmisContentVersioningService;
+    private final CmisRelationshipService cmisRelationshipService;
 
     @GetMapping
     @Operation(summary = "CMIS browser binding read entrypoint")
@@ -45,6 +52,9 @@ public class CmisBrowserController {
         @RequestParam(required = false) String objectId,
         @RequestParam(required = false) String path,
         @RequestParam(required = false) String statement,
+        @RequestParam(required = false) String changeLogToken,
+        @RequestParam(required = false) String direction,
+        @RequestParam(required = false) String typeId,
         @RequestParam(defaultValue = "0") int skipCount,
         @RequestParam(defaultValue = "50") int maxItems
     ) {
@@ -55,6 +65,11 @@ public class CmisBrowserController {
             case "children" -> ResponseEntity.ok(cmisBrowserService.getChildren(objectId, path, skipCount, maxItems));
             case "query" -> ResponseEntity.ok(cmisQueryService.query(statement, skipCount, maxItems));
             case "content" -> contentResponse(objectId, path);
+            case "versions" -> ResponseEntity.ok(cmisBrowserService.getAllVersions(objectId));
+            case "latestVersion" -> ResponseEntity.ok(cmisBrowserService.getLatestVersion(objectId, false));
+            case "contentChanges" -> ResponseEntity.ok(cmisChangeLogService.getContentChanges(changeLogToken, maxItems));
+            case "acl" -> ResponseEntity.ok(cmisAclService.getAcl(objectId));
+            case "relationships" -> ResponseEntity.ok(cmisRelationshipService.getObjectRelationships(objectId, direction, typeId));
             default -> throw new ResponseStatusException(
                 HttpStatus.BAD_REQUEST,
                 "Unsupported cmisselector: " + selector
@@ -82,6 +97,55 @@ public class CmisBrowserController {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, ex.getMessage(), ex);
         } catch (IOException ex) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "CMIS content action failed", ex);
+        }
+    }
+
+    @PostMapping("/acl")
+    @Operation(summary = "Apply ACL changes to a CMIS object")
+    public ResponseEntity<?> applyAcl(@RequestBody CmisModels.ApplyAclRequest request) {
+        try {
+            return ResponseEntity.ok(cmisAclService.applyAcl(
+                    request.objectId(), request.addAces(), request.removeAces()));
+        } catch (IllegalArgumentException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, ex.getMessage(), ex);
+        } catch (NoSuchElementException ex) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, ex.getMessage(), ex);
+        } catch (SecurityException ex) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, ex.getMessage(), ex);
+        }
+    }
+
+    @PostMapping("/relationships")
+    @Operation(summary = "Create a CMIS relationship between two objects")
+    public ResponseEntity<?> createRelationship(@RequestBody CmisModels.CreateRelationshipRequest request) {
+        try {
+            return ResponseEntity.ok(cmisRelationshipService.createRelationship(
+                    request.sourceId(), request.targetId(), request.relationshipType()));
+        } catch (IllegalArgumentException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, ex.getMessage(), ex);
+        } catch (NoSuchElementException ex) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, ex.getMessage(), ex);
+        } catch (SecurityException ex) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, ex.getMessage(), ex);
+        }
+    }
+
+    @DeleteMapping("/relationships")
+    @Operation(summary = "Delete a CMIS relationship between two objects")
+    public ResponseEntity<?> deleteRelationship(
+        @RequestParam String sourceId,
+        @RequestParam String targetId,
+        @RequestParam String relationshipType
+    ) {
+        try {
+            cmisRelationshipService.deleteRelationship(sourceId, targetId, relationshipType);
+            return ResponseEntity.noContent().build();
+        } catch (IllegalArgumentException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, ex.getMessage(), ex);
+        } catch (NoSuchElementException ex) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, ex.getMessage(), ex);
+        } catch (SecurityException ex) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, ex.getMessage(), ex);
         }
     }
 

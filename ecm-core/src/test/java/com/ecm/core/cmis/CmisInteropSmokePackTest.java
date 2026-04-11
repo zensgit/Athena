@@ -34,7 +34,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class CmisInteropSmokePackTest {
 
     @Mock
+    private CmisAclService aclService;
+
+    @Mock
     private CmisBrowserService browserService;
+
+    @Mock
+    private CmisChangeLogService changeLogService;
 
     @Mock
     private CmisQueryService queryService;
@@ -45,6 +51,9 @@ class CmisInteropSmokePackTest {
     @Mock
     private CmisContentVersioningService contentVersioningService;
 
+    @Mock
+    private CmisRelationshipService relationshipService;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private MockMvc browserMvc;
@@ -53,7 +62,7 @@ class CmisInteropSmokePackTest {
     @BeforeEach
     void setUp() {
         browserMvc = MockMvcBuilders.standaloneSetup(
-            new CmisBrowserController(browserService, queryService, mutationService, contentVersioningService)
+            new CmisBrowserController(aclService, browserService, changeLogService, queryService, mutationService, contentVersioningService, relationshipService)
         ).build();
         atomMvc = MockMvcBuilders.standaloneSetup(
             new CmisAtomPubController(browserService, mutationService, contentVersioningService, new CmisAtomPubSerializer())

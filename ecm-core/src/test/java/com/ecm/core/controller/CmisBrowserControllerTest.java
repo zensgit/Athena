@@ -2,11 +2,14 @@ package com.ecm.core.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ecm.core.cmis.CmisAclService;
 import com.ecm.core.cmis.CmisBrowserService;
+import com.ecm.core.cmis.CmisChangeLogService;
 import com.ecm.core.cmis.CmisContentVersioningService;
 import com.ecm.core.cmis.CmisModels;
 import com.ecm.core.cmis.CmisMutationService;
 import com.ecm.core.cmis.CmisQueryService;
+import com.ecm.core.cmis.CmisRelationshipService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,7 +39,13 @@ class CmisBrowserControllerTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Mock
+    private CmisAclService cmisAclService;
+
+    @Mock
     private CmisBrowserService cmisBrowserService;
+
+    @Mock
+    private CmisChangeLogService cmisChangeLogService;
 
     @Mock
     private CmisQueryService cmisQueryService;
@@ -46,6 +55,9 @@ class CmisBrowserControllerTest {
 
     @Mock
     private CmisContentVersioningService cmisContentVersioningService;
+
+    @Mock
+    private CmisRelationshipService cmisRelationshipService;
 
     @InjectMocks
     private CmisBrowserController cmisBrowserController;

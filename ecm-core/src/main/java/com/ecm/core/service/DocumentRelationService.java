@@ -18,6 +18,11 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * @deprecated Use {@link NodeRelationService} for new code. This service is retained for
+ * backward compatibility with existing REST API consumers and will be removed in a future release.
+ */
+@Deprecated
 @Slf4j
 @Service
 @RequiredArgsConstructor

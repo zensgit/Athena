@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd">
+
+    <changeSet id="071-create-node-relations-table" author="claude">
+        <createTable tableName="node_relations">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="source_id" type="${uuid_type}">
+                <constraints nullable="false" foreignKeyName="fk_nr_source" references="nodes(id)"/>
+            </column>
+            <column name="target_id" type="${uuid_type}">
+                <constraints nullable="false" foreignKeyName="fk_nr_target" references="nodes(id)"/>
+            </column>
+            <column name="relation_type" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="assoc_type" type="varchar(200)"/>
+            <column name="direction" type="varchar(32)" defaultValue="PEER"/>
+            <column name="order_index" type="int"/>
+            <column name="created_by" type="varchar(255)"/>
+            <column name="created_date" type="timestamp" defaultValueComputed="${now}"/>
+            <column name="last_modified_by" type="varchar(255)"/>
+            <column name="last_modified_date" type="timestamp" defaultValueComputed="${now}"/>
+            <column name="entity_version" type="bigint" defaultValue="0"/>
+            <column name="is_deleted" type="boolean" defaultValueBoolean="false"/>
+            <column name="deleted_at" type="timestamp"/>
+            <column name="deleted_by" type="varchar(255)"/>
+        </createTable>
+
+        <addUniqueConstraint tableName="node_relations"
+            columnNames="source_id, target_id, relation_type"
+            constraintName="uq_nr_source_target_type"/>
+
+        <createIndex tableName="node_relations" indexName="idx_nr_source_id">
+            <column name="source_id"/>
+        </createIndex>
+        <createIndex tableName="node_relations" indexName="idx_nr_target_id">
+            <column name="target_id"/>
+        </createIndex>
+        <createIndex tableName="node_relations" indexName="idx_nr_assoc_type">
+            <column name="assoc_type"/>
+        </createIndex>
+        <createIndex tableName="node_relations" indexName="idx_nr_direction">
+            <column name="direction"/>
+        </createIndex>
+
+        <!-- Migrate existing document_relations data -->
+        <sql>
+            INSERT INTO node_relations (id, source_id, target_id, relation_type, assoc_type, direction, order_index,
+                                        created_by, created_date, last_modified_by, last_modified_date,
+                                        entity_version, is_deleted, deleted_at, deleted_by)
+            SELECT id, source_id, target_id, relation_type, assoc_type, direction, order_index,
+                   created_by, created_date, last_modified_by, last_modified_date,
+                   entity_version, is_deleted, deleted_at, deleted_by
+            FROM document_relations
+        </sql>
+    </changeSet>
+</databaseChangeLog>
