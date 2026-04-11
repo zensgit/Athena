@@ -59,7 +59,7 @@ class CmisBrowserServiceTest {
     @org.junit.jupiter.api.BeforeEach
     void setUp() {
         cmisBrowserService = new CmisBrowserService(nodeService, folderService, typeManager, objectFactory, versionService);
-        cmisQueryService = new CmisQueryService(nodeRepository, folderService, securityService, tenantWorkspaceScopeService, objectFactory);
+        cmisQueryService = new CmisQueryService(nodeRepository, documentRepository, folderService, securityService, tenantWorkspaceScopeService, objectFactory);
         lenient().when(typeManager.getAllTypes()).thenReturn(List.of(
             new CmisModels.TypeDefinition("cmis:folder", "Folder", "cmis:folder", true, true, true,
                 List.of("cmis:objectId", "cmis:name", "cmis:baseTypeId", "cmis:objectTypeId", "cmis:path", "cmis:parentId")),
@@ -221,6 +221,9 @@ class CmisBrowserServiceTest {
 
     @Mock
     private com.ecm.core.repository.NodeRepository nodeRepository;
+
+    @Mock
+    private com.ecm.core.repository.DocumentRepository documentRepository;
 
     private Folder buildFolder(String name, String path) {
         Folder folder = new Folder();

@@ -1,12 +1,16 @@
 package com.ecm.core.cmis;
 
+import com.ecm.core.entity.Document;
+import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Node;
 import com.ecm.core.entity.Permission;
+import com.ecm.core.repository.DocumentRepository;
 import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.service.FolderService;
 import com.ecm.core.service.SecurityService;
 import com.ecm.core.service.TenantWorkspaceScopeService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -14,9 +18,11 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -27,10 +33,13 @@ public class CmisQueryService {
     );
 
     private static final Pattern IN_FOLDER_PATTERN = Pattern.compile("(?is)^IN_FOLDER\\('([^']+)'\\)$");
+    private static final Pattern IN_TREE_PATTERN = Pattern.compile("(?is)^IN_TREE\\('([^']+)'\\)$");
+    private static final Pattern CONTAINS_PATTERN = Pattern.compile("(?is)^CONTAINS\\('([^']*)'\\)$");
     private static final Pattern EQUALS_PATTERN = Pattern.compile("(?is)^cmis:name\\s*=\\s*'([^']*)'$");
     private static final Pattern LIKE_PATTERN = Pattern.compile("(?is)^cmis:name\\s+LIKE\\s+'([^']*)'$");
 
     private final NodeRepository nodeRepository;
+    private final DocumentRepository documentRepository;
     private final FolderService folderService;
     private final SecurityService securityService;
     private final TenantWorkspaceScopeService tenantWorkspaceScopeService;
@@ -41,7 +50,10 @@ public class CmisQueryService {
         int normalizedSkip = Math.max(skipCount, 0);
         int normalizedMax = Math.max(Math.min(maxItems, 200), 1);
 
-        List<Node> matched = nodeRepository.findAll(buildSpecification(parsed), resolveSort(parsed)).stream()
+        // Resolve full-text candidate IDs when CONTAINS is present
+        Set<UUID> containsCandidateIds = resolveContainsCandidates(parsed);
+
+        List<Node> matched = nodeRepository.findAll(buildSpecification(parsed, containsCandidateIds), resolveSort(parsed)).stream()
             .filter(this::isVisibleToCurrentTenant)
             .filter(node -> securityService.hasPermission(node, Permission.PermissionType.READ))
             .toList();
@@ -83,6 +95,9 @@ public class CmisQueryService {
             null,
             null,
             null,
+            null,
+            null,
+            null,
             sortField != null ? sortField.toLowerCase(Locale.ROOT) : null,
             sortDirection != null ? sortDirection.toLowerCase(Locale.ROOT) : "asc"
         );
@@ -94,14 +109,26 @@ public class CmisQueryService {
         String folderRef = null;
         String nameEquals = null;
         String nameLike = null;
+        String treeRef = null;
+        String containsSearch = null;
 
         for (String fragment : whereClause.split("(?i)\\s+AND\\s+")) {
             String clause = fragment.trim();
             Matcher inFolder = IN_FOLDER_PATTERN.matcher(clause);
+            Matcher inTree = IN_TREE_PATTERN.matcher(clause);
+            Matcher contains = CONTAINS_PATTERN.matcher(clause);
             Matcher equals = EQUALS_PATTERN.matcher(clause);
             Matcher like = LIKE_PATTERN.matcher(clause);
             if (inFolder.matches()) {
                 folderRef = inFolder.group(1);
+                continue;
+            }
+            if (inTree.matches()) {
+                treeRef = inTree.group(1);
+                continue;
+            }
+            if (contains.matches()) {
+                containsSearch = contains.group(1);
                 continue;
             }
             if (equals.matches()) {
@@ -119,6 +146,9 @@ public class CmisQueryService {
             parsed.fromType(),
             folderRef,
             resolveFolderId(folderRef),
+            treeRef,
+            resolveTreeFolderPath(treeRef),
+            containsSearch,
             nameEquals,
             nameLike,
             parsed.sortField(),
@@ -136,7 +166,50 @@ public class CmisQueryService {
         return folderService.getFolder(UUID.fromString(folderRef)).getId();
     }
 
-    private Specification<Node> buildSpecification(ParsedQuery parsed) {
+    /**
+     * Resolves an IN_TREE folder reference to its path string.
+     * Accepts either a path (starts with '/') or a folder UUID.
+     */
+    private String resolveTreeFolderPath(String treeRef) {
+        if (treeRef == null || treeRef.isBlank()) {
+            return null;
+        }
+        if (treeRef.startsWith("/")) {
+            // Verify the folder exists and return its canonical path
+            Folder folder = folderService.getFolderByPath(treeRef);
+            return folder.getPath();
+        }
+        Folder folder = folderService.getFolder(UUID.fromString(treeRef));
+        return folder.getPath();
+    }
+
+    /**
+     * When CONTAINS is present, runs a full-text search via DocumentRepository
+     * and returns the set of matching document IDs.
+     * Returns null when CONTAINS is not present (no filtering needed).
+     * Returns an empty set for folder queries or empty search terms (no results possible).
+     */
+    private Set<UUID> resolveContainsCandidates(ParsedQuery parsed) {
+        if (parsed.containsSearch() == null) {
+            return null;
+        }
+        // CONTAINS does not apply to folders — they have no text_content
+        if ("cmis:folder".equals(parsed.fromType())) {
+            return Set.of();
+        }
+        String searchTerm = parsed.containsSearch().trim();
+        if (searchTerm.isEmpty()) {
+            return Set.of();
+        }
+        // Use a large page to collect candidate IDs; the JPA spec + permission filter narrows further
+        return documentRepository.fullTextSearch(searchTerm, PageRequest.of(0, 10_000))
+            .getContent()
+            .stream()
+            .map(Document::getId)
+            .collect(Collectors.toSet());
+    }
+
+    private Specification<Node> buildSpecification(ParsedQuery parsed, Set<UUID> containsCandidateIds) {
         return (root, query, cb) -> {
             List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
             predicates.add(cb.isFalse(root.get("deleted")));
@@ -148,11 +221,31 @@ public class CmisQueryService {
                 predicates.add(cb.equal(root.type(), com.ecm.core.entity.Folder.class));
             }
 
+            // IN_FOLDER — direct children of a specific folder
             if (parsed.folderRef() != null) {
                 if ("root".equalsIgnoreCase(parsed.folderRef())) {
                     predicates.add(cb.isNull(root.get("parent")));
                 } else if (parsed.folderId() != null) {
                     predicates.add(cb.equal(root.get("parent").get("id"), parsed.folderId()));
+                }
+            }
+
+            // IN_TREE — all descendants under a folder (path LIKE folderPath/%)
+            if (parsed.treeFolderPath() != null) {
+                String pathPrefix = parsed.treeFolderPath();
+                if (!pathPrefix.endsWith("/")) {
+                    pathPrefix = pathPrefix + "/";
+                }
+                predicates.add(cb.like(root.get("path"), pathPrefix + "%"));
+            }
+
+            // CONTAINS — restrict to full-text search candidate IDs
+            if (containsCandidateIds != null) {
+                if (containsCandidateIds.isEmpty()) {
+                    // No full-text matches — force an impossible predicate
+                    predicates.add(cb.disjunction());
+                } else {
+                    predicates.add(root.get("id").in(containsCandidateIds));
                 }
             }
 
@@ -200,6 +293,9 @@ public class CmisQueryService {
         String fromType,
         String folderRef,
         UUID folderId,
+        String treeRef,
+        String treeFolderPath,
+        String containsSearch,
         String nameEquals,
         String nameLike,
         String sortField,
