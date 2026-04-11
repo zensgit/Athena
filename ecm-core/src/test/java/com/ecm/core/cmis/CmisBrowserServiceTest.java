@@ -8,6 +8,7 @@ import com.ecm.core.service.FolderService;
 import com.ecm.core.service.NodeService;
 import com.ecm.core.service.SecurityService;
 import com.ecm.core.service.TenantWorkspaceScopeService;
+import com.ecm.core.service.VersionService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -39,12 +40,17 @@ class CmisBrowserServiceTest {
     private FolderService folderService;
 
     @Mock
+    private VersionService versionService;
+
+    @Mock
     private SecurityService securityService;
 
     @Mock
     private TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
-    private final CmisTypeManager typeManager = new CmisTypeManager();
+    @Mock
+    private CmisTypeManager typeManager;
+
     private final CmisObjectFactory objectFactory = new CmisObjectFactory(new RepositoryIdentityProvider("athena", "athena"));
 
     private CmisBrowserService cmisBrowserService;
@@ -52,8 +58,15 @@ class CmisBrowserServiceTest {
 
     @org.junit.jupiter.api.BeforeEach
     void setUp() {
-        cmisBrowserService = new CmisBrowserService(nodeService, folderService, typeManager, objectFactory);
+        cmisBrowserService = new CmisBrowserService(nodeService, folderService, typeManager, objectFactory, versionService);
         cmisQueryService = new CmisQueryService(nodeRepository, folderService, securityService, tenantWorkspaceScopeService, objectFactory);
+        lenient().when(typeManager.getAllTypes()).thenReturn(List.of(
+            new CmisModels.TypeDefinition("cmis:folder", "Folder", "cmis:folder", true, true, true,
+                List.of("cmis:objectId", "cmis:name", "cmis:baseTypeId", "cmis:objectTypeId", "cmis:path", "cmis:parentId")),
+            new CmisModels.TypeDefinition("cmis:document", "Document", "cmis:document", true, true, true,
+                List.of("cmis:objectId", "cmis:name", "cmis:baseTypeId", "cmis:objectTypeId", "cmis:path", "cmis:parentId",
+                    "cmis:contentStreamMimeType", "cmis:contentStreamLength", "cmis:versionLabel"))
+        ));
         lenient().when(securityService.hasPermission(any(Node.class), eq(com.ecm.core.entity.Permission.PermissionType.READ)))
             .thenReturn(true);
         lenient().when(tenantWorkspaceScopeService.hasScopedTenantWorkspace()).thenReturn(false);

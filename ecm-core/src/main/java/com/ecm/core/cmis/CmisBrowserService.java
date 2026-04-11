@@ -1,15 +1,20 @@
 package com.ecm.core.cmis;
 
+import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Node;
+import com.ecm.core.entity.Version;
 import com.ecm.core.service.FolderService;
 import com.ecm.core.service.NodeService;
+import com.ecm.core.service.VersionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -20,6 +25,7 @@ public class CmisBrowserService {
     private final FolderService folderService;
     private final CmisTypeManager typeManager;
     private final CmisObjectFactory objectFactory;
+    private final VersionService versionService;
 
     public CmisModels.RepositoryInfo getRepositoryInfo() {
         return new CmisModels.RepositoryInfo(
@@ -40,7 +46,7 @@ public class CmisBrowserService {
     }
 
     public CmisModels.TypeChildrenResponse getTypeChildren() {
-        List<CmisModels.TypeDefinition> types = typeManager.getBaseTypes();
+        List<CmisModels.TypeDefinition> types = typeManager.getAllTypes();
         return new CmisModels.TypeChildrenResponse(types, types.size(), false);
     }
 
@@ -99,6 +105,79 @@ public class CmisBrowserService {
             normalizedMax,
             allChildren.size(),
             normalizedSkip + entries.size() < allChildren.size()
+        );
+    }
+
+    public List<CmisModels.ObjectEntry> getAllVersions(String objectId) {
+        UUID documentId = UUID.fromString(objectId.trim());
+        Node node = nodeService.getNode(documentId);
+        if (!(node instanceof Document document)) {
+            throw new IllegalArgumentException("getAllVersions requires a document, not a folder");
+        }
+        List<Version> versions = versionService.getVersionHistory(documentId);
+        if (versions.isEmpty()) {
+            return List.of(objectFactory.fromNode(document));
+        }
+        int latestVersionNumber = versions.stream()
+            .mapToInt(Version::getVersionNumber)
+            .max()
+            .orElse(0);
+        return versions.stream()
+            .map(v -> versionToObjectEntry(v, document, latestVersionNumber))
+            .toList();
+    }
+
+    public CmisModels.ObjectEntry getLatestVersion(String objectId, boolean major) {
+        UUID documentId = UUID.fromString(objectId.trim());
+        Node node = nodeService.getNode(documentId);
+        if (!(node instanceof Document document)) {
+            throw new IllegalArgumentException("getLatestVersion requires a document, not a folder");
+        }
+        List<Version> versions = versionService.getVersionHistory(documentId, major);
+        if (versions.isEmpty()) {
+            return objectFactory.fromNode(document);
+        }
+        int latestVersionNumber = versions.stream()
+            .mapToInt(Version::getVersionNumber)
+            .max()
+            .orElse(0);
+        return versionToObjectEntry(versions.get(0), document, latestVersionNumber);
+    }
+
+    private CmisModels.ObjectEntry versionToObjectEntry(Version version, Document document, int latestVersionNumber) {
+        Map<String, Object> properties = new LinkedHashMap<>();
+        String versionedObjectId = document.getId().toString() + ";v" + version.getVersionString();
+        properties.put("cmis:objectId", versionedObjectId);
+        properties.put("cmis:name", document.getName());
+        properties.put("cmis:baseTypeId", "cmis:document");
+        properties.put("cmis:objectTypeId", "cmis:document");
+        properties.put("cmis:versionLabel", version.getVersionString());
+        properties.put("cmis:versionSeriesId", document.getId().toString());
+        properties.put("cmis:isLatestVersion", version.getVersionNumber().equals(latestVersionNumber));
+        properties.put("cmis:isMajorVersion", version.isMajorVersionFlag());
+        properties.put("cmis:creationDate", version.getFrozenDate());
+        properties.put("cmis:createdBy", version.getFrozenBy());
+        properties.put("cmis:contentStreamMimeType", version.getMimeType());
+        properties.put("cmis:contentStreamLength", version.getFileSize());
+        properties.put("cmis:checkinComment", version.getComment());
+
+        List<String> allowableActions = List.of(
+            "canGetProperties", "canGetContentStream", "canGetAllVersions"
+        );
+
+        return new CmisModels.ObjectEntry(
+            objectFactory.getRepositoryId(),
+            versionedObjectId,
+            document.getName(),
+            "cmis:document",
+            "cmis:document",
+            document.getPath(),
+            document.getParent() != null && document.getParent().getId() != null
+                ? document.getParent().getId().toString()
+                : CmisObjectFactory.ROOT_OBJECT_ID,
+            false,
+            properties,
+            allowableActions
         );
     }
 

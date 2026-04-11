@@ -7,9 +7,14 @@ import com.ecm.core.service.FolderService;
 import com.ecm.core.service.NodeService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -76,6 +81,7 @@ public class CmisMutationService {
         );
     }
 
+    @Transactional
     public CmisModels.MutationResponse updateProperties(CmisModels.MutationRequest request) {
         Node node = resolveNode(request.objectId(), request.path());
         Map<String, Object> updates = new LinkedHashMap<>();
@@ -111,11 +117,43 @@ public class CmisMutationService {
             });
         }
 
-        if (updates.isEmpty()) {
+        // Handle secondary types (aspects)
+        boolean hasSecondaryTypeUpdate = request.properties() != null
+            && request.properties().containsKey("cmis:secondaryObjectTypeIds");
+
+        if (updates.isEmpty() && !hasSecondaryTypeUpdate) {
             throw new IllegalArgumentException("At least one updatable property is required");
         }
 
+        // Apply aspect changes directly on the managed entity before saving.
+        // Within the @Transactional boundary, JPA L1 cache ensures updateNode
+        // operates on the same instance, persisting aspect modifications.
+        if (hasSecondaryTypeUpdate) {
+            Object raw = request.properties().get("cmis:secondaryObjectTypeIds");
+            Set<String> desired = new HashSet<>();
+            if (raw instanceof Collection<?> collection) {
+                collection.forEach(item -> {
+                    if (item != null) {
+                        desired.add(item.toString());
+                    }
+                });
+            }
+            Set<String> current = node.getAspects() != null ? new HashSet<>(node.getAspects()) : new HashSet<>();
+
+            for (String aspect : desired) {
+                if (!current.contains(aspect)) {
+                    node.addAspect(aspect);
+                }
+            }
+            for (String aspect : current) {
+                if (!desired.contains(aspect)) {
+                    node.removeAspect(aspect);
+                }
+            }
+        }
+
         Node updated = nodeService.updateNode(node.getId(), updates);
+
         return new CmisModels.MutationResponse(
             objectFactory.getRepositoryId(),
             "updateProperties",

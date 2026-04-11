@@ -71,6 +71,13 @@ public class CmisObjectFactory {
         properties.put("athena:typeQName", node.getTypeQName());
         properties.put("athena:archiveStatus", node.getArchiveStatus() != null ? node.getArchiveStatus().name() : null);
 
+        // Secondary types from aspects
+        List<String> secondaryTypeIds = new ArrayList<>();
+        if (node.getAspects() != null) {
+            secondaryTypeIds.addAll(node.getAspects().stream().sorted().toList());
+        }
+        properties.put("cmis:secondaryObjectTypeIds", secondaryTypeIds);
+
         if (node instanceof Document document) {
             properties.put("cmis:contentStreamMimeType", document.getMimeType());
             properties.put("cmis:contentStreamLength", document.getFileSize());
