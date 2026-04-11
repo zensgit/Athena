@@ -72,4 +72,10 @@ describe('tenantService api wrappers', () => {
     await tenantService.deleteTenant('acme corp');
     expect(mockedApi.delete).toHaveBeenCalledWith('/admin/tenants/acme%20corp');
   });
+
+  it('fetches tenant metrics with an encoded tenant domain', async () => {
+    mockedApi.get.mockResolvedValueOnce({});
+    await tenantService.getTenantMetrics('acme corp');
+    expect(mockedApi.get).toHaveBeenCalledWith('/admin/tenants/acme%20corp/metrics');
+  });
 });
