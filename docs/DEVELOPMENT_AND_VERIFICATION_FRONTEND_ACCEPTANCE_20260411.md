@@ -147,3 +147,40 @@ Known pre-existing warnings still present in build:
 ## Notes
 
 - A full browser-based authenticated acceptance run against a live Athena stack was not executed in this pass because the local Athena API/UI stack was not active on the expected endpoints; this pass therefore closed acceptance through focused frontend smoke tests plus backend controller/service verification.
+
+## Follow-up Full-Stack Smoke Harness
+
+File:
+
+- `ecm-frontend/e2e/frontend-acceptance-smoke.spec.ts`
+
+What was added:
+
+- A lightweight authenticated Playwright smoke harness for:
+  - `/admin/tenants`
+  - `/admin/transfer-replication`
+  - `/admin/cmis-explorer`
+- The spec uses the existing `loginWithCredentialsE2E(...)` bypass-first helper and `waitForApiReady(...)`.
+- Validation performed in this pass:
+
+```bash
+cd ecm-frontend
+npx playwright test e2e/frontend-acceptance-smoke.spec.ts --list
+```
+
+Result:
+
+- Playwright discovered 3 smoke tests successfully.
+
+Environment limitation encountered:
+
+- A true live run of the new Playwright smoke was attempted but could not be completed on this machine because the local Athena stack could not be started.
+- Docker image pulls for required services failed repeatedly with Docker Hub `EOF` errors (`postgres:15-alpine`, `nginx:alpine`, `python:3.11-slim`, and related images).
+- This host also had no local cache for the required Athena dependency images, so `--pull never` was not a viable fallback.
+
+Practical consequence:
+
+- The repository now contains the runnable smoke spec, but the live browser-backed full-stack execution is still pending a machine with:
+  - a working Docker registry connection, or
+  - a prewarmed local image cache, or
+  - an already-running Athena stack reachable at the expected UI/API endpoints.
