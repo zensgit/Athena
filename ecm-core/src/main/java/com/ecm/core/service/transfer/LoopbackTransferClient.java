@@ -20,7 +20,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -55,63 +59,42 @@ public class LoopbackTransferClient implements TransferClient {
         ReplicationDefinition.ConflictPolicy conflictPolicy,
         LocalDateTime lastSuccessfulSyncAt
     ) {
-        if (isUnchangedSinceWatermark(source, lastSuccessfulSyncAt) && !(source instanceof Folder)) {
-            LocalDateTime now = LocalDateTime.now();
-            return new TransferExecutionResult(null, "Skipped unchanged document", List.of(
-                new TransferExecutionEntry(source.getId(), source.getPath(),
-                    source.getNodeType() != null ? source.getNodeType().name() : source.getClass().getSimpleName(),
-                    null, "SKIPPED_UNCHANGED", "Document unchanged since last successful sync", now, now)
-            ));
-        }
         UUID targetFolderId = target.getTargetFolderId();
         folderService.getFolder(targetFolderId);
-        String repoId = repositoryIdentityProvider.getTransferRepositoryId();
-
-        // Check mapping for idempotent skip
-        Optional<TransferNodeMapping> existingMapping = transferNodeMappingService.findMapping(
-            targetFolderId, repoId, source.getId());
-        if (existingMapping.isPresent()
-            && isUnchangedSinceWatermark(source, lastSuccessfulSyncAt)
-            && (!(source instanceof Folder) || !includeChildren)) {
-            LocalDateTime now = LocalDateTime.now();
-            transferNodeMappingService.refreshSyncTimestamps(
-                targetFolderId, repoId, source.getId(), source.getLastModifiedDate(), now);
-            return new TransferExecutionResult(
-                existingMapping.get().getLocalNodeId(),
-                "Skipped unchanged mapped node",
-                List.of(new TransferExecutionEntry(
-                    source.getId(), source.getPath(),
-                    source.getNodeType() != null ? source.getNodeType().name() : source.getClass().getSimpleName(),
-                    existingMapping.get().getLocalNodeId(),
-                    "SKIPPED_UNCHANGED", "Loopback: mapped node unchanged since last sync", now, now
-                ))
-            );
-        }
 
         ReplicationDefinition.ConflictPolicy effectivePolicy = conflictPolicy != null
             ? conflictPolicy
             : ReplicationDefinition.ConflictPolicy.RENAME;
-        LoopbackReplicationResult replicated = replicateToParent(targetFolderId, source, includeChildren, effectivePolicy);
-        LocalDateTime now = LocalDateTime.now();
+        List<TransferExecutionEntry> entries = new ArrayList<>();
+        LoopbackReplicationResult replicated;
 
-        // Upsert mapping after successful replication
-        transferNodeMappingService.upsertMapping(
-            targetFolderId, repoId, source.getId(),
-            replicated.node().getId(), source.getLastModifiedDate(), now);
+        if (source instanceof Folder folder) {
+            replicated = replicateFolderTree(
+                targetFolderId,
+                targetFolderId,
+                folder,
+                includeChildren,
+                effectivePolicy,
+                lastSuccessfulSyncAt,
+                entries
+            );
+        } else if (source instanceof Document document) {
+            replicated = replicateDocumentToParent(
+                targetFolderId,
+                targetFolderId,
+                document,
+                effectivePolicy,
+                lastSuccessfulSyncAt
+            );
+            entries.add(entryFor(document, replicated));
+        } else {
+            throw new IllegalArgumentException("Unsupported node type for loopback replication: " + source.getNodeType());
+        }
 
         return new TransferExecutionResult(
-            replicated.node().getId(),
+            replicated.node() != null ? replicated.node().getId() : null,
             replicated.message(),
-            List.of(new TransferExecutionEntry(
-                source.getId(),
-                source.getPath(),
-                source.getNodeType() != null ? source.getNodeType().name() : source.getClass().getSimpleName(),
-                replicated.node().getId(),
-                replicated.action(),
-                replicated.message(),
-                now,
-                now
-            ))
+            entries
         );
     }
 
@@ -123,38 +106,229 @@ public class LoopbackTransferClient implements TransferClient {
         return lastModified != null && !lastModified.isAfter(watermark);
     }
 
-    private LoopbackReplicationResult replicateToParent(
+    private LoopbackReplicationResult replicateFolderTree(
+        UUID receiverRootId,
         UUID targetParentId,
-        Node source,
+        Folder source,
         boolean includeChildren,
+        ReplicationDefinition.ConflictPolicy conflictPolicy,
+        LocalDateTime lastSuccessfulSyncAt,
+        List<TransferExecutionEntry> entries
+    ) {
+        LoopbackReplicationResult folderResult = alignFolder(receiverRootId, targetParentId, source, conflictPolicy);
+        entries.add(entryFor(source, folderResult));
+        if (!includeChildren || "SKIPPED".equals(folderResult.action())) {
+            return folderResult;
+        }
+
+        for (Node child : loadChildrenSorted(source.getId())) {
+            if (child instanceof Folder childFolder) {
+                replicateFolderTree(
+                    receiverRootId,
+                    folderResult.node().getId(),
+                    childFolder,
+                    true,
+                    conflictPolicy,
+                    lastSuccessfulSyncAt,
+                    entries
+                );
+                continue;
+            }
+            if (child instanceof Document childDocument) {
+                entries.add(entryFor(
+                    childDocument,
+                    replicateDocumentToParent(
+                        receiverRootId,
+                        folderResult.node().getId(),
+                        childDocument,
+                        conflictPolicy,
+                        lastSuccessfulSyncAt
+                    )
+                ));
+            }
+        }
+        return folderResult;
+    }
+
+    private LoopbackReplicationResult alignFolder(
+        UUID receiverRootId,
+        UUID targetParentId,
+        Folder source,
+        ReplicationDefinition.ConflictPolicy conflictPolicy
+    ) {
+        Optional<MappedNode> mappedFolder = resolveMappedNode(receiverRootId, source.getId());
+        if (mappedFolder.isPresent() && mappedFolder.get().node() instanceof Folder existingFolder) {
+            if (matchesSourceVersion(mappedFolder.get().mapping(), source.getLastModifiedDate())) {
+                refreshMapping(receiverRootId, source.getId(), source.getLastModifiedDate());
+                return new LoopbackReplicationResult(
+                    existingFolder,
+                    "UNCHANGED",
+                    "Loopback mapped folder already up to date"
+                );
+            }
+
+            Folder effectiveFolder = existingFolder;
+            if (!Objects.equals(parentIdOf(existingFolder), targetParentId)) {
+                effectiveFolder = requireFolder(nodeService.moveNode(existingFolder.getId(), targetParentId));
+            }
+
+            Map<String, Object> updates = new LinkedHashMap<>();
+            if (!Objects.equals(source.getName(), effectiveFolder.getName())) {
+                updates.put("name", source.getName());
+            }
+            if (!Objects.equals(source.getDescription(), effectiveFolder.getDescription())) {
+                updates.put("description", source.getDescription());
+            }
+            if (!updates.isEmpty()) {
+                effectiveFolder = requireFolder(nodeService.updateNode(effectiveFolder.getId(), updates));
+            }
+
+            upsertMapping(receiverRootId, source.getId(), effectiveFolder.getId(), source.getLastModifiedDate());
+            return new LoopbackReplicationResult(
+                effectiveFolder,
+                "OVERWRITTEN",
+                "Loopback updated mapped folder"
+            );
+        }
+
+        return replicateFolderConflict(receiverRootId, targetParentId, source, conflictPolicy);
+    }
+
+    private LoopbackReplicationResult replicateFolderConflict(
+        UUID receiverRootId,
+        UUID targetParentId,
+        Folder source,
         ReplicationDefinition.ConflictPolicy conflictPolicy
     ) {
         Optional<Node> existing = nodeRepository.findByParentIdAndName(targetParentId, source.getName());
         if (existing.isEmpty()) {
+            Node created = nodeService.copyNode(source.getId(), targetParentId, source.getName(), false);
+            upsertMapping(receiverRootId, source.getId(), created.getId(), source.getLastModifiedDate());
             return new LoopbackReplicationResult(
-                nodeService.copyNode(source.getId(), targetParentId, source.getName(), includeChildren),
+                created,
                 "CREATED",
                 "Loopback replication created target node"
             );
         }
 
         return switch (conflictPolicy) {
-            case SKIP -> new LoopbackReplicationResult(existing.get(), "SKIPPED", "Loopback replication skipped existing node");
-            case RENAME -> new LoopbackReplicationResult(
-                nodeService.copyNode(
+            case SKIP -> {
+                if (!(existing.get() instanceof Folder)) {
+                    throw new IllegalStateException("Cannot skip folder replication because a non-folder already exists: " + source.getName());
+                }
+                upsertMapping(receiverRootId, source.getId(), existing.get().getId(), source.getLastModifiedDate());
+                yield new LoopbackReplicationResult(existing.get(), "SKIPPED", "Loopback replication skipped existing node");
+            }
+            case RENAME -> {
+                Node renamed = nodeService.copyNode(
                     source.getId(),
                     targetParentId,
                     generateReplicaName(targetParentId, source.getName()),
-                    includeChildren
-                ),
-                "RENAMED",
-                "Loopback replication created renamed target node"
-            );
-            case OVERWRITE -> new LoopbackReplicationResult(
-                overwriteExisting(targetParentId, source, includeChildren, existing.get()),
+                    false
+                );
+                upsertMapping(receiverRootId, source.getId(), renamed.getId(), source.getLastModifiedDate());
+                yield new LoopbackReplicationResult(renamed, "RENAMED", "Loopback replication created renamed target node");
+            }
+            case OVERWRITE -> {
+                Node overwritten = overwriteExisting(targetParentId, source, false, existing.get());
+                upsertMapping(receiverRootId, source.getId(), overwritten.getId(), source.getLastModifiedDate());
+                yield new LoopbackReplicationResult(overwritten, "OVERWRITTEN", "Loopback replication overwrote existing target node");
+            }
+        };
+    }
+
+    private LoopbackReplicationResult replicateDocumentToParent(
+        UUID receiverRootId,
+        UUID targetParentId,
+        Document source,
+        ReplicationDefinition.ConflictPolicy conflictPolicy,
+        LocalDateTime lastSuccessfulSyncAt
+    ) {
+        Optional<MappedNode> mappedDocument = resolveMappedNode(receiverRootId, source.getId());
+        if (mappedDocument.isPresent() && mappedDocument.get().node() instanceof Document existingDocument) {
+            if (matchesSourceVersion(mappedDocument.get().mapping(), source.getLastModifiedDate())) {
+                refreshMapping(receiverRootId, source.getId(), source.getLastModifiedDate());
+                return new LoopbackReplicationResult(
+                    existingDocument,
+                    "UNCHANGED",
+                    "Loopback mapped document already up to date"
+                );
+            }
+
+            Document effectiveDocument = existingDocument;
+            if (!Objects.equals(parentIdOf(existingDocument), targetParentId)) {
+                effectiveDocument = requireDocument(nodeService.moveNode(existingDocument.getId(), targetParentId));
+            }
+            overwriteDocument(source, effectiveDocument);
+
+            Map<String, Object> updates = new LinkedHashMap<>();
+            if (!Objects.equals(source.getName(), effectiveDocument.getName())) {
+                updates.put("name", source.getName());
+            }
+            if (!Objects.equals(source.getDescription(), effectiveDocument.getDescription())) {
+                updates.put("description", source.getDescription());
+            }
+            if (!updates.isEmpty()) {
+                effectiveDocument = requireDocument(nodeService.updateNode(effectiveDocument.getId(), updates));
+            }
+
+            upsertMapping(receiverRootId, source.getId(), effectiveDocument.getId(), source.getLastModifiedDate());
+            return new LoopbackReplicationResult(
+                effectiveDocument,
                 "OVERWRITTEN",
-                "Loopback replication overwrote existing target node"
+                "Loopback updated mapped document"
             );
+        }
+
+        if (isUnchangedSinceWatermark(source, lastSuccessfulSyncAt)) {
+            return new LoopbackReplicationResult(
+                null,
+                "SKIPPED_UNCHANGED",
+                "Document unchanged since last successful sync"
+            );
+        }
+
+        Optional<Node> existing = nodeRepository.findByParentIdAndName(targetParentId, source.getName());
+        if (existing.isEmpty()) {
+            Node created = nodeService.copyNode(source.getId(), targetParentId, source.getName(), false);
+            upsertMapping(receiverRootId, source.getId(), created.getId(), source.getLastModifiedDate());
+            return new LoopbackReplicationResult(
+                created,
+                "CREATED",
+                "Loopback replication created target node"
+            );
+        }
+
+        return switch (conflictPolicy) {
+            case SKIP -> {
+                if (!(existing.get() instanceof Document)) {
+                    throw new IllegalStateException("Cannot skip document replication because a non-document already exists: " + source.getName());
+                }
+                upsertMapping(receiverRootId, source.getId(), existing.get().getId(), source.getLastModifiedDate());
+                yield new LoopbackReplicationResult(existing.get(), "SKIPPED", "Loopback replication skipped existing node");
+            }
+            case RENAME -> {
+                Node renamed = nodeService.copyNode(
+                    source.getId(),
+                    targetParentId,
+                    generateReplicaName(targetParentId, source.getName()),
+                    false
+                );
+                upsertMapping(receiverRootId, source.getId(), renamed.getId(), source.getLastModifiedDate());
+                yield new LoopbackReplicationResult(renamed, "RENAMED", "Loopback replication created renamed target node");
+            }
+            case OVERWRITE -> {
+                Node overwritten;
+                if (existing.get() instanceof Document existingDocument) {
+                    overwriteDocument(source, existingDocument);
+                    syncDescription(existingDocument, source.getDescription());
+                    overwritten = existingDocument;
+                } else {
+                    overwritten = overwriteExisting(targetParentId, source, false, existing.get());
+                }
+                upsertMapping(receiverRootId, source.getId(), overwritten.getId(), source.getLastModifiedDate());
+                yield new LoopbackReplicationResult(overwritten, "OVERWRITTEN", "Loopback replication overwrote existing target node");
+            }
         };
     }
 
@@ -183,9 +357,84 @@ public class LoopbackTransferClient implements TransferClient {
         } catch (IOException ex) {
             throw new UncheckedIOException("Failed to read source content for loopback overwrite: " + source.getId(), ex);
         }
-        if (source.getDescription() != null) {
-            nodeService.updateNode(target.getId(), java.util.Map.of("description", source.getDescription()));
+    }
+
+    private void syncDescription(Document target, String description) {
+        if (Objects.equals(description, target.getDescription())) {
+            return;
         }
+        Map<String, Object> updates = new LinkedHashMap<>();
+        updates.put("description", description);
+        nodeService.updateNode(target.getId(), updates);
+    }
+
+    private Optional<MappedNode> resolveMappedNode(UUID receiverRootId, UUID sourceNodeId) {
+        return transferNodeMappingService.findMapping(receiverRootId, repositoryIdentityProvider.getTransferRepositoryId(), sourceNodeId)
+            .flatMap(mapping -> nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(mapping.getLocalNodeId(), Node.ArchiveStatus.LIVE)
+                .map(node -> new MappedNode(mapping, node)));
+    }
+
+    private boolean matchesSourceVersion(TransferNodeMapping mapping, LocalDateTime sourceLastModifiedAt) {
+        return sourceLastModifiedAt != null && Objects.equals(mapping.getLastSourceModifiedAt(), sourceLastModifiedAt);
+    }
+
+    private void refreshMapping(UUID receiverRootId, UUID sourceNodeId, LocalDateTime sourceLastModifiedAt) {
+        transferNodeMappingService.refreshSyncTimestamps(
+            receiverRootId,
+            repositoryIdentityProvider.getTransferRepositoryId(),
+            sourceNodeId,
+            sourceLastModifiedAt,
+            LocalDateTime.now()
+        );
+    }
+
+    private void upsertMapping(UUID receiverRootId, UUID sourceNodeId, UUID localNodeId, LocalDateTime sourceLastModifiedAt) {
+        transferNodeMappingService.upsertMapping(
+            receiverRootId,
+            repositoryIdentityProvider.getTransferRepositoryId(),
+            sourceNodeId,
+            localNodeId,
+            sourceLastModifiedAt,
+            LocalDateTime.now()
+        );
+    }
+
+    private List<Node> loadChildrenSorted(UUID parentId) {
+        return nodeRepository.findByParentIdAndDeletedFalseAndArchiveStatus(parentId, Node.ArchiveStatus.LIVE).stream()
+            .sorted((left, right) -> String.CASE_INSENSITIVE_ORDER.compare(left.getName(), right.getName()))
+            .toList();
+    }
+
+    private UUID parentIdOf(Node node) {
+        return node.getParent() != null ? node.getParent().getId() : null;
+    }
+
+    private Folder requireFolder(Node node) {
+        if (!(node instanceof Folder folder)) {
+            throw new IllegalStateException("Expected folder node during loopback replication");
+        }
+        return folder;
+    }
+
+    private Document requireDocument(Node node) {
+        if (!(node instanceof Document document)) {
+            throw new IllegalStateException("Expected document node during loopback replication");
+        }
+        return document;
+    }
+
+    private TransferExecutionEntry entryFor(Node source, LoopbackReplicationResult replicated) {
+        LocalDateTime now = LocalDateTime.now();
+        return new TransferExecutionEntry(
+            source.getId(),
+            source.getPath(),
+            source.getNodeType() != null ? source.getNodeType().name() : source.getClass().getSimpleName(),
+            replicated.node() != null ? replicated.node().getId() : null,
+            replicated.action(),
+            replicated.message(),
+            now,
+            now
+        );
     }
 
     private String generateReplicaName(UUID targetFolderId, String requestedName) {
@@ -208,5 +457,8 @@ public class LoopbackTransferClient implements TransferClient {
     }
 
     private record LoopbackReplicationResult(Node node, String action, String message) {
+    }
+
+    private record MappedNode(TransferNodeMapping mapping, Node node) {
     }
 }
