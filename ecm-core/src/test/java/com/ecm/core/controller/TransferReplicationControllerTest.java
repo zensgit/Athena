@@ -478,6 +478,7 @@ class TransferReplicationControllerTest {
             jobRetentionDays,
             conflictPolicy,
             now,
+            null,
             now,
             now
         );

@@ -67,6 +67,9 @@ public class ReplicationDefinition {
     @Column(name = "last_run_at")
     private LocalDateTime lastRunAt;
 
+    @Column(name = "last_successful_sync_at")
+    private LocalDateTime lastSuccessfulSyncAt;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

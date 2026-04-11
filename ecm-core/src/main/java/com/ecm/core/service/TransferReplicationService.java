@@ -335,11 +335,13 @@ public class TransferReplicationService {
                     definition.isIncludeChildren(),
                     definition.getConflictPolicy() != null
                         ? definition.getConflictPolicy()
-                        : ReplicationDefinition.ConflictPolicy.RENAME
+                        : ReplicationDefinition.ConflictPolicy.RENAME,
+                    definition.getLastSuccessfulSyncAt()
                 );
 
             LocalDateTime completedAt = LocalDateTime.now();
             definition.setLastRunAt(completedAt);
+            definition.setLastSuccessfulSyncAt(completedAt);
             replicationDefinitionRepository.save(definition);
             JobEntryReportPayload entryReportPayload = buildSuccessEntryReport(source, result, startedAt, completedAt);
 
@@ -568,6 +570,7 @@ public class TransferReplicationService {
                 ? definition.getConflictPolicy()
                 : ReplicationDefinition.ConflictPolicy.RENAME,
             definition.getLastRunAt(),
+            definition.getLastSuccessfulSyncAt(),
             definition.getCreatedAt(),
             definition.getUpdatedAt()
         );
@@ -934,6 +937,7 @@ public class TransferReplicationService {
         int jobRetentionDays,
         ReplicationDefinition.ConflictPolicy conflictPolicy,
         LocalDateTime lastRunAt,
+        LocalDateTime lastSuccessfulSyncAt,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
     ) {}

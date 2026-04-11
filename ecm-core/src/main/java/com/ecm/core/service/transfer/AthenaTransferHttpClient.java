@@ -1,5 +1,6 @@
 package com.ecm.core.service.transfer;
 
+import com.ecm.core.config.RepositoryIdentityProvider;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Node;
@@ -35,6 +36,7 @@ public class AthenaTransferHttpClient implements TransferClient {
     private final RestTemplate restTemplate;
     private final ContentService contentService;
     private final NodeRepository nodeRepository;
+    private final RepositoryIdentityProvider repositoryIdentityProvider;
 
     @Override
     public TransferTarget.TransportType transportType() {
@@ -67,7 +69,8 @@ public class AthenaTransferHttpClient implements TransferClient {
         TransferTarget target,
         Node source,
         boolean includeChildren,
-        ReplicationDefinition.ConflictPolicy conflictPolicy
+        ReplicationDefinition.ConflictPolicy conflictPolicy,
+        LocalDateTime lastSuccessfulSyncAt
     ) {
         UUID remoteId;
         String message;
@@ -76,22 +79,28 @@ public class AthenaTransferHttpClient implements TransferClient {
             TransferReceiverFolderResult folderResult = createRemoteFolder(
                 target,
                 target.getTargetFolderId(),
-                folder.getName(),
-                folder.getDescription(),
+                folder,
+                null,
                 conflictPolicy
             );
             remoteId = folderResult.folderId();
             message = folderResult.message();
             entries.add(entryFor(source, remoteId, folderResult.disposition().name(), folderResult.message()));
             if (includeChildren && folderResult.disposition() != TransferReceiverService.ConflictDisposition.SKIPPED) {
-                replicateChildren(target, folder, remoteId, conflictPolicy, entries);
+                replicateChildren(target, folder, remoteId, conflictPolicy, lastSuccessfulSyncAt, entries);
             }
         } else if (source instanceof Document document) {
+            if (isUnchangedSinceWatermark(document, lastSuccessfulSyncAt)) {
+                return new TransferExecutionResult(null, "Skipped unchanged document", List.of(
+                    entryFor(source, null, "SKIPPED_UNCHANGED", "Document unchanged since last successful sync")
+                ));
+            }
             TransferReceiverDocumentResult documentResult = uploadRemoteDocument(
                 target,
                 target.getTargetFolderId(),
                 document,
                 document.getName(),
+                null,
                 conflictPolicy
             );
             remoteId = documentResult.documentId();
@@ -112,6 +121,7 @@ public class AthenaTransferHttpClient implements TransferClient {
         Folder sourceFolder,
         UUID remoteParentId,
         ReplicationDefinition.ConflictPolicy conflictPolicy,
+        LocalDateTime lastSuccessfulSyncAt,
         List<TransferExecutionEntry> entries
     ) {
         List<Node> children = nodeRepository.findByParentIdAndDeletedFalseAndArchiveStatus(
@@ -124,20 +134,28 @@ public class AthenaTransferHttpClient implements TransferClient {
                 TransferReceiverFolderResult folderResult = createRemoteFolder(
                     target,
                     remoteParentId,
-                    folder.getName(),
-                    folder.getDescription(),
+                    folder,
+                    folder.getParent() != null ? folder.getParent().getId() : null,
                     conflictPolicy
                 );
                 entries.add(entryFor(folder, folderResult.folderId(), folderResult.disposition().name(), folderResult.message()));
                 if (folderResult.disposition() != TransferReceiverService.ConflictDisposition.SKIPPED) {
-                    replicateChildren(target, folder, folderResult.folderId(), conflictPolicy, entries);
+                    replicateChildren(target, folder, folderResult.folderId(), conflictPolicy, lastSuccessfulSyncAt, entries);
                 }
-            } else if (child instanceof Document document) {
+                continue;
+            }
+
+            if (child instanceof Document document) {
+                if (isUnchangedSinceWatermark(document, lastSuccessfulSyncAt)) {
+                    entries.add(entryFor(document, null, "SKIPPED_UNCHANGED", "Unchanged since last successful sync"));
+                    continue;
+                }
                 TransferReceiverDocumentResult documentResult = uploadRemoteDocument(
                     target,
                     remoteParentId,
                     document,
                     document.getName(),
+                    document.getParent() != null ? document.getParent().getId() : null,
                     conflictPolicy
                 );
                 entries.add(entryFor(document, documentResult.documentId(), documentResult.disposition().name(), documentResult.message()));
@@ -145,18 +163,32 @@ public class AthenaTransferHttpClient implements TransferClient {
         }
     }
 
+    private boolean isUnchangedSinceWatermark(Node node, LocalDateTime watermark) {
+        if (watermark == null) {
+            return false; // First run: sync everything
+        }
+        LocalDateTime lastModified = node.getLastModifiedDate();
+        return lastModified != null && !lastModified.isAfter(watermark);
+    }
+
     private TransferReceiverFolderResult createRemoteFolder(
         TransferTarget target,
         UUID parentId,
-        String name,
-        String description,
+        Folder folder,
+        UUID sourceParentNodeId,
         ReplicationDefinition.ConflictPolicy conflictPolicy
     ) {
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("parentFolderId", parentId);
-        request.put("name", name);
-        request.put("description", description);
+        request.put("name", folder.getName());
+        request.put("description", folder.getDescription());
         request.put("conflictPolicy", conflictPolicy != null ? conflictPolicy.name() : ReplicationDefinition.ConflictPolicy.RENAME.name());
+        request.put("sourceRepositoryId", repositoryIdentityProvider.getTransferRepositoryId());
+        request.put("sourceNodeId", folder.getId());
+        if (sourceParentNodeId != null) {
+            request.put("sourceParentNodeId", sourceParentNodeId);
+        }
+        request.put("sourceLastModifiedAt", folder.getLastModifiedDate());
 
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(request, jsonHeaders(target));
         ResponseEntity<JsonNode> response = restTemplate.exchange(
@@ -168,7 +200,7 @@ public class AthenaTransferHttpClient implements TransferClient {
         JsonNode body = response.getBody();
         return new TransferReceiverFolderResult(
             extractUuid(body, "folderId", "Remote folder creation did not return a folderId"),
-            body != null && !body.path("folderName").asText().isBlank() ? body.path("folderName").asText() : name,
+            body != null && !body.path("folderName").asText().isBlank() ? body.path("folderName").asText() : folder.getName(),
             parseDisposition(body),
             extractMessage(body, "Remote folder creation completed")
         );
@@ -179,6 +211,7 @@ public class AthenaTransferHttpClient implements TransferClient {
         UUID remoteFolderId,
         Document document,
         String fileName,
+        UUID sourceParentNodeId,
         ReplicationDefinition.ConflictPolicy conflictPolicy
     ) {
         byte[] bytes = readContent(document);
@@ -201,6 +234,14 @@ public class AthenaTransferHttpClient implements TransferClient {
             body.add("description", document.getDescription());
         }
         body.add("conflictPolicy", (conflictPolicy != null ? conflictPolicy : ReplicationDefinition.ConflictPolicy.RENAME).name());
+        body.add("sourceRepositoryId", repositoryIdentityProvider.getTransferRepositoryId());
+        body.add("sourceNodeId", document.getId().toString());
+        if (sourceParentNodeId != null) {
+            body.add("sourceParentNodeId", sourceParentNodeId.toString());
+        }
+        if (document.getLastModifiedDate() != null) {
+            body.add("sourceLastModifiedAt", document.getLastModifiedDate().toString());
+        }
 
         HttpHeaders headers = authHeaders(target);
         headers.setContentType(MediaType.MULTIPART_FORM_DATA);

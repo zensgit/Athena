@@ -7,9 +7,11 @@ import com.ecm.core.entity.Node;
 import com.ecm.core.entity.ReplicationDefinition;
 import com.ecm.core.entity.TransferTarget;
 import com.ecm.core.repository.NodeRepository;
+import com.ecm.core.entity.TransferNodeMapping;
 import com.ecm.core.service.ContentService;
 import com.ecm.core.service.FolderService;
 import com.ecm.core.service.NodeService;
+import com.ecm.core.service.TransferNodeMappingService;
 import com.ecm.core.service.VersionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -32,6 +34,7 @@ public class LoopbackTransferClient implements TransferClient {
     private final ContentService contentService;
     private final VersionService versionService;
     private final RepositoryIdentityProvider repositoryIdentityProvider;
+    private final TransferNodeMappingService transferNodeMappingService;
 
     @Override
     public TransferTarget.TransportType transportType() {
@@ -49,14 +52,53 @@ public class LoopbackTransferClient implements TransferClient {
         TransferTarget target,
         Node source,
         boolean includeChildren,
-        ReplicationDefinition.ConflictPolicy conflictPolicy
+        ReplicationDefinition.ConflictPolicy conflictPolicy,
+        LocalDateTime lastSuccessfulSyncAt
     ) {
-        folderService.getFolder(target.getTargetFolderId());
+        if (isUnchangedSinceWatermark(source, lastSuccessfulSyncAt) && !(source instanceof Folder)) {
+            LocalDateTime now = LocalDateTime.now();
+            return new TransferExecutionResult(null, "Skipped unchanged document", List.of(
+                new TransferExecutionEntry(source.getId(), source.getPath(),
+                    source.getNodeType() != null ? source.getNodeType().name() : source.getClass().getSimpleName(),
+                    null, "SKIPPED_UNCHANGED", "Document unchanged since last successful sync", now, now)
+            ));
+        }
+        UUID targetFolderId = target.getTargetFolderId();
+        folderService.getFolder(targetFolderId);
+        String repoId = repositoryIdentityProvider.getTransferRepositoryId();
+
+        // Check mapping for idempotent skip
+        Optional<TransferNodeMapping> existingMapping = transferNodeMappingService.findMapping(
+            targetFolderId, repoId, source.getId());
+        if (existingMapping.isPresent()
+            && isUnchangedSinceWatermark(source, lastSuccessfulSyncAt)
+            && (!(source instanceof Folder) || !includeChildren)) {
+            LocalDateTime now = LocalDateTime.now();
+            transferNodeMappingService.refreshSyncTimestamps(
+                targetFolderId, repoId, source.getId(), source.getLastModifiedDate(), now);
+            return new TransferExecutionResult(
+                existingMapping.get().getLocalNodeId(),
+                "Skipped unchanged mapped node",
+                List.of(new TransferExecutionEntry(
+                    source.getId(), source.getPath(),
+                    source.getNodeType() != null ? source.getNodeType().name() : source.getClass().getSimpleName(),
+                    existingMapping.get().getLocalNodeId(),
+                    "SKIPPED_UNCHANGED", "Loopback: mapped node unchanged since last sync", now, now
+                ))
+            );
+        }
+
         ReplicationDefinition.ConflictPolicy effectivePolicy = conflictPolicy != null
             ? conflictPolicy
             : ReplicationDefinition.ConflictPolicy.RENAME;
-        LoopbackReplicationResult replicated = replicateToParent(target.getTargetFolderId(), source, includeChildren, effectivePolicy);
+        LoopbackReplicationResult replicated = replicateToParent(targetFolderId, source, includeChildren, effectivePolicy);
         LocalDateTime now = LocalDateTime.now();
+
+        // Upsert mapping after successful replication
+        transferNodeMappingService.upsertMapping(
+            targetFolderId, repoId, source.getId(),
+            replicated.node().getId(), source.getLastModifiedDate(), now);
+
         return new TransferExecutionResult(
             replicated.node().getId(),
             replicated.message(),
@@ -71,6 +113,14 @@ public class LoopbackTransferClient implements TransferClient {
                 now
             ))
         );
+    }
+
+    private boolean isUnchangedSinceWatermark(Node node, LocalDateTime watermark) {
+        if (watermark == null) {
+            return false;
+        }
+        LocalDateTime lastModified = node.getLastModifiedDate();
+        return lastModified != null && !lastModified.isAfter(watermark);
     }
 
     private LoopbackReplicationResult replicateToParent(

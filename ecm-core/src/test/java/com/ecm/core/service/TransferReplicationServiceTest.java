@@ -28,6 +28,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.lenient;
@@ -257,7 +258,7 @@ class TransferReplicationServiceTest {
         UUID copiedNodeId = UUID.randomUUID();
         when(folderService.getFolder(targetFolderId)).thenReturn(folder(targetFolderId, "Outbound"));
         when(nodeService.getNode(sourceNodeId)).thenReturn(source);
-        when(loopbackTransferClient.replicate(target, source, true, ReplicationDefinition.ConflictPolicy.RENAME))
+        when(loopbackTransferClient.replicate(eq(target), eq(source), eq(true), eq(ReplicationDefinition.ConflictPolicy.RENAME), any()))
             .thenReturn(new TransferClient.TransferExecutionResult(copiedNodeId, "Loopback replication completed"));
 
         TransferReplicationService.ReplicationJobDto job = service.runDefinition(definition.getId());
@@ -384,7 +385,7 @@ class TransferReplicationServiceTest {
         Node source = node(sourceNodeId, "Contracts");
         UUID copiedNodeId = UUID.randomUUID();
         when(nodeService.getNode(sourceNodeId)).thenReturn(source);
-        when(athenaTransferClient.replicate(target, source, true, ReplicationDefinition.ConflictPolicy.RENAME))
+        when(athenaTransferClient.replicate(eq(target), eq(source), eq(true), eq(ReplicationDefinition.ConflictPolicy.RENAME), any()))
             .thenThrow(new IllegalStateException("Remote receiver rejected upload"))
             .thenReturn(new TransferClient.TransferExecutionResult(copiedNodeId, "Remote transfer completed after retry"));
 
@@ -436,7 +437,7 @@ class TransferReplicationServiceTest {
 
         Node source = node(sourceNodeId, "Contracts");
         when(nodeService.getNode(sourceNodeId)).thenReturn(source);
-        when(athenaTransferClient.replicate(target, source, true, ReplicationDefinition.ConflictPolicy.RENAME))
+        when(athenaTransferClient.replicate(eq(target), eq(source), eq(true), eq(ReplicationDefinition.ConflictPolicy.RENAME), any()))
             .thenThrow(new IllegalStateException("Remote receiver rejected upload"));
 
         TransferReplicationService.ReplicationJobDto failedJob = service.runDefinition(definition.getId());
@@ -522,12 +523,12 @@ class TransferReplicationServiceTest {
         Node copied = node(UUID.randomUUID(), "Contracts");
         when(folderService.getFolder(targetFolderId)).thenReturn(folder(targetFolderId, "Outbound"));
         when(nodeService.getNode(sourceNodeId)).thenReturn(source);
-        when(loopbackTransferClient.replicate(target, source, true, ReplicationDefinition.ConflictPolicy.SKIP))
+        when(loopbackTransferClient.replicate(eq(target), eq(source), eq(true), eq(ReplicationDefinition.ConflictPolicy.SKIP), any()))
             .thenReturn(new TransferClient.TransferExecutionResult(copied.getId(), "Skipped existing"));
 
         service.runDefinition(definition.getId());
 
-        verify(loopbackTransferClient).replicate(target, source, true, ReplicationDefinition.ConflictPolicy.SKIP);
+        verify(loopbackTransferClient).replicate(eq(target), eq(source), eq(true), eq(ReplicationDefinition.ConflictPolicy.SKIP), any());
     }
 
     @Test
@@ -699,6 +700,118 @@ class TransferReplicationServiceTest {
 
         verify(replicationDefinitionRepository).existsByTransferTargetId(target.getId());
         verify(transferTargetRepository).delete(target);
+    }
+
+    @Test
+    @DisplayName("successful replication sets lastSuccessfulSyncAt on definition")
+    void successfulReplicationSetsLastSuccessfulSyncAt() {
+        UUID targetFolderId = UUID.randomUUID();
+        UUID sourceNodeId = UUID.randomUUID();
+
+        TransferTarget target = new TransferTarget();
+        target.setId(UUID.randomUUID());
+        target.setName("loopback");
+        target.setTransportType(TransferTarget.TransportType.LOOPBACK);
+        target.setTargetFolderId(targetFolderId);
+        target.setEnabled(true);
+        target.setCreatedAt(LocalDateTime.now());
+        storedTargets.put(target.getId(), target);
+
+        ReplicationDefinition definition = new ReplicationDefinition();
+        definition.setId(UUID.randomUUID());
+        definition.setName("contracts");
+        definition.setSourceNodeId(sourceNodeId);
+        definition.setTransferTargetId(target.getId());
+        definition.setIncludeChildren(true);
+        definition.setEnabled(true);
+        definition.setCreatedAt(LocalDateTime.now());
+        storedDefinitions.put(definition.getId(), definition);
+
+        assertNull(definition.getLastSuccessfulSyncAt(), "Should be null before first run");
+
+        Node source = node(sourceNodeId, "Contracts");
+        when(folderService.getFolder(targetFolderId)).thenReturn(folder(targetFolderId, "Outbound"));
+        when(nodeService.getNode(sourceNodeId)).thenReturn(source);
+        when(loopbackTransferClient.replicate(eq(target), eq(source), eq(true), eq(ReplicationDefinition.ConflictPolicy.RENAME), any()))
+            .thenReturn(new TransferClient.TransferExecutionResult(UUID.randomUUID(), "OK"));
+
+        service.runDefinition(definition.getId());
+
+        assertNotNull(definition.getLastSuccessfulSyncAt(), "Should be set after successful run");
+    }
+
+    @Test
+    @DisplayName("failed replication does NOT update lastSuccessfulSyncAt")
+    void failedReplicationDoesNotUpdateLastSuccessfulSyncAt() {
+        UUID targetFolderId = UUID.randomUUID();
+        UUID sourceNodeId = UUID.randomUUID();
+
+        TransferTarget target = new TransferTarget();
+        target.setId(UUID.randomUUID());
+        target.setName("loopback");
+        target.setTransportType(TransferTarget.TransportType.LOOPBACK);
+        target.setTargetFolderId(targetFolderId);
+        target.setEnabled(true);
+        target.setCreatedAt(LocalDateTime.now());
+        storedTargets.put(target.getId(), target);
+
+        ReplicationDefinition definition = new ReplicationDefinition();
+        definition.setId(UUID.randomUUID());
+        definition.setName("contracts");
+        definition.setSourceNodeId(sourceNodeId);
+        definition.setTransferTargetId(target.getId());
+        definition.setIncludeChildren(true);
+        definition.setEnabled(true);
+        definition.setCreatedAt(LocalDateTime.now());
+        storedDefinitions.put(definition.getId(), definition);
+
+        Node source = node(sourceNodeId, "Contracts");
+        when(nodeService.getNode(sourceNodeId)).thenReturn(source);
+        when(loopbackTransferClient.replicate(eq(target), eq(source), eq(true), eq(ReplicationDefinition.ConflictPolicy.RENAME), any()))
+            .thenThrow(new RuntimeException("Connection refused"));
+
+        service.runDefinition(definition.getId());
+
+        assertNull(definition.getLastSuccessfulSyncAt(), "Should remain null after failed run");
+    }
+
+    @Test
+    @DisplayName("processJob passes lastSuccessfulSyncAt watermark to transfer client")
+    void processJobPassesWatermarkToTransferClient() {
+        UUID targetFolderId = UUID.randomUUID();
+        UUID sourceNodeId = UUID.randomUUID();
+        LocalDateTime previousSync = LocalDateTime.now().minusHours(6);
+
+        TransferTarget target = new TransferTarget();
+        target.setId(UUID.randomUUID());
+        target.setName("loopback");
+        target.setTransportType(TransferTarget.TransportType.LOOPBACK);
+        target.setTargetFolderId(targetFolderId);
+        target.setEnabled(true);
+        target.setCreatedAt(LocalDateTime.now());
+        storedTargets.put(target.getId(), target);
+
+        ReplicationDefinition definition = new ReplicationDefinition();
+        definition.setId(UUID.randomUUID());
+        definition.setName("contracts");
+        definition.setSourceNodeId(sourceNodeId);
+        definition.setTransferTargetId(target.getId());
+        definition.setIncludeChildren(true);
+        definition.setEnabled(true);
+        definition.setLastSuccessfulSyncAt(previousSync);
+        definition.setCreatedAt(LocalDateTime.now());
+        storedDefinitions.put(definition.getId(), definition);
+
+        Node source = node(sourceNodeId, "Contracts");
+        when(folderService.getFolder(targetFolderId)).thenReturn(folder(targetFolderId, "Outbound"));
+        when(nodeService.getNode(sourceNodeId)).thenReturn(source);
+        when(loopbackTransferClient.replicate(eq(target), eq(source), eq(true), eq(ReplicationDefinition.ConflictPolicy.RENAME), eq(previousSync)))
+            .thenReturn(new TransferClient.TransferExecutionResult(UUID.randomUUID(), "Incremental sync"));
+
+        TransferReplicationService.ReplicationJobDto job = service.runDefinition(definition.getId());
+
+        assertEquals(ReplicationJob.ReplicationJobStatus.COMPLETED, job.status());
+        verify(loopbackTransferClient).replicate(eq(target), eq(source), eq(true), eq(ReplicationDefinition.ConflictPolicy.RENAME), eq(previousSync));
     }
 
     private Folder folder(UUID id, String name) {

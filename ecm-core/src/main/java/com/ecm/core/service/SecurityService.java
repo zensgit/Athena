@@ -1,5 +1,6 @@
 package com.ecm.core.service;
 
+import com.ecm.core.config.TenantContext;
 import com.ecm.core.entity.*;
 import com.ecm.core.entity.Permission.PermissionType;
 import com.ecm.core.entity.PermissionSet;
@@ -24,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.security.core.GrantedAuthority;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.Locale;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -87,7 +89,7 @@ public class SecurityService {
         return hasRole("ROLE_ADMIN", username);
     }
     
-    @Cacheable(value = "permissions", key = "#node.id + '_' + #permissionType + '_' + #username")
+    @Cacheable(value = "permissions", key = "T(com.ecm.core.service.SecurityService).permissionCacheKey(#node, #permissionType, #username)")
     public boolean hasPermission(Node node, PermissionType permissionType, String username) {
         // Admin has all permissions for the evaluated user.
         // Note: do not use the caller's authorities when evaluating another user.
@@ -360,7 +362,7 @@ public class SecurityService {
     }
     
     @Transactional
-    @CacheEvict(value = "permissions", key = "#node.id + '*'")
+    @CacheEvict(value = "permissions", allEntries = true)
     public void removePermission(Node node, String authority, PermissionType permissionType) {
         // Check if user has permission to change permissions
         if (!hasPermission(node, PermissionType.CHANGE_PERMISSIONS)) {
@@ -558,6 +560,22 @@ public class SecurityService {
         List<Permission> expiredPermissions = permissionRepository.findExpiredPermissions();
         log.info("Cleaning up {} expired permissions", expiredPermissions.size());
         permissionRepository.deleteAll(expiredPermissions);
+    }
+
+    static String permissionCacheKey(Node node, PermissionType permissionType, String username) {
+        return currentTenantDomainForCache() + '_' + nodeCacheKey(node) + '_' + permissionType + '_' + username;
+    }
+
+    static String currentTenantDomainForCache() {
+        String tenantDomain = TenantContext.getCurrentTenantDomain();
+        if (tenantDomain == null || tenantDomain.isBlank()) {
+            return TenantService.DEFAULT_TENANT_DOMAIN;
+        }
+        return tenantDomain.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String nodeCacheKey(Node node) {
+        return node != null && node.getId() != null ? node.getId().toString() : "null";
     }
     
     private boolean checkNodePermissions(Node node, PermissionType permissionType, 

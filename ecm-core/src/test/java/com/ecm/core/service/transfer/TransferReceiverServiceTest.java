@@ -5,6 +5,7 @@ import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Node;
 import com.ecm.core.entity.ReplicationDefinition;
+import com.ecm.core.entity.TransferNodeMapping;
 import com.ecm.core.entity.TransferReceiverRegistration;
 import com.ecm.core.entity.TransferTarget;
 import com.ecm.core.pipeline.PipelineResult;
@@ -13,6 +14,7 @@ import com.ecm.core.repository.TransferReceiverRegistrationRepository;
 import com.ecm.core.service.DocumentUploadService;
 import com.ecm.core.service.FolderService;
 import com.ecm.core.service.NodeService;
+import com.ecm.core.service.TransferNodeMappingService;
 import com.ecm.core.service.VersionService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -26,6 +28,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -35,6 +38,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -60,6 +65,9 @@ class TransferReceiverServiceTest {
 
     @Mock
     private VersionService versionService;
+
+    @Mock
+    private TransferNodeMappingService transferNodeMappingService;
 
     @AfterEach
     void tearDown() {
@@ -117,7 +125,11 @@ class TransferReceiverServiceTest {
                 rootId,
                 "Contracts",
                 "Synced",
-                ReplicationDefinition.ConflictPolicy.RENAME
+                ReplicationDefinition.ConflictPolicy.RENAME,
+                null,
+                null,
+                null,
+                null
             ),
             null,
             "shared-secret"
@@ -153,7 +165,11 @@ class TransferReceiverServiceTest {
                 rootId,
                 "Contracts",
                 "Synced",
-                ReplicationDefinition.ConflictPolicy.SKIP
+                ReplicationDefinition.ConflictPolicy.SKIP,
+                null,
+                null,
+                null,
+                null
             ),
             null,
             "shared-secret"
@@ -164,6 +180,63 @@ class TransferReceiverServiceTest {
         assertEquals(existing.getName(), response.folderName());
         assertEquals(TransferReceiverService.ConflictDisposition.SKIPPED, response.disposition());
         assertEquals("Skipped existing receiver folder", response.message());
+    }
+
+    @Test
+    @DisplayName("createFolder resolves mapped parent from sourceParentNodeId")
+    void createFolderResolvesMappedParentFromSourceParentNodeId() {
+        UUID rootId = UUID.randomUUID();
+        UUID sourceParentNodeId = UUID.randomUUID();
+        UUID sourceNodeId = UUID.randomUUID();
+        Folder root = folder(rootId, "Outbound", "/Company Home/Outbound");
+        Folder mappedParent = folder(UUID.randomUUID(), "Team A", "/Company Home/Outbound/Team A");
+        Folder created = folder(UUID.randomUUID(), "Contracts", "/Company Home/Outbound/Team A/Contracts");
+        mappedParent.setParent(root);
+        TransferReceiverRegistration receiver = receiver(rootId);
+        TransferNodeMapping parentMapping = new TransferNodeMapping();
+        parentMapping.setRootFolderId(rootId);
+        parentMapping.setSourceRepositoryId("athena");
+        parentMapping.setSourceNodeId(sourceParentNodeId);
+        parentMapping.setLocalNodeId(mappedParent.getId());
+
+        when(receiverRepository.findAll()).thenReturn(List.of(receiver));
+        when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(rootId, Node.ArchiveStatus.LIVE)).thenReturn(Optional.of(root));
+        when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(mappedParent.getId(), Node.ArchiveStatus.LIVE)).thenReturn(Optional.of(mappedParent));
+        when(nodeRepository.findByParentIdAndName(mappedParent.getId(), "Contracts")).thenReturn(Optional.empty());
+        when(receiverRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(transferNodeMappingService.findMapping(any(), anyString(), any())).thenReturn(Optional.empty());
+        when(transferNodeMappingService.findMapping(rootId, "athena", sourceParentNodeId)).thenReturn(Optional.of(parentMapping));
+        when(folderService.createFolder(any())).thenReturn(created);
+
+        TransferReceiverService service = service();
+
+        TransferReceiverService.CreateFolderResponse response = service.createFolder(
+            new TransferReceiverService.CreateFolderRequest(
+                rootId,
+                "Contracts",
+                "Synced",
+                ReplicationDefinition.ConflictPolicy.RENAME,
+                "athena",
+                sourceNodeId,
+                sourceParentNodeId,
+                java.time.LocalDateTime.parse("2026-04-11T12:00:00")
+            ),
+            null,
+            "shared-secret"
+        );
+
+        ArgumentCaptor<FolderService.CreateFolderRequest> requestCaptor = ArgumentCaptor.forClass(FolderService.CreateFolderRequest.class);
+        verify(folderService).createFolder(requestCaptor.capture());
+        assertEquals(mappedParent.getId(), requestCaptor.getValue().parentId());
+        verify(transferNodeMappingService).upsertMapping(
+            eq(rootId),
+            eq("athena"),
+            eq(sourceNodeId),
+            eq(created.getId()),
+            eq(java.time.LocalDateTime.parse("2026-04-11T12:00:00")),
+            any(java.time.LocalDateTime.class)
+        );
+        assertEquals(created.getId(), response.folderId());
     }
 
     @Test
@@ -198,6 +271,10 @@ class TransferReceiverServiceTest {
             rootId,
             "Signed",
             ReplicationDefinition.ConflictPolicy.RENAME,
+            null,
+            null,
+            null,
+            null,
             null,
             "shared-secret"
         );
@@ -241,6 +318,10 @@ class TransferReceiverServiceTest {
             "Signed",
             ReplicationDefinition.ConflictPolicy.OVERWRITE,
             null,
+            null,
+            null,
+            null,
+            null,
             "shared-secret"
         );
 
@@ -250,6 +331,58 @@ class TransferReceiverServiceTest {
         assertEquals(existing.getName(), response.documentName());
         assertEquals(TransferReceiverService.ConflictDisposition.OVERWRITTEN, response.disposition());
         assertEquals("Overwrote receiver document", response.message());
+    }
+
+    @Test
+    @DisplayName("uploadDocument returns unchanged when mapped source version already synced")
+    void uploadDocumentReturnsUnchangedWhenMappedSourceAlreadySynced() throws IOException {
+        UUID rootId = UUID.randomUUID();
+        UUID sourceNodeId = UUID.randomUUID();
+        Folder root = folder(rootId, "Outbound", "/Company Home/Outbound");
+        Document existing = document(UUID.randomUUID(), "contract.pdf", "/Company Home/Outbound/contract.pdf");
+        existing.setParent(root);
+        TransferReceiverRegistration receiver = receiver(rootId);
+        LocalDateTime syncedAt = LocalDateTime.parse("2026-04-11T12:00:00");
+        TransferNodeMapping mapping = new TransferNodeMapping();
+        mapping.setRootFolderId(rootId);
+        mapping.setSourceRepositoryId("athena");
+        mapping.setSourceNodeId(sourceNodeId);
+        mapping.setLocalNodeId(existing.getId());
+        mapping.setLastSourceModifiedAt(syncedAt);
+
+        when(receiverRepository.findAll()).thenReturn(List.of(receiver));
+        when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(rootId, Node.ArchiveStatus.LIVE)).thenReturn(Optional.of(root));
+        when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(existing.getId(), Node.ArchiveStatus.LIVE)).thenReturn(Optional.of(existing));
+        when(receiverRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(transferNodeMappingService.findMapping(any(), anyString(), any())).thenReturn(Optional.empty());
+        when(transferNodeMappingService.findMapping(rootId, "athena", sourceNodeId)).thenReturn(Optional.of(mapping));
+
+        TransferReceiverService service = service();
+
+        TransferReceiverService.UploadDocumentResponse response = service.uploadDocument(
+            new org.springframework.mock.web.MockMultipartFile("file", "contract.pdf", "application/pdf", "pdf".getBytes()),
+            rootId,
+            "Signed",
+            ReplicationDefinition.ConflictPolicy.OVERWRITE,
+            "athena",
+            sourceNodeId,
+            null,
+            syncedAt,
+            null,
+            "shared-secret"
+        );
+
+        verify(documentUploadService, never()).uploadDocument(any(), any(), any());
+        verify(versionService, never()).createVersion(any(), any(MultipartFile.class), anyString(), anyBoolean());
+        verify(transferNodeMappingService).refreshSyncTimestamps(
+            eq(rootId),
+            eq("athena"),
+            eq(sourceNodeId),
+            eq(syncedAt),
+            any(LocalDateTime.class)
+        );
+        assertEquals(TransferReceiverService.ConflictDisposition.UNCHANGED, response.disposition());
+        assertEquals(existing.getId(), response.documentId());
     }
 
     @Test
@@ -280,7 +413,8 @@ class TransferReceiverServiceTest {
             documentUploadService,
             nodeService,
             versionService,
-            new RepositoryIdentityProvider("athena", "athena")
+            new RepositoryIdentityProvider("athena", "athena"),
+            transferNodeMappingService
         );
     }
 

@@ -80,6 +80,7 @@
     <include file="db/changelog/changes/067-add-transfer-target-remote-repository-id.xml"/>
     <include file="db/changelog/changes/068-create-transfer-node-mappings-table.xml"/>
     <include file="db/changelog/changes/069-add-replication-job-entry-report-columns.xml"/>
+    <include file="db/changelog/changes/070-add-replication-definition-last-successful-sync-at.xml"/>
     <include file="db/changelog/changes/007-insert-initial-data.xml"/>
 
 </databaseChangeLog>

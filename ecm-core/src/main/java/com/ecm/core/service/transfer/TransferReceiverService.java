@@ -11,6 +11,7 @@ import com.ecm.core.repository.TransferReceiverRegistrationRepository;
 import com.ecm.core.service.DocumentUploadService;
 import com.ecm.core.service.FolderService;
 import com.ecm.core.service.NodeService;
+import com.ecm.core.service.TransferNodeMappingService;
 import com.ecm.core.service.VersionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.mock.web.MockMultipartFile;
@@ -23,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -43,6 +45,7 @@ public class TransferReceiverService {
     private final NodeService nodeService;
     private final VersionService versionService;
     private final RepositoryIdentityProvider repositoryIdentityProvider;
+    private final TransferNodeMappingService transferNodeMappingService;
 
     @Transactional
     public VerifyFolderResponse verifyFolder(UUID folderId, String authUsername, String authSecret) {
@@ -59,7 +62,55 @@ public class TransferReceiverService {
         }
         String requestedName = normalizeRequired(request.name(), "Folder name is required");
         AuthorizedFolder authorized = resolveAuthorizedFolder(request.parentFolderId(), authUsername, authSecret);
-        Folder parent = authorized.folder();
+        UUID receiverRootId = authorized.receiver().getRootFolderId();
+        Folder parent = resolveEffectiveParentFolder(
+            authorized,
+            request.sourceRepositoryId(),
+            request.sourceParentNodeId()
+        );
+
+        MappingIdentity mappingIdentity = mappingIdentity(request.sourceRepositoryId(), request.sourceNodeId());
+        if (mappingIdentity != null) {
+            Optional<MappedNode> mappedFolder = resolveMappedNode(receiverRootId, mappingIdentity);
+            if (mappedFolder.isPresent() && mappedFolder.get().node() instanceof Folder existingFolder) {
+                if (matchesSourceVersion(mappedFolder.get().mapping(), request.sourceLastModifiedAt())) {
+                    refreshMappingSync(receiverRootId, mappingIdentity, request.sourceLastModifiedAt());
+                    recordAccessSuccess(authorized.receiver(), "Receiver folder already up to date: " + existingFolder.getName());
+                    return new CreateFolderResponse(
+                        existingFolder.getId(),
+                        existingFolder.getName(),
+                        ConflictDisposition.UNCHANGED,
+                        "Receiver folder already up to date"
+                    );
+                }
+
+                SecurityContext previous = pushTransferAuthentication();
+                try {
+                    Folder effectiveFolder = existingFolder;
+                    if (!Objects.equals(parent.getId(), parentIdOf(existingFolder))) {
+                        effectiveFolder = requireFolder(nodeService.moveNode(existingFolder.getId(), parent.getId()));
+                    }
+                    Map<String, Object> updates = new java.util.LinkedHashMap<>();
+                    updates.put("name", requestedName);
+                    String normalizedDescription = normalizeOptional(request.description());
+                    if (normalizedDescription != null || effectiveFolder.getDescription() != null) {
+                        updates.put("description", normalizedDescription);
+                    }
+                    effectiveFolder = requireFolder(nodeService.updateNode(effectiveFolder.getId(), updates));
+                    upsertMapping(receiverRootId, mappingIdentity, effectiveFolder.getId(), request.sourceLastModifiedAt());
+                    recordAccessSuccess(authorized.receiver(), "Updated mapped receiver folder: " + effectiveFolder.getName());
+                    return new CreateFolderResponse(
+                        effectiveFolder.getId(),
+                        effectiveFolder.getName(),
+                        ConflictDisposition.OVERWRITTEN,
+                        "Updated mapped receiver folder"
+                    );
+                } finally {
+                    popTransferAuthentication(previous);
+                }
+            }
+        }
+
         ConflictResolution resolution = resolveFolderConflict(
             parent.getId(),
             requestedName,
@@ -67,6 +118,7 @@ public class TransferReceiverService {
         );
         if (resolution.disposition() == ConflictDisposition.SKIPPED) {
             Folder existingFolder = requireFolder(resolution.existingNode());
+            upsertMappingIfPresent(receiverRootId, mappingIdentity, existingFolder.getId(), request.sourceLastModifiedAt());
             recordAccessSuccess(authorized.receiver(), "Skipped existing receiver folder: " + existingFolder.getName());
             return new CreateFolderResponse(
                 existingFolder.getId(),
@@ -96,7 +148,9 @@ public class TransferReceiverService {
                 case RENAMED -> "Created renamed receiver folder";
                 case OVERWRITTEN -> "Overwrote receiver folder";
                 case SKIPPED -> "Skipped existing receiver folder";
+                case UNCHANGED -> "Receiver folder already up to date";
             };
+            upsertMappingIfPresent(receiverRootId, mappingIdentity, created.getId(), request.sourceLastModifiedAt());
             recordAccessSuccess(authorized.receiver(), message + ": " + created.getName());
             return new CreateFolderResponse(created.getId(), created.getName(), resolution.disposition(), message);
         } finally {
@@ -117,6 +171,10 @@ public class TransferReceiverService {
             parentFolderId,
             description,
             ReplicationDefinition.ConflictPolicy.RENAME,
+            null,
+            null,
+            null,
+            null,
             authUsername,
             authSecret
         );
@@ -128,6 +186,10 @@ public class TransferReceiverService {
         UUID parentFolderId,
         String description,
         ReplicationDefinition.ConflictPolicy conflictPolicy,
+        String sourceRepositoryId,
+        UUID sourceNodeId,
+        UUID sourceParentNodeId,
+        LocalDateTime sourceLastModifiedAt,
         String authUsername,
         String authSecret
     ) throws IOException {
@@ -136,8 +198,62 @@ public class TransferReceiverService {
         }
 
         AuthorizedFolder authorized = resolveAuthorizedFolder(parentFolderId, authUsername, authSecret);
-        Folder parent = authorized.folder();
+        UUID receiverRootId = authorized.receiver().getRootFolderId();
+        Folder parent = resolveEffectiveParentFolder(authorized, sourceRepositoryId, sourceParentNodeId);
         String filename = normalizeRequired(file.getOriginalFilename(), "File name is required");
+
+        MappingIdentity mappingIdentity = mappingIdentity(sourceRepositoryId, sourceNodeId);
+        if (mappingIdentity != null) {
+            Optional<MappedNode> mappedDocument = resolveMappedNode(receiverRootId, mappingIdentity);
+            if (mappedDocument.isPresent() && mappedDocument.get().node() instanceof com.ecm.core.entity.Document existingDocument) {
+                if (matchesSourceVersion(mappedDocument.get().mapping(), sourceLastModifiedAt)) {
+                    refreshMappingSync(receiverRootId, mappingIdentity, sourceLastModifiedAt);
+                    recordAccessSuccess(authorized.receiver(), "Receiver document already up to date: " + existingDocument.getName());
+                    return new UploadDocumentResponse(
+                        existingDocument.getId(),
+                        existingDocument.getName(),
+                        ConflictDisposition.UNCHANGED,
+                        "Receiver document already up to date"
+                    );
+                }
+
+                MultipartFile effectiveFile = file;
+                String normalizedDescription = normalizeOptional(description);
+                SecurityContext previous = pushTransferAuthentication();
+                try {
+                    if (!Objects.equals(parent.getId(), parentIdOf(existingDocument))) {
+                        nodeService.moveNode(existingDocument.getId(), parent.getId());
+                    }
+                    versionService.createVersion(
+                        existingDocument.getId(),
+                        file,
+                        "Replicated mapped update via transfer receiver",
+                        false
+                    );
+                    Map<String, Object> updates = new java.util.LinkedHashMap<>();
+                    if (!Objects.equals(existingDocument.getName(), filename)) {
+                        updates.put("name", filename);
+                    }
+                    if (normalizedDescription != null || existingDocument.getDescription() != null) {
+                        updates.put("description", normalizedDescription);
+                    }
+                    if (!updates.isEmpty()) {
+                        nodeService.updateNode(existingDocument.getId(), updates);
+                    }
+                    upsertMapping(receiverRootId, mappingIdentity, existingDocument.getId(), sourceLastModifiedAt);
+                    recordAccessSuccess(authorized.receiver(), "Updated mapped receiver document: " + filename);
+                    return new UploadDocumentResponse(
+                        existingDocument.getId(),
+                        filename,
+                        ConflictDisposition.OVERWRITTEN,
+                        "Updated mapped receiver document"
+                    );
+                } finally {
+                    popTransferAuthentication(previous);
+                }
+            }
+        }
+
         ConflictResolution resolution = resolveDocumentConflict(
             parent.getId(),
             filename,
@@ -145,6 +261,7 @@ public class TransferReceiverService {
         );
         if (resolution.disposition() == ConflictDisposition.SKIPPED) {
             com.ecm.core.entity.Document existingDocument = requireDocument(resolution.existingNode());
+            upsertMappingIfPresent(receiverRootId, mappingIdentity, existingDocument.getId(), sourceLastModifiedAt);
             recordAccessSuccess(authorized.receiver(), "Skipped existing receiver document: " + existingDocument.getName());
             return new UploadDocumentResponse(
                 existingDocument.getId(),
@@ -176,6 +293,7 @@ public class TransferReceiverService {
                 if (normalizedDescription != null) {
                     nodeService.updateNode(existingDocument.getId(), Map.of("description", normalizedDescription));
                 }
+                upsertMappingIfPresent(receiverRootId, mappingIdentity, existingDocument.getId(), sourceLastModifiedAt);
                 recordAccessSuccess(authorized.receiver(), "Overwrote receiver document: " + existingDocument.getName());
                 return new UploadDocumentResponse(
                     existingDocument.getId(),
@@ -193,7 +311,9 @@ public class TransferReceiverService {
                 case RENAMED -> "Uploaded renamed receiver document";
                 case OVERWRITTEN -> "Overwrote receiver document";
                 case SKIPPED -> "Skipped existing receiver document";
+                case UNCHANGED -> "Receiver document already up to date";
             };
+            upsertMappingIfPresent(receiverRootId, mappingIdentity, result.getDocumentId(), sourceLastModifiedAt);
             recordAccessSuccess(authorized.receiver(), message + ": " + effectiveFile.getOriginalFilename());
             return new UploadDocumentResponse(
                 result.getDocumentId(),
@@ -259,6 +379,88 @@ public class TransferReceiverService {
         receiver.setLastAccessMessage(message);
         receiver.setLastAccessedAt(java.time.LocalDateTime.now());
         receiverRepository.save(receiver);
+    }
+
+    private Folder resolveEffectiveParentFolder(
+        AuthorizedFolder authorized,
+        String sourceRepositoryId,
+        UUID sourceParentNodeId
+    ) {
+        MappingIdentity mappingIdentity = mappingIdentity(sourceRepositoryId, sourceParentNodeId);
+        if (mappingIdentity == null) {
+            return authorized.folder();
+        }
+        return resolveMappedNode(authorized.receiver().getRootFolderId(), mappingIdentity)
+            .map(MappedNode::node)
+            .filter(Folder.class::isInstance)
+            .map(Folder.class::cast)
+            .orElse(authorized.folder());
+    }
+
+    private MappingIdentity mappingIdentity(String sourceRepositoryId, UUID sourceNodeId) {
+        String normalizedSourceRepositoryId = normalizeOptional(sourceRepositoryId);
+        if (normalizedSourceRepositoryId == null || sourceNodeId == null) {
+            return null;
+        }
+        return new MappingIdentity(normalizedSourceRepositoryId, sourceNodeId);
+    }
+
+    private Optional<MappedNode> resolveMappedNode(UUID receiverRootId, MappingIdentity mappingIdentity) {
+        return transferNodeMappingService.findMapping(receiverRootId, mappingIdentity.sourceRepositoryId(), mappingIdentity.sourceNodeId())
+            .flatMap(mapping -> loadLiveNode(mapping.getLocalNodeId()).map(node -> new MappedNode(mapping, node)));
+    }
+
+    private Optional<Node> loadLiveNode(UUID nodeId) {
+        return nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(nodeId, Node.ArchiveStatus.LIVE);
+    }
+
+    private boolean matchesSourceVersion(com.ecm.core.entity.TransferNodeMapping mapping, LocalDateTime sourceLastModifiedAt) {
+        return sourceLastModifiedAt != null && Objects.equals(mapping.getLastSourceModifiedAt(), sourceLastModifiedAt);
+    }
+
+    private void refreshMappingSync(UUID receiverRootId, MappingIdentity mappingIdentity, LocalDateTime sourceLastModifiedAt) {
+        if (mappingIdentity == null) {
+            return;
+        }
+        transferNodeMappingService.refreshSyncTimestamps(
+            receiverRootId,
+            mappingIdentity.sourceRepositoryId(),
+            mappingIdentity.sourceNodeId(),
+            sourceLastModifiedAt,
+            LocalDateTime.now()
+        );
+    }
+
+    private void upsertMappingIfPresent(
+        UUID receiverRootId,
+        MappingIdentity mappingIdentity,
+        UUID localNodeId,
+        LocalDateTime sourceLastModifiedAt
+    ) {
+        if (mappingIdentity == null || localNodeId == null) {
+            return;
+        }
+        upsertMapping(receiverRootId, mappingIdentity, localNodeId, sourceLastModifiedAt);
+    }
+
+    private void upsertMapping(
+        UUID receiverRootId,
+        MappingIdentity mappingIdentity,
+        UUID localNodeId,
+        LocalDateTime sourceLastModifiedAt
+    ) {
+        transferNodeMappingService.upsertMapping(
+            receiverRootId,
+            mappingIdentity.sourceRepositoryId(),
+            mappingIdentity.sourceNodeId(),
+            localNodeId,
+            sourceLastModifiedAt,
+            LocalDateTime.now()
+        );
+    }
+
+    private UUID parentIdOf(Node node) {
+        return node.getParent() != null ? node.getParent().getId() : null;
     }
 
     private Folder tryLoadFolder(UUID folderId) {
@@ -442,7 +644,11 @@ public class TransferReceiverService {
         UUID parentFolderId,
         String name,
         String description,
-        ReplicationDefinition.ConflictPolicy conflictPolicy
+        ReplicationDefinition.ConflictPolicy conflictPolicy,
+        String sourceRepositoryId,
+        UUID sourceNodeId,
+        UUID sourceParentNodeId,
+        LocalDateTime sourceLastModifiedAt
     ) {}
 
     public record CreateFolderResponse(
@@ -463,10 +669,15 @@ public class TransferReceiverService {
 
     private record ConflictResolution(String resolvedName, Node existingNode, ConflictDisposition disposition) {}
 
+    private record MappingIdentity(String sourceRepositoryId, UUID sourceNodeId) {}
+
+    private record MappedNode(com.ecm.core.entity.TransferNodeMapping mapping, Node node) {}
+
     public enum ConflictDisposition {
         CREATED,
         RENAMED,
         SKIPPED,
-        OVERWRITTEN
+        OVERWRITTEN,
+        UNCHANGED
     }
 }

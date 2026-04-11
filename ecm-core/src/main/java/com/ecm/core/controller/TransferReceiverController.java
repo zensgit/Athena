@@ -8,10 +8,12 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @RestController
@@ -49,10 +51,25 @@ public class TransferReceiverController {
         @RequestParam UUID parentFolderId,
         @RequestParam(required = false) String description,
         @RequestParam(defaultValue = "RENAME") ReplicationDefinition.ConflictPolicy conflictPolicy,
+        @RequestParam(required = false) String sourceRepositoryId,
+        @RequestParam(required = false) UUID sourceNodeId,
+        @RequestParam(required = false) UUID sourceParentNodeId,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime sourceLastModifiedAt,
         @RequestHeader(value = TransferReceiverHeaders.USER_HEADER, required = false) String authUsername,
         @RequestHeader(value = TransferReceiverHeaders.SECRET_HEADER, required = false) String authSecret
     ) throws IOException {
         return ResponseEntity.status(201)
-            .body(transferReceiverService.uploadDocument(file, parentFolderId, description, conflictPolicy, authUsername, authSecret));
+            .body(transferReceiverService.uploadDocument(
+                file,
+                parentFolderId,
+                description,
+                conflictPolicy,
+                sourceRepositoryId,
+                sourceNodeId,
+                sourceParentNodeId,
+                sourceLastModifiedAt,
+                authUsername,
+                authSecret
+            ));
     }
 }

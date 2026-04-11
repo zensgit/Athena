@@ -74,7 +74,11 @@ class TransferReceiverControllerTest {
                 parentFolderId,
                 "Contracts",
                 "Replica",
-                ReplicationDefinition.ConflictPolicy.SKIP
+                ReplicationDefinition.ConflictPolicy.SKIP,
+                null,
+                null,
+                null,
+                null
             )),
             eq(null),
             eq("shared-secret")
@@ -114,6 +118,10 @@ class TransferReceiverControllerTest {
             eq(parentFolderId),
             eq("Signed"),
             eq(ReplicationDefinition.ConflictPolicy.OVERWRITE),
+            eq(null),
+            eq(null),
+            eq(null),
+            eq(null),
             eq("replicator"),
             eq("top-secret")
         )).thenReturn(new TransferReceiverService.UploadDocumentResponse(

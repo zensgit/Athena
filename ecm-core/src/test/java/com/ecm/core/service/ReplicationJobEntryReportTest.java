@@ -24,6 +24,7 @@ import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
@@ -114,7 +115,7 @@ class ReplicationJobEntryReportTest {
 
         when(nodeService.getNode(sourceNodeId)).thenReturn(source);
         when(folderService.getFolder(target.getTargetFolderId())).thenReturn(folder(target.getTargetFolderId(), "Outbound"));
-        when(loopbackClient.replicate(target, source, true, ReplicationDefinition.ConflictPolicy.RENAME))
+        when(loopbackClient.replicate(eq(target), eq(source), eq(true), eq(ReplicationDefinition.ConflictPolicy.RENAME), any()))
             .thenReturn(new TransferClient.TransferExecutionResult(UUID.randomUUID(), "OK", entries));
 
         TransferReplicationService.ReplicationJobDto job = service.runDefinition(definition.getId());
@@ -145,7 +146,7 @@ class ReplicationJobEntryReportTest {
 
         when(nodeService.getNode(sourceNodeId)).thenReturn(source);
         when(folderService.getFolder(target.getTargetFolderId())).thenReturn(folder(target.getTargetFolderId(), "Outbound"));
-        when(loopbackClient.replicate(target, source, true, ReplicationDefinition.ConflictPolicy.RENAME))
+        when(loopbackClient.replicate(eq(target), eq(source), eq(true), eq(ReplicationDefinition.ConflictPolicy.RENAME), any()))
             .thenReturn(new TransferClient.TransferExecutionResult(UUID.randomUUID(), "OK", entries));
 
         TransferReplicationService.ReplicationJobDto job = service.runDefinition(definition.getId());
@@ -169,7 +170,7 @@ class ReplicationJobEntryReportTest {
         Node source = folder(sourceNodeId, "Contracts");
 
         when(nodeService.getNode(sourceNodeId)).thenReturn(source);
-        when(loopbackClient.replicate(target, source, true, ReplicationDefinition.ConflictPolicy.RENAME))
+        when(loopbackClient.replicate(eq(target), eq(source), eq(true), eq(ReplicationDefinition.ConflictPolicy.RENAME), any()))
             .thenThrow(new RuntimeException("Connection refused"));
 
         TransferReplicationService.ReplicationJobDto job = service.runDefinition(definition.getId());

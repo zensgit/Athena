@@ -18,8 +18,18 @@ public interface TransferClient {
         TransferTarget target,
         Node source,
         boolean includeChildren,
-        ReplicationDefinition.ConflictPolicy conflictPolicy
+        ReplicationDefinition.ConflictPolicy conflictPolicy,
+        LocalDateTime lastSuccessfulSyncAt
     );
+
+    default TransferExecutionResult replicate(
+        TransferTarget target,
+        Node source,
+        boolean includeChildren,
+        ReplicationDefinition.ConflictPolicy conflictPolicy
+    ) {
+        return replicate(target, source, includeChildren, conflictPolicy, null);
+    }
 
     record TransferVerificationResult(String message, String remoteRepositoryId) {
         public TransferVerificationResult(String message) {
