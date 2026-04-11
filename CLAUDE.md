@@ -81,6 +81,8 @@ All items delivered in 24 commits, 115 files, ~11,500 lines.
 - Primary remote: `origin https://github.com/zensgit/Athena.git`
 - Latest cross-device handoff note:
   - `docs/HANDOFF_20260411.md`
+- Full status snapshot:
+  - `docs/PROJECT_STATUS_20260411.md`
 - Latest acceptance smoke:
   - `ecm-frontend/e2e/frontend-acceptance-smoke.spec.ts`
 - Latest acceptance verification doc:
