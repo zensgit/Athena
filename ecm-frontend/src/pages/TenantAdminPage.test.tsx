@@ -100,6 +100,7 @@ beforeAll(() => {
 beforeEach(() => {
   jest.clearAllMocks();
   MockIntersectionObserver.instances = [];
+  mockedTenantService.getActiveTenantDomain.mockReturnValue('default');
   mockedTenantService.listTenants.mockResolvedValue(tenants);
   mockedTenantService.getCurrentTenant.mockResolvedValue(tenants[0]);
   mockedTenantService.getTenantMetrics.mockImplementation(async (tenantDomain: string) => {
@@ -149,10 +150,10 @@ test('loads tenant metrics when a tenant card becomes visible', async () => {
 
   await waitFor(() => expect(mockedTenantService.getTenantMetrics).toHaveBeenCalledWith('acme'));
 
-  expect(screen.getByText('250 bytes')).toBeInTheDocument();
-  expect(screen.getByText('1,000 bytes')).toBeInTheDocument();
-  expect(screen.getByText('750 bytes')).toBeInTheDocument();
-  expect(screen.getByText('25% used')).toBeInTheDocument();
+  expect(screen.getByText('250 bytes')).toBeTruthy();
+  expect(screen.getByText('1,000 bytes')).toBeTruthy();
+  expect(screen.getByText('750 bytes')).toBeTruthy();
+  expect(screen.getByText('25% used')).toBeTruthy();
   expect(mockedTenantService.getTenantMetrics).not.toHaveBeenCalledWith('beta');
 });
 
@@ -170,7 +171,7 @@ test('invalidates cached tenant metrics when the page refreshes', async () => {
     firstObserver.trigger(firstAcmeCard as Element);
   });
 
-  await waitFor(() => expect(screen.getByText('250 bytes')).toBeInTheDocument());
+  expect(await screen.findByText('250 bytes')).toBeTruthy();
 
   mockedTenantService.getTenantMetrics.mockResolvedValueOnce({
     tenantDomain: 'acme',
@@ -183,6 +184,8 @@ test('invalidates cached tenant metrics when the page refreshes', async () => {
     documentCount: 5,
     folderCount: 6,
   });
+  mockedTenantService.listTenants.mockResolvedValueOnce([...tenants]);
+  mockedTenantService.getCurrentTenant.mockResolvedValueOnce({ ...tenants[0] });
 
   fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
 
@@ -198,7 +201,7 @@ test('invalidates cached tenant metrics when the page refreshes', async () => {
   });
 
   await waitFor(() => expect(mockedTenantService.getTenantMetrics).toHaveBeenCalledTimes(2));
-  await waitFor(() => expect(screen.getByText('400 bytes')).toBeInTheDocument());
+  expect(await screen.findByText('400 bytes')).toBeTruthy();
 });
 
 test('shows a retry action when tenant metrics loading fails and reloads successfully', async () => {
@@ -229,12 +232,12 @@ test('shows a retry action when tenant metrics loading fails and reloads success
     observer.trigger(acmeCard as Element);
   });
 
-  await waitFor(() => expect(screen.getByText('Metrics temporarily unavailable')).toBeInTheDocument());
-  expect(screen.getByText('Load failed')).toBeInTheDocument();
+  expect(await screen.findByText('Metrics temporarily unavailable')).toBeTruthy();
+  expect(screen.getByText('Load failed')).toBeTruthy();
   expect(toastErrorMock).toHaveBeenCalledWith('Metrics temporarily unavailable');
 
   fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
 
   await waitFor(() => expect(mockedTenantService.getTenantMetrics).toHaveBeenCalledTimes(2));
-  await waitFor(() => expect(screen.getByText('300 bytes')).toBeInTheDocument());
+  expect(await screen.findByText('300 bytes')).toBeTruthy();
 });
