@@ -96,6 +96,34 @@ class CmisBrowserControllerTest {
     }
 
     @Test
+    @DisplayName("Type children selector returns HTTP payload for CMIS Explorer")
+    void browserTypeChildrenReturnsTypePayload() throws Exception {
+        when(cmisBrowserService.getTypeChildren()).thenReturn(new CmisModels.TypeChildrenResponse(
+            List.of(new CmisModels.TypeDefinition(
+                "cmis:document",
+                "Document",
+                "cmis:document",
+                true,
+                true,
+                true,
+                List.of("cmis:name")
+            )),
+            1,
+            false
+        ));
+
+        MvcResult mvcResult = mockMvc.perform(get("/api/v1/cmis/browser")
+                .param("cmisselector", "typeChildren"))
+            .andExpect(status().isOk())
+            .andReturn();
+
+        JsonNode root = objectMapper.readTree(mvcResult.getResponse().getContentAsString());
+        assertEquals(1, root.get("totalNumItems").asInt());
+        assertEquals("cmis:document", root.get("types").get(0).get("id").asText());
+        assertEquals("Document", root.get("types").get(0).get("displayName").asText());
+    }
+
+    @Test
     @DisplayName("Object selector returns CMIS object payload")
     void browserObjectReturnsObjectEntry() throws Exception {
         when(cmisBrowserService.getObject("root", null)).thenReturn(new CmisModels.ObjectEntry(
@@ -193,6 +221,11 @@ class CmisBrowserControllerTest {
 
         JsonNode root = objectMapper.readTree(mvcResult.getResponse().getContentAsString());
         assertEquals("SELECT * FROM cmis:document", root.get("statement").asText());
+        assertEquals("athena", root.get("repositoryId").asText());
+        assertEquals(0, root.get("skipCount").asInt());
+        assertEquals(25, root.get("maxItems").asInt());
+        assertEquals(1, root.get("totalNumItems").asInt());
+        assertTrue(root.get("hasMoreItems").isBoolean());
         assertEquals("contract.pdf", root.get("objects").get(0).get("name").asText());
     }
 

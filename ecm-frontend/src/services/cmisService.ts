@@ -27,10 +27,12 @@ export type CmisTypeChildrenResponse = {
   hasMoreItems: boolean;
 };
 
+export type CmisQueryRow = Record<string, unknown>;
+
 export type CmisQueryResponse = {
   repositoryId: string;
   statement: string;
-  objects: any[];
+  objects: CmisQueryRow[];
   skipCount: number;
   maxItems: number;
   totalNumItems: number;

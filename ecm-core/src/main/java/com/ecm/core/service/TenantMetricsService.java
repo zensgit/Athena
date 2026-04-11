@@ -45,7 +45,7 @@ public class TenantMetricsService {
             tenant.isEnabled(),
             storageUsedBytes,
             quotaBytes,
-            quotaBytes != null ? quotaBytes - storageUsedBytes : null,
+            quotaBytes != null ? Math.max(0L, quotaBytes - storageUsedBytes) : null,
             nodeCount,
             documentCount,
             folderCount

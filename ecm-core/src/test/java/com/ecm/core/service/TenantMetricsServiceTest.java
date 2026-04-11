@@ -94,6 +94,23 @@ class TenantMetricsServiceTest {
     }
 
     @Test
+    @DisplayName("Available bytes clamps to zero when tenant is over quota")
+    void availableBytesClampedWhenOverQuota() {
+        UUID rootId = UUID.randomUUID();
+        Tenant tenant = tenant("acme", "Acme Corp", true, 1_000L, rootId);
+        when(tenantRepository.findByTenantDomainIgnoreCaseAndDeletedFalse("acme"))
+            .thenReturn(Optional.of(tenant));
+        when(tenantQuotaService.calculateUsedBytes(tenant)).thenReturn(1_500L);
+        when(nodeRepository.findById(rootId)).thenReturn(Optional.of(folderWithPath(rootId, "/acme workspace")));
+        when(nodeRepository.countByDeletedFalseAndPathLike("/acme workspace/%")).thenReturn(0L);
+        when(documentRepository.countByDeletedFalseAndPathLike("/acme workspace/%")).thenReturn(0L);
+
+        TenantMetricsService.TenantMetrics metrics = service.getMetrics("acme");
+
+        assertEquals(0L, metrics.storageAvailableBytes());
+    }
+
+    @Test
     @DisplayName("Available bytes is null when no quota configured")
     void availableBytesNullWithoutQuota() {
         UUID rootId = UUID.randomUUID();

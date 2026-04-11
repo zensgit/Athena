@@ -187,6 +187,15 @@ const formatEntrySourceDetail = (entry: ReplicationJobEntryReportItem) => {
 const formatEntryAction = (entry: ReplicationJobEntryReportItem) =>
   entry.action || "—";
 
+const hasRenderableEntryReport = (entryReport: ReplicationJobDto["entryReport"]): entryReport is NonNullable<ReplicationJobDto["entryReport"]> =>
+  Boolean(
+    entryReport
+      && typeof entryReport.totalEntries === "number"
+      && typeof entryReport.successCount === "number"
+      && typeof entryReport.failureCount === "number"
+      && Array.isArray(entryReport.entries)
+  );
+
 const formatScheduleSummary = (definition: ReplicationDefinitionDto) => {
   if (!definition.cronExpression) {
     return "Ad hoc";
@@ -1187,7 +1196,7 @@ const TransferReplicationPage: React.FC = () => {
                 <TableBody>
                   {jobs.map((job) => {
                     const expanded = expandedJobId === job.id;
-                    const entryReport = job.entryReport;
+                    const entryReport = hasRenderableEntryReport(job.entryReport) ? job.entryReport : null;
                     const entryRows = entryReport?.entries || [];
 
                     return (

@@ -22,6 +22,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -358,6 +359,36 @@ class TransferReplicationControllerTest {
     }
 
     @Test
+    @DisplayName("GET /replication/jobs includes entry report contract fields when present")
+    void listJobsReturnsEntryReportPayload() throws Exception {
+        UUID jobId = UUID.randomUUID();
+        Map<String, Object> entryReport = Map.of(
+            "totalEntries", 2,
+            "successCount", 1,
+            "failureCount", 1,
+            "entries", List.of(
+                Map.of("action", "CREATED", "sourceNodeId", UUID.randomUUID().toString()),
+                Map.of("action", "FAILED", "message", "Conflict policy skipped duplicate")
+            )
+        );
+
+        when(transferReplicationService.listJobs(any())).thenReturn(new PageImpl<>(
+            List.of(jobDto(jobId, ReplicationJob.ReplicationJobStatus.COMPLETED, entryReport, true)),
+            PageRequest.of(0, 20),
+            1
+        ));
+
+        mockMvc.perform(get("/api/v1/replication/jobs").param("page", "0").param("size", "20"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.content[0].id").value(jobId.toString()))
+            .andExpect(jsonPath("$.content[0].entryReport.totalEntries").value(2))
+            .andExpect(jsonPath("$.content[0].entryReport.successCount").value(1))
+            .andExpect(jsonPath("$.content[0].entryReport.failureCount").value(1))
+            .andExpect(jsonPath("$.content[0].entryReport.entries[1].message").value("Conflict policy skipped duplicate"))
+            .andExpect(jsonPath("$.content[0].reportTruncated").value(true));
+    }
+
+    @Test
     @DisplayName("GET /replication/jobs/{id} returns job details")
     void getJobReturnsJob() throws Exception {
         UUID jobId = UUID.randomUUID();
@@ -411,6 +442,15 @@ class TransferReplicationControllerTest {
     }
 
     private TransferReplicationService.ReplicationJobDto jobDto(UUID id, ReplicationJob.ReplicationJobStatus status) {
+        return jobDto(id, status, null, false);
+    }
+
+    private TransferReplicationService.ReplicationJobDto jobDto(
+        UUID id,
+        ReplicationJob.ReplicationJobStatus status,
+        Map<String, Object> entryReport,
+        boolean reportTruncated
+    ) {
         return new TransferReplicationService.ReplicationJobDto(
             id,
             UUID.randomUUID(),
@@ -430,8 +470,8 @@ class TransferReplicationControllerTest {
                     : ReplicationJob.TransportStatus.NEVER_RUN,
             "Transport diagnostics",
             null,
-            null,
-            false,
+            entryReport,
+            reportTruncated,
             LocalDateTime.now(),
             LocalDateTime.now(),
             null,

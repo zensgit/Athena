@@ -32,29 +32,31 @@ const CmisExplorerPage: React.FC = () => {
   const [types, setTypes] = useState<CmisTypeDefinition[]>([]);
   const [queryStatement, setQueryStatement] = useState('SELECT * FROM cmis:document');
   const [queryResults, setQueryResults] = useState<CmisQueryResponse | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [repoLoading, setRepoLoading] = useState(false);
+  const [typesLoading, setTypesLoading] = useState(false);
+  const [queryLoading, setQueryLoading] = useState(false);
 
   const loadRepoInfo = useCallback(async () => {
-    setLoading(true);
+    setRepoLoading(true);
     try {
       const info = await cmisService.getRepositoryInfo();
       setRepoInfo(info);
     } catch {
       toast.error('Failed to load repository info');
     } finally {
-      setLoading(false);
+      setRepoLoading(false);
     }
   }, []);
 
   const loadTypes = useCallback(async () => {
-    setLoading(true);
+    setTypesLoading(true);
     try {
       const response = await cmisService.getTypeChildren();
       setTypes(response.types);
     } catch {
       toast.error('Failed to load type definitions');
     } finally {
-      setLoading(false);
+      setTypesLoading(false);
     }
   }, []);
 
@@ -63,29 +65,43 @@ const CmisExplorerPage: React.FC = () => {
       toast.warning('Enter a CMIS-QL statement');
       return;
     }
-    setLoading(true);
+    setQueryLoading(true);
     try {
       const response = await cmisService.query(queryStatement.trim());
       setQueryResults(response);
     } catch {
       toast.error('Query execution failed');
     } finally {
-      setLoading(false);
+      setQueryLoading(false);
     }
   }, [queryStatement]);
 
   useEffect(() => {
-    loadRepoInfo();
-  }, [loadRepoInfo]);
+    if (tab === 0 && !repoInfo && !repoLoading) {
+      void loadRepoInfo();
+      return;
+    }
 
-  useEffect(() => {
-    if (tab === 1 && types.length === 0) {
+    if (tab === 1 && types.length === 0 && !typesLoading) {
       loadTypes();
     }
-  }, [tab, types.length, loadTypes]);
+  }, [tab, types.length, typesLoading, loadTypes, repoInfo, repoLoading, loadRepoInfo]);
+
+  useEffect(() => {
+    const handleTenantChanged = () => {
+      setRepoInfo(null);
+      setTypes([]);
+      setQueryResults(null);
+    };
+
+    window.addEventListener('athena:tenant-changed', handleTenantChanged);
+    return () => {
+      window.removeEventListener('athena:tenant-changed', handleTenantChanged);
+    };
+  }, []);
 
   const renderRepoInfo = () => {
-    if (loading && !repoInfo) {
+    if (repoLoading && !repoInfo) {
       return (
         <Box display="flex" justifyContent="center" py={4}>
           <CircularProgress />
@@ -151,7 +167,7 @@ const CmisExplorerPage: React.FC = () => {
   };
 
   const renderTypeBrowser = () => {
-    if (loading && types.length === 0) {
+    if (typesLoading && types.length === 0) {
       return (
         <Box display="flex" justifyContent="center" py={4}>
           <CircularProgress />
@@ -230,9 +246,9 @@ const CmisExplorerPage: React.FC = () => {
           />
           <Button
             variant="contained"
-            startIcon={loading ? <CircularProgress size={18} color="inherit" /> : <RunIcon />}
+            startIcon={queryLoading ? <CircularProgress size={18} color="inherit" /> : <RunIcon />}
             onClick={runQuery}
-            disabled={loading}
+            disabled={queryLoading}
             sx={{ minWidth: 100, mt: 0.5 }}
           >
             Run
@@ -258,7 +274,7 @@ const CmisExplorerPage: React.FC = () => {
                   </TableHead>
                   <TableBody>
                     {queryResults.objects.map((obj, idx) => (
-                      <TableRow key={idx}>
+                      <TableRow key={String(obj['cmis:objectId'] ?? `row-${idx}`)}>
                         {objectKeys.map((key) => (
                           <TableCell key={key} sx={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {typeof obj[key] === 'object' ? JSON.stringify(obj[key]) : String(obj[key] ?? '')}
