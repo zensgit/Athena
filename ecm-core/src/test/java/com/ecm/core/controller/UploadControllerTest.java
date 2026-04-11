@@ -2,6 +2,7 @@ package com.ecm.core.controller;
 
 import com.ecm.core.pipeline.PipelineResult;
 import com.ecm.core.service.DocumentUploadService;
+import com.ecm.core.service.TenantQuotaService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -19,7 +20,10 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import java.util.Map;
 import java.util.UUID;
 
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @ExtendWith(MockitoExtension.class)
@@ -30,12 +34,17 @@ class UploadControllerTest {
     @Mock
     private DocumentUploadService uploadService;
 
+    @Mock
+    private TenantQuotaService tenantQuotaService;
+
     @InjectMocks
     private UploadController uploadController;
 
     @BeforeEach
     void setup() {
-        mockMvc = MockMvcBuilders.standaloneSetup(uploadController).build();
+        mockMvc = MockMvcBuilders.standaloneSetup(uploadController)
+            .setControllerAdvice(new RestExceptionHandler())
+            .build();
     }
 
     @Test
@@ -68,5 +77,22 @@ class UploadControllerTest {
         mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/documents/pipeline/status"))
             .andExpect(status().isOk())
             .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON));
+    }
+
+    @Test
+    @DisplayName("Single upload rejects when quota preflight fails")
+    void uploadRejectsWhenQuotaPreflightFails() throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+            "file", "test.txt", MediaType.TEXT_PLAIN_VALUE, "hello".getBytes()
+        );
+        Mockito.doThrow(new TenantQuotaService.QuotaExceededException("acme", 10L, 8L, 5L))
+            .when(tenantQuotaService).assertQuotaAvailable(file.getSize());
+
+        mockMvc.perform(MockMvcRequestBuilders.multipart("/api/v1/documents/upload")
+                .file(file))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.message").value("Tenant 'acme' storage quota exceeded: quota=10 bytes, used=8 bytes, requested=5 bytes, available=2 bytes"));
+
+        verify(uploadService, never()).uploadDocument(Mockito.any(), Mockito.any(), Mockito.any());
     }
 }

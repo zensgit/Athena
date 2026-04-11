@@ -814,6 +814,75 @@ class TransferReplicationServiceTest {
         verify(loopbackTransferClient).replicate(eq(target), eq(source), eq(true), eq(ReplicationDefinition.ConflictPolicy.RENAME), eq(previousSync));
     }
 
+    @Test
+    @DisplayName("partial result failures do not advance watermark and mark job failed")
+    void partialResultFailuresDoNotAdvanceWatermarkAndMarkJobFailed() {
+        UUID targetFolderId = UUID.randomUUID();
+        UUID sourceNodeId = UUID.randomUUID();
+        LocalDateTime previousSync = LocalDateTime.now().minusHours(6);
+
+        TransferTarget target = new TransferTarget();
+        target.setId(UUID.randomUUID());
+        target.setName("loopback");
+        target.setTransportType(TransferTarget.TransportType.LOOPBACK);
+        target.setTargetFolderId(targetFolderId);
+        target.setEnabled(true);
+        target.setCreatedAt(LocalDateTime.now());
+        storedTargets.put(target.getId(), target);
+
+        ReplicationDefinition definition = new ReplicationDefinition();
+        definition.setId(UUID.randomUUID());
+        definition.setName("contracts");
+        definition.setSourceNodeId(sourceNodeId);
+        definition.setTransferTargetId(target.getId());
+        definition.setIncludeChildren(true);
+        definition.setEnabled(true);
+        definition.setAutoRetryEnabled(true);
+        definition.setRetryBackoffMinutes(10);
+        definition.setMaxRetryAttempts(1);
+        definition.setLastSuccessfulSyncAt(previousSync);
+        definition.setCreatedAt(LocalDateTime.now());
+        storedDefinitions.put(definition.getId(), definition);
+
+        Node source = node(sourceNodeId, "Contracts");
+        when(folderService.getFolder(targetFolderId)).thenReturn(folder(targetFolderId, "Outbound"));
+        when(nodeService.getNode(sourceNodeId)).thenReturn(source);
+        when(loopbackTransferClient.replicate(eq(target), eq(source), eq(true), eq(ReplicationDefinition.ConflictPolicy.RENAME), eq(previousSync)))
+            .thenReturn(new TransferClient.TransferExecutionResult(
+                UUID.randomUUID(),
+                "Incremental sync",
+                List.of(
+                    new TransferClient.TransferExecutionEntry(
+                        sourceNodeId,
+                        "/Contracts",
+                        "FOLDER",
+                        UUID.randomUUID(),
+                        "CREATED",
+                        "Created mapped folder",
+                        LocalDateTime.now(),
+                        LocalDateTime.now()
+                    ),
+                    new TransferClient.TransferExecutionEntry(
+                        UUID.randomUUID(),
+                        "/Contracts/contract.pdf",
+                        "DOCUMENT",
+                        null,
+                        "FAILED",
+                        "Remote receiver rejected upload",
+                        LocalDateTime.now(),
+                        LocalDateTime.now()
+                    )
+                )
+            ));
+
+        TransferReplicationService.ReplicationJobDto job = service.runDefinition(definition.getId());
+
+        assertEquals(ReplicationJob.ReplicationJobStatus.FAILED, job.status());
+        assertEquals(previousSync, definition.getLastSuccessfulSyncAt());
+        assertEquals(1L, job.entryReport().get("failureCount"));
+        assertTrue(job.transportMessage().contains("1 failed entry"));
+    }
+
     private Folder folder(UUID id, String name) {
         Folder folder = new Folder();
         folder.setId(id);

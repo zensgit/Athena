@@ -9,6 +9,7 @@ import com.ecm.core.preview.PreviewService;
 import com.ecm.core.service.CheckOutCheckInService;
 import com.ecm.core.service.ContentService;
 import com.ecm.core.service.NodeService;
+import com.ecm.core.service.TenantQuotaService;
 import com.ecm.core.service.PdfAnnotationService;
 import com.ecm.core.service.RenditionResourceService;
 import com.ecm.core.service.VersionService;
@@ -46,6 +47,9 @@ class DocumentControllerPreviewRepairTest {
     private ContentService contentService;
 
     @Mock
+    private TenantQuotaService tenantQuotaService;
+
+    @Mock
     private PreviewService previewService;
 
     @Mock
@@ -72,6 +76,7 @@ class DocumentControllerPreviewRepairTest {
             nodeService,
             versionService,
             contentService,
+            tenantQuotaService,
             previewService,
             previewQueueService,
             ocrQueueService,

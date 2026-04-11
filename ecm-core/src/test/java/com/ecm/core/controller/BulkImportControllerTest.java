@@ -3,6 +3,7 @@ package com.ecm.core.controller;
 import com.ecm.core.entity.ImportJob.ConflictPolicy;
 import com.ecm.core.entity.ImportJob.ImportJobStatus;
 import com.ecm.core.service.BulkImportService;
+import com.ecm.core.service.TenantQuotaService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,12 +36,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class BulkImportControllerTest {
 
     @Mock private BulkImportService bulkImportService;
+    @Mock private TenantQuotaService tenantQuotaService;
 
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
-        BulkImportController controller = new BulkImportController(bulkImportService);
+        BulkImportController controller = new BulkImportController(bulkImportService, tenantQuotaService);
         ObjectMapper objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
         MappingJackson2HttpMessageConverter converter = new MappingJackson2HttpMessageConverter(objectMapper);
@@ -67,6 +69,24 @@ class BulkImportControllerTest {
             .andExpect(jsonPath("$.status").value("PENDING"))
             .andExpect(jsonPath("$.conflictPolicy").value("RENAME"))
             .andExpect(jsonPath("$.targetFolderId").value(targetFolderId.toString()));
+    }
+
+    @Test
+    @DisplayName("POST /bulk-import rejects when quota preflight fails")
+    void startImportRejectsWhenQuotaPreflightFails() throws Exception {
+        MockMultipartFile file = new MockMultipartFile("files", "budget.xlsx", "application/vnd.ms-excel", "sheet".getBytes());
+        org.mockito.Mockito.doThrow(new TenantQuotaService.QuotaExceededException("acme", 10L, 8L, 5L))
+            .when(tenantQuotaService).assertQuotaAvailable(5L);
+
+        mockMvc.perform(multipart("/api/v1/bulk-import")
+                .file(file)
+                .param("relativePaths", "finance/q1/budget.xlsx")
+                .param("conflictPolicy", "RENAME"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.message").value("Tenant 'acme' storage quota exceeded: quota=10 bytes, used=8 bytes, requested=5 bytes, available=2 bytes"));
+
+        org.mockito.Mockito.verify(bulkImportService, org.mockito.Mockito.never())
+            .startImport(any(), anyList(), any(), any());
     }
 
     @Test

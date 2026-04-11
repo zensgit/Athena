@@ -52,6 +52,9 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
     
     @Query("SELECT SUM(d.fileSize) FROM Document d WHERE d.createdBy = :userId AND d.deleted = false")
     Long calculateUserStorageUsage(@Param("userId") String userId);
+
+    @Query("SELECT COALESCE(SUM(d.fileSize), 0) FROM Document d WHERE d.deleted = false AND d.path LIKE :pathPrefix")
+    long sumFileSizeByPathPrefix(@Param("pathPrefix") String pathPrefix);
     
     @Query("SELECT d.mimeType, COUNT(d) FROM Document d WHERE d.deleted = false GROUP BY d.mimeType")
     List<Object[]> getDocumentCountByMimeType();

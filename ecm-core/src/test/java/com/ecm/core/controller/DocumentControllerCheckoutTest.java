@@ -11,6 +11,7 @@ import com.ecm.core.preview.PreviewService;
 import com.ecm.core.service.CheckOutCheckInService;
 import com.ecm.core.service.ContentService;
 import com.ecm.core.service.NodeService;
+import com.ecm.core.service.TenantQuotaService;
 import com.ecm.core.service.PdfAnnotationService;
 import com.ecm.core.service.RenditionResourceService;
 import com.ecm.core.service.VersionService;
@@ -42,6 +43,7 @@ class DocumentControllerCheckoutTest {
     @Mock private NodeService nodeService;
     @Mock private VersionService versionService;
     @Mock private ContentService contentService;
+    @Mock private TenantQuotaService tenantQuotaService;
     @Mock private PreviewService previewService;
     @Mock private PreviewQueueService previewQueueService;
     @Mock private OcrQueueService ocrQueueService;
@@ -56,6 +58,7 @@ class DocumentControllerCheckoutTest {
             nodeService,
             versionService,
             contentService,
+            tenantQuotaService,
             previewService,
             previewQueueService,
             ocrQueueService,

@@ -340,20 +340,34 @@ public class TransferReplicationService {
                 );
 
             LocalDateTime completedAt = LocalDateTime.now();
+            boolean hasFailedEntries = resultHasFailedEntries(result);
             definition.setLastRunAt(completedAt);
-            definition.setLastSuccessfulSyncAt(completedAt);
+            if (!hasFailedEntries) {
+                definition.setLastSuccessfulSyncAt(completedAt);
+            }
             replicationDefinitionRepository.save(definition);
             JobEntryReportPayload entryReportPayload = buildSuccessEntryReport(source, result, startedAt, completedAt);
 
             job.setCopiedNodeId(result.copiedNodeId());
-            job.setStatus(ReplicationJobStatus.COMPLETED);
             job.setCompletedAt(completedAt);
+            job.setEntryReport(entryReportPayload.entryReport());
+            job.setReportTruncated(entryReportPayload.reportTruncated());
+            if (hasFailedEntries) {
+                String failureMessage = summarizeResultFailures(result);
+                job.setStatus(ReplicationJobStatus.FAILED);
+                job.setLastMessage("Replication completed with failed entries");
+                job.setTransportStatus(ReplicationJob.TransportStatus.FAILED);
+                job.setTransportMessage(failureMessage);
+                job.setErrorLog(failureMessage);
+                replicationJobRepository.save(job);
+                tryQueueAutomaticRetry(job);
+                return;
+            }
+            job.setStatus(ReplicationJobStatus.COMPLETED);
             job.setLastMessage(result.message());
             job.setTransportStatus(ReplicationJob.TransportStatus.SUCCESS);
             job.setTransportMessage(result.message());
             job.setErrorLog(null);
-            job.setEntryReport(entryReportPayload.entryReport());
-            job.setReportTruncated(entryReportPayload.reportTruncated());
             replicationJobRepository.save(job);
         } catch (RuntimeException ex) {
             log.warn("Replication job {} failed: {}", jobId, ex.getMessage());
@@ -805,6 +819,30 @@ public class TransferReplicationService {
         entryReport.put("failureCount", failureCount);
         entryReport.put("entries", storedEntries);
         return new JobEntryReportPayload(entryReport, reportTruncated);
+    }
+
+    private boolean resultHasFailedEntries(TransferClient.TransferExecutionResult result) {
+        return result != null
+            && result.entries() != null
+            && result.entries().stream().anyMatch(this::isFailedEntry);
+    }
+
+    private String summarizeResultFailures(TransferClient.TransferExecutionResult result) {
+        if (result == null || result.entries() == null || result.entries().isEmpty()) {
+            return "Replication completed with failed entries";
+        }
+        long failedCount = result.entries().stream().filter(this::isFailedEntry).count();
+        String baseMessage = normalizeOptional(result.message());
+        if (baseMessage == null) {
+            return "Replication completed with " + failedCount + " failed entr" + (failedCount == 1 ? "y" : "ies");
+        }
+        return baseMessage + " (" + failedCount + " failed entr" + (failedCount == 1 ? "y" : "ies") + ")";
+    }
+
+    private boolean isFailedEntry(TransferClient.TransferExecutionEntry entry) {
+        return entry != null
+            && entry.action() != null
+            && "FAILED".equalsIgnoreCase(entry.action());
     }
 
     private Map<String, Object> toEntryReportItem(TransferClient.TransferExecutionEntry entry) {

@@ -3,6 +3,7 @@ package com.ecm.core.controller;
 import com.ecm.core.entity.ReplicationDefinition;
 import com.ecm.core.service.transfer.TransferReceiverHeaders;
 import com.ecm.core.service.transfer.TransferReceiverService;
+import com.ecm.core.service.TenantQuotaService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +24,7 @@ import java.util.UUID;
 public class TransferReceiverController {
 
     private final TransferReceiverService transferReceiverService;
+    private final TenantQuotaService tenantQuotaService;
 
     @GetMapping("/verify")
     @Operation(summary = "Verify transfer receiver target folder")
@@ -58,6 +60,9 @@ public class TransferReceiverController {
         @RequestHeader(value = TransferReceiverHeaders.USER_HEADER, required = false) String authUsername,
         @RequestHeader(value = TransferReceiverHeaders.SECRET_HEADER, required = false) String authSecret
     ) throws IOException {
+        if (file != null) {
+            tenantQuotaService.assertQuotaAvailable(file.getSize());
+        }
         return ResponseEntity.status(201)
             .body(transferReceiverService.uploadDocument(
                 file,

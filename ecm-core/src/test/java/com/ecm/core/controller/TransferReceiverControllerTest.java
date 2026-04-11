@@ -3,6 +3,7 @@ package com.ecm.core.controller;
 import com.ecm.core.entity.ReplicationDefinition;
 import com.ecm.core.service.transfer.TransferReceiverHeaders;
 import com.ecm.core.service.transfer.TransferReceiverService;
+import com.ecm.core.service.TenantQuotaService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,6 +21,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.UUID;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -34,11 +36,14 @@ class TransferReceiverControllerTest {
     @Mock
     private TransferReceiverService transferReceiverService;
 
+    @Mock
+    private TenantQuotaService tenantQuotaService;
+
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
-        TransferReceiverController controller = new TransferReceiverController(transferReceiverService);
+        TransferReceiverController controller = new TransferReceiverController(transferReceiverService, tenantQuotaService);
         ObjectMapper objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
@@ -113,6 +118,7 @@ class TransferReceiverControllerTest {
         UUID parentFolderId = UUID.randomUUID();
         UUID documentId = UUID.randomUUID();
         MockMultipartFile file = new MockMultipartFile("file", "contract.pdf", "application/pdf", "pdf".getBytes());
+        org.mockito.Mockito.doNothing().when(tenantQuotaService).assertQuotaAvailable(file.getSize());
         when(transferReceiverService.uploadDocument(
             anyMultipart(),
             eq(parentFolderId),
@@ -143,6 +149,27 @@ class TransferReceiverControllerTest {
             .andExpect(jsonPath("$.documentName").value("contract.pdf"))
             .andExpect(jsonPath("$.disposition").value("OVERWRITTEN"))
             .andExpect(jsonPath("$.message").value("Overwrote receiver document"));
+    }
+
+    @Test
+    @DisplayName("POST /transfer/receiver/documents rejects when quota preflight fails")
+    void uploadDocumentRejectsWhenQuotaPreflightFails() throws Exception {
+        UUID parentFolderId = UUID.randomUUID();
+        MockMultipartFile file = new MockMultipartFile("file", "contract.pdf", "application/pdf", "pdf".getBytes());
+        org.mockito.Mockito.doThrow(new TenantQuotaService.QuotaExceededException("acme", 10L, 8L, 3L))
+            .when(tenantQuotaService).assertQuotaAvailable(file.getSize());
+
+        mockMvc.perform(multipart("/api/v1/transfer/receiver/documents")
+                .file(file)
+                .param("parentFolderId", parentFolderId.toString())
+                .param("conflictPolicy", "OVERWRITE")
+                .header(TransferReceiverHeaders.USER_HEADER, "replicator")
+                .header(TransferReceiverHeaders.SECRET_HEADER, "top-secret"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.message").value("Tenant 'acme' storage quota exceeded: quota=10 bytes, used=8 bytes, requested=3 bytes, available=2 bytes"));
+
+        org.mockito.Mockito.verify(transferReceiverService, org.mockito.Mockito.never())
+            .uploadDocument(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test

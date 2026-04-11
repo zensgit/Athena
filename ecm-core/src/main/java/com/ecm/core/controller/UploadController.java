@@ -2,6 +2,7 @@ package com.ecm.core.controller;
 
 import com.ecm.core.pipeline.PipelineResult;
 import com.ecm.core.service.DocumentUploadService;
+import com.ecm.core.service.TenantQuotaService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -30,6 +31,7 @@ import java.util.UUID;
 public class UploadController {
 
     private final DocumentUploadService uploadService;
+    private final TenantQuotaService tenantQuotaService;
 
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(summary = "Upload a document", description = "Upload a document with automatic processing")
@@ -45,6 +47,9 @@ public class UploadController {
 
             @Parameter(description = "Document description")
             @RequestParam(value = "description", required = false) String description) throws IOException {
+
+        // Best-effort quota preflight
+        tenantQuotaService.assertQuotaAvailable(file.getSize());
 
         Map<String, Object> properties = null;
         if (description != null) {
@@ -81,6 +86,11 @@ public class UploadController {
 
             @Parameter(description = "Target folder ID (alias of folderId)")
             @RequestParam(value = "parentId", required = false) UUID parentId) throws IOException {
+
+        // Best-effort quota preflight for total batch size
+        long totalBatchSize = 0;
+        for (MultipartFile f : files) { totalBatchSize += f.getSize(); }
+        tenantQuotaService.assertQuotaAvailable(totalBatchSize);
 
         UUID effectiveFolderId = folderId != null ? folderId : parentId;
         Map<String, PipelineResult> results = uploadService.uploadBatch(files, effectiveFolderId);

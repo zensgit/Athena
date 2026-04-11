@@ -41,8 +41,9 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Transactional
 public class ContentService {
-    
+
     private final DocumentRepository documentRepository;
+    private final TenantQuotaService tenantQuotaService;
     
     @Value("${ecm.storage.root-path}")
     private String rootPath;
@@ -99,7 +100,17 @@ public class ContentService {
             }
             
             log.info("Stored content: {} at path: {}", contentId, storagePath);
-            
+
+            // Authoritative quota enforcement: check actual stored size
+            try {
+                long storedSize = Files.size(storagePath);
+                tenantQuotaService.assertQuotaAvailable(storedSize);
+            } catch (TenantQuotaService.QuotaExceededException ex) {
+                log.warn("Quota exceeded after write, deleting stored content: {}", contentId);
+                Files.deleteIfExists(storagePath);
+                throw ex;
+            }
+
             return contentId;
             
         } finally {

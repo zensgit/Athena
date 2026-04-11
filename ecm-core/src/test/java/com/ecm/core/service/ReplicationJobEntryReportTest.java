@@ -183,6 +183,37 @@ class ReplicationJobEntryReportTest {
         assertFalse(job.reportTruncated());
     }
 
+    @Test
+    @DisplayName("partial-success report keeps mixed summary and marks job failed")
+    void partialSuccessReportKeepsMixedSummaryAndMarksJobFailed() {
+        setupTargetAndDefinition();
+        ReplicationDefinition definition = storedDefinitions.values().iterator().next();
+        TransferTarget target = storedTargets.values().iterator().next();
+        UUID sourceNodeId = definition.getSourceNodeId();
+        Node source = folder(sourceNodeId, "Contracts");
+        LocalDateTime previousSync = LocalDateTime.now().minusHours(2);
+        definition.setLastSuccessfulSyncAt(previousSync);
+
+        List<TransferClient.TransferExecutionEntry> entries = List.of(
+            entry(UUID.randomUUID(), "CREATED", "Created folder A"),
+            entry(null, "FAILED", "Remote receiver rejected upload")
+        );
+
+        when(nodeService.getNode(sourceNodeId)).thenReturn(source);
+        when(folderService.getFolder(target.getTargetFolderId())).thenReturn(folder(target.getTargetFolderId(), "Outbound"));
+        when(loopbackClient.replicate(eq(target), eq(source), eq(true), eq(ReplicationDefinition.ConflictPolicy.RENAME), eq(previousSync)))
+            .thenReturn(new TransferClient.TransferExecutionResult(UUID.randomUUID(), "Incremental sync", entries));
+
+        TransferReplicationService.ReplicationJobDto job = service.runDefinition(definition.getId());
+
+        assertEquals(ReplicationJobStatus.FAILED, job.status());
+        assertEquals(previousSync, definition.getLastSuccessfulSyncAt());
+        assertEquals(2, job.entryReport().get("totalEntries"));
+        assertEquals(1L, job.entryReport().get("successCount"));
+        assertEquals(1L, job.entryReport().get("failureCount"));
+        assertTrue(job.errorLog().contains("1 failed entry"));
+    }
+
     private void setupTargetAndDefinition() {
         UUID targetFolderId = UUID.randomUUID();
         UUID sourceNodeId = UUID.randomUUID();

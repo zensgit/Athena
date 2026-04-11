@@ -2,6 +2,7 @@ package com.ecm.core.controller;
 
 import com.ecm.core.entity.ImportJob.ConflictPolicy;
 import com.ecm.core.service.BulkImportService;
+import com.ecm.core.service.TenantQuotaService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -14,6 +15,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Arrays;
+import java.util.Objects;
 import java.util.UUID;
 
 @RestController
@@ -23,6 +26,7 @@ import java.util.UUID;
 public class BulkImportController {
 
     private final BulkImportService bulkImportService;
+    private final TenantQuotaService tenantQuotaService;
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(summary = "Start a bulk import job")
@@ -32,6 +36,13 @@ public class BulkImportController {
         @RequestParam(value = "targetFolderId", required = false) UUID targetFolderId,
         @RequestParam(value = "conflictPolicy", defaultValue = "SKIP") ConflictPolicy conflictPolicy
     ) throws IOException {
+        if (files != null && files.length > 0) {
+            long requestedBytes = Arrays.stream(files)
+                .filter(Objects::nonNull)
+                .mapToLong(MultipartFile::getSize)
+                .sum();
+            tenantQuotaService.assertQuotaAvailable(requestedBytes);
+        }
         return ResponseEntity.accepted()
             .body(bulkImportService.startImport(files, relativePaths, targetFolderId, conflictPolicy));
     }

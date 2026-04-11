@@ -17,6 +17,7 @@ import com.ecm.core.service.PdfAnnotationService;
 import com.ecm.core.service.RenditionResourceService;
 import com.ecm.core.service.VersionService;
 import com.ecm.core.service.ContentService;
+import com.ecm.core.service.TenantQuotaService;
 import com.ecm.core.preview.PreviewService;
 import com.ecm.core.preview.PreviewResult;
 import com.ecm.core.preview.PreviewQueueService;
@@ -53,6 +54,7 @@ public class DocumentController {
     private final NodeService nodeService;
     private final VersionService versionService;
     private final ContentService contentService;
+    private final TenantQuotaService tenantQuotaService;
     private final PreviewService previewService;
     private final PreviewQueueService previewQueueService;
     private final OcrQueueService ocrQueueService;
@@ -75,9 +77,12 @@ public class DocumentController {
             @Parameter(description = "Parent folder ID (alias of parentId)") @RequestParam(required = false) UUID folderId,
             @Parameter(description = "Document ID for versioning") @RequestParam(required = false) UUID documentId,
             @Parameter(description = "Version comment") @RequestParam(required = false) String comment,
-            @Parameter(description = "Major version") @RequestParam(defaultValue = "false") boolean majorVersion) 
+            @Parameter(description = "Major version") @RequestParam(defaultValue = "false") boolean majorVersion)
             throws IOException {
-        
+
+        // Best-effort quota preflight using declared file size
+        tenantQuotaService.assertQuotaAvailable(file.getSize());
+
         if (documentId != null) {
             // Create new version
             Version version = versionService.createVersion(documentId, file, comment, majorVersion);
