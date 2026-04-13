@@ -1,0 +1,30 @@
+# Git
+.git
+.gitignore
+
+# Build output
+target/
+build/
+out/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Maven wrapper (already in image)
+.mvn/wrapper/maven-wrapper.jar
+
+# Tests (not needed in image)
+src/test/

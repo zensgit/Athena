@@ -65,15 +65,25 @@ services:
       - ecm_temp:/var/ecm/temp
       - ./logs:/app/logs
     depends_on:
-      - postgres
-      - elasticsearch
-      - redis
-      - rabbitmq
-      - minio
-      - keycloak
-      - ml-service
-      - collabora
-      - clamav
+      postgres:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+      # Optional services — uncomment when their images are available:
+      # ml-service:
+      #   condition: service_healthy
+      # collabora:
+      #   condition: service_started
+      # clamav:
+      #   condition: service_healthy
     networks:
       - ecm-network
     restart: unless-stopped
@@ -81,7 +91,8 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      start_period: 90s
+      retries: 5
 
   # PostgreSQL Database
   postgres:
@@ -236,15 +247,23 @@ services:
       - KC_DB_URL=jdbc:postgresql://postgres-keycloak:5432/keycloak
       - KC_DB_USERNAME=${KEYCLOAK_DB_USER}
       - KC_DB_PASSWORD=${KEYCLOAK_DB_PASSWORD}
+      - KC_HEALTH_ENABLED=true
     volumes:
       - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm.json
     ports:
       - "${KEYCLOAK_PORT:-8180}:8080"
     depends_on:
-      - postgres-keycloak
+      postgres-keycloak:
+        condition: service_healthy
     networks:
       - ecm-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200\\|UP'"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 5
 
   # Postgres for Keycloak
   postgres-keycloak:
@@ -258,6 +277,11 @@ services:
     networks:
       - ecm-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${KEYCLOAK_DB_USER} -d keycloak"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # ML Service
   ml-service:
@@ -314,7 +338,8 @@ services:
     ports:
       - "8069:8069"
     depends_on:
-      - postgres-odoo
+      postgres-odoo:
+        condition: service_healthy
     networks:
       - ecm-network
     restart: unless-stopped
@@ -331,6 +356,11 @@ services:
     networks:
       - ecm-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${ODOO_DB_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # Frontend Application
   ecm-frontend:
@@ -340,10 +370,17 @@ services:
     ports:
       - "${ECM_FRONTEND_PORT:-3000}:80"
     depends_on:
-      - ecm-core
+      ecm-core:
+        condition: service_healthy
     networks:
       - ecm-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
 
   # Nginx Reverse Proxy
   nginx:
@@ -356,11 +393,19 @@ services:
       - ./nginx/ssl:/etc/nginx/ssl:ro
       - ./nginx/logs:/var/log/nginx
     depends_on:
-      - ecm-core
-      - ecm-frontend
+      ecm-core:
+        condition: service_healthy
+      ecm-frontend:
+        condition: service_healthy
     networks:
       - ecm-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
 
   # Monitoring with Prometheus
   prometheus:
@@ -395,7 +440,8 @@ services:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
     depends_on:
-      - prometheus
+      prometheus:
+        condition: service_started
     networks:
       - ecm-network
     restart: unless-stopped

@@ -25,6 +25,8 @@ import java.util.*;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
+import org.springframework.beans.factory.annotation.Autowired;
+
 @Service
 @Slf4j
 public class BulkImportService {
@@ -38,6 +40,7 @@ public class BulkImportService {
     private final TenantWorkspaceScopeService tenantWorkspaceScopeService;
     private final Executor importExecutor;
 
+    @Autowired
     public BulkImportService(
         ImportJobRepository importJobRepository,
         DocumentUploadService documentUploadService,

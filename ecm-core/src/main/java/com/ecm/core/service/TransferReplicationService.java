@@ -31,6 +31,8 @@ import java.util.concurrent.Executors;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Autowired;
+
 @Service
 @Slf4j
 public class TransferReplicationService {
@@ -47,6 +49,7 @@ public class TransferReplicationService {
     private final Executor executor;
     private final Map<TransferTarget.TransportType, TransferClient> transferClients;
 
+    @Autowired
     public TransferReplicationService(
         TransferTargetRepository transferTargetRepository,
         ReplicationDefinitionRepository replicationDefinitionRepository,
