@@ -11,6 +11,7 @@ import com.ecm.core.event.*;
 import com.ecm.core.repository.DocumentRepository;
 import com.ecm.core.repository.VersionRepository;
 import com.ecm.core.util.LineDiffUtils;
+import com.ecm.core.entity.ContentReference.OwnerType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,6 +45,7 @@ public class VersionService {
     private final SecurityService securityService;
     private final ApplicationEventPublisher eventPublisher;
     private final VersionLabelService versionLabelService;
+    private final ContentReferenceService contentReferenceService;
 
     @Autowired
     @Lazy
@@ -119,7 +121,10 @@ public class VersionService {
         }
         
         Version savedVersion = versionRepository.save(version);
-        
+
+        // Register binary ownership in content reference ledger
+        contentReferenceService.attach(contentId, OwnerType.VERSION, savedVersion.getId());
+
         String previousContentHash = normalizeHash(document.getContentHash());
 
         // Update document
@@ -268,14 +273,10 @@ public class VersionService {
         }
         
         versionRepository.delete(version);
-        
-        // Try to delete content if not referenced
-        try {
-            contentService.deleteContent(version.getContentId());
-        } catch (IOException e) {
-            log.warn("Failed to delete content for version: {}", versionId, e);
-        }
-        
+
+        // Detach binary ownership — physical deletion is deferred to orphan cleanup
+        contentReferenceService.detach(version.getContentId(), OwnerType.VERSION, versionId);
+
         eventPublisher.publishEvent(new VersionDeletedEvent(version, securityService.getCurrentUser()));
     }
     

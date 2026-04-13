@@ -1,5 +1,6 @@
 package com.ecm.core.service;
 
+import com.ecm.core.entity.ContentReference.OwnerType;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Permission.PermissionType;
@@ -38,6 +39,7 @@ public class CheckOutCheckInService {
     private final NodeRepository nodeRepository;
     private final SecurityService securityService;
     private final TenantWorkspaceScopeService tenantWorkspaceScopeService;
+    private final ContentReferenceService contentReferenceService;
 
     // ------------------------------------------------------------------ checkout
 
@@ -106,6 +108,9 @@ public class CheckOutCheckInService {
 
         Document savedWc = documentRepository.save(wc);
 
+        // Register binary ownership for working copy
+        contentReferenceService.attach(savedWc.getContentId(), OwnerType.WORKING_COPY, savedWc.getId());
+
         // --- mark original as checked-out ----------------------------------
         original.checkout(currentUser);
         documentRepository.save(original);
@@ -167,6 +172,9 @@ public class CheckOutCheckInService {
         wc.setLastModifiedDate(LocalDateTime.now());
         documentRepository.save(wc);
 
+        // Detach binary ownership for working copy
+        contentReferenceService.detach(wc.getContentId(), OwnerType.WORKING_COPY, wc.getId());
+
         log.info("Checked in working copy {} → original {}", workingCopyId, original.getId());
 
         if (keepCheckedOut) {
@@ -207,6 +215,10 @@ public class CheckOutCheckInService {
             wc.setLastModifiedBy(currentUser);
             wc.setLastModifiedDate(LocalDateTime.now());
             documentRepository.save(wc);
+
+            // Detach binary ownership for cancelled working copy
+            contentReferenceService.detach(wc.getContentId(), OwnerType.WORKING_COPY, wc.getId());
+
             log.info("Cancelled checkout and soft-deleted working copy {}", wc.getId());
         }
 

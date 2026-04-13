@@ -2,6 +2,7 @@ package com.ecm.core.service;
 
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Version;
+import com.ecm.core.repository.ContentReferenceRepository;
 import com.ecm.core.repository.DocumentRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -44,6 +45,7 @@ public class ContentService {
 
     private final DocumentRepository documentRepository;
     private final TenantQuotaService tenantQuotaService;
+    private final ContentReferenceRepository contentReferenceRepository;
     
     @Value("${ecm.storage.root-path}")
     private String rootPath;
@@ -299,18 +301,16 @@ public class ContentService {
     }
     
     private boolean isContentReferenced(String contentId) {
-        // Check if any documents or versions reference this content
-        long docCount = documentRepository.count((root, query, cb) -> 
-            cb.equal(root.get("contentId"), contentId));
-        
-        if (docCount > 0) {
+        // Use content reference ledger as authoritative source when available
+        if (contentReferenceRepository.countByContentIdAndActiveTrue(contentId) > 0) {
             return true;
         }
-        
-        // Also check versions
-        // This would require a VersionRepository query
-        
-        return false;
+
+        // Fallback: check documents table directly (covers pre-ledger references)
+        long docCount = documentRepository.count((root, query, cb) ->
+            cb.equal(root.get("contentId"), contentId));
+
+        return docCount > 0;
     }
     
     private String generateContentId() {
