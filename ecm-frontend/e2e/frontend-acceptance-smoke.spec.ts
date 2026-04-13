@@ -27,8 +27,8 @@ test.describe('Athena frontend acceptance smoke', () => {
 
     await expect(page).toHaveURL(/\/admin\/transfer-replication$/);
     await expect(page.locator('h4', { hasText: 'Transfer Replication' })).toBeVisible();
-    await expect(page.locator('text=Transfer Targets')).toBeVisible();
-    await expect(page.locator('text=Replication Jobs')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Transfer Targets' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Replication Jobs' })).toBeVisible();
     await expect(page.locator('text=LOOPBACK keeps local same-repo replication.')).toBeVisible();
   });
 
