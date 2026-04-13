@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="072-create-content-references-table" author="kernel-hardening">
+        <comment>P0A-1: Authoritative binary ownership ledger for reference-safe content lifecycle</comment>
+
+        <createTable tableName="content_references">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="content_id" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="owner_type" type="varchar(32)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="owner_id" type="${uuid_type}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="active" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="timestamp" defaultValueComputed="${now}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="timestamp"/>
+        </createTable>
+
+        <addUniqueConstraint
+            tableName="content_references"
+            columnNames="content_id, owner_type, owner_id"
+            constraintName="uq_content_ref_owner"/>
+
+        <createIndex tableName="content_references" indexName="idx_content_ref_content_active">
+            <column name="content_id"/>
+            <column name="active"/>
+        </createIndex>
+
+        <createIndex tableName="content_references" indexName="idx_content_ref_owner">
+            <column name="owner_type"/>
+            <column name="owner_id"/>
+        </createIndex>
+
+        <rollback>
+            <dropTable tableName="content_references"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

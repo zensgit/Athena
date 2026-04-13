@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="073-backfill-document-content-references" author="kernel-hardening">
+        <comment>P0A-2: Backfill content references for existing documents (non-working-copy)</comment>
+        <sql>
+            INSERT INTO content_references (id, content_id, owner_type, owner_id, active, created_at)
+            SELECT gen_random_uuid(), d.content_id, 'DOCUMENT', d.id, true, now()
+            FROM documents d
+            WHERE d.content_id IS NOT NULL
+              AND d.content_id != ''
+              AND d.is_working_copy = false
+              AND NOT EXISTS (
+                  SELECT 1 FROM content_references cr
+                  WHERE cr.content_id = d.content_id
+                    AND cr.owner_type = 'DOCUMENT'
+                    AND cr.owner_id = d.id
+              )
+        </sql>
+        <rollback>
+            <sql>DELETE FROM content_references WHERE owner_type = 'DOCUMENT'</sql>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="073-backfill-working-copy-content-references" author="kernel-hardening">
+        <comment>P0A-2: Backfill content references for existing working copies</comment>
+        <sql>
+            INSERT INTO content_references (id, content_id, owner_type, owner_id, active, created_at)
+            SELECT gen_random_uuid(), d.content_id, 'WORKING_COPY', d.id, true, now()
+            FROM documents d
+            WHERE d.content_id IS NOT NULL
+              AND d.content_id != ''
+              AND d.is_working_copy = true
+              AND NOT EXISTS (
+                  SELECT 1 FROM content_references cr
+                  WHERE cr.content_id = d.content_id
+                    AND cr.owner_type = 'WORKING_COPY'
+                    AND cr.owner_id = d.id
+              )
+        </sql>
+        <rollback>
+            <sql>DELETE FROM content_references WHERE owner_type = 'WORKING_COPY'</sql>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="073-backfill-version-content-references" author="kernel-hardening">
+        <comment>P0A-2: Backfill content references for existing versions</comment>
+        <sql>
+            INSERT INTO content_references (id, content_id, owner_type, owner_id, active, created_at)
+            SELECT gen_random_uuid(), v.content_id, 'VERSION', v.id, true, now()
+            FROM versions v
+            WHERE v.content_id IS NOT NULL
+              AND v.content_id != ''
+              AND NOT EXISTS (
+                  SELECT 1 FROM content_references cr
+                  WHERE cr.content_id = v.content_id
+                    AND cr.owner_type = 'VERSION'
+                    AND cr.owner_id = v.id
+              )
+        </sql>
+        <rollback>
+            <sql>DELETE FROM content_references WHERE owner_type = 'VERSION'</sql>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

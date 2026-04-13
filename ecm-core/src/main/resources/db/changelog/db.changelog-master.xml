@@ -82,6 +82,8 @@
     <include file="db/changelog/changes/069-add-replication-job-entry-report-columns.xml"/>
     <include file="db/changelog/changes/070-add-replication-definition-last-successful-sync-at.xml"/>
     <include file="db/changelog/changes/071-create-node-relations-table.xml"/>
+    <include file="db/changelog/changes/072-create-content-reference-ledger.xml"/>
+    <include file="db/changelog/changes/073-backfill-content-references.xml"/>
     <include file="db/changelog/changes/007-insert-initial-data.xml"/>
 
 </databaseChangeLog>
