@@ -304,24 +304,8 @@ public class DocumentController {
             @Parameter(description = "Major version") @RequestParam(defaultValue = "false") boolean majorVersion,
             @Parameter(description = "Keep checked out") @RequestParam(defaultValue = "false") boolean keepCheckedOut)
             throws IOException {
-
-        Document wc = (Document) nodeService.getNode(workingCopyId);
-        if (!wc.isWorkingCopy()) {
-            throw new IllegalArgumentException("Node is not a working copy");
-        }
-
-        // If a new file is explicitly uploaded, update the working copy content
-        // before check-in so the version is created from the new content.
-        if (file != null) {
-            String contentId = contentService.storeContent(file);
-            wc.setContentId(contentId);
-            wc.setFileSize(file.getSize());
-            wc.setMimeType(contentService.detectMimeType(contentId, file.getOriginalFilename()));
-        }
-
-        // checkin() creates a version automatically when content/metadata changed
         Document result = checkOutCheckInService.checkin(
-                workingCopyId, keepCheckedOut, comment, majorVersion);
+                workingCopyId, keepCheckedOut, comment, majorVersion, file);
         return ResponseEntity.ok(toNodeDto(result));
     }
 

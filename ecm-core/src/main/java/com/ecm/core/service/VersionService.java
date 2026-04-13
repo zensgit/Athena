@@ -74,7 +74,9 @@ public class VersionService {
         }
         
         // Check if document is checked out
-        if (document.isCheckedOut() && !document.getCheckoutUser().equals(securityService.getCurrentUser())) {
+        if (document.isCheckedOut()
+                && !Objects.equals(document.getCheckoutUser(), securityService.getCurrentUser())
+                && !securityService.hasRole("ROLE_ADMIN")) {
             throw new IllegalStateException("Document is checked out by: " + document.getCheckoutUser());
         }
         

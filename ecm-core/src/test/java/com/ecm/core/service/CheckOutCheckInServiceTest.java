@@ -15,8 +15,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.util.ReflectionTestUtils;
 
+import java.io.ByteArrayInputStream;
 import java.util.NoSuchElementException;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -33,14 +37,23 @@ class CheckOutCheckInServiceTest {
     @Mock private SecurityService securityService;
     @Mock private TenantWorkspaceScopeService tenantWorkspaceScopeService;
     @Mock private ContentReferenceService contentReferenceService;
+    @Mock private ContentService contentService;
+    @Mock private VersionService versionService;
 
     private CheckOutCheckInService service;
 
     @BeforeEach
     void setUp() {
         service = new CheckOutCheckInService(
-            documentRepository, folderRepository, nodeRepository, securityService, tenantWorkspaceScopeService, contentReferenceService
+            documentRepository,
+            folderRepository,
+            nodeRepository,
+            securityService,
+            tenantWorkspaceScopeService,
+            contentReferenceService,
+            contentService
         );
+        ReflectionTestUtils.setField(service, "versionService", versionService);
     }
 
     // ===================================================================== checkout
@@ -271,6 +284,13 @@ class CheckOutCheckInServiceTest {
             when(securityService.getCurrentUser()).thenReturn("alice");
             when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
             when(documentRepository.save(any(Document.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(contentService.getContent("new-content")).thenReturn(new ByteArrayInputStream("updated".getBytes()));
+            doAnswer(inv -> {
+                original.setContentId("new-content");
+                original.setContentHash("new-hash");
+                original.setFileSize(6000L);
+                return null;
+            }).when(versionService).createVersion(eq(originalId), any(), eq("report.docx"), eq("Check-in"), eq(false));
 
             Document result = service.checkin(wcId, false);
 
@@ -284,7 +304,8 @@ class CheckOutCheckInServiceTest {
             assertEquals(6000L, result.getFileSize());
             // working copy should be soft-deleted
             assertTrue(wc.isDeleted());
-            verify(contentReferenceService).syncOwnerReference("old-content", "new-content", OwnerType.DOCUMENT, originalId);
+            verify(versionService).createVersion(eq(originalId), any(), eq("report.docx"), eq("Check-in"), eq(false));
+            verify(contentReferenceService).detach("new-content", OwnerType.WORKING_COPY, wcId);
         }
 
         @Test
@@ -295,7 +316,7 @@ class CheckOutCheckInServiceTest {
 
             when(documentRepository.findById(docId)).thenReturn(Optional.of(doc));
 
-            assertThrows(IllegalStateException.class, () -> service.checkin(docId, false));
+            assertThrows(IllegalArgumentException.class, () -> service.checkin(docId, false));
         }
 
         @Test
@@ -355,7 +376,7 @@ class CheckOutCheckInServiceTest {
         }
 
         @Test
-        @DisplayName("does not propagate content when unchanged")
+        @DisplayName("does not create version when content and metadata are unchanged")
         void skipsContentPropagationWhenUnchanged() {
             UUID originalId = UUID.randomUUID();
             UUID wcId = UUID.randomUUID();
@@ -363,6 +384,7 @@ class CheckOutCheckInServiceTest {
             Document original = document(originalId, "report.docx", folder(UUID.randomUUID(), "/"));
             original.checkout("alice");
             original.setContentId("same-content");
+            original.setProperties(Map.of("dept", "legal"));
 
             Document wc = document(wcId, "(Working Copy) report.docx", folder(UUID.randomUUID(), "/"));
             wc.setWorkingCopy(true);
@@ -370,6 +392,7 @@ class CheckOutCheckInServiceTest {
             wc.setCheckoutUser("alice");
             wc.setContentId("same-content");
             wc.setContentHash("same-hash");
+            wc.setProperties(Map.of("dept", "legal"));
 
             when(documentRepository.findById(wcId)).thenReturn(Optional.of(wc));
             when(documentRepository.findById(originalId)).thenReturn(Optional.of(original));
@@ -379,6 +402,87 @@ class CheckOutCheckInServiceTest {
 
             Document result = service.checkin(wcId, false);
             assertEquals("same-content", result.getContentId());
+            verify(versionService, never()).createVersion(any(), any(), any(), any(), anyBoolean());
+        }
+
+        @Test
+        @DisplayName("creates version and persists properties when only metadata changed")
+        void createsVersionAndPersistsPropertiesWhenMetadataChanged() {
+            UUID originalId = UUID.randomUUID();
+            UUID wcId = UUID.randomUUID();
+
+            Document original = document(originalId, "report.docx", folder(UUID.randomUUID(), "/"));
+            original.checkout("alice");
+            original.setContentId("same-content");
+            original.setProperties(Map.of("dept", "legal"));
+
+            Document wc = document(wcId, "(Working Copy) report.docx", folder(UUID.randomUUID(), "/"));
+            wc.setWorkingCopy(true);
+            wc.setWorkingCopyOf(originalId);
+            wc.setCheckoutUser("alice");
+            wc.setContentId("same-content");
+            wc.setProperties(Map.of("dept", "finance"));
+
+            when(documentRepository.findById(wcId)).thenReturn(Optional.of(wc));
+            when(documentRepository.findById(originalId)).thenReturn(Optional.of(original));
+            when(securityService.getCurrentUser()).thenReturn("alice");
+            when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
+            when(documentRepository.save(any(Document.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(contentService.getContent("same-content")).thenReturn(new ByteArrayInputStream("same".getBytes()));
+
+            Document result = service.checkin(wcId, false, "metadata update", false);
+
+            assertEquals("finance", result.getProperties().get("dept"));
+            verify(versionService).createVersion(eq(originalId), any(), eq("report.docx"), eq("metadata update"), eq(false));
+        }
+
+        @Test
+        @DisplayName("uploaded file is persisted on working copy before version creation")
+        void uploadedFileUpdatesWorkingCopyBeforeVersionCreation() {
+            UUID originalId = UUID.randomUUID();
+            UUID wcId = UUID.randomUUID();
+
+            Document original = document(originalId, "report.docx", folder(UUID.randomUUID(), "/"));
+            original.checkout("alice");
+            original.setContentId("old-content");
+
+            Document wc = document(wcId, "(Working Copy) report.docx", folder(UUID.randomUUID(), "/"));
+            wc.setWorkingCopy(true);
+            wc.setWorkingCopyOf(originalId);
+            wc.setCheckoutUser("alice");
+            wc.setContentId("old-content");
+
+            MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "report-v2.docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "updated".getBytes()
+            );
+
+            when(documentRepository.findById(wcId)).thenReturn(Optional.of(wc));
+            when(documentRepository.findById(originalId)).thenReturn(Optional.of(original));
+            when(securityService.getCurrentUser()).thenReturn("alice");
+            when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
+            when(documentRepository.save(any(Document.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(contentService.storeContent(file)).thenReturn("uploaded-content");
+            when(contentService.detectMimeType("uploaded-content", "report-v2.docx"))
+                .thenReturn("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+            when(contentService.getContentSize("uploaded-content")).thenReturn(7L);
+            when(contentService.extractMetadata("uploaded-content")).thenReturn(Map.of("textContent", "updated"));
+            when(contentService.getContent("uploaded-content")).thenReturn(new ByteArrayInputStream("updated".getBytes()));
+            doAnswer(inv -> {
+                original.setContentId("uploaded-content");
+                original.setFileSize(7L);
+                original.setMimeType("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+                return null;
+            }).when(versionService).createVersion(eq(originalId), any(), eq("report.docx"), eq("check-in upload"), eq(true));
+
+            Document result = service.checkin(wcId, false, "check-in upload", true, file);
+
+            assertEquals("uploaded-content", wc.getContentId());
+            assertEquals("uploaded-content", result.getContentId());
+            verify(contentReferenceService).syncOwnerReference("old-content", "uploaded-content", OwnerType.WORKING_COPY, wcId);
+            verify(versionService).createVersion(eq(originalId), any(), eq("report-v2.docx"), eq("check-in upload"), eq(true));
         }
     }
 

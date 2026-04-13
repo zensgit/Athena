@@ -8,6 +8,7 @@ import com.ecm.core.service.ContentService;
 import com.ecm.core.service.NodeService;
 import com.ecm.core.service.VersionService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -141,19 +142,20 @@ public class CmisContentVersioningService {
             throw new IllegalArgumentException("Node is not a working copy: " + workingCopy.getId());
         }
 
+        MockMultipartFile upload = null;
         if (request.contentBase64() != null && !request.contentBase64().isBlank()) {
             byte[] content = requireContent(request.contentBase64());
             String filename = effectiveFilename(request, workingCopy);
-            versionService.createVersion(
-                workingCopy.getWorkingCopyOf(),
-                new ByteArrayInputStream(content),
-                filename,
-                blankToNull(request.comment()),
-                Boolean.TRUE.equals(request.majorVersion())
-            );
+            upload = new MockMultipartFile("file", filename, null, content);
         }
 
-        Document original = checkOutCheckInService.checkin(workingCopy.getId(), Boolean.TRUE.equals(request.keepCheckedOut()));
+        Document original = checkOutCheckInService.checkin(
+            workingCopy.getId(),
+            Boolean.TRUE.equals(request.keepCheckedOut()),
+            blankToNull(request.comment()),
+            Boolean.TRUE.equals(request.majorVersion()),
+            upload
+        );
         return new CmisModels.MutationResponse(
             objectFactory.getRepositoryId(),
             "checkIn",

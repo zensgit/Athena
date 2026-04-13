@@ -20,6 +20,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -28,6 +29,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -121,8 +123,7 @@ class DocumentControllerWorkingCopyTest {
         Document original = document(originalId, "report.docx");
         original.checkin();
 
-        Mockito.when(nodeService.getNode(wcId)).thenReturn(wcDoc);
-        Mockito.when(checkOutCheckInService.checkin(wcId, false)).thenReturn(original);
+        Mockito.when(checkOutCheckInService.checkin(wcId, false, null, false, null)).thenReturn(original);
 
         mockMvc.perform(post("/api/v1/documents/{workingCopyId}/checkin-wc", wcId))
             .andExpect(status().isOk())
@@ -135,12 +136,47 @@ class DocumentControllerWorkingCopyTest {
     @DisplayName("POST checkin-wc rejects non-working-copy")
     void checkinWcRejectsNonWc() throws Exception {
         UUID docId = UUID.randomUUID();
-        Document doc = document(docId, "report.docx");
-
-        Mockito.when(nodeService.getNode(docId)).thenReturn(doc);
+        Mockito.when(checkOutCheckInService.checkin(docId, false, null, false, null))
+            .thenThrow(new IllegalArgumentException("Node is not a working copy"));
 
         mockMvc.perform(post("/api/v1/documents/{workingCopyId}/checkin-wc", docId))
             .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("POST checkin-wc with file delegates uploaded file to service")
+    void checkinWcWithFileDelegatesToService() throws Exception {
+        UUID wcId = UUID.randomUUID();
+        UUID originalId = UUID.randomUUID();
+        Document original = document(originalId, "report.docx");
+        original.checkin();
+
+        MockMultipartFile file = new MockMultipartFile(
+            "file",
+            "report-v2.docx",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "updated".getBytes()
+        );
+
+        Mockito.when(checkOutCheckInService.checkin(
+            Mockito.eq(wcId),
+            Mockito.eq(true),
+            Mockito.eq("ship"),
+            Mockito.eq(true),
+            Mockito.any()
+        )).thenReturn(original);
+
+        mockMvc.perform(multipart("/api/v1/documents/{workingCopyId}/checkin-wc", wcId)
+                .file(file)
+                .param("comment", "ship")
+                .param("majorVersion", "true")
+                .param("keepCheckedOut", "true")
+                .with(request -> {
+                    request.setMethod("POST");
+                    return request;
+                }))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id").value(originalId.toString()));
     }
 
     // ------------------------------------------------------------------ cancel-checkout-wc

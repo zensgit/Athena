@@ -3,20 +3,24 @@ package com.ecm.core.service;
 import com.ecm.core.entity.ContentReference.OwnerType;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Folder;
-import com.ecm.core.entity.Version;
 import com.ecm.core.entity.Permission.PermissionType;
 import com.ecm.core.repository.DocumentRepository;
 import com.ecm.core.repository.FolderRepository;
 import com.ecm.core.repository.NodeRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.io.FilenameUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
@@ -154,9 +158,18 @@ public class CheckOutCheckInService {
      */
     public Document checkin(UUID workingCopyId, boolean keepCheckedOut,
                             String comment, boolean majorVersion) {
+        return checkin(workingCopyId, keepCheckedOut, comment, majorVersion, null);
+    }
+
+    /**
+     * Check in a working copy with an optional uploaded file.
+     * The file update, version creation, and working-copy cleanup run in one transaction.
+     */
+    public Document checkin(UUID workingCopyId, boolean keepCheckedOut,
+                            String comment, boolean majorVersion, MultipartFile file) {
         Document wc = loadLiveDocument(workingCopyId);
         if (!wc.isWorkingCopy()) {
-            throw new IllegalStateException("Document is not a working copy");
+            throw new IllegalArgumentException("Node is not a working copy");
         }
 
         String currentUser = securityService.getCurrentUser();
@@ -168,32 +181,32 @@ public class CheckOutCheckInService {
             throw new SecurityException("Only checkout owner can keep document checked out");
         }
 
+        if (file != null && !file.isEmpty()) {
+            updateWorkingCopyContent(wc, file, currentUser);
+        }
+
         Document original = loadLiveDocument(wc.getWorkingCopyOf());
 
         boolean contentChanged = !Objects.equals(original.getContentId(), wc.getContentId());
-        boolean metadataChanged = wc.getProperties() != null
-                && !Objects.equals(original.getProperties(), wc.getProperties());
+        boolean metadataChanged = hasVersionableMetadataChanges(original, wc);
 
         // --- create a version if content or metadata changed ----------------
         if (contentChanged || metadataChanged) {
-            try {
+            try (InputStream contentStream = contentService.getContent(wc.getContentId())) {
                 String versionComment = comment != null ? comment : "Check-in";
-                java.io.InputStream contentStream = contentService.getContent(wc.getContentId());
+                String versionFilename = resolveVersionFilename(original, wc, file);
                 versionService.createVersion(
-                        original.getId(), contentStream, original.getName(),
+                        original.getId(), contentStream, versionFilename,
                         versionComment, majorVersion);
                 // Re-load original after version creation updated it
                 original = loadLiveDocument(original.getId());
-            } catch (java.io.IOException e) {
+            } catch (IOException e) {
                 throw new IllegalStateException(
                         "Failed to create version during check-in: " + e.getMessage(), e);
             }
-        } else {
-            // No content/metadata change — still propagate properties if set
-            if (wc.getProperties() != null) {
-                original.setProperties(new java.util.HashMap<>(wc.getProperties()));
-            }
         }
+
+        applyWorkingCopyState(original, wc);
 
         // --- clear checkout state on original ------------------------------
         original.checkin();
@@ -330,5 +343,90 @@ public class CheckOutCheckInService {
             return true;
         }
         return tenantWorkspaceScopeService.isPathVisible(node.getPath());
+    }
+
+    private boolean hasVersionableMetadataChanges(Document original, Document wc) {
+        return !Objects.equals(original.getProperties(), wc.getProperties())
+            || !Objects.equals(original.getMetadata(), wc.getMetadata())
+            || !Objects.equals(original.getDescription(), wc.getDescription())
+            || !Objects.equals(original.getEncoding(), wc.getEncoding())
+            || !Objects.equals(original.getFileExtension(), wc.getFileExtension());
+    }
+
+    private void applyWorkingCopyState(Document original, Document wc) {
+        original.setDescription(wc.getDescription());
+        original.setEncoding(wc.getEncoding());
+        original.setFileExtension(wc.getFileExtension());
+        original.setProperties(wc.getProperties() != null
+            ? new java.util.HashMap<>(wc.getProperties())
+            : new java.util.HashMap<>());
+        original.setMetadata(wc.getMetadata() != null
+            ? new java.util.HashMap<>(wc.getMetadata())
+            : new java.util.HashMap<>());
+    }
+
+    private void updateWorkingCopyContent(Document wc, MultipartFile file, String currentUser) {
+        String previousContentId = wc.getContentId();
+        try {
+            String contentId = contentService.storeContent(file);
+            String mimeType = contentService.detectMimeType(contentId, file.getOriginalFilename());
+            long fileSize = contentService.getContentSize(contentId);
+            Map<String, Object> extracted = contentService.extractMetadata(contentId);
+
+            wc.setContentId(contentId);
+            wc.setMimeType(mimeType);
+            wc.setFileSize(fileSize);
+            wc.setFileExtension(FilenameUtils.getExtension(file.getOriginalFilename()));
+            wc.setContentHash((String) extracted.get("contentHash"));
+            String textContent = (String) extracted.get("textContent");
+            if (textContent != null) {
+                wc.setTextContent(textContent);
+            }
+            wc.setLastModifiedBy(currentUser);
+            wc.setLastModifiedDate(LocalDateTime.now());
+            documentRepository.save(wc);
+            contentReferenceService.syncOwnerReference(
+                previousContentId,
+                contentId,
+                OwnerType.WORKING_COPY,
+                wc.getId()
+            );
+        } catch (IOException e) {
+            throw new IllegalStateException(
+                "Failed to update working copy content before check-in: " + e.getMessage(), e);
+        }
+    }
+
+    private String resolveVersionFilename(Document original, Document wc, MultipartFile file) {
+        if (file != null && !file.isEmpty()) {
+            String uploadedFilename = file.getOriginalFilename();
+            if (uploadedFilename != null && !uploadedFilename.isBlank()) {
+                return uploadedFilename;
+            }
+        }
+
+        String originalName = original.getName();
+        if (originalName == null || originalName.isBlank()) {
+            String extension = normalizeExtension(wc.getFileExtension());
+            return extension == null ? "document" : "document." + extension;
+        }
+
+        String extension = normalizeExtension(wc.getFileExtension());
+        if (extension == null) {
+            return originalName;
+        }
+
+        String baseName = FilenameUtils.getBaseName(originalName);
+        if (baseName == null || baseName.isBlank()) {
+            return originalName;
+        }
+        return baseName + "." + extension;
+    }
+
+    private String normalizeExtension(String extension) {
+        if (extension == null || extension.isBlank()) {
+            return null;
+        }
+        return extension.startsWith(".") ? extension.substring(1) : extension;
     }
 }

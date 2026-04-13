@@ -25,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -305,7 +306,8 @@ class CmisContentVersioningServiceTest {
         checkedIn.setId(originalId);
 
         when(nodeService.getNode(workingCopy.getId())).thenReturn(workingCopy);
-        when(checkOutCheckInService.checkin(workingCopy.getId(), true)).thenReturn(checkedIn);
+        when(checkOutCheckInService.checkin(eq(workingCopy.getId()), eq(true), eq("checkin"), eq(true), any()))
+            .thenReturn(checkedIn);
 
         CmisModels.MutationResponse response = service.checkInWorkingCopy(new CmisModels.MutationRequest(
             workingCopy.getId().toString(),
@@ -325,8 +327,8 @@ class CmisContentVersioningServiceTest {
             Boolean.TRUE
         ));
 
-        verify(versionService).createVersion(eq(originalId), any(ByteArrayInputStream.class), eq("contract.pdf"), eq("checkin"), eq(true));
-        verify(checkOutCheckInService).checkin(workingCopy.getId(), true);
+        verify(versionService, never()).createVersion(eq(originalId), any(ByteArrayInputStream.class), eq("contract.pdf"), eq("checkin"), eq(true));
+        verify(checkOutCheckInService).checkin(eq(workingCopy.getId()), eq(true), eq("checkin"), eq(true), any());
         assertEquals("checkIn", response.action());
         assertEquals(originalId.toString(), response.object().objectId());
     }
