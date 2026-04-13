@@ -52,6 +52,9 @@ class NodeServiceChildrenAclTest {
     @Mock
     private ApplicationEventPublisher eventPublisher;
 
+    @Mock
+    private ContentReferenceService contentReferenceService;
+
     private NodeService nodeService;
 
     @BeforeEach
@@ -63,7 +66,8 @@ class NodeServiceChildrenAclTest {
             permissionRepository,
             correspondentRepository,
             securityService,
-            eventPublisher
+            eventPublisher,
+            contentReferenceService
         );
     }
 

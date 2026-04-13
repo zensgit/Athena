@@ -21,9 +21,6 @@
                     AND cr.owner_id = d.id
               )
         </sql>
-        <rollback>
-            <sql>DELETE FROM content_references WHERE owner_type = 'DOCUMENT'</sql>
-        </rollback>
     </changeSet>
 
     <changeSet id="073-backfill-working-copy-content-references" author="kernel-hardening">
@@ -35,6 +32,7 @@
             WHERE d.content_id IS NOT NULL
               AND d.content_id != ''
               AND d.is_working_copy = true
+              AND d.is_deleted = false
               AND NOT EXISTS (
                   SELECT 1 FROM content_references cr
                   WHERE cr.content_id = d.content_id
@@ -42,9 +40,6 @@
                     AND cr.owner_id = d.id
               )
         </sql>
-        <rollback>
-            <sql>DELETE FROM content_references WHERE owner_type = 'WORKING_COPY'</sql>
-        </rollback>
     </changeSet>
 
     <changeSet id="073-backfill-version-content-references" author="kernel-hardening">
@@ -55,6 +50,7 @@
             FROM versions v
             WHERE v.content_id IS NOT NULL
               AND v.content_id != ''
+              AND v.is_deleted = false
               AND NOT EXISTS (
                   SELECT 1 FROM content_references cr
                   WHERE cr.content_id = v.content_id
@@ -62,9 +58,6 @@
                     AND cr.owner_id = v.id
               )
         </sql>
-        <rollback>
-            <sql>DELETE FROM content_references WHERE owner_type = 'VERSION'</sql>
-        </rollback>
     </changeSet>
 
 </databaseChangeLog>

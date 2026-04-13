@@ -34,6 +34,7 @@ class NodeServiceAspectTest {
     @Mock private CorrespondentRepository correspondentRepository;
     @Mock private SecurityService securityService;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private ContentReferenceService contentReferenceService;
 
     private NodeService nodeService;
 
@@ -41,7 +42,7 @@ class NodeServiceAspectTest {
     void setUp() {
         nodeService = new NodeService(
             nodeRepository, folderRepository, documentRepository,
-            permissionRepository, correspondentRepository, securityService, eventPublisher
+            permissionRepository, correspondentRepository, securityService, eventPublisher, contentReferenceService
         );
     }
 

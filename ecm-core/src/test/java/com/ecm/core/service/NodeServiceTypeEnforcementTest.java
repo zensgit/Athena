@@ -30,6 +30,7 @@ class NodeServiceTypeEnforcementTest {
     @Mock private CorrespondentRepository correspondentRepository;
     @Mock private SecurityService securityService;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private ContentReferenceService contentReferenceService;
     @Mock private DictionaryService dictionaryService;
 
     private PropertyConstraintValidator constraintValidator;
@@ -40,7 +41,7 @@ class NodeServiceTypeEnforcementTest {
         constraintValidator = new PropertyConstraintValidator();
         nodeService = new NodeService(
             nodeRepository, folderRepository, documentRepository,
-            permissionRepository, correspondentRepository, securityService, eventPublisher
+            permissionRepository, correspondentRepository, securityService, eventPublisher, contentReferenceService
         );
         ReflectionTestUtils.setField(nodeService, "dictionaryService", dictionaryService);
         ReflectionTestUtils.setField(nodeService, "propertyConstraintValidator", constraintValidator);

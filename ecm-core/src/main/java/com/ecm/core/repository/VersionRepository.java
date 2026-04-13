@@ -38,6 +38,8 @@ public interface VersionRepository extends JpaRepository<Version, UUID> {
     
     @Query("SELECT v FROM Version v WHERE v.contentHash = :contentHash")
     List<Version> findByContentHash(@Param("contentHash") String contentHash);
+
+    long countByContentIdAndDeletedFalse(String contentId);
     
     @Query("SELECT SUM(v.fileSize) FROM Version v")
     Long calculateTotalVersionStorage();

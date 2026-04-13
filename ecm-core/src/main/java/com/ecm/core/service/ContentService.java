@@ -4,6 +4,7 @@ import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Version;
 import com.ecm.core.repository.ContentReferenceRepository;
 import com.ecm.core.repository.DocumentRepository;
+import com.ecm.core.repository.VersionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.codec.digest.DigestUtils;
@@ -44,6 +45,7 @@ import java.util.UUID;
 public class ContentService {
 
     private final DocumentRepository documentRepository;
+    private final VersionRepository versionRepository;
     private final TenantQuotaService tenantQuotaService;
     private final ContentReferenceRepository contentReferenceRepository;
     
@@ -310,7 +312,11 @@ public class ContentService {
         long docCount = documentRepository.count((root, query, cb) ->
             cb.equal(root.get("contentId"), contentId));
 
-        return docCount > 0;
+        if (docCount > 0) {
+            return true;
+        }
+
+        return versionRepository.countByContentIdAndDeletedFalse(contentId) > 0;
     }
     
     private String generateContentId() {

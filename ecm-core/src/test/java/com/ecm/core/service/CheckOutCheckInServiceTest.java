@@ -1,6 +1,7 @@
 package com.ecm.core.service;
 
 import com.ecm.core.entity.Document;
+import com.ecm.core.entity.ContentReference.OwnerType;
 import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Permission.PermissionType;
 import com.ecm.core.repository.DocumentRepository;
@@ -31,13 +32,14 @@ class CheckOutCheckInServiceTest {
     @Mock private NodeRepository nodeRepository;
     @Mock private SecurityService securityService;
     @Mock private TenantWorkspaceScopeService tenantWorkspaceScopeService;
+    @Mock private ContentReferenceService contentReferenceService;
 
     private CheckOutCheckInService service;
 
     @BeforeEach
     void setUp() {
         service = new CheckOutCheckInService(
-            documentRepository, folderRepository, nodeRepository, securityService, tenantWorkspaceScopeService
+            documentRepository, folderRepository, nodeRepository, securityService, tenantWorkspaceScopeService, contentReferenceService
         );
     }
 
@@ -254,6 +256,7 @@ class CheckOutCheckInServiceTest {
 
             Document original = document(originalId, "report.docx", folder(UUID.randomUUID(), "/"));
             original.checkout("alice");
+            original.setContentId("old-content");
 
             Document wc = document(wcId, "(Working Copy) report.docx", folder(UUID.randomUUID(), "/"));
             wc.setWorkingCopy(true);
@@ -281,6 +284,7 @@ class CheckOutCheckInServiceTest {
             assertEquals(6000L, result.getFileSize());
             // working copy should be soft-deleted
             assertTrue(wc.isDeleted());
+            verify(contentReferenceService).syncOwnerReference("old-content", "new-content", OwnerType.DOCUMENT, originalId);
         }
 
         @Test

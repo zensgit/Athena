@@ -1,5 +1,6 @@
 package com.ecm.core.service;
 
+import com.ecm.core.entity.ContentReference.OwnerType;
 import com.ecm.core.entity.Document;
 import com.ecm.core.repository.NodeRepository;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +29,7 @@ public class PdfManipulationService {
     private final NodeService nodeService;
     private final ContentService contentService;
     private final NodeRepository nodeRepository;
+    private final ContentReferenceService contentReferenceService;
 
     /**
      * Merge multiple PDF documents into one new document.
@@ -90,7 +92,9 @@ public class PdfManipulationService {
             
             String contentId = contentService.store(inputStream);
             newDoc.setContentId(contentId);
-            return nodeRepository.save(newDoc);
+            Document savedDoc = nodeRepository.save(newDoc);
+            contentReferenceService.attach(savedDoc.getContentId(), OwnerType.DOCUMENT, savedDoc.getId());
+            return savedDoc;
 
         } finally {
             for (PDDocument doc : openDocuments) {
@@ -141,7 +145,9 @@ public class PdfManipulationService {
                 
                 String contentId = contentService.store(new ByteArrayInputStream(out.toByteArray()));
                 newDoc.setContentId(contentId);
-                createdDocs.add(nodeRepository.save(newDoc));
+                Document savedDoc = nodeRepository.save(newDoc);
+                contentReferenceService.attach(savedDoc.getContentId(), OwnerType.DOCUMENT, savedDoc.getId());
+                createdDocs.add(savedDoc);
             }
             
             return createdDocs;

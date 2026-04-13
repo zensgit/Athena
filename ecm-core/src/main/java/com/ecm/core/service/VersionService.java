@@ -125,6 +125,7 @@ public class VersionService {
         // Register binary ownership in content reference ledger
         contentReferenceService.attach(contentId, OwnerType.VERSION, savedVersion.getId());
 
+        String previousDocumentContentId = document.getContentId();
         String previousContentHash = normalizeHash(document.getContentHash());
 
         // Update document
@@ -143,6 +144,12 @@ public class VersionService {
         }
         
         documentRepository.save(document);
+        contentReferenceService.syncOwnerReference(
+            previousDocumentContentId,
+            contentId,
+            OwnerType.DOCUMENT,
+            document.getId()
+        );
 
         eventPublisher.publishEvent(new VersionCreatedEvent(savedVersion, securityService.getCurrentUser()));
 
@@ -377,6 +384,7 @@ public class VersionService {
     public void promoteVersion(UUID versionId) {
         Version version = getVersion(versionId);
         Document document = version.getDocument();
+        String previousDocumentContentId = document.getContentId();
         String previousContentHash = normalizeHash(document.getContentHash());
         
         // Check permissions
@@ -396,6 +404,12 @@ public class VersionService {
         clearPreviewFailureLedgerOnContentChange(document, previousContentHash, version.getContentHash());
         
         documentRepository.save(document);
+        contentReferenceService.syncOwnerReference(
+            previousDocumentContentId,
+            version.getContentId(),
+            OwnerType.DOCUMENT,
+            document.getId()
+        );
         
         eventPublisher.publishEvent(new VersionPromotedEvent(version, securityService.getCurrentUser()));
     }

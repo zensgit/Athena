@@ -39,6 +39,7 @@ class NodeServiceTenantWorkspaceScopeTest {
     @Mock private CorrespondentRepository correspondentRepository;
     @Mock private SecurityService securityService;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private ContentReferenceService contentReferenceService;
 
     private NodeService nodeService;
 
@@ -51,7 +52,8 @@ class NodeServiceTenantWorkspaceScopeTest {
             permissionRepository,
             correspondentRepository,
             securityService,
-            eventPublisher
+            eventPublisher,
+            contentReferenceService
         );
     }
 

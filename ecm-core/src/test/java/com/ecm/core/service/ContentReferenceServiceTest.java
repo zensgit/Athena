@@ -14,6 +14,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.io.IOException;
+import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -197,6 +198,47 @@ class ContentReferenceServiceTest {
     }
 
     @Nested
+    @DisplayName("syncOwnerReference")
+    class SyncOwnerReference {
+
+        @Test
+        @DisplayName("detaches previous content and attaches current content when content changes")
+        void switchesOwnershipBetweenContentIds() {
+            UUID ownerId = UUID.randomUUID();
+
+            when(contentReferenceRepository.deactivate("old-content", OwnerType.DOCUMENT, ownerId))
+                .thenReturn(1);
+            when(contentReferenceRepository.findByContentIdAndOwnerTypeAndOwnerId(
+                "new-content", OwnerType.DOCUMENT, ownerId
+            )).thenReturn(Optional.empty());
+            when(contentReferenceRepository.save(any(ContentReference.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+            service.syncOwnerReference("old-content", "new-content", OwnerType.DOCUMENT, ownerId);
+
+            verify(contentReferenceRepository).deactivate("old-content", OwnerType.DOCUMENT, ownerId);
+            verify(contentReferenceRepository).save(any(ContentReference.class));
+        }
+
+        @Test
+        @DisplayName("reattaches current content when content id is unchanged")
+        void ensuresReferenceExistsWhenContentUnchanged() {
+            UUID ownerId = UUID.randomUUID();
+
+            when(contentReferenceRepository.findByContentIdAndOwnerTypeAndOwnerId(
+                "same-content", OwnerType.DOCUMENT, ownerId
+            )).thenReturn(Optional.empty());
+            when(contentReferenceRepository.save(any(ContentReference.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+            service.syncOwnerReference("same-content", "same-content", OwnerType.DOCUMENT, ownerId);
+
+            verify(contentReferenceRepository, never()).deactivate(anyString(), any(), any());
+            verify(contentReferenceRepository).save(any(ContentReference.class));
+        }
+    }
+
+    @Nested
     @DisplayName("hasActiveReferences")
     class HasActiveReferences {
 
@@ -239,7 +281,7 @@ class ContentReferenceServiceTest {
         @DisplayName("deletes orphaned content with zero active references")
         void deletesOrphanedContent() throws IOException {
             String orphanContentId = "20260413_orphan";
-            when(contentReferenceRepository.findOrphanContentIds())
+            when(contentReferenceRepository.findEligibleOrphanContentIds(any(LocalDateTime.class)))
                     .thenReturn(List.of(orphanContentId));
             when(contentReferenceRepository.countByContentIdAndActiveTrue(orphanContentId))
                     .thenReturn(0L);
@@ -254,7 +296,7 @@ class ContentReferenceServiceTest {
         @DisplayName("skips content that gained new references since query")
         void skipsContentWithNewReferences() throws IOException {
             String contentId = "20260413_revived";
-            when(contentReferenceRepository.findOrphanContentIds())
+            when(contentReferenceRepository.findEligibleOrphanContentIds(any(LocalDateTime.class)))
                     .thenReturn(List.of(contentId));
             when(contentReferenceRepository.countByContentIdAndActiveTrue(contentId))
                     .thenReturn(1L); // new reference appeared
@@ -277,12 +319,28 @@ class ContentReferenceServiceTest {
         @Test
         @DisplayName("does nothing when no orphans found")
         void doesNothingWhenNoOrphans() {
-            when(contentReferenceRepository.findOrphanContentIds())
+            when(contentReferenceRepository.findEligibleOrphanContentIds(any(LocalDateTime.class)))
                     .thenReturn(Collections.emptyList());
 
             service.cleanupOrphanedContent();
 
             verify(contentService, never()).deleteContent(anyString());
+        }
+
+        @Test
+        @DisplayName("uses grace cutoff when selecting orphan candidates")
+        void usesGraceCutoffWhenFindingOrphans() {
+            ArgumentCaptor<LocalDateTime> cutoffCaptor = ArgumentCaptor.forClass(LocalDateTime.class);
+            when(contentReferenceRepository.findEligibleOrphanContentIds(any(LocalDateTime.class)))
+                .thenReturn(Collections.emptyList());
+
+            LocalDateTime before = LocalDateTime.now().minusHours(24).minusMinutes(1);
+            service.cleanupOrphanedContent();
+            LocalDateTime after = LocalDateTime.now().minusHours(24).plusMinutes(1);
+
+            verify(contentReferenceRepository).findEligibleOrphanContentIds(cutoffCaptor.capture());
+            LocalDateTime cutoff = cutoffCaptor.getValue();
+            assertTrue(!cutoff.isBefore(before) && !cutoff.isAfter(after));
         }
     }
 }

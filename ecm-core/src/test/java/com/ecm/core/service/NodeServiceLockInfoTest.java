@@ -38,6 +38,7 @@ class NodeServiceLockInfoTest {
     @Mock private CorrespondentRepository correspondentRepository;
     @Mock private SecurityService securityService;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private ContentReferenceService contentReferenceService;
 
     private NodeService nodeService;
 
@@ -50,7 +51,8 @@ class NodeServiceLockInfoTest {
             permissionRepository,
             correspondentRepository,
             securityService,
-            eventPublisher
+            eventPublisher,
+            contentReferenceService
         );
     }
 

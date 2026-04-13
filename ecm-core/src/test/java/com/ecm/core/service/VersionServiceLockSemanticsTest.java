@@ -37,6 +37,7 @@ class VersionServiceLockSemanticsTest {
     @Mock private SecurityService securityService;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private VersionLabelService versionLabelService;
+    @Mock private ContentReferenceService contentReferenceService;
 
     private VersionService versionService;
 
@@ -48,7 +49,8 @@ class VersionServiceLockSemanticsTest {
             contentService,
             securityService,
             eventPublisher,
-            versionLabelService
+            versionLabelService,
+            contentReferenceService
         );
     }
 
@@ -76,7 +78,9 @@ class VersionServiceLockSemanticsTest {
     @DisplayName("Create version clears expired lock before storing new version")
     void createVersionClearsExpiredLock() throws Exception {
         UUID documentId = UUID.randomUUID();
+        UUID savedVersionId = UUID.randomUUID();
         Document document = document(documentId, "contract.pdf");
+        document.setContentId("previous-content");
         document.applyLock("bob", LocalDateTime.now().minusHours(1), LockLifetime.EPHEMERAL, LocalDateTime.now().minusMinutes(5));
 
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
@@ -89,12 +93,23 @@ class VersionServiceLockSemanticsTest {
         when(contentService.extractMetadata("content-1")).thenReturn(Map.of("contentHash", "hash-1"));
         when(versionRepository.findMaxVersionNumber(documentId)).thenReturn(1);
         when(versionLabelService.generateLabel(document, 2)).thenReturn("1.1");
-        when(versionRepository.save(any(Version.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(versionRepository.save(any(Version.class))).thenAnswer(invocation -> {
+            Version version = invocation.getArgument(0);
+            version.setId(savedVersionId);
+            return version;
+        });
 
         versionService.createVersion(documentId, new ByteArrayInputStream("next".getBytes()), "contract.pdf", "updated", false);
 
         assertFalse(document.isLocked());
         verify(documentRepository, atLeastOnce()).save(document);
+        verify(contentReferenceService).attach("content-1", com.ecm.core.entity.ContentReference.OwnerType.VERSION, savedVersionId);
+        verify(contentReferenceService).syncOwnerReference(
+            "previous-content",
+            "content-1",
+            com.ecm.core.entity.ContentReference.OwnerType.DOCUMENT,
+            documentId
+        );
     }
 
     private Document document(UUID id, String name) {

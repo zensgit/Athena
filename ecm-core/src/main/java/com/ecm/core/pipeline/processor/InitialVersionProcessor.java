@@ -1,5 +1,6 @@
 package com.ecm.core.pipeline.processor;
 
+import com.ecm.core.entity.ContentReference.OwnerType;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Version;
 import com.ecm.core.event.VersionCreatedEvent;
@@ -8,6 +9,7 @@ import com.ecm.core.pipeline.DocumentProcessor;
 import com.ecm.core.pipeline.ProcessingResult;
 import com.ecm.core.repository.DocumentRepository;
 import com.ecm.core.repository.VersionRepository;
+import com.ecm.core.service.ContentReferenceService;
 import com.ecm.core.service.VersionLabelService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +33,7 @@ public class InitialVersionProcessor implements DocumentProcessor {
     private final DocumentRepository documentRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final VersionLabelService versionLabelService;
+    private final ContentReferenceService contentReferenceService;
 
     @Override
     public int getOrder() {
@@ -90,6 +93,7 @@ public class InitialVersionProcessor implements DocumentProcessor {
             version.setComment("Initial upload");
 
             Version saved = versionRepository.save(version);
+            contentReferenceService.attach(saved.getContentId(), OwnerType.VERSION, saved.getId());
 
             document.setCurrentVersion(saved);
             document.setVersionLabel(saved.getVersionLabel());

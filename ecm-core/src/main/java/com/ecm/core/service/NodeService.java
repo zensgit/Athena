@@ -3,6 +3,7 @@ package com.ecm.core.service;
 import com.ecm.core.dto.CheckoutInfoDto;
 import com.ecm.core.dto.LockInfoDto;
 import com.ecm.core.config.TenantContext;
+import com.ecm.core.entity.ContentReference.OwnerType;
 import com.ecm.core.entity.*;
 import com.ecm.core.entity.Node.NodeStatus;
 import com.ecm.core.entity.Node.NodeType;
@@ -42,6 +43,7 @@ public class NodeService {
     private final CorrespondentRepository correspondentRepository;
     private final SecurityService securityService;
     private final ApplicationEventPublisher eventPublisher;
+    private final ContentReferenceService contentReferenceService;
 
     @Autowired
     @Lazy
@@ -94,6 +96,7 @@ public class NodeService {
         enforceAspectProperties(node);
 
         Node savedNode = nodeRepository.save(node);
+        attachDocumentReferenceIfPresent(savedNode);
         
         // Copy parent permissions if inherit is true
         if (node.isInheritPermissions() && node.getParent() != null) {
@@ -871,6 +874,7 @@ public class NodeService {
         copy.getMetadata().putAll(source.getMetadata());
         
         copy = nodeRepository.save(copy);
+        attachDocumentReferenceIfPresent(copy);
         
         // Copy permissions
         copyPermissions(source, copy);
@@ -892,6 +896,8 @@ public class NodeService {
         for (Node child : children) {
             deleteNodeRecursive(child);
         }
+
+        detachDocumentReferencesIfPresent(node);
         
         // Delete permissions
         permissionRepository.deleteByNodeId(node.getId());
@@ -962,5 +968,37 @@ public class NodeService {
             log.error("Failed to trigger {} rules for node {}: {}",
                 triggerType, node.getId(), e.getMessage(), e);
         }
+    }
+
+    private void attachDocumentReferenceIfPresent(Node node) {
+        if (!(node instanceof Document document)) {
+            return;
+        }
+        if (document.getId() == null || document.getContentId() == null || document.getContentId().isBlank()) {
+            return;
+        }
+        contentReferenceService.attach(document.getContentId(), resolveDocumentOwnerType(document), document.getId());
+    }
+
+    private void detachDocumentReferencesIfPresent(Node node) {
+        if (!(node instanceof Document document)) {
+            return;
+        }
+        if (document.getId() != null) {
+            contentReferenceService.detach(
+                document.getContentId(),
+                resolveDocumentOwnerType(document),
+                document.getId()
+            );
+        }
+        for (Version version : document.getVersions()) {
+            if (version.getId() != null) {
+                contentReferenceService.detach(version.getContentId(), OwnerType.VERSION, version.getId());
+            }
+        }
+    }
+
+    private OwnerType resolveDocumentOwnerType(Document document) {
+        return document.isWorkingCopy() ? OwnerType.WORKING_COPY : OwnerType.DOCUMENT;
     }
 }

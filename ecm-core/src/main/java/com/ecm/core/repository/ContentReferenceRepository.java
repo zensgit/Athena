@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -38,13 +39,12 @@ public interface ContentReferenceRepository extends JpaRepository<ContentReferen
                    @Param("ownerType") OwnerType ownerType,
                    @Param("ownerId") UUID ownerId);
 
-    /**
-     * Find content IDs with zero active references (orphan candidates).
-     */
-    @Query("SELECT DISTINCT cr.contentId FROM ContentReference cr " +
+    @Query("SELECT cr.contentId FROM ContentReference cr " +
            "WHERE cr.contentId NOT IN " +
-           "(SELECT cr2.contentId FROM ContentReference cr2 WHERE cr2.active = true)")
-    List<String> findOrphanContentIds();
+           "(SELECT cr2.contentId FROM ContentReference cr2 WHERE cr2.active = true) " +
+           "GROUP BY cr.contentId " +
+           "HAVING MAX(COALESCE(cr.updatedAt, cr.createdAt)) <= :cutoff")
+    List<String> findEligibleOrphanContentIds(@Param("cutoff") LocalDateTime cutoff);
 
     /**
      * Remove all inactive references for a given content ID (after physical cleanup).

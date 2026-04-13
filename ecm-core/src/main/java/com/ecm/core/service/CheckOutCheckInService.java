@@ -147,6 +147,7 @@ public class CheckOutCheckInService {
         }
 
         Document original = loadLiveDocument(wc.getWorkingCopyOf());
+        String originalContentIdBeforeCheckin = original.getContentId();
 
         // --- propagate content changes from working copy → original ---------
         if (!Objects.equals(original.getContentId(), wc.getContentId())) {
@@ -165,6 +166,12 @@ public class CheckOutCheckInService {
         original.setLastModifiedBy(currentUser);
         original.setLastModifiedDate(LocalDateTime.now());
         documentRepository.save(original);
+        contentReferenceService.syncOwnerReference(
+            originalContentIdBeforeCheckin,
+            original.getContentId(),
+            OwnerType.DOCUMENT,
+            original.getId()
+        );
 
         // --- soft-delete the working copy ----------------------------------
         wc.setDeleted(true);

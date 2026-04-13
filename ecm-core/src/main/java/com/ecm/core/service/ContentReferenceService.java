@@ -11,7 +11,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -89,6 +91,34 @@ public class ContentReferenceService {
     }
 
     /**
+     * Keep ownership in sync when an entity switches from one content binary to another.
+     * If content remains the same, ensures the active reference exists.
+     */
+    public void syncOwnerReference(String previousContentId, String currentContentId,
+                                   OwnerType ownerType, UUID ownerId) {
+        if (!ledgerEnabled || ownerId == null) {
+            return;
+        }
+
+        String previous = normalizeContentId(previousContentId);
+        String current = normalizeContentId(currentContentId);
+
+        if (Objects.equals(previous, current)) {
+            if (current != null) {
+                attach(current, ownerType, ownerId);
+            }
+            return;
+        }
+
+        if (previous != null) {
+            detach(previous, ownerType, ownerId);
+        }
+        if (current != null) {
+            attach(current, ownerType, ownerId);
+        }
+    }
+
+    /**
      * Check whether any active reference exists for a content binary.
      */
     @Transactional(readOnly = true)
@@ -132,7 +162,8 @@ public class ContentReferenceService {
             return;
         }
 
-        List<String> orphanCandidates = contentReferenceRepository.findOrphanContentIds();
+        LocalDateTime cutoff = LocalDateTime.now().minusHours(Math.max(orphanCleanupGraceHours, 0));
+        List<String> orphanCandidates = contentReferenceRepository.findEligibleOrphanContentIds(cutoff);
         if (orphanCandidates.isEmpty()) {
             return;
         }
@@ -160,5 +191,12 @@ public class ContentReferenceService {
         if (deletedCount > 0) {
             log.info("Orphan cleanup: deleted {} orphaned binaries", deletedCount);
         }
+    }
+
+    private String normalizeContentId(String contentId) {
+        if (contentId == null || contentId.isBlank()) {
+            return null;
+        }
+        return contentId;
     }
 }
