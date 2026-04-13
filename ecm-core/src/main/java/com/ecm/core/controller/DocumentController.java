@@ -309,13 +309,19 @@ public class DocumentController {
         if (!wc.isWorkingCopy()) {
             throw new IllegalArgumentException("Node is not a working copy");
         }
-        UUID originalId = wc.getWorkingCopyOf();
 
+        // If a new file is explicitly uploaded, update the working copy content
+        // before check-in so the version is created from the new content.
         if (file != null) {
-            versionService.createVersion(originalId, file, comment, majorVersion);
+            String contentId = contentService.storeContent(file);
+            wc.setContentId(contentId);
+            wc.setFileSize(file.getSize());
+            wc.setMimeType(contentService.detectMimeType(contentId, file.getOriginalFilename()));
         }
 
-        Document result = checkOutCheckInService.checkin(workingCopyId, keepCheckedOut);
+        // checkin() creates a version automatically when content/metadata changed
+        Document result = checkOutCheckInService.checkin(
+                workingCopyId, keepCheckedOut, comment, majorVersion);
         return ResponseEntity.ok(toNodeDto(result));
     }
 

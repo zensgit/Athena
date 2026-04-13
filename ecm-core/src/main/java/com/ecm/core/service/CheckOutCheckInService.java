@@ -3,12 +3,15 @@ package com.ecm.core.service;
 import com.ecm.core.entity.ContentReference.OwnerType;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Folder;
+import com.ecm.core.entity.Version;
 import com.ecm.core.entity.Permission.PermissionType;
 import com.ecm.core.repository.DocumentRepository;
 import com.ecm.core.repository.FolderRepository;
 import com.ecm.core.repository.NodeRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,6 +43,11 @@ public class CheckOutCheckInService {
     private final SecurityService securityService;
     private final TenantWorkspaceScopeService tenantWorkspaceScopeService;
     private final ContentReferenceService contentReferenceService;
+    private final ContentService contentService;
+
+    @Autowired
+    @Lazy
+    private VersionService versionService;
 
     // ------------------------------------------------------------------ checkout
 
@@ -124,14 +132,28 @@ public class CheckOutCheckInService {
     // ------------------------------------------------------------------ checkin
 
     /**
-     * Check in a working copy. The original document is updated and the
-     * working copy is soft-deleted.
+     * Check in a working copy. If content or metadata changed, a new version
+     * is created before the working copy is soft-deleted.
      *
      * @param workingCopyId   ID of the working-copy document
      * @param keepCheckedOut  if {@code true}, a fresh working copy is created after checkin
      * @return the original document after checkin
      */
     public Document checkin(UUID workingCopyId, boolean keepCheckedOut) {
+        return checkin(workingCopyId, keepCheckedOut, null, false);
+    }
+
+    /**
+     * Check in a working copy with explicit version comment and major/minor flag.
+     *
+     * @param workingCopyId   ID of the working-copy document
+     * @param keepCheckedOut  if {@code true}, a fresh working copy is created after checkin
+     * @param comment         version comment (nullable)
+     * @param majorVersion    if {@code true}, create a major version; otherwise minor
+     * @return the original document after checkin
+     */
+    public Document checkin(UUID workingCopyId, boolean keepCheckedOut,
+                            String comment, boolean majorVersion) {
         Document wc = loadLiveDocument(workingCopyId);
         if (!wc.isWorkingCopy()) {
             throw new IllegalStateException("Document is not a working copy");
@@ -147,18 +169,30 @@ public class CheckOutCheckInService {
         }
 
         Document original = loadLiveDocument(wc.getWorkingCopyOf());
-        String originalContentIdBeforeCheckin = original.getContentId();
 
-        // --- propagate content changes from working copy → original ---------
-        if (!Objects.equals(original.getContentId(), wc.getContentId())) {
-            original.setContentId(wc.getContentId());
-            original.setContentHash(wc.getContentHash());
-            original.setFileSize(wc.getFileSize());
-            original.setMimeType(wc.getMimeType());
-            original.setEncoding(wc.getEncoding());
-        }
-        if (wc.getProperties() != null) {
-            original.setProperties(new java.util.HashMap<>(wc.getProperties()));
+        boolean contentChanged = !Objects.equals(original.getContentId(), wc.getContentId());
+        boolean metadataChanged = wc.getProperties() != null
+                && !Objects.equals(original.getProperties(), wc.getProperties());
+
+        // --- create a version if content or metadata changed ----------------
+        if (contentChanged || metadataChanged) {
+            try {
+                String versionComment = comment != null ? comment : "Check-in";
+                java.io.InputStream contentStream = contentService.getContent(wc.getContentId());
+                versionService.createVersion(
+                        original.getId(), contentStream, original.getName(),
+                        versionComment, majorVersion);
+                // Re-load original after version creation updated it
+                original = loadLiveDocument(original.getId());
+            } catch (java.io.IOException e) {
+                throw new IllegalStateException(
+                        "Failed to create version during check-in: " + e.getMessage(), e);
+            }
+        } else {
+            // No content/metadata change — still propagate properties if set
+            if (wc.getProperties() != null) {
+                original.setProperties(new java.util.HashMap<>(wc.getProperties()));
+            }
         }
 
         // --- clear checkout state on original ------------------------------
@@ -166,12 +200,6 @@ public class CheckOutCheckInService {
         original.setLastModifiedBy(currentUser);
         original.setLastModifiedDate(LocalDateTime.now());
         documentRepository.save(original);
-        contentReferenceService.syncOwnerReference(
-            originalContentIdBeforeCheckin,
-            original.getContentId(),
-            OwnerType.DOCUMENT,
-            original.getId()
-        );
 
         // --- soft-delete the working copy ----------------------------------
         wc.setDeleted(true);
@@ -182,7 +210,8 @@ public class CheckOutCheckInService {
         // Detach binary ownership for working copy
         contentReferenceService.detach(wc.getContentId(), OwnerType.WORKING_COPY, wc.getId());
 
-        log.info("Checked in working copy {} → original {}", workingCopyId, original.getId());
+        log.info("Checked in working copy {} → original {} (contentChanged={}, metadataChanged={})",
+                workingCopyId, original.getId(), contentChanged, metadataChanged);
 
         if (keepCheckedOut) {
             return checkout(original.getId());
