@@ -1,3 +1,4 @@
+/* eslint-disable testing-library/no-node-access, testing-library/no-wait-for-multiple-assertions */
 import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { toast } from 'react-toastify';

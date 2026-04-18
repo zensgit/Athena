@@ -1,3 +1,4 @@
+/* eslint-disable testing-library/no-node-access, testing-library/no-wait-for-multiple-assertions */
 import React from 'react';
 import { Provider } from 'react-redux';
 import { configureStore } from '@reduxjs/toolkit';
