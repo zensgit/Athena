@@ -63,7 +63,8 @@ class NodeControllerAspectTest {
         Folder folder = folder(nodeId, "Contracts");
         folder.addAspect("cm:titled");
 
-        Mockito.when(nodeService.addAspect(nodeId, "cm:titled")).thenReturn(folder);
+        Mockito.when(nodeService.addAspect(Mockito.eq(nodeId), Mockito.eq("cm:titled"), Mockito.anyMap()))
+            .thenReturn(folder);
 
         mockMvc.perform(post("/api/v1/nodes/{nodeId}/aspects/{aspectName}", nodeId, "cm:titled")
                 .contentType(MediaType.APPLICATION_JSON)

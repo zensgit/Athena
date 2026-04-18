@@ -349,6 +349,61 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
 
     @Query("""
         SELECT a FROM AuditLog a
+        WHERE UPPER(a.eventType) LIKE 'RM_%'
+          AND (:eventType IS NULL OR :eventType = '' OR a.eventType = :eventType)
+          AND (:username IS NULL OR :username = '' OR a.username = :username)
+          AND (:from IS NULL OR a.eventTime >= :from)
+          AND (:to IS NULL OR a.eventTime <= :to)
+        ORDER BY a.eventTime DESC
+        """)
+    Page<AuditLog> findRecordsManagementTimeline(@Param("eventType") String eventType,
+                                                 @Param("username") String username,
+                                                 @Param("from") LocalDateTime from,
+                                                 @Param("to") LocalDateTime to,
+                                                 Pageable pageable);
+
+    @Query("""
+        SELECT a FROM AuditLog a
+        WHERE a.eventType IN :eventTypes
+          AND (:username IS NULL OR :username = '' OR a.username = :username)
+          AND (:from IS NULL OR a.eventTime >= :from)
+          AND (:to IS NULL OR a.eventTime <= :to)
+        ORDER BY a.eventTime DESC
+        """)
+    Page<AuditLog> findByEventTypesAndFilters(@Param("eventTypes") List<String> eventTypes,
+                                               @Param("username") String username,
+                                               @Param("from") LocalDateTime from,
+                                               @Param("to") LocalDateTime to,
+                                               Pageable pageable);
+
+    @Query("""
+        SELECT a FROM AuditLog a
+        WHERE UPPER(a.eventType) LIKE 'RM_%'
+          AND a.eventType NOT IN :excludedEventTypes
+          AND (:eventType IS NULL OR :eventType = '' OR a.eventType = :eventType)
+          AND (:username IS NULL OR :username = '' OR a.username = :username)
+          AND (:from IS NULL OR a.eventTime >= :from)
+          AND (:to IS NULL OR a.eventTime <= :to)
+        ORDER BY a.eventTime DESC
+        """)
+    Page<AuditLog> findOtherRecordsManagementTimeline(@Param("excludedEventTypes") List<String> excludedEventTypes,
+                                                      @Param("eventType") String eventType,
+                                                      @Param("username") String username,
+                                                      @Param("from") LocalDateTime from,
+                                                      @Param("to") LocalDateTime to,
+                                                      Pageable pageable);
+
+    @Query("""
+        SELECT DATE(a.eventTime), a.eventType, COUNT(a) FROM AuditLog a
+        WHERE UPPER(a.eventType) LIKE 'RM_%'
+          AND a.eventTime >= :from
+        GROUP BY DATE(a.eventTime), a.eventType
+        ORDER BY DATE(a.eventTime) ASC, a.eventType ASC
+        """)
+    List<Object[]> countRecordsManagementEventsByDaySince(@Param("from") LocalDateTime from);
+
+    @Query("""
+        SELECT a FROM AuditLog a
         WHERE (:username IS NULL OR :username = '' OR a.username = :username)
           AND (:eventType IS NULL OR :eventType = '' OR a.eventType = :eventType)
           AND (:nodeId IS NULL OR a.nodeId = :nodeId)
@@ -443,6 +498,37 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
                                                                         @Param("afterTime") LocalDateTime afterTime,
                                                                         @Param("afterId") UUID afterId,
                                                                         Pageable pageable);
+
+    @Query("""
+        SELECT a.username, a.eventType, COUNT(a), MAX(a.eventTime) FROM AuditLog a
+        WHERE UPPER(a.eventType) LIKE 'RM_%'
+          AND a.eventTime >= :from
+          AND a.eventTime <= :to
+        GROUP BY a.username, a.eventType
+        ORDER BY a.username ASC, a.eventType ASC
+        """)
+    List<Object[]> countRmEventsByUsernameAndTypeBetween(@Param("from") LocalDateTime from,
+                                                          @Param("to") LocalDateTime to);
+
+    @Query("""
+        SELECT DATE(a.eventTime), a.username, a.eventType, COUNT(a) FROM AuditLog a
+        WHERE UPPER(a.eventType) LIKE 'RM_%'
+          AND a.eventTime >= :from
+        GROUP BY DATE(a.eventTime), a.username, a.eventType
+        ORDER BY DATE(a.eventTime) ASC, a.username ASC, a.eventType ASC
+        """)
+    List<Object[]> countRmEventsByDayUsernameAndTypeSince(@Param("from") LocalDateTime from);
+
+    @Query("""
+        SELECT a.eventType, COUNT(a), MAX(a.eventTime) FROM AuditLog a
+        WHERE UPPER(a.eventType) LIKE 'RM_%'
+          AND a.eventTime >= :from
+          AND a.eventTime <= :to
+        GROUP BY a.eventType
+        ORDER BY COUNT(a) DESC, a.eventType ASC
+        """)
+    List<Object[]> countRmEventsByTypeBetween(@Param("from") LocalDateTime from,
+                                              @Param("to") LocalDateTime to);
 
     /**
      * Delete audit logs older than the specified date (for retention policy)

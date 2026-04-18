@@ -11,6 +11,7 @@ import com.ecm.core.entity.TransferNodeMapping;
 import com.ecm.core.service.ContentService;
 import com.ecm.core.service.FolderService;
 import com.ecm.core.service.NodeService;
+import com.ecm.core.service.RecordsManagementService;
 import com.ecm.core.service.TransferNodeMappingService;
 import com.ecm.core.service.VersionService;
 import lombok.RequiredArgsConstructor;
@@ -37,6 +38,7 @@ public class LoopbackTransferClient implements TransferClient {
     private final NodeRepository nodeRepository;
     private final ContentService contentService;
     private final VersionService versionService;
+    private final RecordsManagementService recordsManagementService;
     private final RepositoryIdentityProvider repositoryIdentityProvider;
     private final TransferNodeMappingService transferNodeMappingService;
 
@@ -167,6 +169,7 @@ public class LoopbackTransferClient implements TransferClient {
                 );
             }
 
+            assertOverwriteAllowed(existingFolder, "replicate mapped folder update via loopback target");
             Folder effectiveFolder = existingFolder;
             if (!Objects.equals(parentIdOf(existingFolder), targetParentId)) {
                 effectiveFolder = requireFolder(nodeService.moveNode(existingFolder.getId(), targetParentId));
@@ -200,6 +203,7 @@ public class LoopbackTransferClient implements TransferClient {
         Folder source,
         ReplicationDefinition.ConflictPolicy conflictPolicy
     ) {
+        assertCreateAllowedInFolder(targetParentId, "replicate folder into loopback target folder");
         Optional<Node> existing = nodeRepository.findByParentIdAndName(targetParentId, source.getName());
         if (existing.isEmpty()) {
             Node created = nodeService.copyNode(source.getId(), targetParentId, source.getName(), false);
@@ -230,6 +234,7 @@ public class LoopbackTransferClient implements TransferClient {
                 yield new LoopbackReplicationResult(renamed, "RENAMED", "Loopback replication created renamed target node");
             }
             case OVERWRITE -> {
+                assertOverwriteAllowed(existing.get(), "overwrite existing node via loopback replication");
                 Node overwritten = overwriteExisting(targetParentId, source, false, existing.get());
                 upsertMapping(receiverRootId, source.getId(), overwritten.getId(), source.getLastModifiedDate());
                 yield new LoopbackReplicationResult(overwritten, "OVERWRITTEN", "Loopback replication overwrote existing target node");
@@ -255,6 +260,7 @@ public class LoopbackTransferClient implements TransferClient {
                 );
             }
 
+            assertOverwriteAllowed(existingDocument, "replicate mapped document update via loopback target");
             Document effectiveDocument = existingDocument;
             if (!Objects.equals(parentIdOf(existingDocument), targetParentId)) {
                 effectiveDocument = requireDocument(nodeService.moveNode(existingDocument.getId(), targetParentId));
@@ -288,6 +294,7 @@ public class LoopbackTransferClient implements TransferClient {
             );
         }
 
+        assertCreateAllowedInFolder(targetParentId, "replicate document into loopback target folder");
         Optional<Node> existing = nodeRepository.findByParentIdAndName(targetParentId, source.getName());
         if (existing.isEmpty()) {
             Node created = nodeService.copyNode(source.getId(), targetParentId, source.getName(), false);
@@ -318,6 +325,7 @@ public class LoopbackTransferClient implements TransferClient {
                 yield new LoopbackReplicationResult(renamed, "RENAMED", "Loopback replication created renamed target node");
             }
             case OVERWRITE -> {
+                assertOverwriteAllowed(existing.get(), "overwrite existing node via loopback replication");
                 Node overwritten;
                 if (existing.get() instanceof Document existingDocument) {
                     overwriteDocument(source, existingDocument);
@@ -356,6 +364,20 @@ public class LoopbackTransferClient implements TransferClient {
             );
         } catch (IOException ex) {
             throw new UncheckedIOException("Failed to read source content for loopback overwrite: " + source.getId(), ex);
+        }
+    }
+
+    private void assertCreateAllowedInFolder(UUID targetParentId, String operation) {
+        if (targetParentId == null || recordsManagementService == null) {
+            return;
+        }
+        nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(targetParentId, Node.ArchiveStatus.LIVE)
+            .ifPresent(node -> recordsManagementService.assertCreateInFolderAllowed(node, operation));
+    }
+
+    private void assertOverwriteAllowed(Node node, String operation) {
+        if (node != null && recordsManagementService != null) {
+            recordsManagementService.assertArchiveMutationAllowed(node, operation);
         }
     }
 

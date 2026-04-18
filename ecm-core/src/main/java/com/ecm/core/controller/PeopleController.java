@@ -15,6 +15,7 @@ import com.ecm.core.repository.UserRepository;
 import com.ecm.core.service.CommentService;
 import com.ecm.core.service.FavoriteService;
 import com.ecm.core.service.SecurityService;
+import com.ecm.core.service.SiteMembershipService;
 import com.ecm.core.service.UserGroupService;
 import com.ecm.core.service.PreferenceService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -59,7 +60,6 @@ public class PeopleController {
     private static final int MAX_RECENT_FAVORITES = 10;
     private static final int MAX_RECENT_COMMENTS = 10;
     private static final DateTimeFormatter ACTIVITY_TIME_FORMAT = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
-    private static final String SITE_REQUESTS_KEY = "siteMembershipRequests";
     
     private final UserGroupService userGroupService;
     private final UserRepository userRepository;
@@ -69,6 +69,7 @@ public class PeopleController {
     private final CommentService commentService;
     private final SecurityService securityService;
     private final PreferenceService preferenceService;
+    private final SiteMembershipService siteMembershipService;
 
     @GetMapping
     @Operation(summary = "Search people", description = "Search users by username or email for mention and approver pickers")
@@ -363,11 +364,14 @@ public class PeopleController {
     }
 
     @GetMapping("/{username}/site-membership-requests")
-    @Operation(summary = "Get person site membership requests", description = "Get pending collaboration requests from the user's preference payload")
+    @Operation(summary = "Get person site membership requests", description = "Get membership requests for a user")
     public ResponseEntity<List<PersonSiteMembershipRequestDto>> getPersonSiteMembershipRequests(@PathVariable String username) {
-        User user = requireUser(username);
-        Map<String, Object> preferences = user.getPreferences() == null ? new LinkedHashMap<>() : user.getPreferences();
-        return ResponseEntity.ok(PersonSiteMembershipRequestDto.fromPreferenceValue(username, preferences.get(SITE_REQUESTS_KEY)));
+        requireUser(username);
+        return ResponseEntity.ok(
+            siteMembershipService.getRequestsForUser(username).stream()
+                .map(PersonSiteMembershipRequestDto::fromMembershipRequest)
+                .toList()
+        );
     }
 
     @GetMapping("/site-membership-requests")
@@ -381,151 +385,89 @@ public class PeopleController {
         @RequestParam(required = false) String requester,
         Pageable pageable
     ) {
-        requireModerationAccess();
-        List<PersonSiteMembershipRequestDto> visibleRequests = userRepository.findAll().stream()
-            .flatMap(user -> PersonSiteMembershipRequestDto.fromPreferenceValue(
-                user.getUsername(),
-                user.getPreferences() != null ? user.getPreferences().get(SITE_REQUESTS_KEY) : null
-            ).stream())
-            .filter(request -> matchesVisibleSiteMembershipRequest(request, siteId, status, requester))
-            .sorted(
-                Comparator.comparing(PersonSiteMembershipRequestDto::requestedAt, Comparator.nullsLast(Comparator.reverseOrder()))
-                    .thenComparing(PersonSiteMembershipRequestDto::username, Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER))
-                    .thenComparing(PersonSiteMembershipRequestDto::siteId, Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER))
-            )
-            .toList();
-        return ResponseEntity.ok(pageVisibleSiteMembershipRequests(visibleRequests, pageable));
+        Page<SiteMembershipService.MembershipRequestDto> visibleRequests =
+            siteMembershipService.getVisibleRequests(siteId, status, requester, pageable);
+        return ResponseEntity.ok(visibleRequests.map(PersonSiteMembershipRequestDto::fromMembershipRequest));
     }
 
     @PostMapping("/{username}/site-membership-requests")
     @Transactional
-    @Operation(summary = "Create person site membership request", description = "Create a pending collaboration request in the current user's preference payload")
+    @Operation(summary = "Create person site membership request", description = "Create a pending collaboration request")
     public ResponseEntity<PersonSiteMembershipRequestDto> createPersonSiteMembershipRequest(
         @PathVariable String username,
         @RequestBody PersonSiteMembershipRequestWriteRequest request
     ) {
-        User user = requireWritableUser(username);
-        Map<String, Object> preferences = editablePreferences(user);
-        List<Map<String, Object>> requests = mutableSiteMembershipRequests(preferences);
-        String siteId = normalizeOptionalString(request.siteId());
-        if (siteId == null) {
-            throw new IllegalArgumentException("Site ID is required");
-        }
-        if (findSiteMembershipRequestIndex(requests, siteId) >= 0) {
-            throw new IllegalArgumentException("Site membership request already exists: " + siteId);
-        }
-
-        Map<String, Object> storedRequest = buildSiteMembershipRequest(siteId, request, LocalDateTime.now(), "PENDING", null);
-        requests.add(storedRequest);
-        preferences.put(SITE_REQUESTS_KEY, requests);
-        user.setPreferences(preferences);
-        userRepository.save(user);
-        return ResponseEntity.status(HttpStatus.CREATED).body(PersonSiteMembershipRequestDto.fromPreferenceValue(username, List.of(storedRequest)).get(0));
+        SiteMembershipService.MembershipRequestDto created = siteMembershipService.createRequestForUser(
+            username,
+            request.siteId(),
+            toMembershipRequest(request)
+        );
+        return ResponseEntity.status(HttpStatus.CREATED).body(PersonSiteMembershipRequestDto.fromMembershipRequest(created));
     }
 
     @PutMapping("/{username}/site-membership-requests/{siteId}")
     @Transactional
-    @Operation(summary = "Update person site membership request", description = "Update a pending collaboration request in the current user's preference payload")
+    @Operation(summary = "Update person site membership request", description = "Update a pending collaboration request")
     public ResponseEntity<PersonSiteMembershipRequestDto> updatePersonSiteMembershipRequest(
         @PathVariable String username,
         @PathVariable String siteId,
         @RequestBody PersonSiteMembershipRequestWriteRequest request
     ) {
-        User user = requireWritableUser(username);
-        Map<String, Object> preferences = editablePreferences(user);
-        List<Map<String, Object>> requests = mutableSiteMembershipRequests(preferences);
         String normalizedSiteId = normalizeOptionalString(siteId);
+        String requestSiteId = normalizeOptionalString(request.siteId());
         if (normalizedSiteId == null) {
             throw new IllegalArgumentException("Site ID is required");
         }
-        String requestSiteId = normalizeOptionalString(request.siteId());
         if (requestSiteId != null && !Objects.equals(requestSiteId, normalizedSiteId)) {
             throw new IllegalArgumentException("Site ID in the request body must match the path parameter");
         }
-
-        int requestIndex = findSiteMembershipRequestIndex(requests, normalizedSiteId);
-        if (requestIndex < 0) {
-            throw new ResourceNotFoundException("Site membership request not found: " + siteId);
-        }
-
-        Map<String, Object> current = requests.get(requestIndex);
-        LocalDateTime requestedAt = parseDateTime(current.get("requestedAt"));
-        String status = normalizeOptionalString(current.get("status"));
-        Map<String, Object> updated = buildSiteMembershipRequest(
+        SiteMembershipService.MembershipRequestDto updated = siteMembershipService.updateRequestForUser(
+            username,
             normalizedSiteId,
-            request,
-            requestedAt,
-            status != null ? status : "PENDING",
-            current
+            toMembershipRequest(new PersonSiteMembershipRequestWriteRequest(
+                normalizedSiteId,
+                request.siteTitle(),
+                request.role(),
+                request.message()
+            ))
         );
-        requests.set(requestIndex, updated);
-        preferences.put(SITE_REQUESTS_KEY, requests);
-        user.setPreferences(preferences);
-        userRepository.save(user);
-        return ResponseEntity.ok(PersonSiteMembershipRequestDto.fromPreferenceValue(username, List.of(updated)).get(0));
+        return ResponseEntity.ok(PersonSiteMembershipRequestDto.fromMembershipRequest(updated));
     }
 
     @PostMapping("/{username}/site-membership-requests/{siteId}/approve")
     @Transactional
-    @Operation(summary = "Approve person site membership request", description = "Approve a collaboration request and persist decision metadata")
+    @Operation(summary = "Approve person site membership request", description = "Approve a collaboration request")
     public ResponseEntity<PersonSiteMembershipRequestDto> approvePersonSiteMembershipRequest(
         @PathVariable String username,
         @PathVariable String siteId,
         @RequestBody(required = false) SiteMembershipRequestDecisionRequest request
     ) {
-        return moderatePersonSiteMembershipRequest(username, siteId, "APPROVED", request);
+        return ResponseEntity.ok(PersonSiteMembershipRequestDto.fromMembershipRequest(
+            siteMembershipService.approve(siteId, username, request != null ? request.decisionComment() : null)
+        ));
     }
 
     @PostMapping("/{username}/site-membership-requests/{siteId}/reject")
     @Transactional
-    @Operation(summary = "Reject person site membership request", description = "Reject a collaboration request and persist decision metadata")
+    @Operation(summary = "Reject person site membership request", description = "Reject a collaboration request")
     public ResponseEntity<PersonSiteMembershipRequestDto> rejectPersonSiteMembershipRequest(
         @PathVariable String username,
         @PathVariable String siteId,
         @RequestBody(required = false) SiteMembershipRequestDecisionRequest request
     ) {
-        return moderatePersonSiteMembershipRequest(username, siteId, "REJECTED", request);
+        return ResponseEntity.ok(PersonSiteMembershipRequestDto.fromMembershipRequest(
+            siteMembershipService.reject(siteId, username, request != null ? request.decisionComment() : null)
+        ));
     }
 
     @DeleteMapping("/{username}/site-membership-requests/{siteId}")
     @Transactional
-    @Operation(summary = "Withdraw person site membership request", description = "Remove a pending collaboration request from the current user's preference payload")
+    @Operation(summary = "Withdraw person site membership request", description = "Withdraw a pending collaboration request")
     public ResponseEntity<Void> withdrawPersonSiteMembershipRequest(
         @PathVariable String username,
         @PathVariable String siteId
     ) {
-        User user = requireWritableUser(username);
-        Map<String, Object> preferences = user.getPreferences() == null
-            ? new LinkedHashMap<>()
-            : new LinkedHashMap<>(user.getPreferences());
-        Object rawRequests = preferences.get(SITE_REQUESTS_KEY);
-        if (!(rawRequests instanceof List<?> rawList)) {
-            throw new ResourceNotFoundException("Site membership request not found: " + siteId);
-        }
-
-        List<Map<String, Object>> remaining = new ArrayList<>();
-        boolean removed = false;
-        for (Object rawItem : rawList) {
-            if (!(rawItem instanceof Map<?, ?> rawMap)) {
-                continue;
-            }
-            Map<String, Object> request = new LinkedHashMap<>();
-            rawMap.forEach((key, value) -> request.put(String.valueOf(key), value));
-            String requestSiteId = request.get("siteId") != null ? String.valueOf(request.get("siteId")) : null;
-            if (!removed && Objects.equals(requestSiteId, siteId)) {
-                removed = true;
-                continue;
-            }
-            remaining.add(request);
-        }
-
-        if (!removed) {
-            throw new ResourceNotFoundException("Site membership request not found: " + siteId);
-        }
-
-        preferences.put(SITE_REQUESTS_KEY, remaining);
-        user.setPreferences(preferences);
-        userRepository.save(user);
+        siteMembershipService.withdrawForUser(username, siteId);
         return ResponseEntity.noContent().build();
     }
 
@@ -541,13 +483,6 @@ public class PeopleController {
             throw new AccessDeniedException("You are not allowed to update this profile");
         }
         return user;
-    }
-
-    private void requireModerationAccess() {
-        String currentUser = securityService.getCurrentUser();
-        if (!securityService.isAdmin(currentUser)) {
-            throw new AccessDeniedException("You are not allowed to manage site membership requests");
-        }
     }
 
     private String normalizeOptionalString(String value) {
@@ -847,6 +782,32 @@ public class PeopleController {
         String decisionComment,
         Map<String, Object> metadata
     ) {
+        static PersonSiteMembershipRequestDto fromMembershipRequest(SiteMembershipService.MembershipRequestDto request) {
+            Map<String, Object> metadata = new LinkedHashMap<>();
+            metadata.put("siteId", request.siteId());
+            metadata.put("siteTitle", request.siteTitle());
+            metadata.put("role", request.role());
+            metadata.put("status", request.status());
+            metadata.put("message", request.message());
+            metadata.put("requestedAt", request.requestedAt());
+            metadata.put("decisionBy", request.decisionBy());
+            metadata.put("decisionAt", request.decisionAt());
+            metadata.put("decisionComment", request.decisionComment());
+            return new PersonSiteMembershipRequestDto(
+                request.username(),
+                request.siteId(),
+                request.siteTitle(),
+                request.role(),
+                request.status(),
+                request.message(),
+                parseDateTime(request.requestedAt()),
+                request.decisionBy(),
+                parseDateTime(request.decisionAt()),
+                request.decisionComment(),
+                metadata
+            );
+        }
+
         static List<PersonSiteMembershipRequestDto> fromPreferenceValue(Object rawValue) {
             return fromPreferenceValue(null, rawValue);
         }
@@ -901,145 +862,11 @@ public class PeopleController {
         }
     }
 
-    private Map<String, Object> editablePreferences(User user) {
-        return user.getPreferences() == null
-            ? new LinkedHashMap<>()
-            : new LinkedHashMap<>(user.getPreferences());
-    }
-
-    private List<Map<String, Object>> mutableSiteMembershipRequests(Map<String, Object> preferences) {
-        Object rawRequests = preferences.get(SITE_REQUESTS_KEY);
-        if (rawRequests == null) {
-            return new ArrayList<>();
-        }
-        if (!(rawRequests instanceof List<?> rawList)) {
-            throw new IllegalArgumentException("Site membership requests preference payload is invalid");
-        }
-        List<Map<String, Object>> requests = new ArrayList<>();
-        for (Object rawItem : rawList) {
-            if (rawItem instanceof Map<?, ?> rawMap) {
-                Map<String, Object> request = new LinkedHashMap<>();
-                rawMap.forEach((key, value) -> request.put(String.valueOf(key), value));
-                requests.add(request);
-            }
-        }
-        return requests;
-    }
-
-    private ResponseEntity<PersonSiteMembershipRequestDto> moderatePersonSiteMembershipRequest(
-        String username,
-        String siteId,
-        String decisionStatus,
-        SiteMembershipRequestDecisionRequest request
-    ) {
-        requireModerationAccess();
-        User user = requireUser(username);
-        Map<String, Object> preferences = editablePreferences(user);
-        List<Map<String, Object>> requests = mutableSiteMembershipRequests(preferences);
-        String normalizedSiteId = normalizeOptionalString(siteId);
-        if (normalizedSiteId == null) {
-            throw new IllegalArgumentException("Site ID is required");
-        }
-
-        int requestIndex = findSiteMembershipRequestIndex(requests, normalizedSiteId);
-        if (requestIndex < 0) {
-            throw new ResourceNotFoundException("Site membership request not found: " + siteId);
-        }
-
-        Map<String, Object> current = requests.get(requestIndex);
-        LocalDateTime requestedAt = parseDateTime(current.get("requestedAt"));
-        Map<String, Object> updated = buildSiteMembershipRequest(
-            normalizedSiteId,
-            toSiteMembershipRequestWriteRequest(current),
-            requestedAt,
-            decisionStatus,
-            current
-        );
-        updated.put("status", decisionStatus);
-        updated.put("decisionBy", securityService.getCurrentUser());
-        updated.put("decisionAt", LocalDateTime.now());
-        updated.put("decisionComment", normalizeOptionalString(request != null ? request.decisionComment() : null));
-
-        requests.set(requestIndex, updated);
-        preferences.put(SITE_REQUESTS_KEY, requests);
-        user.setPreferences(preferences);
-        userRepository.save(user);
-        return ResponseEntity.ok(PersonSiteMembershipRequestDto.fromPreferenceValue(username, List.of(updated)).get(0));
-    }
-
-    private int findSiteMembershipRequestIndex(List<Map<String, Object>> requests, String siteId) {
-        for (int i = 0; i < requests.size(); i++) {
-            Map<String, Object> request = requests.get(i);
-            if (Objects.equals(normalizeOptionalString(request.get("siteId")), siteId)) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    private Map<String, Object> buildSiteMembershipRequest(
-        String siteId,
-        PersonSiteMembershipRequestWriteRequest request,
-        LocalDateTime requestedAt,
-        String status,
-        Map<String, Object> inheritedRequest
-    ) {
-        Map<String, Object> storedRequest = new LinkedHashMap<>();
-        storedRequest.put("siteId", siteId);
-        storedRequest.put("siteTitle", normalizeOptionalString(request.siteTitle()) != null ? normalizeOptionalString(request.siteTitle()) : siteId);
-        storedRequest.put("role", normalizeOptionalString(request.role()));
-        storedRequest.put("status", normalizeOptionalString(status) != null ? normalizeOptionalString(status) : "PENDING");
-        storedRequest.put("message", normalizeOptionalString(request.message()));
-        storedRequest.put("requestedAt", requestedAt != null ? requestedAt : LocalDateTime.now());
-        if (inheritedRequest != null) {
-            if (inheritedRequest.containsKey("decisionBy")) {
-                storedRequest.put("decisionBy", inheritedRequest.get("decisionBy"));
-            }
-            if (inheritedRequest.containsKey("decisionAt")) {
-                storedRequest.put("decisionAt", inheritedRequest.get("decisionAt"));
-            }
-            if (inheritedRequest.containsKey("decisionComment")) {
-                storedRequest.put("decisionComment", inheritedRequest.get("decisionComment"));
-            }
-        }
-        return storedRequest;
-    }
-
-    private Page<PersonSiteMembershipRequestDto> pageVisibleSiteMembershipRequests(
-        List<PersonSiteMembershipRequestDto> requests,
-        Pageable pageable
-    ) {
-        if (pageable == null || pageable.isUnpaged()) {
-            return new PageImpl<>(requests);
-        }
-        int offset = Math.toIntExact(pageable.getOffset());
-        int end = Math.min(offset + pageable.getPageSize(), requests.size());
-        List<PersonSiteMembershipRequestDto> pageContent = offset >= requests.size()
-            ? List.of()
-            : requests.subList(offset, end);
-        return new PageImpl<>(pageContent, pageable, requests.size());
-    }
-
-    private boolean matchesVisibleSiteMembershipRequest(
-        PersonSiteMembershipRequestDto request,
-        String siteId,
-        String status,
-        String requester
-    ) {
-        String normalizedSiteId = normalizeOptionalString(siteId);
-        String normalizedStatus = normalizeOptionalString(status);
-        String normalizedRequester = normalizeOptionalString(requester);
-        return (normalizedSiteId == null || Objects.equals(normalizeOptionalString(request.siteId()), normalizedSiteId))
-            && (normalizedStatus == null || Objects.equals(normalizeOptionalString(request.status()), normalizedStatus))
-            && (normalizedRequester == null || Objects.equals(normalizeOptionalString(request.username()), normalizedRequester));
-    }
-
-    private PersonSiteMembershipRequestWriteRequest toSiteMembershipRequestWriteRequest(Map<String, Object> request) {
-        return new PersonSiteMembershipRequestWriteRequest(
-            normalizeOptionalString(request.get("siteId")),
-            normalizeOptionalString(request.get("siteTitle")),
-            normalizeOptionalString(request.get("role")),
-            normalizeOptionalString(request.get("message"))
+    private SiteMembershipService.CreateMembershipRequest toMembershipRequest(PersonSiteMembershipRequestWriteRequest request) {
+        return new SiteMembershipService.CreateMembershipRequest(
+            request.siteTitle(),
+            request.role(),
+            request.message()
         );
     }
 

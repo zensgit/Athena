@@ -61,6 +61,7 @@ public class Folder extends Node {
 
     public enum FolderType {
         GENERAL,
+        FILE_PLAN,
         WORKSPACE,
         PROJECT,
         ARCHIVE,

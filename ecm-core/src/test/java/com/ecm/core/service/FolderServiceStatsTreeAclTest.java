@@ -83,11 +83,11 @@ class FolderServiceStatsTreeAclTest {
         when(securityService.hasPermission(root, PermissionType.READ)).thenReturn(true);
         when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
 
-        when(nodeRepository.findByParentIdAndDeletedFalse(rootId))
+        when(nodeRepository.findByParentIdAndDeletedFalseAndArchiveStatus(rootId, com.ecm.core.entity.Node.ArchiveStatus.LIVE))
             .thenReturn(List.of(allowedFolder, deniedFolder, allowedDoc, deniedDoc));
-        when(nodeRepository.findByParentIdAndDeletedFalse(allowedFolder.getId()))
+        when(nodeRepository.findByParentIdAndDeletedFalseAndArchiveStatus(allowedFolder.getId(), com.ecm.core.entity.Node.ArchiveStatus.LIVE))
             .thenReturn(List.of(allowedSubFolder, deniedSubFolder, allowedSubDoc));
-        when(nodeRepository.findByParentIdAndDeletedFalse(allowedSubFolder.getId()))
+        when(nodeRepository.findByParentIdAndDeletedFalseAndArchiveStatus(allowedSubFolder.getId(), com.ecm.core.entity.Node.ArchiveStatus.LIVE))
             .thenReturn(List.of(allowedSubDoc2));
 
         when(securityService.hasPermission(allowedFolder, PermissionType.READ)).thenReturn(true);
@@ -126,9 +126,9 @@ class FolderServiceStatsTreeAclTest {
         when(securityService.hasPermission(root, PermissionType.READ)).thenReturn(true);
         when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
 
-        when(nodeRepository.findByParentIdAndDeletedFalse(rootId))
+        when(nodeRepository.findByParentIdAndDeletedFalseAndArchiveStatus(rootId, com.ecm.core.entity.Node.ArchiveStatus.LIVE))
             .thenReturn(List.of(allowedFolder, deniedFolder, allowedDoc));
-        when(nodeRepository.findByParentIdAndDeletedFalse(allowedFolder.getId()))
+        when(nodeRepository.findByParentIdAndDeletedFalseAndArchiveStatus(allowedFolder.getId(), com.ecm.core.entity.Node.ArchiveStatus.LIVE))
             .thenReturn(List.of(allowedSubDoc));
 
         when(securityService.hasPermission(allowedFolder, PermissionType.READ)).thenReturn(true);
@@ -167,11 +167,11 @@ class FolderServiceStatsTreeAclTest {
         when(securityService.hasPermission(root, PermissionType.READ)).thenReturn(true);
         when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
 
-        when(nodeRepository.findByParentIdAndDeletedFalse(rootId))
+        when(nodeRepository.findByParentIdAndDeletedFalseAndArchiveStatus(rootId, com.ecm.core.entity.Node.ArchiveStatus.LIVE))
             .thenReturn(List.of(allowedFolder, deniedFolder, allowedDoc, deniedDoc));
-        when(nodeRepository.findByParentIdAndDeletedFalse(allowedFolder.getId()))
+        when(nodeRepository.findByParentIdAndDeletedFalseAndArchiveStatus(allowedFolder.getId(), com.ecm.core.entity.Node.ArchiveStatus.LIVE))
             .thenReturn(List.of());
-        when(nodeRepository.findByParentIdAndDeletedFalse(deniedFolder.getId()))
+        when(nodeRepository.findByParentIdAndDeletedFalseAndArchiveStatus(deniedFolder.getId(), com.ecm.core.entity.Node.ArchiveStatus.LIVE))
             .thenReturn(List.of(nestedDoc));
 
         FolderService.FolderStats stats = folderService.getFolderStats(rootId);
@@ -204,7 +204,7 @@ class FolderServiceStatsTreeAclTest {
         assertFalse(rootNode.hasChildren());
         assertEquals(0, rootNode.children().size());
 
-        verify(nodeRepository, never()).findByParentIdAndDeletedFalse(rootId);
+        verify(nodeRepository, never()).findByParentIdAndDeletedFalseAndArchiveStatus(rootId, com.ecm.core.entity.Node.ArchiveStatus.LIVE);
     }
 
     private static Folder folder(UUID id, String name, Integer maxItems) {
@@ -213,6 +213,7 @@ class FolderServiceStatsTreeAclTest {
         folder.setName(name);
         folder.setDeleted(false);
         folder.setMaxItems(maxItems);
+        folder.setArchiveStatus(com.ecm.core.entity.Node.ArchiveStatus.LIVE);
         return folder;
     }
 
@@ -222,6 +223,7 @@ class FolderServiceStatsTreeAclTest {
         document.setName(name);
         document.setFileSize(size);
         document.setDeleted(false);
+        document.setArchiveStatus(com.ecm.core.entity.Node.ArchiveStatus.LIVE);
         return document;
     }
 }

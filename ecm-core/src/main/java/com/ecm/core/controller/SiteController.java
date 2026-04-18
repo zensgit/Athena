@@ -83,7 +83,6 @@ public class SiteController {
     }
 
     @PostMapping("/{siteId}/membership-requests/{username}/approve")
-    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Approve membership request")
     public ResponseEntity<MembershipRequestDto> approveMembershipRequest(
             @PathVariable String siteId,
@@ -93,7 +92,6 @@ public class SiteController {
     }
 
     @PostMapping("/{siteId}/membership-requests/{username}/reject")
-    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Reject membership request")
     public ResponseEntity<MembershipRequestDto> rejectMembershipRequest(
             @PathVariable String siteId,
@@ -118,7 +116,6 @@ public class SiteController {
     }
 
     @PostMapping("/{siteId}/members")
-    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Add site member")
     public ResponseEntity<SiteMemberDto> addMember(
             @PathVariable String siteId,
@@ -128,7 +125,6 @@ public class SiteController {
     }
 
     @PutMapping("/{siteId}/members/{username}")
-    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Update member role")
     public ResponseEntity<SiteMemberDto> updateMemberRole(
             @PathVariable String siteId,
@@ -138,7 +134,6 @@ public class SiteController {
     }
 
     @DeleteMapping("/{siteId}/members/{username}")
-    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Remove site member")
     public ResponseEntity<Void> removeMember(
             @PathVariable String siteId,

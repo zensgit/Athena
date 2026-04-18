@@ -8,6 +8,7 @@ import com.ecm.core.service.CommentService;
 import com.ecm.core.service.FavoriteService;
 import com.ecm.core.service.PreferenceService;
 import com.ecm.core.service.SecurityService;
+import com.ecm.core.service.SiteMembershipService;
 import com.ecm.core.service.UserGroupService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -71,6 +72,9 @@ class PeopleControllerSecurityTest {
 
     @MockBean
     private PreferenceService preferenceService;
+
+    @MockBean
+    private SiteMembershipService siteMembershipService;
 
     @Configuration
     @EnableWebSecurity
@@ -221,18 +225,6 @@ class PeopleControllerSecurityTest {
     @WithMockUser(username = "alice")
     @DisplayName("Authenticated users can withdraw their own site membership request")
     void authenticatedUsersCanWithdrawOwnSiteMembershipRequest() throws Exception {
-        com.ecm.core.entity.User user = new com.ecm.core.entity.User();
-        user.setId(UUID.randomUUID());
-        user.setUsername("alice");
-        user.setEmail("alice@example.com");
-        user.setPreferences(new java.util.HashMap<>(java.util.Map.of(
-            "siteMembershipRequests",
-            java.util.List.of(java.util.Map.of("siteId", "finance", "status", "PENDING"))
-        )));
-
-        when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
-        when(userRepository.save(org.mockito.ArgumentMatchers.any(com.ecm.core.entity.User.class)))
-            .thenAnswer(invocation -> invocation.getArgument(0));
         when(securityService.getCurrentUser()).thenReturn("alice");
 
         mockMvc.perform(delete("/api/v1/people/alice/site-membership-requests/finance"))
@@ -243,8 +235,8 @@ class PeopleControllerSecurityTest {
     @WithMockUser(username = "alice")
     @DisplayName("Authenticated non-admin users cannot access the moderation queue")
     void authenticatedUsersCannotAccessModerationQueue() throws Exception {
-        when(securityService.getCurrentUser()).thenReturn("alice");
-        when(securityService.isAdmin("alice")).thenReturn(false);
+        when(siteMembershipService.getVisibleRequests(org.mockito.ArgumentMatchers.isNull(), org.mockito.ArgumentMatchers.isNull(), org.mockito.ArgumentMatchers.isNull(), org.mockito.ArgumentMatchers.any()))
+            .thenThrow(new com.ecm.core.exception.AccessDeniedException("You are not allowed to manage site membership requests"));
 
         mockMvc.perform(get("/api/v1/people/site-membership-requests"))
             .andExpect(status().isForbidden());
@@ -254,16 +246,14 @@ class PeopleControllerSecurityTest {
     @WithMockUser(username = "alice")
     @DisplayName("Authenticated users can create their own site membership request")
     void authenticatedUsersCanCreateOwnSiteMembershipRequest() throws Exception {
-        com.ecm.core.entity.User user = new com.ecm.core.entity.User();
-        user.setId(UUID.randomUUID());
-        user.setUsername("alice");
-        user.setEmail("alice@example.com");
-        user.setPreferences(new java.util.HashMap<>());
-
-        when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
-        when(userRepository.save(org.mockito.ArgumentMatchers.any(com.ecm.core.entity.User.class)))
-            .thenAnswer(invocation -> invocation.getArgument(0));
-        when(securityService.getCurrentUser()).thenReturn("alice");
+        when(siteMembershipService.createRequestForUser(
+            org.mockito.ArgumentMatchers.eq("alice"),
+            org.mockito.ArgumentMatchers.eq("finance"),
+            org.mockito.ArgumentMatchers.any(SiteMembershipService.CreateMembershipRequest.class)
+        )).thenReturn(new SiteMembershipService.MembershipRequestDto(
+            "alice", "finance", "Finance Workspace", "CONSUMER", "Need access", "PENDING",
+            "2026-03-18T11:45:00", null, null, null
+        ));
 
         mockMvc.perform(post("/api/v1/people/alice/site-membership-requests")
                 .contentType("application/json")
@@ -281,8 +271,8 @@ class PeopleControllerSecurityTest {
     @WithMockUser(username = "alice")
     @DisplayName("Authenticated non-admin users cannot approve site membership requests")
     void authenticatedUsersCannotApproveSiteMembershipRequests() throws Exception {
-        when(securityService.getCurrentUser()).thenReturn("alice");
-        when(securityService.isAdmin("alice")).thenReturn(false);
+        when(siteMembershipService.approve("finance", "alice", null))
+            .thenThrow(new com.ecm.core.exception.AccessDeniedException("You are not allowed to manage site membership requests"));
 
         mockMvc.perform(post("/api/v1/people/alice/site-membership-requests/finance/approve"))
             .andExpect(status().isForbidden());
@@ -292,19 +282,14 @@ class PeopleControllerSecurityTest {
     @WithMockUser(username = "alice")
     @DisplayName("Authenticated users can update their own site membership request")
     void authenticatedUsersCanUpdateOwnSiteMembershipRequest() throws Exception {
-        com.ecm.core.entity.User user = new com.ecm.core.entity.User();
-        user.setId(UUID.randomUUID());
-        user.setUsername("alice");
-        user.setEmail("alice@example.com");
-        user.setPreferences(new java.util.HashMap<>(java.util.Map.of(
-            "siteMembershipRequests",
-            java.util.List.of(java.util.Map.of("siteId", "finance", "siteTitle", "Finance Workspace", "status", "PENDING"))
-        )));
-
-        when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
-        when(userRepository.save(org.mockito.ArgumentMatchers.any(com.ecm.core.entity.User.class)))
-            .thenAnswer(invocation -> invocation.getArgument(0));
-        when(securityService.getCurrentUser()).thenReturn("alice");
+        when(siteMembershipService.updateRequestForUser(
+            org.mockito.ArgumentMatchers.eq("alice"),
+            org.mockito.ArgumentMatchers.eq("finance"),
+            org.mockito.ArgumentMatchers.any(SiteMembershipService.CreateMembershipRequest.class)
+        )).thenReturn(new SiteMembershipService.MembershipRequestDto(
+            "alice", "finance", "Finance Workspace", "CONTRIBUTOR", "Updated access request", "PENDING",
+            "2026-03-18T11:45:00", null, null, null
+        ));
 
         mockMvc.perform(put("/api/v1/people/alice/site-membership-requests/finance")
                 .contentType("application/json")

@@ -38,6 +38,7 @@ class BulkImportServiceTest {
     @Mock private NodeService nodeService;
     @Mock private SecurityService securityService;
     @Mock private TenantWorkspaceScopeService tenantWorkspaceScopeService;
+    @Mock private RecordsManagementService recordsManagementService;
 
     private BulkImportService service;
     private Map<UUID, ImportJob> storedJobs;
@@ -52,6 +53,7 @@ class BulkImportServiceTest {
             nodeService,
             securityService,
             tenantWorkspaceScopeService,
+            recordsManagementService,
             Runnable::run
         );
         storedJobs = new LinkedHashMap<>();
@@ -180,6 +182,67 @@ class BulkImportServiceTest {
         assertEquals("q1", requests.get(1).name());
         assertEquals(engineering.getId(), requests.get(1).parentId());
         verify(documentUploadService).uploadDocument(any(), eq(quarter.getId()), isNull());
+    }
+
+    @Test
+    @DisplayName("startImport rejects upload into file plan target folder")
+    void startImportRejectsUploadIntoFilePlanTargetFolder() throws Exception {
+        UUID targetFolderId = UUID.randomUUID();
+        Folder filePlan = folder(targetFolderId, "Corporate File Plan");
+        filePlan.setPath("/Corporate File Plan");
+        filePlan.setFolderType(Folder.FolderType.FILE_PLAN);
+
+        when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(targetFolderId, Node.ArchiveStatus.LIVE))
+            .thenReturn(Optional.of(filePlan));
+        doThrow(new com.ecm.core.exception.IllegalOperationException(
+            "Cannot bulk import into target folder because target folder 'Corporate File Plan' is a file plan"
+        )).when(recordsManagementService).assertCreateInFolderAllowed(filePlan, "bulk import into target folder");
+
+        BulkImportService.ImportJobDto result = service.startImport(
+            new MultipartFile[]{multipart("report.txt", "hello")},
+            List.of("report.txt"),
+            targetFolderId,
+            ConflictPolicy.SKIP
+        );
+
+        BulkImportService.ImportJobDto refreshed = service.getJob(result.id());
+        assertEquals(ImportJobStatus.FAILED, refreshed.status());
+        assertEquals(1, refreshed.failedFiles());
+        assertTrue(refreshed.errorLog().contains("Corporate File Plan"));
+        verify(documentUploadService, never()).uploadDocument(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("startImport rejects overwrite when existing node is RM governed")
+    void startImportRejectsOverwriteWhenExistingNodeIsRmGoverned() throws Exception {
+        UUID parentFolderId = UUID.randomUUID();
+        Folder generalFolder = folder(parentFolderId, "General");
+        generalFolder.setPath("/General");
+        Document existing = existingDocument("report.txt");
+        existing.setId(UUID.randomUUID());
+        existing.setPath("/Corporate File Plan/report.txt");
+
+        when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(parentFolderId, Node.ArchiveStatus.LIVE))
+            .thenReturn(Optional.of(generalFolder));
+        when(nodeRepository.findByParentIdAndName(parentFolderId, "report.txt"))
+            .thenReturn(Optional.of(existing));
+        doThrow(new com.ecm.core.exception.IllegalOperationException(
+            "Cannot overwrite existing node via bulk import because node 'report.txt' is governed by file plan 'Corporate File Plan'"
+        )).when(recordsManagementService).assertArchiveMutationAllowed(existing, "overwrite existing node via bulk import");
+
+        BulkImportService.ImportJobDto result = service.startImport(
+            new MultipartFile[]{multipart("report.txt", "hello")},
+            List.of("report.txt"),
+            parentFolderId,
+            ConflictPolicy.OVERWRITE
+        );
+
+        BulkImportService.ImportJobDto refreshed = service.getJob(result.id());
+        assertEquals(ImportJobStatus.FAILED, refreshed.status());
+        assertEquals(1, refreshed.failedFiles());
+        assertTrue(refreshed.errorLog().contains("governed by file plan"));
+        verify(nodeService, never()).deleteNode(any(), anyBoolean());
+        verify(documentUploadService, never()).uploadDocument(any(), any(), any());
     }
 
     @Test

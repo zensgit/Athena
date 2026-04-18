@@ -15,5 +15,9 @@ public interface CategoryRepository extends JpaRepository<Category, UUID> {
 
     List<Category> findByParentAndActiveTrue(Category parent);
 
+    List<Category> findByPurposeAndActiveTrueOrderByPathAsc(Category.Purpose purpose);
+
+    Optional<Category> findFirstByPathAndActiveTrue(String path);
+
     Optional<Category> findByName(String name);
 }

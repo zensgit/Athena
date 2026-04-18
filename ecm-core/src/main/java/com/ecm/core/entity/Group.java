@@ -28,6 +28,21 @@ public class Group extends BaseEntity {
     
     @Column(name = "email")
     private String email;
+
+    @Column(name = "directory_managed", nullable = false)
+    private boolean directoryManaged = false;
+
+    @Column(name = "directory_source", length = 64)
+    private String directorySource;
+
+    @Column(name = "directory_external_id", length = 255)
+    private String directoryExternalId;
+
+    @Column(name = "directory_dn", length = 1024)
+    private String directoryDn;
+
+    @Column(name = "directory_last_synced_at")
+    private java.time.LocalDateTime directoryLastSyncedAt;
     
     @ManyToMany(mappedBy = "groups", fetch = FetchType.LAZY)
     private Set<User> users = new HashSet<>();

@@ -318,7 +318,7 @@ class ContentReferenceServiceTest {
 
         @Test
         @DisplayName("does nothing when no orphans found")
-        void doesNothingWhenNoOrphans() {
+        void doesNothingWhenNoOrphans() throws IOException {
             when(contentReferenceRepository.findEligibleOrphanContentIds(any(LocalDateTime.class)))
                     .thenReturn(Collections.emptyList());
 

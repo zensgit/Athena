@@ -54,12 +54,18 @@ public record NodeDto(
     LocalDateTime previewLastUpdated
 ) {
     public static NodeDto from(Node node) {
+        return from(node, null);
+    }
+
+    public static NodeDto from(Node node, Map<String, Object> propertiesOverride) {
         if (node == null) {
             return null;
         }
 
         UUID parentId = node.getParent() != null ? node.getParent().getId() : null;
-        Map<String, Object> properties = node.getProperties() != null ? new HashMap<>(node.getProperties()) : new HashMap<>();
+        Map<String, Object> properties = propertiesOverride != null
+            ? new HashMap<>(propertiesOverride)
+            : (node.getProperties() != null ? new HashMap<>(node.getProperties()) : new HashMap<>());
         Map<String, Object> metadata = node.getMetadata() != null ? new HashMap<>(node.getMetadata()) : new HashMap<>();
 
         List<String> tags = new ArrayList<>();

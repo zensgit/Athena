@@ -22,6 +22,7 @@ public class ContentModelService {
     private final AspectDefinitionRepository aspectRepo;
     private final PropertyDefinitionRepository propertyRepo;
     private final ConstraintDefinitionRepository constraintRepo;
+    private final RuntimeModelValidationService runtimeModelValidationService;
 
     // ------------------------------------------------------------------ model CRUD
 
@@ -48,6 +49,7 @@ public class ContentModelService {
         if (model.getStatus() == ModelStatus.ACTIVE) {
             throw new IllegalStateException("Model is already active");
         }
+        runtimeModelValidationService.validateModelActivation(model);
         model.setStatus(ModelStatus.ACTIVE);
         return modelRepo.save(model);
     }
@@ -66,6 +68,7 @@ public class ContentModelService {
         if (model.getStatus() == ModelStatus.ACTIVE) {
             throw new IllegalStateException("Cannot delete an active model; deactivate first");
         }
+        runtimeModelValidationService.validateModelDeletion(model);
         model.setDeleted(true);
         modelRepo.save(model);
     }
@@ -98,6 +101,7 @@ public class ContentModelService {
 
     public TypeDefinition addType(UUID modelId, TypeDefinition type) {
         ContentModelDefinition model = getModel(modelId);
+        runtimeModelValidationService.ensureStructuralMutationAllowed(model, "type create");
         // duplicate-name guard
         boolean dup = typeRepo.findByModelId(modelId).stream()
             .anyMatch(t -> t.getName().equals(type.getName()));
@@ -111,6 +115,7 @@ public class ContentModelService {
     public TypeDefinition updateType(UUID typeId, String title, String description, String parentName) {
         TypeDefinition type = typeRepo.findById(typeId)
             .orElseThrow(() -> new NoSuchElementException("Type not found: " + typeId));
+        runtimeModelValidationService.validateTypeUpdate(type, parentName);
         if (title != null) type.setTitle(title);
         if (description != null) type.setDescription(description);
         if (parentName != null) type.setParentName(parentName.isBlank() ? null : parentName);
@@ -120,6 +125,7 @@ public class ContentModelService {
     public void deleteType(UUID typeId) {
         TypeDefinition type = typeRepo.findById(typeId)
             .orElseThrow(() -> new NoSuchElementException("Type not found: " + typeId));
+        runtimeModelValidationService.validateTypeDeletion(type);
         typeRepo.delete(type);
     }
 
@@ -127,6 +133,7 @@ public class ContentModelService {
 
     public AspectDefinition addAspectDefinition(UUID modelId, AspectDefinition aspect) {
         ContentModelDefinition model = getModel(modelId);
+        runtimeModelValidationService.ensureStructuralMutationAllowed(model, "aspect create");
         boolean dup = aspectRepo.findByModelId(modelId).stream()
             .anyMatch(a -> a.getName().equals(aspect.getName()));
         if (dup) {
@@ -139,6 +146,7 @@ public class ContentModelService {
     public AspectDefinition updateAspect(UUID aspectId, String title, String description, String parentName) {
         AspectDefinition aspect = aspectRepo.findById(aspectId)
             .orElseThrow(() -> new NoSuchElementException("Aspect not found: " + aspectId));
+        runtimeModelValidationService.validateAspectUpdate(aspect, parentName);
         if (title != null) aspect.setTitle(title);
         if (description != null) aspect.setDescription(description);
         if (parentName != null) aspect.setParentName(parentName.isBlank() ? null : parentName);
@@ -148,15 +156,19 @@ public class ContentModelService {
     public void deleteAspect(UUID aspectId) {
         AspectDefinition aspect = aspectRepo.findById(aspectId)
             .orElseThrow(() -> new NoSuchElementException("Aspect not found: " + aspectId));
+        runtimeModelValidationService.validateAspectDeletion(aspect);
         aspectRepo.delete(aspect);
     }
 
     // ------------------------------------------------------------------ properties
 
     public PropertyDefinition addProperty(UUID ownerId, PropertyDefinition property, boolean isAspect) {
+        normalizePropertyDefinition(property);
+        runtimeModelValidationService.validatePropertyDefinition(property);
         if (isAspect) {
             AspectDefinition aspect = aspectRepo.findById(ownerId)
                 .orElseThrow(() -> new NoSuchElementException("Aspect not found: " + ownerId));
+            runtimeModelValidationService.ensureStructuralMutationAllowed(aspect.getModel(), "aspect property create");
             boolean dup = propertyRepo.findByAspectDefinitionId(ownerId).stream()
                 .anyMatch(p -> p.getName().equals(property.getName()));
             if (dup) {
@@ -166,6 +178,7 @@ public class ContentModelService {
         } else {
             TypeDefinition type = typeRepo.findById(ownerId)
                 .orElseThrow(() -> new NoSuchElementException("Type not found: " + ownerId));
+            runtimeModelValidationService.ensureStructuralMutationAllowed(type.getModel(), "type property create");
             boolean dup = propertyRepo.findByTypeDefinitionId(ownerId).stream()
                 .anyMatch(p -> p.getName().equals(property.getName()));
             if (dup) {
@@ -176,9 +189,16 @@ public class ContentModelService {
         return propertyRepo.save(property);
     }
 
+    private void normalizePropertyDefinition(PropertyDefinition property) {
+        if (property != null && property.isEncrypted()) {
+            property.setIndexed(false);
+        }
+    }
+
     public void deleteProperty(UUID propertyId) {
         PropertyDefinition property = propertyRepo.findById(propertyId)
             .orElseThrow(() -> new NoSuchElementException("Property not found: " + propertyId));
+        runtimeModelValidationService.validatePropertyDeletion(property);
         propertyRepo.delete(property);
     }
 
@@ -187,6 +207,7 @@ public class ContentModelService {
     public ConstraintDefinition addConstraint(UUID propertyId, ConstraintDefinition constraint) {
         PropertyDefinition property = propertyRepo.findById(propertyId)
             .orElseThrow(() -> new NoSuchElementException("Property not found: " + propertyId));
+        runtimeModelValidationService.validateConstraintDeletion(property);
         constraint.setPropertyDefinition(property);
         return constraintRepo.save(constraint);
     }
@@ -194,6 +215,7 @@ public class ContentModelService {
     public void deleteConstraint(UUID constraintId) {
         ConstraintDefinition constraint = constraintRepo.findById(constraintId)
             .orElseThrow(() -> new NoSuchElementException("Constraint not found: " + constraintId));
+        runtimeModelValidationService.validateConstraintDeletion(constraint.getPropertyDefinition());
         constraintRepo.delete(constraint);
     }
 }

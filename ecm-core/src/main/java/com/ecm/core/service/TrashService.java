@@ -5,7 +5,9 @@ import com.ecm.core.entity.Permission.PermissionType;
 import com.ecm.core.repository.NodeRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,6 +35,14 @@ public class TrashService {
     private final SecurityService securityService;
     private final TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
+    @Autowired
+    @Lazy
+    private LegalHoldService legalHoldService;
+
+    @Autowired
+    @Lazy
+    private RecordsManagementService recordsManagementService;
+
     @Value("${ecm.trash.retention-days:30}")
     private int retentionDays;
 
@@ -50,6 +60,9 @@ public class TrashService {
         if (!securityService.hasPermission(node, PermissionType.DELETE)) {
             throw new SecurityException("No permission to delete this document");
         }
+
+        assertNoActiveHold(node, "move to trash");
+        assertNoRecordHierarchyMutation(node, "move to trash");
 
         String currentUser = securityService.getCurrentUser();
 
@@ -93,6 +106,10 @@ public class TrashService {
             throw new IllegalStateException("Cannot restore: parent folder is also in trash. Restore parent first.");
         }
 
+        if (recordsManagementService != null) {
+            recordsManagementService.assertRestoreAllowed(node, "restore from trash");
+        }
+
         // Restore
         node.setDeleted(false);
         node.setDeletedAt(null);
@@ -126,6 +143,9 @@ public class TrashService {
         if (!isAdmin && !isOwner) {
             throw new SecurityException("No permission to permanently delete. Admin or owner access required.");
         }
+
+        assertNoActiveHold(node, "permanently delete");
+        assertNoRecordHierarchyMutation(node, "permanently delete");
 
         // Delete children first if it's a folder
         if (node.isFolder()) {
@@ -190,12 +210,16 @@ public class TrashService {
                 .toList();
         }
 
+        List<Node> rootItems = trashItems.stream()
+            .filter(node -> node.getParent() == null || !node.getParent().isDeleted())
+            .toList();
+        rootItems.forEach(node -> {
+            assertNoActiveHold(node, "empty trash");
+            assertNoRecordHierarchyMutation(node, "empty trash");
+        });
+
         int count = 0;
-        for (Node node : trashItems) {
-            // Skip children (they will be deleted with parent)
-            if (node.getParent() != null && node.getParent().isDeleted()) {
-                continue;
-            }
+        for (Node node : rootItems) {
             permanentDeleteChildren(node);
             nodeRepository.delete(node);
             count++;
@@ -266,6 +290,8 @@ public class TrashService {
                 continue;
             }
             try {
+                assertNoActiveHold(node, "auto-purge");
+                assertNoRecordHierarchyMutation(node, "auto-purge");
                 permanentDeleteChildren(node);
                 nodeRepository.delete(node);
                 count++;
@@ -304,6 +330,18 @@ public class TrashService {
             return true;
         }
         return tenantWorkspaceScopeService.isPathVisible(node.getPath());
+    }
+
+    private void assertNoActiveHold(Node node, String operation) {
+        if (legalHoldService != null) {
+            legalHoldService.assertOperationAllowed(node, operation);
+        }
+    }
+
+    private void assertNoRecordHierarchyMutation(Node node, String operation) {
+        if (recordsManagementService != null) {
+            recordsManagementService.assertHierarchyMutationAllowed(node, operation);
+        }
     }
 
     // Helper methods

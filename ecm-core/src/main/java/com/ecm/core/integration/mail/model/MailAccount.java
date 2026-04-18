@@ -1,6 +1,7 @@
 package com.ecm.core.integration.mail.model;
 
 import com.ecm.core.entity.BaseEntity;
+import com.ecm.core.security.secret.EncryptedSecretConverter;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -32,7 +33,8 @@ public class MailAccount extends BaseEntity {
     private String username;
 
     @Column
-    private String password; // Should be encrypted in prod
+    @Convert(converter = EncryptedSecretConverter.class)
+    private String password;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -52,6 +54,7 @@ public class MailAccount extends BaseEntity {
     private String oauthClientId;
 
     @Column(name = "oauth_client_secret", columnDefinition = "TEXT")
+    @Convert(converter = EncryptedSecretConverter.class)
     private String oauthClientSecret;
 
     @Column(name = "oauth_tenant_id")
@@ -61,9 +64,11 @@ public class MailAccount extends BaseEntity {
     private String oauthScope;
 
     @Column(name = "oauth_access_token", columnDefinition = "TEXT")
+    @Convert(converter = EncryptedSecretConverter.class)
     private String oauthAccessToken;
 
     @Column(name = "oauth_refresh_token", columnDefinition = "TEXT")
+    @Convert(converter = EncryptedSecretConverter.class)
     private String oauthRefreshToken;
 
     @Column(name = "oauth_token_expires_at")

@@ -122,6 +122,40 @@ class SearchControllerTest {
     }
 
     @Test
+    @DisplayName("Full-text search returns RM record projection fields")
+    void searchShouldReturnRecordProjectionFields() throws Exception {
+        Page<SearchResult> page = new PageImpl<>(
+            List.of(
+                SearchResult.builder()
+                    .id("id-1")
+                    .name("contract.pdf")
+                    .record(true)
+                    .declaredBy("records-admin")
+                    .declaredAt("2026-04-17T10:00:00")
+                    .declaredVersionLabel("1.2")
+                    .recordCategoryId("cat-1")
+                    .recordCategoryName("Contracts")
+                    .recordCategoryPath("/Records Management/Contracts")
+                    .build()
+            ),
+            PageRequest.of(0, 10),
+            1
+        );
+        Mockito.when(fullTextSearchService.search("contract", 0, 10, null, null, null, true, List.of()))
+            .thenReturn(page);
+
+        mockMvc.perform(get("/api/v1/search")
+                .param("q", "contract")
+                .param("page", "0")
+                .param("size", "10"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.content[0].record").value(true))
+            .andExpect(jsonPath("$.content[0].declaredBy").value("records-admin"))
+            .andExpect(jsonPath("$.content[0].declaredVersionLabel").value("1.2"))
+            .andExpect(jsonPath("$.content[0].recordCategoryPath").value("/Records Management/Contracts"));
+    }
+
+    @Test
     @DisplayName("Faceted search endpoint returns 200")
     void facetedSearchShouldReturnOk() throws Exception {
         Page<SearchResult> emptyPage = new PageImpl<>(List.of(), PageRequest.of(0, 10), 0);
@@ -160,6 +194,8 @@ class SearchControllerTest {
                       "filters": {
                         "mimeTypes": ["application/pdf"],
                         "tags": ["important"],
+                        "recordOnly": true,
+                        "recordCategoryPaths": ["/Records Management/Finance"],
                         "folderId": "folder-1",
                         "includeChildren": false
                       }
@@ -171,6 +207,8 @@ class SearchControllerTest {
             .andExpect(jsonPath("$.hasFilters").value(true))
             .andExpect(jsonPath("$.filterCounts.mimeTypes").value(1))
             .andExpect(jsonPath("$.filterCounts.tags").value(1))
+            .andExpect(jsonPath("$.filterCounts.recordOnly").value(1))
+            .andExpect(jsonPath("$.filterCounts.recordCategoryPaths").value(1))
             .andExpect(jsonPath("$.filterCounts.folderId").value(1))
             .andExpect(jsonPath("$.filterCounts.facets").value(2))
             .andExpect(jsonPath("$.requestedFacetCount").value(2))
@@ -1073,9 +1111,6 @@ class SearchControllerTest {
     @Test
     @DisplayName("Dry-run queue failed previews CSV async export list returns recent tasks")
     void listDryRunQueueFailedPreviewsBySearchCsvAsyncTasksShouldReturnRecentTasks() throws Exception {
-        Mockito.when(fullTextSearchService.advancedSearch(Mockito.any()))
-            .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 100), 0));
-
         MvcResult startResult = mockMvc.perform(post("/api/v1/search/preview/queue-failed/dry-run/export-async")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""

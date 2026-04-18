@@ -48,7 +48,7 @@ class NodeControllerPropertyValidationTest {
     @DisplayName("Add aspect returns structured property validation details")
     void addAspectReturnsStructuredValidationDetails() throws Exception {
         UUID nodeId = UUID.randomUUID();
-        Mockito.when(nodeService.addAspect(nodeId, "cm:titled"))
+        Mockito.when(nodeService.addAspect(Mockito.eq(nodeId), Mockito.eq("cm:titled"), Mockito.anyMap()))
             .thenThrow(new PropertyValidationException(
                 "Property validation failed: Missing mandatory property 'cm:title' for aspect cm:titled",
                 List.of("Missing mandatory property 'cm:title' for aspect cm:titled")

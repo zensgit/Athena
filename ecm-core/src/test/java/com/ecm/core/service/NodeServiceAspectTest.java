@@ -61,7 +61,8 @@ class NodeServiceAspectTest {
     @DisplayName("addAspect rejects without WRITE permission")
     void addAspectRejectsWithoutPermission() {
         Folder folder = folder("test");
-        when(nodeRepository.findByIdAndDeletedFalse(folder.getId())).thenReturn(Optional.of(folder));
+        when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(folder.getId(), com.ecm.core.entity.Node.ArchiveStatus.LIVE))
+            .thenReturn(Optional.of(folder));
         when(securityService.hasPermission(folder, Permission.PermissionType.READ)).thenReturn(true);
         when(securityService.hasPermission(folder, Permission.PermissionType.WRITE)).thenReturn(false);
 
@@ -93,7 +94,8 @@ class NodeServiceAspectTest {
         Folder folder = folder("test");
         folder.addAspect("cm:titled");
         folder.addAspect("cm:auditable");
-        when(nodeRepository.findByIdAndDeletedFalse(folder.getId())).thenReturn(Optional.of(folder));
+        when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(folder.getId(), com.ecm.core.entity.Node.ArchiveStatus.LIVE))
+            .thenReturn(Optional.of(folder));
         when(securityService.hasPermission(folder, Permission.PermissionType.READ)).thenReturn(true);
 
         Set<String> aspects = nodeService.getAspects(folder.getId());
@@ -106,7 +108,8 @@ class NodeServiceAspectTest {
     void hasAspectTrue() {
         Folder folder = folder("test");
         folder.addAspect("cm:titled");
-        when(nodeRepository.findByIdAndDeletedFalse(folder.getId())).thenReturn(Optional.of(folder));
+        when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(folder.getId(), com.ecm.core.entity.Node.ArchiveStatus.LIVE))
+            .thenReturn(Optional.of(folder));
         when(securityService.hasPermission(folder, Permission.PermissionType.READ)).thenReturn(true);
 
         assertTrue(nodeService.hasAspect(folder.getId(), "cm:titled"));
@@ -116,7 +119,8 @@ class NodeServiceAspectTest {
     @DisplayName("hasAspect returns false for missing aspect")
     void hasAspectFalse() {
         Folder folder = folder("test");
-        when(nodeRepository.findByIdAndDeletedFalse(folder.getId())).thenReturn(Optional.of(folder));
+        when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(folder.getId(), com.ecm.core.entity.Node.ArchiveStatus.LIVE))
+            .thenReturn(Optional.of(folder));
         when(securityService.hasPermission(folder, Permission.PermissionType.READ)).thenReturn(true);
 
         assertFalse(nodeService.hasAspect(folder.getId(), "cm:titled"));
@@ -127,11 +131,13 @@ class NodeServiceAspectTest {
         f.setId(UUID.randomUUID());
         f.setName(name);
         f.setPath("/" + name);
+        f.setArchiveStatus(com.ecm.core.entity.Node.ArchiveStatus.LIVE);
         return f;
     }
 
     private void stubWritable(Folder folder) {
-        when(nodeRepository.findByIdAndDeletedFalse(folder.getId())).thenReturn(Optional.of(folder));
+        when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(folder.getId(), com.ecm.core.entity.Node.ArchiveStatus.LIVE))
+            .thenReturn(Optional.of(folder));
         when(securityService.hasPermission(folder, Permission.PermissionType.READ)).thenReturn(true);
         when(securityService.hasPermission(folder, Permission.PermissionType.WRITE)).thenReturn(true);
         when(nodeRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));

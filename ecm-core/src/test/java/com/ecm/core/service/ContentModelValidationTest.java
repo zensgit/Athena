@@ -26,6 +26,7 @@ class ContentModelValidationTest {
     @Mock private AspectDefinitionRepository aspectRepo;
     @Mock private PropertyDefinitionRepository propertyRepo;
     @Mock private ConstraintDefinitionRepository constraintRepo;
+    @Mock private RuntimeModelValidationService runtimeModelValidationService;
     @InjectMocks private ContentModelService service;
 
     @Nested

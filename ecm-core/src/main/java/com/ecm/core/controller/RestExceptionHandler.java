@@ -3,6 +3,7 @@ package com.ecm.core.controller;
 import com.ecm.core.exception.AccessDeniedException;
 import com.ecm.core.exception.DuplicateResourceException;
 import com.ecm.core.exception.IllegalOperationException;
+import com.ecm.core.exception.ModelValidationException;
 import com.ecm.core.exception.NodeNotFoundException;
 import com.ecm.core.exception.PropertyValidationException;
 import com.ecm.core.exception.ResourceNotFoundException;
@@ -13,6 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.time.Instant;
 import java.util.List;
@@ -30,6 +32,18 @@ public class RestExceptionHandler {
     public ResponseEntity<ApiError> handleBadRequest(IllegalArgumentException ex, HttpServletRequest request) {
         log.debug("Bad request: {}", ex.getMessage());
         return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiError> handleTypeMismatch(MethodArgumentTypeMismatchException ex, HttpServletRequest request) {
+        log.debug("Bad request: {}", ex.getMessage());
+        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(ModelValidationException.class)
+    public ResponseEntity<ApiError> handleModelValidation(ModelValidationException ex, HttpServletRequest request) {
+        log.debug("Model validation failed: {}", ex.getMessage());
+        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request, ex.getViolations());
     }
 
     @ExceptionHandler(PropertyValidationException.class)

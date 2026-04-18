@@ -61,7 +61,8 @@ class NodeServiceLockTest {
         UUID nodeId = UUID.randomUUID();
         Folder folder = folder(nodeId, "workspace");
 
-        when(nodeRepository.findByIdAndDeletedFalse(nodeId)).thenReturn(Optional.of(folder));
+        when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(nodeId, com.ecm.core.entity.Node.ArchiveStatus.LIVE))
+            .thenReturn(Optional.of(folder));
         when(nodeRepository.save(any(Folder.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(securityService.hasPermission(folder, com.ecm.core.entity.Permission.PermissionType.READ)).thenReturn(true);
         when(securityService.hasPermission(folder, com.ecm.core.entity.Permission.PermissionType.WRITE)).thenReturn(true);
@@ -81,7 +82,8 @@ class NodeServiceLockTest {
         Folder folder = folder(nodeId, "workspace");
         folder.applyLock("alice", LocalDateTime.now().minusHours(2), LockLifetime.EPHEMERAL, LocalDateTime.now().minusMinutes(5));
 
-        when(nodeRepository.findByIdAndDeletedFalse(nodeId)).thenReturn(Optional.of(folder));
+        when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(nodeId, com.ecm.core.entity.Node.ArchiveStatus.LIVE))
+            .thenReturn(Optional.of(folder));
         when(nodeRepository.save(any(Folder.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(securityService.hasPermission(folder, com.ecm.core.entity.Permission.PermissionType.READ)).thenReturn(true);
 
@@ -99,6 +101,7 @@ class NodeServiceLockTest {
         folder.setId(id);
         folder.setName(name);
         folder.setPath("/" + name);
+        folder.setArchiveStatus(com.ecm.core.entity.Node.ArchiveStatus.LIVE);
         return folder;
     }
 }

@@ -6,6 +6,7 @@ import com.ecm.core.model.*;
 import com.ecm.core.repository.*;
 import com.ecm.core.exception.*;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,6 +29,10 @@ public class CategoryService {
 
     @Autowired
     private TenantWorkspaceScopeService tenantWorkspaceScopeService;
+
+    @Autowired
+    @Lazy
+    private RecordsManagementService recordsManagementService;
     
     /**
      * 创建分类
@@ -40,7 +45,11 @@ public class CategoryService {
         
         if (parentId != null) {
             Category parent = loadCategory(parentId);
+            if (parent.getPurpose() == Category.Purpose.RECORD) {
+                throw new IllegalOperationException("Use the records management API to create record categories");
+            }
             category.setParent(parent);
+            category.setPurpose(parent.getPurpose());
         }
         
         return categoryRepository.save(category);
@@ -114,6 +123,7 @@ public class CategoryService {
         securityService.checkPermission(node, PermissionType.WRITE);
         
         Category category = loadCategory(categoryId);
+        assertCategoryMutationAllowed(node, Set.of(category), "add category");
         
         node.getCategories().add(category);
         nodeRepository.save(node);
@@ -132,10 +142,13 @@ public class CategoryService {
         // 权限检查
         securityService.checkPermission(node, PermissionType.WRITE);
 
+        Set<Category> categories = new LinkedHashSet<>();
         for (String categoryId : categoryIds) {
-            Category category = loadCategory(categoryId);
-            node.getCategories().add(category);
+            categories.add(loadCategory(categoryId));
         }
+
+        assertCategoryMutationAllowed(node, categories, "add categories");
+        node.getCategories().addAll(categories);
 
         nodeRepository.save(node);
     }
@@ -150,6 +163,7 @@ public class CategoryService {
         securityService.checkPermission(node, PermissionType.WRITE);
         
         Category category = loadCategory(categoryId);
+        assertCategoryMutationAllowed(node, Set.of(category), "remove category");
         
         node.getCategories().remove(category);
         nodeRepository.save(node);
@@ -205,6 +219,9 @@ public class CategoryService {
      */
     public Category updateCategory(String categoryId, String name, String description) {
         Category category = loadCategory(categoryId);
+        if (category.getPurpose() == Category.Purpose.RECORD) {
+            throw new IllegalOperationException("Use the records management API to update record categories");
+        }
         
         category.setName(name);
         category.setDescription(description);
@@ -217,10 +234,16 @@ public class CategoryService {
      */
     public Category moveCategory(String categoryId, String newParentId) {
         Category category = loadCategory(categoryId);
+        if (category.getPurpose() == Category.Purpose.RECORD) {
+            throw new IllegalOperationException("Use the records management API to move record categories");
+        }
         
         Category newParent = null;
         if (newParentId != null) {
             newParent = loadCategory(newParentId);
+            if (newParent.getPurpose() == Category.Purpose.RECORD) {
+                throw new IllegalOperationException("Use the records management API to move record categories");
+            }
             
             // 检查循环引用
             if (isDescendantOf(newParent, category)) {
@@ -248,6 +271,9 @@ public class CategoryService {
      */
     public void deleteCategory(String categoryId, boolean deleteChildren) {
         Category category = loadCategory(categoryId);
+        if (category.getPurpose() == Category.Purpose.RECORD) {
+            throw new IllegalOperationException("Use the records management API to delete record categories");
+        }
         
         if (deleteChildren) {
             // 递归删除所有子分类
@@ -329,6 +355,22 @@ public class CategoryService {
             return node;
         } catch (IllegalArgumentException ex) {
             throw new NodeNotFoundException("Invalid node id: " + nodeId, ex);
+        }
+    }
+
+    private void assertCategoryMutationAllowed(Node node, Collection<Category> categories, String operation) {
+        if (recordsManagementService != null && recordsManagementService.isDeclaredRecord(node)) {
+            throw new IllegalOperationException(
+                "Use the records management API to " + operation + " on declared record '" + node.getName() + "'"
+            );
+        }
+
+        boolean recordCategoryRequested = categories != null
+            && categories.stream().anyMatch(category -> category != null && category.getPurpose() == Category.Purpose.RECORD);
+        if (recordCategoryRequested && (recordsManagementService == null || !recordsManagementService.isDeclaredRecord(node))) {
+            throw new IllegalOperationException(
+                "Record categories can only be assigned to declared records"
+            );
         }
     }
     

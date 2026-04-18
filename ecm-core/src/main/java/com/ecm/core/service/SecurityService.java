@@ -7,6 +7,7 @@ import com.ecm.core.entity.PermissionSet;
 import com.ecm.core.entity.Permission.AuthorityType;
 import com.ecm.core.entity.Role.Privilege;
 import com.ecm.core.entity.Group.GroupType;
+import com.ecm.core.event.RepositoryLifecyclePublisher;
 import com.ecm.core.repository.*;
 import com.ecm.core.security.DynamicAuthority;
 import com.ecm.core.security.PermissionContext;
@@ -15,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -40,6 +42,7 @@ public class SecurityService {
     private final PermissionRepository permissionRepository;
     private final NodeRepository nodeRepository;
     private final List<DynamicAuthority> dynamicAuthorities;
+    private final ApplicationEventPublisher eventPublisher;
 
     @PostConstruct
     public void init() {
@@ -304,31 +307,10 @@ public class SecurityService {
     @CacheEvict(value = "permissions", allEntries = true)
     public void setPermission(Node node, String authority, AuthorityType authorityType,
                               PermissionType permissionType, boolean allowed) {
-        // Check if user has permission to change permissions
-        if (!hasPermission(node, PermissionType.CHANGE_PERMISSIONS)) {
-            throw new SecurityException("No permission to change permissions on node: " + node.getName());
-        }
-        
-        // Find existing permission
-        Optional<Permission> existing = permissionRepository.findByNodeIdAndAuthority(node.getId(), authority)
-            .stream()
-            .filter(p -> p.getPermission() == permissionType)
-            .findFirst();
-        
-        if (existing.isPresent()) {
-            // Update existing
-            Permission permission = existing.get();
-            permission.setAllowed(allowed);
-            permissionRepository.save(permission);
-        } else {
-            // Create new
-            Permission permission = new Permission();
-            permission.setNode(node);
-            permission.setAuthority(authority);
-            permission.setAuthorityType(authorityType);
-            permission.setPermission(permissionType);
-            permission.setAllowed(allowed);
-            permissionRepository.save(permission);
+        ensureCanChangePermissions(node);
+
+        if (setPermissionInternal(node, authority, authorityType, permissionType, allowed)) {
+            publishPermissionIndexRefresh(node, true);
         }
     }
 
@@ -343,54 +325,65 @@ public class SecurityService {
             return;
         }
 
-        if (!hasPermission(node, PermissionType.CHANGE_PERMISSIONS)) {
-            throw new SecurityException("No permission to change permissions on node: " + node.getName());
-        }
+        ensureCanChangePermissions(node);
 
         List<Permission> existing = permissionRepository.findByNodeIdAndAuthority(node.getId(), authority);
+        boolean changed = false;
         if (replace) {
             for (Permission permission : existing) {
                 if (!permissionSet.getPermissions().contains(permission.getPermission())) {
                     permissionRepository.delete(permission);
+                    changed = true;
                 }
             }
         }
 
         for (PermissionType permissionType : permissionSet.getPermissions()) {
-            setPermission(node, authority, authorityType, permissionType, true);
+            if (setPermissionInternal(node, authority, authorityType, permissionType, true)) {
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            publishPermissionIndexRefresh(node, true);
         }
     }
     
     @Transactional
     @CacheEvict(value = "permissions", allEntries = true)
     public void removePermission(Node node, String authority, PermissionType permissionType) {
-        // Check if user has permission to change permissions
-        if (!hasPermission(node, PermissionType.CHANGE_PERMISSIONS)) {
-            throw new SecurityException("No permission to change permissions on node: " + node.getName());
-        }
-        
-        permissionRepository.findByNodeIdAndAuthority(node.getId(), authority).stream()
+        ensureCanChangePermissions(node);
+
+        List<Permission> removed = permissionRepository.findByNodeIdAndAuthority(node.getId(), authority).stream()
             .filter(p -> p.getPermission() == permissionType)
-            .forEach(permissionRepository::delete);
+            .toList();
+        removed.forEach(permissionRepository::delete);
+
+        if (!removed.isEmpty()) {
+            publishPermissionIndexRefresh(node, true);
+        }
     }
     
     @Transactional
     @CacheEvict(value = "permissions", allEntries = true)
     public void setInheritPermissions(Node node, boolean inherit) {
-        // Check if user has permission to change permissions
-        if (!hasPermission(node, PermissionType.CHANGE_PERMISSIONS)) {
-            throw new SecurityException("No permission to change permission inheritance");
+        ensureCanChangePermissions(node);
+
+        if (node.isInheritPermissions() == inherit) {
+            return;
         }
-        
+
         node.setInheritPermissions(inherit);
         nodeRepository.save(node);
-        
+
         if (!inherit) {
             // Copy parent permissions when breaking inheritance
             if (node.getParent() != null) {
                 copyPermissions(node.getParent(), node);
             }
         }
+
+        publishPermissionIndexRefresh(node, true);
     }
     
     public List<Permission> getNodePermissions(Node node) {
@@ -492,6 +485,7 @@ public class SecurityService {
     }
     
     @Transactional
+    @CacheEvict(value = "permissions", allEntries = true)
     public void takeOwnership(Node node) {
         // Check if user has permission to take ownership
         if (!hasPermission(node, PermissionType.TAKE_OWNERSHIP)) {
@@ -506,8 +500,10 @@ public class SecurityService {
         
         // Grant all permissions to new owner
         for (PermissionType permissionType : PermissionType.values()) {
-            setPermission(node, currentUser, AuthorityType.USER, permissionType, true);
+            setPermissionInternal(node, currentUser, AuthorityType.USER, permissionType, true);
         }
+
+        publishPermissionIndexRefresh(node, true, currentUser);
     }
     
     @Cacheable(value = "authorities", key = "#username")
@@ -556,10 +552,24 @@ public class SecurityService {
     }
     
     @Transactional
+    @CacheEvict(value = "permissions", allEntries = true)
     public void cleanupExpiredPermissions() {
         List<Permission> expiredPermissions = permissionRepository.findExpiredPermissions();
         log.info("Cleaning up {} expired permissions", expiredPermissions.size());
+        if (expiredPermissions.isEmpty()) {
+            return;
+        }
+
+        Set<UUID> affectedNodeIds = expiredPermissions.stream()
+            .map(Permission::getNode)
+            .filter(Objects::nonNull)
+            .map(Node::getId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
         permissionRepository.deleteAll(expiredPermissions);
+        String currentUser = getCurrentUser();
+        nodeRepository.findAllById(affectedNodeIds)
+            .forEach(node -> publishPermissionIndexRefresh(node, true, currentUser));
     }
 
     static String permissionCacheKey(Node node, PermissionType permissionType, String username) {
@@ -663,6 +673,55 @@ public class SecurityService {
         List<String> allowedAuthorities,
         List<String> deniedAuthorities
     ) {
+    }
+
+    private void ensureCanChangePermissions(Node node) {
+        if (!hasPermission(node, PermissionType.CHANGE_PERMISSIONS)) {
+            throw new SecurityException("No permission to change permissions on node: " + node.getName());
+        }
+    }
+
+    private boolean setPermissionInternal(Node node, String authority, AuthorityType authorityType,
+                                          PermissionType permissionType, boolean allowed) {
+        Optional<Permission> existing = permissionRepository.findByNodeIdAndAuthority(node.getId(), authority)
+            .stream()
+            .filter(permission -> permission.getPermission() == permissionType)
+            .findFirst();
+
+        if (existing.isPresent()) {
+            Permission permission = existing.get();
+            if (permission.isAllowed() == allowed) {
+                return false;
+            }
+            permission.setAllowed(allowed);
+            permissionRepository.save(permission);
+            return true;
+        }
+
+        Permission permission = new Permission();
+        permission.setNode(node);
+        permission.setAuthority(authority);
+        permission.setAuthorityType(authorityType);
+        permission.setPermission(permissionType);
+        permission.setAllowed(allowed);
+        permissionRepository.save(permission);
+        return true;
+    }
+
+    private void publishPermissionIndexRefresh(Node node, boolean includeDescendants) {
+        publishPermissionIndexRefresh(node, includeDescendants, getCurrentUser());
+    }
+
+    private void publishPermissionIndexRefresh(Node node, boolean includeDescendants, String username) {
+        if (node == null) {
+            return;
+        }
+        RepositoryLifecyclePublisher.publishNodePermissionsChanged(
+            eventPublisher,
+            node,
+            username,
+            includeDescendants
+        );
     }
     
     private List<Permission> getInheritedPermissions(Node node) {

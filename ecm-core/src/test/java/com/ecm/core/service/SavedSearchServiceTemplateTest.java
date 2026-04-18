@@ -27,6 +27,9 @@ class SavedSearchServiceTemplateTest {
     private FacetedSearchService facetedSearchService;
 
     @Mock
+    private FolderService folderService;
+
+    @Mock
     private ObjectMapper objectMapper;
 
     @InjectMocks

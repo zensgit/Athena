@@ -12,6 +12,7 @@ import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.service.ContentService;
 import com.ecm.core.service.FolderService;
 import com.ecm.core.service.NodeService;
+import com.ecm.core.service.RecordsManagementService;
 import com.ecm.core.service.TransferNodeMappingService;
 import com.ecm.core.service.VersionService;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,9 +31,12 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -56,6 +60,9 @@ class LoopbackTransferClientTest {
     private VersionService versionService;
 
     @Mock
+    private RecordsManagementService recordsManagementService;
+
+    @Mock
     private TransferNodeMappingService transferNodeMappingService;
 
     private LoopbackTransferClient client;
@@ -68,6 +75,7 @@ class LoopbackTransferClientTest {
             nodeRepository,
             contentService,
             versionService,
+            recordsManagementService,
             new RepositoryIdentityProvider("athena", "athena"),
             transferNodeMappingService
         );
@@ -229,6 +237,39 @@ class LoopbackTransferClientTest {
         assertEquals(existingTarget.getId(), result.entries().get(0).targetNodeId());
         verify(transferNodeMappingService).refreshSyncTimestamps(eq(receiverRootId), eq("athena"), eq(sourceDocumentId), eq(source.getLastModifiedDate()), any());
         verify(nodeRepository, never()).findByParentIdAndName(any(), any());
+    }
+
+    @Test
+    @DisplayName("replicate rejects governed target folder before loopback copy")
+    void replicateRejectsGovernedTargetFolderBeforeLoopbackCopy() {
+        UUID receiverRootId = UUID.randomUUID();
+        UUID sourceDocumentId = UUID.randomUUID();
+
+        Folder receiverRoot = folder(receiverRootId, "Corporate File Plan", "/Corporate File Plan");
+        receiverRoot.setFolderType(Folder.FolderType.FILE_PLAN);
+        Document source = document(sourceDocumentId, "contract.pdf", "/contract.pdf", "content-source");
+        source.setLastModifiedDate(LocalDateTime.parse("2026-04-11T12:30:00"));
+
+        TransferTarget target = new TransferTarget();
+        target.setTransportType(TransferTarget.TransportType.LOOPBACK);
+        target.setTargetFolderId(receiverRootId);
+
+        when(folderService.getFolder(receiverRootId)).thenReturn(receiverRoot);
+        when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(receiverRootId, Node.ArchiveStatus.LIVE))
+            .thenReturn(Optional.of(receiverRoot));
+        when(transferNodeMappingService.findMapping(receiverRootId, "athena", sourceDocumentId)).thenReturn(Optional.empty());
+        doThrow(new com.ecm.core.exception.IllegalOperationException(
+            "Cannot replicate document into loopback target folder because target folder 'Corporate File Plan' is a file plan"
+        )).when(recordsManagementService).assertCreateInFolderAllowed(receiverRoot, "replicate document into loopback target folder");
+
+        assertThrows(com.ecm.core.exception.IllegalOperationException.class, () -> client.replicate(
+            target,
+            source,
+            false,
+            ReplicationDefinition.ConflictPolicy.RENAME,
+            null
+        ));
+        verify(nodeService, never()).copyNode(any(), any(), anyString(), anyBoolean());
     }
 
     private Folder folder(UUID id, String name, String path) {

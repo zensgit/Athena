@@ -7,6 +7,7 @@ import com.ecm.core.integration.mail.repository.MailAccountRepository;
 import com.ecm.core.integration.mail.repository.MailRuleRepository;
 import com.ecm.core.integration.mail.repository.ProcessedMailRepository;
 import com.ecm.core.integration.mail.service.MailFetcherService;
+import com.ecm.core.integration.mail.service.MailOAuthCredentialOwnerAdapter;
 import com.ecm.core.integration.mail.service.MailOAuthService;
 import com.ecm.core.integration.mail.service.MailProcessedRetentionService;
 import com.ecm.core.integration.mail.service.MailReportingService;
@@ -24,6 +25,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import org.springframework.format.annotation.DateTimeFormat;
+import jakarta.transaction.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.LocalDate;
@@ -40,6 +42,7 @@ public class MailAutomationController {
     private final MailAccountRepository accountRepository;
     private final MailRuleRepository ruleRepository;
     private final MailFetcherService fetcherService;
+    private final MailOAuthCredentialOwnerAdapter oauthOwnerAdapter;
     private final MailOAuthService oauthService;
     private final MailProcessedRetentionService retentionService;
     private final MailReportingService reportingService;
@@ -210,6 +213,7 @@ public class MailAutomationController {
 
     @PostMapping("/accounts")
     @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
     public ResponseEntity<MailAccountResponse> createAccount(@RequestBody MailAccountRequest request) {
         MailAccount account = new MailAccount();
         account.setName(request.name());
@@ -227,11 +231,13 @@ public class MailAutomationController {
         account.setOauthCredentialKey(request.oauthCredentialKey());
         applyOAuthSettings(account);
         MailAccount saved = accountRepository.save(account);
+        oauthOwnerAdapter.syncAccount(saved);
         return ResponseEntity.ok(MailAccountResponse.from(saved, fetcherService.checkOAuthEnv(saved)));
     }
 
     @PutMapping("/accounts/{id}")
     @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
     public ResponseEntity<MailAccountResponse> updateAccount(@PathVariable UUID id, @RequestBody MailAccountRequest request) {
         MailAccount account = accountRepository.findById(id)
             .orElseThrow(() -> new IllegalArgumentException("Mail account not found: " + id));
@@ -254,6 +260,7 @@ public class MailAutomationController {
         applyOAuthSettings(account);
 
         MailAccount saved = accountRepository.save(account);
+        oauthOwnerAdapter.syncAccount(saved);
         return ResponseEntity.ok(MailAccountResponse.from(saved, fetcherService.checkOAuthEnv(saved)));
     }
 
@@ -353,7 +360,9 @@ public class MailAutomationController {
 
     @DeleteMapping("/accounts/{id}")
     @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
     public ResponseEntity<Void> deleteAccount(@PathVariable UUID id) {
+        oauthOwnerAdapter.deleteCredential(id);
         accountRepository.deleteById(id);
         return ResponseEntity.noContent().build();
     }
@@ -382,18 +391,16 @@ public class MailAutomationController {
             throw new IllegalArgumentException("Account is not configured for OAuth2: " + account.getName());
         }
 
-        account.setOauthAccessToken(null);
-        account.setOauthRefreshToken(null);
-        account.setOauthTokenExpiresAt(null);
-
         // If the last failure indicates OAuth must be reconnected, clear the sticky error/status so the UI can recover.
         if (isOauthReauthError(account.getLastFetchError())) {
             account.setLastFetchError(null);
             account.setLastFetchStatus(null);
+            accountRepository.save(account);
         }
 
-        fetcherService.evictOAuthSession(account.getId());
-        MailAccount saved = accountRepository.save(account);
+        oauthService.clearStoredTokens(account.getId());
+        MailAccount saved = accountRepository.findById(account.getId())
+            .orElseThrow(() -> new IllegalArgumentException("Mail account not found: " + id));
         return ResponseEntity.ok(MailAccountResponse.from(saved, fetcherService.checkOAuthEnv(saved)));
     }
 

@@ -15,6 +15,7 @@ import com.ecm.core.service.CommentService;
 import com.ecm.core.service.FavoriteService;
 import com.ecm.core.service.PreferenceService;
 import com.ecm.core.service.SecurityService;
+import com.ecm.core.service.SiteMembershipService;
 import com.ecm.core.service.UserGroupService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -78,6 +79,9 @@ class PeopleControllerTest {
 
     @Mock
     private PreferenceService preferenceService;
+
+    @Mock
+    private SiteMembershipService siteMembershipService;
 
     @InjectMocks
     private PeopleController peopleController;
@@ -737,22 +741,16 @@ class PeopleControllerTest {
     }
 
     @Test
-    @DisplayName("Site membership requests are read from user preferences")
-    void getPersonSiteMembershipRequestsReturnsPreferences() throws Exception {
+    @DisplayName("Site membership requests are read from membership service")
+    void getPersonSiteMembershipRequestsDelegatesToService() throws Exception {
         User user = new User();
         user.setId(UUID.randomUUID());
         user.setUsername("alice");
         user.setEmail("alice@example.com");
-        Map<String, Object> request = new HashMap<>();
-        request.put("siteId", "finance");
-        request.put("siteTitle", "Finance");
-        request.put("role", "Contributor");
-        request.put("status", "PENDING");
-        request.put("message", "Need access for quarterly planning");
-        request.put("requestedAt", "2026-03-18T11:45:00");
-        user.setPreferences(new HashMap<>(Map.of("siteMembershipRequests", List.of(request))));
-
         Mockito.when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
+        Mockito.when(siteMembershipService.getRequestsForUser("alice")).thenReturn(List.of(
+            membershipRequestDto("alice", "finance", "Finance", "CONTRIBUTOR", "Need access for quarterly planning", "PENDING")
+        ));
 
         mockMvc.perform(get("/api/v1/people/alice/site-membership-requests"))
             .andExpect(status().isOk())
@@ -763,30 +761,13 @@ class PeopleControllerTest {
     @Test
     @DisplayName("Admins can list visible site membership requests with filters")
     void listVisibleSiteMembershipRequestsReturnsPagedResults() throws Exception {
-        User alice = new User();
-        alice.setId(UUID.randomUUID());
-        alice.setUsername("alice");
-        alice.setEmail("alice@example.com");
-        alice.setPreferences(new HashMap<>(Map.of(
-            "siteMembershipRequests",
-            List.of(
-                buildMembershipRequest("finance", "Finance", "Contributor", "PENDING", "Need access", "2026-03-18T11:45:00"),
-                buildMembershipRequest("legal", "Legal", "Viewer", "REJECTED", "Already have access", "2026-03-18T12:10:00")
-            )
-        )));
-
-        User bob = new User();
-        bob.setId(UUID.randomUUID());
-        bob.setUsername("bob");
-        bob.setEmail("bob@example.com");
-        bob.setPreferences(new HashMap<>(Map.of(
-            "siteMembershipRequests",
-            List.of(buildMembershipRequest("finance", "Finance", "Collaborator", "APPROVED", "Approved", "2026-03-17T09:30:00"))
-        )));
-
-        Mockito.when(userRepository.findAll()).thenReturn(List.of(alice, bob));
-        Mockito.when(securityService.getCurrentUser()).thenReturn("admin");
-        Mockito.when(securityService.isAdmin("admin")).thenReturn(true);
+        PageRequest pageable = PageRequest.of(0, 10);
+        Mockito.when(siteMembershipService.getVisibleRequests("finance", "PENDING", null, pageable))
+            .thenReturn(new PageImpl<>(
+                List.of(membershipRequestDto("alice", "finance", "Finance", "CONTRIBUTOR", "Need access", "PENDING")),
+                pageable,
+                1
+            ));
 
         mockMvc.perform(get("/api/v1/people/site-membership-requests")
                 .param("siteId", "finance")
@@ -803,19 +784,18 @@ class PeopleControllerTest {
     @Test
     @DisplayName("Admins can approve a site membership request and persist decision metadata")
     void approvePersonSiteMembershipRequestUpdatesDecisionMetadata() throws Exception {
-        User user = new User();
-        user.setId(UUID.randomUUID());
-        user.setUsername("alice");
-        user.setEmail("alice@example.com");
-        user.setPreferences(new HashMap<>(Map.of(
-            "siteMembershipRequests",
-            List.of(buildMembershipRequest("finance", "Finance Workspace", "Contributor", "PENDING", "Need access", "2026-03-18T11:45:00"))
-        )));
-
-        Mockito.when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
-        Mockito.when(securityService.getCurrentUser()).thenReturn("admin");
-        Mockito.when(securityService.isAdmin("admin")).thenReturn(true);
-        Mockito.when(userRepository.save(Mockito.any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        Mockito.when(siteMembershipService.approve("finance", "alice", "Looks good"))
+            .thenReturn(membershipRequestDto(
+                "alice",
+                "finance",
+                "Finance Workspace",
+                "CONTRIBUTOR",
+                "Need access",
+                "APPROVED",
+                "admin",
+                "2026-03-18T12:00:00",
+                "Looks good"
+            ));
 
         mockMvc.perform(post("/api/v1/people/alice/site-membership-requests/finance/approve")
                 .contentType("application/json")
@@ -830,30 +810,23 @@ class PeopleControllerTest {
             .andExpect(jsonPath("$.decisionBy").value("admin"))
             .andExpect(jsonPath("$.decisionComment").value("Looks good"))
             .andExpect(jsonPath("$.decisionAt").exists());
-
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> requests = (List<Map<String, Object>>) user.getPreferences().get("siteMembershipRequests");
-        org.junit.jupiter.api.Assertions.assertEquals("APPROVED", requests.get(0).get("status"));
-        org.junit.jupiter.api.Assertions.assertEquals("admin", requests.get(0).get("decisionBy"));
-        org.junit.jupiter.api.Assertions.assertEquals("Looks good", requests.get(0).get("decisionComment"));
     }
 
     @Test
     @DisplayName("Admins can reject a site membership request and persist decision metadata")
     void rejectPersonSiteMembershipRequestUpdatesDecisionMetadata() throws Exception {
-        User user = new User();
-        user.setId(UUID.randomUUID());
-        user.setUsername("alice");
-        user.setEmail("alice@example.com");
-        user.setPreferences(new HashMap<>(Map.of(
-            "siteMembershipRequests",
-            List.of(buildMembershipRequest("finance", "Finance Workspace", "Contributor", "PENDING", "Need access", "2026-03-18T11:45:00"))
-        )));
-
-        Mockito.when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
-        Mockito.when(securityService.getCurrentUser()).thenReturn("admin");
-        Mockito.when(securityService.isAdmin("admin")).thenReturn(true);
-        Mockito.when(userRepository.save(Mockito.any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        Mockito.when(siteMembershipService.reject("finance", "alice", "Not moderated yet"))
+            .thenReturn(membershipRequestDto(
+                "alice",
+                "finance",
+                "Finance Workspace",
+                "CONTRIBUTOR",
+                "Need access",
+                "REJECTED",
+                "admin",
+                "2026-03-18T12:00:00",
+                "Not moderated yet"
+            ));
 
         mockMvc.perform(post("/api/v1/people/alice/site-membership-requests/finance/reject")
                 .contentType("application/json")
@@ -871,15 +844,18 @@ class PeopleControllerTest {
     @Test
     @DisplayName("Current user can create a site membership request")
     void createPersonSiteMembershipRequestAddsEntryToPreferences() throws Exception {
-        User user = new User();
-        user.setId(UUID.randomUUID());
-        user.setUsername("alice");
-        user.setEmail("alice@example.com");
-        user.setPreferences(new HashMap<>());
-
-        Mockito.when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
-        Mockito.when(securityService.getCurrentUser()).thenReturn("alice");
-        Mockito.when(userRepository.save(Mockito.any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        Mockito.when(siteMembershipService.createRequestForUser(
+            Mockito.eq("alice"),
+            Mockito.eq("finance"),
+            Mockito.any(SiteMembershipService.CreateMembershipRequest.class)
+        )).thenReturn(membershipRequestDto(
+            "alice",
+            "finance",
+            "Finance Workspace",
+            "CONTRIBUTOR",
+            "Need access for quarterly planning",
+            "PENDING"
+        ));
 
         mockMvc.perform(post("/api/v1/people/alice/site-membership-requests")
                 .contentType("application/json")
@@ -894,35 +870,26 @@ class PeopleControllerTest {
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.siteId").value("finance"))
             .andExpect(jsonPath("$.siteTitle").value("Finance Workspace"))
-            .andExpect(jsonPath("$.role").value("Contributor"))
+            .andExpect(jsonPath("$.role").value("CONTRIBUTOR"))
             .andExpect(jsonPath("$.status").value("PENDING"))
             .andExpect(jsonPath("$.message").value("Need access for quarterly planning"));
-
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> requests = (List<Map<String, Object>>) user.getPreferences().get("siteMembershipRequests");
-        org.junit.jupiter.api.Assertions.assertEquals(1, requests.size());
-        org.junit.jupiter.api.Assertions.assertEquals("finance", requests.get(0).get("siteId"));
     }
 
     @Test
     @DisplayName("Current user can update an existing site membership request")
     void updatePersonSiteMembershipRequestReplacesEntry() throws Exception {
-        User user = new User();
-        user.setId(UUID.randomUUID());
-        user.setUsername("alice");
-        user.setEmail("alice@example.com");
-        Map<String, Object> request = new HashMap<>();
-        request.put("siteId", "finance");
-        request.put("siteTitle", "Finance Workspace");
-        request.put("role", "Contributor");
-        request.put("status", "PENDING");
-        request.put("message", "Need access for quarterly planning");
-        request.put("requestedAt", "2026-03-18T11:45:00");
-        user.setPreferences(new HashMap<>(Map.of("siteMembershipRequests", List.of(request))));
-
-        Mockito.when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
-        Mockito.when(securityService.getCurrentUser()).thenReturn("alice");
-        Mockito.when(userRepository.save(Mockito.any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        Mockito.when(siteMembershipService.updateRequestForUser(
+            Mockito.eq("alice"),
+            Mockito.eq("finance"),
+            Mockito.any(SiteMembershipService.CreateMembershipRequest.class)
+        )).thenReturn(membershipRequestDto(
+            "alice",
+            "finance",
+            "Finance Workspace",
+            "COLLABORATOR",
+            "Updated access request",
+            "PENDING"
+        ));
 
         mockMvc.perform(put("/api/v1/people/alice/site-membership-requests/finance")
                 .contentType("application/json")
@@ -935,45 +902,18 @@ class PeopleControllerTest {
                     """))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.siteId").value("finance"))
-            .andExpect(jsonPath("$.role").value("Collaborator"))
+            .andExpect(jsonPath("$.role").value("COLLABORATOR"))
             .andExpect(jsonPath("$.message").value("Updated access request"))
             .andExpect(jsonPath("$.status").value("PENDING"));
-
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> requests = (List<Map<String, Object>>) user.getPreferences().get("siteMembershipRequests");
-        org.junit.jupiter.api.Assertions.assertEquals(1, requests.size());
-        org.junit.jupiter.api.Assertions.assertEquals("Collaborator", requests.get(0).get("role"));
-        org.junit.jupiter.api.Assertions.assertEquals("Updated access request", requests.get(0).get("message"));
     }
 
     @Test
     @DisplayName("Current user can withdraw a site membership request")
     void withdrawPersonSiteMembershipRequestRemovesPreferenceEntry() throws Exception {
-        User user = new User();
-        user.setId(UUID.randomUUID());
-        user.setUsername("alice");
-        user.setEmail("alice@example.com");
-        Map<String, Object> financeRequest = new HashMap<>();
-        financeRequest.put("siteId", "finance");
-        financeRequest.put("siteTitle", "Finance");
-        financeRequest.put("status", "PENDING");
-        Map<String, Object> legalRequest = new HashMap<>();
-        legalRequest.put("siteId", "legal");
-        legalRequest.put("siteTitle", "Legal");
-        legalRequest.put("status", "PENDING");
-        user.setPreferences(new HashMap<>(Map.of("siteMembershipRequests", List.of(financeRequest, legalRequest))));
-
-        Mockito.when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
-        Mockito.when(securityService.getCurrentUser()).thenReturn("alice");
-        Mockito.when(userRepository.save(Mockito.any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
         mockMvc.perform(delete("/api/v1/people/alice/site-membership-requests/finance"))
             .andExpect(status().isNoContent());
 
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> remaining = (List<Map<String, Object>>) user.getPreferences().get("siteMembershipRequests");
-        org.junit.jupiter.api.Assertions.assertEquals(1, remaining.size());
-        org.junit.jupiter.api.Assertions.assertEquals("legal", remaining.get(0).get("siteId"));
+        Mockito.verify(siteMembershipService).withdrawForUser("alice", "finance");
     }
 
     private Favorite buildFavorite(UUID favoriteId, UUID nodeId, String nodeName, Node.NodeType nodeType) {
@@ -1002,21 +942,39 @@ class PeopleControllerTest {
         return favorite;
     }
 
-    private Map<String, Object> buildMembershipRequest(
+    private SiteMembershipService.MembershipRequestDto membershipRequestDto(
+        String username,
         String siteId,
         String siteTitle,
         String role,
-        String status,
         String message,
-        String requestedAt
+        String status
     ) {
-        Map<String, Object> request = new HashMap<>();
-        request.put("siteId", siteId);
-        request.put("siteTitle", siteTitle);
-        request.put("role", role);
-        request.put("status", status);
-        request.put("message", message);
-        request.put("requestedAt", requestedAt);
-        return request;
+        return membershipRequestDto(username, siteId, siteTitle, role, message, status, null, null, null);
+    }
+
+    private SiteMembershipService.MembershipRequestDto membershipRequestDto(
+        String username,
+        String siteId,
+        String siteTitle,
+        String role,
+        String message,
+        String status,
+        String decisionBy,
+        String decisionAt,
+        String decisionComment
+    ) {
+        return new SiteMembershipService.MembershipRequestDto(
+            username,
+            siteId,
+            siteTitle,
+            role,
+            message,
+            status,
+            "2026-03-18T11:45:00",
+            decisionBy,
+            decisionAt,
+            decisionComment
+        );
     }
 }

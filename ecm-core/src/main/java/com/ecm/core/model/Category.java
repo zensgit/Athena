@@ -4,6 +4,8 @@ import com.ecm.core.entity.Node;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -70,6 +72,10 @@ public class Category {
     @Column(name = "sort_order")
     private Integer sortOrder = 0;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "purpose", nullable = false, length = 32)
+    private Purpose purpose = Purpose.GENERAL;
+
     @PrePersist
     protected void onCreate() {
         Date now = new Date();
@@ -134,4 +140,12 @@ public class Category {
 
     public Integer getSortOrder() { return sortOrder; }
     public void setSortOrder(Integer sortOrder) { this.sortOrder = sortOrder; }
+
+    public Purpose getPurpose() { return purpose; }
+    public void setPurpose(Purpose purpose) { this.purpose = purpose != null ? purpose : Purpose.GENERAL; }
+
+    public enum Purpose {
+        GENERAL,
+        RECORD
+    }
 }

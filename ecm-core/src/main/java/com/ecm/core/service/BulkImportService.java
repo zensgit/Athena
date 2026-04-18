@@ -38,6 +38,7 @@ public class BulkImportService {
     private final NodeService nodeService;
     private final SecurityService securityService;
     private final TenantWorkspaceScopeService tenantWorkspaceScopeService;
+    private final RecordsManagementService recordsManagementService;
     private final Executor importExecutor;
 
     @Autowired
@@ -48,7 +49,8 @@ public class BulkImportService {
         NodeRepository nodeRepository,
         NodeService nodeService,
         SecurityService securityService,
-        TenantWorkspaceScopeService tenantWorkspaceScopeService
+        TenantWorkspaceScopeService tenantWorkspaceScopeService,
+        RecordsManagementService recordsManagementService
     ) {
         this(
             importJobRepository,
@@ -58,6 +60,7 @@ public class BulkImportService {
             nodeService,
             securityService,
             tenantWorkspaceScopeService,
+            recordsManagementService,
             Executors.newCachedThreadPool()
         );
     }
@@ -70,6 +73,7 @@ public class BulkImportService {
         NodeService nodeService,
         SecurityService securityService,
         TenantWorkspaceScopeService tenantWorkspaceScopeService,
+        RecordsManagementService recordsManagementService,
         Executor importExecutor
     ) {
         this.importJobRepository = importJobRepository;
@@ -79,6 +83,7 @@ public class BulkImportService {
         this.nodeService = nodeService;
         this.securityService = securityService;
         this.tenantWorkspaceScopeService = tenantWorkspaceScopeService;
+        this.recordsManagementService = recordsManagementService;
         this.importExecutor = importExecutor;
     }
 
@@ -253,10 +258,13 @@ public class BulkImportService {
     private UUID resolveParentFolder(ImportJob job, String relativePath, Map<String, UUID> folderCache) {
         String parentPath = parentPath(relativePath);
         if (folderCache.containsKey(parentPath)) {
-            return folderCache.get(parentPath);
+            UUID cachedParentId = folderCache.get(parentPath);
+            assertCreateAllowedInFolder(cachedParentId, "bulk import into target folder");
+            return cachedParentId;
         }
 
         UUID currentParentId = job.getTargetFolderId();
+        assertCreateAllowedInFolder(currentParentId, "bulk import into target folder");
         String[] segments = parentPath.isBlank() ? new String[0] : parentPath.split("/");
         StringBuilder currentPath = new StringBuilder();
 
@@ -283,6 +291,7 @@ public class BulkImportService {
                 if (!node.isFolder()) {
                     throw new IllegalStateException("Import path segment conflicts with existing document: " + segment);
                 }
+                assertCreateAllowedInFolder(node, "bulk import into target folder");
                 currentParentId = node.getId();
                 folderCache.put(currentPath.toString(), currentParentId);
                 continue;
@@ -323,10 +332,35 @@ public class BulkImportService {
                 if (existingNode.isFolder()) {
                     throw new IllegalStateException("Cannot overwrite existing folder: " + requestedName);
                 }
+                assertOverwriteAllowed(existingNode, "overwrite existing node via bulk import");
                 nodeService.deleteNode(existingNode.getId(), false);
                 yield requestedName;
             }
         };
+    }
+
+    private void assertCreateAllowedInFolder(UUID folderId, String operation) {
+        if (folderId == null) {
+            return;
+        }
+        nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(folderId, Node.ArchiveStatus.LIVE)
+            .ifPresent(node -> {
+                if (recordsManagementService != null) {
+                    recordsManagementService.assertCreateInFolderAllowed(node, operation);
+                }
+            });
+    }
+
+    private void assertCreateAllowedInFolder(Node folder, String operation) {
+        if (folder != null && recordsManagementService != null) {
+            recordsManagementService.assertCreateInFolderAllowed(folder, operation);
+        }
+    }
+
+    private void assertOverwriteAllowed(Node node, String operation) {
+        if (node != null && recordsManagementService != null) {
+            recordsManagementService.assertArchiveMutationAllowed(node, operation);
+        }
     }
 
     private String generateUniqueName(UUID parentFolderId, String requestedName) {

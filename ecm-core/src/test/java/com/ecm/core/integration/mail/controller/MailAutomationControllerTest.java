@@ -5,6 +5,7 @@ import com.ecm.core.integration.mail.repository.MailAccountRepository;
 import com.ecm.core.integration.mail.repository.MailRuleRepository;
 import com.ecm.core.integration.mail.repository.ProcessedMailRepository;
 import com.ecm.core.integration.mail.service.MailFetcherService;
+import com.ecm.core.integration.mail.service.MailOAuthCredentialOwnerAdapter;
 import com.ecm.core.integration.mail.service.MailOAuthService;
 import com.ecm.core.integration.mail.service.MailProcessedRetentionService;
 import com.ecm.core.integration.mail.service.MailReportScheduledExportService;
@@ -28,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
@@ -42,6 +44,9 @@ class MailAutomationControllerTest {
 
     @Mock
     private MailFetcherService fetcherService;
+
+    @Mock
+    private MailOAuthCredentialOwnerAdapter oauthOwnerAdapter;
 
     @Mock
     private MailOAuthService oauthService;
@@ -73,6 +78,7 @@ class MailAutomationControllerTest {
             accountRepository,
             ruleRepository,
             fetcherService,
+            oauthOwnerAdapter,
             oauthService,
             retentionService,
             reportingService,
@@ -152,6 +158,7 @@ class MailAutomationControllerTest {
         assertNull(lastSavedAccount.getOauthTokenExpiresAt());
         assertFalse(response.oauthEnvConfigured());
         assertEquals(List.of("ECM_MAIL_OAUTH_GMAIL_JOSHUA_CLIENT_ID"), response.oauthMissingEnvKeys());
+        verify(oauthOwnerAdapter).syncAccount(lastSavedAccount);
     }
 
     @Test
@@ -208,5 +215,6 @@ class MailAutomationControllerTest {
         assertNull(existing.getOauthAccessToken());
         assertNull(existing.getOauthRefreshToken());
         assertNull(existing.getOauthTokenExpiresAt());
+        verify(oauthOwnerAdapter).syncAccount(existing);
     }
 }

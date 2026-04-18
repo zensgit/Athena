@@ -1,5 +1,6 @@
 package com.ecm.core.service;
 
+import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.SavedSearch;
 import com.ecm.core.repository.SavedSearchRepository;
 import com.ecm.core.search.FacetedSearchService;
@@ -94,6 +95,7 @@ public class SavedSearchService {
     private final SavedSearchRepository savedSearchRepository;
     private final SecurityService securityService;
     private final FacetedSearchService facetedSearchService;
+    private final FolderService folderService;
     private final ObjectMapper objectMapper;
 
     @Transactional(readOnly = true)
@@ -252,6 +254,35 @@ public class SavedSearchService {
             log.error("Failed to execute saved search {}", id, e);
             throw new RuntimeException("Failed to execute saved search", e);
         }
+    }
+
+    @Transactional
+    public Folder createSmartFolder(UUID id, String name, String description, UUID parentId) {
+        SavedSearch search = getMySavedSearch(id);
+        String folderName = name != null && !name.trim().isBlank() ? name.trim() : search.getName();
+        if (folderName == null || folderName.isBlank()) {
+            throw new IllegalArgumentException("Smart folder name must not be blank");
+        }
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> queryCriteria = objectMapper.convertValue(
+            search.getQueryParams() != null ? search.getQueryParams() : Map.of(),
+            LinkedHashMap.class
+        );
+
+        return folderService.createFolder(new FolderService.CreateFolderRequest(
+            folderName,
+            description,
+            parentId,
+            Folder.FolderType.GENERAL,
+            null,
+            null,
+            null,
+            null,
+            true,
+            true,
+            queryCriteria
+        ));
     }
 
     public record SavedSearchTemplate(

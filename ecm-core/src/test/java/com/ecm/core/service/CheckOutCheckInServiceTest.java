@@ -16,6 +16,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.io.ByteArrayInputStream;
@@ -38,6 +39,7 @@ class CheckOutCheckInServiceTest {
     @Mock private TenantWorkspaceScopeService tenantWorkspaceScopeService;
     @Mock private ContentReferenceService contentReferenceService;
     @Mock private ContentService contentService;
+    @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private VersionService versionService;
 
     private CheckOutCheckInService service;
@@ -51,7 +53,8 @@ class CheckOutCheckInServiceTest {
             securityService,
             tenantWorkspaceScopeService,
             contentReferenceService,
-            contentService
+            contentService,
+            eventPublisher
         );
         ReflectionTestUtils.setField(service, "versionService", versionService);
     }
@@ -263,7 +266,7 @@ class CheckOutCheckInServiceTest {
 
         @Test
         @DisplayName("soft-deletes working copy and clears original checkout state")
-        void checkinClearsStateAndDeletesWc() {
+        void checkinClearsStateAndDeletesWc() throws Exception {
             UUID originalId = UUID.randomUUID();
             UUID wcId = UUID.randomUUID();
 
@@ -377,7 +380,7 @@ class CheckOutCheckInServiceTest {
 
         @Test
         @DisplayName("does not create version when content and metadata are unchanged")
-        void skipsContentPropagationWhenUnchanged() {
+        void skipsContentPropagationWhenUnchanged() throws Exception {
             UUID originalId = UUID.randomUUID();
             UUID wcId = UUID.randomUUID();
 
@@ -407,7 +410,7 @@ class CheckOutCheckInServiceTest {
 
         @Test
         @DisplayName("creates version and persists properties when only metadata changed")
-        void createsVersionAndPersistsPropertiesWhenMetadataChanged() {
+        void createsVersionAndPersistsPropertiesWhenMetadataChanged() throws Exception {
             UUID originalId = UUID.randomUUID();
             UUID wcId = UUID.randomUUID();
 
@@ -438,7 +441,7 @@ class CheckOutCheckInServiceTest {
 
         @Test
         @DisplayName("uploaded file is persisted on working copy before version creation")
-        void uploadedFileUpdatesWorkingCopyBeforeVersionCreation() {
+        void uploadedFileUpdatesWorkingCopyBeforeVersionCreation() throws Exception {
             UUID originalId = UUID.randomUUID();
             UUID wcId = UUID.randomUUID();
 
@@ -475,7 +478,7 @@ class CheckOutCheckInServiceTest {
                 original.setFileSize(7L);
                 original.setMimeType("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
                 return null;
-            }).when(versionService).createVersion(eq(originalId), any(), eq("report.docx"), eq("check-in upload"), eq(true));
+            }).when(versionService).createVersion(eq(originalId), any(), eq("report-v2.docx"), eq("check-in upload"), eq(true));
 
             Document result = service.checkin(wcId, false, "check-in upload", true, file);
 

@@ -17,7 +17,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.core.env.Environment;
 
 import java.util.List;
 
@@ -60,7 +59,7 @@ class MailFetcherServiceOAuthEnvTest {
     private MeterRegistry meterRegistry;
 
     @Mock
-    private Environment environment;
+    private MailOAuthService mailOAuthService;
 
     private MailFetcherService service;
 
@@ -77,15 +76,17 @@ class MailFetcherServiceOAuthEnvTest {
             tagService,
             emailIngestionService,
             meterRegistry,
-            environment
+            mailOAuthService
         );
     }
 
     @Test
-    @DisplayName("Non-OAuth accounts are always configured")
+    @DisplayName("checkOAuthEnv delegates to MailOAuthService for non-OAuth accounts")
     void nonOauthAccountIsConfigured() {
         MailAccount account = new MailAccount();
         account.setSecurity(MailAccount.SecurityType.SSL);
+        when(mailOAuthService.checkOAuthEnv(account))
+            .thenReturn(new MailFetcherService.OAuthEnvCheckResult(false, true, null, List.of()));
 
         var result = service.checkOAuthEnv(account);
 
@@ -95,11 +96,21 @@ class MailFetcherServiceOAuthEnvTest {
     }
 
     @Test
-    @DisplayName("OAuth accounts report missing required env keys")
+    @DisplayName("checkOAuthEnv delegates missing-key results from MailOAuthService")
     void oauthAccountMissingKeys() {
         MailAccount account = new MailAccount();
         account.setSecurity(MailAccount.SecurityType.OAUTH2);
         account.setOauthCredentialKey("gmail-joshua");
+        when(mailOAuthService.checkOAuthEnv(account))
+            .thenReturn(new MailFetcherService.OAuthEnvCheckResult(
+                true,
+                false,
+                "GMAIL_JOSHUA",
+                List.of(
+                    "ECM_MAIL_OAUTH_GMAIL_JOSHUA_CLIENT_ID",
+                    "ECM_MAIL_OAUTH_GMAIL_JOSHUA_REFRESH_TOKEN"
+                )
+            ));
 
         var result = service.checkOAuthEnv(account);
 
@@ -116,14 +127,13 @@ class MailFetcherServiceOAuthEnvTest {
     }
 
     @Test
-    @DisplayName("OAuth accounts are configured when required env keys exist")
+    @DisplayName("checkOAuthEnv delegates configured results from MailOAuthService")
     void oauthAccountConfiguredWhenEnvPresent() {
         MailAccount account = new MailAccount();
         account.setSecurity(MailAccount.SecurityType.OAUTH2);
         account.setOauthCredentialKey("gmail-joshua");
-
-        when(environment.getProperty("ECM_MAIL_OAUTH_GMAIL_JOSHUA_CLIENT_ID")).thenReturn("client");
-        when(environment.getProperty("ECM_MAIL_OAUTH_GMAIL_JOSHUA_REFRESH_TOKEN")).thenReturn("refresh");
+        when(mailOAuthService.checkOAuthEnv(account))
+            .thenReturn(new MailFetcherService.OAuthEnvCheckResult(true, true, "GMAIL_JOSHUA", List.of()));
 
         var result = service.checkOAuthEnv(account);
 

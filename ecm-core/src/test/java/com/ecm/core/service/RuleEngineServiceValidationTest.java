@@ -154,6 +154,96 @@ class RuleEngineServiceValidationTest {
     }
 
     @Test
+    void createRule_rejectsScheduledRuleWithoutCronExpression() {
+        RuleEngineService.CreateRuleRequest request = buildScheduledRequest(15);
+        request.setCronExpression("   ");
+
+        IllegalArgumentException error = assertThrows(
+            IllegalArgumentException.class,
+            () -> ruleEngineService.createRule(request)
+        );
+
+        assertTrue(error.getMessage().contains("Cron expression is required"));
+        verify(ruleRepository, never()).save(any(AutomationRule.class));
+    }
+
+    @Test
+    void createRule_rejectsSubMinimumScheduledInterval() {
+        RuleEngineService.CreateRuleRequest request = buildScheduledRequest(15);
+        request.setCronExpression("0 * * * * *");
+
+        IllegalArgumentException error = assertThrows(
+            IllegalArgumentException.class,
+            () -> ruleEngineService.createRule(request)
+        );
+
+        assertTrue(error.getMessage().contains("at least 5 minutes apart"));
+        verify(ruleRepository, never()).save(any(AutomationRule.class));
+    }
+
+    @Test
+    void createRule_clearsScheduledFieldsForNonScheduledTrigger() {
+        RuleEngineService.CreateRuleRequest request = RuleEngineService.CreateRuleRequest.builder()
+            .name("document-created-rule")
+            .triggerType(AutomationRule.TriggerType.DOCUMENT_CREATED)
+            .condition(RuleCondition.builder().type(RuleCondition.ConditionType.ALWAYS_TRUE).build())
+            .actions(List.of(RuleAction.addTag("validation-tag")))
+            .cronExpression("0 */15 * * * *")
+            .timezone("Asia/Shanghai")
+            .maxItemsPerRun(5)
+            .manualBackfillMinutes(10)
+            .build();
+        when(ruleRepository.save(any(AutomationRule.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        AutomationRule saved = ruleEngineService.createRule(request);
+
+        assertEquals(null, saved.getCronExpression());
+        assertEquals(null, saved.getTimezone());
+        assertEquals(null, saved.getMaxItemsPerRun());
+        assertEquals(null, saved.getManualBackfillMinutes());
+        assertEquals(null, saved.getNextRunAt());
+    }
+
+    @Test
+    void updateRule_rejectsNonPositiveMaxItemsPerRun() {
+        UUID ruleId = UUID.randomUUID();
+        when(ruleRepository.findById(ruleId)).thenReturn(Optional.of(buildExistingRule(ruleId, 5)));
+
+        RuleEngineService.UpdateRuleRequest request = new RuleEngineService.UpdateRuleRequest();
+        request.setMaxItemsPerRun(0);
+
+        IllegalArgumentException error = assertThrows(
+            IllegalArgumentException.class,
+            () -> ruleEngineService.updateRule(ruleId, request)
+        );
+
+        assertTrue(error.getMessage().contains("Max items per run must be at least 1"));
+        verify(ruleRepository, never()).save(any(AutomationRule.class));
+    }
+
+    @Test
+    void updateRule_clearsScheduledFieldsWhenTriggerSwitchesAway() {
+        UUID ruleId = UUID.randomUUID();
+        AutomationRule existing = buildExistingRule(ruleId, 5);
+        existing.setLastRunAt(java.time.LocalDateTime.now().minusMinutes(30));
+        when(ruleRepository.findById(ruleId)).thenReturn(Optional.of(existing));
+        when(ruleRepository.save(any(AutomationRule.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        RuleEngineService.UpdateRuleRequest request = new RuleEngineService.UpdateRuleRequest();
+        request.setTriggerType(AutomationRule.TriggerType.DOCUMENT_UPDATED);
+
+        AutomationRule saved = ruleEngineService.updateRule(ruleId, request);
+
+        assertEquals(AutomationRule.TriggerType.DOCUMENT_UPDATED, saved.getTriggerType());
+        assertEquals(null, saved.getCronExpression());
+        assertEquals(null, saved.getTimezone());
+        assertEquals(null, saved.getMaxItemsPerRun());
+        assertEquals(null, saved.getManualBackfillMinutes());
+        assertEquals(null, saved.getNextRunAt());
+        assertEquals(null, saved.getLastRunAt());
+    }
+
+    @Test
     void createRule_rejectsScriptActionForNonAdmin() {
         when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
         RuleEngineService.CreateRuleRequest request = RuleEngineService.CreateRuleRequest.builder()
@@ -208,7 +298,7 @@ class RuleEngineServiceValidationTest {
             .triggerType(AutomationRule.TriggerType.SCHEDULED)
             .condition(RuleCondition.builder().type(RuleCondition.ConditionType.ALWAYS_TRUE).build())
             .actions(List.of(RuleAction.addTag("validation-tag")))
-            .cronExpression("0 * * * * *")
+            .cronExpression("0 */15 * * * *")
             .timezone("UTC")
             .manualBackfillMinutes(manualBackfillMinutes)
             .build();
@@ -226,8 +316,9 @@ class RuleEngineServiceValidationTest {
             .triggerType(AutomationRule.TriggerType.SCHEDULED)
             .condition(RuleCondition.builder().type(RuleCondition.ConditionType.ALWAYS_TRUE).build())
             .actions(List.of(RuleAction.addTag("validation-tag")))
-            .cronExpression("0 * * * * *")
+            .cronExpression("0 */15 * * * *")
             .timezone("UTC")
+            .maxItemsPerRun(200)
             .manualBackfillMinutes(manualBackfillMinutes)
             .enabled(true)
             .priority(100)

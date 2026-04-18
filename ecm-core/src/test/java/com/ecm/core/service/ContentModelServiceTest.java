@@ -29,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -49,6 +50,9 @@ class ContentModelServiceTest {
 
     @Mock
     private ConstraintDefinitionRepository constraintDefinitionRepository;
+
+    @Mock
+    private RuntimeModelValidationService runtimeModelValidationService;
 
     @InjectMocks
     private ContentModelService contentModelService;
@@ -301,6 +305,7 @@ class ContentModelServiceTest {
 
             PropertyDefinition result = contentModelService.addProperty(typeId, propDef, false);
 
+            verify(runtimeModelValidationService).validatePropertyDefinition(propDef);
             verify(propertyDefinitionRepository).save(propertyCaptor.capture());
             PropertyDefinition captured = propertyCaptor.getValue();
             assertThat(captured.getName()).isEqualTo("custom:title");
@@ -328,11 +333,55 @@ class ContentModelServiceTest {
 
             PropertyDefinition result = contentModelService.addProperty(aspectId, propDef, true);
 
+            verify(runtimeModelValidationService).validatePropertyDefinition(propDef);
             verify(propertyDefinitionRepository).save(propertyCaptor.capture());
             PropertyDefinition captured = propertyCaptor.getValue();
             assertThat(captured.getName()).isEqualTo("custom:createdDate");
             assertThat(captured.getAspectDefinition()).isEqualTo(aspectDef);
             assertThat(result.getId()).isNotNull();
+        }
+
+        @Test
+        void rejectsInvalidEncryptedPropertyDefinitionBeforeLookup() {
+            UUID typeId = UUID.randomUUID();
+            PropertyDefinition propDef = new PropertyDefinition();
+            propDef.setName("custom:secret");
+            propDef.setEncrypted(true);
+
+            RuntimeException failure = new RuntimeException("Encrypted property invalid");
+            org.mockito.Mockito.doThrow(failure)
+                .when(runtimeModelValidationService)
+                .validatePropertyDefinition(propDef);
+
+            assertThatThrownBy(() -> contentModelService.addProperty(typeId, propDef, false))
+                .isSameAs(failure);
+
+            verify(runtimeModelValidationService).validatePropertyDefinition(propDef);
+            verifyNoInteractions(typeDefinitionRepository, aspectDefinitionRepository, propertyDefinitionRepository);
+        }
+
+        @Test
+        void coercesEncryptedPropertyToNonIndexedBeforeValidation() {
+            UUID typeId = UUID.randomUUID();
+            TypeDefinition typeDef = new TypeDefinition();
+            typeDef.setId(typeId);
+            typeDef.setName("custom:document");
+
+            when(typeDefinitionRepository.findById(typeId)).thenReturn(Optional.of(typeDef));
+            when(propertyDefinitionRepository.save(any(PropertyDefinition.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+            PropertyDefinition propDef = new PropertyDefinition();
+            propDef.setName("custom:secret");
+            propDef.setEncrypted(true);
+            propDef.setIndexed(true);
+
+            contentModelService.addProperty(typeId, propDef, false);
+
+            verify(runtimeModelValidationService).validatePropertyDefinition(propDef);
+            verify(propertyDefinitionRepository).save(propertyCaptor.capture());
+            assertThat(propDef.isIndexed()).isFalse();
+            assertThat(propertyCaptor.getValue().isIndexed()).isFalse();
         }
     }
 

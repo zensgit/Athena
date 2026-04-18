@@ -1,5 +1,6 @@
 package com.ecm.core.controller;
 
+import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.SavedSearch;
 import com.ecm.core.search.FacetedSearchService.FacetedSearchResponse;
 import com.ecm.core.service.SavedSearchService;
@@ -82,11 +83,26 @@ public class SavedSearchController {
         return ResponseEntity.ok(savedSearchService.updatePinned(id, request.pinned()));
     }
 
+    @PostMapping("/{id}/smart-folder")
+    @Operation(summary = "Create smart folder from saved search", description = "Create a smart folder backed by an existing saved search")
+    public ResponseEntity<FolderController.FolderResponse> createSmartFolder(
+            @PathVariable UUID id,
+            @RequestBody CreateSmartFolderRequest request) {
+        Folder folder = savedSearchService.createSmartFolder(id, request.name(), request.description(), request.parentId());
+        return ResponseEntity.ok(FolderController.FolderResponse.from(folder));
+    }
+
     public record SaveSearchRequest(String name, Map<String, Object> queryParams) {}
 
     public record UpdateSavedSearchRequest(String name, Map<String, Object> queryParams) {}
 
     public record UpdatePinRequest(boolean pinned) {}
+
+    public record CreateSmartFolderRequest(
+        String name,
+        String description,
+        UUID parentId
+    ) {}
 
     public record SavedSearchTemplateResponse(
         String id,

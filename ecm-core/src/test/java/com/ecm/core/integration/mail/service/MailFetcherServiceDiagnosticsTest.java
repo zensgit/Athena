@@ -23,7 +23,6 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.core.env.Environment;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -76,7 +75,7 @@ class MailFetcherServiceDiagnosticsTest {
     private MeterRegistry meterRegistry;
 
     @Mock
-    private Environment environment;
+    private MailOAuthService mailOAuthService;
 
     private MailFetcherService service;
 
@@ -93,7 +92,7 @@ class MailFetcherServiceDiagnosticsTest {
             tagService,
             emailIngestionService,
             meterRegistry,
-            environment
+            mailOAuthService
         );
     }
 
@@ -147,7 +146,7 @@ class MailFetcherServiceDiagnosticsTest {
             tagService,
             emailIngestionService,
             new SimpleMeterRegistry(),
-            environment
+            mailOAuthService
         );
 
         when(accountRepository.findByEnabledTrue()).thenReturn(List.of());

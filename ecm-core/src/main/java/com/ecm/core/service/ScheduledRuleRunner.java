@@ -16,12 +16,10 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.scheduling.support.CronExpression;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.List;
 
 /**
@@ -177,11 +175,11 @@ public class ScheduledRuleRunner {
 
         try {
             if (rule.getCronExpression() != null && !rule.getCronExpression().isBlank()) {
-                CronExpression cron = CronExpression.parse(rule.getCronExpression());
-                String timezone = rule.getTimezone() != null ? rule.getTimezone() : "UTC";
-
-                // Calculate next execution time
-                nextRun = cron.next(now.atZone(ZoneId.of(timezone)).toLocalDateTime());
+                nextRun = ScheduledRuleValidation.computeNextRunAt(
+                    rule.getCronExpression(),
+                    rule.getTimezone(),
+                    now
+                );
             }
         } catch (Exception e) {
             log.error("Invalid cron expression '{}' for rule '{}': {}",
@@ -227,18 +225,9 @@ public class ScheduledRuleRunner {
      */
     public List<LocalDateTime> validateCronExpression(String cronExpression, String timezone) {
         try {
-            CronExpression cron = CronExpression.parse(cronExpression);
-            String tz = timezone != null ? timezone : "UTC";
-            ZoneId zoneId = ZoneId.of(tz);
-
-            LocalDateTime current = LocalDateTime.now();
-            return java.util.stream.Stream.iterate(
-                    cron.next(current.atZone(zoneId).toLocalDateTime()),
-                    prev -> prev != null,
-                    prev -> cron.next(prev)
-                )
-                .limit(5)
-                .toList();
+            return ScheduledRuleValidation.previewExecutions(cronExpression, timezone, 5);
+        } catch (IllegalArgumentException e) {
+            throw e;
         } catch (Exception e) {
             throw new IllegalArgumentException("Invalid cron expression: " + cronExpression, e);
         }

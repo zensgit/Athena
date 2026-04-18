@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="074-create-site-membership-requests-table" author="kernel-hardening">
+        <comment>P1 PR-8: First-class persistence for site membership requests</comment>
+
+        <createTable tableName="site_membership_requests">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="site_id" type="${uuid_type}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="username" type="varchar(150)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="site_title" type="varchar(255)"/>
+            <column name="requested_role" type="varchar(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="message" type="text"/>
+            <column name="status" type="varchar(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="requested_at" type="timestamp">
+                <constraints nullable="false"/>
+            </column>
+            <column name="decision_by" type="varchar(150)"/>
+            <column name="decision_at" type="timestamp"/>
+            <column name="decision_comment" type="text"/>
+            <column name="updated_at" type="timestamp"/>
+        </createTable>
+
+        <addUniqueConstraint
+            tableName="site_membership_requests"
+            columnNames="site_id, username"
+            constraintName="uq_site_membership_request"/>
+
+        <createIndex tableName="site_membership_requests" indexName="idx_smr_site_status">
+            <column name="site_id"/>
+            <column name="status"/>
+        </createIndex>
+
+        <createIndex tableName="site_membership_requests" indexName="idx_smr_username_status">
+            <column name="username"/>
+            <column name="status"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="074-backfill-site-membership-requests-from-preferences" author="kernel-hardening">
+        <comment>P1 PR-8: Backfill legacy site membership requests from user preferences</comment>
+        <sql>
+            INSERT INTO site_membership_requests (
+                id, site_id, username, site_title, requested_role, message, status,
+                requested_at, decision_by, decision_at, decision_comment
+            )
+            SELECT DISTINCT ON (u.username, s.id)
+                gen_random_uuid(),
+                s.id,
+                u.username,
+                COALESCE(NULLIF(BTRIM(req->>'siteTitle'), ''), s.title),
+                COALESCE(NULLIF(BTRIM(req->>'role'), ''), 'CONSUMER'),
+                NULLIF(BTRIM(req->>'message'), ''),
+                COALESCE(NULLIF(BTRIM(req->>'status'), ''), 'PENDING'),
+                COALESCE(NULLIF(req->>'requestedAt', '')::timestamp, now()),
+                NULLIF(BTRIM(req->>'decisionBy'), ''),
+                NULLIF(req->>'decisionAt', '')::timestamp,
+                NULLIF(BTRIM(req->>'decisionComment'), '')
+            FROM users u
+            CROSS JOIN LATERAL jsonb_array_elements(COALESCE(u.preferences -> 'siteMembershipRequests', '[]'::jsonb)) req
+            JOIN sites s
+              ON lower(s.site_id) = lower(NULLIF(BTRIM(req->>'siteId'), ''))
+             AND s.is_deleted = false
+            WHERE NULLIF(BTRIM(req->>'siteId'), '') IS NOT NULL
+            ORDER BY u.username, s.id, COALESCE(NULLIF(req->>'requestedAt', '')::timestamp, now()) DESC
+        </sql>
+    </changeSet>
+
+</databaseChangeLog>

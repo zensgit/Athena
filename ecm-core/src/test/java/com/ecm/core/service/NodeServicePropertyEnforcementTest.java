@@ -228,7 +228,8 @@ class NodeServicePropertyEnforcementTest {
             Folder folder = folder("test");
             folder.addAspect("cm:titled");
             folder.setProperties(new HashMap<>(Map.of("cm:title", "Hello")));
-            when(nodeRepository.findByIdAndDeletedFalse(folder.getId())).thenReturn(Optional.of(folder));
+            when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(folder.getId(), Node.ArchiveStatus.LIVE))
+                .thenReturn(Optional.of(folder));
             when(securityService.hasPermission(folder, PermissionType.READ)).thenReturn(true);
             when(securityService.hasPermission(folder, PermissionType.WRITE)).thenReturn(true);
 
@@ -249,7 +250,8 @@ class NodeServicePropertyEnforcementTest {
             Folder folder = folder("test");
             folder.addAspect("cm:titled");
             folder.setProperties(new HashMap<>(Map.of("cm:title", "Hello")));
-            when(nodeRepository.findByIdAndDeletedFalse(folder.getId())).thenReturn(Optional.of(folder));
+            when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(folder.getId(), Node.ArchiveStatus.LIVE))
+                .thenReturn(Optional.of(folder));
             when(securityService.hasPermission(folder, PermissionType.READ)).thenReturn(true);
             when(securityService.hasPermission(folder, PermissionType.WRITE)).thenReturn(true);
             when(nodeRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -321,11 +323,13 @@ class NodeServicePropertyEnforcementTest {
         f.setId(UUID.randomUUID());
         f.setName(name);
         f.setPath("/" + name);
+        f.setArchiveStatus(Node.ArchiveStatus.LIVE);
         return f;
     }
 
     private void stubWritable(Folder folder) {
-        when(nodeRepository.findByIdAndDeletedFalse(folder.getId())).thenReturn(Optional.of(folder));
+        when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(folder.getId(), Node.ArchiveStatus.LIVE))
+            .thenReturn(Optional.of(folder));
         when(securityService.hasPermission(folder, PermissionType.READ)).thenReturn(true);
         when(securityService.hasPermission(folder, PermissionType.WRITE)).thenReturn(true);
         when(nodeRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -333,7 +337,8 @@ class NodeServicePropertyEnforcementTest {
 
     /** Like stubWritable but without save mock — for tests that throw before save. */
     private void stubReadWrite(Folder folder) {
-        when(nodeRepository.findByIdAndDeletedFalse(folder.getId())).thenReturn(Optional.of(folder));
+        when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(folder.getId(), Node.ArchiveStatus.LIVE))
+            .thenReturn(Optional.of(folder));
         when(securityService.hasPermission(folder, PermissionType.READ)).thenReturn(true);
         when(securityService.hasPermission(folder, PermissionType.WRITE)).thenReturn(true);
     }

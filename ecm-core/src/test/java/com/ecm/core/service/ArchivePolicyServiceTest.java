@@ -40,6 +40,7 @@ class ArchivePolicyServiceTest {
     @Mock private SecurityService securityService;
     @Mock private ContentArchiveService contentArchiveService;
     @Mock private TenantWorkspaceScopeService tenantWorkspaceScopeService;
+    @Mock private RecordsManagementService recordsManagementService;
 
     private ArchivePolicyService archivePolicyService;
 
@@ -51,9 +52,13 @@ class ArchivePolicyServiceTest {
             nodeRepository,
             securityService,
             contentArchiveService,
-            tenantWorkspaceScopeService
+            tenantWorkspaceScopeService,
+            recordsManagementService
         );
         lenient().when(tenantWorkspaceScopeService.isPathVisible(anyString())).thenReturn(true);
+        lenient().when(recordsManagementService.isFilePlanFolder(any())).thenReturn(false);
+        lenient().when(recordsManagementService.isDeclaredRecord(any())).thenReturn(false);
+        lenient().when(recordsManagementService.isGovernedByFilePlan(any())).thenReturn(false);
     }
 
     @Test
@@ -166,6 +171,31 @@ class ArchivePolicyServiceTest {
 
         assertEquals(1, result.size());
         assertEquals("/Finance", result.get(0).folderPath());
+    }
+
+    @Test
+    @DisplayName("dryRun excludes records managed by file plans")
+    void dryRunExcludesFilePlanGovernedCandidates() {
+        UUID folderId = UUID.randomUUID();
+        Folder folder = folder(folderId, "/Finance");
+
+        Document governed = document(UUID.randomUUID(), "/Finance/records/report.pdf");
+        governed.setLastModifiedDate(LocalDateTime.now().minusDays(200));
+        Document eligible = document(UUID.randomUUID(), "/Finance/loose.pdf");
+        eligible.setLastModifiedDate(LocalDateTime.now().minusDays(200));
+
+        when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+        when(folderRepository.findById(folderId)).thenReturn(Optional.of(folder));
+        when(nodeRepository.findByPathPrefix("/Finance/")).thenReturn(List.of(governed, eligible));
+        when(recordsManagementService.isGovernedByFilePlan(governed)).thenReturn(true);
+
+        ArchivePolicyService.ArchivePolicyDryRunDto result = archivePolicyService.dryRunPolicy(
+            folderId,
+            new ArchivePolicyService.ArchivePolicyUpsertRequest(true, 90, Node.ArchiveStoreTier.COLD, true, 10)
+        );
+
+        assertEquals(1, result.candidateCount());
+        assertEquals("/Finance/loose.pdf", result.candidates().get(0).path());
     }
 
     private static Folder folder(UUID id, String path) {

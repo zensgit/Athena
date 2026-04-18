@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.List;
@@ -48,6 +49,9 @@ class SecurityServiceAclTest {
     @Mock
     private NodeRepository nodeRepository;
 
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
+
     private SecurityService securityService;
 
     @BeforeEach
@@ -58,7 +62,8 @@ class SecurityServiceAclTest {
             roleRepository,
             permissionRepository,
             nodeRepository,
-            List.<DynamicAuthority>of()
+            List.<DynamicAuthority>of(),
+            eventPublisher
         );
     }
 

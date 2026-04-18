@@ -26,6 +26,7 @@ public class SearchResult {
     private String parentId;
     private String mimeType;
     private Long fileSize;
+    private String currentVersionLabel;
     private String createdBy;
     private LocalDateTime createdDate;
     private String lastModifiedBy;
@@ -37,6 +38,14 @@ public class SearchResult {
     private List<String> tags;
     private List<String> categories;
     private String correspondent;
+    private boolean record;
+    private String declaredBy;
+    private String declaredAt;
+    private String declaredVersionLabel;
+    private String declarationComment;
+    private String recordCategoryId;
+    private String recordCategoryName;
+    private String recordCategoryPath;
     private String previewStatus;
     private String previewFailureReason;
     private String previewFailureCategory;

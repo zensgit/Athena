@@ -97,8 +97,33 @@ public class EcmEventListener {
         // Update search index
         searchIndexService.updateNode(event.getNode());
         
-        // Update children paths in index
-        searchIndexService.updateNodeChildren(event.getNode());
+        // Reindex descendants from database so move does not depend on stale index paths
+        searchIndexService.reindexNodeSubtree(event.getNode());
+    }
+
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void handleNodePermissionsChanged(NodePermissionsChangedEvent event) {
+        log.info("Node permissions changed: {}", event.getNode().getName());
+
+        searchIndexService.updateNode(event.getNode());
+        if (event.isIncludeDescendants() && event.getNode().isFolder()) {
+            searchIndexService.updateNodeChildren(event.getNode());
+        }
+    }
+
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void handleNodeSubtreeReindexRequested(NodeSubtreeReindexRequestedEvent event) {
+        log.info("Node subtree reindex requested: {}", event.getNode().getName());
+        searchIndexService.reindexNodeSubtree(event.getNode());
+    }
+
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void handleNodesReindexRequested(NodesReindexRequestedEvent event) {
+        log.info("Node batch reindex requested: {} node(s)", event.getNodeIds().size());
+        searchIndexService.reindexNodes(event.getNodeIds());
     }
     
     @Async

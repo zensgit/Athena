@@ -86,6 +86,7 @@ public class FacetedSearchService {
         "createdBy",
         "tags",
         "categories",
+        "recordCategoryPath",
         "correspondent",
         "previewStatus",
         "nodeType"
@@ -523,6 +524,11 @@ public class FacetedSearchService {
         addAnyOfTermsFilter(bool, List.of("nodeType"), filters.getNodeTypes());
         addAnyOfTermsFilter(bool, List.of("tags"), filters.getTags());
         addAnyOfTermsFilter(bool, List.of("categories"), filters.getCategories());
+        addAnyOfTermsFilter(
+            bool,
+            List.of("properties.rm:recordCategoryPath", "properties.rm:recordCategoryPath.keyword"),
+            filters.getRecordCategoryPaths()
+        );
         addAnyOfTermsFilter(bool, List.of("correspondent"), filters.getCorrespondents());
         if (filters.getLocked() != null) {
             bool.filter(f -> f.term(t -> t.field("locked").value(filters.getLocked())));
@@ -536,6 +542,7 @@ public class FacetedSearchService {
         if (filters.getCheckoutUser() != null && !filters.getCheckoutUser().isBlank()) {
             addAnyOfTermsFilter(bool, List.of("checkoutUser"), List.of(filters.getCheckoutUser()));
         }
+        SearchRecordProjectionHelper.applyRecordOnlyFilter(bool, filters.getRecordOnly());
 
         if (filters.getCreatedByList() != null && !filters.getCreatedByList().isEmpty()) {
             addAnyOfTermsFilter(bool, List.of("createdBy"), filters.getCreatedByList());
@@ -733,6 +740,13 @@ public class FacetedSearchService {
                 builder.withAggregation("previewStatus", buildPreviewStatusFacetAggregation());
                 continue;
             }
+            if ("recordCategoryPath".equalsIgnoreCase(field)) {
+                builder.withAggregation("recordCategoryPath", Aggregation.of(a -> a.terms(t -> t
+                    .field("properties.rm:recordCategoryPath.keyword")
+                    .size(DEFAULT_FACET_SIZE)
+                )));
+                continue;
+            }
             builder.withAggregation(field, Aggregation.of(a -> a.terms(t -> t
                 .field(field)
                 .size(DEFAULT_FACET_SIZE)
@@ -899,6 +913,7 @@ public class FacetedSearchService {
         Map<String, Integer> createdByCounts = new HashMap<>();
         Map<String, Integer> tagCounts = new HashMap<>();
         Map<String, Integer> categoryCounts = new HashMap<>();
+        Map<String, Integer> recordCategoryPathCounts = new HashMap<>();
         Map<String, Integer> correspondentCounts = new HashMap<>();
 
         for (SearchHit<NodeDocument> hit : searchHits) {
@@ -928,6 +943,13 @@ public class FacetedSearchService {
                 }
             }
 
+            Object recordCategoryPath = doc.getProperties() != null
+                ? doc.getProperties().get("rm:recordCategoryPath")
+                : null;
+            if (recordCategoryPath instanceof String path && !path.isBlank()) {
+                recordCategoryPathCounts.merge(path, 1, Integer::sum);
+            }
+
             // Count correspondents
             if (doc.getCorrespondent() != null) {
                 correspondentCounts.merge(doc.getCorrespondent(), 1, Integer::sum);
@@ -939,6 +961,7 @@ public class FacetedSearchService {
         facets.put("createdBy", toFacetValues(createdByCounts));
         facets.put("tags", toFacetValues(tagCounts));
         facets.put("categories", toFacetValues(categoryCounts));
+        facets.put("recordCategoryPath", toFacetValues(recordCategoryPathCounts));
         facets.put("correspondent", toFacetValues(correspondentCounts));
 
         return facets;
@@ -998,6 +1021,7 @@ public class FacetedSearchService {
 
     private SearchResult toSearchResult(SearchHit<NodeDocument> hit) {
         NodeDocument doc = hit.getContent();
+        Map<String, Object> properties = doc.getProperties() != null ? doc.getProperties() : Map.of();
         Map<String, List<String>> highlights = hit.getHighlightFields();
         String effectivePreviewStatus = PreviewStatusFilterHelper.resolveEffectiveStatus(
             doc.getPreviewStatus(),
@@ -1024,6 +1048,7 @@ public class FacetedSearchService {
             .parentId(doc.getParentId())
             .mimeType(doc.getMimeType())
             .fileSize(doc.getFileSize())
+            .currentVersionLabel(doc.getVersionLabel())
             .createdBy(doc.getCreatedBy())
             .createdDate(doc.getCreatedDate())
             .lastModifiedBy(doc.getLastModifiedBy())
@@ -1035,10 +1060,22 @@ public class FacetedSearchService {
             .tags(doc.getTags() != null ? List.copyOf(doc.getTags()) : List.of())
             .categories(doc.getCategories() != null ? List.copyOf(doc.getCategories()) : List.of())
             .correspondent(doc.getCorrespondent())
+            .record(SearchRecordProjectionHelper.isRecordProjection(properties))
+            .declaredBy(readString(properties.get("rm:declaredBy")))
+            .declaredAt(readString(properties.get("rm:declaredAt")))
+            .declaredVersionLabel(readString(properties.get("rm:declaredVersionLabel")))
+            .declarationComment(readString(properties.get("rm:declarationComment")))
+            .recordCategoryId(readString(properties.get("rm:recordCategoryId")))
+            .recordCategoryName(readString(properties.get("rm:recordCategoryName")))
+            .recordCategoryPath(readString(properties.get("rm:recordCategoryPath")))
             .previewStatus(effectivePreviewStatus)
             .previewFailureReason(effectivePreviewFailureReason)
             .previewFailureCategory(effectivePreviewFailureCategory)
             .build();
+    }
+
+    private String readString(Object value) {
+        return value != null ? value.toString() : null;
     }
 
     private String getMimeTypeLabel(String mimeType) {

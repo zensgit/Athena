@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="076-add-ldap-directory-columns" author="kernel-hardening">
+        <comment>P3 PR-13: LDAP/AD mirror metadata for users and groups</comment>
+
+        <addColumn tableName="users">
+            <column name="directory_managed" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="directory_source" type="varchar(64)"/>
+            <column name="directory_external_id" type="varchar(255)"/>
+            <column name="directory_dn" type="varchar(1024)"/>
+            <column name="directory_last_synced_at" type="timestamp"/>
+        </addColumn>
+
+        <addColumn tableName="groups">
+            <column name="directory_managed" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="directory_source" type="varchar(64)"/>
+            <column name="directory_external_id" type="varchar(255)"/>
+            <column name="directory_dn" type="varchar(1024)"/>
+            <column name="directory_last_synced_at" type="timestamp"/>
+        </addColumn>
+
+        <addUniqueConstraint
+            tableName="users"
+            columnNames="directory_source, directory_external_id"
+            constraintName="uq_user_directory_identity"/>
+
+        <addUniqueConstraint
+            tableName="groups"
+            columnNames="directory_source, directory_external_id"
+            constraintName="uq_group_directory_identity"/>
+
+        <createIndex tableName="users" indexName="idx_user_directory_managed_source">
+            <column name="directory_managed"/>
+            <column name="directory_source"/>
+        </createIndex>
+
+        <createIndex tableName="groups" indexName="idx_group_directory_managed_source">
+            <column name="directory_managed"/>
+            <column name="directory_source"/>
+        </createIndex>
+
+        <rollback>
+            <dropIndex tableName="groups" indexName="idx_group_directory_managed_source"/>
+            <dropIndex tableName="users" indexName="idx_user_directory_managed_source"/>
+            <dropUniqueConstraint tableName="groups" constraintName="uq_group_directory_identity"/>
+            <dropUniqueConstraint tableName="users" constraintName="uq_user_directory_identity"/>
+            <dropColumn tableName="groups" columnName="directory_last_synced_at"/>
+            <dropColumn tableName="groups" columnName="directory_dn"/>
+            <dropColumn tableName="groups" columnName="directory_external_id"/>
+            <dropColumn tableName="groups" columnName="directory_source"/>
+            <dropColumn tableName="groups" columnName="directory_managed"/>
+            <dropColumn tableName="users" columnName="directory_last_synced_at"/>
+            <dropColumn tableName="users" columnName="directory_dn"/>
+            <dropColumn tableName="users" columnName="directory_external_id"/>
+            <dropColumn tableName="users" columnName="directory_source"/>
+            <dropColumn tableName="users" columnName="directory_managed"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

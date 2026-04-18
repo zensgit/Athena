@@ -8,6 +8,7 @@ import com.ecm.core.entity.ModelStatus;
 import com.ecm.core.entity.PropertyDataType;
 import com.ecm.core.entity.PropertyDefinition;
 import com.ecm.core.entity.TypeDefinition;
+import com.ecm.core.exception.ModelValidationException;
 import com.ecm.core.service.ContentModelService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -120,6 +121,23 @@ class ContentModelControllerTest {
             .andExpect(jsonPath("$.id").value(typeId.toString()))
             .andExpect(jsonPath("$.qualifiedName").value("acme:invoice"))
             .andExpect(jsonPath("$.mandatoryAspects[0]").value("cm:auditable"));
+    }
+
+    @Test
+    @DisplayName("Activate model returns validation details on invalid model graph")
+    void activateModelReturnsValidationDetails() throws Exception {
+        UUID modelId = UUID.randomUUID();
+
+        Mockito.when(contentModelService.activateModel(modelId))
+            .thenThrow(new ModelValidationException(
+                "Model validation failed",
+                List.of("Circular type inheritance detected at 'acme:invoice'")
+            ));
+
+        mockMvc.perform(post("/api/v1/content-models/{modelId}/activate", modelId))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.message").value("Model validation failed"))
+            .andExpect(jsonPath("$.details[0]").value("Circular type inheritance detected at 'acme:invoice'"));
     }
 
     private ContentModelDefinition buildModelGraph() {

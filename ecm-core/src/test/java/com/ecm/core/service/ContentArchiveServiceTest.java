@@ -5,6 +5,7 @@ import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Node;
 import com.ecm.core.entity.Node.ArchiveStatus;
 import com.ecm.core.entity.Node.ArchiveStoreTier;
+import com.ecm.core.exception.IllegalOperationException;
 import com.ecm.core.exception.ResourceNotFoundException;
 import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.search.SearchIndexService;
@@ -27,7 +28,9 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -39,6 +42,8 @@ class ContentArchiveServiceTest {
     @Mock private ActivityEventListener activityEventListener;
     @Mock private SearchIndexService searchIndexService;
     @Mock private TenantWorkspaceScopeService tenantWorkspaceScopeService;
+    @Mock private LegalHoldService legalHoldService;
+    @Mock private RecordsManagementService recordsManagementService;
 
     private ContentArchiveService service;
 
@@ -49,7 +54,9 @@ class ContentArchiveServiceTest {
             securityService,
             activityEventListener,
             searchIndexService,
-            tenantWorkspaceScopeService
+            tenantWorkspaceScopeService,
+            legalHoldService,
+            recordsManagementService
         );
         lenient().when(tenantWorkspaceScopeService.isPathVisible(anyString())).thenReturn(true);
     }
@@ -114,9 +121,73 @@ class ContentArchiveServiceTest {
         assertEquals(ArchiveStatus.LIVE, child.getArchiveStatus());
         assertEquals(ArchiveStoreTier.HOT, child.getArchiveStoreTier());
         assertEquals(2, result.affectedNodeCount());
+        verify(recordsManagementService).assertRestoreScopeAllowed(eq(root), anyList(), eq("restore"));
         verify(searchIndexService).updateNode(root);
         verify(searchIndexService).updateDocument(child);
         verify(activityEventListener).postNodeActivity(eq("node.restored"), eq("alice"), eq(root), anyMap());
+    }
+
+    @Test
+    @DisplayName("restoreNode rejects archived folder scope containing non-archived descendants")
+    void restoreNodeRejectsScopeContainingNonArchivedDescendant() {
+        Folder root = folder("finance", "alice");
+        root.setArchiveStatus(ArchiveStatus.ARCHIVED);
+        root.setArchiveStoreTier(ArchiveStoreTier.GLACIER);
+        root.setArchivedBy("alice");
+        Document child = document("spec.docx", "/finance/spec.docx", "alice");
+        child.setArchiveStatus(ArchiveStatus.LIVE);
+
+        when(nodeRepository.findByIdAndDeletedFalse(root.getId())).thenReturn(Optional.of(root));
+        when(nodeRepository.findByPathPrefix("/finance/")).thenReturn(List.of(child));
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, () -> service.restoreNode(root.getId()));
+
+        assertEquals("Cannot restore because archived scope contains non-archived node 'spec.docx'", ex.getMessage());
+        verify(recordsManagementService, never()).assertRestoreScopeAllowed(eq(root), anyList(), eq("restore"));
+    }
+
+    @Test
+    @DisplayName("restoreNode rejects archived folder scope containing working copies")
+    void restoreNodeRejectsScopeContainingWorkingCopy() {
+        Folder root = folder("finance", "alice");
+        root.setArchiveStatus(ArchiveStatus.ARCHIVED);
+        root.setArchiveStoreTier(ArchiveStoreTier.GLACIER);
+        root.setArchivedBy("alice");
+        Document child = document("spec.docx", "/finance/spec.docx", "alice");
+        child.setArchiveStatus(ArchiveStatus.ARCHIVED);
+        child.setWorkingCopy(true);
+
+        when(nodeRepository.findByIdAndDeletedFalse(root.getId())).thenReturn(Optional.of(root));
+        when(nodeRepository.findByPathPrefix("/finance/")).thenReturn(List.of(child));
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, () -> service.restoreNode(root.getId()));
+
+        assertEquals("Cannot restore because archived scope contains working copy 'spec.docx'", ex.getMessage());
+        verify(recordsManagementService, never()).assertRestoreScopeAllowed(eq(root), anyList(), eq("restore"));
+    }
+
+    @Test
+    @DisplayName("restoreNode rejects RM-governed descendants before mutating archived scope")
+    void restoreNodeRejectsRestoreScopeBlockedByRecordsManagement() {
+        Folder root = folder("finance", "alice");
+        root.setArchiveStatus(ArchiveStatus.ARCHIVED);
+        root.setArchiveStoreTier(ArchiveStoreTier.GLACIER);
+        root.setArchivedBy("alice");
+        Document child = document("spec.docx", "/finance/spec.docx", "alice");
+        child.setArchiveStatus(ArchiveStatus.ARCHIVED);
+        child.setArchiveStoreTier(ArchiveStoreTier.GLACIER);
+        child.setArchivedBy("alice");
+
+        when(nodeRepository.findByIdAndDeletedFalse(root.getId())).thenReturn(Optional.of(root));
+        when(nodeRepository.findByPathPrefix("/finance/")).thenReturn(List.of(child));
+        doThrow(new IllegalOperationException("Cannot restore because node 'finance' contains declared record(s): spec.docx"))
+            .when(recordsManagementService).assertRestoreScopeAllowed(eq(root), anyList(), eq("restore"));
+
+        IllegalOperationException ex = assertThrows(IllegalOperationException.class, () -> service.restoreNode(root.getId()));
+
+        assertEquals("Cannot restore because node 'finance' contains declared record(s): spec.docx", ex.getMessage());
+        assertEquals(ArchiveStatus.ARCHIVED, root.getArchiveStatus());
+        assertEquals(ArchiveStatus.ARCHIVED, child.getArchiveStatus());
     }
 
     @Test
@@ -159,6 +230,28 @@ class ContentArchiveServiceTest {
         when(tenantWorkspaceScopeService.isPathVisible(root.getPath())).thenReturn(false);
 
         assertThrows(ResourceNotFoundException.class, () -> service.archiveNode(root.getId(), ArchiveStoreTier.COLD));
+    }
+
+    @Test
+    @DisplayName("archiveNode rejects declared records managed by RM")
+    void archiveNodeRejectsDeclaredRecords() {
+        Folder root = folder("finance", "alice");
+        when(nodeRepository.findByIdAndDeletedFalse(root.getId())).thenReturn(Optional.of(root));
+        doThrow(new IllegalOperationException("Cannot archive because node 'finance' is declared as a record"))
+            .when(recordsManagementService).assertArchiveMutationAllowed(root, "archive");
+
+        assertThrows(IllegalOperationException.class, () -> service.archiveNode(root.getId(), ArchiveStoreTier.COLD));
+    }
+
+    @Test
+    @DisplayName("archiveNodeByPolicy rejects held nodes")
+    void archiveNodeByPolicyRejectsHeldNodes() {
+        Folder root = folder("finance", "alice");
+        when(nodeRepository.findByIdAndDeletedFalse(root.getId())).thenReturn(Optional.of(root));
+        doThrow(new IllegalOperationException("Cannot archive because node 'finance' is under active legal hold(s): Hold A"))
+            .when(legalHoldService).assertOperationAllowed(root, "archive");
+
+        assertThrows(IllegalOperationException.class, () -> service.archiveNodeByPolicy(root.getId(), ArchiveStoreTier.COLD, "system"));
     }
 
     @Test

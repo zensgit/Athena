@@ -126,7 +126,9 @@ public class FolderController {
             request.maxItems(),
             request.allowedTypes(),
             request.autoFileNaming(),
-            request.namingPattern()
+            request.namingPattern(),
+            request.isSmart(),
+            request.queryCriteria()
         );
 
         Folder folder = folderService.updateFolder(folderId, serviceRequest);
@@ -317,7 +319,9 @@ public class FolderController {
         Integer maxItems,
         String allowedTypes,
         Boolean autoFileNaming,
-        String namingPattern
+        String namingPattern,
+        Boolean isSmart,
+        Map<String, Object> queryCriteria
     ) {}
 
     public record RenameRequest(String name) {}

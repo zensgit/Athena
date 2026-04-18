@@ -16,6 +16,8 @@ public class SearchFilters {
     private String lockedBy;
     private Boolean checkedOut;
     private String checkoutUser;
+    private Boolean recordOnly;
+    private List<String> recordCategoryPaths;
     private String createdBy;
     private List<String> createdByList;
     private LocalDateTime dateFrom;

@@ -54,6 +54,21 @@ public class User extends BaseEntity {
     
     @Column(name = "job_title")
     private String jobTitle;
+
+    @Column(name = "directory_managed", nullable = false)
+    private boolean directoryManaged = false;
+
+    @Column(name = "directory_source", length = 64)
+    private String directorySource;
+
+    @Column(name = "directory_external_id", length = 255)
+    private String directoryExternalId;
+
+    @Column(name = "directory_dn", length = 1024)
+    private String directoryDn;
+
+    @Column(name = "directory_last_synced_at")
+    private LocalDateTime directoryLastSyncedAt;
     
     @Column(name = "locale")
     private String locale = "en_US";

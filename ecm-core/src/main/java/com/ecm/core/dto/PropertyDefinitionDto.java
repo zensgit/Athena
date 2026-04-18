@@ -17,6 +17,7 @@ public record PropertyDefinitionDto(
     String defaultValue,
     boolean indexed,
     boolean protectedField,
+    boolean encrypted,
     String qualifiedName,
     List<ConstraintDefinitionDto> constraints
 ) {
@@ -33,6 +34,7 @@ public record PropertyDefinitionDto(
             property.getDefaultValue(),
             property.isIndexed(),
             property.isProtectedField(),
+            property.isEncrypted(),
             property.qualifiedName(),
             property.getConstraints() == null
                 ? List.of()

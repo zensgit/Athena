@@ -103,7 +103,21 @@ public class RuleEngineService {
         if (ruleRepository.findByName(request.getName()).isPresent()) {
             throw new DuplicateResourceException("Rule with name already exists: " + request.getName());
         }
-        validateManualBackfillMinutes(request.getManualBackfillMinutes());
+        if (request.getTriggerType() == null) {
+            throw new IllegalArgumentException("Trigger type is required");
+        }
+        ScheduledRuleState scheduledRuleState = resolveScheduledRuleState(
+            request.getTriggerType(),
+            request.getCronExpression(),
+            request.getTimezone(),
+            request.getMaxItemsPerRun(),
+            request.getManualBackfillMinutes(),
+            null,
+            null,
+            null,
+            null,
+            null
+        );
         validateActionAuthoringPermissions(request.getActions());
 
         AutomationRule rule = AutomationRule.builder()
@@ -119,10 +133,11 @@ public class RuleEngineService {
             .scopeMimeTypes(request.getScopeMimeTypes())
             .stopOnMatch(request.getStopOnMatch() != null ? request.getStopOnMatch() : false)
             // Scheduled rule fields
-            .cronExpression(request.getCronExpression())
-            .timezone(request.getTimezone() != null ? request.getTimezone() : "UTC")
-            .maxItemsPerRun(request.getMaxItemsPerRun() != null ? request.getMaxItemsPerRun() : 200)
-            .manualBackfillMinutes(request.getManualBackfillMinutes())
+            .cronExpression(scheduledRuleState.cronExpression())
+            .timezone(scheduledRuleState.timezone())
+            .nextRunAt(scheduledRuleState.nextRunAt())
+            .maxItemsPerRun(scheduledRuleState.maxItemsPerRun())
+            .manualBackfillMinutes(scheduledRuleState.manualBackfillMinutes())
             .build();
 
         AutomationRule saved = ruleRepository.save(rule);
@@ -137,6 +152,9 @@ public class RuleEngineService {
     @Transactional
     public AutomationRule updateRule(UUID ruleId, UpdateRuleRequest request) {
         AutomationRule rule = getVisibleRule(ruleId);
+        TriggerType effectiveTriggerType = request.getTriggerType() != null
+            ? request.getTriggerType()
+            : rule.getTriggerType();
 
         // Check for duplicate name (excluding current rule)
         if (request.getName() != null && !request.getName().equals(rule.getName())) {
@@ -174,20 +192,20 @@ public class RuleEngineService {
         if (request.getStopOnMatch() != null) {
             rule.setStopOnMatch(request.getStopOnMatch());
         }
-        // Scheduled rule fields
-        if (request.getCronExpression() != null) {
-            rule.setCronExpression(request.getCronExpression());
-        }
-        if (request.getTimezone() != null) {
-            rule.setTimezone(request.getTimezone());
-        }
-        if (request.getMaxItemsPerRun() != null) {
-            rule.setMaxItemsPerRun(request.getMaxItemsPerRun());
-        }
-        if (request.getManualBackfillMinutes() != null) {
-            validateManualBackfillMinutes(request.getManualBackfillMinutes());
-            rule.setManualBackfillMinutes(request.getManualBackfillMinutes());
-        }
+
+        ScheduledRuleState scheduledRuleState = resolveScheduledRuleState(
+            effectiveTriggerType,
+            request.getCronExpression(),
+            request.getTimezone(),
+            request.getMaxItemsPerRun(),
+            request.getManualBackfillMinutes(),
+            rule.getCronExpression(),
+            rule.getTimezone(),
+            rule.getMaxItemsPerRun(),
+            rule.getManualBackfillMinutes(),
+            rule.getLastRunAt()
+        );
+        applyScheduledRuleState(rule, scheduledRuleState);
 
         return ruleRepository.save(rule);
     }
@@ -1762,6 +1780,86 @@ public class RuleEngineService {
                     + " and "
                     + MAX_MANUAL_BACKFILL_MINUTES
             );
+        }
+    }
+
+    private ScheduledRuleState resolveScheduledRuleState(
+        TriggerType triggerType,
+        String requestedCronExpression,
+        String requestedTimezone,
+        Integer requestedMaxItemsPerRun,
+        Integer requestedManualBackfillMinutes,
+        String existingCronExpression,
+        String existingTimezone,
+        Integer existingMaxItemsPerRun,
+        Integer existingManualBackfillMinutes,
+        LocalDateTime existingLastRunAt
+    ) {
+        if (triggerType != TriggerType.SCHEDULED) {
+            return ScheduledRuleState.none();
+        }
+
+        String effectiveCronExpression = requestedCronExpression != null
+            ? requestedCronExpression
+            : existingCronExpression;
+        String effectiveTimezone = requestedTimezone != null
+            ? requestedTimezone
+            : existingTimezone;
+        Integer effectiveMaxItemsPerRun = requestedMaxItemsPerRun != null
+            ? requestedMaxItemsPerRun
+            : existingMaxItemsPerRun;
+        Integer effectiveManualBackfillMinutes = requestedManualBackfillMinutes != null
+            ? requestedManualBackfillMinutes
+            : existingManualBackfillMinutes;
+
+        validateManualBackfillMinutes(effectiveManualBackfillMinutes);
+        ScheduledRuleValidation.ValidatedSchedule validated = ScheduledRuleValidation.validateAndBuild(
+            effectiveCronExpression,
+            effectiveTimezone,
+            effectiveMaxItemsPerRun
+        );
+
+        LocalDateTime nextRunAt = existingLastRunAt != null
+            ? ScheduledRuleValidation.computeNextRunAt(
+                validated.cronExpression(),
+                validated.timezone(),
+                existingLastRunAt
+            )
+            : validated.nextRunAt();
+
+        return new ScheduledRuleState(
+            validated.cronExpression(),
+            validated.timezone(),
+            validated.maxItemsPerRun(),
+            effectiveManualBackfillMinutes,
+            nextRunAt
+        );
+    }
+
+    private void applyScheduledRuleState(AutomationRule rule, ScheduledRuleState scheduledRuleState) {
+        rule.setCronExpression(scheduledRuleState.cronExpression());
+        rule.setTimezone(scheduledRuleState.timezone());
+        rule.setMaxItemsPerRun(scheduledRuleState.maxItemsPerRun());
+        rule.setManualBackfillMinutes(scheduledRuleState.manualBackfillMinutes());
+        rule.setNextRunAt(scheduledRuleState.nextRunAt());
+        if (!scheduledRuleState.scheduled()) {
+            rule.setLastRunAt(null);
+        }
+    }
+
+    private record ScheduledRuleState(
+        String cronExpression,
+        String timezone,
+        Integer maxItemsPerRun,
+        Integer manualBackfillMinutes,
+        LocalDateTime nextRunAt
+    ) {
+        static ScheduledRuleState none() {
+            return new ScheduledRuleState(null, null, null, null, null);
+        }
+
+        boolean scheduled() {
+            return cronExpression != null;
         }
     }
 }

@@ -62,7 +62,8 @@ class NodeServiceLockInfoTest {
         UUID nodeId = UUID.randomUUID();
         Folder folder = folder(nodeId, "workspace");
 
-        when(nodeRepository.findByIdAndDeletedFalse(nodeId)).thenReturn(Optional.of(folder));
+        when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(nodeId, com.ecm.core.entity.Node.ArchiveStatus.LIVE))
+            .thenReturn(Optional.of(folder));
         when(securityService.hasPermission(folder, com.ecm.core.entity.Permission.PermissionType.READ)).thenReturn(true);
         when(securityService.getCurrentUser()).thenReturn("alice");
         when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
@@ -81,7 +82,8 @@ class NodeServiceLockInfoTest {
         Folder folder = folder(nodeId, "workspace");
         folder.applyLock("alice", LocalDateTime.now().minusMinutes(5), LockLifetime.EPHEMERAL, LocalDateTime.now().plusMinutes(10));
 
-        when(nodeRepository.findByIdAndDeletedFalse(nodeId)).thenReturn(Optional.of(folder));
+        when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(nodeId, com.ecm.core.entity.Node.ArchiveStatus.LIVE))
+            .thenReturn(Optional.of(folder));
         when(securityService.hasPermission(folder, com.ecm.core.entity.Permission.PermissionType.READ)).thenReturn(true);
         when(securityService.getCurrentUser()).thenReturn("alice");
         when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
@@ -102,7 +104,8 @@ class NodeServiceLockInfoTest {
         Folder folder = folder(nodeId, "workspace");
         folder.applyLock("bob", LocalDateTime.now().minusHours(1), LockLifetime.EPHEMERAL, LocalDateTime.now().minusMinutes(2));
 
-        when(nodeRepository.findByIdAndDeletedFalse(nodeId)).thenReturn(Optional.of(folder));
+        when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(nodeId, com.ecm.core.entity.Node.ArchiveStatus.LIVE))
+            .thenReturn(Optional.of(folder));
         when(securityService.hasPermission(folder, com.ecm.core.entity.Permission.PermissionType.READ)).thenReturn(true);
         when(securityService.getCurrentUser()).thenReturn("alice");
         when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
@@ -120,6 +123,7 @@ class NodeServiceLockInfoTest {
         folder.setId(id);
         folder.setName(name);
         folder.setPath("/" + name);
+        folder.setArchiveStatus(com.ecm.core.entity.Node.ArchiveStatus.LIVE);
         return folder;
     }
 }

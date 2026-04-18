@@ -51,6 +51,10 @@ public abstract class Node extends BaseEntity {
     @Type(JsonType.class)
     @Column(name = "properties", columnDefinition = "jsonb")
     private Map<String, Object> properties = new HashMap<>();
+
+    @Type(JsonType.class)
+    @Column(name = "encrypted_properties", columnDefinition = "jsonb")
+    private Map<String, String> encryptedProperties = new HashMap<>();
     
     @Type(JsonType.class)
     @Column(name = "metadata", columnDefinition = "jsonb")

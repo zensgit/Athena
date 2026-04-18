@@ -45,6 +45,9 @@ public class PropertyDefinition extends BaseEntity {
     @Column(name = "protected_field")
     private boolean protectedField = false;
 
+    @Column(name = "encrypted", nullable = false)
+    private boolean encrypted = false;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "type_definition_id")
     private TypeDefinition typeDefinition;

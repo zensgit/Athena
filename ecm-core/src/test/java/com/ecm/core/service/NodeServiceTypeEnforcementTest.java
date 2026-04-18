@@ -318,7 +318,8 @@ class NodeServiceTypeEnforcementTest {
             Folder folder = folder("test");
             folder.setTypeQName("cm:classifiable");
             folder.setProperties(new HashMap<>(Map.of("cm:category", "A")));
-            when(nodeRepository.findByIdAndDeletedFalse(folder.getId())).thenReturn(Optional.of(folder));
+            when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(folder.getId(), Node.ArchiveStatus.LIVE))
+                .thenReturn(Optional.of(folder));
             when(securityService.hasPermission(folder, PermissionType.READ)).thenReturn(true);
             when(securityService.hasPermission(folder, PermissionType.WRITE)).thenReturn(true);
 
@@ -344,6 +345,7 @@ class NodeServiceTypeEnforcementTest {
         f.setId(UUID.randomUUID());
         f.setName(name);
         f.setPath("/" + name);
+        f.setArchiveStatus(Node.ArchiveStatus.LIVE);
         return f;
     }
 

@@ -1278,6 +1278,8 @@ public class SearchController {
             || hasText(filters.getLockedBy())
             || filters.getCheckedOut() != null
             || hasText(filters.getCheckoutUser())
+            || filters.getRecordOnly() != null
+            || countList(filters.getRecordCategoryPaths()) > 0
             || hasText(filters.getCreatedBy())
             || countList(filters.getCreatedByList()) > 0
             || filters.getDateFrom() != null
@@ -1372,6 +1374,8 @@ public class SearchController {
         filterCounts.put("lockedBy", hasText(filters.getLockedBy()) ? 1 : 0);
         filterCounts.put("checkedOut", filters.getCheckedOut() != null ? 1 : 0);
         filterCounts.put("checkoutUser", hasText(filters.getCheckoutUser()) ? 1 : 0);
+        filterCounts.put("recordOnly", filters.getRecordOnly() != null ? 1 : 0);
+        filterCounts.put("recordCategoryPaths", countList(filters.getRecordCategoryPaths()));
         filterCounts.put("createdByList", countList(filters.getCreatedByList()));
         filterCounts.put("tags", countList(filters.getTags()));
         filterCounts.put("categories", countList(filters.getCategories()));
@@ -1419,6 +1423,8 @@ public class SearchController {
         target.setLockedBy(source.getLockedBy());
         target.setCheckedOut(source.getCheckedOut());
         target.setCheckoutUser(source.getCheckoutUser());
+        target.setRecordOnly(source.getRecordOnly());
+        target.setRecordCategoryPaths(source.getRecordCategoryPaths());
         target.setCreatedBy(source.getCreatedBy());
         target.setCreatedByList(source.getCreatedByList());
         target.setDateFrom(source.getDateFrom());

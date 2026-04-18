@@ -37,10 +37,6 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.env.Environment;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -50,10 +46,6 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
-import org.springframework.web.client.HttpStatusCodeException;
-import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayOutputStream;
@@ -90,7 +82,6 @@ public class MailFetcherService {
     private static final int MAX_ERROR_LENGTH = 500;
     private static final int MAX_RUNTIME_ERROR_SUMMARY_LENGTH = 240;
     private static final double RUNTIME_TREND_ERROR_RATE_THRESHOLD = 0.05d;
-    private static final String OAUTH_ENV_PREFIX = "ECM_MAIL_OAUTH_";
     private static final Pattern UUID_PATTERN = Pattern.compile(
         "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
     );
@@ -105,8 +96,7 @@ public class MailFetcherService {
     private final TagService tagService;
     private final EmailIngestionService emailIngestionService;
     private final MeterRegistry meterRegistry;
-    private final Environment environment;
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final MailOAuthService mailOAuthService;
 
     @Value("${ecm.mail.fetcher.run-as-user:admin}")
     private String runAsUser;
@@ -121,7 +111,6 @@ public class MailFetcherService {
     private String routingAllowedDomain;
 
     private final Map<UUID, Instant> lastPollByAccount = new ConcurrentHashMap<>();
-    private final Map<UUID, OAuthSession> oauthSessionByAccount = new ConcurrentHashMap<>();
     private volatile MailFetchSummary lastFetchSummary;
     private volatile Instant lastFetchAt;
 
@@ -209,7 +198,7 @@ public class MailFetcherService {
             return new AccountSkipDecision("oauth_unconfigured", true);
         }
 
-        if (!hasCredentialKey(account)) {
+        if (account.getOauthCredentialKey() == null || account.getOauthCredentialKey().isBlank()) {
             String refreshToken = account.getOauthRefreshToken();
             if (refreshToken == null || refreshToken.isBlank()) {
                 // Account exists but has not been connected via OAuth callback yet.
@@ -414,7 +403,7 @@ public class MailFetcherService {
     }
 
     public void evictOAuthSession(UUID accountId) {
-        oauthSessionByAccount.remove(accountId);
+        mailOAuthService.evictSession(accountId);
     }
 
     public MailRulePreviewResult previewRule(UUID accountId, UUID ruleId, Integer maxMessagesPerFolder) {
@@ -2953,123 +2942,7 @@ public class MailFetcherService {
     }
 
     private String resolveOAuthAccessToken(MailAccount account) {
-        OAuthSession session = oauthSessionByAccount.get(account.getId());
-        if (session != null && !isTokenExpired(session.expiresAt())) {
-            return session.accessToken();
-        }
-
-        OAuthTokenResponse response = refreshOAuthAccessToken(account);
-        LocalDateTime expiresAt = null;
-        if (response.expiresIn() != null && response.expiresIn() > 0) {
-            expiresAt = LocalDateTime.now().plusSeconds(response.expiresIn());
-        }
-        oauthSessionByAccount.put(account.getId(), new OAuthSession(response.accessToken(), expiresAt));
-        return response.accessToken();
-    }
-
-    private OAuthTokenResponse refreshOAuthAccessToken(MailAccount account) {
-        String clientId = resolveOAuthClientId(account);
-        String refreshTokenEnv = resolveOAuthRefreshToken(account);
-        String clientSecret = resolveOAuthClientSecret(account);
-        String scope = resolveOAuthScope(account);
-        String tokenEndpoint = resolveOAuthTokenEndpoint(account);
-
-        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
-        form.add("grant_type", "refresh_token");
-        form.add("client_id", clientId);
-        if (clientSecret != null && !clientSecret.isBlank()) {
-            form.add("client_secret", clientSecret);
-        }
-        form.add("refresh_token", refreshTokenEnv);
-        if (scope != null && !scope.isBlank()) {
-            form.add("scope", scope);
-        }
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-        Map<?, ?> body;
-        try {
-            var response = restTemplate.postForEntity(tokenEndpoint, new HttpEntity<>(form, headers), Map.class);
-            body = response.getBody();
-        } catch (HttpStatusCodeException ex) {
-            // Detect non-retryable "invalid_grant" and force reconnect by clearing stored tokens.
-            var parsed = MailOAuthTokenErrorParser.parse(ex.getResponseBodyAsString()).orElse(null);
-            if (parsed != null) {
-                if ("invalid_grant".equalsIgnoreCase(parsed.error())) {
-                    clearStoredOAuthTokens(account);
-                    try {
-                        accountRepository.save(account);
-                    } catch (Exception saveError) {
-                        log.warn("Failed to persist OAuth token reset for account {}", account.getName(), saveError);
-                    }
-                    oauthSessionByAccount.remove(account.getId());
-                    throw new MailOAuthReauthRequiredException(account.getId(), parsed.error(), parsed.errorDescription());
-                }
-
-                String message = "OAuth token refresh failed: " + parsed.error();
-                if (parsed.errorDescription() != null && !parsed.errorDescription().isBlank()) {
-                    message += " - " + parsed.errorDescription().trim();
-                }
-                throw new IllegalStateException(message, ex);
-            }
-            throw ex;
-        }
-
-        if (body == null || body.get("access_token") == null) {
-            throw new IllegalStateException("OAuth token refresh failed for account " + account.getName());
-        }
-
-        String accessToken = body.get("access_token").toString();
-        String refreshToken = body.get("refresh_token") != null ? body.get("refresh_token").toString() : null;
-        Long expiresIn = body.get("expires_in") instanceof Number number ? number.longValue() : null;
-
-        return new OAuthTokenResponse(accessToken, refreshToken, expiresIn);
-    }
-
-    private void clearStoredOAuthTokens(MailAccount account) {
-        account.setOauthAccessToken(null);
-        account.setOauthRefreshToken(null);
-        account.setOauthTokenExpiresAt(null);
-    }
-
-    private String resolveOAuthTokenEndpoint(MailAccount account) {
-        String override = hasCredentialKey(account)
-            ? resolveOAuthEnv(account, "TOKEN_ENDPOINT", false)
-            : resolveProviderEnv(account, "TOKEN_ENDPOINT", false);
-        if (override != null && !override.isBlank()) {
-            return override;
-        }
-        if (account.getOauthTokenEndpoint() != null && !account.getOauthTokenEndpoint().isBlank()) {
-            return account.getOauthTokenEndpoint();
-        }
-        if (account.getOauthProvider() == null) {
-            throw new IllegalStateException("OAuth provider not configured for account " + account.getName());
-        }
-        return switch (account.getOauthProvider()) {
-            case GOOGLE -> "https://oauth2.googleapis.com/token";
-            case MICROSOFT -> {
-                String tenantId = account.getOauthTenantId();
-                if (tenantId == null || tenantId.isBlank()) {
-                    tenantId = "common";
-                }
-                yield "https://login.microsoftonline.com/" + tenantId + "/oauth2/v2.0/token";
-            }
-            case CUSTOM -> throw new IllegalStateException("OAuth token endpoint not configured for account "
-                + account.getName());
-        };
-    }
-
-    private boolean isTokenExpired(LocalDateTime expiresAt) {
-        if (expiresAt == null) {
-            return false;
-        }
-        return expiresAt.isBefore(LocalDateTime.now().plusMinutes(1));
-    }
-
-    private record OAuthTokenResponse(String accessToken, String refreshToken, Long expiresIn) {
-    }
-
-    private record OAuthSession(String accessToken, LocalDateTime expiresAt) {
+        return mailOAuthService.resolveAccessToken(account);
     }
 
     public record OAuthEnvCheckResult(
@@ -3081,139 +2954,11 @@ public class MailFetcherService {
     }
 
     public OAuthEnvCheckResult checkOAuthEnv(UUID accountId) {
-        MailAccount account = accountRepository.findById(accountId)
-            .orElseThrow(() -> new IllegalArgumentException("Mail account not found: " + accountId));
-        return checkOAuthEnv(account);
+        return mailOAuthService.checkOAuthEnv(accountId);
     }
 
     public OAuthEnvCheckResult checkOAuthEnv(MailAccount account) {
-        if (account.getSecurity() != MailAccount.SecurityType.OAUTH2) {
-            return new OAuthEnvCheckResult(false, true, null, List.of());
-        }
-
-        String normalizedKey = normalizeCredentialKeyNullable(account.getOauthCredentialKey());
-        if (normalizedKey != null) {
-            List<String> requiredEnvKeys = List.of(
-                buildOauthEnvKey(normalizedKey, "CLIENT_ID"),
-                buildOauthEnvKey(normalizedKey, "REFRESH_TOKEN")
-            );
-            List<String> missing = requiredEnvKeys.stream()
-                .filter(this::isMissingEnvValue)
-                .toList();
-            return new OAuthEnvCheckResult(true, missing.isEmpty(), normalizedKey, missing);
-        }
-
-        MailAccount.OAuthProvider provider = account.getOauthProvider();
-        if (provider == null || provider == MailAccount.OAuthProvider.CUSTOM) {
-            return new OAuthEnvCheckResult(true, false, null, List.of("oauthCredentialKey"));
-        }
-
-        String prefix = provider == MailAccount.OAuthProvider.GOOGLE
-            ? "ECM_MAIL_OAUTH_GOOGLE_"
-            : "ECM_MAIL_OAUTH_MICROSOFT_";
-        List<String> requiredEnvKeys = List.of(
-            prefix + "CLIENT_ID",
-            prefix + "CLIENT_SECRET"
-        );
-        List<String> missing = requiredEnvKeys.stream()
-            .filter(this::isMissingEnvValue)
-            .toList();
-        return new OAuthEnvCheckResult(true, missing.isEmpty(), null, missing);
-    }
-
-    private String resolveOAuthCredentialKey(MailAccount account) {
-        String normalizedKey = normalizeCredentialKeyNullable(account.getOauthCredentialKey());
-        if (normalizedKey == null) {
-            throw new IllegalStateException("OAuth credential key missing for account " + account.getName());
-        }
-        return normalizedKey;
-    }
-
-    private boolean hasCredentialKey(MailAccount account) {
-        return account.getOauthCredentialKey() != null && !account.getOauthCredentialKey().isBlank();
-    }
-
-    private String normalizeCredentialKeyNullable(String key) {
-        if (key == null || key.isBlank()) {
-            return null;
-        }
-        String trimmed = key.trim();
-        return trimmed.toUpperCase().replaceAll("[^A-Z0-9]+", "_");
-    }
-
-    private String buildOauthEnvKey(String normalizedKey, String suffix) {
-        return OAUTH_ENV_PREFIX + normalizedKey + "_" + suffix;
-    }
-
-    private boolean isMissingEnvValue(String envKey) {
-        String value = environment.getProperty(envKey);
-        return value == null || value.isBlank();
-    }
-
-    private String resolveOAuthEnv(MailAccount account, String suffix, boolean required) {
-        String normalizedKey = resolveOAuthCredentialKey(account);
-        String envKey = buildOauthEnvKey(normalizedKey, suffix);
-        String value = environment.getProperty(envKey);
-        if (required && (value == null || value.isBlank())) {
-            throw new IllegalStateException("Missing OAuth env var " + envKey + " for account " + account.getName());
-        }
-        return value;
-    }
-
-    private String resolveProviderEnv(MailAccount account, String suffix, boolean required) {
-        MailAccount.OAuthProvider provider = account.getOauthProvider();
-        if (provider == null) {
-            throw new IllegalStateException("OAuth provider missing for account " + account.getName());
-        }
-        String prefix = switch (provider) {
-            case GOOGLE -> "ECM_MAIL_OAUTH_GOOGLE_";
-            case MICROSOFT -> "ECM_MAIL_OAUTH_MICROSOFT_";
-            case CUSTOM -> throw new IllegalStateException("Custom OAuth provider requires credential key");
-        };
-        String envKey = prefix + suffix;
-        String value = environment.getProperty(envKey);
-        if (required && (value == null || value.isBlank())) {
-            throw new IllegalStateException("Missing OAuth env var " + envKey + " for account " + account.getName());
-        }
-        return value;
-    }
-
-    private String resolveOAuthClientId(MailAccount account) {
-        if (hasCredentialKey(account)) {
-            return resolveOAuthEnv(account, "CLIENT_ID", true);
-        }
-        return resolveProviderEnv(account, "CLIENT_ID", true);
-    }
-
-    private String resolveOAuthClientSecret(MailAccount account) {
-        if (hasCredentialKey(account)) {
-            return resolveOAuthEnv(account, "CLIENT_SECRET", false);
-        }
-        return resolveProviderEnv(account, "CLIENT_SECRET", true);
-    }
-
-    private String resolveOAuthRefreshToken(MailAccount account) {
-        if (hasCredentialKey(account)) {
-            return resolveOAuthEnv(account, "REFRESH_TOKEN", true);
-        }
-        String refreshToken = account.getOauthRefreshToken();
-        if (refreshToken == null || refreshToken.isBlank()) {
-            throw new IllegalStateException("Missing OAuth refresh token for account " + account.getName());
-        }
-        return refreshToken;
-    }
-
-    private String resolveOAuthScope(MailAccount account) {
-        String scope;
-        if (hasCredentialKey(account)) {
-            scope = resolveOAuthEnv(account, "SCOPE", false);
-        } else {
-            scope = resolveProviderEnv(account, "SCOPE", false);
-        }
-        if (scope != null && !scope.isBlank()) {
-            return scope;
-        }
-        return account.getOauthScope();
+        return mailOAuthService.checkOAuthEnv(account);
     }
 
     private Store connect(MailAccount account) throws Exception {

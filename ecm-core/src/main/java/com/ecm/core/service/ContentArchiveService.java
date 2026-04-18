@@ -30,17 +30,22 @@ public class ContentArchiveService {
     private final ActivityEventListener activityEventListener;
     private final com.ecm.core.search.SearchIndexService searchIndexService;
     private final TenantWorkspaceScopeService tenantWorkspaceScopeService;
+    private final LegalHoldService legalHoldService;
+    private final RecordsManagementService recordsManagementService;
 
     @Transactional
     public ArchiveMutationDto archiveNode(UUID nodeId, ArchiveStoreTier storageTier) {
         Node node = loadActiveNode(nodeId);
         securityService.checkPermission(node, PermissionType.DELETE);
+        legalHoldService.assertOperationAllowed(node, "archive");
+        recordsManagementService.assertArchiveMutationAllowed(node, "archive");
         return archiveNodeInternal(node, storageTier, securityService.getCurrentUser(), "archived");
     }
 
     @Transactional
     public ArchiveMutationDto archiveNodeByPolicy(UUID nodeId, ArchiveStoreTier storageTier, String actor) {
         Node node = loadActiveNode(nodeId);
+        legalHoldService.assertOperationAllowed(node, "archive");
         return archiveNodeInternal(node, storageTier, actor, "policy_archived");
     }
 
@@ -51,6 +56,10 @@ public class ContentArchiveService {
         if (node.getArchiveStatus() != ArchiveStatus.ARCHIVED) {
             throw new IllegalStateException("Node is not archived: " + nodeId);
         }
+        List<Node> scope = collectArchiveScope(node);
+        assertRestoreScopeState(scope);
+        legalHoldService.assertOperationAllowed(node, "restore");
+        recordsManagementService.assertRestoreScopeAllowed(node, scope, "restore");
 
         String currentUser = securityService.getCurrentUser();
         boolean isArchiver = currentUser.equals(node.getArchivedBy());
@@ -60,7 +69,6 @@ public class ContentArchiveService {
             throw new SecurityException("No permission to restore archived node");
         }
 
-        List<Node> scope = collectArchiveScope(node);
         ArchiveStoreTier previousTier = node.getArchiveStoreTier();
         for (Node candidate : scope) {
             candidate.setArchiveStatus(ArchiveStatus.LIVE);
@@ -81,6 +89,28 @@ public class ContentArchiveService {
             )
         );
         return toMutationDto(node, scope.size());
+    }
+
+    private void assertRestoreScopeState(List<Node> scope) {
+        for (Node candidate : scope) {
+            if (candidate.getArchiveStatus() != ArchiveStatus.ARCHIVED) {
+                throw new IllegalStateException(
+                    "Cannot restore because archived scope contains non-archived node '" + candidate.getName() + "'"
+                );
+            }
+            if (candidate instanceof com.ecm.core.entity.Document document) {
+                if (document.isWorkingCopy()) {
+                    throw new IllegalStateException(
+                        "Cannot restore because archived scope contains working copy '" + document.getName() + "'"
+                    );
+                }
+                if (document.isCheckedOut()) {
+                    throw new IllegalStateException(
+                        "Cannot restore because archived scope contains checked-out document '" + document.getName() + "'"
+                    );
+                }
+            }
+        }
     }
 
     public ArchiveStatusDto getArchiveStatus(UUID nodeId) {

@@ -122,6 +122,35 @@ ecm:
     admin-username: ${ECM_KEYCLOAK_ADMIN_USERNAME:}
     admin-password: ${ECM_KEYCLOAK_ADMIN_PASSWORD:}
 
+  ldap:
+    url: ${ECM_LDAP_URL:ldap://localhost:389}
+    bind-dn: ${ECM_LDAP_BIND_DN:}
+    bind-password: ${ECM_LDAP_BIND_PASSWORD:}
+    user-base-dn: ${ECM_LDAP_USER_BASE_DN:}
+    user-filter: ${ECM_LDAP_USER_FILTER:(objectClass=person)}
+    user-username-attribute: ${ECM_LDAP_USER_USERNAME_ATTRIBUTE:uid}
+    user-email-attribute: ${ECM_LDAP_USER_EMAIL_ATTRIBUTE:mail}
+    user-first-name-attribute: ${ECM_LDAP_USER_FIRST_NAME_ATTRIBUTE:givenName}
+    user-last-name-attribute: ${ECM_LDAP_USER_LAST_NAME_ATTRIBUTE:sn}
+    user-display-name-attribute: ${ECM_LDAP_USER_DISPLAY_NAME_ATTRIBUTE:displayName}
+    user-department-attribute: ${ECM_LDAP_USER_DEPARTMENT_ATTRIBUTE:department}
+    user-job-title-attribute: ${ECM_LDAP_USER_JOB_TITLE_ATTRIBUTE:title}
+    user-external-id-attribute: ${ECM_LDAP_USER_EXTERNAL_ID_ATTRIBUTE:entryUUID}
+    user-enabled-attribute: ${ECM_LDAP_USER_ENABLED_ATTRIBUTE:}
+    group-base-dn: ${ECM_LDAP_GROUP_BASE_DN:}
+    group-filter: ${ECM_LDAP_GROUP_FILTER:(|(objectClass=groupOfNames)(objectClass=group)(objectClass=groupOfUniqueNames))}
+    group-name-attribute: ${ECM_LDAP_GROUP_NAME_ATTRIBUTE:cn}
+    group-display-name-attribute: ${ECM_LDAP_GROUP_DISPLAY_NAME_ATTRIBUTE:displayName}
+    group-description-attribute: ${ECM_LDAP_GROUP_DESCRIPTION_ATTRIBUTE:description}
+    group-email-attribute: ${ECM_LDAP_GROUP_EMAIL_ATTRIBUTE:mail}
+    group-external-id-attribute: ${ECM_LDAP_GROUP_EXTERNAL_ID_ATTRIBUTE:entryUUID}
+    group-member-attribute: ${ECM_LDAP_GROUP_MEMBER_ATTRIBUTE:member}
+    connect-timeout-ms: ${ECM_LDAP_CONNECT_TIMEOUT_MS:5000}
+    read-timeout-ms: ${ECM_LDAP_READ_TIMEOUT_MS:10000}
+    sync:
+      enabled: ${ECM_LDAP_SYNC_ENABLED:false}
+      cron: ${ECM_LDAP_SYNC_CRON:0 0 */4 * * *}
+
   storage:
     type: filesystem
     root-path: /var/ecm/content
@@ -134,6 +163,11 @@ ecm:
     jwt:
       secret: ${JWT_SECRET:mySecretKey}
       expiration: 86400000
+    secret:
+      enabled: ${ECM_SECURITY_SECRET_ENABLED:false}
+      active-key-version: ${ECM_SECURITY_SECRET_ACTIVE_KEY_VERSION:v1}
+      keys:
+        v1: ${ECM_SECURITY_SECRET_KEY_V1:}
     cors:
       allowed-origins: "*"
       allowed-methods: "*"
@@ -141,6 +175,13 @@ ecm:
       exposed-headers: "Authorization,Link,X-Total-Count"
       allow-credentials: true
       max-age: 3600
+
+  site:
+    membership:
+      persistence:
+        enabled: ${ECM_SITE_MEMBERSHIP_PERSISTENCE_ENABLED:true}
+      legacy-reader:
+        enabled: ${ECM_SITE_MEMBERSHIP_LEGACY_READER_ENABLED:true}
   
   preview:
     cache:

@@ -15,7 +15,6 @@ import com.ecm.core.entity.ContentReference.OwnerType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
@@ -49,10 +48,11 @@ public class VersionService {
 
     @Autowired
     @Lazy
-    private RuleEngineService ruleEngineService;
+    private LegalHoldService legalHoldService;
 
-    @Value("${ecm.rules.enabled:true}")
-    private boolean rulesEnabled;
+    @Autowired
+    @Lazy
+    private RecordsManagementService recordsManagementService;
 
     private static final int MAX_COMPARE_TEXT_BYTES_HARD_LIMIT = 1_000_000;
     private static final int MAX_COMPARE_TEXT_LINES_HARD_LIMIT = 10_000;
@@ -63,6 +63,7 @@ public class VersionService {
         Document document = documentRepository.findById(documentId)
             .orElseThrow(() -> new NoSuchElementException("Document not found: " + documentId));
         document = normalizeExpiredLock(document);
+        assertNoRecordDirectMutation(document, "create a new version");
         
         // Check permissions
         if (!securityService.hasPermission(document, PermissionType.WRITE)) {
@@ -153,10 +154,12 @@ public class VersionService {
             document.getId()
         );
 
-        eventPublisher.publishEvent(new VersionCreatedEvent(savedVersion, securityService.getCurrentUser()));
-
-        // Trigger automation rules for new version
-        triggerRulesForDocument(document, TriggerType.VERSION_CREATED);
+        RepositoryLifecyclePublisher.publishVersionCreated(
+            eventPublisher,
+            savedVersion,
+            securityService.getCurrentUser(),
+            TriggerType.VERSION_CREATED
+        );
 
         return savedVersion;
     }
@@ -237,6 +240,7 @@ public class VersionService {
     public void revertToVersion(UUID documentId, UUID versionId) throws IOException {
         Document document = documentRepository.findById(documentId)
             .orElseThrow(() -> new NoSuchElementException("Document not found: " + documentId));
+        assertNoRecordDirectMutation(document, "revert version");
         
         Version targetVersion = getVersion(versionId);
         
@@ -269,6 +273,8 @@ public class VersionService {
             !securityService.hasRole("ROLE_ADMIN")) {
             throw new SecurityException("No permission to delete version");
         }
+        assertNoActiveHold(document, "delete version");
+        assertNoRecordDirectMutation(document, "delete version");
         
         // Cannot delete current version
         if (document.getCurrentVersion() != null && 
@@ -287,6 +293,18 @@ public class VersionService {
         contentReferenceService.detach(version.getContentId(), OwnerType.VERSION, versionId);
 
         eventPublisher.publishEvent(new VersionDeletedEvent(version, securityService.getCurrentUser()));
+    }
+
+    private void assertNoActiveHold(Node node, String operation) {
+        if (legalHoldService != null) {
+            legalHoldService.assertOperationAllowed(node, operation);
+        }
+    }
+
+    private void assertNoRecordDirectMutation(Node node, String operation) {
+        if (recordsManagementService != null) {
+            recordsManagementService.assertDirectMutationAllowed(node, operation);
+        }
     }
     
     public void freezeVersion(UUID versionId) {
@@ -557,23 +575,4 @@ public class VersionService {
         return value;
     }
 
-    /**
-     * Trigger automation rules for a document.
-     */
-    private void triggerRulesForDocument(Document document, TriggerType triggerType) {
-        if (!rulesEnabled) {
-            return;
-        }
-
-        try {
-            log.debug("Triggering {} rules for document: {} ({})",
-                triggerType, document.getName(), document.getId());
-
-            ruleEngineService.evaluateAndExecute(document, triggerType);
-        } catch (Exception e) {
-            // Log but don't fail the main operation
-            log.error("Failed to trigger {} rules for document {}: {}",
-                triggerType, document.getId(), e.getMessage(), e);
-        }
-    }
 }

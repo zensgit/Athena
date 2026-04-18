@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="081-record-category-foundation" author="codex">
+        <comment>P4 PR-18: mark record categories and seed RM root category metadata</comment>
+
+        <addColumn tableName="categories">
+            <column name="purpose" type="varchar(32)" defaultValue="GENERAL">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+
+        <sql>
+            UPDATE categories
+            SET purpose = 'GENERAL'
+            WHERE purpose IS NULL;
+        </sql>
+
+        <sql>
+            INSERT INTO categories (
+                id, name, description, path, level, created_by, active, purpose
+            )
+            SELECT
+                ${uuid_function},
+                'Records Management',
+                'Seeded root category for record classification',
+                '/Records Management',
+                0,
+                'system',
+                true,
+                'RECORD'
+            WHERE NOT EXISTS (
+                SELECT 1 FROM categories WHERE path = '/Records Management'
+            );
+        </sql>
+
+        <sql>
+            INSERT INTO property_definitions (
+                id, name, title, description, data_type, mandatory, multi_valued,
+                default_value, indexed, protected_field, encrypted, aspect_definition_id, created_by
+            )
+            SELECT
+                ${uuid_function},
+                'recordCategoryId',
+                'Record Category Id',
+                'Assigned record category identifier',
+                'TEXT',
+                false,
+                false,
+                NULL,
+                false,
+                true,
+                false,
+                ad.id,
+                'system'
+            FROM aspect_definitions ad
+            JOIN content_model_definitions cmd ON cmd.id = ad.model_id
+            WHERE cmd.prefix = 'rm'
+              AND ad.name = 'record'
+              AND NOT EXISTS (
+                SELECT 1
+                FROM property_definitions pd
+                WHERE pd.aspect_definition_id = ad.id
+                  AND pd.name = 'recordCategoryId'
+              );
+        </sql>
+
+        <sql>
+            INSERT INTO property_definitions (
+                id, name, title, description, data_type, mandatory, multi_valued,
+                default_value, indexed, protected_field, encrypted, aspect_definition_id, created_by
+            )
+            SELECT
+                ${uuid_function},
+                'recordCategoryName',
+                'Record Category Name',
+                'Assigned record category name',
+                'TEXT',
+                false,
+                false,
+                NULL,
+                false,
+                true,
+                false,
+                ad.id,
+                'system'
+            FROM aspect_definitions ad
+            JOIN content_model_definitions cmd ON cmd.id = ad.model_id
+            WHERE cmd.prefix = 'rm'
+              AND ad.name = 'record'
+              AND NOT EXISTS (
+                SELECT 1
+                FROM property_definitions pd
+                WHERE pd.aspect_definition_id = ad.id
+                  AND pd.name = 'recordCategoryName'
+              );
+        </sql>
+
+        <sql>
+            INSERT INTO property_definitions (
+                id, name, title, description, data_type, mandatory, multi_valued,
+                default_value, indexed, protected_field, encrypted, aspect_definition_id, created_by
+            )
+            SELECT
+                ${uuid_function},
+                'recordCategoryPath',
+                'Record Category Path',
+                'Assigned record category path',
+                'TEXT',
+                false,
+                false,
+                NULL,
+                false,
+                true,
+                false,
+                ad.id,
+                'system'
+            FROM aspect_definitions ad
+            JOIN content_model_definitions cmd ON cmd.id = ad.model_id
+            WHERE cmd.prefix = 'rm'
+              AND ad.name = 'record'
+              AND NOT EXISTS (
+                SELECT 1
+                FROM property_definitions pd
+                WHERE pd.aspect_definition_id = ad.id
+                  AND pd.name = 'recordCategoryPath'
+              );
+        </sql>
+
+        <rollback>
+            <sql>
+                DELETE FROM property_definitions
+                WHERE aspect_definition_id IN (
+                    SELECT ad.id
+                    FROM aspect_definitions ad
+                    JOIN content_model_definitions cmd ON cmd.id = ad.model_id
+                    WHERE cmd.prefix = 'rm'
+                      AND ad.name = 'record'
+                )
+                  AND name IN ('recordCategoryId', 'recordCategoryName', 'recordCategoryPath');
+            </sql>
+            <sql>
+                DELETE FROM categories
+                WHERE path = '/Records Management'
+                  AND created_by = 'system'
+                  AND NOT EXISTS (SELECT 1 FROM categories child WHERE child.parent_id = categories.id)
+                  AND NOT EXISTS (SELECT 1 FROM node_categories nc WHERE nc.category_id = categories.id);
+            </sql>
+            <dropColumn tableName="categories" columnName="purpose"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

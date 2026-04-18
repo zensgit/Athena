@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="080-seed-record-management-aspect" author="codex">
+        <comment>Seed lightweight records management model and rm:record aspect</comment>
+
+        <sql>
+            INSERT INTO content_model_definitions (
+                id, namespace_uri, prefix, name, description, author, status, version_label, created_by
+            )
+            SELECT
+                ${uuid_function},
+                'https://athena.ecm/model/rm/1.0',
+                'rm',
+                'recordsManagement',
+                'Seeded Records Management model',
+                'system',
+                'ACTIVE',
+                '1.0',
+                'system'
+            WHERE NOT EXISTS (
+                SELECT 1 FROM content_model_definitions WHERE prefix = 'rm'
+            );
+        </sql>
+
+        <sql>
+            INSERT INTO aspect_definitions (
+                id, name, title, description, parent_name, model_id, created_by
+            )
+            SELECT
+                ${uuid_function},
+                'record',
+                'Record',
+                'Marks a live document as a declared record',
+                NULL,
+                cmd.id,
+                'system'
+            FROM content_model_definitions cmd
+            WHERE cmd.prefix = 'rm'
+              AND NOT EXISTS (
+                SELECT 1
+                FROM aspect_definitions ad
+                WHERE ad.model_id = cmd.id
+                  AND ad.name = 'record'
+              );
+        </sql>
+
+        <sql>
+            INSERT INTO property_definitions (
+                id, name, title, description, data_type, mandatory, multi_valued,
+                default_value, indexed, protected_field, encrypted, aspect_definition_id, created_by
+            )
+            SELECT
+                ${uuid_function},
+                'declaredAt',
+                'Declared At',
+                'Record declaration timestamp',
+                'DATETIME',
+                false,
+                false,
+                NULL,
+                false,
+                true,
+                false,
+                ad.id,
+                'system'
+            FROM aspect_definitions ad
+            JOIN content_model_definitions cmd ON cmd.id = ad.model_id
+            WHERE cmd.prefix = 'rm'
+              AND ad.name = 'record'
+              AND NOT EXISTS (
+                SELECT 1
+                FROM property_definitions pd
+                WHERE pd.aspect_definition_id = ad.id
+                  AND pd.name = 'declaredAt'
+              );
+        </sql>
+
+        <sql>
+            INSERT INTO property_definitions (
+                id, name, title, description, data_type, mandatory, multi_valued,
+                default_value, indexed, protected_field, encrypted, aspect_definition_id, created_by
+            )
+            SELECT
+                ${uuid_function},
+                'declaredBy',
+                'Declared By',
+                'Username that declared the record',
+                'TEXT',
+                false,
+                false,
+                NULL,
+                false,
+                true,
+                false,
+                ad.id,
+                'system'
+            FROM aspect_definitions ad
+            JOIN content_model_definitions cmd ON cmd.id = ad.model_id
+            WHERE cmd.prefix = 'rm'
+              AND ad.name = 'record'
+              AND NOT EXISTS (
+                SELECT 1
+                FROM property_definitions pd
+                WHERE pd.aspect_definition_id = ad.id
+                  AND pd.name = 'declaredBy'
+              );
+        </sql>
+
+        <sql>
+            INSERT INTO property_definitions (
+                id, name, title, description, data_type, mandatory, multi_valued,
+                default_value, indexed, protected_field, encrypted, aspect_definition_id, created_by
+            )
+            SELECT
+                ${uuid_function},
+                'declarationComment',
+                'Declaration Comment',
+                'Optional comment captured at declaration time',
+                'TEXT',
+                false,
+                false,
+                NULL,
+                false,
+                true,
+                false,
+                ad.id,
+                'system'
+            FROM aspect_definitions ad
+            JOIN content_model_definitions cmd ON cmd.id = ad.model_id
+            WHERE cmd.prefix = 'rm'
+              AND ad.name = 'record'
+              AND NOT EXISTS (
+                SELECT 1
+                FROM property_definitions pd
+                WHERE pd.aspect_definition_id = ad.id
+                  AND pd.name = 'declarationComment'
+              );
+        </sql>
+
+        <sql>
+            INSERT INTO property_definitions (
+                id, name, title, description, data_type, mandatory, multi_valued,
+                default_value, indexed, protected_field, encrypted, aspect_definition_id, created_by
+            )
+            SELECT
+                ${uuid_function},
+                'declaredVersionLabel',
+                'Declared Version Label',
+                'Document version label at declaration time',
+                'TEXT',
+                false,
+                false,
+                NULL,
+                false,
+                true,
+                false,
+                ad.id,
+                'system'
+            FROM aspect_definitions ad
+            JOIN content_model_definitions cmd ON cmd.id = ad.model_id
+            WHERE cmd.prefix = 'rm'
+              AND ad.name = 'record'
+              AND NOT EXISTS (
+                SELECT 1
+                FROM property_definitions pd
+                WHERE pd.aspect_definition_id = ad.id
+                  AND pd.name = 'declaredVersionLabel'
+              );
+        </sql>
+
+        <rollback>
+            <sql>
+                DELETE FROM property_definitions
+                WHERE aspect_definition_id IN (
+                    SELECT ad.id
+                    FROM aspect_definitions ad
+                    JOIN content_model_definitions cmd ON cmd.id = ad.model_id
+                    WHERE cmd.prefix = 'rm'
+                      AND ad.name = 'record'
+                );
+            </sql>
+            <sql>
+                DELETE FROM aspect_definitions
+                WHERE model_id IN (
+                    SELECT id FROM content_model_definitions WHERE prefix = 'rm'
+                )
+                  AND name = 'record';
+            </sql>
+            <sql>
+                DELETE FROM content_model_definitions
+                WHERE prefix = 'rm';
+            </sql>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

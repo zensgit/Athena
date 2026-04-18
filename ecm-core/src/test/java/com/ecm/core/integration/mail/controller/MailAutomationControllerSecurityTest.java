@@ -4,6 +4,7 @@ import com.ecm.core.integration.mail.repository.MailAccountRepository;
 import com.ecm.core.integration.mail.repository.MailRuleRepository;
 import com.ecm.core.integration.mail.repository.ProcessedMailRepository;
 import com.ecm.core.integration.mail.service.MailFetcherService;
+import com.ecm.core.integration.mail.service.MailOAuthCredentialOwnerAdapter;
 import com.ecm.core.integration.mail.service.MailOAuthService;
 import com.ecm.core.integration.mail.service.MailProcessedRetentionService;
 import com.ecm.core.integration.mail.service.MailReportScheduledExportService;
@@ -55,6 +56,9 @@ class MailAutomationControllerSecurityTest {
 
     @MockBean
     private MailFetcherService fetcherService;
+
+    @MockBean
+    private MailOAuthCredentialOwnerAdapter oauthOwnerAdapter;
 
     @MockBean
     private MailOAuthService oauthService;

@@ -860,7 +860,7 @@ class PreviewDiagnosticsControllerSecurityTest {
     void diagnosticsQueueDeclinedAllowsAdmin() throws Exception {
         UUID quietPeriodDocumentId = UUID.randomUUID();
         UUID permanentDocumentId = UUID.randomUUID();
-        Instant now = Instant.parse("2026-03-10T13:00:00Z");
+        Instant now = Instant.now().minusSeconds(2L * 3600L);
 
         PreviewQueueService.PreviewQueueDeclinedSnapshot snapshot = new PreviewQueueService.PreviewQueueDeclinedSnapshot(
             true,
@@ -1061,7 +1061,7 @@ class PreviewDiagnosticsControllerSecurityTest {
     @DisplayName("Admin can manage declined queue async export tasks")
     void diagnosticsQueueDeclinedAsyncExportTaskCenterForAdmin() throws Exception {
         UUID documentId = UUID.randomUUID();
-        Instant declinedAt = Instant.parse("2026-03-11T10:00:00Z");
+        Instant declinedAt = Instant.now().minusSeconds(90L * 60L);
         PreviewQueueService.PreviewQueueDeclinedSnapshot snapshot = new PreviewQueueService.PreviewQueueDeclinedSnapshot(
             true,
             1L,
@@ -1481,7 +1481,7 @@ class PreviewDiagnosticsControllerSecurityTest {
     @DisplayName("Admin can requeue and clear declined preview queue diagnostics by filter")
     void diagnosticsQueueDeclinedRequeueAndClearAllowsAdmin() throws Exception {
         UUID quietPeriodDocumentId = UUID.randomUUID();
-        Instant now = Instant.parse("2026-03-10T14:00:00Z");
+        Instant now = Instant.now().minusSeconds(90L * 60L);
         PreviewQueueService.PreviewQueueDeclinedSnapshot snapshot = new PreviewQueueService.PreviewQueueDeclinedSnapshot(
             true,
             1L,
@@ -1595,7 +1595,7 @@ class PreviewDiagnosticsControllerSecurityTest {
     @DisplayName("Admin can dry-run requeue for declined preview queue diagnostics")
     void diagnosticsQueueDeclinedRequeueDryRunAllowsAdmin() throws Exception {
         UUID quietPeriodDocumentId = UUID.randomUUID();
-        Instant now = Instant.parse("2026-03-10T14:30:00Z");
+        Instant now = Instant.now().minusSeconds(75L * 60L);
         PreviewQueueService.PreviewQueueDeclinedSnapshot snapshot = new PreviewQueueService.PreviewQueueDeclinedSnapshot(
             true,
             1L,
@@ -1811,7 +1811,7 @@ class PreviewDiagnosticsControllerSecurityTest {
     @DisplayName("Admin can export queue declined requeue dry-run CSV with reason breakdown")
     void diagnosticsQueueDeclinedRequeueDryRunExportAllowsAdmin() throws Exception {
         UUID quietPeriodDocumentId = UUID.randomUUID();
-        Instant now = Instant.parse("2026-03-10T14:30:00Z");
+        Instant now = Instant.now().minusSeconds(75L * 60L);
         PreviewQueueService.PreviewQueueDeclinedSnapshot snapshot = new PreviewQueueService.PreviewQueueDeclinedSnapshot(
             true,
             1L,
@@ -1885,7 +1885,7 @@ class PreviewDiagnosticsControllerSecurityTest {
             .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
                 .contentType("text/csv;charset=UTF-8"))
             .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
-                .string(org.hamcrest.Matchers.containsString("categoryFilter,forceRequiredFilter,queryFilter,windowHoursFilter,limit,force,requested,estimatedQueued,estimatedSkipped,estimatedFailed,documentId,category,outcome,reasonCode,message,previewStatus,nextAttemptAt,preflightStatus,preflightSkipReason,preflightRoute,preflightPolicyProfile,preflightPipeline")))
+                .string(org.hamcrest.Matchers.containsString("categoryFilter,forceRequiredFilter,queryFilter,windowHoursFilter,limit,force,requested,estimatedQueued,estimatedSkipped,estimatedFailed,documentId,category,outcome,reasonCode,message,previewStatus,previewFailureReason,previewFailureCategory,previewLastUpdated,nextAttemptAt,preflightStatus,preflightSkipReason,preflightRoute,preflightPolicyProfile,preflightPipeline")))
             .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
                 .string(org.hamcrest.Matchers.containsString("reasonCode,outcome,count")))
             .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
@@ -1907,7 +1907,7 @@ class PreviewDiagnosticsControllerSecurityTest {
     @DisplayName("Admin can manage declined requeue dry-run async export tasks")
     void diagnosticsQueueDeclinedRequeueDryRunAsyncExportTaskCenterForAdmin() throws Exception {
         UUID documentId = UUID.randomUUID();
-        Instant declinedAt = Instant.parse("2026-03-11T11:20:00Z");
+        Instant declinedAt = Instant.now().minusSeconds(70L * 60L);
         PreviewQueueService.PreviewQueueDeclinedSnapshot snapshot = new PreviewQueueService.PreviewQueueDeclinedSnapshot(
             true,
             1L,
@@ -2228,7 +2228,7 @@ class PreviewDiagnosticsControllerSecurityTest {
     @DisplayName("Queue declined dry-run surfaces preflight skip reason codes")
     void diagnosticsQueueDeclinedRequeueDryRunSurfacesPreflightSkipReason() throws Exception {
         UUID unsupportedDocumentId = UUID.randomUUID();
-        Instant now = Instant.parse("2026-03-10T15:00:00Z");
+        Instant now = Instant.now().minusSeconds(60L * 60L);
         PreviewQueueService.PreviewQueueDeclinedSnapshot snapshot = new PreviewQueueService.PreviewQueueDeclinedSnapshot(
             true,
             1L,
@@ -2304,7 +2304,7 @@ class PreviewDiagnosticsControllerSecurityTest {
     @DisplayName("Queue declined async export list supports skipCount and maxItems paging")
     void diagnosticsQueueDeclinedAsyncListSupportsPaging() throws Exception {
         UUID documentId = UUID.randomUUID();
-        Instant declinedAt = Instant.parse("2026-03-12T09:00:00Z");
+        Instant declinedAt = Instant.now().minusSeconds(50L * 60L);
         PreviewQueueService.PreviewQueueDeclinedSnapshot snapshot = new PreviewQueueService.PreviewQueueDeclinedSnapshot(
             true,
             1L,
@@ -2360,7 +2360,7 @@ class PreviewDiagnosticsControllerSecurityTest {
     @DisplayName("Queue declined requeue dry-run async export list supports skipCount and maxItems paging")
     void diagnosticsQueueDeclinedRequeueDryRunAsyncListSupportsPaging() throws Exception {
         UUID documentId = UUID.randomUUID();
-        Instant declinedAt = Instant.parse("2026-03-12T10:00:00Z");
+        Instant declinedAt = Instant.now().minusSeconds(45L * 60L);
         PreviewQueueService.PreviewQueueDeclinedSnapshot snapshot = new PreviewQueueService.PreviewQueueDeclinedSnapshot(
             true,
             1L,

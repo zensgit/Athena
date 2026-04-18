@@ -5,16 +5,18 @@ import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Folder.FolderType;
 import com.ecm.core.entity.Node;
 import com.ecm.core.entity.Permission.PermissionType;
-import com.ecm.core.event.NodeCreatedEvent;
-import com.ecm.core.event.NodeDeletedEvent;
-import com.ecm.core.event.NodeUpdatedEvent;
+import com.ecm.core.event.RepositoryLifecyclePublisher;
+import com.ecm.core.search.SearchFilters;
+import com.ecm.core.search.SearchResult;
 import com.ecm.core.search.SimplePageRequest;
 import com.ecm.core.repository.FolderRepository;
 import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.repository.PermissionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -33,6 +35,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Transactional
 public class FolderService {
+    private static final int SMART_FOLDER_FILTERED_FETCH_SIZE = 1000;
 
     private final FolderRepository folderRepository;
     private final NodeRepository nodeRepository;
@@ -42,12 +45,20 @@ public class FolderService {
     private final com.ecm.core.search.FacetedSearchService searchService;
     private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
+    @Autowired
+    @Lazy
+    private LegalHoldService legalHoldService;
+
     /**
      * Create a new folder
      */
     public Folder createFolder(CreateFolderRequest request) {
         UUID effectiveParentId = resolveScopedParentId(request.parentId());
         log.debug("Creating folder: {} under parent: {}", request.name(), effectiveParentId);
+        boolean smartFolder = Boolean.TRUE.equals(request.isSmart());
+        Map<String, Object> queryCriteria = smartFolder
+            ? normalizeQueryCriteria(request.queryCriteria())
+            : new LinkedHashMap<>();
 
         Folder folder = new Folder();
         folder.setName(request.name());
@@ -58,11 +69,10 @@ public class FolderService {
         folder.setAutoFileNaming(request.autoFileNaming() != null && request.autoFileNaming());
         folder.setNamingPattern(request.namingPattern());
         
-        // Smart Folder
-        if (Boolean.TRUE.equals(request.isSmart())) {
+        if (smartFolder) {
+            validateSmartFolderQueryCriteria(queryCriteria);
             folder.setSmart(true);
-            folder.setQueryCriteria(request.queryCriteria());
-            // Smart folders typically don't have children in the DB sense
+            folder.setQueryCriteria(queryCriteria);
         }
 
         if (effectiveParentId != null) {
@@ -83,6 +93,7 @@ public class FolderService {
                 }
             }
 
+            assertAcceptsPhysicalChildren(parent);
             folder.setParent(parent);
         }
 
@@ -101,7 +112,12 @@ public class FolderService {
         }
 
         log.info("Created folder: {} ({})", savedFolder.getName(), savedFolder.getId());
-        eventPublisher.publishEvent(new NodeCreatedEvent(savedFolder, securityService.getCurrentUser()));
+        RepositoryLifecyclePublisher.publishNodeCreated(
+            eventPublisher,
+            savedFolder,
+            securityService.getCurrentUser(),
+            null
+        );
 
         return savedFolder;
     }
@@ -170,39 +186,8 @@ public class FolderService {
         Folder folder = getFolder(folderId);
         boolean isAdmin = securityService.hasRole("ROLE_ADMIN");
         
-        // Smart Folder Logic
         if (folder.isSmart() && folder.getQueryCriteria() != null) {
-            try {
-                // Convert stored criteria to search request
-                var criteria = folder.getQueryCriteria();
-                var request = objectMapper.convertValue(criteria, com.ecm.core.search.FacetedSearchService.FacetedSearchRequest.class);
-                var simplePageRequest = new SimplePageRequest();
-                simplePageRequest.setPage(pageable.getPageNumber());
-                simplePageRequest.setSize(pageable.getPageSize());
-                request.setPageable(simplePageRequest);
-                
-                var results = searchService.search(request);
-                
-                // Map search results back to Node entities (simplified)
-                // Ideally, SearchResult should be compatible or we fetch nodes by ID
-                List<UUID> ids = results.getResults().getContent().stream()
-                    .map(r -> UUID.fromString(r.getId()))
-                    .collect(Collectors.toList());
-                
-                if (ids.isEmpty()) {
-                    return Page.empty(pageable);
-                }
-                
-                // Preserve order from search result if possible, or just fetch
-                return nodeRepository.findAllById(ids).stream()
-                    .filter(n -> !n.isDeleted() && n.getArchiveStatus() == Node.ArchiveStatus.LIVE)
-                    .collect(Collectors.collectingAndThen(Collectors.toList(), 
-                        list -> new org.springframework.data.domain.PageImpl<>(list, pageable, results.getTotalHits())));
-                        
-            } catch (Exception e) {
-                log.error("Failed to execute smart folder query for {}", folderId, e);
-                return Page.empty(pageable);
-            }
+            return getSmartFolderContents(folder, pageable);
         }
 
         if (isAdmin) {
@@ -223,6 +208,24 @@ public class FolderService {
     @Transactional(readOnly = true)
     public FolderContentsResponse getFolderContentsFiltered(UUID folderId, FolderContentsFilter filter) {
         Folder folder = getFolder(folderId);
+
+        if (folder.isSmart()) {
+            Page<Node> page = getFolderContents(
+                folderId,
+                org.springframework.data.domain.PageRequest.of(0, SMART_FOLDER_FILTERED_FETCH_SIZE)
+            );
+            List<Node> combined = new ArrayList<>(page.getContent());
+            combined.sort(getNodeComparator(filter.sortBy(), filter.sortDirection()));
+            List<Node> folders = combined.stream().filter(Node::isFolder).toList();
+            List<Node> documents = combined.stream().filter(node -> !node.isFolder()).toList();
+            return new FolderContentsResponse(
+                folder,
+                combined,
+                folders.size(),
+                documents.size(),
+                calculateTotalSize(documents)
+            );
+        }
 
         List<Node> children = nodeRepository.findByParentIdAndDeletedFalseAndArchiveStatus(folderId, Node.ArchiveStatus.LIVE);
 
@@ -301,9 +304,15 @@ public class FolderService {
         if (request.namingPattern() != null) {
             folder.setNamingPattern(request.namingPattern());
         }
+        applySmartFolderSettings(folder, request);
 
         Folder updatedFolder = folderRepository.save(folder);
-        eventPublisher.publishEvent(new NodeUpdatedEvent(updatedFolder, securityService.getCurrentUser()));
+        RepositoryLifecyclePublisher.publishNodeUpdated(
+            eventPublisher,
+            updatedFolder,
+            securityService.getCurrentUser(),
+            null
+        );
 
         return updatedFolder;
     }
@@ -321,7 +330,7 @@ public class FolderService {
      */
     public Folder renameFolder(UUID folderId, String newName) {
         return updateFolder(folderId, new UpdateFolderRequest(
-            newName, null, null, null, null, null, null
+            newName, null, null, null, null, null, null, null, null
         ));
     }
 
@@ -336,6 +345,7 @@ public class FolderService {
         if (!securityService.hasPermission(folder, PermissionType.DELETE)) {
             throw new SecurityException("No permission to delete folder: " + folder.getName());
         }
+        assertNoActiveHold(folder, permanent ? "permanently delete" : "delete");
 
         // Check if folder has children
         long childCount = folderRepository.countChildren(folderId);
@@ -350,8 +360,14 @@ public class FolderService {
         }
 
         log.info("Deleted folder: {} (permanent: {})", folder.getName(), permanent);
-        eventPublisher.publishEvent(new NodeDeletedEvent(
-            folder, securityService.getCurrentUser(), permanent, deletedPath, readableAuthorities));
+        RepositoryLifecyclePublisher.publishNodeDeleted(
+            eventPublisher,
+            folder,
+            securityService.getCurrentUser(),
+            permanent,
+            deletedPath,
+            readableAuthorities
+        );
     }
 
     /**
@@ -455,6 +471,9 @@ public class FolderService {
     @Transactional(readOnly = true)
     public boolean canAcceptItems(UUID folderId, int itemCount) {
         Folder folder = getFolder(folderId);
+        if (folder.isSmart()) {
+            return false;
+        }
 
         if (folder.getMaxItems() == null) {
             return true;
@@ -470,10 +489,167 @@ public class FolderService {
     @Transactional(readOnly = true)
     public boolean canAcceptFileType(UUID folderId, String mimeType) {
         Folder folder = getFolder(folderId);
+        if (folder.isSmart()) {
+            return false;
+        }
         return folder.canContainType(mimeType);
     }
 
     // === Private helper methods ===
+
+    private Page<Node> getSmartFolderContents(Folder folder, Pageable pageable) {
+        try {
+            Map<String, Object> criteria = normalizeQueryCriteria(folder.getQueryCriteria());
+            validateSmartFolderQueryCriteria(criteria);
+
+            var request = objectMapper.convertValue(
+                criteria,
+                com.ecm.core.search.FacetedSearchService.FacetedSearchRequest.class
+            );
+            var simplePageRequest = new SimplePageRequest();
+            if (pageable != null && pageable.isPaged()) {
+                simplePageRequest.setPage(pageable.getPageNumber());
+                simplePageRequest.setSize(pageable.getPageSize());
+            } else {
+                simplePageRequest.setPage(0);
+                simplePageRequest.setSize(SMART_FOLDER_FILTERED_FETCH_SIZE);
+            }
+            request.setPageable(simplePageRequest);
+
+            var results = searchService.search(request);
+            List<UUID> ids = results.getResults().getContent().stream()
+                .map(SearchResult::getId)
+                .filter(Objects::nonNull)
+                .map(UUID::fromString)
+                .toList();
+
+            if (ids.isEmpty()) {
+                return Page.empty(pageable == null ? Pageable.unpaged() : pageable);
+            }
+
+            Map<UUID, Integer> order = new HashMap<>();
+            for (int i = 0; i < ids.size(); i++) {
+                order.put(ids.get(i), i);
+            }
+
+            List<Node> content = nodeRepository.findAllById(ids).stream()
+                .filter(n -> !n.isDeleted() && n.getArchiveStatus() == Node.ArchiveStatus.LIVE)
+                .sorted(Comparator.comparingInt(node -> order.getOrDefault(node.getId(), Integer.MAX_VALUE)))
+                .toList();
+
+            Pageable effectivePageable = pageable == null ? Pageable.unpaged() : pageable;
+            return new PageImpl<>(content, effectivePageable, results.getTotalHits());
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Failed to execute smart folder query for {}", folder.getId(), e);
+            throw new IllegalArgumentException("Invalid smart folder queryCriteria", e);
+        }
+    }
+
+    private void applySmartFolderSettings(Folder folder, UpdateFolderRequest request) {
+        boolean currentSmart = folder.isSmart();
+        Boolean requestedSmart = request.isSmart();
+        Map<String, Object> requestedCriteria = request.queryCriteria();
+
+        if (requestedSmart == null && requestedCriteria == null) {
+            return;
+        }
+
+        boolean targetSmart = requestedSmart != null ? requestedSmart : currentSmart;
+        if (!targetSmart) {
+            if (requestedCriteria != null) {
+                throw new IllegalArgumentException("queryCriteria is only supported for smart folders");
+            }
+            folder.setSmart(false);
+            folder.setQueryCriteria(new LinkedHashMap<>());
+            return;
+        }
+
+        Map<String, Object> effectiveCriteria = requestedCriteria != null
+            ? normalizeQueryCriteria(requestedCriteria)
+            : normalizeQueryCriteria(folder.getQueryCriteria());
+        validateSmartFolderQueryCriteria(effectiveCriteria);
+
+        if (!currentSmart && nodeRepository.countByParentId(folder.getId()) > 0) {
+            throw new IllegalArgumentException("Cannot convert a non-empty folder into a smart folder");
+        }
+
+        folder.setSmart(true);
+        folder.setQueryCriteria(effectiveCriteria);
+    }
+
+    private void validateSmartFolderQueryCriteria(Map<String, Object> queryCriteria) {
+        if (queryCriteria == null || queryCriteria.isEmpty()) {
+            throw new IllegalArgumentException("Smart folders require non-empty queryCriteria");
+        }
+
+        com.ecm.core.search.FacetedSearchService.FacetedSearchRequest request;
+        try {
+            request = objectMapper.convertValue(
+                queryCriteria,
+                com.ecm.core.search.FacetedSearchService.FacetedSearchRequest.class
+            );
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid smart folder queryCriteria", e);
+        }
+
+        boolean hasQuery = request.getQuery() != null && !request.getQuery().isBlank();
+        boolean hasFilters = hasSearchFilters(request.getFilters());
+        boolean hasPathPrefix = request.getPathPrefix() != null && !request.getPathPrefix().isBlank();
+
+        if (!hasQuery && !hasFilters && !hasPathPrefix) {
+            throw new IllegalArgumentException("Smart folder queryCriteria must define a query, filters, or pathPrefix");
+        }
+    }
+
+    private boolean hasSearchFilters(SearchFilters filters) {
+        if (filters == null) {
+            return false;
+        }
+        return hasValues(filters.getNodeTypes())
+            || hasValues(filters.getMimeTypes())
+            || filters.getLocked() != null
+            || hasText(filters.getLockedBy())
+            || filters.getCheckedOut() != null
+            || hasText(filters.getCheckoutUser())
+            || hasText(filters.getCreatedBy())
+            || hasValues(filters.getCreatedByList())
+            || filters.getDateFrom() != null
+            || filters.getDateTo() != null
+            || filters.getModifiedFrom() != null
+            || filters.getModifiedTo() != null
+            || filters.getMinSize() != null
+            || filters.getMaxSize() != null
+            || hasValues(filters.getTags())
+            || hasValues(filters.getCategories())
+            || hasValues(filters.getCorrespondents())
+            || hasText(filters.getPath())
+            || hasText(filters.getFolderId())
+            || hasValues(filters.getPreviewStatuses())
+            || filters.isIncludeDeleted();
+    }
+
+    private boolean hasValues(Collection<?> values) {
+        return values != null && !values.isEmpty();
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private Map<String, Object> normalizeQueryCriteria(Map<String, Object> queryCriteria) {
+        if (queryCriteria == null) {
+            return new LinkedHashMap<>();
+        }
+        return new LinkedHashMap<>(queryCriteria);
+    }
+
+    private void assertAcceptsPhysicalChildren(Folder parent) {
+        if (parent.isSmart()) {
+            throw new IllegalArgumentException("Smart folders cannot contain physical child nodes: " + parent.getName());
+        }
+    }
 
     private void copyPermissions(Node source, Node target) {
         var sourcePermissions = permissionRepository.findByNodeId(source.getId());
@@ -583,6 +759,12 @@ public class FolderService {
         }
     }
 
+    private void assertNoActiveHold(Node node, String operation) {
+        if (legalHoldService != null) {
+            legalHoldService.assertOperationAllowed(node, operation);
+        }
+    }
+
     private int[] countDescendantsRecursive(UUID folderId, boolean isAdmin) {
         int totalFolders = 0;
         int totalDocuments = 0;
@@ -680,7 +862,9 @@ public class FolderService {
         Integer maxItems,
         String allowedTypes,
         Boolean autoFileNaming,
-        String namingPattern
+        String namingPattern,
+        Boolean isSmart,
+        Map<String, Object> queryCriteria
     ) {}
 
     public record FolderContentsFilter(

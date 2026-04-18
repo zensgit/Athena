@@ -1,9 +1,15 @@
 package com.ecm.core.service;
 
 import com.ecm.core.entity.Site;
+import com.ecm.core.entity.SiteMember;
+import com.ecm.core.entity.SiteMember.SiteMemberRole;
+import com.ecm.core.entity.SiteMembershipRequest;
+import com.ecm.core.entity.SiteMembershipRequest.RequestStatus;
 import com.ecm.core.entity.User;
+import com.ecm.core.exception.AccessDeniedException;
 import com.ecm.core.exception.ResourceNotFoundException;
 import com.ecm.core.repository.SiteMemberRepository;
+import com.ecm.core.repository.SiteMembershipRequestRepository;
 import com.ecm.core.repository.SiteRepository;
 import com.ecm.core.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -14,12 +20,23 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.util.*;
+import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.Optional;
+import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class SiteMembershipServiceTest {
@@ -27,6 +44,7 @@ class SiteMembershipServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private SiteRepository siteRepository;
     @Mock private SiteMemberRepository siteMemberRepository;
+    @Mock private SiteMembershipRequestRepository siteMembershipRequestRepository;
     @Mock private SecurityService securityService;
     @Mock private ActivityEventListener activityEventListener;
     @Mock private TenantWorkspaceScopeService tenantWorkspaceScopeService;
@@ -39,12 +57,22 @@ class SiteMembershipServiceTest {
             userRepository,
             siteRepository,
             siteMemberRepository,
+            siteMembershipRequestRepository,
             securityService,
             activityEventListener,
             tenantWorkspaceScopeService
         );
         lenient().when(siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse(anyString()))
             .thenAnswer(invocation -> Optional.of(site(invocation.getArgument(0))));
+        lenient().when(siteMemberRepository.findByUsername(anyString())).thenReturn(List.of());
+        lenient().when(siteMembershipRequestRepository.save(any(SiteMembershipRequest.class)))
+            .thenAnswer(invocation -> {
+                SiteMembershipRequest request = invocation.getArgument(0);
+                if (request.getId() == null) {
+                    request.setId(UUID.randomUUID());
+                }
+                return request;
+            });
     }
 
     @Nested
@@ -52,12 +80,14 @@ class SiteMembershipServiceTest {
     class CreateRequest {
 
         @Test
-        @DisplayName("creates pending request in user preferences")
-        void createsPending() {
-            User user = userWith("alice", new HashMap<>());
+        @DisplayName("creates a persistent pending request")
+        void createsPendingPersistentRequest() {
+            Site site = site("finance");
             when(securityService.getCurrentUser()).thenReturn("alice");
-            when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
-            when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(userRepository.findByUsername("alice")).thenReturn(Optional.of(userWith("alice", new HashMap<>())));
+            when(siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse("finance")).thenReturn(Optional.of(site));
+            when(siteMembershipRequestRepository.findBySiteIdAndUsername(site.getId(), "alice")).thenReturn(Optional.empty());
+            when(siteMemberRepository.findBySiteIdAndUsername(site.getId(), "alice")).thenReturn(Optional.empty());
 
             var result = service.createRequest("finance",
                 new SiteMembershipService.CreateMembershipRequest("Finance", "CONTRIBUTOR", "Please add me"));
@@ -66,22 +96,25 @@ class SiteMembershipServiceTest {
             assertEquals("alice", result.username());
             assertEquals("PENDING", result.status());
             assertEquals("CONTRIBUTOR", result.role());
+            verify(siteMembershipRequestRepository).save(any(SiteMembershipRequest.class));
             verify(activityEventListener).postMembershipActivity(
                 eq("site.membership.requested"),
                 eq("alice"),
                 eq("finance"),
-                anyMap()
+                any(Map.class)
             );
         }
 
         @Test
         @DisplayName("rejects duplicate request for same site")
-        void rejectsDuplicate() {
-            User user = userWith("alice", new HashMap<>(Map.of(
-                "siteMembershipRequests", List.of(Map.of("siteId", "finance", "status", "PENDING"))
-            )));
+        void rejectsDuplicatePersistentRequest() {
+            Site site = site("finance");
+            SiteMembershipRequest existing = request(site, "alice", RequestStatus.PENDING, "CONSUMER");
             when(securityService.getCurrentUser()).thenReturn("alice");
-            when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
+            when(userRepository.findByUsername("alice")).thenReturn(Optional.of(userWith("alice", new HashMap<>())));
+            when(siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse("finance")).thenReturn(Optional.of(site));
+            when(siteMembershipRequestRepository.findBySiteIdAndUsername(site.getId(), "alice")).thenReturn(Optional.of(existing));
+            when(siteMemberRepository.findBySiteIdAndUsername(site.getId(), "alice")).thenReturn(Optional.empty());
 
             assertThrows(IllegalArgumentException.class,
                 () -> service.createRequest("finance",
@@ -91,6 +124,8 @@ class SiteMembershipServiceTest {
         @Test
         @DisplayName("rejects request for site outside current tenant workspace")
         void rejectsForeignTenantSite() {
+            when(userRepository.findByUsername("alice")).thenReturn(Optional.of(userWith("alice", new HashMap<>())));
+            when(securityService.getCurrentUser()).thenReturn("alice");
             when(tenantWorkspaceScopeService.resolveCurrentTenantRootPath()).thenReturn("/Tenant Workspace");
             when(tenantWorkspaceScopeService.isSiteVisible("finance", "/Tenant Workspace")).thenReturn(false);
 
@@ -105,61 +140,69 @@ class SiteMembershipServiceTest {
     class Moderation {
 
         @Test
-        @DisplayName("approve sets status to APPROVED with decision metadata")
-        void approveSetsStatus() {
-            User user = userWith("bob", new HashMap<>(Map.of(
-                "siteMembershipRequests", new ArrayList<>(List.of(
-                    new LinkedHashMap<>(Map.of("siteId", "hr", "status", "PENDING", "role", "CONSUMER"))
-                ))
-            )));
-            when(userRepository.findByUsername("bob")).thenReturn(Optional.of(user));
-            when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+        @DisplayName("approve sets status and creates membership")
+        void approveSetsStatusAndCreatesMember() {
+            Site site = site("hr");
+            SiteMembershipRequest existing = request(site, "bob", RequestStatus.PENDING, "CONSUMER");
+
+            when(siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse("hr")).thenReturn(Optional.of(site));
             when(securityService.getCurrentUser()).thenReturn("admin");
-            when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(securityService.hasRole("ROLE_ADMIN", "admin")).thenReturn(true);
+            when(siteMembershipRequestRepository.findBySiteIdAndUsername(site.getId(), "bob")).thenReturn(Optional.of(existing));
+            when(siteMemberRepository.findBySiteIdAndUsername(site.getId(), "bob")).thenReturn(Optional.empty());
+            when(siteMemberRepository.save(any(SiteMember.class))).thenAnswer(invocation -> {
+                SiteMember member = invocation.getArgument(0);
+                member.setId(UUID.randomUUID());
+                return member;
+            });
 
             var result = service.approve("hr", "bob", "Welcome aboard");
 
             assertEquals("APPROVED", result.status());
             assertEquals("admin", result.decisionBy());
             assertEquals("Welcome aboard", result.decisionComment());
+            verify(siteMemberRepository).save(any(SiteMember.class));
             verify(activityEventListener).postMembershipActivity(
                 eq("site.membership.approved"),
                 eq("bob"),
                 eq("hr"),
-                anyMap()
+                any(Map.class)
             );
         }
 
         @Test
         @DisplayName("reject sets status to REJECTED")
         void rejectSetsStatus() {
-            User user = userWith("bob", new HashMap<>(Map.of(
-                "siteMembershipRequests", new ArrayList<>(List.of(
-                    new LinkedHashMap<>(Map.of("siteId", "hr", "status", "PENDING", "role", "CONSUMER"))
-                ))
-            )));
-            when(userRepository.findByUsername("bob")).thenReturn(Optional.of(user));
-            when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+            Site site = site("hr");
+            SiteMembershipRequest existing = request(site, "bob", RequestStatus.PENDING, "CONSUMER");
+
+            when(siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse("hr")).thenReturn(Optional.of(site));
             when(securityService.getCurrentUser()).thenReturn("admin");
-            when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(securityService.hasRole("ROLE_ADMIN", "admin")).thenReturn(true);
+            when(siteMembershipRequestRepository.findBySiteIdAndUsername(site.getId(), "bob")).thenReturn(Optional.of(existing));
 
             var result = service.reject("hr", "bob", "Not eligible");
 
             assertEquals("REJECTED", result.status());
+            assertEquals("Not eligible", result.decisionComment());
             verify(activityEventListener).postMembershipActivity(
                 eq("site.membership.rejected"),
                 eq("bob"),
                 eq("hr"),
-                anyMap()
+                any(Map.class)
             );
         }
 
         @Test
-        @DisplayName("non-admin cannot moderate")
-        void nonAdminRejected() {
-            when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
+        @DisplayName("non-admin non-manager cannot moderate")
+        void nonModeratorRejected() {
+            Site site = site("hr");
+            when(siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse("hr")).thenReturn(Optional.of(site));
+            when(securityService.getCurrentUser()).thenReturn("alice");
+            when(securityService.hasRole("ROLE_ADMIN", "alice")).thenReturn(false);
+            when(siteMemberRepository.findByUsername("alice")).thenReturn(List.of());
 
-            assertThrows(SecurityException.class,
+            assertThrows(AccessDeniedException.class,
                 () -> service.approve("hr", "bob", null));
         }
     }
@@ -169,61 +212,56 @@ class SiteMembershipServiceTest {
     class Withdraw {
 
         @Test
-        @DisplayName("removes request from preferences")
-        void removesRequest() {
-            User user = userWith("alice", new HashMap<>(Map.of(
-                "siteMembershipRequests", new ArrayList<>(List.of(
-                    new LinkedHashMap<>(Map.of("siteId", "finance", "status", "PENDING")),
-                    new LinkedHashMap<>(Map.of("siteId", "hr", "status", "PENDING"))
-                ))
-            )));
+        @DisplayName("marks request withdrawn instead of deleting it")
+        void marksRequestWithdrawn() {
+            Site site = site("finance");
+            SiteMembershipRequest existing = request(site, "alice", RequestStatus.PENDING, "CONSUMER");
             when(securityService.getCurrentUser()).thenReturn("alice");
-            when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
-            when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(userRepository.findByUsername("alice")).thenReturn(Optional.of(userWith("alice", new HashMap<>())));
+            when(siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse("finance")).thenReturn(Optional.of(site));
+            when(siteMembershipRequestRepository.findBySiteIdAndUsername(site.getId(), "alice")).thenReturn(Optional.of(existing));
 
             service.withdraw("finance");
 
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> remaining = (List<Map<String, Object>>) user.getPreferences().get("siteMembershipRequests");
-            assertEquals(1, remaining.size());
-            assertEquals("hr", remaining.get(0).get("siteId"));
+            assertEquals(RequestStatus.WITHDRAWN, existing.getStatus());
+            verify(siteMembershipRequestRepository).save(existing);
             verify(activityEventListener).postMembershipActivity(
                 eq("site.membership.withdrawn"),
                 eq("alice"),
                 eq("finance"),
-                anyMap()
+                any(Map.class)
             );
         }
 
         @Test
         @DisplayName("throws when request not found")
         void throwsNotFound() {
-            User user = userWith("alice", new HashMap<>());
+            Site site = site("finance");
             when(securityService.getCurrentUser()).thenReturn("alice");
-            when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
+            when(siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse("finance")).thenReturn(Optional.of(site));
+            when(siteMembershipRequestRepository.findBySiteIdAndUsername(site.getId(), "alice")).thenReturn(Optional.empty());
+            when(userRepository.findByUsername("alice")).thenReturn(Optional.of(userWith("alice", new HashMap<>())));
 
             assertThrows(NoSuchElementException.class,
-                () -> service.withdraw("nonexistent"));
+                () -> service.withdraw("finance"));
         }
     }
 
     @Nested
-    @DisplayName("getRequestsForSite")
-    class QueryBySite {
+    @DisplayName("queries")
+    class Querying {
 
         @Test
-        @DisplayName("returns requests matching siteId across users")
-        void filtersAndAggregates() {
-            User alice = userWith("alice", new HashMap<>(Map.of(
-                "siteMembershipRequests", List.of(Map.of("siteId", "finance", "status", "PENDING"))
-            )));
-            User bob = userWith("bob", new HashMap<>(Map.of(
-                "siteMembershipRequests", List.of(
-                    Map.of("siteId", "finance", "status", "APPROVED"),
-                    Map.of("siteId", "hr", "status", "PENDING")
-                )
-            )));
-            when(userRepository.findAll()).thenReturn(List.of(alice, bob));
+        @DisplayName("returns persistent requests for a site")
+        void returnsRequestsForSite() {
+            Site site = site("finance");
+            when(siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse("finance")).thenReturn(Optional.of(site));
+            when(securityService.getCurrentUser()).thenReturn("admin");
+            when(securityService.hasRole("ROLE_ADMIN", "admin")).thenReturn(true);
+            when(siteMembershipRequestRepository.findBySiteIdOrderByRequestedAtDesc(site.getId())).thenReturn(List.of(
+                request(site, "alice", RequestStatus.PENDING, "CONTRIBUTOR"),
+                request(site, "bob", RequestStatus.APPROVED, "CONSUMER")
+            ));
 
             var result = service.getRequestsForSite("finance");
 
@@ -234,13 +272,13 @@ class SiteMembershipServiceTest {
         @Test
         @DisplayName("getRequestsForUser filters requests outside current tenant workspace")
         void getRequestsForUserFiltersForeignTenantRequests() {
-            User alice = userWith("alice", new HashMap<>(Map.of(
-                "siteMembershipRequests", List.of(
-                    Map.of("siteId", "finance", "status", "PENDING"),
-                    Map.of("siteId", "hr", "status", "PENDING")
-                )
-            )));
-            when(userRepository.findByUsername("alice")).thenReturn(Optional.of(alice));
+            Site finance = site("finance");
+            Site hr = site("hr");
+            when(userRepository.findByUsername("alice")).thenReturn(Optional.of(userWith("alice", new HashMap<>())));
+            when(siteMembershipRequestRepository.findByUsernameOrderByRequestedAtDesc("alice")).thenReturn(List.of(
+                request(finance, "alice", RequestStatus.PENDING, "CONTRIBUTOR"),
+                request(hr, "alice", RequestStatus.PENDING, "CONSUMER")
+            ));
             when(tenantWorkspaceScopeService.resolveCurrentTenantRootPath()).thenReturn("/Tenant Workspace");
             when(tenantWorkspaceScopeService.isSiteVisible("finance", "/Tenant Workspace")).thenReturn(true);
             when(tenantWorkspaceScopeService.isSiteVisible("hr", "/Tenant Workspace")).thenReturn(false);
@@ -249,6 +287,22 @@ class SiteMembershipServiceTest {
 
             assertEquals(1, result.size());
             assertEquals("finance", result.get(0).siteId());
+        }
+
+        @Test
+        @DisplayName("legacy reader still surfaces preference-backed requests during compatibility window")
+        void legacyReaderStillWorks() {
+            User alice = userWith("alice", new HashMap<>(Map.of(
+                "siteMembershipRequests", List.of(Map.of("siteId", "finance", "status", "PENDING", "role", "CONSUMER"))
+            )));
+            when(userRepository.findByUsername("alice")).thenReturn(Optional.of(alice));
+            when(siteMembershipRequestRepository.findByUsernameOrderByRequestedAtDesc("alice")).thenReturn(List.of());
+
+            var result = service.getRequestsForUser("alice");
+
+            assertEquals(1, result.size());
+            assertEquals("finance", result.get(0).siteId());
+            assertEquals("PENDING", result.get(0).status());
         }
     }
 
@@ -267,5 +321,18 @@ class SiteMembershipServiceTest {
         site.setVisibility(Site.SiteVisibility.PUBLIC);
         site.setStatus(Site.SiteStatus.ACTIVE);
         return site;
+    }
+
+    private SiteMembershipRequest request(Site site, String username, RequestStatus status, String role) {
+        SiteMembershipRequest request = new SiteMembershipRequest();
+        request.setId(UUID.randomUUID());
+        request.setSite(site);
+        request.setUsername(username);
+        request.setSiteTitle(site.getTitle());
+        request.setRequestedRole(role);
+        request.setMessage("Need access");
+        request.setStatus(status);
+        request.setRequestedAt(LocalDateTime.of(2026, 4, 1, 10, 0));
+        return request;
     }
 }

@@ -5,6 +5,7 @@ import com.ecm.core.entity.SiteMember;
 import com.ecm.core.entity.SiteMember.SiteMemberRole;
 import com.ecm.core.entity.User;
 import com.ecm.core.repository.SiteMemberRepository;
+import com.ecm.core.repository.SiteMembershipRequestRepository;
 import com.ecm.core.repository.SiteRepository;
 import com.ecm.core.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,6 +31,7 @@ class SiteMemberRosterTest {
     @Mock private UserRepository userRepository;
     @Mock private SiteRepository siteRepository;
     @Mock private SiteMemberRepository siteMemberRepository;
+    @Mock private SiteMembershipRequestRepository siteMembershipRequestRepository;
     @Mock private SecurityService securityService;
     @Mock private ActivityEventListener activityEventListener;
     @Mock private TenantWorkspaceScopeService tenantWorkspaceScopeService;
@@ -42,6 +44,7 @@ class SiteMemberRosterTest {
             userRepository,
             siteRepository,
             siteMemberRepository,
+            siteMembershipRequestRepository,
             securityService,
             activityEventListener,
             tenantWorkspaceScopeService
@@ -75,14 +78,16 @@ class SiteMemberRosterTest {
     class AddMember {
 
         @Test
-        @DisplayName("adds member with specified role")
+        @DisplayName("site manager can add member with specified role")
         void addsMember() {
             Site site = site("finance");
             User user = new User();
             user.setUsername("charlie");
+            SiteMember manager = member(site, "manager", SiteMemberRole.MANAGER);
 
-            when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
-            when(securityService.getCurrentUser()).thenReturn("admin");
+            when(securityService.hasRole("ROLE_ADMIN", "manager")).thenReturn(false);
+            when(securityService.getCurrentUser()).thenReturn("manager");
+            when(siteMemberRepository.findByUsername("manager")).thenReturn(List.of(manager));
             when(siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse("finance")).thenReturn(Optional.of(site));
             when(siteMemberRepository.findBySiteIdAndUsername(site.getId(), "charlie")).thenReturn(Optional.empty());
             when(userRepository.findByUsername("charlie")).thenReturn(Optional.of(user));
@@ -99,7 +104,7 @@ class SiteMemberRosterTest {
             assertEquals("finance", result.siteId());
             verify(activityEventListener).postSiteMemberActivity(
                 eq("site.member.added"),
-                eq("admin"),
+                eq("manager"),
                 eq("finance"),
                 eq("charlie"),
                 eq("CONTRIBUTOR")
@@ -110,7 +115,10 @@ class SiteMemberRosterTest {
         @DisplayName("rejects duplicate member")
         void rejectsDuplicate() {
             Site site = site("finance");
-            when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+            SiteMember manager = member(site, "manager", SiteMemberRole.MANAGER);
+            when(securityService.getCurrentUser()).thenReturn("manager");
+            when(securityService.hasRole("ROLE_ADMIN", "manager")).thenReturn(false);
+            when(siteMemberRepository.findByUsername("manager")).thenReturn(List.of(manager));
             when(siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse("finance")).thenReturn(Optional.of(site));
             when(siteMemberRepository.findBySiteIdAndUsername(site.getId(), "alice")).thenReturn(Optional.of(new SiteMember()));
 
@@ -119,11 +127,15 @@ class SiteMemberRosterTest {
         }
 
         @Test
-        @DisplayName("non-admin cannot add members")
-        void nonAdminRejected() {
-            when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
+        @DisplayName("non-manager cannot add members")
+        void nonManagerRejected() {
+            Site site = site("finance");
+            when(securityService.getCurrentUser()).thenReturn("alice");
+            when(securityService.hasRole("ROLE_ADMIN", "alice")).thenReturn(false);
+            when(siteMemberRepository.findByUsername("alice")).thenReturn(List.of());
+            when(siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse("finance")).thenReturn(Optional.of(site));
 
-            assertThrows(SecurityException.class,
+            assertThrows(com.ecm.core.exception.AccessDeniedException.class,
                 () -> service.addMember("finance", "alice", SiteMemberRole.CONSUMER));
         }
     }
@@ -137,9 +149,11 @@ class SiteMemberRosterTest {
         void updatesRole() {
             Site site = site("finance");
             SiteMember existing = member(site, "alice", SiteMemberRole.CONSUMER);
+            SiteMember manager = member(site, "manager", SiteMemberRole.MANAGER);
 
-            when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
-            when(securityService.getCurrentUser()).thenReturn("admin");
+            when(securityService.hasRole("ROLE_ADMIN", "manager")).thenReturn(false);
+            when(securityService.getCurrentUser()).thenReturn("manager");
+            when(siteMemberRepository.findByUsername("manager")).thenReturn(List.of(manager));
             when(siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse("finance")).thenReturn(Optional.of(site));
             when(siteMemberRepository.findBySiteIdAndUsername(site.getId(), "alice")).thenReturn(Optional.of(existing));
             when(siteMemberRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -149,7 +163,7 @@ class SiteMemberRosterTest {
             assertEquals("COLLABORATOR", result.role());
             verify(activityEventListener).postSiteMemberActivity(
                 eq("site.member.role_changed"),
-                eq("admin"),
+                eq("manager"),
                 eq("finance"),
                 eq("alice"),
                 eq("COLLABORATOR")
@@ -160,7 +174,10 @@ class SiteMemberRosterTest {
         @DisplayName("throws when member not found")
         void throwsNotFound() {
             Site site = site("finance");
-            when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+            SiteMember manager = member(site, "manager", SiteMemberRole.MANAGER);
+            when(securityService.getCurrentUser()).thenReturn("manager");
+            when(securityService.hasRole("ROLE_ADMIN", "manager")).thenReturn(false);
+            when(siteMemberRepository.findByUsername("manager")).thenReturn(List.of(manager));
             when(siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse("finance")).thenReturn(Optional.of(site));
             when(siteMemberRepository.findBySiteIdAndUsername(site.getId(), "nobody")).thenReturn(Optional.empty());
 
@@ -177,8 +194,10 @@ class SiteMemberRosterTest {
         @DisplayName("removes member by username")
         void removesMember() {
             Site site = site("finance");
-            when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
-            when(securityService.getCurrentUser()).thenReturn("admin");
+            SiteMember manager = member(site, "manager", SiteMemberRole.MANAGER);
+            when(securityService.hasRole("ROLE_ADMIN", "manager")).thenReturn(false);
+            when(securityService.getCurrentUser()).thenReturn("manager");
+            when(siteMemberRepository.findByUsername("manager")).thenReturn(List.of(manager));
             when(siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse("finance")).thenReturn(Optional.of(site));
 
             service.removeMember("finance", "alice");
@@ -186,7 +205,7 @@ class SiteMemberRosterTest {
             verify(siteMemberRepository).deleteBySiteIdAndUsername(site.getId(), "alice");
             verify(activityEventListener).postSiteMemberActivity(
                 eq("site.member.removed"),
-                eq("admin"),
+                eq("manager"),
                 eq("finance"),
                 eq("alice"),
                 eq("REMOVED")

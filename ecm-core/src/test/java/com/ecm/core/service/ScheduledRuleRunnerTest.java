@@ -20,8 +20,10 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -52,9 +54,9 @@ class ScheduledRuleRunnerTest {
     @BeforeEach
     void setUp() {
         ReflectionTestUtils.setField(scheduledRuleRunner, "manualBackfillMinutes", 5L);
-        when(securityService.getCurrentUser()).thenReturn("admin");
-        when(ruleRepository.updateScheduledRunTimes(any(), any(), any())).thenReturn(1);
-        when(documentRepository.findModifiedSince(any(), any(Pageable.class))).thenReturn(Page.empty());
+        lenient().when(securityService.getCurrentUser()).thenReturn("admin");
+        lenient().when(ruleRepository.updateScheduledRunTimes(any(), any(), any())).thenReturn(1);
+        lenient().when(documentRepository.findModifiedSince(any(), any(Pageable.class))).thenReturn(Page.empty());
     }
 
     @Test
@@ -113,11 +115,29 @@ class ScheduledRuleRunnerTest {
         assertTrue(usedSince.isAfter(now.minusHours(1)), "Fallback window should remain bounded");
     }
 
+    @Test
+    void validateCronExpression_rejectsSubMinimumIntervalSchedules() {
+        IllegalArgumentException error = assertThrows(
+            IllegalArgumentException.class,
+            () -> scheduledRuleRunner.validateCronExpression("0 * * * * *", "UTC")
+        );
+
+        assertTrue(error.getMessage().contains("at least 5 minutes apart"));
+    }
+
+    @Test
+    void validateCronExpression_returnsFutureExecutionsForValidSchedule() {
+        java.util.List<LocalDateTime> preview = scheduledRuleRunner.validateCronExpression("0 */15 * * * *", "UTC");
+
+        assertEquals(5, preview.size());
+        assertTrue(preview.get(1).isAfter(preview.get(0)));
+    }
+
     private AutomationRule buildScheduledRule(LocalDateTime lastRunAt, Integer manualBackfillMinutes) {
         AutomationRule rule = AutomationRule.builder()
             .name("scheduled-rule-test")
             .triggerType(AutomationRule.TriggerType.SCHEDULED)
-            .cronExpression("0 * * * * *")
+            .cronExpression("0 */15 * * * *")
             .enabled(true)
             .lastRunAt(lastRunAt)
             .manualBackfillMinutes(manualBackfillMinutes)

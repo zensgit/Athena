@@ -8,12 +8,14 @@ import com.ecm.core.entity.ReplicationDefinition;
 import com.ecm.core.entity.TransferNodeMapping;
 import com.ecm.core.entity.TransferReceiverRegistration;
 import com.ecm.core.entity.TransferTarget;
+import com.ecm.core.exception.IllegalOperationException;
 import com.ecm.core.pipeline.PipelineResult;
 import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.repository.TransferReceiverRegistrationRepository;
 import com.ecm.core.service.DocumentUploadService;
 import com.ecm.core.service.FolderService;
 import com.ecm.core.service.NodeService;
+import com.ecm.core.service.RecordsManagementService;
 import com.ecm.core.service.TransferNodeMappingService;
 import com.ecm.core.service.VersionService;
 import org.junit.jupiter.api.AfterEach;
@@ -41,6 +43,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -65,6 +68,9 @@ class TransferReceiverServiceTest {
 
     @Mock
     private VersionService versionService;
+
+    @Mock
+    private RecordsManagementService recordsManagementService;
 
     @Mock
     private TransferNodeMappingService transferNodeMappingService;
@@ -386,6 +392,72 @@ class TransferReceiverServiceTest {
     }
 
     @Test
+    @DisplayName("createFolder rejects file plan parent")
+    void createFolderRejectsFilePlanParent() {
+        UUID rootId = UUID.randomUUID();
+        Folder root = folder(rootId, "Corporate File Plan", "/Corporate File Plan");
+        root.setFolderType(Folder.FolderType.FILE_PLAN);
+        TransferReceiverRegistration receiver = receiver(rootId);
+
+        when(receiverRepository.findAll()).thenReturn(List.of(receiver));
+        when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(rootId, Node.ArchiveStatus.LIVE)).thenReturn(Optional.of(root));
+        doThrow(new com.ecm.core.exception.IllegalOperationException(
+            "Cannot replicate folder into target folder because target folder 'Corporate File Plan' is a file plan"
+        )).when(recordsManagementService).assertCreateInFolderAllowed(root, "replicate folder into target folder");
+
+        TransferReceiverService service = service();
+
+        assertThrows(IllegalOperationException.class, () -> service.createFolder(
+            new TransferReceiverService.CreateFolderRequest(
+                rootId,
+                "Contracts",
+                "Synced",
+                ReplicationDefinition.ConflictPolicy.RENAME,
+                null,
+                null,
+                null,
+                null
+            ),
+            null,
+            "shared-secret"
+        ));
+        verify(folderService, never()).createFolder(any());
+    }
+
+    @Test
+    @DisplayName("uploadDocument rejects overwrite when existing document is RM governed")
+    void uploadDocumentRejectsOverwriteWhenExistingDocumentIsRmGoverned() throws IOException {
+        UUID rootId = UUID.randomUUID();
+        Folder root = folder(rootId, "Outbound", "/Company Home/Outbound");
+        TransferReceiverRegistration receiver = receiver(rootId);
+        Document existing = document(UUID.randomUUID(), "contract.pdf", "/Corporate File Plan/contract.pdf");
+
+        when(receiverRepository.findAll()).thenReturn(List.of(receiver));
+        when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(rootId, Node.ArchiveStatus.LIVE)).thenReturn(Optional.of(root));
+        when(nodeRepository.findByParentIdAndName(rootId, "contract.pdf")).thenReturn(Optional.of(existing));
+        doThrow(new com.ecm.core.exception.IllegalOperationException(
+            "Cannot overwrite existing document via transfer receiver because node 'contract.pdf' is governed by file plan 'Corporate File Plan'"
+        )).when(recordsManagementService).assertArchiveMutationAllowed(existing, "overwrite existing document via transfer receiver");
+
+        TransferReceiverService service = service();
+
+        assertThrows(IllegalOperationException.class, () -> service.uploadDocument(
+            new org.springframework.mock.web.MockMultipartFile("file", "contract.pdf", "application/pdf", "pdf".getBytes()),
+            rootId,
+            "Signed",
+            ReplicationDefinition.ConflictPolicy.OVERWRITE,
+            null,
+            null,
+            null,
+            null,
+            null,
+            "shared-secret"
+        ));
+        verify(versionService, never()).createVersion(any(), any(MultipartFile.class), anyString(), anyBoolean());
+        verify(documentUploadService, never()).uploadDocument(any(), any(), any());
+    }
+
+    @Test
     @DisplayName("verifyFolder rejects credentials outside authorized root")
     void verifyFolderRejectsFolderOutsideAuthorizedRoot() {
         UUID rootId = UUID.randomUUID();
@@ -413,6 +485,7 @@ class TransferReceiverServiceTest {
             documentUploadService,
             nodeService,
             versionService,
+            recordsManagementService,
             new RepositoryIdentityProvider("athena", "athena"),
             transferNodeMappingService
         );

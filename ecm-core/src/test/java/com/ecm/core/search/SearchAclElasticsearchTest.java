@@ -5,6 +5,7 @@ import com.ecm.core.entity.Node.NodeType;
 import com.ecm.core.entity.Permission.PermissionType;
 import com.ecm.core.repository.DocumentRepository;
 import com.ecm.core.repository.NodeRepository;
+import com.ecm.core.service.NodePropertyEncryptionService;
 import com.ecm.core.service.SecurityService;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
@@ -69,6 +70,9 @@ class SearchAclElasticsearchTest {
 
     @MockBean
     private SecurityService securityService;
+
+    @MockBean
+    private NodePropertyEncryptionService nodePropertyEncryptionService;
 
     @BeforeEach
     void setupIndex() {

@@ -11,6 +11,7 @@ import com.ecm.core.repository.TransferReceiverRegistrationRepository;
 import com.ecm.core.service.DocumentUploadService;
 import com.ecm.core.service.FolderService;
 import com.ecm.core.service.NodeService;
+import com.ecm.core.service.RecordsManagementService;
 import com.ecm.core.service.TransferNodeMappingService;
 import com.ecm.core.service.VersionService;
 import lombok.RequiredArgsConstructor;
@@ -44,6 +45,7 @@ public class TransferReceiverService {
     private final DocumentUploadService documentUploadService;
     private final NodeService nodeService;
     private final VersionService versionService;
+    private final RecordsManagementService recordsManagementService;
     private final RepositoryIdentityProvider repositoryIdentityProvider;
     private final TransferNodeMappingService transferNodeMappingService;
 
@@ -68,6 +70,7 @@ public class TransferReceiverService {
             request.sourceRepositoryId(),
             request.sourceParentNodeId()
         );
+        assertCreateAllowedInFolder(parent, "replicate folder into target folder");
 
         MappingIdentity mappingIdentity = mappingIdentity(request.sourceRepositoryId(), request.sourceNodeId());
         if (mappingIdentity != null) {
@@ -84,6 +87,7 @@ public class TransferReceiverService {
                     );
                 }
 
+                assertOverwriteAllowed(existingFolder, "replicate mapped folder update via transfer receiver");
                 SecurityContext previous = pushTransferAuthentication();
                 try {
                     Folder effectiveFolder = existingFolder;
@@ -127,9 +131,15 @@ public class TransferReceiverService {
                 "Skipped existing receiver folder"
             );
         }
+        if (resolution.disposition() == ConflictDisposition.OVERWRITTEN && resolution.existingNode() != null) {
+            assertOverwriteAllowed(resolution.existingNode(), "overwrite existing node via transfer receiver");
+        }
 
         SecurityContext previous = pushTransferAuthentication();
         try {
+            if (resolution.disposition() == ConflictDisposition.OVERWRITTEN && resolution.existingNode() != null) {
+                deleteExistingConflict(resolution.existingNode());
+            }
             Folder created = folderService.createFolder(new FolderService.CreateFolderRequest(
                 resolution.resolvedName(),
                 normalizeOptional(request.description()),
@@ -201,6 +211,7 @@ public class TransferReceiverService {
         UUID receiverRootId = authorized.receiver().getRootFolderId();
         Folder parent = resolveEffectiveParentFolder(authorized, sourceRepositoryId, sourceParentNodeId);
         String filename = normalizeRequired(file.getOriginalFilename(), "File name is required");
+        assertCreateAllowedInFolder(parent, "replicate document into target folder");
 
         MappingIdentity mappingIdentity = mappingIdentity(sourceRepositoryId, sourceNodeId);
         if (mappingIdentity != null) {
@@ -219,6 +230,7 @@ public class TransferReceiverService {
 
                 MultipartFile effectiveFile = file;
                 String normalizedDescription = normalizeOptional(description);
+                assertOverwriteAllowed(existingDocument, "replicate mapped document update via transfer receiver");
                 SecurityContext previous = pushTransferAuthentication();
                 try {
                     if (!Objects.equals(parent.getId(), parentIdOf(existingDocument))) {
@@ -280,6 +292,13 @@ public class TransferReceiverService {
         if (normalizedDescription != null) {
             properties = Map.of("description", normalizedDescription);
         }
+        if (resolution.disposition() == ConflictDisposition.OVERWRITTEN && resolution.existingNode() != null) {
+            if (resolution.existingNode() instanceof Folder) {
+                assertOverwriteAllowed(resolution.existingNode(), "overwrite existing node via transfer receiver");
+            } else {
+                assertOverwriteAllowed(resolution.existingNode(), "overwrite existing document via transfer receiver");
+            }
+        }
 
         SecurityContext previous = pushTransferAuthentication();
         try {
@@ -301,6 +320,9 @@ public class TransferReceiverService {
                     resolution.disposition(),
                     "Overwrote receiver document"
                 );
+            }
+            if (resolution.disposition() == ConflictDisposition.OVERWRITTEN && resolution.existingNode() instanceof Folder existingFolder) {
+                deleteExistingConflict(existingFolder);
             }
             PipelineResult result = documentUploadService.uploadDocument(effectiveFile, parent.getId(), properties);
             if (!result.isSuccess() || result.getDocumentId() == null) {
@@ -512,10 +534,7 @@ public class TransferReceiverService {
                 yield new ConflictResolution(requestedName, existing.get(), ConflictDisposition.SKIPPED);
             }
             case RENAME -> new ConflictResolution(generateReplicaName(parentFolderId, requestedName), existing.get(), ConflictDisposition.RENAMED);
-            case OVERWRITE -> {
-                deleteExistingConflict(existing.get());
-                yield new ConflictResolution(requestedName, existing.get(), ConflictDisposition.OVERWRITTEN);
-            }
+            case OVERWRITE -> new ConflictResolution(requestedName, existing.get(), ConflictDisposition.OVERWRITTEN);
         };
     }
 
@@ -536,17 +555,24 @@ public class TransferReceiverService {
                 yield new ConflictResolution(requestedName, existing.get(), ConflictDisposition.SKIPPED);
             }
             case RENAME -> new ConflictResolution(generateReplicaName(parentFolderId, requestedName), existing.get(), ConflictDisposition.RENAMED);
-            case OVERWRITE -> {
-                if (existing.get() instanceof Folder) {
-                    deleteExistingConflict(existing.get());
-                }
-                yield new ConflictResolution(requestedName, existing.get(), ConflictDisposition.OVERWRITTEN);
-            }
+            case OVERWRITE -> new ConflictResolution(requestedName, existing.get(), ConflictDisposition.OVERWRITTEN);
         };
     }
 
     private void deleteExistingConflict(Node existing) {
         nodeService.deleteNode(existing.getId(), false);
+    }
+
+    private void assertCreateAllowedInFolder(Folder folder, String operation) {
+        if (folder != null && recordsManagementService != null) {
+            recordsManagementService.assertCreateInFolderAllowed(folder, operation);
+        }
+    }
+
+    private void assertOverwriteAllowed(Node node, String operation) {
+        if (node != null && recordsManagementService != null) {
+            recordsManagementService.assertArchiveMutationAllowed(node, operation);
+        }
     }
 
     private String generateReplicaName(UUID parentFolderId, String requestedName) {

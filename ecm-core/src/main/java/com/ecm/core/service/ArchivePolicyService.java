@@ -3,12 +3,15 @@ package com.ecm.core.service;
 import com.ecm.core.entity.ArchivePolicy;
 import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Node;
+import com.ecm.core.exception.IllegalOperationException;
 import com.ecm.core.exception.ResourceNotFoundException;
 import com.ecm.core.repository.ArchivePolicyRepository;
 import com.ecm.core.repository.FolderRepository;
 import com.ecm.core.repository.NodeRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,6 +37,11 @@ public class ArchivePolicyService {
     private final SecurityService securityService;
     private final ContentArchiveService contentArchiveService;
     private final TenantWorkspaceScopeService tenantWorkspaceScopeService;
+    private final RecordsManagementService recordsManagementService;
+
+    @Autowired
+    @Lazy
+    private com.ecm.core.repository.DispositionScheduleRepository dispositionScheduleRepository;
 
     @Transactional(readOnly = true)
     public Optional<ArchivePolicyDto> getPolicy(UUID folderId) {
@@ -59,7 +67,9 @@ public class ArchivePolicyService {
     public ArchivePolicyDto upsertPolicy(UUID folderId, ArchivePolicyUpsertRequest request) {
         requireAdmin();
         Folder folder = loadLiveFolder(folderId);
+        assertArchivePolicyFolderAllowed(folder);
         validateRequest(request);
+        assertNoActiveDispositionSchedule(folderId, request.enabled());
 
         ArchivePolicy policy = archivePolicyRepository.findByFolderId(folderId)
             .filter(existing -> !existing.isDeleted())
@@ -87,6 +97,7 @@ public class ArchivePolicyService {
     public ArchivePolicyDryRunDto dryRunPolicy(UUID folderId, ArchivePolicyUpsertRequest request) {
         requireAdmin();
         Folder folder = loadLiveFolder(folderId);
+        assertArchivePolicyFolderAllowed(folder);
         PolicySnapshot snapshot = resolveSnapshot(folder, request, true);
         ArchivePolicyDryRunDto result = buildDryRun(snapshot);
 
@@ -105,6 +116,7 @@ public class ArchivePolicyService {
     public ArchivePolicyExecutionDto executePolicy(UUID folderId) {
         requireAdmin();
         Folder folder = loadLiveFolder(folderId);
+        assertArchivePolicyFolderAllowed(folder);
         ArchivePolicy policy = archivePolicyRepository.findByFolderId(folderId)
             .filter(existing -> !existing.isDeleted())
             .orElseThrow(() -> new NoSuchElementException("Archive policy not found for folder: " + folderId));
@@ -123,6 +135,7 @@ public class ArchivePolicyService {
                 continue;
             }
             try {
+                assertArchivePolicyFolderAllowed(folder);
                 results.add(executePolicy(policy, folder, SYSTEM_ACTOR));
             } catch (Exception ex) {
                 log.warn("Archive policy run failed for folder {}: {}", folder.getId(), ex.getMessage());
@@ -208,6 +221,8 @@ public class ArchivePolicyService {
         List<Node> eligible = rawCandidates.stream()
             .filter(node -> !node.isDeleted())
             .filter(node -> node.getArchiveStatus() == Node.ArchiveStatus.LIVE)
+            .filter(node -> !recordsManagementService.isDeclaredRecord(node))
+            .filter(node -> !recordsManagementService.isGovernedByFilePlan(node))
             .filter(node -> isOlderThanCutoff(node, snapshot.cutoffDate()))
             .sorted(Comparator
                 .comparingInt((Node node) -> depth(node.getPath()))
@@ -322,6 +337,27 @@ public class ArchivePolicyService {
         if (!securityService.hasRole("ROLE_ADMIN")) {
             throw new SecurityException("Admin access required for archive policy operations");
         }
+    }
+
+    private void assertArchivePolicyFolderAllowed(Folder folder) {
+        if (recordsManagementService.isFilePlanFolder(folder)) {
+            throw new IllegalOperationException(
+                "Archive policy cannot be attached to file plan folder: " + folder.getName()
+            );
+        }
+    }
+
+    private void assertNoActiveDispositionSchedule(UUID folderId, boolean enabled) {
+        if (!enabled || dispositionScheduleRepository == null) {
+            return;
+        }
+        dispositionScheduleRepository.findByFolderId(folderId)
+            .filter(schedule -> !schedule.isDeleted() && schedule.isEnabled())
+            .ifPresent(schedule -> {
+                throw new IllegalOperationException(
+                    "Archive policy cannot be enabled while disposition schedule is enabled for folder: " + folderId
+                );
+            });
     }
 
     private ArchivePolicyDto toDto(ArchivePolicy policy) {

@@ -66,7 +66,7 @@ class FolderServiceLockSemanticsTest {
         when(securityService.hasPermission(folder, com.ecm.core.entity.Permission.PermissionType.READ)).thenReturn(true);
         when(securityService.hasPermission(folder, com.ecm.core.entity.Permission.PermissionType.WRITE)).thenReturn(true);
 
-        folderService.updateFolder(folderId, new FolderService.UpdateFolderRequest("workspace-2", null, null, null, null, null, null));
+        folderService.updateFolder(folderId, new FolderService.UpdateFolderRequest("workspace-2", null, null, null, null, null, null, null, null));
 
         assertFalse(folder.isLocked());
         assertNull(folder.getLockedBy());

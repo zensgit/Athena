@@ -1,7 +1,7 @@
 package com.ecm.core.service;
 
 import com.ecm.core.entity.Node;
-import com.ecm.core.event.NodeUpdatedEvent;
+import com.ecm.core.event.RepositoryLifecyclePublisher;
 import com.ecm.core.repository.NodeRepository;
 import lombok.Builder;
 import lombok.Data;
@@ -102,7 +102,12 @@ public class BulkMetadataService {
         if (changed && request.correspondentId() == null && !request.clearCorrespondent()) {
             Node node = nodeRepository.findById(nodeId)
                 .orElseThrow(() -> new IllegalArgumentException("Node not found: " + nodeId));
-            eventPublisher.publishEvent(new NodeUpdatedEvent(node, securityService.getCurrentUser()));
+            RepositoryLifecyclePublisher.publishNodeUpdated(
+                eventPublisher,
+                node,
+                securityService.getCurrentUser(),
+                null
+            );
         }
     }
 
