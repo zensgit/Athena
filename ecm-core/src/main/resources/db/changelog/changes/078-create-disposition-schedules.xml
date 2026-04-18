@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="078-create-disposition-schedules" author="kernel-hardening">
+        <comment>P3 PR-15: Disposition schedules and execution history</comment>
+
+        <createTable tableName="disposition_schedules">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="folder_id" type="${uuid_type}">
+                <constraints nullable="false" foreignKeyName="fk_disposition_schedule_folder" references="folders(id)" unique="true"/>
+            </column>
+            <column name="enabled" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="include_subfolders" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="cutoff_after_days" type="integer" defaultValueNumeric="90">
+                <constraints nullable="false"/>
+            </column>
+            <column name="archive_after_cutoff_days" type="integer"/>
+            <column name="destroy_after_archive_days" type="integer"/>
+            <column name="archive_storage_tier" type="varchar(20)" defaultValue="COLD">
+                <constraints nullable="false"/>
+            </column>
+            <column name="max_candidates_per_action" type="integer" defaultValueNumeric="100">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_dry_run_at" type="timestamp"/>
+            <column name="last_executed_at" type="timestamp"/>
+            <column name="last_error" type="varchar(1000)"/>
+            <column name="created_date" type="timestamp" defaultValueComputed="${now}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_date" type="timestamp"/>
+            <column name="created_by" type="varchar(255)" defaultValue="system">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_by" type="varchar(255)"/>
+            <column name="version" type="bigint"/>
+            <column name="is_deleted" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="deleted_at" type="timestamp"/>
+            <column name="deleted_by" type="varchar(255)"/>
+        </createTable>
+
+        <createIndex tableName="disposition_schedules" indexName="idx_disposition_schedule_enabled">
+            <column name="enabled"/>
+        </createIndex>
+
+        <createTable tableName="disposition_action_executions">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="schedule_id" type="${uuid_type}">
+                <constraints nullable="false" foreignKeyName="fk_disposition_execution_schedule" references="disposition_schedules(id)"/>
+            </column>
+            <column name="action_type" type="varchar(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="status" type="varchar(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="node_id" type="${uuid_type}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="node_name" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="node_type" type="varchar(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="node_path" type="varchar(2000)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="affected_node_count" type="integer" defaultValueNumeric="1">
+                <constraints nullable="false"/>
+            </column>
+            <column name="details" type="varchar(2000)"/>
+            <column name="actor" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="executed_at" type="timestamp" defaultValueComputed="${now}">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <createIndex tableName="disposition_action_executions" indexName="idx_disposition_exec_schedule_time">
+            <column name="schedule_id"/>
+            <column name="executed_at"/>
+        </createIndex>
+
+        <createIndex tableName="disposition_action_executions" indexName="idx_disposition_exec_schedule_action_status">
+            <column name="schedule_id"/>
+            <column name="action_type"/>
+            <column name="status"/>
+        </createIndex>
+
+        <rollback>
+            <dropTable tableName="disposition_action_executions"/>
+            <dropTable tableName="disposition_schedules"/>
+        </rollback>
+    </changeSet>
+</databaseChangeLog>

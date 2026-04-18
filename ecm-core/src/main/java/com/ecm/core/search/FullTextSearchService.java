@@ -13,6 +13,7 @@ import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery;
 import co.elastic.clients.json.JsonData;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -56,13 +57,14 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
+@RequiredArgsConstructor(onConstructor_ = @Autowired)
 public class FullTextSearchService {
 
     private final ElasticsearchOperations elasticsearchOperations;
     private final DocumentRepository documentRepository;
     private final NodeRepository nodeRepository;
     private final SecurityService securityService;
+    private final com.ecm.core.service.NodePropertyEncryptionService nodePropertyEncryptionService;
 
     private static final List<String> SEARCH_FIELDS = List.of(
         "name^2",
@@ -92,6 +94,15 @@ public class FullTextSearchService {
 
     private final AtomicBoolean rebuildInProgress = new AtomicBoolean(false);
     private final AtomicInteger rebuildProgress = new AtomicInteger(0);
+
+    FullTextSearchService(
+        ElasticsearchOperations elasticsearchOperations,
+        DocumentRepository documentRepository,
+        NodeRepository nodeRepository,
+        SecurityService securityService
+    ) {
+        this(elasticsearchOperations, documentRepository, nodeRepository, securityService, null);
+    }
 
     /**
      * Search documents with full-text matching.
@@ -236,6 +247,9 @@ public class FullTextSearchService {
                 for (Document doc : documents) {
                     try {
                         NodeDocument nodeDoc = NodeDocument.fromNode(doc);
+                        nodeDoc.setProperties(nodePropertyEncryptionService != null
+                            ? nodePropertyEncryptionService.resolveIndexableProperties(doc)
+                            : doc.getProperties());
                         nodeDoc.setPermissions(securityService.resolveReadAuthorities(doc));
                         elasticsearchOperations.save(nodeDoc, IndexCoordinates.of(INDEX_NAME));
                         totalIndexed++;
@@ -458,6 +472,12 @@ public class FullTextSearchService {
                 if (filters.getCheckoutUser() != null && !filters.getCheckoutUser().isBlank()) {
                     addAnyOfTermsFilter(b, List.of("checkoutUser", "checkoutUser.keyword"), List.of(filters.getCheckoutUser()));
                 }
+                SearchRecordProjectionHelper.applyRecordOnlyFilter(b, filters.getRecordOnly());
+                addAnyOfTermsFilter(
+                    b,
+                    List.of("properties.rm:recordCategoryPath", "properties.rm:recordCategoryPath.keyword"),
+                    filters.getRecordCategoryPaths()
+                );
 
                 if (filters.getCreatedByList() != null && !filters.getCreatedByList().isEmpty()) {
                     addAnyOfTermsFilter(b, List.of("createdBy", "createdBy.keyword"), filters.getCreatedByList());
@@ -721,6 +741,7 @@ public class FullTextSearchService {
 
     private SearchResult toSearchResult(SearchHit<NodeDocument> hit) {
         NodeDocument doc = hit.getContent();
+        Map<String, Object> properties = doc.getProperties() != null ? doc.getProperties() : Map.of();
         Map<String, List<String>> highlights = hit.getHighlightFields();
         String effectivePreviewStatus = PreviewStatusFilterHelper.resolveEffectiveStatus(
             doc.getPreviewStatus(),
@@ -747,6 +768,7 @@ public class FullTextSearchService {
             .parentId(doc.getParentId())
             .mimeType(doc.getMimeType())
             .fileSize(doc.getFileSize())
+            .currentVersionLabel(doc.getVersionLabel())
             .createdBy(doc.getCreatedBy())
             .createdDate(doc.getCreatedDate())
             .lastModifiedBy(doc.getLastModifiedBy())
@@ -758,10 +780,22 @@ public class FullTextSearchService {
             .tags(doc.getTags() != null ? List.copyOf(doc.getTags()) : List.of())
             .categories(doc.getCategories() != null ? List.copyOf(doc.getCategories()) : List.of())
             .correspondent(doc.getCorrespondent())
+            .record(SearchRecordProjectionHelper.isRecordProjection(properties))
+            .declaredBy(readString(properties.get("rm:declaredBy")))
+            .declaredAt(readString(properties.get("rm:declaredAt")))
+            .declaredVersionLabel(readString(properties.get("rm:declaredVersionLabel")))
+            .declarationComment(readString(properties.get("rm:declarationComment")))
+            .recordCategoryId(readString(properties.get("rm:recordCategoryId")))
+            .recordCategoryName(readString(properties.get("rm:recordCategoryName")))
+            .recordCategoryPath(readString(properties.get("rm:recordCategoryPath")))
             .previewStatus(effectivePreviewStatus)
             .previewFailureReason(effectivePreviewFailureReason)
             .previewFailureCategory(effectivePreviewFailureCategory)
             .build();
+    }
+
+    private String readString(Object value) {
+        return value != null ? value.toString() : null;
     }
 
     private NodeDocument createNodeDocument(Document doc) {

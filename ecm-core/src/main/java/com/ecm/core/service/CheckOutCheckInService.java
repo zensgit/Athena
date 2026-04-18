@@ -3,7 +3,9 @@ package com.ecm.core.service;
 import com.ecm.core.entity.ContentReference.OwnerType;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Folder;
+import com.ecm.core.entity.Node;
 import com.ecm.core.entity.Permission.PermissionType;
+import com.ecm.core.event.RepositoryLifecyclePublisher;
 import com.ecm.core.repository.DocumentRepository;
 import com.ecm.core.repository.FolderRepository;
 import com.ecm.core.repository.NodeRepository;
@@ -11,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,7 +38,6 @@ import java.util.UUID;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 @Transactional
 public class CheckOutCheckInService {
 
@@ -48,10 +50,63 @@ public class CheckOutCheckInService {
     private final TenantWorkspaceScopeService tenantWorkspaceScopeService;
     private final ContentReferenceService contentReferenceService;
     private final ContentService contentService;
+    private final ApplicationEventPublisher eventPublisher;
+    private final NodePropertyEncryptionService nodePropertyEncryptionService;
 
     @Autowired
     @Lazy
     private VersionService versionService;
+
+    @Autowired
+    @Lazy
+    private RecordsManagementService recordsManagementService;
+
+    @Autowired
+    public CheckOutCheckInService(
+        DocumentRepository documentRepository,
+        FolderRepository folderRepository,
+        NodeRepository nodeRepository,
+        SecurityService securityService,
+        TenantWorkspaceScopeService tenantWorkspaceScopeService,
+        ContentReferenceService contentReferenceService,
+        ContentService contentService,
+        ApplicationEventPublisher eventPublisher,
+        NodePropertyEncryptionService nodePropertyEncryptionService
+    ) {
+        this.documentRepository = documentRepository;
+        this.folderRepository = folderRepository;
+        this.nodeRepository = nodeRepository;
+        this.securityService = securityService;
+        this.tenantWorkspaceScopeService = tenantWorkspaceScopeService;
+        this.contentReferenceService = contentReferenceService;
+        this.contentService = contentService;
+        this.eventPublisher = eventPublisher;
+        this.nodePropertyEncryptionService = nodePropertyEncryptionService;
+    }
+
+    // Test-only delegate
+    public CheckOutCheckInService(
+        DocumentRepository documentRepository,
+        FolderRepository folderRepository,
+        NodeRepository nodeRepository,
+        SecurityService securityService,
+        TenantWorkspaceScopeService tenantWorkspaceScopeService,
+        ContentReferenceService contentReferenceService,
+        ContentService contentService,
+        ApplicationEventPublisher eventPublisher
+    ) {
+        this(
+            documentRepository,
+            folderRepository,
+            nodeRepository,
+            securityService,
+            tenantWorkspaceScopeService,
+            contentReferenceService,
+            contentService,
+            eventPublisher,
+            null
+        );
+    }
 
     // ------------------------------------------------------------------ checkout
 
@@ -68,6 +123,7 @@ public class CheckOutCheckInService {
      */
     public Document checkout(UUID documentId, UUID destinationFolderId) {
         Document original = loadLiveDocument(documentId);
+        assertNoRecordDirectMutation(original, "check out");
 
         if (!securityService.hasPermission(original, PermissionType.WRITE)) {
             throw new SecurityException("No permission to check out document: " + original.getName());
@@ -111,12 +167,11 @@ public class CheckOutCheckInService {
         wc.setCreatedDate(LocalDateTime.now());
         wc.setLastModifiedBy(currentUser);
         wc.setLastModifiedDate(LocalDateTime.now());
-        if (original.getProperties() != null) {
-            wc.setProperties(new java.util.HashMap<>(original.getProperties()));
-        }
+        wc.setProperties(new java.util.HashMap<>(resolveReadableProperties(original)));
         if (original.getMetadata() != null) {
             wc.setMetadata(new java.util.HashMap<>(original.getMetadata()));
         }
+        prepareEncryptedProperties(wc);
 
         Document savedWc = documentRepository.save(wc);
 
@@ -207,6 +262,7 @@ public class CheckOutCheckInService {
         }
 
         applyWorkingCopyState(original, wc);
+        prepareEncryptedProperties(original);
 
         // --- clear checkout state on original ------------------------------
         original.checkin();
@@ -218,6 +274,7 @@ public class CheckOutCheckInService {
         wc.setDeleted(true);
         wc.setLastModifiedBy(currentUser);
         wc.setLastModifiedDate(LocalDateTime.now());
+        prepareEncryptedProperties(wc);
         documentRepository.save(wc);
 
         // Detach binary ownership for working copy
@@ -225,6 +282,12 @@ public class CheckOutCheckInService {
 
         log.info("Checked in working copy {} → original {} (contentChanged={}, metadataChanged={})",
                 workingCopyId, original.getId(), contentChanged, metadataChanged);
+
+        RepositoryLifecyclePublisher.publishNodeCheckedIn(
+            eventPublisher,
+            original,
+            currentUser
+        );
 
         if (keepCheckedOut) {
             return checkout(original.getId());
@@ -263,6 +326,7 @@ public class CheckOutCheckInService {
             wc.setDeleted(true);
             wc.setLastModifiedBy(currentUser);
             wc.setLastModifiedDate(LocalDateTime.now());
+            prepareEncryptedProperties(wc);
             documentRepository.save(wc);
 
             // Detach binary ownership for cancelled working copy
@@ -346,7 +410,10 @@ public class CheckOutCheckInService {
     }
 
     private boolean hasVersionableMetadataChanges(Document original, Document wc) {
-        return !Objects.equals(original.getProperties(), wc.getProperties())
+        return !Objects.equals(
+                resolveReadableProperties(original),
+                resolveReadableProperties(wc)
+            )
             || !Objects.equals(original.getMetadata(), wc.getMetadata())
             || !Objects.equals(original.getDescription(), wc.getDescription())
             || !Objects.equals(original.getEncoding(), wc.getEncoding())
@@ -357,12 +424,23 @@ public class CheckOutCheckInService {
         original.setDescription(wc.getDescription());
         original.setEncoding(wc.getEncoding());
         original.setFileExtension(wc.getFileExtension());
-        original.setProperties(wc.getProperties() != null
-            ? new java.util.HashMap<>(wc.getProperties())
-            : new java.util.HashMap<>());
+        original.setProperties(new java.util.HashMap<>(resolveReadableProperties(wc)));
         original.setMetadata(wc.getMetadata() != null
             ? new java.util.HashMap<>(wc.getMetadata())
             : new java.util.HashMap<>());
+    }
+
+    private Map<String, Object> resolveReadableProperties(Document document) {
+        if (nodePropertyEncryptionService == null) {
+            return document.getProperties() != null ? new java.util.HashMap<>(document.getProperties()) : new java.util.HashMap<>();
+        }
+        return nodePropertyEncryptionService.resolveReadableProperties(document);
+    }
+
+    private void prepareEncryptedProperties(Document document) {
+        if (nodePropertyEncryptionService != null) {
+            nodePropertyEncryptionService.prepareForPersistence(document);
+        }
     }
 
     private void updateWorkingCopyContent(Document wc, MultipartFile file, String currentUser) {
@@ -428,5 +506,11 @@ public class CheckOutCheckInService {
             return null;
         }
         return extension.startsWith(".") ? extension.substring(1) : extension;
+    }
+
+    private void assertNoRecordDirectMutation(Node node, String operation) {
+        if (recordsManagementService != null) {
+            recordsManagementService.assertDirectMutationAllowed(node, operation);
+        }
     }
 }

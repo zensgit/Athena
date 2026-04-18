@@ -16,13 +16,14 @@ import com.ecm.core.entity.LockType;
 import com.ecm.core.entity.RenditionResource;
 import com.ecm.core.service.DocumentRelationService;
 import com.ecm.core.service.LockService;
+import com.ecm.core.service.NodePropertyEncryptionService;
 import com.ecm.core.service.NodeService;
 import com.ecm.core.service.RenditionResourceService;
 import com.ecm.core.service.VersionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -45,7 +46,6 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping({"/api/nodes", "/api/v1/nodes"})
-@RequiredArgsConstructor
 @Tag(name = "Node Management", description = "APIs for managing nodes (files and folders)")
 public class NodeController {
 
@@ -58,6 +58,35 @@ public class NodeController {
     private final VersionService versionService;
     private final RenditionResourceService renditionResourceService;
     private final LockService lockService;
+    private final NodePropertyEncryptionService nodePropertyEncryptionService;
+
+    @Autowired
+    public NodeController(
+        NodeService nodeService,
+        DocumentRelationService relationService,
+        VersionService versionService,
+        RenditionResourceService renditionResourceService,
+        LockService lockService,
+        NodePropertyEncryptionService nodePropertyEncryptionService
+    ) {
+        this.nodeService = nodeService;
+        this.relationService = relationService;
+        this.versionService = versionService;
+        this.renditionResourceService = renditionResourceService;
+        this.lockService = lockService;
+        this.nodePropertyEncryptionService = nodePropertyEncryptionService;
+    }
+
+    // Test-only delegate
+    NodeController(
+        NodeService nodeService,
+        DocumentRelationService relationService,
+        VersionService versionService,
+        RenditionResourceService renditionResourceService,
+        LockService lockService
+    ) {
+        this(nodeService, relationService, versionService, renditionResourceService, lockService, null);
+    }
 
     @GetMapping("/{nodeId}")
     @Operation(summary = "Get node by ID", description = "Retrieve a node by its ID")
@@ -857,7 +886,12 @@ public class NodeController {
     }
 
     private NodeDto toNodeDto(Node node) {
-        NodeDto base = NodeDto.from(node);
+        NodeDto base = NodeDto.from(
+            node,
+            nodePropertyEncryptionService != null
+                ? nodePropertyEncryptionService.resolveReadableProperties(node)
+                : node.getProperties()
+        );
         if (!(node instanceof Document document)) {
             return base;
         }

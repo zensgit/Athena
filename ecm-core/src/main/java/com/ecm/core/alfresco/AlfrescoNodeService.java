@@ -3,9 +3,10 @@ package com.ecm.core.alfresco;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Node;
+import com.ecm.core.service.NodePropertyEncryptionService;
 import com.ecm.core.service.NodeService;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.Serializable;
@@ -18,10 +19,21 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Service("alfrescoNodeService")
-@RequiredArgsConstructor
 public class AlfrescoNodeService {
-    
+
     private final NodeService nodeService;
+    private final NodePropertyEncryptionService nodePropertyEncryptionService;
+
+    @Autowired
+    public AlfrescoNodeService(NodeService nodeService, NodePropertyEncryptionService nodePropertyEncryptionService) {
+        this.nodeService = nodeService;
+        this.nodePropertyEncryptionService = nodePropertyEncryptionService;
+    }
+
+    // Test-only delegate
+    AlfrescoNodeService(NodeService nodeService) {
+        this(nodeService, null);
+    }
     
     /**
      * Create a new node (Alfresco-compatible method)
@@ -85,7 +97,10 @@ public class AlfrescoNodeService {
         }
         
         // Add custom properties
-        for (Map.Entry<String, Object> entry : node.getProperties().entrySet()) {
+        Map<String, Object> readableProperties = nodePropertyEncryptionService != null
+            ? nodePropertyEncryptionService.resolveReadableProperties(node)
+            : node.getProperties();
+        for (Map.Entry<String, Object> entry : readableProperties.entrySet()) {
             if (entry.getValue() instanceof Serializable) {
                 properties.put(QName.createQName(entry.getKey()), (Serializable) entry.getValue());
             }

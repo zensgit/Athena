@@ -4,10 +4,11 @@ import com.ecm.core.dto.NodeDto;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.ContentType;
 import com.ecm.core.service.ContentTypeService;
+import com.ecm.core.service.NodePropertyEncryptionService;
 import com.ecm.core.service.RenditionResourceService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -18,12 +19,31 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/types")
-@RequiredArgsConstructor
 @Tag(name = "Content Types", description = "Manage content types and metadata schemas")
 public class ContentTypeController {
 
     private final ContentTypeService contentTypeService;
     private final RenditionResourceService renditionResourceService;
+    private final NodePropertyEncryptionService nodePropertyEncryptionService;
+
+    @Autowired
+    public ContentTypeController(
+        ContentTypeService contentTypeService,
+        RenditionResourceService renditionResourceService,
+        NodePropertyEncryptionService nodePropertyEncryptionService
+    ) {
+        this.contentTypeService = contentTypeService;
+        this.renditionResourceService = renditionResourceService;
+        this.nodePropertyEncryptionService = nodePropertyEncryptionService;
+    }
+
+    // Test-only delegate
+    ContentTypeController(
+        ContentTypeService contentTypeService,
+        RenditionResourceService renditionResourceService
+    ) {
+        this(contentTypeService, renditionResourceService, null);
+    }
 
     @GetMapping
     @Operation(summary = "List types", description = "Get all defined content types")
@@ -71,7 +91,12 @@ public class ContentTypeController {
     }
 
     private NodeDto toNodeDto(com.ecm.core.entity.Node node) {
-        NodeDto base = NodeDto.from(node);
+        NodeDto base = NodeDto.from(
+            node,
+            nodePropertyEncryptionService != null
+                ? nodePropertyEncryptionService.resolveReadableProperties(node)
+                : node.getProperties()
+        );
         if (!(node instanceof Document document)) {
             return base;
         }

@@ -6,6 +6,7 @@ import com.ecm.core.repository.DocumentRepository;
 import com.ecm.core.repository.NodeRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -19,23 +20,36 @@ import org.springframework.data.elasticsearch.core.query.Query;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
+@RequiredArgsConstructor(onConstructor_ = @Autowired)
 public class SearchIndexService {
     
     private final DocumentRepository documentRepository;
     private final NodeRepository nodeRepository;
     private final com.ecm.core.service.SecurityService securityService;
+    private final com.ecm.core.service.NodePropertyEncryptionService nodePropertyEncryptionService;
     private final ElasticsearchOperations elasticsearchOperations;
     private static final String INDEX_NAME = "ecm_documents";
 
     @Value("${ecm.search.refresh-after-write:false}")
     private boolean refreshAfterWrite;
+
+    SearchIndexService(
+        DocumentRepository documentRepository,
+        NodeRepository nodeRepository,
+        com.ecm.core.service.SecurityService securityService,
+        ElasticsearchOperations elasticsearchOperations
+    ) {
+        this(documentRepository, nodeRepository, securityService, null, elasticsearchOperations);
+    }
 
     public boolean isDocumentIndexed(String documentId) {
         try {
@@ -95,6 +109,7 @@ public class SearchIndexService {
                 return;
             }
             NodeDocument nodeDoc = NodeDocument.fromNode(hydrated);
+            nodeDoc.setProperties(resolveIndexableProperties(hydrated));
             applyReadPermissions(hydrated, nodeDoc);
             elasticsearchOperations.save(nodeDoc, IndexCoordinates.of(INDEX_NAME));
             log.debug("Indexed node: {}", hydrated.getId());
@@ -112,6 +127,7 @@ public class SearchIndexService {
                 return;
             }
             NodeDocument nodeDoc = NodeDocument.fromNode(hydrated);
+            nodeDoc.setProperties(resolveIndexableProperties(hydrated));
             applyReadPermissions(hydrated, nodeDoc);
             elasticsearchOperations.save(nodeDoc, IndexCoordinates.of(INDEX_NAME));
             log.debug("Updated node in index: {}", hydrated.getId());
@@ -175,6 +191,7 @@ public class SearchIndexService {
             return;
         }
         NodeDocument nodeDoc = NodeDocument.fromNode(hydrated);
+        nodeDoc.setProperties(resolveIndexableProperties(hydrated));
         nodeDoc.setMimeType(hydrated.getMimeType());
         nodeDoc.setFileSize(hydrated.getFileSize());
         nodeDoc.setTextContent(hydrated.getTextContent());
@@ -191,6 +208,13 @@ public class SearchIndexService {
         } catch (Exception e) {
             log.debug("Failed to refresh search index: {}", e.getMessage());
         }
+    }
+
+    private java.util.Map<String, Object> resolveIndexableProperties(Node node) {
+        if (nodePropertyEncryptionService == null) {
+            return node.getProperties();
+        }
+        return nodePropertyEncryptionService.resolveIndexableProperties(node);
     }
     
     public void updateNodeChildren(Node parentNode) {
@@ -242,6 +266,70 @@ public class SearchIndexService {
                 searchHits.getTotalHits(), parentNode.getId(), updated, deleted);
         } catch (Exception e) {
             log.error("Failed to update children of node: {}", parentNode.getId(), e);
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public void reindexNodeSubtree(Node parentNode) {
+        try {
+            if (parentNode == null || parentNode.getPath() == null) {
+                return;
+            }
+
+            String pathPrefix = parentNode.getPath() + "/";
+            List<Node> descendants = nodeRepository.findByPathPrefix(pathPrefix);
+            int updated = 0;
+
+            for (Node descendant : descendants) {
+                Node hydrated = fetchNode(descendant.getId());
+                if (hydrated == null) {
+                    continue;
+                }
+
+                NodeDocument refreshed = NodeDocument.fromNode(hydrated);
+                applyReadPermissions(hydrated, refreshed);
+                elasticsearchOperations.save(refreshed, IndexCoordinates.of(INDEX_NAME));
+                updated++;
+            }
+
+            log.debug("Reindexed subtree of node {} from database (updated={})",
+                parentNode.getId(), updated);
+        } catch (Exception e) {
+            log.error("Failed to reindex subtree of node: {}", parentNode.getId(), e);
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public void reindexNodes(List<UUID> nodeIds) {
+        try {
+            if (nodeIds == null || nodeIds.isEmpty()) {
+                return;
+            }
+
+            List<UUID> distinctNodeIds = new ArrayList<>(new LinkedHashSet<>(
+                nodeIds.stream().filter(Objects::nonNull).toList()
+            ));
+            int updated = 0;
+            int deleted = 0;
+
+            for (UUID nodeId : distinctNodeIds) {
+                Node hydrated = fetchNode(nodeId);
+                if (hydrated == null) {
+                    deleteNode(nodeId);
+                    deleted++;
+                    continue;
+                }
+
+                NodeDocument refreshed = NodeDocument.fromNode(hydrated);
+                refreshed.setProperties(resolveIndexableProperties(hydrated));
+                applyReadPermissions(hydrated, refreshed);
+                elasticsearchOperations.save(refreshed, IndexCoordinates.of(INDEX_NAME));
+                updated++;
+            }
+
+            log.debug("Reindexed explicit node batch from database (updated={}, deleted={})", updated, deleted);
+        } catch (Exception e) {
+            log.error("Failed to reindex requested nodes", e);
         }
     }
     

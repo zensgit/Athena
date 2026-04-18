@@ -1,0 +1,25 @@
+#!/bin/sh
+set -eu
+
+# Lightweight Maven wrapper for environments that do not have a local
+# JDK/Maven toolchain. It delegates to the official Maven Docker image.
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+PROJECT_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo "docker is required to run this wrapper" >&2
+  exit 1
+fi
+
+MAVEN_IMAGE="${MAVEN_DOCKER_IMAGE:-maven:3.9-eclipse-temurin-17}"
+HOST_M2_DIR="${MAVEN_DOCKER_M2_DIR:-$SCRIPT_DIR/.m2-cache}"
+
+mkdir -p "$HOST_M2_DIR"
+
+exec docker run --rm \
+  -v "$PROJECT_ROOT":/workspace \
+  -v "$HOST_M2_DIR":/root/.m2 \
+  -w /workspace/ecm-core \
+  "$MAVEN_IMAGE" \
+  mvn "$@"

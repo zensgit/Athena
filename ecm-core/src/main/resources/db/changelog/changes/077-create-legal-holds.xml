@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="077-create-legal-holds" author="kernel-hardening">
+        <comment>P3 PR-14: Legal hold foundation</comment>
+
+        <createTable tableName="legal_holds">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="name" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="description" type="text"/>
+            <column name="status" type="varchar(20)" defaultValue="ACTIVE">
+                <constraints nullable="false"/>
+            </column>
+            <column name="released_at" type="timestamp"/>
+            <column name="released_by" type="varchar(255)"/>
+            <column name="release_comment" type="text"/>
+            <column name="created_date" type="timestamp" defaultValueComputed="${now}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_date" type="timestamp"/>
+            <column name="created_by" type="varchar(255)" defaultValue="system">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_by" type="varchar(255)"/>
+            <column name="version" type="bigint"/>
+            <column name="is_deleted" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="deleted_at" type="timestamp"/>
+            <column name="deleted_by" type="varchar(255)"/>
+        </createTable>
+
+        <createIndex tableName="legal_holds" indexName="idx_legal_hold_status">
+            <column name="status"/>
+        </createIndex>
+
+        <createTable tableName="legal_hold_items">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="hold_id" type="${uuid_type}">
+                <constraints nullable="false" foreignKeyName="fk_legal_hold_item_hold" references="legal_holds(id)"/>
+            </column>
+            <column name="node_id" type="${uuid_type}">
+                <constraints nullable="false" foreignKeyName="fk_legal_hold_item_node" references="nodes(id)"/>
+            </column>
+            <column name="node_type" type="varchar(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="node_path" type="varchar(2000)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="added_at" type="timestamp" defaultValueComputed="${now}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="added_by" type="varchar(255)" defaultValue="system">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <addUniqueConstraint
+            tableName="legal_hold_items"
+            columnNames="hold_id, node_id"
+            constraintName="uq_legal_hold_item"/>
+
+        <createIndex tableName="legal_hold_items" indexName="idx_legal_hold_item_hold">
+            <column name="hold_id"/>
+        </createIndex>
+
+        <createIndex tableName="legal_hold_items" indexName="idx_legal_hold_item_node">
+            <column name="node_id"/>
+        </createIndex>
+
+        <rollback>
+            <dropTable tableName="legal_hold_items"/>
+            <dropTable tableName="legal_holds"/>
+        </rollback>
+    </changeSet>
+</databaseChangeLog>

@@ -9,14 +9,13 @@ import com.ecm.core.entity.Node.NodeStatus;
 import com.ecm.core.entity.Node.NodeType;
 import com.ecm.core.entity.Permission.PermissionType;
 import com.ecm.core.entity.Folder.FolderType;
-import com.ecm.core.entity.AutomationRule.TriggerType;
 import com.ecm.core.event.*;
+import com.ecm.core.exception.IllegalOperationException;
 import com.ecm.core.exception.PropertyValidationException;
 import com.ecm.core.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
@@ -32,7 +31,6 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 @Transactional
 public class NodeService {
 
@@ -44,10 +42,7 @@ public class NodeService {
     private final SecurityService securityService;
     private final ApplicationEventPublisher eventPublisher;
     private final ContentReferenceService contentReferenceService;
-
-    @Autowired
-    @Lazy
-    private RuleEngineService ruleEngineService;
+    private final NodePropertyEncryptionService nodePropertyEncryptionService;
 
     @Autowired
     @Lazy
@@ -57,9 +52,61 @@ public class NodeService {
     @Lazy
     private PropertyConstraintValidator propertyConstraintValidator;
 
-    @Value("${ecm.rules.enabled:true}")
-    private boolean rulesEnabled;
-    
+    @Autowired
+    @Lazy
+    private LegalHoldService legalHoldService;
+
+    @Autowired
+    @Lazy
+    private RecordsManagementService recordsManagementService;
+
+    @Autowired
+    public NodeService(
+        NodeRepository nodeRepository,
+        FolderRepository folderRepository,
+        DocumentRepository documentRepository,
+        PermissionRepository permissionRepository,
+        CorrespondentRepository correspondentRepository,
+        SecurityService securityService,
+        ApplicationEventPublisher eventPublisher,
+        ContentReferenceService contentReferenceService,
+        NodePropertyEncryptionService nodePropertyEncryptionService
+    ) {
+        this.nodeRepository = nodeRepository;
+        this.folderRepository = folderRepository;
+        this.documentRepository = documentRepository;
+        this.permissionRepository = permissionRepository;
+        this.correspondentRepository = correspondentRepository;
+        this.securityService = securityService;
+        this.eventPublisher = eventPublisher;
+        this.contentReferenceService = contentReferenceService;
+        this.nodePropertyEncryptionService = nodePropertyEncryptionService;
+    }
+
+    // Test-only delegate (backward compat for tests that don't pass NodePropertyEncryptionService)
+    public NodeService(
+        NodeRepository nodeRepository,
+        FolderRepository folderRepository,
+        DocumentRepository documentRepository,
+        PermissionRepository permissionRepository,
+        CorrespondentRepository correspondentRepository,
+        SecurityService securityService,
+        ApplicationEventPublisher eventPublisher,
+        ContentReferenceService contentReferenceService
+    ) {
+        this(
+            nodeRepository,
+            folderRepository,
+            documentRepository,
+            permissionRepository,
+            correspondentRepository,
+            securityService,
+            eventPublisher,
+            contentReferenceService,
+            null
+        );
+    }
+
     public Node createNode(Node node, UUID parentId) {
         UUID effectiveParentId = resolveScopedParentId(parentId);
         log.debug("Creating node: {} under parent: {}", node.getName(), effectiveParentId);
@@ -81,6 +128,8 @@ public class NodeService {
                     throw new IllegalStateException("Folder is full: " + parent.getName());
                 }
             }
+
+            assertAcceptsPhysicalChildren(parent);
             
             node.setParent(parent);
         }
@@ -94,6 +143,7 @@ public class NodeService {
         applyMandatoryAspects(node);
         enforceTypeProperties(node);
         enforceAspectProperties(node);
+        prepareEncryptedProperties(node);
 
         Node savedNode = nodeRepository.save(node);
         attachDocumentReferenceIfPresent(savedNode);
@@ -103,7 +153,12 @@ public class NodeService {
             copyPermissions(node.getParent(), savedNode);
         }
         
-        eventPublisher.publishEvent(new NodeCreatedEvent(savedNode, securityService.getCurrentUser()));
+        RepositoryLifecyclePublisher.publishNodeCreated(
+            eventPublisher,
+            savedNode,
+            securityService.getCurrentUser(),
+            null
+        );
         
         return savedNode;
     }
@@ -165,6 +220,7 @@ public class NodeService {
     
     public Node updateNode(UUID nodeId, Map<String, Object> updates) {
         Node node = getNode(nodeId);
+        materializeReadableProperties(node);
         
         if (!securityService.hasPermission(node, PermissionType.WRITE)) {
             throw new SecurityException("No permission to update node: " + node.getName());
@@ -172,6 +228,12 @@ public class NodeService {
         
         if (node.isEffectivelyLocked(LocalDateTime.now()) && !node.getLockedBy().equals(securityService.getCurrentUser())) {
             throw new IllegalStateException("Node is " + node.describeActiveLock(LocalDateTime.now()));
+        }
+
+        if (node instanceof Document) {
+            assertNoRecordDirectMutation(node, "update");
+        } else if (updates != null && updates.containsKey("name")) {
+            assertNoRecordHierarchyMutation(node, "rename");
         }
         
         // Update allowed fields
@@ -223,12 +285,15 @@ public class NodeService {
         // Content model enforcement: type + aspect after property merge
         enforceTypeProperties(node);
         enforceAspectProperties(node);
+        prepareEncryptedProperties(node);
 
         Node updatedNode = nodeRepository.save(node);
-        eventPublisher.publishEvent(new NodeUpdatedEvent(updatedNode, securityService.getCurrentUser()));
-
-        // Trigger automation rules for document updates
-        triggerRulesForDocument(updatedNode, TriggerType.DOCUMENT_UPDATED);
+        RepositoryLifecyclePublisher.publishNodeUpdated(
+            eventPublisher,
+            updatedNode,
+            securityService.getCurrentUser(),
+            updatedNode instanceof Document ? AutomationRule.TriggerType.DOCUMENT_UPDATED : null
+        );
 
         return updatedNode;
     }
@@ -238,6 +303,8 @@ public class NodeService {
         Folder targetParent = folderRepository.findById(targetParentId)
             .orElseThrow(() -> new IllegalArgumentException("Target parent not found: " + targetParentId));
         assertTenantScoped(targetParent);
+        assertNoActiveHold(node, "move");
+        assertNoRecordHierarchyMutation(node, "move");
         
         // Check permissions
         if (!securityService.hasPermission(node, PermissionType.DELETE)) {
@@ -246,6 +313,7 @@ public class NodeService {
         if (!securityService.hasPermission(targetParent, PermissionType.CREATE_CHILDREN)) {
             throw new SecurityException("No permission to create children in target folder");
         }
+        assertAcceptsPhysicalChildren(targetParent);
         
         // Check for circular reference
         if (isDescendant(targetParent, node)) {
@@ -256,17 +324,22 @@ public class NodeService {
         if (nodeRepository.findByParentIdAndName(targetParentId, node.getName()).isPresent()) {
             throw new IllegalArgumentException("Node with name already exists in target folder: " + node.getName());
         }
-        
+
         Node oldParent = node.getParent();
         node.setParent(targetParent);
-        
+        node.setPath(targetParent.getPath() + "/" + node.getName());
+
         Node movedNode = nodeRepository.save(node);
+        refreshDescendantPaths(movedNode);
 
-        eventPublisher.publishEvent(new NodeMovedEvent(
-            movedNode, oldParent, targetParent, securityService.getCurrentUser()));
-
-        // Trigger automation rules for document moves
-        triggerRulesForDocument(movedNode, TriggerType.DOCUMENT_MOVED);
+        RepositoryLifecyclePublisher.publishNodeMoved(
+            eventPublisher,
+            movedNode,
+            oldParent,
+            targetParent,
+            securityService.getCurrentUser(),
+            movedNode instanceof Document ? AutomationRule.TriggerType.DOCUMENT_MOVED : null
+        );
 
         return movedNode;
     }
@@ -301,6 +374,8 @@ public class NodeService {
         Folder targetParent = folderRepository.findById(targetParentId)
             .orElseThrow(() -> new IllegalArgumentException("Target parent not found: " + targetParentId));
         assertTenantScoped(targetParent);
+        assertNoActiveHold(source, "copy");
+        assertNoRecordHierarchyMutation(source, "copy");
         
         // Check permissions
         if (!securityService.hasPermission(source, PermissionType.READ)) {
@@ -309,6 +384,7 @@ public class NodeService {
         if (!securityService.hasPermission(targetParent, PermissionType.CREATE_CHILDREN)) {
             throw new SecurityException("No permission to create children in target folder");
         }
+        assertAcceptsPhysicalChildren(targetParent);
         
         String copyName = newName != null ? newName : source.getName() + " (Copy)";
         
@@ -332,6 +408,8 @@ public class NodeService {
         if (!securityService.hasPermission(node, PermissionType.DELETE)) {
             throw new SecurityException("No permission to delete node: " + node.getName());
         }
+        assertNoActiveHold(node, permanent ? "permanently delete" : "delete");
+        assertNoRecordHierarchyMutation(node, permanent ? "permanently delete" : "delete");
         
         if (permanent) {
             deleteNodeRecursive(node);
@@ -339,8 +417,36 @@ public class NodeService {
             softDeleteNodeRecursive(node);
         }
         
-        eventPublisher.publishEvent(new NodeDeletedEvent(
-            node, securityService.getCurrentUser(), permanent, deletedPath, readableAuthorities));
+        RepositoryLifecyclePublisher.publishNodeDeleted(
+            eventPublisher,
+            node,
+            securityService.getCurrentUser(),
+            permanent,
+            deletedPath,
+            readableAuthorities
+        );
+    }
+
+    public GovernanceDeleteResult deleteNodeByGovernance(UUID nodeId, String actor) {
+        Node node = nodeRepository.findByIdAndDeletedFalse(nodeId)
+            .orElseThrow(() -> new NoSuchElementException("Node not found: " + nodeId));
+        assertTenantScoped(node);
+        assertNoActiveHold(node, "destroy");
+
+        String deletedPath = node.getPath();
+        java.util.Set<String> readableAuthorities = securityService.resolveReadAuthorities(node);
+
+        int affectedNodeCount = deleteNodeRecursive(node);
+
+        RepositoryLifecyclePublisher.publishNodeDeleted(
+            eventPublisher,
+            node,
+            actor,
+            true,
+            deletedPath,
+            readableAuthorities
+        );
+        return new GovernanceDeleteResult(node.getId(), node.getName(), affectedNodeCount);
     }
     
     public void lockNode(UUID nodeId) {
@@ -521,6 +627,7 @@ public class NodeService {
         if (!securityService.hasPermission(document, PermissionType.WRITE)) {
             throw new SecurityException("No permission to check out document: " + document.getName());
         }
+        assertNoRecordDirectMutation(document, "check out");
         document = (Document) normalizeExpiredLock(document);
         if (document.isEffectivelyLocked(LocalDateTime.now()) && !Objects.equals(document.getLockedBy(), securityService.getCurrentUser())) {
             throw new IllegalStateException("Document is " + document.describeActiveLock(LocalDateTime.now()));
@@ -572,6 +679,12 @@ public class NodeService {
         return node;
     }
 
+    private void assertAcceptsPhysicalChildren(Folder parent) {
+        if (parent.isSmart()) {
+            throw new IllegalArgumentException("Smart folders cannot contain physical child nodes: " + parent.getName());
+        }
+    }
+
     private Long ageSeconds(LocalDateTime lockedDate, LocalDateTime now) {
         if (lockedDate == null) {
             return null;
@@ -612,9 +725,14 @@ public class NodeService {
 
     public Node addAspect(UUID nodeId, String aspectName, Map<String, Object> aspectProperties) {
         Node node = getNode(nodeId);
+        materializeReadableProperties(node);
         if (!securityService.hasPermission(node, PermissionType.WRITE)) {
             throw new SecurityException("No permission to modify node: " + node.getName());
         }
+        if (RecordsManagementService.RECORD_ASPECT.equals(aspectName)) {
+            throw new IllegalOperationException("Use the records management API to declare records");
+        }
+        assertNoRecordDirectMutation(node, "add aspect");
         node.addAspect(aspectName);
         // merge caller-supplied properties before defaults (caller overrides defaults)
         if (aspectProperties != null && !aspectProperties.isEmpty()) {
@@ -625,20 +743,24 @@ public class NodeService {
         }
         applyAspectDefaults(node, aspectName);
         enforceAspectProperties(node);
+        prepareEncryptedProperties(node);
         return nodeRepository.save(node);
     }
 
     public Node removeAspect(UUID nodeId, String aspectName) {
         Node node = getNode(nodeId);
+        materializeReadableProperties(node);
         if (!securityService.hasPermission(node, PermissionType.WRITE)) {
             throw new SecurityException("No permission to modify node: " + node.getName());
         }
+        assertNoRecordDirectMutation(node, "remove aspect");
         node.removeAspect(aspectName);
         // remove aspect-specific properties from the JSONB properties map
         // (prefixed properties like "cm:title" belong to the aspect)
         if (node.getProperties() != null) {
             node.getProperties().entrySet().removeIf(e -> e.getKey().startsWith(aspectName.split(":")[0] + ":"));
         }
+        prepareEncryptedProperties(node);
         return nodeRepository.save(node);
     }
 
@@ -870,9 +992,9 @@ public class NodeService {
         }
         
         copy.setParent(targetParent);
-        copy.getProperties().putAll(source.getProperties());
+        copy.getProperties().putAll(resolveReadableProperties(source));
         copy.getMetadata().putAll(source.getMetadata());
-        
+        prepareEncryptedProperties(copy);
         copy = nodeRepository.save(copy);
         attachDocumentReferenceIfPresent(copy);
         
@@ -890,11 +1012,12 @@ public class NodeService {
         return copy;
     }
     
-    private void deleteNodeRecursive(Node node) {
+    private int deleteNodeRecursive(Node node) {
+        int affectedNodeCount = 1;
         // Delete children first
         List<Node> children = nodeRepository.findByParentIdAndDeletedFalse(node.getId());
         for (Node child : children) {
-            deleteNodeRecursive(child);
+            affectedNodeCount += deleteNodeRecursive(child);
         }
 
         detachDocumentReferencesIfPresent(node);
@@ -904,12 +1027,26 @@ public class NodeService {
         
         // Delete node
         nodeRepository.delete(node);
+        return affectedNodeCount;
     }
     
     private void softDeleteNodeRecursive(Node node) {
         String currentUser = securityService.getCurrentUser();
         LocalDateTime deletedAt = LocalDateTime.now();
         nodeRepository.softDeleteByPathPrefix(node.getPath(), deletedAt, currentUser);
+    }
+
+    private void refreshDescendantPaths(Node parent) {
+        if (!(parent instanceof Folder)) {
+            return;
+        }
+
+        List<Node> children = nodeRepository.findByParentIdAndDeletedFalse(parent.getId());
+        for (Node child : children) {
+            child.setPath(parent.getPath() + "/" + child.getName());
+            Node savedChild = nodeRepository.save(child);
+            refreshDescendantPaths(savedChild);
+        }
     }
 
     private UUID resolveScopedParentId(UUID requestedParentId) {
@@ -943,30 +1080,21 @@ public class NodeService {
         }
     }
 
-    /**
-     * Trigger automation rules for a document.
-     * Only triggers for Document nodes, not Folders.
-     * Catches all exceptions to avoid failing the main operation.
-     */
-    private void triggerRulesForDocument(Node node, TriggerType triggerType) {
-        if (!rulesEnabled) {
-            return;
+    private void assertNoActiveHold(Node node, String operation) {
+        if (legalHoldService != null) {
+            legalHoldService.assertOperationAllowed(node, operation);
         }
+    }
 
-        if (!(node instanceof Document)) {
-            return;
+    private void assertNoRecordDirectMutation(Node node, String operation) {
+        if (recordsManagementService != null) {
+            recordsManagementService.assertDirectMutationAllowed(node, operation);
         }
+    }
 
-        try {
-            Document document = (Document) node;
-            log.debug("Triggering {} rules for document: {} ({})",
-                triggerType, document.getName(), document.getId());
-
-            ruleEngineService.evaluateAndExecute(document, triggerType);
-        } catch (Exception e) {
-            // Log but don't fail the main operation
-            log.error("Failed to trigger {} rules for node {}: {}",
-                triggerType, node.getId(), e.getMessage(), e);
+    private void assertNoRecordHierarchyMutation(Node node, String operation) {
+        if (recordsManagementService != null) {
+            recordsManagementService.assertHierarchyMutationAllowed(node, operation);
         }
     }
 
@@ -1000,5 +1128,31 @@ public class NodeService {
 
     private OwnerType resolveDocumentOwnerType(Document document) {
         return document.isWorkingCopy() ? OwnerType.WORKING_COPY : OwnerType.DOCUMENT;
+    }
+
+    private Map<String, Object> resolveReadableProperties(Node node) {
+        if (nodePropertyEncryptionService == null) {
+            return node.getProperties() != null ? new HashMap<>(node.getProperties()) : new HashMap<>();
+        }
+        return nodePropertyEncryptionService.resolveReadableProperties(node);
+    }
+
+    private void materializeReadableProperties(Node node) {
+        if (nodePropertyEncryptionService != null) {
+            nodePropertyEncryptionService.materializeReadableProperties(node);
+        }
+    }
+
+    private void prepareEncryptedProperties(Node node) {
+        if (nodePropertyEncryptionService != null) {
+            nodePropertyEncryptionService.prepareForPersistence(node);
+        }
+    }
+
+    public record GovernanceDeleteResult(
+        UUID nodeId,
+        String name,
+        int affectedNodeCount
+    ) {
     }
 }

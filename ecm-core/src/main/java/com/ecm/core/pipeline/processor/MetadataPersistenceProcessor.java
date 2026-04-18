@@ -11,8 +11,9 @@ import com.ecm.core.pipeline.ProcessingResult;
 import com.ecm.core.repository.DocumentRepository;
 import com.ecm.core.repository.FolderRepository;
 import com.ecm.core.service.ContentReferenceService;
-import lombok.RequiredArgsConstructor;
+import com.ecm.core.service.NodePropertyEncryptionService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
@@ -24,13 +25,38 @@ import org.springframework.stereotype.Component;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class MetadataPersistenceProcessor implements DocumentProcessor {
 
     private final DocumentRepository documentRepository;
     private final FolderRepository folderRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final ContentReferenceService contentReferenceService;
+    private final NodePropertyEncryptionService nodePropertyEncryptionService;
+
+    @Autowired
+    public MetadataPersistenceProcessor(
+        DocumentRepository documentRepository,
+        FolderRepository folderRepository,
+        ApplicationEventPublisher eventPublisher,
+        ContentReferenceService contentReferenceService,
+        NodePropertyEncryptionService nodePropertyEncryptionService
+    ) {
+        this.documentRepository = documentRepository;
+        this.folderRepository = folderRepository;
+        this.eventPublisher = eventPublisher;
+        this.contentReferenceService = contentReferenceService;
+        this.nodePropertyEncryptionService = nodePropertyEncryptionService;
+    }
+
+    // Test-only delegate
+    MetadataPersistenceProcessor(
+        DocumentRepository documentRepository,
+        FolderRepository folderRepository,
+        ApplicationEventPublisher eventPublisher,
+        ContentReferenceService contentReferenceService
+    ) {
+        this(documentRepository, folderRepository, eventPublisher, contentReferenceService, null);
+    }
 
     @Override
     public int getOrder() {
@@ -83,6 +109,9 @@ public class MetadataPersistenceProcessor implements DocumentProcessor {
             // Set creator
             document.setCreatedBy(context.getUserId());
             document.setLastModifiedBy(context.getUserId());
+            if (nodePropertyEncryptionService != null) {
+                nodePropertyEncryptionService.prepareForPersistence(document);
+            }
 
             // Save to database (Source of Truth)
             Document savedDocument = documentRepository.save(document);

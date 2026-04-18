@@ -17,6 +17,7 @@ import com.ecm.core.service.PdfAnnotationService;
 import com.ecm.core.service.RenditionResourceService;
 import com.ecm.core.service.VersionService;
 import com.ecm.core.service.ContentService;
+import com.ecm.core.service.NodePropertyEncryptionService;
 import com.ecm.core.service.TenantQuotaService;
 import com.ecm.core.preview.PreviewService;
 import com.ecm.core.preview.PreviewResult;
@@ -27,7 +28,7 @@ import com.ecm.core.conversion.ConversionResult;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.ContentDisposition;
@@ -47,10 +48,9 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping({"/api/documents", "/api/v1/documents"})
-@RequiredArgsConstructor
 @Tag(name = "Document Management", description = "APIs for managing documents")
 public class DocumentController {
-    
+
     private final NodeService nodeService;
     private final VersionService versionService;
     private final ContentService contentService;
@@ -62,6 +62,66 @@ public class DocumentController {
     private final PdfAnnotationService pdfAnnotationService;
     private final RenditionResourceService renditionResourceService;
     private final CheckOutCheckInService checkOutCheckInService;
+    private final NodePropertyEncryptionService nodePropertyEncryptionService;
+
+    @Autowired
+    public DocumentController(
+        NodeService nodeService,
+        VersionService versionService,
+        ContentService contentService,
+        TenantQuotaService tenantQuotaService,
+        PreviewService previewService,
+        PreviewQueueService previewQueueService,
+        OcrQueueService ocrQueueService,
+        ConversionService conversionService,
+        PdfAnnotationService pdfAnnotationService,
+        RenditionResourceService renditionResourceService,
+        CheckOutCheckInService checkOutCheckInService,
+        NodePropertyEncryptionService nodePropertyEncryptionService
+    ) {
+        this.nodeService = nodeService;
+        this.versionService = versionService;
+        this.contentService = contentService;
+        this.tenantQuotaService = tenantQuotaService;
+        this.previewService = previewService;
+        this.previewQueueService = previewQueueService;
+        this.ocrQueueService = ocrQueueService;
+        this.conversionService = conversionService;
+        this.pdfAnnotationService = pdfAnnotationService;
+        this.renditionResourceService = renditionResourceService;
+        this.checkOutCheckInService = checkOutCheckInService;
+        this.nodePropertyEncryptionService = nodePropertyEncryptionService;
+    }
+
+    // Test-only delegate
+    DocumentController(
+        NodeService nodeService,
+        VersionService versionService,
+        ContentService contentService,
+        TenantQuotaService tenantQuotaService,
+        PreviewService previewService,
+        PreviewQueueService previewQueueService,
+        OcrQueueService ocrQueueService,
+        ConversionService conversionService,
+        PdfAnnotationService pdfAnnotationService,
+        RenditionResourceService renditionResourceService,
+        CheckOutCheckInService checkOutCheckInService
+    ) {
+        this(
+            nodeService,
+            versionService,
+            contentService,
+            tenantQuotaService,
+            previewService,
+            previewQueueService,
+            ocrQueueService,
+            conversionService,
+            pdfAnnotationService,
+            renditionResourceService,
+            checkOutCheckInService,
+            null
+        );
+    }
 
     @Value("${ecm.preview.read.hash-enforce.enabled:true}")
     private boolean previewReadHashEnforceEnabled;
@@ -340,7 +400,12 @@ public class DocumentController {
     }
 
     private NodeDto toNodeDto(Document document) {
-        NodeDto base = NodeDto.from(document);
+        NodeDto base = NodeDto.from(
+            document,
+            nodePropertyEncryptionService != null
+                ? nodePropertyEncryptionService.resolveReadableProperties(document)
+                : document.getProperties()
+        );
         RenditionResourceService.RenditionSummary renditionSummary = renditionResourceService.summarizeDocument(document);
         if (renditionSummary == null || !renditionSummary.document()) {
             return base;

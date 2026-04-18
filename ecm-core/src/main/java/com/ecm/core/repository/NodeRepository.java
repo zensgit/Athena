@@ -167,4 +167,27 @@ public interface NodeRepository extends JpaRepository<Node, UUID>, JpaSpecificat
 
     @Query("SELECT COUNT(n) FROM Node n WHERE n.deleted = false AND n.path LIKE :pathPattern")
     long countByDeletedFalseAndPathLike(@Param("pathPattern") String pathPattern);
+
+    @Query("SELECT COUNT(n) FROM Node n WHERE n.deleted = false AND n.typeQName = :typeQName")
+    long countByTypeQNameAndDeletedFalse(@Param("typeQName") String typeQName);
+
+    @Query("SELECT COUNT(n) FROM Node n JOIN n.aspects a WHERE n.deleted = false AND a = :aspectName")
+    long countByAspectNameAndDeletedFalse(@Param("aspectName") String aspectName);
+
+    @Query("SELECT n FROM Node n JOIN n.aspects a WHERE n.deleted = false AND a = :aspectName ORDER BY n.createdDate DESC")
+    List<Node> findByAspectNameAndDeletedFalse(@Param("aspectName") String aspectName);
+
+    @Query(value = "SELECT COUNT(*) FROM nodes n WHERE n.is_deleted = false AND jsonb_exists(n.properties, :propertyKey)", nativeQuery = true)
+    long countByPropertyKeyAndDeletedFalse(@Param("propertyKey") String propertyKey);
+
+    @Query(value = """
+        SELECT COUNT(*)
+        FROM nodes n
+        WHERE n.is_deleted = false
+          AND (
+            jsonb_exists(n.properties, :propertyKey)
+            OR jsonb_exists(n.encrypted_properties, :propertyKey)
+          )
+        """, nativeQuery = true)
+    long countByPropertyKeyAcrossStorageAndDeletedFalse(@Param("propertyKey") String propertyKey);
 }
