@@ -298,12 +298,13 @@
 | PR-3 | `P0A-4` | check-in/version behavior |
 | PR-4 | `P0B-1`, `P0B-2` | move consistency and search sync |
 | PR-5 | `P0B-3`, `P0B-4` | ACL delta indexing |
-| PR-6 | `P1-1`, `P1-2` | kernel hook and governance |
-| PR-7 | `P1-3`, `P1-4` | site permission model hardening |
+| PR-6 | `P1-1` | lifecycle hook contract and shared dispatch surface |
+| PR-7 | `P1-2` | model governance validation isolated from site work |
+| PR-8 | `P1-3`, `P1-4` | membership persistence plus site authority hardening |
 
 ## Blocking Rules
 - `P2` feature work cannot start before `PR-5` is complete.
-- External invitation work cannot start before `PR-7` is complete.
+- External invitation work cannot start before `PR-8` is complete.
 - Legal hold or records-management work cannot start before `PR-2` and `PR-3` are complete.
 
 ## Recommended Execution Order
@@ -314,3 +315,4 @@
 5. `PR-5`
 6. `PR-6`
 7. `PR-7`
+8. `PR-8`

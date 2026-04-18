@@ -258,6 +258,19 @@
 ### Reclassified Items
 - `Smart/Virtual Folders`: enhancement, not greenfield. Athena already has smart-folder runtime execution.
 - `Scheduled User Actions`: enhancement, not greenfield. Athena already has cron validation and scheduled runner support.
+
+## Current Delivery State
+- `P0A`: completed
+- `P0B`: completed
+- `P1`: completed
+- `P2` first wave: completed
+
+## Next Wave
+- `P3` is now planned separately in:
+  - [P3_PR11_PR12_PR13_PR14_PR15_EXECUTION_PLAN_20260414.md](/Users/chouhua/Downloads/Github/Athena/docs/P3_PR11_PR12_PR13_PR14_PR15_EXECUTION_PLAN_20260414.md)
+  - [P3_PR11_PR12_PR13_PR14_PR15_ACCEPTANCE_20260414.md](/Users/chouhua/Downloads/Github/Athena/docs/P3_PR11_PR12_PR13_PR14_PR15_ACCEPTANCE_20260414.md)
+- `Generic OAuth Credential Store` is reclassified as generalization work on top of the existing mail OAuth baseline, not a true greenfield feature.
+- `Disposition Schedules` is reclassified as blocked until `Legal Holds` exists.
 - `Site Invitation Workflow`: depends on P1 site permission hardening.
 
 ### Deferred Until After P1

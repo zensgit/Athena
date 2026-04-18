@@ -440,6 +440,85 @@ ECM_MAIL_OAUTH_GMAIL_HAROLD_SCOPE=...
 docker-compose up -d --no-deps --force-recreate ecm-core
 ```
 
+### Secret Encryption Foundation
+
+Athena 现已支持对部分敏感持久化字段做透明加密。当前首批接入的是 Mail Automation
+账户上的数据库敏感字段，例如：
+
+- `password`
+- `oauth_client_secret`
+- `oauth_access_token`
+- `oauth_refresh_token`
+
+配置项：
+
+- `ECM_SECURITY_SECRET_ENABLED=true`
+- `ECM_SECURITY_SECRET_ACTIVE_KEY_VERSION=v1`
+- `ECM_SECURITY_SECRET_KEY_V1=<base64-encoded AES key>`
+
+示例：
+
+```bash
+ECM_SECURITY_SECRET_ENABLED=true
+ECM_SECURITY_SECRET_ACTIVE_KEY_VERSION=v1
+ECM_SECURITY_SECRET_KEY_V1=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+```
+
+说明：
+
+- 建议在生产环境使用独立生成的 32-byte AES key，并以 Base64 形式提供。
+- 当前实现兼容历史明文值；启用后，新写入或后续更新会改为密文持久化。
+- `PR-11B` 已把同一套能力扩展到内容模型里标记为 `encrypted=true` 的节点属性；这类属性：
+  - 需要启用上述 secret 配置
+  - 会写入 `nodes.encrypted_properties`
+  - 不会进入搜索索引
+- 该能力当前是 foundation slice，尚未扩展到动态模型属性。
+
+### LDAP / Active Directory Sync
+
+Athena 现已支持把 LDAP / AD 用户、组和成员关系同步到本地镜像表。首批切片只同步：
+
+- `users`
+- `groups`
+- `user_groups`
+
+不会自动把目录组直接映射到站点成员。
+
+基础配置：
+
+```bash
+ECM_IDENTITY_PROVIDER=ldap
+ECM_LDAP_URL=ldap://ldap.example.com:389
+ECM_LDAP_BIND_DN=cn=svc-athena,ou=svc,dc=example,dc=com
+ECM_LDAP_BIND_PASSWORD=...
+ECM_LDAP_USER_BASE_DN=ou=people,dc=example,dc=com
+ECM_LDAP_GROUP_BASE_DN=ou=groups,dc=example,dc=com
+ECM_LDAP_SYNC_ENABLED=true
+ECM_LDAP_SYNC_CRON=0 0 */4 * * *
+```
+
+常用可选属性：
+
+- `ECM_LDAP_USER_FILTER`
+- `ECM_LDAP_GROUP_FILTER`
+- `ECM_LDAP_USER_USERNAME_ATTRIBUTE`
+- `ECM_LDAP_USER_EMAIL_ATTRIBUTE`
+- `ECM_LDAP_USER_EXTERNAL_ID_ATTRIBUTE`
+- `ECM_LDAP_USER_ENABLED_ATTRIBUTE`
+- `ECM_LDAP_GROUP_NAME_ATTRIBUTE`
+- `ECM_LDAP_GROUP_MEMBER_ATTRIBUTE`
+
+管理接口：
+
+- `POST /api/v1/admin/ldap/test-connection`
+- `POST /api/v1/admin/ldap/sync`
+
+说明：
+
+- LDAP 模式下，Athena 的用户/组查询仍读取本地镜像，不会每次请求都直连目录。
+- 目录缺失的镜像用户/组会被禁用，而不是硬删除。
+- 已经进入 Athena 的 `username` / `group.name` 不会因为目录重命名而自动改写，以避免破坏 ACL、工作流和站点引用。
+
 ### Nginx 配置
 
 #### 性能优化配置
