@@ -35,6 +35,7 @@ import {
   Star,
   AccountTree,
   LocalOffer,
+  Gavel,
   Category as CategoryIcon,
   Terminal,
   SavedSearch as SavedSearchIcon,
@@ -563,6 +564,12 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                     <ArchiveIcon fontSize="small" />
                   </ListItemIcon>
                   <ListItemText>Content Archive</ListItemText>
+                </MenuItem>
+                <MenuItem onClick={() => navigate('/admin/records-management')}>
+                  <ListItemIcon>
+                    <Gavel fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Records Management</ListItemText>
                 </MenuItem>
                 <MenuItem onClick={() => navigate('/admin/templates')}>
                   <ListItemIcon>

@@ -22,6 +22,8 @@ describe('advancedSearchStateUtils', () => {
       lockOwner: '',
       checkoutState: 'checkedOut',
       checkoutUser: 'alice',
+      recordOnly: false,
+      recordCategoryPaths: [],
       dateRange: 'week',
       mimeTypes: ['application/pdf', 'text/plain'],
       creators: ['admin'],
@@ -42,6 +44,8 @@ describe('advancedSearchStateUtils', () => {
         lockOwner: 'carol',
         checkoutState: 'available',
         checkoutUser: 'bob',
+        recordOnly: true,
+        recordCategoryPaths: ['/Records Management/Finance'],
         dateRange: 'month',
         mimeTypes: ['application/pdf'],
         creators: ['admin'],
@@ -51,7 +55,7 @@ describe('advancedSearchStateUtils', () => {
         maxSize: 8,
       })
     ).toBe(
-      'q=alpha&page=2&previewStatus=FAILED&lockState=locked&lockOwner=carol&checkoutState=available&checkoutUser=bob&dateRange=month&mimeTypes=application%2Fpdf&creators=admin&tags=tag-a&categories=cat-a&minSize=5&maxSize=8'
+      'q=alpha&page=2&previewStatus=FAILED&lockState=locked&lockOwner=carol&checkoutState=available&checkoutUser=bob&recordOnly=true&recordCategoryPaths=%2FRecords+Management%2FFinance&dateRange=month&mimeTypes=application%2Fpdf&creators=admin&tags=tag-a&categories=cat-a&minSize=5&maxSize=8'
     );
   });
 
@@ -65,6 +69,8 @@ describe('advancedSearchStateUtils', () => {
           lockOwner: 'carol',
           checkoutState: 'checkedOut',
           checkoutUser: 'alice',
+          recordOnly: true,
+          recordCategoryPaths: ['/Records Management/Finance'],
           dateRange: 'today',
           mimeTypes: ['application/pdf'],
           creators: ['admin'],
@@ -83,6 +89,8 @@ describe('advancedSearchStateUtils', () => {
       lockedBy: 'carol',
       checkedOut: true,
       checkoutUser: 'alice',
+      recordOnly: true,
+      recordCategoryPaths: ['/Records Management/Finance'],
       mimeTypes: ['application/pdf'],
       createdByList: ['admin'],
       tags: ['tag-a'],
@@ -104,6 +112,8 @@ describe('advancedSearchStateUtils', () => {
           lockedBy: 'carol',
           checkedOut: 'true',
           checkoutUser: 'alice',
+          recordOnly: 'true',
+          recordCategoryPaths: '/Records Management/Finance,/Records Management/Legal',
           dateRange: 'week',
           mimeTypes: 'application/pdf,text/plain',
           createdByList: ['admin', 'editor'],
@@ -120,6 +130,8 @@ describe('advancedSearchStateUtils', () => {
       lockOwner: 'carol',
       checkoutState: 'checkedOut',
       checkoutUser: 'alice',
+      recordOnly: true,
+      recordCategoryPaths: ['/Records Management/Finance', '/Records Management/Legal'],
       dateRange: 'week',
       mimeTypes: ['application/pdf', 'text/plain'],
       creators: ['admin', 'editor'],
@@ -138,6 +150,8 @@ describe('advancedSearchStateUtils', () => {
       lockOwner: '',
       checkoutState: 'all' as const,
       checkoutUser: '',
+      recordOnly: true,
+      recordCategoryPaths: ['/Records Management/Finance'],
       dateRange: 'all' as const,
       mimeTypes: ['text/plain', 'application/pdf'],
       creators: ['editor', 'admin'],
@@ -154,6 +168,8 @@ describe('advancedSearchStateUtils', () => {
         lockOwner: '',
         checkoutState: 'all',
         checkoutUser: '',
+        recordOnly: true,
+        recordCategoryPaths: ['/Records Management/Finance'],
         dateRange: 'all',
         mimeTypes: ['application/pdf', 'text/plain'],
         creators: ['admin', 'editor'],

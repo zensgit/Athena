@@ -70,6 +70,9 @@ export const buildSearchPrefillFromAdvancedSearchUrl = (
   const creators = state.creators.length > 0 ? state.creators : parseCsv(params.get('creators'));
   const tags = state.tags.length > 0 ? state.tags : parseCsv(params.get('tags'));
   const categories = state.categories.length > 0 ? state.categories : parseCsv(params.get('categories'));
+  const recordCategoryPaths = state.recordCategoryPaths?.length
+    ? state.recordCategoryPaths
+    : parseCsv(params.get('recordCategoryPaths'));
   const minSize = state.minSize;
   const maxSize = state.maxSize;
   const modifiedFrom = resolveModifiedFromDate(state.dateRange);
@@ -83,10 +86,12 @@ export const buildSearchPrefillFromAdvancedSearchUrl = (
   if (state.checkoutState === 'checkedOut') prefillPayload.checkedOut = true;
   if (state.checkoutState === 'available') prefillPayload.checkedOut = false;
   if (state.checkoutUser.trim()) prefillPayload.checkoutUser = state.checkoutUser.trim();
+  if (state.recordOnly) prefillPayload.recordOnly = true;
   if (mimeTypes.length === 1) prefillPayload.contentType = mimeTypes[0];
   if (creators.length === 1) prefillPayload.createdBy = creators[0];
   if (tags.length > 0) prefillPayload.tags = tags;
   if (categories.length > 0) prefillPayload.categories = categories;
+  if (recordCategoryPaths.length > 0) prefillPayload.recordCategoryPaths = recordCategoryPaths;
   if (minSize !== undefined) prefillPayload.minSize = minSize;
   if (maxSize !== undefined) prefillPayload.maxSize = maxSize;
   if (modifiedFrom) prefillPayload.modifiedFrom = modifiedFrom;

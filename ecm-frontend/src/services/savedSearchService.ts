@@ -55,6 +55,21 @@ export interface FacetedSearchResponse {
   queryTime?: number;
 }
 
+export interface SmartFolderPayload {
+  name?: string;
+  description?: string;
+  parentId?: string;
+}
+
+export interface SmartFolderResponse {
+  id: string;
+  name: string;
+  path: string;
+  parentId?: string;
+  smart?: boolean;
+  queryCriteria?: Record<string, any>;
+}
+
 class SavedSearchService {
   async save(name: string, queryParams: Record<string, any>): Promise<SavedSearch> {
     return api.post<SavedSearch>('/search/saved', { name, queryParams });
@@ -91,6 +106,10 @@ class SavedSearchService {
 
   async execute(id: string): Promise<FacetedSearchResponse> {
     return api.get<FacetedSearchResponse>(`/search/saved/${id}/execute`);
+  }
+
+  async createSmartFolder(id: string, input: SmartFolderPayload): Promise<SmartFolderResponse> {
+    return api.post<SmartFolderResponse>(`/search/saved/${id}/smart-folder`, input);
   }
 }
 

@@ -1,0 +1,546 @@
+import recordsManagementService from './recordsManagementService';
+import api from './api';
+
+jest.mock('./api', () => ({
+  __esModule: true,
+  default: {
+    get: jest.fn(),
+    post: jest.fn(),
+    put: jest.fn(),
+    delete: jest.fn(),
+    downloadFile: jest.fn(),
+  },
+}));
+
+const mockedApi = api as jest.Mocked<typeof api>;
+
+describe('recordsManagementService', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('lists declared records', async () => {
+    mockedApi.get.mockResolvedValueOnce([{ nodeId: 'node-1', name: 'Record 1', path: '/Records/1' }] as any);
+
+    const result = await recordsManagementService.listRecords();
+
+    expect(mockedApi.get).toHaveBeenCalledWith('/records');
+    expect(result).toHaveLength(1);
+  });
+
+  it('loads record declaration for a node', async () => {
+    mockedApi.get.mockResolvedValueOnce({ nodeId: 'node-1', name: 'Record 1', path: '/Records/1' } as any);
+
+    await recordsManagementService.getRecord('node-1');
+
+    expect(mockedApi.get).toHaveBeenCalledWith('/nodes/node-1/record');
+  });
+
+  it('declares a node as a record with a trimmed comment', async () => {
+    mockedApi.put.mockResolvedValueOnce({ nodeId: 'node-1', name: 'Record 1', path: '/Records/1' } as any);
+
+    await recordsManagementService.declareRecord('node-1', { comment: '  legal hold  ' });
+
+    expect(mockedApi.put).toHaveBeenCalledWith('/nodes/node-1/record', { comment: 'legal hold' });
+  });
+
+  it('undeclares a node as a record with a trimmed reason', async () => {
+    mockedApi.post.mockResolvedValueOnce(undefined as any);
+
+    await recordsManagementService.undeclareRecord('node-1', { reason: '  governance update  ' });
+
+    expect(mockedApi.post).toHaveBeenCalledWith('/nodes/node-1/record/undeclare', {
+      reason: 'governance update',
+    });
+  });
+
+  it('loads records summary', async () => {
+    mockedApi.get.mockResolvedValueOnce({
+      declaredRecordCount: 1,
+      filePlanCount: 2,
+      recordCategoryCount: 3,
+      uncategorizedRecordCount: 0,
+      outsideFilePlanRecordCount: 1,
+      categoryBreakdown: [],
+      filePlanBreakdown: [],
+    } as any);
+
+    await recordsManagementService.getSummary();
+
+    expect(mockedApi.get).toHaveBeenCalledWith('/records/summary');
+  });
+
+  it('loads operations telemetry with a limit', async () => {
+    mockedApi.get.mockResolvedValueOnce({
+      governedImportJobCount: 3,
+      activeGovernedImportJobCount: 1,
+      governedTransferJobCount: 2,
+      activeGovernedTransferJobCount: 1,
+      importStatusBreakdown: [],
+      transferStatusBreakdown: [],
+      recentImportJobs: [],
+      recentTransferJobs: [],
+    } as any);
+
+    await recordsManagementService.getOperationsTelemetry(12);
+
+    expect(mockedApi.get).toHaveBeenCalledWith('/records/operations', {
+      params: { limit: 12 },
+    });
+  });
+
+  it('loads activity timeline with a day range', async () => {
+    mockedApi.get.mockResolvedValueOnce({
+      days: 14,
+      points: [],
+    } as any);
+
+    await recordsManagementService.getActivityTimeline(14);
+
+    expect(mockedApi.get).toHaveBeenCalledWith('/records/activity-timeline', {
+      params: { days: 14 },
+    });
+  });
+
+  it('loads activity highlights with a comparison window', async () => {
+    mockedApi.get.mockResolvedValueOnce({
+      windowDays: 7,
+      currentWindow: {
+        fromDay: '2026-04-08',
+        toDay: '2026-04-14',
+        activeDayCount: 5,
+        declaredCount: 3,
+        undeclaredCount: 1,
+        categoryAssignedCount: 4,
+        governanceChangeCount: 2,
+        totalCount: 10,
+      },
+      previousWindow: {
+        fromDay: '2026-04-01',
+        toDay: '2026-04-07',
+        activeDayCount: 4,
+        declaredCount: 1,
+        undeclaredCount: 0,
+        categoryAssignedCount: 2,
+        governanceChangeCount: 1,
+        totalCount: 4,
+      },
+      busiestDay: {
+        day: '2026-04-14',
+        totalCount: 4,
+      },
+    } as any);
+
+    await recordsManagementService.getActivityHighlights(7);
+
+    expect(mockedApi.get).toHaveBeenCalledWith('/records/activity-highlights', {
+      params: { windowDays: 7 },
+    });
+  });
+
+  it('loads activity breakdown with day and bucket ranges', async () => {
+    mockedApi.get.mockResolvedValueOnce({
+      days: 28,
+      bucketDays: 7,
+      buckets: [],
+    } as any);
+
+    await recordsManagementService.getActivityBreakdown(28, 7);
+
+    expect(mockedApi.get).toHaveBeenCalledWith('/records/activity-breakdown', {
+      params: { days: 28, bucketDays: 7 },
+    });
+  });
+
+  it('loads activity contributors with day and limit ranges', async () => {
+    mockedApi.get.mockResolvedValueOnce({
+      days: 28,
+      limit: 5,
+      contributors: [],
+    } as any);
+
+    await recordsManagementService.getActivityContributors(28, 5);
+
+    expect(mockedApi.get).toHaveBeenCalledWith('/records/activity-contributors', {
+      params: { days: 28, limit: 5 },
+    });
+  });
+
+  it('exports activity contributor report CSV with trimmed filename range and csv params', async () => {
+    mockedApi.downloadFile.mockResolvedValueOnce(undefined as any);
+
+    await recordsManagementService.exportActivityContributorReportCsv({
+      from: '2026-04-09T00:00:00',
+      to: '2026-04-15T23:59:59',
+      limit: 5,
+    });
+
+    expect(mockedApi.downloadFile).toHaveBeenCalledWith(
+      '/records/activity-contributor-report',
+      'rm-activity-contributor-report-2026-04-09-to-2026-04-15.csv',
+      {
+        params: {
+          from: '2026-04-09T00:00:00',
+          to: '2026-04-15T23:59:59',
+          limit: 5,
+          format: 'csv',
+        },
+      }
+    );
+  });
+
+  it('loads contributor event-type trend with day, bucket, limit, and event-type ranges', async () => {
+    mockedApi.get.mockResolvedValueOnce({
+      days: 28,
+      bucketDays: 7,
+      limit: 5,
+      eventTypeLimit: 3,
+      trackedContributors: [],
+      buckets: [],
+    } as any);
+
+    await recordsManagementService.getActivityContributorEventTypeTrend(28, 7, 5, 3);
+
+    expect(mockedApi.get).toHaveBeenCalledWith('/records/activity-contributor-event-type-trend', {
+      params: { days: 28, bucketDays: 7, limit: 5, eventTypeLimit: 3 },
+    });
+  });
+
+  it('loads contributor family trend with day, bucket, and limit ranges', async () => {
+    mockedApi.get.mockResolvedValueOnce({
+      days: 28,
+      bucketDays: 7,
+      limit: 5,
+      trackedContributors: [],
+      buckets: [],
+    } as any);
+
+    await recordsManagementService.getActivityContributorFamilyTrend(28, 7, 5);
+
+    expect(mockedApi.get).toHaveBeenCalledWith('/records/activity-contributor-family-trend', {
+      params: { days: 28, bucketDays: 7, limit: 5 },
+    });
+  });
+
+  it('loads contributor family highlights with window and limit ranges', async () => {
+    mockedApi.get.mockResolvedValueOnce({
+      windowDays: 7,
+      limit: 5,
+      currentWindow: { fromDay: '2026-04-09', toDay: '2026-04-15' },
+      previousWindow: { fromDay: '2026-04-02', toDay: '2026-04-08' },
+      contributors: [],
+    } as any);
+
+    await recordsManagementService.getActivityContributorFamilyHighlights(7, 5);
+
+    expect(mockedApi.get).toHaveBeenCalledWith('/records/activity-contributor-family-highlights', {
+      params: { windowDays: 7, limit: 5 },
+    });
+  });
+
+  it('exports contributor family report CSV with trimmed filename range and csv params', async () => {
+    mockedApi.downloadFile.mockResolvedValueOnce(undefined as any);
+
+    await recordsManagementService.exportActivityContributorFamilyReportCsv({
+      from: '2026-04-09T00:00:00',
+      to: '2026-04-15T23:59:59',
+      limit: 5,
+    });
+
+    expect(mockedApi.downloadFile).toHaveBeenCalledWith(
+      '/records/activity-contributor-family-report',
+      'rm-activity-contributor-family-report-2026-04-09-to-2026-04-15.csv',
+      {
+        params: {
+          from: '2026-04-09T00:00:00',
+          to: '2026-04-15T23:59:59',
+          limit: 5,
+          format: 'csv',
+        },
+      }
+    );
+  });
+
+  it('exports activity family report CSV with trimmed filename range and csv params', async () => {
+    mockedApi.downloadFile.mockResolvedValueOnce(undefined as any);
+
+    await recordsManagementService.exportActivityFamilyReportCsv({
+      from: '2026-04-09T00:00:00',
+      to: '2026-04-15T23:59:59',
+    });
+
+    expect(mockedApi.downloadFile).toHaveBeenCalledWith(
+      '/records/activity-family-report',
+      'rm-activity-family-report-2026-04-09-to-2026-04-15.csv',
+      {
+        params: {
+          from: '2026-04-09T00:00:00',
+          to: '2026-04-15T23:59:59',
+          format: 'csv',
+        },
+      }
+    );
+  });
+
+  it('loads contributor event-type highlights with window, limit, and event-type ranges', async () => {
+    mockedApi.get.mockResolvedValueOnce({
+      windowDays: 7,
+      limit: 5,
+      eventTypeLimit: 3,
+      currentWindow: { fromDay: '2026-04-09', toDay: '2026-04-15' },
+      previousWindow: { fromDay: '2026-04-02', toDay: '2026-04-08' },
+      contributors: [],
+    } as any);
+
+    await recordsManagementService.getActivityContributorEventTypeHighlights(7, 5, 3);
+
+    expect(mockedApi.get).toHaveBeenCalledWith('/records/activity-contributor-event-type-highlights', {
+      params: { windowDays: 7, limit: 5, eventTypeLimit: 3 },
+    });
+  });
+
+  it('exports contributor event-type report CSV with trimmed filename range and csv params', async () => {
+    mockedApi.downloadFile.mockResolvedValueOnce(undefined as any);
+
+    await recordsManagementService.exportActivityContributorEventTypeReportCsv({
+      from: '2026-04-09T00:00:00',
+      to: '2026-04-15T23:59:59',
+      limit: 5,
+      eventTypeLimit: 3,
+    });
+
+    expect(mockedApi.downloadFile).toHaveBeenCalledWith(
+      '/records/activity-contributor-event-type-report',
+      'rm-activity-contributor-event-type-report-2026-04-09-to-2026-04-15.csv',
+      {
+        params: {
+          from: '2026-04-09T00:00:00',
+          to: '2026-04-15T23:59:59',
+          limit: 5,
+          eventTypeLimit: 3,
+          format: 'csv',
+        },
+      }
+    );
+  });
+
+  it('loads activity event hotspots with day and limit ranges', async () => {
+    mockedApi.get.mockResolvedValueOnce({
+      days: 28,
+      limit: 8,
+      eventTypes: [],
+    } as any);
+
+    await recordsManagementService.getActivityEventTypes(28, 8);
+
+    expect(mockedApi.get).toHaveBeenCalledWith('/records/activity-event-types', {
+      params: { days: 28, limit: 8 },
+    });
+  });
+
+  it('exports activity event-type report CSV with trimmed filename range and csv params', async () => {
+    mockedApi.downloadFile.mockResolvedValueOnce(undefined as any);
+
+    await recordsManagementService.exportActivityEventTypeReportCsv({
+      from: '2026-04-09T00:00:00',
+      to: '2026-04-15T23:59:59',
+      limit: 8,
+    });
+
+    expect(mockedApi.downloadFile).toHaveBeenCalledWith(
+      '/records/activity-event-type-report',
+      'rm-activity-event-type-report-2026-04-09-to-2026-04-15.csv',
+      {
+        params: {
+          from: '2026-04-09T00:00:00',
+          to: '2026-04-15T23:59:59',
+          limit: 8,
+          format: 'csv',
+        },
+      }
+    );
+  });
+
+  it('loads activity family mix with a day range', async () => {
+    mockedApi.get.mockResolvedValueOnce({
+      days: 28,
+      totalCount: 0,
+      families: [],
+    } as any);
+
+    await recordsManagementService.getActivityFamilies(28);
+
+    expect(mockedApi.get).toHaveBeenCalledWith('/records/activity-families', {
+      params: { days: 28 },
+    });
+  });
+
+  it('loads activity family highlights with a comparison window', async () => {
+    mockedApi.get.mockResolvedValueOnce({
+      windowDays: 7,
+      currentWindow: { fromDay: '2026-04-09', toDay: '2026-04-15' },
+      previousWindow: { fromDay: '2026-04-02', toDay: '2026-04-08' },
+      families: [],
+    } as any);
+
+    await recordsManagementService.getActivityFamilyHighlights(7);
+
+    expect(mockedApi.get).toHaveBeenCalledWith('/records/activity-family-highlights', {
+      params: { windowDays: 7 },
+    });
+  });
+
+  it('lists audit with trimmed filters and pagination', async () => {
+    mockedApi.get.mockResolvedValueOnce({ content: [], totalElements: 0, totalPages: 0, number: 0, size: 25 } as any);
+
+    await recordsManagementService.listAudit({
+      family: '  DECLARED ',
+      eventType: '  rm_record_declared ',
+      username: '  admin ',
+      from: '2026-04-14T10:00',
+      to: '2026-04-14T23:59:59',
+      page: 2,
+      size: 25,
+    });
+
+    expect(mockedApi.get).toHaveBeenCalledWith('/records/audit', {
+      params: {
+        family: 'DECLARED',
+        eventType: 'rm_record_declared',
+        username: 'admin',
+        from: '2026-04-14T10:00',
+        to: '2026-04-14T23:59:59',
+        page: 2,
+        size: 25,
+      },
+    });
+  });
+
+  it('creates a file plan with trimmed fields', async () => {
+    mockedApi.post.mockResolvedValueOnce({ folderId: 'plan-1', name: 'File Plan', path: '/File Plan' } as any);
+
+    await recordsManagementService.createFilePlan({
+      name: '  File Plan ',
+      description: '  RM workspace ',
+      parentId: 'parent-1',
+    });
+
+    expect(mockedApi.post).toHaveBeenCalledWith('/records/file-plans', {
+      name: 'File Plan',
+      description: 'RM workspace',
+      parentId: 'parent-1',
+    });
+  });
+
+  it('creates a record category with trimmed fields', async () => {
+    mockedApi.post.mockResolvedValueOnce({ categoryId: 'cat-1', name: 'HR', path: '/Records Management/HR' } as any);
+
+    await recordsManagementService.createRecordCategory({
+      name: '  HR ',
+      description: '  Employee records ',
+      parentId: 'root-1',
+    });
+
+    expect(mockedApi.post).toHaveBeenCalledWith('/records/categories', {
+      name: 'HR',
+      description: 'Employee records',
+      parentId: 'root-1',
+    });
+  });
+
+  it('updates a file plan description', async () => {
+    mockedApi.put.mockResolvedValueOnce({ folderId: 'plan-1', description: 'Updated' } as any);
+
+    await recordsManagementService.updateFilePlan('plan-1', {
+      description: '  Updated  ',
+    });
+
+    expect(mockedApi.put).toHaveBeenCalledWith('/records/file-plans/plan-1', {
+      description: 'Updated',
+    });
+  });
+
+  it('renames a file plan with a trimmed name', async () => {
+    mockedApi.put.mockResolvedValueOnce({ folderId: 'plan-1', name: 'People File Plan' } as any);
+
+    await recordsManagementService.renameFilePlan('plan-1', {
+      name: '  People File Plan  ',
+    });
+
+    expect(mockedApi.put).toHaveBeenCalledWith('/records/file-plans/plan-1/rename', {
+      name: 'People File Plan',
+    });
+  });
+
+  it('moves a file plan', async () => {
+    mockedApi.put.mockResolvedValueOnce({ folderId: 'plan-3', parentId: 'plan-2' } as any);
+
+    await recordsManagementService.moveFilePlan('plan-3', {
+      targetParentId: 'plan-2',
+    });
+
+    expect(mockedApi.put).toHaveBeenCalledWith('/records/file-plans/plan-3/move', {
+      targetParentId: 'plan-2',
+    });
+  });
+
+  it('deletes a file plan', async () => {
+    mockedApi.delete.mockResolvedValueOnce(undefined as any);
+
+    await recordsManagementService.deleteFilePlan('plan-1');
+
+    expect(mockedApi.delete).toHaveBeenCalledWith('/records/file-plans/plan-1');
+  });
+
+  it('updates a record category description', async () => {
+    mockedApi.put.mockResolvedValueOnce({ categoryId: 'cat-1', description: 'Updated' } as any);
+
+    await recordsManagementService.updateRecordCategory('cat-1', {
+      description: '  Updated  ',
+    });
+
+    expect(mockedApi.put).toHaveBeenCalledWith('/records/categories/cat-1', {
+      description: 'Updated',
+    });
+  });
+
+  it('renames a record category with a trimmed name', async () => {
+    mockedApi.put.mockResolvedValueOnce({ categoryId: 'cat-1', name: 'Agreements' } as any);
+
+    await recordsManagementService.renameRecordCategory('cat-1', {
+      name: '  Agreements  ',
+    });
+
+    expect(mockedApi.put).toHaveBeenCalledWith('/records/categories/cat-1/rename', {
+      name: 'Agreements',
+    });
+  });
+
+  it('moves a record category', async () => {
+    mockedApi.put.mockResolvedValueOnce({ categoryId: 'cat-1', parentId: 'cat-2' } as any);
+
+    await recordsManagementService.moveRecordCategory('cat-1', {
+      targetParentId: 'cat-2',
+    });
+
+    expect(mockedApi.put).toHaveBeenCalledWith('/records/categories/cat-1/move', {
+      targetParentId: 'cat-2',
+    });
+  });
+
+  it('deletes a record category', async () => {
+    mockedApi.delete.mockResolvedValueOnce(undefined as any);
+
+    await recordsManagementService.deleteRecordCategory('cat-1');
+
+    expect(mockedApi.delete).toHaveBeenCalledWith('/records/categories/cat-1');
+  });
+
+  it('assigns a record category', async () => {
+    mockedApi.put.mockResolvedValueOnce({ nodeId: 'node-1', recordCategoryId: 'cat-1' } as any);
+
+    await recordsManagementService.assignRecordCategory('node-1', 'cat-1');
+
+    expect(mockedApi.put).toHaveBeenCalledWith('/nodes/node-1/record/category', { categoryId: 'cat-1' });
+  });
+});

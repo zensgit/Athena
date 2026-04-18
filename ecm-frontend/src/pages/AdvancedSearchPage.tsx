@@ -93,11 +93,13 @@ import { shouldSuppressStaleFallbackForQuery } from 'utils/searchFallbackUtils';
 import { buildPreviewQueueOverride } from 'utils/previewQueueOverrideUtils';
 import CheckoutGraphDialog from 'components/dialogs/CheckoutGraphDialog';
 import RenditionDefinitionDialog from 'components/dialogs/RenditionDefinitionDialog';
+import RecordStatusChip from 'components/records/RecordStatusChip';
 import { formatCheckoutGraphSummary } from 'utils/checkoutGraphUtils';
 import { summarizeNodeAssociationEdges } from 'utils/nodeAssociationUtils';
 import { applyPreviewQueueSearchBatchResultToOverrides } from 'utils/previewQueueSearchBatchUtils';
 import { summarizeRenditionDefinitions } from 'utils/renditionDefinitionUtils';
 import { formatBreadcrumbPath } from 'utils/pathDisplayUtils';
+import { getRecordDeclarationFromNode } from 'utils/recordDeclarationUtils';
 import { buildSearchErrorRecovery, SearchErrorRecovery } from 'utils/searchErrorUtils';
 
 const MATCH_FIELD_LABELS: Record<string, string> = {
@@ -255,6 +257,14 @@ interface SearchResult {
   previewStatus?: string;
   previewFailureReason?: string;
   previewFailureCategory?: string;
+  record?: boolean;
+  declaredBy?: string;
+  declaredAt?: string;
+  declaredVersionLabel?: string;
+  declarationComment?: string;
+  recordCategoryId?: string;
+  recordCategoryName?: string;
+  recordCategoryPath?: string;
 }
 
 
@@ -268,6 +278,7 @@ interface Facets {
   createdBy: FacetValue[];
   tags: FacetValue[];
   categories: FacetValue[];
+  recordCategoryPath: FacetValue[];
   previewStatus?: FacetValue[];
 }
 
@@ -328,6 +339,7 @@ const normalizeSearchFacets = (
     createdBy: rawFacets.createdBy || [],
     tags: rawFacets.tags || [],
     categories: rawFacets.categories || [],
+    recordCategoryPath: rawFacets.recordCategoryPath || [],
     previewStatus: rawFacets.previewStatus || [],
   };
 };
@@ -376,10 +388,12 @@ const AdvancedSearchPage: React.FC = () => {
   const [selectedCreators, setSelectedCreators] = useState<string[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [selectedRecordCategoryPaths, setSelectedRecordCategoryPaths] = useState<string[]>([]);
   const [lockState, setLockState] = useState<LockSearchState>('all');
   const [lockOwner, setLockOwner] = useState('');
   const [checkoutState, setCheckoutState] = useState<CheckoutSearchState>('all');
   const [checkoutUser, setCheckoutUser] = useState('');
+  const [recordOnly, setRecordOnly] = useState(false);
   const [dateRange, setDateRange] = useState<'all' | 'today' | 'week' | 'month'>('all');
   const [minSize, setMinSize] = useState<number | undefined>();
   const [maxSize, setMaxSize] = useState<number | undefined>();
@@ -563,6 +577,8 @@ const AdvancedSearchPage: React.FC = () => {
       lockOwnerOverride?: string;
       checkoutStateOverride?: CheckoutSearchState;
       checkoutUserOverride?: string;
+      recordOnlyOverride?: boolean;
+      recordCategoryPathsOverride?: string[];
       dateRangeOverride?: 'all' | 'today' | 'week' | 'month';
       mimeTypesOverride?: string[];
       creatorsOverride?: string[];
@@ -581,6 +597,8 @@ const AdvancedSearchPage: React.FC = () => {
       const effectiveLockOwner = options?.lockOwnerOverride ?? lockOwner;
       const effectiveCheckoutState = options?.checkoutStateOverride ?? checkoutState;
       const effectiveCheckoutUser = options?.checkoutUserOverride ?? checkoutUser;
+      const effectiveRecordOnly = options?.recordOnlyOverride ?? recordOnly;
+      const effectiveRecordCategoryPaths = options?.recordCategoryPathsOverride ?? selectedRecordCategoryPaths;
       const effectiveDateRange = options?.dateRangeOverride ?? dateRange;
       const effectiveMimeTypes = options?.mimeTypesOverride ?? selectedMimeTypes;
       const effectiveCreators = options?.creatorsOverride ?? selectedCreators;
@@ -595,6 +613,8 @@ const AdvancedSearchPage: React.FC = () => {
         lockOwner: effectiveLockOwner,
         checkoutState: effectiveCheckoutState,
         checkoutUser: effectiveCheckoutUser,
+        recordOnly: effectiveRecordOnly,
+        recordCategoryPaths: effectiveRecordCategoryPaths,
         dateRange: effectiveDateRange,
         mimeTypes: effectiveMimeTypes,
         creators: effectiveCreators,
@@ -658,6 +678,8 @@ const AdvancedSearchPage: React.FC = () => {
         lockOwner: effectiveLockOwner,
         checkoutState: effectiveCheckoutState,
         checkoutUser: effectiveCheckoutUser,
+        recordOnly: effectiveRecordOnly,
+        recordCategoryPaths: effectiveRecordCategoryPaths,
         dateRange: effectiveDateRange,
         mimeTypes: effectiveMimeTypes,
         creators: effectiveCreators,
@@ -694,6 +716,8 @@ const AdvancedSearchPage: React.FC = () => {
     maxSize,
     minSize,
     query,
+    recordOnly,
+    selectedRecordCategoryPaths,
     selectedCategories,
     selectedCreators,
     selectedMimeTypes,
@@ -710,6 +734,8 @@ const AdvancedSearchPage: React.FC = () => {
     setLockOwner(criteria.lockOwner);
     setCheckoutState(criteria.checkoutState);
     setCheckoutUser(criteria.checkoutUser);
+    setRecordOnly(criteria.recordOnly);
+    setSelectedRecordCategoryPaths(criteria.recordCategoryPaths);
     setDateRange(criteria.dateRange);
     setSelectedMimeTypes(criteria.mimeTypes);
     setSelectedCreators(criteria.creators);
@@ -725,6 +751,8 @@ const AdvancedSearchPage: React.FC = () => {
       lockOwnerOverride: criteria.lockOwner,
       checkoutStateOverride: criteria.checkoutState,
       checkoutUserOverride: criteria.checkoutUser,
+      recordOnlyOverride: criteria.recordOnly,
+      recordCategoryPathsOverride: criteria.recordCategoryPaths,
       dateRangeOverride: criteria.dateRange,
       mimeTypesOverride: criteria.mimeTypes,
       creatorsOverride: criteria.creators,
@@ -858,7 +886,9 @@ const AdvancedSearchPage: React.FC = () => {
     setLockState(restoredState.lockState);
     setLockOwner(restoredState.lockOwner);
     setCheckoutState(restoredState.checkoutState);
-    setCheckoutUser(restoredState.checkoutUser);
+   setCheckoutUser(restoredState.checkoutUser);
+    setRecordOnly(restoredState.recordOnly);
+    setSelectedRecordCategoryPaths(restoredState.recordCategoryPaths);
     setDateRange(restoredState.dateRange);
     setSelectedMimeTypes(restoredState.mimeTypes);
     setSelectedCreators(restoredState.creators);
@@ -875,6 +905,8 @@ const AdvancedSearchPage: React.FC = () => {
         lockOwnerOverride: restoredState.lockOwner,
         checkoutStateOverride: restoredState.checkoutState,
         checkoutUserOverride: restoredState.checkoutUser,
+        recordOnlyOverride: restoredState.recordOnly,
+        recordCategoryPathsOverride: restoredState.recordCategoryPaths,
         dateRangeOverride: restoredState.dateRange,
         mimeTypesOverride: restoredState.mimeTypes,
         creatorsOverride: restoredState.creators,
@@ -1327,6 +1359,8 @@ const AdvancedSearchPage: React.FC = () => {
       lockOwner,
       checkoutState,
       checkoutUser,
+      recordOnly,
+      recordCategoryPaths: selectedRecordCategoryPaths,
       dateRange,
       mimeTypes: selectedMimeTypes,
       creators: selectedCreators,
@@ -1336,7 +1370,7 @@ const AdvancedSearchPage: React.FC = () => {
       maxSize,
     });
     void handleSearch(1, { previewStatuses: next });
-  }, [checkoutState, checkoutUser, dateRange, handleSearch, lockOwner, lockState, maxSize, minSize, query, selectedCategories, selectedCreators, selectedMimeTypes, selectedPreviewStatuses, selectedTags, syncSearchStateToUrl]);
+  }, [checkoutState, checkoutUser, dateRange, handleSearch, lockOwner, lockState, maxSize, minSize, query, recordOnly, selectedCategories, selectedCreators, selectedMimeTypes, selectedPreviewStatuses, selectedRecordCategoryPaths, selectedTags, syncSearchStateToUrl]);
 
   const handleRetryPreview = useCallback(async (result: SearchResult, force = false) => {
     if (!result?.id || result.nodeType === 'FOLDER') {
@@ -1512,6 +1546,8 @@ const AdvancedSearchPage: React.FC = () => {
         lockedBy: lockOwner.trim() || undefined,
         checkedOut: checkoutState === 'checkedOut' ? true : checkoutState === 'available' ? false : undefined,
         checkoutUser: checkoutUser.trim() || undefined,
+        recordOnly: recordOnly || undefined,
+        recordCategoryPaths: selectedRecordCategoryPaths.length > 0 ? selectedRecordCategoryPaths : undefined,
         mimeTypes: selectedMimeTypes.length > 0 ? selectedMimeTypes : undefined,
         createdByList: selectedCreators.length > 0 ? selectedCreators : undefined,
         tags: selectedTags.length > 0 ? selectedTags : undefined,
@@ -1560,6 +1596,8 @@ const AdvancedSearchPage: React.FC = () => {
   }, [
     checkoutState,
     checkoutUser,
+    recordOnly,
+    selectedRecordCategoryPaths,
     dateRange,
     lockOwner,
     lockState,
@@ -1827,6 +1865,8 @@ const AdvancedSearchPage: React.FC = () => {
           lockedBy: lockOwner.trim() || undefined,
           checkedOut: checkoutState === 'checkedOut' ? true : checkoutState === 'available' ? false : undefined,
           checkoutUser: checkoutUser.trim() || undefined,
+          recordOnly: recordOnly || undefined,
+          recordCategoryPaths: selectedRecordCategoryPaths.length > 0 ? selectedRecordCategoryPaths : undefined,
           mimeTypes: selectedMimeTypes.length > 0 ? selectedMimeTypes : undefined,
           createdByList: selectedCreators.length > 0 ? selectedCreators : undefined,
           tags: selectedTags.length > 0 ? selectedTags : undefined,
@@ -1894,6 +1934,8 @@ const AdvancedSearchPage: React.FC = () => {
     maxSize,
     minSize,
     query,
+    recordOnly,
+    selectedRecordCategoryPaths,
     selectedCategories,
     selectedCreators,
     selectedMimeTypes,
@@ -2011,6 +2053,8 @@ const AdvancedSearchPage: React.FC = () => {
           lockedBy: lockOwner.trim() || undefined,
           checkedOut: checkoutState === 'checkedOut' ? true : checkoutState === 'available' ? false : undefined,
           checkoutUser: checkoutUser.trim() || undefined,
+          recordOnly: recordOnly || undefined,
+          recordCategoryPaths: selectedRecordCategoryPaths.length > 0 ? selectedRecordCategoryPaths : undefined,
           mimeTypes: selectedMimeTypes.length > 0 ? selectedMimeTypes : undefined,
           createdByList: selectedCreators.length > 0 ? selectedCreators : undefined,
           tags: selectedTags.length > 0 ? selectedTags : undefined,
@@ -2101,6 +2145,8 @@ const AdvancedSearchPage: React.FC = () => {
     previewBatchMaxDocuments,
     previewBatchWorkerCount,
     query,
+    recordOnly,
+    selectedRecordCategoryPaths,
     selectedCategories,
     selectedCreators,
     selectedMimeTypes,
@@ -2186,6 +2232,8 @@ const AdvancedSearchPage: React.FC = () => {
           lockedBy: lockOwner.trim() || undefined,
           checkedOut: checkoutState === 'checkedOut' ? true : checkoutState === 'available' ? false : undefined,
           checkoutUser: checkoutUser.trim() || undefined,
+          recordOnly: recordOnly || undefined,
+          recordCategoryPaths: selectedRecordCategoryPaths.length > 0 ? selectedRecordCategoryPaths : undefined,
           mimeTypes: selectedMimeTypes.length > 0 ? selectedMimeTypes : undefined,
           createdByList: selectedCreators.length > 0 ? selectedCreators : undefined,
           tags: selectedTags.length > 0 ? selectedTags : undefined,
@@ -2234,6 +2282,8 @@ const AdvancedSearchPage: React.FC = () => {
     minSize,
     query,
     runPreviewBatchAction,
+    recordOnly,
+    selectedRecordCategoryPaths,
     selectedCategories,
     selectedCreators,
     selectedMimeTypes,
@@ -2251,6 +2301,8 @@ const AdvancedSearchPage: React.FC = () => {
         filters: {
           locked: lockState === 'locked' ? true : lockState === 'unlocked' ? false : undefined,
           lockedBy: lockOwner.trim() || undefined,
+          recordOnly: recordOnly || undefined,
+          recordCategoryPaths: selectedRecordCategoryPaths.length > 0 ? selectedRecordCategoryPaths : undefined,
           mimeTypes: selectedMimeTypes.length > 0 ? selectedMimeTypes : undefined,
           createdByList: selectedCreators.length > 0 ? selectedCreators : undefined,
           tags: selectedTags.length > 0 ? selectedTags : undefined,
@@ -2298,6 +2350,8 @@ const AdvancedSearchPage: React.FC = () => {
     minSize,
     query,
     runPreviewBatchAction,
+    recordOnly,
+    selectedRecordCategoryPaths,
     selectedCategories,
     selectedCreators,
     selectedMimeTypes,
@@ -2551,6 +2605,46 @@ const AdvancedSearchPage: React.FC = () => {
               onChange={(e) => setCheckoutUser(e.target.value)}
               placeholder="alice"
             />
+            <FormControlLabel
+              sx={{ mb: 3 }}
+              control={(
+                <Checkbox
+                  checked={recordOnly}
+                  onChange={(event) => setRecordOnly(event.target.checked)}
+                />
+              )}
+              label="Record declarations only"
+            />
+
+            {facets?.recordCategoryPath && facets.recordCategoryPath.length > 0 && (
+              <>
+                <Typography variant="subtitle2" gutterBottom>Record Category</Typography>
+                <FormControl fullWidth size="small" sx={{ mb: 3 }}>
+                  <Select
+                    multiple
+                    value={selectedRecordCategoryPaths}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSelectedRecordCategoryPaths(typeof val === 'string' ? val.split(',') : val);
+                    }}
+                    renderValue={(selected) => (
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {selected.map((value) => (
+                          <Chip key={value} label={value} size="small" />
+                        ))}
+                      </Box>
+                    )}
+                  >
+                    {facets.recordCategoryPath.map((facet) => (
+                      <MenuItem key={facet.value} value={facet.value}>
+                        <Checkbox checked={selectedRecordCategoryPaths.indexOf(facet.value) > -1} />
+                        <ListItemText primary={facet.value} secondary={`(${facet.count})`} />
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </>
+            )}
 
             {/* Tags Facet */}
             {facets?.tags && facets.tags.length > 0 && (
@@ -3082,6 +3176,8 @@ const AdvancedSearchPage: React.FC = () => {
                           lockOwner,
                           checkoutState,
                           checkoutUser,
+                          recordOnly,
+                          recordCategoryPaths: selectedRecordCategoryPaths,
                           dateRange,
                           mimeTypes: selectedMimeTypes,
                           creators: selectedCreators,
@@ -3096,6 +3192,7 @@ const AdvancedSearchPage: React.FC = () => {
                           lockOwnerOverride: lockOwner,
                           checkoutStateOverride: checkoutState,
                           checkoutUserOverride: checkoutUser,
+                          recordCategoryPathsOverride: selectedRecordCategoryPaths,
                         });
                       }}
                     >
@@ -3682,7 +3779,9 @@ const AdvancedSearchPage: React.FC = () => {
                     </Stack>
                   </Paper>
                 )}
-                {displayResults.map((result) => (
+                {displayResults.map((result) => {
+                  const recordDeclaration = getRecordDeclarationFromNode(result);
+                  return (
                   <Paper 
                     key={result.id} 
                     sx={{ p: 2, cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }}
@@ -3810,6 +3909,9 @@ const AdvancedSearchPage: React.FC = () => {
                           size="small"
                           variant="outlined"
                         />
+                        {recordDeclaration && (
+                          <RecordStatusChip declaration={recordDeclaration} />
+                        )}
                         {formatScore(result.score) && (
                           <Chip label={formatScore(result.score)} size="small" variant="outlined" />
                         )}
@@ -4002,7 +4104,8 @@ const AdvancedSearchPage: React.FC = () => {
                       </Box>
                     )}
                   </Paper>
-                ))}
+                  );
+                })}
               </Stack>
             ) : (
               <Box p={4} textAlign="center">

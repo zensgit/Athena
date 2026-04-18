@@ -84,6 +84,8 @@ import { toast } from 'react-toastify';
 import MoveCopyDialog from 'components/dialogs/MoveCopyDialog';
 import CheckoutGraphDialog from 'components/dialogs/CheckoutGraphDialog';
 import RenditionDefinitionDialog from 'components/dialogs/RenditionDefinitionDialog';
+import RecordStatusChip from 'components/records/RecordStatusChip';
+import { getRecordDeclarationFromNode } from 'utils/recordDeclarationUtils';
 import { getEffectivePreviewStatus, getFailedPreviewMeta } from 'utils/previewStatusUtils';
 import { getCancelCheckoutActionReason, getCheckInActionReason, getFileCheckoutActionReason, getFileCheckoutTooltip } from 'utils/fileCheckoutBadgeUtils';
 import { getFileLockActionReason, getFileLockTooltip } from 'utils/fileLockBadgeUtils';
@@ -876,6 +878,7 @@ const FileList: React.FC<FileListProps> = ({
           : '';
         const lockTooltip = getFileLockTooltip(params.row);
         const checkoutTooltip = getFileCheckoutTooltip(params.row);
+        const recordDeclaration = getRecordDeclarationFromNode(params.row);
         return (
           <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
           {params.row.nodeType === 'FOLDER' ? (
@@ -904,6 +907,9 @@ const FileList: React.FC<FileListProps> = ({
               size="small"
               sx={{ ml: 1 }}
             />
+          )}
+          {recordDeclaration && (
+            <RecordStatusChip declaration={recordDeclaration} sx={{ ml: 1 }} />
           )}
           {previewMeta && (
             <Box display="flex" alignItems="center" gap={0.5} ml={1}>
@@ -1029,6 +1035,7 @@ const FileList: React.FC<FileListProps> = ({
             : '';
           const lockTooltip = getFileLockTooltip(node);
           const checkoutTooltip = getFileCheckoutTooltip(node);
+          const recordDeclaration = getRecordDeclarationFromNode(node);
           return (
             <Card
               key={node.id}
@@ -1086,6 +1093,9 @@ const FileList: React.FC<FileListProps> = ({
                     {fileTypeLabel && (
                       <Box display="flex" gap={0.5} flexWrap="wrap" mt={0.5}>
                         <Chip label={fileTypeLabel} size="small" variant="outlined" />
+                        {recordDeclaration && (
+                          <RecordStatusChip declaration={recordDeclaration} />
+                        )}
                         {previewMeta && (
                           <Box display="flex" alignItems="center" gap={0.5}>
                             <Tooltip

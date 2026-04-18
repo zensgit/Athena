@@ -43,8 +43,25 @@ export const fetchChildren = createAsyncThunk(
 
 export const createFolder = createAsyncThunk(
   'node/createFolder',
-  async ({ parentId, name, properties }: { parentId: string; name: string; properties?: Record<string, any> }) => {
-    const folder = await nodeService.createFolder(parentId, { name, properties });
+  async ({
+    parentId,
+    name,
+    description,
+    isSmart,
+    queryCriteria,
+  }: {
+    parentId: string;
+    name: string;
+    description?: string;
+    isSmart?: boolean;
+    queryCriteria?: Record<string, any>;
+  }) => {
+    const folder = await nodeService.createFolder(parentId, {
+      name,
+      description,
+      isSmart,
+      queryCriteria,
+    });
     return folder;
   }
 );

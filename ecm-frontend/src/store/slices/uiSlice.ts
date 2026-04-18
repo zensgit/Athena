@@ -49,6 +49,8 @@ export interface SearchPrefill {
   lockedBy?: string;
   checkedOut?: boolean;
   checkoutUser?: string;
+  recordOnly?: boolean;
+  recordCategoryPaths?: string[];
   aspects?: string[];
   properties?: Record<string, any>;
   createdBy?: string;

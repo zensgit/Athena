@@ -66,6 +66,7 @@ import savedSearchService, { SavedSearch } from 'services/savedSearchService';
 import { Node, SearchCriteria } from 'types';
 import { toast } from 'react-toastify';
 import Highlight from 'components/search/Highlight';
+import RecordStatusChip from 'components/records/RecordStatusChip';
 import { buildSearchCriteriaFromSavedSearch } from 'utils/savedSearchUtils';
 import {
   isPrecisionFilenameLikeQuery,
@@ -91,6 +92,7 @@ import {
 import { getSearchResultCheckoutChip } from 'utils/advancedSearchCheckoutUtils';
 import { getSearchResultLockChip } from 'utils/advancedSearchLockUtils';
 import { getFileLockActionReason } from 'utils/fileLockBadgeUtils';
+import { getRecordDeclarationFromNode } from 'utils/recordDeclarationUtils';
 import CheckoutGraphDialog from 'components/dialogs/CheckoutGraphDialog';
 import RenditionDefinitionDialog from 'components/dialogs/RenditionDefinitionDialog';
 const DocumentPreview = React.lazy(() => import('components/preview/DocumentPreview'));
@@ -164,12 +166,14 @@ const buildFallbackCriteriaKey = (criteria?: SearchCriteria): string => {
     createdBy: normalizeCriteriaValues(createdBy),
     tags: normalizeCriteriaValues(criteria.tags),
     categories: normalizeCriteriaValues(criteria.categories),
+    recordCategoryPaths: normalizeCriteriaValues(criteria.recordCategoryPaths),
     correspondents: normalizeCriteriaValues(criteria.correspondents),
     previewStatuses: normalizeCriteriaValues(criteria.previewStatuses),
     locked: criteria.locked ?? null,
     lockedBy: criteria.lockedBy?.trim() || '',
     checkedOut: criteria.checkedOut ?? null,
     checkoutUser: criteria.checkoutUser?.trim() || '',
+    recordOnly: criteria.recordOnly ?? null,
     createdFrom: criteria.createdFrom || '',
     createdTo: criteria.createdTo || '',
     modifiedFrom: criteria.modifiedFrom || '',
@@ -211,11 +215,13 @@ const SearchResults: React.FC = () => {
   const [selectedCorrespondents, setSelectedCorrespondents] = useState<string[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [selectedRecordCategoryPaths, setSelectedRecordCategoryPaths] = useState<string[]>([]);
   const [selectedPreviewStatuses, setSelectedPreviewStatuses] = useState<string[]>([]);
   const [selectedLockState, setSelectedLockState] = useState<LockFacetState>('all');
   const [selectedLockOwner, setSelectedLockOwner] = useState('');
   const [selectedCheckoutState, setSelectedCheckoutState] = useState<CheckoutFacetState>('all');
   const [selectedCheckoutUser, setSelectedCheckoutUser] = useState('');
+  const [selectedRecordOnly, setSelectedRecordOnly] = useState(false);
   const [previewNode, setPreviewNode] = useState<Node | null>(null);
   const [previewAnnotate, setPreviewAnnotate] = useState(false);
   const [hiddenNodeIds, setHiddenNodeIds] = useState<string[]>([]);
@@ -486,6 +492,9 @@ const SearchResults: React.FC = () => {
       properties: lastSearchCriteria?.properties || {},
       tags: selectedTags.length > 0 ? selectedTags : (lastSearchCriteria?.tags || []),
       categories: selectedCategories.length > 0 ? selectedCategories : (lastSearchCriteria?.categories || []),
+      recordCategoryPaths: selectedRecordCategoryPaths.length > 0
+        ? selectedRecordCategoryPaths
+        : (lastSearchCriteria?.recordCategoryPaths || []),
       correspondents: selectedCorrespondents.length > 0
         ? selectedCorrespondents
         : (lastSearchCriteria?.correspondents || []),
@@ -504,6 +513,7 @@ const SearchResults: React.FC = () => {
           ? false
           : lastSearchCriteria?.checkedOut,
       checkoutUser: selectedCheckoutUser.trim() || lastSearchCriteria?.checkoutUser || '',
+      recordOnly: selectedRecordOnly || lastSearchCriteria?.recordOnly || false,
       minSize: lastSearchCriteria?.minSize,
       maxSize: lastSearchCriteria?.maxSize,
       pathPrefix: lastSearchCriteria?.path || '',
@@ -602,11 +612,13 @@ const SearchResults: React.FC = () => {
     setSelectedCorrespondents([]);
     setSelectedTags([]);
     setSelectedCategories([]);
+    setSelectedRecordCategoryPaths([]);
     setSelectedPreviewStatuses([]);
     setSelectedLockState('all');
     setSelectedLockOwner('');
     setSelectedCheckoutState('all');
     setSelectedCheckoutUser('');
+    setSelectedRecordOnly(false);
   };
 
   const removeFacetValue = (
@@ -627,10 +639,12 @@ const SearchResults: React.FC = () => {
     selectedCorrespondents.length > 0 ||
     selectedTags.length > 0 ||
     selectedCategories.length > 0 ||
+    selectedRecordCategoryPaths.length > 0 ||
     selectedLockState !== 'all' ||
     selectedLockOwner.trim().length > 0 ||
     selectedCheckoutState !== 'all' ||
-    selectedCheckoutUser.trim().length > 0;
+    selectedCheckoutUser.trim().length > 0 ||
+    selectedRecordOnly;
   const previewStatusFilterApplied = selectedPreviewStatuses.length > 0;
   const filtersApplied = nonPreviewFiltersApplied || previewStatusFilterApplied;
 
@@ -649,6 +663,7 @@ const SearchResults: React.FC = () => {
     setSelectedCorrespondents(lastSearchCriteria.correspondents || []);
     setSelectedTags(lastSearchCriteria.tags || []);
     setSelectedCategories(lastSearchCriteria.categories || []);
+    setSelectedRecordCategoryPaths(lastSearchCriteria.recordCategoryPaths || []);
     setSelectedPreviewStatuses(lastSearchCriteria.previewStatuses || []);
     setSelectedLockState(
       lastSearchCriteria.locked === true
@@ -666,6 +681,7 @@ const SearchResults: React.FC = () => {
           : 'all'
     );
     setSelectedCheckoutUser(lastSearchCriteria.checkoutUser || '');
+    setSelectedRecordOnly(Boolean(lastSearchCriteria.recordOnly));
     setPage(1);
 
     const timer = window.setTimeout(() => {
@@ -994,6 +1010,7 @@ const SearchResults: React.FC = () => {
     );
     const baseTags = normalize(lastSearchCriteria.tags || []);
     const baseCategories = normalize(lastSearchCriteria.categories || []);
+    const baseRecordCategoryPaths = normalize(lastSearchCriteria.recordCategoryPaths || []);
     const baseCorrespondents = normalize(lastSearchCriteria.correspondents || []);
     const basePreviewStatuses = normalize(lastSearchCriteria.previewStatuses || []);
     const baseLockState: LockFacetState =
@@ -1010,11 +1027,13 @@ const SearchResults: React.FC = () => {
           ? 'available'
           : 'all';
     const baseCheckoutUser = (lastSearchCriteria.checkoutUser || '').trim();
+    const baseRecordOnly = Boolean(lastSearchCriteria.recordOnly);
 
     const nextMimeTypes = normalize(selectedMimeTypes);
     const nextCreators = normalize(selectedCreators);
     const nextTags = normalize(selectedTags);
     const nextCategories = normalize(selectedCategories);
+    const nextRecordCategoryPaths = normalize(selectedRecordCategoryPaths);
     const nextCorrespondents = normalize(selectedCorrespondents);
     const nextPreviewStatuses = normalize(selectedPreviewStatuses);
     const nextLockOwner = selectedLockOwner.trim();
@@ -1025,12 +1044,14 @@ const SearchResults: React.FC = () => {
       && arraysEqual(baseCreators, nextCreators)
       && arraysEqual(baseTags, nextTags)
       && arraysEqual(baseCategories, nextCategories)
+      && arraysEqual(baseRecordCategoryPaths, nextRecordCategoryPaths)
       && arraysEqual(baseCorrespondents, nextCorrespondents)
       && arraysEqual(basePreviewStatuses, nextPreviewStatuses)
       && baseLockState === selectedLockState
       && baseLockOwner === nextLockOwner
       && baseCheckoutState === selectedCheckoutState
       && baseCheckoutUser === nextCheckoutUser
+      && baseRecordOnly === selectedRecordOnly
     ) {
       return;
     }
@@ -1044,6 +1065,7 @@ const SearchResults: React.FC = () => {
       createdBy: undefined,
       tags: nextTags.length ? nextTags : undefined,
       categories: nextCategories.length ? nextCategories : undefined,
+      recordCategoryPaths: nextRecordCategoryPaths.length ? nextRecordCategoryPaths : undefined,
       correspondents: nextCorrespondents.length ? nextCorrespondents : undefined,
       previewStatuses: nextPreviewStatuses.length ? nextPreviewStatuses : undefined,
       locked: selectedLockState === 'locked'
@@ -1058,6 +1080,7 @@ const SearchResults: React.FC = () => {
           ? false
           : undefined,
       checkoutUser: nextCheckoutUser || undefined,
+      recordOnly: selectedRecordOnly || undefined,
       page: 0,
       size: pageSize,
       ...sortParams,
@@ -1068,11 +1091,13 @@ const SearchResults: React.FC = () => {
     selectedCorrespondents,
     selectedTags,
     selectedCategories,
+    selectedRecordCategoryPaths,
     selectedPreviewStatuses,
     selectedLockState,
     selectedLockOwner,
     selectedCheckoutState,
     selectedCheckoutUser,
+    selectedRecordOnly,
     lastSearchCriteria,
     facetSyncSuppressed,
     pageSize,
@@ -1088,11 +1113,13 @@ const SearchResults: React.FC = () => {
     selectedCorrespondents,
     selectedTags,
     selectedCategories,
+    selectedRecordCategoryPaths,
     selectedPreviewStatuses,
     selectedLockState,
     selectedLockOwner,
     selectedCheckoutState,
     selectedCheckoutUser,
+    selectedRecordOnly,
   ]);
 
   useEffect(() => {
@@ -1977,6 +2004,7 @@ const SearchResults: React.FC = () => {
         correspondents: toSorted(searchFacets.correspondent),
         tags: toSorted(searchFacets.tags),
         categories: toSorted(searchFacets.categories),
+        recordCategoryPaths: toSorted(searchFacets.recordCategoryPath),
       };
     }
 
@@ -1985,6 +2013,7 @@ const SearchResults: React.FC = () => {
     const correspondentCounts = new Map<string, number>();
     const tagCounts = new Map<string, number>();
     const categoryCounts = new Map<string, number>();
+    const recordCategoryPathCounts = new Map<string, number>();
 
     const inc = (map: Map<string, number>, key: string) => {
       map.set(key, (map.get(key) || 0) + 1);
@@ -2010,6 +2039,9 @@ const SearchResults: React.FC = () => {
           inc(categoryCounts, category);
         }
       }
+      if (node.recordCategoryPath) {
+        inc(recordCategoryPathCounts, node.recordCategoryPath);
+      }
     }
 
     const mapToSortedArray = (map: Map<string, number>): FacetValue[] => {
@@ -2024,6 +2056,7 @@ const SearchResults: React.FC = () => {
       correspondents: mapToSortedArray(correspondentCounts),
       tags: mapToSortedArray(tagCounts),
       categories: mapToSortedArray(categoryCounts),
+      recordCategoryPaths: mapToSortedArray(recordCategoryPathCounts),
     };
   }, [shouldUseSearchFacets, searchFacets, displayNodes]);
   const facetScopeLabel = shouldUseSearchFacets
@@ -2403,6 +2436,48 @@ const SearchResults: React.FC = () => {
               placeholder="alice"
               sx={{ mb: 2 }}
             />
+            <FormControlLabel
+              control={(
+                <Checkbox
+                  checked={selectedRecordOnly}
+                  onChange={(event) => setSelectedRecordOnly(event.target.checked)}
+                />
+              )}
+              label="Record declarations only"
+              sx={{ mb: 2 }}
+            />
+
+            {facets.recordCategoryPaths.length > 0 && (
+              <>
+                <Typography variant="subtitle2" gutterBottom>
+                  Record Category
+                </Typography>
+                <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+                  <Select
+                    multiple
+                    value={selectedRecordCategoryPaths}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setSelectedRecordCategoryPaths(typeof value === 'string' ? value.split(',') : (value as string[]));
+                    }}
+                    renderValue={(selected) => (
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {(selected as string[]).map((value) => (
+                          <Chip key={value} label={value} size="small" />
+                        ))}
+                      </Box>
+                    )}
+                  >
+                    {facets.recordCategoryPaths.map((facet) => (
+                      <MenuItem key={facet.value} value={facet.value}>
+                        <Checkbox checked={selectedRecordCategoryPaths.indexOf(facet.value) > -1} />
+                        <ListItemText primary={facet.value} secondary={`(${facet.count})`} />
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </>
+            )}
             {failedPreviewSummary.retryableFailed > 0 && (
               <Box display="flex" alignItems="center" gap={1} mb={2}>
                 <Button
@@ -2956,6 +3031,14 @@ const SearchResults: React.FC = () => {
                   onDelete={() => removeFacetValue(setSelectedCategories, value)}
                 />
               ))}
+              {selectedRecordCategoryPaths.map((value) => (
+                <Chip
+                  key={`record-category-${value}`}
+                  label={`Record category: ${value}`}
+                  size="small"
+                  onDelete={() => removeFacetValue(setSelectedRecordCategoryPaths, value)}
+                />
+              ))}
               {selectedPreviewStatuses.map((value) => (
                 <Chip
                   key={`preview-${value}`}
@@ -2996,6 +3079,14 @@ const SearchResults: React.FC = () => {
                   onDelete={() => setSelectedCheckoutUser('')}
                 />
               )}
+              {selectedRecordOnly && (
+                <Chip
+                  key="record-only"
+                  label="Record: declared only"
+                  size="small"
+                  onDelete={() => setSelectedRecordOnly(false)}
+                />
+              )}
               <Button size="small" onClick={clearFacetFilters}>
                 Clear all
               </Button>
@@ -3026,7 +3117,9 @@ const SearchResults: React.FC = () => {
           ) : (
             <>
               <Grid container spacing={2}>
-                {paginatedNodes.map((node) => (
+                {paginatedNodes.map((node) => {
+                  const recordDeclaration = getRecordDeclarationFromNode(node);
+                  return (
                   <Grid item xs={12} sm={6} md={4} lg={3} xl={2} key={node.id}>
                     <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                       <CardContent sx={{ flex: 1 }}>
@@ -3067,8 +3160,11 @@ const SearchResults: React.FC = () => {
                                 {getFileTypeChip(node.contentType)}
                                 {node.currentVersionLabel && (
                                   <Chip label={`v${node.currentVersionLabel}`} size="small" variant="outlined" />
-                              )}
-                              {getPreviewStatusChip(node)}
+                                )}
+                                {recordDeclaration && (
+                                  <RecordStatusChip declaration={recordDeclaration} />
+                                )}
+                                {getPreviewStatusChip(node)}
                             </Box>
                           </Box>
                         </Box>
@@ -3309,7 +3405,8 @@ const SearchResults: React.FC = () => {
                       </CardActions>
                     </Card>
                   </Grid>
-                ))}
+                  );
+                })}
               </Grid>
 
               {totalPages > 1 && (

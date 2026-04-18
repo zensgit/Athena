@@ -14,7 +14,9 @@ import {
 
 interface CreateFolderRequest {
   name: string;
-  properties?: Record<string, any>;
+  description?: string;
+  isSmart?: boolean;
+  queryCriteria?: Record<string, any>;
 }
 
 interface FolderResponse {
@@ -25,6 +27,8 @@ interface FolderResponse {
   parentId?: string;
   folderType: string;
   inheritPermissions?: boolean;
+  smart?: boolean;
+  queryCriteria?: Record<string, any>;
   createdBy: string;
   createdDate: string;
   lastModifiedBy?: string;
@@ -52,6 +56,13 @@ interface ApiNodeResponse {
   checkedOut?: boolean;
   checkoutUser?: string;
   checkoutDate?: string;
+  currentVersionLabel?: string;
+  properties?: Record<string, any>;
+  metadata?: Record<string, any>;
+  aspects?: string[];
+  tags?: string[];
+  categories?: string[];
+  inheritPermissions?: boolean;
   previewStatus?: string;
   previewFailureReason?: string;
   previewFailureCategory?: string;
@@ -755,6 +766,12 @@ class NodeService {
     if (criteria.checkoutUser?.trim()) {
       filters.checkoutUser = criteria.checkoutUser.trim();
     }
+    if (criteria.recordOnly !== undefined) {
+      filters.recordOnly = criteria.recordOnly;
+    }
+    if (criteria.recordCategoryPaths?.length) {
+      filters.recordCategoryPaths = criteria.recordCategoryPaths;
+    }
     if (criteria.createdByList?.length) {
       filters.createdByList = criteria.createdByList;
     } else if (criteria.createdBy) {
@@ -847,31 +864,41 @@ class NodeService {
       path: folder.path,
       nodeType: 'FOLDER',
       parentId: folder.parentId,
-      properties: { description: folder.description },
+      properties: folder.description ? { description: folder.description } : {},
       aspects: [],
       created: folder.createdDate,
       modified: folder.lastModifiedDate || folder.createdDate,
       creator: folder.createdBy,
       modifier: folder.lastModifiedBy || folder.createdBy,
+      description: folder.description,
       inheritPermissions: folder.inheritPermissions,
+      smart: folder.smart,
+      queryCriteria: folder.queryCriteria,
     };
   }
 
   private apiNodeToNode(apiNode: ApiNodeResponse): Node {
+    const properties = apiNode.properties || { description: apiNode.description };
     return {
       id: apiNode.id,
       name: apiNode.name,
       path: apiNode.path,
       nodeType: apiNode.nodeType,
       parentId: apiNode.parentId,
-      properties: { description: apiNode.description },
-      aspects: [],
+      properties,
+      metadata: apiNode.metadata || {},
+      aspects: apiNode.aspects || [],
       created: apiNode.createdDate,
       modified: apiNode.lastModifiedDate || apiNode.createdDate,
       creator: apiNode.createdBy,
       modifier: apiNode.lastModifiedBy || apiNode.createdBy,
       size: apiNode.size,
       contentType: apiNode.contentType,
+      currentVersionLabel: apiNode.currentVersionLabel,
+      description: apiNode.description,
+      tags: apiNode.tags,
+      categories: apiNode.categories,
+      inheritPermissions: apiNode.inheritPermissions,
       correspondentId: apiNode.correspondentId,
       correspondent: apiNode.correspondentName,
       locked: apiNode.locked,
@@ -882,6 +909,18 @@ class NodeService {
       previewStatus: apiNode.previewStatus,
       previewFailureReason: apiNode.previewFailureReason,
       previewFailureCategory: apiNode.previewFailureCategory,
+      record: Boolean(
+        apiNode.aspects?.includes('rm:record')
+          || properties['rm:declaredAt']
+          || properties['rm:declaredBy']
+      ),
+      declaredBy: properties['rm:declaredBy'],
+      declaredAt: properties['rm:declaredAt'],
+      declaredVersionLabel: properties['rm:declaredVersionLabel'],
+      declarationComment: properties['rm:declarationComment'],
+      recordCategoryId: properties['rm:recordCategoryId'],
+      recordCategoryName: properties['rm:recordCategoryName'],
+      recordCategoryPath: properties['rm:recordCategoryPath'],
     };
   }
 
@@ -918,6 +957,18 @@ class NodeService {
       previewStatus: apiNode.previewStatus,
       previewFailureReason: apiNode.previewFailureReason,
       previewFailureCategory: apiNode.previewFailureCategory,
+      record: Boolean(
+        apiNode.aspects?.includes('rm:record')
+          || apiNode.properties?.['rm:declaredAt']
+          || apiNode.properties?.['rm:declaredBy']
+      ),
+      declaredBy: apiNode.properties?.['rm:declaredBy'],
+      declaredAt: apiNode.properties?.['rm:declaredAt'],
+      declaredVersionLabel: apiNode.properties?.['rm:declaredVersionLabel'],
+      declarationComment: apiNode.properties?.['rm:declarationComment'],
+      recordCategoryId: apiNode.properties?.['rm:recordCategoryId'],
+      recordCategoryName: apiNode.properties?.['rm:recordCategoryName'],
+      recordCategoryPath: apiNode.properties?.['rm:recordCategoryPath'],
     };
   }
 
@@ -1113,9 +1164,12 @@ class NodeService {
     }
     const folder = await api.post<FolderResponse>('/folders', {
       name: request.name,
+      description: request.description,
       parentId: parentId,
       folderType: 'GENERAL',
       inheritPermissions: true,
+      isSmart: request.isSmart === true ? true : undefined,
+      queryCriteria: request.isSmart === true ? request.queryCriteria : undefined,
     });
     return this.folderToNode(folder);
   }
@@ -1834,6 +1888,23 @@ class NodeService {
     const inferredNodeType = item.mimeType || item.fileSize
       ? 'DOCUMENT'
       : (item.nodeType === 'FOLDER' || item.nodeType === 'DOCUMENT' ? item.nodeType : 'FOLDER');
+    const properties: Record<string, any> = { description: item.description };
+    if (item.declaredBy) properties['rm:declaredBy'] = item.declaredBy;
+    if (item.declaredAt) properties['rm:declaredAt'] = item.declaredAt;
+    if (item.declaredVersionLabel) properties['rm:declaredVersionLabel'] = item.declaredVersionLabel;
+    if (item.declarationComment) properties['rm:declarationComment'] = item.declarationComment;
+    if (item.recordCategoryId) properties['rm:recordCategoryId'] = item.recordCategoryId;
+    if (item.recordCategoryName) properties['rm:recordCategoryName'] = item.recordCategoryName;
+    if (item.recordCategoryPath) properties['rm:recordCategoryPath'] = item.recordCategoryPath;
+    const isRecord = Boolean(
+      item.record
+        || item.declaredBy
+        || item.declaredAt
+        || item.declaredVersionLabel
+        || item.recordCategoryId
+        || item.recordCategoryName
+        || item.recordCategoryPath
+    );
 
     return ({
       id: item.id,
@@ -1841,14 +1912,15 @@ class NodeService {
       path: item.path,
       nodeType: inferredNodeType,
       parentId: item.parentId,
-      properties: { description: item.description },
-      aspects: [],
+      properties,
+      aspects: isRecord ? ['rm:record'] : [],
       created: item.createdDate,
       modified: item.lastModifiedDate || item.createdDate,
       creator: item.createdBy,
       modifier: item.lastModifiedBy || item.createdBy,
       size: item.fileSize,
       contentType: item.mimeType,
+      currentVersionLabel: item.currentVersionLabel,
       description: item.description,
       highlights: item.highlights,
       matchFields: item.matchFields,
@@ -1860,6 +1932,14 @@ class NodeService {
       previewFailureReason: item.previewFailureReason,
       previewFailureCategory: item.previewFailureCategory,
       score: item.score,
+      record: isRecord,
+      declaredBy: item.declaredBy,
+      declaredAt: item.declaredAt,
+      declaredVersionLabel: item.declaredVersionLabel,
+      declarationComment: item.declarationComment,
+      recordCategoryId: item.recordCategoryId,
+      recordCategoryName: item.recordCategoryName,
+      recordCategoryPath: item.recordCategoryPath,
     } as Node);
   }
 

@@ -100,6 +100,8 @@ describe('savedSearchUtils', () => {
       lockOwner: 'carol',
       checkoutState: 'checkedOut',
       checkoutUser: 'alice',
+      recordOnly: false,
+      recordCategoryPaths: [],
       dateRange: 'month',
       mimeTypes: ['application/pdf'],
       creators: ['admin', 'editor'],
@@ -132,6 +134,33 @@ describe('savedSearchUtils', () => {
     expect(criteria.lockedBy).toBe('carol');
     expect(criteria.checkedOut).toBe(true);
     expect(criteria.checkoutUser).toBe('alice');
+  });
+
+  it('maps recordOnly and recordCategoryPaths from saved search into both search criteria and advanced-search state', () => {
+    const savedSearch = {
+      id: 'saved-record-only',
+      userId: 'admin',
+      name: 'Declared records',
+      createdAt: new Date().toISOString(),
+      queryParams: {
+        query: 'record',
+        filters: {
+          recordOnly: 'true',
+          recordCategoryPaths: '/Records Management/Finance,/Records Management/Legal',
+        },
+      },
+    };
+
+    expect(buildSearchCriteriaFromSavedSearch(savedSearch)).toMatchObject({
+      name: 'record',
+      recordOnly: true,
+      recordCategoryPaths: ['/Records Management/Finance', '/Records Management/Legal'],
+    });
+    expect(buildAdvancedSearchStateFromSavedSearch(savedSearch)).toMatchObject({
+      query: 'record',
+      recordOnly: true,
+      recordCategoryPaths: ['/Records Management/Finance', '/Records Management/Legal'],
+    });
   });
 
   it('supports legacy aliases for pathPrefix, createdFrom/to, and previewStatus', () => {

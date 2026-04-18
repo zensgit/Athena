@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Dialog,
   DialogActions,
@@ -45,10 +45,11 @@ import {
   ChatBubbleOutline,
   Person,
   Share,
+  Approval,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
-import { CheckoutInfo, LockInfo, Node, PdfAnnotation, PdfAnnotationState } from 'types';
+import { CheckoutInfo, LockInfo, Node, PdfAnnotation, PdfAnnotationState, RecordDeclaration } from 'types';
 import { useAppSelector, useAppDispatch } from 'store';
 import { setSelectedNodeId, setShareLinkManagerOpen } from 'store/slices/uiSlice';
 import apiService from 'services/api';
@@ -59,12 +60,16 @@ import nodeService, {
   OcrQueueStatus,
   PreviewQueueStatus,
 } from 'services/nodeService';
+import recordsManagementService from 'services/recordsManagementService';
 import { toast } from 'react-toastify';
 import { getEffectivePreviewStatus, getFailedPreviewMeta, isRetryablePreviewFailure } from 'utils/previewStatusUtils';
 import { getLockInfoAlertMessage, getLockInfoAlertSeverity, getLockInfoChipLabel } from 'utils/lockInfoUtils';
 import { getCheckoutInfoAlertMessage, getCheckoutInfoAlertSeverity, getCheckoutInfoChipLabel } from 'utils/checkoutInfoUtils';
 import CheckoutGraphDialog from 'components/dialogs/CheckoutGraphDialog';
 import RenditionDefinitionDialog from 'components/dialogs/RenditionDefinitionDialog';
+import RecordStatusChip from 'components/records/RecordStatusChip';
+import DeclareRecordDialog from 'components/records/DeclareRecordDialog';
+import UndeclareRecordDialog from 'components/records/UndeclareRecordDialog';
 import { resolveDocumentPreviewQueueState } from './documentPreviewQueueState';
 import { formatCheckoutGraphSummary } from 'utils/checkoutGraphUtils';
 import { getRenditionDefinitionLines } from 'utils/renditionDefinitionUtils';
@@ -266,6 +271,10 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   const [queueingPreview, setQueueingPreview] = useState(false);
   const [nodeDetails, setNodeDetails] = useState<Node | null>(null);
   const [nodeDetailsLoading, setNodeDetailsLoading] = useState(false);
+  const [recordDeclaration, setRecordDeclaration] = useState<RecordDeclaration | null>(null);
+  const [recordDeclarationLoading, setRecordDeclarationLoading] = useState(false);
+  const [declareRecordDialogOpen, setDeclareRecordDialogOpen] = useState(false);
+  const [undeclareRecordDialogOpen, setUndeclareRecordDialogOpen] = useState(false);
   const [lockInfo, setLockInfo] = useState<LockInfo | null>(null);
   const [checkoutInfo, setCheckoutInfo] = useState<CheckoutInfo | null>(null);
   const [checkoutGraph, setCheckoutGraph] = useState<NodeCheckoutGraph | null>(null);
@@ -314,6 +323,11 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   const rotationNormalized = ((rotation % 360) + 360) % 360;
   const annotationsDisabledForRotation = rotationNormalized !== 0;
   const canAnnotate = canWrite && !annotationsDisabledForRotation;
+  const effectiveAspects = useMemo(
+    () => nodeDetails?.aspects ?? node?.aspects ?? [],
+    [node?.aspects, nodeDetails?.aspects]
+  );
+  const isDeclaredRecord = effectiveAspects.includes('rm:record') || Boolean(recordDeclaration);
   const mentionTargets = [
     { label: 'Creator', username: node?.creator },
     { label: 'Modifier', username: node?.modifier },
@@ -567,6 +581,37 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     void loadNodeDetails();
   }, [loadNodeDetails, nodeId, open]);
 
+  useEffect(() => {
+    if (!open || !nodeId || !isAdmin || !effectiveAspects.includes('rm:record')) {
+      setRecordDeclaration(null);
+      setRecordDeclarationLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setRecordDeclarationLoading(true);
+    void recordsManagementService.getRecord(nodeId)
+      .then((declaration) => {
+        if (!cancelled) {
+          setRecordDeclaration(declaration);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRecordDeclaration(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setRecordDeclarationLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveAspects, isAdmin, nodeId, open]);
+
   const closeCheckInDialog = useCallback(() => {
     if (checkInSubmitting) {
       return;
@@ -733,6 +778,10 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     setQueueingPreview(false);
     setNodeDetails(null);
     setNodeDetailsLoading(false);
+    setRecordDeclaration(null);
+    setRecordDeclarationLoading(false);
+    setDeclareRecordDialogOpen(false);
+    setUndeclareRecordDialogOpen(false);
     setLockInfo(null);
     setCheckoutInfo(null);
     setCheckoutGraph(null);
@@ -1872,6 +1921,13 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
             </Tooltip>
           )}
 
+          {isDeclaredRecord && (
+            <RecordStatusChip
+              declaration={recordDeclaration}
+              sx={{ mr: 2 }}
+            />
+          )}
+
           {/* Navigation controls for PDF */}
           {effectiveContentType === 'application/pdf' && numPages && (
             <Box display="flex" alignItems="center" mr={2}>
@@ -2063,6 +2119,34 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                 <ListItemText>Share</ListItemText>
               </MenuItem>
             )}
+            {isAdmin && node?.nodeType === 'DOCUMENT' && !isDeclaredRecord && (
+              <MenuItem
+                onClick={() => {
+                  setDeclareRecordDialogOpen(true);
+                  handleMenuClose();
+                }}
+                disabled={recordDeclarationLoading || Boolean(nodeDetails?.checkedOut || node?.checkedOut)}
+              >
+                <ListItemIcon>
+                  <Approval fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>Declare Record</ListItemText>
+              </MenuItem>
+            )}
+            {isAdmin && node?.nodeType === 'DOCUMENT' && isDeclaredRecord && (
+              <MenuItem
+                onClick={() => {
+                  setUndeclareRecordDialogOpen(true);
+                  handleMenuClose();
+                }}
+                disabled={recordDeclarationLoading}
+              >
+                <ListItemIcon>
+                  <Approval fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>Undeclare Record...</ListItemText>
+              </MenuItem>
+            )}
             <MenuItem onClick={() => { handlePrint(); handleMenuClose(); }}>
               <ListItemIcon>
                 <Print fontSize="small" />
@@ -2095,8 +2179,22 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
           || shouldPollOcr
           || resolvedOcrStatus === 'FAILED'
           || Boolean(lockInfoAlertMessage)
-          || Boolean(checkoutInfoAlertMessage)) && (
+          || Boolean(checkoutInfoAlertMessage)
+          || Boolean(recordDeclaration)) && (
           <Box sx={{ p: 2, bgcolor: 'background.paper', borderBottom: '1px solid', borderColor: 'divider' }}>
+            {recordDeclaration && (
+              <Alert
+                severity="warning"
+                sx={{
+                  mb: checkoutInfoAlertMessage || lockInfoAlertMessage || shouldPollPreview || showPreviewFailureAlert || shouldPollOcr || resolvedOcrStatus === 'FAILED'
+                    ? 1
+                    : 0,
+                }}
+              >
+                {`Declared as a record${recordDeclaration.declaredBy ? ` by ${recordDeclaration.declaredBy}` : ''}${recordDeclaration.declaredAt ? ` on ${new Date(recordDeclaration.declaredAt).toLocaleString()}` : ''}.`}
+                {recordDeclaration.declarationComment ? ` Comment: ${recordDeclaration.declarationComment}` : ''}
+              </Alert>
+            )}
             {checkoutInfoAlertMessage && checkoutInfoAlertSeverity && (
               <Alert
                 severity={checkoutInfoAlertSeverity}
@@ -2458,6 +2556,28 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
           </Button>
         </DialogActions>
       </Dialog>
+
+      <DeclareRecordDialog
+        open={declareRecordDialogOpen}
+        nodeId={nodeId}
+        nodeName={node.name}
+        onClose={() => setDeclareRecordDialogOpen(false)}
+        onDeclared={(declaration) => {
+          setRecordDeclaration(declaration);
+          void loadNodeDetails();
+        }}
+      />
+
+      <UndeclareRecordDialog
+        open={undeclareRecordDialogOpen}
+        nodeId={nodeId}
+        nodeName={node.name}
+        onClose={() => setUndeclareRecordDialogOpen(false)}
+        onUndeclared={() => {
+          setRecordDeclaration(null);
+          void loadNodeDetails();
+        }}
+      />
 
       <Dialog
         open={annotationDialogOpen}

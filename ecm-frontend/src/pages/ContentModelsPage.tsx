@@ -83,7 +83,15 @@ const ContentModelsPage: React.FC = () => {
   const [addAspectForm, setAddAspectForm] = useState({ name: '', title: '', description: '', parentName: '' });
   const [addPropertyOpen, setAddPropertyOpen] = useState(false);
   const [addPropertyTarget, setAddPropertyTarget] = useState<{ id: string; kind: 'type' | 'aspect'; label: string } | null>(null);
-  const [addPropertyForm, setAddPropertyForm] = useState({ name: '', title: '', dataType: 'TEXT' as PropertyDataType, mandatory: false, multiValued: false, defaultValue: '' });
+  const [addPropertyForm, setAddPropertyForm] = useState({
+    name: '',
+    title: '',
+    dataType: 'TEXT' as PropertyDataType,
+    mandatory: false,
+    multiValued: false,
+    encrypted: false,
+    defaultValue: '',
+  });
   const [editTypeOpen, setEditTypeOpen] = useState(false);
   const [editTypeForm, setEditTypeForm] = useState({ id: '', qualifiedName: '', title: '', description: '', parentName: '' });
   const [editAspectOpen, setEditAspectOpen] = useState(false);
@@ -282,6 +290,7 @@ const ContentModelsPage: React.FC = () => {
         dataType: addPropertyForm.dataType,
         mandatory: addPropertyForm.mandatory,
         multiValued: addPropertyForm.multiValued,
+        encrypted: addPropertyForm.encrypted,
         defaultValue: addPropertyForm.defaultValue.trim() || undefined,
       };
       if (addPropertyTarget.kind === 'type') {
@@ -290,7 +299,7 @@ const ContentModelsPage: React.FC = () => {
         await contentModelService.addPropertyToAspect(addPropertyTarget.id, payload);
       }
       setAddPropertyOpen(false);
-      setAddPropertyForm({ name: '', title: '', dataType: 'TEXT', mandatory: false, multiValued: false, defaultValue: '' });
+      setAddPropertyForm({ name: '', title: '', dataType: 'TEXT', mandatory: false, multiValued: false, encrypted: false, defaultValue: '' });
       setAddPropertyTarget(null);
       toast.success('Property added');
       await loadPage();
@@ -299,7 +308,7 @@ const ContentModelsPage: React.FC = () => {
 
   const openAddProperty = (id: string, kind: 'type' | 'aspect', label: string) => {
     setAddPropertyTarget({ id, kind, label });
-    setAddPropertyForm({ name: '', title: '', dataType: 'TEXT', mandatory: false, multiValued: false, defaultValue: '' });
+    setAddPropertyForm({ name: '', title: '', dataType: 'TEXT', mandatory: false, multiValued: false, encrypted: false, defaultValue: '' });
     setAddPropertyOpen(true);
   };
 
@@ -509,6 +518,7 @@ const ContentModelsPage: React.FC = () => {
                     {property.mandatory && <Chip size="small" label="Mandatory" color="error" variant="outlined" />}
                     {property.multiValued && <Chip size="small" label="Multi" variant="outlined" />}
                     {property.indexed && <Chip size="small" label="Indexed" color="success" variant="outlined" />}
+                    {property.encrypted && <Chip size="small" label="Encrypted" color="secondary" variant="outlined" />}
                     {property.protectedField && <Chip size="small" label="Protected" color="warning" variant="outlined" />}
                   </Stack>
                 </TableCell>
@@ -984,7 +994,7 @@ const ContentModelsPage: React.FC = () => {
               {DATA_TYPES.map((dt) => <MenuItem key={dt} value={dt}>{dt}</MenuItem>)}
             </Select>
             <Grid container spacing={2}>
-              <Grid item xs={6}>
+              <Grid item xs={12} md={4}>
                 <Button
                   variant={addPropertyForm.mandatory ? 'contained' : 'outlined'}
                   size="small"
@@ -994,7 +1004,7 @@ const ContentModelsPage: React.FC = () => {
                   Mandatory: {addPropertyForm.mandatory ? 'Yes' : 'No'}
                 </Button>
               </Grid>
-              <Grid item xs={6}>
+              <Grid item xs={12} md={4}>
                 <Button
                   variant={addPropertyForm.multiValued ? 'contained' : 'outlined'}
                   size="small"
@@ -1004,7 +1014,22 @@ const ContentModelsPage: React.FC = () => {
                   Multi-valued: {addPropertyForm.multiValued ? 'Yes' : 'No'}
                 </Button>
               </Grid>
+              <Grid item xs={12} md={4}>
+                <Button
+                  variant={addPropertyForm.encrypted ? 'contained' : 'outlined'}
+                  size="small"
+                  fullWidth
+                  onClick={() => setAddPropertyForm((p) => ({ ...p, encrypted: !p.encrypted }))}
+                >
+                  Encrypted: {addPropertyForm.encrypted ? 'Yes' : 'No'}
+                </Button>
+              </Grid>
             </Grid>
+            {addPropertyForm.encrypted && (
+              <Alert severity="info">
+                Encrypted model properties are stored outside plaintext node properties and are excluded from search indexing.
+              </Alert>
+            )}
             <TextField label="Default Value" value={addPropertyForm.defaultValue} onChange={(e) => setAddPropertyForm((p) => ({ ...p, defaultValue: e.target.value }))} fullWidth />
           </Stack>
         </DialogContent>

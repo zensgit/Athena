@@ -151,6 +151,8 @@ export const buildSearchCriteriaFromSavedSearch = (item: SavedSearch): SearchCri
     lockedBy: advancedState.lockOwner || undefined,
     checkedOut: advancedState.checkoutState === 'checkedOut' ? true : advancedState.checkoutState === 'available' ? false : undefined,
     checkoutUser: advancedState.checkoutUser || undefined,
+    recordOnly: advancedState.recordOnly || undefined,
+    recordCategoryPaths: advancedState.recordCategoryPaths.length ? advancedState.recordCategoryPaths : undefined,
     aspects: normalizeList(getFilterValue('aspects')),
     properties,
     createdBy,

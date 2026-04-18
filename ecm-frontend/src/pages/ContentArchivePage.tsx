@@ -167,10 +167,10 @@ const ContentArchivePage: React.FC = () => {
     setSubmitting(true);
     try {
       const result = await contentArchiveService.restoreNode(trimmed);
-      toast.success(`Restored ${result.affectedNodeCount} node(s) to HOT storage`);
+      toast.success(`Reopened ${result.affectedNodeCount} node(s) to HOT storage`);
       await Promise.all([refreshLookup(trimmed), loadArchivedNodes()]);
     } catch {
-      toast.error('Failed to restore archived node');
+      toast.error('Failed to reopen archived node');
     } finally {
       setSubmitting(false);
     }
@@ -329,7 +329,7 @@ const ContentArchivePage: React.FC = () => {
             Content Archive
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Move nodes into archive storage tiers and restore them back to HOT storage when needed.
+            Move nodes into archive storage tiers and reopen them back to HOT storage when needed.
           </Typography>
         </Box>
         <Button variant="outlined" startIcon={<Refresh />} onClick={() => void loadArchivedNodes()} disabled={loading}>
@@ -344,7 +344,7 @@ const ContentArchivePage: React.FC = () => {
               <Stack spacing={2.5}>
                 <Typography variant="h6">Archive Operator</Typography>
                 <Alert severity="info">
-                  First version focuses on archive status, restore flow, and operator visibility. It does not yet move
+                  First version focuses on archive status, reopen flow, and operator visibility. It does not yet move
                   content into an external cold-storage backend.
                 </Alert>
                 <TextField
@@ -387,7 +387,7 @@ const ContentArchivePage: React.FC = () => {
                     onClick={() => void handleRestoreNode()}
                     disabled={submitting}
                   >
-                    Restore
+                    Reopen
                   </Button>
                 </Stack>
                 {statusLookup ? (
@@ -567,7 +567,7 @@ const ContentArchivePage: React.FC = () => {
                           <TableCell align="right">
                             <Stack direction="row" justifyContent="flex-end" spacing={1}>
                               <Button size="small" color="success" startIcon={<Restore />} onClick={() => void handleRestoreNode(node.nodeId)}>
-                                Restore
+                                Reopen
                               </Button>
                             </Stack>
                           </TableCell>

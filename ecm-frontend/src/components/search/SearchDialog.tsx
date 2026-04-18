@@ -93,6 +93,7 @@ const SearchDialog: React.FC = () => {
 
   const [tags, setTags] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
+  const [recordCategoryPaths, setRecordCategoryPaths] = useState<string[]>([]);
   const [correspondents, setCorrespondents] = useState<string[]>([]);
   const [selectedPreviewStatuses, setSelectedPreviewStatuses] = useState<string[]>([]);
   const [minSize, setMinSize] = useState<number | undefined>();
@@ -112,12 +113,14 @@ const SearchDialog: React.FC = () => {
   const [facetOptions, setFacetOptions] = useState<{
     tags: string[];
     categories: string[];
+    recordCategoryPaths: string[];
     correspondents: string[];
     mimeTypes: string[];
     createdBy: string[];
   }>({
     tags: [],
     categories: [],
+    recordCategoryPaths: [],
     correspondents: [],
     mimeTypes: [],
     createdBy: [],
@@ -136,6 +139,7 @@ const SearchDialog: React.FC = () => {
       setFacetOptions({
         tags: res.tags?.map((f: any) => f.value) || [],
         categories: res.categories?.map((f: any) => f.value) || [],
+        recordCategoryPaths: res.recordCategoryPath?.map((f: any) => f.value) || [],
         correspondents: res.correspondent?.map((f: any) => f.value) || [],
         mimeTypes: res.mimeType?.map((f: any) => f.value) || [],
         createdBy: res.createdBy?.map((f: any) => f.value) || [],
@@ -209,11 +213,13 @@ const SearchDialog: React.FC = () => {
           modifiedTo: lastSearchCriteria.modifiedTo,
           tags: lastSearchCriteria.tags || [],
           categories: lastSearchCriteria.categories || [],
+          recordCategoryPaths: lastSearchCriteria.recordCategoryPaths || [],
           correspondents: lastSearchCriteria.correspondents || [],
           locked: lastSearchCriteria.locked,
           lockedBy: lastSearchCriteria.lockedBy || '',
           checkedOut: lastSearchCriteria.checkedOut,
           checkoutUser: lastSearchCriteria.checkoutUser || '',
+          recordOnly: lastSearchCriteria.recordOnly,
           minSize: lastSearchCriteria.minSize,
           maxSize: lastSearchCriteria.maxSize,
           pathPrefix: lastSearchCriteria.path || '',
@@ -237,6 +243,7 @@ const SearchDialog: React.FC = () => {
       || Boolean(source.lockedBy)
       || source.checkedOut !== undefined
       || Boolean(source.checkoutUser)
+      || source.recordOnly === true
       || (source.previewStatuses && source.previewStatuses.length > 0)
       || (source.folderId && source.folderId.trim().length > 0)
     );
@@ -251,6 +258,7 @@ const SearchDialog: React.FC = () => {
     const hasMetaPrefill = Boolean(
       (source.tags && source.tags.length > 0)
       || (source.categories && source.categories.length > 0)
+      || (source.recordCategoryPaths && source.recordCategoryPaths.length > 0)
       || (source.correspondents && source.correspondents.length > 0)
       || source.minSize !== undefined
       || source.maxSize !== undefined
@@ -281,6 +289,7 @@ const SearchDialog: React.FC = () => {
       lockedBy: source.lockedBy || '',
       checkedOut: source.checkedOut,
       checkoutUser: source.checkoutUser || '',
+      recordOnly: source.recordOnly,
       createdFrom: source.createdFrom,
       createdTo: source.createdTo,
       modifiedFrom: source.modifiedFrom,
@@ -292,6 +301,7 @@ const SearchDialog: React.FC = () => {
     setExpandedSection(nextExpandedSection);
     setTags(source.tags || []);
     setCategories(source.categories || []);
+    setRecordCategoryPaths(source.recordCategoryPaths || []);
     setCorrespondents(source.correspondents || []);
     setSelectedPreviewStatuses(source.previewStatuses || []);
     setMinSize(source.minSize);
@@ -384,6 +394,7 @@ const SearchDialog: React.FC = () => {
       lockedBy: '',
       checkedOut: undefined,
       checkoutUser: '',
+      recordOnly: false,
     });
     setCustomProperties([]);
     setNewPropertyKey('');
@@ -391,6 +402,7 @@ const SearchDialog: React.FC = () => {
     setExpandedSection('basic');
     setTags([]);
     setCategories([]);
+    setRecordCategoryPaths([]);
     setCorrespondents([]);
     setSelectedPreviewStatuses([]);
     setMinSize(undefined);
@@ -408,6 +420,7 @@ const SearchDialog: React.FC = () => {
     const filters: Record<string, any> = {};
     const normalizedTags = normalizeList(tags);
     const normalizedCategories = normalizeList(categories);
+    const normalizedRecordCategoryPaths = normalizeList(recordCategoryPaths);
     const normalizedCorrespondents = normalizeList(correspondents);
     const normalizedProperties = customProperties.reduce((acc, prop) => {
       const key = prop.key.trim();
@@ -436,6 +449,9 @@ const SearchDialog: React.FC = () => {
     if (normalizedCategories.length) {
       filters.categories = normalizedCategories;
     }
+    if (normalizedRecordCategoryPaths.length) {
+      filters.recordCategoryPaths = normalizedRecordCategoryPaths;
+    }
     if (normalizedCorrespondents.length) {
       filters.correspondents = normalizedCorrespondents;
     }
@@ -453,6 +469,9 @@ const SearchDialog: React.FC = () => {
     }
     if (searchCriteria.checkoutUser?.trim()) {
       filters.checkoutUser = searchCriteria.checkoutUser.trim();
+    }
+    if (searchCriteria.recordOnly) {
+      filters.recordOnly = true;
     }
     if (minSize !== undefined) {
       filters.minSize = minSize;
@@ -483,7 +502,7 @@ const SearchDialog: React.FC = () => {
       query,
       filters,
       highlightEnabled: true,
-      facetFields: ['mimeType', 'createdBy', 'tags', 'categories', 'correspondent'],
+      facetFields: ['mimeType', 'createdBy', 'tags', 'categories', 'recordCategoryPath', 'correspondent'],
       pageable: { page: 0, size: 50 },
     };
   };
@@ -524,6 +543,7 @@ const SearchDialog: React.FC = () => {
   const handleSearch = async () => {
     const normalizedTags = normalizeList(tags);
     const normalizedCategories = normalizeList(categories);
+    const normalizedRecordCategoryPaths = normalizeList(recordCategoryPaths);
     const normalizedCorrespondents = normalizeList(correspondents);
 
     const criteria: SearchCriteria = {
@@ -534,6 +554,7 @@ const SearchDialog: React.FC = () => {
       }, {} as Record<string, any>),
       tags: normalizedTags,
       categories: normalizedCategories,
+      recordCategoryPaths: normalizedRecordCategoryPaths,
       correspondents: normalizedCorrespondents,
       previewStatuses: selectedPreviewStatuses,
       minSize,
@@ -609,6 +630,9 @@ const SearchDialog: React.FC = () => {
     if (searchCriteria.checkoutUser?.trim()) {
       chips.push({ key: 'checkoutUser', label: `Checkout user: ${searchCriteria.checkoutUser.trim()}` });
     }
+    if (searchCriteria.recordOnly) {
+      chips.push({ key: 'recordOnly', label: 'Record: declared only' });
+    }
     if (searchCriteria.createdFrom || searchCriteria.createdTo) {
       chips.push({
         key: 'createdDate',
@@ -632,6 +656,9 @@ const SearchDialog: React.FC = () => {
     });
     tags.forEach((tag) => chips.push({ key: `tag-${tag}`, label: `Tag: ${tag}` }));
     categories.forEach((category) => chips.push({ key: `category-${category}`, label: `Category: ${category}` }));
+    recordCategoryPaths.forEach((path) =>
+      chips.push({ key: `record-category-${path}`, label: `Record category: ${path}` })
+    );
     correspondents.forEach((correspondent) =>
       chips.push({ key: `correspondent-${correspondent}`, label: `Correspondent: ${correspondent}` })
     );
@@ -662,6 +689,7 @@ const SearchDialog: React.FC = () => {
     searchCriteria.lockedBy,
     searchCriteria.checkedOut,
     searchCriteria.checkoutUser,
+    searchCriteria.recordOnly,
     searchCriteria.createdFrom,
     searchCriteria.createdTo,
     searchCriteria.modifiedFrom,
@@ -670,6 +698,7 @@ const SearchDialog: React.FC = () => {
     customProperties,
     tags,
     categories,
+    recordCategoryPaths,
     correspondents,
     selectedPreviewStatuses,
     minSize,
@@ -711,6 +740,7 @@ const SearchDialog: React.FC = () => {
       searchCriteria.lockedBy ||
       searchCriteria.checkedOut !== undefined ||
       searchCriteria.checkoutUser ||
+      searchCriteria.recordOnly ||
       (searchCriteria.aspects && searchCriteria.aspects.length > 0) ||
       customProperties.length > 0 ||
       searchCriteria.createdFrom ||
@@ -719,6 +749,7 @@ const SearchDialog: React.FC = () => {
       searchCriteria.modifiedTo ||
       tags.length > 0 ||
       categories.length > 0 ||
+      recordCategoryPaths.length > 0 ||
       correspondents.length > 0 ||
       selectedPreviewStatuses.length > 0 ||
       minSize !== undefined ||
@@ -928,6 +959,22 @@ const SearchDialog: React.FC = () => {
                     />
                   </Grid>
                   <Grid item xs={12}>
+                    <FormControlLabel
+                      control={(
+                        <Checkbox
+                          checked={Boolean(searchCriteria.recordOnly)}
+                          onChange={(e) =>
+                            setSearchCriteria({
+                              ...searchCriteria,
+                              recordOnly: e.target.checked,
+                            })
+                          }
+                        />
+                      )}
+                      label="Record declarations only"
+                    />
+                  </Grid>
+                  <Grid item xs={12}>
                     <FormControl fullWidth>
                       <InputLabel id="preview-status-label">Preview Status</InputLabel>
                       <Select
@@ -1114,10 +1161,31 @@ const SearchDialog: React.FC = () => {
             onChange={(_, isExpanded) => setExpandedSection(isExpanded ? 'meta' : false)}
           >
             <AccordionSummary expandIcon={<ExpandMore />}>
-              <Typography>Tags / Categories / Size / Path</Typography>
+              <Typography>Tags / Categories / Record Categories / Size / Path</Typography>
             </AccordionSummary>
             <AccordionDetails>
               <Grid container spacing={2}>
+                <Grid item xs={12}>
+                  <Autocomplete
+                    multiple
+                    freeSolo
+                    options={facetOptions.recordCategoryPaths}
+                    value={recordCategoryPaths}
+                    onChange={(_, value) => setRecordCategoryPaths(value.map((item) => item.toString()))}
+                    renderTags={(value, getTagProps) =>
+                      value.map((option, index) => (
+                        <Chip label={option} size="small" {...getTagProps({ index })} />
+                      ))
+                    }
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        label="Record Categories"
+                        placeholder="Add record category paths"
+                      />
+                    )}
+                  />
+                </Grid>
                 <Grid item xs={12}>
                   <Autocomplete
                     multiple

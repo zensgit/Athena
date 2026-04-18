@@ -7,15 +7,17 @@ describe('searchPrefillUtils', () => {
   it('maps /search URL params into search prefill fields', () => {
     const prefill = buildSearchPrefillFromAdvancedSearchUrl(
       '/search',
-      '?q=alpha&previewStatus=failed,unsupported_media_type&mimeTypes=application%2Fpdf&creators=admin&tags=t1,t2&categories=c1&minSize=1&maxSize=7&dateRange=week'
+      '?q=alpha&previewStatus=failed,unsupported_media_type&recordOnly=true&mimeTypes=application%2Fpdf&creators=admin&tags=t1,t2&categories=c1&recordCategoryPaths=%2FRecords%20Management%2FFinance&minSize=1&maxSize=7&dateRange=week'
     );
 
     expect(prefill.name).toBe('alpha');
     expect(prefill.previewStatuses).toEqual(['FAILED', 'UNSUPPORTED']);
+    expect(prefill.recordOnly).toBe(true);
     expect(prefill.contentType).toBe('application/pdf');
     expect(prefill.createdBy).toBe('admin');
     expect(prefill.tags).toEqual(['t1', 't2']);
     expect(prefill.categories).toEqual(['c1']);
+    expect(prefill.recordCategoryPaths).toEqual(['/Records Management/Finance']);
     expect(prefill.minSize).toBe(1);
     expect(prefill.maxSize).toBe(7);
     expect(prefill.modifiedFrom).toBeTruthy();

@@ -17,6 +17,7 @@ import { DataGrid, GridColDef } from '@mui/x-data-grid';
 import {
   ContentPasteSearch,
   ContentCopy,
+  CreateNewFolder,
   Delete,
   Edit,
   FileDownload,
@@ -85,6 +86,11 @@ const SavedSearchesPage: React.FC = () => {
   const [editDialogItem, setEditDialogItem] = useState<SavedSearch | null>(null);
   const [editDialogName, setEditDialogName] = useState('');
   const [editDialogSubmitting, setEditDialogSubmitting] = useState(false);
+  const [smartFolderDialogOpen, setSmartFolderDialogOpen] = useState(false);
+  const [smartFolderDialogItem, setSmartFolderDialogItem] = useState<SavedSearch | null>(null);
+  const [smartFolderName, setSmartFolderName] = useState('');
+  const [smartFolderDescription, setSmartFolderDescription] = useState('');
+  const [smartFolderSubmitting, setSmartFolderSubmitting] = useState(false);
 
   const sortSavedSearches = useCallback((data: SavedSearch[]) => {
     const toTime = (value?: string) => {
@@ -189,6 +195,52 @@ const SavedSearchesPage: React.FC = () => {
       toast.success('Saved search link copied');
     } catch {
       toast.error('Failed to copy link');
+    }
+  };
+
+  const openCreateSmartFolderDialog = (item: SavedSearch) => {
+    setSmartFolderDialogItem(item);
+    setSmartFolderName(item.name || '');
+    setSmartFolderDescription('');
+    setSmartFolderDialogOpen(true);
+  };
+
+  const closeCreateSmartFolderDialog = (options?: { force?: boolean }) => {
+    if (smartFolderSubmitting && !options?.force) {
+      return;
+    }
+    setSmartFolderDialogOpen(false);
+    setSmartFolderDialogItem(null);
+    setSmartFolderName('');
+    setSmartFolderDescription('');
+    setSmartFolderSubmitting(false);
+  };
+
+  const handleCreateSmartFolderSubmit = async () => {
+    const item = smartFolderDialogItem;
+    if (!item) {
+      closeCreateSmartFolderDialog();
+      return;
+    }
+
+    const trimmedName = smartFolderName.trim();
+    if (!trimmedName) {
+      toast.error('Please enter a folder name');
+      return;
+    }
+
+    setSmartFolderSubmitting(true);
+    try {
+      const folder = await savedSearchService.createSmartFolder(item.id, {
+        name: trimmedName,
+        description: smartFolderDescription.trim() || undefined,
+      });
+      toast.success('Smart folder created');
+      closeCreateSmartFolderDialog({ force: true });
+      navigate(`/browse/${folder.id}`);
+    } catch {
+      toast.error('Failed to create smart folder');
+      setSmartFolderSubmitting(false);
     }
   };
 
@@ -386,7 +438,7 @@ const SavedSearchesPage: React.FC = () => {
     {
       field: 'actions',
       headerName: '',
-      width: 300,
+      width: 360,
       sortable: false,
       renderCell: (params) => (
         <Box display="flex" gap={1}>
@@ -424,6 +476,13 @@ const SavedSearchesPage: React.FC = () => {
             onClick={() => openDuplicateDialog(params.row as SavedSearch)}
           >
             <ContentCopy fontSize="small" />
+          </IconButton>
+          <IconButton
+            size="small"
+            aria-label={`Create smart folder from saved search ${String((params.row as SavedSearch).name)}`}
+            onClick={() => openCreateSmartFolderDialog(params.row as SavedSearch)}
+          >
+            <CreateNewFolder fontSize="small" />
           </IconButton>
           <IconButton
             size="small"
@@ -516,6 +575,43 @@ const SavedSearchesPage: React.FC = () => {
             disabled={editDialogSubmitting}
           >
             {editDialogSubmitting ? 'Saving…' : 'Save'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={smartFolderDialogOpen} onClose={() => closeCreateSmartFolderDialog()} maxWidth="sm" fullWidth>
+        <DialogTitle>Create Smart Folder</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Folder Name"
+            fullWidth
+            value={smartFolderName}
+            onChange={(event) => setSmartFolderName(event.target.value)}
+            disabled={smartFolderSubmitting}
+          />
+          <TextField
+            margin="dense"
+            label="Description (optional)"
+            fullWidth
+            multiline
+            rows={3}
+            value={smartFolderDescription}
+            onChange={(event) => setSmartFolderDescription(event.target.value)}
+            disabled={smartFolderSubmitting}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => closeCreateSmartFolderDialog()} disabled={smartFolderSubmitting}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleCreateSmartFolderSubmit}
+            disabled={smartFolderSubmitting}
+          >
+            {smartFolderSubmitting ? 'Creating…' : 'Create Smart Folder'}
           </Button>
         </DialogActions>
       </Dialog>

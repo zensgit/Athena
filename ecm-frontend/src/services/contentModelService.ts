@@ -37,8 +37,19 @@ export interface PropertyDefinition {
   defaultValue?: string | null;
   indexed: boolean;
   protectedField: boolean;
+  encrypted?: boolean;
   qualifiedName: string;
   constraints: ConstraintDefinition[];
+}
+
+export interface PropertyDefinitionRequest {
+  name: string;
+  title?: string;
+  dataType: PropertyDataType;
+  mandatory?: boolean;
+  multiValued?: boolean;
+  defaultValue?: string;
+  encrypted?: boolean;
 }
 
 export interface TypeDefinition {
@@ -145,11 +156,11 @@ class ContentModelService {
 
   // ---- properties ----------------------------------------------------------
 
-  async addPropertyToType(typeId: string, property: { name: string; title?: string; dataType: PropertyDataType; mandatory?: boolean; multiValued?: boolean; defaultValue?: string }): Promise<PropertyDefinition> {
+  async addPropertyToType(typeId: string, property: PropertyDefinitionRequest): Promise<PropertyDefinition> {
     return api.post<PropertyDefinition>(`/content-models/types/${typeId}/properties`, property);
   }
 
-  async addPropertyToAspect(aspectId: string, property: { name: string; title?: string; dataType: PropertyDataType; mandatory?: boolean; multiValued?: boolean; defaultValue?: string }): Promise<PropertyDefinition> {
+  async addPropertyToAspect(aspectId: string, property: PropertyDefinitionRequest): Promise<PropertyDefinition> {
     return api.post<PropertyDefinition>(`/content-models/aspects/${aspectId}/properties`, property);
   }
 

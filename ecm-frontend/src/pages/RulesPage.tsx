@@ -97,6 +97,19 @@ const DEFAULT_FOLDER_DRY_RUN_DATA = JSON.stringify(
   2
 );
 
+const DEFAULT_SCHEDULED_TIMEZONE = 'UTC';
+const DEFAULT_SCHEDULED_MAX_ITEMS_PER_RUN = 200;
+const MIN_SCHEDULE_INTERVAL_MINUTES = 5;
+const MIN_MANUAL_BACKFILL_MINUTES = 1;
+const MAX_MANUAL_BACKFILL_MINUTES = 1440;
+
+const buildScheduledDefaults = () => ({
+  cronExpression: '',
+  timezone: DEFAULT_SCHEDULED_TIMEZONE,
+  maxItemsPerRun: DEFAULT_SCHEDULED_MAX_ITEMS_PER_RUN,
+  manualBackfillMinutes: undefined as number | undefined,
+});
+
 // Cron presets for common schedules
 const CRON_PRESETS = [
   { label: 'Every minute', value: '0 * * * * *' },
@@ -185,10 +198,7 @@ const RulesPage: React.FC = () => {
     condition: { type: 'ALWAYS_TRUE' },
     actions: [],
     // Scheduled rule fields
-    cronExpression: '',
-    timezone: 'UTC',
-    maxItemsPerRun: 200,
-    manualBackfillMinutes: undefined,
+    ...buildScheduledDefaults(),
   });
   const [conditionText, setConditionText] = useState(DEFAULT_CONDITION);
   const [actionsText, setActionsText] = useState(DEFAULT_ACTIONS);
@@ -286,10 +296,7 @@ const RulesPage: React.FC = () => {
       scopeFolderId: null,
       condition: { type: 'ALWAYS_TRUE' },
       actions: [],
-      cronExpression: '',
-      timezone: 'UTC',
-      maxItemsPerRun: 200,
-      manualBackfillMinutes: undefined,
+      ...buildScheduledDefaults(),
     });
     setConditionText(DEFAULT_CONDITION);
     setActionsText(DEFAULT_ACTIONS);
@@ -312,10 +319,7 @@ const RulesPage: React.FC = () => {
       scopeFolderId: null,
       condition: template.condition,
       actions: template.actions,
-      cronExpression: '',
-      timezone: 'UTC',
-      maxItemsPerRun: 200,
-      manualBackfillMinutes: undefined,
+      ...buildScheduledDefaults(),
     });
     setConditionText(JSON.stringify(template.condition, null, 2));
     setActionsText(JSON.stringify(template.actions, null, 2));
@@ -362,6 +366,30 @@ const RulesPage: React.FC = () => {
     setActionsText(JSON.stringify(template.actions, null, 2));
   };
 
+  const updateTriggerType = (nextTriggerType: TriggerType) => {
+    setForm((prev) => {
+      if (nextTriggerType !== 'SCHEDULED') {
+        return {
+          ...prev,
+          triggerType: nextTriggerType,
+          ...buildScheduledDefaults(),
+        };
+      }
+      return {
+        ...prev,
+        triggerType: nextTriggerType,
+        cronExpression: prev.cronExpression || '',
+        timezone: prev.timezone || DEFAULT_SCHEDULED_TIMEZONE,
+        maxItemsPerRun:
+          typeof prev.maxItemsPerRun === 'number' && prev.maxItemsPerRun > 0
+            ? prev.maxItemsPerRun
+            : DEFAULT_SCHEDULED_MAX_ITEMS_PER_RUN,
+        manualBackfillMinutes: prev.manualBackfillMinutes,
+      };
+    });
+    setCronValidation(null);
+  };
+
   const parseJsonOrThrow = (text: string, label: string) => {
     try {
       return JSON.parse(text);
@@ -379,7 +407,7 @@ const RulesPage: React.FC = () => {
     try {
       const result = await ruleService.validateCronExpression(
         form.cronExpression,
-        form.timezone
+        form.timezone || DEFAULT_SCHEDULED_TIMEZONE
       );
       setCronValidation(result);
       if (result.valid) {
@@ -412,20 +440,28 @@ const RulesPage: React.FC = () => {
       typeof form.manualBackfillMinutes === 'number' && !Number.isNaN(form.manualBackfillMinutes)
         ? form.manualBackfillMinutes
         : undefined;
+    const normalizedMaxItemsPerRun =
+      typeof form.maxItemsPerRun === 'number' && !Number.isNaN(form.maxItemsPerRun)
+        ? form.maxItemsPerRun
+        : DEFAULT_SCHEDULED_MAX_ITEMS_PER_RUN;
     if (
       form.triggerType === 'SCHEDULED' &&
       normalizedBackfillMinutes !== undefined &&
-      normalizedBackfillMinutes < 1
+      normalizedBackfillMinutes < MIN_MANUAL_BACKFILL_MINUTES
     ) {
-      toast.error('Manual backfill minutes must be at least 1');
+      toast.error(`Manual backfill minutes must be at least ${MIN_MANUAL_BACKFILL_MINUTES}`);
       return;
     }
     if (
       form.triggerType === 'SCHEDULED' &&
       normalizedBackfillMinutes !== undefined &&
-      normalizedBackfillMinutes > 1440
+      normalizedBackfillMinutes > MAX_MANUAL_BACKFILL_MINUTES
     ) {
-      toast.error('Manual backfill minutes must be 1440 or less');
+      toast.error(`Manual backfill minutes must be ${MAX_MANUAL_BACKFILL_MINUTES} or less`);
+      return;
+    }
+    if (form.triggerType === 'SCHEDULED' && normalizedMaxItemsPerRun < 1) {
+      toast.error('Max items per run must be at least 1');
       return;
     }
 
@@ -445,9 +481,14 @@ const RulesPage: React.FC = () => {
       actions,
       scopeFolderId: form.scopeFolderId || null,
       // Only include scheduled fields if trigger type is SCHEDULED
-      cronExpression: form.triggerType === 'SCHEDULED' ? form.cronExpression : undefined,
-      timezone: form.triggerType === 'SCHEDULED' ? form.timezone : undefined,
-      maxItemsPerRun: form.triggerType === 'SCHEDULED' ? form.maxItemsPerRun : undefined,
+      cronExpression:
+        form.triggerType === 'SCHEDULED' ? form.cronExpression?.trim() || undefined : undefined,
+      timezone:
+        form.triggerType === 'SCHEDULED'
+          ? form.timezone || DEFAULT_SCHEDULED_TIMEZONE
+          : undefined,
+      maxItemsPerRun:
+        form.triggerType === 'SCHEDULED' ? normalizedMaxItemsPerRun : undefined,
       manualBackfillMinutes:
         form.triggerType === 'SCHEDULED' ? normalizedBackfillMinutes : undefined,
     };
@@ -1356,9 +1397,7 @@ const RulesPage: React.FC = () => {
                 labelId="trigger-label"
                 value={form.triggerType}
                 label="Trigger"
-                onChange={(e) =>
-                  setForm((prev) => ({ ...prev, triggerType: e.target.value as TriggerType }))
-                }
+                onChange={(e) => updateTriggerType(e.target.value as TriggerType)}
               >
                 {TRIGGER_TYPES.map((tt) => (
                   <MenuItem key={tt} value={tt}>
@@ -1423,7 +1462,7 @@ const RulesPage: React.FC = () => {
                     setCronValidation(null);
                   }}
                   placeholder="0 0 * * * *"
-                  helperText="Spring cron format: sec min hour day month weekday"
+                  helperText={`Spring cron format: sec min hour day month weekday. Minimum interval: ${MIN_SCHEDULE_INTERVAL_MINUTES} minutes.`}
                   fullWidth
                   required
                 />
@@ -1464,7 +1503,7 @@ const RulesPage: React.FC = () => {
                   onChange={(e) =>
                     setForm((prev) => ({ ...prev, maxItemsPerRun: Number(e.target.value) }))
                   }
-                  helperText="Maximum documents to process per execution"
+                  helperText="Maximum documents to process per execution. Minimum: 1."
                   inputProps={{ min: 1, max: 10000 }}
                   sx={{ width: 200 }}
                 />

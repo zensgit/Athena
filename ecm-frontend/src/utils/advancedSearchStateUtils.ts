@@ -10,6 +10,8 @@ export type AdvancedSearchCriteriaState = {
   lockOwner: string;
   checkoutState: 'all' | 'checkedOut' | 'available';
   checkoutUser: string;
+  recordOnly: boolean;
+  recordCategoryPaths: string[];
   dateRange: AdvancedSearchDateRange;
   mimeTypes: string[];
   creators: string[];
@@ -79,6 +81,13 @@ const parseOptionalNumber = (rawValue: string | null): number | undefined => {
     return undefined;
   }
   return value;
+};
+
+const parseBooleanFlag = (rawValue: string | null): boolean => {
+  if (!rawValue) {
+    return false;
+  }
+  return rawValue.trim().toLowerCase() === 'true';
 };
 
 const asRecord = (value: unknown): Record<string, unknown> | null => {
@@ -188,6 +197,8 @@ export const parseAdvancedSearchUrlState = (search: string): AdvancedSearchUrlSt
     lockOwner: (params.get('lockOwner') || params.get('lockedBy') || '').trim(),
     checkoutState: parseCheckoutState(params.get('checkoutState')),
     checkoutUser: (params.get('checkoutUser') || '').trim(),
+    recordOnly: parseBooleanFlag(params.get('recordOnly')),
+    recordCategoryPaths: parseCsvValues(params.get('recordCategoryPaths')),
     dateRange: parseDateRange(params.get('dateRange')),
     mimeTypes: parseCsvValues(params.get('mimeTypes')),
     creators: parseCsvValues(params.get('creators')),
@@ -226,6 +237,12 @@ export const buildAdvancedSearchUrlSearch = (state: AdvancedSearchUrlState): str
   if (normalizedCheckoutUser) {
     params.set('checkoutUser', normalizedCheckoutUser);
   }
+  if (state.recordOnly) {
+    params.set('recordOnly', 'true');
+  }
+  if (state.recordCategoryPaths.length > 0) {
+    params.set('recordCategoryPaths', state.recordCategoryPaths.join(','));
+  }
   if (state.dateRange !== 'all') {
     params.set('dateRange', state.dateRange);
   }
@@ -246,6 +263,8 @@ export const hasRestorableAdvancedSearchState = (state: AdvancedSearchUrlState):
     || state.lockOwner.trim().length > 0
     || state.checkoutState !== 'all'
     || state.checkoutUser.trim().length > 0
+    || state.recordOnly
+    || state.recordCategoryPaths.length > 0
     || state.dateRange !== 'all'
     || state.mimeTypes.length > 0
     || state.creators.length > 0
@@ -267,6 +286,8 @@ export const buildSearchCriteriaFromAdvancedState = (
   lockedBy: state.lockOwner?.trim() || undefined,
   checkedOut: state.checkoutState === 'checkedOut' ? true : state.checkoutState === 'available' ? false : undefined,
   checkoutUser: state.checkoutUser?.trim() || undefined,
+  recordOnly: state.recordOnly || undefined,
+  recordCategoryPaths: state.recordCategoryPaths.length > 0 ? state.recordCategoryPaths : undefined,
   createdByList: state.creators.length > 0 ? state.creators : undefined,
   tags: state.tags.length > 0 ? state.tags : undefined,
   categories: state.categories.length > 0 ? state.categories : undefined,
@@ -285,6 +306,8 @@ export const buildAdvancedSearchCriteriaKey = (criteria: AdvancedSearchCriteriaS
     lockOwner: criteria.lockOwner?.trim() || '',
     checkoutState: criteria.checkoutState ?? 'all',
     checkoutUser: criteria.checkoutUser?.trim() || '',
+    recordOnly: criteria.recordOnly ?? false,
+    recordCategoryPaths: normalizeCriteriaValues(criteria.recordCategoryPaths),
     dateRange: criteria.dateRange,
     mimeTypes: normalizeCriteriaValues(criteria.mimeTypes),
     creators: normalizeCriteriaValues(criteria.creators),
@@ -302,6 +325,8 @@ export const hasActiveAdvancedSearchCriteria = (criteria: AdvancedSearchCriteria
     || (criteria.lockOwner?.trim().length || 0) > 0
     || (criteria.checkoutState ?? 'all') !== 'all'
     || (criteria.checkoutUser?.trim().length || 0) > 0
+    || criteria.recordOnly
+    || criteria.recordCategoryPaths.length > 0
     || criteria.dateRange !== 'all'
     || criteria.mimeTypes.length > 0
     || criteria.creators.length > 0
@@ -366,6 +391,12 @@ export const resolveTemplateQueryState = (queryParamsRaw: unknown): AdvancedSear
     checkoutUser: typeof getValue('checkoutUser', 'checkedOutBy') === 'string'
       ? (getValue('checkoutUser', 'checkedOutBy') as string).trim()
       : '',
+    recordOnly: typeof getValue('recordOnly', 'record') === 'boolean'
+      ? Boolean(getValue('recordOnly', 'record'))
+      : typeof getValue('recordOnly', 'record') === 'string'
+        ? parseBooleanFlag(getValue('recordOnly', 'record') as string)
+        : false,
+    recordCategoryPaths: parseTemplateValues(getValue('recordCategoryPaths', 'recordCategoryPath')),
     dateRange: parseTemplateDateRange(getValue('dateRange')),
     mimeTypes: parseTemplateValues(getValue('mimeTypes', 'mimeType', 'mimetype')),
     creators: parseTemplateValues(getValue('creators', 'createdByList', 'createdBy', 'creator', 'createdByUser')),
