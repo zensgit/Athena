@@ -110,6 +110,7 @@ public class RmReportPresetService {
      */
     public void delete(UUID id) {
         RmReportPreset preset = getOwned(id);
+        preset.setName(toDeletedStorageName(preset.getName(), preset.getId()));
         preset.setDeleted(true);
         preset.setDeletedAt(LocalDateTime.now());
         preset.setDeletedBy(securityService.getCurrentUser());
@@ -142,5 +143,15 @@ public class RmReportPresetService {
             throw new IllegalArgumentException(message);
         }
         return trimmed;
+    }
+
+    private static String toDeletedStorageName(String currentName, UUID id) {
+        String suffix = "__deleted__" + (id != null ? id : UUID.randomUUID());
+        int maxBaseLength = Math.max(0, 200 - suffix.length());
+        String base = currentName == null ? "" : currentName;
+        if (base.length() > maxBaseLength) {
+            base = base.substring(0, maxBaseLength);
+        }
+        return base + suffix;
     }
 }

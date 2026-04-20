@@ -201,6 +201,7 @@ class RmReportPresetServiceTest {
         void softDeletes() {
             UUID id = UUID.randomUUID();
             RmReportPreset preset = RmReportPreset.builder().owner("alice").name("A").build();
+            preset.setId(id);
             when(securityService.getCurrentUser()).thenReturn("alice");
             when(repository.findByIdAndDeletedFalse(id)).thenReturn(Optional.of(preset));
             when(repository.save(preset)).thenReturn(preset);
@@ -210,6 +211,8 @@ class RmReportPresetServiceTest {
             assertTrue(preset.isDeleted());
             assertNotNull(preset.getDeletedAt());
             assertEquals("alice", preset.getDeletedBy());
+            assertNotEquals("A", preset.getName());
+            assertTrue(preset.getName().startsWith("A__deleted__"));
             verify(repository).save(preset);
         }
     }

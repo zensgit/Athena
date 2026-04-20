@@ -3,6 +3,20 @@
 ## Date
 2026-04-20
 
+## Follow-up Note
+
+`PR-86` later found and fixed one persistence correctness gap in this
+foundation slice:
+
+- soft-deleted presets originally could not safely reuse the same `(owner, name)`
+  because the database uniqueness rule remained unconditional
+
+The follow-up fix keeps the public API unchanged and tombstones the internal
+stored name during delete so the original visible name becomes reusable.
+
+This note exists to keep the historical `PR-83` document aligned with the
+current reviewed state.
+
 ## Why now
 
 Per `docs/P5_PR82_CI_E2E_STABILIZATION_CLOSEOUT_DEVELOPMENT_20260420.md`:
@@ -81,7 +95,7 @@ enum Kind {
 
 2. **Kind is immutable after create.** Params and name/description can change; kind cannot. Changing kind would invalidate the stored params contract — callers who want a different kind should create a new preset.
 
-3. **Duplicate-name check uses the `deleted_false` partial view.** Soft-deleted presets don't block the same name being reused. Unique index remains on `(owner, name)` without a `is_deleted` filter because Liquibase/Postgres partial unique indexes complicate cross-DB portability, and the service-level check is authoritative.
+3. **Duplicate-name check initially used the `deleted_false` view only.** That made the intended "reuse the same name after delete" behavior incomplete because the database unique rule still applied to deleted rows. A later follow-up (`PR-86`) fixed this by tombstoning the stored deleted-row name on soft-delete while preserving the same public API.
 
 4. **JSONB params stored as `Map<String, Object>`.** No schema per kind — each kind's expected shape lives in the corresponding report endpoint's contract. This keeps the preset store strictly additive: a new report endpoint with new params can be saved without a schema migration.
 
@@ -147,7 +161,10 @@ GET http://localhost:7700/api/v1/records/report-presets (no auth) → 401
 ## Follow-up Slices (not in this PR)
 
 1. **Scheduled preset execution** — cron-driven run against `/records/activity-*-report` plus an execution log table
-2. **Frontend "Save as preset" affordance** on the Records Management page's report cards
+2. **Frontend preset consumption** on the Records Management page
+   - `PR-89` later delivered `Save as preset` on report cards
+   - `PR-90` later delivered preset list + apply/export consumption on top of the same API
+   - `PR-91` later delivered preset edit/delete maintenance on top of the same API
 3. **Preset execution endpoint** — `POST /api/v1/records/report-presets/{id}/execute` that expands params and invokes the matching report endpoint
 4. **Scheduled delivery** — email/download-bundle channels per the P5 intake matrix's "RM delivery workflows" direction
 
