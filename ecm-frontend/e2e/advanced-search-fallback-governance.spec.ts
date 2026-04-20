@@ -108,8 +108,10 @@ test.describe('Advanced search fallback governance', () => {
       await searchQueryInput.press('Enter');
 
       await expect(page.getByText('Preview issues on current page: 2')).toBeVisible({ timeout: 60_000 });
-      await expect(page.getByText('Retryable 0')).toBeVisible({ timeout: 60_000 });
-      await expect(page.getByText('Unsupported 2')).toBeVisible({ timeout: 60_000 });
+      // "Retryable 0" and "Unsupported 2" each appear in both a combined summary
+      // line and a standalone badge, so use .first() to avoid strict-mode match.
+      await expect(page.getByText('Retryable 0').first()).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByText('Unsupported 2').first()).toBeVisible({ timeout: 60_000 });
       await expect(page.getByRole('button', { name: 'Retry failed previews' })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Force rebuild failed previews' })).toHaveCount(0);
       await expect(
