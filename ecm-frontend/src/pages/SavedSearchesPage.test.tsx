@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { toast } from 'react-toastify';
 import SavedSearchesPage from './SavedSearchesPage';
 import savedSearchService from 'services/savedSearchService';
+import { setSearchOpen, setSearchPrefill } from 'store/slices/uiSlice';
 
 const mockNavigate = jest.fn();
 const mockDispatch = jest.fn();
@@ -109,5 +110,42 @@ describe('SavedSearchesPage smart folder action', () => {
 
     expect(toastSuccessMock).toHaveBeenCalledWith('Smart folder created');
     expect(mockNavigate).toHaveBeenCalledWith('/browse/folder-1');
+  });
+
+  it('loads record filters into advanced search prefill', async () => {
+    mockedSavedSearchService.list.mockResolvedValueOnce([
+      {
+        id: 'saved-2',
+        userId: 'alice',
+        name: 'Declared Finance Records',
+        queryParams: {
+          query: 'finance',
+          filters: {
+            recordOnly: true,
+            recordCategoryPaths: ['/Records Management/Finance'],
+          },
+        },
+        createdAt: '2026-04-14T00:00:00Z',
+      },
+    ]);
+
+    render(<SavedSearchesPage />);
+
+    expect(await screen.findByText('Declared Finance Records')).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText('Load saved search Declared Finance Records'));
+
+    expect(mockDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: setSearchPrefill.type,
+        payload: expect.objectContaining({
+          name: 'finance',
+          recordOnly: true,
+          recordCategoryPaths: ['/Records Management/Finance'],
+        }),
+      })
+    );
+    expect(mockDispatch).toHaveBeenCalledWith(setSearchOpen(true));
+    expect(toastSuccessMock).toHaveBeenCalledWith('Loaded saved search into Advanced Search');
   });
 });

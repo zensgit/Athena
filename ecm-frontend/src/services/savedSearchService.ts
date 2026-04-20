@@ -31,6 +31,7 @@ export interface SearchResultItem {
   parentId?: string;
   mimeType?: string;
   fileSize?: number;
+  currentVersionLabel?: string;
   locked?: boolean;
   lockedBy?: string;
   checkedOut?: boolean;
@@ -46,6 +47,17 @@ export interface SearchResultItem {
   tags?: string[];
   categories?: string[];
   correspondent?: string;
+  record?: boolean;
+  declaredBy?: string;
+  declaredAt?: string;
+  declaredVersionLabel?: string;
+  declarationComment?: string;
+  recordCategoryId?: string;
+  recordCategoryName?: string;
+  recordCategoryPath?: string;
+  previewStatus?: string;
+  previewFailureReason?: string;
+  previewFailureCategory?: string;
 }
 
 export interface FacetedSearchResponse {

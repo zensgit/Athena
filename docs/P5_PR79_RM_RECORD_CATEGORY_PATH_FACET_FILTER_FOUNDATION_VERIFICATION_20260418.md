@@ -4,8 +4,8 @@
 
 - backend search filters now accept `recordCategoryPaths`
 - default faceted search now exposes `recordCategoryPath` buckets on the existing facet pipeline
-- `SearchResults` and `AdvancedSearchPage` now consume the facet and send filter payloads on the existing search path
-- saved-search and advanced-search URL state preserve `recordCategoryPaths`
+- `SearchResults`, `AdvancedSearchPage`, and `SearchDialog` now consume or preserve the filter on the existing search path
+- saved-search, advanced-search URL state, and `SavedSearchesPage -> Load to search` preserve `recordCategoryPaths`
 - no new backend endpoint or migration was added
 
 ## Checks
@@ -23,13 +23,13 @@ Result:
 ### Frontend targeted tests
 
 ```bash
-cd ecm-frontend && CI=true npm test -- --watchAll=false --runInBand --runTestsByPath src/utils/advancedSearchStateUtils.test.ts src/utils/savedSearchUtils.test.ts src/services/nodeService.recordProjection.test.ts --forceExit
+cd ecm-frontend && CI=true npm test -- --watchAll=false --runInBand --runTestsByPath src/utils/advancedSearchStateUtils.test.ts src/utils/savedSearchUtils.test.ts src/services/nodeService.recordProjection.test.ts src/utils/searchPrefillUtils.test.ts src/pages/SavedSearchesPage.test.tsx --forceExit
 ```
 
 Result:
 
-- `Test Suites: 3 passed, 3 total`
-- `Tests: 20 passed, 20 total`
+- `Test Suites: 5 passed, 5 total`
+- `Tests: 26 passed, 26 total`
 
 ### Frontend production build
 
@@ -56,6 +56,6 @@ Result:
 
 ## Notes
 
-- this slice intentionally stops at facet/filter plumbing and page-level consumption
-- `SearchDialog` remains out of scope because it has no authoritative non-admin RM category option source
-- frontend page behavior for the new facet is covered by type-safe build validation plus shared URL/saved-search/payload tests
+- this slice still stops at facet/filter plumbing and existing search-surface consumption
+- `SearchDialog` reuses the existing `/search/facets` pipeline; no separate RM picker endpoint was introduced
+- frontend behavior for the new facet/filter is covered by shared URL/prefill/saved-search/payload tests plus production build validation

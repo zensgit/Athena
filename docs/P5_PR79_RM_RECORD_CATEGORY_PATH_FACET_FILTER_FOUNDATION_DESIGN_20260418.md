@@ -86,6 +86,8 @@ URL/saved-search/prefill round-trip is extended through:
 - `searchPrefillUtils`
 - `uiSlice`
 
+`SavedSearchesPage` also now preserves both `recordOnly` and `recordCategoryPaths` when operators use `Load to search`, so editing or rerunning a saved search no longer silently drops the RM-only filter state.
+
 ## Files
 
 ### Backend
@@ -101,6 +103,7 @@ URL/saved-search/prefill round-trip is extended through:
 - `ecm-frontend/src/types/index.ts`
 - `ecm-frontend/src/services/nodeService.ts`
 - `ecm-frontend/src/components/search/SearchDialog.tsx`
+- `ecm-frontend/src/pages/SavedSearchesPage.tsx`
 - `ecm-frontend/src/pages/SearchResults.tsx`
 - `ecm-frontend/src/pages/AdvancedSearchPage.tsx`
 - `ecm-frontend/src/utils/advancedSearchStateUtils.ts`
@@ -108,6 +111,7 @@ URL/saved-search/prefill round-trip is extended through:
 - `ecm-frontend/src/utils/savedSearchUtils.ts`
 - `ecm-frontend/src/store/slices/uiSlice.ts`
 - `ecm-frontend/src/services/nodeService.recordProjection.test.ts`
+- `ecm-frontend/src/pages/SavedSearchesPage.test.tsx`
 - `ecm-frontend/src/utils/advancedSearchStateUtils.test.ts`
 - `ecm-frontend/src/utils/searchPrefillUtils.test.ts`
 - `ecm-frontend/src/utils/savedSearchUtils.test.ts`

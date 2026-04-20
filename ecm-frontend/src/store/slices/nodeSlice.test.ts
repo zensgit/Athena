@@ -1,6 +1,20 @@
-import nodeReducer, { fetchChildren } from 'store/slices/nodeSlice';
+import nodeReducer, { executeSavedSearch, fetchChildren } from 'store/slices/nodeSlice';
+import savedSearchService from 'services/savedSearchService';
+
+jest.mock('services/savedSearchService', () => ({
+  __esModule: true,
+  default: {
+    execute: jest.fn(),
+  },
+}));
+
+const mockedSavedSearchService = savedSearchService as jest.Mocked<typeof savedSearchService>;
 
 describe('nodeSlice fetchChildren state handling', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it('clears stale nodes when a new children request starts', () => {
     const initialState = nodeReducer(undefined, { type: 'node/init' });
     const seededState = {
@@ -77,5 +91,59 @@ describe('nodeSlice fetchChildren state handling', () => {
     expect(nextState.error).toBe('boom');
     expect(nextState.nodes).toEqual([]);
     expect(nextState.nodesTotal).toBe(0);
+  });
+
+  it('preserves RM projection when executing a saved search', async () => {
+    mockedSavedSearchService.execute.mockResolvedValueOnce({
+      results: {
+        content: [
+          {
+            id: 'doc-1',
+            name: 'Contract.pdf',
+            path: '/Sites/Legal/Contract.pdf',
+            nodeType: 'DOCUMENT',
+            parentId: 'folder-1',
+            mimeType: 'application/pdf',
+            fileSize: 1024,
+            createdBy: 'alice',
+            createdDate: '2026-04-19T10:00:00Z',
+            lastModifiedBy: 'alice',
+            lastModifiedDate: '2026-04-19T10:00:00Z',
+            currentVersionLabel: '1.1',
+            record: true,
+            declaredBy: 'records-admin',
+            declaredAt: '2026-04-18T09:00:00Z',
+            declaredVersionLabel: '1.0',
+            declarationComment: 'Declare for retention',
+            recordCategoryId: 'cat-1',
+            recordCategoryName: 'Contracts',
+            recordCategoryPath: '/Records Management/Contracts',
+          },
+        ],
+      },
+      totalHits: 1,
+    } as any);
+
+    const dispatch = jest.fn();
+    const getState = jest.fn();
+    const result = await executeSavedSearch('saved-1')(dispatch, getState, undefined);
+
+    expect(mockedSavedSearchService.execute).toHaveBeenCalledWith('saved-1');
+    expect(result.type).toBe('node/executeSavedSearch/fulfilled');
+    if (result.type !== 'node/executeSavedSearch/fulfilled') {
+      throw new Error('Expected saved search execution to be fulfilled');
+    }
+    expect(result.payload.total).toBe(1);
+    expect(result.payload.nodes[0]).toMatchObject({
+      id: 'doc-1',
+      record: true,
+      currentVersionLabel: '1.1',
+      declaredBy: 'records-admin',
+      declaredVersionLabel: '1.0',
+      recordCategoryPath: '/Records Management/Contracts',
+    });
+    expect(result.payload.nodes[0].aspects).toContain('rm:record');
+    expect(result.payload.nodes[0].properties['rm:declaredBy']).toBe('records-admin');
+    expect(result.payload.nodes[0].properties['rm:recordCategoryPath']).toBe('/Records Management/Contracts');
   });
 });

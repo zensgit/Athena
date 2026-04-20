@@ -66,7 +66,11 @@ The accepted `P5` runtime slices on top of this matrix are:
   - no new backend endpoint or migration
 - `PR-79`
   - RM record-category-path facet and filter foundation
-  - end-to-end search facet/filter consumption on `SearchResults` and `AdvancedSearchPage`
+  - end-to-end search facet/filter consumption on `SearchResults`, `AdvancedSearchPage`, and the existing search prefill/saved-search chain
+  - no new backend endpoint or migration
+- `PR-80`
+  - RM saved-search execution record projection fix
+  - preserves `record / declared* / recordCategory*` on the `SavedSearchesPage -> executeSavedSearch -> SearchResults?savedSearchId=...` path
   - no new backend endpoint or migration
 
 These are still valid, but they should wait until policy semantics and operator demand are explicit.

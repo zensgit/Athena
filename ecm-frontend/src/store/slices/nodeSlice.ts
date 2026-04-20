@@ -1,6 +1,6 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import nodeService from 'services/nodeService';
-import savedSearchService from 'services/savedSearchService';
+import savedSearchService, { SearchResultItem } from 'services/savedSearchService';
 import { Node, NodeState, SearchCriteria } from 'types';
 
 const initialState: NodeState = {
@@ -153,44 +153,75 @@ export const fetchSearchFacets = createAsyncThunk(
   }
 );
 
+const mapSavedSearchResultItemToNode = (item: SearchResultItem): Node => {
+  const inferredNodeType = item.mimeType || item.fileSize
+    ? 'DOCUMENT'
+    : (item.nodeType === 'FOLDER' || item.nodeType === 'DOCUMENT' ? item.nodeType : 'FOLDER');
+  const properties: Record<string, any> = { description: item.description };
+  if (item.declaredBy) properties['rm:declaredBy'] = item.declaredBy;
+  if (item.declaredAt) properties['rm:declaredAt'] = item.declaredAt;
+  if (item.declaredVersionLabel) properties['rm:declaredVersionLabel'] = item.declaredVersionLabel;
+  if (item.declarationComment) properties['rm:declarationComment'] = item.declarationComment;
+  if (item.recordCategoryId) properties['rm:recordCategoryId'] = item.recordCategoryId;
+  if (item.recordCategoryName) properties['rm:recordCategoryName'] = item.recordCategoryName;
+  if (item.recordCategoryPath) properties['rm:recordCategoryPath'] = item.recordCategoryPath;
+  const isRecord = Boolean(
+    item.record
+      || item.declaredBy
+      || item.declaredAt
+      || item.declaredVersionLabel
+      || item.recordCategoryId
+      || item.recordCategoryName
+      || item.recordCategoryPath
+  );
+
+  return {
+    id: item.id,
+    name: item.name,
+    path: item.path,
+    nodeType: inferredNodeType,
+    parentId: item.parentId,
+    properties,
+    aspects: isRecord ? ['rm:record'] : [],
+    created: item.createdDate || new Date().toISOString(),
+    modified: item.lastModifiedDate || item.createdDate || new Date().toISOString(),
+    creator: item.createdBy || '',
+    modifier: item.lastModifiedBy || item.createdBy || '',
+    size: item.fileSize,
+    contentType: item.mimeType,
+    currentVersionLabel: item.currentVersionLabel,
+    description: item.description,
+    highlights: item.highlights,
+    matchFields: item.matchFields,
+    highlightSummary: item.highlightSummary,
+    tags: item.tags,
+    categories: item.categories,
+    correspondent: item.correspondent,
+    locked: item.locked,
+    lockedBy: item.lockedBy,
+    checkedOut: item.checkedOut,
+    checkoutUser: item.checkoutUser,
+    previewStatus: item.previewStatus,
+    previewFailureReason: item.previewFailureReason,
+    previewFailureCategory: item.previewFailureCategory,
+    score: item.score,
+    record: isRecord,
+    declaredBy: item.declaredBy,
+    declaredAt: item.declaredAt,
+    declaredVersionLabel: item.declaredVersionLabel,
+    declarationComment: item.declarationComment,
+    recordCategoryId: item.recordCategoryId,
+    recordCategoryName: item.recordCategoryName,
+    recordCategoryPath: item.recordCategoryPath,
+  };
+};
+
 export const executeSavedSearch = createAsyncThunk(
   'node/executeSavedSearch',
   async (savedSearchId: string) => {
     const response = await savedSearchService.execute(savedSearchId);
     const items = response.results?.content || [];
-    const nodes = items.map((item) => {
-      const inferredNodeType = item.mimeType || item.fileSize
-        ? 'DOCUMENT'
-        : (item.nodeType === 'FOLDER' || item.nodeType === 'DOCUMENT' ? item.nodeType : 'FOLDER');
-
-      return ({
-        id: item.id,
-        name: item.name,
-        path: item.path,
-        nodeType: inferredNodeType,
-        parentId: item.parentId,
-        properties: { description: item.description },
-        aspects: [],
-        created: item.createdDate || new Date().toISOString(),
-        modified: item.lastModifiedDate || item.createdDate || new Date().toISOString(),
-        creator: item.createdBy || '',
-        modifier: item.lastModifiedBy || item.createdBy || '',
-        size: item.fileSize,
-        contentType: item.mimeType,
-        locked: item.locked,
-        lockedBy: item.lockedBy,
-        checkedOut: item.checkedOut,
-        checkoutUser: item.checkoutUser,
-        description: item.description,
-        highlights: item.highlights,
-        matchFields: item.matchFields,
-        highlightSummary: item.highlightSummary,
-        tags: item.tags,
-        categories: item.categories,
-        correspondent: item.correspondent,
-        score: item.score,
-      } as Node);
-    });
+    const nodes = items.map(mapSavedSearchResultItemToNode);
     return { nodes, total: response.totalHits ?? nodes.length };
   }
 );

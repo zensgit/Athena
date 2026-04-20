@@ -167,6 +167,8 @@ const SavedSearchesPage: React.FC = () => {
         lockedBy: criteria.lockedBy || '',
         checkedOut: criteria.checkedOut,
         checkoutUser: criteria.checkoutUser || '',
+        recordOnly: criteria.recordOnly,
+        recordCategoryPaths: criteria.recordCategoryPaths || [],
         aspects: criteria.aspects || [],
         properties: criteria.properties || {},
         createdBy: criteria.createdBy || '',

@@ -20,7 +20,7 @@ This document builds on the already completed `P4` closeout material:
 - the handoff is no longer only directional; it is now executable as an intake matrix
 - `P5` follow-up can be assigned by owner lane without reopening the `P4` ledger
 - acceptance entry conditions are defined before new runtime slices begin
-- accepted runtime slices now include `PR-76`, `PR-77`, `PR-78`, and `PR-79` on the `RM search/index surfaces` lane
+- accepted runtime slices now include `PR-76`, `PR-77`, `PR-78`, `PR-79`, and `PR-80` on the `RM search/index surfaces` lane
 
 ## Checks
 
