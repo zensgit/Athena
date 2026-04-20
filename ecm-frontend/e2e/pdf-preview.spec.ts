@@ -314,7 +314,7 @@ test('File browser view action opens preview', async ({ page, request }) => {
   await expect(browserDialog.getByLabel('close')).toBeVisible({ timeout: 60_000 });
   await page.waitForSelector('.react-pdf__Page__canvas, [data-testid="pdf-preview-fallback"]', { timeout: 60_000 });
 
-  await page.getByLabel('close').click();
+  await browserDialog.getByLabel('close').click();
 
   await request.delete(`${baseApiUrl}/api/v1/nodes/${folderId}`, {
     headers: { Authorization: `Bearer ${apiToken}` },

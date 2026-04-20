@@ -327,7 +327,15 @@ public class DocumentController {
         if (file != null) {
             versionService.createVersion(documentId, file, comment, majorVersion);
         }
-        Document document = nodeService.checkinDocument(documentId, keepCheckedOut);
+        // /checkin is historically used both for: (a) committing working-copy edits
+        // that require an active checkout, and (b) uploading a fresh version when
+        // the caller happens to have the document path. Only clear the checkout
+        // state when the document is actually checked out; otherwise return the
+        // document with whatever state versionService.createVersion() left it in.
+        Document document = (Document) nodeService.getNode(documentId);
+        if (document.isCheckedOut()) {
+            document = nodeService.checkinDocument(documentId, keepCheckedOut);
+        }
         return ResponseEntity.ok(toNodeDto(document));
     }
     
