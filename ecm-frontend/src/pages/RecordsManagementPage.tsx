@@ -46,12 +46,15 @@ import {
   RecordDeclaration,
   RecordsOperationsTelemetry,
   RecordsSummary,
+  RmReportPreset,
+  RmReportPresetKind,
 } from 'types';
 import MoveFilePlanDialog from 'components/records/MoveFilePlanDialog';
 import MoveRecordCategoryDialog from 'components/records/MoveRecordCategoryDialog';
 import RenameFilePlanDialog from 'components/records/RenameFilePlanDialog';
 import RecordStatusChip from 'components/records/RecordStatusChip';
 import RenameRecordCategoryDialog from 'components/records/RenameRecordCategoryDialog';
+import SaveReportPresetDialog from 'components/records/SaveReportPresetDialog';
 import UndeclareRecordDialog from 'components/records/UndeclareRecordDialog';
 
 const AUDIT_DEFAULT_ROWS = 10;
@@ -270,6 +273,17 @@ interface AuditDrilldownState {
   to: string;
 }
 
+interface ReportPresetDraft {
+  presetId?: string;
+  title: string;
+  helperText: string;
+  name: string;
+  description?: string;
+  submitLabel?: string;
+  kind: RmReportPresetKind;
+  params: Record<string, unknown>;
+}
+
 const emptyAuditFiltersState = (): AuditFilterState => ({
   family: '',
   eventType: '',
@@ -295,6 +309,93 @@ const formatLocalDateInputDay = (date: Date) => {
 
 const buildAuditRangeBoundary = (day?: string | null, endOfDay = false) =>
   day ? `${day}T${endOfDay ? '23:59:59' : '00:00:00'}` : '';
+
+const buildRollingWindowRange = (days: number, scope: 'current' | 'previous') => {
+  const endDate = new Date();
+  const currentStartDate = new Date(endDate);
+  currentStartDate.setDate(currentStartDate.getDate() - (days - 1));
+
+  const previousEndDate = new Date(currentStartDate);
+  previousEndDate.setDate(previousEndDate.getDate() - 1);
+  const previousStartDate = new Date(previousEndDate);
+  previousStartDate.setDate(previousStartDate.getDate() - (days - 1));
+
+  const fromDay = scope === 'current'
+    ? formatLocalDateInputDay(currentStartDate)
+    : formatLocalDateInputDay(previousStartDate);
+  const toDay = scope === 'current'
+    ? formatLocalDateInputDay(endDate)
+    : formatLocalDateInputDay(previousEndDate);
+
+  return {
+    from: buildAuditRangeBoundary(fromDay, false),
+    to: buildAuditRangeBoundary(toDay, true),
+    fromDay,
+    toDay,
+  };
+};
+
+const buildNamedWindowRange = (window?: { fromDay?: string | null; toDay?: string | null } | null) => {
+  if (!window?.fromDay || !window?.toDay) {
+    return null;
+  }
+  return {
+    from: buildAuditRangeBoundary(window.fromDay, false),
+    to: buildAuditRangeBoundary(window.toDay, true),
+    fromDay: window.fromDay,
+    toDay: window.toDay,
+  };
+};
+
+const buildPresetDisplayName = (reportLabel: string, scope: 'current' | 'previous') =>
+  `${reportLabel} ${scope === 'current' ? 'Current Window' : 'Previous Window'}`;
+
+const getPresetStringParam = (preset: RmReportPreset, key: string) => {
+  const value = preset.params?.[key];
+  return typeof value === 'string' ? value.trim() : '';
+};
+
+const getPresetNumberParam = (preset: RmReportPreset, key: string) => {
+  const value = preset.params?.[key];
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+};
+
+const formatPresetKindLabel = (kind: RmReportPresetKind) => {
+  switch (kind) {
+    case 'ACTIVITY_FAMILY_REPORT':
+      return 'Activity Family Report';
+    case 'ACTIVITY_FAMILY_HIGHLIGHTS':
+      return 'Activity Family Highlights';
+    case 'ACTIVITY_FAMILY_MIX':
+      return 'Activity Family Mix';
+    case 'ACTIVITY_EVENT_TYPE_REPORT':
+      return 'Activity Event-Type Report';
+    case 'ACTIVITY_CONTRIBUTOR_REPORT':
+      return 'Activity Contributor Report';
+    case 'ACTIVITY_CONTRIBUTOR_FAMILY_REPORT':
+      return 'Contributor Family Report';
+    case 'ACTIVITY_CONTRIBUTOR_EVENT_TYPE_REPORT':
+      return 'Contributor Event-Type Report';
+    default:
+      return kind;
+  }
+};
+
+const formatPresetRangeLabel = (preset: RmReportPreset) => {
+  const from = getPresetStringParam(preset, 'from');
+  const to = getPresetStringParam(preset, 'to');
+  if (!from || !to) {
+    return 'Window unavailable';
+  }
+  return `${from.slice(0, 10)} to ${to.slice(0, 10)}`;
+};
 
 interface SnapshotSegment {
   label: string;
@@ -469,6 +570,13 @@ const RecordsManagementPage: React.FC = () => {
   const [renameCategoryTarget, setRenameCategoryTarget] = useState<RecordCategory | null>(null);
   const [moveCategoryDialogOpen, setMoveCategoryDialogOpen] = useState(false);
   const [moveCategoryTarget, setMoveCategoryTarget] = useState<RecordCategory | null>(null);
+  const [reportPresetDraft, setReportPresetDraft] = useState<ReportPresetDraft | null>(null);
+  const [reportPresetSubmitting, setReportPresetSubmitting] = useState(false);
+  const [reportPresets, setReportPresets] = useState<RmReportPreset[]>([]);
+  const [reportPresetsLoading, setReportPresetsLoading] = useState(false);
+  const [reportPresetsError, setReportPresetsError] = useState<string | null>(null);
+  const [presetExportingId, setPresetExportingId] = useState<string | null>(null);
+  const [presetDeletingId, setPresetDeletingId] = useState<string | null>(null);
   const [editingFilePlanId, setEditingFilePlanId] = useState<string | null>(null);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [filePlanForm, setFilePlanForm] = useState({
@@ -554,6 +662,27 @@ const RecordsManagementPage: React.FC = () => {
     } finally {
       if (!silent) {
         setOperationsLoading(false);
+      }
+    }
+  }, []);
+
+  const loadReportPresets = useCallback(async (silent = false) => {
+    if (!silent) {
+      setReportPresetsLoading(true);
+    }
+    try {
+      const result = await recordsManagementService.listReportPresets();
+      setReportPresets(result);
+      setReportPresetsError(null);
+    } catch {
+      setReportPresets([]);
+      setReportPresetsError('Failed to load RM report presets');
+      if (!silent) {
+        toast.error('Failed to load RM report presets');
+      }
+    } finally {
+      if (!silent) {
+        setReportPresetsLoading(false);
       }
     }
   }, []);
@@ -851,6 +980,10 @@ const RecordsManagementPage: React.FC = () => {
   }, [loadOperations]);
 
   useEffect(() => {
+    void loadReportPresets();
+  }, [loadReportPresets]);
+
+  useEffect(() => {
     void loadBreakdown();
   }, [loadBreakdown]);
 
@@ -897,6 +1030,76 @@ const RecordsManagementPage: React.FC = () => {
   useEffect(() => {
     void loadAudit(appliedAuditFilters, auditPageIndex, auditRowsPerPage);
   }, [appliedAuditFilters, auditPageIndex, auditRowsPerPage, loadAudit]);
+
+  const openReportPresetDraft = useCallback((draft: ReportPresetDraft) => {
+    setReportPresetDraft(draft);
+  }, []);
+
+  const closeReportPresetDialog = useCallback(() => {
+    if (reportPresetSubmitting) {
+      return;
+    }
+    setReportPresetDraft(null);
+  }, [reportPresetSubmitting]);
+
+  const saveReportPreset = useCallback(async ({ name, description }: { name: string; description?: string }) => {
+    if (!reportPresetDraft) {
+      return;
+    }
+    setReportPresetSubmitting(true);
+    try {
+      if (reportPresetDraft.presetId) {
+        await recordsManagementService.updateReportPreset(reportPresetDraft.presetId, {
+          name,
+          description,
+          params: reportPresetDraft.params,
+        });
+      } else {
+        await recordsManagementService.createReportPreset({
+          name,
+          description,
+          kind: reportPresetDraft.kind,
+          params: reportPresetDraft.params,
+        });
+      }
+      await loadReportPresets(true);
+      toast.success(reportPresetDraft.presetId ? 'RM report preset updated' : 'RM report preset saved');
+      setReportPresetDraft(null);
+    } catch {
+      toast.error(reportPresetDraft.presetId ? 'Failed to update RM report preset' : 'Failed to save RM report preset');
+    } finally {
+      setReportPresetSubmitting(false);
+    }
+  }, [loadReportPresets, reportPresetDraft]);
+
+  const openEditReportPresetDraft = useCallback((preset: RmReportPreset) => {
+    setReportPresetDraft({
+      presetId: preset.id,
+      title: 'Edit RM Report Preset',
+      helperText: `Update the saved preset for ${formatPresetKindLabel(preset.kind)} without changing its report kind.`,
+      name: preset.name,
+      description: preset.description ?? undefined,
+      submitLabel: 'Update Preset',
+      kind: preset.kind,
+      params: preset.params ?? {},
+    });
+  }, []);
+
+  const deleteReportPreset = useCallback(async (preset: RmReportPreset) => {
+    if (!window.confirm(`Delete RM report preset "${preset.name}"?`)) {
+      return;
+    }
+    setPresetDeletingId(preset.id);
+    try {
+      await recordsManagementService.deleteReportPreset(preset.id);
+      await loadReportPresets(true);
+      toast.success('RM report preset deleted');
+    } catch {
+      toast.error('Failed to delete RM report preset');
+    } finally {
+      setPresetDeletingId((current) => (current === preset.id ? null : current));
+    }
+  }, [loadReportPresets]);
 
   const visibleCategoryOptions = useMemo(
     () => categories.filter((category) => category.path !== '/Records Management'),
@@ -1132,6 +1335,199 @@ const RecordsManagementPage: React.FC = () => {
       family,
     });
   }, [applyAuditDrilldown]);
+
+  const openWindowReportPreset = useCallback((
+    kind: RmReportPresetKind,
+    reportLabel: string,
+    window: { fromDay?: string | null; toDay?: string | null } | null | undefined,
+    scope: 'current' | 'previous',
+    extraParams: Record<string, unknown> = {}
+  ) => {
+    const range = buildNamedWindowRange(window);
+    if (!range?.from || !range?.to) {
+      toast.error('Failed to prepare RM report preset');
+      return;
+    }
+    openReportPresetDraft({
+      title: 'Save RM Report Preset',
+      helperText: `Save ${reportLabel} for the ${scope} window (${range.fromDay} to ${range.toDay}) as a reusable RM report preset.`,
+      name: buildPresetDisplayName(reportLabel, scope),
+      kind,
+      params: {
+        from: range.from,
+        to: range.to,
+        ...extraParams,
+      },
+    });
+  }, [openReportPresetDraft]);
+
+  const openRollingReportPreset = useCallback((
+    kind: RmReportPresetKind,
+    reportLabel: string,
+    days: number,
+    scope: 'current' | 'previous',
+    extraParams: Record<string, unknown> = {}
+  ) => {
+    const range = buildRollingWindowRange(days, scope);
+    if (!range.from || !range.to) {
+      toast.error('Failed to prepare RM report preset');
+      return;
+    }
+    openReportPresetDraft({
+      title: 'Save RM Report Preset',
+      helperText: `Save ${reportLabel} for the ${scope} window (${range.fromDay} to ${range.toDay}) as a reusable RM report preset.`,
+      name: buildPresetDisplayName(reportLabel, scope),
+      kind,
+      params: {
+        from: range.from,
+        to: range.to,
+        ...extraParams,
+      },
+    });
+  }, [openReportPresetDraft]);
+
+  const openContributorFamilyReportPreset = useCallback((scope: 'current' | 'previous') => {
+    openWindowReportPreset(
+      'ACTIVITY_CONTRIBUTOR_FAMILY_REPORT',
+      'RM Contributor Family Report',
+      scope === 'current'
+        ? activityContributorFamilyHighlights?.currentWindow
+        : activityContributorFamilyHighlights?.previousWindow,
+      scope,
+      {
+        limit: activityContributorFamilyHighlights?.limit,
+      }
+    );
+  }, [activityContributorFamilyHighlights, openWindowReportPreset]);
+
+  const openContributorEventTypeReportPreset = useCallback((scope: 'current' | 'previous') => {
+    openWindowReportPreset(
+      'ACTIVITY_CONTRIBUTOR_EVENT_TYPE_REPORT',
+      'RM Contributor Event-Type Report',
+      scope === 'current'
+        ? activityContributorEventTypeHighlights?.currentWindow
+        : activityContributorEventTypeHighlights?.previousWindow,
+      scope,
+      {
+        limit: activityContributorEventTypeHighlights?.limit,
+        eventTypeLimit: activityContributorEventTypeHighlights?.eventTypeLimit,
+      }
+    );
+  }, [activityContributorEventTypeHighlights, openWindowReportPreset]);
+
+  const openActivityFamilyReportPreset = useCallback((scope: 'current' | 'previous') => {
+    openWindowReportPreset(
+      'ACTIVITY_FAMILY_REPORT',
+      'RM Activity Family Report',
+      scope === 'current'
+        ? activityFamilyHighlights?.currentWindow
+        : activityFamilyHighlights?.previousWindow,
+      scope
+    );
+  }, [activityFamilyHighlights, openWindowReportPreset]);
+
+  const openActivityFamilyMixReportPreset = useCallback((scope: 'current' | 'previous') => {
+    openRollingReportPreset(
+      'ACTIVITY_FAMILY_REPORT',
+      'RM Activity Family Report',
+      activityFamilies?.days ?? ACTIVITY_FAMILIES_DEFAULT_DAYS,
+      scope
+    );
+  }, [activityFamilies, openRollingReportPreset]);
+
+  const openActivityEventTypeReportPreset = useCallback((scope: 'current' | 'previous') => {
+    openRollingReportPreset(
+      'ACTIVITY_EVENT_TYPE_REPORT',
+      'RM Activity Event-Type Report',
+      activityEventTypes?.days ?? ACTIVITY_EVENT_TYPES_DEFAULT_DAYS,
+      scope,
+      {
+        limit: activityEventTypes?.limit,
+      }
+    );
+  }, [activityEventTypes, openRollingReportPreset]);
+
+  const openActivityContributorReportPreset = useCallback((scope: 'current' | 'previous') => {
+    openRollingReportPreset(
+      'ACTIVITY_CONTRIBUTOR_REPORT',
+      'RM Activity Contributor Report',
+      activityContributors?.days ?? ACTIVITY_CONTRIBUTORS_DEFAULT_DAYS,
+      scope,
+      {
+        limit: activityContributors?.limit,
+      }
+    );
+  }, [activityContributors, openRollingReportPreset]);
+
+  const applyReportPresetToAudit = useCallback((preset: RmReportPreset) => {
+    const from = getPresetStringParam(preset, 'from');
+    const to = getPresetStringParam(preset, 'to');
+    if (!from || !to) {
+      toast.error('Failed to apply RM report preset');
+      return;
+    }
+    applyAuditDrilldown(`Preset ${preset.name}`, from, to, {
+      family: getPresetStringParam(preset, 'family'),
+      eventType: getPresetStringParam(preset, 'eventType'),
+      username: getPresetStringParam(preset, 'username'),
+    });
+  }, [applyAuditDrilldown]);
+
+  const exportReportPresetCsv = useCallback(async (preset: RmReportPreset) => {
+    const from = getPresetStringParam(preset, 'from');
+    const to = getPresetStringParam(preset, 'to');
+    if (!from || !to) {
+      toast.error('Failed to export RM report preset');
+      return;
+    }
+
+    setPresetExportingId(preset.id);
+    try {
+      switch (preset.kind) {
+        case 'ACTIVITY_FAMILY_REPORT':
+        case 'ACTIVITY_FAMILY_HIGHLIGHTS':
+        case 'ACTIVITY_FAMILY_MIX':
+          await recordsManagementService.exportActivityFamilyReportCsv({ from, to });
+          break;
+        case 'ACTIVITY_EVENT_TYPE_REPORT':
+          await recordsManagementService.exportActivityEventTypeReportCsv({
+            from,
+            to,
+            limit: getPresetNumberParam(preset, 'limit'),
+          });
+          break;
+        case 'ACTIVITY_CONTRIBUTOR_REPORT':
+          await recordsManagementService.exportActivityContributorReportCsv({
+            from,
+            to,
+            limit: getPresetNumberParam(preset, 'limit'),
+          });
+          break;
+        case 'ACTIVITY_CONTRIBUTOR_FAMILY_REPORT':
+          await recordsManagementService.exportActivityContributorFamilyReportCsv({
+            from,
+            to,
+            limit: getPresetNumberParam(preset, 'limit'),
+          });
+          break;
+        case 'ACTIVITY_CONTRIBUTOR_EVENT_TYPE_REPORT':
+          await recordsManagementService.exportActivityContributorEventTypeReportCsv({
+            from,
+            to,
+            limit: getPresetNumberParam(preset, 'limit'),
+            eventTypeLimit: getPresetNumberParam(preset, 'eventTypeLimit'),
+          });
+          break;
+        default:
+          throw new Error('Unsupported preset kind');
+      }
+      toast.success('RM report preset CSV exported');
+    } catch {
+      toast.error('Failed to export RM report preset');
+    } finally {
+      setPresetExportingId((current) => (current === preset.id ? null : current));
+    }
+  }, []);
 
   const reviewContributorFamilyHighlightAudit = useCallback((
     username: string | null | undefined,
@@ -2283,6 +2679,20 @@ const RecordsManagementPage: React.FC = () => {
                           >
                             Export previous CSV
                           </Button>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => openContributorFamilyReportPreset('current')}
+                          >
+                            Save current preset
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => openContributorFamilyReportPreset('previous')}
+                          >
+                            Save previous preset
+                          </Button>
                         </Stack>
 
                         {activityContributorFamilyHighlights.contributors.length === 0 ? (
@@ -2439,6 +2849,20 @@ const RecordsManagementPage: React.FC = () => {
                             onClick={() => exportContributorEventTypeReportCsv('previous')}
                           >
                             Export previous CSV
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => openContributorEventTypeReportPreset('current')}
+                          >
+                            Save current preset
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => openContributorEventTypeReportPreset('previous')}
+                          >
+                            Save previous preset
                           </Button>
                         </Stack>
 
@@ -2702,6 +3126,20 @@ const RecordsManagementPage: React.FC = () => {
                           >
                             Export previous CSV
                           </Button>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => openActivityFamilyReportPreset('current')}
+                          >
+                            Save current preset
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => openActivityFamilyReportPreset('previous')}
+                          >
+                            Save previous preset
+                          </Button>
                         </Stack>
 
                         {activityFamilyHighlights.families.length === 0 ? (
@@ -2812,6 +3250,20 @@ const RecordsManagementPage: React.FC = () => {
                           >
                             Export previous CSV
                           </Button>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => openActivityFamilyMixReportPreset('current')}
+                          >
+                            Save current preset
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => openActivityFamilyMixReportPreset('previous')}
+                          >
+                            Save previous preset
+                          </Button>
                         </Stack>
                         {activityFamilies?.families.map((entry) => (
                           <Card key={entry.family} variant="outlined">
@@ -2904,6 +3356,20 @@ const RecordsManagementPage: React.FC = () => {
                           >
                             Export previous CSV
                           </Button>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => openActivityEventTypeReportPreset('current')}
+                          >
+                            Save current preset
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => openActivityEventTypeReportPreset('previous')}
+                          >
+                            Save previous preset
+                          </Button>
                         </Stack>
                         {activityEventTypes?.eventTypes.map((entry) => (
                           <Card key={entry.eventType} variant="outlined">
@@ -2995,6 +3461,20 @@ const RecordsManagementPage: React.FC = () => {
                             onClick={() => exportActivityContributorReportCsv('previous')}
                           >
                             Export previous CSV
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => openActivityContributorReportPreset('current')}
+                          >
+                            Save current preset
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => openActivityContributorReportPreset('previous')}
+                          >
+                            Save previous preset
                           </Button>
                         </Stack>
                         {activityContributors?.contributors.map((contributor) => (
@@ -4358,6 +4838,96 @@ const RecordsManagementPage: React.FC = () => {
           </Card>
         </Grid>
 
+        <Grid item xs={12}>
+          <Card variant="outlined">
+            <CardContent>
+              <Stack spacing={1.5}>
+                <Box>
+                  <Typography variant="h6" gutterBottom>
+                    Saved RM Report Presets
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Reuse saved RM report windows through the existing audit and CSV export surfaces.
+                  </Typography>
+                </Box>
+
+                {reportPresetsError && (
+                  <Alert severity="warning">
+                    {reportPresetsError}
+                  </Alert>
+                )}
+
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Name</TableCell>
+                      <TableCell>Kind</TableCell>
+                      <TableCell>Window</TableCell>
+                      <TableCell>Description</TableCell>
+                      <TableCell>Updated</TableCell>
+                      <TableCell align="right">Actions</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {reportPresets.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6}>
+                          {reportPresetsLoading ? 'Loading presets...' : 'No saved RM report presets.'}
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      reportPresets.map((preset) => (
+                        <TableRow key={preset.id}>
+                          <TableCell>{preset.name}</TableCell>
+                          <TableCell>{formatPresetKindLabel(preset.kind)}</TableCell>
+                          <TableCell>{formatPresetRangeLabel(preset)}</TableCell>
+                          <TableCell>{preset.description || '—'}</TableCell>
+                          <TableCell>{formatDateTime(preset.lastModifiedDate || preset.createdDate)}</TableCell>
+                          <TableCell align="right">
+                            <Stack direction="row" spacing={1} justifyContent="flex-end">
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                onClick={() => openEditReportPresetDraft(preset)}
+                              >
+                                Edit
+                              </Button>
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                color="warning"
+                                onClick={() => void deleteReportPreset(preset)}
+                                disabled={presetDeletingId === preset.id}
+                              >
+                                {presetDeletingId === preset.id ? 'Deleting...' : 'Delete'}
+                              </Button>
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                onClick={() => applyReportPresetToAudit(preset)}
+                              >
+                                Apply to audit
+                              </Button>
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                onClick={() => void exportReportPresetCsv(preset)}
+                                disabled={presetExportingId === preset.id}
+                              >
+                                {presetExportingId === preset.id ? 'Exporting...' : 'Export CSV'}
+                              </Button>
+                            </Stack>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </Stack>
+            </CardContent>
+          </Card>
+        </Grid>
+
         <Grid item xs={12} ref={auditRef}>
           <Card variant="outlined">
             <CardContent>
@@ -4485,6 +5055,17 @@ const RecordsManagementPage: React.FC = () => {
       </Grid>
     </Grid>
 
+      <SaveReportPresetDialog
+        open={Boolean(reportPresetDraft)}
+        title={reportPresetDraft?.title ?? 'Save RM Report Preset'}
+        helperText={reportPresetDraft?.helperText ?? 'Save this report configuration as a reusable RM report preset.'}
+        initialName={reportPresetDraft?.name ?? ''}
+        initialDescription={reportPresetDraft?.description}
+        submitLabel={reportPresetDraft?.submitLabel}
+        submitting={reportPresetSubmitting}
+        onClose={closeReportPresetDialog}
+        onSave={saveReportPreset}
+      />
       <RenameFilePlanDialog
         open={renameFilePlanDialogOpen}
         filePlan={renameFilePlanTarget}

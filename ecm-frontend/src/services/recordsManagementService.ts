@@ -24,6 +24,8 @@ import {
   RecordDeclaration,
   RenameFilePlanRequest,
   RenameRecordCategoryRequest,
+  RmReportPreset,
+  RmReportPresetKind,
   RecordsSummary,
   UpdateFilePlanRequest,
   UpdateRecordCategoryRequest,
@@ -70,6 +72,19 @@ export interface ActivityContributorReportExportFilters {
   limit?: number;
 }
 
+export interface CreateReportPresetRequest {
+  name: string;
+  description?: string;
+  kind: RmReportPresetKind;
+  params: Record<string, unknown>;
+}
+
+export interface UpdateReportPresetRequest {
+  name?: string;
+  description?: string;
+  params?: Record<string, unknown>;
+}
+
 class RecordsManagementService {
   async listRecords(): Promise<RecordDeclaration[]> {
     return api.get<RecordDeclaration[]>('/records');
@@ -77,6 +92,35 @@ class RecordsManagementService {
 
   async getSummary(): Promise<RecordsSummary> {
     return api.get<RecordsSummary>('/records/summary');
+  }
+
+  async listReportPresets(): Promise<RmReportPreset[]> {
+    return api.get<RmReportPreset[]>('/records/report-presets');
+  }
+
+  async createReportPreset(request: CreateReportPresetRequest): Promise<RmReportPreset> {
+    const trimmedName = request.name.trim();
+    const trimmedDescription = request.description?.trim();
+    return api.post<RmReportPreset>('/records/report-presets', {
+      name: trimmedName,
+      ...(trimmedDescription ? { description: trimmedDescription } : {}),
+      kind: request.kind,
+      params: request.params,
+    });
+  }
+
+  async updateReportPreset(id: string, request: UpdateReportPresetRequest): Promise<RmReportPreset> {
+    const trimmedName = request.name?.trim();
+    const trimmedDescription = request.description?.trim();
+    return api.put<RmReportPreset>(`/records/report-presets/${id}`, {
+      ...(trimmedName !== undefined ? { name: trimmedName } : {}),
+      ...(trimmedDescription !== undefined ? { description: trimmedDescription } : {}),
+      ...(request.params !== undefined ? { params: request.params } : {}),
+    });
+  }
+
+  async deleteReportPreset(id: string): Promise<void> {
+    return api.delete<void>(`/records/report-presets/${id}`);
   }
 
   async getOperationsTelemetry(limit = 20): Promise<RecordsOperationsTelemetry> {

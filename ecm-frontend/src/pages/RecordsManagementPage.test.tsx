@@ -20,6 +20,10 @@ jest.mock('services/recordsManagementService', () => ({
     getSummary: jest.fn(),
     getOperationsTelemetry: jest.fn(),
     getActivityBreakdown: jest.fn(),
+    listReportPresets: jest.fn(),
+    createReportPreset: jest.fn(),
+    updateReportPreset: jest.fn(),
+    deleteReportPreset: jest.fn(),
     getActivityContributorEventTypeHighlights: jest.fn(),
     getActivityContributorFamilyHighlights: jest.fn(),
     exportActivityFamilyReportCsv: jest.fn(),
@@ -625,6 +629,39 @@ describe('RecordsManagementPage', () => {
       recordCategoryPath: '/Records Management/Contracts',
     } as any);
     mockedRecordsManagementService.undeclareRecord.mockResolvedValue(undefined as any);
+    mockedRecordsManagementService.listReportPresets.mockResolvedValue([
+      {
+        id: 'preset-family-current',
+        owner: 'admin',
+        name: 'HR family current',
+        description: 'Saved family report',
+        kind: 'ACTIVITY_FAMILY_REPORT',
+        params: {
+          from: '2026-04-09T00:00:00',
+          to: '2026-04-15T23:59:59',
+        },
+        createdDate: '2026-04-15T12:00:00',
+        lastModifiedDate: '2026-04-15T12:30:00',
+      },
+    ] as any);
+    mockedRecordsManagementService.createReportPreset.mockResolvedValue({
+      id: 'preset-1',
+      owner: 'admin',
+      name: 'Preset',
+      kind: 'ACTIVITY_FAMILY_REPORT',
+      params: {},
+    } as any);
+    mockedRecordsManagementService.updateReportPreset.mockResolvedValue({
+      id: 'preset-family-current',
+      owner: 'admin',
+      name: 'HR family current updated',
+      kind: 'ACTIVITY_FAMILY_REPORT',
+      params: {
+        from: '2026-04-09T00:00:00',
+        to: '2026-04-15T23:59:59',
+      },
+    } as any);
+    mockedRecordsManagementService.deleteReportPreset.mockResolvedValue(undefined as any);
   });
 
   it('loads records management summary, operations telemetry, browse surfaces, and audit', async () => {
@@ -743,6 +780,119 @@ describe('RecordsManagementPage', () => {
     expect(toastSuccessMock).toHaveBeenCalledWith('Activity contributor previous window CSV exported');
   });
 
+  it('applies a saved RM report preset to the existing audit surface', async () => {
+    renderPage();
+
+    const presetRow = (await screen.findByText('HR family current')).closest('tr');
+    expect(presetRow).toBeTruthy();
+
+    fireEvent.click(within(presetRow as HTMLElement).getByRole('button', { name: 'Apply to audit' }));
+
+    expect(await screen.findByText(/Reviewing audit evidence for Preset HR family current/)).toBeTruthy();
+  });
+
+  it('exports a saved RM report preset via the existing CSV route', async () => {
+    renderPage();
+
+    const presetRow = (await screen.findByText('HR family current')).closest('tr');
+    expect(presetRow).toBeTruthy();
+
+    fireEvent.click(within(presetRow as HTMLElement).getByRole('button', { name: 'Export CSV' }));
+
+    await waitFor(() => expect(mockedRecordsManagementService.exportActivityFamilyReportCsv).toHaveBeenCalledWith({
+      from: '2026-04-09T00:00:00',
+      to: '2026-04-15T23:59:59',
+    }));
+    expect(toastSuccessMock).toHaveBeenCalledWith('RM report preset CSV exported');
+  });
+
+  it('edits a saved RM report preset from the preset table', async () => {
+    renderPage();
+
+    const presetRow = (await screen.findByText('HR family current')).closest('tr');
+    expect(presetRow).toBeTruthy();
+
+    fireEvent.click(within(presetRow as HTMLElement).getByRole('button', { name: 'Edit' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Edit RM Report Preset' })).toBeTruthy();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Preset Name' }), {
+      target: { value: '  HR family current updated  ' },
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Description (optional)' }), {
+      target: { value: '  Updated from preset table  ' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Update Preset' }));
+
+    await waitFor(() => expect(mockedRecordsManagementService.updateReportPreset).toHaveBeenCalledWith(
+      'preset-family-current',
+      {
+        name: 'HR family current updated',
+        description: 'Updated from preset table',
+        params: {
+          from: '2026-04-09T00:00:00',
+          to: '2026-04-15T23:59:59',
+        },
+      }
+    ));
+    expect(toastSuccessMock).toHaveBeenCalledWith('RM report preset updated');
+  });
+
+  it('deletes a saved RM report preset from the preset table', async () => {
+    const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
+    renderPage();
+
+    const presetRow = (await screen.findByText('HR family current')).closest('tr');
+    expect(presetRow).toBeTruthy();
+
+    fireEvent.click(within(presetRow as HTMLElement).getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => expect(mockedRecordsManagementService.deleteReportPreset).toHaveBeenCalledWith('preset-family-current'));
+    expect(toastSuccessMock).toHaveBeenCalledWith('RM report preset deleted');
+    confirmSpy.mockRestore();
+  });
+
+  it('saves an activity contributor report preset for the previous rolling window', async () => {
+    renderPage();
+
+    const contributorsSection = (await screen.findByRole('heading', { name: 'RM Activity Contributors' })).closest('.MuiCard-root');
+    expect(contributorsSection).toBeTruthy();
+
+    const effectiveDays = 28;
+    const endDate = new Date();
+    const currentStartDate = new Date(endDate);
+    currentStartDate.setDate(currentStartDate.getDate() - (effectiveDays - 1));
+    const previousEndDate = new Date(currentStartDate);
+    previousEndDate.setDate(previousEndDate.getDate() - 1);
+    const previousStartDate = new Date(previousEndDate);
+    previousStartDate.setDate(previousStartDate.getDate() - (effectiveDays - 1));
+    const formatLocalDay = (date: Date) => {
+      const year = date.getFullYear();
+      const month = `${date.getMonth() + 1}`.padStart(2, '0');
+      const day = `${date.getDate()}`.padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+    const formatRangeBoundary = (date: Date, endOfDay = false) =>
+      `${formatLocalDay(date)}T${endOfDay ? '23:59:59' : '00:00:00'}`;
+
+    fireEvent.click(await within(contributorsSection as HTMLElement).findByRole('button', { name: 'Save previous preset' }));
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Preset Name' }), {
+      target: { value: '  Contributor previous window  ' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Preset' }));
+
+    await waitFor(() => expect(mockedRecordsManagementService.createReportPreset).toHaveBeenCalledWith({
+      name: 'Contributor previous window',
+      description: undefined,
+      kind: 'ACTIVITY_CONTRIBUTOR_REPORT',
+      params: {
+        from: formatRangeBoundary(previousStartDate),
+        to: formatRangeBoundary(previousEndDate, true),
+        limit: 5,
+      },
+    }));
+    expect(toastSuccessMock).toHaveBeenCalledWith('RM report preset saved');
+  });
+
   it('renders RM contributor event-type highlights from audit-backed comparison data', async () => {
     renderPage();
 
@@ -788,6 +938,38 @@ describe('RecordsManagementPage', () => {
       to: '2026-04-08T23:59:59',
     }));
     expect(toastSuccessMock).toHaveBeenCalledWith('Activity family previous window CSV exported');
+  });
+
+  it('saves an activity family report preset for the current window', async () => {
+    renderPage();
+
+    const familyHighlightsSection = (await screen.findByRole('heading', { name: 'RM Activity Family Highlights' })).closest('.MuiCard-root');
+    expect(familyHighlightsSection).toBeTruthy();
+
+    fireEvent.click(await within(familyHighlightsSection as HTMLElement).findByRole('button', { name: 'Save current preset' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Save RM Report Preset' })).toBeTruthy();
+    const nameInput = screen.getByRole('textbox', { name: 'Preset Name' }) as HTMLInputElement;
+    expect(nameInput.value).toBe('RM Activity Family Report Current Window');
+
+    fireEvent.change(nameInput, {
+      target: { value: '  HR family current window  ' },
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Description (optional)' }), {
+      target: { value: '  Saved from highlights card  ' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Preset' }));
+
+    await waitFor(() => expect(mockedRecordsManagementService.createReportPreset).toHaveBeenCalledWith({
+      name: 'HR family current window',
+      description: 'Saved from highlights card',
+      kind: 'ACTIVITY_FAMILY_REPORT',
+      params: {
+        from: '2026-04-09T00:00:00',
+        to: '2026-04-15T23:59:59',
+      },
+    }));
+    expect(toastSuccessMock).toHaveBeenCalledWith('RM report preset saved');
   });
 
   it('exports activity event-type report CSVs for current and previous windows', async () => {

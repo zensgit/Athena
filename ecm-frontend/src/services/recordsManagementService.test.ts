@@ -70,6 +70,97 @@ describe('recordsManagementService', () => {
     expect(mockedApi.get).toHaveBeenCalledWith('/records/summary');
   });
 
+  it('lists RM report presets', async () => {
+    mockedApi.get.mockResolvedValueOnce([
+      {
+        id: 'preset-1',
+        owner: 'admin',
+        name: 'Family current',
+        kind: 'ACTIVITY_FAMILY_REPORT',
+        params: {
+          from: '2026-04-09T00:00:00',
+          to: '2026-04-15T23:59:59',
+        },
+      },
+    ] as any);
+
+    await recordsManagementService.listReportPresets();
+
+    expect(mockedApi.get).toHaveBeenCalledWith('/records/report-presets');
+  });
+
+  it('creates an RM report preset with trimmed name and description', async () => {
+    mockedApi.post.mockResolvedValueOnce({
+      id: 'preset-1',
+      owner: 'admin',
+      name: 'Family current',
+      kind: 'ACTIVITY_FAMILY_REPORT',
+      params: {
+        from: '2026-04-09T00:00:00',
+        to: '2026-04-15T23:59:59',
+      },
+    } as any);
+
+    await recordsManagementService.createReportPreset({
+      name: '  Family current  ',
+      description: '  Saved from RM highlights  ',
+      kind: 'ACTIVITY_FAMILY_REPORT',
+      params: {
+        from: '2026-04-09T00:00:00',
+        to: '2026-04-15T23:59:59',
+      },
+    });
+
+    expect(mockedApi.post).toHaveBeenCalledWith('/records/report-presets', {
+      name: 'Family current',
+      description: 'Saved from RM highlights',
+      kind: 'ACTIVITY_FAMILY_REPORT',
+      params: {
+        from: '2026-04-09T00:00:00',
+        to: '2026-04-15T23:59:59',
+      },
+    });
+  });
+
+  it('updates an RM report preset with trimmed editable fields', async () => {
+    mockedApi.put.mockResolvedValueOnce({
+      id: 'preset-1',
+      owner: 'admin',
+      name: 'Family current updated',
+      kind: 'ACTIVITY_FAMILY_REPORT',
+      params: {
+        from: '2026-04-09T00:00:00',
+        to: '2026-04-15T23:59:59',
+      },
+    } as any);
+
+    await recordsManagementService.updateReportPreset('preset-1', {
+      name: '  Family current updated  ',
+      description: '  Updated from RM page  ',
+      params: {
+        from: '2026-04-09T00:00:00',
+        to: '2026-04-15T23:59:59',
+      },
+    });
+
+    expect(mockedApi.put).toHaveBeenCalledWith('/records/report-presets/preset-1', {
+      name: 'Family current updated',
+      description: 'Updated from RM page',
+      params: {
+        from: '2026-04-09T00:00:00',
+        to: '2026-04-15T23:59:59',
+      },
+    });
+  });
+
+  it('deletes an RM report preset', async () => {
+    mockedApi.delete.mockResolvedValueOnce(undefined as any);
+
+    await recordsManagementService.deleteReportPreset('preset-1');
+
+    expect(mockedApi.delete).toHaveBeenCalledWith('/records/report-presets/preset-1');
+  });
+
   it('loads operations telemetry with a limit', async () => {
     mockedApi.get.mockResolvedValueOnce({
       governedImportJobCount: 3,

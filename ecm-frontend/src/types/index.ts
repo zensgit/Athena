@@ -157,6 +157,26 @@ export interface RecordsSummary {
   filePlanBreakdown: SummaryBucket[];
 }
 
+export type RmReportPresetKind =
+  | 'ACTIVITY_FAMILY_REPORT'
+  | 'ACTIVITY_FAMILY_HIGHLIGHTS'
+  | 'ACTIVITY_FAMILY_MIX'
+  | 'ACTIVITY_EVENT_TYPE_REPORT'
+  | 'ACTIVITY_CONTRIBUTOR_REPORT'
+  | 'ACTIVITY_CONTRIBUTOR_FAMILY_REPORT'
+  | 'ACTIVITY_CONTRIBUTOR_EVENT_TYPE_REPORT';
+
+export interface RmReportPreset {
+  id: string;
+  owner: string;
+  name: string;
+  description?: string | null;
+  kind: RmReportPresetKind;
+  params: Record<string, unknown>;
+  createdDate?: string | null;
+  lastModifiedDate?: string | null;
+}
+
 export interface RecordAuditEntry {
   auditLogId: string;
   eventType: string;
