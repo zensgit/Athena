@@ -7,7 +7,7 @@ Date: 2026-04-20
 - the current CI/E2E stabilization batch has a documented end state
 - the `PR-81` review finding has been incorporated into the closeout
 - the workflow readiness contract is now stricter than the originally submitted fix batch
-- the closeout records merge readiness and the remaining CI confirmation caveat
+- the closeout records the remaining CI rerun requirement explicitly
 
 ## Evidence Sources
 
@@ -20,6 +20,26 @@ Closeout verification relies on:
 - `docs/P5_PR81_CI_E2E_FIX_BATCH_REVIEW_AND_READINESS_GATE_FIX_VERIFICATION_20260420.md`
 
 ## Checks Performed For This Closeout
+
+### GitHub Actions run reconciliation
+
+Inspected GitHub Actions run:
+
+- `24650183138`
+
+Observed result:
+
+- `Backend Verify`: success
+- `Frontend Build & Test`: failure
+- `Phase C Security Verification`: failure
+- later smoke/E2E jobs: skipped
+
+Important context:
+
+- the run checked out commit `b5aafe5feb8c2036aba2292e3cbdc06c136a9eb7`
+- that commit predates the current local review follow-up and workflow gate hardening
+
+Therefore this run cannot be treated as the authoritative final gate for the current patch set.
 
 ### Workflow gate verification
 
@@ -38,6 +58,19 @@ ruby -e 'require "yaml"; YAML.load_file(".github/workflows/ci.yml"); puts "workf
 Result:
 
 - `workflow-yaml-ok`
+
+### Local spot-check for the only frontend unit failure from run `24650183138`
+
+```bash
+cd ecm-frontend && CI=true npm test -- --watchAll=false --runInBand \
+  --runTestsByPath src/pages/RecordsManagementPage.test.tsx \
+  --testNamePattern='summarizes selected operations filters and clears them by scope' \
+  --forceExit
+```
+
+Result:
+
+- passed locally on the current workspace
 
 ### Static diff check
 
@@ -69,4 +102,5 @@ Unrelated pre-existing dirty files left untouched:
 
 - no blocking code-review finding remains in the reviewed CI/E2E stabilization batch
 - one medium workflow issue was found during review and has already been fixed
-- the batch is now closeout-ready and merge-ready, with final confidence still depending on the next CI run using the stricter readiness gate
+- the inspected GitHub Actions run is stale relative to the current follow-up state
+- final closeout still depends on one more CI rerun against the current workflow and patch set

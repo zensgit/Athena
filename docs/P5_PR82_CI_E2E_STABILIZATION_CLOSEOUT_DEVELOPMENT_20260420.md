@@ -4,7 +4,7 @@ Date: 2026-04-20
 
 ## Scope
 
-`PR-82` is the final closeout slice for the current CI/E2E stabilization batch.
+`PR-82` is the closeout candidate slice for the current CI/E2E stabilization batch.
 
 It does not introduce new application behavior. It closes the review-and-hardening loop around:
 
@@ -24,7 +24,7 @@ This closeout is based on the following already completed artifacts:
 
 ## Stabilization Result
 
-The stabilization batch is now treated as closed from an implementation standpoint.
+The stabilization batch is now treated as closed from an implementation standpoint, but not yet finally closed from a CI gate standpoint.
 
 ### Confirmed valid from the submitted fix batch
 
@@ -40,13 +40,28 @@ The stabilization batch is now treated as closed from an implementation standpoi
 - readiness also requires an HTTP-success response via `curl -fs`
 - actuator status is now checked via JSON parsing instead of string grep
 
+## CI Status Reconciliation
+
+The latest inspected GitHub Actions run, `24650183138`, is not the final gate for the current follow-up state.
+
+It checked out commit:
+
+- `b5aafe5feb8c2036aba2292e3cbdc06c136a9eb7`
+
+which predates the current review follow-up and workflow hardening.
+
+That run failed in two places:
+
+- `Frontend Build & Test`: one `RecordsManagementPage` test timed out
+- `Phase C Security Verification`: the workflow still used the old `8080` wait target and hit the old `073` working-copy backfill SQL
+
+Those failures should be treated as stale gate evidence, not as the final verdict on the current follow-up set.
+
 ## Merge-Ready Recommendation
 
-This batch is merge-ready with one explicit operational caveat:
-
-- the next GitHub Actions run should be treated as the final confirmation gate for the tightened readiness checks
-
 There is no remaining blocking code-review finding in the stabilization patch set.
+
+Operationally, the batch is pending one more CI rerun on the current workflow state.
 
 ## What This Closeout Does Not Claim
 
@@ -56,7 +71,7 @@ There is no remaining blocking code-review finding in the stabilization patch se
 
 ## Recommended Next Step
 
-After the next CI pass confirms the stricter readiness gates, the next slice should return to product work rather than more CI surgery.
+After the next CI pass confirms the stricter readiness gates on the current patch set, the next slice should return to product work rather than more CI surgery.
 
 The most reasonable next direction remains:
 
