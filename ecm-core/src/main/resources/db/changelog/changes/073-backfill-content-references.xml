@@ -24,15 +24,16 @@
     </changeSet>
 
     <changeSet id="073-backfill-working-copy-content-references" author="kernel-hardening">
-        <comment>P0A-2: Backfill content references for existing working copies</comment>
+        <comment>P0A-2: Backfill content references for existing working copies (live nodes only)</comment>
         <sql>
             INSERT INTO content_references (id, content_id, owner_type, owner_id, active, created_at)
             SELECT gen_random_uuid(), d.content_id, 'WORKING_COPY', d.id, true, now()
             FROM documents d
+            JOIN nodes n ON n.id = d.id
             WHERE d.content_id IS NOT NULL
               AND d.content_id != ''
               AND d.is_working_copy = true
-              AND d.is_deleted = false
+              AND n.is_deleted = false
               AND NOT EXISTS (
                   SELECT 1 FROM content_references cr
                   WHERE cr.content_id = d.content_id
