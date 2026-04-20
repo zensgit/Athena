@@ -136,7 +136,7 @@ jobs:
           timeout 120 bash -c "until docker inspect --format='{{.State.Health.Status}}' athena-keycloak-1 2>/dev/null | grep -q healthy; do sleep 5; done" || true
           docker compose up -d ecm-core
           echo "Waiting for ecm-core..."
-          timeout 480 bash -c "until curl -sf http://localhost:7700/actuator/health >/dev/null 2>&1; do sleep 5; done"
+          timeout 900 bash -c "until curl -sf http://localhost:7700/actuator/health >/dev/null 2>&1; do sleep 5; done"
           docker compose up -d ecm-frontend
           echo "Waiting for ecm-frontend..."
           timeout 60 bash -c "until curl -sf http://localhost:5500/ >/dev/null 2>&1; do sleep 3; done"
@@ -253,7 +253,7 @@ jobs:
           docker compose up -d keycloak
           timeout 120 bash -c "until docker inspect --format='{{.State.Health.Status}}' athena-keycloak-1 2>/dev/null | grep -q healthy; do sleep 5; done" || true
           docker compose up -d ecm-core
-          timeout 480 bash -c "until curl -sf http://localhost:7700/actuator/health >/dev/null 2>&1; do sleep 5; done"
+          timeout 900 bash -c "until curl -sf http://localhost:7700/actuator/health >/dev/null 2>&1; do sleep 5; done"
           docker compose up -d ecm-frontend
           timeout 60 bash -c "until curl -sf http://localhost:5500/ >/dev/null 2>&1; do sleep 3; done"
 
@@ -343,7 +343,7 @@ jobs:
           timeout 120 bash -c "until docker inspect --format='{{.State.Health.Status}}' athena-keycloak-1 2>/dev/null | grep -q healthy; do sleep 5; done" || true
           docker compose build --build-arg SKIP_LIBREOFFICE=true ecm-core
           docker compose up -d ecm-core
-          timeout 480 bash -c "until curl -sf http://localhost:8080/actuator/health >/dev/null 2>&1; do sleep 5; done"
+          timeout 900 bash -c "until curl -sf http://localhost:8080/actuator/health >/dev/null 2>&1; do sleep 5; done"
 
       - name: Run Phase C verification
         run: |
