@@ -327,14 +327,21 @@ public class DocumentController {
         if (file != null) {
             versionService.createVersion(documentId, file, comment, majorVersion);
         }
-        // /checkin is historically used both for: (a) committing working-copy edits
-        // that require an active checkout, and (b) uploading a fresh version when
-        // the caller happens to have the document path. Only clear the checkout
-        // state when the document is actually checked out; otherwise return the
-        // document with whatever state versionService.createVersion() left it in.
-        Document document = (Document) nodeService.getNode(documentId);
-        if (document.isCheckedOut()) {
+        // /checkin is historically used both for:
+        //   (a) committing working-copy edits — requires an active checkout
+        //   (b) uploading a fresh version — caller supplies a file and has never
+        //       called /checkout; no checkout state to clear
+        // For (a) checkinDocument() enforces the strict P0A-4 "must be checked
+        // out" invariant. For (b) it throws IllegalStateException, which we
+        // treat as expected when a file was provided.
+        Document document;
+        try {
             document = nodeService.checkinDocument(documentId, keepCheckedOut);
+        } catch (IllegalStateException e) {
+            if (file == null) {
+                throw e;
+            }
+            document = (Document) nodeService.getNode(documentId);
         }
         return ResponseEntity.ok(toNodeDto(document));
     }
