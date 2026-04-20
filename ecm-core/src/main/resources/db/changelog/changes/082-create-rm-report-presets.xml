@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="082-create-rm-report-presets" author="p5-pr83">
+        <comment>P5 PR-83: RM Saved Report Preset Foundation</comment>
+
+        <createTable tableName="rm_report_presets">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="owner" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="name" type="varchar(200)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="description" type="varchar(500)"/>
+            <column name="kind" type="varchar(64)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="params" type="jsonb">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_date" type="timestamp" defaultValueComputed="${now}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_date" type="timestamp"/>
+            <column name="created_by" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_by" type="varchar(255)"/>
+            <column name="version" type="bigint" defaultValueNumeric="0"/>
+            <column name="is_deleted" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="deleted_at" type="timestamp"/>
+            <column name="deleted_by" type="varchar(255)"/>
+        </createTable>
+
+        <addUniqueConstraint tableName="rm_report_presets"
+                             columnNames="owner, name"
+                             constraintName="uq_rm_report_preset_owner_name"/>
+
+        <createIndex tableName="rm_report_presets" indexName="idx_rm_report_preset_owner">
+            <column name="owner"/>
+        </createIndex>
+
+        <createIndex tableName="rm_report_presets" indexName="idx_rm_report_preset_kind">
+            <column name="kind"/>
+        </createIndex>
+
+        <rollback>
+            <dropTable tableName="rm_report_presets"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

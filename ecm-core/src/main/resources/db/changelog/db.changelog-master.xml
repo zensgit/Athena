@@ -92,6 +92,7 @@
     <include file="db/changelog/changes/079-add-node-encrypted-properties.xml"/>
     <include file="db/changelog/changes/080-seed-record-management-aspect.xml"/>
     <include file="db/changelog/changes/081-record-category-foundation.xml"/>
+    <include file="db/changelog/changes/082-create-rm-report-presets.xml"/>
     <include file="db/changelog/changes/007-insert-initial-data.xml"/>
 
 </databaseChangeLog>
