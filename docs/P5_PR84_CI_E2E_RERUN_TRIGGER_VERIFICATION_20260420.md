@@ -29,13 +29,49 @@ Results:
 
 ## Rerun Trigger Verification
 
-This document is updated after the docs-only rerun trigger commit is created and pushed.
+### Trigger commit
 
-Items to record:
+- commit SHA: `16648b3ef979b607875e8227da653ba9e6a0afce`
+- commit title: `docs: trigger fresh CI rerun for stabilization closeout`
 
-- rerun trigger commit SHA
-- GitHub Actions run id created from that commit
-- initial job status snapshot
+### Push result
+
+```bash
+git push origin main
+```
+
+Result:
+
+- pushed successfully
+- `main` advanced from `2a3586d` to `16648b3`
+
+### GitHub Actions run created from the trigger commit
+
+- run id: `24669169102`
+- workflow: `CI`
+- event: `push`
+- head SHA: `16648b3ef979b607875e8227da653ba9e6a0afce`
+- status at capture time: `in_progress`
+
+### Initial job snapshot
+
+At the time of capture:
+
+- `Backend Verify`: `in_progress`
+- `Frontend Build & Test`: `in_progress`
+
+Observed step progress:
+
+- `Backend Verify`
+  - `Compile`: `success`
+  - `Unit tests`: `in_progress`
+- `Frontend Build & Test`
+  - `Install dependencies`: `success`
+  - `Lint`: `success`
+  - `Type check`: `success`
+  - `Build`: `in_progress`
+
+This is sufficient to prove the rerun was created from the current patch set and entered normal execution.
 
 ## Verification Outcome
 

@@ -72,6 +72,18 @@ The accepted `P5` runtime slices on top of this matrix are:
   - RM saved-search execution record projection fix
   - preserves `record / declared* / recordCategory*` on the `SavedSearchesPage -> executeSavedSearch -> SearchResults?savedSearchId=...` path
   - no new backend endpoint or migration
+- `PR-89`
+  - RM report preset save-as-preset UI consumption
+  - first shipped frontend use of the `PR-83` preset foundation on existing RM report cards
+  - no new backend endpoint or migration
+- `PR-90`
+  - RM report preset list and apply/export UI consumption
+  - lists saved presets, applies them to `Records Audit`, and reuses existing CSV export routes
+  - no new backend endpoint or migration
+- `PR-91`
+  - RM report preset edit/delete UI consumption
+  - extends the same preset table with maintenance workflows while preserving existing CRUD semantics
+  - no new backend endpoint or migration
 
 These are still valid, but they should wait until policy semantics and operator demand are explicit.
 

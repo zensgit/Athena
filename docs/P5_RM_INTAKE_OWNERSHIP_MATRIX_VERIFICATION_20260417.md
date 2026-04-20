@@ -21,6 +21,9 @@ This document builds on the already completed `P4` closeout material:
 - `P5` follow-up can be assigned by owner lane without reopening the `P4` ledger
 - acceptance entry conditions are defined before new runtime slices begin
 - accepted runtime slices now include `PR-76`, `PR-77`, `PR-78`, `PR-79`, and `PR-80` on the `RM search/index surfaces` lane
+- accepted runtime slices now also include `PR-89` on the `RM delivery workflows` lane as the first frontend consumption of the preset foundation
+- accepted runtime slices now also include `PR-90` on the `RM delivery workflows` lane as the first preset list/apply/export consumption layer on top of `PR-83`
+- accepted runtime slices now also include `PR-91` on the `RM delivery workflows` lane as the first preset maintenance UI layer on top of `PR-83`
 
 ## Checks
 
