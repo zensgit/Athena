@@ -18,6 +18,7 @@ test('Phase 5 full-stack: admin pages render (Mail Automation + Preview Diagnost
 
   await page.goto('/admin/preview-diagnostics', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: 'Preview Diagnostics' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Refresh' })).toBeVisible();
+  // Page has multiple "Refresh history" / "Auto Refresh" buttons too — use exact match
+  await expect(page.getByRole('button', { name: 'Refresh', exact: true }).first()).toBeVisible();
 });
 

@@ -48,7 +48,7 @@ test.describe('Advanced search fallback governance', () => {
     await page.waitForURL(/\/search/, { timeout: 60_000 });
     await expect(page.getByRole('heading', { name: /Advanced Search/i })).toBeVisible({ timeout: 60_000 });
 
-    await page.route('**/api/v1/search/faceted', async (route) => {
+    await page.route('**/api/v1/search/query', async (route) => {
       const requestData = route.request().postDataJSON() as { query?: string } | null;
       if (!requestData || requestData.query !== query) {
         await route.continue();
@@ -116,7 +116,7 @@ test.describe('Advanced search fallback governance', () => {
         page.getByText('All preview issues on this page are unsupported; retry actions are hidden.')
       ).toBeVisible({ timeout: 60_000 });
     } finally {
-      await page.unroute('**/api/v1/search/faceted').catch(() => null);
+      await page.unroute('**/api/v1/search/query').catch(() => null);
     }
   });
 
@@ -163,7 +163,7 @@ test.describe('Advanced search fallback governance', () => {
     await expect(page.getByText(filename).first()).toBeVisible({ timeout: 60_000 });
 
     let forcedEmptyCount = 0;
-    await page.route('**/api/v1/search/faceted', async (route) => {
+    await page.route('**/api/v1/search/query', async (route) => {
       const requestData = route.request().postDataJSON() as { query?: string } | null;
       if (!requestData || requestData.query !== filename) {
         await route.continue();
@@ -214,7 +214,7 @@ test.describe('Advanced search fallback governance', () => {
     await page.waitForTimeout(2200);
     expect(forcedEmptyCount).toBe(countAfterHide);
 
-    await page.unroute('**/api/v1/search/faceted');
+    await page.unroute('**/api/v1/search/query');
     await request.delete(`${apiUrl}/api/v1/nodes/${documentId}`, {
       headers: { Authorization: `Bearer ${token}` },
     }).catch(() => null);
@@ -232,7 +232,7 @@ test.describe('Advanced search fallback governance', () => {
     const exactQuery = `e2e-advanced-preview-failure-${Date.now()}.bin`;
     const now = new Date().toISOString();
 
-    await page.route('**/api/v1/search/faceted', async (route) => {
+    await page.route('**/api/v1/search/query', async (route) => {
       const requestData = route.request().postDataJSON() as { query?: string } | null;
       if (!requestData) {
         await route.continue();
@@ -318,7 +318,7 @@ test.describe('Advanced search fallback governance', () => {
       });
       await expect(page.getByText(seedQuery).first()).toBeVisible({ timeout: 60_000 });
     } finally {
-      await page.unroute('**/api/v1/search/faceted').catch(() => null);
+      await page.unroute('**/api/v1/search/query').catch(() => null);
     }
   });
 });

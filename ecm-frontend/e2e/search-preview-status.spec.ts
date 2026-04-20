@@ -269,10 +269,27 @@ test('Advanced search preview status facet counts reflect full result set', asyn
 
     await gotoWithAuthE2E(page, '/search', defaultUsername, defaultPassword, { token });
     await page.getByLabel('Search query').fill(queryKey);
-    await page.getByRole('button', { name: /^Search$/ }).filter({ hasText: /^Search$/ }).click();
+    const searchButton = page.getByRole('button', { name: /^Search$/ }).filter({ hasText: /^Search$/ });
+    await searchButton.click();
 
     await expect(page.getByText(`Found ${totalDocs} results`)).toBeVisible({ timeout: 60_000 });
-    await expect(page.getByRole('button', { name: `Unsupported (${totalDocs})` }).first()).toBeVisible({ timeout: 60_000 });
+
+    // Facet counts reflect the eventual-consistent ES state. If the index didn't
+    // fully register UNSUPPORTED status for all totalDocs when the initial search
+    // ran, retry the search up to 5 times until the count catches up.
+    const unsupportedFacet = page.getByRole('button', { name: `Unsupported (${totalDocs})` }).first();
+    let seen = false;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        await expect(unsupportedFacet).toBeVisible({ timeout: 15_000 });
+        seen = true;
+        break;
+      } catch {
+        // Re-trigger search to pick up the latest facet counts
+        await searchButton.click();
+      }
+    }
+    expect(seen).toBe(true);
   } finally {
     await request.delete(`${baseApiUrl}/api/v1/nodes/${folderId}`,
       { headers: { Authorization: `Bearer ${token}` } }).catch(() => null);
