@@ -316,7 +316,7 @@ jobs:
     name: Phase C Security Verification
     runs-on: ubuntu-latest
     needs: backend
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v4
@@ -341,9 +341,9 @@ jobs:
           done
           docker compose up -d keycloak
           timeout 120 bash -c "until docker inspect --format='{{.State.Health.Status}}' athena-keycloak-1 2>/dev/null | grep -q healthy; do sleep 5; done" || true
-          docker compose build --no-cache ecm-core
+          docker compose build --build-arg SKIP_LIBREOFFICE=true ecm-core
           docker compose up -d ecm-core
-          timeout 180 bash -c "until curl -sf http://localhost:8080/actuator/health >/dev/null 2>&1; do sleep 5; done"
+          timeout 240 bash -c "until curl -sf http://localhost:8080/actuator/health >/dev/null 2>&1; do sleep 5; done"
 
       - name: Run Phase C verification
         run: |

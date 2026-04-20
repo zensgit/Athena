@@ -67,7 +67,6 @@ import {
   OpenInNew,
   ExpandMore,
   ExpandLess,
-  FilterList,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import apiService from '../services/api';

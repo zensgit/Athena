@@ -114,7 +114,7 @@ Spring sees two public constructors and cannot pick one. With no `@Autowired` ma
 **A. For beans using plain `@RequiredArgsConstructor` (8 beans)**:
 - Removed `@RequiredArgsConstructor`
 - Wrote the full-param constructor manually with `@Autowired`
-- Kept the test-compat constructor as a package-private delegate (tests are in the same package)
+- Kept the test-compat delegate for test compatibility; in most controller/processor/adapter classes it is package-private, while in a few service classes it remains public, but Spring now still selects the `@Autowired` primary constructor unambiguously
 
 ```java
 @Autowired

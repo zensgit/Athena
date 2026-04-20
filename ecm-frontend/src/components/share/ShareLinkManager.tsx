@@ -34,7 +34,6 @@ import {
   PlayArrow,
   ExpandMore,
   ExpandLess,
-  BarChart,
 } from '@mui/icons-material';
 import shareLinkService, {
   ShareLink,
