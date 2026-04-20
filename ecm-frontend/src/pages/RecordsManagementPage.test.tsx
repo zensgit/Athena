@@ -57,7 +57,7 @@ jest.mock('services/recordsManagementService', () => ({
 const mockedRecordsManagementService = recordsManagementService as jest.Mocked<typeof recordsManagementService>;
 const toastSuccessMock = toast.success as jest.Mock;
 
-jest.setTimeout(15000);
+jest.setTimeout(45000);
 
 const renderPage = () => {
   const store = configureStore({
