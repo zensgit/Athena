@@ -32,6 +32,26 @@
         var E2E_TIMEOUT_OVERRIDE_KEY = 'ecm_e2e_bootstrap_fallback_ms';
         var AUTH_INIT_STATUS_KEY = 'ecm_auth_init_status';
         var AUTH_INIT_STATUS_STARTUP_RECOVERY = 'startup_recovery';
+        var RELOAD_CACHE_BUST_KEY = '_ecm_reload';
+
+        // Strip the cache-bust query parameter on load. The fallback overlay's
+        // "Reload" button adds ?_ecm_reload=<ts> to defeat HTTP caching; once the
+        // reload has completed, the param has no further purpose and callers
+        // (including the Phase 5 Mocked e2e regression) wait for it to leave
+        // the URL as the signal that the shell has recovered.
+        try {
+          var loadedUrl = new URL(window.location.href, window.location.origin);
+          if (loadedUrl.searchParams.has(RELOAD_CACHE_BUST_KEY)) {
+            loadedUrl.searchParams.delete(RELOAD_CACHE_BUST_KEY);
+            window.history.replaceState(
+              window.history.state,
+              '',
+              loadedUrl.pathname + (loadedUrl.search ? loadedUrl.search : '') + loadedUrl.hash
+            );
+          }
+        } catch (error) {
+          // best-effort cleanup only
+        }
 
         function isWebdriverRuntime() {
           return window.navigator && window.navigator.webdriver === true;
