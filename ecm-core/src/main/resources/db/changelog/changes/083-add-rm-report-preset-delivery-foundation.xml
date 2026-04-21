@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="083-add-rm-report-preset-delivery-foundation" author="p5-pr93">
+        <comment>P5 PR-93: RM report preset scheduled delivery foundation</comment>
+
+        <addColumn tableName="rm_report_presets">
+            <column name="schedule_enabled" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="cron_expression" type="varchar(100)"/>
+            <column name="schedule_timezone" type="varchar(64)" defaultValue="UTC">
+                <constraints nullable="false"/>
+            </column>
+            <column name="delivery_folder_id" type="${uuid_type}"/>
+            <column name="next_run_at" type="timestamp"/>
+            <column name="last_run_at" type="timestamp"/>
+        </addColumn>
+
+        <createTable tableName="rm_report_preset_executions">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="preset_id" type="${uuid_type}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="owner" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="trigger_type" type="varchar(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="status" type="varchar(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="filename" type="varchar(255)"/>
+            <column name="target_folder_id" type="${uuid_type}"/>
+            <column name="document_id" type="${uuid_type}"/>
+            <column name="message" type="varchar(2000)"/>
+            <column name="started_at" type="timestamp">
+                <constraints nullable="false"/>
+            </column>
+            <column name="finished_at" type="timestamp">
+                <constraints nullable="false"/>
+            </column>
+            <column name="duration_ms" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <createIndex tableName="rm_report_presets" indexName="idx_rm_report_preset_schedule_due">
+            <column name="schedule_enabled"/>
+            <column name="next_run_at"/>
+        </createIndex>
+
+        <createIndex tableName="rm_report_preset_executions" indexName="idx_rm_report_preset_exec_preset_started">
+            <column name="preset_id"/>
+            <column name="started_at"/>
+        </createIndex>
+
+        <createIndex tableName="rm_report_preset_executions" indexName="idx_rm_report_preset_exec_status">
+            <column name="status"/>
+        </createIndex>
+
+        <addForeignKeyConstraint
+            constraintName="fk_rm_report_preset_execution_preset"
+            baseTableName="rm_report_preset_executions"
+            baseColumnNames="preset_id"
+            referencedTableName="rm_report_presets"
+            referencedColumnNames="id"/>
+
+        <rollback>
+            <dropTable tableName="rm_report_preset_executions"/>
+            <dropIndex tableName="rm_report_presets" indexName="idx_rm_report_preset_schedule_due"/>
+            <dropColumn tableName="rm_report_presets" columnName="schedule_enabled"/>
+            <dropColumn tableName="rm_report_presets" columnName="cron_expression"/>
+            <dropColumn tableName="rm_report_presets" columnName="schedule_timezone"/>
+            <dropColumn tableName="rm_report_presets" columnName="delivery_folder_id"/>
+            <dropColumn tableName="rm_report_presets" columnName="next_run_at"/>
+            <dropColumn tableName="rm_report_presets" columnName="last_run_at"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

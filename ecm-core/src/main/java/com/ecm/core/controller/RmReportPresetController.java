@@ -2,6 +2,7 @@ package com.ecm.core.controller;
 
 import com.ecm.core.entity.RmReportPreset;
 import com.ecm.core.entity.RmReportPreset.Kind;
+import com.ecm.core.service.RmReportPresetDeliveryService;
 import com.ecm.core.service.RmReportPresetService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
@@ -38,6 +40,7 @@ import java.util.UUID;
 public class RmReportPresetController {
 
     private final RmReportPresetService service;
+    private final RmReportPresetDeliveryService deliveryService;
 
     public record ReportPresetResponse(
             UUID id,
@@ -74,6 +77,13 @@ public class RmReportPresetController {
             String name,
             String description,
             Map<String, Object> params
+    ) {}
+
+    public record UpdateScheduleRequest(
+            Boolean enabled,
+            String cronExpression,
+            String timezone,
+            UUID deliveryFolderId
     ) {}
 
     @GetMapping
@@ -117,5 +127,41 @@ public class RmReportPresetController {
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/{id}/schedule")
+    @Operation(summary = "Get schedule/delivery status for an owned preset")
+    public ResponseEntity<RmReportPresetDeliveryService.ScheduleStatusDto> getSchedule(@PathVariable UUID id) {
+        return ResponseEntity.ok(deliveryService.getSchedule(id));
+    }
+
+    @PutMapping("/{id}/schedule")
+    @Operation(summary = "Configure scheduled delivery for an owned preset")
+    public ResponseEntity<RmReportPresetDeliveryService.ScheduleStatusDto> updateSchedule(
+            @PathVariable UUID id,
+            @RequestBody UpdateScheduleRequest request) {
+        return ResponseEntity.ok(deliveryService.updateSchedule(
+                id,
+                new RmReportPresetDeliveryService.UpdateScheduleRequest(
+                        request.enabled(),
+                        request.cronExpression(),
+                        request.timezone(),
+                        request.deliveryFolderId()
+                )
+        ));
+    }
+
+    @PostMapping("/{id}/deliver")
+    @Operation(summary = "Run preset delivery now using the configured folder target")
+    public ResponseEntity<RmReportPresetDeliveryService.PresetExecutionDto> deliverNow(@PathVariable UUID id) {
+        return ResponseEntity.ok(deliveryService.deliverNow(id));
+    }
+
+    @GetMapping("/{id}/executions")
+    @Operation(summary = "List recent delivery executions for an owned preset")
+    public ResponseEntity<List<RmReportPresetDeliveryService.PresetExecutionDto>> listExecutions(
+            @PathVariable UUID id,
+            @RequestParam(required = false) Integer limit) {
+        return ResponseEntity.ok(deliveryService.listExecutions(id, limit));
     }
 }

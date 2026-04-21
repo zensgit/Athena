@@ -7,6 +7,7 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.time.LocalDateTime;
 
 @Repository
 public interface RmReportPresetRepository extends JpaRepository<RmReportPreset, UUID> {
@@ -16,4 +17,8 @@ public interface RmReportPresetRepository extends JpaRepository<RmReportPreset, 
     Optional<RmReportPreset> findByIdAndDeletedFalse(UUID id);
 
     boolean existsByOwnerAndNameAndDeletedFalse(String owner, String name);
+
+    List<RmReportPreset> findByScheduleEnabledTrueAndDeletedFalseAndNextRunAtLessThanEqualOrderByNextRunAtAsc(
+        LocalDateTime now
+    );
 }

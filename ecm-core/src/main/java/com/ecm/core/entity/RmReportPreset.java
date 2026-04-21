@@ -17,7 +17,9 @@ import lombok.ToString;
 import org.hibernate.annotations.Type;
 
 import java.util.HashMap;
+import java.time.LocalDateTime;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * P5 PR-83: RM Saved Report Preset Foundation
@@ -63,6 +65,26 @@ public class RmReportPreset extends BaseEntity {
     @Column(name = "params", columnDefinition = "jsonb", nullable = false)
     @Builder.Default
     private Map<String, Object> params = new HashMap<>();
+
+    @Builder.Default
+    @Column(name = "schedule_enabled", nullable = false)
+    private boolean scheduleEnabled = false;
+
+    @Column(name = "cron_expression", length = 100)
+    private String cronExpression;
+
+    @Column(name = "schedule_timezone", length = 64)
+    @Builder.Default
+    private String scheduleTimezone = "UTC";
+
+    @Column(name = "delivery_folder_id")
+    private UUID deliveryFolderId;
+
+    @Column(name = "next_run_at")
+    private LocalDateTime nextRunAt;
+
+    @Column(name = "last_run_at")
+    private LocalDateTime lastRunAt;
 
     public enum Kind {
         ACTIVITY_FAMILY_REPORT,
