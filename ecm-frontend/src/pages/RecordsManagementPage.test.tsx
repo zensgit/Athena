@@ -27,6 +27,10 @@ jest.mock('services/recordsManagementService', () => ({
     createReportPreset: jest.fn(),
     updateReportPreset: jest.fn(),
     deleteReportPreset: jest.fn(),
+    getReportPresetSchedule: jest.fn(),
+    updateReportPresetSchedule: jest.fn(),
+    deliverReportPresetNow: jest.fn(),
+    listReportPresetExecutions: jest.fn(),
     getActivityContributorEventTypeHighlights: jest.fn(),
     getActivityContributorFamilyHighlights: jest.fn(),
     exportActivityFamilyReportCsv: jest.fn(),
@@ -646,6 +650,19 @@ describe('RecordsManagementPage', () => {
         createdDate: '2026-04-15T12:00:00',
         lastModifiedDate: '2026-04-15T12:30:00',
       },
+      {
+        id: 'preset-family-highlights',
+        owner: 'admin',
+        name: 'HR family highlights',
+        description: 'Summary-only window',
+        kind: 'ACTIVITY_FAMILY_HIGHLIGHTS',
+        params: {
+          from: '2026-04-09T00:00:00',
+          to: '2026-04-15T23:59:59',
+        },
+        createdDate: '2026-04-15T12:05:00',
+        lastModifiedDate: '2026-04-15T12:35:00',
+      },
     ] as any);
     mockedRecordsManagementService.createReportPreset.mockResolvedValue({
       id: 'preset-1',
@@ -665,6 +682,40 @@ describe('RecordsManagementPage', () => {
       },
     } as any);
     mockedRecordsManagementService.deleteReportPreset.mockResolvedValue(undefined as any);
+    mockedRecordsManagementService.getReportPresetSchedule.mockResolvedValue({
+      presetId: 'preset-family-current',
+      enabled: false,
+      cronExpression: null,
+      timezone: 'UTC',
+      deliveryFolderId: null,
+      nextRunAt: null,
+      lastRunAt: null,
+      lastExecution: null,
+    } as any);
+    mockedRecordsManagementService.updateReportPresetSchedule.mockResolvedValue({
+      presetId: 'preset-family-current',
+      enabled: true,
+      cronExpression: '0 9 * * MON-FRI',
+      timezone: 'UTC',
+      deliveryFolderId: 'folder-1',
+      nextRunAt: '2026-04-22T09:00:00',
+      lastRunAt: null,
+      lastExecution: null,
+    } as any);
+    mockedRecordsManagementService.deliverReportPresetNow.mockResolvedValue({
+      id: 'exec-1',
+      presetId: 'preset-family-current',
+      triggerType: 'MANUAL',
+      status: 'SUCCESS',
+      filename: 'HR-family-current.csv',
+      targetFolderId: 'folder-1',
+      documentId: 'doc-1',
+      message: 'Delivered successfully',
+      startedAt: '2026-04-21T09:00:00',
+      finishedAt: '2026-04-21T09:00:01',
+      durationMs: 1000,
+    } as any);
+    mockedRecordsManagementService.listReportPresetExecutions.mockResolvedValue([] as any);
   });
 
   it('loads records management summary, operations telemetry, browse surfaces, and audit', async () => {
@@ -807,6 +858,51 @@ describe('RecordsManagementPage', () => {
       to: '2026-04-15T23:59:59',
     }));
     expect(toastSuccessMock).toHaveBeenCalledWith('RM report preset CSV exported');
+  });
+
+  it('opens the schedule dialog from a CSV-capable preset row and saves schedule config', async () => {
+    renderPage();
+
+    const presetRow = (await screen.findByText('HR family current')).closest('tr');
+    expect(presetRow).toBeTruthy();
+
+    fireEvent.click(within(presetRow as HTMLElement).getByRole('button', { name: 'Schedule' }));
+
+    expect(await screen.findByRole('dialog', { name: /Schedule Delivery/i })).toBeTruthy();
+    await waitFor(() =>
+      expect(mockedRecordsManagementService.getReportPresetSchedule).toHaveBeenCalledWith('preset-family-current')
+    );
+    expect(mockedRecordsManagementService.listReportPresetExecutions).toHaveBeenCalledWith('preset-family-current', 5);
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /Enable scheduled delivery/i }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Cron expression' }), {
+      target: { value: ' 0 9 * * MON-FRI ' },
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Delivery folder ID' }), {
+      target: { value: ' folder-1 ' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save schedule' }));
+
+    await waitFor(() => expect(mockedRecordsManagementService.updateReportPresetSchedule).toHaveBeenCalledWith(
+      'preset-family-current',
+      {
+        enabled: true,
+        cronExpression: '0 9 * * MON-FRI',
+        timezone: 'UTC',
+        deliveryFolderId: 'folder-1',
+      }
+    ));
+  });
+
+  it('keeps summary-only presets audit-only in the preset table', async () => {
+    renderPage();
+
+    const presetRow = (await screen.findByText('HR family highlights')).closest('tr');
+    expect(presetRow).toBeTruthy();
+
+    expect(within(presetRow as HTMLElement).queryByRole('button', { name: 'Export CSV' })).toBeNull();
+    expect(within(presetRow as HTMLElement).queryByRole('button', { name: 'Schedule' })).toBeNull();
+    expect(within(presetRow as HTMLElement).getByRole('button', { name: 'Apply to audit' })).toBeTruthy();
   });
 
   it('edits a saved RM report preset from the preset table', async () => {

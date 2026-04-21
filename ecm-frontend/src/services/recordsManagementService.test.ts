@@ -1,4 +1,4 @@
-import recordsManagementService from './recordsManagementService';
+import recordsManagementService, { supportsReportPresetCsvDelivery } from './recordsManagementService';
 import api from './api';
 
 jest.mock('./api', () => ({
@@ -252,6 +252,13 @@ describe('recordsManagementService', () => {
     expect(mockedApi.get).toHaveBeenCalledWith('/records/report-presets/preset-1/executions', {
       params: undefined,
     });
+  });
+
+  it('identifies which preset kinds support CSV delivery', () => {
+    expect(supportsReportPresetCsvDelivery('ACTIVITY_FAMILY_REPORT')).toBe(true);
+    expect(supportsReportPresetCsvDelivery('ACTIVITY_CONTRIBUTOR_EVENT_TYPE_REPORT')).toBe(true);
+    expect(supportsReportPresetCsvDelivery('ACTIVITY_FAMILY_HIGHLIGHTS')).toBe(false);
+    expect(supportsReportPresetCsvDelivery('ACTIVITY_FAMILY_MIX')).toBe(false);
   });
 
   it('loads operations telemetry with a limit', async () => {

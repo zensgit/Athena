@@ -4850,7 +4850,7 @@ const RecordsManagementPage: React.FC = () => {
                     Saved RM Report Presets
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    Reuse saved RM report windows through the existing audit and CSV export surfaces.
+                    Reuse saved RM report windows through the existing audit and CSV export surfaces. Summary-only presets remain audit-only; CSV-capable presets expose export and scheduled delivery.
                   </Typography>
                 </Box>
 
@@ -4911,22 +4911,24 @@ const RecordsManagementPage: React.FC = () => {
                               >
                                 Apply to audit
                               </Button>
-                              <Button
-                                size="small"
-                                variant="outlined"
-                                onClick={() => void exportReportPresetCsv(preset)}
-                                disabled={presetExportingId === preset.id}
-                              >
-                                {presetExportingId === preset.id ? 'Exporting...' : 'Export CSV'}
-                              </Button>
                               {supportsReportPresetCsvDelivery(preset.kind) && (
-                                <Button
-                                  size="small"
-                                  variant="outlined"
-                                  onClick={() => setSchedulePresetTarget(preset)}
-                                >
-                                  Schedule
-                                </Button>
+                                <>
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    onClick={() => void exportReportPresetCsv(preset)}
+                                    disabled={presetExportingId === preset.id}
+                                  >
+                                    {presetExportingId === preset.id ? 'Exporting...' : 'Export CSV'}
+                                  </Button>
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    onClick={() => setSchedulePresetTarget(preset)}
+                                  >
+                                    Schedule
+                                  </Button>
+                                </>
                               )}
                             </Stack>
                           </TableCell>

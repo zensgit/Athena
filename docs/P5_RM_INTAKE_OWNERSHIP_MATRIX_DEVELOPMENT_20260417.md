@@ -92,6 +92,26 @@ The accepted `P5` runtime slices on top of this matrix are:
   - RM report preset scheduled delivery foundation
   - adds schedule metadata, CSV delivery upload, and execution ledger on top of the preset/execute path
   - backend-only; no frontend schedule UI yet
+- `PR-96`
+  - RM report preset scheduled delivery frontend service layer
+  - adds typed schedule/deliver/execution methods and a kind guard that mirrors backend CSV-deliverable kinds
+  - no new backend endpoint or migration
+- `PR-97`
+  - RM report preset schedule dialog component
+  - adds load/save/deliver-now/history UI on top of the PR-96 service layer
+  - component-only; page wiring remains separate
+- `PR-98`
+  - RM report preset schedule page wiring
+  - adds the preset-row Schedule action and mounts the dialog on `RecordsManagementPage`
+  - no new backend endpoint or migration
+- `PR-99`
+  - RM report preset delivery UI hardening
+  - closes shipped follow-ups: summary-only presets stay audit-only in the table, and schedule chips/history refresh after save or manual delivery
+  - no new backend endpoint or migration
+- `PR-100`
+  - RM report preset scheduled delivery mocked E2E
+  - adds one browser-level mocked coverage slice across the shipped `PR-95/96/97/98/99` chain
+  - no new backend endpoint or migration
 
 These are still valid, but they should wait until policy semantics and operator demand are explicit.
 

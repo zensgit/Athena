@@ -26,6 +26,11 @@ This document builds on the already completed `P4` closeout material:
 - accepted runtime slices now also include `PR-91` on the `RM delivery workflows` lane as the first preset maintenance UI layer on top of `PR-83`
 - accepted runtime slices now also include `PR-92` on the `RM delivery workflows` lane as the first backend execute path on top of the preset foundation
 - accepted runtime slices now also include `PR-93` on the `RM delivery workflows` lane as the first scheduled delivery and execution-ledger backend foundation on top of `PR-83/92`
+- accepted runtime slices now also include `PR-96` on the `RM delivery workflows` lane as the first typed frontend schedule/delivery service surface on top of `PR-95`
+- accepted runtime slices now also include `PR-97` on the `RM delivery workflows` lane as the first schedule dialog and execution-history UI on top of `PR-95/96`
+- accepted runtime slices now also include `PR-98` on the `RM delivery workflows` lane as the first page-level schedule action wiring on top of `PR-97`
+- accepted runtime slices now also include `PR-99` on the `RM delivery workflows` lane as review-driven hardening of the shipped schedule/export UI semantics
+- accepted runtime slices now also include `PR-100` on the `RM delivery workflows` lane as the first browser-level mocked E2E coverage across the shipped scheduled-delivery chain
 
 ## Checks
 

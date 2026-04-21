@@ -65,7 +65,9 @@ const ScheduleReportPresetDialog: React.FC<ScheduleReportPresetDialogProps> = ({
   const kindSupportsCsvDelivery = preset ? supportsReportPresetCsvDelivery(preset.kind) : false;
 
   const loadState = useCallback(async () => {
-    if (!preset) return;
+    if (!preset) {
+      return null;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -81,9 +83,14 @@ const ScheduleReportPresetDialog: React.FC<ScheduleReportPresetDialogProps> = ({
       setDeliveryFolderId(scheduleStatus.deliveryFolderId ?? '');
       setCronError(null);
       setFolderError(null);
+      return {
+        scheduleStatus,
+        recentExecutions,
+      };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load schedule';
       setError(message);
+      return null;
     } finally {
       setLoading(false);
     }
@@ -131,6 +138,11 @@ const ScheduleReportPresetDialog: React.FC<ScheduleReportPresetDialogProps> = ({
     try {
       const updated = await recordsManagementService.updateReportPresetSchedule(preset.id, request);
       setStatus(updated);
+      setEnabled(updated.enabled);
+      setCronExpression(updated.cronExpression ?? '');
+      setTimezone(updated.timezone ?? 'UTC');
+      setDeliveryFolderId(updated.deliveryFolderId ?? '');
+      await loadState();
       onSaved?.(updated);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to save schedule';
@@ -145,9 +157,10 @@ const ScheduleReportPresetDialog: React.FC<ScheduleReportPresetDialogProps> = ({
     setError(null);
     setDelivering(true);
     try {
-      const execution = await recordsManagementService.deliverReportPresetNow(preset.id);
-      setExecutions((prior) => [execution, ...prior].slice(0, 5));
-      if (execution.status === 'FAILED') {
+      await recordsManagementService.deliverReportPresetNow(preset.id);
+      const refreshed = await loadState();
+      const execution = refreshed?.recentExecutions[0];
+      if (execution?.status === 'FAILED') {
         setError(execution.message || 'Delivery failed');
       }
     } catch (err) {

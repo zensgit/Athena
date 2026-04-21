@@ -95,17 +95,28 @@ describe('ScheduleReportPresetDialog', () => {
   });
 
   it('disables the schedule with a minimal request body', async () => {
-    mockedService.getReportPresetSchedule.mockResolvedValueOnce({
-      presetId: 'preset-1',
-      enabled: true,
-      cronExpression: '0 9 * * MON-FRI',
-      timezone: 'UTC',
-      deliveryFolderId: 'folder-1',
-      nextRunAt: null,
-      lastRunAt: null,
-      lastExecution: null,
-    });
-    mockedService.listReportPresetExecutions.mockResolvedValueOnce([]);
+    mockedService.getReportPresetSchedule
+      .mockResolvedValueOnce({
+        presetId: 'preset-1',
+        enabled: true,
+        cronExpression: '0 9 * * MON-FRI',
+        timezone: 'UTC',
+        deliveryFolderId: 'folder-1',
+        nextRunAt: null,
+        lastRunAt: null,
+        lastExecution: null,
+      })
+      .mockResolvedValueOnce({
+        presetId: 'preset-1',
+        enabled: false,
+        cronExpression: null,
+        timezone: 'UTC',
+        deliveryFolderId: 'folder-1',
+        nextRunAt: null,
+        lastRunAt: null,
+        lastExecution: null,
+      });
+    mockedService.listReportPresetExecutions.mockResolvedValue([]);
     mockedService.updateReportPresetSchedule.mockResolvedValueOnce({
       presetId: 'preset-1',
       enabled: false,
@@ -136,6 +147,7 @@ describe('ScheduleReportPresetDialog', () => {
         deliveryFolderId: 'folder-1',
       });
     });
+    expect(mockedService.getReportPresetSchedule).toHaveBeenCalledTimes(2);
     expect(onSaved).toHaveBeenCalled();
   });
 
@@ -154,17 +166,56 @@ describe('ScheduleReportPresetDialog', () => {
   });
 
   it('delivers now and prepends the new execution to the list', async () => {
-    mockedService.getReportPresetSchedule.mockResolvedValueOnce({
-      presetId: 'preset-1',
-      enabled: false,
-      cronExpression: null,
-      timezone: 'UTC',
-      deliveryFolderId: null,
-      nextRunAt: null,
-      lastRunAt: null,
-      lastExecution: null,
-    });
-    mockedService.listReportPresetExecutions.mockResolvedValueOnce([]);
+    mockedService.getReportPresetSchedule
+      .mockResolvedValueOnce({
+        presetId: 'preset-1',
+        enabled: false,
+        cronExpression: null,
+        timezone: 'UTC',
+        deliveryFolderId: 'folder-1',
+        nextRunAt: null,
+        lastRunAt: null,
+        lastExecution: null,
+      })
+      .mockResolvedValueOnce({
+        presetId: 'preset-1',
+        enabled: false,
+        cronExpression: null,
+        timezone: 'UTC',
+        deliveryFolderId: 'folder-1',
+        nextRunAt: null,
+        lastRunAt: '2026-04-21T01:00:01',
+        lastExecution: {
+          id: 'exec-1',
+          presetId: 'preset-1',
+          triggerType: 'MANUAL',
+          status: 'SUCCESS',
+          filename: 'Weekly-Family-Report-20260421.csv',
+          targetFolderId: 'folder-1',
+          documentId: 'doc-1',
+          message: 'Delivered successfully',
+          startedAt: '2026-04-21T01:00:00',
+          finishedAt: '2026-04-21T01:00:01',
+          durationMs: 1000,
+        },
+      });
+    mockedService.listReportPresetExecutions
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: 'exec-1',
+          presetId: 'preset-1',
+          triggerType: 'MANUAL',
+          status: 'SUCCESS',
+          filename: 'Weekly-Family-Report-20260421.csv',
+          targetFolderId: 'folder-1',
+          documentId: 'doc-1',
+          message: 'Delivered successfully',
+          startedAt: '2026-04-21T01:00:00',
+          finishedAt: '2026-04-21T01:00:01',
+          durationMs: 1000,
+        },
+      ]);
     mockedService.deliverReportPresetNow.mockResolvedValueOnce({
       id: 'exec-1',
       presetId: 'preset-1',
@@ -195,8 +246,11 @@ describe('ScheduleReportPresetDialog', () => {
     await waitFor(() => {
       expect(mockedService.deliverReportPresetNow).toHaveBeenCalledWith('preset-1');
     });
+    expect(mockedService.getReportPresetSchedule).toHaveBeenCalledTimes(2);
+    expect(mockedService.listReportPresetExecutions).toHaveBeenCalledTimes(2);
     expect(
       await screen.findByText('Weekly-Family-Report-20260421.csv')
     ).not.toBeNull();
+    expect(await screen.findByText(/Last:/)).not.toBeNull();
   });
 });
