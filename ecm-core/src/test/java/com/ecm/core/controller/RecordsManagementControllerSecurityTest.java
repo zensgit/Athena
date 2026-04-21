@@ -1,6 +1,7 @@
 package com.ecm.core.controller;
 
 import com.ecm.core.service.RecordsManagementService;
+import com.ecm.core.service.RmReportPresetService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,6 +40,9 @@ class RecordsManagementControllerSecurityTest {
 
     @MockBean
     private RecordsManagementService recordsManagementService;
+
+    @MockBean
+    private RmReportPresetService rmReportPresetService;
 
     @Configuration
     @EnableWebSecurity
