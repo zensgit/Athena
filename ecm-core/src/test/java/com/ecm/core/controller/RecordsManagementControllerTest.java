@@ -1,5 +1,7 @@
 package com.ecm.core.controller;
 
+import com.ecm.core.entity.RmReportPreset;
+import com.ecm.core.service.RmReportPresetService;
 import com.ecm.core.service.RecordsManagementService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -17,6 +19,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -37,9 +40,12 @@ class RecordsManagementControllerTest {
     @Mock
     private RecordsManagementService recordsManagementService;
 
+    @Mock
+    private RmReportPresetService rmReportPresetService;
+
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(new RecordsManagementController(recordsManagementService))
+        mockMvc = MockMvcBuilders.standaloneSetup(new RecordsManagementController(recordsManagementService, rmReportPresetService))
             .setControllerAdvice(new RestExceptionHandler())
             .setCustomArgumentResolvers(new PageableHandlerMethodArgumentResolver())
             .build();
@@ -1644,6 +1650,159 @@ class RecordsManagementControllerTest {
         mockMvc.perform(get("/api/v1/records/activity-family-report").param("format", "xlsx"))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.message").value("Unsupported format: xlsx"));
+    }
+
+    @Test
+    @DisplayName("executeReportPreset returns JSON for a saved family report preset")
+    void executeReportPresetReturnsJsonForFamilyReport() throws Exception {
+        UUID presetId = UUID.randomUUID();
+        Mockito.when(rmReportPresetService.getOwned(presetId)).thenReturn(
+            RmReportPreset.builder()
+                .owner("admin")
+                .name("Quarterly family report")
+                .kind(RmReportPreset.Kind.ACTIVITY_FAMILY_REPORT)
+                .params(Map.of(
+                    "from", "2026-04-01T00:00:00",
+                    "to", "2026-04-15T23:59:59",
+                    "eventTypeLimit", 3,
+                    "contributorLimit", 2
+                ))
+                .build()
+        );
+        Mockito.when(recordsManagementService.getActivityFamilyReport(
+                LocalDateTime.of(2026, 4, 1, 0, 0),
+                LocalDateTime.of(2026, 4, 15, 23, 59, 59),
+                3,
+                2))
+            .thenReturn(
+                new RecordsManagementService.ActivityFamilyReportDto(
+                    new RecordsManagementService.ActivityDateTimeRangeDto("2026-04-01T00:00", "2026-04-15T23:59:59"),
+                    new RecordsManagementService.ActivityDateTimeRangeDto("2026-03-16T00:00", "2026-03-31T23:59:59"),
+                    3,
+                    2,
+                    8,
+                    5,
+                    List.of(
+                        new RecordsManagementService.ActivityFamilyReportEntryDto(
+                            "DECLARED",
+                            5,
+                            2,
+                            3,
+                            LocalDateTime.of(2026, 4, 15, 10, 0),
+                            List.of(),
+                            List.of()
+                        )
+                    )
+                )
+            );
+
+        mockMvc.perform(post("/api/v1/records/report-presets/{presetId}/execute", presetId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.currentWindow.from").value("2026-04-01T00:00"))
+            .andExpect(jsonPath("$.families[0].family").value("DECLARED"))
+            .andExpect(jsonPath("$.families[0].delta").value(3));
+    }
+
+    @Test
+    @DisplayName("executeReportPreset returns CSV for a saved contributor event-type report preset")
+    void executeReportPresetReturnsCsvForContributorEventTypeReport() throws Exception {
+        UUID presetId = UUID.randomUUID();
+        Mockito.when(rmReportPresetService.getOwned(presetId)).thenReturn(
+            RmReportPreset.builder()
+                .owner("admin")
+                .name("Contributor event types")
+                .kind(RmReportPreset.Kind.ACTIVITY_CONTRIBUTOR_EVENT_TYPE_REPORT)
+                .params(Map.of(
+                    "from", "2026-04-01T00:00:00",
+                    "to", "2026-04-15T23:59:59",
+                    "limit", 5,
+                    "eventTypeLimit", 3
+                ))
+                .build()
+        );
+        Mockito.when(recordsManagementService.getActivityContributorEventTypeReport(
+                LocalDateTime.of(2026, 4, 1, 0, 0),
+                LocalDateTime.of(2026, 4, 15, 23, 59, 59),
+                5,
+                3))
+            .thenReturn(
+                new RecordsManagementService.ActivityContributorEventTypeReportDto(
+                    new RecordsManagementService.ActivityDateTimeRangeDto("2026-04-01T00:00", "2026-04-15T23:59:59"),
+                    new RecordsManagementService.ActivityDateTimeRangeDto("2026-03-16T00:00", "2026-03-31T23:59:59"),
+                    5,
+                    3,
+                    12,
+                    6,
+                    List.of(
+                        new RecordsManagementService.ActivityContributorEventTypeReportEntryDto(
+                            "admin",
+                            "admin",
+                            8,
+                            4,
+                            4,
+                            LocalDateTime.of(2026, 4, 15, 10, 0),
+                            List.of(
+                                new RecordsManagementService.ActivityContributorEventTypeReportEventTypeDto(
+                                    "RM_RECORD_DECLARED",
+                                    "DECLARED",
+                                    5,
+                                    2,
+                                    3,
+                                    LocalDateTime.of(2026, 4, 15, 10, 0)
+                                )
+                            )
+                        )
+                    )
+                )
+            );
+
+        mockMvc.perform(post("/api/v1/records/report-presets/{presetId}/execute", presetId)
+                .param("format", "csv"))
+            .andExpect(status().isOk())
+            .andExpect(header().string("Content-Type", org.hamcrest.Matchers.containsString("text/csv")))
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("username,label,eventType,family")))
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("admin,admin,RM_RECORD_DECLARED,DECLARED")));
+    }
+
+    @Test
+    @DisplayName("executeReportPreset rejects CSV for summary-only preset kinds")
+    void executeReportPresetRejectsCsvForSummaryOnlyPresetKind() throws Exception {
+        UUID presetId = UUID.randomUUID();
+        Mockito.when(rmReportPresetService.getOwned(presetId)).thenReturn(
+            RmReportPreset.builder()
+                .owner("admin")
+                .name("Family highlights")
+                .kind(RmReportPreset.Kind.ACTIVITY_FAMILY_HIGHLIGHTS)
+                .params(Map.of("windowDays", 7))
+                .build()
+        );
+
+        mockMvc.perform(post("/api/v1/records/report-presets/{presetId}/execute", presetId)
+                .param("format", "csv"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.message").value(
+                "CSV export is not supported for report preset kind ACTIVITY_FAMILY_HIGHLIGHTS"
+            ));
+    }
+
+    @Test
+    @DisplayName("executeReportPreset rejects missing required datetime params")
+    void executeReportPresetRejectsMissingRequiredDatetimeParams() throws Exception {
+        UUID presetId = UUID.randomUUID();
+        Mockito.when(rmReportPresetService.getOwned(presetId)).thenReturn(
+            RmReportPreset.builder()
+                .owner("admin")
+                .name("Broken family report")
+                .kind(RmReportPreset.Kind.ACTIVITY_FAMILY_REPORT)
+                .params(Map.of("from", "2026-04-01T00:00:00"))
+                .build()
+        );
+
+        mockMvc.perform(post("/api/v1/records/report-presets/{presetId}/execute", presetId))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.message").value(
+                "Preset param \"to\" is required for ACTIVITY_FAMILY_REPORT"
+            ));
     }
 
     @Test

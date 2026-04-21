@@ -1,5 +1,7 @@
 package com.ecm.core.controller;
 
+import com.ecm.core.entity.RmReportPreset;
+import com.ecm.core.service.RmReportPresetService;
 import com.ecm.core.service.RecordsManagementService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -23,8 +25,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.nio.charset.StandardCharsets;
 
@@ -36,6 +40,7 @@ import java.nio.charset.StandardCharsets;
 public class RecordsManagementController {
 
     private final RecordsManagementService recordsManagementService;
+    private final RmReportPresetService rmReportPresetService;
 
     @GetMapping("/records")
     @Operation(summary = "List declared records")
@@ -121,6 +126,63 @@ public class RecordsManagementController {
         @RequestParam(required = false) Integer limit
     ) {
         return ResponseEntity.ok(recordsManagementService.getActivityContributorFamilyHighlights(windowDays, limit));
+    }
+
+    @PostMapping("/records/report-presets/{presetId}/execute")
+    @Operation(summary = "Execute a saved RM report preset")
+    public ResponseEntity<?> executeReportPreset(
+        @PathVariable UUID presetId,
+        @RequestParam(required = false) String format
+    ) {
+        RmReportPreset preset = rmReportPresetService.getOwned(presetId);
+        String normalizedFormat = normalizeReportFormat(format);
+        return switch (preset.getKind()) {
+            case ACTIVITY_FAMILY_REPORT -> getActivityFamilyReport(
+                requirePresetDateTimeParam(preset, "from"),
+                requirePresetDateTimeParam(preset, "to"),
+                optionalPresetIntegerParam(preset, "eventTypeLimit"),
+                optionalPresetIntegerParam(preset, "contributorLimit"),
+                normalizedFormat
+            );
+            case ACTIVITY_EVENT_TYPE_REPORT -> getActivityEventTypeReport(
+                requirePresetDateTimeParam(preset, "from"),
+                requirePresetDateTimeParam(preset, "to"),
+                optionalPresetIntegerParam(preset, "limit"),
+                normalizedFormat
+            );
+            case ACTIVITY_CONTRIBUTOR_REPORT -> getActivityContributorReport(
+                requirePresetDateTimeParam(preset, "from"),
+                requirePresetDateTimeParam(preset, "to"),
+                optionalPresetIntegerParam(preset, "limit"),
+                optionalPresetIntegerParam(preset, "eventTypeLimit"),
+                normalizedFormat
+            );
+            case ACTIVITY_CONTRIBUTOR_FAMILY_REPORT -> getActivityContributorFamilyReport(
+                requirePresetDateTimeParam(preset, "from"),
+                requirePresetDateTimeParam(preset, "to"),
+                optionalPresetIntegerParam(preset, "limit"),
+                normalizedFormat
+            );
+            case ACTIVITY_CONTRIBUTOR_EVENT_TYPE_REPORT -> getActivityContributorEventTypeReport(
+                requirePresetDateTimeParam(preset, "from"),
+                requirePresetDateTimeParam(preset, "to"),
+                optionalPresetIntegerParam(preset, "limit"),
+                optionalPresetIntegerParam(preset, "eventTypeLimit"),
+                normalizedFormat
+            );
+            case ACTIVITY_FAMILY_HIGHLIGHTS -> {
+                rejectCsvForSummaryOnlyPreset(preset, normalizedFormat);
+                yield ResponseEntity.ok(
+                    recordsManagementService.getActivityFamilyHighlights(optionalPresetIntegerParam(preset, "windowDays"))
+                );
+            }
+            case ACTIVITY_FAMILY_MIX -> {
+                rejectCsvForSummaryOnlyPreset(preset, normalizedFormat);
+                yield ResponseEntity.ok(
+                    recordsManagementService.getActivityFamilies(optionalPresetIntegerParam(preset, "days"))
+                );
+            }
+        };
     }
 
     @GetMapping("/records/activity-contributor-report")
@@ -488,6 +550,68 @@ public class RecordsManagementController {
             return normalized;
         }
         throw new IllegalArgumentException("Unsupported format: " + format);
+    }
+
+    private void rejectCsvForSummaryOnlyPreset(RmReportPreset preset, String format) {
+        if ("csv".equals(format)) {
+            throw new IllegalArgumentException(
+                "CSV export is not supported for report preset kind " + preset.getKind()
+            );
+        }
+    }
+
+    private LocalDateTime requirePresetDateTimeParam(RmReportPreset preset, String key) {
+        String value = requirePresetStringParam(preset, key);
+        try {
+            return LocalDateTime.parse(value);
+        } catch (DateTimeParseException ex) {
+            throw new IllegalArgumentException(
+                "Preset param \"" + key + "\" must be an ISO-8601 datetime for " + preset.getKind()
+            );
+        }
+    }
+
+    private String requirePresetStringParam(RmReportPreset preset, String key) {
+        Object value = presetParam(preset, key);
+        if (value == null) {
+            throw new IllegalArgumentException(
+                "Preset param \"" + key + "\" is required for " + preset.getKind()
+            );
+        }
+        if (value instanceof String stringValue && !stringValue.isBlank()) {
+            return stringValue.trim();
+        }
+        throw new IllegalArgumentException(
+            "Preset param \"" + key + "\" must be a non-blank string for " + preset.getKind()
+        );
+    }
+
+    private Integer optionalPresetIntegerParam(RmReportPreset preset, String key) {
+        Object value = presetParam(preset, key);
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number numberValue) {
+            double doubleValue = numberValue.doubleValue();
+            if (Double.isFinite(doubleValue) && Math.rint(doubleValue) == doubleValue) {
+                return numberValue.intValue();
+            }
+        }
+        if (value instanceof String stringValue && !stringValue.isBlank()) {
+            try {
+                return Integer.valueOf(stringValue.trim());
+            } catch (NumberFormatException ignored) {
+                // Fall through to the consistent bad-request below.
+            }
+        }
+        throw new IllegalArgumentException(
+            "Preset param \"" + key + "\" must be an integer for " + preset.getKind()
+        );
+    }
+
+    private Object presetParam(RmReportPreset preset, String key) {
+        Map<String, Object> params = preset.getParams();
+        return params == null ? null : params.get(key);
     }
 
     private String buildActivityContributorFamilyReportCsv(RecordsManagementService.ActivityContributorFamilyReportDto report) {

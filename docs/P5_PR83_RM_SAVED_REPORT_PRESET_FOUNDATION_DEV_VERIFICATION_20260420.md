@@ -165,7 +165,9 @@ GET http://localhost:7700/api/v1/records/report-presets (no auth) → 401
    - `PR-89` later delivered `Save as preset` on report cards
    - `PR-90` later delivered preset list + apply/export consumption on top of the same API
    - `PR-91` later delivered preset edit/delete maintenance on top of the same API
-3. **Preset execution endpoint** — `POST /api/v1/records/report-presets/{id}/execute` that expands params and invokes the matching report endpoint
+3. **Preset execution endpoint**
+   - `PR-92` later delivered `POST /api/v1/records/report-presets/{id}/execute`
+   - execution stays thin: it expands owned preset params and invokes the matching existing RM report route/CSV builder
 4. **Scheduled delivery** — email/download-bundle channels per the P5 intake matrix's "RM delivery workflows" direction
 
 Each is a well-bounded additive slice with no shared state beyond the `rm_report_presets` table.

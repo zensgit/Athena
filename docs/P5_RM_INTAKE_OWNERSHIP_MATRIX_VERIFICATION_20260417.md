@@ -24,6 +24,7 @@ This document builds on the already completed `P4` closeout material:
 - accepted runtime slices now also include `PR-89` on the `RM delivery workflows` lane as the first frontend consumption of the preset foundation
 - accepted runtime slices now also include `PR-90` on the `RM delivery workflows` lane as the first preset list/apply/export consumption layer on top of `PR-83`
 - accepted runtime slices now also include `PR-91` on the `RM delivery workflows` lane as the first preset maintenance UI layer on top of `PR-83`
+- accepted runtime slices now also include `PR-92` on the `RM delivery workflows` lane as the first backend execute path on top of the preset foundation
 
 ## Checks
 
