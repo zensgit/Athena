@@ -15,4 +15,12 @@ public interface RmReportPresetExecutionRepository extends JpaRepository<RmRepor
     List<RmReportPresetExecution> findByPresetIdOrderByStartedAtDesc(UUID presetId, Pageable pageable);
 
     Optional<RmReportPresetExecution> findFirstByPresetIdOrderByStartedAtDesc(UUID presetId);
+
+    Optional<RmReportPresetExecution> findFirstByOwnerOrderByStartedAtDesc(String owner);
+
+    long countByOwnerAndStatusAndStartedAtGreaterThanEqual(
+        String owner,
+        com.ecm.core.entity.RmReportPresetExecution.ExecutionStatus status,
+        java.time.LocalDateTime since
+    );
 }

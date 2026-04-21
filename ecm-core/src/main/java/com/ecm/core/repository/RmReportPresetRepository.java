@@ -21,4 +21,11 @@ public interface RmReportPresetRepository extends JpaRepository<RmReportPreset, 
     List<RmReportPreset> findByScheduleEnabledTrueAndDeletedFalseAndNextRunAtLessThanEqualOrderByNextRunAtAsc(
         LocalDateTime now
     );
+
+    long countByOwnerAndScheduleEnabledTrueAndDeletedFalse(String owner);
+
+    long countByOwnerAndScheduleEnabledTrueAndDeletedFalseAndNextRunAtLessThanEqual(
+        String owner,
+        LocalDateTime now
+    );
 }

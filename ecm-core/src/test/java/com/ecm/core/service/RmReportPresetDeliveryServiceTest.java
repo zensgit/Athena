@@ -356,6 +356,70 @@ class RmReportPresetDeliveryServiceTest {
         assertTrue(csv.contains("FAILED"));
     }
 
+    @Test
+    @DisplayName("getScheduledDeliveryTelemetry aggregates owner-scoped counts")
+    void getScheduledDeliveryTelemetryAggregatesOwnerScopedCounts() {
+        when(securityService.getCurrentUser()).thenReturn("admin");
+        when(presetRepository.countByOwnerAndScheduleEnabledTrueAndDeletedFalse("admin")).thenReturn(5L);
+        when(presetRepository.countByOwnerAndScheduleEnabledTrueAndDeletedFalseAndNextRunAtLessThanEqual(
+            eq("admin"), any(LocalDateTime.class))).thenReturn(2L);
+        when(executionRepository.countByOwnerAndStatusAndStartedAtGreaterThanEqual(
+            eq("admin"), eq(RmReportPresetExecution.ExecutionStatus.SUCCESS), any(LocalDateTime.class)))
+            .thenReturn(7L);
+        when(executionRepository.countByOwnerAndStatusAndStartedAtGreaterThanEqual(
+            eq("admin"), eq(RmReportPresetExecution.ExecutionStatus.FAILED), any(LocalDateTime.class)))
+            .thenReturn(1L);
+        RmReportPresetExecution latest = execution(
+            UUID.randomUUID(),
+            "Weekly Family Report",
+            RmReportPreset.Kind.ACTIVITY_FAMILY_REPORT,
+            RmReportPresetExecution.TriggerType.SCHEDULED,
+            RmReportPresetExecution.ExecutionStatus.SUCCESS
+        );
+        latest.setStartedAt(LocalDateTime.of(2026, 4, 21, 9, 0));
+        when(executionRepository.findFirstByOwnerOrderByStartedAtDesc("admin"))
+            .thenReturn(Optional.of(latest));
+
+        RmReportPresetDeliveryService service = new RmReportPresetDeliveryService(
+            presetService,
+            presetRepository,
+            executionRepository,
+            recordsManagementService,
+            uploadService,
+            auditService,
+            securityService
+        );
+
+        RmReportPresetDeliveryService.ScheduledDeliveryTelemetryDto telemetry =
+            service.getScheduledDeliveryTelemetry();
+
+        assertEquals(5L, telemetry.scheduleEnabledCount());
+        assertEquals(2L, telemetry.duePresetCount());
+        assertEquals(7L, telemetry.last24hSuccessCount());
+        assertEquals(1L, telemetry.last24hFailedCount());
+        assertEquals(LocalDateTime.of(2026, 4, 21, 9, 0), telemetry.lastExecutionAt());
+        assertNotNull(telemetry.generatedAt());
+    }
+
+    @Test
+    @DisplayName("getScheduledDeliveryTelemetry rejects anonymous callers")
+    void getScheduledDeliveryTelemetryRejectsAnonymousCallers() {
+        when(securityService.getCurrentUser()).thenReturn(null);
+
+        RmReportPresetDeliveryService service = new RmReportPresetDeliveryService(
+            presetService,
+            presetRepository,
+            executionRepository,
+            recordsManagementService,
+            uploadService,
+            auditService,
+            securityService
+        );
+
+        assertThrows(IllegalStateException.class, service::getScheduledDeliveryTelemetry);
+        verifyNoInteractions(presetRepository, executionRepository);
+    }
+
     private static RmReportPreset preset(RmReportPreset.Kind kind, Map<String, Object> params) {
         RmReportPreset preset = RmReportPreset.builder()
             .owner("admin")

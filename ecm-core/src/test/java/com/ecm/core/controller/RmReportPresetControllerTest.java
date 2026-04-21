@@ -215,4 +215,27 @@ class RmReportPresetControllerTest {
             .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.containsString("attachment;")))
             .andExpect(content().string(org.hamcrest.Matchers.containsString("executionId,presetId,presetName,presetKind")));
     }
+
+    @Test
+    @DisplayName("getTelemetry returns scheduled delivery health summary")
+    void getTelemetryReturnsScheduledDeliveryHealthSummary() throws Exception {
+        Mockito.when(deliveryService.getScheduledDeliveryTelemetry())
+            .thenReturn(new RmReportPresetDeliveryService.ScheduledDeliveryTelemetryDto(
+                5L,
+                2L,
+                7L,
+                1L,
+                LocalDateTime.of(2026, 4, 21, 9, 0),
+                LocalDateTime.of(2026, 4, 21, 16, 0)
+            ));
+
+        mockMvc.perform(get("/api/v1/records/report-presets/telemetry"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.scheduleEnabledCount").value(5))
+            .andExpect(jsonPath("$.duePresetCount").value(2))
+            .andExpect(jsonPath("$.last24hSuccessCount").value(7))
+            .andExpect(jsonPath("$.last24hFailedCount").value(1))
+            .andExpect(jsonPath("$.lastExecutionAt").exists())
+            .andExpect(jsonPath("$.generatedAt").exists());
+    }
 }

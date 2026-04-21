@@ -158,6 +158,12 @@ public class RmReportPresetController {
         return ResponseEntity.noContent().build();
     }
 
+    @GetMapping("/telemetry")
+    @Operation(summary = "Summarize scheduled delivery health for the caller's presets")
+    public ResponseEntity<RmReportPresetDeliveryService.ScheduledDeliveryTelemetryDto> getTelemetry() {
+        return ResponseEntity.ok(deliveryService.getScheduledDeliveryTelemetry());
+    }
+
     @GetMapping("/{id}/schedule")
     @Operation(summary = "Get schedule/delivery status for an owned preset")
     public ResponseEntity<RmReportPresetDeliveryService.ScheduleStatusDto> getSchedule(@PathVariable UUID id) {

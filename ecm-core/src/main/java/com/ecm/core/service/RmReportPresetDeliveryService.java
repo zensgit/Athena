@@ -58,6 +58,39 @@ public class RmReportPresetDeliveryService {
         return toScheduleStatus(preset, latestExecution(preset.getId()));
     }
 
+    @Transactional(readOnly = true)
+    public ScheduledDeliveryTelemetryDto getScheduledDeliveryTelemetry() {
+        String owner = securityService.getCurrentUser();
+        if (owner == null || owner.isBlank()) {
+            throw new IllegalStateException("Current user is required for scheduled delivery telemetry");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime since = now.minusHours(24);
+
+        long scheduleEnabledCount =
+            presetRepository.countByOwnerAndScheduleEnabledTrueAndDeletedFalse(owner);
+        long duePresetCount =
+            presetRepository.countByOwnerAndScheduleEnabledTrueAndDeletedFalseAndNextRunAtLessThanEqual(owner, now);
+        long last24hSuccessCount = executionRepository
+            .countByOwnerAndStatusAndStartedAtGreaterThanEqual(owner, ExecutionStatus.SUCCESS, since);
+        long last24hFailedCount = executionRepository
+            .countByOwnerAndStatusAndStartedAtGreaterThanEqual(owner, ExecutionStatus.FAILED, since);
+
+        LocalDateTime lastExecutionAt = executionRepository
+            .findFirstByOwnerOrderByStartedAtDesc(owner)
+            .map(RmReportPresetExecution::getStartedAt)
+            .orElse(null);
+
+        return new ScheduledDeliveryTelemetryDto(
+            scheduleEnabledCount,
+            duePresetCount,
+            last24hSuccessCount,
+            last24hFailedCount,
+            lastExecutionAt,
+            now
+        );
+    }
+
     public ScheduleStatusDto updateSchedule(UUID presetId, UpdateScheduleRequest request) {
         if (request == null) {
             throw new IllegalArgumentException("Schedule request is required");
@@ -731,6 +764,16 @@ public class RmReportPresetDeliveryService {
         String cronExpression,
         String timezone,
         UUID deliveryFolderId
+    ) {
+    }
+
+    public record ScheduledDeliveryTelemetryDto(
+        long scheduleEnabledCount,
+        long duePresetCount,
+        long last24hSuccessCount,
+        long last24hFailedCount,
+        LocalDateTime lastExecutionAt,
+        LocalDateTime generatedAt
     ) {
     }
 
