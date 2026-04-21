@@ -51,6 +51,7 @@ import {
   RmReportPresetExecutionStatus,
   RmReportPresetExecutionTrigger,
   RmReportPresetKind,
+  RmScheduledDeliveryTelemetry,
 } from 'types';
 import MoveFilePlanDialog from 'components/records/MoveFilePlanDialog';
 import MoveRecordCategoryDialog from 'components/records/MoveRecordCategoryDialog';
@@ -624,6 +625,10 @@ const RecordsManagementPage: React.FC = () => {
   const [presetExportingId, setPresetExportingId] = useState<string | null>(null);
   const [presetDeletingId, setPresetDeletingId] = useState<string | null>(null);
   const [schedulePresetTarget, setSchedulePresetTarget] = useState<RmReportPreset | null>(null);
+  const [scheduledDeliveryTelemetry, setScheduledDeliveryTelemetry] =
+    useState<RmScheduledDeliveryTelemetry | null>(null);
+  const [scheduledDeliveryTelemetryLoading, setScheduledDeliveryTelemetryLoading] = useState(false);
+  const [scheduledDeliveryTelemetryError, setScheduledDeliveryTelemetryError] = useState<string | null>(null);
   const [presetExecutionLedgerPage, setPresetExecutionLedgerPage] = useState<PageResponse<RmReportPresetExecution>>(
     emptyPresetExecutionLedgerPage()
   );
@@ -724,6 +729,20 @@ const RecordsManagementPage: React.FC = () => {
       if (!silent) {
         setOperationsLoading(false);
       }
+    }
+  }, []);
+
+  const loadScheduledDeliveryTelemetry = useCallback(async () => {
+    setScheduledDeliveryTelemetryLoading(true);
+    try {
+      const result = await recordsManagementService.getScheduledDeliveryTelemetry();
+      setScheduledDeliveryTelemetry(result);
+      setScheduledDeliveryTelemetryError(null);
+    } catch {
+      setScheduledDeliveryTelemetry(null);
+      setScheduledDeliveryTelemetryError('Failed to load scheduled delivery health');
+    } finally {
+      setScheduledDeliveryTelemetryLoading(false);
     }
   }, []);
 
@@ -1073,6 +1092,10 @@ const RecordsManagementPage: React.FC = () => {
   useEffect(() => {
     void loadReportPresets();
   }, [loadReportPresets]);
+
+  useEffect(() => {
+    void loadScheduledDeliveryTelemetry();
+  }, [loadScheduledDeliveryTelemetry]);
 
   useEffect(() => {
     void loadPresetExecutionLedger(
@@ -5112,6 +5135,70 @@ const RecordsManagementPage: React.FC = () => {
                     )}
                   </TableBody>
                 </Table>
+              </Stack>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        <Grid item xs={12}>
+          <Card variant="outlined">
+            <CardContent>
+              <Stack spacing={1.5}>
+                <Box>
+                  <Typography variant="h6" gutterBottom>
+                    Scheduled Delivery Health
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    At-a-glance view of how many RM report presets are on a schedule and how recent deliveries have performed.
+                  </Typography>
+                </Box>
+                {scheduledDeliveryTelemetryError ? (
+                  <Typography variant="body2" color="error">
+                    {scheduledDeliveryTelemetryError}
+                  </Typography>
+                ) : scheduledDeliveryTelemetryLoading && !scheduledDeliveryTelemetry ? (
+                  <Typography variant="body2" color="text.secondary">
+                    Loading scheduled delivery health...
+                  </Typography>
+                ) : scheduledDeliveryTelemetry ? (
+                  <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                    <Chip
+                      size="small"
+                      color="primary"
+                      variant="outlined"
+                      label={`Scheduled presets: ${scheduledDeliveryTelemetry.scheduleEnabledCount}`}
+                    />
+                    <Chip
+                      size="small"
+                      color={scheduledDeliveryTelemetry.duePresetCount > 0 ? 'warning' : 'default'}
+                      variant="outlined"
+                      label={`Due now: ${scheduledDeliveryTelemetry.duePresetCount}`}
+                    />
+                    <Chip
+                      size="small"
+                      color="success"
+                      variant="outlined"
+                      label={`Last 24h success: ${scheduledDeliveryTelemetry.last24hSuccessCount}`}
+                    />
+                    <Chip
+                      size="small"
+                      color={scheduledDeliveryTelemetry.last24hFailedCount > 0 ? 'error' : 'default'}
+                      variant="outlined"
+                      label={`Last 24h failed: ${scheduledDeliveryTelemetry.last24hFailedCount}`}
+                    />
+                    {scheduledDeliveryTelemetry.lastExecutionAt && (
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        label={`Last delivery: ${formatDateTime(scheduledDeliveryTelemetry.lastExecutionAt)}`}
+                      />
+                    )}
+                  </Stack>
+                ) : (
+                  <Typography variant="body2" color="text.secondary">
+                    No scheduled delivery activity yet.
+                  </Typography>
+                )}
               </Stack>
             </CardContent>
           </Card>

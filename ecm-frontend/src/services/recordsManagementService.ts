@@ -30,6 +30,7 @@ import {
   RmReportPresetExecutionTrigger,
   RmReportPresetKind,
   RmReportPresetScheduleStatus,
+  RmScheduledDeliveryTelemetry,
   RecordsSummary,
   UpdateFilePlanRequest,
   UpdateRecordCategoryRequest,
@@ -256,6 +257,10 @@ class RecordsManagementService {
         limit: filters.limit ?? undefined,
       },
     });
+  }
+
+  async getScheduledDeliveryTelemetry(): Promise<RmScheduledDeliveryTelemetry> {
+    return api.get<RmScheduledDeliveryTelemetry>('/records/report-presets/telemetry');
   }
 
   async getOperationsTelemetry(limit = 20): Promise<RecordsOperationsTelemetry> {

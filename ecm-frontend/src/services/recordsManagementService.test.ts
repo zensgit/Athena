@@ -161,6 +161,21 @@ describe('recordsManagementService', () => {
     expect(mockedApi.delete).toHaveBeenCalledWith('/records/report-presets/preset-1');
   });
 
+  it('fetches the scheduled delivery health telemetry', async () => {
+    mockedApi.get.mockResolvedValueOnce({
+      scheduleEnabledCount: 5,
+      duePresetCount: 2,
+      last24hSuccessCount: 7,
+      last24hFailedCount: 1,
+      lastExecutionAt: '2026-04-21T09:00:00',
+      generatedAt: '2026-04-21T16:00:00',
+    } as any);
+
+    await recordsManagementService.getScheduledDeliveryTelemetry();
+
+    expect(mockedApi.get).toHaveBeenCalledWith('/records/report-presets/telemetry');
+  });
+
   it('fetches an RM report preset schedule status', async () => {
     mockedApi.get.mockResolvedValueOnce({
       presetId: 'preset-1',

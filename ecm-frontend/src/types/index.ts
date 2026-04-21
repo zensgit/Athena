@@ -196,6 +196,15 @@ export interface RmReportPresetExecution {
   durationMs: number;
 }
 
+export interface RmScheduledDeliveryTelemetry {
+  scheduleEnabledCount: number;
+  duePresetCount: number;
+  last24hSuccessCount: number;
+  last24hFailedCount: number;
+  lastExecutionAt?: string | null;
+  generatedAt: string;
+}
+
 export interface RmReportPresetScheduleStatus {
   presetId: string;
   enabled: boolean;
