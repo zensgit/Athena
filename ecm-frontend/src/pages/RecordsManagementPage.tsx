@@ -1252,6 +1252,38 @@ const RecordsManagementPage: React.FC = () => {
     }
   }, [appliedPresetExecutionLedgerFilters, presetExecutionLedgerPage]);
 
+  const hasAppliedPresetExecutionLedgerFilters = useMemo(
+    () => Boolean(
+      appliedPresetExecutionLedgerFilters.presetId
+      || appliedPresetExecutionLedgerFilters.status
+      || appliedPresetExecutionLedgerFilters.triggerType
+      || appliedPresetExecutionLedgerFilters.from
+      || appliedPresetExecutionLedgerFilters.to
+    ),
+    [appliedPresetExecutionLedgerFilters]
+  );
+
+  const presetExecutionLedgerFilterChips = useMemo(() => {
+    const chips: string[] = [];
+    if (appliedPresetExecutionLedgerFilters.presetId) {
+      const preset = reportPresetById.get(appliedPresetExecutionLedgerFilters.presetId);
+      chips.push(`Preset: ${preset?.name || appliedPresetExecutionLedgerFilters.presetId}`);
+    }
+    if (appliedPresetExecutionLedgerFilters.status) {
+      chips.push(`Result: ${formatPresetExecutionStatusLabel(appliedPresetExecutionLedgerFilters.status)}`);
+    }
+    if (appliedPresetExecutionLedgerFilters.triggerType) {
+      chips.push(`Trigger: ${formatPresetExecutionTriggerLabel(appliedPresetExecutionLedgerFilters.triggerType)}`);
+    }
+    if (appliedPresetExecutionLedgerFilters.from) {
+      chips.push(`From: ${appliedPresetExecutionLedgerFilters.from}`);
+    }
+    if (appliedPresetExecutionLedgerFilters.to) {
+      chips.push(`To: ${appliedPresetExecutionLedgerFilters.to}`);
+    }
+    return chips;
+  }, [appliedPresetExecutionLedgerFilters, reportPresetById]);
+
   const isRootRecordCategory = useCallback(
     (category: RecordCategory) => category.path === '/Records Management',
     []
@@ -5206,6 +5238,34 @@ const RecordsManagementPage: React.FC = () => {
                   </Alert>
                 )}
 
+                {hasAppliedPresetExecutionLedgerFilters && (
+                  <Stack
+                    direction={{ xs: 'column', md: 'row' }}
+                    spacing={1}
+                    justifyContent="space-between"
+                    alignItems={{ xs: 'flex-start', md: 'center' }}
+                  >
+                    <Stack spacing={1}>
+                      <Typography variant="body2" color="text.secondary">
+                        Active ledger filters
+                      </Typography>
+                      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                        {presetExecutionLedgerFilterChips.map((label) => (
+                          <Chip key={label} size="small" variant="outlined" label={label} />
+                        ))}
+                      </Stack>
+                    </Stack>
+                    <Button
+                      size="small"
+                      variant="text"
+                      onClick={handleClearPresetExecutionLedgerFilters}
+                      disabled={presetExecutionLedgerLoading}
+                    >
+                      Clear applied filters
+                    </Button>
+                  </Stack>
+                )}
+
                 <Typography variant="body2" color="text.secondary">
                   {`Showing ${presetExecutionLedgerPage.content.length} of ${presetExecutionLedgerPage.totalElements} deliveries`}
                 </Typography>
@@ -5226,7 +5286,27 @@ const RecordsManagementPage: React.FC = () => {
                     {presetExecutionLedgerPage.content.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={7}>
-                          {presetExecutionLedgerLoading ? 'Loading preset delivery ledger...' : 'No preset deliveries found.'}
+                          {presetExecutionLedgerLoading ? (
+                            'Loading preset delivery ledger...'
+                          ) : hasAppliedPresetExecutionLedgerFilters ? (
+                            <Stack
+                              direction={{ xs: 'column', md: 'row' }}
+                              spacing={1}
+                              justifyContent="space-between"
+                              alignItems={{ xs: 'flex-start', md: 'center' }}
+                            >
+                              <Typography variant="body2">
+                                No deliveries match the current filters.
+                              </Typography>
+                              <Button
+                                size="small"
+                                variant="text"
+                                onClick={handleClearPresetExecutionLedgerFilters}
+                              >
+                                Show all deliveries
+                              </Button>
+                            </Stack>
+                          ) : 'No preset deliveries found.'}
                         </TableCell>
                       </TableRow>
                     ) : (

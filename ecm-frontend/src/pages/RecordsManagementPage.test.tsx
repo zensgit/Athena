@@ -1052,6 +1052,9 @@ describe('RecordsManagementPage', () => {
       page: 0,
       size: 10,
     }));
+    expect(within(ledgerSection as HTMLElement).getByText('Active ledger filters')).toBeTruthy();
+    expect(within(ledgerSection as HTMLElement).getByText('Result: Failed')).toBeTruthy();
+    expect(within(ledgerSection as HTMLElement).getByText('Trigger: Scheduled')).toBeTruthy();
 
     fireEvent.click(within(ledgerSection as HTMLElement).getByRole('button', { name: 'Export ledger CSV' }));
 
@@ -1063,6 +1066,116 @@ describe('RecordsManagementPage', () => {
       limit: 10,
     }));
     expect(toastSuccessMock).toHaveBeenCalledWith('RM preset delivery ledger CSV exported');
+  });
+
+  it('shows zero-match preset delivery ledger state and recovers by clearing filters', async () => {
+    mockedRecordsManagementService.listReportPresetExecutionLedger
+      .mockReset()
+      .mockResolvedValueOnce({
+        content: [
+          {
+            id: 'ledger-1',
+            presetId: 'preset-family-current',
+            presetName: 'HR family current',
+            presetKind: 'ACTIVITY_FAMILY_REPORT',
+            triggerType: 'MANUAL',
+            status: 'SUCCESS',
+            filename: 'hr-family-current-20260421.csv',
+            targetFolderId: 'folder-1',
+            documentId: 'doc-1',
+            message: 'Delivered successfully',
+            startedAt: '2026-04-21T09:00:00',
+            finishedAt: '2026-04-21T09:00:01',
+            durationMs: 1000,
+          },
+          {
+            id: 'ledger-2',
+            presetId: 'preset-family-current',
+            presetName: 'HR family current',
+            presetKind: 'ACTIVITY_FAMILY_REPORT',
+            triggerType: 'SCHEDULED',
+            status: 'FAILED',
+            filename: 'hr-family-current-20260422.csv',
+            targetFolderId: 'folder-1',
+            documentId: null,
+            message: 'Delivery failed',
+            startedAt: '2026-04-22T09:00:00',
+            finishedAt: '2026-04-22T09:00:03',
+            durationMs: 3000,
+          },
+        ],
+        totalElements: 2,
+        totalPages: 1,
+        number: 0,
+        size: 10,
+      } as any)
+      .mockResolvedValueOnce({
+        content: [],
+        totalElements: 0,
+        totalPages: 0,
+        number: 0,
+        size: 10,
+      } as any)
+      .mockResolvedValueOnce({
+        content: [
+          {
+            id: 'ledger-1',
+            presetId: 'preset-family-current',
+            presetName: 'HR family current',
+            presetKind: 'ACTIVITY_FAMILY_REPORT',
+            triggerType: 'MANUAL',
+            status: 'SUCCESS',
+            filename: 'hr-family-current-20260421.csv',
+            targetFolderId: 'folder-1',
+            documentId: 'doc-1',
+            message: 'Delivered successfully',
+            startedAt: '2026-04-21T09:00:00',
+            finishedAt: '2026-04-21T09:00:01',
+            durationMs: 1000,
+          },
+          {
+            id: 'ledger-2',
+            presetId: 'preset-family-current',
+            presetName: 'HR family current',
+            presetKind: 'ACTIVITY_FAMILY_REPORT',
+            triggerType: 'SCHEDULED',
+            status: 'FAILED',
+            filename: 'hr-family-current-20260422.csv',
+            targetFolderId: 'folder-1',
+            documentId: null,
+            message: 'Delivery failed',
+            startedAt: '2026-04-22T09:00:00',
+            finishedAt: '2026-04-22T09:00:03',
+            durationMs: 3000,
+          },
+        ],
+        totalElements: 2,
+        totalPages: 1,
+        number: 0,
+        size: 10,
+      } as any);
+
+    renderPage();
+
+    const ledgerSection = (await screen.findByRole('heading', { name: 'Preset Delivery Ledger' })).closest('.MuiCard-root');
+    expect(ledgerSection).toBeTruthy();
+
+    const resultSelect = within(ledgerSection as HTMLElement).getByRole('combobox', { name: 'Result' });
+    fireEvent.mouseDown(resultSelect);
+    fireEvent.click(await screen.findByRole('option', { name: 'Failed' }));
+    fireEvent.click(within(ledgerSection as HTMLElement).getByRole('button', { name: 'Apply' }));
+
+    expect(await within(ledgerSection as HTMLElement).findByText('No deliveries match the current filters.')).toBeTruthy();
+    expect(within(ledgerSection as HTMLElement).getByRole('button', { name: 'Show all deliveries' })).toBeTruthy();
+
+    fireEvent.click(within(ledgerSection as HTMLElement).getByRole('button', { name: 'Show all deliveries' }));
+
+    await waitFor(() => expect(mockedRecordsManagementService.listReportPresetExecutionLedger).toHaveBeenLastCalledWith({
+      page: 0,
+      size: 10,
+    }));
+    await waitFor(() => expect(within(ledgerSection as HTMLElement).queryByText('Active ledger filters')).toBeNull());
+    await waitFor(() => expect(within(ledgerSection as HTMLElement).getByText('Showing 2 of 2 deliveries')).toBeTruthy());
   });
 
   it('saves an activity contributor report preset for the previous rolling window', async () => {
