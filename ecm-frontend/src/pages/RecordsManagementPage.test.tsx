@@ -16,6 +16,9 @@ jest.mock('react-toastify', () => ({
 
 jest.mock('services/recordsManagementService', () => ({
   __esModule: true,
+  supportsReportPresetCsvDelivery: jest.requireActual(
+    '../services/recordsManagementService'
+  ).supportsReportPresetCsvDelivery,
   default: {
     getSummary: jest.fn(),
     getOperationsTelemetry: jest.fn(),

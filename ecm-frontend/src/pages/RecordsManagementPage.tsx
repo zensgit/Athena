@@ -55,6 +55,8 @@ import RenameFilePlanDialog from 'components/records/RenameFilePlanDialog';
 import RecordStatusChip from 'components/records/RecordStatusChip';
 import RenameRecordCategoryDialog from 'components/records/RenameRecordCategoryDialog';
 import SaveReportPresetDialog from 'components/records/SaveReportPresetDialog';
+import ScheduleReportPresetDialog from 'components/records/ScheduleReportPresetDialog';
+import { supportsReportPresetCsvDelivery } from 'services/recordsManagementService';
 import UndeclareRecordDialog from 'components/records/UndeclareRecordDialog';
 
 const AUDIT_DEFAULT_ROWS = 10;
@@ -577,6 +579,7 @@ const RecordsManagementPage: React.FC = () => {
   const [reportPresetsError, setReportPresetsError] = useState<string | null>(null);
   const [presetExportingId, setPresetExportingId] = useState<string | null>(null);
   const [presetDeletingId, setPresetDeletingId] = useState<string | null>(null);
+  const [schedulePresetTarget, setSchedulePresetTarget] = useState<RmReportPreset | null>(null);
   const [editingFilePlanId, setEditingFilePlanId] = useState<string | null>(null);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [filePlanForm, setFilePlanForm] = useState({
@@ -4916,6 +4919,15 @@ const RecordsManagementPage: React.FC = () => {
                               >
                                 {presetExportingId === preset.id ? 'Exporting...' : 'Export CSV'}
                               </Button>
+                              {supportsReportPresetCsvDelivery(preset.kind) && (
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  onClick={() => setSchedulePresetTarget(preset)}
+                                >
+                                  Schedule
+                                </Button>
+                              )}
                             </Stack>
                           </TableCell>
                         </TableRow>
@@ -5065,6 +5077,11 @@ const RecordsManagementPage: React.FC = () => {
         submitting={reportPresetSubmitting}
         onClose={closeReportPresetDialog}
         onSave={saveReportPreset}
+      />
+      <ScheduleReportPresetDialog
+        open={Boolean(schedulePresetTarget)}
+        preset={schedulePresetTarget}
+        onClose={() => setSchedulePresetTarget(null)}
       />
       <RenameFilePlanDialog
         open={renameFilePlanDialogOpen}
