@@ -47,6 +47,9 @@ import {
   RecordsOperationsTelemetry,
   RecordsSummary,
   RmReportPreset,
+  RmReportPresetExecution,
+  RmReportPresetExecutionStatus,
+  RmReportPresetExecutionTrigger,
   RmReportPresetKind,
 } from 'types';
 import MoveFilePlanDialog from 'components/records/MoveFilePlanDialog';
@@ -75,8 +78,19 @@ const ACTIVITY_EVENT_TYPES_DEFAULT_DAYS = 28;
 const ACTIVITY_EVENT_TYPES_DEFAULT_LIMIT = 8;
 const ACTIVITY_HIGHLIGHTS_DEFAULT_WINDOW_DAYS = 7;
 const ACTIVITY_TIMELINE_DEFAULT_DAYS = 14;
+const PRESET_EXECUTION_LEDGER_DEFAULT_ROWS = 10;
 
 const emptyAuditPage = (size = AUDIT_DEFAULT_ROWS): PageResponse<RecordAuditEntry> => ({
+  content: [],
+  totalElements: 0,
+  totalPages: 0,
+  number: 0,
+  size,
+});
+
+const emptyPresetExecutionLedgerPage = (
+  size = PRESET_EXECUTION_LEDGER_DEFAULT_ROWS
+): PageResponse<RmReportPresetExecution> => ({
   content: [],
   totalElements: 0,
   totalPages: 0,
@@ -286,12 +300,36 @@ interface ReportPresetDraft {
   params: Record<string, unknown>;
 }
 
+interface PresetExecutionLedgerFilterState {
+  presetId: string;
+  status: '' | RmReportPresetExecutionStatus;
+  triggerType: '' | RmReportPresetExecutionTrigger;
+  from: string;
+  to: string;
+}
+
 const emptyAuditFiltersState = (): AuditFilterState => ({
   family: '',
   eventType: '',
   username: '',
   from: '',
   to: '',
+});
+
+const emptyPresetExecutionLedgerFiltersState = (): PresetExecutionLedgerFilterState => ({
+  presetId: '',
+  status: '',
+  triggerType: '',
+  from: '',
+  to: '',
+});
+
+const normalizePresetExecutionLedgerFilters = (filters: PresetExecutionLedgerFilterState) => ({
+  ...(filters.presetId.trim() ? { presetId: filters.presetId.trim() } : {}),
+  ...(filters.status ? { status: filters.status } : {}),
+  ...(filters.triggerType ? { triggerType: filters.triggerType } : {}),
+  ...(filters.from.trim() ? { from: filters.from.trim() } : {}),
+  ...(filters.to.trim() ? { to: filters.to.trim() } : {}),
 });
 
 const AUDIT_FAMILY_OPTIONS = [
@@ -398,6 +436,12 @@ const formatPresetRangeLabel = (preset: RmReportPreset) => {
   }
   return `${from.slice(0, 10)} to ${to.slice(0, 10)}`;
 };
+
+const formatPresetExecutionTriggerLabel = (triggerType: RmReportPresetExecutionTrigger) =>
+  triggerType === 'MANUAL' ? 'Manual' : 'Scheduled';
+
+const formatPresetExecutionStatusLabel = (status: RmReportPresetExecutionStatus) =>
+  status === 'SUCCESS' ? 'Successful' : 'Failed';
 
 interface SnapshotSegment {
   label: string;
@@ -580,6 +624,20 @@ const RecordsManagementPage: React.FC = () => {
   const [presetExportingId, setPresetExportingId] = useState<string | null>(null);
   const [presetDeletingId, setPresetDeletingId] = useState<string | null>(null);
   const [schedulePresetTarget, setSchedulePresetTarget] = useState<RmReportPreset | null>(null);
+  const [presetExecutionLedgerPage, setPresetExecutionLedgerPage] = useState<PageResponse<RmReportPresetExecution>>(
+    emptyPresetExecutionLedgerPage()
+  );
+  const [presetExecutionLedgerLoading, setPresetExecutionLedgerLoading] = useState(false);
+  const [presetExecutionLedgerError, setPresetExecutionLedgerError] = useState<string | null>(null);
+  const [presetExecutionLedgerFilters, setPresetExecutionLedgerFilters] = useState<PresetExecutionLedgerFilterState>(
+    emptyPresetExecutionLedgerFiltersState
+  );
+  const [appliedPresetExecutionLedgerFilters, setAppliedPresetExecutionLedgerFilters] =
+    useState<PresetExecutionLedgerFilterState>(emptyPresetExecutionLedgerFiltersState);
+  const [presetExecutionLedgerPageIndex, setPresetExecutionLedgerPageIndex] = useState(0);
+  const [presetExecutionLedgerRowsPerPage, setPresetExecutionLedgerRowsPerPage] =
+    useState(PRESET_EXECUTION_LEDGER_DEFAULT_ROWS);
+  const [presetExecutionLedgerExporting, setPresetExecutionLedgerExporting] = useState(false);
   const [editingFilePlanId, setEditingFilePlanId] = useState<string | null>(null);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [filePlanForm, setFilePlanForm] = useState({
@@ -689,6 +747,36 @@ const RecordsManagementPage: React.FC = () => {
       }
     }
   }, []);
+
+  const loadPresetExecutionLedger = useCallback(async (
+    filters = appliedPresetExecutionLedgerFilters,
+    page = presetExecutionLedgerPageIndex,
+    size = presetExecutionLedgerRowsPerPage,
+    silent = false
+  ) => {
+    if (!silent) {
+      setPresetExecutionLedgerLoading(true);
+    }
+    try {
+      const result = await recordsManagementService.listReportPresetExecutionLedger({
+        ...normalizePresetExecutionLedgerFilters(filters),
+        page,
+        size,
+      });
+      setPresetExecutionLedgerPage(result);
+      setPresetExecutionLedgerError(null);
+    } catch {
+      setPresetExecutionLedgerError('Failed to load preset delivery ledger');
+      if (!silent) {
+        toast.error('Failed to load preset delivery ledger');
+        setPresetExecutionLedgerPage(emptyPresetExecutionLedgerPage(size));
+      }
+    } finally {
+      if (!silent) {
+        setPresetExecutionLedgerLoading(false);
+      }
+    }
+  }, [appliedPresetExecutionLedgerFilters, presetExecutionLedgerPageIndex, presetExecutionLedgerRowsPerPage]);
 
   const loadBreakdown = useCallback(async (silent = false) => {
     if (!silent) {
@@ -987,6 +1075,19 @@ const RecordsManagementPage: React.FC = () => {
   }, [loadReportPresets]);
 
   useEffect(() => {
+    void loadPresetExecutionLedger(
+      appliedPresetExecutionLedgerFilters,
+      presetExecutionLedgerPageIndex,
+      presetExecutionLedgerRowsPerPage
+    );
+  }, [
+    appliedPresetExecutionLedgerFilters,
+    loadPresetExecutionLedger,
+    presetExecutionLedgerPageIndex,
+    presetExecutionLedgerRowsPerPage,
+  ]);
+
+  useEffect(() => {
     void loadBreakdown();
   }, [loadBreakdown]);
 
@@ -1108,6 +1209,48 @@ const RecordsManagementPage: React.FC = () => {
     () => categories.filter((category) => category.path !== '/Records Management'),
     [categories]
   );
+
+  const reportPresetById = useMemo(
+    () => new Map(reportPresets.map((preset) => [preset.id, preset])),
+    [reportPresets]
+  );
+
+  const openBrowseTarget = useCallback((nodeId?: string | null) => {
+    if (!nodeId) {
+      return;
+    }
+    window.open(`/browse/${nodeId}`, '_blank', 'noopener,noreferrer');
+  }, []);
+
+  const handleApplyPresetExecutionLedgerFilters = useCallback(() => {
+    setAppliedPresetExecutionLedgerFilters({ ...presetExecutionLedgerFilters });
+    setPresetExecutionLedgerPageIndex(0);
+  }, [presetExecutionLedgerFilters]);
+
+  const handleClearPresetExecutionLedgerFilters = useCallback(() => {
+    const cleared = emptyPresetExecutionLedgerFiltersState();
+    setPresetExecutionLedgerFilters(cleared);
+    setAppliedPresetExecutionLedgerFilters(cleared);
+    setPresetExecutionLedgerPageIndex(0);
+  }, []);
+
+  const exportPresetExecutionLedgerCsv = useCallback(async () => {
+    setPresetExecutionLedgerExporting(true);
+    try {
+      await recordsManagementService.exportReportPresetExecutionLedgerCsv({
+        ...normalizePresetExecutionLedgerFilters(appliedPresetExecutionLedgerFilters),
+        limit: Math.max(
+          presetExecutionLedgerPage.totalElements,
+          presetExecutionLedgerPage.size || PRESET_EXECUTION_LEDGER_DEFAULT_ROWS
+        ),
+      });
+      toast.success('RM preset delivery ledger CSV exported');
+    } catch {
+      toast.error('Failed to export preset delivery ledger');
+    } finally {
+      setPresetExecutionLedgerExporting(false);
+    }
+  }, [appliedPresetExecutionLedgerFilters, presetExecutionLedgerPage]);
 
   const isRootRecordCategory = useCallback(
     (category: RecordCategory) => category.path === '/Records Management',
@@ -4937,6 +5080,235 @@ const RecordsManagementPage: React.FC = () => {
                     )}
                   </TableBody>
                 </Table>
+              </Stack>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        <Grid item xs={12}>
+          <Card variant="outlined">
+            <CardContent>
+              <Stack spacing={1.5}>
+                <Box>
+                  <Typography variant="h6" gutterBottom>
+                    Preset Delivery Ledger
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Review delivery executions across all RM report presets, then export the filtered ledger or jump back to delivered evidence and the existing audit surface.
+                  </Typography>
+                </Box>
+
+                <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} flexWrap="wrap" useFlexGap>
+                  <TextField
+                    select
+                    size="small"
+                    label="Preset"
+                    value={presetExecutionLedgerFilters.presetId}
+                    onChange={(event) => setPresetExecutionLedgerFilters((current) => ({
+                      ...current,
+                      presetId: event.target.value,
+                    }))}
+                    sx={{ minWidth: 220 }}
+                  >
+                    <MenuItem value="">
+                      <em>All Presets</em>
+                    </MenuItem>
+                    {reportPresets.map((preset) => (
+                      <MenuItem key={preset.id} value={preset.id}>
+                        {preset.name}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                  <TextField
+                    select
+                    size="small"
+                    label="Result"
+                    value={presetExecutionLedgerFilters.status}
+                    onChange={(event) => setPresetExecutionLedgerFilters((current) => ({
+                      ...current,
+                      status: event.target.value as PresetExecutionLedgerFilterState['status'],
+                    }))}
+                    sx={{ minWidth: 160 }}
+                  >
+                    <MenuItem value="">
+                      <em>All Results</em>
+                    </MenuItem>
+                    <MenuItem value="SUCCESS">Successful</MenuItem>
+                    <MenuItem value="FAILED">Failed</MenuItem>
+                  </TextField>
+                  <TextField
+                    select
+                    size="small"
+                    label="Trigger"
+                    value={presetExecutionLedgerFilters.triggerType}
+                    onChange={(event) => setPresetExecutionLedgerFilters((current) => ({
+                      ...current,
+                      triggerType: event.target.value as PresetExecutionLedgerFilterState['triggerType'],
+                    }))}
+                    sx={{ minWidth: 160 }}
+                  >
+                    <MenuItem value="">
+                      <em>All Triggers</em>
+                    </MenuItem>
+                    <MenuItem value="MANUAL">Manual</MenuItem>
+                    <MenuItem value="SCHEDULED">Scheduled</MenuItem>
+                  </TextField>
+                  <TextField
+                    size="small"
+                    label="From"
+                    type="datetime-local"
+                    value={presetExecutionLedgerFilters.from}
+                    onChange={(event) => setPresetExecutionLedgerFilters((current) => ({
+                      ...current,
+                      from: event.target.value,
+                    }))}
+                    InputLabelProps={{ shrink: true }}
+                    inputProps={{ step: 1 }}
+                  />
+                  <TextField
+                    size="small"
+                    label="To"
+                    type="datetime-local"
+                    value={presetExecutionLedgerFilters.to}
+                    onChange={(event) => setPresetExecutionLedgerFilters((current) => ({
+                      ...current,
+                      to: event.target.value,
+                    }))}
+                    InputLabelProps={{ shrink: true }}
+                    inputProps={{ step: 1 }}
+                  />
+                  <Button
+                    variant="contained"
+                    onClick={handleApplyPresetExecutionLedgerFilters}
+                    disabled={presetExecutionLedgerLoading}
+                  >
+                    Apply
+                  </Button>
+                  <Button
+                    variant="text"
+                    onClick={handleClearPresetExecutionLedgerFilters}
+                    disabled={presetExecutionLedgerLoading}
+                  >
+                    Clear
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    onClick={() => void exportPresetExecutionLedgerCsv()}
+                    disabled={presetExecutionLedgerExporting}
+                  >
+                    {presetExecutionLedgerExporting ? 'Exporting...' : 'Export ledger CSV'}
+                  </Button>
+                </Stack>
+
+                {presetExecutionLedgerError && (
+                  <Alert severity="warning">
+                    {presetExecutionLedgerError}
+                  </Alert>
+                )}
+
+                <Typography variant="body2" color="text.secondary">
+                  {`Showing ${presetExecutionLedgerPage.content.length} of ${presetExecutionLedgerPage.totalElements} deliveries`}
+                </Typography>
+
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Started</TableCell>
+                      <TableCell>Preset</TableCell>
+                      <TableCell>Trigger</TableCell>
+                      <TableCell>Result</TableCell>
+                      <TableCell>File</TableCell>
+                      <TableCell>Message</TableCell>
+                      <TableCell align="right">Actions</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {presetExecutionLedgerPage.content.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7}>
+                          {presetExecutionLedgerLoading ? 'Loading preset delivery ledger...' : 'No preset deliveries found.'}
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      presetExecutionLedgerPage.content.map((execution) => {
+                        const preset = reportPresetById.get(execution.presetId);
+                        const presetKind = execution.presetKind ?? preset?.kind;
+                        return (
+                          <TableRow key={execution.id}>
+                            <TableCell>{formatDateTime(execution.startedAt)}</TableCell>
+                            <TableCell>
+                              <Stack spacing={0.5}>
+                                <Typography variant="body2">
+                                  {execution.presetName || preset?.name || execution.presetId}
+                                </Typography>
+                                {presetKind && (
+                                  <Typography variant="caption" color="text.secondary">
+                                    {formatPresetKindLabel(presetKind)}
+                                  </Typography>
+                                )}
+                              </Stack>
+                            </TableCell>
+                            <TableCell>{formatPresetExecutionTriggerLabel(execution.triggerType)}</TableCell>
+                            <TableCell>
+                              <Chip
+                                size="small"
+                                label={formatPresetExecutionStatusLabel(execution.status)}
+                                color={execution.status === 'SUCCESS' ? 'success' : 'warning'}
+                                variant="outlined"
+                              />
+                            </TableCell>
+                            <TableCell>{execution.filename || '—'}</TableCell>
+                            <TableCell>{execution.message || '—'}</TableCell>
+                            <TableCell align="right">
+                              <Stack direction="row" spacing={1} justifyContent="flex-end">
+                                {preset && (
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    onClick={() => applyReportPresetToAudit(preset)}
+                                  >
+                                    Apply preset
+                                  </Button>
+                                )}
+                                {execution.documentId && (
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    onClick={() => openBrowseTarget(execution.documentId)}
+                                  >
+                                    Open delivered file
+                                  </Button>
+                                )}
+                                {execution.targetFolderId && (
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    onClick={() => openBrowseTarget(execution.targetFolderId)}
+                                  >
+                                    Open target folder
+                                  </Button>
+                                )}
+                              </Stack>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+                <TablePagination
+                  component="div"
+                  count={presetExecutionLedgerPage.totalElements}
+                  page={presetExecutionLedgerPage.number}
+                  onPageChange={(_, nextPage) => setPresetExecutionLedgerPageIndex(nextPage)}
+                  rowsPerPage={presetExecutionLedgerRowsPerPage}
+                  onRowsPerPageChange={(event) => {
+                    const nextRows = Number(event.target.value);
+                    setPresetExecutionLedgerRowsPerPage(nextRows);
+                    setPresetExecutionLedgerPageIndex(0);
+                  }}
+                  rowsPerPageOptions={[10, 25, 50]}
+                />
               </Stack>
             </CardContent>
           </Card>

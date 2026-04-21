@@ -101,10 +101,10 @@ export async function waitForApiReady(
       const res = await request.get(`${apiUrl}/actuator/health`);
       if (res.ok()) {
         const payload = (await res.json()) as { status?: string };
-        if (!payload?.status || payload.status.toUpperCase() !== 'DOWN') {
+        if (payload?.status?.toUpperCase() === 'UP') {
           return;
         }
-        lastError = `health status=${payload.status}`;
+        lastError = `health status=${payload?.status ?? 'missing'}`;
       } else {
         lastError = `health status code=${res.status()}`;
       }

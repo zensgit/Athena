@@ -31,6 +31,10 @@ This document builds on the already completed `P4` closeout material:
 - accepted runtime slices now also include `PR-98` on the `RM delivery workflows` lane as the first page-level schedule action wiring on top of `PR-97`
 - accepted runtime slices now also include `PR-99` on the `RM delivery workflows` lane as review-driven hardening of the shipped schedule/export UI semantics
 - accepted runtime slices now also include `PR-100` on the `RM delivery workflows` lane as the first browser-level mocked E2E coverage across the shipped scheduled-delivery chain
+- accepted runtime slices now also include `PR-101` on the `RM delivery workflows` lane as the first non-mocked full-stack/admin smoke across the shipped scheduled-delivery chain
+- accepted runtime slices now also include `PR-102` on the `RM delivery workflows` lane as frontend-only operator polish for the shipped delivery execution ledger surface
+- accepted runtime slices now also include `PR-103` on the `RM delivery workflows` lane as the first cross-preset execution ledger/filter/export backend foundation on top of the shipped scheduled-delivery surface
+- accepted runtime slices now also include `PR-104` on the `RM delivery workflows` lane as the first page-level consumption of the shipped cross-preset execution ledger/filter/export surface
 
 ## Checks
 

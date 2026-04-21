@@ -9,8 +9,13 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -22,9 +27,11 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.nio.charset.StandardCharsets;
 
 /**
  * P5 PR-83: RM saved report preset REST API.
@@ -85,6 +92,28 @@ public class RmReportPresetController {
             String timezone,
             UUID deliveryFolderId
     ) {}
+
+    public record ExecutionLedgerResponse(
+            List<RmReportPresetDeliveryService.PresetExecutionDto> content,
+            int page,
+            int size,
+            long totalElements,
+            int totalPages,
+            boolean first,
+            boolean last
+    ) {
+        public static ExecutionLedgerResponse from(Page<RmReportPresetDeliveryService.PresetExecutionDto> page) {
+            return new ExecutionLedgerResponse(
+                    page.getContent(),
+                    page.getNumber(),
+                    page.getSize(),
+                    page.getTotalElements(),
+                    page.getTotalPages(),
+                    page.isFirst(),
+                    page.isLast()
+            );
+        }
+    }
 
     @GetMapping
     @Operation(summary = "List my saved RM report presets")
@@ -163,5 +192,45 @@ public class RmReportPresetController {
             @PathVariable UUID id,
             @RequestParam(required = false) Integer limit) {
         return ResponseEntity.ok(deliveryService.listExecutions(id, limit));
+    }
+
+    @GetMapping("/executions")
+    @Operation(summary = "List preset delivery executions for the current owner")
+    public ResponseEntity<ExecutionLedgerResponse> listExecutionLedger(
+            @RequestParam(required = false) UUID presetId,
+            @RequestParam(required = false) com.ecm.core.entity.RmReportPresetExecution.ExecutionStatus status,
+            @RequestParam(required = false) com.ecm.core.entity.RmReportPresetExecution.TriggerType triggerType,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size) {
+        Page<RmReportPresetDeliveryService.PresetExecutionDto> result =
+            deliveryService.listExecutionLedger(presetId, status, triggerType, from, to, page, size);
+        return ResponseEntity.ok(
+            ExecutionLedgerResponse.from(result)
+        );
+    }
+
+    @GetMapping(value = "/executions/export", produces = "text/csv")
+    @Operation(summary = "Export preset delivery execution ledger for the current owner")
+    public ResponseEntity<byte[]> exportExecutionLedger(
+            @RequestParam(required = false) UUID presetId,
+            @RequestParam(required = false) com.ecm.core.entity.RmReportPresetExecution.ExecutionStatus status,
+            @RequestParam(required = false) com.ecm.core.entity.RmReportPresetExecution.TriggerType triggerType,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to,
+            @RequestParam(required = false) Integer limit) {
+        byte[] csv = deliveryService.exportExecutionLedgerCsv(presetId, status, triggerType, from, to, limit)
+            .getBytes(StandardCharsets.UTF_8);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentDisposition(ContentDisposition.attachment()
+            .filename(
+                "rm-report-preset-executions-" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")) + ".csv",
+                StandardCharsets.UTF_8
+            )
+            .build());
+        headers.setContentType(MediaType.parseMediaType("text/csv; charset=UTF-8"));
+        headers.setContentLength(csv.length);
+        return ResponseEntity.ok().headers(headers).body(csv);
     }
 }

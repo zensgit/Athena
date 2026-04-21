@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
@@ -35,6 +35,9 @@ interface ScheduleReportPresetDialogProps {
   onSaved?: (status: RmReportPresetScheduleStatus) => void;
 }
 
+type ExecutionStatusFilter = 'ALL' | 'SUCCESS' | 'FAILED';
+type ExecutionTriggerFilter = 'ALL' | 'MANUAL' | 'SCHEDULED';
+
 const formatDateTime = (value?: string | null): string => {
   if (!value) return '—';
   const parsed = new Date(value);
@@ -61,8 +64,20 @@ const ScheduleReportPresetDialog: React.FC<ScheduleReportPresetDialogProps> = ({
   const [deliveryFolderId, setDeliveryFolderId] = useState('');
   const [cronError, setCronError] = useState<string | null>(null);
   const [folderError, setFolderError] = useState<string | null>(null);
+  const [executionStatusFilter, setExecutionStatusFilter] = useState<ExecutionStatusFilter>('ALL');
+  const [executionTriggerFilter, setExecutionTriggerFilter] = useState<ExecutionTriggerFilter>('ALL');
 
   const kindSupportsCsvDelivery = preset ? supportsReportPresetCsvDelivery(preset.kind) : false;
+
+  const filteredExecutions = useMemo(
+    () =>
+      executions.filter((execution) => {
+        const matchesStatus = executionStatusFilter === 'ALL' || execution.status === executionStatusFilter;
+        const matchesTrigger = executionTriggerFilter === 'ALL' || execution.triggerType === executionTriggerFilter;
+        return matchesStatus && matchesTrigger;
+      }),
+    [executionStatusFilter, executionTriggerFilter, executions]
+  );
 
   const loadState = useCallback(async () => {
     if (!preset) {
@@ -98,9 +113,18 @@ const ScheduleReportPresetDialog: React.FC<ScheduleReportPresetDialogProps> = ({
 
   useEffect(() => {
     if (open && preset && kindSupportsCsvDelivery) {
+      setExecutionStatusFilter('ALL');
+      setExecutionTriggerFilter('ALL');
       void loadState();
     }
   }, [open, preset, kindSupportsCsvDelivery, loadState]);
+
+  const openBrowseTarget = (nodeId?: string | null) => {
+    if (!nodeId) {
+      return;
+    }
+    window.open(`/browse/${nodeId}`, '_blank', 'noopener,noreferrer');
+  };
 
   const handleSave = async () => {
     if (!preset) return;
@@ -244,9 +268,26 @@ const ScheduleReportPresetDialog: React.FC<ScheduleReportPresetDialogProps> = ({
 
             {status && (
               <Box sx={{ mb: 2 }}>
-                <Typography variant="subtitle2" gutterBottom>
-                  Current schedule
-                </Typography>
+                <Stack
+                  direction={{ xs: 'column', sm: 'row' }}
+                  spacing={1}
+                  alignItems={{ xs: 'flex-start', sm: 'center' }}
+                  justifyContent="space-between"
+                  sx={{ mb: 1 }}
+                >
+                  <Typography variant="subtitle2">
+                    Current schedule
+                  </Typography>
+                  {status.deliveryFolderId && (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => openBrowseTarget(status.deliveryFolderId)}
+                    >
+                      Open target folder
+                    </Button>
+                  )}
+                </Stack>
                 <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
                   <Chip
                     label={status.enabled ? 'Enabled' : 'Disabled'}
@@ -258,6 +299,14 @@ const ScheduleReportPresetDialog: React.FC<ScheduleReportPresetDialogProps> = ({
                   )}
                   {status.lastRunAt && (
                     <Chip label={`Last: ${formatDateTime(status.lastRunAt)}`} size="small" variant="outlined" />
+                  )}
+                  {status.lastExecution?.status && (
+                    <Chip
+                      label={`Last Result: ${status.lastExecution.status}`}
+                      size="small"
+                      color={status.lastExecution.status === 'SUCCESS' ? 'success' : 'error'}
+                      variant="outlined"
+                    />
                   )}
                 </Stack>
               </Box>
@@ -275,15 +324,80 @@ const ScheduleReportPresetDialog: React.FC<ScheduleReportPresetDialogProps> = ({
                 {delivering ? 'Delivering…' : 'Deliver now'}
               </Button>
             </Stack>
+            {executions.length > 0 && (
+              <Stack spacing={1} sx={{ mb: 1.5 }}>
+                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                  <Button
+                    size="small"
+                    variant={executionStatusFilter === 'ALL' ? 'contained' : 'outlined'}
+                    onClick={() => setExecutionStatusFilter('ALL')}
+                    disabled={busy}
+                  >
+                    All results
+                  </Button>
+                  <Button
+                    size="small"
+                    variant={executionStatusFilter === 'SUCCESS' ? 'contained' : 'outlined'}
+                    onClick={() => setExecutionStatusFilter('SUCCESS')}
+                    disabled={busy}
+                  >
+                    Successful
+                  </Button>
+                  <Button
+                    size="small"
+                    color="error"
+                    variant={executionStatusFilter === 'FAILED' ? 'contained' : 'outlined'}
+                    onClick={() => setExecutionStatusFilter('FAILED')}
+                    disabled={busy}
+                  >
+                    Failed
+                  </Button>
+                </Stack>
+                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                  <Button
+                    size="small"
+                    variant={executionTriggerFilter === 'ALL' ? 'contained' : 'outlined'}
+                    onClick={() => setExecutionTriggerFilter('ALL')}
+                    disabled={busy}
+                  >
+                    All triggers
+                  </Button>
+                  <Button
+                    size="small"
+                    variant={executionTriggerFilter === 'MANUAL' ? 'contained' : 'outlined'}
+                    onClick={() => setExecutionTriggerFilter('MANUAL')}
+                    disabled={busy}
+                  >
+                    Manual
+                  </Button>
+                  <Button
+                    size="small"
+                    variant={executionTriggerFilter === 'SCHEDULED' ? 'contained' : 'outlined'}
+                    onClick={() => setExecutionTriggerFilter('SCHEDULED')}
+                    disabled={busy}
+                  >
+                    Scheduled
+                  </Button>
+                </Stack>
+                <Typography variant="body2" color="text.secondary">
+                  Showing {filteredExecutions.length} of {executions.length} deliveries.
+                </Typography>
+              </Stack>
+            )}
             {executions.length === 0 ? (
               <Typography variant="body2" color="text.secondary">
                 No deliveries yet.
               </Typography>
+            ) : filteredExecutions.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">
+                No deliveries match the current filters.
+              </Typography>
             ) : (
               <List dense>
-                {executions.map((execution) => (
+                {filteredExecutions.map((execution) => (
                   <ListItem key={execution.id} divider>
                     <ListItemText
+                      secondaryTypographyProps={{ component: 'div' }}
                       primary={
                         <Stack direction="row" spacing={1} alignItems="center">
                           <Chip
@@ -295,7 +409,33 @@ const ScheduleReportPresetDialog: React.FC<ScheduleReportPresetDialogProps> = ({
                           <Typography variant="body2">{formatDateTime(execution.startedAt)}</Typography>
                         </Stack>
                       }
-                      secondary={execution.filename || execution.message || ''}
+                      secondary={(
+                        <Stack spacing={0.75} sx={{ mt: 0.5 }}>
+                          <Typography variant="body2" color="text.secondary">
+                            {execution.filename || execution.message || '—'}
+                          </Typography>
+                          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                            {execution.documentId && (
+                              <Button
+                                size="small"
+                                variant="text"
+                                onClick={() => openBrowseTarget(execution.documentId)}
+                              >
+                                Open delivered file
+                              </Button>
+                            )}
+                            {execution.targetFolderId && (
+                              <Button
+                                size="small"
+                                variant="text"
+                                onClick={() => openBrowseTarget(execution.targetFolderId)}
+                              >
+                                Open target folder
+                              </Button>
+                            )}
+                          </Stack>
+                        </Stack>
+                      )}
                     />
                   </ListItem>
                 ))}

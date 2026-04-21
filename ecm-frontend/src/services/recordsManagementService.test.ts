@@ -254,6 +254,84 @@ describe('recordsManagementService', () => {
     });
   });
 
+  it('lists preset delivery ledger rows with optional filters', async () => {
+    mockedApi.get.mockResolvedValueOnce({
+      content: [
+        {
+          id: 'exec-1',
+          presetId: 'preset-1',
+          presetName: 'Weekly Family Report',
+          presetKind: 'ACTIVITY_FAMILY_REPORT',
+          triggerType: 'MANUAL',
+          status: 'SUCCESS',
+          startedAt: '2026-04-21T10:00:00',
+          finishedAt: '2026-04-21T10:00:01',
+          durationMs: 1000,
+        },
+      ],
+      page: 1,
+      size: 25,
+      totalElements: 30,
+      totalPages: 2,
+      first: false,
+      last: false,
+    } as any);
+
+    const result = await recordsManagementService.listReportPresetExecutionLedger({
+      presetId: ' preset-1 ',
+      status: 'FAILED',
+      triggerType: 'SCHEDULED',
+      from: ' 2026-04-01T00:00:00 ',
+      to: ' 2026-04-21T23:59:59 ',
+      page: 1,
+      size: 25,
+    });
+
+    expect(mockedApi.get).toHaveBeenCalledWith('/records/report-presets/executions', {
+      params: {
+        presetId: 'preset-1',
+        status: 'FAILED',
+        triggerType: 'SCHEDULED',
+        from: '2026-04-01T00:00:00',
+        to: '2026-04-21T23:59:59',
+        page: 1,
+        size: 25,
+      },
+    });
+    expect(result.number).toBe(1);
+    expect(result.size).toBe(25);
+    expect(result.totalElements).toBe(30);
+    expect(result.content[0].presetName).toBe('Weekly Family Report');
+  });
+
+  it('exports preset delivery ledger CSV with current filters', async () => {
+    mockedApi.downloadFile.mockResolvedValueOnce(undefined as any);
+
+    await recordsManagementService.exportReportPresetExecutionLedgerCsv({
+      presetId: ' preset-1 ',
+      status: 'SUCCESS',
+      triggerType: 'MANUAL',
+      from: ' 2026-04-09T00:00:00 ',
+      to: ' 2026-04-15T23:59:59 ',
+      limit: 75,
+    });
+
+    expect(mockedApi.downloadFile).toHaveBeenCalledWith(
+      '/records/report-presets/executions/export',
+      'rm-report-preset-executions-2026-04-09-to-2026-04-15.csv',
+      {
+        params: {
+          presetId: 'preset-1',
+          status: 'SUCCESS',
+          triggerType: 'MANUAL',
+          from: '2026-04-09T00:00:00',
+          to: '2026-04-15T23:59:59',
+          limit: 75,
+        },
+      }
+    );
+  });
+
   it('identifies which preset kinds support CSV delivery', () => {
     expect(supportsReportPresetCsvDelivery('ACTIVITY_FAMILY_REPORT')).toBe(true);
     expect(supportsReportPresetCsvDelivery('ACTIVITY_CONTRIBUTOR_EVENT_TYPE_REPORT')).toBe(true);

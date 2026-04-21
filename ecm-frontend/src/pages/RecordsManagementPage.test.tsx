@@ -31,6 +31,8 @@ jest.mock('services/recordsManagementService', () => ({
     updateReportPresetSchedule: jest.fn(),
     deliverReportPresetNow: jest.fn(),
     listReportPresetExecutions: jest.fn(),
+    listReportPresetExecutionLedger: jest.fn(),
+    exportReportPresetExecutionLedgerCsv: jest.fn(),
     getActivityContributorEventTypeHighlights: jest.fn(),
     getActivityContributorFamilyHighlights: jest.fn(),
     exportActivityFamilyReportCsv: jest.fn(),
@@ -716,6 +718,45 @@ describe('RecordsManagementPage', () => {
       durationMs: 1000,
     } as any);
     mockedRecordsManagementService.listReportPresetExecutions.mockResolvedValue([] as any);
+    mockedRecordsManagementService.listReportPresetExecutionLedger.mockResolvedValue({
+      content: [
+        {
+          id: 'ledger-1',
+          presetId: 'preset-family-current',
+          presetName: 'HR family current',
+          presetKind: 'ACTIVITY_FAMILY_REPORT',
+          triggerType: 'MANUAL',
+          status: 'SUCCESS',
+          filename: 'hr-family-current-20260421.csv',
+          targetFolderId: 'folder-1',
+          documentId: 'doc-1',
+          message: 'Delivered successfully',
+          startedAt: '2026-04-21T09:00:00',
+          finishedAt: '2026-04-21T09:00:01',
+          durationMs: 1000,
+        },
+        {
+          id: 'ledger-2',
+          presetId: 'preset-family-current',
+          presetName: 'HR family current',
+          presetKind: 'ACTIVITY_FAMILY_REPORT',
+          triggerType: 'SCHEDULED',
+          status: 'FAILED',
+          filename: 'hr-family-current-20260422.csv',
+          targetFolderId: 'folder-1',
+          documentId: null,
+          message: 'Delivery failed',
+          startedAt: '2026-04-22T09:00:00',
+          finishedAt: '2026-04-22T09:00:03',
+          durationMs: 3000,
+        },
+      ],
+      totalElements: 2,
+      totalPages: 1,
+      number: 0,
+      size: 10,
+    } as any);
+    mockedRecordsManagementService.exportReportPresetExecutionLedgerCsv.mockResolvedValue(undefined as any);
   });
 
   it('loads records management summary, operations telemetry, browse surfaces, and audit', async () => {
@@ -837,7 +878,9 @@ describe('RecordsManagementPage', () => {
   it('applies a saved RM report preset to the existing audit surface', async () => {
     renderPage();
 
-    const presetRow = (await screen.findByText('HR family current')).closest('tr');
+    const presetSection = (await screen.findByRole('heading', { name: 'Saved RM Report Presets' })).closest('.MuiCard-root');
+    expect(presetSection).toBeTruthy();
+    const presetRow = (await within(presetSection as HTMLElement).findByText('HR family current')).closest('tr');
     expect(presetRow).toBeTruthy();
 
     fireEvent.click(within(presetRow as HTMLElement).getByRole('button', { name: 'Apply to audit' }));
@@ -848,7 +891,9 @@ describe('RecordsManagementPage', () => {
   it('exports a saved RM report preset via the existing CSV route', async () => {
     renderPage();
 
-    const presetRow = (await screen.findByText('HR family current')).closest('tr');
+    const presetSection = (await screen.findByRole('heading', { name: 'Saved RM Report Presets' })).closest('.MuiCard-root');
+    expect(presetSection).toBeTruthy();
+    const presetRow = (await within(presetSection as HTMLElement).findByText('HR family current')).closest('tr');
     expect(presetRow).toBeTruthy();
 
     fireEvent.click(within(presetRow as HTMLElement).getByRole('button', { name: 'Export CSV' }));
@@ -863,7 +908,9 @@ describe('RecordsManagementPage', () => {
   it('opens the schedule dialog from a CSV-capable preset row and saves schedule config', async () => {
     renderPage();
 
-    const presetRow = (await screen.findByText('HR family current')).closest('tr');
+    const presetSection = (await screen.findByRole('heading', { name: 'Saved RM Report Presets' })).closest('.MuiCard-root');
+    expect(presetSection).toBeTruthy();
+    const presetRow = (await within(presetSection as HTMLElement).findByText('HR family current')).closest('tr');
     expect(presetRow).toBeTruthy();
 
     fireEvent.click(within(presetRow as HTMLElement).getByRole('button', { name: 'Schedule' }));
@@ -908,7 +955,9 @@ describe('RecordsManagementPage', () => {
   it('edits a saved RM report preset from the preset table', async () => {
     renderPage();
 
-    const presetRow = (await screen.findByText('HR family current')).closest('tr');
+    const presetSection = (await screen.findByRole('heading', { name: 'Saved RM Report Presets' })).closest('.MuiCard-root');
+    expect(presetSection).toBeTruthy();
+    const presetRow = (await within(presetSection as HTMLElement).findByText('HR family current')).closest('tr');
     expect(presetRow).toBeTruthy();
 
     fireEvent.click(within(presetRow as HTMLElement).getByRole('button', { name: 'Edit' }));
@@ -940,7 +989,9 @@ describe('RecordsManagementPage', () => {
     const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
     renderPage();
 
-    const presetRow = (await screen.findByText('HR family current')).closest('tr');
+    const presetSection = (await screen.findByRole('heading', { name: 'Saved RM Report Presets' })).closest('.MuiCard-root');
+    expect(presetSection).toBeTruthy();
+    const presetRow = (await within(presetSection as HTMLElement).findByText('HR family current')).closest('tr');
     expect(presetRow).toBeTruthy();
 
     fireEvent.click(within(presetRow as HTMLElement).getByRole('button', { name: 'Delete' }));
@@ -948,6 +999,70 @@ describe('RecordsManagementPage', () => {
     await waitFor(() => expect(mockedRecordsManagementService.deleteReportPreset).toHaveBeenCalledWith('preset-family-current'));
     expect(toastSuccessMock).toHaveBeenCalledWith('RM report preset deleted');
     confirmSpy.mockRestore();
+  });
+
+  it('renders the preset delivery ledger and opens delivered browse targets', async () => {
+    const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
+    renderPage();
+
+    const ledgerSection = (await screen.findByRole('heading', { name: 'Preset Delivery Ledger' })).closest('.MuiCard-root');
+    expect(ledgerSection).toBeTruthy();
+    expect(await within(ledgerSection as HTMLElement).findAllByText('HR family current')).toHaveLength(2);
+    expect(within(ledgerSection as HTMLElement).getByText('Successful')).toBeTruthy();
+    expect(within(ledgerSection as HTMLElement).getByText('Failed')).toBeTruthy();
+    expect(within(ledgerSection as HTMLElement).getByText('Showing 2 of 2 deliveries')).toBeTruthy();
+
+    fireEvent.click(within(ledgerSection as HTMLElement).getByRole('button', { name: 'Open delivered file' }));
+    expect(openSpy).toHaveBeenCalledWith('/browse/doc-1', '_blank', 'noopener,noreferrer');
+
+    fireEvent.click(within(ledgerSection as HTMLElement).getAllByRole('button', { name: 'Open target folder' })[0]);
+    expect(openSpy).toHaveBeenLastCalledWith('/browse/folder-1', '_blank', 'noopener,noreferrer');
+
+    openSpy.mockRestore();
+  });
+
+  it('filters and exports the preset delivery ledger', async () => {
+    renderPage();
+
+    const ledgerSection = (await screen.findByRole('heading', { name: 'Preset Delivery Ledger' })).closest('.MuiCard-root');
+    expect(ledgerSection).toBeTruthy();
+
+    const resultSelect = within(ledgerSection as HTMLElement).getByRole('combobox', { name: 'Result' });
+    fireEvent.mouseDown(resultSelect);
+    fireEvent.click(await screen.findByRole('option', { name: 'Failed' }));
+
+    const triggerSelect = within(ledgerSection as HTMLElement).getByRole('combobox', { name: 'Trigger' });
+    fireEvent.mouseDown(triggerSelect);
+    fireEvent.click(await screen.findByRole('option', { name: 'Scheduled' }));
+
+    fireEvent.change(within(ledgerSection as HTMLElement).getByLabelText('From'), {
+      target: { value: '2026-04-21T00:00:00' },
+    });
+    fireEvent.change(within(ledgerSection as HTMLElement).getByLabelText('To'), {
+      target: { value: '2026-04-22T23:59:59' },
+    });
+
+    fireEvent.click(within(ledgerSection as HTMLElement).getByRole('button', { name: 'Apply' }));
+
+    await waitFor(() => expect(mockedRecordsManagementService.listReportPresetExecutionLedger).toHaveBeenLastCalledWith({
+      status: 'FAILED',
+      triggerType: 'SCHEDULED',
+      from: '2026-04-21T00:00',
+      to: '2026-04-22T23:59:59.000',
+      page: 0,
+      size: 10,
+    }));
+
+    fireEvent.click(within(ledgerSection as HTMLElement).getByRole('button', { name: 'Export ledger CSV' }));
+
+    await waitFor(() => expect(mockedRecordsManagementService.exportReportPresetExecutionLedgerCsv).toHaveBeenCalledWith({
+      status: 'FAILED',
+      triggerType: 'SCHEDULED',
+      from: '2026-04-21T00:00',
+      to: '2026-04-22T23:59:59.000',
+      limit: 10,
+    }));
+    expect(toastSuccessMock).toHaveBeenCalledWith('RM preset delivery ledger CSV exported');
   });
 
   it('saves an activity contributor report preset for the previous rolling window', async () => {
@@ -1279,8 +1394,9 @@ describe('RecordsManagementPage', () => {
       size: 10,
     }));
 
-    expect((screen.getByLabelText('From') as HTMLInputElement).value.startsWith('2026-04-08T00:00')).toBe(true);
-    expect((screen.getByLabelText('To') as HTMLInputElement).value.startsWith('2026-04-14T23:59:59')).toBe(true);
+    const auditSection = (screen.getByRole('heading', { name: 'Records Audit' })).closest('.MuiCard-root') as HTMLElement;
+    expect((within(auditSection).getByLabelText('From') as HTMLInputElement).value.startsWith('2026-04-08T00:00')).toBe(true);
+    expect((within(auditSection).getByLabelText('To') as HTMLInputElement).value.startsWith('2026-04-14T23:59:59')).toBe(true);
     expect(screen.getByText(/Reviewing audit evidence for Current activity window/)).toBeTruthy();
   });
 
@@ -1330,8 +1446,9 @@ describe('RecordsManagementPage', () => {
       size: 10,
     }));
 
-    expect((screen.getByLabelText('From') as HTMLInputElement).value).toBe('');
-    expect((screen.getByLabelText('To') as HTMLInputElement).value).toBe('');
+    const auditSection = (screen.getByRole('heading', { name: 'Records Audit' })).closest('.MuiCard-root') as HTMLElement;
+    expect((within(auditSection).getByLabelText('From') as HTMLInputElement).value).toBe('');
+    expect((within(auditSection).getByLabelText('To') as HTMLInputElement).value).toBe('');
     expect(screen.queryByText(/Reviewing audit evidence for/)).toBeNull();
   });
 

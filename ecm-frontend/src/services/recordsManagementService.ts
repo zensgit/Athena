@@ -26,6 +26,8 @@ import {
   RenameRecordCategoryRequest,
   RmReportPreset,
   RmReportPresetExecution,
+  RmReportPresetExecutionStatus,
+  RmReportPresetExecutionTrigger,
   RmReportPresetKind,
   RmReportPresetScheduleStatus,
   RecordsSummary,
@@ -118,6 +120,35 @@ export type UpdateReportPresetScheduleRequest =
       deliveryFolderId: string;
     };
 
+interface ReportPresetExecutionLedgerApiResponse {
+  content: RmReportPresetExecution[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+  first: boolean;
+  last: boolean;
+}
+
+export interface ReportPresetExecutionLedgerFilters {
+  presetId?: string;
+  status?: RmReportPresetExecutionStatus;
+  triggerType?: RmReportPresetExecutionTrigger;
+  from?: string;
+  to?: string;
+  page?: number;
+  size?: number;
+}
+
+export interface ReportPresetExecutionLedgerExportFilters {
+  presetId?: string;
+  status?: RmReportPresetExecutionStatus;
+  triggerType?: RmReportPresetExecutionTrigger;
+  from?: string;
+  to?: string;
+  limit?: number;
+}
+
 class RecordsManagementService {
   async listRecords(): Promise<RecordDeclaration[]> {
     return api.get<RecordDeclaration[]>('/records');
@@ -179,6 +210,51 @@ class RecordsManagementService {
   async listReportPresetExecutions(id: string, limit?: number): Promise<RmReportPresetExecution[]> {
     return api.get<RmReportPresetExecution[]>(`/records/report-presets/${id}/executions`, {
       params: limit != null ? { limit } : undefined,
+    });
+  }
+
+  async listReportPresetExecutionLedger(
+    filters: ReportPresetExecutionLedgerFilters = {}
+  ): Promise<PageResponse<RmReportPresetExecution>> {
+    const params = {
+      ...(filters.presetId?.trim() ? { presetId: filters.presetId.trim() } : {}),
+      ...(filters.status ? { status: filters.status } : {}),
+      ...(filters.triggerType ? { triggerType: filters.triggerType } : {}),
+      ...(filters.from?.trim() ? { from: filters.from.trim() } : {}),
+      ...(filters.to?.trim() ? { to: filters.to.trim() } : {}),
+      page: filters.page ?? 0,
+      size: filters.size ?? 10,
+    };
+    const result = await api.get<ReportPresetExecutionLedgerApiResponse>(
+      '/records/report-presets/executions',
+      { params }
+    );
+    return {
+      content: result.content,
+      totalElements: result.totalElements,
+      totalPages: result.totalPages,
+      number: result.page,
+      size: result.size,
+    };
+  }
+
+  async exportReportPresetExecutionLedgerCsv(
+    filters: ReportPresetExecutionLedgerExportFilters = {}
+  ): Promise<void> {
+    const normalizedFrom = filters.from?.trim();
+    const normalizedTo = filters.to?.trim();
+    const filename = normalizedFrom && normalizedTo
+      ? `rm-report-preset-executions-${normalizedFrom.slice(0, 10)}-to-${normalizedTo.slice(0, 10)}.csv`
+      : 'rm-report-preset-executions.csv';
+    return api.downloadFile('/records/report-presets/executions/export', filename, {
+      params: {
+        ...(filters.presetId?.trim() ? { presetId: filters.presetId.trim() } : {}),
+        ...(filters.status ? { status: filters.status } : {}),
+        ...(filters.triggerType ? { triggerType: filters.triggerType } : {}),
+        ...(normalizedFrom ? { from: normalizedFrom } : {}),
+        ...(normalizedTo ? { to: normalizedTo } : {}),
+        limit: filters.limit ?? undefined,
+      },
     });
   }
 

@@ -9,7 +9,11 @@ import com.ecm.core.repository.RmReportPresetExecutionRepository;
 import com.ecm.core.repository.RmReportPresetRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -25,6 +29,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -45,6 +50,7 @@ public class RmReportPresetDeliveryService {
     private final RecordsManagementService recordsManagementService;
     private final DocumentUploadService uploadService;
     private final AuditService auditService;
+    private final SecurityService securityService;
 
     @Transactional(readOnly = true)
     public ScheduleStatusDto getSchedule(UUID presetId) {
@@ -113,6 +119,65 @@ public class RmReportPresetDeliveryService {
             ).stream()
             .map(this::toExecutionDto)
             .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public Page<PresetExecutionDto> listExecutionLedger(
+        UUID presetId,
+        ExecutionStatus status,
+        TriggerType triggerType,
+        LocalDateTime from,
+        LocalDateTime to,
+        Integer page,
+        Integer size
+    ) {
+        UUID ownedPresetId = normalizeOwnedPresetId(presetId);
+        Pageable pageable = PageRequest.of(
+            normalizeLedgerPage(page),
+            normalizeLedgerPageSize(size),
+            Sort.by(Sort.Direction.DESC, "startedAt")
+        );
+        String owner = requireCurrentOwner();
+        Page<RmReportPresetExecution> result = executionRepository.findAll(
+            executionLedgerSpec(owner, ownedPresetId, status, triggerType, from, to),
+            pageable
+        );
+        return result.map(this::toExecutionDto);
+    }
+
+    @Transactional(readOnly = true)
+    public String exportExecutionLedgerCsv(
+        UUID presetId,
+        ExecutionStatus status,
+        TriggerType triggerType,
+        LocalDateTime from,
+        LocalDateTime to,
+        Integer limit
+    ) {
+        UUID ownedPresetId = normalizeOwnedPresetId(presetId);
+        String owner = requireCurrentOwner();
+        List<RmReportPresetExecution> executions = executionRepository.findAll(
+            executionLedgerSpec(owner, ownedPresetId, status, triggerType, from, to),
+            PageRequest.of(0, normalizeLedgerExportLimit(limit), Sort.by(Sort.Direction.DESC, "startedAt"))
+        ).getContent();
+
+        auditService.logEvent(
+            "RM_REPORT_PRESET_EXECUTION_LEDGER_EXPORTED",
+            ownedPresetId,
+            "rm-report-preset-execution-ledger",
+            owner,
+            String.format(
+                "Exported %d preset delivery executions (presetId=%s, status=%s, triggerType=%s, from=%s, to=%s)",
+                executions.size(),
+                ownedPresetId,
+                status,
+                triggerType,
+                from,
+                to
+            )
+        );
+
+        return buildExecutionLedgerCsv(executions);
     }
 
     public PresetExecutionDto deliverNow(UUID presetId) {
@@ -365,6 +430,8 @@ public class RmReportPresetDeliveryService {
         return new PresetExecutionDto(
             execution.getId(),
             execution.getPreset().getId(),
+            execution.getPreset().getName(),
+            execution.getPreset().getKind(),
             execution.getTriggerType(),
             execution.getStatus(),
             execution.getFilename(),
@@ -382,6 +449,69 @@ public class RmReportPresetDeliveryService {
             return 20;
         }
         return Math.max(1, Math.min(limit, 100));
+    }
+
+    private int normalizeLedgerPage(Integer page) {
+        return page == null ? 0 : Math.max(0, page);
+    }
+
+    private int normalizeLedgerPageSize(Integer size) {
+        if (size == null) {
+            return 20;
+        }
+        return Math.max(1, Math.min(size, 100));
+    }
+
+    private int normalizeLedgerExportLimit(Integer limit) {
+        if (limit == null) {
+            return 200;
+        }
+        return Math.max(1, Math.min(limit, 1000));
+    }
+
+    private UUID normalizeOwnedPresetId(UUID presetId) {
+        if (presetId == null) {
+            return null;
+        }
+        return presetService.getOwned(presetId).getId();
+    }
+
+    private String requireCurrentOwner() {
+        String owner = securityService.getCurrentUser();
+        if (owner == null || owner.isBlank()) {
+            throw new SecurityException("No authenticated user for preset execution ledger operation");
+        }
+        return owner;
+    }
+
+    private Specification<RmReportPresetExecution> executionLedgerSpec(
+        String owner,
+        UUID presetId,
+        ExecutionStatus status,
+        TriggerType triggerType,
+        LocalDateTime from,
+        LocalDateTime to
+    ) {
+        return (root, query, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.get("owner"), owner));
+            if (presetId != null) {
+                predicates.add(cb.equal(root.get("preset").get("id"), presetId));
+            }
+            if (status != null) {
+                predicates.add(cb.equal(root.get("status"), status));
+            }
+            if (triggerType != null) {
+                predicates.add(cb.equal(root.get("triggerType"), triggerType));
+            }
+            if (from != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("startedAt"), from));
+            }
+            if (to != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get("startedAt"), to));
+            }
+            return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+        };
     }
 
     private LocalDateTime requirePresetDateTimeParam(RmReportPreset preset, String key) {
@@ -542,6 +672,28 @@ public class RmReportPresetDeliveryService {
         return sb.toString();
     }
 
+    private String buildExecutionLedgerCsv(List<RmReportPresetExecution> executions) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("executionId,presetId,presetName,presetKind,triggerType,status,filename,targetFolderId,documentId,message,startedAt,finishedAt,durationMs\n");
+        for (RmReportPresetExecution execution : executions) {
+            sb.append(csvEscape(execution.getId())).append(',')
+                .append(csvEscape(execution.getPreset().getId())).append(',')
+                .append(csvEscape(execution.getPreset().getName())).append(',')
+                .append(csvEscape(execution.getPreset().getKind())).append(',')
+                .append(csvEscape(execution.getTriggerType())).append(',')
+                .append(csvEscape(execution.getStatus())).append(',')
+                .append(csvEscape(execution.getFilename())).append(',')
+                .append(csvEscape(execution.getTargetFolderId())).append(',')
+                .append(csvEscape(execution.getDocumentId())).append(',')
+                .append(csvEscape(execution.getMessage())).append(',')
+                .append(csvEscape(execution.getStartedAt())).append(',')
+                .append(csvEscape(execution.getFinishedAt())).append(',')
+                .append(csvEscape(execution.getDurationMs()))
+                .append('\n');
+        }
+        return sb.toString();
+    }
+
     private String joinReportEventTypes(List<RecordsManagementService.ActivityFamilyReportEventTypeDto> eventTypes) {
         return eventTypes.stream()
             .map(item -> item.eventType() + " (" + item.count() + ")")
@@ -597,6 +749,8 @@ public class RmReportPresetDeliveryService {
     public record PresetExecutionDto(
         UUID id,
         UUID presetId,
+        String presetName,
+        RmReportPreset.Kind presetKind,
         TriggerType triggerType,
         ExecutionStatus status,
         String filename,

@@ -112,6 +112,22 @@ The accepted `P5` runtime slices on top of this matrix are:
   - RM report preset scheduled delivery mocked E2E
   - adds one browser-level mocked coverage slice across the shipped `PR-95/96/97/98/99` chain
   - no new backend endpoint or migration
+- `PR-101`
+  - RM report preset scheduled delivery full-stack smoke
+  - adds one non-mocked browser/admin proof across the shipped `PR-95/96/97/98/99/100` chain against the current-code frontend/backend stack
+  - no new backend endpoint or migration
+- `PR-102`
+  - RM report preset execution ledger UI polish
+  - adds local execution filters, browse navigation to delivered evidence, and stronger schedule summary on top of the shipped scheduled-delivery dialog
+  - no new backend endpoint or migration
+- `PR-103`
+  - RM report preset cross-preset execution ledger/filter/export backend foundation
+  - adds owner-scoped ledger JSON and CSV routes, additive preset metadata on execution rows, and specification-based filtering
+  - no new table or migration; frontend page-level ledger consumption remains deferred
+- `PR-104`
+  - RM report preset page-level execution ledger consumption
+  - adds page-level preset delivery ledger filters, export reuse, and browse/apply actions on top of `PR-103`
+  - no new backend endpoint or migration
 
 These are still valid, but they should wait until policy semantics and operator demand are explicit.
 

@@ -5,6 +5,7 @@ import com.ecm.core.entity.RmReportPresetExecution;
 import com.ecm.core.pipeline.PipelineResult;
 import com.ecm.core.repository.RmReportPresetExecutionRepository;
 import com.ecm.core.repository.RmReportPresetRepository;
+import org.springframework.data.domain.PageImpl;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -53,6 +54,9 @@ class RmReportPresetDeliveryServiceTest {
     @Mock
     private AuditService auditService;
 
+    @Mock
+    private SecurityService securityService;
+
     @Test
     @DisplayName("updateSchedule enables a schedulable preset and computes next run")
     void updateScheduleEnablesSchedulablePreset() {
@@ -71,7 +75,8 @@ class RmReportPresetDeliveryServiceTest {
             executionRepository,
             recordsManagementService,
             uploadService,
-            auditService
+            auditService,
+            securityService
         );
 
         RmReportPresetDeliveryService.ScheduleStatusDto result = service.updateSchedule(
@@ -103,7 +108,8 @@ class RmReportPresetDeliveryServiceTest {
             executionRepository,
             recordsManagementService,
             uploadService,
-            auditService
+            auditService,
+            securityService
         );
 
         IllegalArgumentException ex = assertThrows(
@@ -176,7 +182,8 @@ class RmReportPresetDeliveryServiceTest {
             executionRepository,
             recordsManagementService,
             uploadService,
-            auditService
+            auditService,
+            securityService
         );
 
         RmReportPresetDeliveryService.PresetExecutionDto result = service.deliverNow(preset.getId());
@@ -250,7 +257,8 @@ class RmReportPresetDeliveryServiceTest {
             executionRepository,
             recordsManagementService,
             uploadService,
-            auditService
+            auditService,
+            securityService
         );
 
         service.runScheduledDeliveries();
@@ -258,6 +266,94 @@ class RmReportPresetDeliveryServiceTest {
         assertNotNull(preset.getLastRunAt());
         assertNotNull(preset.getNextRunAt());
         assertTrue(preset.getNextRunAt().isAfter(LocalDateTime.now().minusMinutes(1)));
+    }
+
+    @Test
+    @DisplayName("listExecutionLedger filters by owner and optional preset/status/trigger/time window")
+    void listExecutionLedgerFiltersByOwnerAndCriteria() {
+        UUID presetId = UUID.randomUUID();
+        RmReportPreset ownedPreset = preset(RmReportPreset.Kind.ACTIVITY_FAMILY_REPORT, Map.of());
+        ownedPreset.setId(presetId);
+        when(securityService.getCurrentUser()).thenReturn("admin");
+        when(presetService.getOwned(presetId)).thenReturn(ownedPreset);
+        when(executionRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class), any(org.springframework.data.domain.Pageable.class)))
+            .thenReturn(new PageImpl<>(List.of(
+                execution(
+                    presetId,
+                    "Weekly Family Report",
+                    RmReportPreset.Kind.ACTIVITY_FAMILY_REPORT,
+                    RmReportPresetExecution.TriggerType.SCHEDULED,
+                    RmReportPresetExecution.ExecutionStatus.SUCCESS
+                )
+            )));
+
+        RmReportPresetDeliveryService service = new RmReportPresetDeliveryService(
+            presetService,
+            presetRepository,
+            executionRepository,
+            recordsManagementService,
+            uploadService,
+            auditService,
+            securityService
+        );
+
+        org.springframework.data.domain.Page<RmReportPresetDeliveryService.PresetExecutionDto> page = service.listExecutionLedger(
+            presetId,
+            RmReportPresetExecution.ExecutionStatus.SUCCESS,
+            RmReportPresetExecution.TriggerType.SCHEDULED,
+            LocalDateTime.of(2026, 4, 21, 0, 0),
+            LocalDateTime.of(2026, 4, 21, 23, 59, 59),
+            0,
+            10
+        );
+
+        assertEquals(1, page.getTotalElements());
+        assertEquals("Weekly Family Report", page.getContent().get(0).presetName());
+        assertEquals(RmReportPreset.Kind.ACTIVITY_FAMILY_REPORT, page.getContent().get(0).presetKind());
+    }
+
+    @Test
+    @DisplayName("exportExecutionLedgerCsv writes preset metadata and execution fields")
+    void exportExecutionLedgerCsvWritesPresetMetadataAndExecutionFields() {
+        UUID presetId = UUID.randomUUID();
+        RmReportPreset ownedPreset = preset(RmReportPreset.Kind.ACTIVITY_FAMILY_REPORT, Map.of());
+        ownedPreset.setId(presetId);
+        when(securityService.getCurrentUser()).thenReturn("admin");
+        when(presetService.getOwned(presetId)).thenReturn(ownedPreset);
+        when(executionRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class), any(org.springframework.data.domain.Pageable.class)))
+            .thenReturn(new PageImpl<>(List.of(
+                execution(
+                    presetId,
+                    "Weekly Family Report",
+                    RmReportPreset.Kind.ACTIVITY_FAMILY_REPORT,
+                    RmReportPresetExecution.TriggerType.MANUAL,
+                    RmReportPresetExecution.ExecutionStatus.FAILED
+                )
+            )));
+
+        RmReportPresetDeliveryService service = new RmReportPresetDeliveryService(
+            presetService,
+            presetRepository,
+            executionRepository,
+            recordsManagementService,
+            uploadService,
+            auditService,
+            securityService
+        );
+
+        String csv = service.exportExecutionLedgerCsv(
+            presetId,
+            RmReportPresetExecution.ExecutionStatus.FAILED,
+            RmReportPresetExecution.TriggerType.MANUAL,
+            null,
+            null,
+            50
+        );
+
+        assertTrue(csv.contains("executionId,presetId,presetName,presetKind,triggerType,status"));
+        assertTrue(csv.contains("Weekly Family Report"));
+        assertTrue(csv.contains("ACTIVITY_FAMILY_REPORT"));
+        assertTrue(csv.contains("FAILED"));
     }
 
     private static RmReportPreset preset(RmReportPreset.Kind kind, Map<String, Object> params) {
@@ -269,5 +365,36 @@ class RmReportPresetDeliveryServiceTest {
             .build();
         preset.setId(UUID.randomUUID());
         return preset;
+    }
+
+    private static RmReportPresetExecution execution(
+        UUID presetId,
+        String presetName,
+        RmReportPreset.Kind presetKind,
+        RmReportPresetExecution.TriggerType triggerType,
+        RmReportPresetExecution.ExecutionStatus status
+    ) {
+        RmReportPreset preset = RmReportPreset.builder()
+            .owner("admin")
+            .name(presetName)
+            .kind(presetKind)
+            .params(Map.of())
+            .build();
+        preset.setId(presetId);
+
+        RmReportPresetExecution execution = new RmReportPresetExecution();
+        execution.setId(UUID.randomUUID());
+        execution.setPreset(preset);
+        execution.setOwner("admin");
+        execution.setTriggerType(triggerType);
+        execution.setStatus(status);
+        execution.setFilename("weekly-family-report.csv");
+        execution.setTargetFolderId(UUID.randomUUID());
+        execution.setDocumentId(UUID.randomUUID());
+        execution.setMessage(status == RmReportPresetExecution.ExecutionStatus.SUCCESS ? "Delivered successfully" : "Delivery failed");
+        execution.setStartedAt(LocalDateTime.of(2026, 4, 21, 16, 0));
+        execution.setFinishedAt(LocalDateTime.of(2026, 4, 21, 16, 1));
+        execution.setDurationMs(1000L);
+        return execution;
     }
 }

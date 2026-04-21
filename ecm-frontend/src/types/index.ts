@@ -183,6 +183,8 @@ export type RmReportPresetExecutionStatus = 'SUCCESS' | 'FAILED';
 export interface RmReportPresetExecution {
   id: string;
   presetId: string;
+  presetName?: string | null;
+  presetKind?: RmReportPresetKind | null;
   triggerType: RmReportPresetExecutionTrigger;
   status: RmReportPresetExecutionStatus;
   filename?: string | null;

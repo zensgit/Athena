@@ -29,8 +29,14 @@ const makePreset = (overrides: Partial<RmReportPreset> = {}): RmReportPreset => 
 });
 
 describe('ScheduleReportPresetDialog', () => {
+  const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
+
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  afterAll(() => {
+    openSpy.mockRestore();
   });
 
   it('loads and displays existing schedule status when opened', async () => {
@@ -252,5 +258,85 @@ describe('ScheduleReportPresetDialog', () => {
       await screen.findByText('Weekly-Family-Report-20260421.csv')
     ).not.toBeNull();
     expect(await screen.findByText(/Last:/)).not.toBeNull();
+  });
+
+  it('filters execution history and opens delivered browse targets', async () => {
+    mockedService.getReportPresetSchedule.mockResolvedValueOnce({
+      presetId: 'preset-1',
+      enabled: true,
+      cronExpression: '0 9 * * MON-FRI',
+      timezone: 'UTC',
+      deliveryFolderId: 'folder-1',
+      nextRunAt: '2026-04-22T09:00:00',
+      lastRunAt: '2026-04-21T09:00:01',
+      lastExecution: {
+        id: 'exec-2',
+        presetId: 'preset-1',
+        triggerType: 'SCHEDULED',
+        status: 'FAILED',
+        filename: null,
+        targetFolderId: 'folder-1',
+        documentId: null,
+        message: 'Folder permission denied',
+        startedAt: '2026-04-21T09:00:00',
+        finishedAt: '2026-04-21T09:00:01',
+        durationMs: 1000,
+      },
+    });
+    mockedService.listReportPresetExecutions.mockResolvedValueOnce([
+      {
+        id: 'exec-1',
+        presetId: 'preset-1',
+        triggerType: 'MANUAL',
+        status: 'SUCCESS',
+        filename: 'weekly-family-report.csv',
+        targetFolderId: 'folder-1',
+        documentId: 'doc-1',
+        message: 'Delivered successfully',
+        startedAt: '2026-04-21T08:00:00',
+        finishedAt: '2026-04-21T08:00:01',
+        durationMs: 1000,
+      },
+      {
+        id: 'exec-2',
+        presetId: 'preset-1',
+        triggerType: 'SCHEDULED',
+        status: 'FAILED',
+        filename: null,
+        targetFolderId: 'folder-1',
+        documentId: null,
+        message: 'Folder permission denied',
+        startedAt: '2026-04-21T09:00:00',
+        finishedAt: '2026-04-21T09:00:01',
+        durationMs: 1000,
+      },
+    ]);
+
+    render(
+      <ScheduleReportPresetDialog open preset={makePreset()} onClose={jest.fn()} />
+    );
+
+    expect(await screen.findByText('Showing 2 of 2 deliveries.')).not.toBeNull();
+    expect(screen.getByText('weekly-family-report.csv')).not.toBeNull();
+    expect(screen.getByText('Folder permission denied')).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Failed' }));
+
+    expect(await screen.findByText('Showing 1 of 2 deliveries.')).not.toBeNull();
+    expect(screen.queryByText('weekly-family-report.csv')).toBeNull();
+    expect(screen.getByText('Folder permission denied')).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Scheduled' }));
+    expect(await screen.findByText('Showing 1 of 2 deliveries.')).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'All results' }));
+    fireEvent.click(screen.getByRole('button', { name: 'All triggers' }));
+
+    const openFileButton = await screen.findByRole('button', { name: 'Open delivered file' });
+    fireEvent.click(openFileButton);
+    expect(openSpy).toHaveBeenCalledWith('/browse/doc-1', '_blank', 'noopener,noreferrer');
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Open target folder' })[0]);
+    expect(openSpy).toHaveBeenCalledWith('/browse/folder-1', '_blank', 'noopener,noreferrer');
   });
 });
