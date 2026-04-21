@@ -34,6 +34,23 @@ import {
   UndeclareRecordRequest,
 } from 'types';
 
+export type RmDeliverableReportPresetKind = Exclude<
+  RmReportPresetKind,
+  'ACTIVITY_FAMILY_HIGHLIGHTS' | 'ACTIVITY_FAMILY_MIX'
+>;
+
+const DELIVERABLE_REPORT_PRESET_KINDS = new Set<RmReportPresetKind>([
+  'ACTIVITY_FAMILY_REPORT',
+  'ACTIVITY_EVENT_TYPE_REPORT',
+  'ACTIVITY_CONTRIBUTOR_REPORT',
+  'ACTIVITY_CONTRIBUTOR_FAMILY_REPORT',
+  'ACTIVITY_CONTRIBUTOR_EVENT_TYPE_REPORT',
+]);
+
+export const supportsReportPresetCsvDelivery = (
+  kind: RmReportPresetKind
+): kind is RmDeliverableReportPresetKind => DELIVERABLE_REPORT_PRESET_KINDS.has(kind);
+
 export interface RecordAuditFilters {
   family?: string;
   eventType?: string;
@@ -87,12 +104,19 @@ export interface UpdateReportPresetRequest {
   params?: Record<string, unknown>;
 }
 
-export interface UpdateReportPresetScheduleRequest {
-  enabled: boolean;
-  cronExpression?: string | null;
-  timezone?: string | null;
-  deliveryFolderId?: string | null;
-}
+export type UpdateReportPresetScheduleRequest =
+  | {
+      enabled: false;
+      cronExpression?: string | null;
+      timezone?: string | null;
+      deliveryFolderId?: string | null;
+    }
+  | {
+      enabled: true;
+      cronExpression: string;
+      timezone?: string | null;
+      deliveryFolderId: string;
+    };
 
 class RecordsManagementService {
   async listRecords(): Promise<RecordDeclaration[]> {

@@ -88,6 +88,10 @@ The accepted `P5` runtime slices on top of this matrix are:
   - RM report preset execute endpoint foundation
   - expands owned preset params and dispatches to existing RM report methods without introducing a second report engine
   - no new table or migration; scheduled delivery remains deferred
+- `PR-93`
+  - RM report preset scheduled delivery foundation
+  - adds schedule metadata, CSV delivery upload, and execution ledger on top of the preset/execute path
+  - backend-only; no frontend schedule UI yet
 
 These are still valid, but they should wait until policy semantics and operator demand are explicit.
 

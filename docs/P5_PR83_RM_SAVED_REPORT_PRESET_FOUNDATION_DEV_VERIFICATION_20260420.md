@@ -168,7 +168,10 @@ GET http://localhost:7700/api/v1/records/report-presets (no auth) → 401
 3. **Preset execution endpoint**
    - `PR-92` later delivered `POST /api/v1/records/report-presets/{id}/execute`
    - execution stays thin: it expands owned preset params and invokes the matching existing RM report route/CSV builder
-4. **Scheduled delivery** — email/download-bundle channels per the P5 intake matrix's "RM delivery workflows" direction
+4. **Scheduled delivery**
+   - `PR-93` later delivered the backend scheduled-delivery foundation:
+     schedule metadata, manual deliver-now, CSV upload to a configured folder, and execution ledger
+   - email/download-bundle channels remain deferred beyond that backend foundation
 
 Each is a well-bounded additive slice with no shared state beyond the `rm_report_presets` table.
 
