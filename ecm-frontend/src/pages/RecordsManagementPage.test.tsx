@@ -14,6 +14,23 @@ jest.mock('react-toastify', () => ({
   },
 }));
 
+jest.mock('components/browser/FolderTree', () => ({
+  __esModule: true,
+  default: ({ onNodeSelect, selectedNodeId }: any) => (
+    <div data-testid="folder-tree-mock">
+      <span data-testid="folder-tree-selected">{selectedNodeId || ''}</span>
+      <button
+        type="button"
+        onClick={() =>
+          onNodeSelect?.({ id: 'folder-1', name: 'Compliance Reports', nodeType: 'FOLDER' })
+        }
+      >
+        Pick folder-1
+      </button>
+    </div>
+  ),
+}));
+
 jest.mock('services/recordsManagementService', () => ({
   __esModule: true,
   supportsReportPresetCsvDelivery: jest.requireActual(
@@ -925,9 +942,7 @@ describe('RecordsManagementPage', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'Cron expression' }), {
       target: { value: ' 0 9 * * MON-FRI ' },
     });
-    fireEvent.change(screen.getByRole('textbox', { name: 'Delivery folder ID' }), {
-      target: { value: ' folder-1 ' },
-    });
+    fireEvent.click(screen.getByRole('button', { name: /pick folder-1/i }));
     fireEvent.click(screen.getByRole('button', { name: 'Save schedule' }));
 
     await waitFor(() => expect(mockedRecordsManagementService.updateReportPresetSchedule).toHaveBeenCalledWith(

@@ -17,6 +17,29 @@ jest.mock('services/recordsManagementService', () => ({
   ).supportsReportPresetCsvDelivery,
 }));
 
+jest.mock('../browser/FolderTree', () => ({
+  __esModule: true,
+  default: ({ onNodeSelect, selectedNodeId }: any) => (
+    <div data-testid="folder-tree-mock">
+      <span data-testid="folder-tree-selected">{selectedNodeId || ''}</span>
+      <button
+        type="button"
+        onClick={() =>
+          onNodeSelect?.({ id: 'folder-42', name: 'Compliance Reports', nodeType: 'FOLDER' })
+        }
+      >
+        Pick folder-42
+      </button>
+      <button
+        type="button"
+        onClick={() => onNodeSelect?.({ id: 'doc-9', name: 'not-a-folder', nodeType: 'DOCUMENT' })}
+      >
+        Pick non-folder
+      </button>
+    </div>
+  ),
+}));
+
 const mockedService = recordsManagementService as jest.Mocked<typeof recordsManagementService>;
 
 const makePreset = (overrides: Partial<RmReportPreset> = {}): RmReportPreset => ({
@@ -61,7 +84,40 @@ describe('ScheduleReportPresetDialog', () => {
     });
     expect(mockedService.listReportPresetExecutions).toHaveBeenCalledWith('preset-1', 5);
     expect(await screen.findByDisplayValue('0 9 * * MON-FRI')).not.toBeNull();
-    expect(screen.getByDisplayValue('folder-1')).not.toBeNull();
+    expect(screen.getByTestId('folder-tree-selected').textContent).toBe('folder-1');
+  });
+
+  it('selects a folder via the folder tree and ignores non-folder nodes', async () => {
+    mockedService.getReportPresetSchedule.mockResolvedValueOnce({
+      presetId: 'preset-1',
+      enabled: false,
+      cronExpression: null,
+      timezone: 'UTC',
+      deliveryFolderId: null,
+      nextRunAt: null,
+      lastRunAt: null,
+      lastExecution: null,
+    });
+    mockedService.listReportPresetExecutions.mockResolvedValueOnce([]);
+
+    render(
+      <ScheduleReportPresetDialog open preset={makePreset()} onClose={jest.fn()} />
+    );
+
+    await waitFor(() =>
+      expect(
+        (screen.getByRole('checkbox', {
+          name: /enable scheduled delivery/i,
+        }) as HTMLInputElement).disabled
+      ).toBe(false)
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /pick non-folder/i }));
+    expect(screen.getByTestId('folder-tree-selected').textContent).toBe('');
+
+    fireEvent.click(screen.getByRole('button', { name: /pick folder-42/i }));
+    expect(screen.getByTestId('folder-tree-selected').textContent).toBe('folder-42');
+    expect(screen.getByText('Selected: Compliance Reports')).not.toBeNull();
   });
 
   it('rejects saving enabled schedule without cron expression', async () => {

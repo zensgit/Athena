@@ -22,6 +22,7 @@ import recordsManagementService, {
   supportsReportPresetCsvDelivery,
   UpdateReportPresetScheduleRequest,
 } from '../../services/recordsManagementService';
+import FolderTree from '../browser/FolderTree';
 import {
   RmReportPreset,
   RmReportPresetExecution,
@@ -62,6 +63,7 @@ const ScheduleReportPresetDialog: React.FC<ScheduleReportPresetDialogProps> = ({
   const [cronExpression, setCronExpression] = useState('');
   const [timezone, setTimezone] = useState('UTC');
   const [deliveryFolderId, setDeliveryFolderId] = useState('');
+  const [deliveryFolderName, setDeliveryFolderName] = useState('');
   const [cronError, setCronError] = useState<string | null>(null);
   const [folderError, setFolderError] = useState<string | null>(null);
   const [executionStatusFilter, setExecutionStatusFilter] = useState<ExecutionStatusFilter>('ALL');
@@ -96,6 +98,7 @@ const ScheduleReportPresetDialog: React.FC<ScheduleReportPresetDialogProps> = ({
       setCronExpression(scheduleStatus.cronExpression ?? '');
       setTimezone(scheduleStatus.timezone ?? 'UTC');
       setDeliveryFolderId(scheduleStatus.deliveryFolderId ?? '');
+      setDeliveryFolderName('');
       setCronError(null);
       setFolderError(null);
       return {
@@ -251,20 +254,48 @@ const ScheduleReportPresetDialog: React.FC<ScheduleReportPresetDialogProps> = ({
               sx={{ mb: 2 }}
             />
 
-            <TextField
-              fullWidth
-              label="Delivery folder ID"
-              value={deliveryFolderId}
-              onChange={(event) => {
-                setDeliveryFolderId(event.target.value);
-                if (folderError) setFolderError(null);
-              }}
-              disabled={busy}
-              required={enabled}
-              error={Boolean(folderError)}
-              helperText={folderError || 'UUID of the folder that should receive the rendered CSV'}
-              sx={{ mb: 2 }}
-            />
+            <Box sx={{ mb: 2 }}>
+              <Typography
+                variant="subtitle2"
+                color={folderError ? 'error' : 'text.primary'}
+                sx={{ mb: 0.5 }}
+              >
+                Delivery folder{enabled ? ' *' : ''}
+              </Typography>
+              <Box
+                sx={{
+                  border: 1,
+                  borderColor: folderError ? 'error.main' : 'divider',
+                  borderRadius: 1,
+                  p: 1,
+                  height: 260,
+                  overflow: 'auto',
+                }}
+              >
+                <FolderTree
+                  rootNodeId="root"
+                  selectedNodeId={deliveryFolderId || undefined}
+                  variant="picker"
+                  onNodeSelect={(node) => {
+                    if (busy) return;
+                    if (node.nodeType !== 'FOLDER') return;
+                    setDeliveryFolderId(node.id);
+                    setDeliveryFolderName(node.name);
+                    if (folderError) setFolderError(null);
+                  }}
+                />
+              </Box>
+              <Typography
+                variant="caption"
+                color={folderError ? 'error' : 'text.secondary'}
+                sx={{ display: 'block', mt: 0.5 }}
+              >
+                {folderError
+                  || (deliveryFolderId
+                    ? `Selected: ${deliveryFolderName || deliveryFolderId}`
+                    : 'Select the folder that should receive the rendered CSV')}
+              </Typography>
+            </Box>
 
             {status && (
               <Box sx={{ mb: 2 }}>
