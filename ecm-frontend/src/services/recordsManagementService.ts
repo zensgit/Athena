@@ -25,7 +25,9 @@ import {
   RenameFilePlanRequest,
   RenameRecordCategoryRequest,
   RmReportPreset,
+  RmReportPresetExecution,
   RmReportPresetKind,
+  RmReportPresetScheduleStatus,
   RecordsSummary,
   UpdateFilePlanRequest,
   UpdateRecordCategoryRequest,
@@ -85,6 +87,13 @@ export interface UpdateReportPresetRequest {
   params?: Record<string, unknown>;
 }
 
+export interface UpdateReportPresetScheduleRequest {
+  enabled: boolean;
+  cronExpression?: string | null;
+  timezone?: string | null;
+  deliveryFolderId?: string | null;
+}
+
 class RecordsManagementService {
   async listRecords(): Promise<RecordDeclaration[]> {
     return api.get<RecordDeclaration[]>('/records');
@@ -121,6 +130,32 @@ class RecordsManagementService {
 
   async deleteReportPreset(id: string): Promise<void> {
     return api.delete<void>(`/records/report-presets/${id}`);
+  }
+
+  async getReportPresetSchedule(id: string): Promise<RmReportPresetScheduleStatus> {
+    return api.get<RmReportPresetScheduleStatus>(`/records/report-presets/${id}/schedule`);
+  }
+
+  async updateReportPresetSchedule(
+    id: string,
+    request: UpdateReportPresetScheduleRequest
+  ): Promise<RmReportPresetScheduleStatus> {
+    return api.put<RmReportPresetScheduleStatus>(`/records/report-presets/${id}/schedule`, {
+      enabled: request.enabled,
+      cronExpression: request.cronExpression ?? null,
+      timezone: request.timezone ?? null,
+      deliveryFolderId: request.deliveryFolderId ?? null,
+    });
+  }
+
+  async deliverReportPresetNow(id: string): Promise<RmReportPresetExecution> {
+    return api.post<RmReportPresetExecution>(`/records/report-presets/${id}/deliver`, {});
+  }
+
+  async listReportPresetExecutions(id: string, limit?: number): Promise<RmReportPresetExecution[]> {
+    return api.get<RmReportPresetExecution[]>(`/records/report-presets/${id}/executions`, {
+      params: limit != null ? { limit } : undefined,
+    });
   }
 
   async getOperationsTelemetry(limit = 20): Promise<RecordsOperationsTelemetry> {

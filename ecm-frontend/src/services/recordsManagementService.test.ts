@@ -161,6 +161,99 @@ describe('recordsManagementService', () => {
     expect(mockedApi.delete).toHaveBeenCalledWith('/records/report-presets/preset-1');
   });
 
+  it('fetches an RM report preset schedule status', async () => {
+    mockedApi.get.mockResolvedValueOnce({
+      presetId: 'preset-1',
+      enabled: false,
+      cronExpression: null,
+      timezone: 'UTC',
+      deliveryFolderId: null,
+      nextRunAt: null,
+      lastRunAt: null,
+      lastExecution: null,
+    } as any);
+
+    await recordsManagementService.getReportPresetSchedule('preset-1');
+
+    expect(mockedApi.get).toHaveBeenCalledWith('/records/report-presets/preset-1/schedule');
+  });
+
+  it('updates an RM report preset schedule with normalized payload', async () => {
+    mockedApi.put.mockResolvedValueOnce({
+      presetId: 'preset-1',
+      enabled: true,
+      cronExpression: '0 9 * * MON-FRI',
+      timezone: 'America/New_York',
+      deliveryFolderId: 'folder-1',
+      nextRunAt: '2026-04-22T13:00:00',
+      lastRunAt: null,
+      lastExecution: null,
+    } as any);
+
+    await recordsManagementService.updateReportPresetSchedule('preset-1', {
+      enabled: true,
+      cronExpression: '0 9 * * MON-FRI',
+      timezone: 'America/New_York',
+      deliveryFolderId: 'folder-1',
+    });
+
+    expect(mockedApi.put).toHaveBeenCalledWith('/records/report-presets/preset-1/schedule', {
+      enabled: true,
+      cronExpression: '0 9 * * MON-FRI',
+      timezone: 'America/New_York',
+      deliveryFolderId: 'folder-1',
+    });
+  });
+
+  it('disables an RM report preset schedule without requiring cron/folder', async () => {
+    mockedApi.put.mockResolvedValueOnce({ presetId: 'preset-1', enabled: false } as any);
+
+    await recordsManagementService.updateReportPresetSchedule('preset-1', { enabled: false });
+
+    expect(mockedApi.put).toHaveBeenCalledWith('/records/report-presets/preset-1/schedule', {
+      enabled: false,
+      cronExpression: null,
+      timezone: null,
+      deliveryFolderId: null,
+    });
+  });
+
+  it('delivers an RM report preset immediately', async () => {
+    mockedApi.post.mockResolvedValueOnce({
+      id: 'exec-1',
+      presetId: 'preset-1',
+      triggerType: 'MANUAL',
+      status: 'SUCCESS',
+      startedAt: '2026-04-21T01:00:00',
+      finishedAt: '2026-04-21T01:00:01',
+      durationMs: 1000,
+    } as any);
+
+    await recordsManagementService.deliverReportPresetNow('preset-1');
+
+    expect(mockedApi.post).toHaveBeenCalledWith('/records/report-presets/preset-1/deliver', {});
+  });
+
+  it('lists RM report preset executions with an optional limit', async () => {
+    mockedApi.get.mockResolvedValueOnce([] as any);
+
+    await recordsManagementService.listReportPresetExecutions('preset-1', 25);
+
+    expect(mockedApi.get).toHaveBeenCalledWith('/records/report-presets/preset-1/executions', {
+      params: { limit: 25 },
+    });
+  });
+
+  it('omits the limit param when not specified', async () => {
+    mockedApi.get.mockResolvedValueOnce([] as any);
+
+    await recordsManagementService.listReportPresetExecutions('preset-1');
+
+    expect(mockedApi.get).toHaveBeenCalledWith('/records/report-presets/preset-1/executions', {
+      params: undefined,
+    });
+  });
+
   it('loads operations telemetry with a limit', async () => {
     mockedApi.get.mockResolvedValueOnce({
       governedImportJobCount: 3,

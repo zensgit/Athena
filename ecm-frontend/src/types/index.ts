@@ -177,6 +177,34 @@ export interface RmReportPreset {
   lastModifiedDate?: string | null;
 }
 
+export type RmReportPresetExecutionTrigger = 'MANUAL' | 'SCHEDULED';
+export type RmReportPresetExecutionStatus = 'SUCCESS' | 'FAILED';
+
+export interface RmReportPresetExecution {
+  id: string;
+  presetId: string;
+  triggerType: RmReportPresetExecutionTrigger;
+  status: RmReportPresetExecutionStatus;
+  filename?: string | null;
+  targetFolderId?: string | null;
+  documentId?: string | null;
+  message?: string | null;
+  startedAt: string;
+  finishedAt: string;
+  durationMs: number;
+}
+
+export interface RmReportPresetScheduleStatus {
+  presetId: string;
+  enabled: boolean;
+  cronExpression?: string | null;
+  timezone?: string | null;
+  deliveryFolderId?: string | null;
+  nextRunAt?: string | null;
+  lastRunAt?: string | null;
+  lastExecution?: RmReportPresetExecution | null;
+}
+
 export interface RecordAuditEntry {
   auditLogId: string;
   eventType: string;
