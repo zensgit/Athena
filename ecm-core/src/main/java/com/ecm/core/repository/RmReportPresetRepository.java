@@ -2,6 +2,9 @@ package com.ecm.core.repository;
 
 import com.ecm.core.entity.RmReportPreset;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -20,6 +23,22 @@ public interface RmReportPresetRepository extends JpaRepository<RmReportPreset, 
 
     List<RmReportPreset> findByScheduleEnabledTrueAndDeletedFalseAndNextRunAtLessThanEqualOrderByNextRunAtAsc(
         LocalDateTime now
+    );
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+        update RmReportPreset p
+           set p.nextRunAt = :nextRunAt,
+               p.entityVersion = p.entityVersion + 1
+         where p.id = :presetId
+           and p.deleted = false
+           and p.scheduleEnabled = true
+           and p.nextRunAt = :expectedNextRunAt
+    """)
+    int claimScheduledRun(
+        @Param("presetId") UUID presetId,
+        @Param("expectedNextRunAt") LocalDateTime expectedNextRunAt,
+        @Param("nextRunAt") LocalDateTime nextRunAt
     );
 
     long countByOwnerAndScheduleEnabledTrueAndDeletedFalse(String owner);

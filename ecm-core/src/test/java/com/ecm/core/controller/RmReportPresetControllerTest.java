@@ -1,5 +1,6 @@
 package com.ecm.core.controller;
 
+import com.ecm.core.entity.RmReportPreset;
 import com.ecm.core.service.RmReportPresetDeliveryService;
 import com.ecm.core.service.RmReportPresetService;
 import org.springframework.data.domain.PageImpl;
@@ -41,6 +42,33 @@ class RmReportPresetControllerTest {
         mockMvc = MockMvcBuilders.standaloneSetup(new RmReportPresetController(presetService, deliveryService))
             .setControllerAdvice(new RestExceptionHandler())
             .build();
+    }
+
+    @Test
+    @DisplayName("listMine returns additive schedule metadata")
+    void listMineReturnsScheduleMetadata() throws Exception {
+        UUID presetId = UUID.randomUUID();
+        UUID folderId = UUID.randomUUID();
+        RmReportPreset preset = RmReportPreset.builder()
+            .owner("admin")
+            .name("Weekly Family Report")
+            .kind(RmReportPreset.Kind.ACTIVITY_FAMILY_REPORT)
+            .params(java.util.Map.of("from", "2026-04-01T00:00:00", "to", "2026-04-21T23:59:59"))
+            .scheduleEnabled(true)
+            .deliveryFolderId(folderId)
+            .nextRunAt(LocalDateTime.of(2026, 4, 22, 9, 0))
+            .lastRunAt(LocalDateTime.of(2026, 4, 21, 9, 0))
+            .build();
+        preset.setId(presetId);
+        Mockito.when(presetService.listForCurrentUser()).thenReturn(List.of(preset));
+
+        mockMvc.perform(get("/api/v1/records/report-presets"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].id").value(presetId.toString()))
+            .andExpect(jsonPath("$[0].scheduleEnabled").value(true))
+            .andExpect(jsonPath("$[0].deliveryFolderId").value(folderId.toString()))
+            .andExpect(jsonPath("$[0].nextRunAt").exists())
+            .andExpect(jsonPath("$[0].lastRunAt").exists());
     }
 
     @Test

@@ -220,21 +220,64 @@ public class RmReportPresetDeliveryService {
 
     @Scheduled(cron = "${ecm.rm.report-presets.scheduler-cron:0 */5 * * * *}")
     public void runScheduledDeliveries() {
+        LocalDateTime now = LocalDateTime.now();
         List<RmReportPreset> duePresets =
-            presetRepository.findByScheduleEnabledTrueAndDeletedFalseAndNextRunAtLessThanEqualOrderByNextRunAtAsc(LocalDateTime.now());
+            presetRepository.findByScheduleEnabledTrueAndDeletedFalseAndNextRunAtLessThanEqualOrderByNextRunAtAsc(now);
         for (RmReportPreset preset : duePresets) {
-            SecurityContext previous = pushPresetAuthentication(preset);
+            if (!claimScheduledRun(preset)) {
+                continue;
+            }
+            RmReportPreset claimedPreset = presetRepository.findByIdAndDeletedFalse(preset.getId()).orElse(null);
+            if (claimedPreset == null) {
+                log.warn("RM report preset {} disappeared after claim; skipping scheduled delivery", preset.getId());
+                continue;
+            }
+            SecurityContext previous = pushPresetAuthentication(claimedPreset);
             try {
-                deliverPreset(preset, TriggerType.SCHEDULED, true);
+                deliverPreset(claimedPreset, TriggerType.SCHEDULED, true, true);
             } catch (Exception ex) {
-                log.warn("RM report preset scheduled delivery errored for {}: {}", preset.getId(), ex.getMessage(), ex);
+                log.warn("RM report preset scheduled delivery errored for {}: {}", claimedPreset.getId(), ex.getMessage(), ex);
             } finally {
                 popAuthentication(previous);
             }
         }
     }
 
+    private boolean claimScheduledRun(RmReportPreset preset) {
+        if (!preset.isScheduleEnabled() || preset.getCronExpression() == null || preset.getNextRunAt() == null) {
+            return false;
+        }
+        LocalDateTime claimedNextRunAt = ScheduledRuleValidation.computeNextRunAt(
+            preset.getCronExpression(),
+            preset.getScheduleTimezone(),
+            preset.getNextRunAt()
+        );
+        if (claimedNextRunAt == null) {
+            log.warn("RM report preset {} could not compute next scheduled run; skipping claim", preset.getId());
+            return false;
+        }
+        int updated = presetRepository.claimScheduledRun(
+            preset.getId(),
+            preset.getNextRunAt(),
+            claimedNextRunAt
+        );
+        if (updated == 0) {
+            log.debug("RM report preset {} was already claimed by another runner", preset.getId());
+            return false;
+        }
+        return true;
+    }
+
     private PresetExecutionDto deliverPreset(RmReportPreset preset, TriggerType triggerType, boolean scheduledRun) {
+        return deliverPreset(preset, triggerType, scheduledRun, false);
+    }
+
+    private PresetExecutionDto deliverPreset(
+        RmReportPreset preset,
+        TriggerType triggerType,
+        boolean scheduledRun,
+        boolean nextRunAlreadyClaimed
+    ) {
         assertSchedulableKind(preset);
         UUID folderId = preset.getDeliveryFolderId();
         if (folderId == null) {
@@ -255,14 +298,23 @@ public class RmReportPresetDeliveryService {
             PipelineResult uploadResult = uploadService.uploadDocument(file, folderId, null);
             if (!uploadResult.isSuccess()) {
                 String message = uploadResult.getErrors() != null ? uploadResult.getErrors().toString() : "Unknown upload error";
-                return persistFailedExecution(preset, triggerType, startedAt, filename, folderId, message, scheduledRun);
+                return persistFailedExecution(
+                    preset,
+                    triggerType,
+                    startedAt,
+                    filename,
+                    folderId,
+                    message,
+                    scheduledRun,
+                    nextRunAlreadyClaimed
+                );
             }
 
             UUID documentId = uploadResult.getDocumentId();
             LocalDateTime finishedAt = LocalDateTime.now();
             long durationMs = Duration.between(startedAt, finishedAt).toMillis();
             preset.setLastRunAt(finishedAt);
-            if (scheduledRun && preset.isScheduleEnabled() && preset.getCronExpression() != null) {
+            if (scheduledRun && !nextRunAlreadyClaimed && preset.isScheduleEnabled() && preset.getCronExpression() != null) {
                 preset.setNextRunAt(ScheduledRuleValidation.computeNextRunAt(
                     preset.getCronExpression(),
                     preset.getScheduleTimezone(),
@@ -304,7 +356,8 @@ public class RmReportPresetDeliveryService {
                 filename,
                 folderId,
                 ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName(),
-                scheduledRun
+                scheduledRun,
+                nextRunAlreadyClaimed
             );
         }
     }
@@ -316,11 +369,12 @@ public class RmReportPresetDeliveryService {
         String filename,
         UUID folderId,
         String message,
-        boolean scheduledRun
+        boolean scheduledRun,
+        boolean nextRunAlreadyClaimed
     ) {
         LocalDateTime finishedAt = LocalDateTime.now();
         long durationMs = Duration.between(startedAt, finishedAt).toMillis();
-        if (scheduledRun && preset.isScheduleEnabled() && preset.getCronExpression() != null) {
+        if (scheduledRun && !nextRunAlreadyClaimed && preset.isScheduleEnabled() && preset.getCronExpression() != null) {
             preset.setNextRunAt(ScheduledRuleValidation.computeNextRunAt(
                 preset.getCronExpression(),
                 preset.getScheduleTimezone(),

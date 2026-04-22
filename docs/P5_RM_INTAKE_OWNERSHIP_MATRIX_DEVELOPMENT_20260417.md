@@ -132,6 +132,10 @@ The accepted `P5` runtime slices on top of this matrix are:
   - RM report preset page-level execution ledger operator polish
   - adds active-filter summary and zero-match recovery on top of `PR-104`
   - no new backend endpoint or migration
+- `PR-109`
+  - RM report preset schedule metadata and health drilldown
+  - adds additive schedule fields on the preset list plus page-level scheduled/due-now filters and health-card drilldown
+  - no new backend endpoint or migration
 
 These are still valid, but they should wait until policy semantics and operator demand are explicit.
 

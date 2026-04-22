@@ -301,6 +301,8 @@ interface ReportPresetDraft {
   params: Record<string, unknown>;
 }
 
+type ReportPresetTableFilter = 'all' | 'scheduled' | 'dueNow';
+
 interface PresetExecutionLedgerFilterState {
   presetId: string;
   status: '' | RmReportPresetExecutionStatus;
@@ -622,6 +624,7 @@ const RecordsManagementPage: React.FC = () => {
   const [reportPresets, setReportPresets] = useState<RmReportPreset[]>([]);
   const [reportPresetsLoading, setReportPresetsLoading] = useState(false);
   const [reportPresetsError, setReportPresetsError] = useState<string | null>(null);
+  const [reportPresetTableFilter, setReportPresetTableFilter] = useState<ReportPresetTableFilter>('all');
   const [presetExportingId, setPresetExportingId] = useState<string | null>(null);
   const [presetDeletingId, setPresetDeletingId] = useState<string | null>(null);
   const [schedulePresetTarget, setSchedulePresetTarget] = useState<RmReportPreset | null>(null);
@@ -672,6 +675,7 @@ const RecordsManagementPage: React.FC = () => {
   const declaredRecordsRef = useRef<HTMLDivElement | null>(null);
   const operationsRef = useRef<HTMLDivElement | null>(null);
   const auditRef = useRef<HTMLDivElement | null>(null);
+  const reportPresetsRef = useRef<HTMLDivElement | null>(null);
 
   const loadAdminData = useCallback(async (silent = false) => {
     if (silent) {
@@ -1237,6 +1241,40 @@ const RecordsManagementPage: React.FC = () => {
     () => new Map(reportPresets.map((preset) => [preset.id, preset])),
     [reportPresets]
   );
+
+  const isPresetDueNow = useCallback((preset: RmReportPreset) => {
+    if (!preset.scheduleEnabled || !preset.nextRunAt) {
+      return false;
+    }
+    const nextRun = new Date(preset.nextRunAt);
+    if (Number.isNaN(nextRun.getTime())) {
+      return false;
+    }
+    return nextRun.getTime() <= Date.now();
+  }, []);
+
+  const reportPresetFilterCounts = useMemo(() => ({
+    all: reportPresets.length,
+    scheduled: reportPresets.filter((preset) => preset.scheduleEnabled).length,
+    dueNow: reportPresets.filter((preset) => isPresetDueNow(preset)).length,
+  }), [isPresetDueNow, reportPresets]);
+
+  const filteredReportPresets = useMemo(() => {
+    switch (reportPresetTableFilter) {
+      case 'scheduled':
+        return reportPresets.filter((preset) => preset.scheduleEnabled);
+      case 'dueNow':
+        return reportPresets.filter((preset) => isPresetDueNow(preset));
+      case 'all':
+      default:
+        return reportPresets;
+    }
+  }, [isPresetDueNow, reportPresetTableFilter, reportPresets]);
+
+  const applyReportPresetTableFilter = useCallback((filter: ReportPresetTableFilter) => {
+    setReportPresetTableFilter(filter);
+    reportPresetsRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+  }, []);
 
   const openBrowseTarget = useCallback((nodeId?: string | null) => {
     if (!nodeId) {
@@ -2620,7 +2658,7 @@ const RecordsManagementPage: React.FC = () => {
           </Card>
         </Grid>
 
-        <Grid item xs={12}>
+        <Grid item xs={12} ref={reportPresetsRef}>
           <Card variant="outlined">
             <CardContent>
               <Stack spacing={1.5}>
@@ -5052,6 +5090,27 @@ const RecordsManagementPage: React.FC = () => {
                   </Typography>
                 </Box>
 
+                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                  <Chip
+                    label={`All · ${reportPresetFilterCounts.all}`}
+                    color={reportPresetTableFilter === 'all' ? 'primary' : 'default'}
+                    variant={reportPresetTableFilter === 'all' ? 'filled' : 'outlined'}
+                    onClick={() => setReportPresetTableFilter('all')}
+                  />
+                  <Chip
+                    label={`Scheduled · ${reportPresetFilterCounts.scheduled}`}
+                    color={reportPresetTableFilter === 'scheduled' ? 'primary' : 'default'}
+                    variant={reportPresetTableFilter === 'scheduled' ? 'filled' : 'outlined'}
+                    onClick={() => setReportPresetTableFilter('scheduled')}
+                  />
+                  <Chip
+                    label={`Due now · ${reportPresetFilterCounts.dueNow}`}
+                    color={reportPresetTableFilter === 'dueNow' ? 'warning' : 'default'}
+                    variant={reportPresetTableFilter === 'dueNow' ? 'filled' : 'outlined'}
+                    onClick={() => setReportPresetTableFilter('dueNow')}
+                  />
+                </Stack>
+
                 {reportPresetsError && (
                   <Alert severity="warning">
                     {reportPresetsError}
@@ -5063,6 +5122,7 @@ const RecordsManagementPage: React.FC = () => {
                     <TableRow>
                       <TableCell>Name</TableCell>
                       <TableCell>Kind</TableCell>
+                      <TableCell>Delivery</TableCell>
                       <TableCell>Window</TableCell>
                       <TableCell>Description</TableCell>
                       <TableCell>Updated</TableCell>
@@ -5070,17 +5130,49 @@ const RecordsManagementPage: React.FC = () => {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {reportPresets.length === 0 ? (
+                    {filteredReportPresets.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={6}>
-                          {reportPresetsLoading ? 'Loading presets...' : 'No saved RM report presets.'}
+                        <TableCell colSpan={7}>
+                          {reportPresetsLoading
+                            ? 'Loading presets...'
+                            : reportPresets.length === 0
+                              ? 'No saved RM report presets.'
+                              : 'No RM report presets match the current filter.'}
                         </TableCell>
                       </TableRow>
                     ) : (
-                      reportPresets.map((preset) => (
+                      filteredReportPresets.map((preset) => (
                         <TableRow key={preset.id}>
                           <TableCell>{preset.name}</TableCell>
                           <TableCell>{formatPresetKindLabel(preset.kind)}</TableCell>
+                          <TableCell sx={{ minWidth: 180 }}>
+                            <Stack spacing={0.5}>
+                              <Chip
+                                size="small"
+                                color={
+                                  preset.scheduleEnabled
+                                    ? (isPresetDueNow(preset) ? 'warning' : 'success')
+                                    : 'default'
+                                }
+                                variant="outlined"
+                                label={
+                                  preset.scheduleEnabled
+                                    ? (isPresetDueNow(preset) ? 'Due now' : 'Scheduled')
+                                    : 'Not scheduled'
+                                }
+                              />
+                              {preset.scheduleEnabled && preset.nextRunAt && (
+                                <Typography variant="caption" color="text.secondary">
+                                  {`Next ${formatDateTime(preset.nextRunAt)}`}
+                                </Typography>
+                              )}
+                              {preset.scheduleEnabled && preset.lastRunAt && (
+                                <Typography variant="caption" color="text.secondary">
+                                  {`Last ${formatDateTime(preset.lastRunAt)}`}
+                                </Typography>
+                              )}
+                            </Stack>
+                          </TableCell>
                           <TableCell>{formatPresetRangeLabel(preset)}</TableCell>
                           <TableCell>{preset.description || '—'}</TableCell>
                           <TableCell>{formatDateTime(preset.lastModifiedDate || preset.createdDate)}</TableCell>
@@ -5167,12 +5259,14 @@ const RecordsManagementPage: React.FC = () => {
                       color="primary"
                       variant="outlined"
                       label={`Scheduled presets: ${scheduledDeliveryTelemetry.scheduleEnabledCount}`}
+                      onClick={() => applyReportPresetTableFilter('scheduled')}
                     />
                     <Chip
                       size="small"
                       color={scheduledDeliveryTelemetry.duePresetCount > 0 ? 'warning' : 'default'}
                       variant="outlined"
                       label={`Due now: ${scheduledDeliveryTelemetry.duePresetCount}`}
+                      onClick={() => applyReportPresetTableFilter('dueNow')}
                     />
                     <Chip
                       size="small"

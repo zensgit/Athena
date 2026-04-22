@@ -173,6 +173,10 @@ export interface RmReportPreset {
   description?: string | null;
   kind: RmReportPresetKind;
   params: Record<string, unknown>;
+  scheduleEnabled?: boolean;
+  deliveryFolderId?: string | null;
+  nextRunAt?: string | null;
+  lastRunAt?: string | null;
   createdDate?: string | null;
   lastModifiedDate?: string | null;
 }

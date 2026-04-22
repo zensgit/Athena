@@ -203,7 +203,7 @@ class RmReportPresetDeliveryServiceTest {
     @Test
     @DisplayName("runScheduledDeliveries executes due presets and advances nextRunAt")
     void runScheduledDeliveriesExecutesDuePresets() throws Exception {
-        RmReportPreset preset = preset(
+        RmReportPreset duePreset = preset(
             RmReportPreset.Kind.ACTIVITY_CONTRIBUTOR_REPORT,
             Map.of(
                 "from", "2026-04-01T00:00:00",
@@ -212,14 +212,34 @@ class RmReportPresetDeliveryServiceTest {
                 "eventTypeLimit", 3
             )
         );
-        preset.setScheduleEnabled(true);
-        preset.setCronExpression("0 */10 * * * *");
-        preset.setScheduleTimezone("UTC");
-        preset.setDeliveryFolderId(UUID.randomUUID());
-        preset.setNextRunAt(LocalDateTime.now().minusMinutes(1));
+        duePreset.setScheduleEnabled(true);
+        duePreset.setCronExpression("0 */10 * * * *");
+        duePreset.setScheduleTimezone("UTC");
+        duePreset.setDeliveryFolderId(UUID.randomUUID());
+        duePreset.setNextRunAt(LocalDateTime.now().minusMinutes(1));
+        LocalDateTime claimedNextRunAt = ScheduledRuleValidation.computeNextRunAt(
+            duePreset.getCronExpression(),
+            duePreset.getScheduleTimezone(),
+            duePreset.getNextRunAt()
+        );
+        RmReportPreset claimedPreset = preset(
+            RmReportPreset.Kind.ACTIVITY_CONTRIBUTOR_REPORT,
+            duePreset.getParams()
+        );
+        claimedPreset.setId(duePreset.getId());
+        claimedPreset.setOwner(duePreset.getOwner());
+        claimedPreset.setScheduleEnabled(true);
+        claimedPreset.setCronExpression(duePreset.getCronExpression());
+        claimedPreset.setScheduleTimezone(duePreset.getScheduleTimezone());
+        claimedPreset.setDeliveryFolderId(duePreset.getDeliveryFolderId());
+        claimedPreset.setNextRunAt(claimedNextRunAt);
 
         when(presetRepository.findByScheduleEnabledTrueAndDeletedFalseAndNextRunAtLessThanEqualOrderByNextRunAtAsc(any(LocalDateTime.class)))
-            .thenReturn(List.of(preset));
+            .thenReturn(List.of(duePreset));
+        when(presetRepository.claimScheduledRun(duePreset.getId(), duePreset.getNextRunAt(), claimedNextRunAt))
+            .thenReturn(1);
+        when(presetRepository.findByIdAndDeletedFalse(duePreset.getId()))
+            .thenReturn(Optional.of(claimedPreset));
         when(recordsManagementService.getActivityContributorReport(
                 LocalDateTime.of(2026, 4, 1, 0, 0),
                 LocalDateTime.of(2026, 4, 15, 23, 59, 59),
@@ -246,7 +266,7 @@ class RmReportPresetDeliveryServiceTest {
                     )
                 )
             );
-        when(uploadService.uploadDocument(any(MultipartFile.class), eq(preset.getDeliveryFolderId()), isNull()))
+        when(uploadService.uploadDocument(any(MultipartFile.class), eq(claimedPreset.getDeliveryFolderId()), isNull()))
             .thenReturn(PipelineResult.builder().success(true).documentId(UUID.randomUUID()).build());
         when(presetRepository.save(any(RmReportPreset.class))).thenAnswer(inv -> inv.getArgument(0));
         when(executionRepository.save(any(RmReportPresetExecution.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -263,9 +283,53 @@ class RmReportPresetDeliveryServiceTest {
 
         service.runScheduledDeliveries();
 
-        assertNotNull(preset.getLastRunAt());
-        assertNotNull(preset.getNextRunAt());
-        assertTrue(preset.getNextRunAt().isAfter(LocalDateTime.now().minusMinutes(1)));
+        assertNotNull(claimedPreset.getLastRunAt());
+        assertEquals(claimedNextRunAt, claimedPreset.getNextRunAt());
+        verify(presetRepository).claimScheduledRun(duePreset.getId(), duePreset.getNextRunAt(), claimedNextRunAt);
+    }
+
+    @Test
+    @DisplayName("runScheduledDeliveries skips presets that were already claimed by another runner")
+    void runScheduledDeliveriesSkipsUnclaimedPreset() {
+        RmReportPreset duePreset = preset(
+            RmReportPreset.Kind.ACTIVITY_CONTRIBUTOR_REPORT,
+            Map.of(
+                "from", "2026-04-01T00:00:00",
+                "to", "2026-04-15T23:59:59",
+                "limit", 5,
+                "eventTypeLimit", 3
+            )
+        );
+        duePreset.setScheduleEnabled(true);
+        duePreset.setCronExpression("0 */10 * * * *");
+        duePreset.setScheduleTimezone("UTC");
+        duePreset.setDeliveryFolderId(UUID.randomUUID());
+        duePreset.setNextRunAt(LocalDateTime.now().minusMinutes(1));
+        LocalDateTime claimedNextRunAt = ScheduledRuleValidation.computeNextRunAt(
+            duePreset.getCronExpression(),
+            duePreset.getScheduleTimezone(),
+            duePreset.getNextRunAt()
+        );
+
+        when(presetRepository.findByScheduleEnabledTrueAndDeletedFalseAndNextRunAtLessThanEqualOrderByNextRunAtAsc(any(LocalDateTime.class)))
+            .thenReturn(List.of(duePreset));
+        when(presetRepository.claimScheduledRun(duePreset.getId(), duePreset.getNextRunAt(), claimedNextRunAt))
+            .thenReturn(0);
+
+        RmReportPresetDeliveryService service = new RmReportPresetDeliveryService(
+            presetService,
+            presetRepository,
+            executionRepository,
+            recordsManagementService,
+            uploadService,
+            auditService,
+            securityService
+        );
+
+        service.runScheduledDeliveries();
+
+        verify(presetRepository).claimScheduledRun(duePreset.getId(), duePreset.getNextRunAt(), claimedNextRunAt);
+        verifyNoInteractions(uploadService, executionRepository, auditService);
     }
 
     @Test

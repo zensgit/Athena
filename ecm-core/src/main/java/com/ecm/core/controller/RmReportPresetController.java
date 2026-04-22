@@ -56,6 +56,10 @@ public class RmReportPresetController {
             String description,
             Kind kind,
             Map<String, Object> params,
+            boolean scheduleEnabled,
+            UUID deliveryFolderId,
+            LocalDateTime nextRunAt,
+            LocalDateTime lastRunAt,
             LocalDateTime createdDate,
             LocalDateTime lastModifiedDate
     ) {
@@ -67,6 +71,10 @@ public class RmReportPresetController {
                     p.getDescription(),
                     p.getKind(),
                     p.getParams(),
+                    p.isScheduleEnabled(),
+                    p.getDeliveryFolderId(),
+                    p.getNextRunAt(),
+                    p.getLastRunAt(),
                     p.getCreatedDate(),
                     p.getLastModifiedDate()
             );

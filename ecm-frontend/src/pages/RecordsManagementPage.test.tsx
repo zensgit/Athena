@@ -667,6 +667,10 @@ describe('RecordsManagementPage', () => {
           from: '2026-04-09T00:00:00',
           to: '2026-04-15T23:59:59',
         },
+        scheduleEnabled: true,
+        deliveryFolderId: 'folder-1',
+        nextRunAt: '2000-01-01T09:00:00',
+        lastRunAt: '2026-04-21T09:00:00',
         createdDate: '2026-04-15T12:00:00',
         lastModifiedDate: '2026-04-15T12:30:00',
       },
@@ -680,6 +684,10 @@ describe('RecordsManagementPage', () => {
           from: '2026-04-09T00:00:00',
           to: '2026-04-15T23:59:59',
         },
+        scheduleEnabled: false,
+        deliveryFolderId: null,
+        nextRunAt: null,
+        lastRunAt: null,
         createdDate: '2026-04-15T12:05:00',
         lastModifiedDate: '2026-04-15T12:35:00',
       },
@@ -776,9 +784,9 @@ describe('RecordsManagementPage', () => {
     } as any);
     mockedRecordsManagementService.exportReportPresetExecutionLedgerCsv.mockResolvedValue(undefined as any);
     mockedRecordsManagementService.getScheduledDeliveryTelemetry.mockResolvedValue({
-      scheduleEnabledCount: 5,
-      duePresetCount: 2,
-      last24hSuccessCount: 7,
+      scheduleEnabledCount: 1,
+      duePresetCount: 1,
+      last24hSuccessCount: 1,
       last24hFailedCount: 1,
       lastExecutionAt: '2026-04-21T09:00:00',
       generatedAt: '2026-04-21T16:00:00',
@@ -1033,11 +1041,27 @@ describe('RecordsManagementPage', () => {
     await waitFor(() =>
       expect(mockedRecordsManagementService.getScheduledDeliveryTelemetry).toHaveBeenCalled()
     );
-    expect(await within(healthSection).findByText('Scheduled presets: 5')).toBeTruthy();
-    expect(within(healthSection).getByText('Due now: 2')).toBeTruthy();
-    expect(within(healthSection).getByText('Last 24h success: 7')).toBeTruthy();
+    expect(await within(healthSection).findByText('Scheduled presets: 1')).toBeTruthy();
+    expect(within(healthSection).getByText('Due now: 1')).toBeTruthy();
+    expect(within(healthSection).getByText('Last 24h success: 1')).toBeTruthy();
     expect(within(healthSection).getByText('Last 24h failed: 1')).toBeTruthy();
     expect(within(healthSection).getByText(/Last delivery:/)).toBeTruthy();
+  });
+
+  it('filters saved presets from scheduled delivery health drilldowns', async () => {
+    renderPage();
+
+    const healthSection = (await screen.findByRole('heading', { name: 'Scheduled Delivery Health' })).closest('.MuiCard-root') as HTMLElement;
+    const presetSection = (await screen.findByRole('heading', { name: 'Saved RM Report Presets' })).closest('.MuiCard-root') as HTMLElement;
+
+    expect(await within(presetSection).findByText('Due now')).toBeTruthy();
+    expect(within(presetSection).getByText('Not scheduled')).toBeTruthy();
+
+    fireEvent.click(await within(healthSection).findByText('Due now: 1'));
+
+    expect(await within(presetSection).findByText('Due now · 1')).toBeTruthy();
+    expect(within(presetSection).getByText('HR family current')).toBeTruthy();
+    expect(within(presetSection).queryByText('HR family highlights')).toBeNull();
   });
 
   it('renders the preset delivery ledger and opens delivered browse targets', async () => {
