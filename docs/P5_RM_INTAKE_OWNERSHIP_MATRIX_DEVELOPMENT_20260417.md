@@ -136,6 +136,10 @@ The accepted `P5` runtime slices on top of this matrix are:
   - RM report preset schedule metadata and health drilldown
   - adds additive schedule fields on the preset list plus page-level scheduled/due-now filters and health-card drilldown
   - no new backend endpoint or migration
+- `PR-110`
+  - RM report preset schedule claim-before-upload hardening
+  - advances `nextRunAt` through an atomic claim step before scheduled upload and skips already-claimed due presets
+  - no new endpoint or migration
 
 These are still valid, but they should wait until policy semantics and operator demand are explicit.
 

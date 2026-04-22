@@ -37,6 +37,7 @@ This document builds on the already completed `P4` closeout material:
 - accepted runtime slices now also include `PR-104` on the `RM delivery workflows` lane as the first page-level consumption of the shipped cross-preset execution ledger/filter/export surface
 - accepted runtime slices now also include `PR-105` on the `RM delivery workflows` lane as page-level operator polish for the shipped preset delivery ledger surface
 - accepted runtime slices now also include `PR-109` on the `RM delivery workflows` lane as additive schedule metadata plus health-to-preset drilldown for the shipped scheduled-delivery surface
+- accepted runtime slices now also include `PR-110` on the `RM delivery workflows` lane as scheduled-run claim-before-upload hardening for the shipped scheduled-delivery runner
 
 ## Checks
 
