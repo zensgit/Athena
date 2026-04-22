@@ -1765,8 +1765,8 @@ class RecordsManagementControllerTest {
     }
 
     @Test
-    @DisplayName("executeReportPreset rejects CSV for summary-only preset kinds")
-    void executeReportPresetRejectsCsvForSummaryOnlyPresetKind() throws Exception {
+    @DisplayName("executeReportPreset supports CSV for summary-only preset kinds")
+    void executeReportPresetSupportsCsvForSummaryOnlyPresetKind() throws Exception {
         UUID presetId = UUID.randomUUID();
         Mockito.when(rmReportPresetService.getOwned(presetId)).thenReturn(
             RmReportPreset.builder()
@@ -1776,13 +1776,37 @@ class RecordsManagementControllerTest {
                 .params(Map.of("windowDays", 7))
                 .build()
         );
+        Mockito.when(recordsManagementService.getActivityFamilyReport(
+                Mockito.any(LocalDateTime.class),
+                Mockito.any(LocalDateTime.class),
+                Mockito.isNull(),
+                Mockito.isNull()))
+            .thenReturn(new RecordsManagementService.ActivityFamilyReportDto(
+                new RecordsManagementService.ActivityDateTimeRangeDto("2026-04-09T00:00:00", "2026-04-15T23:59:59"),
+                new RecordsManagementService.ActivityDateTimeRangeDto("2026-04-02T00:00:00", "2026-04-08T23:59:59"),
+                5,
+                5,
+                7,
+                4,
+                List.of(
+                    new RecordsManagementService.ActivityFamilyReportEntryDto(
+                        "DECLARED",
+                        5,
+                        2,
+                        3,
+                        LocalDateTime.of(2026, 4, 15, 10, 0),
+                        List.of(),
+                        List.of()
+                    )
+                )
+            ));
 
         mockMvc.perform(post("/api/v1/records/report-presets/{presetId}/execute", presetId)
                 .param("format", "csv"))
-            .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.message").value(
-                "CSV export is not supported for report preset kind ACTIVITY_FAMILY_HIGHLIGHTS"
-            ));
+            .andExpect(status().isOk())
+            .andExpect(header().string("Content-Type", org.hamcrest.Matchers.containsString("text/csv")))
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("family,currentCount,previousCount")))
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("DECLARED,5,2,3")));
     }
 
     @Test

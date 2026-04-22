@@ -37,13 +37,12 @@ import {
   UndeclareRecordRequest,
 } from 'types';
 
-export type RmDeliverableReportPresetKind = Exclude<
-  RmReportPresetKind,
-  'ACTIVITY_FAMILY_HIGHLIGHTS' | 'ACTIVITY_FAMILY_MIX'
->;
+export type RmDeliverableReportPresetKind = RmReportPresetKind;
 
 const DELIVERABLE_REPORT_PRESET_KINDS = new Set<RmReportPresetKind>([
   'ACTIVITY_FAMILY_REPORT',
+  'ACTIVITY_FAMILY_HIGHLIGHTS',
+  'ACTIVITY_FAMILY_MIX',
   'ACTIVITY_EVENT_TYPE_REPORT',
   'ACTIVITY_CONTRIBUTOR_REPORT',
   'ACTIVITY_CONTRIBUTOR_FAMILY_REPORT',

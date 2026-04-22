@@ -410,6 +410,38 @@ const getPresetNumberParam = (preset: RmReportPreset, key: string) => {
   return undefined;
 };
 
+const resolvePresetAuditRange = (preset: RmReportPreset) => {
+  const from = getPresetStringParam(preset, 'from');
+  const to = getPresetStringParam(preset, 'to');
+  if (from && to) {
+    return {
+      from,
+      to,
+      fromDay: from.slice(0, 10),
+      toDay: to.slice(0, 10),
+    };
+  }
+
+  let rollingDays: number | undefined;
+  switch (preset.kind) {
+    case 'ACTIVITY_FAMILY_HIGHLIGHTS':
+      rollingDays = getPresetNumberParam(preset, 'windowDays');
+      break;
+    case 'ACTIVITY_FAMILY_MIX':
+      rollingDays = getPresetNumberParam(preset, 'days');
+      break;
+    default:
+      rollingDays = undefined;
+      break;
+  }
+
+  if (!rollingDays || rollingDays < 1) {
+    return null;
+  }
+
+  return buildRollingWindowRange(rollingDays, 'current');
+};
+
 const formatPresetKindLabel = (kind: RmReportPresetKind) => {
   switch (kind) {
     case 'ACTIVITY_FAMILY_REPORT':
@@ -432,12 +464,11 @@ const formatPresetKindLabel = (kind: RmReportPresetKind) => {
 };
 
 const formatPresetRangeLabel = (preset: RmReportPreset) => {
-  const from = getPresetStringParam(preset, 'from');
-  const to = getPresetStringParam(preset, 'to');
-  if (!from || !to) {
+  const range = resolvePresetAuditRange(preset);
+  if (!range?.from || !range?.to) {
     return 'Window unavailable';
   }
-  return `${from.slice(0, 10)} to ${to.slice(0, 10)}`;
+  return `${range.from.slice(0, 10)} to ${range.to.slice(0, 10)}`;
 };
 
 const formatPresetExecutionTriggerLabel = (triggerType: RmReportPresetExecutionTrigger) =>
@@ -800,6 +831,14 @@ const RecordsManagementPage: React.FC = () => {
       }
     }
   }, [appliedPresetExecutionLedgerFilters, presetExecutionLedgerPageIndex, presetExecutionLedgerRowsPerPage]);
+
+  const refreshPresetDeliverySurfaces = useCallback(async () => {
+    await Promise.all([
+      loadReportPresets(true),
+      loadScheduledDeliveryTelemetry(),
+      loadPresetExecutionLedger(undefined, undefined, undefined, true),
+    ]);
+  }, [loadPresetExecutionLedger, loadReportPresets, loadScheduledDeliveryTelemetry]);
 
   const loadBreakdown = useCallback(async (silent = false) => {
     if (!silent) {
@@ -1699,13 +1738,12 @@ const RecordsManagementPage: React.FC = () => {
   }, [activityContributors, openRollingReportPreset]);
 
   const applyReportPresetToAudit = useCallback((preset: RmReportPreset) => {
-    const from = getPresetStringParam(preset, 'from');
-    const to = getPresetStringParam(preset, 'to');
-    if (!from || !to) {
+    const range = resolvePresetAuditRange(preset);
+    if (!range?.from || !range?.to) {
       toast.error('Failed to apply RM report preset');
       return;
     }
-    applyAuditDrilldown(`Preset ${preset.name}`, from, to, {
+    applyAuditDrilldown(`Preset ${preset.name}`, range.from, range.to, {
       family: getPresetStringParam(preset, 'family'),
       eventType: getPresetStringParam(preset, 'eventType'),
       username: getPresetStringParam(preset, 'username'),
@@ -1713,12 +1751,12 @@ const RecordsManagementPage: React.FC = () => {
   }, [applyAuditDrilldown]);
 
   const exportReportPresetCsv = useCallback(async (preset: RmReportPreset) => {
-    const from = getPresetStringParam(preset, 'from');
-    const to = getPresetStringParam(preset, 'to');
-    if (!from || !to) {
+    const range = resolvePresetAuditRange(preset);
+    if (!range?.from || !range?.to) {
       toast.error('Failed to export RM report preset');
       return;
     }
+    const { from, to } = range;
 
     setPresetExportingId(preset.id);
     try {
@@ -5717,6 +5755,7 @@ const RecordsManagementPage: React.FC = () => {
         open={Boolean(schedulePresetTarget)}
         preset={schedulePresetTarget}
         onClose={() => setSchedulePresetTarget(null)}
+        onChanged={refreshPresetDeliverySurfaces}
       />
       <RenameFilePlanDialog
         open={renameFilePlanDialogOpen}

@@ -191,8 +191,15 @@ describe('ScheduleReportPresetDialog', () => {
     });
 
     const onSaved = jest.fn();
+    const onChanged = jest.fn();
     render(
-      <ScheduleReportPresetDialog open preset={makePreset()} onClose={jest.fn()} onSaved={onSaved} />
+      <ScheduleReportPresetDialog
+        open
+        preset={makePreset()}
+        onClose={jest.fn()}
+        onSaved={onSaved}
+        onChanged={onChanged}
+      />
     );
 
     // Wait until the loaded schedule is reflected in the cron field before
@@ -211,9 +218,22 @@ describe('ScheduleReportPresetDialog', () => {
     });
     expect(mockedService.getReportPresetSchedule).toHaveBeenCalledTimes(2);
     expect(onSaved).toHaveBeenCalled();
+    expect(onChanged).toHaveBeenCalled();
   });
 
-  it('shows a disabled/non-CSV warning for summary-only kinds', async () => {
+  it('loads schedule controls for summary-only kinds that now support CSV delivery', async () => {
+    mockedService.getReportPresetSchedule.mockResolvedValueOnce({
+      presetId: 'preset-1',
+      enabled: false,
+      cronExpression: null,
+      timezone: 'UTC',
+      deliveryFolderId: null,
+      nextRunAt: null,
+      lastRunAt: null,
+      lastExecution: null,
+    });
+    mockedService.listReportPresetExecutions.mockResolvedValueOnce([]);
+
     render(
       <ScheduleReportPresetDialog
         open
@@ -222,9 +242,9 @@ describe('ScheduleReportPresetDialog', () => {
       />
     );
 
-    expect(await screen.findByText(/summary-only/i)).not.toBeNull();
-    expect(mockedService.getReportPresetSchedule).not.toHaveBeenCalled();
-    expect(screen.queryByRole('button', { name: /save schedule/i })).toBeNull();
+    expect(await screen.findByRole('button', { name: /save schedule/i })).not.toBeNull();
+    expect(mockedService.getReportPresetSchedule).toHaveBeenCalledWith('preset-1');
+    expect(screen.queryByText(/summary-only/i)).toBeNull();
   });
 
   it('delivers now and prepends the new execution to the list', async () => {
@@ -292,8 +312,9 @@ describe('ScheduleReportPresetDialog', () => {
       durationMs: 1000,
     });
 
+    const onChanged = jest.fn();
     render(
-      <ScheduleReportPresetDialog open preset={makePreset()} onClose={jest.fn()} />
+      <ScheduleReportPresetDialog open preset={makePreset()} onClose={jest.fn()} onChanged={onChanged} />
     );
 
     // Wait for load to finish so the "Deliver now" button is not disabled.
@@ -314,6 +335,7 @@ describe('ScheduleReportPresetDialog', () => {
       await screen.findByText('Weekly-Family-Report-20260421.csv')
     ).not.toBeNull();
     expect(await screen.findByText(/Last:/)).not.toBeNull();
+    expect(onChanged).toHaveBeenCalled();
   });
 
   it('filters execution history and opens delivered browse targets', async () => {

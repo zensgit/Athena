@@ -38,6 +38,12 @@ This document builds on the already completed `P4` closeout material:
 - accepted runtime slices now also include `PR-105` on the `RM delivery workflows` lane as page-level operator polish for the shipped preset delivery ledger surface
 - accepted runtime slices now also include `PR-109` on the `RM delivery workflows` lane as additive schedule metadata plus health-to-preset drilldown for the shipped scheduled-delivery surface
 - accepted runtime slices now also include `PR-110` on the `RM delivery workflows` lane as scheduled-run claim-before-upload hardening for the shipped scheduled-delivery runner
+- accepted runtime slices now also include `PR-111` on the `RM delivery workflows` lane as summary-only preset CSV and scheduled-delivery support on top of the shipped preset execute and scheduled-delivery surface
+- accepted runtime slices now also include `PR-112` on the `RM delivery workflows` lane as mocked browser-level schedule/export coverage for the shipped summary-only preset contract
+- accepted runtime slices now also include `PR-113` on the `RM delivery workflows` lane as the first non-mocked full-stack/admin smoke across the shipped summary-only preset export and scheduled-delivery chain
+- accepted runtime slices now also include `PR-114` on the `RM delivery workflows` lane as frontend-only operator polish that refreshes preset/health/ledger surfaces and proves summary-only delivery all the way into the page-level execution ledger
+- accepted runtime slices now also include `PR-115` on the `RM delivery workflows` lane as mocked browser-level operator regression coverage for scheduled-delivery health and cross-preset ledger filter/export behavior
+- accepted runtime slices now also include `PR-116` on the `RM delivery workflows` lane as the first real-stack smoke for page-level preset delivery ledger filter/export/zero-match operator behavior
 
 ## Checks
 

@@ -6,6 +6,9 @@ const rootFolderId = '11111111-1111-1111-1111-111111111111';
 const deliverablePresetId = '22222222-2222-2222-2222-222222222222';
 const summaryOnlyPresetId = '33333333-3333-3333-3333-333333333333';
 const deliveryFolderId = '44444444-4444-4444-4444-444444444444';
+const summaryMixPresetId = '77777777-7777-7777-7777-777777777777';
+const exportedCsvBody = 'family,currentCount,previousCount,delta\nDECLARED,5,2,3\n';
+const nowTimestamp = Date.parse(now);
 
 test('RM report preset scheduled delivery flow works end-to-end (mocked API)', async ({ page }) => {
   test.setTimeout(120_000);
@@ -41,13 +44,41 @@ test('RM report preset scheduled delivery flow works end-to-end (mocked API)', a
       description: 'Summary-only preset',
       kind: 'ACTIVITY_FAMILY_HIGHLIGHTS',
       params: {
-        from: '2026-04-14T00:00:00',
-        to: '2026-04-20T23:59:59',
+        windowDays: 7,
+      },
+      createdDate: now,
+      lastModifiedDate: now,
+    },
+    {
+      id: summaryMixPresetId,
+      owner: 'admin',
+      name: 'Weekly Family Mix',
+      description: 'Summary-only preset',
+      kind: 'ACTIVITY_FAMILY_MIX',
+      params: {
+        days: 28,
       },
       createdDate: now,
       lastModifiedDate: now,
     },
   ];
+
+  const presetById = new Map(reportPresets.map((preset) => [preset.id, preset]));
+  const seededFailedExecution = {
+    id: '99999999-9999-9999-9999-999999999999',
+    presetId: summaryMixPresetId,
+    presetName: 'Weekly Family Mix',
+    presetKind: 'ACTIVITY_FAMILY_MIX',
+    triggerType: 'SCHEDULED',
+    status: 'FAILED',
+    filename: null,
+    targetFolderId: deliveryFolderId,
+    documentId: null,
+    message: 'Delivery failed',
+    startedAt: '2026-04-19T09:00:00Z',
+    finishedAt: '2026-04-19T09:00:05Z',
+    durationMs: 5000,
+  };
 
   const scheduleState = new Map<string, any>([
     [deliverablePresetId, {
@@ -60,16 +91,94 @@ test('RM report preset scheduled delivery flow works end-to-end (mocked API)', a
       lastRunAt: null,
       lastExecution: null,
     }],
+    [summaryOnlyPresetId, {
+      presetId: summaryOnlyPresetId,
+      enabled: false,
+      cronExpression: null,
+      timezone: 'UTC',
+      deliveryFolderId: null,
+      nextRunAt: null,
+      lastRunAt: null,
+      lastExecution: null,
+    }],
   ]);
 
   const executionState = new Map<string, any[]>([
     [deliverablePresetId, []],
+    [summaryOnlyPresetId, []],
   ]);
+
+  const withScheduleMetadata = (preset: (typeof reportPresets)[number]) => {
+    const schedule = scheduleState.get(preset.id);
+    return {
+      ...preset,
+      scheduleEnabled: Boolean(schedule?.enabled),
+      deliveryFolderId: schedule?.deliveryFolderId ?? null,
+      nextRunAt: schedule?.nextRunAt ?? null,
+      lastRunAt: schedule?.lastRunAt ?? null,
+    };
+  };
+
+  const buildLedgerEntries = () => {
+    const dynamicEntries = Array.from(executionState.entries()).flatMap(([presetId, executions]) => {
+      const preset = presetById.get(presetId);
+      return executions.map((execution) => ({
+        ...execution,
+        presetName: execution.presetName ?? preset?.name ?? presetId,
+        presetKind: execution.presetKind ?? preset?.kind ?? null,
+      }));
+    });
+
+    return [seededFailedExecution, ...dynamicEntries].sort((left, right) =>
+      Date.parse(right.startedAt) - Date.parse(left.startedAt)
+    );
+  };
+
+  const filterLedgerEntries = (entries: any[], url: URL) => {
+    const presetId = url.searchParams.get('presetId') || '';
+    const status = url.searchParams.get('status') || '';
+    const triggerType = url.searchParams.get('triggerType') || '';
+    const from = url.searchParams.get('from');
+    const to = url.searchParams.get('to');
+
+    return entries.filter((entry) => {
+      if (presetId && entry.presetId !== presetId) return false;
+      if (status && entry.status !== status) return false;
+      if (triggerType && entry.triggerType !== triggerType) return false;
+      if (from && Date.parse(entry.startedAt) < Date.parse(from)) return false;
+      if (to && Date.parse(entry.startedAt) > Date.parse(to)) return false;
+      return true;
+    });
+  };
+
+  const buildTelemetry = () => {
+    const entries = buildLedgerEntries();
+    const last24hFloor = nowTimestamp - 24 * 60 * 60 * 1000;
+    const last24hEntries = entries.filter((entry) => Date.parse(entry.finishedAt) >= last24hFloor);
+    const lastExecutionAt = entries.length > 0
+      ? entries.reduce((latest, entry) => (!latest || Date.parse(entry.finishedAt) > Date.parse(latest) ? entry.finishedAt : latest), null as string | null)
+      : null;
+
+    return {
+      scheduleEnabledCount: Array.from(scheduleState.values()).filter((status) => status.enabled).length,
+      duePresetCount: Array.from(scheduleState.values()).filter((status) =>
+        status.enabled && status.nextRunAt && Date.parse(status.nextRunAt) <= nowTimestamp
+      ).length,
+      last24hSuccessCount: last24hEntries.filter((entry) => entry.status === 'SUCCESS').length,
+      last24hFailedCount: last24hEntries.filter((entry) => entry.status === 'FAILED').length,
+      lastExecutionAt,
+      generatedAt: now,
+    };
+  };
 
   let scheduleGetCount = 0;
   let executionsGetCount = 0;
   let lastScheduleUpdate: any = null;
   let lastDeliveredPresetId: string | null = null;
+  let activityFamilyReportCsvRequestCount = 0;
+  let lastActivityFamilyReportCsvQuery: Record<string, string> | null = null;
+  let ledgerExportRequestCount = 0;
+  let lastLedgerExportQuery: Record<string, string> | null = null;
 
   await page.route('**/api/v1/**', async (route) => {
     const request = route.request();
@@ -97,8 +206,20 @@ test('RM report preset scheduled delivery flow works end-to-end (mocked API)', a
     }
 
     if (pathname.includes('/folders/') && pathname.endsWith('/contents')) {
+      const folderId = pathname.split('/').slice(-2)[0];
       await fulfillJson(route, {
-        content: [],
+        content: folderId === rootFolderId ? [
+          {
+            id: deliveryFolderId,
+            name: 'Delivery Target',
+            path: '/Root/Delivery Target',
+            nodeType: 'FOLDER',
+            createdBy: 'admin',
+            createdDate: now,
+            lastModifiedBy: 'admin',
+            lastModifiedDate: now,
+          },
+        ] : [],
         totalElements: 0,
         totalPages: 1,
         number: 0,
@@ -267,6 +388,35 @@ test('RM report preset scheduled delivery flow works end-to-end (mocked API)', a
       return;
     }
 
+    if (pathname.endsWith('/records/activity-family-report')) {
+      if (url.searchParams.get('format') === 'csv') {
+        activityFamilyReportCsvRequestCount += 1;
+        lastActivityFamilyReportCsvQuery = Object.fromEntries(url.searchParams.entries());
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/csv; charset=UTF-8',
+          body: exportedCsvBody,
+        });
+        return;
+      }
+      await fulfillJson(route, {
+        currentWindow: {
+          from: '2026-04-14T00:00:00',
+          to: '2026-04-20T23:59:59',
+        },
+        previousWindow: {
+          from: '2026-04-07T00:00:00',
+          to: '2026-04-13T23:59:59',
+        },
+        eventTypeLimit: 5,
+        contributorLimit: 5,
+        currentTotalCount: 0,
+        previousTotalCount: 0,
+        families: [],
+      });
+      return;
+    }
+
     if (pathname.endsWith('/records/activity-family-highlights')) {
       await fulfillJson(route, {
         windowDays: 7,
@@ -278,7 +428,44 @@ test('RM report preset scheduled delivery flow works end-to-end (mocked API)', a
     }
 
     if (pathname.endsWith('/records/report-presets') && method === 'GET') {
-      await fulfillJson(route, reportPresets);
+      await fulfillJson(route, reportPresets.map(withScheduleMetadata));
+      return;
+    }
+
+    if (pathname.endsWith('/records/report-presets/telemetry') && method === 'GET') {
+      await fulfillJson(route, buildTelemetry());
+      return;
+    }
+
+    if (pathname.endsWith('/records/report-presets/executions') && method === 'GET') {
+      const filtered = filterLedgerEntries(buildLedgerEntries(), url);
+      const size = Number(url.searchParams.get('size') || '10');
+      const pageIndex = Number(url.searchParams.get('page') || '0');
+      const start = pageIndex * size;
+      const content = filtered.slice(start, start + size);
+      await fulfillJson(route, {
+        content,
+        page: pageIndex,
+        size,
+        totalElements: filtered.length,
+        totalPages: filtered.length === 0 ? 0 : Math.ceil(filtered.length / size),
+        first: pageIndex === 0,
+        last: start + size >= filtered.length,
+      });
+      return;
+    }
+
+    if (pathname.endsWith('/records/report-presets/executions/export') && method === 'GET') {
+      ledgerExportRequestCount += 1;
+      lastLedgerExportQuery = Object.fromEntries(url.searchParams.entries());
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/csv; charset=UTF-8',
+        body: [
+          'presetName,presetKind,triggerType,status,filename,message',
+          'Weekly Family Mix,ACTIVITY_FAMILY_MIX,SCHEDULED,FAILED,,Delivery failed',
+        ].join('\n'),
+      });
       return;
     }
 
@@ -355,12 +542,22 @@ test('RM report preset scheduled delivery flow works end-to-end (mocked API)', a
 
   const deliverableRow = page.locator('tr', { has: page.getByText('Weekly Family Report') }).first();
   const summaryOnlyRow = page.locator('tr', { has: page.getByText('Weekly Family Highlights') }).first();
+  const summaryMixRow = page.locator('tr', { has: page.getByText('Weekly Family Mix') }).first();
 
   await expect(deliverableRow.getByRole('button', { name: 'Schedule' })).toBeVisible();
   await expect(deliverableRow.getByRole('button', { name: 'Export CSV' })).toBeVisible();
   await expect(summaryOnlyRow.getByRole('button', { name: 'Apply to audit' })).toBeVisible();
-  await expect(summaryOnlyRow.getByRole('button', { name: 'Schedule' })).toHaveCount(0);
-  await expect(summaryOnlyRow.getByRole('button', { name: 'Export CSV' })).toHaveCount(0);
+  await expect(summaryOnlyRow.getByRole('button', { name: 'Schedule' })).toBeVisible();
+  await expect(summaryOnlyRow.getByRole('button', { name: 'Export CSV' })).toBeVisible();
+  await expect(summaryMixRow.getByRole('button', { name: 'Schedule' })).toBeVisible();
+  await expect(summaryMixRow.getByRole('button', { name: 'Export CSV' })).toBeVisible();
+
+  await summaryOnlyRow.getByRole('button', { name: 'Export CSV' }).click();
+
+  await expect.poll(() => activityFamilyReportCsvRequestCount).toBe(1);
+  await expect.poll(() => lastActivityFamilyReportCsvQuery).toMatchObject({
+    format: 'csv',
+  });
 
   await deliverableRow.getByRole('button', { name: 'Schedule' }).click();
 
@@ -371,7 +568,7 @@ test('RM report preset scheduled delivery flow works end-to-end (mocked API)', a
 
   await dialog.getByRole('checkbox', { name: 'Enable scheduled delivery' }).check();
   await dialog.getByRole('textbox', { name: 'Cron expression' }).fill('0 9 * * MON-FRI');
-  await dialog.getByRole('textbox', { name: 'Delivery folder ID' }).fill(deliveryFolderId);
+  await dialog.getByRole('treeitem', { name: /Delivery Target/i }).click();
   await dialog.getByRole('button', { name: 'Save schedule' }).click();
 
   await expect.poll(() => lastScheduleUpdate).toMatchObject({
@@ -391,4 +588,76 @@ test('RM report preset scheduled delivery flow works end-to-end (mocked API)', a
   await expect.poll(() => executionsGetCount).toBe(3);
   await expect(dialog.getByText('weekly-family-report-20260421.csv')).toBeVisible();
   await expect(dialog.getByText(/Last:/)).toBeVisible();
+
+  await dialog.getByRole('button', { name: 'Close' }).click();
+
+  await summaryOnlyRow.getByRole('button', { name: 'Schedule' }).click();
+
+  const summaryDialog = page.getByRole('dialog', { name: /Schedule Delivery/i });
+  await expect(summaryDialog).toBeVisible();
+  await expect.poll(() => scheduleGetCount).toBe(4);
+  await expect.poll(() => executionsGetCount).toBe(4);
+
+  await summaryDialog.getByRole('checkbox', { name: 'Enable scheduled delivery' }).check();
+  await summaryDialog.getByRole('textbox', { name: 'Cron expression' }).fill('0 12 * * MON-FRI');
+  await summaryDialog.getByRole('treeitem', { name: /Delivery Target/i }).click();
+  await summaryDialog.getByRole('button', { name: 'Save schedule' }).click();
+
+  await expect.poll(() => lastScheduleUpdate).toMatchObject({
+    enabled: true,
+    cronExpression: '0 12 * * MON-FRI',
+    timezone: 'UTC',
+    deliveryFolderId,
+  });
+  await expect.poll(() => scheduleGetCount).toBe(5);
+
+  await summaryDialog.getByRole('button', { name: 'Deliver now' }).click();
+
+  await expect.poll(() => lastDeliveredPresetId).toBe(summaryOnlyPresetId);
+  await expect.poll(() => scheduleGetCount).toBe(6);
+  await expect.poll(() => executionsGetCount).toBe(6);
+  await expect(summaryDialog.getByText('weekly-family-report-20260421.csv')).toBeVisible();
+  await expect(summaryDialog.getByText(/Last:/)).toBeVisible();
+
+  await summaryDialog.getByRole('button', { name: 'Close' }).click();
+
+  const healthCard = page.getByRole('heading', { name: 'Scheduled Delivery Health' })
+    .locator('xpath=ancestor::div[contains(@class,"MuiCard-root")][1]');
+  await expect(healthCard.getByText('Scheduled presets: 2')).toBeVisible();
+  await expect(healthCard.getByText('Last 24h success: 2')).toBeVisible();
+  await expect(healthCard.getByText('Last 24h failed: 0')).toBeVisible();
+
+  const ledgerCard = page.getByRole('heading', { name: 'Preset Delivery Ledger' })
+    .locator('xpath=ancestor::div[contains(@class,"MuiCard-root")][1]');
+  await expect(ledgerCard.getByText('Showing 3 of 3 deliveries')).toBeVisible();
+  await expect(ledgerCard.getByText('Weekly Family Highlights')).toBeVisible();
+  await expect(ledgerCard.getByText('weekly-family-report-20260421.csv')).toHaveCount(2);
+
+  await ledgerCard.getByRole('combobox', { name: 'Result' }).click();
+  await page.getByRole('option', { name: 'Failed' }).click();
+  await ledgerCard.getByRole('combobox', { name: 'Trigger' }).click();
+  await page.getByRole('option', { name: 'Scheduled' }).click();
+  await ledgerCard.getByRole('button', { name: 'Apply', exact: true }).click();
+
+  await expect(ledgerCard.getByText('Active ledger filters')).toBeVisible();
+  await expect(ledgerCard.getByText('Result: Failed')).toBeVisible();
+  await expect(ledgerCard.getByText('Trigger: Scheduled')).toBeVisible();
+  await expect(ledgerCard.getByText('Showing 1 of 1 deliveries')).toBeVisible();
+  await expect(ledgerCard.getByText('Weekly Family Mix')).toBeVisible();
+
+  await ledgerCard.getByRole('button', { name: 'Export ledger CSV' }).click();
+  await expect.poll(() => ledgerExportRequestCount).toBe(1);
+  await expect.poll(() => lastLedgerExportQuery).toMatchObject({
+    status: 'FAILED',
+    triggerType: 'SCHEDULED',
+    limit: '10',
+  });
+
+  await ledgerCard.getByRole('combobox', { name: 'Preset' }).click();
+  await page.getByRole('option', { name: 'Weekly Family Highlights' }).click();
+  await ledgerCard.getByRole('button', { name: 'Apply', exact: true }).click();
+
+  await expect(ledgerCard.getByText('No deliveries match the current filters.')).toBeVisible();
+  await ledgerCard.getByRole('button', { name: 'Show all deliveries' }).click();
+  await expect(ledgerCard.getByText('Showing 3 of 3 deliveries')).toBeVisible();
 });

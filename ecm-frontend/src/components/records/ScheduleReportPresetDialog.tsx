@@ -34,6 +34,7 @@ interface ScheduleReportPresetDialogProps {
   preset: RmReportPreset | null;
   onClose: () => void;
   onSaved?: (status: RmReportPresetScheduleStatus) => void;
+  onChanged?: () => void | Promise<void>;
 }
 
 type ExecutionStatusFilter = 'ALL' | 'SUCCESS' | 'FAILED';
@@ -51,6 +52,7 @@ const ScheduleReportPresetDialog: React.FC<ScheduleReportPresetDialogProps> = ({
   preset,
   onClose,
   onSaved,
+  onChanged,
 }) => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -114,6 +116,10 @@ const ScheduleReportPresetDialog: React.FC<ScheduleReportPresetDialogProps> = ({
     }
   }, [preset]);
 
+  const notifyChanged = useCallback(async () => {
+    await onChanged?.();
+  }, [onChanged]);
+
   useEffect(() => {
     if (open && preset && kindSupportsCsvDelivery) {
       setExecutionStatusFilter('ALL');
@@ -171,6 +177,7 @@ const ScheduleReportPresetDialog: React.FC<ScheduleReportPresetDialogProps> = ({
       setDeliveryFolderId(updated.deliveryFolderId ?? '');
       await loadState();
       onSaved?.(updated);
+      await notifyChanged();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to save schedule';
       setError(message);
@@ -179,13 +186,14 @@ const ScheduleReportPresetDialog: React.FC<ScheduleReportPresetDialogProps> = ({
     }
   };
 
-  const handleDeliverNow = async () => {
+  const handleDeliverNow = useCallback(async () => {
     if (!preset) return;
     setError(null);
     setDelivering(true);
     try {
       await recordsManagementService.deliverReportPresetNow(preset.id);
       const refreshed = await loadState();
+      await notifyChanged();
       const execution = refreshed?.recentExecutions[0];
       if (execution?.status === 'FAILED') {
         setError(execution.message || 'Delivery failed');
@@ -196,7 +204,7 @@ const ScheduleReportPresetDialog: React.FC<ScheduleReportPresetDialogProps> = ({
     } finally {
       setDelivering(false);
     }
-  };
+  }, [loadState, notifyChanged, preset]);
 
   const busy = loading || saving || delivering;
 

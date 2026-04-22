@@ -140,6 +140,30 @@ The accepted `P5` runtime slices on top of this matrix are:
   - RM report preset schedule claim-before-upload hardening
   - advances `nextRunAt` through an atomic claim step before scheduled upload and skips already-claimed due presets
   - no new endpoint or migration
+- `PR-111`
+  - RM summary-only preset CSV and scheduled-delivery support
+  - enables `ACTIVITY_FAMILY_HIGHLIGHTS` and `ACTIVITY_FAMILY_MIX` to participate in preset-row export, preset execute CSV, and scheduled CSV delivery by reusing the shipped family-report CSV semantics
+  - no new endpoint, table, or migration
+- `PR-112`
+  - RM summary-only preset schedule/export mocked E2E coverage
+  - updates the shipped mocked preset schedule flow so browser-level evidence matches the `PR-111` summary-only preset contract
+  - no runtime endpoint, table, or migration change
+- `PR-113`
+  - RM summary-only preset full-stack/admin smoke
+  - adds one non-mocked browser/admin proof across the shipped summary-only preset export and scheduled-delivery contract against the current-code frontend/backend stack
+  - no new runtime endpoint, table, or migration change
+- `PR-114`
+  - RM preset delivery surface refresh and ledger full-stack proof
+  - refreshes the parent preset/health/ledger surfaces after successful dialog save/deliver and extends the summary-only full-stack smoke into the page-level delivery ledger
+  - no new runtime endpoint, table, or migration change
+- `PR-115`
+  - RM preset delivery ledger operator mocked browser coverage
+  - extends the shipped mocked preset-delivery browser flow into scheduled-delivery health and cross-preset ledger filter/export/zero-match operator paths
+  - no new runtime endpoint, table, or migration change
+- `PR-116`
+  - RM preset delivery ledger full-stack/admin smoke
+  - extends the live preset schedule smoke into page-level ledger filter/export/zero-match operator actions against the current frontend/backend stack
+  - no new runtime endpoint, table, or migration change
 
 These are still valid, but they should wait until policy semantics and operator demand are explicit.
 

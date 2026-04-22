@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
 import java.time.format.DateTimeFormatter;
@@ -171,16 +172,22 @@ public class RecordsManagementController {
                 normalizedFormat
             );
             case ACTIVITY_FAMILY_HIGHLIGHTS -> {
-                rejectCsvForSummaryOnlyPreset(preset, normalizedFormat);
-                yield ResponseEntity.ok(
-                    recordsManagementService.getActivityFamilyHighlights(optionalPresetIntegerParam(preset, "windowDays"))
-                );
+                if ("csv".equals(normalizedFormat)) {
+                    ResolvedPresetDateTimeRange range = requirePresetRollingDateTimeRange(preset, "windowDays");
+                    yield getActivityFamilyReport(range.from(), range.to(), null, null, normalizedFormat);
+                }
+                yield ResponseEntity.ok(recordsManagementService.getActivityFamilyHighlights(
+                    resolvePresetRollingDays(preset, "windowDays")
+                ));
             }
             case ACTIVITY_FAMILY_MIX -> {
-                rejectCsvForSummaryOnlyPreset(preset, normalizedFormat);
-                yield ResponseEntity.ok(
-                    recordsManagementService.getActivityFamilies(optionalPresetIntegerParam(preset, "days"))
-                );
+                if ("csv".equals(normalizedFormat)) {
+                    ResolvedPresetDateTimeRange range = requirePresetRollingDateTimeRange(preset, "days");
+                    yield getActivityFamilyReport(range.from(), range.to(), null, null, normalizedFormat);
+                }
+                yield ResponseEntity.ok(recordsManagementService.getActivityFamilies(
+                    resolvePresetRollingDays(preset, "days")
+                ));
             }
         };
     }
@@ -552,14 +559,6 @@ public class RecordsManagementController {
         throw new IllegalArgumentException("Unsupported format: " + format);
     }
 
-    private void rejectCsvForSummaryOnlyPreset(RmReportPreset preset, String format) {
-        if ("csv".equals(format)) {
-            throw new IllegalArgumentException(
-                "CSV export is not supported for report preset kind " + preset.getKind()
-            );
-        }
-    }
-
     private LocalDateTime requirePresetDateTimeParam(RmReportPreset preset, String key) {
         String value = requirePresetStringParam(preset, key);
         try {
@@ -609,9 +608,65 @@ public class RecordsManagementController {
         );
     }
 
+    private LocalDateTime optionalPresetDateTimeParam(RmReportPreset preset, String key) {
+        Object value = presetParam(preset, key);
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof String stringValue && !stringValue.isBlank()) {
+            try {
+                return LocalDateTime.parse(stringValue.trim());
+            } catch (DateTimeParseException ex) {
+                throw new IllegalArgumentException(
+                    "Preset param \"" + key + "\" must be an ISO-8601 datetime for " + preset.getKind()
+                );
+            }
+        }
+        throw new IllegalArgumentException(
+            "Preset param \"" + key + "\" must be an ISO-8601 datetime for " + preset.getKind()
+        );
+    }
+
+    private Integer resolvePresetRollingDays(RmReportPreset preset, String key) {
+        Integer explicitDays = optionalPresetIntegerParam(preset, key);
+        if (explicitDays != null) {
+            return explicitDays;
+        }
+        LocalDateTime from = optionalPresetDateTimeParam(preset, "from");
+        LocalDateTime to = optionalPresetDateTimeParam(preset, "to");
+        if (from != null && to != null) {
+            long dayCount = java.time.temporal.ChronoUnit.DAYS.between(from.toLocalDate(), to.toLocalDate()) + 1L;
+            return (int) Math.max(dayCount, 1L);
+        }
+        return null;
+    }
+
+    private ResolvedPresetDateTimeRange requirePresetRollingDateTimeRange(RmReportPreset preset, String dayKey) {
+        LocalDateTime from = optionalPresetDateTimeParam(preset, "from");
+        LocalDateTime to = optionalPresetDateTimeParam(preset, "to");
+        if (from != null && to != null) {
+            return new ResolvedPresetDateTimeRange(from, to);
+        }
+        Integer days = resolvePresetRollingDays(preset, dayKey);
+        if (days == null || days < 1) {
+            throw new IllegalArgumentException(
+                "Preset param \"" + dayKey + "\" is required for CSV export on " + preset.getKind()
+            );
+        }
+        LocalDate endDate = LocalDate.now();
+        LocalDate startDate = endDate.minusDays(days - 1L);
+        return new ResolvedPresetDateTimeRange(startDate.atStartOfDay(), endDate.atTime(23, 59, 59));
+    }
+
     private Object presetParam(RmReportPreset preset, String key) {
         Map<String, Object> params = preset.getParams();
         return params == null ? null : params.get(key);
+    }
+
+    private record ResolvedPresetDateTimeRange(
+        LocalDateTime from,
+        LocalDateTime to
+    ) {
     }
 
     private String buildActivityContributorFamilyReportCsv(RecordsManagementService.ActivityContributorFamilyReportDto report) {

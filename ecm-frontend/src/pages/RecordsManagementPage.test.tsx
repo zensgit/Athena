@@ -681,6 +681,7 @@ describe('RecordsManagementPage', () => {
         description: 'Summary-only window',
         kind: 'ACTIVITY_FAMILY_HIGHLIGHTS',
         params: {
+          windowDays: 7,
           from: '2026-04-09T00:00:00',
           to: '2026-04-15T23:59:59',
         },
@@ -971,16 +972,24 @@ describe('RecordsManagementPage', () => {
         deliveryFolderId: 'folder-1',
       }
     ));
+    expect(mockedRecordsManagementService.listReportPresets).toHaveBeenCalledTimes(2);
+    expect(mockedRecordsManagementService.getScheduledDeliveryTelemetry).toHaveBeenCalledTimes(2);
+    expect(mockedRecordsManagementService.listReportPresetExecutionLedger).toHaveBeenCalledTimes(2);
   });
 
-  it('keeps summary-only presets audit-only in the preset table', async () => {
+  it('supports CSV export and scheduling for summary-only presets in the preset table', async () => {
     renderPage();
 
     const presetRow = (await screen.findByText('HR family highlights')).closest('tr');
     expect(presetRow).toBeTruthy();
 
-    expect(within(presetRow as HTMLElement).queryByRole('button', { name: 'Export CSV' })).toBeNull();
-    expect(within(presetRow as HTMLElement).queryByRole('button', { name: 'Schedule' })).toBeNull();
+    fireEvent.click(within(presetRow as HTMLElement).getByRole('button', { name: 'Export CSV' }));
+
+    await waitFor(() => expect(mockedRecordsManagementService.exportActivityFamilyReportCsv).toHaveBeenCalledWith({
+      from: '2026-04-09T00:00:00',
+      to: '2026-04-15T23:59:59',
+    }));
+    expect(within(presetRow as HTMLElement).getByRole('button', { name: 'Schedule' })).toBeTruthy();
     expect(within(presetRow as HTMLElement).getByRole('button', { name: 'Apply to audit' })).toBeTruthy();
   });
 

@@ -97,10 +97,13 @@ class RmReportPresetDeliveryServiceTest {
     }
 
     @Test
-    @DisplayName("updateSchedule rejects summary-only preset kinds")
-    void updateScheduleRejectsSummaryOnlyPresetKinds() {
+    @DisplayName("updateSchedule enables summary-only preset kinds that now support CSV delivery")
+    void updateScheduleEnablesSummaryOnlyPresetKinds() {
         RmReportPreset preset = preset(RmReportPreset.Kind.ACTIVITY_FAMILY_HIGHLIGHTS, Map.of("windowDays", 7));
+        UUID folderId = UUID.randomUUID();
         when(presetService.getOwned(preset.getId())).thenReturn(preset);
+        when(presetRepository.save(any(RmReportPreset.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(executionRepository.findFirstByPresetIdOrderByStartedAtDesc(preset.getId())).thenReturn(Optional.empty());
 
         RmReportPresetDeliveryService service = new RmReportPresetDeliveryService(
             presetService,
@@ -112,21 +115,19 @@ class RmReportPresetDeliveryServiceTest {
             securityService
         );
 
-        IllegalArgumentException ex = assertThrows(
-            IllegalArgumentException.class,
-            () -> service.updateSchedule(
-                preset.getId(),
-                new RmReportPresetDeliveryService.UpdateScheduleRequest(
-                    true,
-                    "0 */10 * * * *",
-                    "UTC",
-                    UUID.randomUUID()
-                )
+        RmReportPresetDeliveryService.ScheduleStatusDto result = service.updateSchedule(
+            preset.getId(),
+            new RmReportPresetDeliveryService.UpdateScheduleRequest(
+                true,
+                "0 */10 * * * *",
+                "UTC",
+                folderId
             )
         );
 
-        assertTrue(ex.getMessage().contains("Scheduled delivery is not supported"));
-        verifyNoInteractions(presetRepository, uploadService);
+        assertTrue(result.enabled());
+        assertEquals(folderId, result.deliveryFolderId());
+        assertNotNull(result.nextRunAt());
     }
 
     @Test
@@ -198,6 +199,72 @@ class RmReportPresetDeliveryServiceTest {
         MultipartFile uploaded = fileCaptor.getValue();
         assertEquals("text/csv", uploaded.getContentType());
         assertTrue(new String(uploaded.getBytes(), StandardCharsets.UTF_8).contains("eventType,family,currentCount"));
+    }
+
+    @Test
+    @DisplayName("deliverNow supports summary-only presets by rendering the current rolling family report CSV")
+    void deliverNowSupportsSummaryOnlyPresets() throws Exception {
+        RmReportPreset preset = preset(
+            RmReportPreset.Kind.ACTIVITY_FAMILY_HIGHLIGHTS,
+            Map.of("windowDays", 7)
+        );
+        UUID folderId = UUID.randomUUID();
+        UUID documentId = UUID.randomUUID();
+        preset.setDeliveryFolderId(folderId);
+        when(presetService.getOwned(preset.getId())).thenReturn(preset);
+        when(recordsManagementService.getActivityFamilyReport(
+                any(LocalDateTime.class),
+                any(LocalDateTime.class),
+                isNull(),
+                isNull()))
+            .thenReturn(
+                new RecordsManagementService.ActivityFamilyReportDto(
+                    new RecordsManagementService.ActivityDateTimeRangeDto("2026-04-09T00:00:00", "2026-04-15T23:59:59"),
+                    new RecordsManagementService.ActivityDateTimeRangeDto("2026-04-02T00:00:00", "2026-04-08T23:59:59"),
+                    5,
+                    5,
+                    7,
+                    4,
+                    List.of(
+                        new RecordsManagementService.ActivityFamilyReportEntryDto(
+                            "DECLARED",
+                            5,
+                            2,
+                            3,
+                            LocalDateTime.of(2026, 4, 15, 10, 0),
+                            List.of(),
+                            List.of()
+                        )
+                    )
+                )
+            );
+        when(uploadService.uploadDocument(any(MultipartFile.class), eq(folderId), isNull()))
+            .thenReturn(PipelineResult.builder().success(true).documentId(documentId).build());
+        when(presetRepository.save(any(RmReportPreset.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(executionRepository.save(any(RmReportPresetExecution.class))).thenAnswer(inv -> {
+            RmReportPresetExecution execution = inv.getArgument(0);
+            execution.setId(UUID.randomUUID());
+            return execution;
+        });
+
+        RmReportPresetDeliveryService service = new RmReportPresetDeliveryService(
+            presetService,
+            presetRepository,
+            executionRepository,
+            recordsManagementService,
+            uploadService,
+            auditService,
+            securityService
+        );
+
+        RmReportPresetDeliveryService.PresetExecutionDto result = service.deliverNow(preset.getId());
+
+        assertEquals(RmReportPresetExecution.ExecutionStatus.SUCCESS, result.status());
+        assertEquals(documentId, result.documentId());
+        ArgumentCaptor<MultipartFile> fileCaptor = ArgumentCaptor.forClass(MultipartFile.class);
+        verify(uploadService).uploadDocument(fileCaptor.capture(), eq(folderId), isNull());
+        assertTrue(new String(fileCaptor.getValue().getBytes(), StandardCharsets.UTF_8)
+            .contains("family,currentCount,previousCount,delta"));
     }
 
     @Test

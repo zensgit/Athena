@@ -417,6 +417,8 @@ public class RmReportPresetDeliveryService {
 
     private boolean supportsScheduledDelivery(RmReportPreset.Kind kind) {
         return kind == RmReportPreset.Kind.ACTIVITY_FAMILY_REPORT
+            || kind == RmReportPreset.Kind.ACTIVITY_FAMILY_HIGHLIGHTS
+            || kind == RmReportPreset.Kind.ACTIVITY_FAMILY_MIX
             || kind == RmReportPreset.Kind.ACTIVITY_EVENT_TYPE_REPORT
             || kind == RmReportPreset.Kind.ACTIVITY_CONTRIBUTOR_REPORT
             || kind == RmReportPreset.Kind.ACTIVITY_CONTRIBUTOR_FAMILY_REPORT
@@ -463,6 +465,18 @@ public class RmReportPresetDeliveryService {
                     optionalPresetIntegerParam(preset, "eventTypeLimit")
                 )
             );
+            case ACTIVITY_FAMILY_HIGHLIGHTS -> {
+                ResolvedPresetDateTimeRange range = requirePresetRollingDateTimeRange(preset, "windowDays");
+                yield buildActivityFamilyReportCsv(
+                    recordsManagementService.getActivityFamilyReport(range.from(), range.to(), null, null)
+                );
+            }
+            case ACTIVITY_FAMILY_MIX -> {
+                ResolvedPresetDateTimeRange range = requirePresetRollingDateTimeRange(preset, "days");
+                yield buildActivityFamilyReportCsv(
+                    recordsManagementService.getActivityFamilyReport(range.from(), range.to(), null, null)
+                );
+            }
             default -> throw new IllegalArgumentException("Scheduled delivery is not supported for preset kind " + preset.getKind());
         };
     }
@@ -650,6 +664,56 @@ public class RmReportPresetDeliveryService {
         );
     }
 
+    private LocalDateTime optionalPresetDateTimeParam(RmReportPreset preset, String key) {
+        Object value = presetParam(preset, key);
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof String stringValue && !stringValue.isBlank()) {
+            try {
+                return LocalDateTime.parse(stringValue.trim());
+            } catch (DateTimeParseException ex) {
+                throw new IllegalArgumentException(
+                    "Preset param \"" + key + "\" must be an ISO-8601 datetime for " + preset.getKind()
+                );
+            }
+        }
+        throw new IllegalArgumentException(
+            "Preset param \"" + key + "\" must be an ISO-8601 datetime for " + preset.getKind()
+        );
+    }
+
+    private Integer resolvePresetRollingDays(RmReportPreset preset, String key) {
+        Integer explicitDays = optionalPresetIntegerParam(preset, key);
+        if (explicitDays != null) {
+            return explicitDays;
+        }
+        LocalDateTime from = optionalPresetDateTimeParam(preset, "from");
+        LocalDateTime to = optionalPresetDateTimeParam(preset, "to");
+        if (from != null && to != null) {
+            long dayCount = java.time.temporal.ChronoUnit.DAYS.between(from.toLocalDate(), to.toLocalDate()) + 1L;
+            return (int) Math.max(dayCount, 1L);
+        }
+        return null;
+    }
+
+    private ResolvedPresetDateTimeRange requirePresetRollingDateTimeRange(RmReportPreset preset, String dayKey) {
+        LocalDateTime from = optionalPresetDateTimeParam(preset, "from");
+        LocalDateTime to = optionalPresetDateTimeParam(preset, "to");
+        if (from != null && to != null) {
+            return new ResolvedPresetDateTimeRange(from, to);
+        }
+        Integer days = resolvePresetRollingDays(preset, dayKey);
+        if (days == null || days < 1) {
+            throw new IllegalArgumentException(
+                "Preset param \"" + dayKey + "\" is required for scheduled delivery on " + preset.getKind()
+            );
+        }
+        LocalDate endDate = LocalDate.now();
+        LocalDate startDate = endDate.minusDays(days - 1L);
+        return new ResolvedPresetDateTimeRange(startDate.atStartOfDay(), endDate.atTime(23, 59, 59));
+    }
+
     private Object presetParam(RmReportPreset preset, String key) {
         Map<String, Object> params = preset.getParams();
         return params == null ? null : params.get(key);
@@ -818,6 +882,12 @@ public class RmReportPresetDeliveryService {
         String cronExpression,
         String timezone,
         UUID deliveryFolderId
+    ) {
+    }
+
+    private record ResolvedPresetDateTimeRange(
+        LocalDateTime from,
+        LocalDateTime to
     ) {
     }
 
