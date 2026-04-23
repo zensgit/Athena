@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { APIRequestContext, expect, test } from '@playwright/test';
 import {
   fetchAccessToken,
@@ -11,6 +12,10 @@ import { gotoWithAuthE2E } from './helpers/login';
 const baseApiUrl = resolveApiUrl();
 const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
+const defaultPostgresContainer = process.env.ECM_POSTGRES_CONTAINER || 'athena-postgres-1';
+const defaultPostgresDb = process.env.POSTGRES_DB || 'ecm_db';
+const defaultPostgresUser = process.env.POSTGRES_USER || 'ecm_user';
+const defaultPostgresPassword = process.env.POSTGRES_PASSWORD || 'ecm_password';
 
 type ReportPresetResponse = {
   id: string;
@@ -130,6 +135,39 @@ async function deleteNode(token: string, nodeId: string, request: APIRequestCont
   }).catch(() => null);
 }
 
+function forcePresetNextRunAt(presetId: string, sqlExpression: string) {
+  const sql = `
+    update rm_report_presets
+       set next_run_at = ${sqlExpression}
+     where id = '${presetId}'
+  `;
+  execFileSync(
+    'docker',
+    [
+      'exec',
+      '-e',
+      `PGPASSWORD=${defaultPostgresPassword}`,
+      defaultPostgresContainer,
+      'psql',
+      '-U',
+      defaultPostgresUser,
+      '-d',
+      defaultPostgresDb,
+      '-tAc',
+      sql,
+    ],
+    { stdio: 'pipe' }
+  );
+}
+
+function forcePresetNextRunAtPast(presetId: string) {
+  forcePresetNextRunAt(presetId, "now() - interval '1 minute'");
+}
+
+function forcePresetNextRunAtFuture(presetId: string) {
+  forcePresetNextRunAt(presetId, "now() + interval '1 day'");
+}
+
 function getSavedPresetCard(page: import('@playwright/test').Page) {
   return page
     .getByRole('heading', { name: 'Saved RM Report Presets' })
@@ -139,6 +177,12 @@ function getSavedPresetCard(page: import('@playwright/test').Page) {
 function getPresetDeliveryLedgerCard(page: import('@playwright/test').Page) {
   return page
     .getByRole('heading', { name: 'Preset Delivery Ledger' })
+    .locator('xpath=ancestor::div[contains(@class,"MuiCard-root")][1]');
+}
+
+function getScheduledDeliveryHealthCard(page: import('@playwright/test').Page) {
+  return page
+    .getByRole('heading', { name: 'Scheduled Delivery Health' })
     .locator('xpath=ancestor::div[contains(@class,"MuiCard-root")][1]');
 }
 
@@ -181,11 +225,13 @@ test('RM report preset schedule can be configured from Records Management (full-
   const from = toLocalDateTime(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000));
   const to = toLocalDateTime(now);
   const presetName = `e2e-rm-schedule-${Date.now()}`;
+  const controlPresetName = `e2e-rm-unscheduled-${Date.now()}`;
   const cronExpression = '0 */10 * * * *';
   const deliveryFolderName = `e2e-rm-delivery-${Date.now()}`;
   const deliveryFolderId = await createFolder(rootFolderId, deliveryFolderName, token, request);
 
   const preset = await createReportPreset(token, presetName, from, to, request);
+  const controlPreset = await createReportPreset(token, controlPresetName, from, to, request);
 
   try {
     const scheduleProbe = await request.get(`${baseApiUrl}/api/v1/records/report-presets/${preset.id}/schedule`, {
@@ -275,7 +321,40 @@ test('RM report preset schedule can be configured from Records Management (full-
 
     await dialog.getByRole('button', { name: 'Close' }).click();
 
+    const healthCard = getScheduledDeliveryHealthCard(page);
+    await expect(healthCard.getByText(/Scheduled presets: [1-9]\d*/)).toBeVisible({ timeout: 30_000 });
+    await expect(healthCard.getByText(/Last 24h success: [1-9]\d*/)).toBeVisible({ timeout: 30_000 });
+
     const ledgerCard = getPresetDeliveryLedgerCard(page);
+    await expect(ledgerCard.getByText(deliveredFilename, { exact: true })).toBeVisible({ timeout: 30_000 });
+    await healthCard.getByText(/Last 24h success: [1-9]\d*/).click();
+    await expect(ledgerCard.getByText('Active ledger filters')).toBeVisible({ timeout: 30_000 });
+    await expect(ledgerCard.getByText('Result: Successful')).toBeVisible();
+    await expect(ledgerCard.getByText(/^From:/)).toBeVisible();
+    await expect(ledgerCard.getByText(/^To:/)).toBeVisible();
+
+    const successLedgerExportResponse = page.waitForResponse((response) => {
+      if (!response.url().includes('/api/v1/records/report-presets/executions/export')) {
+        return false;
+      }
+      const url = new URL(response.url());
+      return url.searchParams.get('status') === 'SUCCESS'
+        && url.searchParams.has('from')
+        && url.searchParams.has('to')
+        && response.ok();
+    });
+    await ledgerCard.getByRole('button', { name: 'Export ledger CSV' }).click();
+    await successLedgerExportResponse;
+
+    await ledgerCard.getByRole('button', { name: 'Clear applied filters' }).click();
+    await expect(ledgerCard.getByText(deliveredFilename, { exact: true })).toBeVisible({ timeout: 30_000 });
+
+    const presetCard = getSavedPresetCard(page);
+    await healthCard.getByText(/Scheduled presets: [1-9]\d*/).click();
+    await expect(presetCard.getByText(/Scheduled · [1-9]\d*/)).toBeVisible({ timeout: 30_000 });
+    await expect(presetCard.getByRole('row').filter({ hasText: presetName }).first()).toBeVisible();
+    await expect(presetCard.getByRole('row').filter({ hasText: controlPresetName })).toHaveCount(0);
+
     const ledgerRow = ledgerCard.getByRole('row').filter({ hasText: presetName }).first();
     await expect(ledgerRow).toBeVisible({ timeout: 30_000 });
     await expect(ledgerRow.getByText('Successful', { exact: true })).toBeVisible();
@@ -307,6 +386,7 @@ test('RM report preset schedule can be configured from Records Management (full-
     await expect(ledgerRow).toBeVisible({ timeout: 30_000 });
   } finally {
     await deleteReportPreset(token, preset.id, request);
+    await deleteReportPreset(token, controlPreset.id, request);
     await deleteNode(token, deliveryFolderId, request);
   }
 });
@@ -429,6 +509,220 @@ test('RM summary-only preset can be exported and scheduled from Records Manageme
     });
   } finally {
     await deleteReportPreset(token, preset.id, request);
+    await deleteNode(token, deliveryFolderId, request);
+  }
+});
+
+test('RM failed preset delivery is surfaced through scheduled delivery health (full-stack)', async ({ page, request }) => {
+  test.setTimeout(180_000);
+
+  await waitForApiReady(request, { apiUrl: baseApiUrl });
+  const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+  const rootFolderId = await getRootFolderId(request, token, { apiUrl: baseApiUrl });
+
+  const now = new Date();
+  const from = toLocalDateTime(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000));
+  const to = toLocalDateTime(now);
+  const presetName = `e2e-rm-failed-schedule-${Date.now()}`;
+  const cronExpression = '0 */20 * * * *';
+  const deliveryFolderName = `e2e-rm-failed-delivery-${Date.now()}`;
+  const deliveryFolderId = await createFolder(rootFolderId, deliveryFolderName, token, request);
+  const invalidDeliveryFolderId = '00000000-0000-0000-0000-000000000000';
+  const preset = await createReportPreset(token, presetName, from, to, request);
+
+  try {
+    await gotoWithAuthE2E(page, '/admin/records-management', defaultUsername, defaultPassword, { token });
+
+    await expect(page).toHaveURL(/\/admin\/records-management$/);
+    await expect(page.getByRole('heading', { name: 'Records Management' })).toBeVisible({ timeout: 60_000 });
+
+    const { dialog } = await openScheduleDialogForPreset(page, presetName);
+
+    await dialog.getByRole('checkbox', { name: 'Enable scheduled delivery' }).check();
+    await dialog.getByRole('textbox', { name: 'Cron expression' }).fill(cronExpression);
+    await pickDeliveryFolder(dialog, deliveryFolderName);
+
+    const saveResponse = page.waitForResponse((response) =>
+      response.url().includes(`/api/v1/records/report-presets/${preset.id}/schedule`)
+      && response.request().method() === 'PUT'
+      && response.ok()
+    );
+    await dialog.getByRole('button', { name: 'Save schedule' }).click();
+    await saveResponse;
+
+    await expect(dialog.getByText('Enabled')).toBeVisible({ timeout: 30_000 });
+    await expect.poll(async () => {
+      const status = await fetchScheduleStatus(token, preset.id, request);
+      return {
+        enabled: status.enabled,
+        deliveryFolderId: status.deliveryFolderId,
+        hasNextRunAt: Boolean(status.nextRunAt),
+      };
+    }, { timeout: 30_000 }).toEqual({
+      enabled: true,
+      deliveryFolderId,
+      hasNextRunAt: true,
+    });
+
+    const forceFailureResponse = await request.put(`${baseApiUrl}/api/v1/records/report-presets/${preset.id}/schedule`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      data: {
+        enabled: true,
+        cronExpression,
+        timezone: 'UTC',
+        deliveryFolderId: invalidDeliveryFolderId,
+      },
+    });
+    expect(forceFailureResponse.ok()).toBeTruthy();
+
+    await expect.poll(async () => {
+      const status = await fetchScheduleStatus(token, preset.id, request);
+      return status.deliveryFolderId;
+    }, { timeout: 30_000 }).toBe(invalidDeliveryFolderId);
+
+    const deliverResponse = page.waitForResponse((response) =>
+      response.url().includes(`/api/v1/records/report-presets/${preset.id}/deliver`)
+      && response.request().method() === 'POST'
+      && response.ok()
+    );
+    await dialog.getByRole('button', { name: 'Deliver now' }).click();
+    await deliverResponse;
+
+    await expect.poll(async () => {
+      const executions = await listExecutions(token, preset.id, request);
+      const first = executions[0];
+      if (!first) {
+        return null;
+      }
+      return {
+        status: first.status,
+        targetFolderId: first.targetFolderId ?? null,
+        filename: first.filename ?? null,
+      };
+    }, { timeout: 60_000 }).toEqual({
+      status: 'FAILED',
+      targetFolderId: invalidDeliveryFolderId,
+      filename: expect.any(String),
+    });
+
+    await dialog.getByRole('button', { name: 'Close' }).click();
+
+    const healthCard = getScheduledDeliveryHealthCard(page);
+    await expect(healthCard.getByText(/Last 24h failed: [1-9]\d*/)).toBeVisible({ timeout: 30_000 });
+
+    const ledgerCard = getPresetDeliveryLedgerCard(page);
+    await healthCard.getByText(/Last 24h failed: [1-9]\d*/).click();
+    await expect(ledgerCard.getByText('Active ledger filters')).toBeVisible({ timeout: 30_000 });
+    await expect(ledgerCard.getByText('Result: Failed')).toBeVisible();
+    await expect(ledgerCard.getByText(/^From:/)).toBeVisible();
+    await expect(ledgerCard.getByText(/^To:/)).toBeVisible();
+
+    const failedLedgerExportResponse = page.waitForResponse((response) => {
+      if (!response.url().includes('/api/v1/records/report-presets/executions/export')) {
+        return false;
+      }
+      const url = new URL(response.url());
+      return url.searchParams.get('status') === 'FAILED'
+        && url.searchParams.has('from')
+        && url.searchParams.has('to')
+        && response.ok();
+    });
+    await ledgerCard.getByRole('button', { name: 'Export ledger CSV' }).click();
+    await failedLedgerExportResponse;
+  } finally {
+    await deleteReportPreset(token, preset.id, request);
+    await deleteNode(token, deliveryFolderId, request);
+  }
+});
+
+test('RM due-now preset is surfaced through scheduled delivery health (full-stack)', async ({ page, request }) => {
+  test.setTimeout(180_000);
+
+  await waitForApiReady(request, { apiUrl: baseApiUrl });
+  const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+  const rootFolderId = await getRootFolderId(request, token, { apiUrl: baseApiUrl });
+
+  const now = new Date();
+  const from = toLocalDateTime(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000));
+  const to = toLocalDateTime(now);
+  const presetName = `e2e-rm-due-now-${Date.now()}`;
+  const controlPresetName = `e2e-rm-future-schedule-${Date.now()}`;
+  const cronExpression = '0 */10 * * * *';
+  const deliveryFolderName = `e2e-rm-due-now-delivery-${Date.now()}`;
+  const deliveryFolderId = await createFolder(rootFolderId, deliveryFolderName, token, request);
+  const preset = await createReportPreset(token, presetName, from, to, request);
+  const controlPreset = await createReportPreset(token, controlPresetName, from, to, request);
+
+  try {
+    await gotoWithAuthE2E(page, '/admin/records-management', defaultUsername, defaultPassword, { token });
+
+    await expect(page).toHaveURL(/\/admin\/records-management$/);
+    await expect(page.getByRole('heading', { name: 'Records Management' })).toBeVisible({ timeout: 60_000 });
+
+    const { dialog } = await openScheduleDialogForPreset(page, presetName);
+
+    await dialog.getByRole('checkbox', { name: 'Enable scheduled delivery' }).check();
+    await dialog.getByRole('textbox', { name: 'Cron expression' }).fill(cronExpression);
+    await pickDeliveryFolder(dialog, deliveryFolderName);
+
+    const saveResponse = page.waitForResponse((response) =>
+      response.url().includes(`/api/v1/records/report-presets/${preset.id}/schedule`)
+      && response.request().method() === 'PUT'
+      && response.ok()
+    );
+    await dialog.getByRole('button', { name: 'Save schedule' }).click();
+    await saveResponse;
+
+    await expect(dialog.getByText('Enabled')).toBeVisible({ timeout: 30_000 });
+    await dialog.getByRole('button', { name: 'Close' }).click();
+
+    const controlScheduleResponse = await request.put(`${baseApiUrl}/api/v1/records/report-presets/${controlPreset.id}/schedule`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      data: {
+        enabled: true,
+        cronExpression,
+        timezone: 'UTC',
+        deliveryFolderId,
+      },
+    });
+    expect(controlScheduleResponse.ok()).toBeTruthy();
+
+    forcePresetNextRunAtPast(preset.id);
+    forcePresetNextRunAtFuture(controlPreset.id);
+
+    await expect.poll(async () => {
+      const status = await fetchScheduleStatus(token, preset.id, request);
+      return Boolean(status.nextRunAt && new Date(status.nextRunAt).getTime() <= Date.now());
+    }, { timeout: 30_000 }).toBe(true);
+
+    await expect.poll(async () => {
+      const status = await fetchScheduleStatus(token, controlPreset.id, request);
+      return Boolean(status.nextRunAt && new Date(status.nextRunAt).getTime() > Date.now());
+    }, { timeout: 30_000 }).toBe(true);
+
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Refresh', exact: true })).toBeVisible({ timeout: 60_000 });
+
+    const healthCard = getScheduledDeliveryHealthCard(page);
+    await expect(healthCard.getByText(/Due now: [1-9]\d*/)).toBeVisible({ timeout: 30_000 });
+
+    const presetCard = getSavedPresetCard(page);
+    await healthCard.getByText(/Due now: [1-9]\d*/).click();
+    await expect(presetCard.getByText(/Due now · [1-9]\d*/)).toBeVisible({ timeout: 30_000 });
+
+    const dueRow = presetCard.getByRole('row').filter({ hasText: presetName }).first();
+    await expect(dueRow).toBeVisible({ timeout: 30_000 });
+    await expect(dueRow.getByText('Due now', { exact: true })).toBeVisible();
+    await expect(presetCard.getByRole('row').filter({ hasText: controlPresetName })).toHaveCount(0);
+  } finally {
+    await deleteReportPreset(token, preset.id, request);
+    await deleteReportPreset(token, controlPreset.id, request);
     await deleteNode(token, deliveryFolderId, request);
   }
 });

@@ -350,6 +350,16 @@ const formatLocalDateInputDay = (date: Date) => {
   return `${year}-${month}-${day}`;
 };
 
+const formatLocalDateTimeInput = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
+};
+
 const buildAuditRangeBoundary = (day?: string | null, endOfDay = false) =>
   day ? `${day}T${endOfDay ? '23:59:59' : '00:00:00'}` : '';
 
@@ -707,6 +717,7 @@ const RecordsManagementPage: React.FC = () => {
   const operationsRef = useRef<HTMLDivElement | null>(null);
   const auditRef = useRef<HTMLDivElement | null>(null);
   const reportPresetsRef = useRef<HTMLDivElement | null>(null);
+  const presetExecutionLedgerRef = useRef<HTMLDivElement | null>(null);
 
   const loadAdminData = useCallback(async (silent = false) => {
     if (silent) {
@@ -1314,6 +1325,27 @@ const RecordsManagementPage: React.FC = () => {
     setReportPresetTableFilter(filter);
     reportPresetsRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
   }, []);
+
+  const applyPresetExecutionLedgerFilterDrilldown = useCallback((filters: PresetExecutionLedgerFilterState) => {
+    setPresetExecutionLedgerFilters(filters);
+    setAppliedPresetExecutionLedgerFilters(filters);
+    setPresetExecutionLedgerPageIndex(0);
+    presetExecutionLedgerRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+  }, []);
+
+  const applyRecentDeliveryLedgerDrilldown = useCallback((status: RmReportPresetExecutionStatus) => {
+    const telemetryReference = scheduledDeliveryTelemetry?.generatedAt
+      ? new Date(scheduledDeliveryTelemetry.generatedAt)
+      : new Date();
+    const toDate = Number.isNaN(telemetryReference.getTime()) ? new Date() : telemetryReference;
+    const fromDate = new Date(toDate.getTime() - (24 * 60 * 60 * 1000));
+    applyPresetExecutionLedgerFilterDrilldown({
+      ...emptyPresetExecutionLedgerFiltersState(),
+      status,
+      from: formatLocalDateTimeInput(fromDate),
+      to: formatLocalDateTimeInput(toDate),
+    });
+  }, [applyPresetExecutionLedgerFilterDrilldown, scheduledDeliveryTelemetry]);
 
   const openBrowseTarget = useCallback((nodeId?: string | null) => {
     if (!nodeId) {
@@ -2364,6 +2396,7 @@ const RecordsManagementPage: React.FC = () => {
     await Promise.all([
       loadAdminData(true),
       loadOperations(true),
+      refreshPresetDeliverySurfaces(),
       loadBreakdown(true),
       loadContributors(true),
       loadFamilies(true),
@@ -5311,12 +5344,18 @@ const RecordsManagementPage: React.FC = () => {
                       color="success"
                       variant="outlined"
                       label={`Last 24h success: ${scheduledDeliveryTelemetry.last24hSuccessCount}`}
+                      onClick={scheduledDeliveryTelemetry.last24hSuccessCount > 0
+                        ? () => applyRecentDeliveryLedgerDrilldown('SUCCESS')
+                        : undefined}
                     />
                     <Chip
                       size="small"
                       color={scheduledDeliveryTelemetry.last24hFailedCount > 0 ? 'error' : 'default'}
                       variant="outlined"
                       label={`Last 24h failed: ${scheduledDeliveryTelemetry.last24hFailedCount}`}
+                      onClick={scheduledDeliveryTelemetry.last24hFailedCount > 0
+                        ? () => applyRecentDeliveryLedgerDrilldown('FAILED')
+                        : undefined}
                     />
                     {scheduledDeliveryTelemetry.lastExecutionAt && (
                       <Chip
@@ -5336,7 +5375,7 @@ const RecordsManagementPage: React.FC = () => {
           </Card>
         </Grid>
 
-        <Grid item xs={12}>
+        <Grid item xs={12} ref={presetExecutionLedgerRef}>
           <Card variant="outlined">
             <CardContent>
               <Stack spacing={1.5}>

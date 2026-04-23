@@ -75,8 +75,8 @@ test('RM report preset scheduled delivery flow works end-to-end (mocked API)', a
     targetFolderId: deliveryFolderId,
     documentId: null,
     message: 'Delivery failed',
-    startedAt: '2026-04-19T09:00:00Z',
-    finishedAt: '2026-04-19T09:00:05Z',
+    startedAt: '2026-04-20T12:00:00Z',
+    finishedAt: '2026-04-20T12:00:05Z',
     durationMs: 5000,
   };
 
@@ -485,7 +485,9 @@ test('RM report preset scheduled delivery flow works end-to-end (mocked API)', a
         cronExpression: body.enabled ? body.cronExpression : null,
         timezone: body.timezone ?? 'UTC',
         deliveryFolderId: body.deliveryFolderId ?? null,
-        nextRunAt: body.enabled ? '2026-04-22T09:00:00' : null,
+        nextRunAt: body.enabled
+          ? (presetId === deliverablePresetId ? '2026-04-21T08:00:00Z' : '2099-04-22T09:00:00Z')
+          : null,
       };
       lastScheduleUpdate = body;
       scheduleState.set(presetId, nextStatus);
@@ -624,8 +626,16 @@ test('RM report preset scheduled delivery flow works end-to-end (mocked API)', a
   const healthCard = page.getByRole('heading', { name: 'Scheduled Delivery Health' })
     .locator('xpath=ancestor::div[contains(@class,"MuiCard-root")][1]');
   await expect(healthCard.getByText('Scheduled presets: 2')).toBeVisible();
+  await expect(healthCard.getByText('Due now: 1')).toBeVisible();
   await expect(healthCard.getByText('Last 24h success: 2')).toBeVisible();
-  await expect(healthCard.getByText('Last 24h failed: 0')).toBeVisible();
+  await expect(healthCard.getByText('Last 24h failed: 1')).toBeVisible();
+
+  const presetCard = page.getByRole('heading', { name: 'Saved RM Report Presets' })
+    .locator('xpath=ancestor::div[contains(@class,"MuiCard-root")][1]');
+  await healthCard.getByText('Due now: 1').click();
+  await expect(presetCard.getByText('Due now · 1')).toBeVisible();
+  await expect(presetCard.getByRole('row').filter({ hasText: 'Weekly Family Report' }).first()).toBeVisible();
+  await expect(presetCard.getByRole('row').filter({ hasText: 'Weekly Family Highlights' })).toHaveCount(0);
 
   const ledgerCard = page.getByRole('heading', { name: 'Preset Delivery Ledger' })
     .locator('xpath=ancestor::div[contains(@class,"MuiCard-root")][1]');
@@ -633,15 +643,11 @@ test('RM report preset scheduled delivery flow works end-to-end (mocked API)', a
   await expect(ledgerCard.getByText('Weekly Family Highlights')).toBeVisible();
   await expect(ledgerCard.getByText('weekly-family-report-20260421.csv')).toHaveCount(2);
 
-  await ledgerCard.getByRole('combobox', { name: 'Result' }).click();
-  await page.getByRole('option', { name: 'Failed' }).click();
-  await ledgerCard.getByRole('combobox', { name: 'Trigger' }).click();
-  await page.getByRole('option', { name: 'Scheduled' }).click();
-  await ledgerCard.getByRole('button', { name: 'Apply', exact: true }).click();
-
+  await healthCard.getByText('Last 24h failed: 1').click();
   await expect(ledgerCard.getByText('Active ledger filters')).toBeVisible();
   await expect(ledgerCard.getByText('Result: Failed')).toBeVisible();
-  await expect(ledgerCard.getByText('Trigger: Scheduled')).toBeVisible();
+  await expect(ledgerCard.getByText(/^From:/)).toBeVisible();
+  await expect(ledgerCard.getByText(/^To:/)).toBeVisible();
   await expect(ledgerCard.getByText('Showing 1 of 1 deliveries')).toBeVisible();
   await expect(ledgerCard.getByText('Weekly Family Mix')).toBeVisible();
 
@@ -649,7 +655,6 @@ test('RM report preset scheduled delivery flow works end-to-end (mocked API)', a
   await expect.poll(() => ledgerExportRequestCount).toBe(1);
   await expect.poll(() => lastLedgerExportQuery).toMatchObject({
     status: 'FAILED',
-    triggerType: 'SCHEDULED',
     limit: '10',
   });
 

@@ -44,6 +44,11 @@ This document builds on the already completed `P4` closeout material:
 - accepted runtime slices now also include `PR-114` on the `RM delivery workflows` lane as frontend-only operator polish that refreshes preset/health/ledger surfaces and proves summary-only delivery all the way into the page-level execution ledger
 - accepted runtime slices now also include `PR-115` on the `RM delivery workflows` lane as mocked browser-level operator regression coverage for scheduled-delivery health and cross-preset ledger filter/export behavior
 - accepted runtime slices now also include `PR-116` on the `RM delivery workflows` lane as the first real-stack smoke for page-level preset delivery ledger filter/export/zero-match operator behavior
+- accepted runtime slices now also include `PR-117` on the `RM delivery workflows` lane as the first real-stack smoke for page-level scheduled-delivery telemetry and the scheduled-presets health drilldown
+- accepted runtime slices now also include `PR-118` on the `RM delivery workflows` lane as frontend-only operator polish and browser-level regression coverage for scheduled-delivery health drilldowns into preset-table and ledger surfaces
+- accepted runtime slices now also include `PR-119` on the `RM delivery workflows` lane as the first real-stack smoke for the scheduled-delivery-health success signal drilling into the page-level preset delivery ledger
+- accepted runtime slices now also include `PR-120` on the `RM delivery workflows` lane as the first real-stack smoke for the scheduled-delivery-health failure signal drilling into the page-level preset delivery ledger
+- accepted runtime slices now also include `PR-121` on the `RM delivery workflows` lane as the first real-stack smoke for the scheduled-delivery-health due-now signal drilling into the page-level preset table filter, plus a frontend hardening fix that keeps preset/health/ledger refresh behavior in sync
 
 ## Checks
 

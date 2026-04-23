@@ -164,6 +164,26 @@ The accepted `P5` runtime slices on top of this matrix are:
   - RM preset delivery ledger full-stack/admin smoke
   - extends the live preset schedule smoke into page-level ledger filter/export/zero-match operator actions against the current frontend/backend stack
   - no new runtime endpoint, table, or migration change
+- `PR-117`
+  - RM scheduled delivery health full-stack/admin smoke
+  - extends the live preset schedule smoke into page-level scheduled-delivery telemetry and the `Scheduled presets` health drilldown against the current frontend/backend stack
+  - no new runtime endpoint, table, or migration change
+- `PR-118`
+  - RM scheduled delivery health operator drilldowns
+  - extends the health card into failed-delivery ledger drilldowns and adds browser-level regression coverage for `Due now` and recent-failure operator paths
+  - no new runtime endpoint, table, or migration change
+- `PR-119`
+  - RM scheduled delivery health success-ledger full-stack/admin smoke
+  - extends the live preset schedule smoke into the `Last 24h success` health drilldown and its page-level ledger evidence
+  - no new runtime endpoint, table, or migration change
+- `PR-120`
+  - RM scheduled delivery health failure-ledger full-stack/admin smoke
+  - extends the live preset schedule smoke into the `Last 24h failed` health drilldown and its page-level ledger/export evidence
+  - no new runtime endpoint, table, or migration change
+- `PR-121`
+  - RM scheduled delivery health due-now full-stack/admin smoke
+  - extends the live preset schedule smoke into the `Due now` health drilldown and adds page-level refresh hardening so preset/health/ledger delivery surfaces reload together
+  - no new runtime endpoint, table, or migration change
 
 These are still valid, but they should wait until policy semantics and operator demand are explicit.
 

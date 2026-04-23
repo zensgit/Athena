@@ -1073,6 +1073,193 @@ describe('RecordsManagementPage', () => {
     expect(within(presetSection).queryByText('HR family highlights')).toBeNull();
   });
 
+  it('refreshes scheduled delivery health and preset delivery surfaces when Refresh is clicked', async () => {
+    const initialPresets = [
+      {
+        id: 'preset-family-current',
+        owner: 'admin',
+        name: 'HR family current',
+        description: 'Saved family report',
+        kind: 'ACTIVITY_FAMILY_REPORT',
+        params: {
+          from: '2026-04-09T00:00:00',
+          to: '2026-04-15T23:59:59',
+        },
+        scheduleEnabled: true,
+        deliveryFolderId: 'folder-1',
+        nextRunAt: '2099-01-01T09:00:00',
+        lastRunAt: '2026-04-21T09:00:00',
+        createdDate: '2026-04-15T12:00:00',
+        lastModifiedDate: '2026-04-15T12:30:00',
+      },
+    ];
+    const refreshedPresets = [
+      {
+        ...initialPresets[0],
+        nextRunAt: '2000-01-01T09:00:00',
+      },
+    ];
+    const ledgerPage = {
+      content: [
+        {
+          id: 'ledger-1',
+          presetId: 'preset-family-current',
+          presetName: 'HR family current',
+          presetKind: 'ACTIVITY_FAMILY_REPORT',
+          triggerType: 'MANUAL',
+          status: 'SUCCESS',
+          filename: 'hr-family-current-20260421.csv',
+          targetFolderId: 'folder-1',
+          documentId: 'doc-1',
+          message: 'Delivered successfully',
+          startedAt: '2026-04-21T09:00:00',
+          finishedAt: '2026-04-21T09:00:01',
+          durationMs: 1000,
+        },
+      ],
+      totalElements: 1,
+      totalPages: 1,
+      number: 0,
+      size: 10,
+    } as any;
+
+    mockedRecordsManagementService.listReportPresets.mockReset();
+    mockedRecordsManagementService.listReportPresets
+      .mockResolvedValueOnce(initialPresets as any)
+      .mockResolvedValueOnce(refreshedPresets as any);
+    mockedRecordsManagementService.getScheduledDeliveryTelemetry.mockReset();
+    mockedRecordsManagementService.getScheduledDeliveryTelemetry
+      .mockResolvedValueOnce({
+        scheduleEnabledCount: 1,
+        duePresetCount: 0,
+        last24hSuccessCount: 1,
+        last24hFailedCount: 0,
+        lastExecutionAt: '2026-04-21T09:00:00',
+        generatedAt: '2026-04-21T16:00:00',
+      } as any)
+      .mockResolvedValueOnce({
+        scheduleEnabledCount: 1,
+        duePresetCount: 1,
+        last24hSuccessCount: 1,
+        last24hFailedCount: 0,
+        lastExecutionAt: '2026-04-21T09:00:00',
+        generatedAt: '2026-04-21T16:05:00',
+      } as any);
+    mockedRecordsManagementService.listReportPresetExecutionLedger.mockReset();
+    mockedRecordsManagementService.listReportPresetExecutionLedger
+      .mockResolvedValueOnce(ledgerPage)
+      .mockResolvedValueOnce(ledgerPage);
+
+    renderPage();
+
+    const healthSection = (await screen.findByRole('heading', { name: 'Scheduled Delivery Health' })).closest('.MuiCard-root') as HTMLElement;
+    const presetSection = (await screen.findByRole('heading', { name: 'Saved RM Report Presets' })).closest('.MuiCard-root') as HTMLElement;
+
+    expect(within(healthSection).getByText('Due now: 0')).toBeTruthy();
+    expect(within(presetSection).queryByText('Due now')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+
+    expect(await within(healthSection).findByText('Due now: 1')).toBeTruthy();
+    expect(await within(presetSection).findByText('Due now')).toBeTruthy();
+    expect(mockedRecordsManagementService.listReportPresets).toHaveBeenCalledTimes(2);
+    expect(mockedRecordsManagementService.getScheduledDeliveryTelemetry).toHaveBeenCalledTimes(2);
+    expect(mockedRecordsManagementService.listReportPresetExecutionLedger).toHaveBeenCalledTimes(2);
+    expect(toastSuccessMock).toHaveBeenCalledWith('Records management data refreshed');
+  });
+
+  it('filters the preset delivery ledger from scheduled delivery health failure drilldowns', async () => {
+    mockedRecordsManagementService.listReportPresetExecutionLedger
+      .mockReset()
+      .mockResolvedValueOnce({
+        content: [
+          {
+            id: 'ledger-1',
+            presetId: 'preset-family-current',
+            presetName: 'HR family current',
+            presetKind: 'ACTIVITY_FAMILY_REPORT',
+            triggerType: 'MANUAL',
+            status: 'SUCCESS',
+            filename: 'hr-family-current-20260421.csv',
+            targetFolderId: 'folder-1',
+            documentId: 'doc-1',
+            message: 'Delivered successfully',
+            startedAt: '2026-04-21T09:00:00',
+            finishedAt: '2026-04-21T09:00:01',
+            durationMs: 1000,
+          },
+          {
+            id: 'ledger-2',
+            presetId: 'preset-family-current',
+            presetName: 'HR family current',
+            presetKind: 'ACTIVITY_FAMILY_REPORT',
+            triggerType: 'SCHEDULED',
+            status: 'FAILED',
+            filename: 'hr-family-current-20260422.csv',
+            targetFolderId: 'folder-1',
+            documentId: null,
+            message: 'Delivery failed',
+            startedAt: '2026-04-22T09:00:00',
+            finishedAt: '2026-04-22T09:00:03',
+            durationMs: 3000,
+          },
+        ],
+        totalElements: 2,
+        totalPages: 1,
+        number: 0,
+        size: 10,
+      } as any)
+      .mockResolvedValueOnce({
+        content: [
+          {
+            id: 'ledger-2',
+            presetId: 'preset-family-current',
+            presetName: 'HR family current',
+            presetKind: 'ACTIVITY_FAMILY_REPORT',
+            triggerType: 'SCHEDULED',
+            status: 'FAILED',
+            filename: 'hr-family-current-20260422.csv',
+            targetFolderId: 'folder-1',
+            documentId: null,
+            message: 'Delivery failed',
+            startedAt: '2026-04-22T09:00:00',
+            finishedAt: '2026-04-22T09:00:03',
+            durationMs: 3000,
+          },
+        ],
+        totalElements: 1,
+        totalPages: 1,
+        number: 0,
+        size: 10,
+      } as any);
+
+    renderPage();
+
+    const healthSection = (await screen.findByRole('heading', { name: 'Scheduled Delivery Health' })).closest('.MuiCard-root') as HTMLElement;
+    const ledgerSection = (await screen.findByRole('heading', { name: 'Preset Delivery Ledger' })).closest('.MuiCard-root') as HTMLElement;
+
+    fireEvent.click(await within(healthSection).findByText('Last 24h failed: 1'));
+
+    await waitFor(() => {
+      const lastCall = mockedRecordsManagementService.listReportPresetExecutionLedger.mock.calls.at(-1)?.[0];
+      expect(lastCall).toMatchObject({
+        status: 'FAILED',
+        page: 0,
+        size: 10,
+      });
+      expect(lastCall?.from).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/);
+      expect(lastCall?.to).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/);
+    });
+
+    expect(await within(ledgerSection).findByText('Active ledger filters')).toBeTruthy();
+    expect(within(ledgerSection).getByText('Result: Failed')).toBeTruthy();
+    expect(within(ledgerSection).getByText(/^From:/)).toBeTruthy();
+    expect(within(ledgerSection).getByText(/^To:/)).toBeTruthy();
+    expect(await within(ledgerSection).findByText('Showing 1 of 1 deliveries')).toBeTruthy();
+    expect(within(ledgerSection).queryByText('Successful')).toBeNull();
+    expect(within(ledgerSection).getByText('Delivery failed')).toBeTruthy();
+  });
+
   it('renders the preset delivery ledger and opens delivered browse targets', async () => {
     const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
     renderPage();
