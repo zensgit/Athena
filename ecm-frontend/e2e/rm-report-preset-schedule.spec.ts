@@ -48,6 +48,11 @@ type ReportPresetExecution = {
 
 const toLocalDateTime = (date: Date) => date.toISOString().slice(0, 19);
 
+function buildSoonHourlyCron(minutesFromNow = 2) {
+  const runAt = new Date(Date.now() + minutesFromNow * 60 * 1000);
+  return `0 ${runAt.getUTCMinutes()} * * * *`;
+}
+
 async function createFolder(parentId: string, folderName: string, token: string, request: APIRequestContext) {
   const response = await request.post(`${baseApiUrl}/api/v1/folders`, {
     headers: {
@@ -67,6 +72,34 @@ async function createFolder(parentId: string, folderName: string, token: string,
     throw new Error('Failed to create delivery folder');
   }
   return payload.id;
+}
+
+async function createDocument(
+  folderId: string,
+  filename: string,
+  token: string,
+  request: APIRequestContext,
+  content = 'E2E preset schedule delivery target document'
+) {
+  const response = await request.post(`${baseApiUrl}/api/v1/documents/upload?folderId=${folderId}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    multipart: {
+      file: {
+        name: filename,
+        mimeType: 'text/plain',
+        buffer: Buffer.from(content),
+      },
+    },
+  });
+  expect(response.ok()).toBeTruthy();
+  const payload = (await response.json()) as { documentId?: string; id?: string };
+  const documentId = payload.documentId ?? payload.id;
+  if (!documentId) {
+    throw new Error('Failed to create delivery target document');
+  }
+  return documentId;
 }
 
 async function createReportPreset(token: string, name: string, from: string, to: string, request: APIRequestContext) {
@@ -133,6 +166,65 @@ async function deleteNode(token: string, nodeId: string, request: APIRequestCont
       Authorization: `Bearer ${token}`,
     },
   }).catch(() => null);
+}
+
+async function getUnreadNotificationCount(token: string, request: APIRequestContext) {
+  const response = await request.get(`${baseApiUrl}/api/v1/notifications/unread-count`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  expect(response.ok()).toBeTruthy();
+  const payload = (await response.json()) as { count?: number };
+  return payload.count ?? 0;
+}
+
+async function getNotificationInboxPayloadText(token: string, request: APIRequestContext) {
+  const response = await request.get(`${baseApiUrl}/api/v1/notifications`, {
+    params: {
+      page: 0,
+      size: 20,
+    },
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  expect(response.ok()).toBeTruthy();
+  return JSON.stringify(await response.json());
+}
+
+async function setUserPreference(
+  token: string,
+  preferenceName: string,
+  value: unknown,
+  request: APIRequestContext
+) {
+  const response = await request.put(
+    `${baseApiUrl}/api/v1/people/${encodeURIComponent(defaultUsername)}/preferences/${encodeURIComponent(preferenceName)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      data: { value },
+    }
+  );
+  expect(response.ok()).toBeTruthy();
+}
+
+async function deleteUserPreference(
+  token: string,
+  preferenceName: string,
+  request: APIRequestContext
+) {
+  await request.delete(
+    `${baseApiUrl}/api/v1/people/${encodeURIComponent(defaultUsername)}/preferences/${encodeURIComponent(preferenceName)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  ).catch(() => null);
 }
 
 function forcePresetNextRunAt(presetId: string, sqlExpression: string) {
@@ -723,6 +815,328 @@ test('RM due-now preset is surfaced through scheduled delivery health (full-stac
   } finally {
     await deleteReportPreset(token, preset.id, request);
     await deleteReportPreset(token, controlPreset.id, request);
+    await deleteNode(token, deliveryFolderId, request);
+  }
+});
+
+test('RM failed scheduled preset delivery creates inbox notification @rm-notification-acceptance (full-stack)', async ({ page, request }) => {
+  test.setTimeout(180_000);
+
+  await waitForApiReady(request, { apiUrl: baseApiUrl });
+  const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+  const rootFolderId = await getRootFolderId(request, token, { apiUrl: baseApiUrl });
+
+  const now = new Date();
+  const from = toLocalDateTime(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000));
+  const to = toLocalDateTime(now);
+  const presetName = `e2e-rm-failure-notification-${Date.now()}`;
+  const cronExpression = buildSoonHourlyCron();
+  const deliveryFolderName = `e2e-rm-notification-delivery-${Date.now()}`;
+  const deliveryFolderId = await createFolder(rootFolderId, deliveryFolderName, token, request);
+  const targetDocumentId = await createDocument(
+    deliveryFolderId,
+    `e2e-rm-delivery-target-${Date.now()}.txt`,
+    token,
+    request
+  );
+  const preset = await createReportPreset(token, presetName, from, to, request);
+  const initialUnreadCount = await getUnreadNotificationCount(token, request);
+
+  try {
+    const scheduleResponse = await request.put(`${baseApiUrl}/api/v1/records/report-presets/${preset.id}/schedule`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      data: {
+        enabled: true,
+        cronExpression,
+        timezone: 'UTC',
+        deliveryFolderId: targetDocumentId,
+      },
+    });
+    expect(scheduleResponse.ok()).toBeTruthy();
+
+    await expect.poll(async () => {
+      const status = await fetchScheduleStatus(token, preset.id, request);
+      return Boolean(status.nextRunAt && new Date(status.nextRunAt).getTime() <= Date.now());
+    }, { timeout: 150_000, intervals: [1000, 2000, 5000] }).toBe(true);
+
+    const runDueResponse = await request.post(`${baseApiUrl}/api/v1/records/report-presets/run-scheduled-deliveries`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    expect(runDueResponse.ok()).toBeTruthy();
+    const runDuePayload = (await runDueResponse.json()) as { processedCount?: number };
+    expect(runDuePayload.processedCount).toBe(1);
+
+    await expect.poll(async () => getUnreadNotificationCount(token, request), { timeout: 60_000 })
+      .toBeGreaterThan(initialUnreadCount);
+
+    await gotoWithAuthE2E(page, '/notifications', defaultUsername, defaultPassword, { token });
+
+    await expect(page).toHaveURL(/\/notifications$/);
+    await expect(page.getByRole('heading', { name: 'Notifications' })).toBeVisible({ timeout: 60_000 });
+
+    const notificationCard = page.locator('.MuiCard-root').filter({ hasText: presetName }).first();
+    await expect(notificationCard).toBeVisible({ timeout: 60_000 });
+    await expect(notificationCard.getByText('Scheduled Delivery Failed')).toBeVisible();
+    await expect(notificationCard.getByText(new RegExp(`Delivery failed for ${presetName}`))).toBeVisible();
+    await expect(notificationCard.getByRole('button', { name: 'Open Records Management' })).toBeVisible();
+    await expect(notificationCard.getByRole('button', { name: 'Open Node' })).toBeVisible();
+
+    await notificationCard.getByRole('button', { name: 'Open Records Management' }).click();
+    await expect(page).toHaveURL(/\/admin\/records-management$/);
+    await expect(page.getByRole('heading', { name: 'Records Management' })).toBeVisible({ timeout: 60_000 });
+  } finally {
+    await deleteReportPreset(token, preset.id, request);
+    await deleteNode(token, targetDocumentId, request);
+    await deleteNode(token, deliveryFolderId, request);
+  }
+});
+
+test('RM successful scheduled preset delivery creates inbox notification @rm-notification-acceptance (full-stack)', async ({ page, request }) => {
+  test.setTimeout(180_000);
+
+  await waitForApiReady(request, { apiUrl: baseApiUrl });
+  const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+  const rootFolderId = await getRootFolderId(request, token, { apiUrl: baseApiUrl });
+
+  const now = new Date();
+  const from = toLocalDateTime(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000));
+  const to = toLocalDateTime(now);
+  const presetName = `e2e-rm-success-notification-${Date.now()}`;
+  const cronExpression = buildSoonHourlyCron();
+  const deliveryFolderName = `e2e-rm-success-notification-delivery-${Date.now()}`;
+  const deliveryFolderId = await createFolder(rootFolderId, deliveryFolderName, token, request);
+  const preset = await createReportPreset(token, presetName, from, to, request);
+  const initialUnreadCount = await getUnreadNotificationCount(token, request);
+
+  try {
+    const scheduleResponse = await request.put(`${baseApiUrl}/api/v1/records/report-presets/${preset.id}/schedule`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      data: {
+        enabled: true,
+        cronExpression,
+        timezone: 'UTC',
+        deliveryFolderId,
+      },
+    });
+    expect(scheduleResponse.ok()).toBeTruthy();
+
+    await expect.poll(async () => {
+      const status = await fetchScheduleStatus(token, preset.id, request);
+      return Boolean(status.nextRunAt && new Date(status.nextRunAt).getTime() <= Date.now());
+    }, { timeout: 150_000, intervals: [1000, 2000, 5000] }).toBe(true);
+
+    const runDueResponse = await request.post(`${baseApiUrl}/api/v1/records/report-presets/run-scheduled-deliveries`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    expect(runDueResponse.ok()).toBeTruthy();
+    const runDuePayload = (await runDueResponse.json()) as { processedCount?: number };
+    expect(runDuePayload.processedCount).toBe(1);
+
+    await expect.poll(async () => {
+      const executions = await listExecutions(token, preset.id, request);
+      const first = executions[0];
+      if (!first) {
+        return null;
+      }
+      return {
+        status: first.status,
+        documentId: first.documentId ?? null,
+        filename: first.filename ?? null,
+      };
+    }, { timeout: 60_000 }).toEqual({
+      status: 'SUCCESS',
+      documentId: expect.any(String),
+      filename: expect.any(String),
+    });
+
+    await expect.poll(async () => getUnreadNotificationCount(token, request), { timeout: 60_000 })
+      .toBeGreaterThan(initialUnreadCount);
+
+    const executions = await listExecutions(token, preset.id, request);
+    const deliveredDocumentId = executions[0]?.documentId;
+    const deliveredFilename = executions[0]?.filename;
+    expect(deliveredDocumentId).toBeTruthy();
+    expect(deliveredFilename).toBeTruthy();
+    if (!deliveredDocumentId || !deliveredFilename) {
+      throw new Error('Expected delivered document metadata from execution ledger');
+    }
+
+    await gotoWithAuthE2E(page, '/notifications', defaultUsername, defaultPassword, { token });
+
+    await expect(page).toHaveURL(/\/notifications$/);
+    await expect(page.getByRole('heading', { name: 'Notifications' })).toBeVisible({ timeout: 60_000 });
+
+    const notificationCard = page.locator('.MuiCard-root').filter({ hasText: presetName }).first();
+    await expect(notificationCard).toBeVisible({ timeout: 60_000 });
+    await expect(notificationCard.getByText('Scheduled Delivery Succeeded')).toBeVisible();
+    await expect(notificationCard.getByText(new RegExp(`Delivered ${presetName}`))).toBeVisible();
+    await expect(notificationCard.getByRole('button', { name: 'Open Records Management' })).toBeVisible();
+    await expect(notificationCard.getByRole('button', { name: 'Open Node' })).toBeVisible();
+
+    await notificationCard.getByRole('button', { name: 'Open Node' }).click();
+    await expect(page).toHaveURL(new RegExp(`/browse/${deliveredDocumentId}$`));
+    await expect(page.getByText(deliveredFilename)).toBeVisible({ timeout: 60_000 });
+  } finally {
+    await deleteReportPreset(token, preset.id, request);
+    await deleteNode(token, deliveryFolderId, request);
+  }
+});
+
+test('RM disabled success notification preference suppresses inbox alert @rm-notification-acceptance (full-stack)', async ({ page, request }) => {
+  test.setTimeout(180_000);
+
+  await waitForApiReady(request, { apiUrl: baseApiUrl });
+  const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+  const rootFolderId = await getRootFolderId(request, token, { apiUrl: baseApiUrl });
+
+  const now = new Date();
+  const from = toLocalDateTime(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000));
+  const to = toLocalDateTime(now);
+  const presetName = `e2e-rm-success-pref-off-${Date.now()}`;
+  const cronExpression = buildSoonHourlyCron();
+  const deliveryFolderName = `e2e-rm-success-pref-off-delivery-${Date.now()}`;
+  const deliveryFolderId = await createFolder(rootFolderId, deliveryFolderName, token, request);
+  const preset = await createReportPreset(token, presetName, from, to, request);
+  const preferenceName = 'org.athena.rm.reportPreset.delivery.notifyOnSuccess';
+
+  try {
+    await setUserPreference(token, preferenceName, false, request);
+
+    const scheduleResponse = await request.put(`${baseApiUrl}/api/v1/records/report-presets/${preset.id}/schedule`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      data: {
+        enabled: true,
+        cronExpression,
+        timezone: 'UTC',
+        deliveryFolderId,
+      },
+    });
+    expect(scheduleResponse.ok()).toBeTruthy();
+
+    await expect.poll(async () => {
+      const status = await fetchScheduleStatus(token, preset.id, request);
+      return Boolean(status.nextRunAt && new Date(status.nextRunAt).getTime() <= Date.now());
+    }, { timeout: 150_000, intervals: [1000, 2000, 5000] }).toBe(true);
+
+    const runDueResponse = await request.post(`${baseApiUrl}/api/v1/records/report-presets/run-scheduled-deliveries`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    expect(runDueResponse.ok()).toBeTruthy();
+    const runDuePayload = (await runDueResponse.json()) as { processedCount?: number };
+    expect(runDuePayload.processedCount).toBe(1);
+
+    await expect.poll(async () => {
+      const executions = await listExecutions(token, preset.id, request);
+      const first = executions[0];
+      if (!first) {
+        return null;
+      }
+      return first.status;
+    }, { timeout: 60_000 }).toBe('SUCCESS');
+
+    expect(await getNotificationInboxPayloadText(token, request)).not.toContain(presetName);
+
+    await gotoWithAuthE2E(page, '/notifications', defaultUsername, defaultPassword, { token });
+
+    await expect(page).toHaveURL(/\/notifications$/);
+    await expect(page.getByRole('heading', { name: 'Notifications' })).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator('.MuiCard-root').filter({ hasText: presetName })).toHaveCount(0);
+  } finally {
+    await deleteUserPreference(token, preferenceName, request);
+    await deleteReportPreset(token, preset.id, request);
+    await deleteNode(token, deliveryFolderId, request);
+  }
+});
+
+test('RM disabled failure notification preference suppresses inbox alert @rm-notification-acceptance (full-stack)', async ({ page, request }) => {
+  test.setTimeout(180_000);
+
+  await waitForApiReady(request, { apiUrl: baseApiUrl });
+  const token = await fetchAccessToken(request, defaultUsername, defaultPassword);
+  const rootFolderId = await getRootFolderId(request, token, { apiUrl: baseApiUrl });
+
+  const now = new Date();
+  const from = toLocalDateTime(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000));
+  const to = toLocalDateTime(now);
+  const presetName = `e2e-rm-failure-pref-off-${Date.now()}`;
+  const cronExpression = buildSoonHourlyCron();
+  const deliveryFolderName = `e2e-rm-failure-pref-off-delivery-${Date.now()}`;
+  const deliveryFolderId = await createFolder(rootFolderId, deliveryFolderName, token, request);
+  const targetDocumentId = await createDocument(
+    deliveryFolderId,
+    `e2e-rm-failure-pref-off-target-${Date.now()}.txt`,
+    token,
+    request
+  );
+  const preset = await createReportPreset(token, presetName, from, to, request);
+  const preferenceName = 'org.athena.rm.reportPreset.delivery.notifyOnFailure';
+
+  try {
+    await setUserPreference(token, preferenceName, false, request);
+
+    const scheduleResponse = await request.put(`${baseApiUrl}/api/v1/records/report-presets/${preset.id}/schedule`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      data: {
+        enabled: true,
+        cronExpression,
+        timezone: 'UTC',
+        deliveryFolderId: targetDocumentId,
+      },
+    });
+    expect(scheduleResponse.ok()).toBeTruthy();
+
+    await expect.poll(async () => {
+      const status = await fetchScheduleStatus(token, preset.id, request);
+      return Boolean(status.nextRunAt && new Date(status.nextRunAt).getTime() <= Date.now());
+    }, { timeout: 150_000, intervals: [1000, 2000, 5000] }).toBe(true);
+
+    const runDueResponse = await request.post(`${baseApiUrl}/api/v1/records/report-presets/run-scheduled-deliveries`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    expect(runDueResponse.ok()).toBeTruthy();
+    const runDuePayload = (await runDueResponse.json()) as { processedCount?: number };
+    expect(runDuePayload.processedCount).toBe(1);
+
+    await expect.poll(async () => {
+      const executions = await listExecutions(token, preset.id, request);
+      const first = executions[0];
+      if (!first) {
+        return null;
+      }
+      return first.status;
+    }, { timeout: 60_000 }).toBe('FAILED');
+
+    expect(await getNotificationInboxPayloadText(token, request)).not.toContain(presetName);
+
+    await gotoWithAuthE2E(page, '/notifications', defaultUsername, defaultPassword, { token });
+
+    await expect(page).toHaveURL(/\/notifications$/);
+    await expect(page.getByRole('heading', { name: 'Notifications' })).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator('.MuiCard-root').filter({ hasText: presetName })).toHaveCount(0);
+  } finally {
+    await deleteUserPreference(token, preferenceName, request);
+    await deleteReportPreset(token, preset.id, request);
+    await deleteNode(token, targetDocumentId, request);
     await deleteNode(token, deliveryFolderId, request);
   }
 });

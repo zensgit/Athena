@@ -66,4 +66,54 @@ describe('notificationUtils', () => {
       { href: '/activities?scope=global&type=site.member.role_changed', label: 'Open Activity' },
     ]);
   });
+
+  it('builds records-management and node links for preset delivery failure notifications', () => {
+    const notification = buildNotification({
+      activityType: 'rm.report_preset.delivery.failed',
+      actorUserId: 'system',
+      siteId: null,
+      nodeId: 'folder-123',
+      nodeName: null,
+      summary: {
+        presetName: 'Daily RM Family Report',
+        triggerType: 'SCHEDULED',
+        message: 'Folder not found',
+      },
+    });
+
+    expect(formatNotificationLabel(notification)).toBe('Scheduled Delivery Failed');
+    expect(formatNotificationSummary(notification)).toBe(
+      'Delivery failed for Daily RM Family Report (scheduled): Folder not found.'
+    );
+    expect(getNotificationLinkTargets(notification)).toEqual([
+      { href: '/admin/records-management', label: 'Open Records Management' },
+      { href: '/browse/folder-123', label: 'Open Node' },
+      { href: '/activities?scope=global&type=rm.report_preset.delivery.failed', label: 'Open Activity' },
+    ]);
+  });
+
+  it('builds records-management and node links for preset delivery success notifications', () => {
+    const notification = buildNotification({
+      activityType: 'rm.report_preset.delivery.succeeded',
+      actorUserId: 'system',
+      siteId: null,
+      nodeId: 'document-123',
+      nodeName: 'daily-rm-family-report-20260423.csv',
+      summary: {
+        presetName: 'Daily RM Family Report',
+        triggerType: 'SCHEDULED',
+        filename: 'daily-rm-family-report-20260423.csv',
+      },
+    });
+
+    expect(formatNotificationLabel(notification)).toBe('Scheduled Delivery Succeeded');
+    expect(formatNotificationSummary(notification)).toBe(
+      'Delivered Daily RM Family Report (scheduled) as daily-rm-family-report-20260423.csv.'
+    );
+    expect(getNotificationLinkTargets(notification)).toEqual([
+      { href: '/admin/records-management', label: 'Open Records Management' },
+      { href: '/browse/document-123', label: 'Open Node' },
+      { href: '/activities?scope=global&type=rm.report_preset.delivery.succeeded', label: 'Open Activity' },
+    ]);
+  });
 });

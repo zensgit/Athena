@@ -266,4 +266,19 @@ class RmReportPresetControllerTest {
             .andExpect(jsonPath("$.lastExecutionAt").exists())
             .andExpect(jsonPath("$.generatedAt").exists());
     }
+
+    @Test
+    @DisplayName("runScheduledDeliveriesNow returns processed count")
+    void runScheduledDeliveriesNowReturnsProcessedCount() throws Exception {
+        Mockito.when(deliveryService.runScheduledDeliveriesNow())
+            .thenReturn(new RmReportPresetDeliveryService.ScheduledRunResultDto(
+                2,
+                LocalDateTime.of(2026, 4, 23, 15, 0)
+            ));
+
+        mockMvc.perform(post("/api/v1/records/report-presets/run-scheduled-deliveries"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.processedCount").value(2))
+            .andExpect(jsonPath("$.generatedAt").exists());
+    }
 }

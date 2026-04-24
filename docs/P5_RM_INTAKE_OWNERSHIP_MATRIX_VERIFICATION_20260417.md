@@ -49,6 +49,17 @@ This document builds on the already completed `P4` closeout material:
 - accepted runtime slices now also include `PR-119` on the `RM delivery workflows` lane as the first real-stack smoke for the scheduled-delivery-health success signal drilling into the page-level preset delivery ledger
 - accepted runtime slices now also include `PR-120` on the `RM delivery workflows` lane as the first real-stack smoke for the scheduled-delivery-health failure signal drilling into the page-level preset delivery ledger
 - accepted runtime slices now also include `PR-121` on the `RM delivery workflows` lane as the first real-stack smoke for the scheduled-delivery-health due-now signal drilling into the page-level preset table filter, plus a frontend hardening fix that keeps preset/health/ledger refresh behavior in sync
+- accepted runtime slices now also include `PR-123` on the `RM delivery workflows` lane as the first owner-scoped inbox alerting foundation for failed scheduled preset deliveries, reusing the shipped activity/notification chain instead of opening a new email channel
+- accepted runtime slices now also include `PR-124` on the `RM delivery workflows` lane as the first real-stack proof that a scheduled preset failure reaches `/notifications`, backed by a small admin trigger for due scheduled deliveries
+- accepted runtime slices now also include `PR-125` on the `RM delivery workflows` lane as the first real-stack proof that a scheduled preset success reaches `/notifications` and can drill into the delivered node
+- accepted runtime slices now also include `PR-126` on the `RM delivery workflows` lane as the first owner-scoped preference layer for muting scheduled preset success/failure inbox alerts without opening a new notification API surface
+- pending verification slices now also include `PR-127` on the `RM delivery workflows` lane as disabled-preference browser smoke coverage; live full-stack acceptance remains pending because local services were unavailable
+- pending backend acceptance slices now also include `PR-128` on the `RM delivery workflows` lane as notification-publish failure isolation for the scheduled-delivery execution ledger; targeted backend test execution remains pending because Docker socket access was unavailable
+- pending backend acceptance slices now also include `PR-129` on the `RM delivery workflows` lane as explicit admin/ops posture and audit/security coverage for the scheduled-delivery trigger endpoint; targeted backend test execution remains pending because Docker socket access was unavailable
+- pending acceptance slices now also include `PR-130` on the `RM delivery workflows` lane as one repeatable notification-lane acceptance gate; full execution remains pending because Docker socket access was unavailable
+- pending acceptance slices now also include `PR-131` on the `RM delivery workflows` lane as acceptance gate hardening; full execution remains pending because Docker socket access was unavailable
+- pending CI acceptance slices now also include `PR-132` on the `RM delivery workflows` lane as the CI attachment for the hardened notification acceptance gate; acceptance remains pending until GitHub Actions runs the new `frontend_e2e_core` step green
+- pending CI acceptance slices now also include `PR-133` on the `RM delivery workflows` lane as bounded readiness retry hardening for the CI-attached gate; acceptance remains pending until GitHub Actions runs the gate green
 
 ## Checks
 

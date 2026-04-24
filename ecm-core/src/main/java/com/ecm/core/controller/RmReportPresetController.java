@@ -172,6 +172,12 @@ public class RmReportPresetController {
         return ResponseEntity.ok(deliveryService.getScheduledDeliveryTelemetry());
     }
 
+    @PostMapping("/run-scheduled-deliveries")
+    @Operation(summary = "Admin ops trigger for due scheduled preset deliveries")
+    public ResponseEntity<RmReportPresetDeliveryService.ScheduledRunResultDto> runScheduledDeliveriesNow() {
+        return ResponseEntity.ok(deliveryService.runScheduledDeliveriesNow());
+    }
+
     @GetMapping("/{id}/schedule")
     @Operation(summary = "Get schedule/delivery status for an owned preset")
     public ResponseEntity<RmReportPresetDeliveryService.ScheduleStatusDto> getSchedule(@PathVariable UUID id) {

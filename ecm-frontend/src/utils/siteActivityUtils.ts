@@ -37,6 +37,8 @@ const ACTIVITY_LABELS: Record<string, string> = {
   'site.membership.withdrawn': 'Membership Withdrawn',
   'site.updated': 'Site Updated',
   'version.created': 'Version Created',
+  'rm.report_preset.delivery.succeeded': 'Scheduled Delivery Succeeded',
+  'rm.report_preset.delivery.failed': 'Scheduled Delivery Failed',
 };
 
 const formatFallbackLabel = (activityType: string): string =>
@@ -62,6 +64,10 @@ export const formatActivitySummary = (activity: ActivityDto): string => {
   const status = getSummaryString(summary, 'status');
   const action = getSummaryString(summary, 'action');
   const versionLabel = getSummaryString(summary, 'versionLabel');
+  const presetName = getSummaryString(summary, 'presetName');
+  const triggerType = getSummaryString(summary, 'triggerType');
+  const message = getSummaryString(summary, 'message');
+  const filename = getSummaryString(summary, 'filename');
 
   switch (activity.activityType) {
     case 'site.created':
@@ -108,6 +114,14 @@ export const formatActivitySummary = (activity: ActivityDto): string => {
       return `Restored ${activity.nodeName ?? 'node'} to hot storage.`;
     case 'version.created':
       return versionLabel ? `Created version ${versionLabel}.` : 'Created a new version.';
+    case 'rm.report_preset.delivery.succeeded': {
+      const triggerLabel = triggerType ? triggerType.toLowerCase() : 'scheduled';
+      return `Delivered ${presetName ?? 'report preset'} (${triggerLabel})${filename ? ` as ${filename}` : ''}.`;
+    }
+    case 'rm.report_preset.delivery.failed': {
+      const triggerLabel = triggerType ? triggerType.toLowerCase() : 'scheduled';
+      return `Delivery failed for ${presetName ?? 'report preset'} (${triggerLabel})${message ? `: ${message}.` : '.'}`;
+    }
     default:
       if (action) {
         return `${action.charAt(0).toUpperCase() + action.slice(1)}${activity.nodeName ? ` ${activity.nodeName}` : ''}.`;
@@ -155,6 +169,16 @@ export const matchesActivityTargetKind = (
 
 export const getActivityLinkTargets = (activity: ActivityDto): ActivityLinkTarget[] => {
   const targets: ActivityLinkTarget[] = [];
+
+  if (
+    activity.activityType === 'rm.report_preset.delivery.failed'
+    || activity.activityType === 'rm.report_preset.delivery.succeeded'
+  ) {
+    targets.push({
+      href: '/admin/records-management',
+      label: 'Open Records Management',
+    });
+  }
 
   if (activity.siteId) {
     targets.push({

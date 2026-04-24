@@ -184,6 +184,50 @@ The accepted `P5` runtime slices on top of this matrix are:
   - RM scheduled delivery health due-now full-stack/admin smoke
   - extends the live preset schedule smoke into the `Due now` health drilldown and adds page-level refresh hardening so preset/health/ledger delivery surfaces reload together
   - no new runtime endpoint, table, or migration change
+- `PR-123`
+  - RM preset delivery failure notification foundation
+  - adds owner-scoped inbox notifications for failed scheduled preset deliveries by reusing the shipped activity + notification chain and records-management links
+  - no new runtime endpoint, table, or migration change
+- `PR-124`
+  - RM preset delivery failure notification full-stack/admin smoke
+  - adds a minimal admin trigger for due scheduled deliveries and proves that a real scheduled failure reaches the owner inbox and drills back into Records Management
+  - no new table or migration change
+- `PR-125`
+  - RM preset delivery success notification full-stack/admin smoke
+  - extends the direct owner inbox alerting lane so successful scheduled deliveries also surface through `/notifications` and can drill into the delivered node
+  - no new table or migration change
+- `PR-126`
+  - RM preset delivery notification preferences
+  - adds owner-scoped success/failure inbox alert toggles on top of the shipped People preferences map and makes scheduled delivery notifications honor those values before posting direct inbox entries
+  - no new endpoint, table, or migration change
+- `PR-127`
+  - RM preset delivery notification preferences full-stack smoke
+  - adds disabled success/failure notification preference smoke coverage that verifies scheduled execution still completes while matching `/notifications` rows stay absent
+  - no runtime code, endpoint, table, or migration change
+- `PR-128`
+  - RM preset delivery notification publish hardening
+  - isolates activity/notification publication failures from delivery execution ledger status so a successful CSV delivery cannot be converted into failed evidence by an inbox outage
+  - no endpoint, table, or migration change
+- `PR-129`
+  - RM preset delivery admin trigger ops posture
+  - documents, audits, and security-tests `POST /api/v1/records/report-presets/run-scheduled-deliveries` as an admin/ops trigger
+  - no endpoint rename, table, or migration change
+- `PR-130`
+  - RM preset delivery notification acceptance gate
+  - adds one repeatable script and one frontend npm script for the backend notification tests plus the four full-stack notification Playwright flows
+  - no runtime endpoint, table, or migration change
+- `PR-131`
+  - RM preset delivery notification gate hardening
+  - switches frontend acceptance selection to a stable Playwright title tag and expands backend defaults to cover activity/inbox notification materialization tests
+  - no runtime endpoint, table, or migration change
+- `PR-132`
+  - RM preset delivery notification CI gate attachment
+  - wires the hardened notification acceptance gate into the existing `frontend_e2e_core` CI stack after Keycloak realm readiness
+  - no runtime endpoint, table, or migration change
+- `PR-133`
+  - RM preset delivery notification gate readiness hardening
+  - adds bounded retry diagnostics around backend health, Keycloak discovery, and UI reachability checks in the CI-attached acceptance gate
+  - no runtime endpoint, table, or migration change
 
 These are still valid, but they should wait until policy semantics and operator demand are explicit.
 

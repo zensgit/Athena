@@ -6,6 +6,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { toast } from 'react-toastify';
 import RecordsManagementPage from './RecordsManagementPage';
 import recordsManagementService from 'services/recordsManagementService';
+import peopleService from 'services/peopleService';
 
 jest.mock('react-toastify', () => ({
   toast: {
@@ -85,7 +86,16 @@ jest.mock('services/recordsManagementService', () => ({
   },
 }));
 
+jest.mock('services/peopleService', () => ({
+  __esModule: true,
+  default: {
+    getPreferences: jest.fn(),
+    setPreference: jest.fn(),
+  },
+}));
+
 const mockedRecordsManagementService = recordsManagementService as jest.Mocked<typeof recordsManagementService>;
+const mockedPeopleService = peopleService as jest.Mocked<typeof peopleService>;
 const toastSuccessMock = toast.success as jest.Mock;
 
 jest.setTimeout(45000);
@@ -95,6 +105,8 @@ const renderPage = () => {
     reducer: {
       auth: () => ({
         user: {
+          username: 'admin',
+          email: 'admin@example.com',
           roles: ['ROLE_ADMIN'],
         },
       }),
@@ -792,6 +804,20 @@ describe('RecordsManagementPage', () => {
       lastExecutionAt: '2026-04-21T09:00:00',
       generatedAt: '2026-04-21T16:00:00',
     } as any);
+    mockedPeopleService.getPreferences.mockResolvedValue({
+      username: 'admin',
+      email: 'admin@example.com',
+      enabled: true,
+      locked: false,
+      preferences: {},
+    } as any);
+    mockedPeopleService.setPreference.mockResolvedValue({
+      username: 'admin',
+      email: 'admin@example.com',
+      enabled: true,
+      locked: false,
+      preferences: {},
+    } as any);
   });
 
   it('loads records management summary, operations telemetry, browse surfaces, and audit', async () => {
@@ -1055,6 +1081,57 @@ describe('RecordsManagementPage', () => {
     expect(within(healthSection).getByText('Last 24h success: 1')).toBeTruthy();
     expect(within(healthSection).getByText('Last 24h failed: 1')).toBeTruthy();
     expect(within(healthSection).getByText(/Last delivery:/)).toBeTruthy();
+  });
+
+  it('loads and updates preset delivery notification preferences', async () => {
+    mockedPeopleService.getPreferences.mockResolvedValueOnce({
+      username: 'admin',
+      email: 'admin@example.com',
+      enabled: true,
+      locked: false,
+      preferences: {
+        'org.athena.rm.reportPreset.delivery.notifyOnSuccess': false,
+        'org.athena.rm.reportPreset.delivery.notifyOnFailure': true,
+      },
+    } as any);
+    mockedPeopleService.setPreference.mockResolvedValueOnce({
+      username: 'admin',
+      email: 'admin@example.com',
+      enabled: true,
+      locked: false,
+      preferences: {
+        'org.athena.rm.reportPreset.delivery.notifyOnSuccess': false,
+        'org.athena.rm.reportPreset.delivery.notifyOnFailure': false,
+      },
+    } as any);
+
+    renderPage();
+
+    const healthSection = (await screen.findByRole('heading', { name: 'Scheduled Delivery Health' })).closest('.MuiCard-root') as HTMLElement;
+
+    await waitFor(() =>
+      expect(mockedPeopleService.getPreferences).toHaveBeenCalledWith(
+        'admin',
+        'org.athena.rm.reportPreset.delivery.'
+      )
+    );
+
+    const successToggle = within(healthSection).getByRole('checkbox', { name: 'Success inbox notifications' }) as HTMLInputElement;
+    const failureToggle = within(healthSection).getByRole('checkbox', { name: 'Failure inbox notifications' }) as HTMLInputElement;
+
+    await waitFor(() => expect(successToggle.checked).toBe(false));
+    expect(failureToggle.checked).toBe(true);
+
+    fireEvent.click(failureToggle);
+
+    await waitFor(() =>
+      expect(mockedPeopleService.setPreference).toHaveBeenCalledWith(
+        'admin',
+        'org.athena.rm.reportPreset.delivery.notifyOnFailure',
+        false
+      )
+    );
+    expect(failureToggle.checked).toBe(false);
   });
 
   it('filters saved presets from scheduled delivery health drilldowns', async () => {

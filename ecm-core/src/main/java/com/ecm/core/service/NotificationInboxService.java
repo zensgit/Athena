@@ -56,6 +56,27 @@ public class NotificationInboxService {
         log.debug("Routed activity {} to {} recipients", activity.getId(), recipients.size());
     }
 
+    /**
+     * Route an activity directly to a single user's inbox without going through
+     * follower resolution. Used for owner-scoped operational alerts such as
+     * failed scheduled deliveries.
+     */
+    @Transactional
+    public Notification createDirectNotification(String userId, Activity activity) {
+        if (userId == null || userId.isBlank()) {
+            throw new IllegalArgumentException("Notification user id is required");
+        }
+        if (activity == null) {
+            throw new IllegalArgumentException("Notification activity is required");
+        }
+        Notification notification = new Notification();
+        notification.setUserId(userId);
+        notification.setActivity(activity);
+        Notification saved = notificationRepository.save(notification);
+        log.debug("Created direct notification {} for user {} from activity {}", saved.getId(), userId, activity.getId());
+        return saved;
+    }
+
     // ------------------------------------------------------------------ inbox read
 
     @Transactional(readOnly = true)

@@ -261,6 +261,16 @@ jobs:
         run: |
           timeout 60 bash -c "until curl -sf http://localhost:8180/realms/ecm/.well-known/openid-configuration >/dev/null 2>&1; do sleep 5; done"
 
+      - name: Run RM notification acceptance gate
+        run: |
+          ECM_API_URL=http://localhost:7700 \
+          ECM_UI_URL=http://localhost:5500 \
+          KEYCLOAK_URL=http://localhost:8180 \
+          KEYCLOAK_REALM=ecm \
+          PW_PROJECT=chromium \
+          PW_WORKERS=1 \
+            bash scripts/p5-rm-notification-acceptance-gate.sh
+
       - name: Run core E2E gate
         working-directory: ecm-frontend
         run: |

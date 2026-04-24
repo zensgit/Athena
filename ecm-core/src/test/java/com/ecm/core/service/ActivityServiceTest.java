@@ -14,6 +14,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Map;
@@ -29,12 +30,14 @@ class ActivityServiceTest {
     @Mock private ActivityRepository activityRepository;
     @Mock private FollowingService followingService;
     @Mock private TenantWorkspaceScopeService tenantWorkspaceScopeService;
+    @Mock private NotificationInboxService notificationInboxService;
 
     private ActivityService service;
 
     @BeforeEach
     void setUp() {
         service = new ActivityService(activityRepository, followingService, tenantWorkspaceScopeService);
+        ReflectionTestUtils.setField(service, "notificationInboxService", notificationInboxService);
     }
 
     @Nested
@@ -74,6 +77,32 @@ class ActivityServiceTest {
 
             assertNotNull(result.getSummary());
             assertTrue(result.getSummary().isEmpty());
+        }
+
+        @Test
+        @DisplayName("posts direct notification activity without follower fan-out")
+        void postsDirectNotificationActivity() {
+            UUID nodeId = UUID.randomUUID();
+            when(activityRepository.save(any())).thenAnswer(inv -> {
+                Activity a = inv.getArgument(0);
+                a.setId(UUID.randomUUID());
+                return a;
+            });
+
+            Activity result = service.postDirectNotificationActivity(
+                "rm.report_preset.delivery.failed",
+                "system",
+                null,
+                nodeId,
+                null,
+                Map.of("presetName", "Daily RM Family Report"),
+                "alice"
+            );
+
+            assertNotNull(result.getId());
+            assertEquals("rm.report_preset.delivery.failed", result.getActivityType());
+            verify(notificationInboxService).createDirectNotification(eq("alice"), same(result));
+            verify(notificationInboxService, never()).routeActivityToFollowers(any(Activity.class));
         }
     }
 

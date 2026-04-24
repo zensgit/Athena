@@ -121,6 +121,23 @@ class NotificationInboxServiceTest {
             verifyNoInteractions(followingService);
             verify(notificationRepository, never()).save(any());
         }
+
+        @Test
+        @DisplayName("creates a direct notification without follower resolution")
+        void createsDirectNotification() {
+            Activity activity = activity("rm.report_preset.delivery.failed", "system", null, UUID.randomUUID());
+            Notification saved = notification(activity, "alice");
+            when(notificationRepository.save(any(Notification.class))).thenReturn(saved);
+
+            Notification result = service.createDirectNotification("alice", activity);
+
+            assertSame(saved, result);
+            verifyNoInteractions(followingService);
+            ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+            verify(notificationRepository).save(captor.capture());
+            assertEquals("alice", captor.getValue().getUserId());
+            assertSame(activity, captor.getValue().getActivity());
+        }
     }
 
     @Nested

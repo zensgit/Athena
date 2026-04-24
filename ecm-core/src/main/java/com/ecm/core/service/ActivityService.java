@@ -37,16 +37,7 @@ public class ActivityService {
     @Transactional
     public Activity postActivity(String activityType, String userId, String siteId,
                                   UUID nodeId, String nodeName, Map<String, Object> summary) {
-        Activity activity = new Activity();
-        activity.setActivityType(activityType);
-        activity.setUserId(userId);
-        activity.setSiteId(siteId);
-        activity.setNodeId(nodeId);
-        activity.setNodeName(nodeName);
-        if (summary != null) {
-            activity.setSummary(summary);
-        }
-        Activity saved = activityRepository.save(activity);
+        Activity saved = saveActivity(activityType, userId, siteId, nodeId, nodeName, summary);
         // route to follower inboxes
         if (notificationInboxService != null) {
             try {
@@ -56,6 +47,51 @@ public class ActivityService {
             }
         }
         return saved;
+    }
+
+    /**
+     * Post a new activity entry and route it directly to a single recipient's
+     * inbox without follower fan-out.
+     */
+    @Transactional
+    public Activity postDirectNotificationActivity(
+        String activityType,
+        String userId,
+        String siteId,
+        UUID nodeId,
+        String nodeName,
+        Map<String, Object> summary,
+        String recipientUserId
+    ) {
+        Activity saved = saveActivity(activityType, userId, siteId, nodeId, nodeName, summary);
+        if (notificationInboxService != null && recipientUserId != null && !recipientUserId.isBlank()) {
+            try {
+                notificationInboxService.createDirectNotification(recipientUserId, saved);
+            } catch (Exception e) {
+                log.warn("Failed to create direct notification for activity {}: {}", saved.getId(), e.getMessage());
+            }
+        }
+        return saved;
+    }
+
+    private Activity saveActivity(
+        String activityType,
+        String userId,
+        String siteId,
+        UUID nodeId,
+        String nodeName,
+        Map<String, Object> summary
+    ) {
+        Activity activity = new Activity();
+        activity.setActivityType(activityType);
+        activity.setUserId(userId);
+        activity.setSiteId(siteId);
+        activity.setNodeId(nodeId);
+        activity.setNodeName(nodeName);
+        if (summary != null) {
+            activity.setSummary(summary);
+        }
+        return activityRepository.save(activity);
     }
 
     /**

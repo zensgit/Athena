@@ -30,8 +30,10 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 @Slf4j
@@ -43,6 +45,12 @@ public class RmReportPresetDeliveryService {
     private static final String AUDIT_SCHEDULE_UPDATED = "RM_REPORT_PRESET_SCHEDULE_UPDATED";
     private static final String AUDIT_DELIVERED = "RM_REPORT_PRESET_DELIVERED";
     private static final String AUDIT_DELIVERY_FAILED = "RM_REPORT_PRESET_DELIVERY_FAILED";
+    private static final String AUDIT_SCHEDULED_DELIVERIES_TRIGGERED = "RM_REPORT_PRESET_SCHEDULED_DELIVERIES_TRIGGERED";
+    private static final String ACTIVITY_DELIVERY_SUCCEEDED = "rm.report_preset.delivery.succeeded";
+    private static final String ACTIVITY_DELIVERY_FAILED = "rm.report_preset.delivery.failed";
+    private static final String NOTIFICATION_ACTOR = "system";
+    static final String PREF_NOTIFY_ON_SUCCESS = "org.athena.rm.reportPreset.delivery.notifyOnSuccess";
+    static final String PREF_NOTIFY_ON_FAILURE = "org.athena.rm.reportPreset.delivery.notifyOnFailure";
 
     private final RmReportPresetService presetService;
     private final RmReportPresetRepository presetRepository;
@@ -51,6 +59,8 @@ public class RmReportPresetDeliveryService {
     private final DocumentUploadService uploadService;
     private final AuditService auditService;
     private final SecurityService securityService;
+    private final ActivityService activityService;
+    private final PreferenceService preferenceService;
 
     @Transactional(readOnly = true)
     public ScheduleStatusDto getSchedule(UUID presetId) {
@@ -218,11 +228,35 @@ public class RmReportPresetDeliveryService {
         return deliverPreset(preset, TriggerType.MANUAL, false);
     }
 
+    public ScheduledRunResultDto runScheduledDeliveriesNow() {
+        int processedCount = processDueScheduledDeliveries();
+        LocalDateTime generatedAt = LocalDateTime.now();
+        String actor = securityService.getCurrentUser();
+        String effectiveActor = actor != null && !actor.isBlank() ? actor : "system";
+        auditService.logEvent(
+            AUDIT_SCHEDULED_DELIVERIES_TRIGGERED,
+            null,
+            "rm-report-preset-scheduled-deliveries",
+            effectiveActor,
+            String.format(
+                "Admin triggered due RM report preset scheduled deliveries (processedCount=%d, generatedAt=%s)",
+                processedCount,
+                generatedAt
+            )
+        );
+        return new ScheduledRunResultDto(processedCount, generatedAt);
+    }
+
     @Scheduled(cron = "${ecm.rm.report-presets.scheduler-cron:0 */5 * * * *}")
     public void runScheduledDeliveries() {
+        processDueScheduledDeliveries();
+    }
+
+    private int processDueScheduledDeliveries() {
         LocalDateTime now = LocalDateTime.now();
         List<RmReportPreset> duePresets =
             presetRepository.findByScheduleEnabledTrueAndDeletedFalseAndNextRunAtLessThanEqualOrderByNextRunAtAsc(now);
+        int processedCount = 0;
         for (RmReportPreset preset : duePresets) {
             if (!claimScheduledRun(preset)) {
                 continue;
@@ -235,12 +269,14 @@ public class RmReportPresetDeliveryService {
             SecurityContext previous = pushPresetAuthentication(claimedPreset);
             try {
                 deliverPreset(claimedPreset, TriggerType.SCHEDULED, true, true);
+                processedCount += 1;
             } catch (Exception ex) {
                 log.warn("RM report preset scheduled delivery errored for {}: {}", claimedPreset.getId(), ex.getMessage(), ex);
             } finally {
                 popAuthentication(previous);
             }
         }
+        return processedCount;
     }
 
     private boolean claimScheduledRun(RmReportPreset preset) {
@@ -297,7 +333,7 @@ public class RmReportPresetDeliveryService {
 
             PipelineResult uploadResult = uploadService.uploadDocument(file, folderId, null);
             if (!uploadResult.isSuccess()) {
-                String message = uploadResult.getErrors() != null ? uploadResult.getErrors().toString() : "Unknown upload error";
+                String message = formatPipelineErrors(uploadResult.getErrors());
                 return persistFailedExecution(
                     preset,
                     triggerType,
@@ -347,6 +383,7 @@ public class RmReportPresetDeliveryService {
                     triggerType, folderId, documentId, filename
                 )
             );
+            publishSuccessfulScheduledDeliveryNotification(preset, execution, scheduledRun);
             return toExecutionDto(execution);
         } catch (Exception ex) {
             return persistFailedExecution(
@@ -406,7 +443,136 @@ public class RmReportPresetDeliveryService {
                 triggerType, folderId, filename, execution.getMessage()
             )
         );
+        publishFailedScheduledDeliveryNotification(preset, execution, scheduledRun);
         return toExecutionDto(execution);
+    }
+
+    private void publishFailedScheduledDeliveryNotification(
+        RmReportPreset preset,
+        RmReportPresetExecution execution,
+        boolean scheduledRun
+    ) {
+        if (!scheduledRun) {
+            return;
+        }
+        String recipient = preset.getOwner();
+        if (recipient == null || recipient.isBlank()) {
+            return;
+        }
+        if (!isNotificationEnabled(recipient, PREF_NOTIFY_ON_FAILURE)) {
+            return;
+        }
+        Map<String, Object> summary = new HashMap<>();
+        summary.put("presetId", preset.getId() != null ? preset.getId().toString() : "");
+        summary.put("presetName", preset.getName() != null ? preset.getName() : "");
+        summary.put("presetKind", preset.getKind() != null ? preset.getKind().name() : "");
+        summary.put("triggerType", execution.getTriggerType() != null ? execution.getTriggerType().name() : "");
+        summary.put("filename", execution.getFilename() != null ? execution.getFilename() : "");
+        summary.put("targetFolderId", execution.getTargetFolderId() != null ? execution.getTargetFolderId().toString() : "");
+        summary.put("message", execution.getMessage() != null ? execution.getMessage() : "");
+        summary.put("executionId", execution.getId() != null ? execution.getId().toString() : "");
+        summary.put("status", execution.getStatus() != null ? execution.getStatus().name() : "");
+        try {
+            activityService.postDirectNotificationActivity(
+                ACTIVITY_DELIVERY_FAILED,
+                NOTIFICATION_ACTOR,
+                null,
+                execution.getTargetFolderId(),
+                null,
+                summary,
+                recipient
+            );
+        } catch (Exception ex) {
+            log.warn(
+                "Failed to publish RM preset failed-delivery notification for execution {}: {}",
+                execution.getId(),
+                ex.getMessage()
+            );
+        }
+    }
+
+    private void publishSuccessfulScheduledDeliveryNotification(
+        RmReportPreset preset,
+        RmReportPresetExecution execution,
+        boolean scheduledRun
+    ) {
+        if (!scheduledRun) {
+            return;
+        }
+        String recipient = preset.getOwner();
+        if (recipient == null || recipient.isBlank()) {
+            return;
+        }
+        if (!isNotificationEnabled(recipient, PREF_NOTIFY_ON_SUCCESS)) {
+            return;
+        }
+        Map<String, Object> summary = new HashMap<>();
+        summary.put("presetId", preset.getId() != null ? preset.getId().toString() : "");
+        summary.put("presetName", preset.getName() != null ? preset.getName() : "");
+        summary.put("presetKind", preset.getKind() != null ? preset.getKind().name() : "");
+        summary.put("triggerType", execution.getTriggerType() != null ? execution.getTriggerType().name() : "");
+        summary.put("filename", execution.getFilename() != null ? execution.getFilename() : "");
+        summary.put("targetFolderId", execution.getTargetFolderId() != null ? execution.getTargetFolderId().toString() : "");
+        summary.put("documentId", execution.getDocumentId() != null ? execution.getDocumentId().toString() : "");
+        summary.put("message", execution.getMessage() != null ? execution.getMessage() : "");
+        summary.put("executionId", execution.getId() != null ? execution.getId().toString() : "");
+        summary.put("status", execution.getStatus() != null ? execution.getStatus().name() : "");
+        try {
+            activityService.postDirectNotificationActivity(
+                ACTIVITY_DELIVERY_SUCCEEDED,
+                NOTIFICATION_ACTOR,
+                null,
+                execution.getDocumentId() != null ? execution.getDocumentId() : execution.getTargetFolderId(),
+                execution.getFilename(),
+                summary,
+                recipient
+            );
+        } catch (Exception ex) {
+            log.warn(
+                "Failed to publish RM preset successful-delivery notification for execution {}: {}",
+                execution.getId(),
+                ex.getMessage()
+            );
+        }
+    }
+
+    private String formatPipelineErrors(Map<String, String> errors) {
+        if (errors == null || errors.isEmpty()) {
+            return "Unknown upload error";
+        }
+        return errors.values().stream()
+            .filter(Objects::nonNull)
+            .map(String::trim)
+            .filter(value -> !value.isBlank())
+            .reduce((left, right) -> left.equals(right) ? left : left + "; " + right)
+            .orElse("Unknown upload error");
+    }
+
+    private boolean isNotificationEnabled(String owner, String preferenceKey) {
+        try {
+            Object value = preferenceService.getPreference(owner, preferenceKey);
+            if (value instanceof Boolean booleanValue) {
+                return booleanValue;
+            }
+            if (value instanceof String stringValue) {
+                if ("true".equalsIgnoreCase(stringValue.trim())) {
+                    return true;
+                }
+                if ("false".equalsIgnoreCase(stringValue.trim())) {
+                    return false;
+                }
+            }
+        } catch (java.util.NoSuchElementException ignored) {
+            return true;
+        } catch (Exception ex) {
+            log.warn(
+                "Failed to read RM preset delivery notification preference {} for {}: {}",
+                preferenceKey,
+                owner,
+                ex.getMessage()
+            );
+        }
+        return true;
     }
 
     private void assertSchedulableKind(RmReportPreset preset) {
@@ -897,6 +1063,12 @@ public class RmReportPresetDeliveryService {
         long last24hSuccessCount,
         long last24hFailedCount,
         LocalDateTime lastExecutionAt,
+        LocalDateTime generatedAt
+    ) {
+    }
+
+    public record ScheduledRunResultDto(
+        int processedCount,
         LocalDateTime generatedAt
     ) {
     }

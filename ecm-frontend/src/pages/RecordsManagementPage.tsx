@@ -6,12 +6,15 @@ import {
   Card,
   CardContent,
   Chip,
+  Divider,
   FormControl,
+  FormControlLabel,
   Grid,
   InputLabel,
   MenuItem,
   Select,
   Stack,
+  Switch,
   Table,
   TableBody,
   TableCell,
@@ -25,6 +28,7 @@ import { Refresh } from '@mui/icons-material';
 import { toast } from 'react-toastify';
 import { useAppSelector } from 'store';
 import recordsManagementService from 'services/recordsManagementService';
+import peopleService from 'services/peopleService';
 import {
   FilePlan,
   GovernedImportJob,
@@ -80,6 +84,9 @@ const ACTIVITY_EVENT_TYPES_DEFAULT_LIMIT = 8;
 const ACTIVITY_HIGHLIGHTS_DEFAULT_WINDOW_DAYS = 7;
 const ACTIVITY_TIMELINE_DEFAULT_DAYS = 14;
 const PRESET_EXECUTION_LEDGER_DEFAULT_ROWS = 10;
+const RM_PRESET_DELIVERY_PREFERENCE_PREFIX = 'org.athena.rm.reportPreset.delivery.';
+const RM_PRESET_DELIVERY_NOTIFY_SUCCESS_KEY = `${RM_PRESET_DELIVERY_PREFERENCE_PREFIX}notifyOnSuccess`;
+const RM_PRESET_DELIVERY_NOTIFY_FAILURE_KEY = `${RM_PRESET_DELIVERY_PREFERENCE_PREFIX}notifyOnFailure`;
 
 const emptyAuditPage = (size = AUDIT_DEFAULT_ROWS): PageResponse<RecordAuditEntry> => ({
   content: [],
@@ -108,6 +115,21 @@ const formatDateTime = (value?: string | null) => {
     return value;
   }
   return parsed.toLocaleString();
+};
+
+const resolveBooleanPreference = (value: unknown, fallback: boolean) => {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'string') {
+    if (value.trim().toLowerCase() === 'true') {
+      return true;
+    }
+    if (value.trim().toLowerCase() === 'false') {
+      return false;
+    }
+  }
+  return fallback;
 };
 
 const formatRmAuditEventTypeLabel = (eventType: string) => eventType
@@ -311,6 +333,11 @@ interface PresetExecutionLedgerFilterState {
   to: string;
 }
 
+interface PresetDeliveryNotificationPreferencesState {
+  notifyOnSuccess: boolean;
+  notifyOnFailure: boolean;
+}
+
 const emptyAuditFiltersState = (): AuditFilterState => ({
   family: '',
   eventType: '',
@@ -325,6 +352,11 @@ const emptyPresetExecutionLedgerFiltersState = (): PresetExecutionLedgerFilterSt
   triggerType: '',
   from: '',
   to: '',
+});
+
+const defaultPresetDeliveryNotificationPreferencesState = (): PresetDeliveryNotificationPreferencesState => ({
+  notifyOnSuccess: true,
+  notifyOnFailure: true,
 });
 
 const normalizePresetExecutionLedgerFilters = (filters: PresetExecutionLedgerFilterState) => ({
@@ -687,6 +719,14 @@ const RecordsManagementPage: React.FC = () => {
   const [presetExecutionLedgerRowsPerPage, setPresetExecutionLedgerRowsPerPage] =
     useState(PRESET_EXECUTION_LEDGER_DEFAULT_ROWS);
   const [presetExecutionLedgerExporting, setPresetExecutionLedgerExporting] = useState(false);
+  const [presetDeliveryNotificationPreferences, setPresetDeliveryNotificationPreferences] =
+    useState<PresetDeliveryNotificationPreferencesState>(defaultPresetDeliveryNotificationPreferencesState);
+  const [presetDeliveryNotificationPreferencesLoading, setPresetDeliveryNotificationPreferencesLoading] =
+    useState(false);
+  const [presetDeliveryNotificationPreferencesError, setPresetDeliveryNotificationPreferencesError] =
+    useState<string | null>(null);
+  const [presetDeliveryNotificationPreferenceSavingKey, setPresetDeliveryNotificationPreferenceSavingKey] =
+    useState<keyof PresetDeliveryNotificationPreferencesState | null>(null);
   const [editingFilePlanId, setEditingFilePlanId] = useState<string | null>(null);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [filePlanForm, setFilePlanForm] = useState({
@@ -712,6 +752,7 @@ const RecordsManagementPage: React.FC = () => {
   const [selectedTransferStatusBucket, setSelectedTransferStatusBucket] = useState<string | null>(null);
   const [selectedImportReason, setSelectedImportReason] = useState<string | null>(null);
   const [selectedTransferReason, setSelectedTransferReason] = useState<string | null>(null);
+  const currentUsername = useAppSelector((state) => state.auth.user?.username ?? '');
   const isAdmin = useAppSelector((state) => Boolean(state.auth.user?.roles?.includes('ROLE_ADMIN')));
   const declaredRecordsRef = useRef<HTMLDivElement | null>(null);
   const operationsRef = useRef<HTMLDivElement | null>(null);
@@ -792,6 +833,42 @@ const RecordsManagementPage: React.FC = () => {
     }
   }, []);
 
+  const loadPresetDeliveryNotificationPreferences = useCallback(async (silent = false) => {
+    if (!currentUsername) {
+      setPresetDeliveryNotificationPreferences(defaultPresetDeliveryNotificationPreferencesState());
+      setPresetDeliveryNotificationPreferencesError(null);
+      return;
+    }
+    if (!silent) {
+      setPresetDeliveryNotificationPreferencesLoading(true);
+    }
+    try {
+      const result = await peopleService.getPreferences(currentUsername, RM_PRESET_DELIVERY_PREFERENCE_PREFIX);
+      const preferences = result.preferences ?? {};
+      setPresetDeliveryNotificationPreferences({
+        notifyOnSuccess: resolveBooleanPreference(
+          preferences[RM_PRESET_DELIVERY_NOTIFY_SUCCESS_KEY],
+          true
+        ),
+        notifyOnFailure: resolveBooleanPreference(
+          preferences[RM_PRESET_DELIVERY_NOTIFY_FAILURE_KEY],
+          true
+        ),
+      });
+      setPresetDeliveryNotificationPreferencesError(null);
+    } catch {
+      setPresetDeliveryNotificationPreferences(defaultPresetDeliveryNotificationPreferencesState());
+      setPresetDeliveryNotificationPreferencesError('Failed to load preset delivery notification preferences');
+      if (!silent) {
+        toast.error('Failed to load preset delivery notification preferences');
+      }
+    } finally {
+      if (!silent) {
+        setPresetDeliveryNotificationPreferencesLoading(false);
+      }
+    }
+  }, [currentUsername]);
+
   const loadReportPresets = useCallback(async (silent = false) => {
     if (!silent) {
       setReportPresetsLoading(true);
@@ -847,9 +924,57 @@ const RecordsManagementPage: React.FC = () => {
     await Promise.all([
       loadReportPresets(true),
       loadScheduledDeliveryTelemetry(),
+      loadPresetDeliveryNotificationPreferences(true),
       loadPresetExecutionLedger(undefined, undefined, undefined, true),
     ]);
-  }, [loadPresetExecutionLedger, loadReportPresets, loadScheduledDeliveryTelemetry]);
+  }, [
+    loadPresetDeliveryNotificationPreferences,
+    loadPresetExecutionLedger,
+    loadReportPresets,
+    loadScheduledDeliveryTelemetry,
+  ]);
+
+  const updatePresetDeliveryNotificationPreference = useCallback(async (
+    key: keyof PresetDeliveryNotificationPreferencesState,
+    checked: boolean
+  ) => {
+    if (!currentUsername) {
+      return;
+    }
+    const preferenceName = key === 'notifyOnSuccess'
+      ? RM_PRESET_DELIVERY_NOTIFY_SUCCESS_KEY
+      : RM_PRESET_DELIVERY_NOTIFY_FAILURE_KEY;
+    const previousValue = presetDeliveryNotificationPreferences[key];
+    setPresetDeliveryNotificationPreferences((current) => ({
+      ...current,
+      [key]: checked,
+    }));
+    setPresetDeliveryNotificationPreferenceSavingKey(key);
+    try {
+      const result = await peopleService.setPreference(currentUsername, preferenceName, checked);
+      const preferences = result.preferences ?? {};
+      setPresetDeliveryNotificationPreferences({
+        notifyOnSuccess: resolveBooleanPreference(
+          preferences[RM_PRESET_DELIVERY_NOTIFY_SUCCESS_KEY],
+          true
+        ),
+        notifyOnFailure: resolveBooleanPreference(
+          preferences[RM_PRESET_DELIVERY_NOTIFY_FAILURE_KEY],
+          true
+        ),
+      });
+      setPresetDeliveryNotificationPreferencesError(null);
+    } catch {
+      setPresetDeliveryNotificationPreferences((current) => ({
+        ...current,
+        [key]: previousValue,
+      }));
+      setPresetDeliveryNotificationPreferencesError('Failed to update preset delivery notification preferences');
+      toast.error('Failed to update preset delivery notification preferences');
+    } finally {
+      setPresetDeliveryNotificationPreferenceSavingKey((current) => (current === key ? null : current));
+    }
+  }, [currentUsername, presetDeliveryNotificationPreferences]);
 
   const loadBreakdown = useCallback(async (silent = false) => {
     if (!silent) {
@@ -1150,6 +1275,10 @@ const RecordsManagementPage: React.FC = () => {
   useEffect(() => {
     void loadScheduledDeliveryTelemetry();
   }, [loadScheduledDeliveryTelemetry]);
+
+  useEffect(() => {
+    void loadPresetDeliveryNotificationPreferences();
+  }, [loadPresetDeliveryNotificationPreferences]);
 
   useEffect(() => {
     void loadPresetExecutionLedger(
@@ -5370,6 +5499,62 @@ const RecordsManagementPage: React.FC = () => {
                     No scheduled delivery activity yet.
                   </Typography>
                 )}
+                <Divider flexItem />
+                <Stack spacing={1}>
+                  <Box>
+                    <Typography variant="subtitle2">
+                      Inbox notifications
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Control whether scheduled preset deliveries create success and failure notifications in your inbox.
+                    </Typography>
+                  </Box>
+                  {presetDeliveryNotificationPreferencesError && (
+                    <Alert severity="warning">
+                      {presetDeliveryNotificationPreferencesError}
+                    </Alert>
+                  )}
+                  <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} useFlexGap>
+                    <FormControlLabel
+                      control={(
+                        <Switch
+                          checked={presetDeliveryNotificationPreferences.notifyOnSuccess}
+                          onChange={(event) => {
+                            void updatePresetDeliveryNotificationPreference(
+                              'notifyOnSuccess',
+                              event.target.checked
+                            );
+                          }}
+                          disabled={
+                            !currentUsername
+                            || presetDeliveryNotificationPreferencesLoading
+                            || presetDeliveryNotificationPreferenceSavingKey !== null
+                          }
+                        />
+                      )}
+                      label="Success inbox notifications"
+                    />
+                    <FormControlLabel
+                      control={(
+                        <Switch
+                          checked={presetDeliveryNotificationPreferences.notifyOnFailure}
+                          onChange={(event) => {
+                            void updatePresetDeliveryNotificationPreference(
+                              'notifyOnFailure',
+                              event.target.checked
+                            );
+                          }}
+                          disabled={
+                            !currentUsername
+                            || presetDeliveryNotificationPreferencesLoading
+                            || presetDeliveryNotificationPreferenceSavingKey !== null
+                          }
+                        />
+                      )}
+                      label="Failure inbox notifications"
+                    />
+                  </Stack>
+                </Stack>
               </Stack>
             </CardContent>
           </Card>

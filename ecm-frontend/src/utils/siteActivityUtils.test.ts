@@ -76,6 +76,42 @@ describe('siteActivityUtils', () => {
     ).toBe('Created version 2.0.');
   });
 
+  it('formats scheduled delivery failure activity summary', () => {
+    expect(
+      formatActivitySummary(
+        buildActivity({
+          activityType: 'rm.report_preset.delivery.failed',
+          nodeId: 'folder-123',
+          nodeName: null,
+          siteId: null,
+          summary: {
+            presetName: 'Daily RM Family Report',
+            triggerType: 'SCHEDULED',
+            message: 'Folder not found',
+          },
+        })
+      )
+    ).toBe('Delivery failed for Daily RM Family Report (scheduled): Folder not found.');
+  });
+
+  it('formats scheduled delivery success activity summary', () => {
+    expect(
+      formatActivitySummary(
+        buildActivity({
+          activityType: 'rm.report_preset.delivery.succeeded',
+          nodeId: 'document-123',
+          nodeName: 'daily-rm-family-report-20260423.csv',
+          siteId: null,
+          summary: {
+            presetName: 'Daily RM Family Report',
+            triggerType: 'SCHEDULED',
+            filename: 'daily-rm-family-report-20260423.csv',
+          },
+        })
+      )
+    ).toBe('Delivered Daily RM Family Report (scheduled) as daily-rm-family-report-20260423.csv.');
+  });
+
   it('matches activity filters against labels and summaries', () => {
     expect(matchesActivityFilter(buildActivity(), 'manager')).toBe(true);
     expect(matchesActivityFilter(buildActivity(), 'role changed')).toBe(true);
@@ -99,6 +135,40 @@ describe('siteActivityUtils', () => {
     expect(getActivityLinkTargets(buildActivity())).toEqual([
       { href: '/sites?siteId=engineering', label: 'Open Site' },
       { href: '/browse/node-123', label: 'Open Node' },
+    ]);
+  });
+
+  it('builds records-management and node drill-down links for preset delivery failures', () => {
+    expect(
+      getActivityLinkTargets(
+        buildActivity({
+          activityType: 'rm.report_preset.delivery.failed',
+          siteId: null,
+          nodeId: 'folder-123',
+          nodeName: null,
+          summary: { presetName: 'Daily RM Family Report' },
+        })
+      )
+    ).toEqual([
+      { href: '/admin/records-management', label: 'Open Records Management' },
+      { href: '/browse/folder-123', label: 'Open Node' },
+    ]);
+  });
+
+  it('builds records-management and node drill-down links for preset delivery successes', () => {
+    expect(
+      getActivityLinkTargets(
+        buildActivity({
+          activityType: 'rm.report_preset.delivery.succeeded',
+          siteId: null,
+          nodeId: 'document-123',
+          nodeName: 'daily-rm-family-report-20260423.csv',
+          summary: { presetName: 'Daily RM Family Report' },
+        })
+      )
+    ).toEqual([
+      { href: '/admin/records-management', label: 'Open Records Management' },
+      { href: '/browse/document-123', label: 'Open Node' },
     ]);
   });
 });

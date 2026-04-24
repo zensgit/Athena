@@ -29,7 +29,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -57,6 +59,12 @@ class RmReportPresetDeliveryServiceTest {
     @Mock
     private SecurityService securityService;
 
+    @Mock
+    private ActivityService activityService;
+
+    @Mock
+    private PreferenceService preferenceService;
+
     @Test
     @DisplayName("updateSchedule enables a schedulable preset and computes next run")
     void updateScheduleEnablesSchedulablePreset() {
@@ -69,15 +77,7 @@ class RmReportPresetDeliveryServiceTest {
         when(presetRepository.save(any(RmReportPreset.class))).thenAnswer(inv -> inv.getArgument(0));
         when(executionRepository.findFirstByPresetIdOrderByStartedAtDesc(preset.getId())).thenReturn(Optional.empty());
 
-        RmReportPresetDeliveryService service = new RmReportPresetDeliveryService(
-            presetService,
-            presetRepository,
-            executionRepository,
-            recordsManagementService,
-            uploadService,
-            auditService,
-            securityService
-        );
+        RmReportPresetDeliveryService service = service();
 
         RmReportPresetDeliveryService.ScheduleStatusDto result = service.updateSchedule(
             preset.getId(),
@@ -105,15 +105,7 @@ class RmReportPresetDeliveryServiceTest {
         when(presetRepository.save(any(RmReportPreset.class))).thenAnswer(inv -> inv.getArgument(0));
         when(executionRepository.findFirstByPresetIdOrderByStartedAtDesc(preset.getId())).thenReturn(Optional.empty());
 
-        RmReportPresetDeliveryService service = new RmReportPresetDeliveryService(
-            presetService,
-            presetRepository,
-            executionRepository,
-            recordsManagementService,
-            uploadService,
-            auditService,
-            securityService
-        );
+        RmReportPresetDeliveryService service = service();
 
         RmReportPresetDeliveryService.ScheduleStatusDto result = service.updateSchedule(
             preset.getId(),
@@ -177,15 +169,7 @@ class RmReportPresetDeliveryServiceTest {
             return execution;
         });
 
-        RmReportPresetDeliveryService service = new RmReportPresetDeliveryService(
-            presetService,
-            presetRepository,
-            executionRepository,
-            recordsManagementService,
-            uploadService,
-            auditService,
-            securityService
-        );
+        RmReportPresetDeliveryService service = service();
 
         RmReportPresetDeliveryService.PresetExecutionDto result = service.deliverNow(preset.getId());
 
@@ -247,15 +231,7 @@ class RmReportPresetDeliveryServiceTest {
             return execution;
         });
 
-        RmReportPresetDeliveryService service = new RmReportPresetDeliveryService(
-            presetService,
-            presetRepository,
-            executionRepository,
-            recordsManagementService,
-            uploadService,
-            auditService,
-            securityService
-        );
+        RmReportPresetDeliveryService service = service();
 
         RmReportPresetDeliveryService.PresetExecutionDto result = service.deliverNow(preset.getId());
 
@@ -338,21 +314,510 @@ class RmReportPresetDeliveryServiceTest {
         when(presetRepository.save(any(RmReportPreset.class))).thenAnswer(inv -> inv.getArgument(0));
         when(executionRepository.save(any(RmReportPresetExecution.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        RmReportPresetDeliveryService service = new RmReportPresetDeliveryService(
-            presetService,
-            presetRepository,
-            executionRepository,
-            recordsManagementService,
-            uploadService,
-            auditService,
-            securityService
-        );
+        RmReportPresetDeliveryService service = service();
 
         service.runScheduledDeliveries();
 
         assertNotNull(claimedPreset.getLastRunAt());
         assertEquals(claimedNextRunAt, claimedPreset.getNextRunAt());
         verify(presetRepository).claimScheduledRun(duePreset.getId(), duePreset.getNextRunAt(), claimedNextRunAt);
+    }
+
+    @Test
+    @DisplayName("runScheduledDeliveries posts direct owner notification when scheduled delivery succeeds")
+    void runScheduledDeliveriesPostsDirectNotificationOnSuccess() throws Exception {
+        RmReportPreset duePreset = preset(
+            RmReportPreset.Kind.ACTIVITY_CONTRIBUTOR_REPORT,
+            Map.of(
+                "from", "2026-04-01T00:00:00",
+                "to", "2026-04-15T23:59:59",
+                "limit", 5,
+                "eventTypeLimit", 3
+            )
+        );
+        duePreset.setScheduleEnabled(true);
+        duePreset.setCronExpression("0 */10 * * * *");
+        duePreset.setScheduleTimezone("UTC");
+        UUID folderId = UUID.randomUUID();
+        UUID documentId = UUID.randomUUID();
+        duePreset.setDeliveryFolderId(folderId);
+        duePreset.setNextRunAt(LocalDateTime.now().minusMinutes(1));
+        LocalDateTime claimedNextRunAt = ScheduledRuleValidation.computeNextRunAt(
+            duePreset.getCronExpression(),
+            duePreset.getScheduleTimezone(),
+            duePreset.getNextRunAt()
+        );
+        RmReportPreset claimedPreset = preset(RmReportPreset.Kind.ACTIVITY_CONTRIBUTOR_REPORT, duePreset.getParams());
+        claimedPreset.setId(duePreset.getId());
+        claimedPreset.setOwner(duePreset.getOwner());
+        claimedPreset.setScheduleEnabled(true);
+        claimedPreset.setCronExpression(duePreset.getCronExpression());
+        claimedPreset.setScheduleTimezone(duePreset.getScheduleTimezone());
+        claimedPreset.setDeliveryFolderId(folderId);
+        claimedPreset.setNextRunAt(claimedNextRunAt);
+
+        when(presetRepository.findByScheduleEnabledTrueAndDeletedFalseAndNextRunAtLessThanEqualOrderByNextRunAtAsc(any(LocalDateTime.class)))
+            .thenReturn(List.of(duePreset));
+        when(presetRepository.claimScheduledRun(duePreset.getId(), duePreset.getNextRunAt(), claimedNextRunAt))
+            .thenReturn(1);
+        when(presetRepository.findByIdAndDeletedFalse(duePreset.getId()))
+            .thenReturn(Optional.of(claimedPreset));
+        when(recordsManagementService.getActivityContributorReport(
+            LocalDateTime.of(2026, 4, 1, 0, 0),
+            LocalDateTime.of(2026, 4, 15, 23, 59, 59),
+            5,
+            3
+        )).thenReturn(
+            new RecordsManagementService.ActivityContributorReportDto(
+                new RecordsManagementService.ActivityDateTimeRangeDto("2026-04-01T00:00", "2026-04-15T23:59:59"),
+                new RecordsManagementService.ActivityDateTimeRangeDto("2026-03-16T00:00", "2026-03-31T23:59:59"),
+                5,
+                3,
+                12,
+                6,
+                List.of()
+            )
+        );
+        when(uploadService.uploadDocument(any(MultipartFile.class), eq(folderId), isNull()))
+            .thenReturn(PipelineResult.builder().success(true).documentId(documentId).build());
+        when(presetRepository.save(any(RmReportPreset.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(executionRepository.save(any(RmReportPresetExecution.class))).thenAnswer(inv -> {
+            RmReportPresetExecution execution = inv.getArgument(0);
+            execution.setId(UUID.randomUUID());
+            return execution;
+        });
+
+        RmReportPresetDeliveryService service = service();
+
+        service.runScheduledDeliveries();
+
+        ArgumentCaptor<Map<String, Object>> summaryCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(activityService).postDirectNotificationActivity(
+            eq("rm.report_preset.delivery.succeeded"),
+            eq("system"),
+            eq(null),
+            eq(documentId),
+            org.mockito.ArgumentMatchers.endsWith(".csv"),
+            summaryCaptor.capture(),
+            eq("admin")
+        );
+        assertEquals("Preset", summaryCaptor.getValue().get("presetName"));
+        assertEquals("SUCCESS", summaryCaptor.getValue().get("status"));
+        assertEquals(documentId.toString(), summaryCaptor.getValue().get("documentId"));
+    }
+
+    @Test
+    @DisplayName("runScheduledDeliveries keeps successful execution when success notification publish fails")
+    void runScheduledDeliveriesKeepsSuccessWhenSuccessNotificationPublishFails() throws Exception {
+        RmReportPreset duePreset = preset(
+            RmReportPreset.Kind.ACTIVITY_CONTRIBUTOR_REPORT,
+            Map.of(
+                "from", "2026-04-01T00:00:00",
+                "to", "2026-04-15T23:59:59",
+                "limit", 5,
+                "eventTypeLimit", 3
+            )
+        );
+        duePreset.setScheduleEnabled(true);
+        duePreset.setCronExpression("0 */10 * * * *");
+        duePreset.setScheduleTimezone("UTC");
+        UUID folderId = UUID.randomUUID();
+        UUID documentId = UUID.randomUUID();
+        duePreset.setDeliveryFolderId(folderId);
+        duePreset.setNextRunAt(LocalDateTime.now().minusMinutes(1));
+        LocalDateTime claimedNextRunAt = ScheduledRuleValidation.computeNextRunAt(
+            duePreset.getCronExpression(),
+            duePreset.getScheduleTimezone(),
+            duePreset.getNextRunAt()
+        );
+        RmReportPreset claimedPreset = preset(RmReportPreset.Kind.ACTIVITY_CONTRIBUTOR_REPORT, duePreset.getParams());
+        claimedPreset.setId(duePreset.getId());
+        claimedPreset.setOwner(duePreset.getOwner());
+        claimedPreset.setScheduleEnabled(true);
+        claimedPreset.setCronExpression(duePreset.getCronExpression());
+        claimedPreset.setScheduleTimezone(duePreset.getScheduleTimezone());
+        claimedPreset.setDeliveryFolderId(folderId);
+        claimedPreset.setNextRunAt(claimedNextRunAt);
+
+        when(presetRepository.findByScheduleEnabledTrueAndDeletedFalseAndNextRunAtLessThanEqualOrderByNextRunAtAsc(any(LocalDateTime.class)))
+            .thenReturn(List.of(duePreset));
+        when(presetRepository.claimScheduledRun(duePreset.getId(), duePreset.getNextRunAt(), claimedNextRunAt))
+            .thenReturn(1);
+        when(presetRepository.findByIdAndDeletedFalse(duePreset.getId()))
+            .thenReturn(Optional.of(claimedPreset));
+        when(recordsManagementService.getActivityContributorReport(
+            LocalDateTime.of(2026, 4, 1, 0, 0),
+            LocalDateTime.of(2026, 4, 15, 23, 59, 59),
+            5,
+            3
+        )).thenReturn(
+            new RecordsManagementService.ActivityContributorReportDto(
+                new RecordsManagementService.ActivityDateTimeRangeDto("2026-04-01T00:00", "2026-04-15T23:59:59"),
+                new RecordsManagementService.ActivityDateTimeRangeDto("2026-03-16T00:00", "2026-03-31T23:59:59"),
+                5,
+                3,
+                12,
+                6,
+                List.of()
+            )
+        );
+        when(uploadService.uploadDocument(any(MultipartFile.class), eq(folderId), isNull()))
+            .thenReturn(PipelineResult.builder().success(true).documentId(documentId).build());
+        when(presetRepository.save(any(RmReportPreset.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(executionRepository.save(any(RmReportPresetExecution.class))).thenAnswer(inv -> {
+            RmReportPresetExecution execution = inv.getArgument(0);
+            execution.setId(UUID.randomUUID());
+            return execution;
+        });
+        doThrow(new RuntimeException("notification down"))
+            .when(activityService)
+            .postDirectNotificationActivity(
+                eq("rm.report_preset.delivery.succeeded"),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any()
+            );
+
+        RmReportPresetDeliveryService service = service();
+
+        service.runScheduledDeliveries();
+
+        ArgumentCaptor<RmReportPresetExecution> executionCaptor =
+            ArgumentCaptor.forClass(RmReportPresetExecution.class);
+        verify(executionRepository).save(executionCaptor.capture());
+        assertEquals(RmReportPresetExecution.ExecutionStatus.SUCCESS, executionCaptor.getValue().getStatus());
+        assertEquals(documentId, executionCaptor.getValue().getDocumentId());
+    }
+
+    @Test
+    @DisplayName("runScheduledDeliveries skips direct success notification when owner disables it")
+    void runScheduledDeliveriesSkipsDirectSuccessNotificationWhenDisabledByPreference() throws Exception {
+        RmReportPreset duePreset = preset(
+            RmReportPreset.Kind.ACTIVITY_CONTRIBUTOR_REPORT,
+            Map.of(
+                "from", "2026-04-01T00:00:00",
+                "to", "2026-04-15T23:59:59",
+                "limit", 5,
+                "eventTypeLimit", 3
+            )
+        );
+        duePreset.setScheduleEnabled(true);
+        duePreset.setCronExpression("0 */10 * * * *");
+        duePreset.setScheduleTimezone("UTC");
+        UUID folderId = UUID.randomUUID();
+        UUID documentId = UUID.randomUUID();
+        duePreset.setDeliveryFolderId(folderId);
+        duePreset.setNextRunAt(LocalDateTime.now().minusMinutes(1));
+        LocalDateTime claimedNextRunAt = ScheduledRuleValidation.computeNextRunAt(
+            duePreset.getCronExpression(),
+            duePreset.getScheduleTimezone(),
+            duePreset.getNextRunAt()
+        );
+        RmReportPreset claimedPreset = preset(RmReportPreset.Kind.ACTIVITY_CONTRIBUTOR_REPORT, duePreset.getParams());
+        claimedPreset.setId(duePreset.getId());
+        claimedPreset.setOwner(duePreset.getOwner());
+        claimedPreset.setScheduleEnabled(true);
+        claimedPreset.setCronExpression(duePreset.getCronExpression());
+        claimedPreset.setScheduleTimezone(duePreset.getScheduleTimezone());
+        claimedPreset.setDeliveryFolderId(folderId);
+        claimedPreset.setNextRunAt(claimedNextRunAt);
+
+        when(presetRepository.findByScheduleEnabledTrueAndDeletedFalseAndNextRunAtLessThanEqualOrderByNextRunAtAsc(any(LocalDateTime.class)))
+            .thenReturn(List.of(duePreset));
+        when(presetRepository.claimScheduledRun(duePreset.getId(), duePreset.getNextRunAt(), claimedNextRunAt))
+            .thenReturn(1);
+        when(presetRepository.findByIdAndDeletedFalse(duePreset.getId()))
+            .thenReturn(Optional.of(claimedPreset));
+        when(recordsManagementService.getActivityContributorReport(
+            LocalDateTime.of(2026, 4, 1, 0, 0),
+            LocalDateTime.of(2026, 4, 15, 23, 59, 59),
+            5,
+            3
+        )).thenReturn(
+            new RecordsManagementService.ActivityContributorReportDto(
+                new RecordsManagementService.ActivityDateTimeRangeDto("2026-04-01T00:00", "2026-04-15T23:59:59"),
+                new RecordsManagementService.ActivityDateTimeRangeDto("2026-03-16T00:00", "2026-03-31T23:59:59"),
+                5,
+                3,
+                12,
+                6,
+                List.of()
+            )
+        );
+        when(uploadService.uploadDocument(any(MultipartFile.class), eq(folderId), isNull()))
+            .thenReturn(PipelineResult.builder().success(true).documentId(documentId).build());
+        when(presetRepository.save(any(RmReportPreset.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(executionRepository.save(any(RmReportPresetExecution.class))).thenAnswer(inv -> {
+            RmReportPresetExecution execution = inv.getArgument(0);
+            execution.setId(UUID.randomUUID());
+            return execution;
+        });
+        when(preferenceService.getPreference("admin", RmReportPresetDeliveryService.PREF_NOTIFY_ON_SUCCESS))
+            .thenReturn(false);
+
+        RmReportPresetDeliveryService service = service();
+
+        service.runScheduledDeliveries();
+
+        verify(activityService, never()).postDirectNotificationActivity(
+            eq("rm.report_preset.delivery.succeeded"),
+            any(),
+            any(),
+            any(),
+            any(),
+            any(),
+            any()
+        );
+    }
+
+    @Test
+    @DisplayName("runScheduledDeliveries posts direct owner notification when scheduled delivery fails")
+    void runScheduledDeliveriesPostsDirectNotificationOnFailure() throws Exception {
+        RmReportPreset duePreset = preset(
+            RmReportPreset.Kind.ACTIVITY_CONTRIBUTOR_REPORT,
+            Map.of(
+                "from", "2026-04-01T00:00:00",
+                "to", "2026-04-15T23:59:59",
+                "limit", 5,
+                "eventTypeLimit", 3
+            )
+        );
+        duePreset.setScheduleEnabled(true);
+        duePreset.setCronExpression("0 */10 * * * *");
+        duePreset.setScheduleTimezone("UTC");
+        UUID folderId = UUID.randomUUID();
+        duePreset.setDeliveryFolderId(folderId);
+        duePreset.setNextRunAt(LocalDateTime.now().minusMinutes(1));
+        LocalDateTime claimedNextRunAt = ScheduledRuleValidation.computeNextRunAt(
+            duePreset.getCronExpression(),
+            duePreset.getScheduleTimezone(),
+            duePreset.getNextRunAt()
+        );
+        RmReportPreset claimedPreset = preset(RmReportPreset.Kind.ACTIVITY_CONTRIBUTOR_REPORT, duePreset.getParams());
+        claimedPreset.setId(duePreset.getId());
+        claimedPreset.setOwner(duePreset.getOwner());
+        claimedPreset.setScheduleEnabled(true);
+        claimedPreset.setCronExpression(duePreset.getCronExpression());
+        claimedPreset.setScheduleTimezone(duePreset.getScheduleTimezone());
+        claimedPreset.setDeliveryFolderId(folderId);
+        claimedPreset.setNextRunAt(claimedNextRunAt);
+
+        when(presetRepository.findByScheduleEnabledTrueAndDeletedFalseAndNextRunAtLessThanEqualOrderByNextRunAtAsc(any(LocalDateTime.class)))
+            .thenReturn(List.of(duePreset));
+        when(presetRepository.claimScheduledRun(duePreset.getId(), duePreset.getNextRunAt(), claimedNextRunAt))
+            .thenReturn(1);
+        when(presetRepository.findByIdAndDeletedFalse(duePreset.getId()))
+            .thenReturn(Optional.of(claimedPreset));
+        when(recordsManagementService.getActivityContributorReport(
+            LocalDateTime.of(2026, 4, 1, 0, 0),
+            LocalDateTime.of(2026, 4, 15, 23, 59, 59),
+            5,
+            3
+        )).thenReturn(
+            new RecordsManagementService.ActivityContributorReportDto(
+                new RecordsManagementService.ActivityDateTimeRangeDto("2026-04-01T00:00", "2026-04-15T23:59:59"),
+                new RecordsManagementService.ActivityDateTimeRangeDto("2026-03-16T00:00", "2026-03-31T23:59:59"),
+                5,
+                3,
+                12,
+                6,
+                List.of()
+            )
+        );
+        when(uploadService.uploadDocument(any(MultipartFile.class), eq(folderId), isNull()))
+            .thenReturn(PipelineResult.builder().success(false).errors(Map.of("upload", "Folder not found")).build());
+        when(presetRepository.save(any(RmReportPreset.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(executionRepository.save(any(RmReportPresetExecution.class))).thenAnswer(inv -> {
+            RmReportPresetExecution execution = inv.getArgument(0);
+            execution.setId(UUID.randomUUID());
+            return execution;
+        });
+
+        RmReportPresetDeliveryService service = service();
+
+        service.runScheduledDeliveries();
+
+        ArgumentCaptor<Map<String, Object>> summaryCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(activityService).postDirectNotificationActivity(
+            eq("rm.report_preset.delivery.failed"),
+            eq("system"),
+            eq(null),
+            eq(folderId),
+            eq(null),
+            summaryCaptor.capture(),
+            eq("admin")
+        );
+        assertEquals("Preset", summaryCaptor.getValue().get("presetName"));
+        assertEquals("FAILED", summaryCaptor.getValue().get("status"));
+        assertEquals("Folder not found", summaryCaptor.getValue().get("message"));
+    }
+
+    @Test
+    @DisplayName("runScheduledDeliveries keeps failed execution when failure notification publish fails")
+    void runScheduledDeliveriesKeepsFailureWhenFailureNotificationPublishFails() throws Exception {
+        RmReportPreset duePreset = preset(
+            RmReportPreset.Kind.ACTIVITY_CONTRIBUTOR_REPORT,
+            Map.of(
+                "from", "2026-04-01T00:00:00",
+                "to", "2026-04-15T23:59:59",
+                "limit", 5,
+                "eventTypeLimit", 3
+            )
+        );
+        duePreset.setScheduleEnabled(true);
+        duePreset.setCronExpression("0 */10 * * * *");
+        duePreset.setScheduleTimezone("UTC");
+        UUID folderId = UUID.randomUUID();
+        duePreset.setDeliveryFolderId(folderId);
+        duePreset.setNextRunAt(LocalDateTime.now().minusMinutes(1));
+        LocalDateTime claimedNextRunAt = ScheduledRuleValidation.computeNextRunAt(
+            duePreset.getCronExpression(),
+            duePreset.getScheduleTimezone(),
+            duePreset.getNextRunAt()
+        );
+        RmReportPreset claimedPreset = preset(RmReportPreset.Kind.ACTIVITY_CONTRIBUTOR_REPORT, duePreset.getParams());
+        claimedPreset.setId(duePreset.getId());
+        claimedPreset.setOwner(duePreset.getOwner());
+        claimedPreset.setScheduleEnabled(true);
+        claimedPreset.setCronExpression(duePreset.getCronExpression());
+        claimedPreset.setScheduleTimezone(duePreset.getScheduleTimezone());
+        claimedPreset.setDeliveryFolderId(folderId);
+        claimedPreset.setNextRunAt(claimedNextRunAt);
+
+        when(presetRepository.findByScheduleEnabledTrueAndDeletedFalseAndNextRunAtLessThanEqualOrderByNextRunAtAsc(any(LocalDateTime.class)))
+            .thenReturn(List.of(duePreset));
+        when(presetRepository.claimScheduledRun(duePreset.getId(), duePreset.getNextRunAt(), claimedNextRunAt))
+            .thenReturn(1);
+        when(presetRepository.findByIdAndDeletedFalse(duePreset.getId()))
+            .thenReturn(Optional.of(claimedPreset));
+        when(recordsManagementService.getActivityContributorReport(
+            LocalDateTime.of(2026, 4, 1, 0, 0),
+            LocalDateTime.of(2026, 4, 15, 23, 59, 59),
+            5,
+            3
+        )).thenReturn(
+            new RecordsManagementService.ActivityContributorReportDto(
+                new RecordsManagementService.ActivityDateTimeRangeDto("2026-04-01T00:00", "2026-04-15T23:59:59"),
+                new RecordsManagementService.ActivityDateTimeRangeDto("2026-03-16T00:00", "2026-03-31T23:59:59"),
+                5,
+                3,
+                12,
+                6,
+                List.of()
+            )
+        );
+        when(uploadService.uploadDocument(any(MultipartFile.class), eq(folderId), isNull()))
+            .thenReturn(PipelineResult.builder().success(false).errors(Map.of("upload", "Folder not found")).build());
+        when(presetRepository.save(any(RmReportPreset.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(executionRepository.save(any(RmReportPresetExecution.class))).thenAnswer(inv -> {
+            RmReportPresetExecution execution = inv.getArgument(0);
+            execution.setId(UUID.randomUUID());
+            return execution;
+        });
+        doThrow(new RuntimeException("notification down"))
+            .when(activityService)
+            .postDirectNotificationActivity(
+                eq("rm.report_preset.delivery.failed"),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any()
+            );
+
+        RmReportPresetDeliveryService service = service();
+
+        service.runScheduledDeliveries();
+
+        ArgumentCaptor<RmReportPresetExecution> executionCaptor =
+            ArgumentCaptor.forClass(RmReportPresetExecution.class);
+        verify(executionRepository).save(executionCaptor.capture());
+        assertEquals(RmReportPresetExecution.ExecutionStatus.FAILED, executionCaptor.getValue().getStatus());
+        assertEquals("Folder not found", executionCaptor.getValue().getMessage());
+    }
+
+    @Test
+    @DisplayName("runScheduledDeliveries skips direct failure notification when owner disables it")
+    void runScheduledDeliveriesSkipsDirectFailureNotificationWhenDisabledByPreference() throws Exception {
+        RmReportPreset duePreset = preset(
+            RmReportPreset.Kind.ACTIVITY_CONTRIBUTOR_REPORT,
+            Map.of(
+                "from", "2026-04-01T00:00:00",
+                "to", "2026-04-15T23:59:59",
+                "limit", 5,
+                "eventTypeLimit", 3
+            )
+        );
+        duePreset.setScheduleEnabled(true);
+        duePreset.setCronExpression("0 */10 * * * *");
+        duePreset.setScheduleTimezone("UTC");
+        UUID folderId = UUID.randomUUID();
+        duePreset.setDeliveryFolderId(folderId);
+        duePreset.setNextRunAt(LocalDateTime.now().minusMinutes(1));
+        LocalDateTime claimedNextRunAt = ScheduledRuleValidation.computeNextRunAt(
+            duePreset.getCronExpression(),
+            duePreset.getScheduleTimezone(),
+            duePreset.getNextRunAt()
+        );
+        RmReportPreset claimedPreset = preset(RmReportPreset.Kind.ACTIVITY_CONTRIBUTOR_REPORT, duePreset.getParams());
+        claimedPreset.setId(duePreset.getId());
+        claimedPreset.setOwner(duePreset.getOwner());
+        claimedPreset.setScheduleEnabled(true);
+        claimedPreset.setCronExpression(duePreset.getCronExpression());
+        claimedPreset.setScheduleTimezone(duePreset.getScheduleTimezone());
+        claimedPreset.setDeliveryFolderId(folderId);
+        claimedPreset.setNextRunAt(claimedNextRunAt);
+
+        when(presetRepository.findByScheduleEnabledTrueAndDeletedFalseAndNextRunAtLessThanEqualOrderByNextRunAtAsc(any(LocalDateTime.class)))
+            .thenReturn(List.of(duePreset));
+        when(presetRepository.claimScheduledRun(duePreset.getId(), duePreset.getNextRunAt(), claimedNextRunAt))
+            .thenReturn(1);
+        when(presetRepository.findByIdAndDeletedFalse(duePreset.getId()))
+            .thenReturn(Optional.of(claimedPreset));
+        when(recordsManagementService.getActivityContributorReport(
+            LocalDateTime.of(2026, 4, 1, 0, 0),
+            LocalDateTime.of(2026, 4, 15, 23, 59, 59),
+            5,
+            3
+        )).thenReturn(
+            new RecordsManagementService.ActivityContributorReportDto(
+                new RecordsManagementService.ActivityDateTimeRangeDto("2026-04-01T00:00", "2026-04-15T23:59:59"),
+                new RecordsManagementService.ActivityDateTimeRangeDto("2026-03-16T00:00", "2026-03-31T23:59:59"),
+                5,
+                3,
+                12,
+                6,
+                List.of()
+            )
+        );
+        when(uploadService.uploadDocument(any(MultipartFile.class), eq(folderId), isNull()))
+            .thenReturn(PipelineResult.builder().success(false).errors(Map.of("upload", "Folder not found")).build());
+        when(presetRepository.save(any(RmReportPreset.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(executionRepository.save(any(RmReportPresetExecution.class))).thenAnswer(inv -> {
+            RmReportPresetExecution execution = inv.getArgument(0);
+            execution.setId(UUID.randomUUID());
+            return execution;
+        });
+        when(preferenceService.getPreference("admin", RmReportPresetDeliveryService.PREF_NOTIFY_ON_FAILURE))
+            .thenReturn(false);
+
+        RmReportPresetDeliveryService service = service();
+
+        service.runScheduledDeliveries();
+
+        verify(activityService, never()).postDirectNotificationActivity(
+            eq("rm.report_preset.delivery.failed"),
+            any(),
+            any(),
+            any(),
+            any(),
+            any(),
+            any()
+        );
     }
 
     @Test
@@ -383,20 +848,35 @@ class RmReportPresetDeliveryServiceTest {
         when(presetRepository.claimScheduledRun(duePreset.getId(), duePreset.getNextRunAt(), claimedNextRunAt))
             .thenReturn(0);
 
-        RmReportPresetDeliveryService service = new RmReportPresetDeliveryService(
-            presetService,
-            presetRepository,
-            executionRepository,
-            recordsManagementService,
-            uploadService,
-            auditService,
-            securityService
-        );
+        RmReportPresetDeliveryService service = service();
 
         service.runScheduledDeliveries();
 
         verify(presetRepository).claimScheduledRun(duePreset.getId(), duePreset.getNextRunAt(), claimedNextRunAt);
         verifyNoInteractions(uploadService, executionRepository, auditService);
+    }
+
+    @Test
+    @DisplayName("runScheduledDeliveriesNow audits admin ops trigger")
+    void runScheduledDeliveriesNowAuditsAdminOpsTrigger() {
+        when(presetRepository.findByScheduleEnabledTrueAndDeletedFalseAndNextRunAtLessThanEqualOrderByNextRunAtAsc(any(LocalDateTime.class)))
+            .thenReturn(List.of());
+        when(securityService.getCurrentUser()).thenReturn("admin");
+
+        RmReportPresetDeliveryService service = service();
+
+        RmReportPresetDeliveryService.ScheduledRunResultDto result =
+            service.runScheduledDeliveriesNow();
+
+        assertEquals(0, result.processedCount());
+        assertNotNull(result.generatedAt());
+        verify(auditService).logEvent(
+            eq("RM_REPORT_PRESET_SCHEDULED_DELIVERIES_TRIGGERED"),
+            isNull(),
+            eq("rm-report-preset-scheduled-deliveries"),
+            eq("admin"),
+            org.mockito.ArgumentMatchers.contains("processedCount=0")
+        );
     }
 
     @Test
@@ -418,15 +898,7 @@ class RmReportPresetDeliveryServiceTest {
                 )
             )));
 
-        RmReportPresetDeliveryService service = new RmReportPresetDeliveryService(
-            presetService,
-            presetRepository,
-            executionRepository,
-            recordsManagementService,
-            uploadService,
-            auditService,
-            securityService
-        );
+        RmReportPresetDeliveryService service = service();
 
         org.springframework.data.domain.Page<RmReportPresetDeliveryService.PresetExecutionDto> page = service.listExecutionLedger(
             presetId,
@@ -462,15 +934,7 @@ class RmReportPresetDeliveryServiceTest {
                 )
             )));
 
-        RmReportPresetDeliveryService service = new RmReportPresetDeliveryService(
-            presetService,
-            presetRepository,
-            executionRepository,
-            recordsManagementService,
-            uploadService,
-            auditService,
-            securityService
-        );
+        RmReportPresetDeliveryService service = service();
 
         String csv = service.exportExecutionLedgerCsv(
             presetId,
@@ -511,15 +975,7 @@ class RmReportPresetDeliveryServiceTest {
         when(executionRepository.findFirstByOwnerOrderByStartedAtDesc("admin"))
             .thenReturn(Optional.of(latest));
 
-        RmReportPresetDeliveryService service = new RmReportPresetDeliveryService(
-            presetService,
-            presetRepository,
-            executionRepository,
-            recordsManagementService,
-            uploadService,
-            auditService,
-            securityService
-        );
+        RmReportPresetDeliveryService service = service();
 
         RmReportPresetDeliveryService.ScheduledDeliveryTelemetryDto telemetry =
             service.getScheduledDeliveryTelemetry();
@@ -537,15 +993,7 @@ class RmReportPresetDeliveryServiceTest {
     void getScheduledDeliveryTelemetryRejectsAnonymousCallers() {
         when(securityService.getCurrentUser()).thenReturn(null);
 
-        RmReportPresetDeliveryService service = new RmReportPresetDeliveryService(
-            presetService,
-            presetRepository,
-            executionRepository,
-            recordsManagementService,
-            uploadService,
-            auditService,
-            securityService
-        );
+        RmReportPresetDeliveryService service = service();
 
         assertThrows(IllegalStateException.class, service::getScheduledDeliveryTelemetry);
         verifyNoInteractions(presetRepository, executionRepository);
@@ -591,5 +1039,19 @@ class RmReportPresetDeliveryServiceTest {
         execution.setFinishedAt(LocalDateTime.of(2026, 4, 21, 16, 1));
         execution.setDurationMs(1000L);
         return execution;
+    }
+
+    private RmReportPresetDeliveryService service() {
+        return new RmReportPresetDeliveryService(
+            presetService,
+            presetRepository,
+            executionRepository,
+            recordsManagementService,
+            uploadService,
+            auditService,
+            securityService,
+            activityService,
+            preferenceService
+        );
     }
 }
