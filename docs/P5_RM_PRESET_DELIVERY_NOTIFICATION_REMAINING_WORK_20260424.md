@@ -27,6 +27,7 @@ The current local worktree covers the owner-scoped inbox notification lane for R
 - PR-142 hardens preflight discovery-count failures so missing acceptance tests produce an explicit diagnostic
 - PR-143 aligns the integration doc with the default-on preference contract and tests missing preference values in the RM page
 - PR-144 runs the closeout preflight in the non-Docker frontend CI job before slower gates
+- PR-144A makes the closeout preflight verify CI workflow wiring semantics, including the live gate, fast preflight, Surefire artifacts, and critical step ordering
 
 ## Completion Assessment
 

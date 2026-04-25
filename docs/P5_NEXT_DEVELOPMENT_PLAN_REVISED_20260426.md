@@ -48,6 +48,7 @@ sit inside the notification lane. Summary:
 | PR-142 | Script | Preflight failure diagnostics |
 | PR-143 | Test | Codified `notifyOnSuccess=true / notifyOnFailure=true` defaults |
 | PR-144 | CI | Preflight runs in cheap frontend job before expensive live gate |
+| PR-144A | CI | Preflight verifies CI workflow wiring semantics and artifact retention |
 
 This is **the same notification lane**, hardened. Not a new capability.
 
@@ -65,6 +66,12 @@ The PR-134..144 bundle plus the two missing scripts and the workflow
 update have been committed and pushed. CI is now in flight on this
 SHA. The next 15-30 minutes will tell whether the notification lane
 gate finally goes green.
+
+Post-revision local hardening adds `PR-144A`: the closeout preflight
+now fails if the CI workflow drops the fast preflight, live acceptance
+gate, backend Surefire artifacts, or required step ordering. This does
+not change the P0 rule: wait for live CI acceptance before starting
+`PR-145`.
 
 ## 2. Current state
 
