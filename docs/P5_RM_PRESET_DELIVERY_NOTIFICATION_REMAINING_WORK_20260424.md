@@ -28,6 +28,9 @@ The current local worktree covers the owner-scoped inbox notification lane for R
 - PR-143 aligns the integration doc with the default-on preference contract and tests missing preference values in the RM page
 - PR-144 runs the closeout preflight in the non-Docker frontend CI job before slower gates
 - PR-144A makes the closeout preflight verify CI workflow wiring semantics, including the live gate, fast preflight, Surefire artifacts, and critical step ordering
+- PR-144B makes the closeout preflight verify the four specific notification acceptance scenarios, not only the tagged-test count
+- PR-144C makes the closeout preflight verify the five backend test classes targeted by the live notification acceptance gate
+- PR-144D removes the preflight's hidden `rg` dependency after GitHub Actions run `24935937705` failed on `rg: command not found`
 
 ## Completion Assessment
 

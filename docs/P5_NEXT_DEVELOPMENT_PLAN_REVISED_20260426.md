@@ -49,6 +49,9 @@ sit inside the notification lane. Summary:
 | PR-143 | Test | Codified `notifyOnSuccess=true / notifyOnFailure=true` defaults |
 | PR-144 | CI | Preflight runs in cheap frontend job before expensive live gate |
 | PR-144A | CI | Preflight verifies CI workflow wiring semantics and artifact retention |
+| PR-144B | CI | Preflight verifies the four required acceptance scenario titles |
+| PR-144C | CI | Preflight verifies the five backend targeted test classes |
+| PR-144D | CI | Preflight portability fix after GitHub runner lacked `rg` |
 
 This is **the same notification lane**, hardened. Not a new capability.
 
@@ -72,6 +75,20 @@ now fails if the CI workflow drops the fast preflight, live acceptance
 gate, backend Surefire artifacts, or required step ordering. This does
 not change the P0 rule: wait for live CI acceptance before starting
 `PR-145`.
+
+`PR-144B` adds one more local guard: the preflight now checks that the
+four required notification acceptance scenarios are still present by
+title, not just that four tagged tests exist. This is still P0
+hardening, not a new product lane.
+
+`PR-144C` extends the same preflight to the backend half of the live
+gate: all five required targeted test classes must still be listed in
+the acceptance gate script and present under `ecm-core/src/test/java`.
+
+`PR-144D` fixes the first real failure observed after network access
+returned: GitHub Actions run `24935937705` failed in the fast
+preflight because the runner did not have `rg`. The preflight now uses
+only `awk`, `grep`, and `find`.
 
 ## 2. Current state
 
