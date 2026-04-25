@@ -9,6 +9,8 @@ import com.ecm.core.repository.RmReportPresetExecutionRepository;
 import com.ecm.core.repository.RmReportPresetRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -62,6 +64,17 @@ public class RmReportPresetDeliveryService {
     private final SecurityService securityService;
     private final ActivityService activityService;
     private final PreferenceService preferenceService;
+
+    /**
+     * Self-injected proxy used to call public methods on this bean through
+     * Spring's AOP infrastructure so {@code @Transactional(REQUIRES_NEW)} on
+     * those methods takes effect. Direct {@code this.method()} calls bypass
+     * the proxy. Marked {@link Lazy} to break the constructor-time circular
+     * dependency. Setter-injected because the field is non-final.
+     */
+    @Autowired
+    @Lazy
+    private RmReportPresetDeliveryService self;
 
     @Transactional(readOnly = true)
     public ScheduleStatusDto getSchedule(UUID presetId) {
@@ -230,19 +243,16 @@ public class RmReportPresetDeliveryService {
     }
 
     /**
-     * NOT_SUPPORTED override of the class-level {@code @Transactional}: each
-     * inner DB call (claim CAS, save preset, save execution row, audit log)
-     * runs in its own implicit transaction via Spring Data. This prevents one
-     * preset's failure from setting rollback-only on a shared outer
-     * transaction — the previous shape produced an opaque
-     * {@code UnexpectedRollbackException} at commit time that no service-body
-     * try/catch could intercept (PR-145 verified the symptom).
+     * Inherits the class-level {@code @Transactional} (REQUIRED). Per-preset
+     * work runs through {@link #processOneScheduledDelivery(java.util.UUID)}
+     * via the self-injected proxy, which is annotated REQUIRES_NEW so the
+     * outer transaction is suspended for each preset and inner failures do
+     * not pollute the outer commit.
      *
      * The controller wraps the call in its own try/catch as a defence in
-     * depth: anything that escapes here gets surfaced via
+     * depth: anything that escapes here is surfaced via
      * {@link com.ecm.core.controller.RestExceptionHandler#handleInternalState}.
      */
-    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public ScheduledRunResultDto runScheduledDeliveriesNow() {
         int processedCount = processDueScheduledDeliveries();
         LocalDateTime generatedAt = LocalDateTime.now();
@@ -263,7 +273,6 @@ public class RmReportPresetDeliveryService {
     }
 
     @Scheduled(cron = "${ecm.rm.report-presets.scheduler-cron:0 */5 * * * *}")
-    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void runScheduledDeliveries() {
         processDueScheduledDeliveries();
     }
@@ -274,25 +283,60 @@ public class RmReportPresetDeliveryService {
             presetRepository.findByScheduleEnabledTrueAndDeletedFalseAndNextRunAtLessThanEqualOrderByNextRunAtAsc(now);
         int processedCount = 0;
         for (RmReportPreset preset : duePresets) {
-            if (!claimScheduledRun(preset)) {
-                continue;
-            }
-            RmReportPreset claimedPreset = presetRepository.findByIdAndDeletedFalse(preset.getId()).orElse(null);
-            if (claimedPreset == null) {
-                log.warn("RM report preset {} disappeared after claim; skipping scheduled delivery", preset.getId());
-                continue;
-            }
-            SecurityContext previous = pushPresetAuthentication(claimedPreset);
             try {
-                deliverPreset(claimedPreset, TriggerType.SCHEDULED, true, true);
-                processedCount += 1;
+                if (self.processOneScheduledDelivery(preset)) {
+                    processedCount += 1;
+                }
             } catch (Exception ex) {
-                log.warn("RM report preset scheduled delivery errored for {}: {}", claimedPreset.getId(), ex.getMessage(), ex);
-            } finally {
-                popAuthentication(previous);
+                // Per-preset failures must never propagate out of the loop —
+                // each preset runs in its own REQUIRES_NEW transaction via the
+                // self-injected proxy, so any rollback or thrown exception is
+                // already isolated. Catching here is defence-in-depth so the
+                // outer caller (manual trigger or @Scheduled tick) always
+                // sees a clean count.
+                log.warn(
+                    "RM report preset scheduled delivery errored for {}: {}",
+                    preset.getId(), ex.getMessage(), ex
+                );
             }
         }
         return processedCount;
+    }
+
+    /**
+     * Per-preset scheduled-delivery worker. Runs in {@code REQUIRES_NEW} so
+     * the outer transaction (started by the @Scheduled tick or the admin
+     * trigger entry method) is suspended for the duration. Per-preset
+     * failure → only this nested transaction rolls back; the outer remains
+     * commit-clean. The {@code persistFailedExecution} write inside
+     * {@link #deliverPreset} commits with this same nested transaction so the
+     * FAILED execution row survives independent of any other preset's outcome.
+     *
+     * <p>Public so the {@link #self} proxy intercepts the call and applies
+     * the propagation override; calling this directly via {@code this.x()}
+     * would bypass the proxy and silently demote it to the outer tx.</p>
+     *
+     * @return {@code true} if the preset's delivery completed (success or
+     *         persisted-failed); {@code false} if no work was claimed (claim
+     *         CAS lost, preset deleted, etc.)
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public boolean processOneScheduledDelivery(RmReportPreset preset) {
+        if (!claimScheduledRun(preset)) {
+            return false;
+        }
+        RmReportPreset claimedPreset = presetRepository.findByIdAndDeletedFalse(preset.getId()).orElse(null);
+        if (claimedPreset == null) {
+            log.warn("RM report preset {} disappeared after claim; skipping scheduled delivery", preset.getId());
+            return false;
+        }
+        SecurityContext previous = pushPresetAuthentication(claimedPreset);
+        try {
+            deliverPreset(claimedPreset, TriggerType.SCHEDULED, true, true);
+            return true;
+        } finally {
+            popAuthentication(previous);
+        }
     }
 
     private boolean claimScheduledRun(RmReportPreset preset) {

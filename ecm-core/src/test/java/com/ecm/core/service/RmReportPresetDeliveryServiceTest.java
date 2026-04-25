@@ -1061,8 +1061,74 @@ class RmReportPresetDeliveryServiceTest {
         assertEquals(underlying, ex);
     }
 
+    @Test
+    @DisplayName("runScheduledDeliveriesNow isolates per-preset failures — outer call still returns processedCount")
+    void runScheduledDeliveriesNowIsolatesPerPresetFailures() {
+        // Two due presets. The first one fails when processOneScheduledDelivery
+        // throws (simulating any RuntimeException — upload error, downstream
+        // service hiccup, etc). The second succeeds. Outer call must still
+        // return 1 instead of bubbling the per-preset exception.
+        RmReportPreset failing = preset(RmReportPreset.Kind.ACTIVITY_FAMILY_REPORT,
+            Map.of("from", "2026-04-01T00:00:00", "to", "2026-04-15T23:59:59"));
+        failing.setScheduleEnabled(true);
+        failing.setCronExpression("0 0 * * * *");
+        failing.setScheduleTimezone("UTC");
+        failing.setNextRunAt(LocalDateTime.now().minusMinutes(5));
+
+        RmReportPreset succeeding = preset(RmReportPreset.Kind.ACTIVITY_FAMILY_REPORT,
+            Map.of("from", "2026-04-01T00:00:00", "to", "2026-04-15T23:59:59"));
+        succeeding.setScheduleEnabled(true);
+        succeeding.setCronExpression("0 0 * * * *");
+        succeeding.setScheduleTimezone("UTC");
+        succeeding.setNextRunAt(LocalDateTime.now().minusMinutes(5));
+
+        when(presetRepository.findByScheduleEnabledTrueAndDeletedFalseAndNextRunAtLessThanEqualOrderByNextRunAtAsc(any(LocalDateTime.class)))
+            .thenReturn(List.of(failing, succeeding));
+        // Claim succeeds for both
+        when(presetRepository.claimScheduledRun(any(UUID.class), any(LocalDateTime.class), any(LocalDateTime.class)))
+            .thenReturn(1);
+        // First findByIdAndDeletedFalse returns failing's claimed state (will throw downstream),
+        // second returns succeeding's claimed state (will succeed)
+        when(presetRepository.findByIdAndDeletedFalse(failing.getId()))
+            .thenThrow(new RuntimeException("simulated per-preset failure"));
+        when(presetRepository.findByIdAndDeletedFalse(succeeding.getId()))
+            .thenReturn(Optional.of(succeeding));
+        // For the succeeding preset to deliver, set folder + stub minimal upload path
+        UUID folderId = UUID.randomUUID();
+        succeeding.setDeliveryFolderId(folderId);
+        when(recordsManagementService.getActivityFamilyReport(any(), any(), any(), any()))
+            .thenReturn(new RecordsManagementService.ActivityFamilyReportDto(
+                new RecordsManagementService.ActivityDateTimeRangeDto("2026-04-01T00:00", "2026-04-15T23:59:59"),
+                new RecordsManagementService.ActivityDateTimeRangeDto("2026-03-17T00:00", "2026-03-31T23:59:59"),
+                5,
+                5,
+                0,
+                0,
+                List.of()
+            ));
+        when(uploadService.uploadDocument(any(), any(UUID.class), any()))
+            .thenReturn(PipelineResult.builder().success(true).documentId(UUID.randomUUID()).build());
+        when(presetRepository.save(any(RmReportPreset.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(executionRepository.save(any(RmReportPresetExecution.class))).thenAnswer(inv -> {
+            RmReportPresetExecution exec = inv.getArgument(0);
+            exec.setId(UUID.randomUUID());
+            return exec;
+        });
+        when(securityService.getCurrentUser()).thenReturn("admin");
+
+        RmReportPresetDeliveryService service = service();
+
+        RmReportPresetDeliveryService.ScheduledRunResultDto result =
+            service.runScheduledDeliveriesNow();
+
+        // Outer call returns successfully — the per-preset exception did not
+        // propagate. processedCount reflects only the succeeded preset.
+        assertEquals(1, result.processedCount());
+        assertNotNull(result.generatedAt());
+    }
+
     private RmReportPresetDeliveryService service() {
-        return new RmReportPresetDeliveryService(
+        RmReportPresetDeliveryService svc = new RmReportPresetDeliveryService(
             presetService,
             presetRepository,
             executionRepository,
@@ -1073,5 +1139,11 @@ class RmReportPresetDeliveryServiceTest {
             activityService,
             preferenceService
         );
+        // In production Spring injects a proxy here so per-preset
+        // processOneScheduledDelivery calls go through @Transactional(REQUIRES_NEW).
+        // Unit tests don't honour @Transactional anyway, so wiring self → self
+        // exercises the same call shape without the propagation semantics.
+        org.springframework.test.util.ReflectionTestUtils.setField(svc, "self", svc);
+        return svc;
     }
 }
