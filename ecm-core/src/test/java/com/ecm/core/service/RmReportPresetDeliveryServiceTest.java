@@ -1042,28 +1042,23 @@ class RmReportPresetDeliveryServiceTest {
     }
 
     @Test
-    @DisplayName("runScheduledDeliveriesNow rethrows underlying failures as IllegalStateException with class+message")
-    void runScheduledDeliveriesNowRethrowsAsIllegalStateException() {
+    @DisplayName("runScheduledDeliveriesNow propagates underlying failures unwrapped — controller catches them")
+    void runScheduledDeliveriesNowPropagatesUnderlyingFailure() {
         RuntimeException underlying = new RuntimeException("scan failed: boom");
         when(presetRepository.findByScheduleEnabledTrueAndDeletedFalseAndNextRunAtLessThanEqualOrderByNextRunAtAsc(any(LocalDateTime.class)))
             .thenThrow(underlying);
 
         RmReportPresetDeliveryService service = service();
 
-        IllegalStateException ex = assertThrows(
-            IllegalStateException.class,
+        // Service no longer wraps. The controller catches at its boundary so it
+        // also catches transaction-commit exceptions thrown by the @Transactional
+        // proxy (e.g. UnexpectedRollbackException), which a service-body try
+        // could not intercept.
+        RuntimeException ex = assertThrows(
+            RuntimeException.class,
             service::runScheduledDeliveriesNow
         );
-
-        assertTrue(
-            ex.getMessage().startsWith("java.lang.RuntimeException"),
-            "expected message to start with the underlying class name; was: " + ex.getMessage()
-        );
-        assertTrue(
-            ex.getMessage().contains("scan failed: boom"),
-            "expected message to include the underlying message; was: " + ex.getMessage()
-        );
-        assertEquals(underlying, ex.getCause());
+        assertEquals(underlying, ex);
     }
 
     private RmReportPresetDeliveryService service() {

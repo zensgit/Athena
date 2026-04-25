@@ -283,13 +283,10 @@ class RmReportPresetControllerTest {
     }
 
     @Test
-    @DisplayName("runScheduledDeliveriesNow surfaces underlying failure class+message in 500 body")
-    void runScheduledDeliveriesNowSurfacesFailureBody() throws Exception {
+    @DisplayName("runScheduledDeliveriesNow wraps a service-thrown RuntimeException into the 500 body")
+    void runScheduledDeliveriesNowSurfacesServiceRuntimeFailureBody() throws Exception {
         Mockito.when(deliveryService.runScheduledDeliveriesNow())
-            .thenThrow(new IllegalStateException(
-                "java.lang.RuntimeException: scan failed: boom",
-                new RuntimeException("scan failed: boom")
-            ));
+            .thenThrow(new RuntimeException("scan failed: boom"));
 
         mockMvc.perform(post("/api/v1/records/report-presets/run-scheduled-deliveries"))
             .andExpect(status().isInternalServerError())
@@ -297,5 +294,25 @@ class RmReportPresetControllerTest {
                 .value(org.hamcrest.Matchers.containsString("java.lang.RuntimeException")))
             .andExpect(jsonPath("$.message")
                 .value(org.hamcrest.Matchers.containsString("scan failed: boom")));
+    }
+
+    @Test
+    @DisplayName("runScheduledDeliveriesNow wraps a transaction-commit failure thrown by the service proxy")
+    void runScheduledDeliveriesNowSurfacesTransactionFailureBody() throws Exception {
+        // Simulates Spring's transaction interceptor throwing
+        // UnexpectedRollbackException at commit time after a per-preset
+        // failure marked the outer tx rollback-only. Before PR-146 this
+        // produced an opaque 500 with no message in the body.
+        Mockito.when(deliveryService.runScheduledDeliveriesNow())
+            .thenThrow(new org.springframework.transaction.UnexpectedRollbackException(
+                "Transaction silently rolled back because it has been marked as rollback-only"
+            ));
+
+        mockMvc.perform(post("/api/v1/records/report-presets/run-scheduled-deliveries"))
+            .andExpect(status().isInternalServerError())
+            .andExpect(jsonPath("$.message")
+                .value(org.hamcrest.Matchers.containsString("UnexpectedRollbackException")))
+            .andExpect(jsonPath("$.message")
+                .value(org.hamcrest.Matchers.containsString("rollback-only")));
     }
 }

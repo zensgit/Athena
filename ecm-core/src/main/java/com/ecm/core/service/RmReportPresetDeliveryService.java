@@ -21,6 +21,7 @@ import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
@@ -228,40 +229,41 @@ public class RmReportPresetDeliveryService {
         return deliverPreset(preset, TriggerType.MANUAL, false);
     }
 
+    /**
+     * NOT_SUPPORTED override of the class-level {@code @Transactional}: each
+     * inner DB call (claim CAS, save preset, save execution row, audit log)
+     * runs in its own implicit transaction via Spring Data. This prevents one
+     * preset's failure from setting rollback-only on a shared outer
+     * transaction — the previous shape produced an opaque
+     * {@code UnexpectedRollbackException} at commit time that no service-body
+     * try/catch could intercept (PR-145 verified the symptom).
+     *
+     * The controller wraps the call in its own try/catch as a defence in
+     * depth: anything that escapes here gets surfaced via
+     * {@link com.ecm.core.controller.RestExceptionHandler#handleInternalState}.
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public ScheduledRunResultDto runScheduledDeliveriesNow() {
-        try {
-            int processedCount = processDueScheduledDeliveries();
-            LocalDateTime generatedAt = LocalDateTime.now();
-            String actor = securityService.getCurrentUser();
-            String effectiveActor = actor != null && !actor.isBlank() ? actor : "system";
-            auditService.logEvent(
-                AUDIT_SCHEDULED_DELIVERIES_TRIGGERED,
-                null,
-                "rm-report-preset-scheduled-deliveries",
-                effectiveActor,
-                String.format(
-                    "Admin triggered due RM report preset scheduled deliveries (processedCount=%d, generatedAt=%s)",
-                    processedCount,
-                    generatedAt
-                )
-            );
-            return new ScheduledRunResultDto(processedCount, generatedAt);
-        } catch (Exception ex) {
-            // Surface the actual cause in the response body. Spring's default 500
-            // strips exception messages, which made the PR-129 admin trigger
-            // failures opaque in CI. Rethrow as IllegalStateException so the
-            // matching @ExceptionHandler can render `class: message` in the
-            // 500 body for diagnosis.
-            log.error("runScheduledDeliveriesNow failed", ex);
-            String causeMessage = ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
-            throw new IllegalStateException(
-                ex.getClass().getName() + ": " + causeMessage,
-                ex
-            );
-        }
+        int processedCount = processDueScheduledDeliveries();
+        LocalDateTime generatedAt = LocalDateTime.now();
+        String actor = securityService.getCurrentUser();
+        String effectiveActor = actor != null && !actor.isBlank() ? actor : "system";
+        auditService.logEvent(
+            AUDIT_SCHEDULED_DELIVERIES_TRIGGERED,
+            null,
+            "rm-report-preset-scheduled-deliveries",
+            effectiveActor,
+            String.format(
+                "Admin triggered due RM report preset scheduled deliveries (processedCount=%d, generatedAt=%s)",
+                processedCount,
+                generatedAt
+            )
+        );
+        return new ScheduledRunResultDto(processedCount, generatedAt);
     }
 
     @Scheduled(cron = "${ecm.rm.report-presets.scheduler-cron:0 */5 * * * *}")
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void runScheduledDeliveries() {
         processDueScheduledDeliveries();
     }

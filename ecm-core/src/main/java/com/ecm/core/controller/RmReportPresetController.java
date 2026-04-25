@@ -175,7 +175,22 @@ public class RmReportPresetController {
     @PostMapping("/run-scheduled-deliveries")
     @Operation(summary = "Admin ops trigger for due scheduled preset deliveries")
     public ResponseEntity<RmReportPresetDeliveryService.ScheduledRunResultDto> runScheduledDeliveriesNow() {
-        return ResponseEntity.ok(deliveryService.runScheduledDeliveriesNow());
+        try {
+            return ResponseEntity.ok(deliveryService.runScheduledDeliveriesNow());
+        } catch (Exception ex) {
+            // Catch at the controller boundary so we also catch exceptions
+            // thrown by the @Transactional proxy on commit (e.g.
+            // UnexpectedRollbackException) — those never reach a service-body
+            // try/catch. Rethrow as IllegalStateException so the matching
+            // handler renders `class: message` in the 500 body for diagnosis.
+            String causeMessage = ex.getMessage() != null
+                ? ex.getMessage()
+                : ex.getClass().getSimpleName();
+            throw new IllegalStateException(
+                ex.getClass().getName() + ": " + causeMessage,
+                ex
+            );
+        }
     }
 
     @GetMapping("/{id}/schedule")
