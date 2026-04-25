@@ -229,22 +229,36 @@ public class RmReportPresetDeliveryService {
     }
 
     public ScheduledRunResultDto runScheduledDeliveriesNow() {
-        int processedCount = processDueScheduledDeliveries();
-        LocalDateTime generatedAt = LocalDateTime.now();
-        String actor = securityService.getCurrentUser();
-        String effectiveActor = actor != null && !actor.isBlank() ? actor : "system";
-        auditService.logEvent(
-            AUDIT_SCHEDULED_DELIVERIES_TRIGGERED,
-            null,
-            "rm-report-preset-scheduled-deliveries",
-            effectiveActor,
-            String.format(
-                "Admin triggered due RM report preset scheduled deliveries (processedCount=%d, generatedAt=%s)",
-                processedCount,
-                generatedAt
-            )
-        );
-        return new ScheduledRunResultDto(processedCount, generatedAt);
+        try {
+            int processedCount = processDueScheduledDeliveries();
+            LocalDateTime generatedAt = LocalDateTime.now();
+            String actor = securityService.getCurrentUser();
+            String effectiveActor = actor != null && !actor.isBlank() ? actor : "system";
+            auditService.logEvent(
+                AUDIT_SCHEDULED_DELIVERIES_TRIGGERED,
+                null,
+                "rm-report-preset-scheduled-deliveries",
+                effectiveActor,
+                String.format(
+                    "Admin triggered due RM report preset scheduled deliveries (processedCount=%d, generatedAt=%s)",
+                    processedCount,
+                    generatedAt
+                )
+            );
+            return new ScheduledRunResultDto(processedCount, generatedAt);
+        } catch (Exception ex) {
+            // Surface the actual cause in the response body. Spring's default 500
+            // strips exception messages, which made the PR-129 admin trigger
+            // failures opaque in CI. Rethrow as IllegalStateException so the
+            // matching @ExceptionHandler can render `class: message` in the
+            // 500 body for diagnosis.
+            log.error("runScheduledDeliveriesNow failed", ex);
+            String causeMessage = ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
+            throw new IllegalStateException(
+                ex.getClass().getName() + ": " + causeMessage,
+                ex
+            );
+        }
     }
 
     @Scheduled(cron = "${ecm.rm.report-presets.scheduler-cron:0 */5 * * * *}")

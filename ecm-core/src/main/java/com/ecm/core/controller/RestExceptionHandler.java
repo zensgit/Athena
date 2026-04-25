@@ -34,6 +34,16 @@ public class RestExceptionHandler {
         return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<ApiError> handleInternalState(IllegalStateException ex, HttpServletRequest request) {
+        // Surface the message in the 500 body. Used by callers that catch a
+        // lower-level exception and rethrow as IllegalStateException with
+        // `originalClass: originalMessage` so the cause is visible in CI logs
+        // and Playwright traces, not just an opaque "Internal Server Error".
+        log.error("Internal state error at {}: {}", request.getRequestURI(), ex.getMessage(), ex);
+        return build(HttpStatus.INTERNAL_SERVER_ERROR, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<ApiError> handleTypeMismatch(MethodArgumentTypeMismatchException ex, HttpServletRequest request) {
         log.debug("Bad request: {}", ex.getMessage());

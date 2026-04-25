@@ -281,4 +281,21 @@ class RmReportPresetControllerTest {
             .andExpect(jsonPath("$.processedCount").value(2))
             .andExpect(jsonPath("$.generatedAt").exists());
     }
+
+    @Test
+    @DisplayName("runScheduledDeliveriesNow surfaces underlying failure class+message in 500 body")
+    void runScheduledDeliveriesNowSurfacesFailureBody() throws Exception {
+        Mockito.when(deliveryService.runScheduledDeliveriesNow())
+            .thenThrow(new IllegalStateException(
+                "java.lang.RuntimeException: scan failed: boom",
+                new RuntimeException("scan failed: boom")
+            ));
+
+        mockMvc.perform(post("/api/v1/records/report-presets/run-scheduled-deliveries"))
+            .andExpect(status().isInternalServerError())
+            .andExpect(jsonPath("$.message")
+                .value(org.hamcrest.Matchers.containsString("java.lang.RuntimeException")))
+            .andExpect(jsonPath("$.message")
+                .value(org.hamcrest.Matchers.containsString("scan failed: boom")));
+    }
 }
