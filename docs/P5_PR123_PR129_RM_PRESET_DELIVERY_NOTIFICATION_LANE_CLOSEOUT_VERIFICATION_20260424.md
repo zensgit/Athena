@@ -21,6 +21,7 @@
 
 - PR-132 wires the consolidated notification acceptance gate into the existing `frontend_e2e_core` CI job
 - local full-gate execution remains unavailable because `ecm-core/mvnw` requires Docker and Docker socket access failed
+- PR-139 attempted to observe GitHub Actions from this sandbox, but `gh run list` could not connect to `api.github.com`
 - this closeout is therefore CI-wired with explicit acceptance pending, not a full green release closeout
 
 ## Required Final Gate

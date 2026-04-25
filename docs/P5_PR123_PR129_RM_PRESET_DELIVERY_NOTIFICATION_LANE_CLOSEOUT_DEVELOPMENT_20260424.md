@@ -38,4 +38,5 @@ It does not rewrite `PR-122`; it records the new capability added on top of that
 
 - observe the GitHub Actions `frontend_e2e_core` run after the CI gate wiring lands
 - confirm the `Run RM notification acceptance gate` step passes in CI
+- capture run id, commit SHA, and the gate completion evidence described in `P5_PR139_RM_NOTIFICATION_CI_OBSERVATION_CLOSEOUT_READINESS_DESIGN_20260425.md`
 - only after that pass, mark the notification lane fully accepted

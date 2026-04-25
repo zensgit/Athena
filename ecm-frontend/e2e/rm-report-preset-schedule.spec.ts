@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { APIRequestContext, expect, test } from '@playwright/test';
+import { APIRequestContext, APIResponse, expect, test } from '@playwright/test';
 import {
   fetchAccessToken,
   findDocumentId,
@@ -47,10 +47,24 @@ type ReportPresetExecution = {
 };
 
 const toLocalDateTime = (date: Date) => date.toISOString().slice(0, 19);
+const stableHourlyCronExpression = '0 0 * * * *';
 
-function buildSoonHourlyCron(minutesFromNow = 2) {
-  const runAt = new Date(Date.now() + minutesFromNow * 60 * 1000);
-  return `0 ${runAt.getUTCMinutes()} * * * *`;
+async function expectApiOk(response: APIResponse, context: string) {
+  if (response.ok()) {
+    return;
+  }
+
+  let body = '';
+  try {
+    body = await response.text();
+  } catch (error) {
+    body = `<failed to read response body: ${error instanceof Error ? error.message : String(error)}>`;
+  }
+
+  const bodyPreview = body.length > 2000 ? `${body.slice(0, 2000)}...` : body;
+  throw new Error(
+    `${context} failed: ${response.status()} ${response.statusText()} ${response.url()}\n${bodyPreview}`
+  );
 }
 
 async function createFolder(parentId: string, folderName: string, token: string, request: APIRequestContext) {
@@ -66,7 +80,7 @@ async function createFolder(parentId: string, folderName: string, token: string,
       inheritPermissions: true,
     },
   });
-  expect(response.ok()).toBeTruthy();
+  await expectApiOk(response, `create folder ${folderName}`);
   const payload = (await response.json()) as { id?: string };
   if (!payload.id) {
     throw new Error('Failed to create delivery folder');
@@ -93,7 +107,7 @@ async function createDocument(
       },
     },
   });
-  expect(response.ok()).toBeTruthy();
+  await expectApiOk(response, `upload document ${filename}`);
   const payload = (await response.json()) as { documentId?: string; id?: string };
   const documentId = payload.documentId ?? payload.id;
   if (!documentId) {
@@ -125,7 +139,7 @@ async function createPreset(
       params,
     },
   });
-  expect(response.ok()).toBeTruthy();
+  await expectApiOk(response, `create report preset ${name}`);
   return (await response.json()) as ReportPresetResponse;
 }
 
@@ -135,7 +149,7 @@ async function fetchScheduleStatus(token: string, presetId: string, request: API
       Authorization: `Bearer ${token}`,
     },
   });
-  expect(response.ok()).toBeTruthy();
+  await expectApiOk(response, `fetch schedule status for preset ${presetId}`);
   return (await response.json()) as ReportPresetScheduleStatus;
 }
 
@@ -148,7 +162,7 @@ async function listExecutions(token: string, presetId: string, request: APIReque
       Authorization: `Bearer ${token}`,
     },
   });
-  expect(response.ok()).toBeTruthy();
+  await expectApiOk(response, `list executions for preset ${presetId}`);
   return (await response.json()) as ReportPresetExecution[];
 }
 
@@ -174,7 +188,7 @@ async function getUnreadNotificationCount(token: string, request: APIRequestCont
       Authorization: `Bearer ${token}`,
     },
   });
-  expect(response.ok()).toBeTruthy();
+  await expectApiOk(response, 'fetch unread notification count');
   const payload = (await response.json()) as { count?: number };
   return payload.count ?? 0;
 }
@@ -189,7 +203,7 @@ async function getNotificationInboxPayloadText(token: string, request: APIReques
       Authorization: `Bearer ${token}`,
     },
   });
-  expect(response.ok()).toBeTruthy();
+  await expectApiOk(response, 'fetch notification inbox payload');
   return JSON.stringify(await response.json());
 }
 
@@ -209,7 +223,7 @@ async function setUserPreference(
       data: { value },
     }
   );
-  expect(response.ok()).toBeTruthy();
+  await expectApiOk(response, `set user preference ${preferenceName}`);
 }
 
 async function deleteUserPreference(
@@ -331,7 +345,7 @@ test('RM report preset schedule can be configured from Records Management (full-
         Authorization: `Bearer ${token}`,
       },
     });
-    expect(scheduleProbe.ok()).toBeTruthy();
+    await expectApiOk(scheduleProbe, `probe schedule endpoint for preset ${preset.id}`);
 
     await gotoWithAuthE2E(page, '/admin/records-management', defaultUsername, defaultPassword, { token });
 
@@ -508,7 +522,7 @@ test('RM summary-only preset can be exported and scheduled from Records Manageme
         Authorization: `Bearer ${token}`,
       },
     });
-    expect(scheduleProbe.ok()).toBeTruthy();
+    await expectApiOk(scheduleProbe, `probe schedule endpoint for summary preset ${preset.id}`);
 
     await gotoWithAuthE2E(page, '/admin/records-management', defaultUsername, defaultPassword, { token });
 
@@ -668,7 +682,7 @@ test('RM failed preset delivery is surfaced through scheduled delivery health (f
         deliveryFolderId: invalidDeliveryFolderId,
       },
     });
-    expect(forceFailureResponse.ok()).toBeTruthy();
+    await expectApiOk(forceFailureResponse, `save invalid delivery folder for preset ${preset.id}`);
 
     await expect.poll(async () => {
       const status = await fetchScheduleStatus(token, preset.id, request);
@@ -783,7 +797,7 @@ test('RM due-now preset is surfaced through scheduled delivery health (full-stac
         deliveryFolderId,
       },
     });
-    expect(controlScheduleResponse.ok()).toBeTruthy();
+    await expectApiOk(controlScheduleResponse, `save control schedule for preset ${controlPreset.id}`);
 
     forcePresetNextRunAtPast(preset.id);
     forcePresetNextRunAtFuture(controlPreset.id);
@@ -830,7 +844,7 @@ test('RM failed scheduled preset delivery creates inbox notification @rm-notific
   const from = toLocalDateTime(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000));
   const to = toLocalDateTime(now);
   const presetName = `e2e-rm-failure-notification-${Date.now()}`;
-  const cronExpression = buildSoonHourlyCron();
+  const cronExpression = stableHourlyCronExpression;
   const deliveryFolderName = `e2e-rm-notification-delivery-${Date.now()}`;
   const deliveryFolderId = await createFolder(rootFolderId, deliveryFolderName, token, request);
   const targetDocumentId = await createDocument(
@@ -855,19 +869,20 @@ test('RM failed scheduled preset delivery creates inbox notification @rm-notific
         deliveryFolderId: targetDocumentId,
       },
     });
-    expect(scheduleResponse.ok()).toBeTruthy();
+    await expectApiOk(scheduleResponse, `save failure notification schedule for preset ${preset.id}`);
+    forcePresetNextRunAtPast(preset.id);
 
     await expect.poll(async () => {
       const status = await fetchScheduleStatus(token, preset.id, request);
       return Boolean(status.nextRunAt && new Date(status.nextRunAt).getTime() <= Date.now());
-    }, { timeout: 150_000, intervals: [1000, 2000, 5000] }).toBe(true);
+    }, { timeout: 30_000, intervals: [1000, 2000, 5000] }).toBe(true);
 
     const runDueResponse = await request.post(`${baseApiUrl}/api/v1/records/report-presets/run-scheduled-deliveries`, {
       headers: {
         Authorization: `Bearer ${token}`,
       },
     });
-    expect(runDueResponse.ok()).toBeTruthy();
+    await expectApiOk(runDueResponse, 'run due scheduled deliveries for failure notification');
     const runDuePayload = (await runDueResponse.json()) as { processedCount?: number };
     expect(runDuePayload.processedCount).toBe(1);
 
@@ -907,7 +922,7 @@ test('RM successful scheduled preset delivery creates inbox notification @rm-not
   const from = toLocalDateTime(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000));
   const to = toLocalDateTime(now);
   const presetName = `e2e-rm-success-notification-${Date.now()}`;
-  const cronExpression = buildSoonHourlyCron();
+  const cronExpression = stableHourlyCronExpression;
   const deliveryFolderName = `e2e-rm-success-notification-delivery-${Date.now()}`;
   const deliveryFolderId = await createFolder(rootFolderId, deliveryFolderName, token, request);
   const preset = await createReportPreset(token, presetName, from, to, request);
@@ -926,19 +941,20 @@ test('RM successful scheduled preset delivery creates inbox notification @rm-not
         deliveryFolderId,
       },
     });
-    expect(scheduleResponse.ok()).toBeTruthy();
+    await expectApiOk(scheduleResponse, `save success notification schedule for preset ${preset.id}`);
+    forcePresetNextRunAtPast(preset.id);
 
     await expect.poll(async () => {
       const status = await fetchScheduleStatus(token, preset.id, request);
       return Boolean(status.nextRunAt && new Date(status.nextRunAt).getTime() <= Date.now());
-    }, { timeout: 150_000, intervals: [1000, 2000, 5000] }).toBe(true);
+    }, { timeout: 30_000, intervals: [1000, 2000, 5000] }).toBe(true);
 
     const runDueResponse = await request.post(`${baseApiUrl}/api/v1/records/report-presets/run-scheduled-deliveries`, {
       headers: {
         Authorization: `Bearer ${token}`,
       },
     });
-    expect(runDueResponse.ok()).toBeTruthy();
+    await expectApiOk(runDueResponse, 'run due scheduled deliveries for success notification');
     const runDuePayload = (await runDueResponse.json()) as { processedCount?: number };
     expect(runDuePayload.processedCount).toBe(1);
 
@@ -1003,7 +1019,7 @@ test('RM disabled success notification preference suppresses inbox alert @rm-not
   const from = toLocalDateTime(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000));
   const to = toLocalDateTime(now);
   const presetName = `e2e-rm-success-pref-off-${Date.now()}`;
-  const cronExpression = buildSoonHourlyCron();
+  const cronExpression = stableHourlyCronExpression;
   const deliveryFolderName = `e2e-rm-success-pref-off-delivery-${Date.now()}`;
   const deliveryFolderId = await createFolder(rootFolderId, deliveryFolderName, token, request);
   const preset = await createReportPreset(token, presetName, from, to, request);
@@ -1024,19 +1040,20 @@ test('RM disabled success notification preference suppresses inbox alert @rm-not
         deliveryFolderId,
       },
     });
-    expect(scheduleResponse.ok()).toBeTruthy();
+    await expectApiOk(scheduleResponse, `save disabled success notification schedule for preset ${preset.id}`);
+    forcePresetNextRunAtPast(preset.id);
 
     await expect.poll(async () => {
       const status = await fetchScheduleStatus(token, preset.id, request);
       return Boolean(status.nextRunAt && new Date(status.nextRunAt).getTime() <= Date.now());
-    }, { timeout: 150_000, intervals: [1000, 2000, 5000] }).toBe(true);
+    }, { timeout: 30_000, intervals: [1000, 2000, 5000] }).toBe(true);
 
     const runDueResponse = await request.post(`${baseApiUrl}/api/v1/records/report-presets/run-scheduled-deliveries`, {
       headers: {
         Authorization: `Bearer ${token}`,
       },
     });
-    expect(runDueResponse.ok()).toBeTruthy();
+    await expectApiOk(runDueResponse, 'run due scheduled deliveries with success preference disabled');
     const runDuePayload = (await runDueResponse.json()) as { processedCount?: number };
     expect(runDuePayload.processedCount).toBe(1);
 
@@ -1074,7 +1091,7 @@ test('RM disabled failure notification preference suppresses inbox alert @rm-not
   const from = toLocalDateTime(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000));
   const to = toLocalDateTime(now);
   const presetName = `e2e-rm-failure-pref-off-${Date.now()}`;
-  const cronExpression = buildSoonHourlyCron();
+  const cronExpression = stableHourlyCronExpression;
   const deliveryFolderName = `e2e-rm-failure-pref-off-delivery-${Date.now()}`;
   const deliveryFolderId = await createFolder(rootFolderId, deliveryFolderName, token, request);
   const targetDocumentId = await createDocument(
@@ -1101,19 +1118,20 @@ test('RM disabled failure notification preference suppresses inbox alert @rm-not
         deliveryFolderId: targetDocumentId,
       },
     });
-    expect(scheduleResponse.ok()).toBeTruthy();
+    await expectApiOk(scheduleResponse, `save disabled failure notification schedule for preset ${preset.id}`);
+    forcePresetNextRunAtPast(preset.id);
 
     await expect.poll(async () => {
       const status = await fetchScheduleStatus(token, preset.id, request);
       return Boolean(status.nextRunAt && new Date(status.nextRunAt).getTime() <= Date.now());
-    }, { timeout: 150_000, intervals: [1000, 2000, 5000] }).toBe(true);
+    }, { timeout: 30_000, intervals: [1000, 2000, 5000] }).toBe(true);
 
     const runDueResponse = await request.post(`${baseApiUrl}/api/v1/records/report-presets/run-scheduled-deliveries`, {
       headers: {
         Authorization: `Bearer ${token}`,
       },
     });
-    expect(runDueResponse.ok()).toBeTruthy();
+    await expectApiOk(runDueResponse, 'run due scheduled deliveries with failure preference disabled');
     const runDuePayload = (await runDueResponse.json()) as { processedCount?: number };
     expect(runDuePayload.processedCount).toBe(1);
 

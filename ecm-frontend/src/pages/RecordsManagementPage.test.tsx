@@ -97,6 +97,7 @@ jest.mock('services/peopleService', () => ({
 const mockedRecordsManagementService = recordsManagementService as jest.Mocked<typeof recordsManagementService>;
 const mockedPeopleService = peopleService as jest.Mocked<typeof peopleService>;
 const toastSuccessMock = toast.success as jest.Mock;
+const toastErrorMock = toast.error as jest.Mock;
 
 jest.setTimeout(45000);
 
@@ -1132,6 +1133,99 @@ describe('RecordsManagementPage', () => {
       )
     );
     expect(failureToggle.checked).toBe(false);
+  });
+
+  it('defaults preset delivery notification preferences to enabled when no values are saved', async () => {
+    mockedPeopleService.getPreferences.mockResolvedValueOnce({
+      username: 'admin',
+      email: 'admin@example.com',
+      enabled: true,
+      locked: false,
+      preferences: {},
+    } as any);
+
+    renderPage();
+
+    const healthSection = (await screen.findByRole('heading', { name: 'Scheduled Delivery Health' })).closest('.MuiCard-root') as HTMLElement;
+    const successToggle = within(healthSection).getByRole('checkbox', { name: 'Success inbox notifications' }) as HTMLInputElement;
+    const failureToggle = within(healthSection).getByRole('checkbox', { name: 'Failure inbox notifications' }) as HTMLInputElement;
+
+    await waitFor(() =>
+      expect(mockedPeopleService.getPreferences).toHaveBeenCalledWith(
+        'admin',
+        'org.athena.rm.reportPreset.delivery.'
+      )
+    );
+    expect(successToggle.checked).toBe(true);
+    expect(failureToggle.checked).toBe(true);
+  });
+
+  it('rolls back success preset delivery notification preference toggle when update fails', async () => {
+    mockedPeopleService.getPreferences.mockResolvedValueOnce({
+      username: 'admin',
+      email: 'admin@example.com',
+      enabled: true,
+      locked: false,
+      preferences: {
+        'org.athena.rm.reportPreset.delivery.notifyOnSuccess': true,
+        'org.athena.rm.reportPreset.delivery.notifyOnFailure': true,
+      },
+    } as any);
+    mockedPeopleService.setPreference.mockRejectedValueOnce(new Error('Preference update failed'));
+
+    renderPage();
+
+    const healthSection = (await screen.findByRole('heading', { name: 'Scheduled Delivery Health' })).closest('.MuiCard-root') as HTMLElement;
+    const successToggle = within(healthSection).getByRole('checkbox', { name: 'Success inbox notifications' }) as HTMLInputElement;
+
+    await waitFor(() => expect(successToggle.checked).toBe(true));
+
+    fireEvent.click(successToggle);
+
+    await waitFor(() =>
+      expect(mockedPeopleService.setPreference).toHaveBeenCalledWith(
+        'admin',
+        'org.athena.rm.reportPreset.delivery.notifyOnSuccess',
+        false
+      )
+    );
+    await waitFor(() => expect(successToggle.checked).toBe(true));
+    expect(await within(healthSection).findByText('Failed to update preset delivery notification preferences')).toBeTruthy();
+    expect(toastErrorMock).toHaveBeenCalledWith('Failed to update preset delivery notification preferences');
+  });
+
+  it('rolls back failure preset delivery notification preference toggle when update fails', async () => {
+    mockedPeopleService.getPreferences.mockResolvedValueOnce({
+      username: 'admin',
+      email: 'admin@example.com',
+      enabled: true,
+      locked: false,
+      preferences: {
+        'org.athena.rm.reportPreset.delivery.notifyOnSuccess': true,
+        'org.athena.rm.reportPreset.delivery.notifyOnFailure': true,
+      },
+    } as any);
+    mockedPeopleService.setPreference.mockRejectedValueOnce(new Error('Preference update failed'));
+
+    renderPage();
+
+    const healthSection = (await screen.findByRole('heading', { name: 'Scheduled Delivery Health' })).closest('.MuiCard-root') as HTMLElement;
+    const failureToggle = within(healthSection).getByRole('checkbox', { name: 'Failure inbox notifications' }) as HTMLInputElement;
+
+    await waitFor(() => expect(failureToggle.checked).toBe(true));
+
+    fireEvent.click(failureToggle);
+
+    await waitFor(() =>
+      expect(mockedPeopleService.setPreference).toHaveBeenCalledWith(
+        'admin',
+        'org.athena.rm.reportPreset.delivery.notifyOnFailure',
+        false
+      )
+    );
+    await waitFor(() => expect(failureToggle.checked).toBe(true));
+    expect(await within(healthSection).findByText('Failed to update preset delivery notification preferences')).toBeTruthy();
+    expect(toastErrorMock).toHaveBeenCalledWith('Failed to update preset delivery notification preferences');
   });
 
   it('filters saved presets from scheduled delivery health drilldowns', async () => {

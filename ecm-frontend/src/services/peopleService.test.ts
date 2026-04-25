@@ -59,4 +59,59 @@ describe('peopleService preferences namespace consumption', () => {
       preferences: { 'ui.theme': 'dark' },
     });
   });
+
+  it('fetches an encoded preference key for a user', async () => {
+    mockedApi.get.mockResolvedValueOnce({
+      key: 'org.athena.rm.reportPreset.delivery.notifyOnSuccess',
+      value: true,
+    });
+
+    await peopleService.getPreference(
+      'alice@example.com',
+      'org.athena.rm.reportPreset.delivery.notifyOnSuccess'
+    );
+
+    expect(mockedApi.get).toHaveBeenCalledWith(
+      '/people/alice%40example.com/preferences/org.athena.rm.reportPreset.delivery.notifyOnSuccess'
+    );
+  });
+
+  it('sets an encoded preference key with a value payload', async () => {
+    mockedApi.put.mockResolvedValueOnce({
+      username: 'alice@example.com',
+      email: 'alice@example.com',
+      enabled: true,
+      locked: false,
+      preferences: {
+        'org.athena.rm.reportPreset.delivery.notifyOnFailure': false,
+      },
+    });
+
+    await peopleService.setPreference(
+      'alice@example.com',
+      'org.athena.rm.reportPreset.delivery.notifyOnFailure',
+      false
+    );
+
+    expect(mockedApi.put).toHaveBeenCalledWith(
+      '/people/alice%40example.com/preferences/org.athena.rm.reportPreset.delivery.notifyOnFailure',
+      { value: false }
+    );
+  });
+
+  it('deletes an encoded preference key for a user', async () => {
+    mockedApi.delete.mockResolvedValueOnce({
+      username: 'alice@example.com',
+      email: 'alice@example.com',
+      enabled: true,
+      locked: false,
+      preferences: {},
+    });
+
+    await peopleService.deletePreference('alice@example.com', 'org.athena.rm/reportPreset');
+
+    expect(mockedApi.delete).toHaveBeenCalledWith(
+      '/people/alice%40example.com/preferences/org.athena.rm%2FreportPreset'
+    );
+  });
 });

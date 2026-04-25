@@ -7,8 +7,9 @@
 
 Eleven-slice Codex bundle opening the **first new capability after the
 PR-122 milestone closeout**. Adds per-user notifications for scheduled
-preset delivery outcomes, an admin ops trigger, and an isolated CI
-gate so notification flakiness cannot cross-contaminate the Core Gate.
+preset delivery outcomes, an admin ops trigger, and a CI gate step so
+notification behavior is exercised in the same live-stack environment
+as the Core Gate.
 
 This integration note records the shipped runtime, the CI change, and
 the behaviour change operators will see. Codex's per-slice docs remain
@@ -25,7 +26,7 @@ the canonical per-PR evidence trail.
   `rm.report_preset.delivery.failed`
 - Preference keys
   `org.athena.rm.reportPreset.delivery.notifyOnSuccess` (default
-  false) and `org.athena.rm.reportPreset.delivery.notifyOnFailure`
+  true) and `org.athena.rm.reportPreset.delivery.notifyOnFailure`
   (default true)
 - Delivery success / failure paths publish an activity event gated
   by the matching preference, using `NOTIFICATION_ACTOR = "system"`
@@ -50,10 +51,11 @@ the canonical per-PR evidence trail.
 
 ### CI change
 
-**New job in `.github/workflows/ci.yml`**: "RM Preset Delivery
-Notification Gate" — a live-backend Playwright gate dedicated to the
-notification flow. Runs separately from the Core Gate so the new
-surface has its own readiness loop and failure signal.
+**New step in `.github/workflows/ci.yml`**: "Run RM notification
+acceptance gate" inside `frontend_e2e_core` — a live-backend
+Playwright gate dedicated to the notification flow. It reuses the
+already-started Core Gate stack instead of starting a second Docker
+stack.
 
 ### Docs
 
@@ -70,6 +72,17 @@ Eleven per-slice design + verification docs (PR-123..133) plus:
   level.
 
 ## Verification
+
+### Subsequent gate hardening
+
+After this PR-123..133 integration note, PR-134..PR-139 further hardened the same CI-attached notification lane:
+
+- PR-134 removes near-future cron waiting from the four notification acceptance flows by forcing due state after schedule save.
+- PR-135 includes backend Surefire reports in `frontend_e2e_core` failure artifacts.
+- PR-136 replaces bare Playwright API response assertions with contextual status, URL, and response-body diagnostics.
+- PR-137 adds People service contract tests for single-preference get/set/delete calls used by RM notification toggles.
+- PR-138 adds the Records Management page rollback test for failed preference saves.
+- PR-139 records the CI evidence required before the lane can be promoted from pending to accepted.
 
 ### Frontend (local)
 ```
@@ -117,7 +130,7 @@ caused by this turn's code.
 | Phase C Security Verification | ✅ unchanged |
 | Acceptance Smoke | ✅ unchanged |
 | Frontend E2E Core Gate | ⚠ facet-aggregation flake may repeat — known |
-| **RM Preset Delivery Notification Gate** | **✅ new gate, exercising the notification spec** |
+| Frontend E2E Core Gate notification step | ✅ new gate step, exercising the notification spec |
 | Phase 5 Mocked Regression Gate | Pre-existing cancelled — unchanged |
 
 ## PR-122 closeout alignment
@@ -136,7 +149,7 @@ activity/audit and preference infrastructure.
 
 ## Files Changed
 
-- `.github/workflows/ci.yml` — new Notification Gate job
+- `.github/workflows/ci.yml` — new Notification Gate step in `frontend_e2e_core`
 - `ecm-core/src/main/java/com/ecm/core/service/RmReportPresetDeliveryService.java`
 - `ecm-core/src/main/java/com/ecm/core/service/ActivityService.java`
 - `ecm-core/src/main/java/com/ecm/core/service/NotificationInboxService.java`

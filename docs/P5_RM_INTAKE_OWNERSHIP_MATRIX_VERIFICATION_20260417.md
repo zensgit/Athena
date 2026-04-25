@@ -60,6 +60,17 @@ This document builds on the already completed `P4` closeout material:
 - pending acceptance slices now also include `PR-131` on the `RM delivery workflows` lane as acceptance gate hardening; full execution remains pending because Docker socket access was unavailable
 - pending CI acceptance slices now also include `PR-132` on the `RM delivery workflows` lane as the CI attachment for the hardened notification acceptance gate; acceptance remains pending until GitHub Actions runs the new `frontend_e2e_core` step green
 - pending CI acceptance slices now also include `PR-133` on the `RM delivery workflows` lane as bounded readiness retry hardening for the CI-attached gate; acceptance remains pending until GitHub Actions runs the gate green
+- pending CI acceptance slices now also include `PR-134` on the `RM delivery workflows` lane as timebox hardening for the four notification acceptance flows; acceptance remains pending until GitHub Actions runs the gate green
+- pending CI diagnostics slices now also include `PR-135` on the `RM delivery workflows` lane as backend Surefire artifact capture for notification gate failures
+- pending CI diagnostics slices now also include `PR-136` on the `RM delivery workflows` lane as contextual API failure diagnostics for the RM notification acceptance Playwright spec
+- pending frontend contract slices now also include `PR-137` on the `RM delivery workflows` lane as People service URL/payload coverage for RM notification preference toggles
+- pending frontend UI resilience slices now also include `PR-138` on the `RM delivery workflows` lane as failure-path coverage for notification preference toggle rollback
+- pending closeout slices now also include `PR-139` on the `RM delivery workflows` lane as CI observation evidence requirements; acceptance remains pending because this sandbox cannot reach `api.github.com`
+- pending frontend UI resilience slices now also include `PR-140` on the `RM delivery workflows` lane as mirror rollback coverage for the failure notification preference toggle
+- pending closeout slices now also include `PR-141` on the `RM delivery workflows` lane as a local preflight command for all non-Docker, non-network checks before CI observation
+- pending closeout diagnostics slices now also include `PR-142` on the `RM delivery workflows` lane as explicit failure messaging for preflight acceptance discovery count mismatches
+- pending preference-contract slices now also include `PR-143` on the `RM delivery workflows` lane as documentation correction plus frontend coverage for default-on missing preference values
+- pending fast-CI slices now also include `PR-144` on the `RM delivery workflows` lane as non-Docker preflight execution in the frontend job before slower gates
 
 ## Checks
 

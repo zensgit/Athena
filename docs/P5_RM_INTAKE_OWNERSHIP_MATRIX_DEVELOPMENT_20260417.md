@@ -228,6 +228,50 @@ The accepted `P5` runtime slices on top of this matrix are:
   - RM preset delivery notification gate readiness hardening
   - adds bounded retry diagnostics around backend health, Keycloak discovery, and UI reachability checks in the CI-attached acceptance gate
   - no runtime endpoint, table, or migration change
+- `PR-134`
+  - RM preset delivery notification acceptance timebox hardening
+  - removes near-future cron waiting from the four notification acceptance flows by forcing due state after schedule save
+  - no runtime endpoint, table, or migration change
+- `PR-135`
+  - RM notification gate failure artifact hardening
+  - adds backend Surefire reports to the `frontend_e2e_core` failure artifact bundle for targeted Maven test failures
+  - no runtime endpoint, table, or migration change
+- `PR-136`
+  - RM notification acceptance API diagnostics
+  - replaces bare Playwright API response assertions in the notification acceptance spec with contextual status/url/body diagnostics
+  - no runtime endpoint, table, or migration change
+- `PR-137`
+  - RM notification preference service contract tests
+  - adds People service unit coverage for single-preference get/set/delete URL construction and value payloads used by RM notification toggles
+  - no runtime endpoint, table, or migration change
+- `PR-138`
+  - RM notification preference UI rollback test
+  - adds Records Management page coverage for optimistic toggle rollback and error surfacing when preference update fails
+  - no runtime endpoint, table, or migration change
+- `PR-139`
+  - RM notification CI observation closeout readiness
+  - records the exact GitHub Actions evidence required before the notification lane can be promoted from pending to accepted
+  - documentation-only; no runtime endpoint, table, or migration change
+- `PR-140`
+  - RM notification failure preference UI rollback test
+  - adds Records Management page coverage for failed optimistic updates of the `notifyOnFailure` toggle
+  - no runtime endpoint, table, or migration change
+- `PR-141`
+  - RM notification closeout preflight script
+  - adds one local command that runs the non-Docker, non-network checks required before CI observation
+  - script/docs only; no runtime endpoint, table, or migration change
+- `PR-142`
+  - RM notification preflight failure diagnostics
+  - hardens acceptance discovery counting so missing or mismatched tagged tests emit an explicit preflight error
+  - script/docs only; no runtime endpoint, table, or migration change
+- `PR-143`
+  - RM notification preference default contract
+  - corrects the integration doc default and adds page coverage proving missing success/failure preference values render as enabled
+  - docs/test only; no runtime endpoint, table, or migration change
+- `PR-144`
+  - RM notification preflight fast CI gate
+  - runs the local closeout preflight in the non-Docker frontend CI job after dependency install and before slower frontend gates
+  - workflow/docs only; no runtime endpoint, table, or migration change
 
 These are still valid, but they should wait until policy semantics and operator demand are explicit.
 

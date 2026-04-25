@@ -72,6 +72,10 @@ jobs:
       - name: Install dependencies
         run: npm ci --legacy-peer-deps --no-audit --no-fund
 
+      - name: Run RM notification closeout preflight
+        working-directory: .
+        run: scripts/p5-rm-notification-closeout-preflight.sh
+
       - name: Lint
         run: npm run lint
 
@@ -315,6 +319,7 @@ jobs:
           path: |
             ecm-frontend/playwright-report
             ecm-frontend/test-results
+            ecm-core/target/surefire-reports
             tmp/ci-e2e-logs
           if-no-files-found: ignore
 
