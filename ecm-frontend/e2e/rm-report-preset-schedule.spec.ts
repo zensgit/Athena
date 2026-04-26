@@ -1001,7 +1001,13 @@ test('RM successful scheduled preset delivery creates inbox notification @rm-not
 
     await notificationCard.getByRole('button', { name: 'Open Node' }).click();
     await expect(page).toHaveURL(new RegExp(`/browse/${deliveredDocumentId}$`));
-    await expect(page.getByText(deliveredFilename)).toBeVisible({ timeout: 60_000 });
+    // The browse page renders the filename twice: once as the document
+    // heading (<em>) and once inside an audit caption ("Delivered
+    // <filename>..." <span>). Substring match catches both → strict-mode
+    // violation that flakes by render timing (8410eaf retry #1 passed,
+    // 3708ba8 all 3 retries failed). Use exact match so only the heading
+    // matches.
+    await expect(page.getByText(deliveredFilename, { exact: true })).toBeVisible({ timeout: 60_000 });
   } finally {
     await deleteReportPreset(token, preset.id, request);
     await deleteNode(token, deliveryFolderId, request);
