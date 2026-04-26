@@ -151,6 +151,25 @@ Both test files now inject `@Mock UserRepository userRepository` and
 | **PR-159d** | **Wire dispatcher into delivery event flow** | **✅ this turn — `e1c36b7`, pending push + Backend Verify** |
 | PR-159e (next) | Email Channel CI gate (preflight + Greenmail SMTP test) | After PR-159d verdict |
 
+## Behavioral change vs. prior implementation
+
+The old code had a single inbox gate:
+```java
+if (!isNotificationEnabled(recipient, PREF_NOTIFY_ON_SUCCESS)) return;
+```
+This silenced **all** channels (including any future email channel) when inbox was disabled.
+
+The new code uses per-channel gating:
+```java
+Set<String> channels = resolveDeliveryChannels(recipient, isSuccess);
+if (channels.isEmpty()) return;
+```
+This means a user with `inbox=false, email=true` will now receive email notifications
+without an inbox record. This is the intended behavior — channels are independent —
+but it is a behavioral change vs. the prior single-gate approach. The change is safe
+in production because `PREF_NOTIFY_BY_EMAIL_ON_SUCCESS/FAILURE` default to `false`
+(opt-in), so no user will unexpectedly receive emails without having enabled the pref.
+
 ## Security / production impact
 
 - Email dispatch is now live for scheduled deliveries. However, the

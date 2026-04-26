@@ -87,6 +87,8 @@ const PRESET_EXECUTION_LEDGER_DEFAULT_ROWS = 10;
 const RM_PRESET_DELIVERY_PREFERENCE_PREFIX = 'org.athena.rm.reportPreset.delivery.';
 const RM_PRESET_DELIVERY_NOTIFY_SUCCESS_KEY = `${RM_PRESET_DELIVERY_PREFERENCE_PREFIX}notifyOnSuccess`;
 const RM_PRESET_DELIVERY_NOTIFY_FAILURE_KEY = `${RM_PRESET_DELIVERY_PREFERENCE_PREFIX}notifyOnFailure`;
+const RM_PRESET_DELIVERY_NOTIFY_BY_EMAIL_SUCCESS_KEY = `${RM_PRESET_DELIVERY_PREFERENCE_PREFIX}notifyByEmailOnSuccess`;
+const RM_PRESET_DELIVERY_NOTIFY_BY_EMAIL_FAILURE_KEY = `${RM_PRESET_DELIVERY_PREFERENCE_PREFIX}notifyByEmailOnFailure`;
 
 const emptyAuditPage = (size = AUDIT_DEFAULT_ROWS): PageResponse<RecordAuditEntry> => ({
   content: [],
@@ -336,6 +338,8 @@ interface PresetExecutionLedgerFilterState {
 interface PresetDeliveryNotificationPreferencesState {
   notifyOnSuccess: boolean;
   notifyOnFailure: boolean;
+  notifyByEmailOnSuccess: boolean;
+  notifyByEmailOnFailure: boolean;
 }
 
 const emptyAuditFiltersState = (): AuditFilterState => ({
@@ -357,6 +361,8 @@ const emptyPresetExecutionLedgerFiltersState = (): PresetExecutionLedgerFilterSt
 const defaultPresetDeliveryNotificationPreferencesState = (): PresetDeliveryNotificationPreferencesState => ({
   notifyOnSuccess: true,
   notifyOnFailure: true,
+  notifyByEmailOnSuccess: false,
+  notifyByEmailOnFailure: false,
 });
 
 const normalizePresetExecutionLedgerFilters = (filters: PresetExecutionLedgerFilterState) => ({
@@ -854,6 +860,14 @@ const RecordsManagementPage: React.FC = () => {
           preferences[RM_PRESET_DELIVERY_NOTIFY_FAILURE_KEY],
           true
         ),
+        notifyByEmailOnSuccess: resolveBooleanPreference(
+          preferences[RM_PRESET_DELIVERY_NOTIFY_BY_EMAIL_SUCCESS_KEY],
+          false
+        ),
+        notifyByEmailOnFailure: resolveBooleanPreference(
+          preferences[RM_PRESET_DELIVERY_NOTIFY_BY_EMAIL_FAILURE_KEY],
+          false
+        ),
       });
       setPresetDeliveryNotificationPreferencesError(null);
     } catch {
@@ -941,9 +955,13 @@ const RecordsManagementPage: React.FC = () => {
     if (!currentUsername) {
       return;
     }
-    const preferenceName = key === 'notifyOnSuccess'
-      ? RM_PRESET_DELIVERY_NOTIFY_SUCCESS_KEY
-      : RM_PRESET_DELIVERY_NOTIFY_FAILURE_KEY;
+    const prefKeyMap: Record<keyof PresetDeliveryNotificationPreferencesState, string> = {
+      notifyOnSuccess: RM_PRESET_DELIVERY_NOTIFY_SUCCESS_KEY,
+      notifyOnFailure: RM_PRESET_DELIVERY_NOTIFY_FAILURE_KEY,
+      notifyByEmailOnSuccess: RM_PRESET_DELIVERY_NOTIFY_BY_EMAIL_SUCCESS_KEY,
+      notifyByEmailOnFailure: RM_PRESET_DELIVERY_NOTIFY_BY_EMAIL_FAILURE_KEY,
+    };
+    const preferenceName = prefKeyMap[key];
     const previousValue = presetDeliveryNotificationPreferences[key];
     setPresetDeliveryNotificationPreferences((current) => ({
       ...current,
@@ -961,6 +979,14 @@ const RecordsManagementPage: React.FC = () => {
         notifyOnFailure: resolveBooleanPreference(
           preferences[RM_PRESET_DELIVERY_NOTIFY_FAILURE_KEY],
           true
+        ),
+        notifyByEmailOnSuccess: resolveBooleanPreference(
+          preferences[RM_PRESET_DELIVERY_NOTIFY_BY_EMAIL_SUCCESS_KEY],
+          false
+        ),
+        notifyByEmailOnFailure: resolveBooleanPreference(
+          preferences[RM_PRESET_DELIVERY_NOTIFY_BY_EMAIL_FAILURE_KEY],
+          false
         ),
       });
       setPresetDeliveryNotificationPreferencesError(null);
@@ -5552,6 +5578,57 @@ const RecordsManagementPage: React.FC = () => {
                         />
                       )}
                       label="Failure inbox notifications"
+                    />
+                  </Stack>
+                </Stack>
+                <Divider flexItem />
+                <Stack spacing={1}>
+                  <Box>
+                    <Typography variant="subtitle2">
+                      Email notifications
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Opt in to receive email alerts for scheduled preset deliveries. Requires email to be configured in your profile.
+                    </Typography>
+                  </Box>
+                  <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} useFlexGap>
+                    <FormControlLabel
+                      control={(
+                        <Switch
+                          checked={presetDeliveryNotificationPreferences.notifyByEmailOnSuccess}
+                          onChange={(event) => {
+                            void updatePresetDeliveryNotificationPreference(
+                              'notifyByEmailOnSuccess',
+                              event.target.checked
+                            );
+                          }}
+                          disabled={
+                            !currentUsername
+                            || presetDeliveryNotificationPreferencesLoading
+                            || presetDeliveryNotificationPreferenceSavingKey !== null
+                          }
+                        />
+                      )}
+                      label="Success email notifications"
+                    />
+                    <FormControlLabel
+                      control={(
+                        <Switch
+                          checked={presetDeliveryNotificationPreferences.notifyByEmailOnFailure}
+                          onChange={(event) => {
+                            void updatePresetDeliveryNotificationPreference(
+                              'notifyByEmailOnFailure',
+                              event.target.checked
+                            );
+                          }}
+                          disabled={
+                            !currentUsername
+                            || presetDeliveryNotificationPreferencesLoading
+                            || presetDeliveryNotificationPreferenceSavingKey !== null
+                          }
+                        />
+                      )}
+                      label="Failure email notifications"
                     />
                   </Stack>
                 </Stack>

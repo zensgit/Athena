@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="085-seed-email-notification-templates" author="p5-pr159c">
+        <comment>P5 PR-159c: Seed default email templates for RM report preset delivery events</comment>
+
+        <insert tableName="email_template">
+            <column name="template_key" value="rm.report_preset.delivery.succeeded"/>
+            <column name="locale" value="default"/>
+            <column name="subject_template" value="Athena: ${presetName} delivered successfully"/>
+            <column name="body_template" value="Your scheduled report preset &quot;${presetName}&quot; has been delivered.&#10;&#10;File: ${filename}&#10;Duration: ${durationMs}ms&#10;&#10;You can find the delivered file in your configured delivery folder.&#10;&#10;— Athena"/>
+            <column name="html_body" valueBoolean="false"/>
+            <column name="description" value="Plain-text notification sent when a scheduled RM report preset delivery succeeds"/>
+            <column name="created_by" value="system"/>
+            <column name="version" valueNumeric="0"/>
+            <column name="is_deleted" valueBoolean="false"/>
+        </insert>
+
+        <insert tableName="email_template">
+            <column name="template_key" value="rm.report_preset.delivery.failed"/>
+            <column name="locale" value="default"/>
+            <column name="subject_template" value="Athena alert: ${presetName} delivery failed"/>
+            <column name="body_template" value="Your scheduled report preset &quot;${presetName}&quot; could not be delivered.&#10;&#10;Reason: ${message}&#10;&#10;Please check your delivery folder configuration and retry, or contact your administrator if the issue persists.&#10;&#10;— Athena"/>
+            <column name="html_body" valueBoolean="false"/>
+            <column name="description" value="Plain-text notification sent when a scheduled RM report preset delivery fails"/>
+            <column name="created_by" value="system"/>
+            <column name="version" valueNumeric="0"/>
+            <column name="is_deleted" valueBoolean="false"/>
+        </insert>
+
+        <rollback>
+            <delete tableName="email_template">
+                <where>template_key = 'rm.report_preset.delivery.succeeded' AND locale = 'default'</where>
+            </delete>
+            <delete tableName="email_template">
+                <where>template_key = 'rm.report_preset.delivery.failed' AND locale = 'default'</where>
+            </delete>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>
