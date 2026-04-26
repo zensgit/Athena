@@ -31,18 +31,20 @@ The current local worktree covers the owner-scoped inbox notification lane for R
 - PR-144B makes the closeout preflight verify the four specific notification acceptance scenarios, not only the tagged-test count
 - PR-144C makes the closeout preflight verify the five backend test classes targeted by the live notification acceptance gate
 - PR-144D removes the preflight's hidden `rg` dependency after GitHub Actions run `24935937705` failed on `rg: command not found`
+- PR-149 isolates each scheduled preset in its own `REQUIRES_NEW` transaction through the Spring proxy
+- PR-149B hardens the remaining optional notification boundaries: missing preference reads no longer mark caller transactions rollback-only, and direct owner notification activity/inbox publication runs in its own transaction
 
 ## Completion Assessment
 
 The product surface is close to complete for the scoped target: scheduled RM report preset delivery with owner inbox notification controls.
 
-The remaining must-have work is CI observation with a reachable GitHub Actions API or a CI run link supplied by a collaborator. It is not another large product-build slice unless the target expands to email/webhook delivery.
+The remaining must-have work is CI observation after PR-149B. It is not another large product-build slice unless the target expands to email/webhook delivery.
 
 ## Must-Have Remaining Work
 
 | Item | Reason | Estimated Effort |
 | --- | --- | --- |
-| Observe the CI `frontend_e2e_core` run with the new RM notification gate | local Docker socket and GitHub Actions API access were unavailable here, so CI evidence must be captured outside this sandbox | 0.5 day |
+| Observe the CI `frontend_e2e_core` run after PR-149B | local Docker socket is unavailable here, so backend verification and live Docker-backed acceptance evidence must be captured in CI | 0.5 day |
 | Promote closeout from development-complete to accepted | closeout exists, but it intentionally keeps final acceptance pending until the CI gate passes | 0.25 day |
 
 Estimated must-have effort: 0.75 day.
@@ -66,6 +68,7 @@ Finish `PR-139` CI observation first:
 2. Run `scripts/p5-rm-notification-closeout-preflight.sh` locally.
 3. Capture the GitHub Actions run id and commit SHA.
 4. Confirm the `Run RM notification acceptance gate` step executes the five backend targeted test classes and four tagged Playwright flows.
-5. If green, update the notification-lane closeout verification status from pending to accepted.
+5. Confirm the two default-on notification flows no longer 500 when preferences are missing.
+6. If green, update the notification-lane closeout verification status from pending to accepted.
 
 Do not start email/webhook work until the current owner-inbox lane is fully closed, otherwise the verification boundary will blur.

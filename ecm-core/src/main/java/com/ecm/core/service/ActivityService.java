@@ -9,6 +9,7 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -53,7 +54,7 @@ public class ActivityService {
      * Post a new activity entry and route it directly to a single recipient's
      * inbox without follower fan-out.
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Activity postDirectNotificationActivity(
         String activityType,
         String userId,

@@ -64,7 +64,7 @@ public class PreferenceService {
     /**
      * Get a single preference value.
      */
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, noRollbackFor = NoSuchElementException.class)
     public Object getPreference(String username, String key) {
         User user = loadUser(username);
         Map<String, Object> prefs = user.getPreferences();

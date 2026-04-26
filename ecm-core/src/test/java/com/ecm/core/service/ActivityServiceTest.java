@@ -15,6 +15,8 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
@@ -103,6 +105,26 @@ class ActivityServiceTest {
             assertEquals("rm.report_preset.delivery.failed", result.getActivityType());
             verify(notificationInboxService).createDirectNotification(eq("alice"), same(result));
             verify(notificationInboxService, never()).routeActivityToFollowers(any(Activity.class));
+        }
+
+        @Test
+        @DisplayName("direct notification activity uses an isolated transaction")
+        void directNotificationActivityUsesIndependentTransaction() throws Exception {
+            Transactional transactional = ActivityService.class
+                .getMethod(
+                    "postDirectNotificationActivity",
+                    String.class,
+                    String.class,
+                    String.class,
+                    UUID.class,
+                    String.class,
+                    Map.class,
+                    String.class
+                )
+                .getAnnotation(Transactional.class);
+
+            assertNotNull(transactional);
+            assertEquals(Propagation.REQUIRES_NEW, transactional.propagation());
         }
     }
 

@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
 
@@ -309,6 +310,17 @@ class PreferenceServiceTest {
 
             assertThrows(NoSuchElementException.class,
                 () -> service.getPreference("alice", "workspace.rootNodeId"));
+        }
+
+        @Test
+        @DisplayName("missing preference reads do not mark caller transaction rollback-only")
+        void missingPreferenceReadDoesNotRollbackCallerTransaction() throws Exception {
+            Transactional transactional = PreferenceService.class
+                .getMethod("getPreference", String.class, String.class)
+                .getAnnotation(Transactional.class);
+
+            assertNotNull(transactional);
+            assertTrue(List.of(transactional.noRollbackFor()).contains(NoSuchElementException.class));
         }
     }
 

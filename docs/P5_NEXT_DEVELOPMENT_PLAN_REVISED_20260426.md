@@ -90,25 +90,36 @@ returned: GitHub Actions run `24935937705` failed in the fast
 preflight because the runner did not have `rg`. The preflight now uses
 only `awk`, `grep`, and `find`.
 
+Post-`PR-144D`, the lane exposed runtime transaction-boundary issues
+instead of CI wiring issues:
+
+| PR | Type | Purpose |
+|----|------|---------|
+| PR-145 / PR-146 | Diagnostic + transaction | Surface `run-scheduled-deliveries` commit-time exceptions at the controller boundary |
+| PR-149 | Transaction | Run each due preset through a self-injected `REQUIRES_NEW` worker |
+| PR-149B | Transaction | Prevent optional missing-preference reads and direct owner notification publication from marking the per-preset transaction rollback-only |
+| PR-148 / PR-150 | Parallel Phase 5 Mocked | Start reducing unrelated mocked-gate failures without changing notification semantics |
+
 ## 2. Current state
 
 | Lane | Status |
 |------|--------|
 | RM preset-delivery core (PR-95..122) | **Closed (accepted)** |
-| Notification lane runtime (PR-123..133) | Code shipped, **gate red until `122c9ca`** |
-| Notification lane CI hardening (PR-134..144) | **Just shipped — pending live verification on `122c9ca`** |
-| Phase 5 Mocked gate | Chronically cancelled — separate investigation |
+| Notification lane runtime (PR-123..133) | Code shipped, **gate red until PR-149B CI proves all four notification flows** |
+| Notification lane CI/tx hardening (PR-134..149B) | **In progress — latest blocker is default-on preference/notification transaction pollution** |
+| Phase 5 Mocked gate | Chronically cancelled, with PR-148/150 reducing known failures in parallel |
 | Email delivery channel | **Not started** (was P1 in yesterday's plan; Codex did not pick it up) |
 
-## 3. Priority 0 — Wait for `122c9ca` and finalize the lane
+## 3. Priority 0 — Wait for PR-149B CI and finalize the lane
 
 This is still a hard prerequisite. Three branches on the next outcome:
 
-| `122c9ca` CI outcome | Next action |
+| PR-149B CI outcome | Next action |
 |----------------------|-------------|
 | Notification gate ✅ + Backend ✅ | Flip the notification-lane closeout doc from `pending` to `accepted` (single docs commit). Lane is done. |
 | Gate fails on a real product issue (not infra) | Diagnose + patch in another small slice. Do not start email work until green. |
-| Gate fails on the *same* missing-script / config issue | Triage further; the bundle should have fixed it, so a same-mode failure means the workflow change didn't take effect on the runner. |
+| Gate fails on the *same* default-on notification 500 | Read the PR-145/146 diagnostic body, then patch the named transaction boundary. |
+| Gate fails on missing-script / config issue | Triage workflow/scripts; this would be a regression in PR-141..144 wiring. |
 | ES facet flake re-appears | Acknowledge and proceed; the flake is documented and not lane-blocking. |
 
 **Estimate**: 0.25 day if green; 0.5-1 day if more diagnosis is needed.
@@ -202,7 +213,7 @@ Three things to carry forward:
 
 Re-stated for the new state:
 
-| `122c9ca` CI state | Action |
+| PR-149B CI state | Action |
 |--------------------|--------|
 | All gates green | Promote notification lane to accepted (one docs commit), then start PR-145 |
 | Notification gate red, real product issue | Diagnose + patch slice |
@@ -213,7 +224,7 @@ Re-stated for the new state:
 
 | Priority | Work | Estimate | Blocking? |
 |----------|------|----------|-----------|
-| **P0** | Wait for `122c9ca` CI; flip closeout to accepted if green | 0.25 d | Yes |
+| **P0** | Wait for PR-149B CI; flip closeout to accepted if green | 0.25 d | Yes |
 | P1 | Email delivery channel (PR-145..149) | 4-6 d | After P0 |
 | P2.A | Phase 5 Mocked investigation | 0.5-1 d + fix | No |
 | P2.B | Webhook / preference overrides / SLO / delegation | 1-7 d each | After P1 |
