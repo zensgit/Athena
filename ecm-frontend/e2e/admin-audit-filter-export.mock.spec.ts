@@ -193,6 +193,42 @@ test('Admin audit filters persist in URL and export filename is stable (mocked A
       await fulfillJson(route, { summary: null, fetchedAt: null });
       return;
     }
+    if (pathname.endsWith('/nodes/download/batch-async/summary') && route.request().method().toUpperCase() === 'GET') {
+      await fulfillJson(route, {
+        totalCount: 0,
+        activeCount: 0,
+        terminalCount: 0,
+        queuedCount: 0,
+        runningCount: 0,
+        cancelRequestedCount: 0,
+        cancelledCount: 0,
+        completedCount: 0,
+        failedCount: 0,
+      });
+      return;
+    }
+    if (pathname.endsWith('/nodes/download/batch-async') && route.request().method().toUpperCase() === 'GET') {
+      const maxItems = Number(requestUrl.searchParams.get('maxItems') || requestUrl.searchParams.get('limit') || '10');
+      const skipCount = Number(requestUrl.searchParams.get('skipCount') || '0');
+      await fulfillJson(route, {
+        items: [],
+        paging: {
+          maxItems,
+          skipCount,
+          totalItems: 0,
+          hasMoreItems: false,
+        },
+      });
+      return;
+    }
+    if (pathname.endsWith('/analytics/async-governance/tasks') && route.request().method().toUpperCase() === 'GET') {
+      await fulfillJson(route, {
+        items: [],
+        totalCount: 0,
+        generatedAt: new Date().toISOString(),
+      });
+      return;
+    }
     if (pathname.endsWith('/ops/recovery/history/export-async/summary') && route.request().method().toUpperCase() === 'GET') {
       const statusFilter = (requestUrl.searchParams.get('status') || '').trim().toUpperCase();
       recoveryHistoryExportAsyncSummaryCalls.push(statusFilter || 'ALL');
@@ -519,19 +555,41 @@ test('Admin audit filters persist in URL and export filename is stable (mocked A
   await page.getByRole('button', { name: 'Start audit async export' }).click();
   await expect(page.getByText(`Audit async export task started: ${auditAsyncStartedTaskId}`)).toBeVisible();
   await page.getByRole('button', { name: 'Refresh audit async export tasks' }).click();
-  const auditAsyncTaskStatusFilter = page.locator('[aria-labelledby="audit-async-status-filter-label"]');
-  await auditAsyncTaskStatusFilter.click();
-  await page.getByRole('option', { name: 'Completed' }).click();
+  const auditAsyncTaskStatusFilter = page.locator(
+    '[role="combobox"][aria-label="Audit async task status filter"]'
+  );
+  const dismissVisibleToasts = async () => {
+    const closeButtons = page.locator('.Toastify__close-button');
+    const closeButtonCount = await closeButtons.count();
+    for (let index = 0; index < closeButtonCount; index += 1) {
+      await closeButtons.first().click({ force: true }).catch(() => undefined);
+    }
+  };
+  const selectAuditAsyncTaskStatus = async (name: string, expectedStatus: string, optionValue = expectedStatus) => {
+    const callsBeforeSelection = auditAsyncListStatusCalls.length;
+    await dismissVisibleToasts();
+    await auditAsyncTaskStatusFilter.click();
+    const statusListbox = page.locator('[role="listbox"]').last();
+    await expect(statusListbox).toBeVisible();
+    const option = statusListbox.locator(`[role="option"][data-value="${optionValue || 'ALL'}"]`);
+    await expect(option).toContainText(name);
+    await option.focus();
+    await page.keyboard.press('Enter');
+    await expect(auditAsyncTaskStatusFilter).toContainText(name);
+    await expect.poll(
+      () => auditAsyncListStatusCalls.slice(callsBeforeSelection),
+      { timeout: 5_000 }
+    ).toContain(expectedStatus);
+  };
+  await selectAuditAsyncTaskStatus('Completed', 'COMPLETED');
   await page.getByRole('button', { name: `Download audit async export task ${auditAsyncCompletedTaskId}` }).click();
   await expect(page.getByText(/Audit async export downloaded:/i)).toBeVisible();
   await page.getByRole('button', { name: 'Cleanup audit async export tasks' }).click();
   await expect(page.getByText(/Deleted 1 audit async export tasks/i)).toBeVisible();
-  await auditAsyncTaskStatusFilter.click();
-  await page.getByRole('option', { name: 'All statuses' }).click();
+  await selectAuditAsyncTaskStatus('All statuses', '', 'ALL');
   await page.getByRole('button', { name: `Cancel audit async export task ${auditAsyncStartedTaskId}` }).click();
   await expect(page.getByText(`Audit async export task cancelled: ${auditAsyncStartedTaskId}`)).toBeVisible();
-  await auditAsyncTaskStatusFilter.click();
-  await page.getByRole('option', { name: 'Running' }).click();
+  await selectAuditAsyncTaskStatus('Running', 'RUNNING');
   await page.getByRole('button', { name: 'Cancel active audit async export tasks' }).click();
   await expect(page.getByText(/No active async audit export tasks matched cancel-active filter/i)).toBeVisible();
 
