@@ -96,6 +96,10 @@ ecm:
   mfa:
     issuer: ${ECM_MFA_ISSUER:Athena ECM}
 
+  email:
+    enabled: ${ECM_EMAIL_ENABLED:false}
+    from-address: ${ECM_EMAIL_FROM_ADDRESS:}
+
   transfer:
     repository-id: ${ECM_TRANSFER_REPOSITORY_ID:${ecm.cmis.repository-id}}
 

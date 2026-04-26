@@ -94,6 +94,7 @@
     <include file="db/changelog/changes/081-record-category-foundation.xml"/>
     <include file="db/changelog/changes/082-create-rm-report-presets.xml"/>
     <include file="db/changelog/changes/083-add-rm-report-preset-delivery-foundation.xml"/>
+    <include file="db/changelog/changes/084-email-notification-foundation.xml"/>
     <include file="db/changelog/changes/007-insert-initial-data.xml"/>
 
 </databaseChangeLog>

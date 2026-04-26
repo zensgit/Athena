@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="084-create-email-template" author="p5-pr159">
+        <comment>P5 PR-159: Email notification template table (foundation)</comment>
+
+        <createTable tableName="email_template">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="template_key" type="varchar(200)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="locale" type="varchar(20)" defaultValue="default">
+                <constraints nullable="false"/>
+            </column>
+            <column name="subject_template" type="varchar(500)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="body_template" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="html_body" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="description" type="varchar(500)"/>
+            <column name="created_date" type="timestamp" defaultValueComputed="${now}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_date" type="timestamp"/>
+            <column name="created_by" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_by" type="varchar(255)"/>
+            <column name="version" type="bigint" defaultValueNumeric="0"/>
+            <column name="is_deleted" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="deleted_at" type="timestamp"/>
+            <column name="deleted_by" type="varchar(255)"/>
+        </createTable>
+
+        <addUniqueConstraint tableName="email_template"
+                             columnNames="template_key, locale"
+                             constraintName="uq_email_template_key_locale"/>
+
+        <createIndex tableName="email_template" indexName="idx_email_template_key">
+            <column name="template_key"/>
+        </createIndex>
+
+        <rollback>
+            <dropTable tableName="email_template"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>
