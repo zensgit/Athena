@@ -281,6 +281,7 @@ public class RmReportPresetDeliveryService {
         LocalDateTime now = LocalDateTime.now();
         List<RmReportPreset> duePresets =
             presetRepository.findByScheduleEnabledTrueAndDeletedFalseAndNextRunAtLessThanEqualOrderByNextRunAtAsc(now);
+        log.info("processDueScheduledDeliveries: now={} duePresetCount={}", now, duePresets.size());
         int processedCount = 0;
         for (RmReportPreset preset : duePresets) {
             try {
@@ -322,7 +323,15 @@ public class RmReportPresetDeliveryService {
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean processOneScheduledDelivery(RmReportPreset preset) {
+        // PR-153 diagnostic logging: previous CI iterations narrowed the
+        // notification gate failure to "processedCount=0 even though one due
+        // preset is forced". Without inner-loop logs the next root cause
+        // can't be pinpointed (artifact log only retains 200 trailing lines).
+        // These INFO lines name each branch so the next CI run is decisive.
+        log.info("processOneScheduledDelivery: enter presetId={} nextRunAt={} cron={}",
+            preset.getId(), preset.getNextRunAt(), preset.getCronExpression());
         if (!claimScheduledRun(preset)) {
+            log.info("processOneScheduledDelivery: claim CAS lost for presetId={}", preset.getId());
             return false;
         }
         RmReportPreset claimedPreset = presetRepository.findByIdAndDeletedFalse(preset.getId()).orElse(null);
@@ -332,8 +341,15 @@ public class RmReportPresetDeliveryService {
         }
         SecurityContext previous = pushPresetAuthentication(claimedPreset);
         try {
+            log.info("processOneScheduledDelivery: calling deliverPreset for presetId={} folderId={}",
+                claimedPreset.getId(), claimedPreset.getDeliveryFolderId());
             deliverPreset(claimedPreset, TriggerType.SCHEDULED, true, true);
+            log.info("processOneScheduledDelivery: deliverPreset returned cleanly for presetId={}", claimedPreset.getId());
             return true;
+        } catch (Exception ex) {
+            log.warn("processOneScheduledDelivery: deliverPreset threw for presetId={}: {}: {}",
+                claimedPreset.getId(), ex.getClass().getName(), ex.getMessage(), ex);
+            throw ex;
         } finally {
             popAuthentication(previous);
         }
