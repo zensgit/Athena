@@ -1,10 +1,23 @@
 import { expect, test } from '@playwright/test';
+import { mockKeycloakUnreachable } from './helpers/keycloakMock';
 
 const FORCE_RENDER_ERROR_KEY = 'ecm_e2e_force_render_error';
+
+// This test deliberately exercises the unauth /login → forced render
+// crash → "Back to Login" recovery flow. Phase 5 Mocked runs
+// `serve -s build` with no Keycloak server, so a real /login boot
+// hangs on Keycloak. seedBypassSessionE2E would change the test
+// intent (user logged in on /, no login UI to return to). Instead,
+// short-circuit Keycloak with mockKeycloakUnreachable so the auth
+// boot resolves into the no-session state quickly and the unauth
+// /login shell renders within seconds.
+//
+// See `docs/P5_PHASE5_MOCKED_GATE_INVESTIGATION_DEV_VERIFICATION_20260426.md`.
 
 test('App error boundary: forced render crash can recover to login', async ({ page }) => {
   test.setTimeout(120_000);
 
+  await mockKeycloakUnreachable(page);
   await page.goto('/login', { waitUntil: 'domcontentloaded' });
   await expect(page.getByText('Sign in with your organization account')).toBeVisible({ timeout: 60_000 });
   await page.evaluate((key) => {
