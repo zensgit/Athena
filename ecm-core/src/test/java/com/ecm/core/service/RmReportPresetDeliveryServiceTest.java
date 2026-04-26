@@ -419,11 +419,13 @@ class RmReportPresetDeliveryServiceTest {
         assertEquals("Preset", summaryCaptor.getValue().get("presetName"));
         assertEquals("SUCCESS", summaryCaptor.getValue().get("status"));
         assertEquals(documentId.toString(), summaryCaptor.getValue().get("documentId"));
+        assertTrue(summaryCaptor.getValue().containsKey("durationMs"));
 
         ArgumentCaptor<NotificationPayload> payloadCaptor = ArgumentCaptor.forClass(NotificationPayload.class);
         verify(notificationDispatcher).dispatch(payloadCaptor.capture(), anyCollection());
         assertEquals("rm.report_preset.delivery.succeeded", payloadCaptor.getValue().getType());
         assertEquals("admin", payloadCaptor.getValue().getRecipientUserId());
+        assertTrue(payloadCaptor.getValue().getTemplateVars().containsKey("durationMs"));
     }
 
     @Test
@@ -664,11 +666,13 @@ class RmReportPresetDeliveryServiceTest {
         assertEquals("Preset", summaryCaptor.getValue().get("presetName"));
         assertEquals("FAILED", summaryCaptor.getValue().get("status"));
         assertEquals("Folder not found", summaryCaptor.getValue().get("message"));
+        assertTrue(summaryCaptor.getValue().containsKey("durationMs"));
 
         ArgumentCaptor<NotificationPayload> payloadCaptor = ArgumentCaptor.forClass(NotificationPayload.class);
         verify(notificationDispatcher).dispatch(payloadCaptor.capture(), anyCollection());
         assertEquals("rm.report_preset.delivery.failed", payloadCaptor.getValue().getType());
         assertEquals("admin", payloadCaptor.getValue().getRecipientUserId());
+        assertTrue(payloadCaptor.getValue().getTemplateVars().containsKey("durationMs"));
     }
 
     @Test

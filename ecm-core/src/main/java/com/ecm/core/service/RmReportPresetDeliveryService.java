@@ -561,6 +561,7 @@ public class RmReportPresetDeliveryService {
         summary.put("message", execution.getMessage() != null ? execution.getMessage() : "");
         summary.put("executionId", execution.getId() != null ? execution.getId().toString() : "");
         summary.put("status", execution.getStatus() != null ? execution.getStatus().name() : "");
+        summary.put("durationMs", execution.getDurationMs() != null ? execution.getDurationMs() : 0L);
         try {
             Activity activity = activityService.createNotificationActivity(
                 ACTIVITY_DELIVERY_FAILED,
@@ -616,6 +617,7 @@ public class RmReportPresetDeliveryService {
         summary.put("message", execution.getMessage() != null ? execution.getMessage() : "");
         summary.put("executionId", execution.getId() != null ? execution.getId().toString() : "");
         summary.put("status", execution.getStatus() != null ? execution.getStatus().name() : "");
+        summary.put("durationMs", execution.getDurationMs() != null ? execution.getDurationMs() : 0L);
         try {
             Activity activity = activityService.createNotificationActivity(
                 ACTIVITY_DELIVERY_SUCCEEDED,
