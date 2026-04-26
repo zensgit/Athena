@@ -6,12 +6,12 @@
                         http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
 
     <changeSet id="087-seed-site-invitation-email-template" author="codex">
-        <comment>Seed default email template used by site invitation delivery</comment>
         <preConditions onFail="MARK_RAN">
             <sqlCheck expectedResult="0">
                 SELECT COUNT(*) FROM email_template WHERE template_key = 'site.invitation' AND locale = 'default'
             </sqlCheck>
         </preConditions>
+        <comment>Seed default email template used by site invitation delivery</comment>
 
         <insert tableName="email_template">
             <column name="template_key" value="site.invitation"/>

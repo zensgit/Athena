@@ -37,12 +37,15 @@ Changes:
   - `message`
   - `expiresAt`
 - Added `SiteInvitationServiceTest` to lock the service-template contract.
+- Added `LiquibaseChangelogParseTest` so Backend Verify catches included
+  changelog parse errors before Phase C has to start a full Docker stack.
 
 ## Files Changed
 
 - `ecm-core/src/main/java/com/ecm/core/service/SiteInvitationService.java`
 - `ecm-core/src/main/resources/db/changelog/db.changelog-master.xml`
 - `ecm-core/src/main/resources/db/changelog/changes/087-seed-site-invitation-email-template.xml`
+- `ecm-core/src/test/java/com/ecm/core/config/LiquibaseChangelogParseTest.java`
 - `ecm-core/src/test/java/com/ecm/core/service/SiteInvitationServiceTest.java`
 
 ## Verification
@@ -57,7 +60,23 @@ xmllint --noout \
   ecm-core/src/main/resources/db/changelog/changes/087-seed-site-invitation-email-template.xml \
   ecm-core/src/main/resources/db/changelog/db.changelog-master.xml
 PASS
+
+javac -cp "$(find ecm-core/.m2-cache/repository -name '*.jar' | tr '\n' ':')" \
+  -d /tmp/athena-liquibase-test-classes \
+  ecm-core/src/test/java/com/ecm/core/config/LiquibaseChangelogParseTest.java
+PASS
 ```
+
+Follow-up validation note:
+
+- CI run `24955914630` passed Backend Verify and Frontend Build & Test, but
+  Phase C startup exposed a Liquibase XML schema-order issue in `087`.
+- Root cause: `<preConditions>` was placed after `<comment>` inside the
+  `changeSet`; the repository's Liquibase XSD expects preconditions before
+  comments/changes.
+- Fix: move `<preConditions>` before `<comment>` in `087`.
+- Guardrail: `LiquibaseChangelogParseTest` now parses
+  `db/changelog/db.changelog-master.xml` through Liquibase during Backend Verify.
 
 Target backend test attempted:
 
