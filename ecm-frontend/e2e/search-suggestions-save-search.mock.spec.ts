@@ -154,8 +154,9 @@ test('Search: spellcheck suggestion + Save Search (mocked API)', async ({ page }
   });
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('button', { name: 'Search' })).toBeVisible();
-  await page.getByRole('button', { name: 'Search' }).click();
+  const globalSearchButton = page.getByRole('banner').getByRole('button', { name: 'Search' });
+  await expect(globalSearchButton).toBeVisible();
+  await globalSearchButton.click();
 
   const searchDialog = page.getByRole('dialog', { name: 'Advanced Search' });
   await expect(searchDialog).toBeVisible();
@@ -309,8 +310,9 @@ test('Search: filename-like query skips spellcheck suggestion request (mocked AP
   });
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('button', { name: 'Search' })).toBeVisible();
-  await page.getByRole('button', { name: 'Search' }).click();
+  const globalSearchButton = page.getByRole('banner').getByRole('button', { name: 'Search' });
+  await expect(globalSearchButton).toBeVisible();
+  await globalSearchButton.click();
 
   const searchDialog = page.getByRole('dialog', { name: 'Advanced Search' });
   await expect(searchDialog).toBeVisible();

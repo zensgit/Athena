@@ -469,13 +469,13 @@ test('Admin audit filters persist in URL and export filename is stable (mocked A
   await page.getByRole('menuitem', { name: 'Admin Dashboard' }).click();
 
   await expect(page.getByRole('heading', { name: 'System Dashboard' })).toBeVisible({ timeout: 60_000 });
-  const asyncExportHealthOverview = page.getByRole('heading', { name: 'Async Export Health Overview' });
+  const asyncExportHealthOverview = page.getByRole('heading', { name: 'Async Task Health Overview' });
   await expect(asyncExportHealthOverview).toBeVisible();
   await expect(page.getByText(new RegExp(`Total\\s*${asyncExportHealthOverviewExpected.total}`))).toBeVisible();
   await expect(page.getByText(new RegExp(`Active\\s*${asyncExportHealthOverviewExpected.active}`))).toBeVisible();
   await expect(page.getByText(new RegExp(`Terminal\\s*${asyncExportHealthOverviewExpected.terminal}`))).toBeVisible();
 
-  const healthOverviewRefreshButton = page.getByRole('button', { name: 'Refresh async export health overview' });
+  const healthOverviewRefreshButton = page.getByRole('button', { name: 'Refresh async task health overview' });
   await expect(healthOverviewRefreshButton).toBeVisible();
   const beforeRecoverySummaryCalls = recoveryHistoryExportAsyncSummaryCalls.length;
   const beforeSearchSummaryCalls = searchDryRunExportAsyncSummaryCalls.length;
@@ -519,17 +519,18 @@ test('Admin audit filters persist in URL and export filename is stable (mocked A
   await page.getByRole('button', { name: 'Start audit async export' }).click();
   await expect(page.getByText(`Audit async export task started: ${auditAsyncStartedTaskId}`)).toBeVisible();
   await page.getByRole('button', { name: 'Refresh audit async export tasks' }).click();
-  await page.getByRole('combobox', { name: 'Task status' }).click();
+  const auditAsyncTaskStatusFilter = page.locator('[aria-labelledby="audit-async-status-filter-label"]');
+  await auditAsyncTaskStatusFilter.click();
   await page.getByRole('option', { name: 'Completed' }).click();
   await page.getByRole('button', { name: `Download audit async export task ${auditAsyncCompletedTaskId}` }).click();
   await expect(page.getByText(/Audit async export downloaded:/i)).toBeVisible();
   await page.getByRole('button', { name: 'Cleanup audit async export tasks' }).click();
   await expect(page.getByText(/Deleted 1 audit async export tasks/i)).toBeVisible();
-  await page.getByRole('combobox', { name: 'Task status' }).click();
+  await auditAsyncTaskStatusFilter.click();
   await page.getByRole('option', { name: 'All statuses' }).click();
   await page.getByRole('button', { name: `Cancel audit async export task ${auditAsyncStartedTaskId}` }).click();
   await expect(page.getByText(`Audit async export task cancelled: ${auditAsyncStartedTaskId}`)).toBeVisible();
-  await page.getByRole('combobox', { name: 'Task status' }).click();
+  await auditAsyncTaskStatusFilter.click();
   await page.getByRole('option', { name: 'Running' }).click();
   await page.getByRole('button', { name: 'Cancel active audit async export tasks' }).click();
   await expect(page.getByText(/No active async audit export tasks matched cancel-active filter/i)).toBeVisible();

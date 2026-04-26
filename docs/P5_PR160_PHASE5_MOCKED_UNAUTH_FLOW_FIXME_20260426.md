@@ -3,6 +3,21 @@
 ## Date
 2026-04-26
 
+## Status
+**Partially superseded by PR-161.** This MD captured the original
+posture: all 6 unauth-flow mock specs marked `test.fixme()` as a
+conservative "the mock approach can't simulate keycloak-init-failure
+in CI". After landing this MD, Codex's `keycloakMock.ts` redesign
+(set `ecm_e2e_bypass=1` without token/user, so `authService.init`
+resolves as unauthenticated **without importing keycloak-js**) was
+accepted. Four of the six fixme'd specs were un-fixme'd in PR-161
+because the new helper makes them tractable in the static-serve env.
+Two remain fixme'd (`route-fallback:78`, `sla:89`) as a conservative
+posture pending CI confirmation.
+
+See `P5_PR161_PHASE5_MOCKED_COMPLETE_FIX_BUNDLE_20260426.md` for the
+final landing posture.
+
 ## Scope
 
 E2E test annotations only. Six specs that exercise the `unauth /login`

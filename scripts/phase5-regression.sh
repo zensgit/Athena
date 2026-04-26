@@ -286,10 +286,13 @@ print_playwright_failure_summary() {
   local log_file="$1"
   local failure_lines=()
 
-  mapfile -t failure_lines < <(
+  while IFS= read -r line; do
+    failure_lines+=("${line}")
+  done < <(
     strip_ansi_file "${log_file}" \
-      | rg "^[[:space:]]*\\[[^]]+\\][[:space:]]+›[[:space:]]+e2e/" \
-      | sed -E 's/^[[:space:]]*\[[^]]+\][[:space:]]+›[[:space:]]+//'
+      | grep -E "^[[:space:]]*\\[[^]]+\\][[:space:]]+›[[:space:]]+e2e/" \
+      | sed -E 's/^[[:space:]]*\[[^]]+\][[:space:]]+›[[:space:]]+//' \
+      || true
   )
 
   if [[ "${#failure_lines[@]}" -gt 0 ]]; then
@@ -302,7 +305,7 @@ print_playwright_failure_summary() {
   fi
 
   local first_error
-  first_error="$(strip_ansi_file "${log_file}" | rg -m1 "(^Error:|^error:|error: )" || true)"
+  first_error="$(strip_ansi_file "${log_file}" | grep -E -m1 "(^Error:|^error:|error: )" || true)"
   if [[ -n "${first_error}" ]]; then
     echo "phase5_regression: first error => ${first_error}"
   fi
@@ -861,7 +864,7 @@ validate_recovery_event_registry() {
     | awk 'NF { print tolower($0) }' \
     | sort -u >"${expected_tmp}"
 
-  rg -No "recovery_event:[a-z0-9_]+" "${PHASE5_SPECS[@]}" \
+  grep -Eho "recovery_event:[a-z0-9_]+" "${PHASE5_SPECS[@]}" \
     | sed -E 's/.*recovery_event:([a-z0-9_]+).*/\1/' \
     | awk 'NF { print tolower($0) }' \
     | sort -u >"${observed_tmp}" || true
@@ -922,7 +925,7 @@ validate_recovery_event_registry() {
 }
 
 collect_recovery_events_from_specs() {
-  rg -No "recovery_event:[a-z0-9_]+" "${PHASE5_SPECS[@]}" \
+  grep -Eho "recovery_event:[a-z0-9_]+" "${PHASE5_SPECS[@]}" \
     | sed -E 's/.*recovery_event:([a-z0-9_]+).*/\1/' \
     | awk 'NF { print tolower($0) }' \
     | sort -u
