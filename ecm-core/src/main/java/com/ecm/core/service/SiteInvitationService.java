@@ -22,6 +22,7 @@ import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.EnumSet;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -277,17 +278,20 @@ public class SiteInvitationService {
             return;
         }
         try {
+            Map<String, Object> variables = new LinkedHashMap<>();
+            variables.put("siteTitle", site.getTitle());
+            variables.put("siteId", site.getSiteId());
+            variables.put("invitedBy", invitation.getInvitedBy());
+            variables.put("token", invitation.getToken());
+            variables.put("role", invitation.getInvitedRole());
+            variables.put("message", invitation.getMessage() != null ? invitation.getMessage() : "");
+            variables.put("expiresAt", invitation.getExpiresAt());
+
             emailService.send(
                 "site.invitation",
                 invitation.getInviteeEmail(),
                 null,
-                Map.of(
-                    "siteTitle", site.getTitle(),
-                    "siteId", site.getSiteId(),
-                    "invitedBy", invitation.getInvitedBy(),
-                    "token", invitation.getToken(),
-                    "role", invitation.getInvitedRole()
-                )
+                variables
             );
         } catch (Exception ex) {
             log.warn("Failed to send invitation email to {}: {}", invitation.getInviteeEmail(), ex.getMessage());

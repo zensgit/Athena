@@ -97,6 +97,7 @@
     <include file="db/changelog/changes/084-email-notification-foundation.xml"/>
     <include file="db/changelog/changes/085-email-notification-seed-templates.xml"/>
     <include file="db/changelog/changes/086-create-site-invitations.xml"/>
+    <include file="db/changelog/changes/087-seed-site-invitation-email-template.xml"/>
     <include file="db/changelog/changes/007-insert-initial-data.xml"/>
 
 </databaseChangeLog>

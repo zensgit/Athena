@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="087-seed-site-invitation-email-template" author="codex">
+        <comment>Seed default email template used by site invitation delivery</comment>
+        <preConditions onFail="MARK_RAN">
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(*) FROM email_template WHERE template_key = 'site.invitation' AND locale = 'default'
+            </sqlCheck>
+        </preConditions>
+
+        <insert tableName="email_template">
+            <column name="template_key" value="site.invitation"/>
+            <column name="locale" value="default"/>
+            <column name="subject_template" value="Athena: You have been invited to ${siteTitle}"/>
+            <column name="body_template" value="You have been invited by ${invitedBy} to join site &quot;${siteTitle}&quot; (${siteId}) as ${role}.&#10;&#10;Invitation token: ${token}&#10;Expires at: ${expiresAt}&#10;&#10;Open Athena and accept the invitation using this token.&#10;&#10;Message:&#10;${message}&#10;&#10;Athena"/>
+            <column name="html_body" valueBoolean="false"/>
+            <column name="description" value="Plain-text notification sent when a manager invites a user to a collaboration site"/>
+            <column name="created_by" value="system"/>
+            <column name="version" valueNumeric="0"/>
+            <column name="is_deleted" valueBoolean="false"/>
+        </insert>
+
+        <rollback>
+            <delete tableName="email_template">
+                <where>template_key = 'site.invitation' AND locale = 'default'</where>
+            </delete>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>
