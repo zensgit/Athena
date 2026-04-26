@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { mockKeycloakUnreachable } from './helpers/keycloakMock';
 import { seedBypassSessionE2E } from './helpers/login';
 
 const setupBrowseMocks = async (page: any) => {
@@ -77,6 +78,11 @@ const setupBrowseMocks = async (page: any) => {
 test('Route fallback: unknown route redirects unauthenticated users to login without blank page (mocked)', async ({ page }) => {
   test.setTimeout(120_000);
 
+  // Subject: unauth /login redirect from an unknown route. Phase 5 Mocked
+  // has no Keycloak server; without this mock, keycloak-js's auth boot
+  // hangs and the 60s expect-timeout fires uniformly.
+  // See `docs/P5_PHASE5_MOCKED_GATE_INVESTIGATION_DEV_VERIFICATION_20260426.md`.
+  await mockKeycloakUnreachable(page);
   await page.goto('/definitely-not-a-real-route', { waitUntil: 'domcontentloaded' });
 
   await expect(page).toHaveURL(/\/login(?:\?.*)?$/, { timeout: 60_000 });

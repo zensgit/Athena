@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { mockKeycloakUnreachable } from './helpers/keycloakMock';
 import { seedBypassSessionE2E } from './helpers/login';
 
 const resolvePositiveInt = (rawValue: string | undefined, fallback: number): number => {
@@ -88,6 +89,12 @@ const setupBrowseMocks = async (page: any) => {
 test('Startup SLA: login route visible under threshold (mocked)', async ({ page }) => {
   test.setTimeout(120_000);
 
+  // Subject: /login renders within the SLA threshold. Phase 5 Mocked has
+  // no Keycloak server; without this mock, keycloak-js's auth boot hangs
+  // and the SLA threshold is exceeded by orders of magnitude — the
+  // exception is not a perf regression, it's environment.
+  // See `docs/P5_PHASE5_MOCKED_GATE_INVESTIGATION_DEV_VERIFICATION_20260426.md`.
+  await mockKeycloakUnreachable(page);
   const startedAt = Date.now();
   await page.goto('/login', { waitUntil: 'domcontentloaded' });
   await expect(page.getByText('Sign in with your organization account')).toBeVisible({ timeout: 60_000 });
