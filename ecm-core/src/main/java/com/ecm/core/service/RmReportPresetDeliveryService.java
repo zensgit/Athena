@@ -4,6 +4,7 @@ import com.ecm.core.entity.RmReportPreset;
 import com.ecm.core.entity.RmReportPresetExecution;
 import com.ecm.core.entity.RmReportPresetExecution.ExecutionStatus;
 import com.ecm.core.entity.RmReportPresetExecution.TriggerType;
+import com.ecm.core.integration.email.notify.NotificationChannel;
 import com.ecm.core.pipeline.PipelineResult;
 import com.ecm.core.repository.RmReportPresetExecutionRepository;
 import com.ecm.core.repository.RmReportPresetRepository;
@@ -34,9 +35,11 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -54,6 +57,8 @@ public class RmReportPresetDeliveryService {
     private static final String NOTIFICATION_ACTOR = "system";
     static final String PREF_NOTIFY_ON_SUCCESS = "org.athena.rm.reportPreset.delivery.notifyOnSuccess";
     static final String PREF_NOTIFY_ON_FAILURE = "org.athena.rm.reportPreset.delivery.notifyOnFailure";
+    static final String PREF_NOTIFY_BY_EMAIL_ON_SUCCESS = "org.athena.rm.reportPreset.delivery.notifyByEmailOnSuccess";
+    static final String PREF_NOTIFY_BY_EMAIL_ON_FAILURE = "org.athena.rm.reportPreset.delivery.notifyByEmailOnFailure";
 
     private final RmReportPresetService presetService;
     private final RmReportPresetRepository presetRepository;
@@ -649,6 +654,47 @@ public class RmReportPresetDeliveryService {
             );
         }
         return true;
+    }
+
+    // Email is opt-in: missing preference → false (unlike inbox which defaults to true).
+    private boolean isEmailNotificationEnabled(String owner, String preferenceKey) {
+        try {
+            Object value = preferenceService.getPreference(owner, preferenceKey);
+            if (value instanceof Boolean booleanValue) {
+                return booleanValue;
+            }
+            if (value instanceof String stringValue) {
+                if ("true".equalsIgnoreCase(stringValue.trim())) {
+                    return true;
+                }
+                if ("false".equalsIgnoreCase(stringValue.trim())) {
+                    return false;
+                }
+            }
+        } catch (java.util.NoSuchElementException ignored) {
+            return false;
+        } catch (Exception ex) {
+            log.warn(
+                "Failed to read RM preset delivery email notification preference {} for {}: {}",
+                preferenceKey,
+                owner,
+                ex.getMessage()
+            );
+        }
+        return false;
+    }
+
+    Set<String> resolveDeliveryChannels(String recipient, boolean isSuccess) {
+        String inboxPrefKey = isSuccess ? PREF_NOTIFY_ON_SUCCESS : PREF_NOTIFY_ON_FAILURE;
+        String emailPrefKey = isSuccess ? PREF_NOTIFY_BY_EMAIL_ON_SUCCESS : PREF_NOTIFY_BY_EMAIL_ON_FAILURE;
+        Set<String> channels = new LinkedHashSet<>();
+        if (isNotificationEnabled(recipient, inboxPrefKey)) {
+            channels.add(NotificationChannel.INBOX);
+        }
+        if (isEmailNotificationEnabled(recipient, emailPrefKey)) {
+            channels.add(NotificationChannel.EMAIL);
+        }
+        return Set.copyOf(channels);
     }
 
     private void assertSchedulableKind(RmReportPreset preset) {
