@@ -1063,7 +1063,7 @@ class RmReportPresetDeliveryServiceTest {
 
     @Test
     @DisplayName("runScheduledDeliveriesNow isolates per-preset failures — outer call still returns processedCount")
-    void runScheduledDeliveriesNowIsolatesPerPresetFailures() {
+    void runScheduledDeliveriesNowIsolatesPerPresetFailures() throws Exception {
         // Two due presets. The first one fails when processOneScheduledDelivery
         // throws (simulating any RuntimeException — upload error, downstream
         // service hiccup, etc). The second succeeds. Outer call must still
