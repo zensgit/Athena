@@ -1,8 +1,10 @@
 package com.ecm.core.service;
 
 import com.ecm.core.integration.email.notify.NotificationChannel;
+import com.ecm.core.integration.email.notify.NotificationDispatcher;
 import com.ecm.core.repository.RmReportPresetExecutionRepository;
 import com.ecm.core.repository.RmReportPresetRepository;
+import com.ecm.core.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -31,12 +33,15 @@ class RmReportPresetDeliveryServiceChannelResolutionTest {
     @Mock private SecurityService securityService;
     @Mock private ActivityService activityService;
     @Mock private PreferenceService preferenceService;
+    @Mock private UserRepository userRepository;
+    @Mock private NotificationDispatcher notificationDispatcher;
 
     private RmReportPresetDeliveryService service() {
         RmReportPresetDeliveryService svc = new RmReportPresetDeliveryService(
             presetService, presetRepository, executionRepository,
             recordsManagementService, uploadService, auditService,
-            securityService, activityService, preferenceService
+            securityService, activityService, preferenceService,
+            userRepository, notificationDispatcher
         );
         ReflectionTestUtils.setField(svc, "self", svc);
         return svc;

@@ -1,13 +1,18 @@
 package com.ecm.core.service;
 
+import com.ecm.core.entity.Activity;
 import com.ecm.core.entity.RmReportPreset;
 import com.ecm.core.entity.RmReportPresetExecution;
 import com.ecm.core.entity.RmReportPresetExecution.ExecutionStatus;
 import com.ecm.core.entity.RmReportPresetExecution.TriggerType;
+import com.ecm.core.entity.User;
 import com.ecm.core.integration.email.notify.NotificationChannel;
+import com.ecm.core.integration.email.notify.NotificationDispatcher;
+import com.ecm.core.integration.email.notify.NotificationPayload;
 import com.ecm.core.pipeline.PipelineResult;
 import com.ecm.core.repository.RmReportPresetExecutionRepository;
 import com.ecm.core.repository.RmReportPresetRepository;
+import com.ecm.core.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -69,6 +74,8 @@ public class RmReportPresetDeliveryService {
     private final SecurityService securityService;
     private final ActivityService activityService;
     private final PreferenceService preferenceService;
+    private final UserRepository userRepository;
+    private final NotificationDispatcher notificationDispatcher;
 
     /**
      * Self-injected proxy used to call public methods on this bean through
@@ -540,7 +547,8 @@ public class RmReportPresetDeliveryService {
         if (recipient == null || recipient.isBlank()) {
             return;
         }
-        if (!isNotificationEnabled(recipient, PREF_NOTIFY_ON_FAILURE)) {
+        Set<String> channels = resolveDeliveryChannels(recipient, false);
+        if (channels.isEmpty()) {
             return;
         }
         Map<String, Object> summary = new HashMap<>();
@@ -554,15 +562,24 @@ public class RmReportPresetDeliveryService {
         summary.put("executionId", execution.getId() != null ? execution.getId().toString() : "");
         summary.put("status", execution.getStatus() != null ? execution.getStatus().name() : "");
         try {
-            activityService.postDirectNotificationActivity(
+            Activity activity = activityService.createNotificationActivity(
                 ACTIVITY_DELIVERY_FAILED,
                 NOTIFICATION_ACTOR,
                 null,
                 execution.getTargetFolderId(),
                 null,
-                summary,
-                recipient
+                summary
             );
+            String email = userRepository.findByUsername(recipient).map(User::getEmail).orElse(null);
+            NotificationPayload payload = NotificationPayload.builder()
+                .type(ACTIVITY_DELIVERY_FAILED)
+                .recipientUserId(recipient)
+                .recipientEmail(email)
+                .preferredLocale("default")
+                .activity(activity)
+                .templateVars(summary)
+                .build();
+            notificationDispatcher.dispatch(payload, channels);
         } catch (Exception ex) {
             log.warn(
                 "Failed to publish RM preset failed-delivery notification for execution {}: {}",
@@ -584,7 +601,8 @@ public class RmReportPresetDeliveryService {
         if (recipient == null || recipient.isBlank()) {
             return;
         }
-        if (!isNotificationEnabled(recipient, PREF_NOTIFY_ON_SUCCESS)) {
+        Set<String> channels = resolveDeliveryChannels(recipient, true);
+        if (channels.isEmpty()) {
             return;
         }
         Map<String, Object> summary = new HashMap<>();
@@ -599,15 +617,24 @@ public class RmReportPresetDeliveryService {
         summary.put("executionId", execution.getId() != null ? execution.getId().toString() : "");
         summary.put("status", execution.getStatus() != null ? execution.getStatus().name() : "");
         try {
-            activityService.postDirectNotificationActivity(
+            Activity activity = activityService.createNotificationActivity(
                 ACTIVITY_DELIVERY_SUCCEEDED,
                 NOTIFICATION_ACTOR,
                 null,
                 execution.getDocumentId() != null ? execution.getDocumentId() : execution.getTargetFolderId(),
                 execution.getFilename(),
-                summary,
-                recipient
+                summary
             );
+            String email = userRepository.findByUsername(recipient).map(User::getEmail).orElse(null);
+            NotificationPayload payload = NotificationPayload.builder()
+                .type(ACTIVITY_DELIVERY_SUCCEEDED)
+                .recipientUserId(recipient)
+                .recipientEmail(email)
+                .preferredLocale("default")
+                .activity(activity)
+                .templateVars(summary)
+                .build();
+            notificationDispatcher.dispatch(payload, channels);
         } catch (Exception ex) {
             log.warn(
                 "Failed to publish RM preset successful-delivery notification for execution {}: {}",

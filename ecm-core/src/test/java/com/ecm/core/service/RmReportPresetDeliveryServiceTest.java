@@ -1,10 +1,15 @@
 package com.ecm.core.service;
 
+import com.ecm.core.entity.Activity;
 import com.ecm.core.entity.RmReportPreset;
 import com.ecm.core.entity.RmReportPresetExecution;
+import com.ecm.core.entity.User;
+import com.ecm.core.integration.email.notify.NotificationDispatcher;
+import com.ecm.core.integration.email.notify.NotificationPayload;
 import com.ecm.core.pipeline.PipelineResult;
 import com.ecm.core.repository.RmReportPresetExecutionRepository;
 import com.ecm.core.repository.RmReportPresetRepository;
+import com.ecm.core.repository.UserRepository;
 import org.springframework.data.domain.PageImpl;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -27,6 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
@@ -64,6 +70,12 @@ class RmReportPresetDeliveryServiceTest {
 
     @Mock
     private PreferenceService preferenceService;
+
+    @Mock
+    private UserRepository userRepository;
+
+    @Mock
+    private NotificationDispatcher notificationDispatcher;
 
     @Test
     @DisplayName("updateSchedule enables a schedulable preset and computes next run")
@@ -324,7 +336,7 @@ class RmReportPresetDeliveryServiceTest {
     }
 
     @Test
-    @DisplayName("runScheduledDeliveries posts direct owner notification when scheduled delivery succeeds")
+    @DisplayName("runScheduledDeliveries dispatches notification via dispatcher when scheduled delivery succeeds")
     void runScheduledDeliveriesPostsDirectNotificationOnSuccess() throws Exception {
         RmReportPreset duePreset = preset(
             RmReportPreset.Kind.ACTIVITY_CONTRIBUTOR_REPORT,
@@ -356,6 +368,10 @@ class RmReportPresetDeliveryServiceTest {
         claimedPreset.setDeliveryFolderId(folderId);
         claimedPreset.setNextRunAt(claimedNextRunAt);
 
+        Activity savedActivity = new Activity();
+        when(activityService.createNotificationActivity(
+            eq("rm.report_preset.delivery.succeeded"), any(), any(), any(), any(), any()
+        )).thenReturn(savedActivity);
         when(presetRepository.findByScheduleEnabledTrueAndDeletedFalseAndNextRunAtLessThanEqualOrderByNextRunAtAsc(any(LocalDateTime.class)))
             .thenReturn(List.of(duePreset));
         when(presetRepository.claimScheduledRun(duePreset.getId(), duePreset.getNextRunAt(), claimedNextRunAt))
@@ -392,18 +408,22 @@ class RmReportPresetDeliveryServiceTest {
         service.runScheduledDeliveries();
 
         ArgumentCaptor<Map<String, Object>> summaryCaptor = ArgumentCaptor.forClass(Map.class);
-        verify(activityService).postDirectNotificationActivity(
+        verify(activityService).createNotificationActivity(
             eq("rm.report_preset.delivery.succeeded"),
             eq("system"),
-            eq(null),
+            isNull(),
             eq(documentId),
             org.mockito.ArgumentMatchers.endsWith(".csv"),
-            summaryCaptor.capture(),
-            eq("admin")
+            summaryCaptor.capture()
         );
         assertEquals("Preset", summaryCaptor.getValue().get("presetName"));
         assertEquals("SUCCESS", summaryCaptor.getValue().get("status"));
         assertEquals(documentId.toString(), summaryCaptor.getValue().get("documentId"));
+
+        ArgumentCaptor<NotificationPayload> payloadCaptor = ArgumentCaptor.forClass(NotificationPayload.class);
+        verify(notificationDispatcher).dispatch(payloadCaptor.capture(), anyCollection());
+        assertEquals("rm.report_preset.delivery.succeeded", payloadCaptor.getValue().getType());
+        assertEquals("admin", payloadCaptor.getValue().getRecipientUserId());
     }
 
     @Test
@@ -471,14 +491,9 @@ class RmReportPresetDeliveryServiceTest {
         });
         doThrow(new RuntimeException("notification down"))
             .when(activityService)
-            .postDirectNotificationActivity(
+            .createNotificationActivity(
                 eq("rm.report_preset.delivery.succeeded"),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any()
+                any(), any(), any(), any(), any()
             );
 
         RmReportPresetDeliveryService service = service();
@@ -562,19 +577,12 @@ class RmReportPresetDeliveryServiceTest {
 
         service.runScheduledDeliveries();
 
-        verify(activityService, never()).postDirectNotificationActivity(
-            eq("rm.report_preset.delivery.succeeded"),
-            any(),
-            any(),
-            any(),
-            any(),
-            any(),
-            any()
-        );
+        verify(activityService, never()).createNotificationActivity(any(), any(), any(), any(), any(), any());
+        verify(notificationDispatcher, never()).dispatch(any(), any());
     }
 
     @Test
-    @DisplayName("runScheduledDeliveries posts direct owner notification when scheduled delivery fails")
+    @DisplayName("runScheduledDeliveries dispatches notification via dispatcher when scheduled delivery fails")
     void runScheduledDeliveriesPostsDirectNotificationOnFailure() throws Exception {
         RmReportPreset duePreset = preset(
             RmReportPreset.Kind.ACTIVITY_CONTRIBUTOR_REPORT,
@@ -605,6 +613,10 @@ class RmReportPresetDeliveryServiceTest {
         claimedPreset.setDeliveryFolderId(folderId);
         claimedPreset.setNextRunAt(claimedNextRunAt);
 
+        Activity savedActivity = new Activity();
+        when(activityService.createNotificationActivity(
+            eq("rm.report_preset.delivery.failed"), any(), any(), any(), any(), any()
+        )).thenReturn(savedActivity);
         when(presetRepository.findByScheduleEnabledTrueAndDeletedFalseAndNextRunAtLessThanEqualOrderByNextRunAtAsc(any(LocalDateTime.class)))
             .thenReturn(List.of(duePreset));
         when(presetRepository.claimScheduledRun(duePreset.getId(), duePreset.getNextRunAt(), claimedNextRunAt))
@@ -641,18 +653,22 @@ class RmReportPresetDeliveryServiceTest {
         service.runScheduledDeliveries();
 
         ArgumentCaptor<Map<String, Object>> summaryCaptor = ArgumentCaptor.forClass(Map.class);
-        verify(activityService).postDirectNotificationActivity(
+        verify(activityService).createNotificationActivity(
             eq("rm.report_preset.delivery.failed"),
             eq("system"),
-            eq(null),
+            isNull(),
             eq(folderId),
-            eq(null),
-            summaryCaptor.capture(),
-            eq("admin")
+            isNull(),
+            summaryCaptor.capture()
         );
         assertEquals("Preset", summaryCaptor.getValue().get("presetName"));
         assertEquals("FAILED", summaryCaptor.getValue().get("status"));
         assertEquals("Folder not found", summaryCaptor.getValue().get("message"));
+
+        ArgumentCaptor<NotificationPayload> payloadCaptor = ArgumentCaptor.forClass(NotificationPayload.class);
+        verify(notificationDispatcher).dispatch(payloadCaptor.capture(), anyCollection());
+        assertEquals("rm.report_preset.delivery.failed", payloadCaptor.getValue().getType());
+        assertEquals("admin", payloadCaptor.getValue().getRecipientUserId());
     }
 
     @Test
@@ -719,14 +735,9 @@ class RmReportPresetDeliveryServiceTest {
         });
         doThrow(new RuntimeException("notification down"))
             .when(activityService)
-            .postDirectNotificationActivity(
+            .createNotificationActivity(
                 eq("rm.report_preset.delivery.failed"),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any()
+                any(), any(), any(), any(), any()
             );
 
         RmReportPresetDeliveryService service = service();
@@ -809,15 +820,8 @@ class RmReportPresetDeliveryServiceTest {
 
         service.runScheduledDeliveries();
 
-        verify(activityService, never()).postDirectNotificationActivity(
-            eq("rm.report_preset.delivery.failed"),
-            any(),
-            any(),
-            any(),
-            any(),
-            any(),
-            any()
-        );
+        verify(activityService, never()).createNotificationActivity(any(), any(), any(), any(), any(), any());
+        verify(notificationDispatcher, never()).dispatch(any(), any());
     }
 
     @Test
@@ -1137,7 +1141,9 @@ class RmReportPresetDeliveryServiceTest {
             auditService,
             securityService,
             activityService,
-            preferenceService
+            preferenceService,
+            userRepository,
+            notificationDispatcher
         );
         // In production Spring injects a proxy here so per-preset
         // processOneScheduledDelivery calls go through @Transactional(REQUIRES_NEW).

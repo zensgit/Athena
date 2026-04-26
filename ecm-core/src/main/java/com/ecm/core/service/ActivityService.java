@@ -75,6 +75,23 @@ public class ActivityService {
         return saved;
     }
 
+    /**
+     * Persists the activity record for audit/feed purposes only, without any
+     * inbox or follower routing. Runs in REQUIRES_NEW so the activity is
+     * committed to the DB before callers dispatch notifications that reference it.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Activity createNotificationActivity(
+        String activityType,
+        String userId,
+        String siteId,
+        UUID nodeId,
+        String nodeName,
+        Map<String, Object> summary
+    ) {
+        return saveActivity(activityType, userId, siteId, nodeId, nodeName, summary);
+    }
+
     private Activity saveActivity(
         String activityType,
         String userId,
