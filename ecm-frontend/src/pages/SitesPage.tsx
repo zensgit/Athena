@@ -444,6 +444,14 @@ const SitesPage: React.FC = () => {
                     >
                       {isFollowingSelectedSite ? 'Following' : 'Follow Site'}
                     </Button>
+                    {isAdmin && (
+                      <Button
+                        size="small"
+                        onClick={() => navigate(`/admin/sites/${selectedSiteId}/invitations`)}
+                      >
+                        Invitations
+                      </Button>
+                    )}
                     {selectedSite?.rootFolderId && (
                       <Button size="small" startIcon={<OpenInNew />} onClick={() => window.open(`/browse/${selectedSite.rootFolderId}`, '_blank')}>
                         Open Workspace

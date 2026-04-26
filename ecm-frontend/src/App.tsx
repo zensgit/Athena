@@ -46,6 +46,11 @@ import PreviewDiagnosticsPage from './pages/PreviewDiagnosticsPage';
 import CmisExplorerPage from './pages/CmisExplorerPage';
 import RecordsManagementPage from './pages/RecordsManagementPage';
 import LegalHoldsPage from './pages/LegalHoldsPage';
+import LocalizedContentPage from './pages/LocalizedContentPage';
+import LdapSyncPage from './pages/LdapSyncPage';
+import DispositionSchedulesPage from './pages/DispositionSchedulesPage';
+import SiteInvitationsPage from './pages/SiteInvitationsPage';
+import InvitationAcceptPage from './pages/InvitationAcceptPage';
 import VersionHistoryDialog from './components/dialogs/VersionHistoryDialog';
 import PermissionsDialog from './components/dialogs/PermissionsDialog';
 import PropertiesDialog from './components/dialogs/PropertiesDialog';
@@ -439,6 +444,36 @@ const App: React.FC = () => {
               }
             />
             <Route
+              path="/admin/localized-content"
+              element={
+                <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
+                  <MainLayout>
+                    <LocalizedContentPage />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/admin/ldap"
+              element={
+                <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
+                  <MainLayout>
+                    <LdapSyncPage />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/admin/disposition-schedules"
+              element={
+                <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
+                  <MainLayout>
+                    <DispositionSchedulesPage />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
               path="/admin/templates"
               element={
                 <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
@@ -487,6 +522,20 @@ const App: React.FC = () => {
                   </MainLayout>
                 </PrivateRoute>
               }
+            />
+            <Route
+              path="/admin/sites/:siteId/invitations"
+              element={
+                <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
+                  <MainLayout>
+                    <SiteInvitationsPage />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/invitations/accept"
+              element={<InvitationAcceptPage />}
             />
             <Route
               path="/unauthorized"

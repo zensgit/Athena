@@ -141,7 +141,7 @@ const NotificationsPage: React.FC = () => {
       ) : (
         <>
           <Stack spacing={1}>
-            {data?.content.map((n) => (
+            {data?.content?.map((n) => (
               <Card
                 key={n.id}
                 variant="outlined"
@@ -199,7 +199,7 @@ const NotificationsPage: React.FC = () => {
                 </CardContent>
               </Card>
             ))}
-            {(!data || data.content.length === 0) && (
+            {(!data || (data.content?.length ?? 0) === 0) && (
               <Paper sx={{ p: 4, textAlign: 'center' }}>
                 <Typography color="text.secondary">
                   {mode === 'unread' ? 'No unread notifications' : 'No notifications'}
