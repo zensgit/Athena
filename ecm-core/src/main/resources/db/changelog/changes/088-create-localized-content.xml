@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="088-create-localized-content" author="codex">
+        <comment>Multilingual content: per-node locale-keyed title and description overrides</comment>
+
+        <createTable tableName="localized_content">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="node_id" type="${uuid_type}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="locale" type="varchar(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="title" type="varchar(500)"/>
+            <column name="description" type="text"/>
+            <column name="created_date" type="timestamp" defaultValueComputed="${now}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_date" type="timestamp"/>
+            <column name="created_by" type="varchar(255)"/>
+            <column name="last_modified_by" type="varchar(255)"/>
+            <column name="version" type="bigint" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <column name="is_deleted" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="deleted_at" type="timestamp"/>
+            <column name="deleted_by" type="varchar(255)"/>
+        </createTable>
+
+        <addForeignKeyConstraint
+            baseTableName="localized_content"
+            baseColumnNames="node_id"
+            referencedTableName="nodes"
+            referencedColumnNames="id"
+            constraintName="fk_localized_content_node"
+            onDelete="CASCADE"/>
+
+        <addUniqueConstraint
+            tableName="localized_content"
+            columnNames="node_id, locale"
+            constraintName="uq_localized_content_node_locale"/>
+
+        <createIndex tableName="localized_content" indexName="idx_localized_content_node_id">
+            <column name="node_id"/>
+        </createIndex>
+
+        <rollback>
+            <dropTable tableName="localized_content"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>
