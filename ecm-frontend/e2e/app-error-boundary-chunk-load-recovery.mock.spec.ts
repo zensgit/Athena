@@ -1,10 +1,21 @@
 import { expect, test } from '@playwright/test';
+import { seedBypassSessionE2E } from './helpers/login';
+
+// Chunk-load error handling is a page-agnostic global behaviour
+// (the unhandledrejection listener catches ChunkLoadError on every
+// route). Phase 5 Mocked runs `serve -s build` with no Keycloak,
+// so navigating to `/login` and waiting for the unauth login text
+// never resolves — see
+// `docs/P5_PHASE5_MOCKED_GATE_INVESTIGATION_DEV_VERIFICATION_20260426.md`.
+// Using `seedBypassSessionE2E` puts us on an authenticated route
+// immediately; the chunk-load behaviour under test is identical.
 
 test('App error boundary: chunk-load failure shows asset-refresh recovery hint (mocked)', async ({ page }) => {
   test.setTimeout(120_000);
 
-  await page.goto('/login', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByText('Sign in with your organization account')).toBeVisible({ timeout: 60_000 });
+  await seedBypassSessionE2E(page, 'admin', 'e2e-token');
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('button', { name: 'Account menu' })).toBeVisible({ timeout: 60_000 });
 
   await page.evaluate(() => {
     const rejectionEvent = new Event('unhandledrejection');
@@ -27,8 +38,9 @@ test('App error boundary: chunk-load failure shows asset-refresh recovery hint (
 test('App error boundary: chunk-load reload uses cache-busting query (mocked)', async ({ page }) => {
   test.setTimeout(120_000);
 
-  await page.goto('/login', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByText('Sign in with your organization account')).toBeVisible({ timeout: 60_000 });
+  await seedBypassSessionE2E(page, 'admin', 'e2e-token');
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('button', { name: 'Account menu' })).toBeVisible({ timeout: 60_000 });
 
   await page.evaluate(() => {
     const rejectionEvent = new Event('unhandledrejection');
@@ -45,6 +57,9 @@ test('App error boundary: chunk-load reload uses cache-busting query (mocked)', 
 
   await page.waitForURL(/_ecm_reload=\d+/, { timeout: 60_000 });
   await expect.poll(() => page.url()).not.toContain('_ecm_reload=');
-  await expect(page.getByText('Sign in with your organization account')).toBeVisible({ timeout: 60_000 });
+  // After reload the bypass session persists in localStorage, so the
+  // user lands back on the authenticated home (not /login). The
+  // cache-bust mechanism under test is identical.
+  await expect(page.getByRole('button', { name: 'Account menu' })).toBeVisible({ timeout: 60_000 });
   console.log('recovery_event:chunk_load_reload_cache_bust');
 });
