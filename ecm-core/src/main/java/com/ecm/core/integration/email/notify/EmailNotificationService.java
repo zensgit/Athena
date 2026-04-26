@@ -3,6 +3,7 @@ package com.ecm.core.integration.email.notify;
 import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.MailException;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -30,7 +31,7 @@ public class EmailNotificationService {
         new PropertyPlaceholderHelper("${", "}", ":", true);
 
     private final EmailTemplateRepository templateRepository;
-    private final JavaMailSender mailSender;
+    private final ObjectProvider<JavaMailSender> mailSenderProvider;
 
     @Value("${ecm.email.enabled:false}")
     private boolean emailEnabled;
@@ -55,6 +56,11 @@ public class EmailNotificationService {
         }
         if (fromAddress == null || fromAddress.isBlank()) {
             log.warn("send: ecm.email.from-address not configured; skipping templateKey={}", templateKey);
+            return;
+        }
+        JavaMailSender mailSender = mailSenderProvider.getIfAvailable();
+        if (mailSender == null) {
+            log.warn("send: JavaMailSender not configured; skipping templateKey={}", templateKey);
             return;
         }
 

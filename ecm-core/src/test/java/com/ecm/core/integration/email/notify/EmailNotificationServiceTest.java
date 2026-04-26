@@ -8,6 +8,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.mail.MailSendException;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -30,15 +31,20 @@ import static org.mockito.Mockito.when;
 class EmailNotificationServiceTest {
 
     @Mock private EmailTemplateRepository templateRepository;
+    @Mock private ObjectProvider<JavaMailSender> mailSenderProvider;
     @Mock private JavaMailSender mailSender;
 
     private EmailNotificationService service;
 
     @BeforeEach
     void setUp() {
-        service = new EmailNotificationService(templateRepository, mailSender);
+        service = new EmailNotificationService(templateRepository, mailSenderProvider);
         ReflectionTestUtils.setField(service, "emailEnabled", true);
         ReflectionTestUtils.setField(service, "fromAddress", "no-reply@athena.local");
+    }
+
+    private void mailSenderAvailable() {
+        when(mailSenderProvider.getIfAvailable()).thenReturn(mailSender);
     }
 
     @Test
@@ -71,8 +77,20 @@ class EmailNotificationServiceTest {
     }
 
     @Test
+    @DisplayName("send: skips silently when JavaMailSender is unavailable")
+    void skipsSilently_whenMailSenderUnavailable() {
+        when(mailSenderProvider.getIfAvailable()).thenReturn(null);
+
+        service.send("any.key", "user@example.com", "default", Map.of());
+
+        verify(templateRepository, never()).findByTemplateKeyAndLocaleInOrderByLocaleAsc(any(), any());
+        verify(mailSender, never()).createMimeMessage();
+    }
+
+    @Test
     @DisplayName("send: warns and returns when template not found")
     void returnsEarly_whenTemplateNotFound() {
+        mailSenderAvailable();
         when(templateRepository.findByTemplateKeyAndLocaleInOrderByLocaleAsc(
             eq("missing.key"), any())).thenReturn(List.of());
 
@@ -84,6 +102,7 @@ class EmailNotificationServiceTest {
     @Test
     @DisplayName("send: dispatches MimeMessage with rendered subject and body when enabled")
     void sendsRenderedMessage_whenEnabled() throws Exception {
+        mailSenderAvailable();
         EmailTemplate template = new EmailTemplate();
         template.setTemplateKey("rm.report_preset.delivery.succeeded");
         template.setLocale("default");
@@ -121,6 +140,7 @@ class EmailNotificationServiceTest {
     @Test
     @DisplayName("send: swallows MailException without bubbling to caller")
     void logsAndSwallows_whenSendThrows() {
+        mailSenderAvailable();
         EmailTemplate template = new EmailTemplate();
         template.setTemplateKey("k");
         template.setLocale("default");

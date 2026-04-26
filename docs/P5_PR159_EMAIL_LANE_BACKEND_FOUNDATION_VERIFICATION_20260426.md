@@ -18,7 +18,7 @@ documented deviations (kept smaller scope for v1).
 | `EmailNotificationService` with `@Async send(...)` and locale fallback | ✅ created |
 | Migration `084-email-notification-foundation.xml` | ✅ created and registered |
 | `application.yml` `ecm.email.*` env-bound config | ✅ added |
-| Unit tests (Mockito) for service behaviour | ✅ created (7 tests) |
+| Unit tests (Mockito) for service behaviour | ✅ created (9 tests) |
 
 **Out of scope for v1 (deferred to follow-up slices):**
 - Thymeleaf engine — substituted by Spring's `PropertyPlaceholderHelper`
@@ -168,18 +168,22 @@ ecm:
 
 `spring.mail.*` autoconfiguration is *not* added to `application.yml`.
 `MailSenderAutoConfiguration` activates only when `spring.mail.host`
-is set (Spring Boot's default behavior). Without an env override
-setting `SPRING_MAIL_HOST`, no `JavaMailSender` bean is created — but
-`@Autowired private final JavaMailSender mailSender` would then fail
-to inject.
+or equivalent mail configuration is set. Without an env override
+setting `SPRING_MAIL_HOST`, no `JavaMailSender` bean is guaranteed.
 
-**Resolution:** the service injects `JavaMailSender` via constructor
-(`@RequiredArgsConstructor`). Spring Boot will create a default
-`JavaMailSenderImpl` even without `spring.mail.host` set — it just
-fails at `send()` time. So the service is dependency-injectable in
-all environments; only actual mail sending requires the env to set
-SMTP details. This matches the `ecm.email.enabled=false` posture:
-deployments without email don't need SMTP config either.
+**Resolution:** the service injects
+`ObjectProvider<JavaMailSender>` instead of requiring a mail sender
+bean at application startup. `send(...)` bails before resolving a
+template when:
+
+- `ecm.email.enabled=false`
+- recipient is blank
+- `ecm.email.from-address` is blank
+- no `JavaMailSender` bean is available
+
+This keeps the default `ecm.email.enabled=false` deployment inert and
+startup-safe. Actual email sending still requires both `ecm.email.*`
+and Spring Boot's `spring.mail.*` SMTP env vars.
 
 If a future deployment wants outbound email, they add:
 
@@ -222,21 +226,19 @@ out in the original handoff plan.
 
 ## Tests
 
-`EmailNotificationServiceTest`: 7 unit tests with `@ExtendWith(MockitoExtension.class)`:
+`EmailNotificationServiceTest`: 9 unit tests with `@ExtendWith(MockitoExtension.class)`:
 
 | Test | Subject |
 |------|---------|
 | `skipsSilently_whenDisabled` | Verifies `ecm.email.enabled=false` prevents any mail call |
 | `skipsSilently_whenToBlank` | Bails early with no recipient |
 | `skipsSilently_whenFromBlank` | Bails early without `from-address` |
+| `skipsSilently_whenMailSenderUnavailable` | Bails early when SMTP is not configured and no `JavaMailSender` bean exists |
 | `returnsEarly_whenTemplateNotFound` | Missing template → warn, no send |
 | `sendsRenderedMessage_whenEnabled` | Real `MimeMessage` round-trip; subject and body substituted |
 | `logsAndSwallows_whenSendThrows` | `MailSendException` from `JavaMailSender` does not bubble |
 | `resolvesTemplateByLocale_withFallbacks` | exact (`zh-CN`) → language (`zh-TW`→`zh`) → `default` (`fr`→`default`) |
 | `computeLocaleFallbacks_chain` | unit test for the static fallback computation |
-
-(Test count is 8 — the count above lists 7 in the table plus
-`computeLocaleFallbacks_chain` which is the static helper test.)
 
 No integration test in this slice. SMTP integration testing (with
 Greenmail or testcontainers) lands in PR-159b.
