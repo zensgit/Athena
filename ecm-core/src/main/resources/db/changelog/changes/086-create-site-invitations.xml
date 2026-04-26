@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="086-create-site-invitations" author="gap7-pr-site-invite">
+        <comment>Gap #7: Token-based site invitations — invite external/internal users to a site by email</comment>
+
+        <createTable tableName="site_invitations">
+            <column name="id" type="${uuid_type}" defaultValueComputed="${uuid_function}">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="site_id" type="${uuid_type}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="invitee_email" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="invitee_username" type="varchar(150)"/>
+            <column name="invited_role" type="varchar(50)" defaultValue="CONSUMER">
+                <constraints nullable="false"/>
+            </column>
+            <column name="token" type="varchar(64)">
+                <constraints nullable="false" unique="true" uniqueConstraintName="uq_site_invitation_token"/>
+            </column>
+            <column name="status" type="varchar(20)" defaultValue="PENDING">
+                <constraints nullable="false"/>
+            </column>
+            <column name="message" type="text"/>
+            <column name="invited_by" type="varchar(150)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="expires_at" type="timestamp">
+                <constraints nullable="false"/>
+            </column>
+            <column name="accepted_at" type="timestamp"/>
+            <column name="created_date" type="timestamp" defaultValueComputed="now()">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_date" type="timestamp"/>
+            <column name="created_by" type="varchar(255)"/>
+            <column name="last_modified_by" type="varchar(255)"/>
+            <column name="version" type="bigint" defaultValueNumeric="0"/>
+            <column name="is_deleted" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="deleted_at" type="timestamp"/>
+            <column name="deleted_by" type="varchar(255)"/>
+        </createTable>
+
+        <addForeignKeyConstraint
+            baseTableName="site_invitations"
+            baseColumnNames="site_id"
+            referencedTableName="sites"
+            referencedColumnNames="id"
+            constraintName="fk_site_invitations_site"
+            onDelete="CASCADE"/>
+
+        <createIndex tableName="site_invitations" indexName="idx_site_inv_site_status">
+            <column name="site_id"/>
+            <column name="status"/>
+        </createIndex>
+
+        <createIndex tableName="site_invitations" indexName="idx_site_inv_email_status">
+            <column name="invitee_email"/>
+            <column name="status"/>
+        </createIndex>
+
+    </changeSet>
+
+</databaseChangeLog>

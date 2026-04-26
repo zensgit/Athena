@@ -45,6 +45,7 @@ import SavedSearchesPage from './pages/SavedSearchesPage';
 import PreviewDiagnosticsPage from './pages/PreviewDiagnosticsPage';
 import CmisExplorerPage from './pages/CmisExplorerPage';
 import RecordsManagementPage from './pages/RecordsManagementPage';
+import LegalHoldsPage from './pages/LegalHoldsPage';
 import VersionHistoryDialog from './components/dialogs/VersionHistoryDialog';
 import PermissionsDialog from './components/dialogs/PermissionsDialog';
 import PropertiesDialog from './components/dialogs/PropertiesDialog';
@@ -423,6 +424,16 @@ const App: React.FC = () => {
                 <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
                   <MainLayout>
                     <RecordsManagementPage />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/admin/legal-holds"
+              element={
+                <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
+                  <MainLayout>
+                    <LegalHoldsPage />
                   </MainLayout>
                 </PrivateRoute>
               }

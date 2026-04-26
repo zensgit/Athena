@@ -53,6 +53,7 @@ import {
   SyncAlt,
   BarChart as BarChartIcon,
   Storage as StorageIcon,
+  Lock as LockIcon,
 } from '@mui/icons-material';
 import { alpha } from '@mui/material/styles';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -570,6 +571,12 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                     <Gavel fontSize="small" />
                   </ListItemIcon>
                   <ListItemText>Records Management</ListItemText>
+                </MenuItem>
+                <MenuItem onClick={() => navigate('/admin/legal-holds')}>
+                  <ListItemIcon>
+                    <LockIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Legal Holds</ListItemText>
                 </MenuItem>
                 <MenuItem onClick={() => navigate('/admin/templates')}>
                   <ListItemIcon>
