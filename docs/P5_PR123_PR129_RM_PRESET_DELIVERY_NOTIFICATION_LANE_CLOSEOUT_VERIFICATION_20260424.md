@@ -17,19 +17,36 @@
 - Playwright discovered the two PR-127 disabled-preference smoke tests
 - `git diff --check` passed after PR-129 edits
 
-## Pending Acceptance
+## Accepted CI Evidence
 
-- PR-132 wires the consolidated notification acceptance gate into the existing `frontend_e2e_core` CI job
-- local full-gate execution remains unavailable because `ecm-core/mvnw` requires Docker and Docker socket access failed
-- PR-139 attempted to observe GitHub Actions from this sandbox, but `gh run list` could not connect to `api.github.com`
-- this closeout is therefore CI-wired with explicit acceptance pending, not a full green release closeout
+GitHub Actions run `24947642547` on commit `7f3cb44` supplied the final acceptance evidence:
 
-## Required Final Gate
+- `Backend Verify`: success
+- `Frontend Build & Test`: success
+- `Phase C Security Verification`: success
+- `Acceptance Smoke (3 admin pages)`: success
+- `Frontend E2E Core Gate` reached and passed the notification lane's required step
+- `Run RM notification acceptance gate`: success
+- `Run core E2E gate`: success
 
-CI must run:
+The `Run RM notification acceptance gate` step ran the consolidated command:
 
 ```bash
 scripts/p5-rm-notification-acceptance-gate.sh
 ```
 
-Acceptance requires this command to pass against the current code and a current full-stack environment. PR-130/PR-131 define and harden the command; PR-132 attaches it to CI; this closeout remains pending until that CI step runs green.
+That gate covers:
+
+- the five targeted backend notification test classes
+- the four tagged full-stack Playwright notification acceptance flows
+- success and failure delivery notifications
+- disabled success and failure notification preferences
+- the default-on success notification path fixed by PR-154's strict locator
+
+## Acceptance Status
+
+The notification lane is accepted.
+
+The earlier pending condition is now satisfied: the consolidated CI gate ran in the GitHub-hosted full-stack environment and passed on the current branch.
+
+Local full-gate execution remains unavailable because `ecm-core/mvnw` delegates Maven to Docker and this machine's Docker socket was not available. CI is therefore the authoritative full-stack verification source for this closeout.

@@ -33,21 +33,22 @@ The current local worktree covers the owner-scoped inbox notification lane for R
 - PR-144D removes the preflight's hidden `rg` dependency after GitHub Actions run `24935937705` failed on `rg: command not found`
 - PR-149 isolates each scheduled preset in its own `REQUIRES_NEW` transaction through the Spring proxy
 - PR-149B hardens the remaining optional notification boundaries: missing preference reads no longer mark caller transactions rollback-only, and direct owner notification activity/inbox publication runs in its own transaction
+- PR-154 fixes the final Playwright strict-locator issue in the default-on success notification scenario
+- PR-155 promotes the notification lane to accepted after GitHub Actions run `24947642547` passed `Run RM notification acceptance gate`
 
 ## Completion Assessment
 
-The product surface is close to complete for the scoped target: scheduled RM report preset delivery with owner inbox notification controls.
+The product surface is accepted for the scoped target: scheduled RM report preset delivery with owner inbox notification controls.
 
-The remaining must-have work is CI observation after PR-149B. It is not another large product-build slice unless the target expands to email/webhook delivery.
+No must-have work remains in this lane. New channels such as email or webhook are separate product capabilities, not remaining notification-lane closeout work.
 
 ## Must-Have Remaining Work
 
 | Item | Reason | Estimated Effort |
 | --- | --- | --- |
-| Observe the CI `frontend_e2e_core` run after PR-149B | local Docker socket is unavailable here, so backend verification and live Docker-backed acceptance evidence must be captured in CI | 0.5 day |
-| Promote closeout from development-complete to accepted | closeout exists, but it intentionally keeps final acceptance pending until the CI gate passes | 0.25 day |
+| None | GitHub Actions run `24947642547` passed the required notification acceptance gate | 0 day |
 
-Estimated must-have effort: 0.75 day.
+Estimated must-have effort: 0 day.
 
 ## Not Required For This Target
 
@@ -60,15 +61,17 @@ These are separate capability decisions, not blockers for the current owner-inbo
 - SLO alerting and escalation policy
 - downloadable bundle delivery
 
+## Accepted Evidence
+
+GitHub Actions run `24947642547` on commit `7f3cb44`:
+
+- `Backend Verify`: success
+- `Frontend Build & Test`: success
+- `Phase C Security Verification`: success
+- `Acceptance Smoke (3 admin pages)`: success
+- `Run RM notification acceptance gate`: success
+- `Run core E2E gate`: success
+
 ## Recommended Next Slice
 
-Finish `PR-139` CI observation first:
-
-1. Push the CI wiring/hardening if it is not already on the branch.
-2. Run `scripts/p5-rm-notification-closeout-preflight.sh` locally.
-3. Capture the GitHub Actions run id and commit SHA.
-4. Confirm the `Run RM notification acceptance gate` step executes the five backend targeted test classes and four tagged Playwright flows.
-5. Confirm the two default-on notification flows no longer 500 when preferences are missing.
-6. If green, update the notification-lane closeout verification status from pending to accepted.
-
-Do not start email/webhook work until the current owner-inbox lane is fully closed, otherwise the verification boundary will blur.
+The owner-inbox notification lane is closed. The next code slice should address the visible Phase 5 Mocked Regression Gate failures before opening the email delivery channel, because Phase 5 Mocked remains the active CI-red lane while email would add a new capability and broaden the verification boundary.

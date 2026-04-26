@@ -34,9 +34,24 @@ It does not rewrite `PR-122`; it records the new capability added on top of that
 
 `PR-123..PR-129` intentionally extend that historical boundary by adding owner-inbox alerting, preferences, validation hooks, and ops hardening. Future readers should treat this closeout as the notification-lane continuation, not as a correction to the older milestone.
 
+## Accepted Closeout Evidence
+
+- GitHub Actions run `24947642547`
+- commit `7f3cb44`
+- `Run RM notification acceptance gate`: success
+- `Run core E2E gate`: success
+- Backend, frontend build/test, Phase C security, and acceptance smoke all passed in the same run
+
+The owner-inbox notification lane is now fully accepted for the scoped target.
+
 ## Remaining Work
 
-- observe the GitHub Actions `frontend_e2e_core` run after the CI gate wiring lands
-- confirm the `Run RM notification acceptance gate` step passes in CI
-- capture run id, commit SHA, and the gate completion evidence described in `P5_PR139_RM_NOTIFICATION_CI_OBSERVATION_CLOSEOUT_READINESS_DESIGN_20260425.md`
-- only after that pass, mark the notification lane fully accepted
+No must-have work remains for the owner-inbox notification lane.
+
+The following are separate future capabilities, not blockers for this closeout:
+
+- email delivery channel
+- webhook delivery channel
+- cross-owner delegation
+- per-preset notification overrides
+- SLO alerting and escalation policy

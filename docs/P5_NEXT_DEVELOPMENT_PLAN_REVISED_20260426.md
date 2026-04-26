@@ -99,64 +99,66 @@ instead of CI wiring issues:
 | PR-149 | Transaction | Run each due preset through a self-injected `REQUIRES_NEW` worker |
 | PR-149B | Transaction | Prevent optional missing-preference reads and direct owner notification publication from marking the per-preset transaction rollback-only |
 | PR-148 / PR-150 | Parallel Phase 5 Mocked | Start reducing unrelated mocked-gate failures without changing notification semantics |
+| PR-154 | E2E locator | Fix the final default-on success notification strict locator |
+| PR-155 | Closeout | Promote the owner-inbox notification lane to accepted after CI gate success |
 
 ## 2. Current state
 
 | Lane | Status |
 |------|--------|
 | RM preset-delivery core (PR-95..122) | **Closed (accepted)** |
-| Notification lane runtime (PR-123..133) | Code shipped, **gate red until PR-149B CI proves all four notification flows** |
-| Notification lane CI/tx hardening (PR-134..149B) | **In progress — latest blocker is default-on preference/notification transaction pollution** |
-| Phase 5 Mocked gate | Chronically cancelled, with PR-148/150 reducing known failures in parallel |
-| Email delivery channel | **Not started** (was P1 in yesterday's plan; Codex did not pick it up) |
+| Notification lane runtime (PR-123..155) | **Closed (accepted)** |
+| Notification lane CI/tx hardening (PR-134..155) | **Closed (accepted)** |
+| Phase 5 Mocked gate | **Active CI-red lane**; PR-148/150/151/152 reduced some Keycloak/login hangs, but failures remain |
+| Email delivery channel | **Not started**; should wait until the active mocked-gate red lane is contained or explicitly accepted as advisory |
 
-## 3. Priority 0 — Wait for PR-149B CI and finalize the lane
+## 3. Priority 0 — Notification lane accepted
 
-This is still a hard prerequisite. Three branches on the next outcome:
+This prerequisite is now satisfied.
 
-| PR-149B CI outcome | Next action |
-|----------------------|-------------|
-| Notification gate ✅ + Backend ✅ | Flip the notification-lane closeout doc from `pending` to `accepted` (single docs commit). Lane is done. |
-| Gate fails on a real product issue (not infra) | Diagnose + patch in another small slice. Do not start email work until green. |
-| Gate fails on the *same* default-on notification 500 | Read the PR-145/146 diagnostic body, then patch the named transaction boundary. |
-| Gate fails on missing-script / config issue | Triage workflow/scripts; this would be a regression in PR-141..144 wiring. |
-| ES facet flake re-appears | Acknowledge and proceed; the flake is documented and not lane-blocking. |
+GitHub Actions run `24947642547` on commit `7f3cb44` passed:
 
-**Estimate**: 0.25 day if green; 0.5-1 day if more diagnosis is needed.
+- `Backend Verify`
+- `Frontend Build & Test`
+- `Phase C Security Verification`
+- `Acceptance Smoke (3 admin pages)`
+- `Run RM notification acceptance gate`
+- `Run core E2E gate`
 
-## 4. Priority 1 — Email delivery channel (PR-145+ series)
+## 4. Priority 1 — Phase 5 Mocked Regression Gate
 
-Same content as yesterday's plan, but **PR numbers shift to 145+**
-because Codex consumed 134..144. Remains the top deferred capability
-from PR-122 closeout and Phase-1 plan #5.
+Phase 5 Mocked is now the visible CI-red lane. Do not start the email
+delivery channel until this lane is either green or explicitly
+classified as advisory with documented ownership.
+
+Recommended split:
+
+| Slice | Content | Estimate |
+|-------|---------|----------|
+| PR-156 | Fix strict locator failures with scoped/exact locators, starting with `search-suggestions-save-search.mock.spec.ts` | 0.5 d |
+| PR-157 | Finish Keycloak-unreachable mocks for `/login` semantic tests that still hang | 0.5-1 d |
+| PR-158 | Investigate `admin-audit-filter-export.mock.spec.ts:473` separately; do not hide it behind retries | 0.5-1 d |
+| PR-159 | Decide whether any remaining mocked-gate failures are product bugs or advisory infra noise | 0.5 d |
+
+## 5. Priority 2 — Email delivery channel
 
 | PR | Content | Estimate |
 |----|---------|----------|
-| PR-145 | Backend `EmailNotificationService` + `EmailTemplate` entity + Liquibase migration + `spring-boot-starter-mail` dep | 1-2 d |
-| PR-146 | `NotificationChannel` abstraction; `InboxChannel` (current) + `EmailChannel`; `EcmEventListener` fan-out per user preference | 1 d |
-| PR-147 | New preference key `notifyBy.email` (default `false`); UI toggle on the RM preset card / Schedule dialog | 0.5 d |
-| PR-148 | Wire `rm.report_preset.delivery.*` events into the email channel; mocked + full-stack smoke | 1-2 d |
-| PR-149 | CI: isolated **Email Channel Gate** job (mirrors PR-132/144 pattern: cheap preflight + expensive live gate) | 0.5 d |
+| PR-160 | Backend `EmailNotificationService` + `EmailTemplate` entity + Liquibase migration + `spring-boot-starter-mail` dep | 1-2 d |
+| PR-161 | `NotificationChannel` abstraction; `InboxChannel` (current) + `EmailChannel`; fan-out per user preference | 1 d |
+| PR-162 | New preference key `notifyBy.email` (default `false`); UI toggle on the RM preset card / Schedule dialog | 0.5 d |
+| PR-163 | Wire `rm.report_preset.delivery.*` events into the email channel; mocked + full-stack smoke | 1-2 d |
+| PR-164 | CI: isolated **Email Channel Gate** job (mirrors PR-132/144 pattern: cheap preflight + expensive live gate) | 0.5 d |
 
 **Total: 4-6 days.**
 
-**Strict gate: do not start until P0 is green and the lane closeout is
-flipped to accepted.** Otherwise the verification boundary blurs the
-same way the PR-134..144 hardening loop just blurred whether the
-notification lane was "done".
+**Strict gate: do not start until Phase 5 Mocked is no longer a
+systemic CI-red lane, or until it is explicitly accepted as advisory.**
+Otherwise the verification boundary will blur again.
 
-## 5. Priority 2 (parallel-safe)
+## 6. Priority 3 (parallel-safe)
 
-### A. Phase 5 Mocked gate systemic investigation
-
-Unchanged from yesterday's plan. Independent of the email lane.
-
-- 0.5-1 d investigation
-- Don't patch with retry-window tweaks (memory entry
-  `feedback_es_facet_aggregation_race.md`)
-- Decision point: fix vs. mark advisory
-
-### B. Notification lane post-acceptance polish (only after P0)
+### A. Notification lane post-acceptance polish
 
 Per PR-139's evidence checklist, after the lane is accepted:
 
@@ -166,7 +168,7 @@ Per PR-139's evidence checklist, after the lane is accepted:
   "live execution observed"
 - Each is ≤ 0.5 day
 
-### C. Webhook / SLO / delegation (only after P1 ships)
+### B. Webhook / SLO / delegation (only after email ships)
 
 Build on the `NotificationChannel` abstraction PR-146 will establish.
 
@@ -177,7 +179,7 @@ Build on the `NotificationChannel` abstraction PR-146 will establish.
 | SLO alerting / escalation | ~1 wk | Threshold definition |
 | Cross-owner delegation | ~1 wk | Authz model design |
 
-## 6. Priority 3 — Phase-1 plan residuals
+## 7. Priority 4 — Phase-1 plan residuals
 
 Unchanged from yesterday's plan. **Independent lanes, do not parallelise
 with the email lane**:
@@ -189,7 +191,7 @@ with the email lane**:
 | #1 Smart/Virtual Folders runtime | M (1-2 w) |
 | #2 Legal Holds | L (2-4 w) |
 
-## 7. Lessons from this revision
+## 8. Lessons from this revision
 
 Three things to carry forward:
 
@@ -209,24 +211,24 @@ Three things to carry forward:
    already covers re-reading; this turn's miss was the inverse:
    *under-reading* the failure and assuming flake.
 
-## 8. Recommended `继续` behaviour
+## 9. Recommended `继续` behaviour
 
-Re-stated for the new state:
+Re-stated for the accepted notification state:
 
-| PR-149B CI state | Action |
+| Current state | Action |
 |--------------------|--------|
-| All gates green | Promote notification lane to accepted (one docs commit), then start PR-145 |
-| Notification gate red, real product issue | Diagnose + patch slice |
-| Notification gate red, infra issue | Investigate workflow + scripts on the runner |
-| Still in progress | Wait. Do not start any new lane. |
+| Notification lane accepted | Work Phase 5 Mocked red lane next |
+| Phase 5 Mocked green or advisory | Start email delivery channel |
+| New notification regression appears | Stop and fix the regression before email |
+| CI still in progress | Wait for the job that owns the current decision boundary |
 
-## 9. Summary table
+## 10. Summary table
 
 | Priority | Work | Estimate | Blocking? |
 |----------|------|----------|-----------|
-| **P0** | Wait for PR-149B CI; flip closeout to accepted if green | 0.25 d | Yes |
-| P1 | Email delivery channel (PR-145..149) | 4-6 d | After P0 |
-| P2.A | Phase 5 Mocked investigation | 0.5-1 d + fix | No |
-| P2.B | Webhook / preference overrides / SLO / delegation | 1-7 d each | After P1 |
-| P3 | Phase-1 residuals (#3, #7, #1, #2) | S-L per item | Independent |
-| P4 | Phase-2 / Phase-3 capabilities | TBD | Deferred |
+| **P0** | Notification lane accepted | Done | No |
+| **P1** | Phase 5 Mocked red-lane fixes | 2-3 d | Yes, before new email capability |
+| P2 | Email delivery channel (PR-160..164) | 4-6 d | After P1 |
+| P3 | Webhook / preference overrides / SLO / delegation | 1-7 d each | After email |
+| P4 | Phase-1 residuals (#3, #7, #1, #2) | S-L per item | Independent |
+| P5 | Phase-2 / Phase-3 capabilities | TBD | Deferred |
