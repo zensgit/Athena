@@ -1,8 +1,8 @@
 # Phase 5 — Frontend Gap-Closure: Design & Verification
 
-**Commit:** `da06d40`  
+**Commits:** `da06d40` (initial Phase 5 frontend), `c216c9e` (design doc), `7019939` (PR-166 manager-flow fix)  
 **Date:** 2026-04-27  
-**Scope:** 5 new admin pages, 4 typed service clients, 11 mocked Playwright spec files (80 tests)
+**Scope:** 5 new admin pages, 4 typed service clients, 11 mocked Playwright spec files (81 tests after PR-166)
 
 ---
 
@@ -63,11 +63,16 @@ App.tsx
 - Routed via `/admin/sites/:siteId/invitations` using `useParams()`
 - Status chips: PENDING (amber), ACCEPTED (green), REJECTED/EXPIRED (red/grey)
 - Cancel `IconButton` carries `aria-label="Cancel invitation"` for Playwright accessibility
-- Invite dialog: `inviteeEmail`, `invitedRole` (Select), optional `message`
+- Invite dialog: `inviteeEmail` ("Email address"), `invitedRole` (Select with InputLabel "Role"), optional `message`
+- Route is gated by `<PrivateRoute>` only (any authenticated user) — not `ROLE_ADMIN`-restricted, since Athena's site model lets non-admin site managers invite members. Authorization remains enforced server-side in `SiteInvitationService` (PR-166 fix `7019939`).
 
 **InvitationAcceptPage**
-- Four states: `idle` → Accept/Decline buttons, `accepted`, `rejected`, `error`
-- No auth required; token from URL search param
+- Four flow states: `idle` → Accept/Decline buttons, `accepted`, `rejected`, `error`
+- Two entry modes:
+  - **URL-token mode**: `?token=...` populates `urlToken`; chip shows "Invitation token present"
+  - **Manual-entry mode**: no URL param → chip "Manual token entry" + `Invitation token` TextField for manual paste
+- Effective token = `urlToken || manualToken.trim()`; Accept/Decline buttons disabled until token is non-empty
+- No auth required; the page itself is public, the API endpoints validate the token
 - `POST /api/v1/invitations/accept` / `POST /api/v1/invitations/reject`
 
 ### 1.5 MainLayout Nav
@@ -124,23 +129,24 @@ Playwright strict mode throws when a locator matches more than one element. Fixe
 | `admin-localized-content.mock.spec.ts` | 4 | Node ID lookup, add locale dialog, inline delete confirm, empty state |
 | `admin-ldap-sync.mock.spec.ts` | 4 | Status card, test connection, sync now, 404 not-configured |
 | `admin-disposition-schedules.mock.spec.ts` | 3 | Schedule list, detail panel, run-all |
-| `admin-site-invitations.mock.spec.ts` | 4 | Invitation list, cancel button, invite dialog, DELETE call |
-| `invitation-accept.mock.spec.ts` | 4 | Accept/decline buttons, success state, declined state, missing-token error |
+| `admin-site-invitations.mock.spec.ts` | 5 | Invitation list, cancel button, invite dialog, DELETE call, non-admin authenticated access |
+| `invitation-accept.mock.spec.ts` | 4 | Accept/decline buttons (URL token), success state, declined state, manual-token-entry submission |
 | `notifications-email-preferences.mock.spec.ts` | 4 | Inbox list, mark-all-read, All-mode toggle, empty unread state |
 | `admin-legal-holds.mock.spec.ts` | 4 | Holds list, status chips, hold detail, create+submit dialog |
 | `admin-rules.mock.spec.ts` | 4 | Rules list, scheduled vs manual, create dialog, enable/disable toggle |
 | `admin-content-models.mock.spec.ts` | 4 | Model list, type detail+properties, create dialog, aspect explorer |
 | `saved-searches-smart-folder.mock.spec.ts` | 4 | Search list, run→navigate, smart-folder dialog fields, submit→navigate |
 
-**Total: 80 tests, 78 passing, 0 regressions introduced**
+**Total: 81 tests, all passing on the latest run, 0 regressions introduced**
 
-The 2 pre-existing failures in `advanced-search-preview-batch-scope.mock.spec.ts` are known flaky tests (ES facet-aggregation timing race, tracked in memory).
+(Earlier runs hit 2 known-flaky failures in `advanced-search-preview-batch-scope.mock.spec.ts`, tracked in memory as the ES facet-aggregation timing race — they reproduce intermittently and are unrelated to this work.)
 
 ### 3.2 Test Result Summary
 
 ```
-Mock specs only:   78 passed  2 known-flaky pre-existing failures
-Full suite:        ~150 passed  ~40 known failures (live-backend specs, no Docker)
+New mock specs (this work):  81 passed, 0 failed
+Full chromium suite:          104 passed, 9 skipped, 0 failed (exit code 0)
+Skipped tests are live-backend specs requiring a running Athena stack.
 ```
 
 ---
@@ -166,7 +172,8 @@ Full suite:        ~150 passed  ~40 known failures (live-backend specs, no Docke
 | 15 | `InvitationAcceptPage` renders at `/invitations/accept?token=...` | ✓ (4 tests) |
 | 16 | Accept → "You're in!" success state | ✓ |
 | 17 | Decline → "Invitation declined" state | ✓ |
-| 18 | Missing token → error message | ✓ |
+| 18 | Missing URL token → manual-entry mode with `Invitation token` input, then submit | ✓ |
+| 18b | Non-admin authenticated user can reach `/admin/sites/:siteId/invitations` (PR-166) | ✓ |
 | 19 | `NotificationsPage` inbox list with activity-type chips | ✓ |
 | 20 | Mark All Read button visible when unreadCount > 0 | ✓ |
 | 21 | All-mode toggle re-fetches via GET /notifications | ✓ |
