@@ -304,6 +304,8 @@ const SitesPage: React.FC = () => {
     req.siteId ?? `${req.siteTitle}-${req.status}-${index}`;
 
   const selectedSite = selectedSiteId ? sites.find((site) => site.siteId === selectedSiteId) : undefined;
+  const selectedMemberRole = members.find((member) => member.username === effectiveUser?.username)?.role;
+  const canManageSelectedSiteInvitations = isAdmin || selectedMemberRole === 'MANAGER';
 
   return (
     <Box maxWidth={1200}>
@@ -444,7 +446,7 @@ const SitesPage: React.FC = () => {
                     >
                       {isFollowingSelectedSite ? 'Following' : 'Follow Site'}
                     </Button>
-                    {isAdmin && (
+                    {canManageSelectedSiteInvitations && (
                       <Button
                         size="small"
                         onClick={() => navigate(`/admin/sites/${selectedSiteId}/invitations`)}

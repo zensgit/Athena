@@ -97,14 +97,27 @@ test('declining invitation shows declined state', async ({ page }) => {
   await expect(page.getByText('Finance Site', { exact: true })).toBeVisible();
 });
 
-test('shows error when token missing', async ({ page }) => {
+test('accepts a manually pasted token when the URL has no token parameter', async ({ page }) => {
   test.setTimeout(60_000);
 
   await setupAuth(page);
 
+  let submittedToken = '';
+  await page.route('**/api/v1/invitations/accept', async (route) => {
+    submittedToken = route.request().postDataJSON().token;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(acceptedDto),
+    });
+  });
+
   await page.goto('/invitations/accept');
 
-  await expect(
-    page.getByText('No invitation token found. Please use the link from your invitation email.')
-  ).toBeVisible();
+  await expect(page.getByText('Manual token entry')).toBeVisible();
+  await page.getByLabel('Invitation token').fill('raw-token-123');
+  await page.getByRole('button', { name: 'Accept Invitation' }).click();
+
+  expect(submittedToken).toBe('raw-token-123');
+  await expect(page.getByText("You're in!", { exact: true })).toBeVisible();
 });

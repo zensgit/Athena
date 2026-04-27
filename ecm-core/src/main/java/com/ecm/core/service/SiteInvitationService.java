@@ -14,10 +14,13 @@ import com.ecm.core.repository.SiteRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.EnumSet;
@@ -42,6 +45,9 @@ public class SiteInvitationService {
     private final SecurityService securityService;
     private final ActivityEventListener activityEventListener;
     private final ObjectProvider<EmailNotificationService> emailNotificationServiceProvider;
+
+    @Value("${ecm.frontend.base-url:http://localhost:3000}")
+    private String frontendBaseUrl;
 
     // ------------------------------------------------------------------ invite
 
@@ -286,6 +292,7 @@ public class SiteInvitationService {
             variables.put("role", invitation.getInvitedRole());
             variables.put("message", invitation.getMessage() != null ? invitation.getMessage() : "");
             variables.put("expiresAt", invitation.getExpiresAt());
+            variables.put("invitationUrl", buildInvitationUrl(invitation.getToken()));
 
             emailService.send(
                 "site.invitation",
@@ -296,6 +303,15 @@ public class SiteInvitationService {
         } catch (Exception ex) {
             log.warn("Failed to send invitation email to {}: {}", invitation.getInviteeEmail(), ex.getMessage());
         }
+    }
+
+    private String buildInvitationUrl(String token) {
+        String baseUrl = (frontendBaseUrl == null || frontendBaseUrl.isBlank())
+            ? "http://localhost:3000"
+            : frontendBaseUrl.trim();
+        String normalizedBaseUrl = baseUrl.replaceAll("/+$", "");
+        return normalizedBaseUrl + "/invitations/accept?token="
+            + URLEncoder.encode(token, StandardCharsets.UTF_8);
     }
 
     private SiteInvitationDto toDto(SiteInvitation inv) {

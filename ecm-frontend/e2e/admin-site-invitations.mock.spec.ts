@@ -105,6 +105,28 @@ test('invite dialog opens', async ({ page }) => {
 
   await expect(page.getByRole('dialog', { name: 'Invite to Site' })).toBeVisible();
   await expect(page.getByLabel('Email address')).toBeVisible();
+  await page.getByRole('combobox', { name: 'Role' }).click();
+  await expect(page.getByRole('option', { name: 'Contributor' })).toBeVisible();
+});
+
+test('authenticated non-admin users can reach invitation manager route', async ({ page }) => {
+  test.setTimeout(60_000);
+
+  await mockKeycloakUnreachable(page);
+  await seedBypassSessionE2E(page, 'editor', 'e2e-token');
+
+  await page.route('**/api/v1/sites/site-abc/invitations', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([inv1]),
+    });
+  });
+
+  await page.goto('/admin/sites/site-abc/invitations');
+
+  await expect(page.getByRole('heading', { name: 'Site Invitations' })).toBeVisible();
+  await expect(page.getByText('alice@example.com')).toBeVisible();
 });
 
 test('cancelling a PENDING invitation calls DELETE', async ({ page }) => {

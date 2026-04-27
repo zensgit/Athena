@@ -1,4 +1,5 @@
 import api from './api';
+import type { SiteMemberRole } from './siteService';
 
 export interface SiteInvitationDto {
   id: string;
@@ -17,7 +18,7 @@ export interface SiteInvitationDto {
 
 export interface InviteRequest {
   inviteeEmail: string;
-  invitedRole?: string;
+  invitedRole?: SiteMemberRole;
   message?: string;
 }
 

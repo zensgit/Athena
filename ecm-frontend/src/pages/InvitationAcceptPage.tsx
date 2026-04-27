@@ -8,6 +8,7 @@ import {
   Chip,
   CircularProgress,
   Stack,
+  TextField,
   Typography,
 } from '@mui/material';
 import { CheckCircle, Cancel, Home } from '@mui/icons-material';
@@ -15,31 +16,24 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import siteInvitationService, { SiteInvitationDto } from 'services/siteInvitationService';
 
-// ── helpers ───────────────────────────────────────────────────────────────────
-
-const formatDateTime = (value?: string | null): string => {
-  if (!value) return '—';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString();
-};
-
-// ── page ──────────────────────────────────────────────────────────────────────
+// page
 
 type PageState = 'idle' | 'submitting' | 'accepted' | 'rejected' | 'error';
 
 const InvitationAcceptPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const token = searchParams.get('token') ?? '';
+  const urlToken = searchParams.get('token')?.trim() ?? '';
 
+  const [manualToken, setManualToken] = useState('');
   const [pageState, setPageState] = useState<PageState>('idle');
   const [result, setResult] = useState<SiteInvitationDto | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const token = urlToken || manualToken.trim();
 
   const handleAccept = async () => {
     if (!token) {
-      setErrorMessage('No invitation token found in the URL.');
+      setErrorMessage('Enter an invitation token first.');
       setPageState('error');
       return;
     }
@@ -60,7 +54,7 @@ const InvitationAcceptPage: React.FC = () => {
 
   const handleReject = async () => {
     if (!token) {
-      setErrorMessage('No invitation token found in the URL.');
+      setErrorMessage('Enter an invitation token first.');
       setPageState('error');
       return;
     }
@@ -79,26 +73,7 @@ const InvitationAcceptPage: React.FC = () => {
     }
   };
 
-  // ── no token ──────────────────────────────────────────────────────────────
-
-  if (!token) {
-    return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh', p: 3 }}>
-        <Card variant="outlined" sx={{ maxWidth: 520, width: '100%' }}>
-          <CardContent sx={{ p: 4 }}>
-            <Alert severity="error" sx={{ mb: 2 }}>
-              No invitation token found. Please use the link from your invitation email.
-            </Alert>
-            <Button startIcon={<Home />} onClick={() => navigate('/')}>
-              Go to Home
-            </Button>
-          </CardContent>
-        </Card>
-      </Box>
-    );
-  }
-
-  // ── error state ───────────────────────────────────────────────────────────
+  // error state
 
   if (pageState === 'error') {
     return (
@@ -117,7 +92,7 @@ const InvitationAcceptPage: React.FC = () => {
     );
   }
 
-  // ── accepted state ────────────────────────────────────────────────────────
+  // accepted state
 
   if (pageState === 'accepted' && result) {
     return (
@@ -151,7 +126,7 @@ const InvitationAcceptPage: React.FC = () => {
     );
   }
 
-  // ── rejected state ────────────────────────────────────────────────────────
+  // rejected state
 
   if (pageState === 'rejected' && result) {
     return (
@@ -176,7 +151,7 @@ const InvitationAcceptPage: React.FC = () => {
     );
   }
 
-  // ── idle / submitting (action-first) ──────────────────────────────────────
+  // idle / submitting
 
   return (
     <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh', p: 3 }}>
@@ -193,8 +168,30 @@ const InvitationAcceptPage: React.FC = () => {
             </Box>
 
             <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
-              <Chip label="Invitation token present" size="small" color="success" variant="outlined" />
+              <Chip
+                label={urlToken ? 'Invitation token present' : 'Manual token entry'}
+                size="small"
+                color={urlToken ? 'success' : 'warning'}
+                variant="outlined"
+              />
             </Box>
+
+            {!urlToken && (
+              <Alert severity="info">
+                Paste the invitation token from your email if the email did not include an accept link.
+              </Alert>
+            )}
+
+            {!urlToken && (
+              <TextField
+                label="Invitation token"
+                value={manualToken}
+                onChange={(event) => setManualToken(event.target.value)}
+                fullWidth
+                autoFocus
+                placeholder="Paste invitation token"
+              />
+            )}
 
             {pageState === 'submitting' ? (
               <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
@@ -207,6 +204,7 @@ const InvitationAcceptPage: React.FC = () => {
                   color="success"
                   startIcon={<CheckCircle />}
                   onClick={() => void handleAccept()}
+                  disabled={!token}
                   fullWidth
                 >
                   Accept Invitation
@@ -216,6 +214,7 @@ const InvitationAcceptPage: React.FC = () => {
                   color="error"
                   startIcon={<Cancel />}
                   onClick={() => void handleReject()}
+                  disabled={!token}
                   fullWidth
                 >
                   Decline

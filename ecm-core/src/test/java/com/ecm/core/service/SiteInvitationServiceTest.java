@@ -105,6 +105,11 @@ class SiteInvitationServiceTest {
             .containsEntry("message", "Please review the closeout documents.");
         assertThat(variables.get("token")).isInstanceOf(String.class);
         assertThat((String) variables.get("token")).hasSize(64);
+        assertThat(variables.get("invitationUrl")).isInstanceOf(String.class);
+        assertThat((String) variables.get("invitationUrl"))
+            .startsWith("http://localhost:3000/invitations/accept?token=");
+        assertThat((String) variables.get("invitationUrl"))
+            .endsWith((String) variables.get("token"));
         assertThat(variables.get("expiresAt")).isInstanceOf(LocalDateTime.class);
     }
 }

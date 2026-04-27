@@ -526,7 +526,7 @@ const App: React.FC = () => {
             <Route
               path="/admin/sites/:siteId/invitations"
               element={
-                <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
+                <PrivateRoute>
                   <MainLayout>
                     <SiteInvitationsPage />
                   </MainLayout>

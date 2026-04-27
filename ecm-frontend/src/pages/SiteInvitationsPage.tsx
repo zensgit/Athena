@@ -33,11 +33,12 @@ import siteInvitationService, {
   InviteRequest,
   SiteInvitationDto,
 } from 'services/siteInvitationService';
+import type { SiteMemberRole } from 'services/siteService';
 
-// ── helpers ───────────────────────────────────────────────────────────────────
+// helpers
 
 const formatDateTime = (value?: string | null): string => {
-  if (!value) return '—';
+  if (!value) return '-';
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleString();
@@ -51,7 +52,7 @@ const statusChipColor = (status: string): StatusColor => {
   return 'default';
 };
 
-// ── CreateInvitationDialog ────────────────────────────────────────────────────
+// CreateInvitationDialog
 
 interface CreateInvitationDialogProps {
   open: boolean;
@@ -114,13 +115,16 @@ const CreateInvitationDialog: React.FC<CreateInvitationDialogProps> = ({
             autoFocus
           />
           <FormControl fullWidth size="small">
-            <InputLabel>Role</InputLabel>
+            <InputLabel id="site-invitation-role-label">Role</InputLabel>
             <Select
+              labelId="site-invitation-role-label"
+              id="site-invitation-role"
               label="Role"
               value={form.invitedRole ?? 'CONSUMER'}
-              onChange={(e) => setForm((prev) => ({ ...prev, invitedRole: e.target.value }))}
+              onChange={(e) => setForm((prev) => ({ ...prev, invitedRole: e.target.value as SiteMemberRole }))}
             >
               <MenuItem value="CONSUMER">Consumer</MenuItem>
+              <MenuItem value="CONTRIBUTOR">Contributor</MenuItem>
               <MenuItem value="COLLABORATOR">Collaborator</MenuItem>
               <MenuItem value="MANAGER">Manager</MenuItem>
             </Select>
@@ -132,7 +136,7 @@ const CreateInvitationDialog: React.FC<CreateInvitationDialogProps> = ({
             fullWidth
             multiline
             rows={3}
-            placeholder="Optional personal message to include in the invitation email…"
+            placeholder="Optional personal message to include in the invitation email..."
           />
         </Stack>
       </DialogContent>
@@ -145,14 +149,14 @@ const CreateInvitationDialog: React.FC<CreateInvitationDialogProps> = ({
           onClick={handleSubmit}
           disabled={!form.inviteeEmail.trim() || submitting}
         >
-          {submitting ? 'Sending…' : 'Send Invitation'}
+          {submitting ? 'Sending...' : 'Send Invitation'}
         </Button>
       </DialogActions>
     </Dialog>
   );
 };
 
-// ── main page ─────────────────────────────────────────────────────────────────
+// main page
 
 const SiteInvitationsPage: React.FC = () => {
   const { siteId } = useParams<{ siteId: string }>();

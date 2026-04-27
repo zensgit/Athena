@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="089-update-site-invitation-email-template-link" author="codex">
+        <preConditions onFail="MARK_RAN">
+            <sqlCheck expectedResult="1">
+                SELECT COUNT(*) FROM email_template WHERE template_key = 'site.invitation' AND locale = 'default'
+            </sqlCheck>
+        </preConditions>
+        <comment>Add a direct acceptance URL while retaining the raw token fallback</comment>
+
+        <update tableName="email_template">
+            <column name="body_template" value="You have been invited by ${invitedBy} to join site &quot;${siteTitle}&quot; (${siteId}) as ${role}.&#10;&#10;Accept invitation: ${invitationUrl}&#10;Invitation token: ${token}&#10;Expires at: ${expiresAt}&#10;&#10;If the link is unavailable, open Athena and paste the invitation token manually.&#10;&#10;Message:&#10;${message}&#10;&#10;Athena"/>
+            <where>template_key = 'site.invitation' AND locale = 'default'</where>
+        </update>
+
+        <rollback>
+            <update tableName="email_template">
+                <column name="body_template" value="You have been invited by ${invitedBy} to join site &quot;${siteTitle}&quot; (${siteId}) as ${role}.&#10;&#10;Invitation token: ${token}&#10;Expires at: ${expiresAt}&#10;&#10;Open Athena and accept the invitation using this token.&#10;&#10;Message:&#10;${message}&#10;&#10;Athena"/>
+                <where>template_key = 'site.invitation' AND locale = 'default'</where>
+            </update>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>
