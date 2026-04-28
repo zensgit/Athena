@@ -77,6 +77,24 @@ class SecurityConfigProtocolSecurityTest {
             .andExpect(status().isUnauthorized());
     }
 
+    @Test
+    @DisplayName("production SecurityConfig protects /api/cmis/atom — CMIS is NOT permitAll (inverse drift guard)")
+    void productionSecurityConfigProtectsCmisAtomPath() throws Exception {
+        // Inverse claim: CMIS routes must remain authenticated. If a future
+        // change accidentally adds /api/cmis/** or /api/v1/cmis/** to the
+        // permitAll list (e.g. while wiring a public CMIS landing page), this
+        // test flips from 401 to 200 and fails immediately.
+        mockMvc.perform(get("/api/cmis/atom"))
+            .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("production SecurityConfig protects /api/cmis/browser — CMIS is NOT permitAll (inverse drift guard)")
+    void productionSecurityConfigProtectsCmisBrowserPath() throws Exception {
+        mockMvc.perform(get("/api/cmis/browser").param("cmisselector", "repositoryInfo"))
+            .andExpect(status().isUnauthorized());
+    }
+
     @RestController
     static class ProtocolProbeController {
         @GetMapping("/api/v1/transfer/receiver/verify")
@@ -91,6 +109,19 @@ class SecurityConfigProtocolSecurityTest {
 
         @GetMapping("/api/v1/protected/probe")
         ResponseEntity<Void> protectedApiProbe() {
+            return ResponseEntity.ok().build();
+        }
+
+        // CMIS probe endpoints — used only by the "must remain authenticated"
+        // assertions. They must never return 200 in this test (filter chain
+        // should reject before they run).
+        @GetMapping("/api/cmis/atom")
+        ResponseEntity<Void> cmisAtomProbe() {
+            return ResponseEntity.ok().build();
+        }
+
+        @GetMapping("/api/cmis/browser")
+        ResponseEntity<Void> cmisBrowserProbe(@RequestParam(name = "cmisselector", required = false) String selector) {
             return ResponseEntity.ok().build();
         }
     }
