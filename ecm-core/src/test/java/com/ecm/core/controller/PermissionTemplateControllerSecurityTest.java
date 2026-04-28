@@ -158,6 +158,7 @@ class PermissionTemplateControllerSecurityTest {
     @DisplayName("ROLE_USER cannot apply permission template")
     void userCannotApplyTemplate() throws Exception {
         mockMvc.perform(post(BASE + "/{id}/apply", UUID.randomUUID())
+                .param("nodeId", UUID.randomUUID().toString())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{}"))
             .andExpect(status().isForbidden());
@@ -172,6 +173,7 @@ class PermissionTemplateControllerSecurityTest {
         // Load-bearing: if a future change widens the gate to
         // hasAnyRole('ADMIN','EDITOR'), this test flips from 403 to 200.
         mockMvc.perform(post(BASE + "/{id}/apply", UUID.randomUUID())
+                .param("nodeId", UUID.randomUUID().toString())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{}"))
             .andExpect(status().isForbidden());

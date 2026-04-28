@@ -1,5 +1,6 @@
 package com.ecm.core.controller;
 
+import com.ecm.core.dto.UserDto;
 import com.ecm.core.service.UserGroupService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -10,6 +11,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -102,7 +104,7 @@ class UserControllerSecurityTest {
     @WithMockUser(roles = "USER")
     @DisplayName("ROLE_USER can search users (read tier is open)")
     void userCanSearchUsers() throws Exception {
-        Page empty = new PageImpl<>(List.of());
+        Page<UserDto> empty = new PageImpl<>(List.of(), PageRequest.of(0, 20), 0);
         when(userGroupService.searchUsers(any(), any())).thenReturn(empty);
 
         mockMvc.perform(get("/api/v1/users"))

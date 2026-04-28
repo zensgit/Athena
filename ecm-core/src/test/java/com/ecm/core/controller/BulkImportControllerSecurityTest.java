@@ -11,6 +11,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -119,7 +120,7 @@ class BulkImportControllerSecurityTest {
     @WithMockUser(roles = "USER")
     @DisplayName("ROLE_USER can list import jobs (gate is isAuthenticated only)")
     void userCanListJobs() throws Exception {
-        Page empty = new PageImpl<>(List.of());
+        Page<BulkImportService.ImportJobDto> empty = new PageImpl<>(List.of(), PageRequest.of(0, 20), 0);
         when(bulkImportService.listJobs(any())).thenReturn(empty);
 
         mockMvc.perform(get("/api/v1/bulk-import"))

@@ -15,6 +15,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -115,7 +116,7 @@ class RuleControllerSecurityTest {
     @WithMockUser(roles = "USER")
     @DisplayName("ROLE_USER can list rules (open read)")
     void userCanListRules() throws Exception {
-        Page<AutomationRule> empty = new PageImpl<>(List.of());
+        Page<AutomationRule> empty = new PageImpl<>(List.of(), PageRequest.of(0, 20), 0);
         when(ruleEngineService.getAllRules(any())).thenReturn(empty);
 
         mockMvc.perform(get("/api/v1/rules"))

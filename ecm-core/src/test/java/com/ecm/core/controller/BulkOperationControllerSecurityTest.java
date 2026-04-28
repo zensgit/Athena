@@ -1,5 +1,6 @@
 package com.ecm.core.controller;
 
+import com.ecm.core.entity.AuditLog;
 import com.ecm.core.repository.AuditLogRepository;
 import com.ecm.core.service.AuditService;
 import com.ecm.core.service.BulkMetadataService;
@@ -12,6 +13,9 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -21,6 +25,11 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.List;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -172,6 +181,15 @@ class BulkOperationControllerSecurityTest {
     @WithMockUser(roles = "EDITOR")
     @DisplayName("ROLE_EDITOR can read bulk history (admin-or-editor gate admits editor)")
     void editorCanReadBulkHistory() throws Exception {
+        Page<AuditLog> empty = new PageImpl<>(List.of(), PageRequest.of(0, 20), 0);
+        when(auditLogRepository.findBulkOperationTimelineNoNodeId(
+                isNull(),
+                isNull(),
+                isNull(),
+                isNull(),
+                any()))
+            .thenReturn(empty);
+
         mockMvc.perform(get("/api/v1/bulk/history"))
             .andExpect(status().isOk());
     }

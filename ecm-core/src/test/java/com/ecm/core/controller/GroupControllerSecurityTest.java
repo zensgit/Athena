@@ -1,5 +1,6 @@
 package com.ecm.core.controller;
 
+import com.ecm.core.dto.GroupDto;
 import com.ecm.core.service.UserGroupService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -10,6 +11,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -107,7 +109,7 @@ class GroupControllerSecurityTest {
     @WithMockUser(roles = "USER")
     @DisplayName("ROLE_USER can list groups (read tier is open)")
     void userCanListGroups() throws Exception {
-        Page empty = new PageImpl<>(List.of());
+        Page<GroupDto> empty = new PageImpl<>(List.of(), PageRequest.of(0, 20), 0);
         when(userGroupService.getGroups(any())).thenReturn(empty);
 
         mockMvc.perform(get("/api/v1/groups"))

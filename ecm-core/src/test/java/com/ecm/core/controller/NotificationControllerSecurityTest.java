@@ -11,6 +11,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -107,7 +108,7 @@ class NotificationControllerSecurityTest {
     @WithMockUser(roles = "USER")
     @DisplayName("authenticated user can list inbox (isAuthenticated() gate)")
     void authenticatedUserCanListInbox() throws Exception {
-        Page<Notification> empty = new PageImpl<>(List.of());
+        Page<Notification> empty = new PageImpl<>(List.of(), PageRequest.of(0, 20), 0);
         when(inboxService.getInbox(any())).thenReturn(empty);
 
         mockMvc.perform(get("/api/v1/notifications"))
