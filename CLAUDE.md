@@ -105,3 +105,24 @@ On a machine with working Docker/image access or an already running Athena stack
 cd ecm-frontend
 npx playwright test e2e/frontend-acceptance-smoke.spec.ts --project=chromium
 ```
+
+## Controller Security Tests
+
+There is an established `@WebMvcTest`-based pattern for controller security
+tests in `ecm-core/src/test/java/com/ecm/core/controller/*SecurityTest.java`.
+Any new controller should ship with a corresponding `*SecurityTest.java` —
+copy any existing one as a template (e.g. `LdapSyncControllerSecurityTest`,
+`RuleControllerSecurityTest`, `ShareLinkControllerSecurityTest`).
+
+The test shape is documented in
+`docs/SECURITY_TEST_LEGACY_FILL_ROUND6_AND_THREAD_CLOSEOUT_20260428.md` §4.3,
+which also lists the per-round breakdown (`SECURITY_TEST_LEGACY_FILL_ROUND[1-6]_*.md`)
+of which controllers were backfilled and why.
+
+**Required calibration per controller:**
+- `@MockBean` per service the controller depends on (find via `grep "private final.*Service" <Controller>.java`)
+- `TestSecurityConfig` should mirror production `SecurityConfig.java` rules — for example, `ShareLinkControllerSecurityTest` adds `permitAll()` for `/api/v1/share/access/**` because production does
+- For role-gated endpoints, include both a denied-role case (proves `@PreAuthorize` fires) and an admitted-role case (proves the gate admits the right role)
+- Surface load-bearing reasoning in `@DisplayName` text or inline comments — readers will weaken these tests later if they don't see why the test exists
+
+**`mvnw` requires Docker.** The `ecm-core/mvnw` script wraps a Maven Docker image, so on machines without a Docker daemon (current dev box included) you cannot run `./mvnw test` locally. Tests ship through Surefire's standard `**/*Test.java` glob and run in CI alongside the green sibling security tests. After committing a new `*SecurityTest.java`, expect a CI run to confirm it lands green.
