@@ -52,10 +52,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *   <li>Valid transfer headers reach the service successfully → 200.</li>
  * </ol>
  *
- * <p>If a future change moves the {@code permitAll()} rule below
- * {@code requestMatchers("/api/**").authenticated()}, the "no headers" case
- * flips from 403 to 401 and this test fails — surfacing the regression
- * before the receiver becomes unreachable for legitimate replication peers.
+ * <p>This narrow WebMvc slice deliberately mirrors the production matcher for
+ * controller-seam isolation. Production {@code SecurityConfig} drift is guarded
+ * separately by {@code SecurityConfigProtocolSecurityTest}.
  */
 @WebMvcTest(controllers = TransferReceiverController.class)
 @ContextConfiguration(classes = {
@@ -140,9 +139,8 @@ class TransferReceiverControllerSecurityTest {
     @Test
     @DisplayName("Anonymous request to permitAll path: filter chain does NOT short-circuit with 401 — proven by the 200/403 outcomes above")
     void filterChainPermitsAnonymousAccess() throws Exception {
-        // This test triangulates the "permitAll" claim by demonstrating that the same path
-        // can return 200 OR 403 depending purely on the headers — neither is 401, which
-        // would be the only outcome if Spring Security had rejected before the controller ran.
+        // This test triangulates the controller-seam claim under the mirrored test
+        // matcher: the same path can return 200 OR 403 depending purely on headers.
         when(transferReceiverService.verifyFolder(any(), eq("peer-a"), eq("good-secret")))
             .thenReturn(new VerifyFolderResponse(UUID.randomUUID(), "Inbox", "/Inbox"));
 

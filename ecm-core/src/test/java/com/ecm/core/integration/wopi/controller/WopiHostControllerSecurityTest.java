@@ -53,13 +53,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *   <li>Valid {@code access_token} produces 200.</li>
  * </ol>
  *
- * <p>If a future change moves the {@code permitAll()} rule below
- * {@code requestMatchers("/api/**").authenticated()} or removes it entirely,
- * the missing-token case still returns 401 — but the mock is never called,
- * so the test would need to verify call count to surface that regression.
- * The "valid token → 200" case catches it more reliably: it would also flip
- * to 401 if permitAll were removed (Office Online integration would break
- * for legitimate users).
+ * <p>This narrow WebMvc slice deliberately mirrors the production matcher for
+ * controller-seam isolation. Production {@code SecurityConfig} drift is guarded
+ * separately by {@code SecurityConfigProtocolSecurityTest}.
  */
 @WebMvcTest(controllers = WopiHostController.class)
 @ContextConfiguration(classes = {
@@ -167,10 +163,8 @@ class WopiHostControllerSecurityTest {
     @Test
     @DisplayName("Anonymous request to /wopi/files/** is reachable — proven by 200 with valid token (would be 401 if permitAll missing)")
     void filterChainPermitsAnonymousAccess() throws Exception {
-        // Triangulates the permitAll claim: the only way the controller can produce 200
-        // for an anonymous (no SecurityContext) request is if the filter chain let it
-        // through. If a future change drops the /wopi/** permitAll rule, this test flips
-        // to 401 immediately.
+        // Triangulates the controller-seam claim under the mirrored test matcher:
+        // a valid token reaches the WOPI service and produces 200 for an anonymous request.
         when(wopiService.checkFileInfo(any(UUID.class), eq("valid-token")))
             .thenReturn(WopiCheckFileInfoResponse.builder()
                 .baseFileName("ok.docx")

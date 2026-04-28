@@ -63,12 +63,30 @@ class XSecurityTest {
 }
 ```
 
-The two assertions together triangulate the security claim. Either one alone is insufficient:
+The two assertions together triangulate the controller-seam security claim under a mirrored test matcher. Either one alone is insufficient:
 - "Bad token → 401" alone could mean the filter chain rejected anonymously (permitAll was dropped).
 - "Good token → 200" alone could mean the filter chain accepted but token was never validated.
 - **Both together** prove the path is permitAll AND the token actually flows through to a validating service.
 
-### 2.2 Service-mock seam
+### 2.2 Production SecurityConfig drift guard
+
+Codex review found one important gap in the first version of this pattern: a mirrored `TestSecurityConfig` proves the controller seam, but it does not by itself fail if production `SecurityConfig` later removes or reorders the real `permitAll()` matchers.
+
+Added `SecurityConfigProtocolSecurityTest` to close that hole with the real production `SecurityConfig` and a minimal probe controller:
+
+| Probe | Expected | Security claim |
+|---|---|---|
+| `GET /api/v1/transfer/receiver/verify?folderId=...` without auth | 200 | production matcher leaves receiver protocol path reachable |
+| same path with `Authorization: Bearer opaque-transfer-secret` | 200 | production `BearerTokenResolver` ignores opaque protocol credentials on receiver path |
+| `GET /wopi/files/{id}?access_token=...` without auth | 200 | production matcher leaves WOPI host path reachable |
+| same path with `Authorization: Bearer opaque-wopi-token` | 200 | production `BearerTokenResolver` ignores opaque protocol credentials on WOPI path |
+| `GET /api/v1/protected/probe` without auth | 401 | ordinary API routes remain protected |
+
+This keeps the responsibilities split:
+- `TransferReceiverControllerSecurityTest` and `WopiHostControllerSecurityTest` prove service-layer protocol credential behavior.
+- `SecurityConfigProtocolSecurityTest` proves the production matcher and bearer-token resolver still route those protocol paths correctly.
+
+### 2.3 Service-mock seam
 
 The choice of which service to mock is calibrated per controller:
 
@@ -79,7 +97,7 @@ The choice of which service to mock is calibrated per controller:
 
 For the test, mocking the outer service (e.g. `WopiService.checkFileInfo`) is enough — we throw the exact production exception shape the validating service would emit, and assert the response code matches. We don't need to load the real validation logic.
 
-### 2.3 Production exception shapes
+### 2.4 Production exception shapes
 
 | Controller | Failure path | Exception | HTTP status |
 |---|---|---|---|
@@ -132,16 +150,19 @@ cd ecm-core
   test
 ```
 
-Targeted result:
+Targeted result for the controller-seam tests:
 - TransferReceiverControllerSecurityTest: tests=4, errors=0, skipped=0, failures=0
 - WopiHostControllerSecurityTest: tests=6, errors=0, skipped=0, failures=0
 
+Additional production-config drift guard:
+- SecurityConfigProtocolSecurityTest: tests=5, errors=0, skipped=0, failures=0
+
 Full controller-security sweep:
 ```
-security_files=38 tests=367 failures=0 errors=0 skipped=0
+security_files=39 tests=372 failures=0 errors=0 skipped=0
 ```
 
-(Was 36/357 before this commit — +2 files, +10 tests, no regressions.)
+(Was 36/357 before round 1 — +3 files, +15 tests, no regressions.)
 
 ### 4.2 Verification checklist
 
@@ -152,9 +173,10 @@ security_files=38 tests=367 failures=0 errors=0 skipped=0
 | 3 | Production exception shape used in mock throws (`SecurityException` / `ResponseStatusException`) | ✓ (both) |
 | 4 | Distinct rejection reasons enumerated where the service has them (WOPI's 4 token-failure cases) | ✓ (WOPI) |
 | 5 | "Valid creds → 200" case present and triangulating the permitAll claim | ✓ (both) |
-| 6 | Surefire green on the targeted run | ✓ (both) |
-| 7 | Surefire green on the full controller-security sweep | ✓ (38/367/0/0/0) |
-| 8 | `.env` untouched (per Codex direction) | ✓ |
+| 6 | Production `SecurityConfig` drift guard covers protocol permitAll matchers and BearerTokenResolver bypass | ✓ |
+| 7 | Surefire green on the targeted run | ✓ |
+| 8 | Surefire green on the full controller-security sweep | ✓ (39/372/0/0/0) |
+| 9 | `.env` untouched (per Codex direction) | ✓ |
 
 ## 5. What's next, what's not
 
