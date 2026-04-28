@@ -91,6 +91,11 @@ landing page or repository-info probe — these tests flip from 401 to 200 and
 fail. That's the behavior we want: any move toward making CMIS anonymously
 reachable should require an explicit, deliberate change to this test.
 
+Codex review tightened this after the initial round-2 commit: the production
+drift guard now also includes explicit `/api/v1/cmis/atom` and
+`/api/v1/cmis/browser` probes, so the inverse claim covers both controller
+prefixes against the real `SecurityConfig`.
+
 The inverse guard pattern is now established for any future controller that
 should remain `authenticated()` and never be silently moved to permitAll.
 
@@ -120,14 +125,16 @@ should remain `authenticated()` and never be silently moved to permitAll.
 | ROLE_USER GET ?cmisselector=repositoryInfo | 200 (JSON) |
 | ROLE_USER POST /acl with SecurityException | **403** (load-bearing) |
 
-### 4.3 SecurityConfigProtocolSecurityTest — +2 tests (now 7 total)
+### 4.3 SecurityConfigProtocolSecurityTest — +4 tests (now 9 total)
 
 Existing 5 (Transfer/WOPI permitAll claims + ordinary `/api/**` 401) plus:
 
 | Test | Expectation |
 |---|---|
 | GET /api/cmis/atom against real SecurityConfig | 401 (NOT permitAll) |
+| GET /api/v1/cmis/atom against real SecurityConfig | 401 (NOT permitAll) |
 | GET /api/cmis/browser against real SecurityConfig | 401 (NOT permitAll) |
+| GET /api/v1/cmis/browser against real SecurityConfig | 401 (NOT permitAll) |
 
 ## 5. Verification
 
@@ -147,14 +154,14 @@ cd ecm-core
 Targeted result:
 - CmisAtomPubControllerSecurityTest: tests=7, errors=0, skipped=0, failures=0
 - CmisBrowserControllerSecurityTest: tests=7, errors=0, skipped=0, failures=0
-- SecurityConfigProtocolSecurityTest: tests=7, errors=0, skipped=0, failures=0
+- SecurityConfigProtocolSecurityTest: tests=9, errors=0, skipped=0, failures=0
 
 Full controller-security sweep:
 ```
-security_files=41 tests=388 failures=0 errors=0 skipped=0
+security_files=41 tests=390 failures=0 errors=0 skipped=0
 ```
 
-(Was 39/372 before this round — +2 files, +16 tests, no regressions.)
+(Was 39/372 before this round — +2 files, +18 tests, no regressions.)
 
 ### 5.2 Verification checklist
 
@@ -164,9 +171,9 @@ security_files=41 tests=388 failures=0 errors=0 skipped=0
 | 2 | Both Browser URL prefixes carry an unauth-401 case | ✓ |
 | 3 | Atom-XML and Browser-JSON bindings both have an authenticated-200 happy-path | ✓ |
 | 4 | Per-object ACL `SecurityException` → 403 mapping covered for both controllers | ✓ |
-| 5 | Inverse drift guard added — `/api/cmis/**` is asserted to remain `authenticated()` against the real SecurityConfig | ✓ |
+| 5 | Inverse drift guard added — both `/api/cmis/**` and `/api/v1/cmis/**` are asserted to remain `authenticated()` against the real SecurityConfig | ✓ |
 | 6 | Surefire green on the targeted run | ✓ |
-| 7 | Surefire green on the full controller-security sweep | ✓ (41/388/0/0/0) |
+| 7 | Surefire green on the full controller-security sweep | ✓ (41/390/0/0/0) |
 | 8 | `.env` untouched | ✓ |
 
 ## 6. What's next

@@ -20,8 +20,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Drift guard for protocol routes that production SecurityConfig must leave to
- * protocol-layer opaque-token validation instead of JWT authentication.
+ * Drift guard for protocol route matcher semantics in production SecurityConfig.
  */
 @WebMvcTest(controllers = SecurityConfigProtocolSecurityTest.ProtocolProbeController.class)
 @ContextConfiguration(classes = {
@@ -89,9 +88,23 @@ class SecurityConfigProtocolSecurityTest {
     }
 
     @Test
+    @DisplayName("production SecurityConfig protects /api/v1/cmis/atom — v1 CMIS is NOT permitAll")
+    void productionSecurityConfigProtectsCmisAtomV1Path() throws Exception {
+        mockMvc.perform(get("/api/v1/cmis/atom"))
+            .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     @DisplayName("production SecurityConfig protects /api/cmis/browser — CMIS is NOT permitAll (inverse drift guard)")
     void productionSecurityConfigProtectsCmisBrowserPath() throws Exception {
         mockMvc.perform(get("/api/cmis/browser").param("cmisselector", "repositoryInfo"))
+            .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("production SecurityConfig protects /api/v1/cmis/browser — v1 CMIS is NOT permitAll")
+    void productionSecurityConfigProtectsCmisBrowserV1Path() throws Exception {
+        mockMvc.perform(get("/api/v1/cmis/browser").param("cmisselector", "repositoryInfo"))
             .andExpect(status().isUnauthorized());
     }
 
@@ -120,8 +133,18 @@ class SecurityConfigProtocolSecurityTest {
             return ResponseEntity.ok().build();
         }
 
+        @GetMapping("/api/v1/cmis/atom")
+        ResponseEntity<Void> cmisAtomV1Probe() {
+            return ResponseEntity.ok().build();
+        }
+
         @GetMapping("/api/cmis/browser")
         ResponseEntity<Void> cmisBrowserProbe(@RequestParam(name = "cmisselector", required = false) String selector) {
+            return ResponseEntity.ok().build();
+        }
+
+        @GetMapping("/api/v1/cmis/browser")
+        ResponseEntity<Void> cmisBrowserV1Probe(@RequestParam(name = "cmisselector", required = false) String selector) {
             return ResponseEntity.ok().build();
         }
     }
