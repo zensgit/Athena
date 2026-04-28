@@ -311,10 +311,7 @@ test('Mail automation: List folders, run diagnostics, export CSVs, and copy diag
     });
   });
 
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('button', { name: 'Account menu' })).toBeVisible();
-  await page.getByRole('button', { name: 'Account menu' }).click();
-  await page.getByRole('menuitem', { name: 'Mail Automation' }).click();
+  await page.goto('/admin/mail', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByRole('heading', { name: 'Mail Automation' })).toBeVisible();
 

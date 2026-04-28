@@ -4557,12 +4557,7 @@ test('Preview diagnostics renders failures and gates retry actions (mocked API)'
     });
   });
 
-  // When running against a static build server (no SPA rewrite), avoid deep links.
-  // Navigate from the app root instead.
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('button', { name: 'Account menu' })).toBeVisible();
-  await page.getByRole('button', { name: 'Account menu' }).click();
-  await page.getByRole('menuitem', { name: 'Preview Diagnostics' }).click();
+  await page.goto('/admin/preview-diagnostics', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByRole('heading', { name: 'Preview Diagnostics' })).toBeVisible();
   await expect(page.getByText('Backend Failure Summary')).toBeVisible();

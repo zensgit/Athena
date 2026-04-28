@@ -231,10 +231,7 @@ test('Mail automation: Trigger Fetch updates last fetch summary and copies run i
     });
   });
 
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('button', { name: 'Account menu' })).toBeVisible();
-  await page.getByRole('button', { name: 'Account menu' }).click();
-  await page.getByRole('menuitem', { name: 'Mail Automation' }).click();
+  await page.goto('/admin/mail', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByRole('heading', { name: 'Mail Automation' })).toBeVisible();
   await expect(page.getByText('No fetch summary yet. Use Trigger Fetch to capture the latest run.')).toBeVisible();

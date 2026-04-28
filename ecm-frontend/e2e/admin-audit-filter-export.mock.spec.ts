@@ -498,11 +498,7 @@ test('Admin audit filters persist in URL and export filename is stable (mocked A
     });
   });
 
-  // When running against a static build server (no SPA rewrite), avoid deep links.
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('button', { name: 'Account menu' })).toBeVisible();
-  await page.getByRole('button', { name: 'Account menu' }).click();
-  await page.getByRole('menuitem', { name: 'Admin Dashboard' }).click();
+  await page.goto('/admin', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByRole('heading', { name: 'System Dashboard' })).toBeVisible({ timeout: 60_000 });
   const asyncExportHealthOverview = page.getByRole('heading', { name: 'Async Task Health Overview' });
