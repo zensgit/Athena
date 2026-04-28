@@ -7,7 +7,7 @@ contributors can navigate them without scanning the full `docs/` tree.
 
 ## Round-by-round
 
-| Round | Doc | Commit | Tests added | Cumulative repo total |
+| Round | Doc | Commit | Tests added | Backfill-tracked total |
 |---|---|---|---|---|
 | Phase 5 close | `P5_BACKEND_SECURITY_TEST_FILL_20260427.md` | `799fd70` | NotificationController, EmailIntegrationController | 18 → 20 |
 | 1 | `SECURITY_TEST_LEGACY_FILL_ROUND1_20260427.md` | `082e9cd` | MfaController, WebhookController, TenantAdminController | 20 → 23 |
@@ -23,7 +23,8 @@ Plus two CI-polish commits during the thread:
 
 ## Cumulative outcome
 
-- **+14 security tests, –14 untested controllers** across the thread
+- **+14 security-test files, –14 untested controllers** across the thread
+- Current local Surefire security-test sweep after round 6: `security_files=36 tests=357 failures=0 errors=0 skipped=0`
 - Untested legacy controllers: 56 → 42
 - Every Phase-5 controller has parity (functional + security tests)
 - High-blast-radius surfaces covered: auth primitives, identity, public

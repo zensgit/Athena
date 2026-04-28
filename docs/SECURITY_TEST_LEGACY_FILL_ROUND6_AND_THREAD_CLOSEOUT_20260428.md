@@ -59,11 +59,39 @@ I caught one issue mid-write: `SecurityController.getCurrentUser()` calls `secur
 
 ### 3.1 Local
 
-`./mvnw test` is blocked locally because `ecm-core/mvnw` delegates to a Maven Docker image and this dev box has no Docker daemon. Same constraint as rounds 1–5.
+`./mvnw test` is blocked locally because `ecm-core/mvnw` delegates to a Maven Docker image and this dev box has no Docker daemon. To avoid waiting on CI only, validation used a temporary Maven binary in `/tmp/codex-maven` with the repo-local `.m2-cache/repository`.
+
+Targeted Round 6 command:
+
+```bash
+/tmp/codex-maven/apache-maven-3.9.11/bin/mvn -q \
+  -Dmaven.repo.local=.m2-cache/repository \
+  -Dspring.profiles.active=test \
+  -Dtest=LicenseControllerSecurityTest,SecurityControllerSecurityTest \
+  test
+```
+
+Result: passed.
+
+Full controller-security sweep:
+
+```bash
+/tmp/codex-maven/apache-maven-3.9.11/bin/mvn -q \
+  -Dmaven.repo.local=.m2-cache/repository \
+  -Dspring.profiles.active=test \
+  '-Dtest=*SecurityTest' \
+  test
+```
+
+Surefire XML summary:
+
+```text
+security_files=36 tests=357 failures=0 errors=0 skipped=0
+```
 
 ### 3.2 CI
 
-Both files ship through the standard Surefire `**/*Test.java` glob and execute alongside the green sibling security tests on the next CI run.
+Both files ship through the standard Surefire `**/*Test.java` glob and execute alongside the green sibling security tests on the next CI run after push.
 
 ### 3.3 Verification checklist
 
@@ -79,7 +107,7 @@ Both files ship through the standard Surefire `**/*Test.java` glob and execute a
 
 ## 4. Backfill thread closeout
 
-| Round | Commit | Tests added | Repo total |
+| Round | Commit | Tests added | Backfill-tracked total |
 |---|---|---|---|
 | Phase 5 close | `799fd70` | Notification, Email | 18 → 20 |
 | 1 | `082e9cd` | MFA, Webhook, TenantAdmin | 20 → 23 |
