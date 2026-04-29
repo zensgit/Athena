@@ -41,6 +41,7 @@ public class PropertyEncryptionOperationsService {
     private static final int MAX_BACKFILL_JOB_LIMIT = 100;
     private static final int DEFAULT_BACKFILL_CANDIDATE_LIMIT = 100;
     private static final int MAX_BACKFILL_CANDIDATE_LIMIT = 1000;
+    private static final String DEFAULT_BACKFILL_ACTOR = "property-encryption-backfill";
 
     @Transactional(readOnly = true)
     public PropertyEncryptionStatus getStatus() {
@@ -297,6 +298,54 @@ public class PropertyEncryptionOperationsService {
             candidates.stream()
                 .map(row -> new PropertyEncryptionBackfillCandidateRef(row.getNodeId(), row.getPropertyKey()))
                 .toList()
+        );
+    }
+
+    @Transactional
+    public PropertyEncryptionBackfillCandidateUpdateResult applyBackfillCandidateUpdate(
+        PropertyBackfillCandidateRow candidate,
+        String modifiedBy
+    ) {
+        if (candidate == null) {
+            throw new IllegalArgumentException("Backfill candidate is required");
+        }
+        if (candidate.getNodeId() == null) {
+            throw new IllegalArgumentException("Backfill candidate nodeId is required");
+        }
+        if (!hasText(candidate.getPropertyKey())) {
+            throw new IllegalArgumentException("Backfill candidate qualifiedName is required");
+        }
+        if (candidate.getPlaintextJson() == null) {
+            throw new IllegalArgumentException("Backfill candidate plaintextJson is required");
+        }
+        if (candidate.getEntityVersion() == null) {
+            throw new IllegalArgumentException("Backfill candidate entityVersion is required");
+        }
+        if (!secretCryptoService.isEnabled()) {
+            throw new IllegalStateException("Secret crypto must be enabled before backfill candidate updates");
+        }
+        String protectedValue = secretCryptoService.protect(candidate.getPlaintextJson());
+        if (!hasText(protectedValue) || !secretCryptoService.isEncrypted(protectedValue)) {
+            throw new IllegalStateException("Backfill candidate encryption did not produce an encrypted payload");
+        }
+
+        String propertyKey = candidate.getPropertyKey().trim();
+        int updated = nodeRepository.backfillEncryptedPropertyIfUnchanged(
+            candidate.getNodeId(),
+            propertyKey,
+            candidate.getPlaintextJson(),
+            candidate.getEntityVersion(),
+            protectedValue,
+            LocalDateTime.now(),
+            hasText(modifiedBy) ? modifiedBy.trim() : DEFAULT_BACKFILL_ACTOR
+        );
+        if (updated > 1) {
+            throw new IllegalStateException("Backfill candidate CAS update affected multiple rows");
+        }
+        return new PropertyEncryptionBackfillCandidateUpdateResult(
+            candidate.getNodeId(),
+            propertyKey,
+            updated == 1
         );
     }
 
@@ -563,6 +612,13 @@ public class PropertyEncryptionOperationsService {
     public record PropertyEncryptionBackfillCandidateRef(
         UUID nodeId,
         String qualifiedName
+    ) {
+    }
+
+    public record PropertyEncryptionBackfillCandidateUpdateResult(
+        UUID nodeId,
+        String qualifiedName,
+        boolean migrated
     ) {
     }
 }

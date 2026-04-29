@@ -31,6 +31,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -428,6 +430,114 @@ class PropertyEncryptionOperationsServiceTest {
         verify(nodeRepository, never()).findBackfillCandidatesByPropertyKeyAndDeletedFalse(any(), anyInt());
     }
 
+    @Test
+    @DisplayName("backfill candidate update applies encrypted payload through repository CAS")
+    void backfillCandidateUpdateAppliesEncryptedPayloadThroughCas() {
+        UUID nodeId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        PropertyBackfillCandidateRow candidate = candidate(nodeId, " acme:secretCode ", "\"SEC-42\"", 7L);
+        when(secretCryptoService.isEnabled()).thenReturn(true);
+        when(secretCryptoService.protect("\"SEC-42\"")).thenReturn("enc:v1:secret");
+        when(secretCryptoService.isEncrypted("enc:v1:secret")).thenReturn(true);
+        when(nodeRepository.backfillEncryptedPropertyIfUnchanged(
+            eq(nodeId),
+            eq("acme:secretCode"),
+            eq("\"SEC-42\""),
+            eq(7L),
+            eq("enc:v1:secret"),
+            any(),
+            eq("operator")
+        )).thenReturn(1);
+
+        PropertyEncryptionOperationsService.PropertyEncryptionBackfillCandidateUpdateResult result =
+            service.applyBackfillCandidateUpdate(candidate, " operator ");
+
+        assertEquals(nodeId, result.nodeId());
+        assertEquals("acme:secretCode", result.qualifiedName());
+        assertTrue(result.migrated());
+    }
+
+    @Test
+    @DisplayName("backfill candidate update reports CAS miss without exposing plaintext")
+    void backfillCandidateUpdateReportsCasMiss() {
+        UUID nodeId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        PropertyBackfillCandidateRow candidate = candidate(nodeId, "acme:secretCode", "\"SEC-42\"", 7L);
+        when(secretCryptoService.isEnabled()).thenReturn(true);
+        when(secretCryptoService.protect("\"SEC-42\"")).thenReturn("enc:v1:secret");
+        when(secretCryptoService.isEncrypted("enc:v1:secret")).thenReturn(true);
+        when(nodeRepository.backfillEncryptedPropertyIfUnchanged(
+            eq(nodeId),
+            eq("acme:secretCode"),
+            eq("\"SEC-42\""),
+            eq(7L),
+            eq("enc:v1:secret"),
+            any(),
+            eq("property-encryption-backfill")
+        )).thenReturn(0);
+
+        PropertyEncryptionOperationsService.PropertyEncryptionBackfillCandidateUpdateResult result =
+            service.applyBackfillCandidateUpdate(candidate, " ");
+
+        assertEquals(nodeId, result.nodeId());
+        assertEquals("acme:secretCode", result.qualifiedName());
+        assertFalse(result.migrated());
+    }
+
+    @Test
+    @DisplayName("backfill candidate update rejects when crypto is disabled")
+    void backfillCandidateUpdateRejectsDisabledCrypto() {
+        PropertyBackfillCandidateRow candidate = candidate(
+            UUID.fromString("11111111-2222-3333-4444-555555555555"),
+            "acme:secretCode",
+            "\"SEC-42\"",
+            7L
+        );
+        when(secretCryptoService.isEnabled()).thenReturn(false);
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, () ->
+            service.applyBackfillCandidateUpdate(candidate, "operator")
+        );
+
+        assertTrue(ex.getMessage().contains("Secret crypto"));
+        verify(nodeRepository, never()).backfillEncryptedPropertyIfUnchanged(
+            any(),
+            any(),
+            any(),
+            anyLong(),
+            any(),
+            any(),
+            any()
+        );
+    }
+
+    @Test
+    @DisplayName("backfill candidate update rejects when encryption output is not protected")
+    void backfillCandidateUpdateRejectsUnprotectedCryptoOutput() {
+        PropertyBackfillCandidateRow candidate = candidate(
+            UUID.fromString("11111111-2222-3333-4444-555555555555"),
+            "acme:secretCode",
+            "\"SEC-42\"",
+            7L
+        );
+        when(secretCryptoService.isEnabled()).thenReturn(true);
+        when(secretCryptoService.protect("\"SEC-42\"")).thenReturn("\"SEC-42\"");
+        when(secretCryptoService.isEncrypted("\"SEC-42\"")).thenReturn(false);
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, () ->
+            service.applyBackfillCandidateUpdate(candidate, "operator")
+        );
+
+        assertTrue(ex.getMessage().contains("encrypted payload"));
+        verify(nodeRepository, never()).backfillEncryptedPropertyIfUnchanged(
+            any(),
+            any(),
+            any(),
+            anyLong(),
+            any(),
+            any(),
+            any()
+        );
+    }
+
     private PropertyDefinition typeProperty(String name) {
         ContentModelDefinition model = model();
         TypeDefinition typeDefinition = new TypeDefinition();
@@ -469,6 +579,10 @@ class PropertyEncryptionOperationsServiceTest {
     }
 
     private PropertyBackfillCandidateRow candidate(UUID nodeId, String propertyKey, String plaintextJson) {
+        return candidate(nodeId, propertyKey, plaintextJson, 0L);
+    }
+
+    private PropertyBackfillCandidateRow candidate(UUID nodeId, String propertyKey, String plaintextJson, Long entityVersion) {
         return new PropertyBackfillCandidateRow() {
             @Override
             public UUID getNodeId() {
@@ -487,7 +601,7 @@ class PropertyEncryptionOperationsServiceTest {
 
             @Override
             public Long getEntityVersion() {
-                return 0L;
+                return entityVersion;
             }
         };
     }

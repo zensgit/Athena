@@ -224,6 +224,35 @@ public interface NodeRepository extends JpaRepository<Node, UUID>, JpaSpecificat
         @Param("limit") int limit
     );
 
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+        UPDATE nodes n
+        SET properties = n.properties - CAST(:propertyKey AS text),
+            encrypted_properties = COALESCE(n.encrypted_properties, '{}'::jsonb)
+                || jsonb_build_object(CAST(:propertyKey AS text), CAST(:encryptedValue AS text)),
+            last_modified_date = :modifiedAt,
+            last_modified_by = :modifiedBy,
+            version = n.version + 1
+        WHERE n.id = :nodeId
+          AND n.is_deleted = false
+          AND n.version = :expectedVersion
+          AND jsonb_exists(n.properties, :propertyKey)
+          AND CAST(n.properties -> :propertyKey AS text) = :expectedPlaintextJson
+          AND (
+            n.encrypted_properties IS NULL
+            OR NOT jsonb_exists(n.encrypted_properties, :propertyKey)
+          )
+        """, nativeQuery = true)
+    int backfillEncryptedPropertyIfUnchanged(
+        @Param("nodeId") UUID nodeId,
+        @Param("propertyKey") String propertyKey,
+        @Param("expectedPlaintextJson") String expectedPlaintextJson,
+        @Param("expectedVersion") long expectedVersion,
+        @Param("encryptedValue") String encryptedValue,
+        @Param("modifiedAt") LocalDateTime modifiedAt,
+        @Param("modifiedBy") String modifiedBy
+    );
+
     @Query(value = """
         SELECT COUNT(*)
         FROM nodes n
