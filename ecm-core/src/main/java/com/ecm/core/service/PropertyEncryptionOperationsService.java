@@ -1,17 +1,25 @@
 package com.ecm.core.service;
 
 import com.ecm.core.entity.AspectDefinition;
+import com.ecm.core.entity.PropertyEncryptionBackfillJob;
+import com.ecm.core.entity.PropertyEncryptionBackfillJob.BackfillDefinitionCountSnapshot;
+import com.ecm.core.entity.PropertyEncryptionBackfillJob.BackfillJobStatus;
 import com.ecm.core.entity.PropertyDataType;
 import com.ecm.core.entity.PropertyDefinition;
 import com.ecm.core.entity.TypeDefinition;
+import com.ecm.core.exception.ResourceNotFoundException;
 import com.ecm.core.repository.NodeRepository;
+import com.ecm.core.repository.PropertyEncryptionBackfillJobRepository;
 import com.ecm.core.repository.PropertyDefinitionRepository;
 import com.ecm.core.security.secret.SecretCryptoProperties;
 import com.ecm.core.security.secret.SecretCryptoService;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -24,8 +32,12 @@ public class PropertyEncryptionOperationsService {
 
     private final PropertyDefinitionRepository propertyDefinitionRepository;
     private final NodeRepository nodeRepository;
+    private final PropertyEncryptionBackfillJobRepository backfillJobRepository;
     private final SecretCryptoService secretCryptoService;
     private final SecretCryptoProperties secretCryptoProperties;
+
+    private static final int DEFAULT_BACKFILL_JOB_LIMIT = 20;
+    private static final int MAX_BACKFILL_JOB_LIMIT = 100;
 
     @Transactional(readOnly = true)
     public PropertyEncryptionStatus getStatus() {
@@ -208,6 +220,57 @@ public class PropertyEncryptionOperationsService {
         );
     }
 
+    @Transactional
+    public PropertyEncryptionBackfillJobDto planBackfillJob(
+        PropertyEncryptionBackfillJobPlanRequest request,
+        String requestedBy
+    ) {
+        PropertyEncryptionBackfillDryRunResult dryRun = dryRunBackfill(
+            new PropertyEncryptionBackfillDryRunRequest(request != null ? request.targetKeyVersion() : null)
+        );
+        if (!dryRun.executable()) {
+            throw new IllegalArgumentException("Backfill dry-run is not executable: " + String.join(",", dryRun.warnings()));
+        }
+
+        PropertyEncryptionBackfillJob job = new PropertyEncryptionBackfillJob();
+        LocalDateTime now = LocalDateTime.now();
+        job.setStatus(BackfillJobStatus.PLANNED);
+        job.setTargetKeyVersion(dryRun.targetKeyVersion());
+        job.setRequestedBy(hasText(requestedBy) ? requestedBy.trim() : "system");
+        job.setRequestedAt(now);
+        job.setCreatedAt(now);
+        job.setEncryptedPropertyDefinitionCount(dryRun.encryptedPropertyDefinitionCount());
+        job.setPlaintextValueCount(dryRun.plaintextValueCount());
+        job.setAlreadyEncryptedValueCount(dryRun.alreadyEncryptedValueCount());
+        job.setDualStorageConflictValueCount(dryRun.dualStorageConflictValueCount());
+        job.setReadyValueCount(dryRun.readyValueCount());
+        job.setOrphanEncryptedValueCount(dryRun.orphanEncryptedValueCount());
+        job.setWarnings(new ArrayList<>(dryRun.warnings()));
+        job.setDefinitionCounts(dryRun.definitionCounts().stream()
+            .map(this::toBackfillDefinitionCountSnapshot)
+            .toList());
+
+        return toBackfillJobDto(backfillJobRepository.save(job));
+    }
+
+    @Transactional(readOnly = true)
+    public List<PropertyEncryptionBackfillJobDto> listBackfillJobs(Integer limit) {
+        Pageable pageable = PageRequest.of(0, clamp(limit != null ? limit : DEFAULT_BACKFILL_JOB_LIMIT, 1, MAX_BACKFILL_JOB_LIMIT));
+        return backfillJobRepository.findAllByOrderByRequestedAtDesc(pageable).stream()
+            .map(this::toBackfillJobDto)
+            .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public PropertyEncryptionBackfillJobDto getBackfillJob(UUID jobId) {
+        if (jobId == null) {
+            throw new IllegalArgumentException("Backfill job id is required");
+        }
+        return backfillJobRepository.findById(jobId)
+            .map(this::toBackfillJobDto)
+            .orElseThrow(() -> new ResourceNotFoundException("Backfill job not found: " + jobId));
+    }
+
     private EncryptedPropertyDefinitionSummary toDefinitionSummary(PropertyDefinition definition) {
         TypeDefinition typeDefinition = definition.getTypeDefinition();
         AspectDefinition aspectDefinition = definition.getAspectDefinition();
@@ -279,6 +342,49 @@ public class PropertyEncryptionOperationsService {
         );
     }
 
+    private BackfillDefinitionCountSnapshot toBackfillDefinitionCountSnapshot(PropertyBackfillCount count) {
+        return new BackfillDefinitionCountSnapshot(
+            count.qualifiedName(),
+            count.ownerKind(),
+            count.ownerQName(),
+            count.plaintextValueCount(),
+            count.alreadyEncryptedValueCount(),
+            count.dualStorageConflictValueCount(),
+            count.readyValueCount()
+        );
+    }
+
+    private PropertyEncryptionBackfillJobDto toBackfillJobDto(PropertyEncryptionBackfillJob job) {
+        return new PropertyEncryptionBackfillJobDto(
+            job.getId(),
+            job.getStatus(),
+            job.getTargetKeyVersion(),
+            job.getRequestedBy(),
+            job.getRequestedAt(),
+            job.getStartedAt(),
+            job.getFinishedAt(),
+            job.getEncryptedPropertyDefinitionCount(),
+            job.getPlaintextValueCount(),
+            job.getAlreadyEncryptedValueCount(),
+            job.getDualStorageConflictValueCount(),
+            job.getReadyValueCount(),
+            job.getOrphanEncryptedValueCount(),
+            job.getProcessedValueCount(),
+            job.getMigratedValueCount(),
+            job.getSkippedValueCount(),
+            job.getFailedValueCount(),
+            List.copyOf(job.getWarnings() != null ? job.getWarnings() : List.of()),
+            List.copyOf(job.getDefinitionCounts() != null ? job.getDefinitionCounts() : List.of()),
+            job.getLastError(),
+            job.getCreatedAt(),
+            job.getUpdatedAt()
+        );
+    }
+
+    private int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
     private long toLong(Object value) {
         if (value instanceof Number number) {
             return number.longValue();
@@ -331,6 +437,11 @@ public class PropertyEncryptionOperationsService {
     ) {
     }
 
+    public record PropertyEncryptionBackfillJobPlanRequest(
+        String targetKeyVersion
+    ) {
+    }
+
     public record PropertyEncryptionRewrapDryRunResult(
         String targetKeyVersion,
         boolean targetKeyConfigured,
@@ -377,6 +488,32 @@ public class PropertyEncryptionOperationsService {
         long alreadyEncryptedValueCount,
         long dualStorageConflictValueCount,
         long readyValueCount
+    ) {
+    }
+
+    public record PropertyEncryptionBackfillJobDto(
+        UUID id,
+        BackfillJobStatus status,
+        String targetKeyVersion,
+        String requestedBy,
+        LocalDateTime requestedAt,
+        LocalDateTime startedAt,
+        LocalDateTime finishedAt,
+        long encryptedPropertyDefinitionCount,
+        long plaintextValueCount,
+        long alreadyEncryptedValueCount,
+        long dualStorageConflictValueCount,
+        long readyValueCount,
+        long orphanEncryptedValueCount,
+        long processedValueCount,
+        long migratedValueCount,
+        long skippedValueCount,
+        long failedValueCount,
+        List<String> warnings,
+        List<BackfillDefinitionCountSnapshot> definitionCounts,
+        String lastError,
+        LocalDateTime createdAt,
+        LocalDateTime updatedAt
     ) {
     }
 }

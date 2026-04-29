@@ -2,10 +2,13 @@ package com.ecm.core.service;
 
 import com.ecm.core.entity.AspectDefinition;
 import com.ecm.core.entity.ContentModelDefinition;
+import com.ecm.core.entity.PropertyEncryptionBackfillJob;
+import com.ecm.core.entity.PropertyEncryptionBackfillJob.BackfillJobStatus;
 import com.ecm.core.entity.PropertyDataType;
 import com.ecm.core.entity.PropertyDefinition;
 import com.ecm.core.entity.TypeDefinition;
 import com.ecm.core.repository.NodeRepository;
+import com.ecm.core.repository.PropertyEncryptionBackfillJobRepository;
 import com.ecm.core.repository.PropertyDefinitionRepository;
 import com.ecm.core.security.secret.SecretCryptoProperties;
 import com.ecm.core.security.secret.SecretCryptoService;
@@ -23,7 +26,11 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -31,6 +38,7 @@ class PropertyEncryptionOperationsServiceTest {
 
     @Mock private PropertyDefinitionRepository propertyDefinitionRepository;
     @Mock private NodeRepository nodeRepository;
+    @Mock private PropertyEncryptionBackfillJobRepository backfillJobRepository;
     @Mock private SecretCryptoService secretCryptoService;
 
     private SecretCryptoProperties secretCryptoProperties;
@@ -42,6 +50,7 @@ class PropertyEncryptionOperationsServiceTest {
         service = new PropertyEncryptionOperationsService(
             propertyDefinitionRepository,
             nodeRepository,
+            backfillJobRepository,
             secretCryptoService,
             secretCryptoProperties
         );
@@ -312,6 +321,67 @@ class PropertyEncryptionOperationsServiceTest {
         assertEquals(0L, result.readyValueCount());
         assertTrue(result.warnings().contains("no_encrypted_property_definitions"));
         assertFalse(result.executable());
+    }
+
+    @Test
+    @DisplayName("backfill job plan persists an executable dry-run snapshot without processing nodes")
+    void backfillJobPlanPersistsExecutableSnapshot() {
+        secretCryptoProperties.setActiveKeyVersion("v1");
+        secretCryptoProperties.setKeys(new LinkedHashMap<>(Map.of("v1", "base64-secret-not-exposed")));
+        when(secretCryptoService.isEnabled()).thenReturn(true);
+        when(propertyDefinitionRepository.findByEncryptedTrue()).thenReturn(List.of(typeProperty("secretCode")));
+        when(nodeRepository.countByPropertyKeyAndDeletedFalse("acme:secretCode")).thenReturn(2L);
+        when(nodeRepository.countByEncryptedPropertyKeyAndDeletedFalse("acme:secretCode")).thenReturn(1L);
+        when(nodeRepository.countByPropertyKeyInBothStorageAndDeletedFalse("acme:secretCode")).thenReturn(0L);
+        when(nodeRepository.countBackfillReadyByPropertyKeyAndDeletedFalse("acme:secretCode")).thenReturn(2L);
+        when(nodeRepository.countEncryptedPropertyValuesAndDeletedFalse()).thenReturn(1L);
+        when(backfillJobRepository.save(any(PropertyEncryptionBackfillJob.class))).thenAnswer(invocation -> {
+            PropertyEncryptionBackfillJob job = invocation.getArgument(0);
+            job.setId(UUID.fromString("11111111-2222-3333-4444-555555555555"));
+            return job;
+        });
+
+        PropertyEncryptionOperationsService.PropertyEncryptionBackfillJobDto result = service.planBackfillJob(
+            new PropertyEncryptionOperationsService.PropertyEncryptionBackfillJobPlanRequest(null),
+            "admin"
+        );
+
+        assertEquals(UUID.fromString("11111111-2222-3333-4444-555555555555"), result.id());
+        assertEquals(BackfillJobStatus.PLANNED, result.status());
+        assertEquals("v1", result.targetKeyVersion());
+        assertEquals("admin", result.requestedBy());
+        assertEquals(1L, result.encryptedPropertyDefinitionCount());
+        assertEquals(2L, result.plaintextValueCount());
+        assertEquals(1L, result.alreadyEncryptedValueCount());
+        assertEquals(0L, result.dualStorageConflictValueCount());
+        assertEquals(2L, result.readyValueCount());
+        assertEquals(0L, result.processedValueCount());
+        assertEquals(0L, result.migratedValueCount());
+        assertEquals(0L, result.failedValueCount());
+        assertEquals(1, result.definitionCounts().size());
+        assertEquals("acme:secretCode", result.definitionCounts().get(0).qualifiedName());
+    }
+
+    @Test
+    @DisplayName("backfill job plan rejects non-executable dry-run state")
+    void backfillJobPlanRejectsNonExecutableDryRun() {
+        secretCryptoProperties.setActiveKeyVersion("v1");
+        secretCryptoProperties.setKeys(new LinkedHashMap<>(Map.of("v1", "base64-secret-not-exposed")));
+        when(secretCryptoService.isEnabled()).thenReturn(false);
+        when(propertyDefinitionRepository.findByEncryptedTrue()).thenReturn(List.of(typeProperty("secretCode")));
+        when(nodeRepository.countByPropertyKeyAndDeletedFalse("acme:secretCode")).thenReturn(2L);
+        when(nodeRepository.countByEncryptedPropertyKeyAndDeletedFalse("acme:secretCode")).thenReturn(0L);
+        when(nodeRepository.countByPropertyKeyInBothStorageAndDeletedFalse("acme:secretCode")).thenReturn(0L);
+        when(nodeRepository.countBackfillReadyByPropertyKeyAndDeletedFalse("acme:secretCode")).thenReturn(2L);
+        when(nodeRepository.countEncryptedPropertyValuesAndDeletedFalse()).thenReturn(0L);
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> service.planBackfillJob(
+            new PropertyEncryptionOperationsService.PropertyEncryptionBackfillJobPlanRequest(null),
+            "admin"
+        ));
+
+        assertTrue(ex.getMessage().contains("secret_crypto_disabled"));
+        verify(backfillJobRepository, never()).save(any(PropertyEncryptionBackfillJob.class));
     }
 
     private PropertyDefinition typeProperty(String name) {

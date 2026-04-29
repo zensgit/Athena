@@ -100,6 +100,7 @@
     <include file="db/changelog/changes/087-seed-site-invitation-email-template.xml"/>
     <include file="db/changelog/changes/088-create-localized-content.xml"/>
     <include file="db/changelog/changes/089-update-site-invitation-email-template-link.xml"/>
+    <include file="db/changelog/changes/090-create-property-encryption-backfill-jobs.xml"/>
     <include file="db/changelog/changes/007-insert-initial-data.xml"/>
 
 </databaseChangeLog>
