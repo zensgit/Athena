@@ -77,6 +77,38 @@ class SecurityConfigProtocolSecurityTest {
     }
 
     @Test
+    @DisplayName("production SecurityConfig protects /api/v1/transfer/targets — sender-side transfer is NOT permitAll")
+    void productionSecurityConfigProtectsTransferReplicationPath() throws Exception {
+        // Receiver path is intentionally permitAll, but sender/admin transfer
+        // routes must stay behind ordinary /api/** authentication.
+        mockMvc.perform(get("/api/v1/transfer/targets"))
+            .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("production SecurityConfig protects /api/v1/replication/jobs — replication ops are NOT permitAll")
+    void productionSecurityConfigProtectsReplicationJobsPath() throws Exception {
+        mockMvc.perform(get("/api/v1/replication/jobs"))
+            .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("production SecurityConfig protects /api/v1/integration/wopi/health — app WOPI companion is NOT permitAll")
+    void productionSecurityConfigProtectsWopiIntegrationPath() throws Exception {
+        // /wopi/** host protocol is permitAll, but application-facing WOPI
+        // integration endpoints must remain authenticated.
+        mockMvc.perform(get("/api/v1/integration/wopi/health"))
+            .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("production SecurityConfig protects /api/v1/integration/wopi/url/{id} — app WOPI URL is NOT permitAll")
+    void productionSecurityConfigProtectsWopiIntegrationUrlPath() throws Exception {
+        mockMvc.perform(get("/api/v1/integration/wopi/url/{documentId}", UUID.randomUUID()))
+            .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     @DisplayName("production SecurityConfig protects /api/cmis/atom — CMIS is NOT permitAll (inverse drift guard)")
     void productionSecurityConfigProtectsCmisAtomPath() throws Exception {
         // Inverse claim: CMIS routes must remain authenticated. If a future
@@ -122,6 +154,26 @@ class SecurityConfigProtocolSecurityTest {
 
         @GetMapping("/api/v1/protected/probe")
         ResponseEntity<Void> protectedApiProbe() {
+            return ResponseEntity.ok().build();
+        }
+
+        @GetMapping("/api/v1/transfer/targets")
+        ResponseEntity<Void> transferReplicationProbe() {
+            return ResponseEntity.ok().build();
+        }
+
+        @GetMapping("/api/v1/replication/jobs")
+        ResponseEntity<Void> replicationJobsProbe() {
+            return ResponseEntity.ok().build();
+        }
+
+        @GetMapping("/api/v1/integration/wopi/health")
+        ResponseEntity<Void> wopiIntegrationProbe() {
+            return ResponseEntity.ok().build();
+        }
+
+        @GetMapping("/api/v1/integration/wopi/url/{documentId}")
+        ResponseEntity<Void> wopiIntegrationUrlProbe(@PathVariable UUID documentId) {
             return ResponseEntity.ok().build();
         }
 
