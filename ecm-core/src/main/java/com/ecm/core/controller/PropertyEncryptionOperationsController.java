@@ -4,6 +4,7 @@ import com.ecm.core.service.PropertyEncryptionOperationsService;
 import com.ecm.core.service.PropertyEncryptionOperationsService.EncryptedPropertyDefinitionSummary;
 import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionBackfillJobDto;
 import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionBackfillJobPlanRequest;
+import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionBackfillJobRunRequest;
 import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionBackfillDryRunRequest;
 import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionBackfillDryRunResult;
 import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionStatus;
@@ -110,5 +111,31 @@ public class PropertyEncryptionOperationsController {
     )
     public ResponseEntity<PropertyEncryptionBackfillJobDto> getBackfillJob(@PathVariable UUID jobId) {
         return ResponseEntity.ok(propertyEncryptionOperationsService.getBackfillJob(jobId));
+    }
+
+    @PostMapping("/backfill-jobs/{jobId}/run")
+    @Operation(
+        summary = "Run a planned property encryption backfill job",
+        description = "Claims a planned backfill job and processes encrypted-property plaintext candidates through the internal CAS executor."
+    )
+    public ResponseEntity<PropertyEncryptionBackfillJobDto> runBackfillJob(
+        @PathVariable UUID jobId,
+        @RequestBody(required = false) PropertyEncryptionBackfillJobRunRequest request,
+        Authentication authentication
+    ) {
+        return ResponseEntity.ok(propertyEncryptionOperationsService.runBackfillJob(
+            jobId,
+            request != null ? request.batchSize() : null,
+            authentication != null ? authentication.getName() : "system"
+        ));
+    }
+
+    @PostMapping("/backfill-jobs/{jobId}/cancel")
+    @Operation(
+        summary = "Cancel a property encryption backfill job",
+        description = "Cancels a planned job immediately or requests cancellation for a currently running job."
+    )
+    public ResponseEntity<PropertyEncryptionBackfillJobDto> cancelBackfillJob(@PathVariable UUID jobId) {
+        return ResponseEntity.ok(propertyEncryptionOperationsService.requestBackfillJobCancel(jobId));
     }
 }

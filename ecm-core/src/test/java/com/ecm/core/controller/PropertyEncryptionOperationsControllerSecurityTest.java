@@ -102,6 +102,12 @@ class PropertyEncryptionOperationsControllerSecurityTest {
             .andExpect(status().isForbidden());
         mockMvc.perform(get("/api/v1/admin/property-encryption/backfill-jobs/11111111-2222-3333-4444-555555555555"))
             .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/admin/property-encryption/backfill-jobs/11111111-2222-3333-4444-555555555555/run")
+                .contentType("application/json")
+                .content("{\"batchSize\":10}"))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/admin/property-encryption/backfill-jobs/11111111-2222-3333-4444-555555555555/cancel"))
+            .andExpect(status().isForbidden());
     }
 
     @Test
@@ -296,11 +302,41 @@ class PropertyEncryptionOperationsControllerSecurityTest {
             .andExpect(jsonPath("$.definitionCounts[0].qualifiedName", is("acme:secretCode")));
     }
 
+    @Test
+    @WithMockUser(username = "admin", roles = "ADMIN")
+    @DisplayName("admin can run and cancel property encryption backfill jobs")
+    void adminCanRunAndCancelBackfillJobs() throws Exception {
+        UUID jobId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        when(propertyEncryptionOperationsService.runBackfillJob(
+            jobId,
+            10,
+            "admin"
+        )).thenReturn(backfillJobDto(jobId, BackfillJobStatus.SUCCEEDED));
+        when(propertyEncryptionOperationsService.requestBackfillJobCancel(jobId))
+            .thenReturn(backfillJobDto(jobId, BackfillJobStatus.CANCELLED));
+
+        mockMvc.perform(post("/api/v1/admin/property-encryption/backfill-jobs/{jobId}/run", jobId)
+                .contentType("application/json")
+                .content("{\"batchSize\":10}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id", is(jobId.toString())))
+            .andExpect(jsonPath("$.status", is("SUCCEEDED")));
+
+        mockMvc.perform(post("/api/v1/admin/property-encryption/backfill-jobs/{jobId}/cancel", jobId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id", is(jobId.toString())))
+            .andExpect(jsonPath("$.status", is("CANCELLED")));
+    }
+
     private PropertyEncryptionBackfillJobDto backfillJobDto(UUID jobId) {
+        return backfillJobDto(jobId, BackfillJobStatus.PLANNED);
+    }
+
+    private PropertyEncryptionBackfillJobDto backfillJobDto(UUID jobId, BackfillJobStatus status) {
         LocalDateTime now = LocalDateTime.of(2026, 4, 29, 12, 0);
         return new PropertyEncryptionBackfillJobDto(
             jobId,
-            BackfillJobStatus.PLANNED,
+            status,
             "v2",
             "admin",
             now,

@@ -21,6 +21,8 @@ public interface PropertyEncryptionBackfillJobRepository extends JpaRepository<P
 
     long countByStatus(BackfillJobStatus status);
 
+    boolean existsByIdAndStatus(UUID id, BackfillJobStatus status);
+
     default int claimPlannedJob(UUID jobId, LocalDateTime startedAt) {
         return claimJobWithStatus(
             jobId,
@@ -29,6 +31,60 @@ public interface PropertyEncryptionBackfillJobRepository extends JpaRepository<P
             BackfillJobStatus.PLANNED
         );
     }
+
+    default int requestBackfillJobCancel(UUID jobId, LocalDateTime requestedAt) {
+        int cancelled = cancelJobWithStatus(
+            jobId,
+            requestedAt,
+            BackfillJobStatus.CANCELLED,
+            BackfillJobStatus.PLANNED
+        );
+        if (cancelled == 1) {
+            return 1;
+        }
+        return requestJobCancelWithStatus(
+            jobId,
+            requestedAt,
+            BackfillJobStatus.CANCEL_REQUESTED,
+            BackfillJobStatus.RUNNING
+        );
+    }
+
+    @Transactional
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+        update PropertyEncryptionBackfillJob j
+           set j.status = :nextStatus,
+               j.finishedAt = :requestedAt,
+               j.updatedAt = :requestedAt,
+               j.lastError = null,
+               j.version = j.version + 1
+         where j.id = :jobId
+           and j.status = :expectedStatus
+    """)
+    int cancelJobWithStatus(
+        @Param("jobId") UUID jobId,
+        @Param("requestedAt") LocalDateTime requestedAt,
+        @Param("nextStatus") BackfillJobStatus nextStatus,
+        @Param("expectedStatus") BackfillJobStatus expectedStatus
+    );
+
+    @Transactional
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+        update PropertyEncryptionBackfillJob j
+           set j.status = :nextStatus,
+               j.updatedAt = :requestedAt,
+               j.version = j.version + 1
+         where j.id = :jobId
+           and j.status = :expectedStatus
+    """)
+    int requestJobCancelWithStatus(
+        @Param("jobId") UUID jobId,
+        @Param("requestedAt") LocalDateTime requestedAt,
+        @Param("nextStatus") BackfillJobStatus nextStatus,
+        @Param("expectedStatus") BackfillJobStatus expectedStatus
+    );
 
     @Transactional
     @Modifying(clearAutomatically = true, flushAutomatically = true)
@@ -70,6 +126,43 @@ public interface PropertyEncryptionBackfillJobRepository extends JpaRepository<P
             failedValueCount,
             lastError,
             BackfillJobStatus.RUNNING
+        );
+    }
+
+    default int markTerminalIfRunningOrCancelRequested(
+        UUID jobId,
+        BackfillJobStatus status,
+        LocalDateTime finishedAt,
+        long processedValueCount,
+        long migratedValueCount,
+        long skippedValueCount,
+        long failedValueCount,
+        String lastError
+    ) {
+        int updated = markTerminalIfStatus(
+            jobId,
+            status,
+            finishedAt,
+            processedValueCount,
+            migratedValueCount,
+            skippedValueCount,
+            failedValueCount,
+            lastError,
+            BackfillJobStatus.RUNNING
+        );
+        if (updated == 1) {
+            return 1;
+        }
+        return markTerminalIfStatus(
+            jobId,
+            status,
+            finishedAt,
+            processedValueCount,
+            migratedValueCount,
+            skippedValueCount,
+            failedValueCount,
+            lastError,
+            BackfillJobStatus.CANCEL_REQUESTED
         );
     }
 

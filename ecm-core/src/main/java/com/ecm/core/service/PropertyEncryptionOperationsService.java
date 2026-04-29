@@ -280,6 +280,16 @@ public class PropertyEncryptionOperationsService {
             .orElseThrow(() -> new ResourceNotFoundException("Backfill job not found: " + jobId));
     }
 
+    public PropertyEncryptionBackfillJobDto requestBackfillJobCancel(UUID jobId) {
+        if (jobId == null) {
+            throw new IllegalArgumentException("Backfill job id is required");
+        }
+        backfillJobRepository.requestBackfillJobCancel(jobId, LocalDateTime.now());
+        return backfillJobRepository.findById(jobId)
+            .map(this::toBackfillJobDto)
+            .orElseThrow(() -> new ResourceNotFoundException("Backfill job not found: " + jobId));
+    }
+
     @Transactional(readOnly = true)
     public PropertyEncryptionBackfillCandidateBatch previewBackfillCandidates(
         PropertyEncryptionBackfillCandidatePreviewRequest request
@@ -378,13 +388,14 @@ public class PropertyEncryptionOperationsService {
         job.setLastError(null);
         job.setUpdatedAt(startedAt);
 
-        BackfillRunCounters counters = new BackfillRunCounters(0, 0, 0, 0, null);
+        BackfillRunCounters counters = new BackfillRunCounters(0, 0, 0, 0, null, false);
         BackfillJobStatus terminalStatus = BackfillJobStatus.FAILED;
         String lastError = null;
         try {
             validateBackfillExecutorPreconditions(job);
 
             counters = runBackfillDefinitions(
+                job.getId(),
                 job.getDefinitionCounts() != null ? job.getDefinitionCounts() : List.of(),
                 clamp(
                     batchSize != null ? batchSize : DEFAULT_BACKFILL_EXECUTOR_BATCH_SIZE,
@@ -395,7 +406,9 @@ public class PropertyEncryptionOperationsService {
             );
 
             lastError = counters.lastError();
-            if (counters.failedValueCount() > 0) {
+            if (counters.cancelRequested()) {
+                terminalStatus = BackfillJobStatus.CANCELLED;
+            } else if (counters.failedValueCount() > 0) {
                 terminalStatus = BackfillJobStatus.FAILED;
             } else {
                 BackfillRemainingCounts remaining = remainingBackfillCounts(job.getDefinitionCounts());
@@ -413,10 +426,16 @@ public class PropertyEncryptionOperationsService {
             terminalStatus = BackfillJobStatus.FAILED;
             lastError = toBackfillError(ex);
         }
+        if (counters.failedValueCount() == 0
+            && terminalStatus != BackfillJobStatus.CANCELLED
+            && isBackfillCancelRequested(job.getId())) {
+            terminalStatus = BackfillJobStatus.CANCELLED;
+            lastError = null;
+        }
 
         LocalDateTime finishedAt = LocalDateTime.now();
         applyTerminalState(job, terminalStatus, counters, finishedAt, lastError);
-        if (backfillJobRepository.markTerminalIfRunning(
+        if (backfillJobRepository.markTerminalIfRunningOrCancelRequested(
             job.getId(),
             terminalStatus,
             finishedAt,
@@ -535,6 +554,7 @@ public class PropertyEncryptionOperationsService {
     }
 
     private BackfillRunCounters runBackfillDefinitions(
+        UUID jobId,
         List<BackfillDefinitionCountSnapshot> definitions,
         int batchSize,
         String actor
@@ -547,11 +567,17 @@ public class PropertyEncryptionOperationsService {
         Set<String> attemptedCandidates = new HashSet<>();
 
         for (BackfillDefinitionCountSnapshot definition : definitions) {
+            if (isBackfillCancelRequested(jobId)) {
+                return new BackfillRunCounters(processed, migrated, skipped, failed, lastError, true);
+            }
             if (definition == null || !hasText(definition.qualifiedName())) {
                 continue;
             }
             long remainingForDefinition = Math.max(0, definition.readyValueCount());
             while (remainingForDefinition > 0) {
+                if (isBackfillCancelRequested(jobId)) {
+                    return new BackfillRunCounters(processed, migrated, skipped, failed, lastError, true);
+                }
                 int limit = (int) Math.min(batchSize, remainingForDefinition);
                 List<PropertyBackfillCandidateRow> candidates = nodeRepository
                     .findBackfillCandidatesByPropertyKeyAndDeletedFalse(definition.qualifiedName(), limit);
@@ -560,6 +586,9 @@ public class PropertyEncryptionOperationsService {
                 }
                 boolean attemptedAnyCandidate = false;
                 for (PropertyBackfillCandidateRow candidate : candidates) {
+                    if (isBackfillCancelRequested(jobId)) {
+                        return new BackfillRunCounters(processed, migrated, skipped, failed, lastError, true);
+                    }
                     if (!attemptedCandidates.add(candidateKey(candidate))) {
                         continue;
                     }
@@ -577,7 +606,7 @@ public class PropertyEncryptionOperationsService {
                     } catch (Exception ex) {
                         failed++;
                         lastError = toBackfillError(ex);
-                        return new BackfillRunCounters(processed, migrated, skipped, failed, lastError);
+                        return new BackfillRunCounters(processed, migrated, skipped, failed, lastError, false);
                     }
                     if (remainingForDefinition <= 0) {
                         break;
@@ -589,7 +618,11 @@ public class PropertyEncryptionOperationsService {
             }
         }
 
-        return new BackfillRunCounters(processed, migrated, skipped, failed, lastError);
+        return new BackfillRunCounters(processed, migrated, skipped, failed, lastError, false);
+    }
+
+    private boolean isBackfillCancelRequested(UUID jobId) {
+        return backfillJobRepository.existsByIdAndStatus(jobId, BackfillJobStatus.CANCEL_REQUESTED);
     }
 
     private String candidateKey(PropertyBackfillCandidateRow candidate) {
@@ -727,6 +760,11 @@ public class PropertyEncryptionOperationsService {
     ) {
     }
 
+    public record PropertyEncryptionBackfillJobRunRequest(
+        Integer batchSize
+    ) {
+    }
+
     public record PropertyEncryptionBackfillCandidatePreviewRequest(
         String qualifiedName,
         Integer limit
@@ -834,7 +872,8 @@ public class PropertyEncryptionOperationsService {
         long migratedValueCount,
         long skippedValueCount,
         long failedValueCount,
-        String lastError
+        String lastError,
+        boolean cancelRequested
     ) {
     }
 

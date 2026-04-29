@@ -558,7 +558,7 @@ class PropertyEncryptionOperationsServiceTest {
             return 1;
         });
         when(backfillJobRepository.findById(jobId)).thenReturn(Optional.of(job));
-        when(backfillJobRepository.markTerminalIfRunning(
+        when(backfillJobRepository.markTerminalIfRunningOrCancelRequested(
             eq(jobId),
             eq(BackfillJobStatus.SUCCEEDED),
             any(),
@@ -626,7 +626,7 @@ class PropertyEncryptionOperationsServiceTest {
             return 1;
         });
         when(backfillJobRepository.findById(jobId)).thenReturn(Optional.of(job));
-        when(backfillJobRepository.markTerminalIfRunning(
+        when(backfillJobRepository.markTerminalIfRunningOrCancelRequested(
             eq(jobId),
             eq(BackfillJobStatus.FAILED),
             any(),
@@ -670,7 +670,7 @@ class PropertyEncryptionOperationsServiceTest {
             return 1;
         });
         when(backfillJobRepository.findById(jobId)).thenReturn(Optional.of(job));
-        when(backfillJobRepository.markTerminalIfRunning(
+        when(backfillJobRepository.markTerminalIfRunningOrCancelRequested(
             eq(jobId),
             eq(BackfillJobStatus.FAILED),
             any(),
@@ -704,7 +704,7 @@ class PropertyEncryptionOperationsServiceTest {
             return 1;
         });
         when(backfillJobRepository.findById(jobId)).thenReturn(Optional.of(job));
-        when(backfillJobRepository.markTerminalIfRunning(
+        when(backfillJobRepository.markTerminalIfRunningOrCancelRequested(
             eq(jobId),
             eq(BackfillJobStatus.FAILED),
             any(),
@@ -743,7 +743,7 @@ class PropertyEncryptionOperationsServiceTest {
             return 1;
         });
         when(backfillJobRepository.findById(jobId)).thenReturn(Optional.of(job));
-        when(backfillJobRepository.markTerminalIfRunning(
+        when(backfillJobRepository.markTerminalIfRunningOrCancelRequested(
             eq(jobId),
             eq(BackfillJobStatus.FAILED),
             any(),
@@ -803,7 +803,7 @@ class PropertyEncryptionOperationsServiceTest {
             return 1;
         });
         when(backfillJobRepository.findById(jobId)).thenReturn(Optional.of(job));
-        when(backfillJobRepository.markTerminalIfRunning(
+        when(backfillJobRepository.markTerminalIfRunningOrCancelRequested(
             eq(jobId),
             eq(BackfillJobStatus.FAILED),
             any(),
@@ -840,6 +840,61 @@ class PropertyEncryptionOperationsServiceTest {
 
         assertTrue(ex.getMessage().contains("PLANNED"));
         verify(backfillJobRepository, never()).save(any(PropertyEncryptionBackfillJob.class));
+    }
+
+    @Test
+    @DisplayName("backfill job cancel reloads the updated ledger row")
+    void backfillJobCancelReloadsUpdatedLedgerRow() {
+        UUID jobId = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        PropertyEncryptionBackfillJob job = plannedBackfillJob(jobId, 1);
+        when(backfillJobRepository.requestBackfillJobCancel(eq(jobId), any())).thenAnswer(invocation -> {
+            job.setStatus(BackfillJobStatus.CANCELLED);
+            job.setFinishedAt(invocation.getArgument(1));
+            return 1;
+        });
+        when(backfillJobRepository.findById(jobId)).thenReturn(Optional.of(job));
+
+        PropertyEncryptionOperationsService.PropertyEncryptionBackfillJobDto result =
+            service.requestBackfillJobCancel(jobId);
+
+        assertEquals(BackfillJobStatus.CANCELLED, result.status());
+        assertTrue(result.finishedAt() != null);
+    }
+
+    @Test
+    @DisplayName("backfill job executor honors cancellation before processing candidates")
+    void backfillJobExecutorHonorsCancellationBeforeCandidates() {
+        UUID jobId = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        PropertyEncryptionBackfillJob job = plannedBackfillJob(jobId, 1);
+        secretCryptoProperties.setActiveKeyVersion("v1");
+        secretCryptoProperties.setKeys(new LinkedHashMap<>(Map.of("v1", "base64-secret-not-exposed")));
+        when(secretCryptoService.isEnabled()).thenReturn(true);
+        when(backfillJobRepository.claimPlannedJob(eq(jobId), any())).thenAnswer(invocation -> {
+            job.setStatus(BackfillJobStatus.RUNNING);
+            job.setStartedAt(invocation.getArgument(1));
+            return 1;
+        });
+        when(backfillJobRepository.findById(jobId)).thenReturn(Optional.of(job));
+        when(nodeRepository.countByPropertyKeyInBothStorageAndDeletedFalse("acme:secretCode")).thenReturn(0L);
+        when(nodeRepository.countBackfillReadyByPropertyKeyAndDeletedFalse("acme:secretCode")).thenReturn(1L);
+        when(backfillJobRepository.existsByIdAndStatus(jobId, BackfillJobStatus.CANCEL_REQUESTED)).thenReturn(true);
+        when(backfillJobRepository.markTerminalIfRunningOrCancelRequested(
+            eq(jobId),
+            eq(BackfillJobStatus.CANCELLED),
+            any(),
+            eq(0L),
+            eq(0L),
+            eq(0L),
+            eq(0L),
+            eq(null)
+        )).thenReturn(1);
+
+        PropertyEncryptionOperationsService.PropertyEncryptionBackfillJobDto result =
+            service.runBackfillJob(jobId, 1, "admin");
+
+        assertEquals(BackfillJobStatus.CANCELLED, result.status());
+        assertEquals(0L, result.processedValueCount());
+        verify(nodeRepository, never()).findBackfillCandidatesByPropertyKeyAndDeletedFalse(any(), anyInt());
     }
 
     private PropertyDefinition typeProperty(String name) {

@@ -57,14 +57,7 @@ class PropertyEncryptionBackfillJobRepositoryTest {
     @DisplayName("claim and terminal update require expected job status")
     void claimAndTerminalUpdateRequireExpectedStatus() {
         LocalDateTime now = LocalDateTime.now();
-        PropertyEncryptionBackfillJob job = new PropertyEncryptionBackfillJob();
-        job.setStatus(BackfillJobStatus.PLANNED);
-        job.setTargetKeyVersion("v1");
-        job.setRequestedBy("admin");
-        job.setRequestedAt(now);
-        job.setCreatedAt(now);
-        job.setWarnings(List.of());
-        job.setDefinitionCounts(List.of());
+        PropertyEncryptionBackfillJob job = newBackfillJob(now);
 
         PropertyEncryptionBackfillJob saved = repository.saveAndFlush(job);
         LocalDateTime startedAt = now.plusMinutes(1);
@@ -105,5 +98,57 @@ class PropertyEncryptionBackfillJobRepositoryTest {
         assertEquals(1L, terminal.getSkippedValueCount());
         assertEquals(0L, terminal.getFailedValueCount());
         assertEquals(2L, terminal.getVersion());
+    }
+
+    @Test
+    @DisplayName("cancel request transitions planned and running jobs with expected status guards")
+    void cancelRequestTransitionsPlannedAndRunningJobsWithExpectedStatusGuards() {
+        LocalDateTime now = LocalDateTime.now();
+        PropertyEncryptionBackfillJob planned = repository.saveAndFlush(newBackfillJob(now));
+        LocalDateTime cancelAt = now.plusMinutes(1);
+
+        assertEquals(1, repository.requestBackfillJobCancel(planned.getId(), cancelAt));
+        assertEquals(0, repository.requestBackfillJobCancel(planned.getId(), cancelAt.plusMinutes(1)));
+
+        PropertyEncryptionBackfillJob cancelled = repository.findById(planned.getId()).orElseThrow();
+        assertEquals(BackfillJobStatus.CANCELLED, cancelled.getStatus());
+        assertEquals(cancelAt, cancelled.getFinishedAt());
+
+        PropertyEncryptionBackfillJob runningJob = repository.saveAndFlush(newBackfillJob(now.plusMinutes(2)));
+        LocalDateTime startedAt = now.plusMinutes(3);
+        LocalDateTime requestAt = now.plusMinutes(4);
+        assertEquals(1, repository.claimPlannedJob(runningJob.getId(), startedAt));
+        assertEquals(1, repository.requestBackfillJobCancel(runningJob.getId(), requestAt));
+
+        PropertyEncryptionBackfillJob cancelRequested = repository.findById(runningJob.getId()).orElseThrow();
+        assertEquals(BackfillJobStatus.CANCEL_REQUESTED, cancelRequested.getStatus());
+
+        assertEquals(1, repository.markTerminalIfRunningOrCancelRequested(
+            runningJob.getId(),
+            BackfillJobStatus.CANCELLED,
+            now.plusMinutes(5),
+            1L,
+            0L,
+            1L,
+            0L,
+            null
+        ));
+
+        PropertyEncryptionBackfillJob terminal = repository.findById(runningJob.getId()).orElseThrow();
+        assertEquals(BackfillJobStatus.CANCELLED, terminal.getStatus());
+        assertEquals(1L, terminal.getProcessedValueCount());
+        assertEquals(1L, terminal.getSkippedValueCount());
+    }
+
+    private PropertyEncryptionBackfillJob newBackfillJob(LocalDateTime now) {
+        PropertyEncryptionBackfillJob job = new PropertyEncryptionBackfillJob();
+        job.setStatus(BackfillJobStatus.PLANNED);
+        job.setTargetKeyVersion("v1");
+        job.setRequestedBy("admin");
+        job.setRequestedAt(now);
+        job.setCreatedAt(now);
+        job.setWarnings(List.of());
+        job.setDefinitionCounts(List.of());
+        return job;
     }
 }
