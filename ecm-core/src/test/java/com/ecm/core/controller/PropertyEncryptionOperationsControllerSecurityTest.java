@@ -3,6 +3,9 @@ package com.ecm.core.controller;
 import com.ecm.core.entity.PropertyDataType;
 import com.ecm.core.service.PropertyEncryptionOperationsService;
 import com.ecm.core.service.PropertyEncryptionOperationsService.EncryptedPropertyDefinitionSummary;
+import com.ecm.core.service.PropertyEncryptionOperationsService.KeyVersionValueCount;
+import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionRewrapDryRunRequest;
+import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionRewrapDryRunResult;
 import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionStatus;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -26,6 +29,7 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -73,6 +77,10 @@ class PropertyEncryptionOperationsControllerSecurityTest {
         mockMvc.perform(get("/api/v1/admin/property-encryption/status"))
             .andExpect(status().isForbidden());
         mockMvc.perform(get("/api/v1/admin/property-encryption/definitions"))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/admin/property-encryption/rewrap-jobs/dry-run")
+                .contentType("application/json")
+                .content("{\"targetKeyVersion\":\"v2\"}"))
             .andExpect(status().isForbidden());
     }
 
@@ -131,5 +139,47 @@ class PropertyEncryptionOperationsControllerSecurityTest {
             .andExpect(jsonPath("$[0].ownerQName", is("acme:contract")))
             .andExpect(jsonPath("$[0].dataType", is("TEXT")))
             .andExpect(jsonPath("$[0].indexed", is(false)));
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("admin can dry-run property encryption rewrap without creating a job")
+    void adminCanDryRunRewrap() throws Exception {
+        when(propertyEncryptionOperationsService.dryRunRewrap(new PropertyEncryptionRewrapDryRunRequest("v2")))
+            .thenReturn(new PropertyEncryptionRewrapDryRunResult(
+                "v2",
+                true,
+                true,
+                4,
+                7,
+                2,
+                5,
+                0,
+                List.of(
+                    new KeyVersionValueCount("v1", 5),
+                    new KeyVersionValueCount("v2", 2)
+                ),
+                List.of(),
+                List.of(),
+                true
+            ));
+
+        mockMvc.perform(post("/api/v1/admin/property-encryption/rewrap-jobs/dry-run")
+                .contentType("application/json")
+                .content("{\"targetKeyVersion\":\"v2\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.targetKeyVersion", is("v2")))
+            .andExpect(jsonPath("$.targetKeyConfigured", is(true)))
+            .andExpect(jsonPath("$.secretCryptoEnabled", is(true)))
+            .andExpect(jsonPath("$.candidateNodeCount", is(4)))
+            .andExpect(jsonPath("$.encryptedPropertyValueCount", is(7)))
+            .andExpect(jsonPath("$.valuesAlreadyOnTargetKeyCount", is(2)))
+            .andExpect(jsonPath("$.valuesRequiringRewrapCount", is(5)))
+            .andExpect(jsonPath("$.unversionedOrMalformedValueCount", is(0)))
+            .andExpect(jsonPath("$.keyVersionCounts", hasSize(2)))
+            .andExpect(jsonPath("$.keyVersionCounts[0].keyVersion", is("v1")))
+            .andExpect(jsonPath("$.keyVersionCounts[0].encryptedPropertyValueCount", is(5)))
+            .andExpect(jsonPath("$.missingSourceKeyVersions", hasSize(0)))
+            .andExpect(jsonPath("$.executable", is(true)));
     }
 }

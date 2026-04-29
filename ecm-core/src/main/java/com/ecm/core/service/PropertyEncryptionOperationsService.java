@@ -77,6 +77,72 @@ public class PropertyEncryptionOperationsService {
             .toList();
     }
 
+    @Transactional(readOnly = true)
+    public PropertyEncryptionRewrapDryRunResult dryRunRewrap(PropertyEncryptionRewrapDryRunRequest request) {
+        String requestedTargetKeyVersion = request != null ? request.targetKeyVersion() : null;
+        String targetKeyVersion = hasText(requestedTargetKeyVersion)
+            ? requestedTargetKeyVersion.trim()
+            : secretCryptoProperties.getActiveKeyVersion();
+        boolean secretCryptoEnabled = secretCryptoService.isEnabled();
+        List<String> configuredKeyVersions = configuredKeyVersions();
+        boolean targetKeyConfigured = targetKeyVersion != null && configuredKeyVersions.contains(targetKeyVersion);
+
+        long candidateNodeCount = nodeRepository.countNodesWithEncryptedPropertiesAndDeletedFalse();
+        long encryptedPropertyValueCount = nodeRepository.countEncryptedPropertyValuesAndDeletedFalse();
+        List<KeyVersionValueCount> keyVersionCounts = keyVersionCounts();
+        long versionedValueCount = keyVersionCounts.stream()
+            .mapToLong(KeyVersionValueCount::encryptedPropertyValueCount)
+            .sum();
+        long alreadyOnTargetKeyCount = keyVersionCounts.stream()
+            .filter(count -> count.keyVersion().equals(targetKeyVersion))
+            .mapToLong(KeyVersionValueCount::encryptedPropertyValueCount)
+            .sum();
+        List<String> missingSourceKeyVersions = keyVersionCounts.stream()
+            .map(KeyVersionValueCount::keyVersion)
+            .filter(keyVersion -> !configuredKeyVersions.contains(keyVersion))
+            .sorted()
+            .toList();
+        long unversionedOrMalformedValueCount = Math.max(0, encryptedPropertyValueCount - versionedValueCount);
+        long valuesRequiringRewrapCount = Math.max(0, encryptedPropertyValueCount - alreadyOnTargetKeyCount);
+
+        List<String> warnings = new ArrayList<>();
+        if (!secretCryptoEnabled) {
+            warnings.add("secret_crypto_disabled");
+        }
+        if (!hasText(targetKeyVersion)) {
+            warnings.add("target_key_version_required");
+        } else if (!targetKeyConfigured) {
+            warnings.add("target_key_version_not_configured");
+        }
+        if (unversionedOrMalformedValueCount > 0) {
+            warnings.add("encrypted_payloads_without_key_version");
+        }
+        if (!missingSourceKeyVersions.isEmpty()) {
+            warnings.add("source_key_versions_not_configured");
+        }
+
+        boolean executable = secretCryptoEnabled
+            && targetKeyConfigured
+            && missingSourceKeyVersions.isEmpty()
+            && unversionedOrMalformedValueCount == 0
+            && valuesRequiringRewrapCount > 0;
+
+        return new PropertyEncryptionRewrapDryRunResult(
+            targetKeyVersion,
+            targetKeyConfigured,
+            secretCryptoEnabled,
+            candidateNodeCount,
+            encryptedPropertyValueCount,
+            alreadyOnTargetKeyCount,
+            valuesRequiringRewrapCount,
+            unversionedOrMalformedValueCount,
+            keyVersionCounts,
+            missingSourceKeyVersions,
+            List.copyOf(warnings),
+            executable
+        );
+    }
+
     private EncryptedPropertyDefinitionSummary toDefinitionSummary(PropertyDefinition definition) {
         TypeDefinition typeDefinition = definition.getTypeDefinition();
         AspectDefinition aspectDefinition = definition.getAspectDefinition();
@@ -113,6 +179,32 @@ public class PropertyEncryptionOperationsService {
         return keys.keySet().stream().sorted().toList();
     }
 
+    private List<KeyVersionValueCount> keyVersionCounts() {
+        return nodeRepository.countEncryptedPropertyValuesByKeyVersionAndDeletedFalse().stream()
+            .map(this::toKeyVersionValueCount)
+            .sorted(Comparator.comparing(KeyVersionValueCount::keyVersion))
+            .toList();
+    }
+
+    private KeyVersionValueCount toKeyVersionValueCount(Object[] row) {
+        String keyVersion = row[0] != null ? row[0].toString() : "";
+        return new KeyVersionValueCount(keyVersion, toLong(row[1]));
+    }
+
+    private long toLong(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value == null) {
+            return 0L;
+        }
+        return Long.parseLong(value.toString());
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
     public record PropertyEncryptionStatus(
         boolean secretCryptoEnabled,
         String activeKeyVersion,
@@ -138,6 +230,33 @@ public class PropertyEncryptionOperationsService {
         boolean mandatory,
         boolean multiValued,
         boolean indexed
+    ) {
+    }
+
+    public record PropertyEncryptionRewrapDryRunRequest(
+        String targetKeyVersion
+    ) {
+    }
+
+    public record PropertyEncryptionRewrapDryRunResult(
+        String targetKeyVersion,
+        boolean targetKeyConfigured,
+        boolean secretCryptoEnabled,
+        long candidateNodeCount,
+        long encryptedPropertyValueCount,
+        long valuesAlreadyOnTargetKeyCount,
+        long valuesRequiringRewrapCount,
+        long unversionedOrMalformedValueCount,
+        List<KeyVersionValueCount> keyVersionCounts,
+        List<String> missingSourceKeyVersions,
+        List<String> warnings,
+        boolean executable
+    ) {
+    }
+
+    public record KeyVersionValueCount(
+        String keyVersion,
+        long encryptedPropertyValueCount
     ) {
     }
 }

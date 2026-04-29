@@ -208,4 +208,17 @@ public interface NodeRepository extends JpaRepository<Node, UUID>, JpaSpecificat
           AND n.encrypted_properties <> '{}'::jsonb
         """, nativeQuery = true)
     long countEncryptedPropertyValuesAndDeletedFalse();
+
+    @Query(value = """
+        SELECT split_part(payload.value, ':', 2) AS key_version,
+               COUNT(*) AS value_count
+        FROM nodes n
+        CROSS JOIN LATERAL jsonb_each_text(n.encrypted_properties) AS payload(key, value)
+        WHERE n.is_deleted = false
+          AND n.encrypted_properties IS NOT NULL
+          AND n.encrypted_properties <> '{}'::jsonb
+          AND payload.value ~ '^enc:[^:]+:.+$'
+        GROUP BY split_part(payload.value, ':', 2)
+        """, nativeQuery = true)
+    List<Object[]> countEncryptedPropertyValuesByKeyVersionAndDeletedFalse();
 }

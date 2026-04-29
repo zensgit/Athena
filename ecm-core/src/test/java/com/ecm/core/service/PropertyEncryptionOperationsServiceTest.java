@@ -113,6 +113,71 @@ class PropertyEncryptionOperationsServiceTest {
         assertEquals(PropertyDataType.TEXT, summaries.get(1).dataType());
     }
 
+    @Test
+    @DisplayName("rewrap dry-run uses active key by default and reports values requiring rewrap")
+    void rewrapDryRunUsesActiveKeyAndReportsImpact() {
+        secretCryptoProperties.setActiveKeyVersion("v2");
+        secretCryptoProperties.setKeys(new LinkedHashMap<>(Map.of(
+            "v1", "base64-secret-not-exposed",
+            "v2", "another-base64-secret-not-exposed"
+        )));
+        when(secretCryptoService.isEnabled()).thenReturn(true);
+        when(nodeRepository.countNodesWithEncryptedPropertiesAndDeletedFalse()).thenReturn(4L);
+        when(nodeRepository.countEncryptedPropertyValuesAndDeletedFalse()).thenReturn(7L);
+        when(nodeRepository.countEncryptedPropertyValuesByKeyVersionAndDeletedFalse()).thenReturn(List.of(
+            new Object[] {"v1", 5L},
+            new Object[] {"v2", 2L}
+        ));
+
+        PropertyEncryptionOperationsService.PropertyEncryptionRewrapDryRunResult result =
+            service.dryRunRewrap(null);
+
+        assertEquals("v2", result.targetKeyVersion());
+        assertTrue(result.targetKeyConfigured());
+        assertTrue(result.secretCryptoEnabled());
+        assertEquals(4L, result.candidateNodeCount());
+        assertEquals(7L, result.encryptedPropertyValueCount());
+        assertEquals(2L, result.valuesAlreadyOnTargetKeyCount());
+        assertEquals(5L, result.valuesRequiringRewrapCount());
+        assertEquals(0L, result.unversionedOrMalformedValueCount());
+        assertEquals(List.of("v1", "v2"), result.keyVersionCounts().stream()
+            .map(PropertyEncryptionOperationsService.KeyVersionValueCount::keyVersion)
+            .toList());
+        assertEquals(List.of(), result.missingSourceKeyVersions());
+        assertEquals(List.of(), result.warnings());
+        assertTrue(result.executable());
+    }
+
+    @Test
+    @DisplayName("rewrap dry-run blocks execution when target key is missing, source key is missing, or payloads are malformed")
+    void rewrapDryRunWarnsForMissingTargetMissingSourceAndMalformedPayloads() {
+        secretCryptoProperties.setActiveKeyVersion("v1");
+        secretCryptoProperties.setKeys(new LinkedHashMap<>(Map.of("v1", "base64-secret-not-exposed")));
+        when(secretCryptoService.isEnabled()).thenReturn(false);
+        when(nodeRepository.countNodesWithEncryptedPropertiesAndDeletedFalse()).thenReturn(3L);
+        when(nodeRepository.countEncryptedPropertyValuesAndDeletedFalse()).thenReturn(5L);
+        when(nodeRepository.countEncryptedPropertyValuesByKeyVersionAndDeletedFalse()).thenReturn(List.<Object[]>of(
+            new Object[] {"v1", 2L},
+            new Object[] {"v9", 1L}
+        ));
+
+        PropertyEncryptionOperationsService.PropertyEncryptionRewrapDryRunResult result =
+            service.dryRunRewrap(new PropertyEncryptionOperationsService.PropertyEncryptionRewrapDryRunRequest("v3"));
+
+        assertEquals("v3", result.targetKeyVersion());
+        assertFalse(result.targetKeyConfigured());
+        assertFalse(result.secretCryptoEnabled());
+        assertEquals(0L, result.valuesAlreadyOnTargetKeyCount());
+        assertEquals(5L, result.valuesRequiringRewrapCount());
+        assertEquals(2L, result.unversionedOrMalformedValueCount());
+        assertEquals(List.of("v9"), result.missingSourceKeyVersions());
+        assertTrue(result.warnings().contains("secret_crypto_disabled"));
+        assertTrue(result.warnings().contains("target_key_version_not_configured"));
+        assertTrue(result.warnings().contains("encrypted_payloads_without_key_version"));
+        assertTrue(result.warnings().contains("source_key_versions_not_configured"));
+        assertFalse(result.executable());
+    }
+
     private PropertyDefinition typeProperty(String name) {
         ContentModelDefinition model = model();
         TypeDefinition typeDefinition = new TypeDefinition();
