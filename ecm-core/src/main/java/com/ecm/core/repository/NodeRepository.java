@@ -190,4 +190,22 @@ public interface NodeRepository extends JpaRepository<Node, UUID>, JpaSpecificat
           )
         """, nativeQuery = true)
     long countByPropertyKeyAcrossStorageAndDeletedFalse(@Param("propertyKey") String propertyKey);
+
+    @Query(value = """
+        SELECT COUNT(*)
+        FROM nodes n
+        WHERE n.is_deleted = false
+          AND n.encrypted_properties IS NOT NULL
+          AND n.encrypted_properties <> '{}'::jsonb
+        """, nativeQuery = true)
+    long countNodesWithEncryptedPropertiesAndDeletedFalse();
+
+    @Query(value = """
+        SELECT COALESCE(SUM(jsonb_object_length(n.encrypted_properties)), 0)
+        FROM nodes n
+        WHERE n.is_deleted = false
+          AND n.encrypted_properties IS NOT NULL
+          AND n.encrypted_properties <> '{}'::jsonb
+        """, nativeQuery = true)
+    long countEncryptedPropertyValuesAndDeletedFalse();
 }

@@ -13,6 +13,7 @@ import java.util.UUID;
 public interface PropertyDefinitionRepository extends JpaRepository<PropertyDefinition, UUID> {
     List<PropertyDefinition> findByTypeDefinitionId(UUID typeDefinitionId);
     List<PropertyDefinition> findByAspectDefinitionId(UUID aspectDefinitionId);
+    List<PropertyDefinition> findByEncryptedTrue();
 
     @Query("SELECT p FROM PropertyDefinition p WHERE p.typeDefinition.model.prefix = :prefix AND p.typeDefinition.name = :typeName")
     List<PropertyDefinition> findByTypeName(@Param("prefix") String prefix, @Param("typeName") String typeName);
