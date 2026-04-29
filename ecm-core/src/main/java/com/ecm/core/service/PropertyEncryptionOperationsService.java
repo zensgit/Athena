@@ -23,8 +23,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -41,7 +43,10 @@ public class PropertyEncryptionOperationsService {
     private static final int MAX_BACKFILL_JOB_LIMIT = 100;
     private static final int DEFAULT_BACKFILL_CANDIDATE_LIMIT = 100;
     private static final int MAX_BACKFILL_CANDIDATE_LIMIT = 1000;
+    private static final int DEFAULT_BACKFILL_EXECUTOR_BATCH_SIZE = 100;
+    private static final int MAX_BACKFILL_EXECUTOR_BATCH_SIZE = 500;
     private static final String DEFAULT_BACKFILL_ACTOR = "property-encryption-backfill";
+    private static final int MAX_BACKFILL_ERROR_LENGTH = 2000;
 
     @Transactional(readOnly = true)
     public PropertyEncryptionStatus getStatus() {
@@ -349,6 +354,83 @@ public class PropertyEncryptionOperationsService {
         );
     }
 
+    public PropertyEncryptionBackfillJobDto runBackfillJob(
+        UUID jobId,
+        Integer batchSize,
+        String requestedBy
+    ) {
+        if (jobId == null) {
+            throw new IllegalArgumentException("Backfill job id is required");
+        }
+        LocalDateTime startedAt = LocalDateTime.now();
+        if (backfillJobRepository.claimPlannedJob(jobId, startedAt) != 1) {
+            PropertyEncryptionBackfillJob current = backfillJobRepository.findById(jobId)
+                .orElseThrow(() -> new ResourceNotFoundException("Backfill job not found: " + jobId));
+            throw new IllegalStateException("Backfill job must be PLANNED before execution; current status is " + current.getStatus());
+        }
+
+        PropertyEncryptionBackfillJob job = backfillJobRepository.findById(jobId)
+            .orElseThrow(() -> new ResourceNotFoundException("Backfill job not found: " + jobId));
+        String actor = hasText(requestedBy) ? requestedBy.trim() : DEFAULT_BACKFILL_ACTOR;
+        job.setStatus(BackfillJobStatus.RUNNING);
+        job.setStartedAt(startedAt);
+        job.setFinishedAt(null);
+        job.setLastError(null);
+        job.setUpdatedAt(startedAt);
+
+        BackfillRunCounters counters = new BackfillRunCounters(0, 0, 0, 0, null);
+        BackfillJobStatus terminalStatus = BackfillJobStatus.FAILED;
+        String lastError = null;
+        try {
+            validateBackfillExecutorPreconditions(job);
+
+            counters = runBackfillDefinitions(
+                job.getDefinitionCounts() != null ? job.getDefinitionCounts() : List.of(),
+                clamp(
+                    batchSize != null ? batchSize : DEFAULT_BACKFILL_EXECUTOR_BATCH_SIZE,
+                    1,
+                    MAX_BACKFILL_EXECUTOR_BATCH_SIZE
+                ),
+                actor
+            );
+
+            lastError = counters.lastError();
+            if (counters.failedValueCount() > 0) {
+                terminalStatus = BackfillJobStatus.FAILED;
+            } else {
+                BackfillRemainingCounts remaining = remainingBackfillCounts(job.getDefinitionCounts());
+                if (remaining.dualStorageConflictValueCount() > 0) {
+                    terminalStatus = BackfillJobStatus.FAILED;
+                    lastError = "Backfill job ended with dual-storage conflicts";
+                } else if (remaining.readyValueCount() > 0) {
+                    terminalStatus = BackfillJobStatus.FAILED;
+                    lastError = "Backfill job ended with remaining ready values";
+                } else {
+                    terminalStatus = BackfillJobStatus.SUCCEEDED;
+                }
+            }
+        } catch (Exception ex) {
+            terminalStatus = BackfillJobStatus.FAILED;
+            lastError = toBackfillError(ex);
+        }
+
+        LocalDateTime finishedAt = LocalDateTime.now();
+        applyTerminalState(job, terminalStatus, counters, finishedAt, lastError);
+        if (backfillJobRepository.markTerminalIfRunning(
+            job.getId(),
+            terminalStatus,
+            finishedAt,
+            job.getProcessedValueCount(),
+            job.getMigratedValueCount(),
+            job.getSkippedValueCount(),
+            job.getFailedValueCount(),
+            lastError
+        ) != 1) {
+            throw new IllegalStateException("Backfill job was no longer RUNNING during terminal update");
+        }
+        return toBackfillJobDto(job);
+    }
+
     private EncryptedPropertyDefinitionSummary toDefinitionSummary(PropertyDefinition definition) {
         TypeDefinition typeDefinition = definition.getTypeDefinition();
         AspectDefinition aspectDefinition = definition.getAspectDefinition();
@@ -432,6 +514,121 @@ public class PropertyEncryptionOperationsService {
         );
     }
 
+    private void validateBackfillExecutorPreconditions(PropertyEncryptionBackfillJob job) {
+        if (!secretCryptoService.isEnabled()) {
+            throw new IllegalStateException("Secret crypto must be enabled before backfill job execution");
+        }
+        String activeKeyVersion = secretCryptoProperties.getActiveKeyVersion();
+        if (!hasText(job.getTargetKeyVersion())) {
+            throw new IllegalStateException("Backfill job target key version is required");
+        }
+        if (!job.getTargetKeyVersion().equals(activeKeyVersion)) {
+            throw new IllegalStateException("Backfill job target key version must match the active key version");
+        }
+        if (!configuredKeyVersions().contains(activeKeyVersion)) {
+            throw new IllegalStateException("Active secret key version is not configured");
+        }
+        BackfillRemainingCounts remaining = remainingBackfillCounts(job.getDefinitionCounts());
+        if (remaining.dualStorageConflictValueCount() > 0) {
+            throw new IllegalStateException("Backfill job cannot execute while dual-storage conflicts exist");
+        }
+    }
+
+    private BackfillRunCounters runBackfillDefinitions(
+        List<BackfillDefinitionCountSnapshot> definitions,
+        int batchSize,
+        String actor
+    ) {
+        long processed = 0;
+        long migrated = 0;
+        long skipped = 0;
+        long failed = 0;
+        String lastError = null;
+        Set<String> attemptedCandidates = new HashSet<>();
+
+        for (BackfillDefinitionCountSnapshot definition : definitions) {
+            if (definition == null || !hasText(definition.qualifiedName())) {
+                continue;
+            }
+            long remainingForDefinition = Math.max(0, definition.readyValueCount());
+            while (remainingForDefinition > 0) {
+                int limit = (int) Math.min(batchSize, remainingForDefinition);
+                List<PropertyBackfillCandidateRow> candidates = nodeRepository
+                    .findBackfillCandidatesByPropertyKeyAndDeletedFalse(definition.qualifiedName(), limit);
+                if (candidates.isEmpty()) {
+                    break;
+                }
+                boolean attemptedAnyCandidate = false;
+                for (PropertyBackfillCandidateRow candidate : candidates) {
+                    if (!attemptedCandidates.add(candidateKey(candidate))) {
+                        continue;
+                    }
+                    attemptedAnyCandidate = true;
+                    processed++;
+                    remainingForDefinition--;
+                    try {
+                        PropertyEncryptionBackfillCandidateUpdateResult result =
+                            applyBackfillCandidateUpdate(candidate, actor);
+                        if (result.migrated()) {
+                            migrated++;
+                        } else {
+                            skipped++;
+                        }
+                    } catch (Exception ex) {
+                        failed++;
+                        lastError = toBackfillError(ex);
+                        return new BackfillRunCounters(processed, migrated, skipped, failed, lastError);
+                    }
+                    if (remainingForDefinition <= 0) {
+                        break;
+                    }
+                }
+                if (!attemptedAnyCandidate) {
+                    break;
+                }
+            }
+        }
+
+        return new BackfillRunCounters(processed, migrated, skipped, failed, lastError);
+    }
+
+    private String candidateKey(PropertyBackfillCandidateRow candidate) {
+        return candidate.getNodeId() + ":" + candidate.getPropertyKey();
+    }
+
+    private BackfillRemainingCounts remainingBackfillCounts(List<BackfillDefinitionCountSnapshot> definitions) {
+        long ready = 0;
+        long conflicts = 0;
+        if (definitions == null) {
+            return new BackfillRemainingCounts(0, 0);
+        }
+        for (BackfillDefinitionCountSnapshot definition : definitions) {
+            if (definition == null || !hasText(definition.qualifiedName())) {
+                continue;
+            }
+            ready += nodeRepository.countBackfillReadyByPropertyKeyAndDeletedFalse(definition.qualifiedName());
+            conflicts += nodeRepository.countByPropertyKeyInBothStorageAndDeletedFalse(definition.qualifiedName());
+        }
+        return new BackfillRemainingCounts(ready, conflicts);
+    }
+
+    private void applyTerminalState(
+        PropertyEncryptionBackfillJob job,
+        BackfillJobStatus terminalStatus,
+        BackfillRunCounters counters,
+        LocalDateTime finishedAt,
+        String lastError
+    ) {
+        job.setStatus(terminalStatus);
+        job.setFinishedAt(finishedAt);
+        job.setUpdatedAt(finishedAt);
+        job.setProcessedValueCount(job.getProcessedValueCount() + counters.processedValueCount());
+        job.setMigratedValueCount(job.getMigratedValueCount() + counters.migratedValueCount());
+        job.setSkippedValueCount(job.getSkippedValueCount() + counters.skippedValueCount());
+        job.setFailedValueCount(job.getFailedValueCount() + counters.failedValueCount());
+        job.setLastError(lastError);
+    }
+
     private PropertyEncryptionBackfillJobDto toBackfillJobDto(PropertyEncryptionBackfillJob job) {
         return new PropertyEncryptionBackfillJobDto(
             job.getId(),
@@ -475,6 +672,16 @@ public class PropertyEncryptionOperationsService {
 
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private String toBackfillError(Exception ex) {
+        String message = ex.getMessage();
+        if (!hasText(message)) {
+            message = ex.getClass().getSimpleName();
+        }
+        return message.length() <= MAX_BACKFILL_ERROR_LENGTH
+            ? message
+            : message.substring(0, MAX_BACKFILL_ERROR_LENGTH);
     }
 
     public record PropertyEncryptionStatus(
@@ -619,6 +826,21 @@ public class PropertyEncryptionOperationsService {
         UUID nodeId,
         String qualifiedName,
         boolean migrated
+    ) {
+    }
+
+    private record BackfillRunCounters(
+        long processedValueCount,
+        long migratedValueCount,
+        long skippedValueCount,
+        long failedValueCount,
+        String lastError
+    ) {
+    }
+
+    private record BackfillRemainingCounts(
+        long readyValueCount,
+        long dualStorageConflictValueCount
     ) {
     }
 }

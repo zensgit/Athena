@@ -20,13 +20,16 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -34,6 +37,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -538,6 +542,306 @@ class PropertyEncryptionOperationsServiceTest {
         );
     }
 
+    @Test
+    @DisplayName("backfill job executor migrates, skips CAS misses, and marks job succeeded")
+    void backfillJobExecutorMigratesSkipsAndSucceeds() {
+        UUID jobId = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        UUID firstNodeId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        UUID secondNodeId = UUID.fromString("66666666-7777-8888-9999-000000000000");
+        PropertyEncryptionBackfillJob job = plannedBackfillJob(jobId, 2);
+        secretCryptoProperties.setActiveKeyVersion("v1");
+        secretCryptoProperties.setKeys(new LinkedHashMap<>(Map.of("v1", "base64-secret-not-exposed")));
+        when(secretCryptoService.isEnabled()).thenReturn(true);
+        when(backfillJobRepository.claimPlannedJob(eq(jobId), any())).thenAnswer(invocation -> {
+            job.setStatus(BackfillJobStatus.RUNNING);
+            job.setStartedAt(invocation.getArgument(1));
+            return 1;
+        });
+        when(backfillJobRepository.findById(jobId)).thenReturn(Optional.of(job));
+        when(backfillJobRepository.markTerminalIfRunning(
+            eq(jobId),
+            eq(BackfillJobStatus.SUCCEEDED),
+            any(),
+            eq(2L),
+            eq(1L),
+            eq(1L),
+            eq(0L),
+            eq(null)
+        )).thenReturn(1);
+        when(nodeRepository.countByPropertyKeyInBothStorageAndDeletedFalse("acme:secretCode")).thenReturn(0L, 0L);
+        when(nodeRepository.countBackfillReadyByPropertyKeyAndDeletedFalse("acme:secretCode")).thenReturn(2L, 0L);
+        when(nodeRepository.findBackfillCandidatesByPropertyKeyAndDeletedFalse("acme:secretCode", 2))
+            .thenReturn(List.of(
+                candidate(firstNodeId, "acme:secretCode", "\"SEC-1\"", 3L),
+                candidate(secondNodeId, "acme:secretCode", "\"SEC-2\"", 4L)
+            ));
+        when(secretCryptoService.protect("\"SEC-1\"")).thenReturn("enc:v1:one");
+        when(secretCryptoService.protect("\"SEC-2\"")).thenReturn("enc:v1:two");
+        when(secretCryptoService.isEncrypted("enc:v1:one")).thenReturn(true);
+        when(secretCryptoService.isEncrypted("enc:v1:two")).thenReturn(true);
+        when(nodeRepository.backfillEncryptedPropertyIfUnchanged(
+            eq(firstNodeId),
+            eq("acme:secretCode"),
+            eq("\"SEC-1\""),
+            eq(3L),
+            eq("enc:v1:one"),
+            any(),
+            eq("admin")
+        )).thenReturn(1);
+        when(nodeRepository.backfillEncryptedPropertyIfUnchanged(
+            eq(secondNodeId),
+            eq("acme:secretCode"),
+            eq("\"SEC-2\""),
+            eq(4L),
+            eq("enc:v1:two"),
+            any(),
+            eq("admin")
+        )).thenReturn(0);
+
+        PropertyEncryptionOperationsService.PropertyEncryptionBackfillJobDto result =
+            service.runBackfillJob(jobId, 2, " admin ");
+
+        assertEquals(BackfillJobStatus.SUCCEEDED, result.status());
+        assertEquals(2L, result.processedValueCount());
+        assertEquals(1L, result.migratedValueCount());
+        assertEquals(1L, result.skippedValueCount());
+        assertEquals(0L, result.failedValueCount());
+        assertNull(result.lastError());
+        assertTrue(result.startedAt() != null);
+        assertTrue(result.finishedAt() != null);
+    }
+
+    @Test
+    @DisplayName("backfill job executor records candidate failures and marks job failed")
+    void backfillJobExecutorRecordsCandidateFailures() {
+        UUID jobId = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        UUID nodeId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        PropertyEncryptionBackfillJob job = plannedBackfillJob(jobId, 1);
+        secretCryptoProperties.setActiveKeyVersion("v1");
+        secretCryptoProperties.setKeys(new LinkedHashMap<>(Map.of("v1", "base64-secret-not-exposed")));
+        when(secretCryptoService.isEnabled()).thenReturn(true);
+        when(backfillJobRepository.claimPlannedJob(eq(jobId), any())).thenAnswer(invocation -> {
+            job.setStatus(BackfillJobStatus.RUNNING);
+            job.setStartedAt(invocation.getArgument(1));
+            return 1;
+        });
+        when(backfillJobRepository.findById(jobId)).thenReturn(Optional.of(job));
+        when(backfillJobRepository.markTerminalIfRunning(
+            eq(jobId),
+            eq(BackfillJobStatus.FAILED),
+            any(),
+            eq(1L),
+            eq(0L),
+            eq(0L),
+            eq(1L),
+            eq("encrypt failed")
+        )).thenReturn(1);
+        when(nodeRepository.countByPropertyKeyInBothStorageAndDeletedFalse("acme:secretCode")).thenReturn(0L);
+        when(nodeRepository.countBackfillReadyByPropertyKeyAndDeletedFalse("acme:secretCode")).thenReturn(1L);
+        when(nodeRepository.findBackfillCandidatesByPropertyKeyAndDeletedFalse("acme:secretCode", 1))
+            .thenReturn(List.of(candidate(nodeId, "acme:secretCode", "\"SEC-FAIL\"", 3L)));
+        when(secretCryptoService.protect("\"SEC-FAIL\"")).thenThrow(new IllegalStateException("encrypt failed"));
+
+        PropertyEncryptionOperationsService.PropertyEncryptionBackfillJobDto result =
+            service.runBackfillJob(jobId, 1, "admin");
+
+        assertEquals(BackfillJobStatus.FAILED, result.status());
+        assertEquals(1L, result.processedValueCount());
+        assertEquals(0L, result.migratedValueCount());
+        assertEquals(0L, result.skippedValueCount());
+        assertEquals(1L, result.failedValueCount());
+        assertEquals("encrypt failed", result.lastError());
+    }
+
+    @Test
+    @DisplayName("backfill job executor fails preflight when target key is no longer active")
+    void backfillJobExecutorFailsWhenTargetKeyIsNotActive() {
+        UUID jobId = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        PropertyEncryptionBackfillJob job = plannedBackfillJob(jobId, 2);
+        secretCryptoProperties.setActiveKeyVersion("v2");
+        secretCryptoProperties.setKeys(new LinkedHashMap<>(Map.of(
+            "v1", "base64-secret-not-exposed",
+            "v2", "another-base64-secret-not-exposed"
+        )));
+        when(secretCryptoService.isEnabled()).thenReturn(true);
+        when(backfillJobRepository.claimPlannedJob(eq(jobId), any())).thenAnswer(invocation -> {
+            job.setStatus(BackfillJobStatus.RUNNING);
+            job.setStartedAt(invocation.getArgument(1));
+            return 1;
+        });
+        when(backfillJobRepository.findById(jobId)).thenReturn(Optional.of(job));
+        when(backfillJobRepository.markTerminalIfRunning(
+            eq(jobId),
+            eq(BackfillJobStatus.FAILED),
+            any(),
+            eq(0L),
+            eq(0L),
+            eq(0L),
+            eq(0L),
+            eq("Backfill job target key version must match the active key version")
+        )).thenReturn(1);
+
+        PropertyEncryptionOperationsService.PropertyEncryptionBackfillJobDto result =
+            service.runBackfillJob(jobId, 2, "admin");
+
+        assertEquals(BackfillJobStatus.FAILED, result.status());
+        assertEquals(0L, result.processedValueCount());
+        assertTrue(result.lastError().contains("active key version"));
+        verify(nodeRepository, never()).findBackfillCandidatesByPropertyKeyAndDeletedFalse(any(), anyInt());
+    }
+
+    @Test
+    @DisplayName("backfill job executor fails when candidates run out but ready values remain")
+    void backfillJobExecutorFailsWhenReadyValuesRemain() {
+        UUID jobId = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        PropertyEncryptionBackfillJob job = plannedBackfillJob(jobId, 1);
+        secretCryptoProperties.setActiveKeyVersion("v1");
+        secretCryptoProperties.setKeys(new LinkedHashMap<>(Map.of("v1", "base64-secret-not-exposed")));
+        when(secretCryptoService.isEnabled()).thenReturn(true);
+        when(backfillJobRepository.claimPlannedJob(eq(jobId), any())).thenAnswer(invocation -> {
+            job.setStatus(BackfillJobStatus.RUNNING);
+            job.setStartedAt(invocation.getArgument(1));
+            return 1;
+        });
+        when(backfillJobRepository.findById(jobId)).thenReturn(Optional.of(job));
+        when(backfillJobRepository.markTerminalIfRunning(
+            eq(jobId),
+            eq(BackfillJobStatus.FAILED),
+            any(),
+            eq(0L),
+            eq(0L),
+            eq(0L),
+            eq(0L),
+            eq("Backfill job ended with remaining ready values")
+        )).thenReturn(1);
+        when(nodeRepository.countByPropertyKeyInBothStorageAndDeletedFalse("acme:secretCode")).thenReturn(0L, 0L);
+        when(nodeRepository.countBackfillReadyByPropertyKeyAndDeletedFalse("acme:secretCode")).thenReturn(1L, 1L);
+        when(nodeRepository.findBackfillCandidatesByPropertyKeyAndDeletedFalse("acme:secretCode", 1))
+            .thenReturn(List.of());
+
+        PropertyEncryptionOperationsService.PropertyEncryptionBackfillJobDto result =
+            service.runBackfillJob(jobId, 1, "admin");
+
+        assertEquals(BackfillJobStatus.FAILED, result.status());
+        assertEquals(0L, result.processedValueCount());
+        assertEquals("Backfill job ended with remaining ready values", result.lastError());
+    }
+
+    @Test
+    @DisplayName("backfill job executor does not reprocess duplicate candidates in one run")
+    void backfillJobExecutorDoesNotReprocessDuplicateCandidates() {
+        UUID jobId = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        UUID nodeId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        PropertyBackfillCandidateRow candidate = candidate(nodeId, "acme:secretCode", "\"SEC-1\"", 3L);
+        PropertyEncryptionBackfillJob job = plannedBackfillJob(jobId, 2);
+        secretCryptoProperties.setActiveKeyVersion("v1");
+        secretCryptoProperties.setKeys(new LinkedHashMap<>(Map.of("v1", "base64-secret-not-exposed")));
+        when(secretCryptoService.isEnabled()).thenReturn(true);
+        when(backfillJobRepository.claimPlannedJob(eq(jobId), any())).thenAnswer(invocation -> {
+            job.setStatus(BackfillJobStatus.RUNNING);
+            job.setStartedAt(invocation.getArgument(1));
+            return 1;
+        });
+        when(backfillJobRepository.findById(jobId)).thenReturn(Optional.of(job));
+        when(backfillJobRepository.markTerminalIfRunning(
+            eq(jobId),
+            eq(BackfillJobStatus.FAILED),
+            any(),
+            eq(1L),
+            eq(0L),
+            eq(1L),
+            eq(0L),
+            eq("Backfill job ended with remaining ready values")
+        )).thenReturn(1);
+        when(nodeRepository.countByPropertyKeyInBothStorageAndDeletedFalse("acme:secretCode")).thenReturn(0L, 0L);
+        when(nodeRepository.countBackfillReadyByPropertyKeyAndDeletedFalse("acme:secretCode")).thenReturn(2L, 1L);
+        when(nodeRepository.findBackfillCandidatesByPropertyKeyAndDeletedFalse("acme:secretCode", 1))
+            .thenReturn(List.of(candidate), List.of(candidate));
+        when(secretCryptoService.protect("\"SEC-1\"")).thenReturn("enc:v1:one");
+        when(secretCryptoService.isEncrypted("enc:v1:one")).thenReturn(true);
+        when(nodeRepository.backfillEncryptedPropertyIfUnchanged(
+            eq(nodeId),
+            eq("acme:secretCode"),
+            eq("\"SEC-1\""),
+            eq(3L),
+            eq("enc:v1:one"),
+            any(),
+            eq("admin")
+        )).thenReturn(0);
+
+        PropertyEncryptionOperationsService.PropertyEncryptionBackfillJobDto result =
+            service.runBackfillJob(jobId, 1, "admin");
+
+        assertEquals(BackfillJobStatus.FAILED, result.status());
+        assertEquals(1L, result.processedValueCount());
+        assertEquals(0L, result.migratedValueCount());
+        assertEquals(1L, result.skippedValueCount());
+        assertEquals(0L, result.failedValueCount());
+        assertEquals("Backfill job ended with remaining ready values", result.lastError());
+        verify(nodeRepository, times(1)).backfillEncryptedPropertyIfUnchanged(
+            eq(nodeId),
+            eq("acme:secretCode"),
+            eq("\"SEC-1\""),
+            eq(3L),
+            eq("enc:v1:one"),
+            any(),
+            eq("admin")
+        );
+    }
+
+    @Test
+    @DisplayName("backfill job executor fails preflight when dual-storage conflicts exist")
+    void backfillJobExecutorFailsWhenDualStorageConflictsExist() {
+        UUID jobId = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        PropertyEncryptionBackfillJob job = plannedBackfillJob(jobId, 1);
+        secretCryptoProperties.setActiveKeyVersion("v1");
+        secretCryptoProperties.setKeys(new LinkedHashMap<>(Map.of("v1", "base64-secret-not-exposed")));
+        when(secretCryptoService.isEnabled()).thenReturn(true);
+        when(backfillJobRepository.claimPlannedJob(eq(jobId), any())).thenAnswer(invocation -> {
+            job.setStatus(BackfillJobStatus.RUNNING);
+            job.setStartedAt(invocation.getArgument(1));
+            return 1;
+        });
+        when(backfillJobRepository.findById(jobId)).thenReturn(Optional.of(job));
+        when(backfillJobRepository.markTerminalIfRunning(
+            eq(jobId),
+            eq(BackfillJobStatus.FAILED),
+            any(),
+            eq(0L),
+            eq(0L),
+            eq(0L),
+            eq(0L),
+            eq("Backfill job cannot execute while dual-storage conflicts exist")
+        )).thenReturn(1);
+        when(nodeRepository.countByPropertyKeyInBothStorageAndDeletedFalse("acme:secretCode")).thenReturn(1L);
+        when(nodeRepository.countBackfillReadyByPropertyKeyAndDeletedFalse("acme:secretCode")).thenReturn(1L);
+
+        PropertyEncryptionOperationsService.PropertyEncryptionBackfillJobDto result =
+            service.runBackfillJob(jobId, 1, "admin");
+
+        assertEquals(BackfillJobStatus.FAILED, result.status());
+        assertEquals(0L, result.processedValueCount());
+        assertEquals("Backfill job cannot execute while dual-storage conflicts exist", result.lastError());
+        verify(nodeRepository, never()).findBackfillCandidatesByPropertyKeyAndDeletedFalse(any(), anyInt());
+    }
+
+    @Test
+    @DisplayName("backfill job executor rejects jobs that are not planned")
+    void backfillJobExecutorRejectsNonPlannedJob() {
+        UUID jobId = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        PropertyEncryptionBackfillJob job = plannedBackfillJob(jobId, 1);
+        job.setStatus(BackfillJobStatus.RUNNING);
+        when(backfillJobRepository.claimPlannedJob(eq(jobId), any())).thenReturn(0);
+        when(backfillJobRepository.findById(jobId)).thenReturn(Optional.of(job));
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, () ->
+            service.runBackfillJob(jobId, 1, "admin")
+        );
+
+        assertTrue(ex.getMessage().contains("PLANNED"));
+        verify(backfillJobRepository, never()).save(any(PropertyEncryptionBackfillJob.class));
+    }
+
     private PropertyDefinition typeProperty(String name) {
         ContentModelDefinition model = model();
         TypeDefinition typeDefinition = new TypeDefinition();
@@ -576,6 +880,30 @@ class PropertyEncryptionOperationsServiceTest {
         model.setPrefix("acme");
         model.setName("content");
         return model;
+    }
+
+    private PropertyEncryptionBackfillJob plannedBackfillJob(UUID jobId, long readyValueCount) {
+        LocalDateTime now = LocalDateTime.now();
+        PropertyEncryptionBackfillJob job = new PropertyEncryptionBackfillJob();
+        job.setId(jobId);
+        job.setStatus(BackfillJobStatus.PLANNED);
+        job.setTargetKeyVersion("v1");
+        job.setRequestedBy("admin");
+        job.setRequestedAt(now);
+        job.setCreatedAt(now);
+        job.setEncryptedPropertyDefinitionCount(1L);
+        job.setPlaintextValueCount(readyValueCount);
+        job.setReadyValueCount(readyValueCount);
+        job.setDefinitionCounts(List.of(new PropertyEncryptionBackfillJob.BackfillDefinitionCountSnapshot(
+            "acme:secretCode",
+            "TYPE",
+            "acme:contract",
+            readyValueCount,
+            0L,
+            0L,
+            readyValueCount
+        )));
+        return job;
     }
 
     private PropertyBackfillCandidateRow candidate(UUID nodeId, String propertyKey, String plaintextJson) {
