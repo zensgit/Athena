@@ -9,6 +9,7 @@ import com.ecm.core.entity.PropertyDefinition;
 import com.ecm.core.entity.TypeDefinition;
 import com.ecm.core.exception.ResourceNotFoundException;
 import com.ecm.core.repository.NodeRepository;
+import com.ecm.core.repository.NodeRepository.PropertyBackfillCandidateRow;
 import com.ecm.core.repository.PropertyEncryptionBackfillJobRepository;
 import com.ecm.core.repository.PropertyDefinitionRepository;
 import com.ecm.core.security.secret.SecretCryptoProperties;
@@ -38,6 +39,8 @@ public class PropertyEncryptionOperationsService {
 
     private static final int DEFAULT_BACKFILL_JOB_LIMIT = 20;
     private static final int MAX_BACKFILL_JOB_LIMIT = 100;
+    private static final int DEFAULT_BACKFILL_CANDIDATE_LIMIT = 100;
+    private static final int MAX_BACKFILL_CANDIDATE_LIMIT = 1000;
 
     @Transactional(readOnly = true)
     public PropertyEncryptionStatus getStatus() {
@@ -271,6 +274,32 @@ public class PropertyEncryptionOperationsService {
             .orElseThrow(() -> new ResourceNotFoundException("Backfill job not found: " + jobId));
     }
 
+    @Transactional(readOnly = true)
+    public PropertyEncryptionBackfillCandidateBatch previewBackfillCandidates(
+        PropertyEncryptionBackfillCandidatePreviewRequest request
+    ) {
+        String qualifiedName = request != null ? request.qualifiedName() : null;
+        if (!hasText(qualifiedName)) {
+            throw new IllegalArgumentException("Encrypted property qualifiedName is required");
+        }
+
+        int limit = clamp(
+            request != null && request.limit() != null ? request.limit() : DEFAULT_BACKFILL_CANDIDATE_LIMIT,
+            1,
+            MAX_BACKFILL_CANDIDATE_LIMIT
+        );
+        List<PropertyBackfillCandidateRow> candidates = nodeRepository
+            .findBackfillCandidatesByPropertyKeyAndDeletedFalse(qualifiedName.trim(), limit);
+        return new PropertyEncryptionBackfillCandidateBatch(
+            qualifiedName.trim(),
+            limit,
+            candidates.size(),
+            candidates.stream()
+                .map(row -> new PropertyEncryptionBackfillCandidateRef(row.getNodeId(), row.getPropertyKey()))
+                .toList()
+        );
+    }
+
     private EncryptedPropertyDefinitionSummary toDefinitionSummary(PropertyDefinition definition) {
         TypeDefinition typeDefinition = definition.getTypeDefinition();
         AspectDefinition aspectDefinition = definition.getAspectDefinition();
@@ -442,6 +471,12 @@ public class PropertyEncryptionOperationsService {
     ) {
     }
 
+    public record PropertyEncryptionBackfillCandidatePreviewRequest(
+        String qualifiedName,
+        Integer limit
+    ) {
+    }
+
     public record PropertyEncryptionRewrapDryRunResult(
         String targetKeyVersion,
         boolean targetKeyConfigured,
@@ -514,6 +549,20 @@ public class PropertyEncryptionOperationsService {
         String lastError,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
+    ) {
+    }
+
+    public record PropertyEncryptionBackfillCandidateBatch(
+        String qualifiedName,
+        int limit,
+        int candidateCount,
+        List<PropertyEncryptionBackfillCandidateRef> candidates
+    ) {
+    }
+
+    public record PropertyEncryptionBackfillCandidateRef(
+        UUID nodeId,
+        String qualifiedName
     ) {
     }
 }

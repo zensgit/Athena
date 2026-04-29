@@ -8,6 +8,7 @@ import com.ecm.core.entity.PropertyDataType;
 import com.ecm.core.entity.PropertyDefinition;
 import com.ecm.core.entity.TypeDefinition;
 import com.ecm.core.repository.NodeRepository;
+import com.ecm.core.repository.NodeRepository.PropertyBackfillCandidateRow;
 import com.ecm.core.repository.PropertyEncryptionBackfillJobRepository;
 import com.ecm.core.repository.PropertyDefinitionRepository;
 import com.ecm.core.security.secret.SecretCryptoProperties;
@@ -29,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -384,6 +386,48 @@ class PropertyEncryptionOperationsServiceTest {
         verify(backfillJobRepository, never()).save(any(PropertyEncryptionBackfillJob.class));
     }
 
+    @Test
+    @DisplayName("backfill candidate preview uses bounded repository predicate without returning plaintext")
+    void backfillCandidatePreviewReturnsNodeRefsOnly() {
+        UUID firstNodeId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        UUID secondNodeId = UUID.fromString("66666666-7777-8888-9999-000000000000");
+        when(nodeRepository.findBackfillCandidatesByPropertyKeyAndDeletedFalse("acme:secretCode", 1000))
+            .thenReturn(List.of(
+                candidate(firstNodeId, "acme:secretCode", "sensitive-one"),
+                candidate(secondNodeId, "acme:secretCode", "sensitive-two")
+            ));
+
+        PropertyEncryptionOperationsService.PropertyEncryptionBackfillCandidateBatch result =
+            service.previewBackfillCandidates(
+                new PropertyEncryptionOperationsService.PropertyEncryptionBackfillCandidatePreviewRequest(
+                    " acme:secretCode ",
+                    5000
+                )
+            );
+
+        assertEquals("acme:secretCode", result.qualifiedName());
+        assertEquals(1000, result.limit());
+        assertEquals(2, result.candidateCount());
+        assertEquals(List.of(firstNodeId, secondNodeId), result.candidates().stream()
+            .map(PropertyEncryptionOperationsService.PropertyEncryptionBackfillCandidateRef::nodeId)
+            .toList());
+        assertEquals(List.of("acme:secretCode", "acme:secretCode"), result.candidates().stream()
+            .map(PropertyEncryptionOperationsService.PropertyEncryptionBackfillCandidateRef::qualifiedName)
+            .toList());
+    }
+
+    @Test
+    @DisplayName("backfill candidate preview rejects blank qualified name")
+    void backfillCandidatePreviewRejectsBlankQualifiedName() {
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () ->
+            service.previewBackfillCandidates(
+                new PropertyEncryptionOperationsService.PropertyEncryptionBackfillCandidatePreviewRequest(" ", 10)
+            ));
+
+        assertTrue(ex.getMessage().contains("qualifiedName"));
+        verify(nodeRepository, never()).findBackfillCandidatesByPropertyKeyAndDeletedFalse(any(), anyInt());
+    }
+
     private PropertyDefinition typeProperty(String name) {
         ContentModelDefinition model = model();
         TypeDefinition typeDefinition = new TypeDefinition();
@@ -422,5 +466,29 @@ class PropertyEncryptionOperationsServiceTest {
         model.setPrefix("acme");
         model.setName("content");
         return model;
+    }
+
+    private PropertyBackfillCandidateRow candidate(UUID nodeId, String propertyKey, String plaintextJson) {
+        return new PropertyBackfillCandidateRow() {
+            @Override
+            public UUID getNodeId() {
+                return nodeId;
+            }
+
+            @Override
+            public String getPropertyKey() {
+                return propertyKey;
+            }
+
+            @Override
+            public String getPlaintextJson() {
+                return plaintextJson;
+            }
+
+            @Override
+            public Long getEntityVersion() {
+                return 0L;
+            }
+        };
     }
 }

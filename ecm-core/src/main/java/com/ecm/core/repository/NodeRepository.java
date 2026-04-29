@@ -205,6 +205,26 @@ public interface NodeRepository extends JpaRepository<Node, UUID>, JpaSpecificat
     long countBackfillReadyByPropertyKeyAndDeletedFalse(@Param("propertyKey") String propertyKey);
 
     @Query(value = """
+        SELECT n.id AS "nodeId",
+               CAST(:propertyKey AS text) AS "propertyKey",
+               CAST(n.properties -> :propertyKey AS text) AS "plaintextJson",
+               n.version AS "entityVersion"
+        FROM nodes n
+        WHERE n.is_deleted = false
+          AND jsonb_exists(n.properties, :propertyKey)
+          AND (
+            n.encrypted_properties IS NULL
+            OR NOT jsonb_exists(n.encrypted_properties, :propertyKey)
+          )
+        ORDER BY n.id
+        LIMIT :limit
+        """, nativeQuery = true)
+    List<PropertyBackfillCandidateRow> findBackfillCandidatesByPropertyKeyAndDeletedFalse(
+        @Param("propertyKey") String propertyKey,
+        @Param("limit") int limit
+    );
+
+    @Query(value = """
         SELECT COUNT(*)
         FROM nodes n
         WHERE n.is_deleted = false
@@ -245,4 +265,14 @@ public interface NodeRepository extends JpaRepository<Node, UUID>, JpaSpecificat
         GROUP BY split_part(payload.value, ':', 2)
         """, nativeQuery = true)
     List<Object[]> countEncryptedPropertyValuesByKeyVersionAndDeletedFalse();
+
+    interface PropertyBackfillCandidateRow {
+        UUID getNodeId();
+
+        String getPropertyKey();
+
+        String getPlaintextJson();
+
+        Long getEntityVersion();
+    }
 }

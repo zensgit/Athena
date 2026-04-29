@@ -20,12 +20,16 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class NodeRepositoryJsonbBackfillSmokeTest {
 
@@ -63,7 +67,11 @@ class NodeRepositoryJsonbBackfillSmokeTest {
                         folder("encrypted-only", Map.of(), stringMapOf("cm:title", "enc:v1:cipher"), false),
                         folder("dual-storage", objectMapOf("cm:title", "dual"), stringMapOf("cm:title", "enc:v1:dual"), false),
                         folder("orphan-encrypted", Map.of(), stringMapOf("custom:orphan", "enc:v1:orphan"), false),
-                        folder("deleted-ignored", objectMapOf("cm:title", "deleted"), stringMapOf("cm:title", "enc:v1:deleted"), true)
+                        folder("deleted-ignored", objectMapOf("cm:title", "deleted"), stringMapOf("cm:title", "enc:v1:deleted"), true),
+                        folder("typed-number", objectMapOf("cm:typed", 42), Map.of(), false),
+                        folder("typed-boolean", objectMapOf("cm:typed", true), Map.of(), false),
+                        folder("typed-object", objectMapOf("cm:typed", objectMapOf("nested", "value")), Map.of(), false),
+                        folder("typed-array", objectMapOf("cm:typed", new ArrayList<>(List.of("one", "two"))), Map.of(), false)
                     ));
                     repository.flush();
 
@@ -76,6 +84,25 @@ class NodeRepositoryJsonbBackfillSmokeTest {
                     assertEquals(0L, repository.countByPropertyKeyAndDeletedFalse("custom:orphan"));
                     assertEquals(1L, repository.countByEncryptedPropertyKeyAndDeletedFalse("custom:orphan"));
                     assertEquals(0L, repository.countBackfillReadyByPropertyKeyAndDeletedFalse("custom:orphan"));
+
+                    List<NodeRepository.PropertyBackfillCandidateRow> candidates =
+                        repository.findBackfillCandidatesByPropertyKeyAndDeletedFalse("cm:title", 10);
+                    assertEquals(2, candidates.size());
+                    assertEquals(Set.of("\"plain\"", "\"plain-null\""), candidates.stream()
+                        .map(NodeRepository.PropertyBackfillCandidateRow::getPlaintextJson)
+                        .collect(Collectors.toSet()));
+                    assertEquals(Set.of("cm:title"), candidates.stream()
+                        .map(NodeRepository.PropertyBackfillCandidateRow::getPropertyKey)
+                        .collect(Collectors.toSet()));
+                    assertTrue(candidates.stream().allMatch(row -> row.getEntityVersion() != null));
+
+                    assertEquals(1, repository.findBackfillCandidatesByPropertyKeyAndDeletedFalse("cm:title", 1).size());
+
+                    List<NodeRepository.PropertyBackfillCandidateRow> typedCandidates =
+                        repository.findBackfillCandidatesByPropertyKeyAndDeletedFalse("cm:typed", 10);
+                    assertEquals(Set.of("42", "true", "{\"nested\":\"value\"}", "[\"one\",\"two\"]"), typedCandidates.stream()
+                        .map(NodeRepository.PropertyBackfillCandidateRow::getPlaintextJson)
+                        .collect(Collectors.toSet()));
 
                     assertEquals(3L, repository.countNodesWithEncryptedPropertiesAndDeletedFalse());
                     assertEquals(3L, repository.countEncryptedPropertyValuesAndDeletedFalse());
