@@ -178,6 +178,142 @@ class PropertyEncryptionOperationsServiceTest {
         assertFalse(result.executable());
     }
 
+    @Test
+    @DisplayName("backfill dry-run reports plaintext encrypted-property values ready for backfill")
+    void backfillDryRunReportsReadyPlaintextValues() {
+        secretCryptoProperties.setActiveKeyVersion("v2");
+        secretCryptoProperties.setKeys(new LinkedHashMap<>(Map.of(
+            "v1", "base64-secret-not-exposed",
+            "v2", "another-base64-secret-not-exposed"
+        )));
+        when(secretCryptoService.isEnabled()).thenReturn(true);
+        when(propertyDefinitionRepository.findByEncryptedTrue()).thenReturn(List.of(
+            typeProperty("secretCode"),
+            aspectProperty("caseNumber")
+        ));
+        when(nodeRepository.countByPropertyKeyAndDeletedFalse("acme:caseNumber")).thenReturn(2L);
+        when(nodeRepository.countByEncryptedPropertyKeyAndDeletedFalse("acme:caseNumber")).thenReturn(1L);
+        when(nodeRepository.countByPropertyKeyInBothStorageAndDeletedFalse("acme:caseNumber")).thenReturn(0L);
+        when(nodeRepository.countBackfillReadyByPropertyKeyAndDeletedFalse("acme:caseNumber")).thenReturn(2L);
+        when(nodeRepository.countByPropertyKeyAndDeletedFalse("acme:secretCode")).thenReturn(4L);
+        when(nodeRepository.countByEncryptedPropertyKeyAndDeletedFalse("acme:secretCode")).thenReturn(2L);
+        when(nodeRepository.countByPropertyKeyInBothStorageAndDeletedFalse("acme:secretCode")).thenReturn(0L);
+        when(nodeRepository.countBackfillReadyByPropertyKeyAndDeletedFalse("acme:secretCode")).thenReturn(4L);
+        when(nodeRepository.countEncryptedPropertyValuesAndDeletedFalse()).thenReturn(3L);
+
+        PropertyEncryptionOperationsService.PropertyEncryptionBackfillDryRunResult result =
+            service.dryRunBackfill(null);
+
+        assertEquals("v2", result.targetKeyVersion());
+        assertTrue(result.targetKeyConfigured());
+        assertTrue(result.secretCryptoEnabled());
+        assertEquals(2L, result.encryptedPropertyDefinitionCount());
+        assertEquals(6L, result.plaintextValueCount());
+        assertEquals(3L, result.alreadyEncryptedValueCount());
+        assertEquals(0L, result.dualStorageConflictValueCount());
+        assertEquals(6L, result.readyValueCount());
+        assertEquals(0L, result.orphanEncryptedValueCount());
+        assertEquals(List.of("acme:caseNumber", "acme:secretCode"), result.definitionCounts().stream()
+            .map(PropertyEncryptionOperationsService.PropertyBackfillCount::qualifiedName)
+            .toList());
+        assertEquals(List.of(), result.warnings());
+        assertTrue(result.executable());
+    }
+
+    @Test
+    @DisplayName("backfill dry-run blocks execution when crypto or storage state is unsafe")
+    void backfillDryRunBlocksUnsafeState() {
+        secretCryptoProperties.setActiveKeyVersion("v1");
+        secretCryptoProperties.setKeys(new LinkedHashMap<>(Map.of("v1", "base64-secret-not-exposed")));
+        when(secretCryptoService.isEnabled()).thenReturn(false);
+        when(propertyDefinitionRepository.findByEncryptedTrue()).thenReturn(List.of(typeProperty("secretCode")));
+        when(nodeRepository.countByPropertyKeyAndDeletedFalse("acme:secretCode")).thenReturn(4L);
+        when(nodeRepository.countByEncryptedPropertyKeyAndDeletedFalse("acme:secretCode")).thenReturn(1L);
+        when(nodeRepository.countByPropertyKeyInBothStorageAndDeletedFalse("acme:secretCode")).thenReturn(2L);
+        when(nodeRepository.countBackfillReadyByPropertyKeyAndDeletedFalse("acme:secretCode")).thenReturn(2L);
+        when(nodeRepository.countEncryptedPropertyValuesAndDeletedFalse()).thenReturn(3L);
+
+        PropertyEncryptionOperationsService.PropertyEncryptionBackfillDryRunResult result =
+            service.dryRunBackfill(new PropertyEncryptionOperationsService.PropertyEncryptionBackfillDryRunRequest("v3"));
+
+        assertEquals("v3", result.targetKeyVersion());
+        assertFalse(result.targetKeyConfigured());
+        assertFalse(result.secretCryptoEnabled());
+        assertEquals(4L, result.plaintextValueCount());
+        assertEquals(1L, result.alreadyEncryptedValueCount());
+        assertEquals(2L, result.dualStorageConflictValueCount());
+        assertEquals(2L, result.readyValueCount());
+        assertEquals(2L, result.orphanEncryptedValueCount());
+        assertTrue(result.warnings().contains("secret_crypto_disabled"));
+        assertTrue(result.warnings().contains("target_key_version_not_configured"));
+        assertTrue(result.warnings().contains("dual_storage_conflicts_detected"));
+        assertTrue(result.warnings().contains("orphan_encrypted_payloads_detected"));
+        assertFalse(result.executable());
+    }
+
+    @Test
+    @DisplayName("backfill dry-run blocks execution when no values are ready")
+    void backfillDryRunBlocksNoReadyValues() {
+        secretCryptoProperties.setActiveKeyVersion("v1");
+        secretCryptoProperties.setKeys(new LinkedHashMap<>(Map.of("v1", "base64-secret-not-exposed")));
+        when(secretCryptoService.isEnabled()).thenReturn(true);
+        when(propertyDefinitionRepository.findByEncryptedTrue()).thenReturn(List.of(typeProperty("secretCode")));
+        when(nodeRepository.countByPropertyKeyAndDeletedFalse("acme:secretCode")).thenReturn(0L);
+        when(nodeRepository.countByEncryptedPropertyKeyAndDeletedFalse("acme:secretCode")).thenReturn(3L);
+        when(nodeRepository.countByPropertyKeyInBothStorageAndDeletedFalse("acme:secretCode")).thenReturn(0L);
+        when(nodeRepository.countBackfillReadyByPropertyKeyAndDeletedFalse("acme:secretCode")).thenReturn(0L);
+        when(nodeRepository.countEncryptedPropertyValuesAndDeletedFalse()).thenReturn(3L);
+
+        PropertyEncryptionOperationsService.PropertyEncryptionBackfillDryRunResult result =
+            service.dryRunBackfill(new PropertyEncryptionOperationsService.PropertyEncryptionBackfillDryRunRequest(" "));
+
+        assertEquals("v1", result.targetKeyVersion());
+        assertTrue(result.targetKeyConfigured());
+        assertEquals(0L, result.readyValueCount());
+        assertEquals(0L, result.orphanEncryptedValueCount());
+        assertEquals(List.of(), result.warnings());
+        assertFalse(result.executable());
+    }
+
+    @Test
+    @DisplayName("backfill dry-run treats orphan encrypted payloads as warning-only")
+    void backfillDryRunAllowsOrphanWarningOnlyWhenReadyValuesExist() {
+        secretCryptoProperties.setActiveKeyVersion("v1");
+        secretCryptoProperties.setKeys(new LinkedHashMap<>(Map.of("v1", "base64-secret-not-exposed")));
+        when(secretCryptoService.isEnabled()).thenReturn(true);
+        when(propertyDefinitionRepository.findByEncryptedTrue()).thenReturn(List.of(typeProperty("secretCode")));
+        when(nodeRepository.countByPropertyKeyAndDeletedFalse("acme:secretCode")).thenReturn(2L);
+        when(nodeRepository.countByEncryptedPropertyKeyAndDeletedFalse("acme:secretCode")).thenReturn(1L);
+        when(nodeRepository.countByPropertyKeyInBothStorageAndDeletedFalse("acme:secretCode")).thenReturn(0L);
+        when(nodeRepository.countBackfillReadyByPropertyKeyAndDeletedFalse("acme:secretCode")).thenReturn(2L);
+        when(nodeRepository.countEncryptedPropertyValuesAndDeletedFalse()).thenReturn(4L);
+
+        PropertyEncryptionOperationsService.PropertyEncryptionBackfillDryRunResult result =
+            service.dryRunBackfill(null);
+
+        assertEquals(3L, result.orphanEncryptedValueCount());
+        assertTrue(result.warnings().contains("orphan_encrypted_payloads_detected"));
+        assertTrue(result.executable());
+    }
+
+    @Test
+    @DisplayName("backfill dry-run blocks execution when no encrypted property definitions exist")
+    void backfillDryRunBlocksNoDefinitions() {
+        secretCryptoProperties.setActiveKeyVersion("v1");
+        secretCryptoProperties.setKeys(new LinkedHashMap<>(Map.of("v1", "base64-secret-not-exposed")));
+        when(secretCryptoService.isEnabled()).thenReturn(true);
+        when(propertyDefinitionRepository.findByEncryptedTrue()).thenReturn(List.of());
+        when(nodeRepository.countEncryptedPropertyValuesAndDeletedFalse()).thenReturn(0L);
+
+        PropertyEncryptionOperationsService.PropertyEncryptionBackfillDryRunResult result =
+            service.dryRunBackfill(null);
+
+        assertEquals(0L, result.encryptedPropertyDefinitionCount());
+        assertEquals(0L, result.readyValueCount());
+        assertTrue(result.warnings().contains("no_encrypted_property_definitions"));
+        assertFalse(result.executable());
+    }
+
     private PropertyDefinition typeProperty(String name) {
         ContentModelDefinition model = model();
         TypeDefinition typeDefinition = new TypeDefinition();

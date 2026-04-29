@@ -4,6 +4,9 @@ import com.ecm.core.entity.PropertyDataType;
 import com.ecm.core.service.PropertyEncryptionOperationsService;
 import com.ecm.core.service.PropertyEncryptionOperationsService.EncryptedPropertyDefinitionSummary;
 import com.ecm.core.service.PropertyEncryptionOperationsService.KeyVersionValueCount;
+import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyBackfillCount;
+import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionBackfillDryRunRequest;
+import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionBackfillDryRunResult;
 import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionRewrapDryRunRequest;
 import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionRewrapDryRunResult;
 import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionStatus;
@@ -79,6 +82,10 @@ class PropertyEncryptionOperationsControllerSecurityTest {
         mockMvc.perform(get("/api/v1/admin/property-encryption/definitions"))
             .andExpect(status().isForbidden());
         mockMvc.perform(post("/api/v1/admin/property-encryption/rewrap-jobs/dry-run")
+                .contentType("application/json")
+                .content("{\"targetKeyVersion\":\"v2\"}"))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/admin/property-encryption/backfill-jobs/dry-run")
                 .contentType("application/json")
                 .content("{\"targetKeyVersion\":\"v2\"}"))
             .andExpect(status().isForbidden());
@@ -180,6 +187,53 @@ class PropertyEncryptionOperationsControllerSecurityTest {
             .andExpect(jsonPath("$.keyVersionCounts[0].keyVersion", is("v1")))
             .andExpect(jsonPath("$.keyVersionCounts[0].encryptedPropertyValueCount", is(5)))
             .andExpect(jsonPath("$.missingSourceKeyVersions", hasSize(0)))
+            .andExpect(jsonPath("$.executable", is(true)));
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("admin can dry-run property encryption backfill without creating a job")
+    void adminCanDryRunBackfill() throws Exception {
+        when(propertyEncryptionOperationsService.dryRunBackfill(new PropertyEncryptionBackfillDryRunRequest("v2")))
+            .thenReturn(new PropertyEncryptionBackfillDryRunResult(
+                "v2",
+                true,
+                true,
+                1,
+                4,
+                2,
+                0,
+                4,
+                0,
+                List.of(new PropertyBackfillCount(
+                    "acme:secretCode",
+                    "TYPE",
+                    "acme:contract",
+                    4,
+                    2,
+                    0,
+                    4
+                )),
+                List.of(),
+                true
+            ));
+
+        mockMvc.perform(post("/api/v1/admin/property-encryption/backfill-jobs/dry-run")
+                .contentType("application/json")
+                .content("{\"targetKeyVersion\":\"v2\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.targetKeyVersion", is("v2")))
+            .andExpect(jsonPath("$.targetKeyConfigured", is(true)))
+            .andExpect(jsonPath("$.secretCryptoEnabled", is(true)))
+            .andExpect(jsonPath("$.encryptedPropertyDefinitionCount", is(1)))
+            .andExpect(jsonPath("$.plaintextValueCount", is(4)))
+            .andExpect(jsonPath("$.alreadyEncryptedValueCount", is(2)))
+            .andExpect(jsonPath("$.dualStorageConflictValueCount", is(0)))
+            .andExpect(jsonPath("$.readyValueCount", is(4)))
+            .andExpect(jsonPath("$.orphanEncryptedValueCount", is(0)))
+            .andExpect(jsonPath("$.definitionCounts", hasSize(1)))
+            .andExpect(jsonPath("$.definitionCounts[0].qualifiedName", is("acme:secretCode")))
+            .andExpect(jsonPath("$.definitionCounts[0].readyValueCount", is(4)))
             .andExpect(jsonPath("$.executable", is(true)));
     }
 }

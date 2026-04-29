@@ -79,10 +79,7 @@ public class PropertyEncryptionOperationsService {
 
     @Transactional(readOnly = true)
     public PropertyEncryptionRewrapDryRunResult dryRunRewrap(PropertyEncryptionRewrapDryRunRequest request) {
-        String requestedTargetKeyVersion = request != null ? request.targetKeyVersion() : null;
-        String targetKeyVersion = hasText(requestedTargetKeyVersion)
-            ? requestedTargetKeyVersion.trim()
-            : secretCryptoProperties.getActiveKeyVersion();
+        String targetKeyVersion = resolveTargetKeyVersion(request != null ? request.targetKeyVersion() : null);
         boolean secretCryptoEnabled = secretCryptoService.isEnabled();
         List<String> configuredKeyVersions = configuredKeyVersions();
         boolean targetKeyConfigured = targetKeyVersion != null && configuredKeyVersions.contains(targetKeyVersion);
@@ -143,6 +140,74 @@ public class PropertyEncryptionOperationsService {
         );
     }
 
+    @Transactional(readOnly = true)
+    public PropertyEncryptionBackfillDryRunResult dryRunBackfill(PropertyEncryptionBackfillDryRunRequest request) {
+        String targetKeyVersion = resolveTargetKeyVersion(request != null ? request.targetKeyVersion() : null);
+        boolean secretCryptoEnabled = secretCryptoService.isEnabled();
+        List<String> configuredKeyVersions = configuredKeyVersions();
+        boolean targetKeyConfigured = targetKeyVersion != null && configuredKeyVersions.contains(targetKeyVersion);
+
+        List<EncryptedPropertyDefinitionSummary> definitions = listEncryptedDefinitions();
+        List<PropertyBackfillCount> definitionCounts = definitions.stream()
+            .map(this::toBackfillCount)
+            .toList();
+
+        long plaintextValueCount = definitionCounts.stream()
+            .mapToLong(PropertyBackfillCount::plaintextValueCount)
+            .sum();
+        long alreadyEncryptedValueCount = definitionCounts.stream()
+            .mapToLong(PropertyBackfillCount::alreadyEncryptedValueCount)
+            .sum();
+        long dualStorageConflictValueCount = definitionCounts.stream()
+            .mapToLong(PropertyBackfillCount::dualStorageConflictValueCount)
+            .sum();
+        long readyValueCount = definitionCounts.stream()
+            .mapToLong(PropertyBackfillCount::readyValueCount)
+            .sum();
+        long totalEncryptedPropertyValueCount = nodeRepository.countEncryptedPropertyValuesAndDeletedFalse();
+        long orphanEncryptedValueCount = Math.max(0, totalEncryptedPropertyValueCount - alreadyEncryptedValueCount);
+
+        List<String> warnings = new ArrayList<>();
+        if (!secretCryptoEnabled) {
+            warnings.add("secret_crypto_disabled");
+        }
+        if (!hasText(targetKeyVersion)) {
+            warnings.add("target_key_version_required");
+        } else if (!targetKeyConfigured) {
+            warnings.add("target_key_version_not_configured");
+        }
+        if (definitions.isEmpty()) {
+            warnings.add("no_encrypted_property_definitions");
+        }
+        if (dualStorageConflictValueCount > 0) {
+            warnings.add("dual_storage_conflicts_detected");
+        }
+        if (orphanEncryptedValueCount > 0) {
+            warnings.add("orphan_encrypted_payloads_detected");
+        }
+
+        boolean executable = secretCryptoEnabled
+            && targetKeyConfigured
+            && !definitions.isEmpty()
+            && dualStorageConflictValueCount == 0
+            && readyValueCount > 0;
+
+        return new PropertyEncryptionBackfillDryRunResult(
+            targetKeyVersion,
+            targetKeyConfigured,
+            secretCryptoEnabled,
+            definitions.size(),
+            plaintextValueCount,
+            alreadyEncryptedValueCount,
+            dualStorageConflictValueCount,
+            readyValueCount,
+            orphanEncryptedValueCount,
+            definitionCounts,
+            List.copyOf(warnings),
+            executable
+        );
+    }
+
     private EncryptedPropertyDefinitionSummary toDefinitionSummary(PropertyDefinition definition) {
         TypeDefinition typeDefinition = definition.getTypeDefinition();
         AspectDefinition aspectDefinition = definition.getAspectDefinition();
@@ -179,6 +244,12 @@ public class PropertyEncryptionOperationsService {
         return keys.keySet().stream().sorted().toList();
     }
 
+    private String resolveTargetKeyVersion(String requestedTargetKeyVersion) {
+        return hasText(requestedTargetKeyVersion)
+            ? requestedTargetKeyVersion.trim()
+            : secretCryptoProperties.getActiveKeyVersion();
+    }
+
     private List<KeyVersionValueCount> keyVersionCounts() {
         return nodeRepository.countEncryptedPropertyValuesByKeyVersionAndDeletedFalse().stream()
             .map(this::toKeyVersionValueCount)
@@ -189,6 +260,23 @@ public class PropertyEncryptionOperationsService {
     private KeyVersionValueCount toKeyVersionValueCount(Object[] row) {
         String keyVersion = row[0] != null ? row[0].toString() : "";
         return new KeyVersionValueCount(keyVersion, toLong(row[1]));
+    }
+
+    private PropertyBackfillCount toBackfillCount(EncryptedPropertyDefinitionSummary definition) {
+        String qualifiedName = definition.qualifiedName();
+        long plaintextValueCount = nodeRepository.countByPropertyKeyAndDeletedFalse(qualifiedName);
+        long alreadyEncryptedValueCount = nodeRepository.countByEncryptedPropertyKeyAndDeletedFalse(qualifiedName);
+        long dualStorageConflictValueCount = nodeRepository.countByPropertyKeyInBothStorageAndDeletedFalse(qualifiedName);
+        long readyValueCount = nodeRepository.countBackfillReadyByPropertyKeyAndDeletedFalse(qualifiedName);
+        return new PropertyBackfillCount(
+            qualifiedName,
+            definition.ownerKind(),
+            definition.ownerQName(),
+            plaintextValueCount,
+            alreadyEncryptedValueCount,
+            dualStorageConflictValueCount,
+            readyValueCount
+        );
     }
 
     private long toLong(Object value) {
@@ -238,6 +326,11 @@ public class PropertyEncryptionOperationsService {
     ) {
     }
 
+    public record PropertyEncryptionBackfillDryRunRequest(
+        String targetKeyVersion
+    ) {
+    }
+
     public record PropertyEncryptionRewrapDryRunResult(
         String targetKeyVersion,
         boolean targetKeyConfigured,
@@ -257,6 +350,33 @@ public class PropertyEncryptionOperationsService {
     public record KeyVersionValueCount(
         String keyVersion,
         long encryptedPropertyValueCount
+    ) {
+    }
+
+    public record PropertyEncryptionBackfillDryRunResult(
+        String targetKeyVersion,
+        boolean targetKeyConfigured,
+        boolean secretCryptoEnabled,
+        long encryptedPropertyDefinitionCount,
+        long plaintextValueCount,
+        long alreadyEncryptedValueCount,
+        long dualStorageConflictValueCount,
+        long readyValueCount,
+        long orphanEncryptedValueCount,
+        List<PropertyBackfillCount> definitionCounts,
+        List<String> warnings,
+        boolean executable
+    ) {
+    }
+
+    public record PropertyBackfillCount(
+        String qualifiedName,
+        String ownerKind,
+        String ownerQName,
+        long plaintextValueCount,
+        long alreadyEncryptedValueCount,
+        long dualStorageConflictValueCount,
+        long readyValueCount
     ) {
     }
 }

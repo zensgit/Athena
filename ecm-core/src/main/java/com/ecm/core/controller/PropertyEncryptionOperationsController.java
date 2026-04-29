@@ -2,6 +2,8 @@ package com.ecm.core.controller;
 
 import com.ecm.core.service.PropertyEncryptionOperationsService;
 import com.ecm.core.service.PropertyEncryptionOperationsService.EncryptedPropertyDefinitionSummary;
+import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionBackfillDryRunRequest;
+import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionBackfillDryRunResult;
 import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionStatus;
 import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionRewrapDryRunRequest;
 import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionRewrapDryRunResult;
@@ -54,5 +56,16 @@ public class PropertyEncryptionOperationsController {
         @RequestBody(required = false) PropertyEncryptionRewrapDryRunRequest request
     ) {
         return ResponseEntity.ok(propertyEncryptionOperationsService.dryRunRewrap(request));
+    }
+
+    @PostMapping("/backfill-jobs/dry-run")
+    @Operation(
+        summary = "Dry-run property encryption backfill",
+        description = "Estimates plaintext encrypted-property values that would be moved into encrypted storage without mutating nodes or creating jobs."
+    )
+    public ResponseEntity<PropertyEncryptionBackfillDryRunResult> dryRunBackfill(
+        @RequestBody(required = false) PropertyEncryptionBackfillDryRunRequest request
+    ) {
+        return ResponseEntity.ok(propertyEncryptionOperationsService.dryRunBackfill(request));
     }
 }

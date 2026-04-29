@@ -180,6 +180,30 @@ public interface NodeRepository extends JpaRepository<Node, UUID>, JpaSpecificat
     @Query(value = "SELECT COUNT(*) FROM nodes n WHERE n.is_deleted = false AND jsonb_exists(n.properties, :propertyKey)", nativeQuery = true)
     long countByPropertyKeyAndDeletedFalse(@Param("propertyKey") String propertyKey);
 
+    @Query(value = "SELECT COUNT(*) FROM nodes n WHERE n.is_deleted = false AND jsonb_exists(n.encrypted_properties, :propertyKey)", nativeQuery = true)
+    long countByEncryptedPropertyKeyAndDeletedFalse(@Param("propertyKey") String propertyKey);
+
+    @Query(value = """
+        SELECT COUNT(*)
+        FROM nodes n
+        WHERE n.is_deleted = false
+          AND jsonb_exists(n.properties, :propertyKey)
+          AND jsonb_exists(n.encrypted_properties, :propertyKey)
+        """, nativeQuery = true)
+    long countByPropertyKeyInBothStorageAndDeletedFalse(@Param("propertyKey") String propertyKey);
+
+    @Query(value = """
+        SELECT COUNT(*)
+        FROM nodes n
+        WHERE n.is_deleted = false
+          AND jsonb_exists(n.properties, :propertyKey)
+          AND (
+            n.encrypted_properties IS NULL
+            OR NOT jsonb_exists(n.encrypted_properties, :propertyKey)
+          )
+        """, nativeQuery = true)
+    long countBackfillReadyByPropertyKeyAndDeletedFalse(@Param("propertyKey") String propertyKey);
+
     @Query(value = """
         SELECT COUNT(*)
         FROM nodes n
