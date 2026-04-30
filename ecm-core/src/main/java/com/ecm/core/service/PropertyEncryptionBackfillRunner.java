@@ -1,5 +1,7 @@
 package com.ecm.core.service;
 
+import com.ecm.core.config.PropertyEncryptionAsyncConfiguration;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
@@ -14,7 +16,7 @@ public class PropertyEncryptionBackfillRunner {
 
     private final PropertyEncryptionOperationsService propertyEncryptionOperationsService;
 
-    @Async
+    @Async(PropertyEncryptionAsyncConfiguration.PROPERTY_ENCRYPTION_BACKFILL_TASK_EXECUTOR)
     public void runClaimedBackfillJob(UUID jobId, Integer batchSize, String requestedBy) {
         try {
             propertyEncryptionOperationsService.runClaimedBackfillJob(jobId, batchSize, requestedBy);
