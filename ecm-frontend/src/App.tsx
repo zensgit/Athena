@@ -28,6 +28,7 @@ import ScriptEnginePage from './pages/ScriptEnginePage';
 import TenantAdminPage from './pages/TenantAdminPage';
 import TenantMetricsDashboardPage from './pages/TenantMetricsDashboardPage';
 import TransferReplicationPage from './pages/TransferReplicationPage';
+import PropertyEncryptionOperationsPage from './pages/PropertyEncryptionOperationsPage';
 import WebhookSubscriptionsPage from './pages/WebhookSubscriptionsPage';
 import PermissionTemplatesPage from './pages/PermissionTemplatesPage';
 import EditorPage from './pages/EditorPage';
@@ -389,6 +390,16 @@ const App: React.FC = () => {
                 <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
                   <MainLayout>
                     <TransferReplicationPage />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/admin/property-encryption"
+              element={
+                <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
+                  <MainLayout>
+                    <PropertyEncryptionOperationsPage />
                   </MainLayout>
                 </PrivateRoute>
               }

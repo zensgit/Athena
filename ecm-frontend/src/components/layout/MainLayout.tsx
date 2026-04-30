@@ -555,6 +555,12 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                   </ListItemIcon>
                   <ListItemText>Transfer Replication</ListItemText>
                 </MenuItem>
+                <MenuItem onClick={() => navigate('/admin/property-encryption')}>
+                  <ListItemIcon>
+                    <LockIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Property Encryption</ListItemText>
+                </MenuItem>
                 <MenuItem onClick={() => navigate('/admin/bulk-import')}>
                   <ListItemIcon>
                     <CloudUpload fontSize="small" />

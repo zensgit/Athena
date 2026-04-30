@@ -76,6 +76,7 @@ test('account menu shows Tags/Categories for admin/editor roles', async () => {
   expect(screen.getByRole('menuitem', { name: 'Tenants' })).toBeTruthy();
   expect(screen.getByRole('menuitem', { name: 'Permission Templates' })).toBeTruthy();
   expect(screen.getByRole('menuitem', { name: 'Webhooks' })).toBeTruthy();
+  expect(screen.getByRole('menuitem', { name: 'Property Encryption' })).toBeTruthy();
   expect(screen.getByRole('menuitem', { name: 'Bulk Import' })).toBeTruthy();
   expect(screen.getByRole('menuitem', { name: 'Content Archive' })).toBeTruthy();
   expect(screen.getByRole('menuitem', { name: 'Records Management' })).toBeTruthy();
@@ -115,6 +116,7 @@ test('account menu hides Tags/Categories for viewer role', async () => {
   expect(screen.queryByRole('menuitem', { name: 'Tenants' })).toBeNull();
   expect(screen.queryByRole('menuitem', { name: 'Permission Templates' })).toBeNull();
   expect(screen.queryByRole('menuitem', { name: 'Webhooks' })).toBeNull();
+  expect(screen.queryByRole('menuitem', { name: 'Property Encryption' })).toBeNull();
   expect(screen.queryByRole('menuitem', { name: 'Bulk Import' })).toBeNull();
   expect(screen.queryByRole('menuitem', { name: 'Content Archive' })).toBeNull();
   expect(screen.queryByRole('menuitem', { name: 'Records Management' })).toBeNull();
