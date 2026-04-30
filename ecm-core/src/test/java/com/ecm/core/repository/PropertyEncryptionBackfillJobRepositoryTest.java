@@ -140,6 +140,37 @@ class PropertyEncryptionBackfillJobRepositoryTest {
         assertEquals(1L, terminal.getSkippedValueCount());
     }
 
+    @Test
+    @DisplayName("start failure and stale recovery terminal-mark active jobs")
+    void startFailureAndStaleRecoveryTerminalMarkActiveJobs() {
+        LocalDateTime now = LocalDateTime.now();
+        PropertyEncryptionBackfillJob rejectedJob = repository.saveAndFlush(newBackfillJob(now));
+        assertEquals(1, repository.claimPlannedJob(rejectedJob.getId(), now.minusMinutes(30)));
+
+        assertEquals(1, repository.markBackfillJobStartFailed(
+            rejectedJob.getId(),
+            now,
+            "async executor rejected start"
+        ));
+        PropertyEncryptionBackfillJob rejected = repository.findById(rejectedJob.getId()).orElseThrow();
+        assertEquals(BackfillJobStatus.FAILED, rejected.getStatus());
+        assertEquals("async executor rejected start", rejected.getLastError());
+
+        PropertyEncryptionBackfillJob staleRunning = repository.saveAndFlush(newBackfillJob(now.minusHours(8)));
+        PropertyEncryptionBackfillJob staleCancelRequested = repository.saveAndFlush(newBackfillJob(now.minusHours(7)));
+        PropertyEncryptionBackfillJob freshRunning = repository.saveAndFlush(newBackfillJob(now.minusMinutes(10)));
+        assertEquals(1, repository.claimPlannedJob(staleRunning.getId(), now.minusHours(7)));
+        assertEquals(1, repository.claimPlannedJob(staleCancelRequested.getId(), now.minusHours(6)));
+        assertEquals(1, repository.requestBackfillJobCancel(staleCancelRequested.getId(), now.minusHours(5)));
+        assertEquals(1, repository.claimPlannedJob(freshRunning.getId(), now.minusMinutes(5)));
+
+        assertEquals(2, repository.markStaleActiveJobsTerminal(now.minusHours(1), now.plusMinutes(1)));
+
+        assertEquals(BackfillJobStatus.FAILED, repository.findById(staleRunning.getId()).orElseThrow().getStatus());
+        assertEquals(BackfillJobStatus.CANCELLED, repository.findById(staleCancelRequested.getId()).orElseThrow().getStatus());
+        assertEquals(BackfillJobStatus.RUNNING, repository.findById(freshRunning.getId()).orElseThrow().getStatus());
+    }
+
     private PropertyEncryptionBackfillJob newBackfillJob(LocalDateTime now) {
         PropertyEncryptionBackfillJob job = new PropertyEncryptionBackfillJob();
         job.setStatus(BackfillJobStatus.PLANNED);

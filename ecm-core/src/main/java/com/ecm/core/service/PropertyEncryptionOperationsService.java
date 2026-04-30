@@ -20,6 +20,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -386,6 +387,34 @@ public class PropertyEncryptionOperationsService {
         return backfillJobRepository.findById(jobId)
             .map(this::toBackfillJobDto)
             .orElseThrow(() -> new ResourceNotFoundException("Backfill job not found: " + jobId));
+    }
+
+    public PropertyEncryptionBackfillJobDto markBackfillJobStartFailed(UUID jobId, String lastError) {
+        if (jobId == null) {
+            throw new IllegalArgumentException("Backfill job id is required");
+        }
+        String boundedLastError = hasText(lastError)
+            ? toBackfillError(lastError.trim())
+            : "Backfill job failed to start";
+        if (backfillJobRepository.markBackfillJobStartFailed(jobId, LocalDateTime.now(), boundedLastError) != 1) {
+            PropertyEncryptionBackfillJob current = backfillJobRepository.findById(jobId)
+                .orElseThrow(() -> new ResourceNotFoundException("Backfill job not found: " + jobId));
+            throw new IllegalStateException(
+                "Backfill job was no longer RUNNING during start-failure update; current status is " + current.getStatus()
+            );
+        }
+        return backfillJobRepository.findById(jobId)
+            .map(this::toBackfillJobDto)
+            .orElseThrow(() -> new ResourceNotFoundException("Backfill job not found: " + jobId));
+    }
+
+    public StaleBackfillRecoveryResult recoverStaleBackfillJobs(Duration staleAfter) {
+        if (staleAfter == null || staleAfter.isNegative() || staleAfter.isZero()) {
+            throw new IllegalArgumentException("staleAfter must be positive");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        int recoveredCount = backfillJobRepository.markStaleActiveJobsTerminal(now.minus(staleAfter), now);
+        return new StaleBackfillRecoveryResult(recoveredCount);
     }
 
     public PropertyEncryptionBackfillJobDto runClaimedBackfillJob(
@@ -756,6 +785,10 @@ public class PropertyEncryptionOperationsService {
         if (!hasText(message)) {
             message = ex.getClass().getSimpleName();
         }
+        return toBackfillError(message);
+    }
+
+    private String toBackfillError(String message) {
         return message.length() <= MAX_BACKFILL_ERROR_LENGTH
             ? message
             : message.substring(0, MAX_BACKFILL_ERROR_LENGTH);
@@ -806,6 +839,11 @@ public class PropertyEncryptionOperationsService {
 
     public record PropertyEncryptionBackfillJobRunRequest(
         Integer batchSize
+    ) {
+    }
+
+    public record StaleBackfillRecoveryResult(
+        int recoveredCount
     ) {
     }
 

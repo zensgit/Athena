@@ -24,7 +24,7 @@ class PropertyEncryptionAsyncConfigurationTest {
             assertEquals(20, executor.getQueueCapacity());
             assertEquals("prop-enc-backfill-", executor.getThreadNamePrefix());
             assertInstanceOf(
-                ThreadPoolExecutor.CallerRunsPolicy.class,
+                ThreadPoolExecutor.AbortPolicy.class,
                 executor.getThreadPoolExecutor().getRejectedExecutionHandler()
             );
         } finally {

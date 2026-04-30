@@ -23,6 +23,38 @@ public interface PropertyEncryptionBackfillJobRepository extends JpaRepository<P
 
     boolean existsByIdAndStatus(UUID id, BackfillJobStatus status);
 
+    default int markBackfillJobStartFailed(UUID jobId, LocalDateTime finishedAt, String lastError) {
+        return markTerminalIfStatus(
+            jobId,
+            BackfillJobStatus.FAILED,
+            finishedAt,
+            0,
+            0,
+            0,
+            0,
+            lastError,
+            BackfillJobStatus.RUNNING
+        );
+    }
+
+    default int markStaleActiveJobsTerminal(LocalDateTime staleStartedBefore, LocalDateTime finishedAt) {
+        int failedRunning = markStaleJobsTerminalWithStatus(
+            staleStartedBefore,
+            finishedAt,
+            BackfillJobStatus.FAILED,
+            "Backfill job recovery marked stale RUNNING job failed",
+            BackfillJobStatus.RUNNING
+        );
+        int cancelledRequested = markStaleJobsTerminalWithStatus(
+            staleStartedBefore,
+            finishedAt,
+            BackfillJobStatus.CANCELLED,
+            null,
+            BackfillJobStatus.CANCEL_REQUESTED
+        );
+        return failedRunning + cancelledRequested;
+    }
+
     default int claimPlannedJob(UUID jobId, LocalDateTime startedAt) {
         return claimJobWithStatus(
             jobId,
@@ -190,6 +222,27 @@ public interface PropertyEncryptionBackfillJobRepository extends JpaRepository<P
         @Param("migratedValueCount") long migratedValueCount,
         @Param("skippedValueCount") long skippedValueCount,
         @Param("failedValueCount") long failedValueCount,
+        @Param("lastError") String lastError,
+        @Param("expectedStatus") BackfillJobStatus expectedStatus
+    );
+
+    @Transactional
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+        update PropertyEncryptionBackfillJob j
+           set j.status = :terminalStatus,
+               j.finishedAt = :finishedAt,
+               j.updatedAt = :finishedAt,
+               j.lastError = :lastError,
+               j.version = j.version + 1
+         where j.status = :expectedStatus
+           and j.startedAt is not null
+           and j.startedAt < :staleStartedBefore
+    """)
+    int markStaleJobsTerminalWithStatus(
+        @Param("staleStartedBefore") LocalDateTime staleStartedBefore,
+        @Param("finishedAt") LocalDateTime finishedAt,
+        @Param("terminalStatus") BackfillJobStatus terminalStatus,
         @Param("lastError") String lastError,
         @Param("expectedStatus") BackfillJobStatus expectedStatus
     );

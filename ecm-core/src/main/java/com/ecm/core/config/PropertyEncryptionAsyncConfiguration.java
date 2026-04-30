@@ -21,7 +21,7 @@ public class PropertyEncryptionAsyncConfiguration {
         executor.setThreadNamePrefix("prop-enc-backfill-");
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(30);
-        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
         return executor;
     }
 }

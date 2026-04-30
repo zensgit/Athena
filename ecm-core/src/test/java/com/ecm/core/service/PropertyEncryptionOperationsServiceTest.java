@@ -20,6 +20,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -881,6 +882,35 @@ class PropertyEncryptionOperationsServiceTest {
         assertEquals(BackfillJobStatus.CANCELLED, result.status());
         assertEquals(0L, result.processedValueCount());
         verify(nodeRepository, never()).findBackfillCandidatesByPropertyKeyAndDeletedFalse(any(), anyInt());
+    }
+
+    @Test
+    @DisplayName("backfill start failure terminal-marks claimed job")
+    void backfillStartFailureTerminalMarksClaimedJob() {
+        UUID jobId = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        PropertyEncryptionBackfillJob job = plannedBackfillJob(jobId, 1);
+        job.setStatus(BackfillJobStatus.FAILED);
+        job.setLastError("executor rejected");
+        when(backfillJobRepository.markBackfillJobStartFailed(eq(jobId), any(), eq("executor rejected")))
+            .thenReturn(1);
+        when(backfillJobRepository.findById(jobId)).thenReturn(Optional.of(job));
+
+        PropertyEncryptionOperationsService.PropertyEncryptionBackfillJobDto result =
+            service.markBackfillJobStartFailed(jobId, "executor rejected");
+
+        assertEquals(BackfillJobStatus.FAILED, result.status());
+        assertEquals("executor rejected", result.lastError());
+    }
+
+    @Test
+    @DisplayName("stale backfill recovery delegates to bounded active-job update")
+    void staleBackfillRecoveryDelegatesToBoundedActiveJobUpdate() {
+        when(backfillJobRepository.markStaleActiveJobsTerminal(any(), any())).thenReturn(2);
+
+        PropertyEncryptionOperationsService.StaleBackfillRecoveryResult result =
+            service.recoverStaleBackfillJobs(Duration.ofHours(6));
+
+        assertEquals(2, result.recoveredCount());
     }
 
     @Test

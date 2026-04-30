@@ -14,6 +14,7 @@ import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncrypti
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -128,11 +129,19 @@ public class PropertyEncryptionOperationsController {
         String actor = authentication != null ? authentication.getName() : "system";
         Integer batchSize = request != null ? request.batchSize() : null;
         PropertyEncryptionBackfillJobDto response = propertyEncryptionOperationsService.claimBackfillJobForExecution(jobId);
-        propertyEncryptionBackfillRunner.runClaimedBackfillJob(
-            jobId,
-            batchSize,
-            actor
-        );
+        try {
+            propertyEncryptionBackfillRunner.runClaimedBackfillJob(
+                jobId,
+                batchSize,
+                actor
+            );
+        } catch (TaskRejectedException ex) {
+            PropertyEncryptionBackfillJobDto failed = propertyEncryptionOperationsService.markBackfillJobStartFailed(
+                jobId,
+                "Backfill job async executor rejected start: " + ex.getMessage()
+            );
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(failed);
+        }
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
     }
 

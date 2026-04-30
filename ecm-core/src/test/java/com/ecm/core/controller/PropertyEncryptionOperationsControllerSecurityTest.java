@@ -22,6 +22,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -36,6 +37,7 @@ import java.util.UUID;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -329,6 +331,29 @@ class PropertyEncryptionOperationsControllerSecurityTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.id", is(jobId.toString())))
             .andExpect(jsonPath("$.status", is("CANCELLED")));
+    }
+
+    @Test
+    @WithMockUser(username = "admin", roles = "ADMIN")
+    @DisplayName("admin run marks claimed job failed when async executor rejects start")
+    void adminRunMarksClaimedJobFailedWhenExecutorRejectsStart() throws Exception {
+        UUID jobId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        when(propertyEncryptionOperationsService.claimBackfillJobForExecution(jobId))
+            .thenReturn(backfillJobDto(jobId, BackfillJobStatus.RUNNING));
+        doThrow(new TaskRejectedException("queue full"))
+            .when(propertyEncryptionBackfillRunner)
+            .runClaimedBackfillJob(jobId, 10, "admin");
+        when(propertyEncryptionOperationsService.markBackfillJobStartFailed(
+            jobId,
+            "Backfill job async executor rejected start: queue full"
+        )).thenReturn(backfillJobDto(jobId, BackfillJobStatus.FAILED));
+
+        mockMvc.perform(post("/api/v1/admin/property-encryption/backfill-jobs/{jobId}/run", jobId)
+                .contentType("application/json")
+                .content("{\"batchSize\":10}"))
+            .andExpect(status().isServiceUnavailable())
+            .andExpect(jsonPath("$.id", is(jobId.toString())))
+            .andExpect(jsonPath("$.status", is("FAILED")));
     }
 
     private PropertyEncryptionBackfillJobDto backfillJobDto(UUID jobId) {
