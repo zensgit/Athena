@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT_DIR}"
 
-BACKEND_TESTS="${BACKEND_TESTS:-NodeRepositoryJsonbBackfillSmokeTest,PropertyEncryptionBackfillJobRepositoryTest,PropertyEncryptionOperationsServiceTest,PropertyEncryptionOperationsControllerSecurityTest,PropertyEncryptionAsyncConfigurationTest,PropertyEncryptionBackfillRunnerTest,PropertyEncryptionBackfillRunnerAsyncProxyTest,PropertyEncryptionBackfillRecoverySchedulerTest}"
+BACKEND_TESTS="${BACKEND_TESTS:-NodeRepositoryJsonbBackfillSmokeTest,PropertyEncryptionBackfillPostgresIntegrationTest,PropertyEncryptionBackfillJobRepositoryTest,PropertyEncryptionOperationsServiceTest,PropertyEncryptionOperationsControllerSecurityTest,PropertyEncryptionAsyncConfigurationTest,PropertyEncryptionBackfillRunnerTest,PropertyEncryptionBackfillRunnerAsyncProxyTest,PropertyEncryptionBackfillRecoverySchedulerTest}"
 DOCKER_CHECK_TIMEOUT_SECONDS="${DOCKER_CHECK_TIMEOUT_SECONDS:-5}"
 
 echo "property_encryption_backfill_gate: start"
