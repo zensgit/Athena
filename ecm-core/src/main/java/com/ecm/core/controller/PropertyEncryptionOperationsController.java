@@ -1,5 +1,6 @@
 package com.ecm.core.controller;
 
+import com.ecm.core.service.PropertyEncryptionBackfillRunner;
 import com.ecm.core.service.PropertyEncryptionOperationsService;
 import com.ecm.core.service.PropertyEncryptionOperationsService.EncryptedPropertyDefinitionSummary;
 import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionBackfillJobDto;
@@ -36,6 +37,7 @@ import java.util.UUID;
 public class PropertyEncryptionOperationsController {
 
     private final PropertyEncryptionOperationsService propertyEncryptionOperationsService;
+    private final PropertyEncryptionBackfillRunner propertyEncryptionBackfillRunner;
 
     @GetMapping("/status")
     @Operation(
@@ -115,19 +117,23 @@ public class PropertyEncryptionOperationsController {
 
     @PostMapping("/backfill-jobs/{jobId}/run")
     @Operation(
-        summary = "Run a planned property encryption backfill job",
-        description = "Claims a planned backfill job and processes encrypted-property plaintext candidates through the internal CAS executor."
+        summary = "Start a planned property encryption backfill job",
+        description = "Claims a planned backfill job, starts asynchronous processing, and returns the claimed RUNNING ledger row."
     )
     public ResponseEntity<PropertyEncryptionBackfillJobDto> runBackfillJob(
         @PathVariable UUID jobId,
         @RequestBody(required = false) PropertyEncryptionBackfillJobRunRequest request,
         Authentication authentication
     ) {
-        return ResponseEntity.ok(propertyEncryptionOperationsService.runBackfillJob(
+        String actor = authentication != null ? authentication.getName() : "system";
+        Integer batchSize = request != null ? request.batchSize() : null;
+        PropertyEncryptionBackfillJobDto response = propertyEncryptionOperationsService.claimBackfillJobForExecution(jobId);
+        propertyEncryptionBackfillRunner.runClaimedBackfillJob(
             jobId,
-            request != null ? request.batchSize() : null,
-            authentication != null ? authentication.getName() : "system"
-        ));
+            batchSize,
+            actor
+        );
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
     }
 
     @PostMapping("/backfill-jobs/{jobId}/cancel")

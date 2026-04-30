@@ -3,6 +3,7 @@ package com.ecm.core.controller;
 import com.ecm.core.entity.PropertyDataType;
 import com.ecm.core.entity.PropertyEncryptionBackfillJob.BackfillDefinitionCountSnapshot;
 import com.ecm.core.entity.PropertyEncryptionBackfillJob.BackfillJobStatus;
+import com.ecm.core.service.PropertyEncryptionBackfillRunner;
 import com.ecm.core.service.PropertyEncryptionOperationsService;
 import com.ecm.core.service.PropertyEncryptionOperationsService.EncryptedPropertyDefinitionSummary;
 import com.ecm.core.service.PropertyEncryptionOperationsService.KeyVersionValueCount;
@@ -35,6 +36,7 @@ import java.util.UUID;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -53,6 +55,9 @@ class PropertyEncryptionOperationsControllerSecurityTest {
 
     @MockBean
     private PropertyEncryptionOperationsService propertyEncryptionOperationsService;
+
+    @MockBean
+    private PropertyEncryptionBackfillRunner propertyEncryptionBackfillRunner;
 
     @Configuration
     @EnableWebSecurity
@@ -307,20 +312,18 @@ class PropertyEncryptionOperationsControllerSecurityTest {
     @DisplayName("admin can run and cancel property encryption backfill jobs")
     void adminCanRunAndCancelBackfillJobs() throws Exception {
         UUID jobId = UUID.fromString("11111111-2222-3333-4444-555555555555");
-        when(propertyEncryptionOperationsService.runBackfillJob(
-            jobId,
-            10,
-            "admin"
-        )).thenReturn(backfillJobDto(jobId, BackfillJobStatus.SUCCEEDED));
+        when(propertyEncryptionOperationsService.claimBackfillJobForExecution(jobId))
+            .thenReturn(backfillJobDto(jobId, BackfillJobStatus.RUNNING));
         when(propertyEncryptionOperationsService.requestBackfillJobCancel(jobId))
             .thenReturn(backfillJobDto(jobId, BackfillJobStatus.CANCELLED));
 
         mockMvc.perform(post("/api/v1/admin/property-encryption/backfill-jobs/{jobId}/run", jobId)
                 .contentType("application/json")
                 .content("{\"batchSize\":10}"))
-            .andExpect(status().isOk())
+            .andExpect(status().isAccepted())
             .andExpect(jsonPath("$.id", is(jobId.toString())))
-            .andExpect(jsonPath("$.status", is("SUCCEEDED")));
+            .andExpect(jsonPath("$.status", is("RUNNING")));
+        verify(propertyEncryptionBackfillRunner).runClaimedBackfillJob(jobId, 10, "admin");
 
         mockMvc.perform(post("/api/v1/admin/property-encryption/backfill-jobs/{jobId}/cancel", jobId))
             .andExpect(status().isOk())

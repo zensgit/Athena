@@ -843,6 +843,47 @@ class PropertyEncryptionOperationsServiceTest {
     }
 
     @Test
+    @DisplayName("claimed backfill execution rejects jobs that were not claimed")
+    void claimedBackfillExecutionRejectsUnclaimedJob() {
+        UUID jobId = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        PropertyEncryptionBackfillJob job = plannedBackfillJob(jobId, 1);
+        when(backfillJobRepository.findById(jobId)).thenReturn(Optional.of(job));
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, () ->
+            service.runClaimedBackfillJob(jobId, 1, "admin")
+        );
+
+        assertTrue(ex.getMessage().contains("RUNNING"));
+        verify(nodeRepository, never()).findBackfillCandidatesByPropertyKeyAndDeletedFalse(any(), anyInt());
+    }
+
+    @Test
+    @DisplayName("claimed backfill execution marks cancel requested jobs cancelled before processing")
+    void claimedBackfillExecutionCancelsCancelRequestedJobBeforeProcessing() {
+        UUID jobId = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        PropertyEncryptionBackfillJob job = plannedBackfillJob(jobId, 1);
+        job.setStatus(BackfillJobStatus.CANCEL_REQUESTED);
+        when(backfillJobRepository.findById(jobId)).thenReturn(Optional.of(job));
+        when(backfillJobRepository.markTerminalIfRunningOrCancelRequested(
+            eq(jobId),
+            eq(BackfillJobStatus.CANCELLED),
+            any(),
+            eq(0L),
+            eq(0L),
+            eq(0L),
+            eq(0L),
+            eq(null)
+        )).thenReturn(1);
+
+        PropertyEncryptionOperationsService.PropertyEncryptionBackfillJobDto result =
+            service.runClaimedBackfillJob(jobId, 1, "admin");
+
+        assertEquals(BackfillJobStatus.CANCELLED, result.status());
+        assertEquals(0L, result.processedValueCount());
+        verify(nodeRepository, never()).findBackfillCandidatesByPropertyKeyAndDeletedFalse(any(), anyInt());
+    }
+
+    @Test
     @DisplayName("backfill job cancel reloads the updated ledger row")
     void backfillJobCancelReloadsUpdatedLedgerRow() {
         UUID jobId = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");

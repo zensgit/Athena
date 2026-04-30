@@ -369,6 +369,11 @@ public class PropertyEncryptionOperationsService {
         Integer batchSize,
         String requestedBy
     ) {
+        claimBackfillJobForExecution(jobId);
+        return runClaimedBackfillJob(jobId, batchSize, requestedBy);
+    }
+
+    public PropertyEncryptionBackfillJobDto claimBackfillJobForExecution(UUID jobId) {
         if (jobId == null) {
             throw new IllegalArgumentException("Backfill job id is required");
         }
@@ -378,15 +383,35 @@ public class PropertyEncryptionOperationsService {
                 .orElseThrow(() -> new ResourceNotFoundException("Backfill job not found: " + jobId));
             throw new IllegalStateException("Backfill job must be PLANNED before execution; current status is " + current.getStatus());
         }
+        return backfillJobRepository.findById(jobId)
+            .map(this::toBackfillJobDto)
+            .orElseThrow(() -> new ResourceNotFoundException("Backfill job not found: " + jobId));
+    }
 
+    public PropertyEncryptionBackfillJobDto runClaimedBackfillJob(
+        UUID jobId,
+        Integer batchSize,
+        String requestedBy
+    ) {
+        if (jobId == null) {
+            throw new IllegalArgumentException("Backfill job id is required");
+        }
         PropertyEncryptionBackfillJob job = backfillJobRepository.findById(jobId)
             .orElseThrow(() -> new ResourceNotFoundException("Backfill job not found: " + jobId));
+        if (job.getStatus() != BackfillJobStatus.RUNNING && job.getStatus() != BackfillJobStatus.CANCEL_REQUESTED) {
+            throw new IllegalStateException("Backfill job must be RUNNING before claimed execution; current status is " + job.getStatus());
+        }
+        if (job.getStatus() == BackfillJobStatus.CANCEL_REQUESTED) {
+            return markClaimedBackfillJobCancelled(job);
+        }
         String actor = hasText(requestedBy) ? requestedBy.trim() : DEFAULT_BACKFILL_ACTOR;
         job.setStatus(BackfillJobStatus.RUNNING);
-        job.setStartedAt(startedAt);
+        if (job.getStartedAt() == null) {
+            job.setStartedAt(LocalDateTime.now());
+        }
         job.setFinishedAt(null);
         job.setLastError(null);
-        job.setUpdatedAt(startedAt);
+        job.setUpdatedAt(job.getStartedAt());
 
         BackfillRunCounters counters = new BackfillRunCounters(0, 0, 0, 0, null, false);
         BackfillJobStatus terminalStatus = BackfillJobStatus.FAILED;
@@ -660,6 +685,25 @@ public class PropertyEncryptionOperationsService {
         job.setSkippedValueCount(job.getSkippedValueCount() + counters.skippedValueCount());
         job.setFailedValueCount(job.getFailedValueCount() + counters.failedValueCount());
         job.setLastError(lastError);
+    }
+
+    private PropertyEncryptionBackfillJobDto markClaimedBackfillJobCancelled(PropertyEncryptionBackfillJob job) {
+        BackfillRunCounters counters = new BackfillRunCounters(0, 0, 0, 0, null, true);
+        LocalDateTime finishedAt = LocalDateTime.now();
+        applyTerminalState(job, BackfillJobStatus.CANCELLED, counters, finishedAt, null);
+        if (backfillJobRepository.markTerminalIfRunningOrCancelRequested(
+            job.getId(),
+            BackfillJobStatus.CANCELLED,
+            finishedAt,
+            job.getProcessedValueCount(),
+            job.getMigratedValueCount(),
+            job.getSkippedValueCount(),
+            job.getFailedValueCount(),
+            null
+        ) != 1) {
+            throw new IllegalStateException("Backfill job was no longer RUNNING or CANCEL_REQUESTED during cancellation");
+        }
+        return toBackfillJobDto(job);
     }
 
     private PropertyEncryptionBackfillJobDto toBackfillJobDto(PropertyEncryptionBackfillJob job) {
