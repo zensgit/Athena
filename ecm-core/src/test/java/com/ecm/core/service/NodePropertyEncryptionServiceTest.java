@@ -86,6 +86,32 @@ class NodePropertyEncryptionServiceTest {
     }
 
     @Test
+    @DisplayName("resolveReadableProperties redacts protected payloads from legacy plain properties")
+    void resolveReadablePropertiesRedactsProtectedPayloadsFromPlainProperties() {
+        Document document = new Document();
+        document.setTypeQName("acme:contract");
+        document.setProperties(new HashMap<>(Map.of(
+            "acme:publicCode", "PUB-1",
+            "acme:legacySecret", "enc:v1:legacy-payload",
+            "acme:nested", Map.of("token", "enc:v2:nested-payload"),
+            "acme:list", List.of("safe", "enc:v3:list-payload")
+        )));
+
+        Map<String, Object> readable = nodePropertyEncryptionService.resolveReadableProperties(document);
+
+        assertEquals("PUB-1", readable.get("acme:publicCode"));
+        assertEquals(NodePropertyEncryptionService.REDACTED_PROTECTED_PAYLOAD, readable.get("acme:legacySecret"));
+        assertEquals(
+            Map.of("token", NodePropertyEncryptionService.REDACTED_PROTECTED_PAYLOAD),
+            readable.get("acme:nested")
+        );
+        assertEquals(
+            List.of("safe", NodePropertyEncryptionService.REDACTED_PROTECTED_PAYLOAD),
+            readable.get("acme:list")
+        );
+    }
+
+    @Test
     @DisplayName("resolveIndexableProperties excludes encrypted model properties")
     void resolveIndexablePropertiesExcludesEncryptedValues() {
         Document document = new Document();
@@ -103,6 +129,24 @@ class NodePropertyEncryptionServiceTest {
         assertEquals("PUB-1", indexable.get("acme:publicCode"));
         assertFalse(indexable.containsKey("acme:secretCode"));
         assertTrue(document.getProperties().containsKey("acme:secretCode"));
+    }
+
+    @Test
+    @DisplayName("resolveIndexableProperties redacts protected payloads from legacy plain properties")
+    void resolveIndexablePropertiesRedactsProtectedPayloads() {
+        Document document = new Document();
+        document.setTypeQName("acme:contract");
+        document.setProperties(new HashMap<>(Map.of(
+            "acme:legacySecret", "enc:v1:legacy-payload",
+            "acme:publicCode", "PUB-1"
+        )));
+
+        when(dictionaryService.getPropertiesForType("acme:contract")).thenReturn(List.of());
+
+        Map<String, Object> indexable = nodePropertyEncryptionService.resolveIndexableProperties(document);
+
+        assertEquals(NodePropertyEncryptionService.REDACTED_PROTECTED_PAYLOAD, indexable.get("acme:legacySecret"));
+        assertEquals("PUB-1", indexable.get("acme:publicCode"));
     }
 
     private PropertyDefinition typedProperty(String name, boolean encrypted) {

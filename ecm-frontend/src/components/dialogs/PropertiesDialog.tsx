@@ -51,17 +51,20 @@ import {
   buildAspectPropertyPayload,
   getAspectPropertyListOptions,
 } from 'utils/aspectPropertyFormUtils';
+import {
+  ENCRYPTED_PROPERTY_DISPLAY_VALUE,
+  containsProtectedPropertyPayload,
+  formatPropertyDisplayValue,
+} from 'utils/propertyRedactionUtils';
 
-interface PropertyField {
+export interface PropertyField {
   key: string;
   value: string;
+  redacted?: boolean;
 }
 
 const resolveContentTypeValue = (value: unknown, fallback?: string) => {
-  if (value === null || value === undefined || value === '') {
-    return fallback ?? '';
-  }
-  return String(value);
+  return formatPropertyDisplayValue(value, fallback ?? '');
 };
 
 const normalizeDateValue = (value: string) => {
@@ -69,20 +72,25 @@ const normalizeDateValue = (value: string) => {
   return value.includes('T') ? value.split('T')[0] : value;
 };
 
-const derivePropertyState = (nodeData: Node, typeDefinition?: ContentTypeDefinition | null) => {
+export const derivePropertyState = (nodeData: Node, typeDefinition?: ContentTypeDefinition | null) => {
   const properties = nodeData.properties || {};
   const reservedKeys = new Set(['name', 'description']);
   const contentTypeKeys = new Set((typeDefinition?.properties || []).map((prop) => prop.name));
 
   const customProps = Object.entries(properties)
     .filter(([key]) => !reservedKeys.has(key) && !contentTypeKeys.has(key))
-    .map(([key, value]) => ({ key, value: resolveContentTypeValue(value) }));
+    .map(([key, value]) => ({
+      key,
+      value: resolveContentTypeValue(value),
+      redacted: containsProtectedPropertyPayload(value) || value === ENCRYPTED_PROPERTY_DISPLAY_VALUE,
+    }));
 
   const typeValues: Record<string, string> = {};
   if (typeDefinition) {
     typeDefinition.properties.forEach((prop) => {
+      const value = properties[prop.name];
       typeValues[prop.name] = resolveContentTypeValue(
-        properties[prop.name],
+        value,
         prop.defaultValue ?? ''
       );
     });
@@ -258,6 +266,9 @@ const PropertiesDialog: React.FC = () => {
 
         selectedTypeDefinition.properties.forEach((prop) => {
           const rawValue = contentTypeValues[prop.name];
+          if (rawValue === ENCRYPTED_PROPERTY_DISPLAY_VALUE) {
+            return;
+          }
           const trimmedValue = typeof rawValue === 'string' ? rawValue.trim() : rawValue;
           const normalizedValue =
             prop.type === 'date' && typeof trimmedValue === 'string'
@@ -284,7 +295,10 @@ const PropertiesDialog: React.FC = () => {
       const updatedProperties: Record<string, any> = {};
 
       // Update custom properties
-      customProperties.forEach(({ key, value }) => {
+      customProperties.forEach(({ key, value, redacted }) => {
+        if (redacted) {
+          return;
+        }
         updatedProperties[key] = value;
       });
 
@@ -292,6 +306,9 @@ const PropertiesDialog: React.FC = () => {
       const contentTypeKeys = new Set((selectedTypeDefinition?.properties || []).map((prop) => prop.name));
       Object.keys(node.properties || {}).forEach((key) => {
         if (['name', 'description'].includes(key) || contentTypeKeys.has(key)) {
+          return;
+        }
+        if (containsProtectedPropertyPayload(node.properties[key]) || node.properties[key] === ENCRYPTED_PROPERTY_DISPLAY_VALUE) {
           return;
         }
         if (!customProperties.find((p) => p.key === key)) {
@@ -946,6 +963,7 @@ const PropertiesDialog: React.FC = () => {
                           editMode && (
                             <IconButton
                               edge="end"
+                              disabled={prop.redacted}
                               onClick={() => handleRemoveProperty(index)}
                             >
                               <Delete fontSize="small" />
@@ -963,6 +981,8 @@ const PropertiesDialog: React.FC = () => {
                                 size="small"
                                 fullWidth
                                 variant="standard"
+                                disabled={prop.redacted}
+                                helperText={prop.redacted ? 'Encrypted payload redacted; update through the owning encrypted property workflow.' : undefined}
                               />
                             ) : (
                               prop.value

@@ -41,6 +41,7 @@ import apiService from 'services/api';
 import savedSearchService, { SavedSearch } from 'services/savedSearchService';
 import { toast } from 'react-toastify';
 import { buildSearchPrefillFromAdvancedSearchUrl } from 'utils/searchPrefillUtils';
+import { containsProtectedPropertyPayload, formatPropertyDisplayValue } from 'utils/propertyRedactionUtils';
 
 const CONTENT_TYPES = [
   { value: 'application/pdf', label: 'PDF' },
@@ -234,7 +235,8 @@ const SearchDialog: React.FC = () => {
 
     const prefilledProperties = Object.entries(source.properties || {})
       .filter(([key, value]) => key.trim().length > 0 && value !== undefined && value !== null)
-      .map(([key, value]) => ({ key, value: String(value) }));
+      .filter(([, value]) => !containsProtectedPropertyPayload(value))
+      .map(([key, value]) => ({ key, value: formatPropertyDisplayValue(value) }));
     const hasBasicPrefill = Boolean(
       source.name
       || source.contentType

@@ -8,6 +8,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -18,15 +20,18 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class NodePropertyEncryptionService {
 
+    public static final String REDACTED_PROTECTED_PAYLOAD = "[encrypted]";
+
     private final DictionaryService dictionaryService;
     private final SecretCryptoService secretCryptoService;
     private final ObjectMapper objectMapper;
 
     public Map<String, Object> resolveReadableProperties(Node node) {
-        Map<String, Object> resolved = node.getProperties() != null
-            ? new LinkedHashMap<>(node.getProperties())
-            : new LinkedHashMap<>();
-        if (node == null || node.getEncryptedProperties() == null || node.getEncryptedProperties().isEmpty()) {
+        if (node == null) {
+            return new LinkedHashMap<>();
+        }
+        Map<String, Object> resolved = redactProtectedPayloads(node.getProperties());
+        if (node.getEncryptedProperties() == null || node.getEncryptedProperties().isEmpty()) {
             return resolved;
         }
 
@@ -78,13 +83,20 @@ public class NodePropertyEncryptionService {
     }
 
     public Map<String, Object> resolveIndexableProperties(Node node) {
-        Map<String, Object> indexable = node.getProperties() != null
-            ? new LinkedHashMap<>(node.getProperties())
-            : new LinkedHashMap<>();
+        Map<String, Object> indexable = redactProtectedPayloads(node != null ? node.getProperties() : null);
         for (String key : resolveEncryptedPropertyKeys(node)) {
             indexable.remove(key);
         }
         return indexable;
+    }
+
+    public Map<String, Object> redactProtectedPayloads(Map<String, Object> properties) {
+        Map<String, Object> redacted = new LinkedHashMap<>();
+        if (properties == null || properties.isEmpty()) {
+            return redacted;
+        }
+        properties.forEach((key, value) -> redacted.put(key, redactProtectedPayloadValue(value)));
+        return redacted;
     }
 
     public Set<String> resolveEncryptedPropertyKeys(Node node) {
@@ -145,5 +157,35 @@ public class NodePropertyEncryptionService {
         } catch (Exception ex) {
             return value;
         }
+    }
+
+    private Object redactProtectedPayloadValue(Object value) {
+        if (value instanceof String stringValue) {
+            return isProtectedPayload(stringValue) ? REDACTED_PROTECTED_PAYLOAD : stringValue;
+        }
+        if (value instanceof Map<?, ?> mapValue) {
+            Map<String, Object> redacted = new LinkedHashMap<>();
+            mapValue.forEach((key, nestedValue) ->
+                redacted.put(String.valueOf(key), redactProtectedPayloadValue(nestedValue))
+            );
+            return redacted;
+        }
+        if (value instanceof Collection<?> collectionValue) {
+            List<Object> redacted = new ArrayList<>();
+            for (Object nestedValue : collectionValue) {
+                redacted.add(redactProtectedPayloadValue(nestedValue));
+            }
+            return redacted;
+        }
+        return value;
+    }
+
+    private boolean isProtectedPayload(String value) {
+        if (value == null || !value.startsWith("enc:")) {
+            return false;
+        }
+        String remainder = value.substring("enc:".length());
+        int delimiterIndex = remainder.indexOf(':');
+        return delimiterIndex > 0 && delimiterIndex < remainder.length() - 1;
     }
 }

@@ -15,6 +15,7 @@ Completed delivery:
 - Property Encryption admin operations page is implemented: route, menu entry, service client, UI, unit tests, and mocked browser smoke registration.
 - Rewrap backend workflow is implemented: dry-run, persisted planned-job ledger, plan/list/get, run/cancel, bounded async runner, JSONB candidate selection, and compare-and-set update.
 - Rewrap frontend execution workflow is implemented: service client methods, separate rewrap job table, plan/run/cancel controls, scoped tests, and mocked Playwright route coverage.
+- Runtime protected-payload redaction is implemented: backend readable/indexable property maps, frontend property dialog display/save, search prefill, and search highlight snippets all guard against raw `enc:...` values.
 - Protocol endpoint security-test expansion has covered Transfer Receiver, WOPI Host, CMIS AtomPub, and CMIS Browser patterns in prior security-test docs.
 
 Verified evidence from latest rewrap-ledger slice:
@@ -28,6 +29,8 @@ Verified evidence from latest rewrap-ledger slice:
 - Frontend production build: compiled successfully.
 - Phase 5 registry-only preflight: 24 expected markers, 24 observed markers.
 - Frontend admin mocked Playwright smoke: 1 test passed against a temporary local SPA server.
+- Runtime redaction backend unit test: `NodePropertyEncryptionServiceTest`, 5 tests passed.
+- Runtime redaction frontend unit test: `propertyRedactionUtils.test.ts`, 5 tests passed.
 
 Known environment constraint:
 
@@ -121,33 +124,52 @@ Estimated effort: `0.5-1 person-day`.
 
 Risk buffer: add `1-2 person-days` if PostgreSQL/Testcontainers exposes a real migration, JSONB query, or concurrency issue.
 
-### P2: Runtime Masking And Redaction Policy
+### Completed: Runtime Protected-Payload Redaction
 
-Goal: close the product-facing gap around how encrypted properties render in generic viewers and editors.
+Goal: prevent raw protected payload strings from leaking through generic runtime views, search helpers, or editor save payloads.
 
-Required changes:
+Delivered changes:
 
-- Audit generic node property viewers and editors for encrypted property behavior.
-- Confirm protected payloads are never shown as raw `enc:...` strings unless explicitly intended for admin diagnostics.
-- Document readable-vs-indexable behavior for encrypted properties.
-- Add targeted UI or API acceptance checks if product policy requires masking assertions.
+- Backend recursively redacts `enc:...` payload-looking strings from readable property maps before response projection overlays model-declared encrypted values.
+- Backend recursively redacts `enc:...` payload-looking strings from indexable property maps.
+- Frontend property display formats raw protected payloads as `[encrypted]`.
+- Frontend generic property editor disables redacted custom-property values and skips them during save so `[encrypted]` is not written back as literal data.
+- Frontend search prefill omits protected payload values from property filters.
+- Frontend search highlights replace inline protected payload text with `[encrypted]`.
 
-Required tests:
+Delivered tests:
 
-- Encrypted property values do not leak raw protected payloads through generic property display.
-- Admin diagnostics show counts and state only, not plaintext or key material.
-- Existing search/index behavior remains documented and unchanged unless explicitly revised.
+- Backend unit coverage for readable and indexable protected-payload redaction.
+- Frontend utility coverage for detection, recursive value redaction, display formatting, and highlight text redaction.
 
-Estimated effort: `1-2 person-days`.
+Status: implemented and locally verified.
+
+### P2: Runtime Model-Property Masking Decision
+
+Goal: decide whether model-declared encrypted properties should remain readable in generic API projections or become masked by default.
+
+Current behavior:
+
+- `NodePropertyEncryptionService.resolveReadableProperties(...)` decrypts model-declared encrypted properties for readable projections.
+- Public `NodeDto` mappers in generic node/document/content-type controllers use that readable projection.
+- Search indexing still excludes encrypted model keys through `resolveIndexableProperties(...)`.
+
+Decision needed:
+
+- If Property Encryption is only at-rest encryption, keep current readable projection semantics and close this as documented behavior.
+- If benchmark parity requires runtime field masking, add a separate `resolveResponseProperties(...)` policy that returns `[encrypted]` for encrypted model keys and switch public DTO mappers to it.
+- Preserve explicit trusted/internal readable paths for copy, checkout/checkin, and compatibility workflows that need plaintext values.
+
+Estimated effort if default masking is required: `0.5-1 person-day`.
 
 ## Remaining Development Estimate
 
-Remaining work to reach Property Encryption benchmark closeout: about `1.5-3 person-days`, plus Docker issue buffer if PostgreSQL exposes real failures.
+Remaining work to reach Property Encryption benchmark closeout: about `1-2.5 person-days`, plus Docker issue buffer if PostgreSQL exposes real failures.
 
 Recommended execution order:
 
 1. Docker-backed rewrap/backfill verification.
-2. Runtime masking/redaction polish.
+2. Decide runtime model-property masking policy.
 3. Final CI/acceptance matrix closeout.
 
 Do not broaden the UI beyond backend-supported execution semantics. The current UI is aligned to backend plan/run/cancel support and keeps unsafe jobs blocked by backend validation.
@@ -228,6 +250,25 @@ ECM_UI_URL=http://127.0.0.1:5500 \
   --workers=1
 ```
 
+Runtime redaction backend test:
+
+```bash
+cd ecm-core
+/tmp/apache-maven-3.9.9/bin/mvn -B -Dstyle.color=never \
+  -Dmaven.repo.local=.m2-cache/repository \
+  -Dtest=NodePropertyEncryptionServiceTest \
+  test
+```
+
+Runtime redaction frontend test:
+
+```bash
+cd ecm-frontend
+CI=true npm test -- --runTestsByPath \
+  src/utils/propertyRedactionUtils.test.ts \
+  --watchAll=false
+```
+
 ## Acceptance Criteria
 
 Property Encryption can be considered benchmark-closeout ready when all of the following are true:
@@ -237,8 +278,10 @@ Property Encryption can be considered benchmark-closeout ready when all of the f
 - Admin UI exposes only backend-supported actions.
 - Docker-backed backend gate has a recorded green run.
 - Frontend mocked Phase 5 gate includes the property encryption admin route and remains green.
-- Runtime masking/redaction behavior is documented and covered by targeted checks.
-- No secrets, plaintext encrypted values, protected payloads, or key material are printed in logs, docs, API responses, or UI diagnostics.
+- Runtime protected-payload redaction behavior is documented and covered by targeted checks.
+- Runtime model-property masking policy is explicitly accepted as readable projection or implemented as default-masked response projection.
+- No protected payloads, key material, or admin-operation plaintext values are printed in logs, docs, API responses, or UI diagnostics.
+- Model-declared encrypted property plaintext is exposed only if the accepted product policy remains readable API projection; otherwise public response projection must mask it as `[encrypted]`.
 
 ## Assumptions
 

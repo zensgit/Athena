@@ -93,6 +93,7 @@ import { getSearchResultCheckoutChip } from 'utils/advancedSearchCheckoutUtils';
 import { getSearchResultLockChip } from 'utils/advancedSearchLockUtils';
 import { getFileLockActionReason } from 'utils/fileLockBadgeUtils';
 import { getRecordDeclarationFromNode } from 'utils/recordDeclarationUtils';
+import { redactProtectedPropertyText } from 'utils/propertyRedactionUtils';
 import CheckoutGraphDialog from 'components/dialogs/CheckoutGraphDialog';
 import RenditionDefinitionDialog from 'components/dialogs/RenditionDefinitionDialog';
 const DocumentPreview = React.lazy(() => import('components/preview/DocumentPreview'));
@@ -1417,12 +1418,15 @@ const SearchResults: React.FC = () => {
         return {
           field,
           label: formatMatchField(field),
-          snippet: values[0],
+          snippet: redactProtectedPropertyText(values[0]),
         };
       })
       .filter((item): item is { field: string; label: string; snippet: string } => Boolean(item))
       .slice(0, 3);
   };
+
+  const redactHighlightValues = (values?: string[]) =>
+    values?.map((value) => redactProtectedPropertyText(value));
 
   const applySuggestedFilter = (filter: { field: string; value: string }) => {
     if (!lastSearchCriteria) {
@@ -3187,13 +3191,13 @@ const SearchResults: React.FC = () => {
                           text={node.description}
                           highlights={
                             node.highlightSummary
-                              ? [node.highlightSummary]
-                              : node.highlights?.description
-                                || node.highlights?.content
-                                || node.highlights?.textContent
-                                || node.highlights?.extractedText
-                                || node.highlights?.title
-                                || node.highlights?.name
+                              ? [redactProtectedPropertyText(node.highlightSummary)]
+                              : redactHighlightValues(node.highlights?.description)
+                                || redactHighlightValues(node.highlights?.content)
+                                || redactHighlightValues(node.highlights?.textContent)
+                                || redactHighlightValues(node.highlights?.extractedText)
+                                || redactHighlightValues(node.highlights?.title)
+                                || redactHighlightValues(node.highlights?.name)
                           }
                         />
                         {(() => {
