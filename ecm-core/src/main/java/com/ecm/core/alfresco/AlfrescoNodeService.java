@@ -98,7 +98,7 @@ public class AlfrescoNodeService {
         
         // Add custom properties
         Map<String, Object> readableProperties = nodePropertyEncryptionService != null
-            ? nodePropertyEncryptionService.resolveReadableProperties(node)
+            ? nodePropertyEncryptionService.resolveResponseProperties(node)
             : node.getProperties();
         for (Map.Entry<String, Object> entry : readableProperties.entrySet()) {
             if (entry.getValue() instanceof Serializable) {

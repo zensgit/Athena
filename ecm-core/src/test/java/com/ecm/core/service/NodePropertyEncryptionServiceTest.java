@@ -20,6 +20,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -83,6 +84,47 @@ class NodePropertyEncryptionServiceTest {
 
         assertEquals("PUB-1", readable.get("acme:publicCode"));
         assertEquals("SEC-42", readable.get("acme:secretCode"));
+    }
+
+    @Test
+    @DisplayName("resolveResponseProperties masks encrypted model properties without decrypting")
+    void resolveResponsePropertiesMasksEncryptedModelPropertiesWithoutDecrypting() {
+        Document document = new Document();
+        document.setTypeQName("acme:contract");
+        document.setProperties(new HashMap<>(Map.of("acme:publicCode", "PUB-1")));
+        document.setEncryptedProperties(new HashMap<>(Map.of("acme:secretCode", "enc:v1:secret")));
+
+        PropertyDefinition encrypted = typedProperty("secretCode", true);
+        PropertyDefinition plain = typedProperty("publicCode", false);
+
+        when(dictionaryService.getPropertiesForType("acme:contract")).thenReturn(List.of(plain, encrypted));
+
+        Map<String, Object> response = nodePropertyEncryptionService.resolveResponseProperties(document);
+
+        assertEquals("PUB-1", response.get("acme:publicCode"));
+        assertEquals(NodePropertyEncryptionService.REDACTED_PROTECTED_PAYLOAD, response.get("acme:secretCode"));
+        verifyNoInteractions(secretCryptoService);
+    }
+
+    @Test
+    @DisplayName("resolveResponseProperties masks legacy plaintext values for encrypted model keys")
+    void resolveResponsePropertiesMasksLegacyPlaintextForEncryptedModelKeys() {
+        Document document = new Document();
+        document.setTypeQName("acme:contract");
+        document.setProperties(new HashMap<>(Map.of(
+            "acme:publicCode", "PUB-1",
+            "acme:secretCode", "SEC-42"
+        )));
+
+        PropertyDefinition encrypted = typedProperty("secretCode", true);
+        PropertyDefinition plain = typedProperty("publicCode", false);
+
+        when(dictionaryService.getPropertiesForType("acme:contract")).thenReturn(List.of(plain, encrypted));
+
+        Map<String, Object> response = nodePropertyEncryptionService.resolveResponseProperties(document);
+
+        assertEquals("PUB-1", response.get("acme:publicCode"));
+        assertEquals(NodePropertyEncryptionService.REDACTED_PROTECTED_PAYLOAD, response.get("acme:secretCode"));
     }
 
     @Test

@@ -16,6 +16,7 @@ Completed delivery:
 - Rewrap backend workflow is implemented: dry-run, persisted planned-job ledger, plan/list/get, run/cancel, bounded async runner, JSONB candidate selection, and compare-and-set update.
 - Rewrap frontend execution workflow is implemented: service client methods, separate rewrap job table, plan/run/cancel controls, scoped tests, and mocked Playwright route coverage.
 - Runtime protected-payload redaction is implemented: backend readable/indexable property maps, frontend property dialog display/save, search prefill, and search highlight snippets all guard against raw `enc:...` values.
+- Runtime response masking is implemented: public/generic node property responses return `[encrypted]` for model-declared encrypted keys while internal trusted workflows keep readable projection.
 - Protocol endpoint security-test expansion has covered Transfer Receiver, WOPI Host, CMIS AtomPub, and CMIS Browser patterns in prior security-test docs.
 
 Verified evidence from latest rewrap-ledger slice:
@@ -31,6 +32,7 @@ Verified evidence from latest rewrap-ledger slice:
 - Frontend admin mocked Playwright smoke: 1 test passed against a temporary local SPA server.
 - Runtime redaction backend unit test: `NodePropertyEncryptionServiceTest`, 5 tests passed.
 - Runtime redaction frontend unit test: `propertyRedactionUtils.test.ts`, 5 tests passed.
+- Runtime response masking backend target suite: 23 tests passed across service, node/document/content-type controller, and search index projection coverage.
 
 Known environment constraint:
 
@@ -144,33 +146,36 @@ Delivered tests:
 
 Status: implemented and locally verified.
 
-### P2: Runtime Model-Property Masking Decision
+### Completed: Runtime Model-Property Response Masking
 
-Goal: decide whether model-declared encrypted properties should remain readable in generic API projections or become masked by default.
+Goal: make public/generic API projections mask model-declared encrypted properties by default.
 
-Current behavior:
+Delivered changes:
 
-- `NodePropertyEncryptionService.resolveReadableProperties(...)` decrypts model-declared encrypted properties for readable projections.
-- Public `NodeDto` mappers in generic node/document/content-type controllers use that readable projection.
-- Search indexing still excludes encrypted model keys through `resolveIndexableProperties(...)`.
+- Added `NodePropertyEncryptionService.resolveResponseProperties(...)`.
+- Public/generic response projection returns `[encrypted]` for model-declared encrypted keys.
+- Public `NodeDto` mappers in node, document, and content-type controllers use response projection.
+- Alfresco-compatible property response mapper uses response projection.
+- Internal trusted workflows preserve `resolveReadableProperties(...)` for copy, checkout/checkin, metadata comparison, and compatibility mutations.
+- Search subtree/child reindex paths now apply `resolveIndexableProperties(...)` before saving `NodeDocument`.
 
-Decision needed:
+Delivered tests:
 
-- If Property Encryption is only at-rest encryption, keep current readable projection semantics and close this as documented behavior.
-- If benchmark parity requires runtime field masking, add a separate `resolveResponseProperties(...)` policy that returns `[encrypted]` for encrypted model keys and switch public DTO mappers to it.
-- Preserve explicit trusted/internal readable paths for copy, checkout/checkin, and compatibility workflows that need plaintext values.
+- Unit coverage for response masking without crypto reveal.
+- Unit coverage for legacy plaintext encrypted-model keys being masked.
+- MockMvc coverage for node, document, and content-type public response DTOs.
+- Search index coverage that subtree reindex stores indexable properties instead of raw properties.
 
-Estimated effort if default masking is required: `0.5-1 person-day`.
+Status: implemented and locally verified.
 
 ## Remaining Development Estimate
 
-Remaining work to reach Property Encryption benchmark closeout: about `1-2.5 person-days`, plus Docker issue buffer if PostgreSQL exposes real failures.
+Remaining work to reach Property Encryption benchmark closeout: about `0.5-1.5 person-days`, plus Docker issue buffer if PostgreSQL exposes real failures.
 
 Recommended execution order:
 
 1. Docker-backed rewrap/backfill verification.
-2. Decide runtime model-property masking policy.
-3. Final CI/acceptance matrix closeout.
+2. Final CI/acceptance matrix closeout.
 
 Do not broaden the UI beyond backend-supported execution semantics. The current UI is aligned to backend plan/run/cancel support and keeps unsafe jobs blocked by backend validation.
 
@@ -269,6 +274,16 @@ CI=true npm test -- --runTestsByPath \
   --watchAll=false
 ```
 
+Runtime response masking backend target suite:
+
+```bash
+cd ecm-core
+/tmp/apache-maven-3.9.9/bin/mvn -B -Dstyle.color=never \
+  -Dmaven.repo.local=.m2-cache/repository \
+  -Dtest=NodePropertyEncryptionServiceTest,NodeControllerAspectTest,DocumentControllerCheckoutTest,ContentTypeControllerPreviewSemanticsTest,SearchIndexServiceSubtreeReindexTest \
+  test
+```
+
 ## Acceptance Criteria
 
 Property Encryption can be considered benchmark-closeout ready when all of the following are true:
@@ -279,9 +294,9 @@ Property Encryption can be considered benchmark-closeout ready when all of the f
 - Docker-backed backend gate has a recorded green run.
 - Frontend mocked Phase 5 gate includes the property encryption admin route and remains green.
 - Runtime protected-payload redaction behavior is documented and covered by targeted checks.
-- Runtime model-property masking policy is explicitly accepted as readable projection or implemented as default-masked response projection.
+- Runtime model-property masking is implemented as default-masked response projection.
 - No protected payloads, key material, or admin-operation plaintext values are printed in logs, docs, API responses, or UI diagnostics.
-- Model-declared encrypted property plaintext is exposed only if the accepted product policy remains readable API projection; otherwise public response projection must mask it as `[encrypted]`.
+- Model-declared encrypted property plaintext remains available only to explicit trusted/internal readable workflows.
 
 ## Assumptions
 

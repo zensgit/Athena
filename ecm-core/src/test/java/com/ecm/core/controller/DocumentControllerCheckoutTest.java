@@ -11,6 +11,7 @@ import com.ecm.core.preview.PreviewService;
 import com.ecm.core.service.CheckOutCheckInService;
 import com.ecm.core.service.ContentService;
 import com.ecm.core.service.NodeService;
+import com.ecm.core.service.NodePropertyEncryptionService;
 import com.ecm.core.service.TenantQuotaService;
 import com.ecm.core.service.PdfAnnotationService;
 import com.ecm.core.service.RenditionResourceService;
@@ -28,6 +29,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.UUID;
+import java.util.Map;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -51,6 +53,7 @@ class DocumentControllerCheckoutTest {
     @Mock private PdfAnnotationService pdfAnnotationService;
     @Mock private RenditionResourceService renditionResourceService;
     @Mock private CheckOutCheckInService checkOutCheckInService;
+    @Mock private NodePropertyEncryptionService nodePropertyEncryptionService;
 
     @BeforeEach
     void setUp() {
@@ -65,7 +68,8 @@ class DocumentControllerCheckoutTest {
             conversionService,
             pdfAnnotationService,
             renditionResourceService,
-            checkOutCheckInService
+            checkOutCheckInService,
+            nodePropertyEncryptionService
         );
         ReflectionTestUtils.setField(controller, "previewReadHashEnforceEnabled", true);
         ReflectionTestUtils.setField(controller, "previewReadAutoRepairOnStale", true);
@@ -87,6 +91,23 @@ class DocumentControllerCheckoutTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.checkedOut").value(true))
             .andExpect(jsonPath("$.checkoutUser").value("alice"));
+    }
+
+    @Test
+    @DisplayName("Checkout response uses masked property response projection")
+    void checkoutResponseUsesMaskedPropertyResponseProjection() throws Exception {
+        UUID documentId = UUID.randomUUID();
+        Document document = document(documentId, "contract.pdf");
+        document.checkout("alice");
+
+        Mockito.when(nodeService.checkoutDocument(documentId)).thenReturn(document);
+        Mockito.when(nodePropertyEncryptionService.resolveResponseProperties(document))
+            .thenReturn(Map.of("acme:secretCode", NodePropertyEncryptionService.REDACTED_PROTECTED_PAYLOAD));
+
+        mockMvc.perform(post("/api/v1/documents/{documentId}/checkout", documentId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.properties['acme:secretCode']")
+                .value(NodePropertyEncryptionService.REDACTED_PROTECTED_PAYLOAD));
     }
 
     @Test

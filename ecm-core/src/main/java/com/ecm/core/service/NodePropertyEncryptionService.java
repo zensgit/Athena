@@ -44,6 +44,23 @@ public class NodePropertyEncryptionService {
         return resolved;
     }
 
+    public Map<String, Object> resolveResponseProperties(Node node) {
+        if (node == null) {
+            return new LinkedHashMap<>();
+        }
+
+        Map<String, Object> response = redactProtectedPayloads(node.getProperties());
+        Map<String, String> encryptedProperties = node.getEncryptedProperties() != null
+            ? node.getEncryptedProperties()
+            : Map.of();
+        for (String key : resolveEncryptedPropertyKeys(node)) {
+            if (encryptedProperties.containsKey(key) || response.containsKey(key)) {
+                response.put(key, REDACTED_PROTECTED_PAYLOAD);
+            }
+        }
+        return response;
+    }
+
     public void materializeReadableProperties(Node node) {
         if (node == null) {
             return;

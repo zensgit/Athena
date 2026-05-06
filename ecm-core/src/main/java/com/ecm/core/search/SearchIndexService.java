@@ -257,6 +257,7 @@ public class SearchIndexService {
                 }
 
                 NodeDocument refreshed = NodeDocument.fromNode(child);
+                refreshed.setProperties(resolveIndexableProperties(child));
                 applyReadPermissions(child, refreshed);
                 elasticsearchOperations.save(refreshed, IndexCoordinates.of(INDEX_NAME));
                 updated++;
@@ -287,6 +288,7 @@ public class SearchIndexService {
                 }
 
                 NodeDocument refreshed = NodeDocument.fromNode(hydrated);
+                refreshed.setProperties(resolveIndexableProperties(hydrated));
                 applyReadPermissions(hydrated, refreshed);
                 elasticsearchOperations.save(refreshed, IndexCoordinates.of(INDEX_NAME));
                 updated++;

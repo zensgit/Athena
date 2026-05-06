@@ -3,6 +3,7 @@ package com.ecm.core.controller;
 import com.ecm.core.entity.Folder;
 import com.ecm.core.service.DocumentRelationService;
 import com.ecm.core.service.LockService;
+import com.ecm.core.service.NodePropertyEncryptionService;
 import com.ecm.core.service.NodeService;
 import com.ecm.core.service.RenditionResourceService;
 import com.ecm.core.service.VersionService;
@@ -19,6 +20,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.Set;
 import java.util.UUID;
+import java.util.Map;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -36,10 +38,18 @@ class NodeControllerAspectTest {
     @Mock private VersionService versionService;
     @Mock private RenditionResourceService renditionResourceService;
     @Mock private LockService lockService;
+    @Mock private NodePropertyEncryptionService nodePropertyEncryptionService;
 
     @BeforeEach
     void setUp() {
-        NodeController controller = new NodeController(nodeService, relationService, versionService, renditionResourceService, lockService);
+        NodeController controller = new NodeController(
+            nodeService,
+            relationService,
+            versionService,
+            renditionResourceService,
+            lockService,
+            nodePropertyEncryptionService
+        );
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
             .setControllerAdvice(new RestExceptionHandler())
             .build();
@@ -54,6 +64,21 @@ class NodeControllerAspectTest {
         mockMvc.perform(get("/api/v1/nodes/{nodeId}/aspects", nodeId))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$[0]").exists());
+    }
+
+    @Test
+    @DisplayName("Get node uses masked property response projection")
+    void getNodeUsesMaskedPropertyResponseProjection() throws Exception {
+        UUID nodeId = UUID.randomUUID();
+        Folder folder = folder(nodeId, "Contracts");
+        Mockito.when(nodeService.getNode(nodeId)).thenReturn(folder);
+        Mockito.when(nodePropertyEncryptionService.resolveResponseProperties(folder))
+            .thenReturn(Map.of("acme:secretCode", NodePropertyEncryptionService.REDACTED_PROTECTED_PAYLOAD));
+
+        mockMvc.perform(get("/api/v1/nodes/{nodeId}", nodeId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.properties['acme:secretCode']")
+                .value(NodePropertyEncryptionService.REDACTED_PROTECTED_PAYLOAD));
     }
 
     @Test

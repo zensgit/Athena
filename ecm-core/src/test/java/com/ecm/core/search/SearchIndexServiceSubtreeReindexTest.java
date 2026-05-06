@@ -5,6 +5,7 @@ import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Node;
 import com.ecm.core.repository.DocumentRepository;
 import com.ecm.core.repository.NodeRepository;
+import com.ecm.core.service.NodePropertyEncryptionService;
 import com.ecm.core.service.SecurityService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -17,6 +18,7 @@ import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.data.elasticsearch.core.mapping.IndexCoordinates;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -32,6 +34,7 @@ class SearchIndexServiceSubtreeReindexTest {
     @Mock private DocumentRepository documentRepository;
     @Mock private NodeRepository nodeRepository;
     @Mock private SecurityService securityService;
+    @Mock private NodePropertyEncryptionService nodePropertyEncryptionService;
     @Mock private ElasticsearchOperations elasticsearchOperations;
 
     private SearchIndexService searchIndexService;
@@ -42,6 +45,7 @@ class SearchIndexServiceSubtreeReindexTest {
             documentRepository,
             nodeRepository,
             securityService,
+            nodePropertyEncryptionService,
             elasticsearchOperations
         );
     }
@@ -56,8 +60,10 @@ class SearchIndexServiceSubtreeReindexTest {
         Folder parent = folder(parentId, "Projects", "/Sites/Target/Projects");
         Folder childFolder = folder(childFolderId, "Q1", "/Sites/Target/Projects/Q1");
         childFolder.setParent(parent);
+        childFolder.setProperties(Map.of("acme:secretCode", "SEC-42"));
         Document childDocument = document(childDocumentId, "report.pdf", "/Sites/Target/Projects/Q1/report.pdf");
         childDocument.setParent(childFolder);
+        childDocument.setProperties(Map.of("acme:secretCode", "SEC-43"));
 
         when(nodeRepository.findByPathPrefix("/Sites/Target/Projects/"))
             .thenReturn(List.of(childFolder, childDocument));
@@ -65,6 +71,10 @@ class SearchIndexServiceSubtreeReindexTest {
         when(nodeRepository.findById(childDocumentId)).thenReturn(java.util.Optional.of(childDocument));
         when(securityService.resolveReadAuthorities(childFolder)).thenReturn(Set.of("EVERYONE"));
         when(securityService.resolveReadAuthorities(childDocument)).thenReturn(Set.of("EVERYONE", "alice"));
+        when(nodePropertyEncryptionService.resolveIndexableProperties(childFolder))
+            .thenReturn(Map.of("acme:publicCode", "PUB-1"));
+        when(nodePropertyEncryptionService.resolveIndexableProperties(childDocument))
+            .thenReturn(Map.of("acme:publicCode", "PUB-2"));
 
         searchIndexService.reindexNodeSubtree(parent);
 
@@ -76,6 +86,8 @@ class SearchIndexServiceSubtreeReindexTest {
         assertEquals("/Sites/Target/Projects/Q1/report.pdf", saved.get(1).getPath());
         assertEquals(Set.of("EVERYONE"), saved.get(0).getPermissions());
         assertEquals(Set.of("EVERYONE", "alice"), saved.get(1).getPermissions());
+        assertEquals(Map.of("acme:publicCode", "PUB-1"), saved.get(0).getProperties());
+        assertEquals(Map.of("acme:publicCode", "PUB-2"), saved.get(1).getProperties());
     }
 
     private Folder folder(UUID id, String name, String path) {

@@ -889,7 +889,7 @@ public class NodeController {
         NodeDto base = NodeDto.from(
             node,
             nodePropertyEncryptionService != null
-                ? nodePropertyEncryptionService.resolveReadableProperties(node)
+                ? nodePropertyEncryptionService.resolveResponseProperties(node)
                 : node.getProperties()
         );
         if (!(node instanceof Document document)) {

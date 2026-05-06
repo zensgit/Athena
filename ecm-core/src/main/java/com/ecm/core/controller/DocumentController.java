@@ -418,7 +418,7 @@ public class DocumentController {
         NodeDto base = NodeDto.from(
             document,
             nodePropertyEncryptionService != null
-                ? nodePropertyEncryptionService.resolveReadableProperties(document)
+                ? nodePropertyEncryptionService.resolveResponseProperties(document)
                 : document.getProperties()
         );
         RenditionResourceService.RenditionSummary renditionSummary = renditionResourceService.summarizeDocument(document);

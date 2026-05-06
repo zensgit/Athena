@@ -8,7 +8,9 @@ Property Encryption already stores model-declared encrypted properties in `nodes
 
 The remaining runtime risk was defense-in-depth handling for abnormal or legacy values where a protected payload string such as `enc:v1:...` appears in a generic property map or a search highlight. Those values should never be displayed, indexed, or written back as ordinary user-editable property data.
 
-This slice closes the raw protected-payload leak path. It does not change the existing product semantics that model-declared encrypted properties are decrypted by `resolveReadableProperties(...)` for trusted readable projections. A stricter default-masked generic API mode remains a product decision.
+This slice closes the raw protected-payload leak path. It did not originally change the existing product semantics that model-declared encrypted properties were decrypted by `resolveReadableProperties(...)` for trusted readable projections.
+
+Follow-up note: `docs/PROPERTY_ENCRYPTION_RESPONSE_MASKING_DESIGN_VERIFICATION_20260505.md` closes that remaining product decision by adding a default-masked public response projection.
 
 ## Design
 
@@ -47,17 +49,17 @@ The utility is applied to:
 - `SearchDialog`: prefilled property filters omit protected payload values
 - `SearchResults`: highlight snippets and highlight summaries redact inline protected payload text before rendering
 
-### Explicit Non-Goal
+### Follow-Up Response Masking
 
-This slice intentionally does not switch generic `NodeDto.properties` from decrypted encrypted-property values to `[encrypted]`.
+This slice intentionally did not switch generic `NodeDto.properties` from decrypted encrypted-property values to `[encrypted]`.
 
 Current documented semantics from `docs/P3_PR11B_MODEL_PROPERTY_ENCRYPTION_DESIGN_20260414.md` are:
 
 - encrypted model properties are removed from plaintext storage
 - encrypted model properties are excluded from search indexing
-- readable API projections can still reveal values through `resolveReadableProperties(...)`
+- readable API projections could still reveal values through `resolveReadableProperties(...)`
 
-If the benchmark requires default runtime masking for model-declared encrypted properties, the next slice should add a separate response policy such as `resolveResponseProperties(...)` and switch public DTO mappers to it while preserving explicit internal/trusted readable paths.
+The follow-up response masking slice adds `resolveResponseProperties(...)` and switches public DTO mappers to it while preserving explicit internal/trusted readable paths.
 
 ## Verification
 
@@ -145,6 +147,5 @@ The Docker-backed PostgreSQL gate remains an environment blocker on this host, n
 Remaining Property Encryption closeout work:
 
 - Run the Docker-backed PostgreSQL backfill/rewrap gate on a Docker-capable host.
-- Decide whether model-declared encrypted properties should be readable by generic API projections or default-masked as `[encrypted]`.
-- If default masking is required, add `resolveResponseProperties(...)` and switch public DTO mappers to that policy while preserving explicit trusted/internal readable paths.
+- Public response masking for model-declared encrypted properties is covered by `docs/PROPERTY_ENCRYPTION_RESPONSE_MASKING_DESIGN_VERIFICATION_20260505.md`.
 - Record a final acceptance matrix after Docker-backed evidence is available.
