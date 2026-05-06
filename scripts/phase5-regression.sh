@@ -1029,6 +1029,7 @@ start_ephemeral_static_server() {
 # This gate is intentionally "mocked-first" so it can run without Docker/backend.
 PHASE5_SPECS=(
   "e2e/admin-preview-diagnostics.mock.spec.ts"
+  "e2e/admin-property-encryption.mock.spec.ts"
   "e2e/permissions-dialog-presets.mock.spec.ts"
   "e2e/admin-audit-filter-export.mock.spec.ts"
   "e2e/version-history-paging-major-only.mock.spec.ts"
