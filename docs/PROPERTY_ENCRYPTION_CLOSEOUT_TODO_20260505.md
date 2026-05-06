@@ -6,7 +6,7 @@ Date: 2026-05-05
 
 Branch evidence:
 
-- Latest local commit: `409f836 feat(security): add property encryption rewrap job ledger`
+- Baseline commit before the frontend execution slice: `409f836 feat(security): add property encryption rewrap job ledger`
 - Working tree note: `.env` has pre-existing local changes and is intentionally excluded from this closeout.
 
 Completed delivery:
@@ -14,6 +14,7 @@ Completed delivery:
 - Backfill API-first workflow is implemented: dry-run, plan, run, cancel, async runner, stale-job recovery, and PostgreSQL-focused integration coverage.
 - Property Encryption admin operations page is implemented: route, menu entry, service client, UI, unit tests, and mocked browser smoke registration.
 - Rewrap backend workflow is implemented: dry-run, persisted planned-job ledger, plan/list/get, run/cancel, bounded async runner, JSONB candidate selection, and compare-and-set update.
+- Rewrap frontend execution workflow is implemented: service client methods, separate rewrap job table, plan/run/cancel controls, scoped tests, and mocked Playwright route coverage.
 - Protocol endpoint security-test expansion has covered Transfer Receiver, WOPI Host, CMIS AtomPub, and CMIS Browser patterns in prior security-test docs.
 
 Verified evidence from latest rewrap-ledger slice:
@@ -22,7 +23,11 @@ Verified evidence from latest rewrap-ledger slice:
 - `PropertyEncryptionBackfillPostgresIntegrationTest`: build success, two Docker/Testcontainers tests skipped locally because Docker was unavailable.
 - `xmllint` on the rewrap changelog and master changelog: passed.
 - `git diff --check`: passed.
-- Frontend admin smoke was previously registered in the Phase 5 mocked gate and passed as a targeted Playwright smoke.
+- Frontend rewrap execution UI targeted Jest: 2 suites, 5 tests passed.
+- Frontend lint: passed.
+- Frontend production build: compiled successfully.
+- Phase 5 registry-only preflight: 24 expected markers, 24 observed markers.
+- Frontend admin mocked Playwright smoke: 1 test passed against a temporary local SPA server.
 
 Known environment constraint:
 
@@ -76,25 +81,27 @@ Delivered tests:
 
 Status: implemented locally; pending Docker-backed PostgreSQL execution.
 
-### P1: Rewrap Execution UI
+### Completed: Rewrap Execution UI
 
 Goal: expose rewrap execution only after the backend can safely mutate payloads.
 
-Required changes:
+Delivered changes:
 
-- Show rewrap planned-job ledger on the Property Encryption admin page.
-- Add run/cancel controls after backend execution endpoints exist.
-- Surface warnings for missing source key versions, malformed/unversioned values, and non-executable dry-run state.
-- Add frontend service methods for run/cancel.
-- Extend the mocked admin Playwright smoke to cover plan -> run -> cancel or terminal state.
+- Added rewrap job DTOs and service wrappers for plan, list, run, and cancel.
+- Showed rewrap planned-job ledger on the Property Encryption admin page.
+- Added plan, run, and cancel controls after backend execution endpoints existed.
+- Kept backfill and rewrap job state separate to avoid counter and action ambiguity.
+- Disabled cancel controls outside `PLANNED` and `RUNNING`; `CANCEL_REQUESTED` is no longer re-clickable.
+- Surfaced warnings for missing source key versions, malformed/unversioned values, and non-executable dry-run state.
+- Extended the mocked admin Playwright smoke to cover rewrap plan -> run -> cancel.
 
-Required tests:
+Delivered tests:
 
-- Unit test service methods for plan/list/get/run/cancel.
-- Unit test page states for executable dry-run, blocked dry-run, planned job, running job, terminal success, terminal failure, and cancellation.
-- Mocked Playwright test confirms the route mounts and actions call the expected endpoints.
+- Unit tested service methods for rewrap plan/list/run/cancel.
+- Unit tested page load and backfill/rewrap action flows with table-scoped assertions.
+- Mocked Playwright test confirms the route mounts and backfill/rewrap actions call the expected endpoints.
 
-Estimated effort: `1-2 person-days`.
+Status: implemented and locally verified.
 
 ### P1: CI Closeout
 
@@ -135,16 +142,15 @@ Estimated effort: `1-2 person-days`.
 
 ## Remaining Development Estimate
 
-Remaining work to reach Property Encryption benchmark closeout: about `2.5-4.5 person-days`, plus Docker issue buffer if PostgreSQL exposes real failures.
+Remaining work to reach Property Encryption benchmark closeout: about `1.5-3 person-days`, plus Docker issue buffer if PostgreSQL exposes real failures.
 
 Recommended execution order:
 
 1. Docker-backed rewrap/backfill verification.
-2. Rewrap execution UI.
-3. Runtime masking/redaction polish.
-4. Final CI/acceptance matrix closeout.
+2. Runtime masking/redaction polish.
+3. Final CI/acceptance matrix closeout.
 
-Do not add UI run/cancel controls before backend rewrap execution exists. That would create a product promise the API cannot safely fulfill.
+Do not broaden the UI beyond backend-supported execution semantics. The current UI is aligned to backend plan/run/cancel support and keeps unsafe jobs blocked by backend validation.
 
 ## Verification Commands
 
@@ -192,6 +198,34 @@ Frontend mocked gate:
 
 ```bash
 PHASE5_VALIDATE_RECOVERY_REGISTRY_ONLY=1 bash scripts/phase5-regression.sh
+```
+
+Frontend rewrap execution UI targeted tests:
+
+```bash
+cd ecm-frontend
+CI=true npm test -- --runTestsByPath \
+  src/services/propertyEncryptionService.test.ts \
+  src/pages/PropertyEncryptionOperationsPage.test.tsx \
+  --watchAll=false
+```
+
+Frontend rewrap execution UI build checks:
+
+```bash
+cd ecm-frontend
+npm run lint
+CI=true npm run build
+```
+
+Frontend mocked browser smoke:
+
+```bash
+cd ecm-frontend
+ECM_UI_URL=http://127.0.0.1:5500 \
+  npx playwright test e2e/admin-property-encryption.mock.spec.ts \
+  --project=chromium \
+  --workers=1
 ```
 
 ## Acceptance Criteria

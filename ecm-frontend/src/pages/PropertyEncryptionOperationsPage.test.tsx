@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { toast } from 'react-toastify';
 import PropertyEncryptionOperationsPage from './PropertyEncryptionOperationsPage';
 import propertyEncryptionService from 'services/propertyEncryptionService';
@@ -17,11 +17,15 @@ jest.mock('services/propertyEncryptionService', () => ({
     getStatus: jest.fn(),
     listDefinitions: jest.fn(),
     listBackfillJobs: jest.fn(),
+    listRewrapJobs: jest.fn(),
     dryRunBackfill: jest.fn(),
     dryRunRewrap: jest.fn(),
     planBackfillJob: jest.fn(),
+    planRewrapJob: jest.fn(),
     runBackfillJob: jest.fn(),
     cancelBackfillJob: jest.fn(),
+    runRewrapJob: jest.fn(),
+    cancelRewrapJob: jest.fn(),
   },
 }));
 
@@ -47,6 +51,31 @@ const plannedJob = {
   failedValueCount: 0,
   warnings: [],
   definitionCounts: [],
+  lastError: null,
+  createdAt: '2026-04-30T00:00:00Z',
+  updatedAt: null,
+};
+
+const plannedRewrapJob = {
+  id: 'rewrap-1',
+  status: 'PLANNED' as const,
+  targetKeyVersion: 'v1',
+  requestedBy: 'admin',
+  requestedAt: '2026-04-30T00:00:00Z',
+  startedAt: null,
+  finishedAt: null,
+  candidateNodeCount: 3,
+  encryptedPropertyValueCount: 5,
+  valuesAlreadyOnTargetKeyCount: 2,
+  valuesRequiringRewrapCount: 3,
+  unversionedOrMalformedValueCount: 0,
+  processedValueCount: 0,
+  rewrappedValueCount: 0,
+  skippedValueCount: 0,
+  failedValueCount: 0,
+  keyVersionCounts: [{ keyVersion: 'v0', encryptedPropertyValueCount: 3 }],
+  missingSourceKeyVersions: [],
+  warnings: [],
   lastError: null,
   createdAt: '2026-04-30T00:00:00Z',
   updatedAt: null,
@@ -81,6 +110,7 @@ beforeEach(() => {
     },
   ]);
   mockedPropertyEncryptionService.listBackfillJobs.mockResolvedValue([plannedJob]);
+  mockedPropertyEncryptionService.listRewrapJobs.mockResolvedValue([plannedRewrapJob]);
 });
 
 test('loads property encryption status, definitions, and jobs', async () => {
@@ -89,14 +119,18 @@ test('loads property encryption status, definitions, and jobs', async () => {
   expect(await screen.findByText('Property Encryption')).toBeTruthy();
   expect(await screen.findByText('Secret crypto enabled')).toBeTruthy();
   expect(screen.getByText('cm:secretCode')).toBeTruthy();
-  expect(screen.getByText('PLANNED')).toBeTruthy();
+  const backfillTable = screen.getByRole('table', { name: 'Property encryption backfill jobs' });
+  const rewrapTable = screen.getByRole('table', { name: 'Property encryption rewrap jobs' });
+  expect(within(backfillTable).getByText('PLANNED')).toBeTruthy();
+  expect(within(rewrapTable).getByText('PLANNED')).toBeTruthy();
 
   expect(mockedPropertyEncryptionService.getStatus).toHaveBeenCalledTimes(1);
   expect(mockedPropertyEncryptionService.listDefinitions).toHaveBeenCalledTimes(1);
   expect(mockedPropertyEncryptionService.listBackfillJobs).toHaveBeenCalledWith(10);
+  expect(mockedPropertyEncryptionService.listRewrapJobs).toHaveBeenCalledWith(10);
 });
 
-test('runs dry-run, plan, run, and cancel actions', async () => {
+test('runs dry-run, plan, run, and cancel actions for backfill and rewrap jobs', async () => {
   mockedPropertyEncryptionService.dryRunBackfill.mockResolvedValue({
     targetKeyVersion: 'v1',
     targetKeyConfigured: true,
@@ -126,6 +160,7 @@ test('runs dry-run, plan, run, and cancel actions', async () => {
     executable: true,
   });
   mockedPropertyEncryptionService.planBackfillJob.mockResolvedValue(plannedJob);
+  mockedPropertyEncryptionService.planRewrapJob.mockResolvedValue(plannedRewrapJob);
   mockedPropertyEncryptionService.runBackfillJob.mockResolvedValue({
     ...plannedJob,
     status: 'RUNNING',
@@ -135,9 +170,20 @@ test('runs dry-run, plan, run, and cancel actions', async () => {
     ...plannedJob,
     status: 'CANCEL_REQUESTED',
   });
+  mockedPropertyEncryptionService.runRewrapJob.mockResolvedValue({
+    ...plannedRewrapJob,
+    status: 'RUNNING',
+    startedAt: '2026-04-30T00:01:00Z',
+  });
+  mockedPropertyEncryptionService.cancelRewrapJob.mockResolvedValue({
+    ...plannedRewrapJob,
+    status: 'CANCEL_REQUESTED',
+  });
 
   render(<PropertyEncryptionOperationsPage />);
-  await screen.findByText('PLANNED');
+  await screen.findAllByText('PLANNED');
+  const backfillTable = screen.getByRole('table', { name: 'Property encryption backfill jobs' });
+  const rewrapTable = screen.getByRole('table', { name: 'Property encryption rewrap jobs' });
 
   fireEvent.click(screen.getByRole('button', { name: 'Backfill Dry Run' }));
   expect(await screen.findByText(/Backfill dry-run: executable/)).toBeTruthy();
@@ -151,18 +197,47 @@ test('runs dry-run, plan, run, and cancel actions', async () => {
   });
 
   fireEvent.click(screen.getByRole('button', { name: 'Rewrap Dry Run' }));
-  expect(await screen.findByText(/Rewrap dry-run only/)).toBeTruthy();
+  expect(await screen.findByText(/Rewrap dry-run: executable/)).toBeTruthy();
   expect(mockedPropertyEncryptionService.dryRunRewrap).toHaveBeenCalledWith('v1');
 
-  fireEvent.click(screen.getByRole('button', { name: 'Run' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Plan Rewrap Job' }));
+  await waitFor(() => expect(mockedPropertyEncryptionService.planRewrapJob).toHaveBeenCalledWith('v1'));
+
+  await waitFor(() => {
+    const runBackfillButton = within(backfillTable).getByRole('button', { name: 'Run Backfill' }) as HTMLButtonElement;
+    expect(runBackfillButton.disabled).toBe(false);
+  });
+  fireEvent.click(within(backfillTable).getByRole('button', { name: 'Run Backfill' }));
   await waitFor(() => expect(mockedPropertyEncryptionService.runBackfillJob).toHaveBeenCalledWith('job-1'));
   await waitFor(() => {
-    const cancelButton = screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement;
+    const cancelButton = within(backfillTable).getByRole('button', { name: 'Cancel Backfill' }) as HTMLButtonElement;
     expect(cancelButton.disabled).toBe(false);
   });
 
-  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  fireEvent.click(within(backfillTable).getByRole('button', { name: 'Cancel Backfill' }));
   await waitFor(() => expect(mockedPropertyEncryptionService.cancelBackfillJob).toHaveBeenCalledWith('job-1'));
+  await waitFor(() => {
+    const cancelButton = within(backfillTable).getByRole('button', { name: 'Cancel Backfill' }) as HTMLButtonElement;
+    expect(cancelButton.disabled).toBe(true);
+  });
+
+  await waitFor(() => {
+    const runRewrapButton = within(rewrapTable).getByRole('button', { name: 'Run Rewrap' }) as HTMLButtonElement;
+    expect(runRewrapButton.disabled).toBe(false);
+  });
+  fireEvent.click(within(rewrapTable).getByRole('button', { name: 'Run Rewrap' }));
+  await waitFor(() => expect(mockedPropertyEncryptionService.runRewrapJob).toHaveBeenCalledWith('rewrap-1'));
+
+  await waitFor(() => {
+    const cancelRewrapButton = within(rewrapTable).getByRole('button', { name: 'Cancel Rewrap' }) as HTMLButtonElement;
+    expect(cancelRewrapButton.disabled).toBe(false);
+  });
+  fireEvent.click(within(rewrapTable).getByRole('button', { name: 'Cancel Rewrap' }));
+  await waitFor(() => expect(mockedPropertyEncryptionService.cancelRewrapJob).toHaveBeenCalledWith('rewrap-1'));
+  await waitFor(() => {
+    const cancelRewrapButton = within(rewrapTable).getByRole('button', { name: 'Cancel Rewrap' }) as HTMLButtonElement;
+    expect(cancelRewrapButton.disabled).toBe(true);
+  });
 
   expect(toast.success).toHaveBeenCalledWith('Backfill dry-run completed.');
 });

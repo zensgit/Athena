@@ -30,21 +30,18 @@ import {
 } from '@mui/icons-material';
 import { toast } from 'react-toastify';
 import propertyEncryptionService, {
-  BackfillJobStatus,
+  PropertyEncryptionJobStatus,
   EncryptedPropertyDefinitionSummary,
   PropertyEncryptionBackfillDryRunResult,
   PropertyEncryptionBackfillJobDto,
   PropertyEncryptionRewrapDryRunResult,
+  PropertyEncryptionRewrapJobDto,
   PropertyEncryptionStatus,
 } from 'services/propertyEncryptionService';
 
-const terminalStatuses = new Set<BackfillJobStatus>([
-  'SUCCEEDED',
-  'FAILED',
-  'CANCELLED',
-]);
+const cancellableStatuses = new Set<PropertyEncryptionJobStatus>(['PLANNED', 'RUNNING']);
 
-const statusColor: Record<BackfillJobStatus, 'default' | 'primary' | 'success' | 'error' | 'warning'> = {
+const statusColor: Record<PropertyEncryptionJobStatus, 'default' | 'primary' | 'success' | 'error' | 'warning'> = {
   PLANNED: 'default',
   RUNNING: 'primary',
   SUCCEEDED: 'success',
@@ -84,7 +81,8 @@ const PropertyEncryptionOperationsPage: React.FC = () => {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [status, setStatus] = useState<PropertyEncryptionStatus | null>(null);
   const [definitions, setDefinitions] = useState<EncryptedPropertyDefinitionSummary[]>([]);
-  const [jobs, setJobs] = useState<PropertyEncryptionBackfillJobDto[]>([]);
+  const [backfillJobs, setBackfillJobs] = useState<PropertyEncryptionBackfillJobDto[]>([]);
+  const [rewrapJobs, setRewrapJobs] = useState<PropertyEncryptionRewrapJobDto[]>([]);
   const [targetKeyVersion, setTargetKeyVersion] = useState('');
   const [backfillDryRun, setBackfillDryRun] = useState<PropertyEncryptionBackfillDryRunResult | null>(null);
   const [rewrapDryRun, setRewrapDryRun] = useState<PropertyEncryptionRewrapDryRunResult | null>(null);
@@ -94,14 +92,16 @@ const PropertyEncryptionOperationsPage: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [nextStatus, nextDefinitions, nextJobs] = await Promise.all([
+      const [nextStatus, nextDefinitions, nextBackfillJobs, nextRewrapJobs] = await Promise.all([
         propertyEncryptionService.getStatus(),
         propertyEncryptionService.listDefinitions(),
         propertyEncryptionService.listBackfillJobs(10),
+        propertyEncryptionService.listRewrapJobs(10),
       ]);
       setStatus(nextStatus);
       setDefinitions(nextDefinitions);
-      setJobs(nextJobs);
+      setBackfillJobs(nextBackfillJobs);
+      setRewrapJobs(nextRewrapJobs);
       if (!targetKeyVersion.trim() && nextStatus.activeKeyVersion) {
         setTargetKeyVersion(nextStatus.activeKeyVersion);
       }
@@ -119,9 +119,14 @@ const PropertyEncryptionOperationsPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const refreshJobs = async () => {
+  const refreshBackfillJobs = async () => {
     const nextJobs = await propertyEncryptionService.listBackfillJobs(10);
-    setJobs(nextJobs);
+    setBackfillJobs(nextJobs);
+  };
+
+  const refreshRewrapJobs = async () => {
+    const nextJobs = await propertyEncryptionService.listRewrapJobs(10);
+    setRewrapJobs(nextJobs);
   };
 
   const handleBackfillDryRun = async () => {
@@ -154,10 +159,23 @@ const PropertyEncryptionOperationsPage: React.FC = () => {
     setActionLoading('plan-backfill');
     try {
       const job = await propertyEncryptionService.planBackfillJob(effectiveTargetKeyVersion);
-      setJobs((current) => [job, ...current.filter((item) => item.id !== job.id)]);
+      setBackfillJobs((current) => [job, ...current.filter((item) => item.id !== job.id)]);
       toast.success('Backfill job planned.');
     } catch (error) {
       toast.error(getErrorMessage(error, 'Backfill job planning failed.'));
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handlePlanRewrap = async () => {
+    setActionLoading('plan-rewrap');
+    try {
+      const job = await propertyEncryptionService.planRewrapJob(effectiveTargetKeyVersion);
+      setRewrapJobs((current) => [job, ...current.filter((item) => item.id !== job.id)]);
+      toast.success('Rewrap job planned.');
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Rewrap job planning failed.'));
     } finally {
       setActionLoading(null);
     }
@@ -167,10 +185,23 @@ const PropertyEncryptionOperationsPage: React.FC = () => {
     setActionLoading(`run-${jobId}`);
     try {
       const job = await propertyEncryptionService.runBackfillJob(jobId);
-      setJobs((current) => current.map((item) => (item.id === job.id ? job : item)));
+      setBackfillJobs((current) => current.map((item) => (item.id === job.id ? job : item)));
       toast.success('Backfill job started.');
     } catch (error) {
       toast.error(getErrorMessage(error, 'Backfill job start failed.'));
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleRunRewrap = async (jobId: string) => {
+    setActionLoading(`run-rewrap-${jobId}`);
+    try {
+      const job = await propertyEncryptionService.runRewrapJob(jobId);
+      setRewrapJobs((current) => current.map((item) => (item.id === job.id ? job : item)));
+      toast.success('Rewrap job started.');
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Rewrap job start failed.'));
     } finally {
       setActionLoading(null);
     }
@@ -180,10 +211,23 @@ const PropertyEncryptionOperationsPage: React.FC = () => {
     setActionLoading(`cancel-${jobId}`);
     try {
       const job = await propertyEncryptionService.cancelBackfillJob(jobId);
-      setJobs((current) => current.map((item) => (item.id === job.id ? job : item)));
+      setBackfillJobs((current) => current.map((item) => (item.id === job.id ? job : item)));
       toast.success('Backfill job cancellation requested.');
     } catch (error) {
       toast.error(getErrorMessage(error, 'Backfill job cancellation failed.'));
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleCancelRewrap = async (jobId: string) => {
+    setActionLoading(`cancel-rewrap-${jobId}`);
+    try {
+      const job = await propertyEncryptionService.cancelRewrapJob(jobId);
+      setRewrapJobs((current) => current.map((item) => (item.id === job.id ? job : item)));
+      toast.success('Rewrap job cancellation requested.');
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Rewrap job cancellation failed.'));
     } finally {
       setActionLoading(null);
     }
@@ -197,7 +241,7 @@ const PropertyEncryptionOperationsPage: React.FC = () => {
             Property Encryption
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Monitor encrypted model properties and operate safe backfill jobs without exposing property values.
+            Monitor encrypted model properties and operate safe backfill and rewrap jobs without exposing property values.
           </Typography>
         </Box>
         <Button
@@ -275,7 +319,7 @@ const PropertyEncryptionOperationsPage: React.FC = () => {
             <CardHeader
               avatar={<Science color="primary" />}
               title="Dry-runs and planning"
-              subheader="Use dry-run output before creating a persistent backfill job"
+              subheader="Use dry-run output before creating persistent backfill or rewrap jobs"
             />
             <CardContent>
               <Stack spacing={2}>
@@ -311,6 +355,14 @@ const PropertyEncryptionOperationsPage: React.FC = () => {
                   >
                     Rewrap Dry Run
                   </Button>
+                  <Button
+                    variant="outlined"
+                    onClick={() => void handlePlanRewrap()}
+                    disabled={Boolean(actionLoading) || rewrapDryRun?.executable === false}
+                    startIcon={actionLoading === 'plan-rewrap' ? <CircularProgress size={16} /> : <TaskAlt />}
+                  >
+                    Plan Rewrap Job
+                  </Button>
                 </Stack>
 
                 {backfillDryRun && (
@@ -322,8 +374,9 @@ const PropertyEncryptionOperationsPage: React.FC = () => {
                 )}
 
                 {rewrapDryRun && (
-                  <Alert severity={rewrapDryRun.executable ? 'info' : 'warning'}>
-                    Rewrap dry-run only: {formatNumber(rewrapDryRun.valuesRequiringRewrapCount)} values require rewrap to {rewrapDryRun.targetKeyVersion || '-'}.
+                  <Alert severity={rewrapDryRun.executable ? 'success' : 'warning'}>
+                    Rewrap dry-run: {rewrapDryRun.executable ? 'executable' : 'blocked'}.
+                    {` ${formatNumber(rewrapDryRun.valuesRequiringRewrapCount)} values require rewrap to ${rewrapDryRun.targetKeyVersion || '-'}.`}
                     {rewrapDryRun.warnings.length > 0 ? ` Warnings: ${rewrapDryRun.warnings.join(', ')}` : ''}
                   </Alert>
                 )}
@@ -383,8 +436,8 @@ const PropertyEncryptionOperationsPage: React.FC = () => {
             <CardHeader
               title="Backfill jobs"
               action={
-                <Button size="small" onClick={() => void refreshJobs()} startIcon={<Refresh />}>
-                  Refresh Jobs
+                <Button size="small" onClick={() => void refreshBackfillJobs()} startIcon={<Refresh />}>
+                  Refresh Backfill Jobs
                 </Button>
               }
             />
@@ -402,7 +455,7 @@ const PropertyEncryptionOperationsPage: React.FC = () => {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {jobs.map((job) => (
+                    {backfillJobs.map((job) => (
                       <TableRow key={job.id}>
                         <TableCell>
                           <Chip label={job.status} color={statusColor[job.status]} size="small" />
@@ -426,22 +479,22 @@ const PropertyEncryptionOperationsPage: React.FC = () => {
                               disabled={Boolean(actionLoading) || job.status !== 'PLANNED'}
                               onClick={() => void handleRunBackfill(job.id)}
                             >
-                              Run
+                              Run Backfill
                             </Button>
                             <Button
                               size="small"
                               color="warning"
                               startIcon={actionLoading === `cancel-${job.id}` ? <CircularProgress size={14} /> : <StopCircle />}
-                              disabled={Boolean(actionLoading) || terminalStatuses.has(job.status)}
+                              disabled={Boolean(actionLoading) || !cancellableStatuses.has(job.status)}
                               onClick={() => void handleCancelBackfill(job.id)}
                             >
-                              Cancel
+                              Cancel Backfill
                             </Button>
                           </Stack>
                         </TableCell>
                       </TableRow>
                     ))}
-                    {jobs.length === 0 && (
+                    {backfillJobs.length === 0 && (
                       <TableRow>
                         <TableCell colSpan={6}>
                           <Typography variant="body2" color="text.secondary">No backfill jobs found.</Typography>
@@ -451,9 +504,87 @@ const PropertyEncryptionOperationsPage: React.FC = () => {
                   </TableBody>
                 </Table>
               </TableContainer>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        <Grid item xs={12}>
+          <Card>
+            <CardHeader
+              title="Rewrap jobs"
+              subheader="Re-encrypt existing encrypted payloads onto the active target key"
+              action={
+                <Button size="small" onClick={() => void refreshRewrapJobs()} startIcon={<Refresh />}>
+                  Refresh Rewrap Jobs
+                </Button>
+              }
+            />
+            <CardContent>
+              <TableContainer>
+                <Table size="small" aria-label="Property encryption rewrap jobs">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Status</TableCell>
+                      <TableCell>Target key</TableCell>
+                      <TableCell>Requested</TableCell>
+                      <TableCell>Counters</TableCell>
+                      <TableCell>Error</TableCell>
+                      <TableCell align="right">Actions</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {rewrapJobs.map((job) => (
+                      <TableRow key={job.id}>
+                        <TableCell>
+                          <Chip label={job.status} color={statusColor[job.status]} size="small" />
+                        </TableCell>
+                        <TableCell>{job.targetKeyVersion || '-'}</TableCell>
+                        <TableCell>
+                          <Typography variant="body2">{job.requestedBy}</Typography>
+                          <Typography variant="caption" color="text.secondary">{formatDateTime(job.requestedAt)}</Typography>
+                        </TableCell>
+                        <TableCell>
+                          Processed {formatNumber(job.processedValueCount)} / rewrapped {formatNumber(job.rewrappedValueCount)}
+                          <br />
+                          Requires rewrap snapshot {formatNumber(job.valuesRequiringRewrapCount)}
+                        </TableCell>
+                        <TableCell>{job.lastError || '-'}</TableCell>
+                        <TableCell align="right">
+                          <Stack direction="row" spacing={1} justifyContent="flex-end">
+                            <Button
+                              size="small"
+                              startIcon={actionLoading === `run-rewrap-${job.id}` ? <CircularProgress size={14} /> : <PlayArrow />}
+                              disabled={Boolean(actionLoading) || job.status !== 'PLANNED'}
+                              onClick={() => void handleRunRewrap(job.id)}
+                            >
+                              Run Rewrap
+                            </Button>
+                            <Button
+                              size="small"
+                              color="warning"
+                              startIcon={actionLoading === `cancel-rewrap-${job.id}` ? <CircularProgress size={14} /> : <StopCircle />}
+                              disabled={Boolean(actionLoading) || !cancellableStatuses.has(job.status)}
+                              onClick={() => void handleCancelRewrap(job.id)}
+                            >
+                              Cancel Rewrap
+                            </Button>
+                          </Stack>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {rewrapJobs.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={6}>
+                          <Typography variant="body2" color="text.secondary">No rewrap jobs found.</Typography>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
               <Divider sx={{ mt: 2, mb: 1 }} />
               <Typography variant="caption" color="text.secondary">
-                Rewrap execution is intentionally not exposed here yet because the backend currently supports rewrap dry-run only.
+                Rewrap execution requires the target key to match the backend active key; unsafe jobs fail before mutating node payloads.
               </Typography>
             </CardContent>
           </Card>

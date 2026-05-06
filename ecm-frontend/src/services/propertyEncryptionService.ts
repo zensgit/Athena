@@ -13,13 +13,15 @@ export type PropertyDataType =
   | 'ANY'
   | string;
 
-export type BackfillJobStatus =
+export type PropertyEncryptionJobStatus =
   | 'PLANNED'
   | 'RUNNING'
   | 'SUCCEEDED'
   | 'FAILED'
   | 'CANCEL_REQUESTED'
   | 'CANCELLED';
+
+export type BackfillJobStatus = PropertyEncryptionJobStatus;
 
 export interface PropertyEncryptionStatus {
   secretCryptoEnabled: boolean;
@@ -104,7 +106,7 @@ export interface BackfillDefinitionCountSnapshot {
 
 export interface PropertyEncryptionBackfillJobDto {
   id: string;
-  status: BackfillJobStatus;
+  status: PropertyEncryptionJobStatus;
   targetKeyVersion?: string | null;
   requestedBy: string;
   requestedAt: string;
@@ -122,6 +124,36 @@ export interface PropertyEncryptionBackfillJobDto {
   failedValueCount: number;
   warnings: string[];
   definitionCounts: BackfillDefinitionCountSnapshot[];
+  lastError?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
+}
+
+export interface RewrapKeyVersionCountSnapshot {
+  keyVersion: string;
+  encryptedPropertyValueCount: number;
+}
+
+export interface PropertyEncryptionRewrapJobDto {
+  id: string;
+  status: PropertyEncryptionJobStatus;
+  targetKeyVersion?: string | null;
+  requestedBy: string;
+  requestedAt: string;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  candidateNodeCount: number;
+  encryptedPropertyValueCount: number;
+  valuesAlreadyOnTargetKeyCount: number;
+  valuesRequiringRewrapCount: number;
+  unversionedOrMalformedValueCount: number;
+  processedValueCount: number;
+  rewrappedValueCount: number;
+  skippedValueCount: number;
+  failedValueCount: number;
+  keyVersionCounts: RewrapKeyVersionCountSnapshot[];
+  missingSourceKeyVersions: string[];
+  warnings: string[];
   lastError?: string | null;
   createdAt: string;
   updatedAt?: string | null;
@@ -148,6 +180,28 @@ class PropertyEncryptionService {
     return api.post<PropertyEncryptionBackfillDryRunResult>(`${BASE_URL}/backfill-jobs/dry-run`, {
       targetKeyVersion: targetKeyVersion?.trim() || undefined,
     });
+  }
+
+  async planRewrapJob(targetKeyVersion?: string): Promise<PropertyEncryptionRewrapJobDto> {
+    return api.post<PropertyEncryptionRewrapJobDto>(`${BASE_URL}/rewrap-jobs/plan`, {
+      targetKeyVersion: targetKeyVersion?.trim() || undefined,
+    });
+  }
+
+  async listRewrapJobs(limit = 10): Promise<PropertyEncryptionRewrapJobDto[]> {
+    return api.get<PropertyEncryptionRewrapJobDto[]>(`${BASE_URL}/rewrap-jobs`, {
+      params: { limit },
+    });
+  }
+
+  async runRewrapJob(jobId: string, batchSize?: number): Promise<PropertyEncryptionRewrapJobDto> {
+    return api.post<PropertyEncryptionRewrapJobDto>(`${BASE_URL}/rewrap-jobs/${jobId}/run`, {
+      batchSize,
+    });
+  }
+
+  async cancelRewrapJob(jobId: string): Promise<PropertyEncryptionRewrapJobDto> {
+    return api.post<PropertyEncryptionRewrapJobDto>(`${BASE_URL}/rewrap-jobs/${jobId}/cancel`);
   }
 
   async planBackfillJob(targetKeyVersion?: string): Promise<PropertyEncryptionBackfillJobDto> {
