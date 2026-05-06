@@ -41,6 +41,7 @@ Verified evidence from latest rewrap-ledger slice:
 - CI push evidence: `origin/main` advanced from `7d7639c` to `f5de379`; GitHub Actions run `25418055312` started for the closeout-gate commit.
 - CI run `25418055312` failure triaged: backend failed on PostgreSQL JSONB/native-query cast plus timestamp/JSONB formatting assertions; frontend failed on a long operator-flow Jest timeout. Fixes are documented in `docs/PROPERTY_ENCRYPTION_CI_RUN_25418055312_FIXES_DESIGN_VERIFICATION_20260505.md`.
 - CI run `25418484543` follow-up failure triaged: backend runner PostgreSQL does not provide `jsonb_object_length(jsonb)`; repository count now uses `CROSS JOIN LATERAL jsonb_each(...)`.
+- CI run `25418606323` achieved the benchmark blocker: `Property Encryption Closeout Gate` passed with backend non-Docker 75/75, frontend targeted 10/10, production build, Phase 5 registry 24/24, and Docker-backed PostgreSQL gate 65/65.
 
 Known environment constraint:
 
@@ -217,7 +218,11 @@ Current CI run to observe:
 https://github.com/zensgit/Athena/actions/runs/25418055312
 ```
 
-Run `25418055312` final status: failed before the Property Encryption closeout job could execute. Push the follow-up fix commit and observe the replacement run.
+Run `25418055312` final status: failed before the Property Encryption closeout job could execute.
+
+Run `25418484543` final relevant status: backend failed on PostgreSQL JSONB entry count before closeout could execute.
+
+Run `25418606323` Property Encryption status: `Property Encryption Closeout Gate` passed. Continue observing remaining non-property workflow jobs separately.
 
 Do not broaden the UI beyond backend-supported execution semantics. The current UI is aligned to backend plan/run/cancel support and keeps unsafe jobs blocked by backend validation.
 

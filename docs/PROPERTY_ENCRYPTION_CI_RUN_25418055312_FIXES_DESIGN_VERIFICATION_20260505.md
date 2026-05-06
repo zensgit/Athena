@@ -240,7 +240,5 @@ Result: passed with no output.
 
 ## Remaining Work
 
-- Push the fix commit.
-- Observe the next CI run.
-- The expected next milestone is that `Backend Verify` and `Frontend Build & Test` pass, allowing `Property Encryption Closeout Gate` to run instead of being skipped.
-- If `Property Encryption Closeout Gate` then fails, fix the concrete Docker-backed PostgreSQL/Testcontainers failure from that job log.
+- Run `25418606323` has validated the targeted fixes: `Backend Verify`, `Frontend Build & Test`, and `Property Encryption Closeout Gate` are green.
+- Continue observing remaining non-property jobs in the same workflow separately.

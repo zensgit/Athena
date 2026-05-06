@@ -84,6 +84,29 @@ Root cause: PostgreSQL runner does not provide jsonb_object_length(jsonb)
 Fix: count JSONB entries with CROSS JOIN LATERAL jsonb_each(...)
 ```
 
+Closeout run `25418606323`:
+
+```text
+Backend Verify: success
+Frontend Build & Test: success
+Property Encryption Closeout Gate: success
+Property Encryption Closeout Gate job ID: 74556589054
+Property Encryption Closeout Gate completed at: 2026-05-06T06:01:17Z
+```
+
+Closeout preflight evidence from job `74556589054`:
+
+```text
+Backend non-Docker evidence: 75 tests, 0 failures, 0 errors, 0 skipped
+Frontend targeted evidence: 3 suites passed, 10 tests passed
+Frontend lint: success
+Frontend production build: compiled successfully
+Phase 5 registry-only preflight: expected events 24, observed markers 24
+Docker-backed PostgreSQL gate: 65 tests, 0 failures, 0 errors, 0 skipped
+Docker-backed gate passed
+property_encryption_closeout_preflight: ok
+```
+
 Observed jobs at first poll:
 
 | Job | Status | Current step |
@@ -106,8 +129,8 @@ Observed jobs at first poll:
 | Frontend targeted suite | reduced preflight: service test 3/3 passed; prior full preflight: 10/10 passed | closeout preflight frontend suite passes | 0 failed tests |
 | Frontend lint/build | reduced lint passed; prior full preflight build compiled successfully | closeout preflight lint/build pass | no lint/build failure |
 | Phase 5 registry | prior full preflight matched 24/24 markers | closeout preflight registry step passes | no missing/stale registry entries |
-| Docker-backed PostgreSQL/Testcontainers | local host blocked by missing Docker socket | `Property Encryption Closeout Gate` runs with `REQUIRE_DOCKER_BACKED_GATE=1` | Docker reachable and backfill gate passes |
-| Full CI baseline | runs `25418055312` and `25418484543` exposed backend + frontend CI gaps; fixes added locally | next CI workflow completes | required jobs green |
+| Docker-backed PostgreSQL/Testcontainers | local host blocked by missing Docker socket | run `25418606323`, job `74556589054` passed | Docker reachable and backfill gate passes |
+| Full CI baseline | runs `25418055312` and `25418484543` exposed backend + frontend CI gaps; fixes added locally | run `25418606323` in progress for remaining non-property jobs | property closeout gate green; full workflow still running |
 
 ## Docker-Backed Closeout Requirement
 
@@ -148,8 +171,6 @@ If `Property Encryption Closeout Gate` fails, classify the failure as one of:
 
 ## Remaining Work
 
-1. Push the CI failure fixes documented in `PROPERTY_ENCRYPTION_CI_RUN_25418055312_FIXES_DESIGN_VERIFICATION_20260505.md`.
-2. Poll the next CI run until completion.
-3. If `Property Encryption Closeout Gate` is green, update this document with the completed job result and mark benchmark closeout ready.
-4. If the gate is red, fix the concrete failure and rerun the same gate.
-5. Keep `.env` out of commits.
+1. Continue polling run `25418606323` for non-property jobs: Phase C, Acceptance Smoke, E2E Core, and Phase 5 Mocked.
+2. If a non-property job fails, triage it separately from Property Encryption closeout unless the log points back to the property-encryption changes.
+3. Keep `.env` out of commits.
