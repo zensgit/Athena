@@ -230,7 +230,7 @@ public interface NodeRepository extends JpaRepository<Node, UUID>, JpaSpecificat
     @Query(value = """
         UPDATE nodes n
         SET properties = n.properties - CAST(:propertyKey AS text),
-            encrypted_properties = COALESCE(n.encrypted_properties, '{}'::jsonb)
+            encrypted_properties = COALESCE(n.encrypted_properties, CAST('{}' AS jsonb))
                 || jsonb_build_object(CAST(:propertyKey AS text), CAST(:encryptedValue AS text)),
             last_modified_date = :modifiedAt,
             last_modified_by = :modifiedBy,
@@ -264,7 +264,7 @@ public interface NodeRepository extends JpaRepository<Node, UUID>, JpaSpecificat
         CROSS JOIN LATERAL jsonb_each_text(n.encrypted_properties) AS payload(key, value)
         WHERE n.is_deleted = false
           AND n.encrypted_properties IS NOT NULL
-          AND n.encrypted_properties <> '{}'::jsonb
+          AND n.encrypted_properties <> CAST('{}' AS jsonb)
           AND payload.value ~ '^enc:[^:]+:.+$'
           AND split_part(payload.value, ':', 2) <> :targetKeyVersion
         ORDER BY n.id, payload.key
@@ -279,7 +279,7 @@ public interface NodeRepository extends JpaRepository<Node, UUID>, JpaSpecificat
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
         UPDATE nodes n
-        SET encrypted_properties = COALESCE(n.encrypted_properties, '{}'::jsonb)
+        SET encrypted_properties = COALESCE(n.encrypted_properties, CAST('{}' AS jsonb))
                 || jsonb_build_object(CAST(:propertyKey AS text), CAST(:rewrappedValue AS text)),
             last_modified_date = :modifiedAt,
             last_modified_by = :modifiedBy,
@@ -316,7 +316,7 @@ public interface NodeRepository extends JpaRepository<Node, UUID>, JpaSpecificat
         FROM nodes n
         WHERE n.is_deleted = false
           AND n.encrypted_properties IS NOT NULL
-          AND n.encrypted_properties <> '{}'::jsonb
+          AND n.encrypted_properties <> CAST('{}' AS jsonb)
         """, nativeQuery = true)
     long countNodesWithEncryptedPropertiesAndDeletedFalse();
 
@@ -325,7 +325,7 @@ public interface NodeRepository extends JpaRepository<Node, UUID>, JpaSpecificat
         FROM nodes n
         WHERE n.is_deleted = false
           AND n.encrypted_properties IS NOT NULL
-          AND n.encrypted_properties <> '{}'::jsonb
+          AND n.encrypted_properties <> CAST('{}' AS jsonb)
         """, nativeQuery = true)
     long countEncryptedPropertyValuesAndDeletedFalse();
 
@@ -336,7 +336,7 @@ public interface NodeRepository extends JpaRepository<Node, UUID>, JpaSpecificat
         CROSS JOIN LATERAL jsonb_each_text(n.encrypted_properties) AS payload(key, value)
         WHERE n.is_deleted = false
           AND n.encrypted_properties IS NOT NULL
-          AND n.encrypted_properties <> '{}'::jsonb
+          AND n.encrypted_properties <> CAST('{}' AS jsonb)
           AND payload.value ~ '^enc:[^:]+:.+$'
         GROUP BY split_part(payload.value, ':', 2)
         """, nativeQuery = true)

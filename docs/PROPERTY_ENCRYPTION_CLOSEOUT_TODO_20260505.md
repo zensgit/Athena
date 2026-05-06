@@ -39,6 +39,7 @@ Verified evidence from latest rewrap-ledger slice:
 - Property Encryption closeout preflight: backend non-Docker suite 75 tests passed, frontend targeted suite 10 tests passed, lint passed, production build compiled, Phase 5 registry matched 24/24, Docker-backed gate reported blocked by missing Docker socket.
 - Property Encryption CI closeout gate wiring: shell syntax passed, workflow YAML parsed, reduced preflight passed locally, and Docker-backed gate fail-fast behavior was reproduced on this host.
 - CI push evidence: `origin/main` advanced from `7d7639c` to `f5de379`; GitHub Actions run `25418055312` started for the closeout-gate commit.
+- CI run `25418055312` failure triaged: backend failed on PostgreSQL JSONB/native-query cast plus timestamp/JSONB formatting assertions; frontend failed on a long operator-flow Jest timeout. Fixes are documented in `docs/PROPERTY_ENCRYPTION_CI_RUN_25418055312_FIXES_DESIGN_VERIFICATION_20260505.md`.
 
 Known environment constraint:
 
@@ -214,6 +215,8 @@ Current CI run to observe:
 ```text
 https://github.com/zensgit/Athena/actions/runs/25418055312
 ```
+
+Run `25418055312` final status: failed before the Property Encryption closeout job could execute. Push the follow-up fix commit and observe the replacement run.
 
 Do not broaden the UI beyond backend-supported execution semantics. The current UI is aligned to backend plan/run/cancel support and keeps unsafe jobs blocked by backend validation.
 

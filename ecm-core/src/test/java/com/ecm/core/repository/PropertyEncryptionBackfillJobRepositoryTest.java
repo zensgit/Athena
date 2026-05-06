@@ -17,6 +17,7 @@ import org.springframework.orm.jpa.persistenceunit.PersistenceManagedTypes;
 import org.springframework.test.context.ContextConfiguration;
 
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -56,7 +57,7 @@ class PropertyEncryptionBackfillJobRepositoryTest {
     @Test
     @DisplayName("claim and terminal update require expected job status")
     void claimAndTerminalUpdateRequireExpectedStatus() {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = dbTimestampNow();
         PropertyEncryptionBackfillJob job = newBackfillJob(now);
 
         PropertyEncryptionBackfillJob saved = repository.saveAndFlush(job);
@@ -103,7 +104,7 @@ class PropertyEncryptionBackfillJobRepositoryTest {
     @Test
     @DisplayName("cancel request transitions planned and running jobs with expected status guards")
     void cancelRequestTransitionsPlannedAndRunningJobsWithExpectedStatusGuards() {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = dbTimestampNow();
         PropertyEncryptionBackfillJob planned = repository.saveAndFlush(newBackfillJob(now));
         LocalDateTime cancelAt = now.plusMinutes(1);
 
@@ -143,7 +144,7 @@ class PropertyEncryptionBackfillJobRepositoryTest {
     @Test
     @DisplayName("start failure and stale recovery terminal-mark active jobs")
     void startFailureAndStaleRecoveryTerminalMarkActiveJobs() {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = dbTimestampNow();
         PropertyEncryptionBackfillJob rejectedJob = repository.saveAndFlush(newBackfillJob(now));
         assertEquals(1, repository.claimPlannedJob(rejectedJob.getId(), now.minusMinutes(30)));
 
@@ -181,5 +182,9 @@ class PropertyEncryptionBackfillJobRepositoryTest {
         job.setWarnings(List.of());
         job.setDefinitionCounts(List.of());
         return job;
+    }
+
+    private LocalDateTime dbTimestampNow() {
+        return LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
     }
 }

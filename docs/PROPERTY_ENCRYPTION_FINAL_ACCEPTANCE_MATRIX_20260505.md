@@ -59,6 +59,23 @@ Observed at: 2026-05-06T05:24:44Z
 Status at observation: in_progress
 ```
 
+Final result for run `25418055312`:
+
+```text
+Workflow conclusion: failure
+Backend Verify: failure
+Frontend Build & Test: failure
+Property Encryption Closeout Gate: skipped
+```
+
+The closeout job did not execute because both prerequisite fast gates failed.
+
+Fix document:
+
+```text
+docs/PROPERTY_ENCRYPTION_CI_RUN_25418055312_FIXES_DESIGN_VERIFICATION_20260505.md
+```
+
 Observed jobs at first poll:
 
 | Job | Status | Current step |
@@ -82,7 +99,7 @@ Observed jobs at first poll:
 | Frontend lint/build | reduced lint passed; prior full preflight build compiled successfully | closeout preflight lint/build pass | no lint/build failure |
 | Phase 5 registry | prior full preflight matched 24/24 markers | closeout preflight registry step passes | no missing/stale registry entries |
 | Docker-backed PostgreSQL/Testcontainers | local host blocked by missing Docker socket | `Property Encryption Closeout Gate` runs with `REQUIRE_DOCKER_BACKED_GATE=1` | Docker reachable and backfill gate passes |
-| Full CI baseline | run pending at first poll | CI workflow completes | required jobs green |
+| Full CI baseline | run `25418055312` exposed backend + frontend failures; fixes added locally | next CI workflow completes | required jobs green |
 
 ## Docker-Backed Closeout Requirement
 
@@ -123,7 +140,8 @@ If `Property Encryption Closeout Gate` fails, classify the failure as one of:
 
 ## Remaining Work
 
-1. Poll run `25418055312` until completion.
-2. If `Property Encryption Closeout Gate` is green, update this document with the completed job result and mark benchmark closeout ready.
-3. If the gate is red, fix the concrete failure and rerun the same gate.
-4. Keep `.env` out of commits.
+1. Push the CI failure fixes documented in `PROPERTY_ENCRYPTION_CI_RUN_25418055312_FIXES_DESIGN_VERIFICATION_20260505.md`.
+2. Poll the next CI run until completion.
+3. If `Property Encryption Closeout Gate` is green, update this document with the completed job result and mark benchmark closeout ready.
+4. If the gate is red, fix the concrete failure and rerun the same gate.
+5. Keep `.env` out of commits.

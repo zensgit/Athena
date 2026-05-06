@@ -113,6 +113,7 @@ class NodeRepositoryJsonbBackfillSmokeTest {
                         repository.findBackfillCandidatesByPropertyKeyAndDeletedFalse("cm:typed", 10);
                     assertEquals(Set.of("42", "true", "{\"nested\":\"value\"}", "[\"one\",\"two\"]"), typedCandidates.stream()
                         .map(NodeRepository.PropertyBackfillCandidateRow::getPlaintextJson)
+                        .map(NodeRepositoryJsonbBackfillSmokeTest::normalizeJsonText)
                         .collect(Collectors.toSet()));
 
                     NodeRepository.PropertyBackfillCandidateRow plainOnlyCandidate = candidates.stream()
@@ -220,6 +221,10 @@ class NodeRepositoryJsonbBackfillSmokeTest {
         Map<String, String> map = new HashMap<>();
         map.put(key, value);
         return map;
+    }
+
+    private static String normalizeJsonText(String value) {
+        return value == null ? null : value.replace(": ", ":").replace(", ", ",");
     }
 
     @SpringBootConfiguration
