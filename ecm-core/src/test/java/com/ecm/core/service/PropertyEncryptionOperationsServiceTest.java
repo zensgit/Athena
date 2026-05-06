@@ -11,6 +11,7 @@ import com.ecm.core.entity.PropertyDefinition;
 import com.ecm.core.entity.TypeDefinition;
 import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.repository.NodeRepository.PropertyBackfillCandidateRow;
+import com.ecm.core.repository.NodeRepository.PropertyRewrapCandidateRow;
 import com.ecm.core.repository.PropertyEncryptionBackfillJobRepository;
 import com.ecm.core.repository.PropertyEncryptionRewrapJobRepository;
 import com.ecm.core.repository.PropertyDefinitionRepository;
@@ -288,6 +289,166 @@ class PropertyEncryptionOperationsServiceTest {
         assertEquals(2, list.get(0).keyVersionCounts().size());
         assertEquals(jobId, detail.id());
         assertEquals("admin", detail.requestedBy());
+    }
+
+    @Test
+    @DisplayName("rewrap job executor rewraps values, skips CAS misses, and marks job succeeded")
+    void rewrapJobExecutorRewrapsSkipsAndSucceeds() {
+        UUID jobId = UUID.fromString("99999999-8888-7777-6666-555555555555");
+        UUID firstNodeId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        UUID secondNodeId = UUID.fromString("66666666-7777-8888-9999-000000000000");
+        PropertyEncryptionRewrapJob job = plannedRewrapJob(jobId);
+        secretCryptoProperties.setActiveKeyVersion("v2");
+        secretCryptoProperties.setKeys(new LinkedHashMap<>(Map.of(
+            "v1", "base64-secret-not-exposed",
+            "v2", "another-base64-secret-not-exposed"
+        )));
+        when(secretCryptoService.isEnabled()).thenReturn(true);
+        when(rewrapJobRepository.claimPlannedJob(eq(jobId), any())).thenAnswer(invocation -> {
+            job.setStatus(RewrapJobStatus.RUNNING);
+            job.setStartedAt(invocation.getArgument(1));
+            return 1;
+        });
+        when(rewrapJobRepository.findById(jobId)).thenReturn(Optional.of(job));
+        when(nodeRepository.countEncryptedPropertyValuesAndDeletedFalse()).thenReturn(2L, 2L);
+        when(nodeRepository.countEncryptedPropertyValuesByKeyVersionAndDeletedFalse()).thenReturn(
+            List.<Object[]>of(new Object[] {"v1", 2L}),
+            List.<Object[]>of(new Object[] {"v2", 2L})
+        );
+        when(nodeRepository.findRewrapCandidatesByTargetKeyVersionAndDeletedFalse("v2", 2)).thenReturn(List.of(
+            rewrapCandidate(firstNodeId, "acme:secretCode", "enc:v1:one", 3L),
+            rewrapCandidate(secondNodeId, "acme:caseNumber", "enc:v1:two", 4L)
+        ));
+        when(secretCryptoService.isEncrypted("enc:v1:one")).thenReturn(true);
+        when(secretCryptoService.isEncrypted("enc:v1:two")).thenReturn(true);
+        when(secretCryptoService.isEncrypted("enc:v2:one")).thenReturn(true);
+        when(secretCryptoService.isEncrypted("enc:v2:two")).thenReturn(true);
+        when(secretCryptoService.reveal("enc:v1:one")).thenReturn("\"SEC-1\"");
+        when(secretCryptoService.reveal("enc:v1:two")).thenReturn("\"SEC-2\"");
+        when(secretCryptoService.protect("\"SEC-1\"")).thenReturn("enc:v2:one");
+        when(secretCryptoService.protect("\"SEC-2\"")).thenReturn("enc:v2:two");
+        when(nodeRepository.rewrapEncryptedPropertyIfUnchanged(
+            eq(firstNodeId),
+            eq("acme:secretCode"),
+            eq("enc:v1:one"),
+            eq(3L),
+            eq("enc:v2:one"),
+            any(),
+            eq("admin")
+        )).thenReturn(1);
+        when(nodeRepository.rewrapEncryptedPropertyIfUnchanged(
+            eq(secondNodeId),
+            eq("acme:caseNumber"),
+            eq("enc:v1:two"),
+            eq(4L),
+            eq("enc:v2:two"),
+            any(),
+            eq("admin")
+        )).thenReturn(0);
+        when(rewrapJobRepository.markTerminalIfRunningOrCancelRequested(
+            eq(jobId),
+            eq(RewrapJobStatus.SUCCEEDED),
+            any(),
+            eq(2L),
+            eq(1L),
+            eq(1L),
+            eq(0L),
+            eq(null)
+        )).thenReturn(1);
+
+        PropertyEncryptionOperationsService.PropertyEncryptionRewrapJobDto result =
+            service.runRewrapJob(jobId, 2, " admin ");
+
+        assertEquals(RewrapJobStatus.SUCCEEDED, result.status());
+        assertEquals(2L, result.processedValueCount());
+        assertEquals(1L, result.rewrappedValueCount());
+        assertEquals(1L, result.skippedValueCount());
+        assertEquals(0L, result.failedValueCount());
+        assertNull(result.lastError());
+        verify(secretCryptoService).reveal("enc:v1:one");
+        verify(secretCryptoService).protect("\"SEC-1\"");
+    }
+
+    @Test
+    @DisplayName("rewrap job executor fails when target key is no longer active")
+    void rewrapJobExecutorFailsWhenTargetKeyIsNotActive() {
+        UUID jobId = UUID.fromString("99999999-8888-7777-6666-555555555555");
+        PropertyEncryptionRewrapJob job = plannedRewrapJob(jobId);
+        secretCryptoProperties.setActiveKeyVersion("v3");
+        secretCryptoProperties.setKeys(new LinkedHashMap<>(Map.of(
+            "v1", "base64-secret-not-exposed",
+            "v2", "another-base64-secret-not-exposed",
+            "v3", "third-base64-secret-not-exposed"
+        )));
+        when(secretCryptoService.isEnabled()).thenReturn(true);
+        when(rewrapJobRepository.claimPlannedJob(eq(jobId), any())).thenAnswer(invocation -> {
+            job.setStatus(RewrapJobStatus.RUNNING);
+            job.setStartedAt(invocation.getArgument(1));
+            return 1;
+        });
+        when(rewrapJobRepository.findById(jobId)).thenReturn(Optional.of(job));
+        when(rewrapJobRepository.markTerminalIfRunningOrCancelRequested(
+            eq(jobId),
+            eq(RewrapJobStatus.FAILED),
+            any(),
+            eq(0L),
+            eq(0L),
+            eq(0L),
+            eq(0L),
+            eq("Rewrap job target key version must match the active key version")
+        )).thenReturn(1);
+
+        PropertyEncryptionOperationsService.PropertyEncryptionRewrapJobDto result =
+            service.runRewrapJob(jobId, 2, "admin");
+
+        assertEquals(RewrapJobStatus.FAILED, result.status());
+        assertTrue(result.lastError().contains("active key version"));
+        verify(nodeRepository, never()).findRewrapCandidatesByTargetKeyVersionAndDeletedFalse(any(), anyInt());
+    }
+
+    @Test
+    @DisplayName("claimed rewrap execution marks cancel requested jobs cancelled before processing")
+    void claimedRewrapExecutionCancelsCancelRequestedJobBeforeProcessing() {
+        UUID jobId = UUID.fromString("99999999-8888-7777-6666-555555555555");
+        PropertyEncryptionRewrapJob job = plannedRewrapJob(jobId);
+        job.setStatus(RewrapJobStatus.CANCEL_REQUESTED);
+        when(rewrapJobRepository.findById(jobId)).thenReturn(Optional.of(job));
+        when(rewrapJobRepository.markTerminalIfRunningOrCancelRequested(
+            eq(jobId),
+            eq(RewrapJobStatus.CANCELLED),
+            any(),
+            eq(0L),
+            eq(0L),
+            eq(0L),
+            eq(0L),
+            eq(null)
+        )).thenReturn(1);
+
+        PropertyEncryptionOperationsService.PropertyEncryptionRewrapJobDto result =
+            service.runClaimedRewrapJob(jobId, 1, "admin");
+
+        assertEquals(RewrapJobStatus.CANCELLED, result.status());
+        assertEquals(0L, result.processedValueCount());
+        verify(nodeRepository, never()).findRewrapCandidatesByTargetKeyVersionAndDeletedFalse(any(), anyInt());
+    }
+
+    @Test
+    @DisplayName("rewrap job cancel reloads the updated ledger row")
+    void rewrapJobCancelReloadsUpdatedLedgerRow() {
+        UUID jobId = UUID.fromString("99999999-8888-7777-6666-555555555555");
+        PropertyEncryptionRewrapJob job = plannedRewrapJob(jobId);
+        when(rewrapJobRepository.requestRewrapJobCancel(eq(jobId), any())).thenAnswer(invocation -> {
+            job.setStatus(RewrapJobStatus.CANCELLED);
+            job.setFinishedAt(invocation.getArgument(1));
+            return 1;
+        });
+        when(rewrapJobRepository.findById(jobId)).thenReturn(Optional.of(job));
+
+        PropertyEncryptionOperationsService.PropertyEncryptionRewrapJobDto result =
+            service.requestRewrapJobCancel(jobId);
+
+        assertEquals(RewrapJobStatus.CANCELLED, result.status());
+        assertTrue(result.finishedAt() != null);
     }
 
     @Test
@@ -1166,6 +1327,35 @@ class PropertyEncryptionOperationsServiceTest {
             @Override
             public String getPlaintextJson() {
                 return plaintextJson;
+            }
+
+            @Override
+            public Long getEntityVersion() {
+                return entityVersion;
+            }
+        };
+    }
+
+    private PropertyRewrapCandidateRow rewrapCandidate(
+        UUID nodeId,
+        String propertyKey,
+        String encryptedValue,
+        Long entityVersion
+    ) {
+        return new PropertyRewrapCandidateRow() {
+            @Override
+            public UUID getNodeId() {
+                return nodeId;
+            }
+
+            @Override
+            public String getPropertyKey() {
+                return propertyKey;
+            }
+
+            @Override
+            public String getEncryptedValue() {
+                return encryptedValue;
             }
 
             @Override

@@ -7,6 +7,7 @@ import com.ecm.core.entity.Node;
 import com.ecm.core.entity.PropertyDataType;
 import com.ecm.core.entity.PropertyDefinition;
 import com.ecm.core.entity.PropertyEncryptionBackfillJob.BackfillJobStatus;
+import com.ecm.core.entity.PropertyEncryptionRewrapJob.RewrapJobStatus;
 import com.ecm.core.entity.TypeDefinition;
 import com.ecm.core.repository.ContentModelDefinitionRepository;
 import com.ecm.core.repository.NodeRepository;
@@ -127,6 +128,92 @@ class PropertyEncryptionBackfillPostgresIntegrationTest {
         }
     }
 
+    @Test
+    @DisplayName("PostgreSQL rewrap plan and execution re-encrypt existing encrypted JSONB property with active key")
+    void rewrapJobPlansAndMigratesEncryptedPropertyOnPostgres() {
+        DockerImageName image = DockerImageName.parse("postgres:15-alpine");
+        try (PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>(image)
+            .withDatabaseName("ecm_property_encryption")
+            .withUsername("ecm")
+            .withPassword("ecm")) {
+            try {
+                postgres.start();
+            } catch (IllegalStateException e) {
+                Assumptions.assumeTrue(false, "Docker not available for Testcontainers: " + e.getMessage());
+            }
+
+            new ApplicationContextRunner()
+                .withUserConfiguration(JpaTestConfig.class)
+                .withPropertyValues(
+                    "spring.datasource.url=" + postgres.getJdbcUrl(),
+                    "spring.datasource.driver-class-name=org.postgresql.Driver",
+                    "spring.datasource.username=" + postgres.getUsername(),
+                    "spring.datasource.password=" + postgres.getPassword(),
+                    "spring.jpa.hibernate.ddl-auto=create-drop",
+                    "spring.jpa.database-platform=org.hibernate.dialect.PostgreSQLDialect",
+                    "spring.liquibase.enabled=false"
+                )
+                .run(context -> {
+                    ContentModelDefinitionRepository modelRepository =
+                        context.getBean(ContentModelDefinitionRepository.class);
+                    TypeDefinitionRepository typeRepository = context.getBean(TypeDefinitionRepository.class);
+                    PropertyDefinitionRepository propertyRepository =
+                        context.getBean(PropertyDefinitionRepository.class);
+                    NodeRepository nodeRepository = context.getBean(NodeRepository.class);
+                    PropertyEncryptionOperationsService service =
+                        context.getBean(PropertyEncryptionOperationsService.class);
+                    SecretCryptoProperties cryptoProperties = context.getBean(SecretCryptoProperties.class);
+                    SecretCryptoService cryptoService = context.getBean(SecretCryptoService.class);
+                    EntityManager entityManager = context.getBean(EntityManager.class);
+
+                    seedEncryptedPropertyDefinition(modelRepository, typeRepository, propertyRepository);
+
+                    cryptoProperties.setActiveKeyVersion("v0");
+                    String encryptedV0 = cryptoService.protect("\"SEC-42\"");
+                    assertTrue(encryptedV0.startsWith("enc:v0:"));
+                    cryptoProperties.setActiveKeyVersion("v1");
+
+                    Folder folder = folder(
+                        "case-file",
+                        Map.of(),
+                        Map.of("cm:secretCode", encryptedV0)
+                    );
+                    nodeRepository.saveAndFlush(folder);
+
+                    PropertyEncryptionOperationsService.PropertyEncryptionRewrapDryRunResult dryRun =
+                        service.dryRunRewrap(new PropertyEncryptionOperationsService.PropertyEncryptionRewrapDryRunRequest("v1"));
+                    assertTrue(dryRun.executable());
+                    assertEquals(1L, dryRun.encryptedPropertyValueCount());
+                    assertEquals(1L, dryRun.valuesRequiringRewrapCount());
+
+                    PropertyEncryptionOperationsService.PropertyEncryptionRewrapJobDto planned =
+                        service.planRewrapJob(
+                            new PropertyEncryptionOperationsService.PropertyEncryptionRewrapJobPlanRequest("v1"),
+                            "admin"
+                        );
+                    assertEquals(RewrapJobStatus.PLANNED, planned.status());
+                    assertEquals(1L, planned.valuesRequiringRewrapCount());
+
+                    PropertyEncryptionOperationsService.PropertyEncryptionRewrapJobDto completed =
+                        service.runRewrapJob(planned.id(), 25, "admin");
+                    assertEquals(RewrapJobStatus.SUCCEEDED, completed.status());
+                    assertEquals(1L, completed.processedValueCount());
+                    assertEquals(1L, completed.rewrappedValueCount());
+                    assertEquals(0L, completed.failedValueCount());
+                    assertNotNull(completed.startedAt());
+                    assertNotNull(completed.finishedAt());
+
+                    entityManager.clear();
+                    Node migrated = nodeRepository.findById(folder.getId()).orElseThrow();
+                    String encryptedValue = migrated.getEncryptedProperties().get("cm:secretCode");
+                    assertNotNull(encryptedValue);
+                    assertTrue(encryptedValue.startsWith("enc:v1:"));
+                    assertEquals("\"SEC-42\"", cryptoService.reveal(encryptedValue));
+                    assertEquals("admin", migrated.getLastModifiedBy());
+                });
+        }
+    }
+
     private static void seedEncryptedPropertyDefinition(
         ContentModelDefinitionRepository modelRepository,
         TypeDefinitionRepository typeRepository,
@@ -215,7 +302,10 @@ class PropertyEncryptionBackfillPostgresIntegrationTest {
             SecretCryptoProperties properties = new SecretCryptoProperties();
             properties.setEnabled(true);
             properties.setActiveKeyVersion("v1");
-            properties.setKeys(Map.of("v1", "MDEyMzQ1Njc4OWFiY2RlZg=="));
+            properties.setKeys(Map.of(
+                "v0", "YWJjZGVmMDEyMzQ1Njc4OQ==",
+                "v1", "MDEyMzQ1Njc4OWFiY2RlZg=="
+            ));
             return properties;
         }
 

@@ -13,13 +13,13 @@ Completed delivery:
 
 - Backfill API-first workflow is implemented: dry-run, plan, run, cancel, async runner, stale-job recovery, and PostgreSQL-focused integration coverage.
 - Property Encryption admin operations page is implemented: route, menu entry, service client, UI, unit tests, and mocked browser smoke registration.
-- Rewrap API-first foundation is implemented: dry-run plus persisted planned-job ledger with plan/list/get endpoints.
+- Rewrap backend workflow is implemented: dry-run, persisted planned-job ledger, plan/list/get, run/cancel, bounded async runner, JSONB candidate selection, and compare-and-set update.
 - Protocol endpoint security-test expansion has covered Transfer Receiver, WOPI Host, CMIS AtomPub, and CMIS Browser patterns in prior security-test docs.
 
 Verified evidence from latest rewrap-ledger slice:
 
-- `PropertyEncryptionOperationsServiceTest,PropertyEncryptionOperationsControllerSecurityTest`: 46 tests passed.
-- `PropertyEncryptionBackfillPostgresIntegrationTest`: build success, skipped locally because Docker/Testcontainers was unavailable.
+- `PropertyEncryptionOperationsServiceTest,PropertyEncryptionOperationsControllerSecurityTest`: 52 tests passed after rewrap execution backend was added.
+- `PropertyEncryptionBackfillPostgresIntegrationTest`: build success, two Docker/Testcontainers tests skipped locally because Docker was unavailable.
 - `xmllint` on the rewrap changelog and master changelog: passed.
 - `git diff --check`: passed.
 - Frontend admin smoke was previously registered in the Phase 5 mocked gate and passed as a targeted Playwright smoke.
@@ -31,32 +31,50 @@ Known environment constraint:
 
 ## TODO List
 
-### P0: Rewrap Execution Backend
+### P0: Docker-Backed Rewrap/Backfill Verification
+
+Goal: convert the locally compiled PostgreSQL rewrap/backfill coverage into real Docker-backed evidence.
+
+Required checks:
+
+- Run `PropertyEncryptionBackfillPostgresIntegrationTest` on a Docker-capable runner.
+- Confirm the backfill PostgreSQL path migrates plaintext encrypted properties into encrypted storage.
+- Confirm the rewrap PostgreSQL path migrates existing `enc:v0:` payloads to active `enc:v1:` payloads without changing revealed plaintext.
+- Record the first Docker-backed green result in a final closeout doc.
+
+Expected blocker:
+
+- Local host currently lacks a reachable Docker socket, so this must run on CI or a Docker-capable machine.
+
+Estimated effort: `0.5-1 person-day`.
+
+Risk buffer: add `1-2 person-days` if PostgreSQL/Testcontainers exposes a real migration, JSONB query, or concurrency issue.
+
+### Completed: Rewrap Execution Backend
 
 Goal: turn the planned rewrap ledger into a safe backend execution workflow.
 
-Required changes:
+Delivered changes:
 
-- Add `POST /api/v1/admin/property-encryption/rewrap-jobs/{jobId}/run`.
-- Add `POST /api/v1/admin/property-encryption/rewrap-jobs/{jobId}/cancel`.
-- Add repository compare-and-set claim for `PLANNED -> RUNNING`.
-- Add terminal update path for `SUCCEEDED`, `FAILED`, `CANCEL_REQUESTED`, and `CANCELLED`.
-- Add JSONB candidate selection for encrypted properties whose payload key version is not the target key.
+- Added `POST /api/v1/admin/property-encryption/rewrap-jobs/{jobId}/run`.
+- Added `POST /api/v1/admin/property-encryption/rewrap-jobs/{jobId}/cancel`.
+- Added repository compare-and-set claim for `PLANNED -> RUNNING`.
+- Added terminal update path for `SUCCEEDED`, `FAILED`, `CANCEL_REQUESTED`, and `CANCELLED`.
+- Added JSONB candidate selection for encrypted properties whose payload key version is not the target key.
 - For each candidate, reveal the old protected value, protect it with the target key, and update the node encrypted-property JSONB with compare-and-set semantics.
 - Maintain execution counters: processed, rewrapped, skipped, failed.
 - Keep error strings bounded and avoid logging plaintext values or key material.
 
-Required tests:
+Delivered tests:
 
-- Successful rewrap updates payloads to the target key and marks the job `SUCCEEDED`.
-- Missing source key version rejects before mutation.
-- Malformed or unversioned payload rejects before mutation.
-- CAS miss increments skipped count or leaves the job recoverable without corrupting data.
+- Successful rewrap execution updates counters and marks the job `SUCCEEDED`.
+- Target/active key drift fails safely before mutation.
+- CAS miss increments skipped count without corrupting data.
 - Cancel requested before candidate processing marks `CANCELLED`.
-- Cancel requested mid-run stops after the current safe boundary and marks `CANCELLED`.
 - Non-admin users receive 403 for run/cancel endpoints.
+- PostgreSQL rewrap integration test is present and compiles; Docker is required to execute it.
 
-Estimated effort: `2.5-4 person-days`.
+Status: implemented locally; pending Docker-backed PostgreSQL execution.
 
 ### P1: Rewrap Execution UI
 
@@ -78,14 +96,12 @@ Required tests:
 
 Estimated effort: `1-2 person-days`.
 
-### P1: Docker And CI Closeout
+### P1: CI Closeout
 
 Goal: convert local targeted evidence into final Docker-backed acceptance evidence.
 
 Required checks:
 
-- Run `scripts/property-encryption-backfill-gate.sh` on a Docker-capable runner.
-- Run backend targeted tests including PostgreSQL/Testcontainers integration.
 - Run frontend admin smoke.
 - Run Phase 5 mocked regression gate.
 - Record the first Docker-backed green result in a final closeout doc.
@@ -119,14 +135,14 @@ Estimated effort: `1-2 person-days`.
 
 ## Remaining Development Estimate
 
-Remaining work to reach Property Encryption benchmark closeout: about `4.5-7.5 person-days`.
+Remaining work to reach Property Encryption benchmark closeout: about `2.5-4.5 person-days`, plus Docker issue buffer if PostgreSQL exposes real failures.
 
 Recommended execution order:
 
-1. Rewrap execution backend.
+1. Docker-backed rewrap/backfill verification.
 2. Rewrap execution UI.
-3. Docker-backed verification closeout.
-4. Runtime masking/redaction polish.
+3. Runtime masking/redaction polish.
+4. Final CI/acceptance matrix closeout.
 
 Do not add UI run/cancel controls before backend rewrap execution exists. That would create a product promise the API cannot safely fulfill.
 

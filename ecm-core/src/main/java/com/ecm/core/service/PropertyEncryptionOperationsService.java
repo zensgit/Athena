@@ -13,6 +13,7 @@ import com.ecm.core.entity.TypeDefinition;
 import com.ecm.core.exception.ResourceNotFoundException;
 import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.repository.NodeRepository.PropertyBackfillCandidateRow;
+import com.ecm.core.repository.NodeRepository.PropertyRewrapCandidateRow;
 import com.ecm.core.repository.PropertyEncryptionBackfillJobRepository;
 import com.ecm.core.repository.PropertyEncryptionRewrapJobRepository;
 import com.ecm.core.repository.PropertyDefinitionRepository;
@@ -47,6 +48,9 @@ public class PropertyEncryptionOperationsService {
 
     private static final int DEFAULT_REWRAP_JOB_LIMIT = 20;
     private static final int MAX_REWRAP_JOB_LIMIT = 100;
+    private static final int DEFAULT_REWRAP_EXECUTOR_BATCH_SIZE = 100;
+    private static final int MAX_REWRAP_EXECUTOR_BATCH_SIZE = 500;
+    private static final String DEFAULT_REWRAP_ACTOR = "property-encryption-rewrap";
     private static final int DEFAULT_BACKFILL_JOB_LIMIT = 20;
     private static final int MAX_BACKFILL_JOB_LIMIT = 100;
     private static final int DEFAULT_BACKFILL_CANDIDATE_LIMIT = 100;
@@ -218,6 +222,146 @@ public class PropertyEncryptionOperationsService {
         return rewrapJobRepository.findById(jobId)
             .map(this::toRewrapJobDto)
             .orElseThrow(() -> new ResourceNotFoundException("Rewrap job not found: " + jobId));
+    }
+
+    public PropertyEncryptionRewrapJobDto requestRewrapJobCancel(UUID jobId) {
+        if (jobId == null) {
+            throw new IllegalArgumentException("Rewrap job id is required");
+        }
+        rewrapJobRepository.requestRewrapJobCancel(jobId, LocalDateTime.now());
+        return rewrapJobRepository.findById(jobId)
+            .map(this::toRewrapJobDto)
+            .orElseThrow(() -> new ResourceNotFoundException("Rewrap job not found: " + jobId));
+    }
+
+    public PropertyEncryptionRewrapJobDto runRewrapJob(
+        UUID jobId,
+        Integer batchSize,
+        String requestedBy
+    ) {
+        claimRewrapJobForExecution(jobId);
+        return runClaimedRewrapJob(jobId, batchSize, requestedBy);
+    }
+
+    public PropertyEncryptionRewrapJobDto claimRewrapJobForExecution(UUID jobId) {
+        if (jobId == null) {
+            throw new IllegalArgumentException("Rewrap job id is required");
+        }
+        LocalDateTime startedAt = LocalDateTime.now();
+        if (rewrapJobRepository.claimPlannedJob(jobId, startedAt) != 1) {
+            PropertyEncryptionRewrapJob current = rewrapJobRepository.findById(jobId)
+                .orElseThrow(() -> new ResourceNotFoundException("Rewrap job not found: " + jobId));
+            throw new IllegalStateException("Rewrap job must be PLANNED before execution; current status is " + current.getStatus());
+        }
+        return rewrapJobRepository.findById(jobId)
+            .map(this::toRewrapJobDto)
+            .orElseThrow(() -> new ResourceNotFoundException("Rewrap job not found: " + jobId));
+    }
+
+    public PropertyEncryptionRewrapJobDto markRewrapJobStartFailed(UUID jobId, String lastError) {
+        if (jobId == null) {
+            throw new IllegalArgumentException("Rewrap job id is required");
+        }
+        String boundedLastError = hasText(lastError)
+            ? toPropertyEncryptionError(lastError.trim())
+            : "Rewrap job failed to start";
+        if (rewrapJobRepository.markRewrapJobStartFailed(jobId, LocalDateTime.now(), boundedLastError) != 1) {
+            PropertyEncryptionRewrapJob current = rewrapJobRepository.findById(jobId)
+                .orElseThrow(() -> new ResourceNotFoundException("Rewrap job not found: " + jobId));
+            throw new IllegalStateException(
+                "Rewrap job was no longer RUNNING during start-failure update; current status is " + current.getStatus()
+            );
+        }
+        return rewrapJobRepository.findById(jobId)
+            .map(this::toRewrapJobDto)
+            .orElseThrow(() -> new ResourceNotFoundException("Rewrap job not found: " + jobId));
+    }
+
+    public PropertyEncryptionRewrapJobDto runClaimedRewrapJob(
+        UUID jobId,
+        Integer batchSize,
+        String requestedBy
+    ) {
+        if (jobId == null) {
+            throw new IllegalArgumentException("Rewrap job id is required");
+        }
+        PropertyEncryptionRewrapJob job = rewrapJobRepository.findById(jobId)
+            .orElseThrow(() -> new ResourceNotFoundException("Rewrap job not found: " + jobId));
+        if (job.getStatus() != RewrapJobStatus.RUNNING && job.getStatus() != RewrapJobStatus.CANCEL_REQUESTED) {
+            throw new IllegalStateException("Rewrap job must be RUNNING before claimed execution; current status is " + job.getStatus());
+        }
+        if (job.getStatus() == RewrapJobStatus.CANCEL_REQUESTED) {
+            return markClaimedRewrapJobCancelled(job);
+        }
+
+        String actor = hasText(requestedBy) ? requestedBy.trim() : DEFAULT_REWRAP_ACTOR;
+        job.setStatus(RewrapJobStatus.RUNNING);
+        if (job.getStartedAt() == null) {
+            job.setStartedAt(LocalDateTime.now());
+        }
+        job.setFinishedAt(null);
+        job.setLastError(null);
+        job.setUpdatedAt(job.getStartedAt());
+
+        RewrapRunCounters counters = new RewrapRunCounters(0, 0, 0, 0, null, false);
+        RewrapJobStatus terminalStatus = RewrapJobStatus.FAILED;
+        String lastError = null;
+        try {
+            validateRewrapExecutorPreconditions(job);
+            counters = runRewrapCandidates(
+                job.getId(),
+                job.getTargetKeyVersion(),
+                clamp(
+                    batchSize != null ? batchSize : DEFAULT_REWRAP_EXECUTOR_BATCH_SIZE,
+                    1,
+                    MAX_REWRAP_EXECUTOR_BATCH_SIZE
+                ),
+                actor
+            );
+
+            lastError = counters.lastError();
+            if (counters.cancelRequested()) {
+                terminalStatus = RewrapJobStatus.CANCELLED;
+            } else if (counters.failedValueCount() > 0) {
+                terminalStatus = RewrapJobStatus.FAILED;
+            } else {
+                RewrapRemainingCounts remaining = remainingRewrapCounts(job.getTargetKeyVersion());
+                if (remaining.unversionedOrMalformedValueCount() > 0) {
+                    terminalStatus = RewrapJobStatus.FAILED;
+                    lastError = "Rewrap job ended with encrypted payloads without key version";
+                } else if (remaining.valuesRequiringRewrapCount() > 0) {
+                    terminalStatus = RewrapJobStatus.FAILED;
+                    lastError = "Rewrap job ended with remaining values requiring rewrap";
+                } else {
+                    terminalStatus = RewrapJobStatus.SUCCEEDED;
+                }
+            }
+        } catch (Exception ex) {
+            terminalStatus = RewrapJobStatus.FAILED;
+            lastError = toPropertyEncryptionError(ex);
+        }
+        if (counters.failedValueCount() == 0
+            && terminalStatus != RewrapJobStatus.CANCELLED
+            && isRewrapCancelRequested(job.getId())) {
+            terminalStatus = RewrapJobStatus.CANCELLED;
+            lastError = null;
+        }
+
+        LocalDateTime finishedAt = LocalDateTime.now();
+        applyRewrapTerminalState(job, terminalStatus, counters, finishedAt, lastError);
+        if (rewrapJobRepository.markTerminalIfRunningOrCancelRequested(
+            job.getId(),
+            terminalStatus,
+            finishedAt,
+            job.getProcessedValueCount(),
+            job.getRewrappedValueCount(),
+            job.getSkippedValueCount(),
+            job.getFailedValueCount(),
+            lastError
+        ) != 1) {
+            throw new IllegalStateException("Rewrap job was no longer RUNNING during terminal update");
+        }
+        return toRewrapJobDto(job);
     }
 
     @Transactional(readOnly = true)
@@ -652,6 +796,229 @@ public class PropertyEncryptionOperationsService {
         );
     }
 
+    private void validateRewrapExecutorPreconditions(PropertyEncryptionRewrapJob job) {
+        if (!secretCryptoService.isEnabled()) {
+            throw new IllegalStateException("Secret crypto must be enabled before rewrap job execution");
+        }
+        String activeKeyVersion = secretCryptoProperties.getActiveKeyVersion();
+        if (!hasText(job.getTargetKeyVersion())) {
+            throw new IllegalStateException("Rewrap job target key version is required");
+        }
+        if (!job.getTargetKeyVersion().equals(activeKeyVersion)) {
+            throw new IllegalStateException("Rewrap job target key version must match the active key version");
+        }
+        List<String> configuredKeyVersions = configuredKeyVersions();
+        if (!configuredKeyVersions.contains(activeKeyVersion)) {
+            throw new IllegalStateException("Active secret key version is not configured");
+        }
+        List<String> missingSnapshotKeyVersions = job.getKeyVersionCounts() == null
+            ? List.of()
+            : job.getKeyVersionCounts().stream()
+                .map(RewrapKeyVersionCountSnapshot::keyVersion)
+                .filter(keyVersion -> !configuredKeyVersions.contains(keyVersion))
+                .sorted()
+                .toList();
+        if (!missingSnapshotKeyVersions.isEmpty()) {
+            throw new IllegalStateException("Rewrap job source key versions are not configured: " + missingSnapshotKeyVersions);
+        }
+        if (job.getMissingSourceKeyVersions() != null && !job.getMissingSourceKeyVersions().isEmpty()) {
+            throw new IllegalStateException("Rewrap job has missing source key versions: " + job.getMissingSourceKeyVersions());
+        }
+        if (job.getUnversionedOrMalformedValueCount() > 0) {
+            throw new IllegalStateException("Rewrap job cannot execute while encrypted payloads lack key versions");
+        }
+        if (job.getValuesRequiringRewrapCount() <= 0) {
+            throw new IllegalStateException("Rewrap job has no values requiring rewrap");
+        }
+    }
+
+    private RewrapRunCounters runRewrapCandidates(
+        UUID jobId,
+        String targetKeyVersion,
+        int batchSize,
+        String actor
+    ) {
+        long processed = 0;
+        long rewrapped = 0;
+        long skipped = 0;
+        long failed = 0;
+        String lastError = null;
+        Set<String> attemptedCandidates = new HashSet<>();
+
+        long remainingValueCount = remainingRewrapCounts(targetKeyVersion).valuesRequiringRewrapCount();
+        while (remainingValueCount > 0) {
+            if (isRewrapCancelRequested(jobId)) {
+                return new RewrapRunCounters(processed, rewrapped, skipped, failed, lastError, true);
+            }
+            int limit = (int) Math.min(batchSize, remainingValueCount);
+            List<PropertyRewrapCandidateRow> candidates =
+                nodeRepository.findRewrapCandidatesByTargetKeyVersionAndDeletedFalse(targetKeyVersion, limit);
+            if (candidates.isEmpty()) {
+                break;
+            }
+            boolean attemptedAnyCandidate = false;
+            for (PropertyRewrapCandidateRow candidate : candidates) {
+                if (isRewrapCancelRequested(jobId)) {
+                    return new RewrapRunCounters(processed, rewrapped, skipped, failed, lastError, true);
+                }
+                if (!attemptedCandidates.add(rewrapCandidateKey(candidate))) {
+                    continue;
+                }
+                attemptedAnyCandidate = true;
+                processed++;
+                remainingValueCount--;
+                try {
+                    PropertyEncryptionRewrapCandidateUpdateResult result =
+                        applyRewrapCandidateUpdate(candidate, targetKeyVersion, actor);
+                    if (result.rewrapped()) {
+                        rewrapped++;
+                    } else {
+                        skipped++;
+                    }
+                } catch (Exception ex) {
+                    failed++;
+                    lastError = toPropertyEncryptionError(ex);
+                    return new RewrapRunCounters(processed, rewrapped, skipped, failed, lastError, false);
+                }
+                if (remainingValueCount <= 0) {
+                    break;
+                }
+            }
+            if (!attemptedAnyCandidate) {
+                break;
+            }
+        }
+
+        return new RewrapRunCounters(processed, rewrapped, skipped, failed, lastError, false);
+    }
+
+    public PropertyEncryptionRewrapCandidateUpdateResult applyRewrapCandidateUpdate(
+        PropertyRewrapCandidateRow candidate,
+        String targetKeyVersion,
+        String modifiedBy
+    ) {
+        if (candidate == null) {
+            throw new IllegalArgumentException("Rewrap candidate is required");
+        }
+        if (candidate.getNodeId() == null) {
+            throw new IllegalArgumentException("Rewrap candidate nodeId is required");
+        }
+        if (!hasText(candidate.getPropertyKey())) {
+            throw new IllegalArgumentException("Rewrap candidate qualifiedName is required");
+        }
+        if (!hasText(candidate.getEncryptedValue())) {
+            throw new IllegalArgumentException("Rewrap candidate encryptedValue is required");
+        }
+        if (candidate.getEntityVersion() == null) {
+            throw new IllegalArgumentException("Rewrap candidate entityVersion is required");
+        }
+        if (!hasText(targetKeyVersion)) {
+            throw new IllegalArgumentException("Rewrap target key version is required");
+        }
+        if (!secretCryptoService.isEnabled()) {
+            throw new IllegalStateException("Secret crypto must be enabled before rewrap candidate updates");
+        }
+
+        String encryptedValue = candidate.getEncryptedValue();
+        String sourceKeyVersion = encryptedPayloadKeyVersion(encryptedValue);
+        if (targetKeyVersion.equals(sourceKeyVersion)) {
+            return new PropertyEncryptionRewrapCandidateUpdateResult(
+                candidate.getNodeId(),
+                candidate.getPropertyKey().trim(),
+                false
+            );
+        }
+        if (!configuredKeyVersions().contains(sourceKeyVersion)) {
+            throw new IllegalStateException("Missing secret encryption key for source version " + sourceKeyVersion);
+        }
+
+        String plaintextValue = secretCryptoService.reveal(encryptedValue);
+        String rewrappedValue = secretCryptoService.protect(plaintextValue);
+        if (!hasText(rewrappedValue)
+            || !secretCryptoService.isEncrypted(rewrappedValue)
+            || !rewrappedValue.startsWith("enc:" + targetKeyVersion + ":")) {
+            throw new IllegalStateException("Rewrap candidate encryption did not produce target key version payload");
+        }
+
+        String propertyKey = candidate.getPropertyKey().trim();
+        int updated = nodeRepository.rewrapEncryptedPropertyIfUnchanged(
+            candidate.getNodeId(),
+            propertyKey,
+            encryptedValue,
+            candidate.getEntityVersion(),
+            rewrappedValue,
+            LocalDateTime.now(),
+            hasText(modifiedBy) ? modifiedBy.trim() : DEFAULT_REWRAP_ACTOR
+        );
+        if (updated > 1) {
+            throw new IllegalStateException("Rewrap candidate CAS update affected multiple rows");
+        }
+        return new PropertyEncryptionRewrapCandidateUpdateResult(
+            candidate.getNodeId(),
+            propertyKey,
+            updated == 1
+        );
+    }
+
+    private boolean isRewrapCancelRequested(UUID jobId) {
+        return rewrapJobRepository.existsByIdAndStatus(jobId, RewrapJobStatus.CANCEL_REQUESTED);
+    }
+
+    private String rewrapCandidateKey(PropertyRewrapCandidateRow candidate) {
+        return candidate.getNodeId() + ":" + candidate.getPropertyKey();
+    }
+
+    private RewrapRemainingCounts remainingRewrapCounts(String targetKeyVersion) {
+        long encryptedPropertyValueCount = nodeRepository.countEncryptedPropertyValuesAndDeletedFalse();
+        List<KeyVersionValueCount> keyVersionCounts = keyVersionCounts();
+        long versionedValueCount = keyVersionCounts.stream()
+            .mapToLong(KeyVersionValueCount::encryptedPropertyValueCount)
+            .sum();
+        long alreadyOnTargetKeyCount = keyVersionCounts.stream()
+            .filter(count -> count.keyVersion().equals(targetKeyVersion))
+            .mapToLong(KeyVersionValueCount::encryptedPropertyValueCount)
+            .sum();
+        long unversionedOrMalformedValueCount = Math.max(0, encryptedPropertyValueCount - versionedValueCount);
+        long valuesRequiringRewrapCount = Math.max(0, encryptedPropertyValueCount - alreadyOnTargetKeyCount);
+        return new RewrapRemainingCounts(valuesRequiringRewrapCount, unversionedOrMalformedValueCount);
+    }
+
+    private void applyRewrapTerminalState(
+        PropertyEncryptionRewrapJob job,
+        RewrapJobStatus terminalStatus,
+        RewrapRunCounters counters,
+        LocalDateTime finishedAt,
+        String lastError
+    ) {
+        job.setStatus(terminalStatus);
+        job.setFinishedAt(finishedAt);
+        job.setUpdatedAt(finishedAt);
+        job.setProcessedValueCount(job.getProcessedValueCount() + counters.processedValueCount());
+        job.setRewrappedValueCount(job.getRewrappedValueCount() + counters.rewrappedValueCount());
+        job.setSkippedValueCount(job.getSkippedValueCount() + counters.skippedValueCount());
+        job.setFailedValueCount(job.getFailedValueCount() + counters.failedValueCount());
+        job.setLastError(lastError);
+    }
+
+    private PropertyEncryptionRewrapJobDto markClaimedRewrapJobCancelled(PropertyEncryptionRewrapJob job) {
+        RewrapRunCounters counters = new RewrapRunCounters(0, 0, 0, 0, null, true);
+        LocalDateTime finishedAt = LocalDateTime.now();
+        applyRewrapTerminalState(job, RewrapJobStatus.CANCELLED, counters, finishedAt, null);
+        if (rewrapJobRepository.markTerminalIfRunningOrCancelRequested(
+            job.getId(),
+            RewrapJobStatus.CANCELLED,
+            finishedAt,
+            job.getProcessedValueCount(),
+            job.getRewrappedValueCount(),
+            job.getSkippedValueCount(),
+            job.getFailedValueCount(),
+            null
+        ) != 1) {
+            throw new IllegalStateException("Rewrap job was no longer RUNNING or CANCEL_REQUESTED during cancellation");
+        }
+        return toRewrapJobDto(job);
+    }
+
     private void validateBackfillExecutorPreconditions(PropertyEncryptionBackfillJob job) {
         if (!secretCryptoService.isEnabled()) {
             throw new IllegalStateException("Secret crypto must be enabled before backfill job execution");
@@ -872,15 +1239,35 @@ public class PropertyEncryptionOperationsService {
         return value != null && !value.isBlank();
     }
 
+    private String encryptedPayloadKeyVersion(String encryptedValue) {
+        if (!hasText(encryptedValue) || !secretCryptoService.isEncrypted(encryptedValue)) {
+            throw new IllegalStateException("Invalid encrypted secret payload format");
+        }
+        String remainder = encryptedValue.substring("enc:".length());
+        int delimiterIndex = remainder.indexOf(':');
+        if (delimiterIndex <= 0 || delimiterIndex == remainder.length() - 1) {
+            throw new IllegalStateException("Invalid encrypted secret payload format");
+        }
+        return remainder.substring(0, delimiterIndex);
+    }
+
     private String toBackfillError(Exception ex) {
+        return toPropertyEncryptionError(ex);
+    }
+
+    private String toBackfillError(String message) {
+        return toPropertyEncryptionError(message);
+    }
+
+    private String toPropertyEncryptionError(Exception ex) {
         String message = ex.getMessage();
         if (!hasText(message)) {
             message = ex.getClass().getSimpleName();
         }
-        return toBackfillError(message);
+        return toPropertyEncryptionError(message);
     }
 
-    private String toBackfillError(String message) {
+    private String toPropertyEncryptionError(String message) {
         return message.length() <= MAX_BACKFILL_ERROR_LENGTH
             ? message
             : message.substring(0, MAX_BACKFILL_ERROR_LENGTH);
@@ -921,6 +1308,11 @@ public class PropertyEncryptionOperationsService {
 
     public record PropertyEncryptionRewrapJobPlanRequest(
         String targetKeyVersion
+    ) {
+    }
+
+    public record PropertyEncryptionRewrapJobRunRequest(
+        Integer batchSize
     ) {
     }
 
@@ -1069,6 +1461,29 @@ public class PropertyEncryptionOperationsService {
         UUID nodeId,
         String qualifiedName,
         boolean migrated
+    ) {
+    }
+
+    public record PropertyEncryptionRewrapCandidateUpdateResult(
+        UUID nodeId,
+        String qualifiedName,
+        boolean rewrapped
+    ) {
+    }
+
+    private record RewrapRunCounters(
+        long processedValueCount,
+        long rewrappedValueCount,
+        long skippedValueCount,
+        long failedValueCount,
+        String lastError,
+        boolean cancelRequested
+    ) {
+    }
+
+    private record RewrapRemainingCounts(
+        long valuesRequiringRewrapCount,
+        long unversionedOrMalformedValueCount
     ) {
     }
 

@@ -11,6 +11,8 @@ public class PropertyEncryptionAsyncConfiguration {
 
     public static final String PROPERTY_ENCRYPTION_BACKFILL_TASK_EXECUTOR =
         "propertyEncryptionBackfillTaskExecutor";
+    public static final String PROPERTY_ENCRYPTION_REWRAP_TASK_EXECUTOR =
+        "propertyEncryptionRewrapTaskExecutor";
 
     @Bean(name = PROPERTY_ENCRYPTION_BACKFILL_TASK_EXECUTOR)
     public ThreadPoolTaskExecutor propertyEncryptionBackfillTaskExecutor() {
@@ -19,6 +21,19 @@ public class PropertyEncryptionAsyncConfiguration {
         executor.setMaxPoolSize(2);
         executor.setQueueCapacity(20);
         executor.setThreadNamePrefix("prop-enc-backfill-");
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(30);
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+        return executor;
+    }
+
+    @Bean(name = PROPERTY_ENCRYPTION_REWRAP_TASK_EXECUTOR)
+    public ThreadPoolTaskExecutor propertyEncryptionRewrapTaskExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(2);
+        executor.setQueueCapacity(20);
+        executor.setThreadNamePrefix("prop-enc-rewrap-");
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(30);
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());

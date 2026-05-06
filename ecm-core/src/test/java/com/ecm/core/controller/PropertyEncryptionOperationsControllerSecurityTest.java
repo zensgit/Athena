@@ -7,6 +7,7 @@ import com.ecm.core.entity.PropertyEncryptionRewrapJob.RewrapJobStatus;
 import com.ecm.core.entity.PropertyEncryptionRewrapJob.RewrapKeyVersionCountSnapshot;
 import com.ecm.core.service.PropertyEncryptionBackfillRunner;
 import com.ecm.core.service.PropertyEncryptionOperationsService;
+import com.ecm.core.service.PropertyEncryptionRewrapRunner;
 import com.ecm.core.service.PropertyEncryptionOperationsService.EncryptedPropertyDefinitionSummary;
 import com.ecm.core.service.PropertyEncryptionOperationsService.KeyVersionValueCount;
 import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyBackfillCount;
@@ -65,6 +66,9 @@ class PropertyEncryptionOperationsControllerSecurityTest {
     @MockBean
     private PropertyEncryptionBackfillRunner propertyEncryptionBackfillRunner;
 
+    @MockBean
+    private PropertyEncryptionRewrapRunner propertyEncryptionRewrapRunner;
+
     @Configuration
     @EnableWebSecurity
     @EnableMethodSecurity(prePostEnabled = true)
@@ -108,6 +112,12 @@ class PropertyEncryptionOperationsControllerSecurityTest {
         mockMvc.perform(get("/api/v1/admin/property-encryption/rewrap-jobs"))
             .andExpect(status().isForbidden());
         mockMvc.perform(get("/api/v1/admin/property-encryption/rewrap-jobs/11111111-2222-3333-4444-555555555555"))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/admin/property-encryption/rewrap-jobs/11111111-2222-3333-4444-555555555555/run")
+                .contentType("application/json")
+                .content("{\"batchSize\":10}"))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/admin/property-encryption/rewrap-jobs/11111111-2222-3333-4444-555555555555/cancel"))
             .andExpect(status().isForbidden());
         mockMvc.perform(post("/api/v1/admin/property-encryption/backfill-jobs/dry-run")
                 .contentType("application/json")
@@ -275,6 +285,53 @@ class PropertyEncryptionOperationsControllerSecurityTest {
     }
 
     @Test
+    @WithMockUser(username = "admin", roles = "ADMIN")
+    @DisplayName("admin can run and cancel property encryption rewrap jobs")
+    void adminCanRunAndCancelRewrapJobs() throws Exception {
+        UUID jobId = UUID.fromString("99999999-8888-7777-6666-555555555555");
+        when(propertyEncryptionOperationsService.claimRewrapJobForExecution(jobId))
+            .thenReturn(rewrapJobDto(jobId, RewrapJobStatus.RUNNING));
+        when(propertyEncryptionOperationsService.requestRewrapJobCancel(jobId))
+            .thenReturn(rewrapJobDto(jobId, RewrapJobStatus.CANCELLED));
+
+        mockMvc.perform(post("/api/v1/admin/property-encryption/rewrap-jobs/{jobId}/run", jobId)
+                .contentType("application/json")
+                .content("{\"batchSize\":10}"))
+            .andExpect(status().isAccepted())
+            .andExpect(jsonPath("$.id", is(jobId.toString())))
+            .andExpect(jsonPath("$.status", is("RUNNING")));
+        verify(propertyEncryptionRewrapRunner).runClaimedRewrapJob(jobId, 10, "admin");
+
+        mockMvc.perform(post("/api/v1/admin/property-encryption/rewrap-jobs/{jobId}/cancel", jobId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id", is(jobId.toString())))
+            .andExpect(jsonPath("$.status", is("CANCELLED")));
+    }
+
+    @Test
+    @WithMockUser(username = "admin", roles = "ADMIN")
+    @DisplayName("admin run marks claimed rewrap job failed when async executor rejects start")
+    void adminRunMarksClaimedRewrapJobFailedWhenExecutorRejectsStart() throws Exception {
+        UUID jobId = UUID.fromString("99999999-8888-7777-6666-555555555555");
+        when(propertyEncryptionOperationsService.claimRewrapJobForExecution(jobId))
+            .thenReturn(rewrapJobDto(jobId, RewrapJobStatus.RUNNING));
+        doThrow(new TaskRejectedException("queue full"))
+            .when(propertyEncryptionRewrapRunner)
+            .runClaimedRewrapJob(jobId, 10, "admin");
+        when(propertyEncryptionOperationsService.markRewrapJobStartFailed(
+            jobId,
+            "Rewrap job async executor rejected start: queue full"
+        )).thenReturn(rewrapJobDto(jobId, RewrapJobStatus.FAILED));
+
+        mockMvc.perform(post("/api/v1/admin/property-encryption/rewrap-jobs/{jobId}/run", jobId)
+                .contentType("application/json")
+                .content("{\"batchSize\":10}"))
+            .andExpect(status().isServiceUnavailable())
+            .andExpect(jsonPath("$.id", is(jobId.toString())))
+            .andExpect(jsonPath("$.status", is("FAILED")));
+    }
+
+    @Test
     @WithMockUser(roles = "ADMIN")
     @DisplayName("admin can dry-run property encryption backfill without creating a job")
     void adminCanDryRunBackfill() throws Exception {
@@ -419,10 +476,14 @@ class PropertyEncryptionOperationsControllerSecurityTest {
     }
 
     private PropertyEncryptionRewrapJobDto rewrapJobDto(UUID jobId) {
+        return rewrapJobDto(jobId, RewrapJobStatus.PLANNED);
+    }
+
+    private PropertyEncryptionRewrapJobDto rewrapJobDto(UUID jobId, RewrapJobStatus status) {
         LocalDateTime now = LocalDateTime.of(2026, 4, 29, 12, 0);
         return new PropertyEncryptionRewrapJobDto(
             jobId,
-            RewrapJobStatus.PLANNED,
+            status,
             "v2",
             "admin",
             now,

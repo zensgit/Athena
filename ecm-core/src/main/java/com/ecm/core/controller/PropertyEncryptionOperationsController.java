@@ -2,6 +2,7 @@ package com.ecm.core.controller;
 
 import com.ecm.core.service.PropertyEncryptionBackfillRunner;
 import com.ecm.core.service.PropertyEncryptionOperationsService;
+import com.ecm.core.service.PropertyEncryptionRewrapRunner;
 import com.ecm.core.service.PropertyEncryptionOperationsService.EncryptedPropertyDefinitionSummary;
 import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionBackfillJobDto;
 import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionBackfillJobPlanRequest;
@@ -13,6 +14,7 @@ import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncrypti
 import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionRewrapDryRunResult;
 import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionRewrapJobDto;
 import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionRewrapJobPlanRequest;
+import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionRewrapJobRunRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -41,6 +43,7 @@ public class PropertyEncryptionOperationsController {
 
     private final PropertyEncryptionOperationsService propertyEncryptionOperationsService;
     private final PropertyEncryptionBackfillRunner propertyEncryptionBackfillRunner;
+    private final PropertyEncryptionRewrapRunner propertyEncryptionRewrapRunner;
 
     @GetMapping("/status")
     @Operation(
@@ -105,6 +108,44 @@ public class PropertyEncryptionOperationsController {
     )
     public ResponseEntity<PropertyEncryptionRewrapJobDto> getRewrapJob(@PathVariable UUID jobId) {
         return ResponseEntity.ok(propertyEncryptionOperationsService.getRewrapJob(jobId));
+    }
+
+    @PostMapping("/rewrap-jobs/{jobId}/run")
+    @Operation(
+        summary = "Start a planned property encryption rewrap job",
+        description = "Claims a planned rewrap job, starts asynchronous processing, and returns the claimed RUNNING ledger row."
+    )
+    public ResponseEntity<PropertyEncryptionRewrapJobDto> runRewrapJob(
+        @PathVariable UUID jobId,
+        @RequestBody(required = false) PropertyEncryptionRewrapJobRunRequest request,
+        Authentication authentication
+    ) {
+        String actor = authentication != null ? authentication.getName() : "system";
+        Integer batchSize = request != null ? request.batchSize() : null;
+        PropertyEncryptionRewrapJobDto response = propertyEncryptionOperationsService.claimRewrapJobForExecution(jobId);
+        try {
+            propertyEncryptionRewrapRunner.runClaimedRewrapJob(
+                jobId,
+                batchSize,
+                actor
+            );
+        } catch (TaskRejectedException ex) {
+            PropertyEncryptionRewrapJobDto failed = propertyEncryptionOperationsService.markRewrapJobStartFailed(
+                jobId,
+                "Rewrap job async executor rejected start: " + ex.getMessage()
+            );
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(failed);
+        }
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
+    }
+
+    @PostMapping("/rewrap-jobs/{jobId}/cancel")
+    @Operation(
+        summary = "Cancel a property encryption rewrap job",
+        description = "Cancels a planned job immediately or requests cancellation for a currently running job."
+    )
+    public ResponseEntity<PropertyEncryptionRewrapJobDto> cancelRewrapJob(@PathVariable UUID jobId) {
+        return ResponseEntity.ok(propertyEncryptionOperationsService.requestRewrapJobCancel(jobId));
     }
 
     @PostMapping("/backfill-jobs/dry-run")

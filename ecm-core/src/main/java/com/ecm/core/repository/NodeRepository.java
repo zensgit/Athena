@@ -256,6 +256,51 @@ public interface NodeRepository extends JpaRepository<Node, UUID>, JpaSpecificat
     );
 
     @Query(value = """
+        SELECT n.id AS "nodeId",
+               payload.key AS "propertyKey",
+               payload.value AS "encryptedValue",
+               n.version AS "entityVersion"
+        FROM nodes n
+        CROSS JOIN LATERAL jsonb_each_text(n.encrypted_properties) AS payload(key, value)
+        WHERE n.is_deleted = false
+          AND n.encrypted_properties IS NOT NULL
+          AND n.encrypted_properties <> '{}'::jsonb
+          AND payload.value ~ '^enc:[^:]+:.+$'
+          AND split_part(payload.value, ':', 2) <> :targetKeyVersion
+        ORDER BY n.id, payload.key
+        LIMIT :limit
+        """, nativeQuery = true)
+    List<PropertyRewrapCandidateRow> findRewrapCandidatesByTargetKeyVersionAndDeletedFalse(
+        @Param("targetKeyVersion") String targetKeyVersion,
+        @Param("limit") int limit
+    );
+
+    @Transactional
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+        UPDATE nodes n
+        SET encrypted_properties = COALESCE(n.encrypted_properties, '{}'::jsonb)
+                || jsonb_build_object(CAST(:propertyKey AS text), CAST(:rewrappedValue AS text)),
+            last_modified_date = :modifiedAt,
+            last_modified_by = :modifiedBy,
+            version = n.version + 1
+        WHERE n.id = :nodeId
+          AND n.is_deleted = false
+          AND n.version = :expectedVersion
+          AND jsonb_exists(n.encrypted_properties, :propertyKey)
+          AND n.encrypted_properties ->> :propertyKey = :expectedEncryptedValue
+        """, nativeQuery = true)
+    int rewrapEncryptedPropertyIfUnchanged(
+        @Param("nodeId") UUID nodeId,
+        @Param("propertyKey") String propertyKey,
+        @Param("expectedEncryptedValue") String expectedEncryptedValue,
+        @Param("expectedVersion") long expectedVersion,
+        @Param("rewrappedValue") String rewrappedValue,
+        @Param("modifiedAt") LocalDateTime modifiedAt,
+        @Param("modifiedBy") String modifiedBy
+    );
+
+    @Query(value = """
         SELECT COUNT(*)
         FROM nodes n
         WHERE n.is_deleted = false
@@ -303,6 +348,16 @@ public interface NodeRepository extends JpaRepository<Node, UUID>, JpaSpecificat
         String getPropertyKey();
 
         String getPlaintextJson();
+
+        Long getEntityVersion();
+    }
+
+    interface PropertyRewrapCandidateRow {
+        UUID getNodeId();
+
+        String getPropertyKey();
+
+        String getEncryptedValue();
 
         Long getEntityVersion();
     }
