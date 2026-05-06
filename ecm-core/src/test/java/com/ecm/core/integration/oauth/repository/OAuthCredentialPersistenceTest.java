@@ -1,5 +1,6 @@
 package com.ecm.core.integration.oauth.repository;
 
+import com.ecm.core.integration.oauth.OAuthCredentialInventoryItem;
 import com.ecm.core.integration.oauth.OAuthProviderType;
 import com.ecm.core.integration.oauth.model.OAuthCredential;
 import com.ecm.core.security.secret.SecretCryptoProperties;
@@ -18,9 +19,11 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ContextConfiguration;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -90,5 +93,40 @@ class OAuthCredentialPersistenceTest {
         OAuthCredential reloaded = repository.findById(saved.getId()).orElseThrow();
         assertEquals("plain-access", reloaded.getAccessToken());
         assertEquals("plain-refresh", reloaded.getRefreshToken());
+    }
+
+    @Test
+    @DisplayName("OAuth credential inventory projection returns redacted status flags")
+    void inventoryProjectionReturnsRedactedStatusFlags() {
+        OAuthCredential credential = new OAuthCredential();
+        credential.setOwnerType("MAIL_ACCOUNT");
+        credential.setOwnerId(UUID.randomUUID());
+        credential.setProvider(OAuthProviderType.GOOGLE);
+        credential.setTokenEndpoint("https://oauth2.googleapis.com/token");
+        credential.setScope("https://mail.google.com/");
+        credential.setCredentialKey("GMAIL");
+        credential.setAccessToken("plain-access");
+        credential.setRefreshToken("plain-refresh");
+        credential.setTokenExpiresAt(LocalDateTime.now().plusHours(1));
+
+        repository.saveAndFlush(credential);
+        entityManager.clear();
+
+        List<OAuthCredentialInventoryItem> inventory = repository.findInventoryItems(
+            "MAIL_ACCOUNT",
+            OAuthProviderType.GOOGLE
+        );
+
+        assertEquals(1, inventory.size());
+        OAuthCredentialInventoryItem item = inventory.get(0);
+        assertEquals("MAIL_ACCOUNT", item.ownerType());
+        assertEquals(OAuthProviderType.GOOGLE, item.provider());
+        assertTrue(item.tokenEndpointConfigured());
+        assertFalse(item.tenantIdConfigured());
+        assertTrue(item.scopeConfigured());
+        assertTrue(item.credentialKeyConfigured());
+        assertTrue(item.accessTokenStored());
+        assertTrue(item.refreshTokenStored());
+        assertTrue(item.connected());
     }
 }

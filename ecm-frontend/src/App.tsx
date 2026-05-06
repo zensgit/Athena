@@ -29,6 +29,7 @@ import TenantAdminPage from './pages/TenantAdminPage';
 import TenantMetricsDashboardPage from './pages/TenantMetricsDashboardPage';
 import TransferReplicationPage from './pages/TransferReplicationPage';
 import PropertyEncryptionOperationsPage from './pages/PropertyEncryptionOperationsPage';
+import OAuthCredentialAdminPage from './pages/OAuthCredentialAdminPage';
 import WebhookSubscriptionsPage from './pages/WebhookSubscriptionsPage';
 import PermissionTemplatesPage from './pages/PermissionTemplatesPage';
 import EditorPage from './pages/EditorPage';
@@ -400,6 +401,16 @@ const App: React.FC = () => {
                 <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
                   <MainLayout>
                     <PropertyEncryptionOperationsPage />
+                  </MainLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/admin/oauth-credentials"
+              element={
+                <PrivateRoute requiredRoles={['ROLE_ADMIN']}>
+                  <MainLayout>
+                    <OAuthCredentialAdminPage />
                   </MainLayout>
                 </PrivateRoute>
               }

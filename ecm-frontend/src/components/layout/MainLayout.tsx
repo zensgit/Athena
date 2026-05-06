@@ -54,6 +54,7 @@ import {
   BarChart as BarChartIcon,
   Storage as StorageIcon,
   Lock as LockIcon,
+  VpnKey as VpnKeyIcon,
   Translate as TranslateIcon,
 } from '@mui/icons-material';
 import { alpha } from '@mui/material/styles';
@@ -560,6 +561,12 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                     <LockIcon fontSize="small" />
                   </ListItemIcon>
                   <ListItemText>Property Encryption</ListItemText>
+                </MenuItem>
+                <MenuItem onClick={() => navigate('/admin/oauth-credentials')}>
+                  <ListItemIcon>
+                    <VpnKeyIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>OAuth Credentials</ListItemText>
                 </MenuItem>
                 <MenuItem onClick={() => navigate('/admin/bulk-import')}>
                   <ListItemIcon>
