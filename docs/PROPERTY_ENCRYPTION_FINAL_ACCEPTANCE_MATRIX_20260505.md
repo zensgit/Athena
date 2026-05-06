@@ -92,6 +92,7 @@ Frontend Build & Test: success
 Property Encryption Closeout Gate: success
 Property Encryption Closeout Gate job ID: 74556589054
 Property Encryption Closeout Gate completed at: 2026-05-06T06:01:17Z
+Phase C Security Verification: failure
 ```
 
 Closeout preflight evidence from job `74556589054`:
@@ -130,7 +131,24 @@ Observed jobs at first poll:
 | Frontend lint/build | reduced lint passed; prior full preflight build compiled successfully | closeout preflight lint/build pass | no lint/build failure |
 | Phase 5 registry | prior full preflight matched 24/24 markers | closeout preflight registry step passes | no missing/stale registry entries |
 | Docker-backed PostgreSQL/Testcontainers | local host blocked by missing Docker socket | run `25418606323`, job `74556589054` passed | Docker reachable and backfill gate passes |
-| Full CI baseline | runs `25418055312` and `25418484543` exposed backend + frontend CI gaps; fixes added locally | run `25418606323` in progress for remaining non-property jobs | property closeout gate green; full workflow still running |
+| Full CI baseline | runs `25418055312` and `25418484543` exposed backend + frontend CI gaps; fixes added locally | run `25418606323` proved the property closeout gate and exposed a separate Flowable startup blocker in Phase C | property closeout gate green; Phase C startup fix pending next run |
+
+## Phase C Follow-Up
+
+Run `25418606323` failed `Phase C Security Verification` before security verification executed.
+
+Failure signature:
+
+```text
+No qualifying bean of type 'org.springframework.core.task.AsyncTaskExecutor' available
+Dependency annotations: {@org.springframework.beans.factory.annotation.Qualifier("applicationTaskExecutor")}
+```
+
+Fix document:
+
+```text
+docs/PHASE_C_FLOWABLE_APPLICATION_TASK_EXECUTOR_FIX_DESIGN_VERIFICATION_20260505.md
+```
 
 ## Docker-Backed Closeout Requirement
 
@@ -171,6 +189,7 @@ If `Property Encryption Closeout Gate` fails, classify the failure as one of:
 
 ## Remaining Work
 
-1. Continue polling run `25418606323` for non-property jobs: Phase C, Acceptance Smoke, E2E Core, and Phase 5 Mocked.
-2. If a non-property job fails, triage it separately from Property Encryption closeout unless the log points back to the property-encryption changes.
+1. Push the Phase C Flowable executor fix and watch the next CI run.
+2. Confirm `Phase C Security Verification` advances past `Start verification stack`.
+3. If a non-property job fails later, triage it separately from Property Encryption closeout unless the log points back to the property-encryption changes.
 3. Keep `.env` out of commits.
