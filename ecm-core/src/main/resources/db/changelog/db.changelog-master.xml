@@ -101,6 +101,7 @@
     <include file="db/changelog/changes/088-create-localized-content.xml"/>
     <include file="db/changelog/changes/089-update-site-invitation-email-template-link.xml"/>
     <include file="db/changelog/changes/090-create-property-encryption-backfill-jobs.xml"/>
+    <include file="db/changelog/changes/091-create-property-encryption-rewrap-jobs.xml"/>
     <include file="db/changelog/changes/007-insert-initial-data.xml"/>
 
 </databaseChangeLog>

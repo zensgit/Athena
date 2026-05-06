@@ -11,6 +11,8 @@ import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncrypti
 import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionStatus;
 import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionRewrapDryRunRequest;
 import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionRewrapDryRunResult;
+import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionRewrapJobDto;
+import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionRewrapJobPlanRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -67,6 +69,42 @@ public class PropertyEncryptionOperationsController {
         @RequestBody(required = false) PropertyEncryptionRewrapDryRunRequest request
     ) {
         return ResponseEntity.ok(propertyEncryptionOperationsService.dryRunRewrap(request));
+    }
+
+    @PostMapping("/rewrap-jobs/plan")
+    @Operation(
+        summary = "Plan a property encryption rewrap job",
+        description = "Persists an executable rewrap dry-run snapshot as a planned job without mutating nodes or starting processing."
+    )
+    public ResponseEntity<PropertyEncryptionRewrapJobDto> planRewrapJob(
+        @RequestBody(required = false) PropertyEncryptionRewrapJobPlanRequest request,
+        Authentication authentication
+    ) {
+        PropertyEncryptionRewrapJobDto response = propertyEncryptionOperationsService.planRewrapJob(
+            request,
+            authentication != null ? authentication.getName() : "system"
+        );
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    @GetMapping("/rewrap-jobs")
+    @Operation(
+        summary = "List planned property encryption rewrap jobs",
+        description = "Returns recent property encryption rewrap job ledger rows without exposing encrypted payloads or key material."
+    )
+    public ResponseEntity<List<PropertyEncryptionRewrapJobDto>> listRewrapJobs(
+        @RequestParam(required = false) Integer limit
+    ) {
+        return ResponseEntity.ok(propertyEncryptionOperationsService.listRewrapJobs(limit));
+    }
+
+    @GetMapping("/rewrap-jobs/{jobId}")
+    @Operation(
+        summary = "Get a property encryption rewrap job",
+        description = "Returns one property encryption rewrap job ledger row without exposing encrypted payloads or key material."
+    )
+    public ResponseEntity<PropertyEncryptionRewrapJobDto> getRewrapJob(@PathVariable UUID jobId) {
+        return ResponseEntity.ok(propertyEncryptionOperationsService.getRewrapJob(jobId));
     }
 
     @PostMapping("/backfill-jobs/dry-run")

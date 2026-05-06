@@ -4,6 +4,9 @@ import com.ecm.core.entity.AspectDefinition;
 import com.ecm.core.entity.PropertyEncryptionBackfillJob;
 import com.ecm.core.entity.PropertyEncryptionBackfillJob.BackfillDefinitionCountSnapshot;
 import com.ecm.core.entity.PropertyEncryptionBackfillJob.BackfillJobStatus;
+import com.ecm.core.entity.PropertyEncryptionRewrapJob;
+import com.ecm.core.entity.PropertyEncryptionRewrapJob.RewrapJobStatus;
+import com.ecm.core.entity.PropertyEncryptionRewrapJob.RewrapKeyVersionCountSnapshot;
 import com.ecm.core.entity.PropertyDataType;
 import com.ecm.core.entity.PropertyDefinition;
 import com.ecm.core.entity.TypeDefinition;
@@ -11,6 +14,7 @@ import com.ecm.core.exception.ResourceNotFoundException;
 import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.repository.NodeRepository.PropertyBackfillCandidateRow;
 import com.ecm.core.repository.PropertyEncryptionBackfillJobRepository;
+import com.ecm.core.repository.PropertyEncryptionRewrapJobRepository;
 import com.ecm.core.repository.PropertyDefinitionRepository;
 import com.ecm.core.security.secret.SecretCryptoProperties;
 import com.ecm.core.security.secret.SecretCryptoService;
@@ -37,9 +41,12 @@ public class PropertyEncryptionOperationsService {
     private final PropertyDefinitionRepository propertyDefinitionRepository;
     private final NodeRepository nodeRepository;
     private final PropertyEncryptionBackfillJobRepository backfillJobRepository;
+    private final PropertyEncryptionRewrapJobRepository rewrapJobRepository;
     private final SecretCryptoService secretCryptoService;
     private final SecretCryptoProperties secretCryptoProperties;
 
+    private static final int DEFAULT_REWRAP_JOB_LIMIT = 20;
+    private static final int MAX_REWRAP_JOB_LIMIT = 100;
     private static final int DEFAULT_BACKFILL_JOB_LIMIT = 20;
     private static final int MAX_BACKFILL_JOB_LIMIT = 100;
     private static final int DEFAULT_BACKFILL_CANDIDATE_LIMIT = 100;
@@ -160,6 +167,57 @@ public class PropertyEncryptionOperationsService {
             List.copyOf(warnings),
             executable
         );
+    }
+
+    @Transactional
+    public PropertyEncryptionRewrapJobDto planRewrapJob(
+        PropertyEncryptionRewrapJobPlanRequest request,
+        String requestedBy
+    ) {
+        PropertyEncryptionRewrapDryRunResult dryRun = dryRunRewrap(
+            new PropertyEncryptionRewrapDryRunRequest(request != null ? request.targetKeyVersion() : null)
+        );
+        if (!dryRun.executable()) {
+            throw new IllegalArgumentException("Rewrap dry-run is not executable: " + String.join(",", dryRun.warnings()));
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        PropertyEncryptionRewrapJob job = new PropertyEncryptionRewrapJob();
+        job.setStatus(RewrapJobStatus.PLANNED);
+        job.setTargetKeyVersion(dryRun.targetKeyVersion());
+        job.setRequestedBy(hasText(requestedBy) ? requestedBy.trim() : "system");
+        job.setRequestedAt(now);
+        job.setCreatedAt(now);
+        job.setCandidateNodeCount(dryRun.candidateNodeCount());
+        job.setEncryptedPropertyValueCount(dryRun.encryptedPropertyValueCount());
+        job.setValuesAlreadyOnTargetKeyCount(dryRun.valuesAlreadyOnTargetKeyCount());
+        job.setValuesRequiringRewrapCount(dryRun.valuesRequiringRewrapCount());
+        job.setUnversionedOrMalformedValueCount(dryRun.unversionedOrMalformedValueCount());
+        job.setKeyVersionCounts(dryRun.keyVersionCounts().stream()
+            .map(this::toRewrapKeyVersionCountSnapshot)
+            .toList());
+        job.setMissingSourceKeyVersions(new ArrayList<>(dryRun.missingSourceKeyVersions()));
+        job.setWarnings(new ArrayList<>(dryRun.warnings()));
+
+        return toRewrapJobDto(rewrapJobRepository.save(job));
+    }
+
+    @Transactional(readOnly = true)
+    public List<PropertyEncryptionRewrapJobDto> listRewrapJobs(Integer limit) {
+        Pageable pageable = PageRequest.of(0, clamp(limit != null ? limit : DEFAULT_REWRAP_JOB_LIMIT, 1, MAX_REWRAP_JOB_LIMIT));
+        return rewrapJobRepository.findAllByOrderByRequestedAtDesc(pageable).stream()
+            .map(this::toRewrapJobDto)
+            .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public PropertyEncryptionRewrapJobDto getRewrapJob(UUID jobId) {
+        if (jobId == null) {
+            throw new IllegalArgumentException("Rewrap job id is required");
+        }
+        return rewrapJobRepository.findById(jobId)
+            .map(this::toRewrapJobDto)
+            .orElseThrow(() -> new ResourceNotFoundException("Rewrap job not found: " + jobId));
     }
 
     @Transactional(readOnly = true)
@@ -587,6 +645,13 @@ public class PropertyEncryptionOperationsService {
         );
     }
 
+    private RewrapKeyVersionCountSnapshot toRewrapKeyVersionCountSnapshot(KeyVersionValueCount count) {
+        return new RewrapKeyVersionCountSnapshot(
+            count.keyVersion(),
+            count.encryptedPropertyValueCount()
+        );
+    }
+
     private void validateBackfillExecutorPreconditions(PropertyEncryptionBackfillJob job) {
         if (!secretCryptoService.isEnabled()) {
             throw new IllegalStateException("Secret crypto must be enabled before backfill job execution");
@@ -762,6 +827,33 @@ public class PropertyEncryptionOperationsService {
         );
     }
 
+    private PropertyEncryptionRewrapJobDto toRewrapJobDto(PropertyEncryptionRewrapJob job) {
+        return new PropertyEncryptionRewrapJobDto(
+            job.getId(),
+            job.getStatus(),
+            job.getTargetKeyVersion(),
+            job.getRequestedBy(),
+            job.getRequestedAt(),
+            job.getStartedAt(),
+            job.getFinishedAt(),
+            job.getCandidateNodeCount(),
+            job.getEncryptedPropertyValueCount(),
+            job.getValuesAlreadyOnTargetKeyCount(),
+            job.getValuesRequiringRewrapCount(),
+            job.getUnversionedOrMalformedValueCount(),
+            job.getProcessedValueCount(),
+            job.getRewrappedValueCount(),
+            job.getSkippedValueCount(),
+            job.getFailedValueCount(),
+            List.copyOf(job.getKeyVersionCounts() != null ? job.getKeyVersionCounts() : List.of()),
+            List.copyOf(job.getMissingSourceKeyVersions() != null ? job.getMissingSourceKeyVersions() : List.of()),
+            List.copyOf(job.getWarnings() != null ? job.getWarnings() : List.of()),
+            job.getLastError(),
+            job.getCreatedAt(),
+            job.getUpdatedAt()
+        );
+    }
+
     private int clamp(int value, int min, int max) {
         return Math.max(min, Math.min(max, value));
     }
@@ -827,6 +919,11 @@ public class PropertyEncryptionOperationsService {
     ) {
     }
 
+    public record PropertyEncryptionRewrapJobPlanRequest(
+        String targetKeyVersion
+    ) {
+    }
+
     public record PropertyEncryptionBackfillDryRunRequest(
         String targetKeyVersion
     ) {
@@ -872,6 +969,32 @@ public class PropertyEncryptionOperationsService {
     public record KeyVersionValueCount(
         String keyVersion,
         long encryptedPropertyValueCount
+    ) {
+    }
+
+    public record PropertyEncryptionRewrapJobDto(
+        UUID id,
+        RewrapJobStatus status,
+        String targetKeyVersion,
+        String requestedBy,
+        LocalDateTime requestedAt,
+        LocalDateTime startedAt,
+        LocalDateTime finishedAt,
+        long candidateNodeCount,
+        long encryptedPropertyValueCount,
+        long valuesAlreadyOnTargetKeyCount,
+        long valuesRequiringRewrapCount,
+        long unversionedOrMalformedValueCount,
+        long processedValueCount,
+        long rewrappedValueCount,
+        long skippedValueCount,
+        long failedValueCount,
+        List<RewrapKeyVersionCountSnapshot> keyVersionCounts,
+        List<String> missingSourceKeyVersions,
+        List<String> warnings,
+        String lastError,
+        LocalDateTime createdAt,
+        LocalDateTime updatedAt
     ) {
     }
 

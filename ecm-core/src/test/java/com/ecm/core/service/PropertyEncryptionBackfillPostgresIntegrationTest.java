@@ -12,6 +12,7 @@ import com.ecm.core.repository.ContentModelDefinitionRepository;
 import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.repository.PropertyDefinitionRepository;
 import com.ecm.core.repository.PropertyEncryptionBackfillJobRepository;
+import com.ecm.core.repository.PropertyEncryptionRewrapJobRepository;
 import com.ecm.core.repository.TypeDefinitionRepository;
 import com.ecm.core.security.secret.SecretCryptoProperties;
 import com.ecm.core.security.secret.SecretCryptoService;
@@ -188,7 +189,8 @@ class PropertyEncryptionBackfillPostgresIntegrationTest {
             ContentModelDefinitionRepository.class,
             TypeDefinitionRepository.class,
             PropertyDefinitionRepository.class,
-            PropertyEncryptionBackfillJobRepository.class
+            PropertyEncryptionBackfillJobRepository.class,
+            PropertyEncryptionRewrapJobRepository.class
         },
         includeFilters = @ComponentScan.Filter(
             type = FilterType.ASSIGNABLE_TYPE,
@@ -197,7 +199,8 @@ class PropertyEncryptionBackfillPostgresIntegrationTest {
                 ContentModelDefinitionRepository.class,
                 TypeDefinitionRepository.class,
                 PropertyDefinitionRepository.class,
-                PropertyEncryptionBackfillJobRepository.class
+                PropertyEncryptionBackfillJobRepository.class,
+                PropertyEncryptionRewrapJobRepository.class
             }
         )
     )
@@ -226,6 +229,7 @@ class PropertyEncryptionBackfillPostgresIntegrationTest {
             PropertyDefinitionRepository propertyDefinitionRepository,
             NodeRepository nodeRepository,
             PropertyEncryptionBackfillJobRepository backfillJobRepository,
+            PropertyEncryptionRewrapJobRepository rewrapJobRepository,
             SecretCryptoService secretCryptoService,
             SecretCryptoProperties secretCryptoProperties
         ) {
@@ -233,6 +237,7 @@ class PropertyEncryptionBackfillPostgresIntegrationTest {
                 propertyDefinitionRepository,
                 nodeRepository,
                 backfillJobRepository,
+                rewrapJobRepository,
                 secretCryptoService,
                 secretCryptoProperties
             );

@@ -4,12 +4,15 @@ import com.ecm.core.entity.AspectDefinition;
 import com.ecm.core.entity.ContentModelDefinition;
 import com.ecm.core.entity.PropertyEncryptionBackfillJob;
 import com.ecm.core.entity.PropertyEncryptionBackfillJob.BackfillJobStatus;
+import com.ecm.core.entity.PropertyEncryptionRewrapJob;
+import com.ecm.core.entity.PropertyEncryptionRewrapJob.RewrapJobStatus;
 import com.ecm.core.entity.PropertyDataType;
 import com.ecm.core.entity.PropertyDefinition;
 import com.ecm.core.entity.TypeDefinition;
 import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.repository.NodeRepository.PropertyBackfillCandidateRow;
 import com.ecm.core.repository.PropertyEncryptionBackfillJobRepository;
+import com.ecm.core.repository.PropertyEncryptionRewrapJobRepository;
 import com.ecm.core.repository.PropertyDefinitionRepository;
 import com.ecm.core.security.secret.SecretCryptoProperties;
 import com.ecm.core.security.secret.SecretCryptoService;
@@ -48,6 +51,7 @@ class PropertyEncryptionOperationsServiceTest {
     @Mock private PropertyDefinitionRepository propertyDefinitionRepository;
     @Mock private NodeRepository nodeRepository;
     @Mock private PropertyEncryptionBackfillJobRepository backfillJobRepository;
+    @Mock private PropertyEncryptionRewrapJobRepository rewrapJobRepository;
     @Mock private SecretCryptoService secretCryptoService;
 
     private SecretCryptoProperties secretCryptoProperties;
@@ -60,6 +64,7 @@ class PropertyEncryptionOperationsServiceTest {
             propertyDefinitionRepository,
             nodeRepository,
             backfillJobRepository,
+            rewrapJobRepository,
             secretCryptoService,
             secretCryptoProperties
         );
@@ -194,6 +199,95 @@ class PropertyEncryptionOperationsServiceTest {
         assertTrue(result.warnings().contains("encrypted_payloads_without_key_version"));
         assertTrue(result.warnings().contains("source_key_versions_not_configured"));
         assertFalse(result.executable());
+    }
+
+    @Test
+    @DisplayName("rewrap job plan persists an executable dry-run snapshot without processing nodes")
+    void rewrapJobPlanPersistsExecutableDryRunSnapshot() {
+        secretCryptoProperties.setActiveKeyVersion("v2");
+        secretCryptoProperties.setKeys(new LinkedHashMap<>(Map.of(
+            "v1", "base64-secret-not-exposed",
+            "v2", "another-base64-secret-not-exposed"
+        )));
+        when(secretCryptoService.isEnabled()).thenReturn(true);
+        when(nodeRepository.countNodesWithEncryptedPropertiesAndDeletedFalse()).thenReturn(4L);
+        when(nodeRepository.countEncryptedPropertyValuesAndDeletedFalse()).thenReturn(7L);
+        when(nodeRepository.countEncryptedPropertyValuesByKeyVersionAndDeletedFalse()).thenReturn(List.of(
+            new Object[] {"v1", 5L},
+            new Object[] {"v2", 2L}
+        ));
+        when(rewrapJobRepository.save(any(PropertyEncryptionRewrapJob.class))).thenAnswer(invocation -> {
+            PropertyEncryptionRewrapJob job = invocation.getArgument(0);
+            job.setId(UUID.fromString("99999999-8888-7777-6666-555555555555"));
+            return job;
+        });
+
+        PropertyEncryptionOperationsService.PropertyEncryptionRewrapJobDto result = service.planRewrapJob(
+            new PropertyEncryptionOperationsService.PropertyEncryptionRewrapJobPlanRequest(null),
+            " admin "
+        );
+
+        assertEquals(UUID.fromString("99999999-8888-7777-6666-555555555555"), result.id());
+        assertEquals(RewrapJobStatus.PLANNED, result.status());
+        assertEquals("v2", result.targetKeyVersion());
+        assertEquals("admin", result.requestedBy());
+        assertEquals(4L, result.candidateNodeCount());
+        assertEquals(7L, result.encryptedPropertyValueCount());
+        assertEquals(2L, result.valuesAlreadyOnTargetKeyCount());
+        assertEquals(5L, result.valuesRequiringRewrapCount());
+        assertEquals(0L, result.unversionedOrMalformedValueCount());
+        assertEquals(0L, result.processedValueCount());
+        assertEquals(0L, result.rewrappedValueCount());
+        assertEquals(0L, result.failedValueCount());
+        assertEquals(List.of("v1", "v2"), result.keyVersionCounts().stream()
+            .map(PropertyEncryptionRewrapJob.RewrapKeyVersionCountSnapshot::keyVersion)
+            .toList());
+        assertEquals(List.of(), result.missingSourceKeyVersions());
+        assertEquals(List.of(), result.warnings());
+    }
+
+    @Test
+    @DisplayName("rewrap job plan rejects non-executable dry-run state")
+    void rewrapJobPlanRejectsNonExecutableDryRun() {
+        secretCryptoProperties.setActiveKeyVersion("v1");
+        secretCryptoProperties.setKeys(new LinkedHashMap<>(Map.of("v1", "base64-secret-not-exposed")));
+        when(secretCryptoService.isEnabled()).thenReturn(false);
+        when(nodeRepository.countNodesWithEncryptedPropertiesAndDeletedFalse()).thenReturn(3L);
+        when(nodeRepository.countEncryptedPropertyValuesAndDeletedFalse()).thenReturn(5L);
+        when(nodeRepository.countEncryptedPropertyValuesByKeyVersionAndDeletedFalse()).thenReturn(List.<Object[]>of(
+            new Object[] {"v1", 2L},
+            new Object[] {"v9", 1L}
+        ));
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> service.planRewrapJob(
+            new PropertyEncryptionOperationsService.PropertyEncryptionRewrapJobPlanRequest("v3"),
+            "admin"
+        ));
+
+        assertTrue(ex.getMessage().contains("secret_crypto_disabled"));
+        assertTrue(ex.getMessage().contains("target_key_version_not_configured"));
+        verify(rewrapJobRepository, never()).save(any(PropertyEncryptionRewrapJob.class));
+    }
+
+    @Test
+    @DisplayName("rewrap job list and get map persisted ledger snapshots")
+    void rewrapJobListAndGetMapSnapshots() {
+        UUID jobId = UUID.fromString("99999999-8888-7777-6666-555555555555");
+        PropertyEncryptionRewrapJob job = plannedRewrapJob(jobId);
+        when(rewrapJobRepository.findAllByOrderByRequestedAtDesc(any())).thenReturn(List.of(job));
+        when(rewrapJobRepository.findById(jobId)).thenReturn(Optional.of(job));
+
+        List<PropertyEncryptionOperationsService.PropertyEncryptionRewrapJobDto> list = service.listRewrapJobs(500);
+        PropertyEncryptionOperationsService.PropertyEncryptionRewrapJobDto detail = service.getRewrapJob(jobId);
+
+        assertEquals(1, list.size());
+        assertEquals(jobId, list.get(0).id());
+        assertEquals(RewrapJobStatus.PLANNED, list.get(0).status());
+        assertEquals("v2", list.get(0).targetKeyVersion());
+        assertEquals(5L, list.get(0).valuesRequiringRewrapCount());
+        assertEquals(2, list.get(0).keyVersionCounts().size());
+        assertEquals(jobId, detail.id());
+        assertEquals("admin", detail.requestedBy());
     }
 
     @Test
@@ -1006,6 +1100,27 @@ class PropertyEncryptionOperationsServiceTest {
         model.setPrefix("acme");
         model.setName("content");
         return model;
+    }
+
+    private PropertyEncryptionRewrapJob plannedRewrapJob(UUID jobId) {
+        LocalDateTime now = LocalDateTime.now();
+        PropertyEncryptionRewrapJob job = new PropertyEncryptionRewrapJob();
+        job.setId(jobId);
+        job.setStatus(RewrapJobStatus.PLANNED);
+        job.setTargetKeyVersion("v2");
+        job.setRequestedBy("admin");
+        job.setRequestedAt(now);
+        job.setCreatedAt(now);
+        job.setCandidateNodeCount(4L);
+        job.setEncryptedPropertyValueCount(7L);
+        job.setValuesAlreadyOnTargetKeyCount(2L);
+        job.setValuesRequiringRewrapCount(5L);
+        job.setUnversionedOrMalformedValueCount(0L);
+        job.setKeyVersionCounts(List.of(
+            new PropertyEncryptionRewrapJob.RewrapKeyVersionCountSnapshot("v1", 5L),
+            new PropertyEncryptionRewrapJob.RewrapKeyVersionCountSnapshot("v2", 2L)
+        ));
+        return job;
     }
 
     private PropertyEncryptionBackfillJob plannedBackfillJob(UUID jobId, long readyValueCount) {

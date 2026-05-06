@@ -3,6 +3,8 @@ package com.ecm.core.controller;
 import com.ecm.core.entity.PropertyDataType;
 import com.ecm.core.entity.PropertyEncryptionBackfillJob.BackfillDefinitionCountSnapshot;
 import com.ecm.core.entity.PropertyEncryptionBackfillJob.BackfillJobStatus;
+import com.ecm.core.entity.PropertyEncryptionRewrapJob.RewrapJobStatus;
+import com.ecm.core.entity.PropertyEncryptionRewrapJob.RewrapKeyVersionCountSnapshot;
 import com.ecm.core.service.PropertyEncryptionBackfillRunner;
 import com.ecm.core.service.PropertyEncryptionOperationsService;
 import com.ecm.core.service.PropertyEncryptionOperationsService.EncryptedPropertyDefinitionSummary;
@@ -14,6 +16,8 @@ import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncrypti
 import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionBackfillDryRunResult;
 import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionRewrapDryRunRequest;
 import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionRewrapDryRunResult;
+import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionRewrapJobDto;
+import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionRewrapJobPlanRequest;
 import com.ecm.core.service.PropertyEncryptionOperationsService.PropertyEncryptionStatus;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -96,6 +100,14 @@ class PropertyEncryptionOperationsControllerSecurityTest {
         mockMvc.perform(post("/api/v1/admin/property-encryption/rewrap-jobs/dry-run")
                 .contentType("application/json")
                 .content("{\"targetKeyVersion\":\"v2\"}"))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/admin/property-encryption/rewrap-jobs/plan")
+                .contentType("application/json")
+                .content("{\"targetKeyVersion\":\"v2\"}"))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/admin/property-encryption/rewrap-jobs"))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/admin/property-encryption/rewrap-jobs/11111111-2222-3333-4444-555555555555"))
             .andExpect(status().isForbidden());
         mockMvc.perform(post("/api/v1/admin/property-encryption/backfill-jobs/dry-run")
                 .contentType("application/json")
@@ -214,6 +226,52 @@ class PropertyEncryptionOperationsControllerSecurityTest {
             .andExpect(jsonPath("$.keyVersionCounts[0].encryptedPropertyValueCount", is(5)))
             .andExpect(jsonPath("$.missingSourceKeyVersions", hasSize(0)))
             .andExpect(jsonPath("$.executable", is(true)));
+    }
+
+    @Test
+    @WithMockUser(username = "admin", roles = "ADMIN")
+    @DisplayName("admin can plan property encryption rewrap without starting processing")
+    void adminCanPlanRewrapJob() throws Exception {
+        UUID jobId = UUID.fromString("99999999-8888-7777-6666-555555555555");
+        when(propertyEncryptionOperationsService.planRewrapJob(
+            new PropertyEncryptionRewrapJobPlanRequest("v2"),
+            "admin"
+        )).thenReturn(rewrapJobDto(jobId));
+
+        mockMvc.perform(post("/api/v1/admin/property-encryption/rewrap-jobs/plan")
+                .contentType("application/json")
+                .content("{\"targetKeyVersion\":\"v2\"}"))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.id", is(jobId.toString())))
+            .andExpect(jsonPath("$.status", is("PLANNED")))
+            .andExpect(jsonPath("$.targetKeyVersion", is("v2")))
+            .andExpect(jsonPath("$.requestedBy", is("admin")))
+            .andExpect(jsonPath("$.valuesRequiringRewrapCount", is(5)))
+            .andExpect(jsonPath("$.processedValueCount", is(0)))
+            .andExpect(jsonPath("$.keyVersionCounts", hasSize(2)));
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("admin can list and get property encryption rewrap jobs")
+    void adminCanListAndGetRewrapJobs() throws Exception {
+        UUID jobId = UUID.fromString("99999999-8888-7777-6666-555555555555");
+        PropertyEncryptionRewrapJobDto dto = rewrapJobDto(jobId);
+        when(propertyEncryptionOperationsService.listRewrapJobs(5)).thenReturn(List.of(dto));
+        when(propertyEncryptionOperationsService.getRewrapJob(jobId)).thenReturn(dto);
+
+        mockMvc.perform(get("/api/v1/admin/property-encryption/rewrap-jobs?limit=5"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$", hasSize(1)))
+            .andExpect(jsonPath("$[0].id", is(jobId.toString())))
+            .andExpect(jsonPath("$[0].status", is("PLANNED")))
+            .andExpect(jsonPath("$[0].valuesRequiringRewrapCount", is(5)));
+
+        mockMvc.perform(get("/api/v1/admin/property-encryption/rewrap-jobs/{jobId}", jobId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id", is(jobId.toString())))
+            .andExpect(jsonPath("$.status", is("PLANNED")))
+            .andExpect(jsonPath("$.keyVersionCounts[0].keyVersion", is("v1")));
     }
 
     @Test
@@ -358,6 +416,37 @@ class PropertyEncryptionOperationsControllerSecurityTest {
 
     private PropertyEncryptionBackfillJobDto backfillJobDto(UUID jobId) {
         return backfillJobDto(jobId, BackfillJobStatus.PLANNED);
+    }
+
+    private PropertyEncryptionRewrapJobDto rewrapJobDto(UUID jobId) {
+        LocalDateTime now = LocalDateTime.of(2026, 4, 29, 12, 0);
+        return new PropertyEncryptionRewrapJobDto(
+            jobId,
+            RewrapJobStatus.PLANNED,
+            "v2",
+            "admin",
+            now,
+            null,
+            null,
+            4,
+            7,
+            2,
+            5,
+            0,
+            0,
+            0,
+            0,
+            0,
+            List.of(
+                new RewrapKeyVersionCountSnapshot("v1", 5),
+                new RewrapKeyVersionCountSnapshot("v2", 2)
+            ),
+            List.of(),
+            List.of(),
+            null,
+            now,
+            null
+        );
     }
 
     private PropertyEncryptionBackfillJobDto backfillJobDto(UUID jobId, BackfillJobStatus status) {
