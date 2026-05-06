@@ -95,13 +95,48 @@ git diff --check
 
 Result: passed with no output.
 
-## CI Expectation
+## CI Result
 
-The next pushed run should start `ecm-core` with Flowable enabled because the qualified `applicationTaskExecutor` is now present.
+Pushed fix commit:
 
-Expected effect:
+```text
+51a337412c5661b1c57d11b273c5872bb6f64d6f
+fix(core): restore application task executor
+```
 
-- `Property Encryption Closeout Gate` remains green.
-- `Phase C Security Verification` advances past `Start verification stack`.
-- If Phase C fails later inside `scripts/verify.sh`, that should be triaged as a separate security-verification behavior issue rather than this startup blocker.
+GitHub Actions result:
 
+```text
+Workflow: CI
+Run ID: 25419356309
+URL: https://github.com/zensgit/Athena/actions/runs/25419356309
+Conclusion: success
+```
+
+Phase C job:
+
+```text
+Job: Phase C Security Verification
+Job ID: 74557929421
+Start verification stack: success
+Run Phase C verification: success
+Completed at: 2026-05-06T06:14:38Z
+```
+
+Full-run confirmation:
+
+```text
+Backend Verify: success
+Frontend Build & Test: success
+Phase C Security Verification: success
+Property Encryption Closeout Gate: success
+Acceptance Smoke (3 admin pages): success
+Frontend E2E Core Gate: success
+Phase 5 Mocked Regression Gate: success
+```
+
+Outcome:
+
+- The Flowable startup blocker is closed.
+- `ecm-core` now starts in the Docker verification stack with Flowable enabled.
+- The property-encryption Docker-backed closeout gate remains green on the same commit.

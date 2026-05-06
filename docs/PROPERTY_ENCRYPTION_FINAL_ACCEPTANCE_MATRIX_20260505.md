@@ -29,14 +29,14 @@ Out of scope:
 Latest code-gate commit:
 
 ```text
-f5de379399ae9db8b47301eb4bd50378e49cce37
-ci(security): add property encryption closeout gate
+51a337412c5661b1c57d11b273c5872bb6f64d6f
+fix(core): restore application task executor
 ```
 
 Push result:
 
 ```text
-origin/main: 7d7639c -> f5de379
+origin/main: f26ec3e -> 51a3374
 ```
 
 Local working-tree note:
@@ -108,6 +108,43 @@ Docker-backed gate passed
 property_encryption_closeout_preflight: ok
 ```
 
+Final closeout run `25419356309`:
+
+```text
+Workflow conclusion: success
+Head SHA: 51a337412c5661b1c57d11b273c5872bb6f64d6f
+URL: https://github.com/zensgit/Athena/actions/runs/25419356309
+Created at: 2026-05-06T06:07:38Z
+Completed at: 2026-05-06T06:34:17Z
+```
+
+Final job matrix:
+
+| Job | Result | Job ID |
+| --- | --- | --- |
+| Backend Verify | success | 74557701175 |
+| Frontend Build & Test | success | 74557701078 |
+| Phase C Security Verification | success | 74557929421 |
+| Property Encryption Closeout Gate | success | 74559015398 |
+| Acceptance Smoke (3 admin pages) | success | 74559015407 |
+| Frontend E2E Core Gate | success | 74559015414 |
+| Phase 5 Mocked Regression Gate | success | 74559015423 |
+
+Final closeout preflight evidence from job `74559015398`:
+
+```text
+Backend non-Docker evidence: 75 tests, 0 failures, 0 errors, 0 skipped
+Frontend targeted evidence: 3 suites passed, 10 tests passed
+Phase 5 registry-only preflight: expected events 24, observed markers 24
+Docker-backed PostgreSQL gate: 66 tests, 0 failures, 0 errors, 0 skipped
+PropertyEncryptionBackfillPostgresIntegrationTest: 2 tests, 0 failures, 0 errors, 0 skipped
+NodeRepositoryJsonbBackfillSmokeTest: 1 test, 0 failures, 0 errors, 0 skipped
+PropertyEncryptionBackfillJobRepositoryTest: 3 tests, 0 failures, 0 errors, 0 skipped
+PropertyEncryptionAsyncConfigurationTest: 2 tests, 0 failures, 0 errors, 0 skipped
+property_encryption_closeout_preflight: Docker-backed gate passed
+property_encryption_closeout_preflight: ok
+```
+
 Observed jobs at first poll:
 
 | Job | Status | Current step |
@@ -130,8 +167,8 @@ Observed jobs at first poll:
 | Frontend targeted suite | reduced preflight: service test 3/3 passed; prior full preflight: 10/10 passed | closeout preflight frontend suite passes | 0 failed tests |
 | Frontend lint/build | reduced lint passed; prior full preflight build compiled successfully | closeout preflight lint/build pass | no lint/build failure |
 | Phase 5 registry | prior full preflight matched 24/24 markers | closeout preflight registry step passes | no missing/stale registry entries |
-| Docker-backed PostgreSQL/Testcontainers | local host blocked by missing Docker socket | run `25418606323`, job `74556589054` passed | Docker reachable and backfill gate passes |
-| Full CI baseline | runs `25418055312` and `25418484543` exposed backend + frontend CI gaps; fixes added locally | run `25418606323` proved the property closeout gate and exposed a separate Flowable startup blocker in Phase C | property closeout gate green; Phase C startup fix pending next run |
+| Docker-backed PostgreSQL/Testcontainers | local host blocked by missing Docker socket | runs `25418606323` and `25419356309` passed; final job `74559015398` passed | Docker reachable and backfill gate passes |
+| Full CI baseline | runs `25418055312` and `25418484543` exposed backend + frontend CI gaps; run `25418606323` exposed the Flowable startup blocker | run `25419356309` passed all jobs | full workflow green |
 
 ## Phase C Follow-Up
 
@@ -150,21 +187,29 @@ Fix document:
 docs/PHASE_C_FLOWABLE_APPLICATION_TASK_EXECUTOR_FIX_DESIGN_VERIFICATION_20260505.md
 ```
 
+Final result on run `25419356309`:
+
+```text
+Phase C Security Verification: success
+Start verification stack: success
+Run Phase C verification: success
+```
+
 ## Docker-Backed Closeout Requirement
 
-Final benchmark closeout is not complete until this command passes on a Docker-capable runner:
+Final benchmark closeout required this command to pass on a Docker-capable runner:
 
 ```bash
 REQUIRE_DOCKER_BACKED_GATE=1 scripts/property-encryption-closeout-preflight.sh
 ```
 
-GitHub Actions now runs that command in:
+GitHub Actions runs that command in:
 
 ```text
 Property Encryption Closeout Gate
 ```
 
-The gate must validate:
+The final run `25419356309` passed this gate. The gate validates:
 
 - PostgreSQL JSONB backfill candidate selection
 - backfill migration into encrypted storage
@@ -189,7 +234,6 @@ If `Property Encryption Closeout Gate` fails, classify the failure as one of:
 
 ## Remaining Work
 
-1. Push the Phase C Flowable executor fix and watch the next CI run.
-2. Confirm `Phase C Security Verification` advances past `Start verification stack`.
-3. If a non-property job fails later, triage it separately from Property Encryption closeout unless the log points back to the property-encryption changes.
-3. Keep `.env` out of commits.
+Property Encryption closeout is complete at the CI gate level.
+
+Keep `.env` out of commits.
