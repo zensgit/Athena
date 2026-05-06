@@ -76,6 +76,14 @@ Fix document:
 docs/PROPERTY_ENCRYPTION_CI_RUN_25418055312_FIXES_DESIGN_VERIFICATION_20260505.md
 ```
 
+Follow-up run `25418484543`:
+
+```text
+Backend Verify: failure
+Root cause: PostgreSQL runner does not provide jsonb_object_length(jsonb)
+Fix: count JSONB entries with CROSS JOIN LATERAL jsonb_each(...)
+```
+
 Observed jobs at first poll:
 
 | Job | Status | Current step |
@@ -99,7 +107,7 @@ Observed jobs at first poll:
 | Frontend lint/build | reduced lint passed; prior full preflight build compiled successfully | closeout preflight lint/build pass | no lint/build failure |
 | Phase 5 registry | prior full preflight matched 24/24 markers | closeout preflight registry step passes | no missing/stale registry entries |
 | Docker-backed PostgreSQL/Testcontainers | local host blocked by missing Docker socket | `Property Encryption Closeout Gate` runs with `REQUIRE_DOCKER_BACKED_GATE=1` | Docker reachable and backfill gate passes |
-| Full CI baseline | run `25418055312` exposed backend + frontend failures; fixes added locally | next CI workflow completes | required jobs green |
+| Full CI baseline | runs `25418055312` and `25418484543` exposed backend + frontend CI gaps; fixes added locally | next CI workflow completes | required jobs green |
 
 ## Docker-Backed Closeout Requirement
 

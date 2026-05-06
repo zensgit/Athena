@@ -40,6 +40,7 @@ Verified evidence from latest rewrap-ledger slice:
 - Property Encryption CI closeout gate wiring: shell syntax passed, workflow YAML parsed, reduced preflight passed locally, and Docker-backed gate fail-fast behavior was reproduced on this host.
 - CI push evidence: `origin/main` advanced from `7d7639c` to `f5de379`; GitHub Actions run `25418055312` started for the closeout-gate commit.
 - CI run `25418055312` failure triaged: backend failed on PostgreSQL JSONB/native-query cast plus timestamp/JSONB formatting assertions; frontend failed on a long operator-flow Jest timeout. Fixes are documented in `docs/PROPERTY_ENCRYPTION_CI_RUN_25418055312_FIXES_DESIGN_VERIFICATION_20260505.md`.
+- CI run `25418484543` follow-up failure triaged: backend runner PostgreSQL does not provide `jsonb_object_length(jsonb)`; repository count now uses `CROSS JOIN LATERAL jsonb_each(...)`.
 
 Known environment constraint:
 

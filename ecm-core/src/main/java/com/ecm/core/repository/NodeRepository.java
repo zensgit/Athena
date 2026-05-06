@@ -321,8 +321,9 @@ public interface NodeRepository extends JpaRepository<Node, UUID>, JpaSpecificat
     long countNodesWithEncryptedPropertiesAndDeletedFalse();
 
     @Query(value = """
-        SELECT COALESCE(SUM(jsonb_object_length(n.encrypted_properties)), 0)
+        SELECT COUNT(*)
         FROM nodes n
+        CROSS JOIN LATERAL jsonb_each(n.encrypted_properties) AS payload(key, value)
         WHERE n.is_deleted = false
           AND n.encrypted_properties IS NOT NULL
           AND n.encrypted_properties <> CAST('{}' AS jsonb)

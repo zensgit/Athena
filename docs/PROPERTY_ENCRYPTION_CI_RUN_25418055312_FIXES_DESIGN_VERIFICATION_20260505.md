@@ -134,6 +134,31 @@ ecm-frontend/src/pages/PropertyEncryptionOperationsPage.test.tsx
 
 ## Verification
 
+### Follow-Up CI Run 25418484543
+
+After the first fix commit, run `25418484543` still failed `Backend Verify` on a narrower PostgreSQL function issue:
+
+```text
+ERROR: function jsonb_object_length(jsonb) does not exist
+```
+
+Root cause:
+
+The repository used `jsonb_object_length(...)` to count encrypted-property entries. The GitHub runner PostgreSQL image does not provide that function.
+
+Follow-up fix:
+
+```sql
+SELECT COUNT(*)
+FROM nodes n
+CROSS JOIN LATERAL jsonb_each(n.encrypted_properties) AS payload(key, value)
+WHERE n.is_deleted = false
+  AND n.encrypted_properties IS NOT NULL
+  AND n.encrypted_properties <> CAST('{}' AS jsonb)
+```
+
+This uses JSONB entry expansion instead of relying on an unavailable aggregate helper.
+
 Backend repository and JSONB smoke target:
 
 ```bash
@@ -168,6 +193,25 @@ Result:
 
 ```text
 PropertyEncryptionOperationsServiceTest: Tests run: 38, Failures: 0, Errors: 0, Skipped: 0
+PropertyEncryptionBackfillPostgresIntegrationTest: Tests run: 2, Failures: 0, Errors: 0, Skipped: 2
+BUILD SUCCESS
+```
+
+Backend PostgreSQL function follow-up compile/skip target:
+
+```bash
+cd ecm-core
+/tmp/apache-maven-3.9.9/bin/mvn -B -Dstyle.color=never \
+  -Dmaven.repo.local=.m2-cache/repository \
+  -Dspring.profiles.active=test \
+  -Dtest=PropertyEncryptionBackfillPostgresIntegrationTest,NodeRepositoryJsonbBackfillSmokeTest \
+  test
+```
+
+Result:
+
+```text
+NodeRepositoryJsonbBackfillSmokeTest: Tests run: 1, Failures: 0, Errors: 0, Skipped: 1
 PropertyEncryptionBackfillPostgresIntegrationTest: Tests run: 2, Failures: 0, Errors: 0, Skipped: 2
 BUILD SUCCESS
 ```
