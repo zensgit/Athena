@@ -73,7 +73,17 @@ Local full E2E execution was not attempted because this checkout did not have th
 127.0.0.1:3000 unavailable
 ```
 
-The full validation target is the next pushed CI run, specifically the preview/search regression gate that failed on run `25436297704`.
+Remote CI validation:
+
+```text
+Run: 25438220258
+Commit: 2db5166
+Result: success
+Frontend E2E Core Gate: success
+Run preview/search regression gate: success
+```
+
+This confirms the previous run `25436297704` failure was closed by the facet-readiness fix.
 
 ## Files Changed
 
