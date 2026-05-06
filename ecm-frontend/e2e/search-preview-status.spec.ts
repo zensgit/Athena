@@ -13,6 +13,14 @@ const baseApiUrl = resolveApiUrl();
 const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
 
+type SearchQueryFacetResponse = {
+  results?: {
+    content?: unknown[];
+    totalElements?: number;
+  };
+  facets?: Record<string, Array<{ value?: string; count?: number }>>;
+};
+
 function randomLetters(length: number) {
   let out = '';
   while (out.length < length) {
@@ -154,6 +162,61 @@ async function uploadDwgFile(
   return documentId;
 }
 
+async function waitForAdvancedSearchPreviewFacet(
+  request: APIRequestContext,
+  query: string,
+  token: string,
+  expectedStatus: string,
+  expectedCount: number,
+  options: { apiUrl?: string; maxAttempts?: number; delayMs?: number } = {},
+) {
+  const apiUrl = options.apiUrl || baseApiUrl;
+  const maxAttempts = options.maxAttempts ?? 60;
+  const delayMs = options.delayMs ?? 2000;
+  const normalizedExpectedStatus = expectedStatus.toUpperCase();
+  let lastError = 'unknown error';
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      const response = await request.post(`${apiUrl}/api/v1/search/query`, {
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        data: {
+          query,
+          filters: {},
+          pageable: { page: 0, size: Math.max(expectedCount, 100) },
+          include: ['results', 'facets'],
+          facets: ['previewStatus'],
+        },
+      });
+      if (response.ok()) {
+        const payload = (await response.json()) as SearchQueryFacetResponse;
+        const total = payload.results?.totalElements ?? payload.results?.content?.length ?? 0;
+        const previewFacets = payload.facets?.previewStatus ?? [];
+        const matchingFacet = previewFacets.find(
+          (facet) => (facet.value || '').toUpperCase() === normalizedExpectedStatus
+        );
+        const matchingCount = Number(matchingFacet?.count ?? 0);
+        if (total >= expectedCount && matchingCount >= expectedCount) {
+          return;
+        }
+        lastError = `total=${total} ${previewFacets
+          .map((facet) => `${facet.value || 'UNKNOWN'}=${Number(facet.count ?? 0)}`)
+          .join(', ') || 'no previewStatus facets'}`;
+      } else {
+        lastError = `status=${response.status()}`;
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+
+  throw new Error(
+    `Advanced search preview facet did not reach ${normalizedExpectedStatus}=${expectedCount} for ${query} (${lastError})`
+  );
+}
+
 test('Search preview status filters are visible and selectable', async ({ page, request }) => {
   test.setTimeout(240_000);
   await waitForApiReady(request, { apiUrl: baseApiUrl });
@@ -261,11 +324,21 @@ test('Advanced search preview status facet counts reflect full result set', asyn
       expect(previewJson.status).toBe('UNSUPPORTED');
 
       const indexRes = await request.post(`${baseApiUrl}/api/v1/search/index/${documentId}`,
-        { headers: { Authorization: `Bearer ${token}` } });
+        { params: { refresh: true }, headers: { Authorization: `Bearer ${token}` } });
       expect(indexRes.ok()).toBeTruthy();
     }
 
+    const indexByQueryRes = await request.post(`${baseApiUrl}/api/v1/search/index/query`, {
+      params: { q: queryKey, limit: totalDocs, refresh: true },
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(indexByQueryRes.ok()).toBeTruthy();
     await waitForSearchIndex(request, queryKey, token, { apiUrl: baseApiUrl, maxAttempts: 60, minResults: totalDocs });
+    await waitForAdvancedSearchPreviewFacet(request, queryKey, token, 'UNSUPPORTED', totalDocs, {
+      apiUrl: baseApiUrl,
+      maxAttempts: 60,
+      delayMs: 1000,
+    });
 
     await gotoWithAuthE2E(page, '/search', defaultUsername, defaultPassword, { token });
     await page.getByLabel('Search query').fill(queryKey);
@@ -274,9 +347,8 @@ test('Advanced search preview status facet counts reflect full result set', asyn
 
     await expect(page.getByText(`Found ${totalDocs} results`)).toBeVisible({ timeout: 60_000 });
 
-    // Facet counts reflect the eventual-consistent ES state. If the index didn't
-    // fully register UNSUPPORTED status for all totalDocs when the initial search
-    // ran, retry the search up to 5 times until the count catches up.
+    // CI can be slow to refresh the browser-side envelope after ES settles.
+    // Retry the UI submit, but only after the API-level facet has already converged.
     const unsupportedFacet = page.getByRole('button', { name: `Unsupported (${totalDocs})` }).first();
     let seen = false;
     for (let attempt = 0; attempt < 5; attempt += 1) {
