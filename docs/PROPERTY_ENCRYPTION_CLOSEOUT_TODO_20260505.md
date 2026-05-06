@@ -19,6 +19,7 @@ Completed delivery:
 - Runtime response masking is implemented: public/generic node property responses return `[encrypted]` for model-declared encrypted keys while internal trusted workflows keep readable projection.
 - Property Encryption closeout preflight is implemented: one script runs all local non-Docker evidence and records Docker-backed gate availability.
 - Property Encryption CI closeout gate is implemented: GitHub Actions now runs the preflight with `REQUIRE_DOCKER_BACKED_GATE=1` after backend and frontend gates.
+- Final acceptance matrix is started in `docs/PROPERTY_ENCRYPTION_FINAL_ACCEPTANCE_MATRIX_20260505.md` with push evidence, CI run ID, gate criteria, and failure triage.
 - Protocol endpoint security-test expansion has covered Transfer Receiver, WOPI Host, CMIS AtomPub, and CMIS Browser patterns in prior security-test docs.
 
 Verified evidence from latest rewrap-ledger slice:
@@ -37,6 +38,7 @@ Verified evidence from latest rewrap-ledger slice:
 - Runtime response masking backend target suite: 23 tests passed across service, node/document/content-type controller, and search index projection coverage.
 - Property Encryption closeout preflight: backend non-Docker suite 75 tests passed, frontend targeted suite 10 tests passed, lint passed, production build compiled, Phase 5 registry matched 24/24, Docker-backed gate reported blocked by missing Docker socket.
 - Property Encryption CI closeout gate wiring: shell syntax passed, workflow YAML parsed, reduced preflight passed locally, and Docker-backed gate fail-fast behavior was reproduced on this host.
+- CI push evidence: `origin/main` advanced from `7d7639c` to `f5de379`; GitHub Actions run `25418055312` started for the closeout-gate commit.
 
 Known environment constraint:
 
@@ -206,6 +208,12 @@ Recommended execution order:
 1. Push and observe `Property Encryption Closeout Gate`.
 2. If green, record the CI run in the final acceptance matrix.
 3. If red, fix the concrete Docker/Testcontainers/PostgreSQL failure and rerun the same gate.
+
+Current CI run to observe:
+
+```text
+https://github.com/zensgit/Athena/actions/runs/25418055312
+```
 
 Do not broaden the UI beyond backend-supported execution semantics. The current UI is aligned to backend plan/run/cancel support and keeps unsafe jobs blocked by backend validation.
 
