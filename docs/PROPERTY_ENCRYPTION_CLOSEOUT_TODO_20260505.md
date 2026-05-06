@@ -17,6 +17,7 @@ Completed delivery:
 - Rewrap frontend execution workflow is implemented: service client methods, separate rewrap job table, plan/run/cancel controls, scoped tests, and mocked Playwright route coverage.
 - Runtime protected-payload redaction is implemented: backend readable/indexable property maps, frontend property dialog display/save, search prefill, and search highlight snippets all guard against raw `enc:...` values.
 - Runtime response masking is implemented: public/generic node property responses return `[encrypted]` for model-declared encrypted keys while internal trusted workflows keep readable projection.
+- Property Encryption closeout preflight is implemented: one script runs all local non-Docker evidence and records Docker-backed gate availability.
 - Protocol endpoint security-test expansion has covered Transfer Receiver, WOPI Host, CMIS AtomPub, and CMIS Browser patterns in prior security-test docs.
 
 Verified evidence from latest rewrap-ledger slice:
@@ -33,6 +34,7 @@ Verified evidence from latest rewrap-ledger slice:
 - Runtime redaction backend unit test: `NodePropertyEncryptionServiceTest`, 5 tests passed.
 - Runtime redaction frontend unit test: `propertyRedactionUtils.test.ts`, 5 tests passed.
 - Runtime response masking backend target suite: 23 tests passed across service, node/document/content-type controller, and search index projection coverage.
+- Property Encryption closeout preflight: backend non-Docker suite 75 tests passed, frontend targeted suite 10 tests passed, lint passed, production build compiled, Phase 5 registry matched 24/24, Docker-backed gate reported blocked by missing Docker socket.
 
 Known environment constraint:
 
@@ -126,6 +128,24 @@ Estimated effort: `0.5-1 person-day`.
 
 Risk buffer: add `1-2 person-days` if PostgreSQL/Testcontainers exposes a real migration, JSONB query, or concurrency issue.
 
+### Completed: Local Closeout Preflight
+
+Goal: make the closeout evidence chain executable from one command and distinguish local non-Docker evidence from the Docker-backed PostgreSQL gate.
+
+Delivered changes:
+
+- Added `scripts/property-encryption-closeout-preflight.sh`.
+- Script runs backend non-Docker evidence, frontend targeted tests, lint, production build, Phase 5 registry-only preflight, and Docker availability checks.
+- Script continues locally when Docker is unavailable and `REQUIRE_DOCKER_BACKED_GATE=0`.
+- Script can be promoted to a final blocking gate with `REQUIRE_DOCKER_BACKED_GATE=1`.
+
+Delivered tests:
+
+- `scripts/property-encryption-closeout-preflight.sh` completed successfully on this host.
+- Docker-backed PostgreSQL gate was explicitly marked blocked because Docker API was unavailable.
+
+Status: implemented and locally verified.
+
 ### Completed: Runtime Protected-Payload Redaction
 
 Goal: prevent raw protected payload strings from leaking through generic runtime views, search helpers, or editor save payloads.
@@ -170,7 +190,7 @@ Status: implemented and locally verified.
 
 ## Remaining Development Estimate
 
-Remaining work to reach Property Encryption benchmark closeout: about `0.5-1.5 person-days`, plus Docker issue buffer if PostgreSQL exposes real failures.
+Remaining work to reach Property Encryption benchmark closeout: about `0.5-1 person-day`, plus Docker issue buffer if PostgreSQL exposes real failures.
 
 Recommended execution order:
 
@@ -284,6 +304,18 @@ cd ecm-core
   test
 ```
 
+Local closeout preflight:
+
+```bash
+scripts/property-encryption-closeout-preflight.sh
+```
+
+Docker-required final preflight:
+
+```bash
+REQUIRE_DOCKER_BACKED_GATE=1 scripts/property-encryption-closeout-preflight.sh
+```
+
 ## Acceptance Criteria
 
 Property Encryption can be considered benchmark-closeout ready when all of the following are true:
@@ -292,6 +324,7 @@ Property Encryption can be considered benchmark-closeout ready when all of the f
 - Rewrap execution can safely run from planned ledger to terminal state with PostgreSQL coverage.
 - Admin UI exposes only backend-supported actions.
 - Docker-backed backend gate has a recorded green run.
+- Local closeout preflight is green.
 - Frontend mocked Phase 5 gate includes the property encryption admin route and remains green.
 - Runtime protected-payload redaction behavior is documented and covered by targeted checks.
 - Runtime model-property masking is implemented as default-masked response projection.
