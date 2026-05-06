@@ -27,6 +27,7 @@ import static org.hamcrest.Matchers.is;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -72,6 +73,8 @@ class OAuthCredentialAdminControllerSecurityTest {
     @DisplayName("OAuth credential inventory requires admin role")
     void inventoryRequiresAdminRole() throws Exception {
         mockMvc.perform(get("/api/v1/admin/oauth-credentials"))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/admin/oauth-credentials/11111111-2222-3333-4444-555555555555/require-reauth"))
             .andExpect(status().isForbidden());
     }
 
@@ -119,5 +122,42 @@ class OAuthCredentialAdminControllerSecurityTest {
             .andExpect(jsonPath("$[0].refreshToken").doesNotExist());
 
         verify(oauthCredentialAdminService).listCredentials("MAIL_ACCOUNT", OAuthProviderType.GOOGLE);
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("admin can require OAuth reauthorization without token disclosure")
+    void adminCanRequireReauth() throws Exception {
+        UUID credentialId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        UUID ownerId = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        when(oauthCredentialAdminService.requireReauth(credentialId)).thenReturn(
+            new OAuthCredentialInventoryItem(
+                credentialId,
+                "MAIL_ACCOUNT",
+                ownerId,
+                OAuthProviderType.GOOGLE,
+                true,
+                false,
+                true,
+                true,
+                false,
+                false,
+                false,
+                null,
+                LocalDateTime.parse("2026-05-01T09:00:00"),
+                LocalDateTime.parse("2026-05-06T10:00:00")
+            )
+        );
+
+        mockMvc.perform(post("/api/v1/admin/oauth-credentials/{credentialId}/require-reauth", credentialId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id", is(credentialId.toString())))
+            .andExpect(jsonPath("$.connected", is(false)))
+            .andExpect(jsonPath("$.accessTokenStored", is(false)))
+            .andExpect(jsonPath("$.refreshTokenStored", is(false)))
+            .andExpect(jsonPath("$.accessToken").doesNotExist())
+            .andExpect(jsonPath("$.refreshToken").doesNotExist());
+
+        verify(oauthCredentialAdminService).requireReauth(credentialId);
     }
 }

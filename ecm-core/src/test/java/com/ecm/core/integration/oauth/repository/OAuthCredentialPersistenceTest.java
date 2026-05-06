@@ -1,6 +1,7 @@
 package com.ecm.core.integration.oauth.repository;
 
 import com.ecm.core.integration.oauth.OAuthCredentialInventoryItem;
+import com.ecm.core.integration.oauth.OAuthCredentialOwnerReference;
 import com.ecm.core.integration.oauth.OAuthProviderType;
 import com.ecm.core.integration.oauth.model.OAuthCredential;
 import com.ecm.core.security.secret.SecretCryptoProperties;
@@ -128,5 +129,14 @@ class OAuthCredentialPersistenceTest {
         assertTrue(item.accessTokenStored());
         assertTrue(item.refreshTokenStored());
         assertTrue(item.connected());
+
+        OAuthCredentialOwnerReference ownerReference = repository.findOwnerReferenceById(item.id()).orElseThrow();
+        assertEquals(item.id(), ownerReference.id());
+        assertEquals("MAIL_ACCOUNT", ownerReference.ownerType());
+        assertEquals(item.ownerId(), ownerReference.ownerId());
+
+        OAuthCredentialInventoryItem byId = repository.findInventoryItemById(item.id()).orElseThrow();
+        assertEquals(item.id(), byId.id());
+        assertTrue(byId.connected());
     }
 }

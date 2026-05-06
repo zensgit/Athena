@@ -7,6 +7,7 @@ jest.mock('services/oauthCredentialAdminService', () => ({
   __esModule: true,
   default: {
     listCredentials: jest.fn(),
+    requireReauth: jest.fn(),
   },
 }));
 
@@ -73,4 +74,42 @@ test('shows empty state for unmatched filters', async () => {
   render(<OAuthCredentialAdminPage />);
 
   expect(await screen.findByText('No OAuth credentials match the current filters.')).toBeTruthy();
+});
+
+test('requires reauthorization by clearing stored token status', async () => {
+  const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
+  mockedOAuthCredentialAdminService.requireReauth.mockResolvedValue({
+    ...credential,
+    accessTokenStored: false,
+    refreshTokenStored: false,
+    connected: false,
+    tokenExpiresAt: null,
+  });
+
+  render(<OAuthCredentialAdminPage />);
+  await screen.findByText('MAIL_ACCOUNT');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Require Reauth' }));
+
+  await waitFor(() => {
+    expect(mockedOAuthCredentialAdminService.requireReauth).toHaveBeenCalledWith('credential-1');
+  });
+  await waitFor(() => {
+    const button = screen.getByRole('button', { name: 'Require Reauth' }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+  });
+
+  confirmSpy.mockRestore();
+});
+
+test('does not require reauthorization when confirmation is cancelled', async () => {
+  const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(false);
+
+  render(<OAuthCredentialAdminPage />);
+  await screen.findByText('MAIL_ACCOUNT');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Require Reauth' }));
+
+  expect(mockedOAuthCredentialAdminService.requireReauth).not.toHaveBeenCalled();
+  confirmSpy.mockRestore();
 });

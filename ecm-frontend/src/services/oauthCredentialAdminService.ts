@@ -41,6 +41,10 @@ class OAuthCredentialAdminService {
     }
     return api.get<OAuthCredentialInventoryItem[]>(BASE_URL, { params });
   }
+
+  async requireReauth(credentialId: string): Promise<OAuthCredentialInventoryItem> {
+    return api.post<OAuthCredentialInventoryItem>(`${BASE_URL}/${credentialId}/require-reauth`);
+  }
 }
 
 const oauthCredentialAdminService = new OAuthCredentialAdminService();

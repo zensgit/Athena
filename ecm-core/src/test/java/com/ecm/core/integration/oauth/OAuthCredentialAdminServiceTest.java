@@ -1,5 +1,6 @@
 package com.ecm.core.integration.oauth;
 
+import com.ecm.core.exception.ResourceNotFoundException;
 import com.ecm.core.integration.oauth.repository.OAuthCredentialRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -8,8 +9,13 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -19,6 +25,9 @@ class OAuthCredentialAdminServiceTest {
 
     @Mock
     private OAuthCredentialRepository oauthCredentialRepository;
+
+    @Mock
+    private OAuthCredentialService oauthCredentialService;
 
     @InjectMocks
     private OAuthCredentialAdminService oauthCredentialAdminService;
@@ -42,5 +51,45 @@ class OAuthCredentialAdminServiceTest {
         oauthCredentialAdminService.listCredentials(" MAIL_ACCOUNT ", null);
 
         verify(oauthCredentialRepository).findInventoryItems("MAIL_ACCOUNT", null);
+    }
+
+    @Test
+    @DisplayName("requireReauth clears owner tokens and returns redacted inventory")
+    void requireReauthClearsOwnerTokensAndReturnsRedactedInventory() {
+        UUID credentialId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        UUID ownerId = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        OAuthCredentialInventoryItem item = new OAuthCredentialInventoryItem(
+            credentialId,
+            "MAIL_ACCOUNT",
+            ownerId,
+            OAuthProviderType.GOOGLE,
+            true,
+            false,
+            true,
+            true,
+            false,
+            false,
+            false,
+            null,
+            LocalDateTime.parse("2026-05-01T09:00:00"),
+            LocalDateTime.parse("2026-05-06T10:00:00")
+        );
+        when(oauthCredentialRepository.findOwnerReferenceById(credentialId))
+            .thenReturn(Optional.of(new OAuthCredentialOwnerReference(credentialId, "MAIL_ACCOUNT", ownerId)));
+        when(oauthCredentialRepository.findInventoryItemById(credentialId)).thenReturn(Optional.of(item));
+
+        OAuthCredentialInventoryItem result = oauthCredentialAdminService.requireReauth(credentialId);
+
+        assertEquals(item, result);
+        verify(oauthCredentialService).clearTokens("MAIL_ACCOUNT", ownerId);
+    }
+
+    @Test
+    @DisplayName("requireReauth rejects unknown credential id")
+    void requireReauthRejectsUnknownCredentialId() {
+        UUID credentialId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        when(oauthCredentialRepository.findOwnerReferenceById(credentialId)).thenReturn(Optional.empty());
+
+        assertThrows(ResourceNotFoundException.class, () -> oauthCredentialAdminService.requireReauth(credentialId));
     }
 }

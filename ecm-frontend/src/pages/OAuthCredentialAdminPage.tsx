@@ -50,6 +50,7 @@ const OAuthCredentialAdminPage: React.FC = () => {
   const [ownerType, setOwnerType] = useState('');
   const [provider, setProvider] = useState('');
   const [loading, setLoading] = useState(false);
+  const [reauthCredentialId, setReauthCredentialId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const loadCredentials = async (nextOwnerType = ownerType, nextProvider = provider) => {
@@ -96,6 +97,25 @@ const OAuthCredentialAdminPage: React.FC = () => {
   const refreshTokenCount = credentials.filter((credential) => credential.refreshTokenStored).length;
   const credentialKeyCount = credentials.filter((credential) => credential.credentialKeyConfigured).length;
 
+  const handleRequireReauth = async (credential: OAuthCredentialInventoryItem) => {
+    const confirmed = window.confirm(
+      `Clear stored OAuth tokens for ${credential.ownerType} ${credential.ownerId}? The owner must reconnect before token-based access can resume.`
+    );
+    if (!confirmed) {
+      return;
+    }
+    setReauthCredentialId(credential.id);
+    setError(null);
+    try {
+      const updated = await oauthCredentialAdminService.requireReauth(credential.id);
+      setCredentials((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to require OAuth reauthorization.');
+    } finally {
+      setReauthCredentialId(null);
+    }
+  };
+
   return (
     <Box sx={{ p: 3 }}>
       <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={2} sx={{ mb: 3 }}>
@@ -104,7 +124,7 @@ const OAuthCredentialAdminPage: React.FC = () => {
             OAuth Credential Store
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Read-only admin inventory for generic OAuth credentials and their connection state.
+            Admin inventory and local reauthorization controls for generic OAuth credentials.
           </Typography>
         </Box>
         <Button
@@ -211,6 +231,7 @@ const OAuthCredentialAdminPage: React.FC = () => {
                     <TableCell>Configuration</TableCell>
                     <TableCell>Expires</TableCell>
                     <TableCell>Updated</TableCell>
+                    <TableCell align="right">Actions</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -242,6 +263,20 @@ const OAuthCredentialAdminPage: React.FC = () => {
                       </TableCell>
                       <TableCell>{formatDateTime(credential.tokenExpiresAt)}</TableCell>
                       <TableCell>{formatDateTime(credential.updatedAt || credential.createdAt)}</TableCell>
+                      <TableCell align="right">
+                        <Button
+                          variant="outlined"
+                          color="warning"
+                          size="small"
+                          onClick={() => void handleRequireReauth(credential)}
+                          disabled={
+                            reauthCredentialId === credential.id
+                            || (!credential.connected && !credential.accessTokenStored && !credential.refreshTokenStored)
+                          }
+                        >
+                          {reauthCredentialId === credential.id ? 'Clearing...' : 'Require Reauth'}
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
