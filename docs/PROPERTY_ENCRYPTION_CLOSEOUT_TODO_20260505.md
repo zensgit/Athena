@@ -18,6 +18,7 @@ Completed delivery:
 - Runtime protected-payload redaction is implemented: backend readable/indexable property maps, frontend property dialog display/save, search prefill, and search highlight snippets all guard against raw `enc:...` values.
 - Runtime response masking is implemented: public/generic node property responses return `[encrypted]` for model-declared encrypted keys while internal trusted workflows keep readable projection.
 - Property Encryption closeout preflight is implemented: one script runs all local non-Docker evidence and records Docker-backed gate availability.
+- Property Encryption CI closeout gate is implemented: GitHub Actions now runs the preflight with `REQUIRE_DOCKER_BACKED_GATE=1` after backend and frontend gates.
 - Protocol endpoint security-test expansion has covered Transfer Receiver, WOPI Host, CMIS AtomPub, and CMIS Browser patterns in prior security-test docs.
 
 Verified evidence from latest rewrap-ledger slice:
@@ -35,6 +36,7 @@ Verified evidence from latest rewrap-ledger slice:
 - Runtime redaction frontend unit test: `propertyRedactionUtils.test.ts`, 5 tests passed.
 - Runtime response masking backend target suite: 23 tests passed across service, node/document/content-type controller, and search index projection coverage.
 - Property Encryption closeout preflight: backend non-Docker suite 75 tests passed, frontend targeted suite 10 tests passed, lint passed, production build compiled, Phase 5 registry matched 24/24, Docker-backed gate reported blocked by missing Docker socket.
+- Property Encryption CI closeout gate wiring: shell syntax passed, workflow YAML parsed, reduced preflight passed locally, and Docker-backed gate fail-fast behavior was reproduced on this host.
 
 Known environment constraint:
 
@@ -49,7 +51,8 @@ Goal: convert the locally compiled PostgreSQL rewrap/backfill coverage into real
 
 Required checks:
 
-- Run `PropertyEncryptionBackfillPostgresIntegrationTest` on a Docker-capable runner.
+- Let the GitHub Actions `Property Encryption Closeout Gate` job run on a Docker-capable runner.
+- Confirm `PropertyEncryptionBackfillPostgresIntegrationTest` passes instead of being locally blocked.
 - Confirm the backfill PostgreSQL path migrates plaintext encrypted properties into encrypted storage.
 - Confirm the rewrap PostgreSQL path migrates existing `enc:v0:` payloads to active `enc:v1:` payloads without changing revealed plaintext.
 - Record the first Docker-backed green result in a final closeout doc.
@@ -110,23 +113,29 @@ Delivered tests:
 
 Status: implemented and locally verified.
 
-### P1: CI Closeout
+### Completed: CI Closeout Gate Wiring
 
 Goal: convert local targeted evidence into final Docker-backed acceptance evidence.
 
-Required checks:
+Delivered changes:
 
-- Run frontend admin smoke.
-- Run Phase 5 mocked regression gate.
-- Record the first Docker-backed green result in a final closeout doc.
+- Added `Property Encryption Closeout Gate` to `.github/workflows/ci.yml`.
+- The job runs after backend and frontend gates.
+- The job installs Java and Node toolchains, installs frontend dependencies, and runs `scripts/property-encryption-closeout-preflight.sh`.
+- The job sets `REQUIRE_DOCKER_BACKED_GATE=1`, making the PostgreSQL/Testcontainers gate mandatory on CI.
+- `scripts/property-encryption-backfill-gate.sh` now prefers a local Maven binary before the Dockerized `ecm-core/./mvnw` wrapper.
+- `scripts/property-encryption-closeout-preflight.sh` exports the resolved `MAVEN_BIN` into the Docker-backed child gate.
 
-Expected blocker:
+Delivered tests:
 
-- Local host currently lacks a reachable Docker socket, so this must run on CI or a Docker-capable machine.
+- Shell syntax checks passed for both property-encryption scripts.
+- Workflow YAML parsed successfully.
+- Reduced local preflight passed with 38 backend tests, 3 frontend service tests, and lint.
+- Docker fail-fast behavior was reproduced locally with the expected missing-socket blocker.
 
-Estimated effort: `0.5-1 person-day`.
+Status: implemented locally; pending the first CI run with Docker available.
 
-Risk buffer: add `1-2 person-days` if PostgreSQL/Testcontainers exposes a real migration, JSONB query, or concurrency issue.
+Remaining CI evidence: record the first green `Property Encryption Closeout Gate` run in the final acceptance matrix.
 
 ### Completed: Local Closeout Preflight
 
@@ -190,12 +199,13 @@ Status: implemented and locally verified.
 
 ## Remaining Development Estimate
 
-Remaining work to reach Property Encryption benchmark closeout: about `0.5-1 person-day`, plus Docker issue buffer if PostgreSQL exposes real failures.
+Remaining work to reach Property Encryption benchmark closeout: about `0.25-0.5 person-day` if CI is green, plus Docker issue buffer if PostgreSQL exposes real failures.
 
 Recommended execution order:
 
-1. Docker-backed rewrap/backfill verification.
-2. Final CI/acceptance matrix closeout.
+1. Push and observe `Property Encryption Closeout Gate`.
+2. If green, record the CI run in the final acceptance matrix.
+3. If red, fix the concrete Docker/Testcontainers/PostgreSQL failure and rerun the same gate.
 
 Do not broaden the UI beyond backend-supported execution semantics. The current UI is aligned to backend plan/run/cancel support and keeps unsafe jobs blocked by backend validation.
 
@@ -316,6 +326,12 @@ Docker-required final preflight:
 REQUIRE_DOCKER_BACKED_GATE=1 scripts/property-encryption-closeout-preflight.sh
 ```
 
+CI closeout job:
+
+```text
+.github/workflows/ci.yml -> Property Encryption Closeout Gate
+```
+
 ## Acceptance Criteria
 
 Property Encryption can be considered benchmark-closeout ready when all of the following are true:
@@ -324,6 +340,7 @@ Property Encryption can be considered benchmark-closeout ready when all of the f
 - Rewrap execution can safely run from planned ledger to terminal state with PostgreSQL coverage.
 - Admin UI exposes only backend-supported actions.
 - Docker-backed backend gate has a recorded green run.
+- GitHub Actions `Property Encryption Closeout Gate` has a recorded green run.
 - Local closeout preflight is green.
 - Frontend mocked Phase 5 gate includes the property encryption admin route and remains green.
 - Runtime protected-payload redaction behavior is documented and covered by targeted checks.

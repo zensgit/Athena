@@ -1,6 +1,7 @@
 # Property Encryption Backfill Gate Script Design and Verification
 
 Date: 2026-04-30
+Updated: 2026-05-05
 Code commit: `01aa370`
 
 ## Context
@@ -25,6 +26,7 @@ Default test set:
 
 ```text
 NodeRepositoryJsonbBackfillSmokeTest,
+PropertyEncryptionBackfillPostgresIntegrationTest,
 PropertyEncryptionBackfillJobRepositoryTest,
 PropertyEncryptionOperationsServiceTest,
 PropertyEncryptionOperationsControllerSecurityTest,
@@ -36,6 +38,8 @@ PropertyEncryptionBackfillRecoverySchedulerTest
 
 The list can be overridden with `BACKEND_TESTS=...`.
 
+Maven can be overridden with `MAVEN_BIN=...`. If unset, the script now prefers `/tmp/apache-maven-3.9.9/bin/mvn`, then `mvn` on `PATH`, then falls back to `ecm-core/./mvnw`.
+
 ## Behavior
 
 The script:
@@ -43,9 +47,9 @@ The script:
 1. Prints the selected test list.
 2. Checks Docker reachability with `docker ps`.
 3. Fails before Maven if Docker is unavailable.
-4. Runs the targeted backend gate through `ecm-core/./mvnw` when Docker is available.
+4. Runs the targeted backend gate through the selected Maven binary when Docker is available.
 
-The explicit Docker precheck matters because both `ecm-core/mvnw` and `NodeRepositoryJsonbBackfillSmokeTest` require Docker in this environment.
+The explicit Docker precheck matters because Testcontainers requires Docker. Local Maven is preferred on CI so Testcontainers can access the runner Docker API directly instead of running inside the Dockerized Maven wrapper.
 
 ## Verification
 
@@ -67,7 +71,7 @@ scripts/property-encryption-backfill-gate.sh
 Result: failed early as expected because Docker is unavailable:
 
 ```text
-property_encryption_backfill_gate: Docker API is not reachable; this gate requires Docker because ecm-core/mvnw and Testcontainers depend on it.
+property_encryption_backfill_gate: Docker API is not reachable; this gate requires Docker because Testcontainers depend on it.
 failed to connect to the docker API at unix:///Users/chouhua/.docker/run/docker.sock
 ```
 

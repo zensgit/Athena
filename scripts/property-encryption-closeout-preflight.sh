@@ -15,6 +15,7 @@ if [[ -z "${MAVEN_BIN}" ]]; then
     exit 1
   fi
 fi
+export MAVEN_BIN
 
 BACKEND_NON_DOCKER_TESTS="${BACKEND_NON_DOCKER_TESTS:-PropertyEncryptionOperationsServiceTest,PropertyEncryptionOperationsControllerSecurityTest,NodePropertyEncryptionServiceTest,NodeControllerAspectTest,DocumentControllerCheckoutTest,ContentTypeControllerPreviewSemanticsTest,SearchIndexServiceSubtreeReindexTest}"
 FRONTEND_TEST_PATHS="${FRONTEND_TEST_PATHS:-src/services/propertyEncryptionService.test.ts src/pages/PropertyEncryptionOperationsPage.test.tsx src/utils/propertyRedactionUtils.test.ts}"
