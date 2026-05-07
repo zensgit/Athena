@@ -9,6 +9,7 @@ jest.mock('services/oauthCredentialAdminService', () => ({
     listCredentials: jest.fn(),
     requireReauth: jest.fn(),
     refreshNow: jest.fn(),
+    revoke: jest.fn(),
   },
 }));
 
@@ -156,5 +157,105 @@ test('does not require reauthorization when confirmation is cancelled', async ()
   fireEvent.click(screen.getByRole('button', { name: 'Require Reauth' }));
 
   expect(mockedOAuthCredentialAdminService.requireReauth).not.toHaveBeenCalled();
+  confirmSpy.mockRestore();
+});
+
+test('Provider Revoke is enabled for GOOGLE rows with a stored token', async () => {
+  render(<OAuthCredentialAdminPage />);
+  await screen.findByText('MAIL_ACCOUNT');
+
+  const button = await screen.findByRole('button', { name: 'Provider Revoke' });
+  expect((button as HTMLButtonElement).disabled).toBe(false);
+});
+
+test('Provider Revoke is disabled for non-GOOGLE rows', async () => {
+  mockedOAuthCredentialAdminService.listCredentials.mockResolvedValue([
+    { ...credential, provider: 'MICROSOFT' },
+  ]);
+
+  render(<OAuthCredentialAdminPage />);
+  await screen.findByText('MICROSOFT');
+
+  const button = await screen.findByRole('button', { name: 'Provider Revoke' });
+  expect((button as HTMLButtonElement).disabled).toBe(true);
+});
+
+test('Provider Revoke is disabled for GOOGLE rows with no stored token', async () => {
+  mockedOAuthCredentialAdminService.listCredentials.mockResolvedValue([
+    {
+      ...credential,
+      accessTokenStored: false,
+      refreshTokenStored: false,
+      connected: false,
+    },
+  ]);
+
+  render(<OAuthCredentialAdminPage />);
+  await screen.findByText('MAIL_ACCOUNT');
+
+  const button = await screen.findByRole('button', { name: 'Provider Revoke' });
+  expect((button as HTMLButtonElement).disabled).toBe(true);
+});
+
+test('does not revoke OAuth token when confirmation is cancelled', async () => {
+  const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(false);
+
+  render(<OAuthCredentialAdminPage />);
+  await screen.findByText('MAIL_ACCOUNT');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Provider Revoke' }));
+
+  expect(mockedOAuthCredentialAdminService.revoke).not.toHaveBeenCalled();
+  confirmSpy.mockRestore();
+});
+
+test('revokes OAuth token at the provider and replaces the row from the redacted response', async () => {
+  const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
+  mockedOAuthCredentialAdminService.revoke.mockResolvedValue({
+    ...credential,
+    accessTokenStored: false,
+    refreshTokenStored: false,
+    connected: false,
+    tokenExpiresAt: null,
+  });
+
+  render(<OAuthCredentialAdminPage />);
+  await screen.findByText('MAIL_ACCOUNT');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Provider Revoke' }));
+
+  await waitFor(() => {
+    expect(mockedOAuthCredentialAdminService.revoke).toHaveBeenCalledWith('credential-1');
+  });
+  // After a successful revoke the row's stored-token flags flip to false, which
+  // re-disables the Provider Revoke button via the (no stored token) guard.
+  await waitFor(() => {
+    const button = screen.getByRole('button', { name: 'Provider Revoke' }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+  });
+
+  confirmSpy.mockRestore();
+});
+
+test('surfaces revoke provider errors and reloads inventory', async () => {
+  const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
+  mockedOAuthCredentialAdminService.revoke.mockRejectedValue({
+    response: {
+      data: {
+        message: 'OAUTH_REVOKE_FAILED: provider returned 500',
+      },
+    },
+  });
+
+  render(<OAuthCredentialAdminPage />);
+  await screen.findByText('MAIL_ACCOUNT');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Provider Revoke' }));
+
+  expect(await screen.findByText('OAUTH_REVOKE_FAILED: provider returned 500')).toBeTruthy();
+  await waitFor(() => {
+    expect(mockedOAuthCredentialAdminService.listCredentials).toHaveBeenCalledTimes(2);
+  });
+
   confirmSpy.mockRestore();
 });

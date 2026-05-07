@@ -63,6 +63,7 @@ const OAuthCredentialAdminPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [reauthCredentialId, setReauthCredentialId] = useState<string | null>(null);
   const [refreshCredentialId, setRefreshCredentialId] = useState<string | null>(null);
+  const [revokeCredentialId, setRevokeCredentialId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const loadCredentials = async (
@@ -151,6 +152,26 @@ const OAuthCredentialAdminPage: React.FC = () => {
       await loadCredentials(ownerType, provider, { preserveError: true });
     } finally {
       setRefreshCredentialId(null);
+    }
+  };
+
+  const handleRevoke = async (credential: OAuthCredentialInventoryItem) => {
+    const confirmed = window.confirm(
+      `Revoke OAuth token at the provider for ${credential.ownerType} ${credential.ownerId}? This contacts Google to invalidate the token. The owner must reconnect afterwards. This is different from Require Reauth, which only clears Athena's local copy.`
+    );
+    if (!confirmed) {
+      return;
+    }
+    setRevokeCredentialId(credential.id);
+    setError(null);
+    try {
+      const updated = await oauthCredentialAdminService.revoke(credential.id);
+      setCredentials((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+    } catch (err) {
+      setError(resolveErrorMessage(err, 'Failed to revoke OAuth token at the provider.'));
+      await loadCredentials(ownerType, provider, { preserveError: true });
+    } finally {
+      setRevokeCredentialId(null);
     }
   };
 
@@ -310,6 +331,7 @@ const OAuthCredentialAdminPage: React.FC = () => {
                             disabled={
                               refreshCredentialId === credential.id
                               || reauthCredentialId === credential.id
+                              || revokeCredentialId === credential.id
                               || (!credential.refreshTokenStored && !credential.credentialKeyConfigured)
                             }
                           >
@@ -323,10 +345,26 @@ const OAuthCredentialAdminPage: React.FC = () => {
                             disabled={
                               reauthCredentialId === credential.id
                               || refreshCredentialId === credential.id
+                              || revokeCredentialId === credential.id
                               || (!credential.connected && !credential.accessTokenStored && !credential.refreshTokenStored)
                             }
                           >
                             {reauthCredentialId === credential.id ? 'Clearing...' : 'Require Reauth'}
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            color="error"
+                            size="small"
+                            onClick={() => void handleRevoke(credential)}
+                            disabled={
+                              revokeCredentialId === credential.id
+                              || refreshCredentialId === credential.id
+                              || reauthCredentialId === credential.id
+                              || credential.provider !== 'GOOGLE'
+                              || (!credential.accessTokenStored && !credential.refreshTokenStored)
+                            }
+                          >
+                            {revokeCredentialId === credential.id ? 'Revoking...' : 'Provider Revoke'}
                           </Button>
                         </Stack>
                       </TableCell>

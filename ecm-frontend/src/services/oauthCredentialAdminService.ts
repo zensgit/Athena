@@ -49,6 +49,10 @@ class OAuthCredentialAdminService {
   async refreshNow(credentialId: string): Promise<OAuthCredentialInventoryItem> {
     return api.post<OAuthCredentialInventoryItem>(`${BASE_URL}/${credentialId}/refresh-now`);
   }
+
+  async revoke(credentialId: string): Promise<OAuthCredentialInventoryItem> {
+    return api.post<OAuthCredentialInventoryItem>(`${BASE_URL}/${credentialId}/revoke`);
+  }
 }
 
 const oauthCredentialAdminService = new OAuthCredentialAdminService();
