@@ -45,17 +45,35 @@ const statusChip = (label: string, active: boolean) => (
   />
 );
 
+const resolveErrorMessage = (err: unknown, fallback: string): string => {
+  const responseMessage = (err as { response?: { data?: { message?: unknown } } })?.response?.data?.message;
+  if (typeof responseMessage === 'string' && responseMessage.trim()) {
+    return responseMessage.trim();
+  }
+  if (err instanceof Error && err.message) {
+    return err.message;
+  }
+  return fallback;
+};
+
 const OAuthCredentialAdminPage: React.FC = () => {
   const [credentials, setCredentials] = useState<OAuthCredentialInventoryItem[]>([]);
   const [ownerType, setOwnerType] = useState('');
   const [provider, setProvider] = useState('');
   const [loading, setLoading] = useState(false);
   const [reauthCredentialId, setReauthCredentialId] = useState<string | null>(null);
+  const [refreshCredentialId, setRefreshCredentialId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const loadCredentials = async (nextOwnerType = ownerType, nextProvider = provider) => {
+  const loadCredentials = async (
+    nextOwnerType = ownerType,
+    nextProvider = provider,
+    options: { preserveError?: boolean } = {}
+  ) => {
     setLoading(true);
-    setError(null);
+    if (!options.preserveError) {
+      setError(null);
+    }
     try {
       const result = await oauthCredentialAdminService.listCredentials({
         ownerType: nextOwnerType,
@@ -63,7 +81,7 @@ const OAuthCredentialAdminPage: React.FC = () => {
       });
       setCredentials(result);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load OAuth credential inventory.');
+      setError(resolveErrorMessage(err, 'Failed to load OAuth credential inventory.'));
     } finally {
       setLoading(false);
     }
@@ -80,7 +98,7 @@ const OAuthCredentialAdminPage: React.FC = () => {
       })
       .catch((err) => {
         if (active) {
-          setError(err instanceof Error ? err.message : 'Failed to load OAuth credential inventory.');
+          setError(resolveErrorMessage(err, 'Failed to load OAuth credential inventory.'));
         }
       })
       .finally(() => {
@@ -110,9 +128,29 @@ const OAuthCredentialAdminPage: React.FC = () => {
       const updated = await oauthCredentialAdminService.requireReauth(credential.id);
       setCredentials((current) => current.map((item) => (item.id === updated.id ? updated : item)));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to require OAuth reauthorization.');
+      setError(resolveErrorMessage(err, 'Failed to require OAuth reauthorization.'));
     } finally {
       setReauthCredentialId(null);
+    }
+  };
+
+  const handleRefreshNow = async (credential: OAuthCredentialInventoryItem) => {
+    const confirmed = window.confirm(
+      `Refresh OAuth token now for ${credential.ownerType} ${credential.ownerId}? If the provider rejects the refresh token, Athena may require the owner to reconnect.`
+    );
+    if (!confirmed) {
+      return;
+    }
+    setRefreshCredentialId(credential.id);
+    setError(null);
+    try {
+      const updated = await oauthCredentialAdminService.refreshNow(credential.id);
+      setCredentials((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+    } catch (err) {
+      setError(resolveErrorMessage(err, 'Failed to refresh OAuth credential.'));
+      await loadCredentials(ownerType, provider, { preserveError: true });
+    } finally {
+      setRefreshCredentialId(null);
     }
   };
 
@@ -264,18 +302,33 @@ const OAuthCredentialAdminPage: React.FC = () => {
                       <TableCell>{formatDateTime(credential.tokenExpiresAt)}</TableCell>
                       <TableCell>{formatDateTime(credential.updatedAt || credential.createdAt)}</TableCell>
                       <TableCell align="right">
-                        <Button
-                          variant="outlined"
-                          color="warning"
-                          size="small"
-                          onClick={() => void handleRequireReauth(credential)}
-                          disabled={
-                            reauthCredentialId === credential.id
-                            || (!credential.connected && !credential.accessTokenStored && !credential.refreshTokenStored)
-                          }
-                        >
-                          {reauthCredentialId === credential.id ? 'Clearing...' : 'Require Reauth'}
-                        </Button>
+                        <Stack direction="row" spacing={1} justifyContent="flex-end">
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            onClick={() => void handleRefreshNow(credential)}
+                            disabled={
+                              refreshCredentialId === credential.id
+                              || reauthCredentialId === credential.id
+                              || (!credential.refreshTokenStored && !credential.credentialKeyConfigured)
+                            }
+                          >
+                            {refreshCredentialId === credential.id ? 'Refreshing...' : 'Refresh Now'}
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            color="warning"
+                            size="small"
+                            onClick={() => void handleRequireReauth(credential)}
+                            disabled={
+                              reauthCredentialId === credential.id
+                              || refreshCredentialId === credential.id
+                              || (!credential.connected && !credential.accessTokenStored && !credential.refreshTokenStored)
+                            }
+                          >
+                            {reauthCredentialId === credential.id ? 'Clearing...' : 'Require Reauth'}
+                          </Button>
+                        </Stack>
                       </TableCell>
                     </TableRow>
                   ))}

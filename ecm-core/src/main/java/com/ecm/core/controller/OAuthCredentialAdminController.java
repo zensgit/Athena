@@ -47,4 +47,13 @@ public class OAuthCredentialAdminController {
     public ResponseEntity<OAuthCredentialInventoryItem> requireReauth(@PathVariable UUID credentialId) {
         return ResponseEntity.ok(oauthCredentialAdminService.requireReauth(credentialId));
     }
+
+    @PostMapping("/{credentialId}/refresh-now")
+    @Operation(
+        summary = "Refresh OAuth credential now",
+        description = "Forces an OAuth refresh-token grant for the credential owner and returns the redacted inventory row."
+    )
+    public ResponseEntity<OAuthCredentialInventoryItem> refreshNow(@PathVariable UUID credentialId) {
+        return ResponseEntity.ok(oauthCredentialAdminService.refreshNow(credentialId));
+    }
 }

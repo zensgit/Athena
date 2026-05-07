@@ -124,6 +124,71 @@ class OAuthCredentialServiceTest {
     }
 
     @Test
+    @DisplayName("refreshAccessTokenNow always performs provider refresh through adapter")
+    void refreshAccessTokenNowAlwaysPerformsProviderRefreshThroughAdapter() {
+        UUID ownerId = UUID.randomUUID();
+        OAuthCredentialOwner owner = new OAuthCredentialOwner(
+            OWNER_TYPE,
+            ownerId,
+            "gmail",
+            OAuthProviderType.GOOGLE,
+            null,
+            null,
+            "https://mail.google.com/",
+            null,
+            "old-access",
+            "refresh-token",
+            LocalDateTime.now().plusHours(1)
+        );
+        when(adapter.loadOwner(ownerId)).thenReturn(owner);
+        when(adapter.buildProviderEnvKey(OAuthProviderType.GOOGLE, "CLIENT_ID")).thenReturn("ECM_MAIL_OAUTH_GOOGLE_CLIENT_ID");
+        when(adapter.buildProviderEnvKey(OAuthProviderType.GOOGLE, "CLIENT_SECRET")).thenReturn("ECM_MAIL_OAUTH_GOOGLE_CLIENT_SECRET");
+        when(adapter.buildProviderEnvKey(OAuthProviderType.GOOGLE, "SCOPE")).thenReturn("ECM_MAIL_OAUTH_GOOGLE_SCOPE");
+        when(adapter.buildProviderEnvKey(OAuthProviderType.GOOGLE, "TOKEN_ENDPOINT")).thenReturn("ECM_MAIL_OAUTH_GOOGLE_TOKEN_ENDPOINT");
+        when(environment.getProperty("ECM_MAIL_OAUTH_GOOGLE_CLIENT_ID")).thenReturn("client-id");
+        when(environment.getProperty("ECM_MAIL_OAUTH_GOOGLE_CLIENT_SECRET")).thenReturn("client-secret");
+        when(environment.getProperty("ECM_MAIL_OAUTH_GOOGLE_SCOPE")).thenReturn(null);
+        when(environment.getProperty("ECM_MAIL_OAUTH_GOOGLE_TOKEN_ENDPOINT")).thenReturn(null);
+        when(adapter.saveTokens(
+            eq(ownerId),
+            eq("forced-access"),
+            eq("forced-refresh"),
+            org.mockito.ArgumentMatchers.any(LocalDateTime.class)
+        )).thenReturn(new OAuthCredentialOwner(
+            OWNER_TYPE,
+            ownerId,
+            "gmail",
+            OAuthProviderType.GOOGLE,
+            null,
+            null,
+            "https://mail.google.com/",
+            null,
+            "forced-access",
+            "forced-refresh",
+            LocalDateTime.now().plusHours(1)
+        ));
+
+        server.expect(requestTo("https://oauth2.googleapis.com/token"))
+            .andExpect(method(HttpMethod.POST))
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("grant_type=refresh_token")))
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("refresh_token=refresh-token")))
+            .andRespond(withSuccess("""
+                {"access_token":"forced-access","refresh_token":"forced-refresh","expires_in":3600}
+                """, MediaType.APPLICATION_JSON));
+
+        String token = service.refreshAccessTokenNow(OWNER_TYPE, ownerId);
+
+        assertEquals("forced-access", token);
+        verify(adapter).saveTokens(
+            eq(ownerId),
+            eq("forced-access"),
+            eq("forced-refresh"),
+            org.mockito.ArgumentMatchers.any(LocalDateTime.class)
+        );
+        server.verify();
+    }
+
+    @Test
     @DisplayName("invalid_grant clears tokens and raises reauth-required")
     void invalidGrantClearsTokensAndRaisesReauthRequired() {
         UUID ownerId = UUID.randomUUID();

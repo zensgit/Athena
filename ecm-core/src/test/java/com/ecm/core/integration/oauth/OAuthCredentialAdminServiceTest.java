@@ -92,4 +92,44 @@ class OAuthCredentialAdminServiceTest {
 
         assertThrows(ResourceNotFoundException.class, () -> oauthCredentialAdminService.requireReauth(credentialId));
     }
+
+    @Test
+    @DisplayName("refreshNow refreshes owner token and returns redacted inventory")
+    void refreshNowRefreshesOwnerTokenAndReturnsRedactedInventory() {
+        UUID credentialId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        UUID ownerId = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        OAuthCredentialInventoryItem item = new OAuthCredentialInventoryItem(
+            credentialId,
+            "MAIL_ACCOUNT",
+            ownerId,
+            OAuthProviderType.GOOGLE,
+            true,
+            false,
+            true,
+            true,
+            true,
+            true,
+            true,
+            LocalDateTime.parse("2026-05-06T12:00:00"),
+            LocalDateTime.parse("2026-05-01T09:00:00"),
+            LocalDateTime.parse("2026-05-06T11:00:00")
+        );
+        when(oauthCredentialRepository.findOwnerReferenceById(credentialId))
+            .thenReturn(Optional.of(new OAuthCredentialOwnerReference(credentialId, "MAIL_ACCOUNT", ownerId)));
+        when(oauthCredentialRepository.findInventoryItemById(credentialId)).thenReturn(Optional.of(item));
+
+        OAuthCredentialInventoryItem result = oauthCredentialAdminService.refreshNow(credentialId);
+
+        assertEquals(item, result);
+        verify(oauthCredentialService).refreshAccessTokenNow("MAIL_ACCOUNT", ownerId);
+    }
+
+    @Test
+    @DisplayName("refreshNow rejects unknown credential id")
+    void refreshNowRejectsUnknownCredentialId() {
+        UUID credentialId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        when(oauthCredentialRepository.findOwnerReferenceById(credentialId)).thenReturn(Optional.empty());
+
+        assertThrows(ResourceNotFoundException.class, () -> oauthCredentialAdminService.refreshNow(credentialId));
+    }
 }

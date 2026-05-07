@@ -2,6 +2,7 @@ package com.ecm.core.controller;
 
 import com.ecm.core.integration.oauth.OAuthCredentialAdminService;
 import com.ecm.core.integration.oauth.OAuthCredentialInventoryItem;
+import com.ecm.core.integration.oauth.OAuthReauthRequiredException;
 import com.ecm.core.integration.oauth.OAuthProviderType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -34,6 +35,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest(OAuthCredentialAdminController.class)
 @ContextConfiguration(classes = {
     OAuthCredentialAdminController.class,
+    RestExceptionHandler.class,
     OAuthCredentialAdminControllerSecurityTest.TestSecurityConfig.class
 })
 class OAuthCredentialAdminControllerSecurityTest {
@@ -75,6 +77,8 @@ class OAuthCredentialAdminControllerSecurityTest {
         mockMvc.perform(get("/api/v1/admin/oauth-credentials"))
             .andExpect(status().isForbidden());
         mockMvc.perform(post("/api/v1/admin/oauth-credentials/11111111-2222-3333-4444-555555555555/require-reauth"))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/admin/oauth-credentials/11111111-2222-3333-4444-555555555555/refresh-now"))
             .andExpect(status().isForbidden());
     }
 
@@ -159,5 +163,59 @@ class OAuthCredentialAdminControllerSecurityTest {
             .andExpect(jsonPath("$.refreshToken").doesNotExist());
 
         verify(oauthCredentialAdminService).requireReauth(credentialId);
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("admin can refresh OAuth credential without token disclosure")
+    void adminCanRefreshNow() throws Exception {
+        UUID credentialId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        UUID ownerId = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        when(oauthCredentialAdminService.refreshNow(credentialId)).thenReturn(
+            new OAuthCredentialInventoryItem(
+                credentialId,
+                "MAIL_ACCOUNT",
+                ownerId,
+                OAuthProviderType.GOOGLE,
+                true,
+                false,
+                true,
+                true,
+                true,
+                true,
+                true,
+                LocalDateTime.parse("2026-05-06T12:00:00"),
+                LocalDateTime.parse("2026-05-01T09:00:00"),
+                LocalDateTime.parse("2026-05-06T11:00:00")
+            )
+        );
+
+        mockMvc.perform(post("/api/v1/admin/oauth-credentials/{credentialId}/refresh-now", credentialId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id", is(credentialId.toString())))
+            .andExpect(jsonPath("$.connected", is(true)))
+            .andExpect(jsonPath("$.accessTokenStored", is(true)))
+            .andExpect(jsonPath("$.refreshTokenStored", is(true)))
+            .andExpect(jsonPath("$.accessToken").doesNotExist())
+            .andExpect(jsonPath("$.refreshToken").doesNotExist());
+
+        verify(oauthCredentialAdminService).refreshNow(credentialId);
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("refresh OAuth credential reports reauth-required as conflict")
+    void refreshNowReportsReauthRequiredAsConflict() throws Exception {
+        UUID credentialId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        UUID ownerId = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        when(oauthCredentialAdminService.refreshNow(credentialId)).thenThrow(
+            new OAuthReauthRequiredException("MAIL_ACCOUNT", ownerId, "invalid_grant", "Token expired")
+        );
+
+        mockMvc.perform(post("/api/v1/admin/oauth-credentials/{credentialId}/refresh-now", credentialId))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.message", is("OAUTH_REAUTH_REQUIRED: invalid_grant - Token expired")));
+
+        verify(oauthCredentialAdminService).refreshNow(credentialId);
     }
 }

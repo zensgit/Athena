@@ -122,6 +122,15 @@ public class OAuthCredentialService {
         return response.accessToken();
     }
 
+    public String refreshAccessTokenNow(String ownerType, UUID ownerId) {
+        AdapterContext context = loadContext(ownerType, ownerId);
+        OAuthTokenResponse response = refreshAccessToken(context);
+        LocalDateTime expiresAt = computeExpiresAt(response.expiresIn());
+        OAuthCredentialOwner saved = context.adapter().saveTokens(ownerId, response.accessToken(), response.refreshToken(), expiresAt);
+        sessionStore.put(new OwnerKey(saved.ownerType(), saved.ownerId()), new OAuthSession(response.accessToken(), expiresAt));
+        return response.accessToken();
+    }
+
     public void clearTokens(String ownerType, UUID ownerId) {
         AdapterContext context = loadContext(ownerType, ownerId);
         context.adapter().clearTokens(ownerId);

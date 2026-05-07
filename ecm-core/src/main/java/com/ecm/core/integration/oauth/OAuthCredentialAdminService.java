@@ -29,6 +29,15 @@ public class OAuthCredentialAdminService {
             .orElseThrow(() -> new ResourceNotFoundException("OAuth credential not found after reauth reset: " + credentialId));
     }
 
+    @Transactional
+    public OAuthCredentialInventoryItem refreshNow(UUID credentialId) {
+        OAuthCredentialOwnerReference owner = oauthCredentialRepository.findOwnerReferenceById(credentialId)
+            .orElseThrow(() -> new ResourceNotFoundException("OAuth credential not found: " + credentialId));
+        oauthCredentialService.refreshAccessTokenNow(owner.ownerType(), owner.ownerId());
+        return oauthCredentialRepository.findInventoryItemById(credentialId)
+            .orElseThrow(() -> new ResourceNotFoundException("OAuth credential not found after token refresh: " + credentialId));
+    }
+
     private String normalize(String value) {
         if (value == null || value.isBlank()) {
             return null;

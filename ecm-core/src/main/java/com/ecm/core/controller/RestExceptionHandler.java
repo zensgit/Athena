@@ -7,6 +7,7 @@ import com.ecm.core.exception.ModelValidationException;
 import com.ecm.core.exception.NodeNotFoundException;
 import com.ecm.core.exception.PropertyValidationException;
 import com.ecm.core.exception.ResourceNotFoundException;
+import com.ecm.core.integration.oauth.OAuthReauthRequiredException;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
@@ -42,6 +43,15 @@ public class RestExceptionHandler {
         // and Playwright traces, not just an opaque "Internal Server Error".
         log.error("Internal state error at {}: {}", request.getRequestURI(), ex.getMessage(), ex);
         return build(HttpStatus.INTERNAL_SERVER_ERROR, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(OAuthReauthRequiredException.class)
+    public ResponseEntity<ApiError> handleOAuthReauthRequired(
+        OAuthReauthRequiredException ex,
+        HttpServletRequest request
+    ) {
+        log.debug("OAuth reauthorization required at {}: {}", request.getRequestURI(), ex.getMessage());
+        return build(HttpStatus.CONFLICT, ex.getMessage(), request);
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)

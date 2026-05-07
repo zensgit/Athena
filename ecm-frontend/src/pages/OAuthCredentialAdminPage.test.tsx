@@ -8,6 +8,7 @@ jest.mock('services/oauthCredentialAdminService', () => ({
   default: {
     listCredentials: jest.fn(),
     requireReauth: jest.fn(),
+    refreshNow: jest.fn(),
   },
 }));
 
@@ -97,6 +98,50 @@ test('requires reauthorization by clearing stored token status', async () => {
   await waitFor(() => {
     const button = screen.getByRole('button', { name: 'Require Reauth' }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
+  });
+
+  confirmSpy.mockRestore();
+});
+
+test('refreshes OAuth credential token status', async () => {
+  const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
+  mockedOAuthCredentialAdminService.refreshNow.mockResolvedValue({
+    ...credential,
+    tokenExpiresAt: '2030-01-02T03:04:05Z',
+    updatedAt: '2030-01-02T03:00:00Z',
+  });
+
+  render(<OAuthCredentialAdminPage />);
+  await screen.findByText('MAIL_ACCOUNT');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh Now' }));
+
+  await waitFor(() => {
+    expect(mockedOAuthCredentialAdminService.refreshNow).toHaveBeenCalledWith('credential-1');
+  });
+  expect((await screen.findAllByText(/2030/)).length).toBeGreaterThan(0);
+
+  confirmSpy.mockRestore();
+});
+
+test('surfaces refresh provider errors and reloads inventory', async () => {
+  const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
+  mockedOAuthCredentialAdminService.refreshNow.mockRejectedValue({
+    response: {
+      data: {
+        message: 'OAUTH_REAUTH_REQUIRED: invalid_grant - Token expired',
+      },
+    },
+  });
+
+  render(<OAuthCredentialAdminPage />);
+  await screen.findByText('MAIL_ACCOUNT');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh Now' }));
+
+  expect(await screen.findByText('OAUTH_REAUTH_REQUIRED: invalid_grant - Token expired')).toBeTruthy();
+  await waitFor(() => {
+    expect(mockedOAuthCredentialAdminService.listCredentials).toHaveBeenCalledTimes(2);
   });
 
   confirmSpy.mockRestore();
