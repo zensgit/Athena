@@ -29,6 +29,7 @@ Codex integrated the branches onto `main` in A -> B -> C order and reviewed the 
 | Operator doc referenced a `MAIL_AUTOMATION_ADMIN` role that does not exist in the current controller gate. | Operators would look for the wrong role when debugging `403` responses. | Reworded to `ROLE_ADMIN` and cited the actual `@PreAuthorize("hasRole('ADMIN')")` gate. |
 | Operator doc described `{id}` as numeric, but `MailAccount.id` is a UUID. | Manual smoke commands could mislead operators. | Reworded the checklist to say UUID. |
 | Operator doc described a per-account "Fetch now" action and diagnostics capability/watermark fields not present in `MailAutomationController` / `MailFetcherService.MailDiagnosticsResult`. | The runbook would promise fields/actions the product does not expose. | Reworded the checklist to the existing global fetch endpoint and current diagnostics payload fields. |
+| Post-push CI `Phase 5 Mocked Regression Gate` returned HTML `200` from the static dev server for the unmocked `/api/v1/integration/mail/provider-presets` path. | The page accepted the non-array payload, then `providerPresets.map(...)` triggered the React error boundary in existing mail automation mocked specs. | Guarded the preset response with `Array.isArray(...)`, added a malformed-response regression test, and reran the full mocked gate locally. |
 
 ## Contract Check
 
@@ -77,6 +78,15 @@ CI=true npm test -- --runTestsByPath src/pages/MailAutomationPage.presets.test.t
 
 Result: passed. `6 / 6` tests passed in `MailAutomationPage.presets.test.tsx`.
 
+Follow-up after the first CI run exposed the mocked-gate non-array payload path:
+
+```bash
+cd ecm-frontend
+npm test -- --runTestsByPath src/pages/MailAutomationPage.presets.test.tsx --watchAll=false
+```
+
+Result: passed. `7 / 7` tests passed in `MailAutomationPage.presets.test.tsx`, including the malformed `provider-presets` payload regression.
+
 ```bash
 cd ecm-frontend
 npm run lint
@@ -96,6 +106,19 @@ git diff --check
 ```
 
 Result: passed. No whitespace errors.
+
+```bash
+CI=false bash scripts/phase5-regression.sh
+```
+
+Result: passed. `31 / 31` Playwright mocked Phase 5 tests passed, including:
+
+- `e2e/mail-automation-trigger-fetch.mock.spec.ts`
+- `e2e/mail-automation-diagnostics-export.mock.spec.ts`
+- `e2e/mail-automation-processed-management.mock.spec.ts`
+- `e2e/mail-automation-phase6-p1.mock.spec.ts`
+
+GitHub Actions run `25501275725` before this follow-up fix was `5 / 6` green: Backend Verify, Frontend Build & Test, Phase C Security Verification, Property Encryption Closeout Gate, Frontend E2E Core Gate, and Acceptance Smoke all succeeded; only `Phase 5 Mocked Regression Gate` failed for the malformed static-server fallback described above.
 
 ## Remaining Work
 

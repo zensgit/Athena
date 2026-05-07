@@ -239,4 +239,22 @@ describe('MailAutomationPage provider preset dropdown', () => {
     // None of the fetched presets are present.
     expect(within(listbox).queryByText('阿里云企业邮箱')).toBeNull();
   });
+
+  test('malformed preset response degrades to Custom instead of crashing', async () => {
+    mockedMailService.listProviderPresets.mockResolvedValueOnce('<html>dev server fallback</html>' as unknown as MailProviderPreset[]);
+
+    render(<MailAutomationPage />);
+
+    await waitFor(() => {
+      expect(mockedMailService.listProviderPresets).toHaveBeenCalledTimes(1);
+    });
+
+    const dialog = await openAccountDialog();
+    const presetSelect = within(dialog).getByRole('combobox', { name: 'Provider preset' });
+    fireEvent.mouseDown(presetSelect);
+
+    const listbox = await screen.findByRole('listbox');
+    expect(within(listbox).getByText('Custom')).toBeTruthy();
+    expect(within(listbox).queryByText('dev server fallback')).toBeNull();
+  });
 });

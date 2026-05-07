@@ -636,7 +636,7 @@ const MailAutomationPage: React.FC = () => {
       .listProviderPresets()
       .then((presets) => {
         if (!cancelled) {
-          setProviderPresets(presets);
+          setProviderPresets(Array.isArray(presets) ? presets : []);
         }
       })
       .catch(() => {
