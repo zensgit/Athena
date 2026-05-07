@@ -210,6 +210,76 @@ class MailAutomationControllerSecurityTest {
     }
 
     @Test
+    @DisplayName("Provider presets endpoint requires authentication")
+    void providerPresetsRequireAuthentication() throws Exception {
+        mockMvc.perform(get("/api/v1/integration/mail/provider-presets"))
+            .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    @DisplayName("Provider presets endpoint requires admin role")
+    void providerPresetsRequireAdminRole() throws Exception {
+        mockMvc.perform(get("/api/v1/integration/mail/provider-presets"))
+            .andExpect(status().isForbidden());
+
+        Mockito.verifyNoInteractions(fetcherService, accountRepository);
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("Admin gets the 5 IMAP presets in fixed order, with no credential fields exposed")
+    void providerPresetsAllowAdminAndExposeNoSecrets() throws Exception {
+        // The response shape is the contract Package B consumes. Ordering and
+        // host/port/security values are load-bearing — DO NOT relax these
+        // assertions without coordinating with Package B.
+        String body = mockMvc.perform(get("/api/v1/integration/mail/provider-presets"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$").isArray())
+            .andExpect(jsonPath("$.length()").value(5))
+            // Order: ALIYUN_QIYE, TENCENT_EXMAIL, TENCENT_EXMAIL_OVERSEAS, MAIL_263, MAIL_263_OVERSEAS.
+            .andExpect(jsonPath("$[0].id").value("ALIYUN_QIYE"))
+            .andExpect(jsonPath("$[0].imapHost").value("imap.qiye.aliyun.com"))
+            .andExpect(jsonPath("$[0].imapPort").value(993))
+            .andExpect(jsonPath("$[0].imapSecurity").value("SSL"))
+            .andExpect(jsonPath("$[1].id").value("TENCENT_EXMAIL"))
+            .andExpect(jsonPath("$[1].imapHost").value("imap.exmail.qq.com"))
+            .andExpect(jsonPath("$[1].imapPort").value(993))
+            .andExpect(jsonPath("$[1].imapSecurity").value("SSL"))
+            .andExpect(jsonPath("$[2].id").value("TENCENT_EXMAIL_OVERSEAS"))
+            .andExpect(jsonPath("$[2].imapHost").value("hwimap.exmail.qq.com"))
+            .andExpect(jsonPath("$[2].imapPort").value(993))
+            .andExpect(jsonPath("$[2].imapSecurity").value("SSL"))
+            .andExpect(jsonPath("$[3].id").value("MAIL_263"))
+            .andExpect(jsonPath("$[3].imapHost").value("imap.263.net"))
+            .andExpect(jsonPath("$[3].imapPort").value(993))
+            .andExpect(jsonPath("$[3].imapSecurity").value("SSL"))
+            .andExpect(jsonPath("$[4].id").value("MAIL_263_OVERSEAS"))
+            .andExpect(jsonPath("$[4].imapHost").value("imapw.263.net"))
+            .andExpect(jsonPath("$[4].imapPort").value(993))
+            .andExpect(jsonPath("$[4].imapSecurity").value("SSL"))
+            // Each preset has a Chinese label; presence is verified, exact wording
+            // is not — we only need the field to be non-blank.
+            .andExpect(jsonPath("$[0].label").isNotEmpty())
+            .andExpect(jsonPath("$[1].label").isNotEmpty())
+            .andExpect(jsonPath("$[2].label").isNotEmpty())
+            .andExpect(jsonPath("$[3].label").isNotEmpty())
+            .andExpect(jsonPath("$[4].label").isNotEmpty())
+            .andReturn().getResponse().getContentAsString();
+
+        // Hard guarantee: the static metadata response must never carry any
+        // credential field. These names match the property paths used by
+        // MailAccount/MailAccountResponse, so a regression that accidentally
+        // wires in account credentials would surface here.
+        org.assertj.core.api.Assertions.assertThat(body)
+            .doesNotContain("\"password\"")
+            .doesNotContain("\"oauthAccessToken\"")
+            .doesNotContain("\"oauthRefreshToken\"")
+            .doesNotContain("\"oauthClientSecret\"")
+            .doesNotContain("\"oauthClientId\"");
+    }
+
+    @Test
     @WithMockUser(roles = "ADMIN")
     @DisplayName("Admin can export mail diagnostics")
     void diagnosticsExportAllowsAdmin() throws Exception {

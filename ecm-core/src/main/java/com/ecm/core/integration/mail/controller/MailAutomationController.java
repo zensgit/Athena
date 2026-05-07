@@ -3,6 +3,8 @@ package com.ecm.core.integration.mail.controller;
 import com.ecm.core.integration.mail.model.MailAccount;
 import com.ecm.core.integration.mail.model.MailRule;
 import com.ecm.core.integration.mail.model.ProcessedMail;
+import com.ecm.core.integration.mail.preset.MailProviderPreset;
+import com.ecm.core.integration.mail.preset.MailProviderPresetResponse;
 import com.ecm.core.integration.mail.repository.MailAccountRepository;
 import com.ecm.core.integration.mail.repository.MailRuleRepository;
 import com.ecm.core.integration.mail.repository.ProcessedMailRepository;
@@ -29,6 +31,7 @@ import jakarta.transaction.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.LocalDate;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
@@ -209,6 +212,22 @@ public class MailAutomationController {
             .map(account -> MailAccountResponse.from(account, fetcherService.checkOAuthEnv(account)))
             .toList();
         return ResponseEntity.ok(accounts);
+    }
+
+    @GetMapping("/provider-presets")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(
+        summary = "List IMAP provider presets",
+        description = "Static IMAP host/port/security defaults for Chinese enterprise mailbox providers "
+            + "(Aliyun, Tencent exmail, 263). Used by the admin UI to pre-fill the create-account form. "
+            + "Response is metadata only — never includes any credential."
+    )
+    public ResponseEntity<List<MailProviderPresetResponse>> getProviderPresets() {
+        return ResponseEntity.ok(
+            Arrays.stream(MailProviderPreset.values())
+                .map(MailProviderPresetResponse::from)
+                .toList()
+        );
     }
 
     @PostMapping("/accounts")
