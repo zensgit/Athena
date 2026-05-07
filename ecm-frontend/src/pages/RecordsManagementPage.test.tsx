@@ -3,6 +3,7 @@ import React from 'react';
 import { Provider } from 'react-redux';
 import { configureStore } from '@reduxjs/toolkit';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { createTheme, ThemeProvider } from '@mui/material/styles';
 import { toast } from 'react-toastify';
 import RecordsManagementPage from './RecordsManagementPage';
 import recordsManagementService from 'services/recordsManagementService';
@@ -101,6 +102,16 @@ const toastErrorMock = toast.error as jest.Mock;
 
 jest.setTimeout(45000);
 
+const testTheme = createTheme({
+  components: {
+    MuiButtonBase: {
+      defaultProps: {
+        disableRipple: true,
+      },
+    },
+  },
+});
+
 const renderPage = () => {
   const store = configureStore({
     reducer: {
@@ -116,7 +127,9 @@ const renderPage = () => {
 
   return render(
     <Provider store={store}>
-      <RecordsManagementPage />
+      <ThemeProvider theme={testTheme}>
+        <RecordsManagementPage />
+      </ThemeProvider>
     </Provider>
   );
 };

@@ -43,16 +43,19 @@ Local checks run after cherry-picking A -> B -> C:
 | Diff hygiene | `git diff --check` | Pass |
 | Preflight syntax | `bash -n scripts/oauth-credential-admin-preflight.sh` | Pass |
 | OAuth admin preflight | `scripts/oauth-credential-admin-preflight.sh` | Pass: 36 backend targeted tests, 17 frontend targeted tests, lint, production build |
+| CI failure follow-up target | `cd ecm-frontend && CI=true npm test -- --runTestsByPath src/pages/RecordsManagementPage.test.tsx --testNamePattern='summarizes selected operations filters and clears them by scope' --watchAll=false --runInBand` | Pass: target test 1/1, 4.8s |
+| CI failure follow-up file | `cd ecm-frontend && CI=true npm test -- --runTestsByPath src/pages/RecordsManagementPage.test.tsx --watchAll=false --runInBand` | Pass: 82/82 |
 
 Notes:
 
 - The standalone 38-test backend command includes `OAuthCredentialPersistenceTest`; the preflight script intentionally keeps its existing faster 36-test backend set.
 - `OAuthCredentialAdminControllerSecurityTest.revokeReportsProviderFailureAs500` logs the expected synthetic 500 stack trace during the test. The suite still exits successfully.
 - `CI=true npm run build` emitted the existing CRA bundle-size advisory and no build failure.
+- Remote CI run `25497544404` passed Backend Verify and Phase C, then failed in Frontend Build & Test during full frontend unit tests. The failure was an existing heavy `RecordsManagementPage.test.tsx` interaction timing out after 45s with MUI `TouchRipple` / `TransitionGroup` act warnings. The follow-up fix disables MUI ripple in that test harness through a test-only theme wrapper; it does not change production UI code or OAuth runtime behavior.
 
 ## Remaining Work
 
-- Push these integration commits and wait for the remote CI gate.
+- Push the CI follow-up fix and wait for the remote CI gate.
 - Microsoft provider-side revoke remains a design follow-up because Microsoft does not provide a direct Google-style RFC 7009 revoke endpoint for this per-credential model.
 - CUSTOM provider revoke needs a modeled revoke endpoint contract before enabling the action for arbitrary providers.
 - Env-managed credential-key-only rows remain intentionally unsupported for provider-side revoke because Athena does not own the external secret material.
