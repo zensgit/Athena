@@ -11,8 +11,8 @@ been intentionally separate because each provider needs explicit revoke endpoint
 support and failure semantics.
 
 This change adds the per-row `Provider Revoke` action to the admin UI. The
-backend contract is fixed and is being implemented in parallel by Package A; the
-frontend consumes the agreed API shape only.
+backend contract is provided by the Google provider-side revoke backend slice;
+the frontend consumes that agreed API shape only.
 
 Backend contract consumed:
 
@@ -137,10 +137,9 @@ Result: passes.
 
 ## Remaining Work
 
-- Backend implementation of `POST /api/v1/admin/oauth-credentials/{id}/revoke`
-  is owned by Package A in this parallel slice. A live full-stack smoke is
-  deferred until the backend lands; the targeted UI tests stub the service so
-  the frontend gates are independent.
+- A live full-stack smoke remains useful after deployment because the targeted
+  UI tests stub the service. The local integration gate is
+  `scripts/oauth-credential-admin-preflight.sh`.
 - Provider-revoke coverage is currently scoped to GOOGLE. Extending to Microsoft
   or custom providers requires additional backend revoke-endpoint support and
   per-provider failure semantics, and is intentionally out of scope here.

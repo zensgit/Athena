@@ -4,7 +4,7 @@ Date: 2026-05-07
 
 ## Context
 
-The OAuth Credential Store admin surface is the cross-integration `/admin/oauth-credentials` view that lets administrators inspect and operate on stored OAuth credential rows aggregated by the generic `OAuthCredentialService` and per-owner `OAuthCredentialOwnerAdapter` implementations. It deliberately keeps token values out of every response and exposes a small, bounded set of write actions. This document records what has shipped, what is currently in flight as a parallel slice, and what remains as design follow-up so the next round of work can pick up cleanly without re-deriving the prior decisions.
+The OAuth Credential Store admin surface is the cross-integration `/admin/oauth-credentials` view that lets administrators inspect and operate on stored OAuth credential rows aggregated by the generic `OAuthCredentialService` and per-owner `OAuthCredentialOwnerAdapter` implementations. It deliberately keeps token values out of every response and exposes a small, bounded set of write actions. This document records what has shipped and what remains as design follow-up so the next round of work can pick up cleanly without re-deriving the prior decisions.
 
 ## Done (as of 2026-05-07)
 
@@ -17,13 +17,9 @@ The OAuth Credential Store admin surface is the cross-integration `/admin/oauth-
 - Refresh Now (forced refresh-token grant): `docs/OAUTH_CREDENTIAL_ADMIN_REFRESH_NOW_DESIGN_VERIFICATION_20260506.md`
   - `POST /api/v1/admin/oauth-credentials/{id}/refresh-now` forces a refresh-token grant via `OAuthCredentialService.refreshAccessTokenNow`, maps `OAuthReauthRequiredException` to HTTP 409, and never returns token values.
   - Per-row Refresh Now action with confirmation, error surfacing, and inventory reload after provider/config failure.
-
-## In-flight (parallel slice)
-
-A v1 Provider Revoke slice is being delivered in parallel branches and will be integrated by the user in order A then B:
-
-- Branch `claude/oauth-revoke-backend` adds `POST /api/v1/admin/oauth-credentials/{id}/revoke` for Google.
-- Branch `claude/oauth-revoke-ui` wires the per-row Provider Revoke control on `/admin/oauth-credentials` once the backend is integrated.
+- Provider Revoke (Google v1): `docs/OAUTH_CREDENTIAL_PROVIDER_REVOKE_BACKEND_DESIGN_VERIFICATION_20260507.md` and `docs/OAUTH_CREDENTIAL_PROVIDER_REVOKE_UI_DESIGN_VERIFICATION_20260507.md`
+  - `POST /api/v1/admin/oauth-credentials/{id}/revoke` calls Google's revoke endpoint for stored local tokens, then returns the redacted projection.
+  - Per-row Provider Revoke action is enabled only for Google credentials with a stored access or refresh token.
 
 v1 Provider Revoke scope is bounded to the following invariants:
 
@@ -31,7 +27,7 @@ v1 Provider Revoke scope is bounded to the following invariants:
 - Refresh token is preferred when available; access token is the fallback when no refresh token is stored.
 - On provider success or already-invalid response, Athena clears its locally stored tokens through the existing owner adapter path.
 - On provider 5xx or network failure, Athena preserves its locally stored tokens so the operator can retry without losing recovery state.
-- The unsupported-provider branch returns a deterministic error code and message so the UI can disable the action without inferring from generic 4xx/5xx.
+- The unsupported-provider branch returns HTTP 400 with a deterministic message. The current UI disables unsupported providers from row metadata instead of inferring from failed calls.
 
 ## v1 Revoke limitations / known gaps
 
