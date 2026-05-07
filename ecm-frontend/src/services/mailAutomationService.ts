@@ -578,7 +578,7 @@ class MailAutomationService {
   }
 
   async listProviderPresets(): Promise<MailProviderPreset[]> {
-    return api.get<MailProviderPreset[]>('/mail/automation/provider-presets');
+    return api.get<MailProviderPreset[]>('/integration/mail/provider-presets');
   }
 }
 

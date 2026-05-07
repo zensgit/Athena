@@ -10,7 +10,7 @@ Automation account form that fills those three fields from a backend-curated
 catalog.
 
 Backend contract is **fixed and consumed in parallel** (Package A is
-implementing the matching `GET /api/v1/mail/automation/provider-presets`
+implementing the matching `GET /api/v1/integration/mail/provider-presets`
 endpoint). The frontend treats the backend as the single source of truth —
 the page does not hard-code preset values.
 
@@ -42,13 +42,12 @@ The response NEVER includes credentials.
 - `MailProviderPresetId` and `MailProviderPreset` TypeScript types matching
   the backend contract verbatim.
 - `listProviderPresets(): Promise<MailProviderPreset[]>` calling
-  `api.get('/mail/automation/provider-presets')`. The shared `api`
-  instance prepends the `/api/v1` base URL, producing the brief-mandated
-  absolute path `/api/v1/mail/automation/provider-presets`. Note: existing
-  `MailAutomationService` methods use the `/integration/mail/...` prefix
-  because the legacy `MailAutomationController` is mounted there. The
-  preset endpoint deliberately follows the brief (Package A's contract)
-  rather than the legacy prefix.
+  `api.get('/integration/mail/provider-presets')`. The shared `api`
+  instance prepends the `/api/v1` base URL, producing the absolute path
+  `/api/v1/integration/mail/provider-presets`. This matches the prefix
+  every other `MailAutomationService` method uses (the controller is
+  mounted at `/api/v1/integration/mail`). Package A confirmed this is
+  the actual production path; the original brief misquoted it.
 
 ### State
 
