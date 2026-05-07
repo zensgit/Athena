@@ -8,7 +8,9 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.HttpStatusCodeException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
@@ -31,6 +33,7 @@ public class OAuthCredentialService {
     private static final String GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
     private static final String MICROSOFT_AUTH_URL_TEMPLATE = "https://login.microsoftonline.com/%s/oauth2/v2.0/authorize";
     private static final String GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
+    private static final String GOOGLE_REVOKE_URL = "https://oauth2.googleapis.com/revoke";
     private static final String MICROSOFT_TOKEN_URL_TEMPLATE = "https://login.microsoftonline.com/%s/oauth2/v2.0/token";
     private static final String GOOGLE_SCOPE_DEFAULT = "https://mail.google.com/";
     private static final String MICROSOFT_SCOPE_DEFAULT = "offline_access https://outlook.office.com/IMAP.AccessAsUser.All";
@@ -135,6 +138,105 @@ public class OAuthCredentialService {
         AdapterContext context = loadContext(ownerType, ownerId);
         context.adapter().clearTokens(ownerId);
         evictSession(ownerType, ownerId);
+    }
+
+    /**
+     * Calls the provider's revoke endpoint for the locally stored OAuth token.
+     *
+     * <p>v1 supports GOOGLE only. Prefers the stored refresh token; falls back to the access token.
+     * On HTTP 200 OR provider-side already-invalid responses (HTTP 4xx with error in
+     * {invalid_token, invalid_grant, unsupported_token_type}), local tokens are cleared and the
+     * session cache is evicted. On HTTP 5xx, network failures, or any other error, local tokens
+     * are preserved and an {@link IllegalStateException} is raised so the operator can retry.
+     */
+    public void revokeProviderTokens(String ownerType, UUID ownerId) {
+        AdapterContext context = loadContext(ownerType, ownerId);
+        OAuthCredentialOwner owner = context.owner();
+
+        if (owner.provider() != OAuthProviderType.GOOGLE) {
+            throw new IllegalArgumentException(
+                "Provider-side revoke is only supported for GOOGLE; this credential is " + owner.provider()
+            );
+        }
+
+        boolean hasAccessToken = owner.accessToken() != null && !owner.accessToken().isBlank();
+        boolean hasRefreshToken = owner.refreshToken() != null && !owner.refreshToken().isBlank();
+
+        if (hasCredentialKey(owner) && !hasAccessToken && !hasRefreshToken) {
+            throw new IllegalArgumentException(
+                "Provider-side revoke requires a locally stored OAuth token; "
+                    + "this credential row only references env-managed secrets"
+            );
+        }
+        if (!hasAccessToken && !hasRefreshToken) {
+            throw new IllegalArgumentException("No locally stored OAuth token to revoke");
+        }
+
+        String tokenToRevoke = hasRefreshToken ? owner.refreshToken() : owner.accessToken();
+
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("token", tokenToRevoke);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+
+        try {
+            restTemplate.postForEntity(
+                GOOGLE_REVOKE_URL,
+                new HttpEntity<>(form, headers),
+                String.class
+            );
+        } catch (HttpServerErrorException ex) {
+            throw new IllegalStateException(
+                "OAuth token revoke failed for owner " + owner.ownerName()
+                    + ": provider returned " + ex.getStatusCode().value(),
+                ex
+            );
+        } catch (HttpStatusCodeException ex) {
+            if (ex.getStatusCode().is5xxServerError()) {
+                throw new IllegalStateException(
+                    "OAuth token revoke failed for owner " + owner.ownerName()
+                        + ": provider returned " + ex.getStatusCode().value(),
+                    ex
+                );
+            }
+            OAuthTokenErrorParser.OAuthTokenError parsed =
+                OAuthTokenErrorParser.parse(ex.getResponseBodyAsString()).orElse(null);
+            if (parsed != null && isAlreadyInvalidTokenError(parsed.error())) {
+                // Provider already considers the token invalid/revoked. Clearing locally reflects truth.
+                context.adapter().clearTokens(owner.ownerId());
+                evictSession(owner.ownerType(), owner.ownerId());
+                return;
+            }
+            String message = "OAuth token revoke failed for owner " + owner.ownerName();
+            if (parsed != null) {
+                message += ": " + parsed.error();
+                if (parsed.errorDescription() != null && !parsed.errorDescription().isBlank()) {
+                    message += " - " + parsed.errorDescription().trim();
+                }
+            } else {
+                message += ": provider returned " + ex.getStatusCode().value();
+            }
+            throw new IllegalStateException(message, ex);
+        } catch (ResourceAccessException ex) {
+            throw new IllegalStateException(
+                "OAuth token revoke failed for owner " + owner.ownerName()
+                    + ": network error contacting provider",
+                ex
+            );
+        }
+
+        context.adapter().clearTokens(owner.ownerId());
+        evictSession(owner.ownerType(), owner.ownerId());
+    }
+
+    private boolean isAlreadyInvalidTokenError(String error) {
+        if (error == null) {
+            return false;
+        }
+        return "invalid_token".equalsIgnoreCase(error)
+            || "invalid_grant".equalsIgnoreCase(error)
+            || "unsupported_token_type".equalsIgnoreCase(error);
     }
 
     public void evictSession(String ownerType, UUID ownerId) {

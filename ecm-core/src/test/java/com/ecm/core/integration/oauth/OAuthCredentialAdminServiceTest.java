@@ -132,4 +132,44 @@ class OAuthCredentialAdminServiceTest {
 
         assertThrows(ResourceNotFoundException.class, () -> oauthCredentialAdminService.refreshNow(credentialId));
     }
+
+    @Test
+    @DisplayName("revokeProvider revokes owner tokens at provider and returns redacted inventory")
+    void revokeProviderRevokesOwnerTokensAndReturnsRedactedInventory() {
+        UUID credentialId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        UUID ownerId = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        OAuthCredentialInventoryItem item = new OAuthCredentialInventoryItem(
+            credentialId,
+            "MAIL_ACCOUNT",
+            ownerId,
+            OAuthProviderType.GOOGLE,
+            true,
+            false,
+            true,
+            true,
+            false,
+            false,
+            false,
+            null,
+            LocalDateTime.parse("2026-05-01T09:00:00"),
+            LocalDateTime.parse("2026-05-07T10:00:00")
+        );
+        when(oauthCredentialRepository.findOwnerReferenceById(credentialId))
+            .thenReturn(Optional.of(new OAuthCredentialOwnerReference(credentialId, "MAIL_ACCOUNT", ownerId)));
+        when(oauthCredentialRepository.findInventoryItemById(credentialId)).thenReturn(Optional.of(item));
+
+        OAuthCredentialInventoryItem result = oauthCredentialAdminService.revokeProvider(credentialId);
+
+        assertEquals(item, result);
+        verify(oauthCredentialService).revokeProviderTokens("MAIL_ACCOUNT", ownerId);
+    }
+
+    @Test
+    @DisplayName("revokeProvider rejects unknown credential id")
+    void revokeProviderRejectsUnknownCredentialId() {
+        UUID credentialId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        when(oauthCredentialRepository.findOwnerReferenceById(credentialId)).thenReturn(Optional.empty());
+
+        assertThrows(ResourceNotFoundException.class, () -> oauthCredentialAdminService.revokeProvider(credentialId));
+    }
 }

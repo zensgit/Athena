@@ -56,4 +56,15 @@ public class OAuthCredentialAdminController {
     public ResponseEntity<OAuthCredentialInventoryItem> refreshNow(@PathVariable UUID credentialId) {
         return ResponseEntity.ok(oauthCredentialAdminService.refreshNow(credentialId));
     }
+
+    @PostMapping("/{credentialId}/revoke")
+    @Operation(
+        summary = "Revoke OAuth credential at provider",
+        description = "Calls the provider's revoke endpoint (GOOGLE only in v1). On success or already-invalid-token "
+            + "responses, clears local tokens and returns the redacted inventory row. On 5xx or network failure, "
+            + "preserves local tokens and surfaces a diagnostic error."
+    )
+    public ResponseEntity<OAuthCredentialInventoryItem> revoke(@PathVariable UUID credentialId) {
+        return ResponseEntity.ok(oauthCredentialAdminService.revokeProvider(credentialId));
+    }
 }

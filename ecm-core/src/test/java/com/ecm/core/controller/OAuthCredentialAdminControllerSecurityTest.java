@@ -68,6 +68,9 @@ class OAuthCredentialAdminControllerSecurityTest {
     void anonymousInventoryReturns401() throws Exception {
         mockMvc.perform(get("/api/v1/admin/oauth-credentials"))
             .andExpect(status().isUnauthorized());
+        // Provider revoke must also reject anonymous callers; keep parity with inventory access.
+        mockMvc.perform(post("/api/v1/admin/oauth-credentials/11111111-2222-3333-4444-555555555555/revoke"))
+            .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -79,6 +82,8 @@ class OAuthCredentialAdminControllerSecurityTest {
         mockMvc.perform(post("/api/v1/admin/oauth-credentials/11111111-2222-3333-4444-555555555555/require-reauth"))
             .andExpect(status().isForbidden());
         mockMvc.perform(post("/api/v1/admin/oauth-credentials/11111111-2222-3333-4444-555555555555/refresh-now"))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/admin/oauth-credentials/11111111-2222-3333-4444-555555555555/revoke"))
             .andExpect(status().isForbidden());
     }
 
@@ -217,5 +222,80 @@ class OAuthCredentialAdminControllerSecurityTest {
             .andExpect(jsonPath("$.message", is("OAUTH_REAUTH_REQUIRED: invalid_grant - Token expired")));
 
         verify(oauthCredentialAdminService).refreshNow(credentialId);
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("admin can revoke OAuth credential at provider without token disclosure")
+    void adminCanRevokeProviderTokens() throws Exception {
+        UUID credentialId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        UUID ownerId = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        when(oauthCredentialAdminService.revokeProvider(credentialId)).thenReturn(
+            new OAuthCredentialInventoryItem(
+                credentialId,
+                "MAIL_ACCOUNT",
+                ownerId,
+                OAuthProviderType.GOOGLE,
+                true,
+                false,
+                true,
+                true,
+                false,
+                false,
+                false,
+                null,
+                LocalDateTime.parse("2026-05-01T09:00:00"),
+                LocalDateTime.parse("2026-05-07T10:00:00")
+            )
+        );
+
+        mockMvc.perform(post("/api/v1/admin/oauth-credentials/{credentialId}/revoke", credentialId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id", is(credentialId.toString())))
+            .andExpect(jsonPath("$.connected", is(false)))
+            .andExpect(jsonPath("$.accessTokenStored", is(false)))
+            .andExpect(jsonPath("$.refreshTokenStored", is(false)))
+            .andExpect(jsonPath("$.accessToken").doesNotExist())
+            .andExpect(jsonPath("$.refreshToken").doesNotExist());
+
+        verify(oauthCredentialAdminService).revokeProvider(credentialId);
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("revoke OAuth credential reports unsupported provider as 400")
+    void revokeReportsUnsupportedProviderAs400() throws Exception {
+        UUID credentialId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        when(oauthCredentialAdminService.revokeProvider(credentialId)).thenThrow(
+            new IllegalArgumentException("Provider-side revoke is only supported for GOOGLE; this credential is MICROSOFT")
+        );
+
+        mockMvc.perform(post("/api/v1/admin/oauth-credentials/{credentialId}/revoke", credentialId))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath(
+                "$.message",
+                is("Provider-side revoke is only supported for GOOGLE; this credential is MICROSOFT")
+            ));
+
+        verify(oauthCredentialAdminService).revokeProvider(credentialId);
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("revoke OAuth credential surfaces provider failure as 500 with diagnostic message")
+    void revokeReportsProviderFailureAs500() throws Exception {
+        UUID credentialId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        when(oauthCredentialAdminService.revokeProvider(credentialId)).thenThrow(
+            new IllegalStateException("OAuth token revoke failed for owner gmail: provider returned 503")
+        );
+
+        mockMvc.perform(post("/api/v1/admin/oauth-credentials/{credentialId}/revoke", credentialId))
+            .andExpect(status().isInternalServerError())
+            .andExpect(jsonPath(
+                "$.message",
+                is("OAuth token revoke failed for owner gmail: provider returned 503")
+            ));
+
+        verify(oauthCredentialAdminService).revokeProvider(credentialId);
     }
 }
