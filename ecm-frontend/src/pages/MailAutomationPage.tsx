@@ -74,6 +74,7 @@ import mailAutomationService, {
   MailDiagnosticsSortField,
   MailDiagnosticsSortOrder,
   MailRuntimeMetrics,
+  MailProviderPreset,
 } from 'services/mailAutomationService';
 import tagService from 'services/tagService';
 import nodeService from 'services/nodeService';
@@ -278,6 +279,8 @@ const MailAutomationPage: React.FC = () => {
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
   const [accountForm, setAccountForm] = useState<MailAccountRequest>(DEFAULT_ACCOUNT_FORM);
   const [editingAccount, setEditingAccount] = useState<MailAccount | null>(null);
+  const [providerPresets, setProviderPresets] = useState<MailProviderPreset[]>([]);
+  const [selectedProviderPresetId, setSelectedProviderPresetId] = useState<string>('');
 
   const [ruleDialogOpen, setRuleDialogOpen] = useState(false);
   const [ruleForm, setRuleForm] = useState(DEFAULT_RULE_FORM);
@@ -626,6 +629,25 @@ const MailAutomationPage: React.FC = () => {
   useEffect(() => {
     loadAll();
   }, [loadAll]);
+
+  useEffect(() => {
+    let cancelled = false;
+    mailAutomationService
+      .listProviderPresets()
+      .then((presets) => {
+        if (!cancelled) {
+          setProviderPresets(presets);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setProviderPresets([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -1724,6 +1746,7 @@ const MailAutomationPage: React.FC = () => {
   const openCreateAccount = () => {
     setEditingAccount(null);
     setAccountForm(DEFAULT_ACCOUNT_FORM);
+    setSelectedProviderPresetId('');
     setAccountDialogOpen(true);
   };
 
@@ -1744,7 +1767,26 @@ const MailAutomationPage: React.FC = () => {
       oauthScope: account.oauthScope || '',
       oauthCredentialKey: account.oauthCredentialKey || '',
     });
+    setSelectedProviderPresetId('');
     setAccountDialogOpen(true);
+  };
+
+  const handleProviderPresetChange = (presetId: string) => {
+    setSelectedProviderPresetId(presetId);
+    if (!presetId) {
+      // Custom: do NOT clear existing values — keep manual override semantics.
+      return;
+    }
+    const preset = providerPresets.find((entry) => entry.id === presetId);
+    if (!preset) {
+      return;
+    }
+    setAccountForm((prev) => ({
+      ...prev,
+      host: preset.imapHost,
+      port: preset.imapPort,
+      security: preset.imapSecurity,
+    }));
   };
 
   const handleSaveAccount = async () => {
@@ -4486,6 +4528,25 @@ const MailAutomationPage: React.FC = () => {
               size="small"
               fullWidth
             />
+            <FormControl size="small" fullWidth>
+              <InputLabel id="mail-provider-preset-label">Provider preset</InputLabel>
+              <Select
+                labelId="mail-provider-preset-label"
+                value={selectedProviderPresetId}
+                label="Provider preset"
+                onChange={(event) => handleProviderPresetChange(event.target.value as string)}
+              >
+                <MenuItem value="">Custom</MenuItem>
+                {providerPresets.map((preset) => (
+                  <MenuItem key={preset.id} value={preset.id}>
+                    {preset.label}
+                  </MenuItem>
+                ))}
+              </Select>
+              <FormHelperText>
+                Pick a provider to fill IMAP host, port, and security. Manual edits remain editable.
+              </FormHelperText>
+            </FormControl>
             <TextField
               label="Host"
               value={accountForm.host}

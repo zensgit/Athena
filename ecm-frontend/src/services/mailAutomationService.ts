@@ -364,6 +364,21 @@ export interface MailRuntimeMetrics {
   trend?: MailRuntimeTrend | null;
 }
 
+export type MailProviderPresetId =
+  | 'ALIYUN_QIYE'
+  | 'TENCENT_EXMAIL'
+  | 'TENCENT_EXMAIL_OVERSEAS'
+  | 'MAIL_263'
+  | 'MAIL_263_OVERSEAS';
+
+export interface MailProviderPreset {
+  id: MailProviderPresetId;
+  label: string;
+  imapHost: string;
+  imapPort: number;
+  imapSecurity: 'SSL' | 'STARTTLS' | 'NONE';
+}
+
 class MailAutomationService {
   async listAccounts(): Promise<MailAccount[]> {
     return api.get<MailAccount[]>('/integration/mail/accounts');
@@ -560,6 +575,10 @@ class MailAutomationService {
       accountId,
       maxMessagesPerFolder,
     });
+  }
+
+  async listProviderPresets(): Promise<MailProviderPreset[]> {
+    return api.get<MailProviderPreset[]>('/mail/automation/provider-presets');
   }
 }
 
