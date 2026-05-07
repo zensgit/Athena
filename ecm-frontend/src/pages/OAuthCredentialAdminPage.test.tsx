@@ -30,6 +30,8 @@ const credential = {
   tokenExpiresAt: '2026-05-06T10:15:30Z',
   createdAt: '2026-05-01T09:00:00Z',
   updatedAt: '2026-05-06T10:00:00Z',
+  providerRevokeSupported: true,
+  providerRevokeUnsupportedReason: null,
 };
 
 beforeEach(() => {
@@ -168,9 +170,34 @@ test('Provider Revoke is enabled for GOOGLE rows with a stored token', async () 
   expect((button as HTMLButtonElement).disabled).toBe(false);
 });
 
-test('Provider Revoke is disabled for non-GOOGLE rows', async () => {
+test('Provider Revoke is disabled when backend reports providerRevokeSupported=false (regardless of provider)', async () => {
+  // Pass GOOGLE plus supported=false to prove backend metadata wins over the
+  // legacy client-side decision tree (which used to gate on provider==='GOOGLE').
   mockedOAuthCredentialAdminService.listCredentials.mockResolvedValue([
-    { ...credential, provider: 'MICROSOFT' },
+    {
+      ...credential,
+      provider: 'GOOGLE',
+      providerRevokeSupported: false,
+      providerRevokeUnsupportedReason: 'No locally stored OAuth token to revoke',
+    },
+  ]);
+
+  render(<OAuthCredentialAdminPage />);
+  await screen.findByText('MAIL_ACCOUNT');
+
+  const button = await screen.findByRole('button', { name: 'Provider Revoke' });
+  expect((button as HTMLButtonElement).disabled).toBe(true);
+});
+
+test('Provider Revoke is disabled for non-GOOGLE rows when backend reports unsupported', async () => {
+  mockedOAuthCredentialAdminService.listCredentials.mockResolvedValue([
+    {
+      ...credential,
+      provider: 'MICROSOFT',
+      providerRevokeSupported: false,
+      providerRevokeUnsupportedReason:
+        'Provider-side revoke is only supported for GOOGLE; this credential is MICROSOFT',
+    },
   ]);
 
   render(<OAuthCredentialAdminPage />);
@@ -180,21 +207,26 @@ test('Provider Revoke is disabled for non-GOOGLE rows', async () => {
   expect((button as HTMLButtonElement).disabled).toBe(true);
 });
 
-test('Provider Revoke is disabled for GOOGLE rows with no stored token', async () => {
+test('Provider Revoke surfaces the backend unsupported reason via tooltip wrapper aria-label', async () => {
+  // The wrapping span carries the same backend-supplied reason as both the
+  // MUI Tooltip title and an aria-label, so the disabled-button case stays
+  // observable without hover-based testing-library queries (the existing
+  // tests in this file all use fireEvent, not userEvent).
+  const reason = 'Provider-side revoke is only supported for GOOGLE; this credential is MICROSOFT';
   mockedOAuthCredentialAdminService.listCredentials.mockResolvedValue([
     {
       ...credential,
-      accessTokenStored: false,
-      refreshTokenStored: false,
-      connected: false,
+      provider: 'MICROSOFT',
+      providerRevokeSupported: false,
+      providerRevokeUnsupportedReason: reason,
     },
   ]);
 
   render(<OAuthCredentialAdminPage />);
-  await screen.findByText('MAIL_ACCOUNT');
+  await screen.findByText('MICROSOFT');
 
-  const button = await screen.findByRole('button', { name: 'Provider Revoke' });
-  expect((button as HTMLButtonElement).disabled).toBe(true);
+  const wrapper = await screen.findByLabelText(reason);
+  expect(wrapper).toBeTruthy();
 });
 
 test('does not revoke OAuth token when confirmation is cancelled', async () => {
@@ -217,6 +249,11 @@ test('revokes OAuth token at the provider and replaces the row from the redacted
     refreshTokenStored: false,
     connected: false,
     tokenExpiresAt: null,
+    // After a successful revoke the backend reports the row no longer has a
+    // local token to revoke, so providerRevokeSupported flips to false.
+    providerRevokeSupported: false,
+    providerRevokeUnsupportedReason:
+      'Provider-side revoke requires a locally stored OAuth token; this credential row only references env-managed secrets',
   });
 
   render(<OAuthCredentialAdminPage />);
@@ -227,8 +264,9 @@ test('revokes OAuth token at the provider and replaces the row from the redacted
   await waitFor(() => {
     expect(mockedOAuthCredentialAdminService.revoke).toHaveBeenCalledWith('credential-1');
   });
-  // After a successful revoke the row's stored-token flags flip to false, which
-  // re-disables the Provider Revoke button via the (no stored token) guard.
+  // After a successful revoke the backend response carries
+  // providerRevokeSupported=false, which re-disables the Provider Revoke button
+  // via the new capability-driven gating.
   await waitFor(() => {
     const button = screen.getByRole('button', { name: 'Provider Revoke' }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);

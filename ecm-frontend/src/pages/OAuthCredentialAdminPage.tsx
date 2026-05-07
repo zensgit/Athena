@@ -16,6 +16,7 @@ import {
   TableHead,
   TableRow,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import { Key, Refresh, VpnKey } from '@mui/icons-material';
@@ -351,21 +352,39 @@ const OAuthCredentialAdminPage: React.FC = () => {
                           >
                             {reauthCredentialId === credential.id ? 'Clearing...' : 'Require Reauth'}
                           </Button>
-                          <Button
-                            variant="outlined"
-                            color="error"
-                            size="small"
-                            onClick={() => void handleRevoke(credential)}
-                            disabled={
-                              revokeCredentialId === credential.id
-                              || refreshCredentialId === credential.id
-                              || reauthCredentialId === credential.id
-                              || credential.provider !== 'GOOGLE'
-                              || (!credential.accessTokenStored && !credential.refreshTokenStored)
+                          <Tooltip
+                            title={
+                              !credential.providerRevokeSupported
+                                ? (credential.providerRevokeUnsupportedReason
+                                  ?? 'Provider-side revoke is not supported for this credential.')
+                                : ''
                             }
                           >
-                            {revokeCredentialId === credential.id ? 'Revoking...' : 'Provider Revoke'}
-                          </Button>
+                            <span
+                              data-testid={`provider-revoke-wrapper-${credential.id}`}
+                              aria-label={
+                                !credential.providerRevokeSupported
+                                  ? (credential.providerRevokeUnsupportedReason
+                                    ?? 'Provider-side revoke is not supported for this credential.')
+                                  : undefined
+                              }
+                            >
+                              <Button
+                                variant="outlined"
+                                color="error"
+                                size="small"
+                                onClick={() => void handleRevoke(credential)}
+                                disabled={
+                                  revokeCredentialId === credential.id
+                                  || refreshCredentialId === credential.id
+                                  || reauthCredentialId === credential.id
+                                  || !credential.providerRevokeSupported
+                                }
+                              >
+                                {revokeCredentialId === credential.id ? 'Revoking...' : 'Provider Revoke'}
+                              </Button>
+                            </span>
+                          </Tooltip>
                         </Stack>
                       </TableCell>
                     </TableRow>

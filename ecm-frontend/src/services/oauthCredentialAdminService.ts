@@ -17,6 +17,8 @@ export interface OAuthCredentialInventoryItem {
   tokenExpiresAt?: string | null;
   createdAt: string;
   updatedAt?: string | null;
+  providerRevokeSupported: boolean;
+  providerRevokeUnsupportedReason: string | null;
 }
 
 export interface OAuthCredentialInventoryFilters {
