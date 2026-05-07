@@ -25,7 +25,7 @@ These apply to all three providers regardless of preset choice:
 - **Generate a client authorization code if the provider requires one.** Tencent and 263 both require a separate "客户端授权码" / "客户端安全密码" — the regular web-login password will be rejected by IMAP even when it works in the web UI. Aliyun also requires a "third-party client security password" for newly provisioned domains. Per-provider details are listed below; this doc never quotes any actual code or password value, only points at where the operator generates it.
 - **Athena encrypts the IMAP password at rest.** The `MailAccount.password` field is annotated `@Convert(converter = EncryptedSecretConverter.class)`, so plaintext passwords are not persisted. The operator never has to inspect, decrypt, or rotate the encrypted form directly — they enter the plaintext in the admin form, the converter encrypts on write, and the IMAP fetch worker decrypts on read.
 - **Pick the correct domestic / overseas preset for the Athena instance's egress.** Tencent and 263 expose distinct hostnames for international clients (`hwimap.exmail.qq.com`, `imapw.263.net`). The mailbox itself is identical; only the routing differs. Picking the wrong variant typically surfaces as long IMAP `IDLE` drops or intermittent `connection reset` events rather than outright failure.
-- **Confirm the operator account has the `MAIL_AUTOMATION_ADMIN` role.** The presets endpoint and the account-create form both sit on the admin surface. Read-only operators will see the form fields disabled and the preset dropdown empty; that is a permission issue, not a preset-loading bug.
+- **Confirm the operator account has `ROLE_ADMIN`.** The presets endpoint and the account-create form both sit on the existing Mail Automation admin surface, and the backend gate is `@PreAuthorize("hasRole('ADMIN')")`. Non-admin requests receive `403 Forbidden`; that is a permission issue, not a preset-loading bug.
 
 ## Per-provider sections
 
@@ -92,7 +92,7 @@ For all five presets the IMAP security on port 993 is implicit TLS (SSL). The 14
 
 ## Manual smoke checklist
 
-Run these checks against the live Athena instance after creating the mail account and saving the IMAP password (the encrypted-on-write converter handles persistence). Replace `{id}` with the numeric `MailAccount.id` returned from the create call. The endpoints listed already exist on `MailAutomationController` — this checklist references them, it does not create them.
+Run these checks against the live Athena instance after creating the mail account and saving the IMAP password (the encrypted-on-write converter handles persistence). Replace `{id}` with the UUID `MailAccount.id` returned from the create call. The endpoints listed already exist on `MailAutomationController` — this checklist references them, it does not create them.
 
 1. **Test connection.**
    - Call: `POST /api/v1/integration/mail/accounts/{id}/test`
@@ -105,15 +105,15 @@ Run these checks against the live Athena instance after creating the mail accoun
    - Expected: `200 OK` with at least one folder, typically `INBOX`.
    - Fail mode (empty list): either the mailbox is genuinely empty, or the provider is exposing system folders behind an IMAP UTF-7 modified namespace prefix (e.g. some Chinese providers prefix Chinese folder names with sequences like `&XfJT0ZAB-` for IMAP UTF-7 encoding). If `INBOX` is missing entirely, treat that as a connectivity / permission issue and retry step 1; if `INBOX` is present and only the localized folders look truncated, the UTF-7 namespace is the likely cause and the rule engine will still process `INBOX` correctly.
 3. **Manual fetch.**
-   - Trigger one fetch cycle for the account (the Mail Automation admin page exposes a per-account "Fetch now" action that hits the existing fetch endpoint).
+   - Trigger one global fetch cycle from the Mail Automation admin page or call `POST /api/v1/integration/mail/fetch`; the fetch worker attempts enabled accounts according to the existing service rules.
    - Expected: `lastFetchAt` on the inventory list updates to a timestamp within the last few seconds, and `lastFetchError` is null.
-   - Fail mode (`lastFetchError` populated): read the structured diagnostics at `GET /api/v1/integration/mail/diagnostics?accountId={id}`. The diagnostics endpoint returns the per-attempt error chain, the IMAP capability set returned by the server, and the last successful fetch watermark — sufficient to distinguish auth failure, TLS misconfiguration, and provider-side rate limiting without re-running the test connection call.
+   - Fail mode (`lastFetchError` populated): read the structured diagnostics at `GET /api/v1/integration/mail/diagnostics?accountId={id}`. The diagnostics endpoint returns recent processed-mail rows and mail-ingested document rows, including status, subject, folder, UID, rule/account names, and `errorMessage` for failed processed rows.
 
 ### After the smoke checklist passes
 
 Once all three steps in the checklist return clean, the account is ready for the rule engine. The Mail Automation admin page exposes the per-account inventory row with `lastFetchAt`, `lastFetchError`, and the matched-rule count — that row is the canonical operator-facing health view going forward, and the smoke endpoints above are only re-run when something on that row goes red.
 
-The diagnostics endpoint (`/api/v1/integration/mail/diagnostics?accountId={id}`) is safe to call at any time; it does not mutate state and does not consume the IMAP rate-limit budget. When in doubt, hit it first before re-running the test-connection call, because the test-connection call does open a fresh IMAP session against the provider and providers do count those toward connection-rate quotas.
+The diagnostics endpoint (`/api/v1/integration/mail/diagnostics?accountId={id}`) is safe to call at any time; it does not mutate state and does not consume the IMAP rate-limit budget. When in doubt, hit it first before re-running the test-connection call, because the test-connection call opens a fresh IMAP session against the provider and providers may count those toward connection-rate quotas.
 
 ## Troubleshooting
 
@@ -146,4 +146,4 @@ The following table summarizes the most common operator-visible failures, what t
 | `connection reset` / repeated `IDLE` drops                                     | Cross-border egress to Chinese provider is unstable                                           | Switch from domestic preset to the matching `*_OVERSEAS` preset                                       |
 | `534 5.7.9 Application-specific password required` (or similar provider text) | Tencent / 263 secure-login is on; regular password used                                       | Generate the client authorization code at provider webmail and re-enter as the IMAP password          |
 
-If the symptom does not match any row above, fall back to the diagnostics endpoint described in the smoke checklist. The diagnostics response carries the IMAP capability list and the last-attempt error chain, which together are usually sufficient to narrow the cause to one of the rows above.
+If the symptom does not match any row above, fall back to the diagnostics endpoint described in the smoke checklist. The diagnostics response carries recent processed-mail status and error-message rows, which are usually enough to narrow the cause to one of the rows above.

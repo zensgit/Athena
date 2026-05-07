@@ -66,7 +66,7 @@ const PRESET_FIXTURE: MailProviderPreset[] = [
   { id: 'TENCENT_EXMAIL', label: '腾讯企业邮箱', imapHost: 'imap.exmail.qq.com', imapPort: 993, imapSecurity: 'SSL' },
   { id: 'TENCENT_EXMAIL_OVERSEAS', label: '腾讯企业邮箱（海外）', imapHost: 'hwimap.exmail.qq.com', imapPort: 993, imapSecurity: 'SSL' },
   { id: 'MAIL_263', label: '263 企业邮箱', imapHost: 'imap.263.net', imapPort: 993, imapSecurity: 'SSL' },
-  { id: 'MAIL_263_OVERSEAS', label: '263 企业邮箱（海外）', imapHost: 'imap.263xmail.com', imapPort: 993, imapSecurity: 'SSL' },
+  { id: 'MAIL_263_OVERSEAS', label: '263 企业邮箱（海外）', imapHost: 'imapw.263.net', imapPort: 993, imapSecurity: 'SSL' },
 ];
 
 const setupBaselineMocks = () => {
