@@ -23,16 +23,11 @@ The OAuth Credential Store admin surface is the cross-integration `/admin/oauth-
 - Provider Revoke (Google v1) integration shipped end-to-end on 2026-05-07: `docs/OAUTH_CREDENTIAL_PROVIDER_REVOKE_INTEGRATION_VERIFICATION_20260507.md`
   - Commit range: `06be7fb` (backend), `9ea6ce7` (frontend), `a114f1d` (preflight + closeout TODO), `a7275da` (integration reconciliation), `1c2603c` (integration verification doc).
   - Local preflight and remote CI both green; backend, frontend, and acceptance smoke gates passed for `a7275da`.
-
-## In-flight (round 2: capability-metadata refactor)
-
-Round 2 replaces the client-side `provider === 'GOOGLE'` check with server-side capability metadata so the UI is provider-agnostic and ready for MICROSOFT / CUSTOM extension without UI churn.
-
-- Package A (`claude/oauth-revoke-meta-backend`): adds `providerRevokeSupported` and `providerRevokeUnsupportedReason` fields to `OAuthCredentialInventoryItem`. The capability decision tree is the single source of truth for whether a row supports Provider Revoke and why a row does not.
-- Package B (`claude/oauth-revoke-meta-ui`): drops the hard-coded `provider === 'GOOGLE'` guard, gates the Provider Revoke control on `providerRevokeSupported`, and surfaces `providerRevokeUnsupportedReason` through a tooltip when the control is disabled.
-- Package C (`claude/oauth-revoke-meta-docs`, this branch): updates this closeout TODO and adds the Microsoft / CUSTOM revoke design follow-up doc.
-
-Integration order remains A then B then C, matching round 1. The targeted-test set is unchanged; capability-metadata coverage is added inside the existing backend test classes (`OAuthCredentialServiceTest`, `OAuthCredentialAdminServiceTest`, `OAuthCredentialAdminControllerSecurityTest`) and existing frontend test files (`OAuthCredentialAdminPage.test.tsx`, `MainLayout.menu.test.tsx`), so `scripts/oauth-credential-admin-preflight.sh` does not need to change in this round.
+- Provider Revoke capability metadata shipped end-to-end on 2026-05-07: `docs/OAUTH_CREDENTIAL_REVOKE_CAPABILITY_INTEGRATION_VERIFICATION_20260507.md`
+  - Backend adds `providerRevokeSupported` and `providerRevokeUnsupportedReason` fields to `OAuthCredentialInventoryItem`.
+  - `OAuthCredentialAdminService` derives those fields from the same decision tree as `OAuthCredentialService.revokeProviderTokens`, so list/reload metadata and `POST /revoke` failures stay aligned.
+  - Frontend drops the hard-coded `provider === 'GOOGLE'` guard and gates the Provider Revoke control on the server-supplied capability fields, with the unsupported reason surfaced on the disabled control.
+  - The targeted-test set is unchanged; capability-metadata coverage lives in the existing OAuth admin backend and frontend test classes, so `scripts/oauth-credential-admin-preflight.sh` remains the local gate.
 
 ## v1 Revoke invariants
 

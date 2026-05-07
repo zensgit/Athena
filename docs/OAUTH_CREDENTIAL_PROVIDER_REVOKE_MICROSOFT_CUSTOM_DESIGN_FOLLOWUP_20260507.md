@@ -6,7 +6,7 @@ Date: 2026-05-07
 
 v1 Google provider-side revoke shipped on 2026-05-07; the integration record is
 `docs/OAUTH_CREDENTIAL_PROVIDER_REVOKE_INTEGRATION_VERIFICATION_20260507.md`.
-With the round 2 capability-metadata refactor in flight, server-supplied
+The round 2 capability-metadata refactor is now shipped; server-supplied
 capability flags (`providerRevokeSupported`,
 `providerRevokeUnsupportedReason`) on `OAuthCredentialInventoryItem` become the
 single source of truth for whether a credential row supports Provider Revoke.
@@ -177,10 +177,10 @@ classes and does not need to change when the new cases are added inside them.
 
 - The capability-metadata refactor (round 2 of this thread:
   `claude/oauth-revoke-meta-backend`, `claude/oauth-revoke-meta-ui`,
-  `claude/oauth-revoke-meta-docs`) is a prerequisite. The UI must already be
-  metadata-driven before any broader provider ships, so that adding MICROSOFT
-  or CUSTOM support requires only a backend capability-tree update plus a
-  per-provider service implementation.
+  `claude/oauth-revoke-meta-docs`) is now merged. The UI is metadata-driven
+  before any broader provider ships, so adding MICROSOFT or CUSTOM support
+  requires only a backend capability-tree update plus a per-provider service
+  implementation.
 - MICROSOFT and CUSTOM should ship as separate slices, not bundled. Their
   failure semantics differ enough - MICROSOFT lacks a canonical revoke
   endpoint, while CUSTOM is RFC 7009-shaped behind a configured endpoint -
