@@ -26,6 +26,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @DataJpaTest(properties = {
@@ -129,6 +130,11 @@ class OAuthCredentialPersistenceTest {
         assertTrue(item.accessTokenStored());
         assertTrue(item.refreshTokenStored());
         assertTrue(item.connected());
+        // Capability metadata is computed by the admin-service enrichment hook, never by JPQL.
+        // The repository projection MUST return the defaults (false, null) so the service is
+        // the single source of truth for revoke supportability.
+        assertFalse(item.providerRevokeSupported());
+        assertNull(item.providerRevokeUnsupportedReason());
 
         OAuthCredentialOwnerReference ownerReference = repository.findOwnerReferenceById(item.id()).orElseThrow();
         assertEquals(item.id(), ownerReference.id());
@@ -138,5 +144,7 @@ class OAuthCredentialPersistenceTest {
         OAuthCredentialInventoryItem byId = repository.findInventoryItemById(item.id()).orElseThrow();
         assertEquals(item.id(), byId.id());
         assertTrue(byId.connected());
+        assertFalse(byId.providerRevokeSupported());
+        assertNull(byId.providerRevokeUnsupportedReason());
     }
 }

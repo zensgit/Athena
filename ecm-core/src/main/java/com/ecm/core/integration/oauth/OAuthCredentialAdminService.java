@@ -17,7 +17,9 @@ public class OAuthCredentialAdminService {
     private final OAuthCredentialService oauthCredentialService;
 
     public List<OAuthCredentialInventoryItem> listCredentials(String ownerType, OAuthProviderType provider) {
-        return oauthCredentialRepository.findInventoryItems(normalize(ownerType), provider);
+        return oauthCredentialRepository.findInventoryItems(normalize(ownerType), provider).stream()
+            .map(OAuthCredentialAdminService::withCapability)
+            .toList();
     }
 
     @Transactional
@@ -25,8 +27,8 @@ public class OAuthCredentialAdminService {
         OAuthCredentialOwnerReference owner = oauthCredentialRepository.findOwnerReferenceById(credentialId)
             .orElseThrow(() -> new ResourceNotFoundException("OAuth credential not found: " + credentialId));
         oauthCredentialService.clearTokens(owner.ownerType(), owner.ownerId());
-        return oauthCredentialRepository.findInventoryItemById(credentialId)
-            .orElseThrow(() -> new ResourceNotFoundException("OAuth credential not found after reauth reset: " + credentialId));
+        return withCapability(oauthCredentialRepository.findInventoryItemById(credentialId)
+            .orElseThrow(() -> new ResourceNotFoundException("OAuth credential not found after reauth reset: " + credentialId)));
     }
 
     @Transactional
@@ -34,8 +36,8 @@ public class OAuthCredentialAdminService {
         OAuthCredentialOwnerReference owner = oauthCredentialRepository.findOwnerReferenceById(credentialId)
             .orElseThrow(() -> new ResourceNotFoundException("OAuth credential not found: " + credentialId));
         oauthCredentialService.refreshAccessTokenNow(owner.ownerType(), owner.ownerId());
-        return oauthCredentialRepository.findInventoryItemById(credentialId)
-            .orElseThrow(() -> new ResourceNotFoundException("OAuth credential not found after token refresh: " + credentialId));
+        return withCapability(oauthCredentialRepository.findInventoryItemById(credentialId)
+            .orElseThrow(() -> new ResourceNotFoundException("OAuth credential not found after token refresh: " + credentialId)));
     }
 
     @Transactional
@@ -43,8 +45,58 @@ public class OAuthCredentialAdminService {
         OAuthCredentialOwnerReference owner = oauthCredentialRepository.findOwnerReferenceById(credentialId)
             .orElseThrow(() -> new ResourceNotFoundException("OAuth credential not found: " + credentialId));
         oauthCredentialService.revokeProviderTokens(owner.ownerType(), owner.ownerId());
-        return oauthCredentialRepository.findInventoryItemById(credentialId)
-            .orElseThrow(() -> new ResourceNotFoundException("OAuth credential not found after provider revoke: " + credentialId));
+        return withCapability(oauthCredentialRepository.findInventoryItemById(credentialId)
+            .orElseThrow(() -> new ResourceNotFoundException("OAuth credential not found after provider revoke: " + credentialId)));
+    }
+
+    /**
+     * Enrich an inventory item with provider-revoke capability metadata.
+     *
+     * <p>The capability decision tree mirrors {@code OAuthCredentialService#revokeProviderTokens}
+     * exactly so that the UI metadata and the {@code POST /revoke} error path agree on:
+     * <ol>
+     *   <li>which providers support revoke (GOOGLE only in v1),</li>
+     *   <li>which credentials lack a locally stored token to revoke,</li>
+     *   <li>and which env-managed-credential-key rows are out of scope.</li>
+     * </ol>
+     *
+     * <p>Inputs are the redacted projection booleans only — never raw token contents.
+     */
+    static OAuthCredentialInventoryItem withCapability(OAuthCredentialInventoryItem item) {
+        boolean supported;
+        String reason;
+        if (item.provider() != OAuthProviderType.GOOGLE) {
+            supported = false;
+            reason = "Provider-side revoke is only supported for GOOGLE; this credential is " + item.provider();
+        } else if (item.accessTokenStored() || item.refreshTokenStored()) {
+            supported = true;
+            reason = null;
+        } else if (item.credentialKeyConfigured()) {
+            supported = false;
+            reason = "Provider-side revoke requires a locally stored OAuth token; "
+                + "this credential row only references env-managed secrets";
+        } else {
+            supported = false;
+            reason = "No locally stored OAuth token to revoke";
+        }
+        return new OAuthCredentialInventoryItem(
+            item.id(),
+            item.ownerType(),
+            item.ownerId(),
+            item.provider(),
+            item.tokenEndpointConfigured(),
+            item.tenantIdConfigured(),
+            item.scopeConfigured(),
+            item.credentialKeyConfigured(),
+            item.accessTokenStored(),
+            item.refreshTokenStored(),
+            item.connected(),
+            item.tokenExpiresAt(),
+            item.createdAt(),
+            item.updatedAt(),
+            supported,
+            reason
+        );
     }
 
     private String normalize(String value) {

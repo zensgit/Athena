@@ -17,6 +17,8 @@ public record OAuthCredentialInventoryItem(
     boolean connected,
     LocalDateTime tokenExpiresAt,
     LocalDateTime createdAt,
-    LocalDateTime updatedAt
+    LocalDateTime updatedAt,
+    boolean providerRevokeSupported,
+    String providerRevokeUnsupportedReason
 ) {
 }

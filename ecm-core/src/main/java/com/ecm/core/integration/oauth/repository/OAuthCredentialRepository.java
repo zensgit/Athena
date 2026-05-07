@@ -38,7 +38,9 @@ public interface OAuthCredentialRepository extends JpaRepository<OAuthCredential
             ) THEN true ELSE false END,
             c.tokenExpiresAt,
             c.createdAt,
-            c.updatedAt
+            c.updatedAt,
+            false,
+            CAST(NULL AS string)
         )
         FROM OAuthCredential c
         WHERE (:ownerType IS NULL OR c.ownerType = :ownerType)
@@ -79,7 +81,9 @@ public interface OAuthCredentialRepository extends JpaRepository<OAuthCredential
             ) THEN true ELSE false END,
             c.tokenExpiresAt,
             c.createdAt,
-            c.updatedAt
+            c.updatedAt,
+            false,
+            CAST(NULL AS string)
         )
         FROM OAuthCredential c
         WHERE c.id = :id

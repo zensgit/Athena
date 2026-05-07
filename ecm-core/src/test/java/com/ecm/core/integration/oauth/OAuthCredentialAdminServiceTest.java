@@ -15,6 +15,9 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.verify;
@@ -54,7 +57,123 @@ class OAuthCredentialAdminServiceTest {
     }
 
     @Test
-    @DisplayName("requireReauth clears owner tokens and returns redacted inventory")
+    @DisplayName("listCredentials enriches every row with provider-revoke capability metadata")
+    void listCredentialsEnrichesEveryRowWithCapability() {
+        // Two rows: a GOOGLE row with stored tokens (supported) and a non-GOOGLE row (unsupported).
+        // The repository projection always returns capability-default (false, null), so the service
+        // must re-derive both fields per row before returning to the controller.
+        UUID googleId = UUID.fromString("11111111-1111-1111-1111-111111111111");
+        UUID microsoftId = UUID.fromString("22222222-2222-2222-2222-222222222222");
+        OAuthCredentialInventoryItem googleRow = inventory(googleId, OAuthProviderType.GOOGLE, true, true, true);
+        OAuthCredentialInventoryItem microsoftRow = inventory(microsoftId, OAuthProviderType.MICROSOFT, true, true, true);
+        when(oauthCredentialRepository.findInventoryItems(null, null)).thenReturn(List.of(googleRow, microsoftRow));
+
+        List<OAuthCredentialInventoryItem> result = oauthCredentialAdminService.listCredentials(null, null);
+
+        assertEquals(2, result.size());
+        assertTrue(result.get(0).providerRevokeSupported());
+        assertNull(result.get(0).providerRevokeUnsupportedReason());
+        assertFalse(result.get(1).providerRevokeSupported());
+        assertNotNull(result.get(1).providerRevokeUnsupportedReason());
+        assertTrue(result.get(1).providerRevokeUnsupportedReason().contains("MICROSOFT"));
+    }
+
+    @Test
+    @DisplayName("withCapability: GOOGLE with stored token is supported, reason null")
+    void withCapabilityGoogleWithStoredTokenIsSupported() {
+        OAuthCredentialInventoryItem item = inventory(UUID.randomUUID(), OAuthProviderType.GOOGLE, true, true, true);
+
+        OAuthCredentialInventoryItem enriched = OAuthCredentialAdminService.withCapability(item);
+
+        assertTrue(enriched.providerRevokeSupported());
+        assertNull(enriched.providerRevokeUnsupportedReason());
+    }
+
+    @Test
+    @DisplayName("withCapability: GOOGLE with refresh-only token is supported")
+    void withCapabilityGoogleWithRefreshOnlyTokenIsSupported() {
+        OAuthCredentialInventoryItem item = inventory(UUID.randomUUID(), OAuthProviderType.GOOGLE, true, false, true);
+
+        OAuthCredentialInventoryItem enriched = OAuthCredentialAdminService.withCapability(item);
+
+        assertTrue(enriched.providerRevokeSupported());
+        assertNull(enriched.providerRevokeUnsupportedReason());
+    }
+
+    @Test
+    @DisplayName("withCapability: GOOGLE with no stored token but credentialKey says env-managed")
+    void withCapabilityGoogleNoTokenWithCredentialKeyIsEnvManaged() {
+        // Reason text must match OAuthCredentialService.revokeProviderTokens byte-for-byte
+        // so the operator sees identical messaging via projection and via POST /revoke errors.
+        OAuthCredentialInventoryItem item = inventory(UUID.randomUUID(), OAuthProviderType.GOOGLE, true, false, false);
+
+        OAuthCredentialInventoryItem enriched = OAuthCredentialAdminService.withCapability(item);
+
+        assertFalse(enriched.providerRevokeSupported());
+        assertEquals(
+            "Provider-side revoke requires a locally stored OAuth token; "
+                + "this credential row only references env-managed secrets",
+            enriched.providerRevokeUnsupportedReason()
+        );
+    }
+
+    @Test
+    @DisplayName("withCapability: GOOGLE with no stored token and no credentialKey says no token")
+    void withCapabilityGoogleNoTokenNoCredentialKeyIsNoToken() {
+        OAuthCredentialInventoryItem item = inventory(UUID.randomUUID(), OAuthProviderType.GOOGLE, false, false, false);
+
+        OAuthCredentialInventoryItem enriched = OAuthCredentialAdminService.withCapability(item);
+
+        assertFalse(enriched.providerRevokeSupported());
+        assertEquals("No locally stored OAuth token to revoke", enriched.providerRevokeUnsupportedReason());
+    }
+
+    @Test
+    @DisplayName("withCapability: MICROSOFT is unsupported with provider-name reason")
+    void withCapabilityMicrosoftIsUnsupported() {
+        OAuthCredentialInventoryItem item = inventory(UUID.randomUUID(), OAuthProviderType.MICROSOFT, true, true, true);
+
+        OAuthCredentialInventoryItem enriched = OAuthCredentialAdminService.withCapability(item);
+
+        assertFalse(enriched.providerRevokeSupported());
+        assertEquals(
+            "Provider-side revoke is only supported for GOOGLE; this credential is MICROSOFT",
+            enriched.providerRevokeUnsupportedReason()
+        );
+    }
+
+    @Test
+    @DisplayName("withCapability: CUSTOM is unsupported")
+    void withCapabilityCustomIsUnsupported() {
+        OAuthCredentialInventoryItem item = inventory(UUID.randomUUID(), OAuthProviderType.CUSTOM, false, false, false);
+
+        OAuthCredentialInventoryItem enriched = OAuthCredentialAdminService.withCapability(item);
+
+        assertFalse(enriched.providerRevokeSupported());
+        assertEquals(
+            "Provider-side revoke is only supported for GOOGLE; this credential is CUSTOM",
+            enriched.providerRevokeUnsupportedReason()
+        );
+    }
+
+    @Test
+    @DisplayName("withCapability: null provider is unsupported and renders as 'null' in reason")
+    void withCapabilityNullProviderIsUnsupported() {
+        // Matches the literal string thrown by OAuthCredentialService.revokeProviderTokens
+        // when provider() is null: "...is " + null -> "...is null".
+        OAuthCredentialInventoryItem item = inventory(UUID.randomUUID(), null, true, true, true);
+
+        OAuthCredentialInventoryItem enriched = OAuthCredentialAdminService.withCapability(item);
+
+        assertFalse(enriched.providerRevokeSupported());
+        assertEquals(
+            "Provider-side revoke is only supported for GOOGLE; this credential is null",
+            enriched.providerRevokeUnsupportedReason()
+        );
+    }
+
+    @Test
+    @DisplayName("requireReauth clears owner tokens and returns redacted inventory with capability metadata")
     void requireReauthClearsOwnerTokensAndReturnsRedactedInventory() {
         UUID credentialId = UUID.fromString("11111111-2222-3333-4444-555555555555");
         UUID ownerId = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
@@ -72,7 +191,9 @@ class OAuthCredentialAdminServiceTest {
             false,
             null,
             LocalDateTime.parse("2026-05-01T09:00:00"),
-            LocalDateTime.parse("2026-05-06T10:00:00")
+            LocalDateTime.parse("2026-05-06T10:00:00"),
+            false,
+            null
         );
         when(oauthCredentialRepository.findOwnerReferenceById(credentialId))
             .thenReturn(Optional.of(new OAuthCredentialOwnerReference(credentialId, "MAIL_ACCOUNT", ownerId)));
@@ -80,7 +201,14 @@ class OAuthCredentialAdminServiceTest {
 
         OAuthCredentialInventoryItem result = oauthCredentialAdminService.requireReauth(credentialId);
 
-        assertEquals(item, result);
+        // After require-reauth the token state is wiped; capability falls into the
+        // env-managed-secrets branch (credentialKey configured, no stored token).
+        assertFalse(result.providerRevokeSupported());
+        assertEquals(
+            "Provider-side revoke requires a locally stored OAuth token; "
+                + "this credential row only references env-managed secrets",
+            result.providerRevokeUnsupportedReason()
+        );
         verify(oauthCredentialService).clearTokens("MAIL_ACCOUNT", ownerId);
     }
 
@@ -94,7 +222,7 @@ class OAuthCredentialAdminServiceTest {
     }
 
     @Test
-    @DisplayName("refreshNow refreshes owner token and returns redacted inventory")
+    @DisplayName("refreshNow refreshes owner token and returns redacted inventory with capability metadata")
     void refreshNowRefreshesOwnerTokenAndReturnsRedactedInventory() {
         UUID credentialId = UUID.fromString("11111111-2222-3333-4444-555555555555");
         UUID ownerId = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
@@ -112,7 +240,9 @@ class OAuthCredentialAdminServiceTest {
             true,
             LocalDateTime.parse("2026-05-06T12:00:00"),
             LocalDateTime.parse("2026-05-01T09:00:00"),
-            LocalDateTime.parse("2026-05-06T11:00:00")
+            LocalDateTime.parse("2026-05-06T11:00:00"),
+            false,
+            null
         );
         when(oauthCredentialRepository.findOwnerReferenceById(credentialId))
             .thenReturn(Optional.of(new OAuthCredentialOwnerReference(credentialId, "MAIL_ACCOUNT", ownerId)));
@@ -120,7 +250,8 @@ class OAuthCredentialAdminServiceTest {
 
         OAuthCredentialInventoryItem result = oauthCredentialAdminService.refreshNow(credentialId);
 
-        assertEquals(item, result);
+        assertTrue(result.providerRevokeSupported());
+        assertNull(result.providerRevokeUnsupportedReason());
         verify(oauthCredentialService).refreshAccessTokenNow("MAIL_ACCOUNT", ownerId);
     }
 
@@ -134,7 +265,7 @@ class OAuthCredentialAdminServiceTest {
     }
 
     @Test
-    @DisplayName("revokeProvider revokes owner tokens at provider and returns redacted inventory")
+    @DisplayName("revokeProvider revokes owner tokens at provider and returns redacted inventory with capability metadata")
     void revokeProviderRevokesOwnerTokensAndReturnsRedactedInventory() {
         UUID credentialId = UUID.fromString("11111111-2222-3333-4444-555555555555");
         UUID ownerId = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
@@ -152,7 +283,9 @@ class OAuthCredentialAdminServiceTest {
             false,
             null,
             LocalDateTime.parse("2026-05-01T09:00:00"),
-            LocalDateTime.parse("2026-05-07T10:00:00")
+            LocalDateTime.parse("2026-05-07T10:00:00"),
+            false,
+            null
         );
         when(oauthCredentialRepository.findOwnerReferenceById(credentialId))
             .thenReturn(Optional.of(new OAuthCredentialOwnerReference(credentialId, "MAIL_ACCOUNT", ownerId)));
@@ -160,7 +293,14 @@ class OAuthCredentialAdminServiceTest {
 
         OAuthCredentialInventoryItem result = oauthCredentialAdminService.revokeProvider(credentialId);
 
-        assertEquals(item, result);
+        // Post-revoke state has no stored tokens; capability collapses to the
+        // env-managed-secrets branch since this row carries a credentialKey.
+        assertFalse(result.providerRevokeSupported());
+        assertEquals(
+            "Provider-side revoke requires a locally stored OAuth token; "
+                + "this credential row only references env-managed secrets",
+            result.providerRevokeUnsupportedReason()
+        );
         verify(oauthCredentialService).revokeProviderTokens("MAIL_ACCOUNT", ownerId);
     }
 
@@ -171,5 +311,37 @@ class OAuthCredentialAdminServiceTest {
         when(oauthCredentialRepository.findOwnerReferenceById(credentialId)).thenReturn(Optional.empty());
 
         assertThrows(ResourceNotFoundException.class, () -> oauthCredentialAdminService.revokeProvider(credentialId));
+    }
+
+    /**
+     * Build an inventory row mirroring the repository projection: capability fields default
+     * to {@code (false, null)} so each test path exercises the service-layer enrichment.
+     */
+    private static OAuthCredentialInventoryItem inventory(
+        UUID id,
+        OAuthProviderType provider,
+        boolean credentialKeyConfigured,
+        boolean accessTokenStored,
+        boolean refreshTokenStored
+    ) {
+        boolean connected = accessTokenStored || refreshTokenStored;
+        return new OAuthCredentialInventoryItem(
+            id,
+            "MAIL_ACCOUNT",
+            UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
+            provider,
+            true,
+            false,
+            true,
+            credentialKeyConfigured,
+            accessTokenStored,
+            refreshTokenStored,
+            connected,
+            connected ? LocalDateTime.parse("2026-05-06T12:00:00") : null,
+            LocalDateTime.parse("2026-05-01T09:00:00"),
+            LocalDateTime.parse("2026-05-06T11:00:00"),
+            false,
+            null
+        );
     }
 }

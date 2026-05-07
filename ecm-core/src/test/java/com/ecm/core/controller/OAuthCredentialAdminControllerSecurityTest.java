@@ -108,7 +108,9 @@ class OAuthCredentialAdminControllerSecurityTest {
                 true,
                 LocalDateTime.parse("2026-05-06T10:15:30"),
                 LocalDateTime.parse("2026-05-01T09:00:00"),
-                LocalDateTime.parse("2026-05-06T10:00:00")
+                LocalDateTime.parse("2026-05-06T10:00:00"),
+                true,
+                null
             )
         ));
 
@@ -127,6 +129,10 @@ class OAuthCredentialAdminControllerSecurityTest {
             .andExpect(jsonPath("$[0].accessTokenStored", is(true)))
             .andExpect(jsonPath("$[0].refreshTokenStored", is(true)))
             .andExpect(jsonPath("$[0].connected", is(true)))
+            // Provider-revoke capability metadata: the frontend keys the Provider Revoke button
+            // off these two fields instead of hard-coding `provider === 'GOOGLE'`.
+            .andExpect(jsonPath("$[0].providerRevokeSupported", is(true)))
+            .andExpect(jsonPath("$[0].providerRevokeUnsupportedReason").doesNotExist())
             .andExpect(jsonPath("$[0].accessToken").doesNotExist())
             .andExpect(jsonPath("$[0].refreshToken").doesNotExist());
 
@@ -154,7 +160,10 @@ class OAuthCredentialAdminControllerSecurityTest {
                 false,
                 null,
                 LocalDateTime.parse("2026-05-01T09:00:00"),
-                LocalDateTime.parse("2026-05-06T10:00:00")
+                LocalDateTime.parse("2026-05-06T10:00:00"),
+                false,
+                "Provider-side revoke requires a locally stored OAuth token; "
+                    + "this credential row only references env-managed secrets"
             )
         );
 
@@ -164,6 +173,12 @@ class OAuthCredentialAdminControllerSecurityTest {
             .andExpect(jsonPath("$.connected", is(false)))
             .andExpect(jsonPath("$.accessTokenStored", is(false)))
             .andExpect(jsonPath("$.refreshTokenStored", is(false)))
+            .andExpect(jsonPath("$.providerRevokeSupported", is(false)))
+            .andExpect(jsonPath(
+                "$.providerRevokeUnsupportedReason",
+                is("Provider-side revoke requires a locally stored OAuth token; "
+                    + "this credential row only references env-managed secrets")
+            ))
             .andExpect(jsonPath("$.accessToken").doesNotExist())
             .andExpect(jsonPath("$.refreshToken").doesNotExist());
 
@@ -191,7 +206,9 @@ class OAuthCredentialAdminControllerSecurityTest {
                 true,
                 LocalDateTime.parse("2026-05-06T12:00:00"),
                 LocalDateTime.parse("2026-05-01T09:00:00"),
-                LocalDateTime.parse("2026-05-06T11:00:00")
+                LocalDateTime.parse("2026-05-06T11:00:00"),
+                true,
+                null
             )
         );
 
@@ -201,6 +218,8 @@ class OAuthCredentialAdminControllerSecurityTest {
             .andExpect(jsonPath("$.connected", is(true)))
             .andExpect(jsonPath("$.accessTokenStored", is(true)))
             .andExpect(jsonPath("$.refreshTokenStored", is(true)))
+            .andExpect(jsonPath("$.providerRevokeSupported", is(true)))
+            .andExpect(jsonPath("$.providerRevokeUnsupportedReason").doesNotExist())
             .andExpect(jsonPath("$.accessToken").doesNotExist())
             .andExpect(jsonPath("$.refreshToken").doesNotExist());
 
@@ -245,7 +264,10 @@ class OAuthCredentialAdminControllerSecurityTest {
                 false,
                 null,
                 LocalDateTime.parse("2026-05-01T09:00:00"),
-                LocalDateTime.parse("2026-05-07T10:00:00")
+                LocalDateTime.parse("2026-05-07T10:00:00"),
+                false,
+                "Provider-side revoke requires a locally stored OAuth token; "
+                    + "this credential row only references env-managed secrets"
             )
         );
 
@@ -255,6 +277,12 @@ class OAuthCredentialAdminControllerSecurityTest {
             .andExpect(jsonPath("$.connected", is(false)))
             .andExpect(jsonPath("$.accessTokenStored", is(false)))
             .andExpect(jsonPath("$.refreshTokenStored", is(false)))
+            .andExpect(jsonPath("$.providerRevokeSupported", is(false)))
+            .andExpect(jsonPath(
+                "$.providerRevokeUnsupportedReason",
+                is("Provider-side revoke requires a locally stored OAuth token; "
+                    + "this credential row only references env-managed secrets")
+            ))
             .andExpect(jsonPath("$.accessToken").doesNotExist())
             .andExpect(jsonPath("$.refreshToken").doesNotExist());
 
