@@ -196,7 +196,7 @@ public class PreviewQueueService {
             removeMemoryJob(existing);
         }
 
-        PreviewJob job = new PreviewJob(documentId, governanceKey, 0, Instant.now());
+        PreviewJob job = new PreviewJob(documentId, governanceKey, 0, Instant.now(), force);
         cancelRequestedByDocument.remove(documentId);
         activeGovernanceByDocument.put(documentId, governanceKey);
         queuedJobs.put(governanceKey, job);
@@ -500,6 +500,15 @@ public class PreviewQueueService {
                 removeMemoryJob(job);
                 return;
             }
+            if (shouldSkipSatisfiedMemoryJob(document, job.force())) {
+                log.info(
+                    "Skipped satisfied preview queue job for {} (status={})",
+                    documentId,
+                    resolveEffectivePreviewStatusForEvaluation(document)
+                );
+                removeMemoryJob(job);
+                return;
+            }
             PreviewFailurePolicyRegistry.PreviewFailurePolicy policy = resolvePolicy(document);
             int effectiveMaxAttempts = resolveMaxAttempts(policy);
 
@@ -738,7 +747,7 @@ public class PreviewQueueService {
     private void scheduleRetry(PreviewJob job, PreviewFailurePolicyRegistry.PreviewFailurePolicy policy) {
         int nextAttempts = job.attempts() + 1;
         Instant nextRunAt = Instant.now().plusMillis(computeRetryDelayMs(policy, nextAttempts));
-        PreviewJob nextJob = new PreviewJob(job.documentId(), job.governanceKey(), nextAttempts, nextRunAt);
+        PreviewJob nextJob = new PreviewJob(job.documentId(), job.governanceKey(), nextAttempts, nextRunAt, job.force());
         activeGovernanceByDocument.put(job.documentId(), job.governanceKey());
         queuedJobs.put(job.governanceKey(), nextJob);
         queue.add(nextJob);
@@ -989,6 +998,17 @@ public class PreviewQueueService {
         queuedJobs.remove(job.governanceKey(), job);
         activeGovernanceByDocument.remove(job.documentId(), job.governanceKey());
         queue.remove(job);
+    }
+
+    private boolean shouldSkipSatisfiedMemoryJob(Document document, boolean force) {
+        if (force || document == null) {
+            return false;
+        }
+        PreviewStatus status = resolveEffectivePreviewStatusForEvaluation(document);
+        if (status == PreviewStatus.UNSUPPORTED) {
+            return true;
+        }
+        return status == PreviewStatus.READY && isReadyRenditionUpToDate(document);
     }
 
     private boolean isMemoryCancelRequested(UUID documentId) {
@@ -1435,7 +1455,7 @@ public class PreviewQueueService {
     ) {
     }
 
-    private record PreviewJob(UUID documentId, String governanceKey, int attempts, Instant nextAttemptAt) {
+    private record PreviewJob(UUID documentId, String governanceKey, int attempts, Instant nextAttemptAt, boolean force) {
     }
 
     private void appendQueueTrace(PreviewResult result, String stage, String message) {

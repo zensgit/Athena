@@ -380,6 +380,114 @@ class PreviewQueueServiceTest {
     }
 
     @Test
+    void skipsQueuedMemoryJobWhenDocumentBecomesUnsupportedBeforeProcessing() throws Exception {
+        DocumentRepository documentRepository = mock(DocumentRepository.class);
+        PreviewService previewService = mock(PreviewService.class);
+        SearchIndexService searchIndexService = mock(SearchIndexService.class);
+        StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
+        PreviewTransformTraceBuffer previewTransformTraceBuffer = mock(PreviewTransformTraceBuffer.class);
+        PreviewFailurePolicyRegistry previewFailurePolicyRegistry = mock(PreviewFailurePolicyRegistry.class);
+        PreviewRenditionPreventionRegistry previewRenditionPreventionRegistry = mock(PreviewRenditionPreventionRegistry.class);
+        PreviewDeadLetterRegistry previewDeadLetterRegistry = mock(PreviewDeadLetterRegistry.class);
+        when(previewFailurePolicyRegistry.resolve(any(), any()))
+            .thenReturn(new PreviewFailurePolicyRegistry.PreviewFailurePolicy("default", "Default", 3, 60000L, 1.6d, 0L, true));
+        PreviewQueueService service = newPreviewQueueService(
+            documentRepository,
+            previewService,
+            searchIndexService,
+            redisTemplate,
+            previewTransformTraceBuffer,
+            previewFailurePolicyRegistry,
+            previewRenditionPreventionRegistry,
+            previewDeadLetterRegistry
+        );
+        ReflectionTestUtils.setField(service, "queueEnabled", true);
+        ReflectionTestUtils.setField(service, "batchSize", 1);
+
+        UUID documentId = UUID.randomUUID();
+        Document document = new Document();
+        document.setId(documentId);
+        document.setMimeType("application/pdf");
+        document.setPreviewStatus(PreviewStatus.FAILED);
+        document.setPreviewFailureReason("Timeout contacting preview service");
+
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        when(documentRepository.save(any(Document.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        PreviewQueueService.PreviewQueueStatus queued = service.enqueue(documentId, false);
+        assertTrue(queued.queued());
+
+        document.setMimeType("application/octet-stream");
+        document.setPreviewStatus(PreviewStatus.UNSUPPORTED);
+        document.setPreviewFailureReason("Preview not supported for mime type: application/octet-stream");
+        clearInvocations(previewService, previewDeadLetterRegistry);
+
+        service.processQueue();
+
+        verifyNoInteractions(previewService);
+        verify(previewDeadLetterRegistry, never()).record(any(), any(), any(), any(), any(), any(), anyInt());
+        assertEquals(0L, service.diagnosticsSnapshot(20).scheduledCount());
+        assertEquals(PreviewStatus.UNSUPPORTED, document.getPreviewStatus());
+    }
+
+    @Test
+    void forcedQueuedMemoryJobStillRunsWhenDocumentBecomesUnsupportedBeforeProcessing() throws Exception {
+        DocumentRepository documentRepository = mock(DocumentRepository.class);
+        PreviewService previewService = mock(PreviewService.class);
+        SearchIndexService searchIndexService = mock(SearchIndexService.class);
+        StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
+        PreviewTransformTraceBuffer previewTransformTraceBuffer = mock(PreviewTransformTraceBuffer.class);
+        PreviewFailurePolicyRegistry previewFailurePolicyRegistry = mock(PreviewFailurePolicyRegistry.class);
+        PreviewRenditionPreventionRegistry previewRenditionPreventionRegistry = mock(PreviewRenditionPreventionRegistry.class);
+        PreviewDeadLetterRegistry previewDeadLetterRegistry = mock(PreviewDeadLetterRegistry.class);
+        when(previewFailurePolicyRegistry.resolve(any(), any()))
+            .thenReturn(new PreviewFailurePolicyRegistry.PreviewFailurePolicy("default", "Default", 3, 60000L, 1.6d, 0L, true));
+        PreviewQueueService service = newPreviewQueueService(
+            documentRepository,
+            previewService,
+            searchIndexService,
+            redisTemplate,
+            previewTransformTraceBuffer,
+            previewFailurePolicyRegistry,
+            previewRenditionPreventionRegistry,
+            previewDeadLetterRegistry
+        );
+        ReflectionTestUtils.setField(service, "queueEnabled", true);
+        ReflectionTestUtils.setField(service, "batchSize", 1);
+        ReflectionTestUtils.setField(service, "runAsUser", "admin");
+
+        UUID documentId = UUID.randomUUID();
+        Document document = new Document();
+        document.setId(documentId);
+        document.setMimeType("application/pdf");
+        document.setPreviewStatus(PreviewStatus.FAILED);
+        document.setPreviewFailureReason("Timeout contacting preview service");
+
+        PreviewResult unsupportedResult = new PreviewResult();
+        unsupportedResult.setSupported(false);
+        unsupportedResult.setStatus(PreviewStatus.UNSUPPORTED.name());
+        unsupportedResult.setFailureReason("Preview not supported for mime type: application/octet-stream");
+        unsupportedResult.setMessage("Preview not supported for mime type: application/octet-stream");
+        unsupportedResult.setMimeType("application/octet-stream");
+
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        when(documentRepository.save(any(Document.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(previewService.generatePreview(document)).thenReturn(unsupportedResult);
+
+        PreviewQueueService.PreviewQueueStatus queued = service.enqueue(documentId, true);
+        assertTrue(queued.queued());
+
+        document.setMimeType("application/octet-stream");
+        document.setPreviewStatus(PreviewStatus.UNSUPPORTED);
+        document.setPreviewFailureReason("Preview not supported for mime type: application/octet-stream");
+
+        service.processQueue();
+
+        verify(previewService, times(1)).generatePreview(document);
+        assertEquals(0L, service.diagnosticsSnapshot(20).scheduledCount());
+    }
+
+    @Test
     void blocksEnqueueForPermanentFailureWhenNotForced() {
         DocumentRepository documentRepository = mock(DocumentRepository.class);
         PreviewService previewService = mock(PreviewService.class);
