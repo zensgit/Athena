@@ -89,15 +89,18 @@ dial unix /Users/chouhua/.docker/run/docker.sock: connect: no such file or direc
 
 ## Expected CI Impact
 
-The next GitHub Actions run should keep these already-green jobs green:
+GitHub Actions run `25505623564` on commit `9c7c308` passed all gates:
 
-- Backend Verify
-- Frontend Build & Test
-- Phase C Security Verification
-- Property Encryption Closeout Gate
-- Phase 5 Mocked Regression Gate
-- Acceptance Smoke
+| Job | Result |
+| --- | --- |
+| Backend Verify | Passed |
+| Frontend Build & Test | Passed |
+| Phase C Security Verification | Passed |
+| Property Encryption Closeout Gate | Passed |
+| Phase 5 Mocked Regression Gate | Passed |
+| Acceptance Smoke (3 admin pages) | Passed |
+| Frontend E2E Core Gate | Passed |
 
-The relevant target is `Frontend E2E Core Gate`, specifically the preview/search regression subset containing `e2e/search-preview-status.spec.ts`.
+The relevant target was `Frontend E2E Core Gate`, specifically the preview/search regression subset containing `e2e/search-preview-status.spec.ts`. It passed after the stale preview queue job fix.
 
-The expected behavioral change is that unsupported binary documents no longer regress from indexed `UNSUPPORTED` to indexed `PROCESSING` because of stale non-forced preview queue jobs.
+The verified behavioral change is that unsupported binary documents no longer regress from indexed `UNSUPPORTED` to indexed `PROCESSING` because of stale non-forced preview queue jobs.
