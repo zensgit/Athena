@@ -97,6 +97,24 @@ git diff --check
 
 Result: passed before commit.
 
+Remote CI:
+
+```bash
+gh run view 25469213928 --repo zensgit/Athena
+```
+
+Result: passed for commit `03bd0cd`.
+
+Green jobs:
+
+- Backend Verify
+- Frontend Build & Test
+- Phase C Security Verification
+- Frontend E2E Core Gate
+- Phase 5 Mocked Regression Gate
+- Acceptance Smoke (3 admin pages)
+- Property Encryption Closeout Gate
+
 ## Files Changed
 
 - `ecm-core/src/main/java/com/ecm/core/controller/OAuthCredentialAdminController.java`
