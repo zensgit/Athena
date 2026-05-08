@@ -164,6 +164,52 @@ class EmailNotificationServiceTest {
     }
 
     @Test
+    @DisplayName("sendSync: returns SendResult(true, null) on successful dispatch")
+    void sendSyncReturnsOkOnSuccess() {
+        mailSenderAvailable();
+        EmailTemplate template = new EmailTemplate();
+        template.setTemplateKey("k");
+        template.setLocale("default");
+        template.setSubjectTemplate("S");
+        template.setBodyTemplate("B");
+        template.setHtmlBody(false);
+        when(templateRepository.findByTemplateKeyAndLocaleInOrderByLocaleAsc(eq("k"), any()))
+            .thenReturn(List.of(template));
+        when(mailSender.createMimeMessage()).thenReturn(new MimeMessage((Session) null));
+
+        EmailNotificationService.SendResult result =
+            service.sendSync("k", "u@example.com", "default", Map.of());
+
+        assertThat(result.ok()).isTrue();
+        assertThat(result.error()).isNull();
+        verify(mailSender, times(1)).send(any(MimeMessage.class));
+    }
+
+    @Test
+    @DisplayName("sendSync: returns SendResult(false, 'SMTP send failed: ...') when MailException is thrown")
+    void sendSyncReturnsFailureWhenMailExceptionThrown() {
+        mailSenderAvailable();
+        EmailTemplate template = new EmailTemplate();
+        template.setTemplateKey("k");
+        template.setLocale("default");
+        template.setSubjectTemplate("S");
+        template.setBodyTemplate("B");
+        template.setHtmlBody(false);
+        when(templateRepository.findByTemplateKeyAndLocaleInOrderByLocaleAsc(eq("k"), any()))
+            .thenReturn(List.of(template));
+        when(mailSender.createMimeMessage()).thenReturn(new MimeMessage((Session) null));
+        org.mockito.Mockito.doThrow(new MailSendException("smtp down"))
+            .when(mailSender).send(any(MimeMessage.class));
+
+        EmailNotificationService.SendResult result =
+            service.sendSync("k", "u@example.com", "default", Map.of());
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.error()).startsWith("SMTP send failed:");
+        assertThat(result.error()).contains("smtp down");
+    }
+
+    @Test
     @DisplayName("resolveTemplate: prefers exact locale, then language, then default")
     void resolvesTemplateByLocale_withFallbacks() {
         EmailTemplate zhCN = new EmailTemplate();

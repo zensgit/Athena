@@ -21,10 +21,14 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
+import static org.hamcrest.Matchers.is;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.ecm.core.exception.ResourceNotFoundException;
 
 @WebMvcTest(controllers = SiteInvitationController.class)
 @ContextConfiguration(classes = {
@@ -93,7 +97,8 @@ class SiteInvitationControllerSecurityTest {
                 "admin",
                 LocalDateTime.of(2026, 5, 3, 9, 0),
                 LocalDateTime.of(2026, 4, 26, 10, 0),
-                LocalDateTime.of(2026, 4, 26, 9, 0)
+                LocalDateTime.of(2026, 4, 26, 9, 0),
+                null, null, null, 0, null
             )
         );
 
@@ -103,5 +108,90 @@ class SiteInvitationControllerSecurityTest {
                     { "token": "abc123token" }
                     """))
             .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("unauthenticated POST resend returns 401")
+    void unauthenticatedResendReturns401() throws Exception {
+        mockMvc.perform(post("/api/v1/sites/finance/invitations/{id}/resend",
+                UUID.fromString("11111111-2222-3333-4444-555555555555")))
+            .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    @DisplayName("resend non-PENDING invitation maps IllegalArgumentException to 400")
+    void resendNonPendingMapsTo400() throws Exception {
+        UUID invitationId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        when(invitationService.resend("finance", invitationId)).thenThrow(
+            new IllegalArgumentException("Only PENDING invitations can be resent; current status: ACCEPTED")
+        );
+
+        mockMvc.perform(post("/api/v1/sites/finance/invitations/{id}/resend", invitationId))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    @DisplayName("resend without manager/admin permission maps SecurityException to 403")
+    void resendWithoutPermissionMapsTo403() throws Exception {
+        UUID invitationId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        when(invitationService.resend("finance", invitationId)).thenThrow(
+            new SecurityException("User is not a site manager or admin")
+        );
+
+        mockMvc.perform(post("/api/v1/sites/finance/invitations/{id}/resend", invitationId))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    @DisplayName("resend unknown invitation maps ResourceNotFoundException to 404")
+    void resendUnknownInvitationMapsTo404() throws Exception {
+        UUID invitationId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        when(invitationService.resend("finance", invitationId)).thenThrow(
+            new ResourceNotFoundException("Invitation not found: " + invitationId)
+        );
+
+        mockMvc.perform(post("/api/v1/sites/finance/invitations/{id}/resend", invitationId))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    @DisplayName("admin/manager resend returns 200 with send-tracking fields populated")
+    void adminResendReturns200WithSendTracking() throws Exception {
+        UUID invitationId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        UUID siteUuid = UUID.randomUUID();
+        when(invitationService.resend("finance", invitationId)).thenReturn(
+            new SiteInvitationService.SiteInvitationDto(
+                invitationId,
+                siteUuid,
+                "Finance Team",
+                "alice@example.com",
+                null,
+                "CONSUMER",
+                "PENDING",
+                null,
+                "admin",
+                LocalDateTime.of(2026, 5, 14, 9, 0),
+                null,
+                LocalDateTime.of(2026, 5, 7, 9, 0),
+                LocalDateTime.of(2026, 5, 7, 10, 0),
+                "SENT",
+                null,
+                2,
+                LocalDateTime.of(2026, 5, 7, 10, 0)
+            )
+        );
+
+        mockMvc.perform(post("/api/v1/sites/finance/invitations/{id}/resend", invitationId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id", is(invitationId.toString())))
+            .andExpect(jsonPath("$.lastSendStatus", is("SENT")))
+            .andExpect(jsonPath("$.lastSendError").doesNotExist())
+            .andExpect(jsonPath("$.sendAttemptCount", is(2)))
+            .andExpect(jsonPath("$.lastSentAt", is("2026-05-07T10:00:00")))
+            .andExpect(jsonPath("$.lastSendAttemptAt", is("2026-05-07T10:00:00")));
     }
 }

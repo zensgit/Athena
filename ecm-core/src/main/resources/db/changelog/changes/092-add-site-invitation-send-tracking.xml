@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="092-add-site-invitation-send-tracking" author="invitation-resend-backend">
+        <comment>Per-invitation email send-status tracking (manual resend, no auto retry worker in v1)</comment>
+
+        <addColumn tableName="site_invitations">
+            <column name="last_send_attempt_at" type="timestamp"/>
+            <column name="last_send_status" type="varchar(20)"/>
+            <column name="last_send_error" type="text"/>
+            <column name="send_attempt_count" type="int" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_sent_at" type="timestamp"/>
+        </addColumn>
+
+        <rollback>
+            <dropColumn tableName="site_invitations" columnName="last_sent_at"/>
+            <dropColumn tableName="site_invitations" columnName="send_attempt_count"/>
+            <dropColumn tableName="site_invitations" columnName="last_send_error"/>
+            <dropColumn tableName="site_invitations" columnName="last_send_status"/>
+            <dropColumn tableName="site_invitations" columnName="last_send_attempt_at"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

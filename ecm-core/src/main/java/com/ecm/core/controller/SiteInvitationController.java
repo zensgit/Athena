@@ -57,6 +57,19 @@ public class SiteInvitationController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping("/api/v1/sites/{siteId}/invitations/{invitationId}/resend")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(
+        summary = "Resend a site invitation email",
+        description = "Re-attempt sending the invitation email (manager or admin only; PENDING only)"
+    )
+    public ResponseEntity<SiteInvitationDto> resend(
+        @PathVariable String siteId,
+        @PathVariable UUID invitationId
+    ) {
+        return ResponseEntity.ok(invitationService.resend(siteId, invitationId));
+    }
+
     // ---- token-based endpoints (any authenticated user) ----------------------
 
     @PostMapping("/api/v1/invitations/accept")

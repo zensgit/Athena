@@ -55,7 +55,8 @@ class SiteInvitationControllerTest {
                 "admin",
                 LocalDateTime.of(2026, 5, 3, 9, 0),
                 null,
-                LocalDateTime.of(2026, 4, 26, 9, 0)
+                LocalDateTime.of(2026, 4, 26, 9, 0),
+                null, null, null, 0, null
             )
         ));
 
@@ -88,6 +89,11 @@ class SiteInvitationControllerTest {
                 "admin",
                 LocalDateTime.of(2026, 5, 3, 9, 0),
                 null,
+                LocalDateTime.of(2026, 4, 26, 9, 0),
+                LocalDateTime.of(2026, 4, 26, 9, 0),
+                "SENT",
+                null,
+                1,
                 LocalDateTime.of(2026, 4, 26, 9, 0)
             )
         );
@@ -131,7 +137,8 @@ class SiteInvitationControllerTest {
                 "admin",
                 LocalDateTime.of(2026, 5, 3, 9, 0),
                 LocalDateTime.of(2026, 4, 26, 10, 0),
-                LocalDateTime.of(2026, 4, 26, 9, 0)
+                LocalDateTime.of(2026, 4, 26, 9, 0),
+                null, null, null, 0, null
             )
         );
 
@@ -164,7 +171,8 @@ class SiteInvitationControllerTest {
                 "admin",
                 LocalDateTime.of(2026, 5, 3, 9, 0),
                 null,
-                LocalDateTime.of(2026, 4, 26, 9, 0)
+                LocalDateTime.of(2026, 4, 26, 9, 0),
+                null, null, null, 0, null
             )
         );
 

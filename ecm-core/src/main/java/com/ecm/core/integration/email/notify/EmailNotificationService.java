@@ -39,39 +39,52 @@ public class EmailNotificationService {
     @Value("${ecm.email.from-address:}")
     private String fromAddress;
 
-    @Async
-    public void send(
+    /**
+     * Outcome of a synchronous send. {@code ok=true} means the underlying
+     * JavaMailSender accepted the message. {@code error} is null on success
+     * and carries a stable, human-readable reason on failure (caller may
+     * persist or display it).
+     */
+    public record SendResult(boolean ok, String error) {}
+
+    /**
+     * Synchronous send. Returns deterministic {@link SendResult} so callers
+     * (e.g. SiteInvitationService) can record per-recipient outcomes. The
+     * legacy {@link #send(String, String, String, Map)} keeps fire-and-forget
+     * semantics and simply ignores the result.
+     */
+    public SendResult sendSync(
         String templateKey,
         String toAddress,
         String preferredLocale,
         Map<String, Object> variables
     ) {
         if (!emailEnabled) {
-            log.debug("send: ecm.email.enabled=false; skipping templateKey={}", templateKey);
-            return;
+            log.debug("sendSync: ecm.email.enabled=false; skipping templateKey={}", templateKey);
+            return new SendResult(false, "ecm.email.enabled is false");
         }
         if (toAddress == null || toAddress.isBlank()) {
-            log.warn("send: missing recipient for templateKey={}", templateKey);
-            return;
+            log.warn("sendSync: missing recipient for templateKey={}", templateKey);
+            return new SendResult(false, "recipient address is blank");
         }
         if (fromAddress == null || fromAddress.isBlank()) {
-            log.warn("send: ecm.email.from-address not configured; skipping templateKey={}", templateKey);
-            return;
+            log.warn("sendSync: ecm.email.from-address not configured; skipping templateKey={}", templateKey);
+            return new SendResult(false, "ecm.email.from-address is not configured");
         }
         JavaMailSender mailSender = mailSenderProvider.getIfAvailable();
         if (mailSender == null) {
-            log.warn("send: JavaMailSender not configured; skipping templateKey={}", templateKey);
-            return;
+            log.warn("sendSync: JavaMailSender not configured; skipping templateKey={}", templateKey);
+            return new SendResult(false, "JavaMailSender is not configured");
         }
 
         EmailTemplate template = resolveTemplate(templateKey, preferredLocale);
         if (template == null) {
             log.warn(
-                "send: template not found key={} locale={}",
+                "sendSync: template not found key={} locale={}",
                 templateKey,
                 preferredLocale
             );
-            return;
+            return new SendResult(false, "template not found: " + templateKey + " for locale fallback");
         }
 
         Properties props = toProperties(variables);
@@ -90,25 +103,47 @@ public class EmailNotificationService {
             mailSender.send(message);
 
             log.info(
-                "send: dispatched templateKey={} subjectLen={} bodyLen={}",
+                "sendSync: dispatched templateKey={} subjectLen={} bodyLen={}",
                 templateKey,
                 subject.length(),
                 body.length()
             );
+            return new SendResult(true, null);
         } catch (MailException ex) {
             log.warn(
-                "send: mail dispatch failed templateKey={} cause={}",
+                "sendSync: mail dispatch failed templateKey={} cause={}",
                 templateKey,
                 ex.getMessage()
             );
+            return new SendResult(false, "SMTP send failed: " + ex.getMessage());
         } catch (Exception ex) {
             log.warn(
-                "send: unexpected failure templateKey={} cause={}",
+                "sendSync: unexpected failure templateKey={} cause={}",
                 templateKey,
                 ex.getMessage(),
                 ex
             );
+            return new SendResult(
+                false,
+                "unexpected send failure: " + ex.getClass().getSimpleName() + " " + ex.getMessage()
+            );
         }
+    }
+
+    /**
+     * Legacy fire-and-forget send. Kept signature-compatible for existing
+     * callers (e.g. RM report-preset notifications) which never inspected
+     * the outcome. New callers that need success/failure tracking should
+     * call {@link #sendSync(String, String, String, Map)} directly.
+     */
+    @Async
+    public void send(
+        String templateKey,
+        String toAddress,
+        String preferredLocale,
+        Map<String, Object> variables
+    ) {
+        sendSync(templateKey, toAddress, preferredLocale, variables);
     }
 
     EmailTemplate resolveTemplate(String templateKey, String preferredLocale) {

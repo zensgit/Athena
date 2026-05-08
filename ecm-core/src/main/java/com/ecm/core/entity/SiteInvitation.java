@@ -57,11 +57,38 @@ public class SiteInvitation extends BaseEntity {
     @Column(name = "accepted_at")
     private LocalDateTime acceptedAt;
 
+    // -------------------------------------------------- send-status tracking (migration 092)
+
+    @Column(name = "last_send_attempt_at")
+    private LocalDateTime lastSendAttemptAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "last_send_status", length = 20)
+    private LastSendStatus lastSendStatus;
+
+    @Column(name = "last_send_error", columnDefinition = "TEXT")
+    private String lastSendError;
+
+    @Column(name = "send_attempt_count", nullable = false)
+    private int sendAttemptCount = 0;
+
+    @Column(name = "last_sent_at")
+    private LocalDateTime lastSentAt;
+
     public enum Status {
         PENDING,
         ACCEPTED,
         REJECTED,
         EXPIRED,
         CANCELLED
+    }
+
+    /**
+     * Outcome of the most recent attempt to dispatch the invitation email.
+     * NULL means "no attempt has been made yet" — there is intentionally no NEVER value.
+     */
+    public enum LastSendStatus {
+        SENT,
+        FAILED
     }
 }
