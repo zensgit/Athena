@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   Box,
   Button,
   ButtonGroup,
@@ -75,6 +76,8 @@ import mailAutomationService, {
   MailDiagnosticsSortOrder,
   MailRuntimeMetrics,
   MailProviderPreset,
+  EmailTestSmtpResponse,
+  TEST_SMTP_UNEXPECTED_RESPONSE_MESSAGE,
 } from 'services/mailAutomationService';
 import tagService from 'services/tagService';
 import nodeService from 'services/nodeService';
@@ -87,6 +90,20 @@ interface TagOption {
 
 const normalizeCredentialKey = (value: string) =>
   value.trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+
+// Mirrors the helper in OAuthCredentialAdminPage so backend error messages
+// (axios error envelope or thrown Error) surface to the operator instead of
+// being swallowed. Used by the Test SMTP dialog's error path.
+const resolveErrorMessage = (err: unknown, fallback: string): string => {
+  const responseMessage = (err as { response?: { data?: { message?: unknown } } })?.response?.data?.message;
+  if (typeof responseMessage === 'string' && responseMessage.trim()) {
+    return responseMessage.trim();
+  }
+  if (err instanceof Error && err.message) {
+    return err.message;
+  }
+  return fallback;
+};
 
 const formatMissingOAuthKeys = (keys?: string[]) => {
   if (!keys || keys.length === 0) {
@@ -281,6 +298,14 @@ const MailAutomationPage: React.FC = () => {
   const [editingAccount, setEditingAccount] = useState<MailAccount | null>(null);
   const [providerPresets, setProviderPresets] = useState<MailProviderPreset[]>([]);
   const [selectedProviderPresetId, setSelectedProviderPresetId] = useState<string>('');
+
+  // Test SMTP dialog (admin-only diagnostic, gated by the backend).
+  const [testSmtpDialogOpen, setTestSmtpDialogOpen] = useState(false);
+  const [testSmtpRecipient, setTestSmtpRecipient] = useState('');
+  const [testSmtpSubmitting, setTestSmtpSubmitting] = useState(false);
+  const [testSmtpResult, setTestSmtpResult] = useState<EmailTestSmtpResponse | null>(null);
+  const [testSmtpError, setTestSmtpError] = useState<string | null>(null);
+  const [testSmtpDiagnostic, setTestSmtpDiagnostic] = useState<string | null>(null);
 
   const [ruleDialogOpen, setRuleDialogOpen] = useState(false);
   const [ruleForm, setRuleForm] = useState(DEFAULT_RULE_FORM);
@@ -1789,6 +1814,69 @@ const MailAutomationPage: React.FC = () => {
     }));
   };
 
+  // Selected preset (or null for Custom). Used to render the read-only SMTP
+  // defaults block under the IMAP fields. SMTP values are not auto-applied;
+  // they are application-level config (spring.mail.*), not per-account.
+  const selectedProviderPreset = useMemo(() => {
+    if (!selectedProviderPresetId) {
+      return null;
+    }
+    return providerPresets.find((entry) => entry.id === selectedProviderPresetId) || null;
+  }, [providerPresets, selectedProviderPresetId]);
+
+  const openTestSmtpDialog = () => {
+    setTestSmtpRecipient('');
+    setTestSmtpResult(null);
+    setTestSmtpError(null);
+    setTestSmtpDiagnostic(null);
+    setTestSmtpSubmitting(false);
+    setTestSmtpDialogOpen(true);
+  };
+
+  const closeTestSmtpDialog = () => {
+    if (testSmtpSubmitting) {
+      return;
+    }
+    setTestSmtpDialogOpen(false);
+  };
+
+  const isTestSmtpRecipientValid = (value: string) => {
+    const trimmed = value.trim();
+    return trimmed.length > 0 && trimmed.includes('@');
+  };
+
+  const handleSubmitTestSmtp = async () => {
+    const trimmed = testSmtpRecipient.trim();
+    if (!isTestSmtpRecipientValid(trimmed)) {
+      return;
+    }
+    setTestSmtpSubmitting(true);
+    setTestSmtpError(null);
+    setTestSmtpDiagnostic(null);
+    setTestSmtpResult(null);
+    try {
+      const response = await mailAutomationService.testSmtp({ to: trimmed });
+      // Defense in depth: even though the service shape-guards, a test that
+      // mocks the service to return null (Phase 5 HTML fallback) bypasses
+      // that guard. Re-validate here so the operator sees the synthetic
+      // message instead of a runtime crash on `response.ok`. Reuse the
+      // service-exported constant so the literal lives in one place.
+      if (!response || typeof (response as { ok?: unknown }).ok !== 'boolean') {
+        throw new Error(TEST_SMTP_UNEXPECTED_RESPONSE_MESSAGE);
+      }
+      if (response.ok) {
+        setTestSmtpResult(response);
+      } else {
+        setTestSmtpError(response.message || 'SMTP test failed.');
+        setTestSmtpDiagnostic(response.diagnostic ?? null);
+      }
+    } catch (err) {
+      setTestSmtpError(resolveErrorMessage(err, 'Failed to send SMTP test email.'));
+    } finally {
+      setTestSmtpSubmitting(false);
+    }
+  };
+
   const handleSaveAccount = async () => {
     try {
       if (!accountForm.name || !accountForm.host || !accountForm.username || !accountForm.port) {
@@ -2324,14 +2412,22 @@ const MailAutomationPage: React.FC = () => {
     <Box maxWidth={1100}>
       <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
         <Typography variant="h5">Mail Automation</Typography>
-        <Button
-          variant="outlined"
-          startIcon={fetching ? <CircularProgress size={16} /> : <Refresh />}
-          onClick={handleTriggerFetch}
-          disabled={fetching}
-        >
-          Trigger Fetch
-        </Button>
+        <Stack direction="row" spacing={1}>
+          <Button
+            variant="outlined"
+            onClick={openTestSmtpDialog}
+          >
+            Test SMTP
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={fetching ? <CircularProgress size={16} /> : <Refresh />}
+            onClick={handleTriggerFetch}
+            disabled={fetching}
+          >
+            Trigger Fetch
+          </Button>
+        </Stack>
       </Box>
 
       {loading ? (
@@ -4596,6 +4692,31 @@ const MailAutomationPage: React.FC = () => {
                 ))}
               </Select>
             </FormControl>
+            {selectedProviderPreset && (
+              // Read-only SMTP defaults for the selected preset. SMTP is
+              // application-level config (spring.mail.*), not per-account, so
+              // we surface the values for the operator to copy rather than
+              // adding form fields. See SMTP_PRESET_AND_TEST_UI design doc.
+              <Alert
+                severity="info"
+                variant="outlined"
+                data-testid="smtp-defaults-block"
+              >
+                <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
+                  SMTP defaults for this preset (not auto-applied):
+                </Typography>
+                <Typography variant="body2" sx={{ mb: 0.5 }}>
+                  Host <code>{selectedProviderPreset.smtpHost}</code>
+                  {' · '}Port <code>{selectedProviderPreset.smtpPort}</code>
+                  {' · '}Security <code>{selectedProviderPreset.smtpSecurity}</code>
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Set these in <code>spring.mail.host</code> / <code>spring.mail.port</code> /
+                  {' '}<code>spring.mail.properties.mail.smtp.&lt;...&gt;</code> (or use the Test SMTP
+                  control to verify) if you want Athena to send mail via this provider.
+                </Typography>
+              </Alert>
+            )}
             {isOauthAccount && (
               <>
                 <FormControl size="small" fullWidth>
@@ -4743,6 +4864,79 @@ const MailAutomationPage: React.FC = () => {
         <DialogActions>
           <Button onClick={() => setAccountDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={handleSaveAccount}>Save</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={testSmtpDialogOpen}
+        onClose={closeTestSmtpDialog}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Test SMTP</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} mt={1}>
+            <Typography variant="body2" color="text.secondary">
+              Sends a test email through the configured <code>spring.mail.*</code> SMTP
+              transport. The endpoint is admin-only and runs even when the
+              outbound mail feature is disabled; failures return a diagnostic
+              instead of erroring.
+            </Typography>
+            <TextField
+              label="Recipient email"
+              value={testSmtpRecipient}
+              onChange={(event) => setTestSmtpRecipient(event.target.value)}
+              size="small"
+              fullWidth
+              autoFocus
+              disabled={testSmtpSubmitting}
+              inputProps={{ 'data-testid': 'test-smtp-recipient' }}
+            />
+            {testSmtpResult && testSmtpResult.ok && (
+              <Alert severity="success" data-testid="test-smtp-success">
+                {`Sent! SMTP ${testSmtpResult.smtpHost}:${testSmtpResult.smtpPort} from ${testSmtpResult.fromAddress}`}
+              </Alert>
+            )}
+            {testSmtpError && (
+              <Alert severity="error" data-testid="test-smtp-error">
+                <Typography variant="body2">{testSmtpError}</Typography>
+                {testSmtpDiagnostic && (
+                  <Box
+                    component="pre"
+                    data-testid="test-smtp-diagnostic"
+                    sx={{
+                      mt: 1,
+                      mb: 0,
+                      p: 1,
+                      backgroundColor: 'rgba(0, 0, 0, 0.06)',
+                      fontSize: '0.75rem',
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
+                      maxHeight: 200,
+                      overflow: 'auto',
+                    }}
+                  >
+                    {testSmtpDiagnostic}
+                  </Box>
+                )}
+              </Alert>
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeTestSmtpDialog} disabled={testSmtpSubmitting}>
+            {testSmtpResult && testSmtpResult.ok ? 'Close' : 'Cancel'}
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleSubmitTestSmtp}
+            disabled={
+              testSmtpSubmitting || !isTestSmtpRecipientValid(testSmtpRecipient)
+            }
+            startIcon={testSmtpSubmitting ? <CircularProgress size={16} /> : undefined}
+          >
+            Send test
+          </Button>
         </DialogActions>
       </Dialog>
 

@@ -371,13 +371,45 @@ export type MailProviderPresetId =
   | 'MAIL_263'
   | 'MAIL_263_OVERSEAS';
 
+export type MailTransportSecurity = 'SSL' | 'STARTTLS' | 'NONE';
+
 export interface MailProviderPreset {
   id: MailProviderPresetId;
   label: string;
   imapHost: string;
   imapPort: number;
-  imapSecurity: 'SSL' | 'STARTTLS' | 'NONE';
+  imapSecurity: MailTransportSecurity;
+  smtpHost: string;
+  smtpPort: number;
+  smtpSecurity: MailTransportSecurity;
 }
+
+export interface EmailTestSmtpRequest {
+  to: string;
+}
+
+export interface EmailTestSmtpResponse {
+  ok: boolean;
+  message: string;
+  smtpHost: string;
+  smtpPort: number;
+  fromAddress: string;
+  diagnostic: string | null;
+}
+
+// Phase 5 Mocked harness can serve SPA index.html with HTTP 200 for unmocked
+// routes. A naive consumer would crash on `response.ok`. Surface a
+// recognizable synthetic error so the dialog's error path renders a sensible
+// operator-facing message instead. See feedback_phase5_mocked_html_fallback.md.
+export const TEST_SMTP_UNEXPECTED_RESPONSE_MESSAGE =
+  'Test SMTP endpoint returned an unexpected response. Mocked CI gate may not cover it; runtime configuration may be missing.';
+
+const isTestSmtpResponse = (value: unknown): value is EmailTestSmtpResponse => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  return typeof (value as { ok?: unknown }).ok === 'boolean';
+};
 
 class MailAutomationService {
   async listAccounts(): Promise<MailAccount[]> {
@@ -578,7 +610,19 @@ class MailAutomationService {
   }
 
   async listProviderPresets(): Promise<MailProviderPreset[]> {
-    return api.get<MailProviderPreset[]>('/integration/mail/provider-presets');
+    // Defensive shape guard: Phase 5 Mocked may serve SPA HTML for unmocked
+    // routes. Returning an empty list lets the page render the Custom option
+    // instead of crashing. The page also guards via Array.isArray.
+    const result = await api.get<MailProviderPreset[]>('/integration/mail/provider-presets');
+    return Array.isArray(result) ? result : [];
+  }
+
+  async testSmtp(payload: EmailTestSmtpRequest): Promise<EmailTestSmtpResponse> {
+    const result = await api.post<EmailTestSmtpResponse>('/admin/email/test-smtp', payload);
+    if (!isTestSmtpResponse(result)) {
+      throw new Error(TEST_SMTP_UNEXPECTED_RESPONSE_MESSAGE);
+    }
+    return result;
   }
 }
 

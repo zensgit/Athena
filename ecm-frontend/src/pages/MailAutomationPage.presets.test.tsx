@@ -62,11 +62,11 @@ const mockedMailService = mailAutomationService as jest.Mocked<typeof mailAutoma
 // live in the backend; this fixture mirrors that shape so the page wiring is
 // exercised against realistic data without duplicating the canonical values.
 const PRESET_FIXTURE: MailProviderPreset[] = [
-  { id: 'ALIYUN_QIYE', label: '阿里云企业邮箱', imapHost: 'imap.qiye.aliyun.com', imapPort: 993, imapSecurity: 'SSL' },
-  { id: 'TENCENT_EXMAIL', label: '腾讯企业邮箱', imapHost: 'imap.exmail.qq.com', imapPort: 993, imapSecurity: 'SSL' },
-  { id: 'TENCENT_EXMAIL_OVERSEAS', label: '腾讯企业邮箱（海外）', imapHost: 'hwimap.exmail.qq.com', imapPort: 993, imapSecurity: 'SSL' },
-  { id: 'MAIL_263', label: '263 企业邮箱', imapHost: 'imap.263.net', imapPort: 993, imapSecurity: 'SSL' },
-  { id: 'MAIL_263_OVERSEAS', label: '263 企业邮箱（海外）', imapHost: 'imapw.263.net', imapPort: 993, imapSecurity: 'SSL' },
+  { id: 'ALIYUN_QIYE', label: '阿里云企业邮箱', imapHost: 'imap.qiye.aliyun.com', imapPort: 993, imapSecurity: 'SSL', smtpHost: 'smtp.qiye.aliyun.com', smtpPort: 465, smtpSecurity: 'SSL' },
+  { id: 'TENCENT_EXMAIL', label: '腾讯企业邮箱', imapHost: 'imap.exmail.qq.com', imapPort: 993, imapSecurity: 'SSL', smtpHost: 'smtp.exmail.qq.com', smtpPort: 465, smtpSecurity: 'SSL' },
+  { id: 'TENCENT_EXMAIL_OVERSEAS', label: '腾讯企业邮箱（海外）', imapHost: 'hwimap.exmail.qq.com', imapPort: 993, imapSecurity: 'SSL', smtpHost: 'hwsmtp.exmail.qq.com', smtpPort: 465, smtpSecurity: 'SSL' },
+  { id: 'MAIL_263', label: '263 企业邮箱', imapHost: 'imap.263.net', imapPort: 993, imapSecurity: 'SSL', smtpHost: 'smtp.263.net', smtpPort: 465, smtpSecurity: 'SSL' },
+  { id: 'MAIL_263_OVERSEAS', label: '263 企业邮箱（海外）', imapHost: 'imapw.263.net', imapPort: 993, imapSecurity: 'SSL', smtpHost: 'smtpw.263.net', smtpPort: 465, smtpSecurity: 'SSL' },
 ];
 
 const setupBaselineMocks = () => {
@@ -256,5 +256,45 @@ describe('MailAutomationPage provider preset dropdown', () => {
     const listbox = await screen.findByRole('listbox');
     expect(within(listbox).getByText('Custom')).toBeTruthy();
     expect(within(listbox).queryByText('dev server fallback')).toBeNull();
+  });
+
+  test('selecting a preset reveals the read-only SMTP defaults block from the fixture', async () => {
+    const aliyun = PRESET_FIXTURE.find((entry) => entry.id === 'ALIYUN_QIYE')!;
+
+    render(<MailAutomationPage />);
+
+    const dialog = await openAccountDialog();
+    await within(dialog).findByRole('combobox', { name: 'Provider preset' });
+
+    // Block is hidden until a preset is selected.
+    expect(within(dialog).queryByTestId('smtp-defaults-block')).toBeNull();
+
+    await pickPreset(dialog, aliyun.label);
+
+    const smtpBlock = await within(dialog).findByTestId('smtp-defaults-block');
+    expect(within(smtpBlock).getByText(aliyun.smtpHost)).toBeTruthy();
+    expect(within(smtpBlock).getByText(String(aliyun.smtpPort))).toBeTruthy();
+    expect(within(smtpBlock).getByText(aliyun.smtpSecurity)).toBeTruthy();
+    expect(
+      within(smtpBlock).getByText(/SMTP defaults for this preset \(not auto-applied\):/),
+    ).toBeTruthy();
+  });
+
+  test('switching back to Custom hides the SMTP defaults block', async () => {
+    const tencent = PRESET_FIXTURE.find((entry) => entry.id === 'TENCENT_EXMAIL')!;
+
+    render(<MailAutomationPage />);
+
+    const dialog = await openAccountDialog();
+    await within(dialog).findByRole('combobox', { name: 'Provider preset' });
+
+    await pickPreset(dialog, tencent.label);
+    await within(dialog).findByTestId('smtp-defaults-block');
+
+    await pickPreset(dialog, 'Custom');
+
+    await waitFor(() => {
+      expect(within(dialog).queryByTestId('smtp-defaults-block')).toBeNull();
+    });
   });
 });
