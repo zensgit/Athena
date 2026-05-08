@@ -14,7 +14,9 @@ Athena Mail Automation now ships preset metadata for Chinese enterprise mailboxe
 
 This document is the operator-facing companion to that work. It captures the provider-side prerequisites the operator must complete before an Athena mail account will succeed, and the manual smoke checklist to run after creating the account.
 
-The preset metadata only carries IMAP host / port / security defaults. SMTP values are documented here for completeness, but Athena Mail Automation v1 is IMAP-fetch only and does not currently send mail through these providers. See the "Out of scope" section below.
+The preset metadata carries IMAP host / port / security defaults; the same `GET /api/v1/integration/mail/provider-presets` endpoint now also exposes the SMTP host / port / security defaults on each preset row (`smtpHost`, `smtpPort`, `smtpSecurity`), so operators can read the SMTP defaults straight from the admin UI's preset dropdown without consulting this document. The Mail Automation admin page renders a read-only SMTP defaults block under the preset dropdown when a preset is selected. SMTP values continue to be documented here as the canonical operator reference and as the cross-check for the values returned by the backend.
+
+Athena Mail Automation v1 still does not send notification mail through the per-account SMTP credentials configured on a `MailAccount`. The SMTP defaults are exposed for two purposes: (a) so an operator wiring the application's outbound `spring.mail.*` settings against one of these providers can see the defaults next to the IMAP defaults, and (b) so the new admin Test SMTP control (see "Verifying SMTP after configuration" below) can be cross-checked against the canonical host/port/security combinations.
 
 ## Common prerequisites
 
@@ -35,6 +37,7 @@ For all five presets the IMAP security on port 993 is implicit TLS (SSL). The 14
 
 - **IMAP host:** `imap.qiye.aliyun.com` **Port:** `993` **Security:** `SSL`
 - **SMTP host:** `smtp.qiye.aliyun.com` **Port:** `465` **Security:** `SSL`
+  - Source: [help.aliyun.com 2937082 — IMAP/SMTP 配置](https://help.aliyun.com/zh/document_detail/2937082.html).
 - **Provider admin steps to enable IMAP/SMTP:**
   1. Sign in to the Aliyun Mail (阿里邮箱) admin console as a domain administrator.
   2. Navigate to "安全管理" → "账号安全策略" (Security Management → Account Security Policy).
@@ -48,6 +51,7 @@ For all five presets the IMAP security on port 993 is implicit TLS (SSL). The 14
 
 - **IMAP host:** `imap.exmail.qq.com` **Port:** `993` **Security:** `SSL`
 - **SMTP host:** `smtp.exmail.qq.com` **Port:** `465` **Security:** `SSL`
+  - Source: [service.rtxmail.net/faq/119](https://service.rtxmail.net/faq/119.html) (cert-expired fallback verified via WeCom help center [open.work.weixin.qq.com/help2/pc/19886](https://open.work.weixin.qq.com/help2/pc/19886) and cnblogs corroboration).
 - **Provider admin steps to enable IMAP/SMTP:**
   1. Sign in to the Tencent Exmail (腾讯企业邮箱) admin console as a domain administrator at `https://exmail.qq.com/`.
   2. Open "邮箱设置" → "客户端设置" (Mailbox Settings → Client Settings).
@@ -61,6 +65,7 @@ For all five presets the IMAP security on port 993 is implicit TLS (SSL). The 14
 
 - **IMAP host:** `hwimap.exmail.qq.com` **Port:** `993` **Security:** `SSL`
 - **SMTP host:** `hwsmtp.exmail.qq.com` **Port:** `465` **Security:** `SSL`
+  - Source: [service.rtxmail.net/faq/119](https://service.rtxmail.net/faq/119.html) (cert-expired fallback verified via WeCom help center [open.work.weixin.qq.com/help2/pc/19886](https://open.work.weixin.qq.com/help2/pc/19886) and cnblogs corroboration).
 - **Provider admin steps to enable IMAP/SMTP:** Same as `TENCENT_EXMAIL`. The overseas hostnames are a routing variant, not a separate product — domain-side enable / authorization-code generation is identical.
 - **Username format:** Full email address (e.g. `user@example.com`).
 - **Authorization code:** Required, same flow as `TENCENT_EXMAIL`.
@@ -71,6 +76,7 @@ For all five presets the IMAP security on port 993 is implicit TLS (SSL). The 14
 
 - **IMAP host:** `imap.263.net` **Port:** `993` **Security:** `SSL`
 - **SMTP host:** `smtp.263.net` **Port:** `465` **Security:** `SSL`
+  - Source: [download.263.net helpcenter/client/970](https://download.263.net/263/helpcenter/client/20160603/970.html).
 - **Provider admin steps to enable IMAP/SMTP:**
   1. Sign in to the 263 Enterprise Mail admin console at `https://mail.263.net/` as a domain administrator.
   2. Open the per-mailbox security settings ("账号安全" / Account Security).
@@ -84,6 +90,7 @@ For all five presets the IMAP security on port 993 is implicit TLS (SSL). The 14
 
 - **IMAP host:** `imapw.263.net` **Port:** `993` **Security:** `SSL`
 - **SMTP host:** `smtpw.263.net` **Port:** `465` **Security:** `SSL`
+  - Source: [download.263.net helpcenter/client/970](https://download.263.net/263/helpcenter/client/20160603/970.html).
 - **Provider admin steps to enable IMAP/SMTP:** Same as `MAIL_263`. The `*w.263.net` hostnames are routing variants for clients connecting from outside mainland China; the mailbox itself is provisioned identically.
 - **Username format:** Full email address (e.g. `user@example.com`).
 - **Authorization code:** Required, same flow as `MAIL_263`.
@@ -124,11 +131,17 @@ The diagnostics endpoint (`/api/v1/integration/mail/diagnostics?accountId={id}`)
 
 ### Confirming preset values against the live backend
 
-The preset dropdown values rendered in the UI come from the backend presets endpoint Package A delivers. The operator can sanity-check that the values the dropdown shows are exactly the values listed in the per-provider sections above — they should match host-for-host, port-for-port, and security-for-security across all five preset ids. If the UI shows a different host for any preset, the truth is the backend response and this doc; surface the drift to the team that maintains the preset enum rather than working around it in the form.
+The preset dropdown values rendered in the UI come from the backend presets endpoint Package A delivers. The operator can sanity-check that the values the dropdown shows are exactly the values listed in the per-provider sections above — they should match host-for-host, port-for-port, and security-for-security across all five preset ids for both IMAP and SMTP defaults. If the UI shows a different host for any preset, the truth is the backend response and this doc; surface the drift to the team that maintains the preset enum rather than working around it in the form.
+
+## Verifying SMTP after configuration
+
+Once the operator has configured `spring.mail.*` (host / port / username / password / SSL or STARTTLS) and `ecm.email.from-address` against one of the provider rows above, they can verify the configuration end-to-end without dispatching a real notification template by using the new admin Test SMTP control. The dialog lives on the Mail Automation admin page and submits a single recipient address; the backend opens a `JavaMailSender` connection using the live `spring.mail.*` settings and sends a fixed `[Athena] SMTP test` subject.
+
+The full operator-side walkthrough — required env vars, click sequence, expected success/failure shapes, and a per-error troubleshooting FAQ — is captured in the runbook at [`SMTP_TEST_OPERATOR_RUNBOOK_20260507.md`](./SMTP_TEST_OPERATOR_RUNBOOK_20260507.md). For the live notification path that actually exercises a template (site invitation), see [`SITE_INVITATION_LIVE_SEND_CLOSEOUT_20260507.md`](./SITE_INVITATION_LIVE_SEND_CLOSEOUT_20260507.md).
 
 ## Out of scope
 
-- **SMTP send.** Athena Mail Automation v1 is IMAP-fetch only. SMTP host / port / security values appear in this doc for documentation completeness; Athena does not currently send mail through these providers and the preset endpoint does not return SMTP fields.
+- **Outbound SMTP through per-account `MailAccount` credentials.** Athena Mail Automation v1 still does not send mail using the per-account IMAP credentials configured on a `MailAccount`. The application's outbound notification mail flows through `spring.mail.*` (a single application-level sender) — not through the per-account fields. The new Test SMTP admin control validates `spring.mail.*`, not per-account SMTP.
 - **OAuth providers for Chinese mailboxes.** None of Aliyun / Tencent / 263 are wired through Athena's OAuth credential store in this slice. The OAuth credential reauth control on the admin page covers the existing OAuth providers only; vendor-specific OAuth for Chinese mailboxes will be revisited as a separate "vendor-specific OAuth enhancement" line if and when the providers expose stable OAuth endpoints to the partner program.
 - **Gmail / Microsoft 365 / Outlook.** Not covered by this preset slice. Those providers are already addressed by the existing OAuth flows on the admin page and are out of scope for the IMAP-preset surface this doc accompanies.
 
