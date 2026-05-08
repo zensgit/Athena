@@ -2,6 +2,12 @@
 
 Date: 2026-05-07
 
+## Status
+
+v1 path confirmed + manual resend layer added.
+
+On 2026-05-07 the resend layer landed: per-invitation send-tracking columns and an admin-only `POST /resend` endpoint. The accept URL semantics, template seed, and async-vs-sync trade-off are unchanged. See [`SITE_INVITATION_RESEND_OPERATOR_RUNBOOK_20260507.md`](./SITE_INVITATION_RESEND_OPERATOR_RUNBOOK_20260507.md) for the operator-facing details.
+
 ## Context
 
 Site invitation infrastructure shipped in an earlier round: the `SiteInvitation` entity, the `SiteInvitationService`, the token-based accept/reject endpoints, the `site.invitation` template seed (migration 087), and the later template-link update (migration 089). The `EmailNotificationService` that dispatches the message was already in place.
@@ -52,13 +58,27 @@ Provider-side prerequisites (enabling SMTP at the admin console, generating the 
 
 ## Failure observability
 
-The invitation send path is fire-and-forget: the API call that creates the invitation row returns success regardless of whether the email actually gets dispatched. Confirmed by reading the source:
+As of the 2026-05-07 resend round, send outcome is now persisted on the `SiteInvitation` row in addition to being logged. The per-row fields are populated by `SiteInvitationService.sendInvitationEmail` after capturing a `SendResult { boolean ok, String error }` from a synchronous call into `EmailNotificationService.sendSync(...)`. The legacy `@Async send(...)` entry point keeps fire-and-forget semantics for non-invitation callers.
 
-- `EmailNotificationService.send(...)` is annotated `@Async` (`EmailNotificationService.java:42`). The call returns to `SiteInvitationService.sendInvitationEmail` immediately and the actual SMTP exchange runs on the async executor.
-- `EmailNotificationService.send` swallows `MailException` with `log.warn("send: mail dispatch failed templateKey={} cause={}", templateKey, ex.getMessage())` (lines 98-103). It also catches generic `Exception` with `log.warn("send: unexpected failure templateKey={} cause={}", ...)` (lines 104-110).
-- `SiteInvitationService.sendInvitationEmail` wraps the entire `emailService.send(...)` invocation in `try { ... } catch (Exception ex) { log.warn("Failed to send invitation email to {}: {}", invitation.getInviteeEmail(), ex.getMessage()); }` (lines 286-305). Because the underlying `send` call is async, this catch primarily covers synchronous setup failures (e.g. building the variables map) — async dispatch failures inside `EmailNotificationService.send` are reported via the `send: mail dispatch failed` log line above, not via this catch.
+**Per-row send-tracking fields** (added by migration 092):
 
-The practical consequence: a failed invitation email does NOT fail the `POST /api/v1/sites/{siteId}/invitations` API call. The `SiteInvitation` row persists in `PENDING` status and the invitee gets nothing. The only way to detect this from outside the application logs is to notice that the invitee never accepts — there is no per-recipient delivery-status field on the `SiteInvitation` row.
+- `lastSendAttemptAt` — timestamp of the most recent send attempt.
+- `lastSendStatus` — string-stored enum `SENT` | `FAILED` | NULL. NULL means no attempt has ever been recorded for this row.
+- `lastSendError` — populated only when `lastSendStatus = FAILED`; carries the `SendResult.error` message (typically the original `MailException` / `Exception` message prefix, e.g. `SMTP send failed: 535 ...`).
+- `sendAttemptCount` — integer, increments on every send attempt (initial invite + every operator-triggered resend).
+- `lastSentAt` — timestamp of the most recent successful send. Distinct from `lastSendAttemptAt` (which advances on failure too).
+
+The new `SiteInvitation.LastSendStatus { SENT, FAILED }` enum stores `lastSendStatus`. Operators see these fields directly in the admin Invitations UI as a per-row status chip plus failure caption / tooltip — they no longer need shell access to the application log to triage a "didn't arrive" report.
+
+The application log lines below still fire (the synchronous path captures the same `MailException` / generic `Exception` outcomes), so log-based grep workflows continue to work. The persisted `lastSendError` is the same message string that the log emits as `cause=...`.
+
+Confirmed by reading the source:
+
+- `EmailNotificationService.sendSync(...)` (post-refactor) returns `SendResult` synchronously. The original `EmailNotificationService.send(...)` remains `@Async` for callers other than `SiteInvitationService` (its `MailException` and generic `Exception` catches at lines 98-110 are unchanged).
+- `SiteInvitationService.sendInvitationEmail` is now sync: it calls `sendSync(...)`, writes `lastSendAttemptAt`, `lastSendStatus`, `lastSendError`, `sendAttemptCount`, `lastSentAt` from the result, and saves the row. The legacy fire-and-forget catch at line 304 still wraps the call to keep an unexpected setup error from blowing up the caller.
+- The trade-off: SMTP latency now sits inside the `@Transactional` path on `invite(...)` and `resend(...)` (typically 1-3s of blocked transaction during dispatch). This is an explicit choice — without sync, recording `lastSendStatus=FAILED` against the same row that initiated the send is impossible.
+
+The practical consequence: a failed invitation email still does NOT fail the `POST /api/v1/sites/{siteId}/invitations` API call (the catch around `sendSync` keeps the row insertable on dispatch failure), but the failure is now visible on the row itself. The `SiteInvitation` row persists in `PENDING` status with `lastSendStatus = FAILED` and `lastSendError` populated. Operators can list invitations and immediately see which ones need a manual resend.
 
 **Operator grep targets in application logs:**
 
@@ -83,7 +103,8 @@ A deterministic verification path the operator runs after wiring the env vars ab
    - The API still returns `201 Created`. The `SiteInvitation` row still persists in `PENDING`.
    - The recipient inbox does NOT receive a new message.
    - The application log emits `send: mail dispatch failed templateKey=site.invitation cause=...` (the `cause=` field will typically be a `MailAuthenticationException` message). Confirm by grepping the log.
-   - Restore `SPRING_MAIL_PASSWORD` to the valid value and restart afterwards. (You may also wish to cancel the failed `PENDING` invitation via `DELETE /api/v1/sites/{siteId}/invitations/{invitationId}` so it does not linger.)
+   - After this step, also confirm the invitation row's `lastSendStatus` is `FAILED` and `lastSendError` is populated (visible in the SiteInvitationsPage admin UI). The same message that appears in the log's `cause=` field is what `lastSendError` carries.
+   - Restore `SPRING_MAIL_PASSWORD` to the valid value and restart afterwards. (You may also wish to cancel the failed `PENDING` invitation via `DELETE /api/v1/sites/{siteId}/invitations/{invitationId}` so it does not linger, or click `Resend email` on the row to retry — see the resend operator runbook.)
 
 If all six steps behave as described, the live invitation send path is confirmed end-to-end on this deployment.
 
@@ -92,9 +113,8 @@ If all six steps behave as described, the live invitation send path is confirmed
 Explicit non-goals of this round. The point of the closeout was to confirm and document the existing live-send path, not to rebuild it. Out of scope:
 
 - **No new template fields.** The `site.invitation` template still uses the same eight placeholders (`siteTitle`, `siteId`, `invitedBy`, `token`, `role`, `message`, `expiresAt`, `invitationUrl`) supplied by `SiteInvitationService.sendInvitationEmail`. Adding a new placeholder would require a service-side variable population change plus a template-body migration, both of which are deferred.
-- **No new endpoint.** The existing `POST /api/v1/sites/{siteId}/invitations` (create), `DELETE /api/v1/sites/{siteId}/invitations/{invitationId}` (cancel), `POST /api/v1/invitations/accept`, and `POST /api/v1/invitations/reject` already cover the workflow. No "resend invitation" endpoint is added.
-- **No retry / dead-letter queue for failed sends.** A failed `EmailNotificationService.send` is logged at `WARN` and never retried. Adding retry / DLQ semantics would require a persistent outbox table and a worker; both are deferred.
-- **No per-recipient delivery tracking.** The `SiteInvitation` row exposes `status` (`PENDING` / `ACCEPTED` / `REJECTED` / `CANCELLED` / `EXPIRED`) and `acceptedAt`, but does not record send-time delivery state, bounces, or open events. Adding such tracking would require either inspecting SMTP server bounce reports or integrating a transactional-mail provider — both deferred.
+- **No per-recipient delivery tracking.** The `SiteInvitation` row exposes `status` (`PENDING` / `ACCEPTED` / `REJECTED` / `CANCELLED` / `EXPIRED`), `acceptedAt`, and (as of this round) `lastSendStatus` / `lastSendError` / `lastSendAttemptAt` / `lastSentAt` / `sendAttemptCount`. It does not record post-dispatch delivery state — bounces, opens, complaints. Adding such tracking would require either inspecting SMTP server bounce reports or integrating a transactional-mail provider — both deferred.
+- **No auto retry worker** (deliberate v1 decision; see resend operator runbook §5 "Why no auto-retry worker in v1"). A failed send remains `lastSendStatus=FAILED` until an operator clicks `Resend email`. Auto-retry would need a persistent outbox / scheduling worker / backoff state; v1 does not ship those.
 - **No HTML body for the invitation template.** Migration 087 seeds with `html_body=false` and migration 089 leaves it unchanged. The current `default`-locale row remains plain text; an HTML template could be added in a later round (either as a new locale row or as an `html_body=true` replacement) without service-side changes.
 
 These items remain candidates for a future round if and when the operator workflow demands them.
