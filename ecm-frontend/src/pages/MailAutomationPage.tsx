@@ -190,6 +190,14 @@ const formatRunIdLabel = (runId?: string | null) => {
   return trimmed.length > 8 ? `Run ${trimmed.slice(0, 8)}` : `Run ${trimmed}`;
 };
 
+const formatOptionalSmtpValue = (value: string | number | null | undefined, fallback: string) => {
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+  const rendered = String(value).trim();
+  return rendered || fallback;
+};
+
 const MailAutomationPage: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -4894,7 +4902,16 @@ const MailAutomationPage: React.FC = () => {
             />
             {testSmtpResult && testSmtpResult.ok && (
               <Alert severity="success" data-testid="test-smtp-success">
-                {`Sent! SMTP ${testSmtpResult.smtpHost}:${testSmtpResult.smtpPort} from ${testSmtpResult.fromAddress}`}
+                {`Sent! SMTP ${formatOptionalSmtpValue(
+                  testSmtpResult.smtpHost,
+                  'configured host',
+                )}:${formatOptionalSmtpValue(
+                  testSmtpResult.smtpPort,
+                  'default port',
+                )} from ${formatOptionalSmtpValue(
+                  testSmtpResult.fromAddress,
+                  'configured sender',
+                )}`}
               </Alert>
             )}
             {testSmtpError && (

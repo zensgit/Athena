@@ -161,6 +161,31 @@ describe('MailAutomationPage Test SMTP dialog', () => {
     expect(within(dialog).getByRole('button', { name: 'Close' })).toBeTruthy();
   });
 
+  test('renders configured fallback labels when optional SMTP fields are null', async () => {
+    const successResponse: EmailTestSmtpResponse = {
+      ok: true,
+      message: 'Sent successfully.',
+      smtpHost: null,
+      smtpPort: null,
+      fromAddress: null,
+      diagnostic: null,
+    };
+    mockedMailService.testSmtp.mockResolvedValueOnce(successResponse);
+
+    render(<MailAutomationPage />);
+    const dialog = await openTestSmtpDialog();
+
+    fireEvent.change(within(dialog).getByLabelText('Recipient email'), {
+      target: { value: 'ops@example.com' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Send test' }));
+
+    const successAlert = await within(dialog).findByTestId('test-smtp-success');
+    expect(successAlert.textContent).toContain('configured host');
+    expect(successAlert.textContent).toContain('default port');
+    expect(successAlert.textContent).toContain('configured sender');
+  });
+
   test('renders an error Alert with message and diagnostic block when ok=false', async () => {
     const failureResponse: EmailTestSmtpResponse = {
       ok: false,

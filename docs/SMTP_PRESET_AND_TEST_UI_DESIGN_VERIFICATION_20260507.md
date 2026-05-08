@@ -30,8 +30,9 @@ interface MailProviderPreset {
 // New admin endpoint (Package A):
 // POST /api/v1/admin/email/test-smtp
 // Body:    { to: string }
-// Returns: { ok: boolean; message: string; smtpHost: string; smtpPort: integer;
-//            fromAddress: string; diagnostic: string | null }
+// Returns: { ok: boolean; message: string; smtpHost: string | null;
+//            smtpPort: integer | null; fromAddress: string | null;
+//            diagnostic: string | null }
 ```
 
 ## Design
@@ -79,6 +80,9 @@ Submission calls `mailAutomationService.testSmtp({ to })`. The handler
 distinguishes:
 
 - `response.ok === true` → green Alert: `"Sent! SMTP <host>:<port> from <from>"`.
+  If any optional field is null or blank, the UI renders `configured host`,
+  `default port`, or `configured sender` instead of leaking `null` into the
+  success line.
 - `response.ok === false` → red Alert with `response.message`. If
   `response.diagnostic` is non-null, it renders in a styled `<pre>` block
   beneath the message (max-height 200px, `whiteSpace: pre-wrap`,
@@ -134,7 +138,7 @@ CI=true npm test -- --runTestsByPath \
   --watchAll=false
 ```
 
-Result: `Test Suites: 2 passed, 2 total. Tests: 14 passed, 14 total.`
+Result after Codex integration review: `Test Suites: 2 passed, 2 total. Tests: 15 passed, 15 total.`
 
 `MailAutomationPage.presets.test.tsx` (existing, extended):
 
@@ -152,6 +156,8 @@ Result: `Test Suites: 2 passed, 2 total. Tests: 14 passed, 14 total.`
 - `ok=true` resolution renders a success Alert containing
   `smtpHost:smtpPort` and the from-address; the action footer shows a
   `Close` button.
+- `ok=true` with nullable SMTP metadata renders stable fallback labels
+  instead of `null:null`.
 - `ok=false` resolution with a `diagnostic` renders a red Alert with
   `message` and a `<pre>` diagnostic block.
 - Service rejection with an axios-style error envelope surfaces the
@@ -212,11 +218,11 @@ touched.
 
 ## Remaining Work
 
-- Package A delivers the backend endpoint and the extended preset
-  payload. Until both are live in the integration environment,
-  end-to-end verification of `Test SMTP` against a real SMTP transport
-  is out of scope for this commit.
-- After Package A merges, a Phase 5 Mocked harness route for
+- Package A has been integrated on `main` together with this UI slice.
+  End-to-end verification of `Test SMTP` against a real SMTP transport
+  remains an operator/runtime activity because it depends on deployment
+  SMTP credentials.
+- A Phase 5 Mocked harness route for
   `/admin/email/test-smtp` should be added in a follow-up so the new
   surface is covered without relying on the synthetic shape-guard
   message in CI; the synthetic message remains a runtime safety net.

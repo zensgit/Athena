@@ -20,7 +20,7 @@ branch `claude/smtp-backend` until the user integrates it.
 - **Test SMTP endpoint:** `POST /api/v1/admin/email/test-smtp`
   - Body: `{ "to": "operator@example.com" }`
   - Response:
-    `{ "ok": boolean, "message": string, "smtpHost": string, "smtpPort": integer, "fromAddress": string, "diagnostic": string|null }`
+    `{ "ok": boolean, "message": string, "smtpHost": string|null, "smtpPort": integer|null, "fromAddress": string, "diagnostic": string|null }`
   - Admin-only (`hasRole('ADMIN')`).
 - **Preset list:** `GET /api/v1/integration/mail/provider-presets` now includes
   `smtpHost`, `smtpPort`, `smtpSecurity` per row, **appended after the existing
@@ -193,17 +193,14 @@ issues.
   `Environment` without adding new keys.
 - `.env` — not touched anywhere on disk.
 
-## Remaining Work
+## Integration Follow-up
 
-- **Package B (frontend)** consumes the contract defined above:
-  - Render `smtpHost`/`smtpPort`/`smtpSecurity` columns in the preset
-    pre-fill UI in addition to the IMAP fields.
-  - Add the admin "Test SMTP" form that POSTs to
-    `/api/v1/admin/email/test-smtp` and renders `ok` / `message` /
-    `diagnostic` / `smtpHost` / `smtpPort` / `fromAddress`.
-- **Package C (integration / e2e)** — Playwright spec covering the admin
-  Test SMTP flow; load-bearing assertions on the `diagnostic` field
-  rendering (null on success, string on failure).
+- **Package B (frontend)** has been integrated on `main` and consumes the
+  contract defined above. During Codex review, the frontend response type was
+  corrected to match the backend's nullable `smtpHost` / `smtpPort` boundary
+  and a null-field regression test was added.
+- **Package C (docs / operator runbook)** has been integrated on `main` and
+  documents both the Test SMTP runbook and the site-invitation live-send smoke.
 - **End-to-end SMTP integration gate** — `EmailNotificationServiceSmtpTest`
   already exercises `JavaMailSender` against an embedded Greenmail server
   for the production async path; a parallel `EmailAdminTestService` Greenmail

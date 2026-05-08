@@ -391,9 +391,9 @@ export interface EmailTestSmtpRequest {
 export interface EmailTestSmtpResponse {
   ok: boolean;
   message: string;
-  smtpHost: string;
-  smtpPort: number;
-  fromAddress: string;
+  smtpHost: string | null;
+  smtpPort: number | null;
+  fromAddress: string | null;
   diagnostic: string | null;
 }
 
