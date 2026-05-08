@@ -8,6 +8,7 @@ import {
   Dialog,
   DialogActions,
   DialogContent,
+  DialogContentText,
   DialogTitle,
   FormControl,
   IconButton,
@@ -26,7 +27,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { Add, Cancel, Refresh } from '@mui/icons-material';
+import { Add, Cancel, Refresh, Send } from '@mui/icons-material';
 import { useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import siteInvitationService, {
@@ -50,6 +51,72 @@ const statusChipColor = (status: string): StatusColor => {
   if (status === 'PENDING') return 'warning';
   if (status === 'ACCEPTED') return 'success';
   return 'default';
+};
+
+const ERROR_CAPTION_MAX_CHARS = 80;
+
+const truncateForCaption = (value: string): string => {
+  if (value.length <= ERROR_CAPTION_MAX_CHARS) return value;
+  return `${value.slice(0, ERROR_CAPTION_MAX_CHARS - 1)}…`;
+};
+
+const resolveErrorMessage = (err: unknown, fallback: string): string => {
+  const responseMessage = (err as { response?: { data?: { message?: unknown } } })?.response?.data?.message;
+  if (typeof responseMessage === 'string' && responseMessage.trim()) {
+    return responseMessage.trim();
+  }
+  if (err instanceof Error && err.message) {
+    return err.message;
+  }
+  return fallback;
+};
+
+interface SendStatusCellProps {
+  invitation: SiteInvitationDto;
+}
+
+// Send status / last attempt / attempt count are co-located in one cell so
+// the existing dense table style stays readable. Chip drives the primary
+// signal; captions surface the timestamps and the truncated error.
+const SendStatusCell: React.FC<SendStatusCellProps> = ({ invitation }) => {
+  const { lastSendStatus, lastSendError, lastSendAttemptAt, lastSentAt, sendAttemptCount } = invitation;
+
+  let chip: React.ReactNode;
+  if (lastSendStatus === 'SENT') {
+    chip = <Chip label="SENT" size="small" color="success" />;
+  } else if (lastSendStatus === 'FAILED') {
+    chip = <Chip label="FAILED" size="small" color="error" />;
+  } else {
+    chip = <Chip label="Not yet sent" size="small" color="default" variant="outlined" />;
+  }
+
+  return (
+    <Stack spacing={0.5}>
+      {chip}
+      <Typography variant="caption" color="text.secondary">
+        last attempt: {formatDateTime(lastSendAttemptAt)}
+      </Typography>
+      {lastSentAt && (
+        <Typography variant="caption" color="text.secondary">
+          last sent: {formatDateTime(lastSentAt)}
+        </Typography>
+      )}
+      <Typography variant="caption" color="text.secondary">
+        attempts: {sendAttemptCount}
+      </Typography>
+      {lastSendStatus === 'FAILED' && lastSendError && (
+        <Tooltip title={lastSendError}>
+          <Typography
+            variant="caption"
+            color="error"
+            data-testid={`invitation-send-error-${invitation.id}`}
+          >
+            {truncateForCaption(lastSendError)}
+          </Typography>
+        </Tooltip>
+      )}
+    </Stack>
+  );
 };
 
 // CreateInvitationDialog
@@ -165,6 +232,9 @@ const SiteInvitationsPage: React.FC = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [cancelling, setCancelling] = useState<string | null>(null);
+  const [resendingInvitationId, setResendingInvitationId] = useState<string | null>(null);
+  const [resendCandidate, setResendCandidate] = useState<SiteInvitationDto | null>(null);
+  const [resendError, setResendError] = useState<string | null>(null);
 
   const loadInvitations = useCallback(async () => {
     if (!siteId) return;
@@ -175,7 +245,7 @@ const SiteInvitationsPage: React.FC = () => {
       setInvitations(data);
     } catch (err) {
       console.error('Failed to load invitations', err);
-      setLoadError('Failed to load invitations.');
+      setLoadError(resolveErrorMessage(err, 'Failed to load invitations.'));
     } finally {
       setLoading(false);
     }
@@ -207,6 +277,37 @@ const SiteInvitationsPage: React.FC = () => {
 
   const handleCreated = (invitation: SiteInvitationDto) => {
     setInvitations((prev) => [invitation, ...prev]);
+  };
+
+  const openResendDialog = (invitation: SiteInvitationDto) => {
+    setResendError(null);
+    setResendCandidate(invitation);
+  };
+
+  const closeResendDialog = () => {
+    if (resendingInvitationId) return;
+    setResendCandidate(null);
+    setResendError(null);
+  };
+
+  const handleResendConfirm = async () => {
+    if (!siteId || !resendCandidate) return;
+    const target = resendCandidate;
+    setResendingInvitationId(target.id);
+    setResendError(null);
+    try {
+      const updated = await siteInvitationService.resendInvitation(siteId, target.id);
+      setInvitations((current) =>
+        current.map((item) => (item.id === updated.id ? updated : item)),
+      );
+      toast.success(`Invitation re-sent to ${updated.inviteeEmail}.`);
+      setResendCandidate(null);
+    } catch (err) {
+      console.error('Failed to resend invitation', err);
+      setResendError(resolveErrorMessage(err, 'Failed to resend invitation.'));
+    } finally {
+      setResendingInvitationId(null);
+    }
   };
 
   if (!siteId) {
@@ -266,6 +367,7 @@ const SiteInvitationsPage: React.FC = () => {
                 <TableCell>Email</TableCell>
                 <TableCell>Role</TableCell>
                 <TableCell>Status</TableCell>
+                <TableCell>Send status</TableCell>
                 <TableCell>Invited By</TableCell>
                 <TableCell>Expires</TableCell>
                 <TableCell align="right">Actions</TableCell>
@@ -274,58 +376,75 @@ const SiteInvitationsPage: React.FC = () => {
             <TableBody>
               {invitations.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} align="center">
+                  <TableCell colSpan={7} align="center">
                     <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
                       No invitations found. Use "Invite" to invite a new member.
                     </Typography>
                   </TableCell>
                 </TableRow>
               ) : (
-                invitations.map((inv) => (
-                  <TableRow key={inv.id} hover>
-                    <TableCell>
-                      <Typography variant="body2">{inv.inviteeEmail}</Typography>
-                      {inv.inviteeUsername && (
-                        <Typography variant="caption" color="text.secondary">
-                          @{inv.inviteeUsername}
-                        </Typography>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Chip label={inv.invitedRole} size="small" variant="outlined" />
-                    </TableCell>
-                    <TableCell>
-                      <Chip
-                        label={inv.status}
-                        size="small"
-                        color={statusChipColor(inv.status)}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">{inv.invitedBy}</Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">{formatDateTime(inv.expiresAt)}</Typography>
-                    </TableCell>
-                    <TableCell align="right">
-                      {inv.status === 'PENDING' && (
-                        <Tooltip title="Cancel invitation">
-                          <span>
-                            <IconButton
-                              size="small"
-                              color="error"
-                              aria-label="Cancel invitation"
-                              disabled={cancelling === inv.id}
-                              onClick={() => void handleCancel(inv.id, inv.inviteeEmail)}
-                            >
-                              <Cancel fontSize="small" />
-                            </IconButton>
-                          </span>
-                        </Tooltip>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))
+                invitations.map((inv) => {
+                  const isPending = inv.status === 'PENDING';
+                  const isResending = resendingInvitationId === inv.id;
+                  return (
+                    <TableRow key={inv.id} hover>
+                      <TableCell>
+                        <Typography variant="body2">{inv.inviteeEmail}</Typography>
+                        {inv.inviteeUsername && (
+                          <Typography variant="caption" color="text.secondary">
+                            @{inv.inviteeUsername}
+                          </Typography>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Chip label={inv.invitedRole} size="small" variant="outlined" />
+                      </TableCell>
+                      <TableCell>
+                        <Chip
+                          label={inv.status}
+                          size="small"
+                          color={statusChipColor(inv.status)}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <SendStatusCell invitation={inv} />
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2">{inv.invitedBy}</Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2">{formatDateTime(inv.expiresAt)}</Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Stack direction="row" spacing={1} justifyContent="flex-end">
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            startIcon={<Send fontSize="small" />}
+                            disabled={!isPending || isResending}
+                            onClick={() => openResendDialog(inv)}
+                            aria-label={`Resend invitation to ${inv.inviteeEmail}`}
+                          >
+                            {isResending ? 'Resending...' : 'Resend email'}
+                          </Button>
+                          <Tooltip title={isPending ? 'Cancel invitation' : ''}>
+                            <span>
+                              <IconButton
+                                size="small"
+                                color="error"
+                                aria-label={`Cancel invitation to ${inv.inviteeEmail}`}
+                                disabled={!isPending || cancelling === inv.id}
+                                onClick={() => void handleCancel(inv.id, inv.inviteeEmail)}
+                              >
+                                <Cancel fontSize="small" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                        </Stack>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
@@ -338,6 +457,42 @@ const SiteInvitationsPage: React.FC = () => {
         onClose={() => setCreateOpen(false)}
         onCreated={handleCreated}
       />
+
+      <Dialog
+        open={resendCandidate !== null}
+        onClose={closeResendDialog}
+        fullWidth
+        maxWidth="xs"
+        aria-labelledby="resend-invitation-dialog-title"
+      >
+        <DialogTitle id="resend-invitation-dialog-title">Resend invitation</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Resend invitation email to <strong>{resendCandidate?.inviteeEmail ?? ''}</strong>?
+            The recipient will receive another copy of the invitation.
+          </DialogContentText>
+          {resendError && (
+            <Alert severity="error" sx={{ mt: 2 }} data-testid="resend-invitation-error">
+              {resendError}
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={closeResendDialog}
+            disabled={resendingInvitationId !== null}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => void handleResendConfirm()}
+            disabled={resendingInvitationId !== null}
+          >
+            {resendingInvitationId !== null ? 'Resending...' : 'Resend'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
