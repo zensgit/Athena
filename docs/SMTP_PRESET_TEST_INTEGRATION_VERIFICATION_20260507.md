@@ -133,6 +133,25 @@ git diff --check
 
 Result: clean.
 
+## CI Verification
+
+Pushed to `origin/main` at commit `dd7390a` and monitored CI run `25530595299`.
+
+| Job | Result | Duration |
+|---|---|---:|
+| Backend Verify | success | 2m17s |
+| Frontend Build & Test | success | 9m32s |
+| Phase C Security Verification | success | 5m08s |
+| Frontend E2E Core Gate | success | 13m17s |
+| Property Encryption Closeout Gate | success | 4m44s |
+| Phase 5 Mocked Regression Gate | success | 6m24s |
+| Acceptance Smoke (3 admin pages) | success | 7m29s |
+
+Run conclusion: `success` (7/7 jobs green).
+
+The only annotation was GitHub Actions' platform warning that Node.js 20 actions
+are deprecated. It is not a code or product regression for this slice.
+
 ## Remaining Work
 
 - Runtime SMTP smoke still requires real deployment credentials and a real recipient inbox; local unit tests intentionally do not commit or expose SMTP secrets.
