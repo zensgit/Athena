@@ -89,11 +89,22 @@ style (`'/sites/${siteId}/invitations/${invitationId}/resend'`).
     on rejection; synthetic shape-guard message on Phase 5 HTML fallback.
     Keeping the error inline (not a toast) means the operator sees it
     next to the Resend button without losing dialog context.
-- On success the row is replaced from the redacted response — the same
-  `setInvitations(current => current.map(item => item.id === updated.id ? updated : item))`
+- On `lastSendStatus=SENT` the row is replaced from the redacted response —
+  the same `setInvitations(current => current.map(item => item.id === updated.id ? updated : item))`
   pattern `OAuthCredentialAdminPage.handleRefreshNow` uses. Toast confirms
-  the recipient and the dialog closes. The error path leaves the dialog
-  open so the operator can read the message and either retry or cancel.
+  the recipient and the dialog closes.
+- On `lastSendStatus=FAILED` the request still completed at HTTP level, but
+  SMTP dispatch failed. The page now treats that DTO as a failed send result:
+  the row is still replaced, a failure toast is shown, the dialog remains
+  open, and the inline dialog alert repeats the captured `lastSendError`.
+  This avoids the misleading "Invitation re-sent" success toast for a 200
+  response whose payload records `FAILED`.
+- The create-invitation dialog applies the same DTO-level outcome check.
+  A created invitation with `lastSendStatus=FAILED` is inserted into the
+  table, but the toast says the invitation was created while email send
+  failed; it no longer claims the email was sent.
+- The catch/rejection path leaves the dialog open so the operator can read
+  the message and either retry or cancel.
 - `loadInvitations` now also funnels its error through `resolveErrorMessage`,
   so a Phase 5 HTML fallback on the list endpoint surfaces the synthetic
   message rather than the generic `'Failed to load invitations.'`.
@@ -109,13 +120,13 @@ style (`'/sites/${siteId}/invitations/${invitationId}/resend'`).
 
 ### Targeted Jest suite
 
-`ecm-frontend/src/pages/SiteInvitationsPage.test.tsx` — new file, 9 tests
-across 3 `describe` blocks. All green.
+`ecm-frontend/src/pages/SiteInvitationsPage.test.tsx` — new file, 11 tests
+across 4 `describe` blocks. All green.
 
 ```
 Test Suites: 1 passed, 1 total
-Tests:       9 passed, 9 total
-Time:        ~4.4 s
+Tests:       11 passed, 11 total
+Time:        ~4.2 s
 ```
 
 Coverage:
@@ -127,14 +138,22 @@ Coverage:
 - **Resend gating (2 tests).** PENDING rows enable the button (each
   located by row-unique `aria-label`); ACCEPTED / CANCELLED / EXPIRED /
   REJECTED rows disable it.
-- **Confirmation flow (4 tests).**
+- **Invite create flow (1 test).** When `createInvitation` resolves with
+  `lastSendStatus=FAILED`, the page does not show a success toast; it shows
+  a failure toast, inserts the row, and renders the row-level failure
+  caption from `lastSendError`.
+- **Confirmation flow (5 tests).**
   1. Confirm-and-success: dialog opens, service called with
      `(siteId, invitationId)`, dialog closes, row updated (attempt count
      flips 0 → 1, SENT chip appears).
-  2. Cancel-confirmation: dialog dismisses, service not called.
-  3. Backend rejection: `{ response: { data: { message } } }` surfaces the
+  2. DTO-level failure: `resendInvitation` resolves with
+     `lastSendStatus=FAILED`; the page keeps the dialog open, shows the
+     failure toast/inline alert, updates the row to FAILED, and does not
+     show the success toast.
+  3. Cancel-confirmation: dialog dismisses, service not called.
+  4. Backend rejection: `{ response: { data: { message } } }` surfaces the
      backend message inside the dialog; page stays mounted.
-  4. **Phase 5 HTML-fallback resilience.** Service rejects with a
+  5. **Phase 5 HTML-fallback resilience.** Service rejects with a
      synthetic `Error(SITE_INVITATION_RESEND_UNEXPECTED_RESPONSE_MESSAGE)` —
      the exact same error the service-layer shape guard throws when
      `api.post` returns SPA HTML. The dialog renders the synthetic

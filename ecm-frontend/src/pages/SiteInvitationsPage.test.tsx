@@ -1,6 +1,7 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { toast } from 'react-toastify';
 import SiteInvitationsPage from './SiteInvitationsPage';
 import siteInvitationService, {
   SITE_INVITATION_RESEND_UNEXPECTED_RESPONSE_MESSAGE,
@@ -231,6 +232,53 @@ describe('SiteInvitationsPage Resend button gating', () => {
   });
 });
 
+describe('SiteInvitationsPage invite create flow', () => {
+  beforeEach(() => {
+    mockedService.listInvitations.mockResolvedValue([]);
+  });
+
+  test('does not report success when the create response records an email send failure', async () => {
+    const created: SiteInvitationDto = {
+      ...baseInvitation,
+      id: 'inv-created-failed',
+      inviteeEmail: 'created-failed@example.com',
+      lastSendAttemptAt: '2026-05-08T12:00:00Z',
+      lastSendStatus: 'FAILED',
+      lastSendError: 'SMTP send failed: 535 bad credentials',
+      sendAttemptCount: 1,
+      lastSentAt: null,
+    };
+    mockedService.createInvitation.mockResolvedValueOnce(created);
+
+    renderPage();
+    await screen.findByText(/No invitations found/);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Invite' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Invite to Site' });
+    fireEvent.change(within(dialog).getByLabelText(/Email address/), {
+      target: { value: created.inviteeEmail },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Send Invitation' }));
+
+    await waitFor(() => {
+      expect(mockedService.createInvitation).toHaveBeenCalledWith(SITE_ID, {
+        inviteeEmail: created.inviteeEmail,
+        invitedRole: 'CONSUMER',
+        message: undefined,
+      });
+    });
+
+    expect(toast.success).not.toHaveBeenCalledWith(expect.stringContaining(created.inviteeEmail));
+    expect(toast.error).toHaveBeenCalledWith(
+      expect.stringContaining('Invitation created for created-failed@example.com, but email send failed'),
+    );
+    expect(await screen.findByText(created.inviteeEmail)).toBeTruthy();
+    expect(screen.getByTestId(`invitation-send-error-${created.id}`).textContent).toContain(
+      'SMTP send failed',
+    );
+  });
+});
+
 describe('SiteInvitationsPage Resend confirmation flow', () => {
   beforeEach(() => {
     mockedService.listInvitations.mockResolvedValue([
@@ -270,6 +318,37 @@ describe('SiteInvitationsPage Resend confirmation flow', () => {
     // Row updated: attempt count flips from 0 to 1 and SENT chip appears.
     expect(await screen.findByText(/attempts: 1/)).toBeTruthy();
     expect(screen.getByText('SENT')).toBeTruthy();
+  });
+
+  test('keeps the dialog open and surfaces DTO failure when resend returns FAILED', async () => {
+    const updated: SiteInvitationDto = {
+      ...neverSentInvitation,
+      lastSendAttemptAt: '2026-05-08T13:00:00Z',
+      lastSendStatus: 'FAILED',
+      lastSendError: 'SMTP send failed: 535 bad credentials',
+      sendAttemptCount: 1,
+      lastSentAt: null,
+    };
+    mockedService.resendInvitation.mockResolvedValueOnce(updated);
+
+    renderPage();
+    await screen.findByText('never@example.com');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Resend invitation to never@example.com' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Resend invitation' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Resend' }));
+
+    const errorAlert = await within(dialog).findByTestId('resend-invitation-error');
+    expect(errorAlert.textContent).toContain('SMTP send failed: 535 bad credentials');
+    expect(toast.success).not.toHaveBeenCalledWith(expect.stringContaining('never@example.com'));
+    expect(toast.error).toHaveBeenCalledWith(
+      expect.stringContaining('Resend attempted for never@example.com, but email send failed'),
+    );
+    expect(screen.getByRole('dialog', { name: 'Resend invitation' })).toBeTruthy();
+    expect(screen.getByTestId(`invitation-send-error-${updated.id}`).textContent).toContain(
+      'SMTP send failed',
+    );
+    expect(screen.getByText('FAILED')).toBeTruthy();
   });
 
   test('cancelling the confirmation dialog does not call the service', async () => {

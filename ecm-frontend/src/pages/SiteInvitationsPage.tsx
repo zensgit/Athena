@@ -71,6 +71,15 @@ const resolveErrorMessage = (err: unknown, fallback: string): string => {
   return fallback;
 };
 
+const buildSendFailureMessage = (
+  invitation: SiteInvitationDto,
+  actionLabel: 'Invitation created' | 'Resend attempted',
+): string => {
+  const base = `${actionLabel} for ${invitation.inviteeEmail}, but email send failed`;
+  const detail = invitation.lastSendError?.trim();
+  return detail ? `${base}: ${detail}` : `${base}.`;
+};
+
 interface SendStatusCellProps {
   invitation: SiteInvitationDto;
 }
@@ -156,7 +165,13 @@ const CreateInvitationDialog: React.FC<CreateInvitationDialogProps> = ({
         invitedRole: form.invitedRole || 'CONSUMER',
         message: form.message?.trim() || undefined,
       });
-      toast.success(`Invitation sent to ${created.inviteeEmail}.`);
+      if (created.lastSendStatus === 'FAILED') {
+        toast.error(buildSendFailureMessage(created, 'Invitation created'));
+      } else if (created.lastSendStatus === 'SENT') {
+        toast.success(`Invitation sent to ${created.inviteeEmail}.`);
+      } else {
+        toast.info(`Invitation created for ${created.inviteeEmail}; email send status is pending.`);
+      }
       onCreated(created);
       handleClose();
     } catch (err) {
@@ -300,7 +315,18 @@ const SiteInvitationsPage: React.FC = () => {
       setInvitations((current) =>
         current.map((item) => (item.id === updated.id ? updated : item)),
       );
-      toast.success(`Invitation re-sent to ${updated.inviteeEmail}.`);
+      if (updated.lastSendStatus === 'FAILED') {
+        const failureMessage = buildSendFailureMessage(updated, 'Resend attempted');
+        toast.error(failureMessage);
+        setResendCandidate(updated);
+        setResendError(failureMessage);
+        return;
+      }
+      if (updated.lastSendStatus === 'SENT') {
+        toast.success(`Invitation re-sent to ${updated.inviteeEmail}.`);
+      } else {
+        toast.info(`Resend completed for ${updated.inviteeEmail}; email send status is pending.`);
+      }
       setResendCandidate(null);
     } catch (err) {
       console.error('Failed to resend invitation', err);
