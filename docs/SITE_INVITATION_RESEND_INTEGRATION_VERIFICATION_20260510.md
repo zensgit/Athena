@@ -101,8 +101,8 @@ workflow maintenance warning, not a failure in this integration.
 
 ## Remaining Work
 
-- Optional follow-up: add a compact "failed invitations" filter if operators
-  start handling many failed rows.
+- Completed follow-up: compact failed-send filter chip is documented in
+  `SITE_INVITATION_FAILED_SEND_FILTER_DESIGN_VERIFICATION_20260510.md`.
 - Optional follow-up: add auto retry/DLQ only if the documented revisit
   thresholds are met.
 - Workflow maintenance: update GitHub Actions dependencies before GitHub's

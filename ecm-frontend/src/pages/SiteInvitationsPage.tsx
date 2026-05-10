@@ -46,6 +46,7 @@ const formatDateTime = (value?: string | null): string => {
 };
 
 type StatusColor = 'warning' | 'success' | 'default';
+type SendStatusFilter = 'ALL' | 'FAILED';
 
 const statusChipColor = (status: string): StatusColor => {
   if (status === 'PENDING') return 'warning';
@@ -250,6 +251,12 @@ const SiteInvitationsPage: React.FC = () => {
   const [resendingInvitationId, setResendingInvitationId] = useState<string | null>(null);
   const [resendCandidate, setResendCandidate] = useState<SiteInvitationDto | null>(null);
   const [resendError, setResendError] = useState<string | null>(null);
+  const [sendStatusFilter, setSendStatusFilter] = useState<SendStatusFilter>('ALL');
+
+  const failedSendCount = invitations.filter((inv) => inv.lastSendStatus === 'FAILED').length;
+  const visibleInvitations = sendStatusFilter === 'FAILED'
+    ? invitations.filter((inv) => inv.lastSendStatus === 'FAILED')
+    : invitations;
 
   const loadInvitations = useCallback(async () => {
     if (!siteId) return;
@@ -381,6 +388,36 @@ const SiteInvitationsPage: React.FC = () => {
         </Alert>
       )}
 
+      <Paper variant="outlined" sx={{ p: 1.5, mb: 2 }}>
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={1.5}
+          alignItems={{ xs: 'flex-start', sm: 'center' }}
+        >
+          <Typography variant="body2" color="text.secondary">
+            Send result
+          </Typography>
+          <Stack direction="row" spacing={1}>
+            <Chip
+              label={`All (${invitations.length})`}
+              clickable
+              color={sendStatusFilter === 'ALL' ? 'primary' : 'default'}
+              variant={sendStatusFilter === 'ALL' ? 'filled' : 'outlined'}
+              onClick={() => setSendStatusFilter('ALL')}
+              aria-label={`Show all invitations (${invitations.length})`}
+            />
+            <Chip
+              label={`Failed sends (${failedSendCount})`}
+              clickable
+              color={sendStatusFilter === 'FAILED' ? 'error' : 'default'}
+              variant={sendStatusFilter === 'FAILED' ? 'filled' : 'outlined'}
+              onClick={() => setSendStatusFilter('FAILED')}
+              aria-label={`Show failed-send invitations (${failedSendCount})`}
+            />
+          </Stack>
+        </Stack>
+      </Paper>
+
       {loading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
           <CircularProgress />
@@ -400,16 +437,18 @@ const SiteInvitationsPage: React.FC = () => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {invitations.length === 0 ? (
+              {visibleInvitations.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} align="center">
                     <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
-                      No invitations found. Use "Invite" to invite a new member.
+                      {invitations.length === 0
+                        ? 'No invitations found. Use "Invite" to invite a new member.'
+                        : 'No failed-send invitations found.'}
                     </Typography>
                   </TableCell>
                 </TableRow>
               ) : (
-                invitations.map((inv) => {
+                visibleInvitations.map((inv) => {
                   const isPending = inv.status === 'PENDING';
                   const isResending = resendingInvitationId === inv.id;
                   return (

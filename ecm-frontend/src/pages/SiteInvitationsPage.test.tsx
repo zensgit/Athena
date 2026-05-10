@@ -187,6 +187,50 @@ describe('SiteInvitationsPage send-status display', () => {
   });
 });
 
+describe('SiteInvitationsPage send-status filter chips', () => {
+  test('filters the table to failed sends and can return to all invitations', async () => {
+    mockedService.listInvitations.mockResolvedValue([
+      sentInvitation,
+      failedInvitation,
+      neverSentInvitation,
+    ]);
+
+    renderPage();
+
+    expect(await screen.findByText('sent@example.com')).toBeTruthy();
+    expect(screen.getByText('failed@example.com')).toBeTruthy();
+    expect(screen.getByText('never@example.com')).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText('Show failed-send invitations (1)'));
+
+    expect(screen.getByText('failed@example.com')).toBeTruthy();
+    expect(screen.queryByText('sent@example.com')).toBeNull();
+    expect(screen.queryByText('never@example.com')).toBeNull();
+
+    fireEvent.click(screen.getByLabelText('Show all invitations (3)'));
+
+    expect(screen.getByText('sent@example.com')).toBeTruthy();
+    expect(screen.getByText('failed@example.com')).toBeTruthy();
+    expect(screen.getByText('never@example.com')).toBeTruthy();
+  });
+
+  test('shows a filter-specific empty state when no rows have failed sends', async () => {
+    mockedService.listInvitations.mockResolvedValue([
+      sentInvitation,
+      neverSentInvitation,
+    ]);
+
+    renderPage();
+    expect(await screen.findByText('sent@example.com')).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText('Show failed-send invitations (0)'));
+
+    expect(screen.getByText('No failed-send invitations found.')).toBeTruthy();
+    expect(screen.queryByText('sent@example.com')).toBeNull();
+    expect(screen.queryByText('never@example.com')).toBeNull();
+  });
+});
+
 describe('SiteInvitationsPage Resend button gating', () => {
   test('Resend button is enabled for every PENDING row', async () => {
     mockedService.listInvitations.mockResolvedValue([
