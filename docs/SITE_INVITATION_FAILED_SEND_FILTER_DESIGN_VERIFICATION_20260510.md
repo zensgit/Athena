@@ -38,6 +38,8 @@ from the failed-send view after a successful resend.
 
 ## Verification
 
+### Local gates
+
 | Gate | Command | Result |
 |---|---|---|
 | Targeted Jest | `CI=true npm test -- --runTestsByPath src/pages/SiteInvitationsPage.test.tsx --watchAll=false` | 1 suite, 13 tests, 0 failures |
@@ -48,6 +50,26 @@ New test coverage:
 
 - filters the table to failed sends and can return to all invitations.
 - shows a filter-specific empty state when no rows have failed sends.
+
+### GitHub Actions
+
+Push to `origin/main` at `1444425` triggered CI run `25630086406`.
+
+| Job | Result | Duration |
+|---|---|---:|
+| Backend Verify | success | 2m23s |
+| Frontend Build & Test | success | 9m38s |
+| Phase C Security Verification | success | 5m04s |
+| Phase 5 Mocked Regression Gate | success | 6m21s |
+| Property Encryption Closeout Gate | success | 4m50s |
+| Acceptance Smoke (3 admin pages) | success | 6m54s |
+| Frontend E2E Core Gate | success | 11m19s |
+
+Run outcome: 7/7 jobs green.
+
+The run still emits the existing GitHub Actions Node.js 20 deprecation warning
+for `actions/checkout@v4` / `actions/setup-java@v4`. This is a workflow
+maintenance warning, not a failed gate.
 
 ## Files Changed
 
