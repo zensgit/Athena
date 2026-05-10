@@ -46,6 +46,8 @@ No backend behavior was changed by the integration follow-up.
 
 ## Verification
 
+### Local gates
+
 | Gate | Command | Result |
 |---|---|---|
 | Backend targeted | `/tmp/apache-maven-3.9.9/bin/mvn -B -q -Dstyle.color=never -Dmaven.repo.local=.m2-cache/repository -Dspring.profiles.active=test -Dtest=SiteInvitationServiceTest,SiteInvitationControllerSecurityTest,SiteInvitationControllerTest,EmailNotificationServiceTest test` | 4 suites, 32 tests, 0 failures, 0 errors |
@@ -65,6 +67,26 @@ The backend gate was therefore rerun with the existing host Maven binary under
 `/tmp/apache-maven-3.9.9/bin/mvn`, matching the pattern used by recent Athena
 verification documents.
 
+### GitHub Actions
+
+Push to `origin/main` at `8c4d00d` triggered CI run `25629290516`.
+
+| Job | Result | Duration |
+|---|---|---:|
+| Backend Verify | success | 2m36s |
+| Frontend Build & Test | success | 7m57s |
+| Phase C Security Verification | success | 5m16s |
+| Frontend E2E Core Gate | success | 11m41s |
+| Property Encryption Closeout Gate | success | 4m10s |
+| Acceptance Smoke (3 admin pages) | success | 6m31s |
+| Phase 5 Mocked Regression Gate | success | 6m37s |
+
+Run outcome: 7/7 jobs green.
+
+The run emitted the existing GitHub Actions annotation that Node.js 20 actions
+are deprecated for `actions/checkout@v4` and `actions/setup-java@v4`. This is a
+workflow maintenance warning, not a failure in this integration.
+
 ## Design State After Integration
 
 - Operators can see the invitation email send outcome directly in the site
@@ -79,8 +101,9 @@ verification documents.
 
 ## Remaining Work
 
-- Push and monitor CI for the integrated main branch.
 - Optional follow-up: add a compact "failed invitations" filter if operators
   start handling many failed rows.
 - Optional follow-up: add auto retry/DLQ only if the documented revisit
   thresholds are met.
+- Workflow maintenance: update GitHub Actions dependencies before GitHub's
+  Node.js 20 deprecation enforcement windows.
