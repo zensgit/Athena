@@ -28,7 +28,7 @@ import {
   Typography,
 } from '@mui/material';
 import { Add, Cancel, Refresh, Send } from '@mui/icons-material';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import siteInvitationService, {
   InviteRequest,
@@ -48,10 +48,17 @@ const formatDateTime = (value?: string | null): string => {
 type StatusColor = 'warning' | 'success' | 'default';
 type SendStatusFilter = 'ALL' | 'FAILED';
 
+const SEND_STATUS_QUERY_PARAM = 'sendStatus';
+const FAILED_SEND_STATUS_QUERY_VALUE = 'failed';
+
 const statusChipColor = (status: string): StatusColor => {
   if (status === 'PENDING') return 'warning';
   if (status === 'ACCEPTED') return 'success';
   return 'default';
+};
+
+const resolveSendStatusFilter = (value: string | null): SendStatusFilter => {
+  return value?.toLowerCase() === FAILED_SEND_STATUS_QUERY_VALUE ? 'FAILED' : 'ALL';
 };
 
 const ERROR_CAPTION_MAX_CHARS = 80;
@@ -243,6 +250,7 @@ const CreateInvitationDialog: React.FC<CreateInvitationDialogProps> = ({
 
 const SiteInvitationsPage: React.FC = () => {
   const { siteId } = useParams<{ siteId: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [invitations, setInvitations] = useState<SiteInvitationDto[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -251,7 +259,19 @@ const SiteInvitationsPage: React.FC = () => {
   const [resendingInvitationId, setResendingInvitationId] = useState<string | null>(null);
   const [resendCandidate, setResendCandidate] = useState<SiteInvitationDto | null>(null);
   const [resendError, setResendError] = useState<string | null>(null);
-  const [sendStatusFilter, setSendStatusFilter] = useState<SendStatusFilter>('ALL');
+  const sendStatusFilter = resolveSendStatusFilter(searchParams.get(SEND_STATUS_QUERY_PARAM));
+
+  const handleSendStatusFilterChange = (nextFilter: SendStatusFilter) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (nextFilter === 'FAILED') {
+        next.set(SEND_STATUS_QUERY_PARAM, FAILED_SEND_STATUS_QUERY_VALUE);
+      } else {
+        next.delete(SEND_STATUS_QUERY_PARAM);
+      }
+      return next;
+    }, { replace: true });
+  };
 
   const failedSendCount = invitations.filter((inv) => inv.lastSendStatus === 'FAILED').length;
   const visibleInvitations = sendStatusFilter === 'FAILED'
@@ -403,7 +423,7 @@ const SiteInvitationsPage: React.FC = () => {
               clickable
               color={sendStatusFilter === 'ALL' ? 'primary' : 'default'}
               variant={sendStatusFilter === 'ALL' ? 'filled' : 'outlined'}
-              onClick={() => setSendStatusFilter('ALL')}
+              onClick={() => handleSendStatusFilterChange('ALL')}
               aria-label={`Show all invitations (${invitations.length})`}
             />
             <Chip
@@ -411,7 +431,7 @@ const SiteInvitationsPage: React.FC = () => {
               clickable
               color={sendStatusFilter === 'FAILED' ? 'error' : 'default'}
               variant={sendStatusFilter === 'FAILED' ? 'filled' : 'outlined'}
-              onClick={() => setSendStatusFilter('FAILED')}
+              onClick={() => handleSendStatusFilterChange('FAILED')}
               aria-label={`Show failed-send invitations (${failedSendCount})`}
             />
           </Stack>

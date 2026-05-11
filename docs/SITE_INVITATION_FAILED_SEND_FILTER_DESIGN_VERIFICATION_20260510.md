@@ -79,7 +79,8 @@ maintenance warning, not a failed gate.
 
 ## Remaining Work
 
-- Optional: add a status query parameter if operators need shareable filtered
-  URLs. Not needed for this small triage slice.
+- Completed follow-up: the failed-send filter now supports shareable URL state
+  through `?sendStatus=failed`. See
+  `SITE_INVITATION_FAILED_SEND_FILTER_URL_STATE_DESIGN_VERIFICATION_20260511.md`.
 - Optional: add bulk resend only if failed-send counts become high enough to
   justify a separate backend capability.
