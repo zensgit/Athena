@@ -41,17 +41,33 @@ explicit.
 | YAML parse | `ruby -e "require 'yaml'; YAML.load_file('.github/workflows/ci.yml'); puts 'yaml ok'"` | `yaml ok` |
 | Whitespace | `git diff --check` | clean |
 
-## Expected CI Validation
+## GitHub Actions Verification
 
-The push should run the normal 7-job CI matrix:
+Push to `origin/main` at `85495c0` triggered CI run `25645408410`.
 
-- Backend Verify
-- Frontend Build & Test
-- Property Encryption Closeout Gate
-- Acceptance Smoke (3 admin pages)
-- Phase 5 Mocked Regression Gate
-- Frontend E2E Core Gate
-- Phase C Security Verification
+| Job | Result | Duration |
+|---|---|---:|
+| Backend Verify | success | 2m24s |
+| Frontend Build & Test | success | 10m11s |
+| Phase C Security Verification | success | 5m10s |
+| Acceptance Smoke (3 admin pages) | success | 6m32s |
+| Property Encryption Closeout Gate | success | 4m53s |
+| Frontend E2E Core Gate | success | 12m14s |
+| Phase 5 Mocked Regression Gate | success | 5m37s |
 
-Success criteria: all 7 jobs remain green and the Node.js 20 action-runtime
-deprecation warning disappears.
+Run outcome: 7/7 jobs green.
+
+Follow-up log scan:
+
+```bash
+gh run view 25645408410 --log \
+  | rg -i "node20|node\.js 20|actions/checkout@v4|actions/setup-node@v4|actions/setup-java@v4|following actions use node.js 20|deprecated node.js version|node.js 20 actions"
+```
+
+Result: no matches. The GitHub Actions Node.js 20 action-runtime deprecation
+warning is no longer present.
+
+The run still contains dependency-level warnings from `npm ci` and Java
+compilation, for example deprecated transitive frontend packages and deprecated
+Java APIs. Those are separate dependency/runtime modernization items and were
+not changed in this workflow-only maintenance slice.
