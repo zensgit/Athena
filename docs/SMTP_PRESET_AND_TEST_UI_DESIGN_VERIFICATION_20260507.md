@@ -222,10 +222,10 @@ touched.
   End-to-end verification of `Test SMTP` against a real SMTP transport
   remains an operator/runtime activity because it depends on deployment
   SMTP credentials.
-- A Phase 5 Mocked harness route for
-  `/admin/email/test-smtp` should be added in a follow-up so the new
-  surface is covered without relying on the synthetic shape-guard
-  message in CI; the synthetic message remains a runtime safety net.
+- Completed follow-up: the Phase 5 mocked harness now covers the successful
+  `/admin/email/test-smtp` browser path. See
+  `SMTP_TEST_SMTP_PHASE5_MOCKED_ROUTE_DESIGN_VERIFICATION_20260511.md`.
+  The synthetic message remains a runtime safety net.
 - The Test SMTP dialog could grow a "From override" field if Athena
   later supports per-tenant SMTP identities; today the from address is
   whatever `spring.mail.username` or `mail.from` resolves to, and is

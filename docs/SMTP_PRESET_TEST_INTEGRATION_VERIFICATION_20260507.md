@@ -155,5 +155,7 @@ are deprecated. It is not a code or product regression for this slice.
 ## Remaining Work
 
 - Runtime SMTP smoke still requires real deployment credentials and a real recipient inbox; local unit tests intentionally do not commit or expose SMTP secrets.
-- A Phase 5 Mocked route for `/admin/email/test-smtp` is still useful so the mocked browser gate asserts this surface directly instead of relying only on the defensive shape guard.
+- Completed follow-up: the Phase 5 mocked gate now covers the successful
+  `/admin/email/test-smtp` browser path. See
+  `SMTP_TEST_SMTP_PHASE5_MOCKED_ROUTE_DESIGN_VERIFICATION_20260511.md`.
 - Site invitation live-send remains documented as an operator smoke because delivery depends on `ECM_EMAIL_ENABLED=true`, public `ECM_FRONTEND_BASE_URL`, and provider SMTP credentials.

@@ -62,6 +62,48 @@ test('Mail automation P1: account health, summary refresh, diagnostics filters, 
   const staleAt = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const freshAt = new Date(Date.now() - 5 * 60 * 1000).toISOString();
   let fetchSummaryCallCount = 0;
+  let testSmtpCallCount = 0;
+  let testSmtpPayload: unknown = null;
+
+  await page.route('**/api/v1/integration/mail/provider-presets', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        {
+          id: 'ALIYUN_QIYE',
+          label: 'Aliyun Enterprise Mail',
+          imapHost: 'imap.qiye.aliyun.com',
+          imapPort: 993,
+          imapSecurity: 'SSL',
+          smtpHost: 'smtp.qiye.aliyun.com',
+          smtpPort: 465,
+          smtpSecurity: 'SSL',
+        },
+      ]),
+    });
+  });
+
+  await page.route('**/api/v1/admin/email/test-smtp', async (route) => {
+    if (route.request().method().toUpperCase() !== 'POST') {
+      await route.fallback();
+      return;
+    }
+    testSmtpCallCount += 1;
+    testSmtpPayload = route.request().postDataJSON();
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        message: 'Sent successfully.',
+        smtpHost: 'smtp.qiye.aliyun.com',
+        smtpPort: 465,
+        fromAddress: 'noreply@example.com',
+        diagnostic: null,
+      }),
+    });
+  });
 
   await page.route('**/api/v1/integration/mail/accounts**', async (route) => {
     await route.fulfill({
@@ -364,6 +406,18 @@ test('Mail automation P1: account health, summary refresh, diagnostics filters, 
   await page.goto('/admin/mail', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByRole('heading', { name: 'Mail Automation' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Test SMTP' }).click();
+  const testSmtpDialog = page.getByRole('dialog', { name: 'Test SMTP' });
+  await expect(testSmtpDialog).toBeVisible();
+  await testSmtpDialog.getByLabel('Recipient email').fill('ops@example.com');
+  await testSmtpDialog.getByRole('button', { name: 'Send test' }).click();
+  await expect(testSmtpDialog.getByTestId('test-smtp-success')).toContainText('smtp.qiye.aliyun.com');
+  await expect(testSmtpDialog.getByTestId('test-smtp-success')).toContainText('noreply@example.com');
+  await expect.poll(() => testSmtpCallCount).toBe(1);
+  expect(testSmtpPayload).toEqual({ to: 'ops@example.com' });
+  await testSmtpDialog.getByRole('button', { name: 'Close' }).click();
+  await expect(testSmtpDialog).toBeHidden();
 
   await expect(page.getByText('Total 3')).toBeVisible();
   await expect(page.getByText('Enabled 2')).toBeVisible();
