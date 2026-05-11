@@ -60,6 +60,22 @@ Notes:
   warning from the CRA toolchain. This is separate from the GitHub Actions
   Node.js runtime warning fixed in `CI_NODE20_ACTIONS_MAINTENANCE_20260510.md`.
 
+### GitHub Actions
+
+Push to `origin/main` at `6161d6f` triggered CI run `25657033641`.
+
+| Job | Result | Duration |
+|---|---|---:|
+| Backend Verify | success | 2m33s |
+| Frontend Build & Test | success | 10m06s |
+| Phase C Security Verification | success | 5m26s |
+| Acceptance Smoke (3 admin pages) | success | 6m52s |
+| Frontend E2E Core Gate | success | 11m45s |
+| Property Encryption Closeout Gate | success | 4m59s |
+| Phase 5 Mocked Regression Gate | success | 6m18s |
+
+Run outcome: 7/7 jobs green.
+
 ## Files Changed
 
 - `ecm-frontend/src/pages/SiteInvitationsPage.tsx`
