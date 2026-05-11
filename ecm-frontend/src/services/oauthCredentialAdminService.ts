@@ -28,6 +28,46 @@ export interface OAuthCredentialInventoryFilters {
 
 const BASE_URL = '/admin/oauth-credentials';
 
+export const OAUTH_CREDENTIAL_ADMIN_UNEXPECTED_RESPONSE_MESSAGE =
+  'OAuth credential admin endpoint returned an unexpected response. Mocked CI gate may not cover it; backend route may be missing.';
+
+const isObject = (value: unknown): value is Record<string, unknown> => (
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+);
+
+const isStringOrNullish = (value: unknown): value is string | null | undefined => (
+  value === null || value === undefined || typeof value === 'string'
+);
+
+const isInventoryItem = (value: unknown): value is OAuthCredentialInventoryItem => {
+  if (!isObject(value)) {
+    return false;
+  }
+  return typeof value.id === 'string'
+    && typeof value.ownerType === 'string'
+    && typeof value.ownerId === 'string'
+    && isStringOrNullish(value.provider)
+    && typeof value.tokenEndpointConfigured === 'boolean'
+    && typeof value.tenantIdConfigured === 'boolean'
+    && typeof value.scopeConfigured === 'boolean'
+    && typeof value.credentialKeyConfigured === 'boolean'
+    && typeof value.accessTokenStored === 'boolean'
+    && typeof value.refreshTokenStored === 'boolean'
+    && typeof value.connected === 'boolean'
+    && isStringOrNullish(value.tokenExpiresAt)
+    && typeof value.createdAt === 'string'
+    && isStringOrNullish(value.updatedAt)
+    && typeof value.providerRevokeSupported === 'boolean'
+    && isStringOrNullish(value.providerRevokeUnsupportedReason);
+};
+
+const assertInventoryItem = (value: unknown): OAuthCredentialInventoryItem => {
+  if (!isInventoryItem(value)) {
+    throw new Error(OAUTH_CREDENTIAL_ADMIN_UNEXPECTED_RESPONSE_MESSAGE);
+  }
+  return value;
+};
+
 class OAuthCredentialAdminService {
   async listCredentials(
     filters: OAuthCredentialInventoryFilters = {}
@@ -41,19 +81,26 @@ class OAuthCredentialAdminService {
     if (provider) {
       params.provider = provider;
     }
-    return api.get<OAuthCredentialInventoryItem[]>(BASE_URL, { params });
+    const result = await api.get<unknown>(BASE_URL, { params });
+    if (!Array.isArray(result)) {
+      throw new Error(OAUTH_CREDENTIAL_ADMIN_UNEXPECTED_RESPONSE_MESSAGE);
+    }
+    return result.map(assertInventoryItem);
   }
 
   async requireReauth(credentialId: string): Promise<OAuthCredentialInventoryItem> {
-    return api.post<OAuthCredentialInventoryItem>(`${BASE_URL}/${credentialId}/require-reauth`);
+    const result = await api.post<unknown>(`${BASE_URL}/${credentialId}/require-reauth`);
+    return assertInventoryItem(result);
   }
 
   async refreshNow(credentialId: string): Promise<OAuthCredentialInventoryItem> {
-    return api.post<OAuthCredentialInventoryItem>(`${BASE_URL}/${credentialId}/refresh-now`);
+    const result = await api.post<unknown>(`${BASE_URL}/${credentialId}/refresh-now`);
+    return assertInventoryItem(result);
   }
 
   async revoke(credentialId: string): Promise<OAuthCredentialInventoryItem> {
-    return api.post<OAuthCredentialInventoryItem>(`${BASE_URL}/${credentialId}/revoke`);
+    const result = await api.post<unknown>(`${BASE_URL}/${credentialId}/revoke`);
+    return assertInventoryItem(result);
   }
 }
 
