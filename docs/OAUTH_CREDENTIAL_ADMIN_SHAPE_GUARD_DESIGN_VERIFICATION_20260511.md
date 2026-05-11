@@ -56,6 +56,24 @@ so no page-level behavior change was needed.
 | Frontend production build | `cd ecm-frontend && CI=true npm run build` | compiled successfully; existing CRA bundle-size advisory only |
 | Whitespace | `git diff --check` | clean |
 
+## GitHub Actions
+
+Run: `25671036078`
+
+Commit: `3950e855a3021f78950f3472969c1e5a64003d56`
+
+Result: 7/7 jobs passed.
+
+| Job | Result |
+|---|---|
+| Backend Verify | passed in 2m28s |
+| Frontend Build & Test | passed in 10m39s |
+| Phase C Security Verification | passed in 5m2s |
+| Phase 5 Mocked Regression Gate | passed in 6m42s |
+| Frontend E2E Core Gate | passed in 11m55s |
+| Acceptance Smoke (3 admin pages) | passed in 6m34s |
+| Property Encryption Closeout Gate | passed in 4m41s |
+
 ## Files Changed
 
 - `ecm-frontend/src/services/oauthCredentialAdminService.ts`
