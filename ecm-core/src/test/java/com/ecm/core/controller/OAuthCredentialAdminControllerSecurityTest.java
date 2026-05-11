@@ -295,14 +295,14 @@ class OAuthCredentialAdminControllerSecurityTest {
     void revokeReportsUnsupportedProviderAs400() throws Exception {
         UUID credentialId = UUID.fromString("11111111-2222-3333-4444-555555555555");
         when(oauthCredentialAdminService.revokeProvider(credentialId)).thenThrow(
-            new IllegalArgumentException("Provider-side revoke is only supported for GOOGLE; this credential is MICROSOFT")
+            new IllegalArgumentException("Provider-side revoke is not yet supported for MICROSOFT")
         );
 
         mockMvc.perform(post("/api/v1/admin/oauth-credentials/{credentialId}/revoke", credentialId))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath(
                 "$.message",
-                is("Provider-side revoke is only supported for GOOGLE; this credential is MICROSOFT")
+                is("Provider-side revoke is not yet supported for MICROSOFT")
             ));
 
         verify(oauthCredentialAdminService).revokeProvider(credentialId);

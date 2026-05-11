@@ -315,8 +315,8 @@ class OAuthCredentialServiceTest {
     }
 
     @Test
-    @DisplayName("revokeProviderTokens rejects non-Google providers as unsupported")
-    void revokeProviderTokensRejectsNonGoogleProviders() {
+    @DisplayName("revokeProviderTokens rejects Microsoft because per-token revoke is not supported")
+    void revokeProviderTokensRejectsMicrosoftProvider() {
         UUID ownerId = UUID.randomUUID();
         OAuthCredentialOwner owner = new OAuthCredentialOwner(
             OWNER_TYPE,
@@ -337,7 +337,101 @@ class OAuthCredentialServiceTest {
             IllegalArgumentException.class,
             () -> service.revokeProviderTokens(OWNER_TYPE, ownerId)
         );
-        assertTrue(ex.getMessage().contains("GOOGLE"), () -> "unexpected message: " + ex.getMessage());
+        assertEquals("Provider-side revoke is not yet supported for MICROSOFT", ex.getMessage());
+        verify(adapter, never()).clearTokens(any());
+    }
+
+    @Test
+    @DisplayName("revokeProviderTokens uses configured CUSTOM revoke endpoint")
+    void revokeProviderTokensUsesCustomRevokeEndpoint() {
+        UUID ownerId = UUID.randomUUID();
+        OAuthCredentialOwner owner = new OAuthCredentialOwner(
+            OWNER_TYPE,
+            ownerId,
+            "custom",
+            OAuthProviderType.CUSTOM,
+            "https://custom.example/token",
+            "https://custom.example/revoke",
+            null,
+            null,
+            null,
+            "stored-access",
+            "stored-refresh",
+            LocalDateTime.now().plusHours(1)
+        );
+        when(adapter.loadOwner(ownerId)).thenReturn(owner);
+
+        server.expect(requestTo("https://custom.example/revoke"))
+            .andExpect(method(HttpMethod.POST))
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("token=stored-refresh")))
+            .andRespond(withSuccess("", MediaType.APPLICATION_JSON));
+
+        service.revokeProviderTokens(OWNER_TYPE, ownerId);
+
+        verify(adapter).clearTokens(ownerId);
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("revokeProviderTokens uses CUSTOM credential-key env revoke endpoint fallback")
+    void revokeProviderTokensUsesCustomCredentialKeyEnvRevokeEndpointFallback() {
+        UUID ownerId = UUID.randomUUID();
+        OAuthCredentialOwner owner = new OAuthCredentialOwner(
+            OWNER_TYPE,
+            ownerId,
+            "custom",
+            OAuthProviderType.CUSTOM,
+            "https://custom.example/token",
+            null,
+            null,
+            null,
+            "vendor-one",
+            "stored-access",
+            "stored-refresh",
+            LocalDateTime.now().plusHours(1)
+        );
+        when(adapter.loadOwner(ownerId)).thenReturn(owner);
+        when(adapter.buildCredentialEnvKey("VENDOR_ONE", "REVOKE_ENDPOINT"))
+            .thenReturn("ECM_MAIL_OAUTH_VENDOR_ONE_REVOKE_ENDPOINT");
+        when(environment.getProperty("ECM_MAIL_OAUTH_VENDOR_ONE_REVOKE_ENDPOINT"))
+            .thenReturn("https://env.example/revoke");
+
+        server.expect(requestTo("https://env.example/revoke"))
+            .andExpect(method(HttpMethod.POST))
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("token=stored-refresh")))
+            .andRespond(withSuccess("", MediaType.APPLICATION_JSON));
+
+        service.revokeProviderTokens(OWNER_TYPE, ownerId);
+
+        verify(adapter).clearTokens(ownerId);
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("revokeProviderTokens rejects CUSTOM without configured revoke endpoint")
+    void revokeProviderTokensRejectsCustomWithoutRevokeEndpoint() {
+        UUID ownerId = UUID.randomUUID();
+        OAuthCredentialOwner owner = new OAuthCredentialOwner(
+            OWNER_TYPE,
+            ownerId,
+            "custom",
+            OAuthProviderType.CUSTOM,
+            "https://custom.example/token",
+            null,
+            null,
+            null,
+            null,
+            "stored-access",
+            "stored-refresh",
+            LocalDateTime.now().plusHours(1)
+        );
+        when(adapter.loadOwner(ownerId)).thenReturn(owner);
+
+        IllegalArgumentException ex = assertThrows(
+            IllegalArgumentException.class,
+            () -> service.revokeProviderTokens(OWNER_TYPE, ownerId)
+        );
+        assertEquals("Provider-side revoke endpoint is not configured for this CUSTOM credential", ex.getMessage());
         verify(adapter, never()).clearTokens(any());
     }
 

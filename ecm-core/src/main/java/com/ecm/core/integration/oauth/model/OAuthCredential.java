@@ -49,6 +49,9 @@ public class OAuthCredential {
     @Column(name = "token_endpoint", length = 512)
     private String tokenEndpoint;
 
+    @Column(name = "revoke_endpoint", length = 512)
+    private String revokeEndpoint;
+
     @Column(name = "tenant_id")
     private String tenantId;
 

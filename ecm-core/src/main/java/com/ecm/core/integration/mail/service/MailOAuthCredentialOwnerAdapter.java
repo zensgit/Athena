@@ -123,6 +123,7 @@ public class MailOAuthCredentialOwnerAdapter implements OAuthCredentialOwnerAdap
         credential.setOwnerId(account.getId());
         credential.setProvider(mapProvider(account.getOauthProvider()));
         credential.setTokenEndpoint(account.getOauthTokenEndpoint());
+        // revokeEndpoint is owned by the generic OAuth credential row/env fallback, not MailAccount.
         credential.setTenantId(account.getOauthTenantId());
         credential.setScope(account.getOauthScope());
         credential.setCredentialKey(account.getOauthCredentialKey());
@@ -139,6 +140,7 @@ public class MailOAuthCredentialOwnerAdapter implements OAuthCredentialOwnerAdap
             account.getName(),
             mapProvider(account.getOauthProvider()),
             account.getOauthTokenEndpoint(),
+            null,
             account.getOauthTenantId(),
             account.getOauthScope(),
             account.getOauthCredentialKey(),
@@ -155,6 +157,7 @@ public class MailOAuthCredentialOwnerAdapter implements OAuthCredentialOwnerAdap
             account.getName(),
             credential.getProvider(),
             coalesce(credential.getTokenEndpoint(), account.getOauthTokenEndpoint()),
+            credential.getRevokeEndpoint(),
             coalesce(credential.getTenantId(), account.getOauthTenantId()),
             coalesce(credential.getScope(), account.getOauthScope()),
             coalesce(credential.getCredentialKey(), account.getOauthCredentialKey()),

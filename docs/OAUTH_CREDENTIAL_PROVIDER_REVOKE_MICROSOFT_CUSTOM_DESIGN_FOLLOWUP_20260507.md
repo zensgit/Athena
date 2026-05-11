@@ -2,6 +2,10 @@
 
 Date: 2026-05-07
 
+Update 2026-05-11: CUSTOM provider revoke shipped as
+`docs/OAUTH_CREDENTIAL_PROVIDER_REVOKE_CUSTOM_BACKEND_DESIGN_VERIFICATION_20260511.md`.
+Microsoft remains unsupported for the reasons documented below.
+
 ## Context
 
 v1 Google provider-side revoke shipped on 2026-05-07; the integration record is
@@ -13,11 +17,10 @@ single source of truth for whether a credential row supports Provider Revoke.
 The UI consumes those flags directly and no longer hard-codes
 `provider === 'GOOGLE'`.
 
-This document captures the design needed to extend Provider Revoke to
-`MICROSOFT` and `CUSTOM` credentials without changing the API shape or the
-frontend control surface. The goal is to keep the v1 Google decision tree
-intact and have new provider branches plug into it through capability metadata
-plus a per-provider revoke implementation.
+This document captures the design needed to extend Provider Revoke beyond
+Google without changing the API shape or the frontend control surface. The
+CUSTOM portion has now shipped; the Microsoft portion remains a design
+constraint because it lacks a direct per-token RFC 7009 revoke endpoint.
 
 ## Microsoft revoke
 
@@ -89,7 +92,7 @@ for MICROSOFT"`. The exact reason string is owned by the round 2 backend
 slice; this doc only requires the wording to be deterministic and localized
 in one place.
 
-## CUSTOM revoke
+## CUSTOM revoke - shipped 2026-05-11
 
 ### Per-credential revoke endpoint
 
@@ -146,12 +149,9 @@ support, env-managed credential-key-only rows continue to return
   credential owner table (alongside the existing token endpoint column). The
   env-key fallback adds no schema change; it is read at runtime.
 
-The next available migration number under
-`ecm-core/src/main/resources/db/changelog/changes` is `092` (last is
-`091-create-property-encryption-rewrap-jobs.xml`). A CUSTOM revoke slice
-should reserve `092-add-oauth-credential-revoke-endpoint.xml` (or equivalent)
-when it is picked up; the present doc only fixes the next-available index, it
-does not write the migration.
+The CUSTOM revoke slice reserved
+`093-add-oauth-credential-revoke-endpoint.xml`. The earlier placeholder number
+`092` was superseded by `092-add-site-invitation-send-tracking.xml`.
 
 ## Test plan placeholder
 
@@ -181,10 +181,8 @@ classes and does not need to change when the new cases are added inside them.
   before any broader provider ships, so adding MICROSOFT or CUSTOM support
   requires only a backend capability-tree update plus a per-provider service
   implementation.
-- MICROSOFT and CUSTOM should ship as separate slices, not bundled. Their
-  failure semantics differ enough - MICROSOFT lacks a canonical revoke
-  endpoint, while CUSTOM is RFC 7009-shaped behind a configured endpoint -
-  that bundling them would force a single review to weigh two different risk
-  profiles in one pass.
+- MICROSOFT and CUSTOM were intentionally kept as separate slices. CUSTOM has
+  shipped because it is RFC 7009-shaped behind a configured endpoint.
+  MICROSOFT remains separate because it lacks a canonical revoke endpoint.
 - Each slice must reuse the v1 Google decision tree for failure handling and
   must not reintroduce client-side provider branching in the UI.

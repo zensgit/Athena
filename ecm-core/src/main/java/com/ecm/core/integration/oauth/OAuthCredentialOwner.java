@@ -9,6 +9,7 @@ public record OAuthCredentialOwner(
     String ownerName,
     OAuthProviderType provider,
     String tokenEndpoint,
+    String revokeEndpoint,
     String tenantId,
     String scope,
     String credentialKey,
@@ -16,4 +17,32 @@ public record OAuthCredentialOwner(
     String refreshToken,
     LocalDateTime tokenExpiresAt
 ) {
+    public OAuthCredentialOwner(
+        String ownerType,
+        UUID ownerId,
+        String ownerName,
+        OAuthProviderType provider,
+        String tokenEndpoint,
+        String tenantId,
+        String scope,
+        String credentialKey,
+        String accessToken,
+        String refreshToken,
+        LocalDateTime tokenExpiresAt
+    ) {
+        this(
+            ownerType,
+            ownerId,
+            ownerName,
+            provider,
+            tokenEndpoint,
+            null,
+            tenantId,
+            scope,
+            credentialKey,
+            accessToken,
+            refreshToken,
+            tokenExpiresAt
+        );
+    }
 }

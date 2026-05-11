@@ -37,6 +37,14 @@ public class OAuthCredentialService {
     private static final String MICROSOFT_TOKEN_URL_TEMPLATE = "https://login.microsoftonline.com/%s/oauth2/v2.0/token";
     private static final String GOOGLE_SCOPE_DEFAULT = "https://mail.google.com/";
     private static final String MICROSOFT_SCOPE_DEFAULT = "offline_access https://outlook.office.com/IMAP.AccessAsUser.All";
+    private static final String ENV_MANAGED_REVOKE_UNSUPPORTED =
+        "Provider-side revoke requires a locally stored OAuth token; "
+            + "this credential row only references env-managed secrets";
+    private static final String NO_LOCAL_TOKEN_REVOKE_UNSUPPORTED = "No locally stored OAuth token to revoke";
+    private static final String CUSTOM_REVOKE_ENDPOINT_UNCONFIGURED =
+        "Provider-side revoke endpoint is not configured for this CUSTOM credential";
+    private static final String MICROSOFT_REVOKE_UNSUPPORTED =
+        "Provider-side revoke is not yet supported for MICROSOFT";
 
     private final Environment environment;
     private final RestTemplate restTemplate;
@@ -143,7 +151,8 @@ public class OAuthCredentialService {
     /**
      * Calls the provider's revoke endpoint for the locally stored OAuth token.
      *
-     * <p>v1 supports GOOGLE only. Prefers the stored refresh token; falls back to the access token.
+     * <p>Supports GOOGLE and CUSTOM credentials with a configured revoke endpoint. Prefers the
+     * stored refresh token; falls back to the access token.
      * On HTTP 200 OR provider-side already-invalid responses (HTTP 4xx with error in
      * {invalid_token, invalid_grant, unsupported_token_type}), local tokens are cleared and the
      * session cache is evicted. On HTTP 5xx, network failures, or any other error, local tokens
@@ -152,25 +161,13 @@ public class OAuthCredentialService {
     public void revokeProviderTokens(String ownerType, UUID ownerId) {
         AdapterContext context = loadContext(ownerType, ownerId);
         OAuthCredentialOwner owner = context.owner();
-
-        if (owner.provider() != OAuthProviderType.GOOGLE) {
-            throw new IllegalArgumentException(
-                "Provider-side revoke is only supported for GOOGLE; this credential is " + owner.provider()
-            );
+        ResolvedProviderRevokeCapability capability = resolveProviderRevokeCapability(context);
+        if (!capability.supported()) {
+            throw new IllegalArgumentException(capability.unsupportedReason());
         }
 
         boolean hasAccessToken = owner.accessToken() != null && !owner.accessToken().isBlank();
         boolean hasRefreshToken = owner.refreshToken() != null && !owner.refreshToken().isBlank();
-
-        if (hasCredentialKey(owner) && !hasAccessToken && !hasRefreshToken) {
-            throw new IllegalArgumentException(
-                "Provider-side revoke requires a locally stored OAuth token; "
-                    + "this credential row only references env-managed secrets"
-            );
-        }
-        if (!hasAccessToken && !hasRefreshToken) {
-            throw new IllegalArgumentException("No locally stored OAuth token to revoke");
-        }
 
         String tokenToRevoke = hasRefreshToken ? owner.refreshToken() : owner.accessToken();
 
@@ -182,7 +179,7 @@ public class OAuthCredentialService {
 
         try {
             restTemplate.postForEntity(
-                GOOGLE_REVOKE_URL,
+                capability.revokeEndpoint(),
                 new HttpEntity<>(form, headers),
                 String.class
             );
@@ -228,6 +225,46 @@ public class OAuthCredentialService {
 
         context.adapter().clearTokens(owner.ownerId());
         evictSession(owner.ownerType(), owner.ownerId());
+    }
+
+    public OAuthProviderRevokeCapability providerRevokeCapability(String ownerType, UUID ownerId) {
+        ResolvedProviderRevokeCapability capability = resolveProviderRevokeCapability(loadContext(ownerType, ownerId));
+        return new OAuthProviderRevokeCapability(capability.supported(), capability.unsupportedReason());
+    }
+
+    private ResolvedProviderRevokeCapability resolveProviderRevokeCapability(AdapterContext context) {
+        OAuthCredentialOwner owner = context.owner();
+        boolean hasAccessToken = owner.accessToken() != null && !owner.accessToken().isBlank();
+        boolean hasRefreshToken = owner.refreshToken() != null && !owner.refreshToken().isBlank();
+
+        if (owner.provider() == null) {
+            return unsupported("Provider-side revoke is only supported for GOOGLE or CUSTOM; this credential is null");
+        }
+        if (owner.provider() == OAuthProviderType.MICROSOFT) {
+            return unsupported(MICROSOFT_REVOKE_UNSUPPORTED);
+        }
+        if (owner.provider() != OAuthProviderType.GOOGLE && owner.provider() != OAuthProviderType.CUSTOM) {
+            return unsupported("Provider-side revoke is only supported for GOOGLE or CUSTOM; this credential is " + owner.provider());
+        }
+        if (hasCredentialKey(owner) && !hasAccessToken && !hasRefreshToken) {
+            return unsupported(ENV_MANAGED_REVOKE_UNSUPPORTED);
+        }
+        if (!hasAccessToken && !hasRefreshToken) {
+            return unsupported(NO_LOCAL_TOKEN_REVOKE_UNSUPPORTED);
+        }
+        if (owner.provider() == OAuthProviderType.GOOGLE) {
+            return new ResolvedProviderRevokeCapability(true, null, GOOGLE_REVOKE_URL);
+        }
+
+        String revokeEndpoint = resolveCustomRevokeEndpoint(context);
+        if (revokeEndpoint == null || revokeEndpoint.isBlank()) {
+            return unsupported(CUSTOM_REVOKE_ENDPOINT_UNCONFIGURED);
+        }
+        return new ResolvedProviderRevokeCapability(true, null, revokeEndpoint);
+    }
+
+    private ResolvedProviderRevokeCapability unsupported(String reason) {
+        return new ResolvedProviderRevokeCapability(false, reason, null);
     }
 
     private boolean isAlreadyInvalidTokenError(String error) {
@@ -416,6 +453,17 @@ public class OAuthCredentialService {
         };
     }
 
+    private String resolveCustomRevokeEndpoint(AdapterContext context) {
+        OAuthCredentialOwner owner = context.owner();
+        if (owner.revokeEndpoint() != null && !owner.revokeEndpoint().isBlank()) {
+            return owner.revokeEndpoint();
+        }
+        if (hasCredentialKey(owner)) {
+            return resolveCredentialEnv(context, "REVOKE_ENDPOINT", false);
+        }
+        return null;
+    }
+
     private String resolveClientId(AdapterContext context) {
         if (hasCredentialKey(context.owner())) {
             return resolveCredentialEnv(context, "CLIENT_ID", true);
@@ -558,6 +606,13 @@ public class OAuthCredentialService {
     }
 
     private record AdapterContext(OAuthCredentialOwnerAdapter adapter, OAuthCredentialOwner owner) {
+    }
+
+    private record ResolvedProviderRevokeCapability(
+        boolean supported,
+        String unsupportedReason,
+        String revokeEndpoint
+    ) {
     }
 
     private record OAuthTokenResponse(String accessToken, String refreshToken, Long expiresIn) {

@@ -28,12 +28,16 @@ The OAuth Credential Store admin surface is the cross-integration `/admin/oauth-
   - `OAuthCredentialAdminService` derives those fields from the same decision tree as `OAuthCredentialService.revokeProviderTokens`, so list/reload metadata and `POST /revoke` failures stay aligned.
   - Frontend drops the hard-coded `provider === 'GOOGLE'` guard and gates the Provider Revoke control on the server-supplied capability fields, with the unsupported reason surfaced on the disabled control.
   - The targeted-test set is unchanged; capability-metadata coverage lives in the existing OAuth admin backend and frontend test classes, so `scripts/oauth-credential-admin-preflight.sh` remains the local gate.
+- Provider Revoke CUSTOM backend support shipped on 2026-05-11: `docs/OAUTH_CREDENTIAL_PROVIDER_REVOKE_CUSTOM_BACKEND_DESIGN_VERIFICATION_20260511.md`
+  - `CUSTOM` rows with a local token and configured revoke endpoint now use the same RFC 7009-style revoke semantics as Google.
+  - Endpoint resolution supports the persisted `oauth_credentials.revoke_endpoint` field and the credential-key env fallback `ECM_MAIL_OAUTH_<KEY>_REVOKE_ENDPOINT`.
+  - The frontend API shape and admin page behavior stay unchanged because capability metadata remains the control surface.
 
 ## v1 Revoke invariants
 
 v1 Provider Revoke scope is bounded to the following invariants:
 
-- Only `GOOGLE` is supported in v1. `MICROSOFT`, `CUSTOM`, and env-managed-only rows must return an explicit unsupported response and the UI must reflect that bound.
+- `GOOGLE` is supported by default. `CUSTOM` is supported only when a revoke endpoint is configured. `MICROSOFT` and env-managed-only rows must return an explicit unsupported response and the UI must reflect that bound.
 - Refresh token is preferred when available; access token is the fallback when no refresh token is stored.
 - On provider success or already-invalid response, Athena clears its locally stored tokens through the existing owner adapter path.
 - On provider 5xx or network failure, Athena preserves its locally stored tokens so the operator can retry without losing recovery state.
@@ -42,7 +46,8 @@ v1 Provider Revoke scope is bounded to the following invariants:
 ## v1 Revoke limitations / known gaps
 
 - No Microsoft revoke. Microsoft uses tenant-scoped revoke endpoints with different confirmation semantics than Google's `oauth2/revoke`, and v1 does not attempt that.
-- No CUSTOM provider revoke. Athena does not yet model a per-credential revoke endpoint contract for CUSTOM providers, so v1 cannot safely call an arbitrary URL.
+- No Microsoft provider-side revoke. Microsoft does not expose a Google-style per-token revoke endpoint for this model; see the follow-up doc for the constraint.
+- No admin UI for editing the generic `revokeEndpoint` field yet. CUSTOM operators can use the env fallback immediately; a future credential editor can expose the persisted field.
 - Env-managed credential-key-only rows cannot be revoked. The credential key references an external secret that Athena does not own; clearing or revoking that secret has to happen in the operator's secret manager.
 - Provider-side revoke does not affect refresh tokens issued to other clients sharing the same Google OAuth client_id. It only invalidates the specific token Athena holds, so other applications using the same client_id retain their own grants.
 

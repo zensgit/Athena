@@ -69,6 +69,7 @@ class OAuthCredentialPersistenceTest {
         credential.setOwnerId(UUID.randomUUID());
         credential.setProvider(OAuthProviderType.GOOGLE);
         credential.setCredentialKey("GMAIL");
+        credential.setRevokeEndpoint("https://custom.example/revoke");
         credential.setAccessToken("plain-access");
         credential.setRefreshToken("plain-refresh");
         credential.setTokenExpiresAt(LocalDateTime.now().plusHours(1));
@@ -95,6 +96,7 @@ class OAuthCredentialPersistenceTest {
         OAuthCredential reloaded = repository.findById(saved.getId()).orElseThrow();
         assertEquals("plain-access", reloaded.getAccessToken());
         assertEquals("plain-refresh", reloaded.getRefreshToken());
+        assertEquals("https://custom.example/revoke", reloaded.getRevokeEndpoint());
     }
 
     @Test

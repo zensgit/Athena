@@ -79,6 +79,22 @@ class OAuthCredentialAdminServiceTest {
     }
 
     @Test
+    @DisplayName("listCredentials uses runtime capability metadata for CUSTOM rows")
+    void listCredentialsUsesRuntimeCapabilityForCustomRows() {
+        UUID customId = UUID.fromString("33333333-3333-3333-3333-333333333333");
+        OAuthCredentialInventoryItem customRow = inventory(customId, OAuthProviderType.CUSTOM, true, false, true);
+        when(oauthCredentialRepository.findInventoryItems(null, OAuthProviderType.CUSTOM)).thenReturn(List.of(customRow));
+        when(oauthCredentialService.providerRevokeCapability("MAIL_ACCOUNT", customRow.ownerId()))
+            .thenReturn(new OAuthProviderRevokeCapability(true, null));
+
+        List<OAuthCredentialInventoryItem> result = oauthCredentialAdminService.listCredentials(null, OAuthProviderType.CUSTOM);
+
+        assertEquals(1, result.size());
+        assertTrue(result.get(0).providerRevokeSupported());
+        assertNull(result.get(0).providerRevokeUnsupportedReason());
+    }
+
+    @Test
     @DisplayName("withCapability: GOOGLE with stored token is supported, reason null")
     void withCapabilityGoogleWithStoredTokenIsSupported() {
         OAuthCredentialInventoryItem item = inventory(UUID.randomUUID(), OAuthProviderType.GOOGLE, true, true, true);
@@ -137,21 +153,21 @@ class OAuthCredentialAdminServiceTest {
 
         assertFalse(enriched.providerRevokeSupported());
         assertEquals(
-            "Provider-side revoke is only supported for GOOGLE; this credential is MICROSOFT",
+            "Provider-side revoke is not yet supported for MICROSOFT",
             enriched.providerRevokeUnsupportedReason()
         );
     }
 
     @Test
-    @DisplayName("withCapability: CUSTOM is unsupported")
+    @DisplayName("withCapability: CUSTOM with stored token defaults to endpoint-not-configured")
     void withCapabilityCustomIsUnsupported() {
-        OAuthCredentialInventoryItem item = inventory(UUID.randomUUID(), OAuthProviderType.CUSTOM, false, false, false);
+        OAuthCredentialInventoryItem item = inventory(UUID.randomUUID(), OAuthProviderType.CUSTOM, false, true, false);
 
         OAuthCredentialInventoryItem enriched = OAuthCredentialAdminService.withCapability(item);
 
         assertFalse(enriched.providerRevokeSupported());
         assertEquals(
-            "Provider-side revoke is only supported for GOOGLE; this credential is CUSTOM",
+            "Provider-side revoke endpoint is not configured for this CUSTOM credential",
             enriched.providerRevokeUnsupportedReason()
         );
     }
@@ -167,7 +183,7 @@ class OAuthCredentialAdminServiceTest {
 
         assertFalse(enriched.providerRevokeSupported());
         assertEquals(
-            "Provider-side revoke is only supported for GOOGLE; this credential is null",
+            "Provider-side revoke is only supported for GOOGLE or CUSTOM; this credential is null",
             enriched.providerRevokeUnsupportedReason()
         );
     }

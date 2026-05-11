@@ -42,6 +42,7 @@ class MailOAuthCredentialOwnerAdapterTest {
         credential.setOwnerId(accountId);
         credential.setProvider(OAuthProviderType.GOOGLE);
         credential.setCredentialKey("GMAIL_GENERIC");
+        credential.setRevokeEndpoint("https://custom.example/revoke");
         credential.setRefreshToken("generic-refresh");
 
         when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
@@ -54,6 +55,7 @@ class MailOAuthCredentialOwnerAdapterTest {
         OAuthCredentialOwner owner = adapter.loadOwner(accountId);
 
         assertEquals("GMAIL_GENERIC", owner.credentialKey());
+        assertEquals("https://custom.example/revoke", owner.revokeEndpoint());
         assertEquals("generic-refresh", owner.refreshToken());
     }
 
@@ -109,6 +111,7 @@ class MailOAuthCredentialOwnerAdapterTest {
         OAuthCredential credential = new OAuthCredential();
         credential.setOwnerType(MailOAuthCredentialOwnerAdapter.OWNER_TYPE);
         credential.setOwnerId(accountId);
+        credential.setRevokeEndpoint("https://custom.example/revoke");
         credential.setRefreshToken("refresh");
         credential.setAccessToken("access");
 
@@ -126,6 +129,7 @@ class MailOAuthCredentialOwnerAdapterTest {
         assertNull(account.getOauthAccessToken());
         assertNull(account.getOauthRefreshToken());
         assertNull(account.getOauthTokenExpiresAt());
+        assertEquals("https://custom.example/revoke", owner.revokeEndpoint());
         assertNull(owner.accessToken());
         assertNull(owner.refreshToken());
     }
