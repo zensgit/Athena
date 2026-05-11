@@ -30,6 +30,12 @@ import oauthCredentialAdminService, {
 
 const PROVIDERS = ['', 'GOOGLE', 'MICROSOFT', 'CUSTOM'];
 
+const isCustomRevokeEndpointGap = (credential: OAuthCredentialInventoryItem): boolean => (
+  credential.provider === 'CUSTOM'
+  && !credential.providerRevokeSupported
+  && (credential.providerRevokeUnsupportedReason ?? '').toLowerCase().includes('revoke endpoint')
+);
+
 const formatDateTime = (value: string | null | undefined): string => {
   if (!value) {
     return '-';
@@ -65,6 +71,7 @@ const OAuthCredentialAdminPage: React.FC = () => {
   const [credentials, setCredentials] = useState<OAuthCredentialInventoryItem[]>([]);
   const [ownerType, setOwnerType] = useState('');
   const [provider, setProvider] = useState('');
+  const [showCustomRevokeEndpointGaps, setShowCustomRevokeEndpointGaps] = useState(false);
   const [loading, setLoading] = useState(false);
   const [reauthCredentialId, setReauthCredentialId] = useState<string | null>(null);
   const [refreshCredentialId, setRefreshCredentialId] = useState<string | null>(null);
@@ -123,6 +130,13 @@ const OAuthCredentialAdminPage: React.FC = () => {
   const connectedCount = credentials.filter((credential) => credential.connected).length;
   const refreshTokenCount = credentials.filter((credential) => credential.refreshTokenStored).length;
   const credentialKeyCount = credentials.filter((credential) => credential.credentialKeyConfigured).length;
+  const customRevokeEndpointGapCount = credentials.filter(isCustomRevokeEndpointGap).length;
+  const visibleCredentials = showCustomRevokeEndpointGaps
+    ? credentials.filter(isCustomRevokeEndpointGap)
+    : credentials;
+  const emptyInventoryMessage = showCustomRevokeEndpointGaps
+    ? 'No CUSTOM credentials currently need a revoke endpoint.'
+    : 'No OAuth credentials match the current filters.';
 
   const handleRequireReauth = async (credential: OAuthCredentialInventoryItem) => {
     const confirmed = window.confirm(
@@ -274,12 +288,18 @@ const OAuthCredentialAdminPage: React.FC = () => {
             <Typography variant="h4">{credentialKeyCount}</Typography>
           </CardContent>
         </Card>
+        <Card sx={{ flex: 1 }}>
+          <CardHeader title="CUSTOM Revoke Gaps" />
+          <CardContent>
+            <Typography variant="h4">{customRevokeEndpointGapCount}</Typography>
+          </CardContent>
+        </Card>
       </Stack>
 
       <Card sx={{ mb: 3 }}>
         <CardHeader title="Filters" subheader="Filters are exact-match because owner types and providers are operational identifiers." />
         <CardContent>
-          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ xs: 'stretch', md: 'center' }}>
             <TextField
               label="Owner type"
               value={ownerType}
@@ -309,7 +329,21 @@ const OAuthCredentialAdminPage: React.FC = () => {
             >
               Apply Filters
             </Button>
+            <Button
+              variant={showCustomRevokeEndpointGaps ? 'contained' : 'outlined'}
+              color="warning"
+              onClick={() => setShowCustomRevokeEndpointGaps((current) => !current)}
+              aria-pressed={showCustomRevokeEndpointGaps}
+              sx={{ minWidth: 220 }}
+            >
+              CUSTOM revoke gaps ({customRevokeEndpointGapCount})
+            </Button>
           </Stack>
+          {showCustomRevokeEndpointGaps && (
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+              Showing CUSTOM credentials where provider-side revoke is blocked by a missing revoke endpoint.
+            </Typography>
+          )}
         </CardContent>
       </Card>
 
@@ -320,8 +354,8 @@ const OAuthCredentialAdminPage: React.FC = () => {
             <Stack alignItems="center" sx={{ py: 4 }}>
               <CircularProgress />
             </Stack>
-          ) : credentials.length === 0 ? (
-            <Alert severity="info">No OAuth credentials match the current filters.</Alert>
+          ) : visibleCredentials.length === 0 ? (
+            <Alert severity="info">{emptyInventoryMessage}</Alert>
           ) : (
             <TableContainer>
               <Table aria-label="OAuth credential inventory" size="small">
@@ -337,7 +371,7 @@ const OAuthCredentialAdminPage: React.FC = () => {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {credentials.map((credential) => (
+                  {visibleCredentials.map((credential) => (
                     <TableRow key={credential.id}>
                       <TableCell>
                         <Typography variant="body2" fontWeight={600}>

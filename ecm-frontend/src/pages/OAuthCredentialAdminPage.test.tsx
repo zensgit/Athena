@@ -83,6 +83,72 @@ test('shows empty state for unmatched filters', async () => {
   expect(await screen.findByText('No OAuth credentials match the current filters.')).toBeTruthy();
 });
 
+test('filters to CUSTOM credentials missing a revoke endpoint', async () => {
+  mockedOAuthCredentialAdminService.listCredentials.mockResolvedValue([
+    {
+      ...credential,
+      id: 'custom-gap',
+      ownerId: 'custom-gap-owner',
+      provider: 'CUSTOM',
+      revokeEndpointConfigured: false,
+      providerRevokeSupported: false,
+      providerRevokeUnsupportedReason: 'Provider-side revoke endpoint is not configured for this CUSTOM credential',
+    },
+    {
+      ...credential,
+      id: 'custom-ready',
+      ownerId: 'custom-ready-owner',
+      provider: 'CUSTOM',
+      revokeEndpointConfigured: true,
+      providerRevokeSupported: true,
+      providerRevokeUnsupportedReason: null,
+    },
+    {
+      ...credential,
+      id: 'microsoft-unsupported',
+      ownerId: 'microsoft-owner',
+      provider: 'MICROSOFT',
+      providerRevokeSupported: false,
+      providerRevokeUnsupportedReason:
+        'Provider-side revoke is only supported for GOOGLE; this credential is MICROSOFT',
+    },
+  ]);
+
+  render(<OAuthCredentialAdminPage />);
+  await screen.findByText('custom-gap-owner');
+
+  fireEvent.click(screen.getByRole('button', { name: 'CUSTOM revoke gaps (1)' }));
+
+  expect(
+    screen.getByText('Showing CUSTOM credentials where provider-side revoke is blocked by a missing revoke endpoint.')
+  ).toBeTruthy();
+  const inventoryTable = screen.getByRole('table', { name: 'OAuth credential inventory' });
+  expect(within(inventoryTable).getByText('custom-gap-owner')).toBeTruthy();
+  expect(within(inventoryTable).queryByText('custom-ready-owner')).toBeNull();
+  expect(within(inventoryTable).queryByText('microsoft-owner')).toBeNull();
+});
+
+test('shows empty state when CUSTOM revoke gap filter has no matches', async () => {
+  mockedOAuthCredentialAdminService.listCredentials.mockResolvedValue([
+    {
+      ...credential,
+      id: 'custom-ready',
+      ownerId: 'custom-ready-owner',
+      provider: 'CUSTOM',
+      revokeEndpointConfigured: true,
+      providerRevokeSupported: true,
+      providerRevokeUnsupportedReason: null,
+    },
+  ]);
+
+  render(<OAuthCredentialAdminPage />);
+  await screen.findByText('custom-ready-owner');
+
+  fireEvent.click(screen.getByRole('button', { name: 'CUSTOM revoke gaps (0)' }));
+
+  expect(await screen.findByText('No CUSTOM credentials currently need a revoke endpoint.')).toBeTruthy();
+});
+
 test('requires reauthorization by clearing stored token status', async () => {
   const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
   mockedOAuthCredentialAdminService.requireReauth.mockResolvedValue({

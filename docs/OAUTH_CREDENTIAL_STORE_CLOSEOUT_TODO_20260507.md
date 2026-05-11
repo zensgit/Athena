@@ -36,6 +36,9 @@ The OAuth Credential Store admin surface is the cross-integration `/admin/oauth-
   - `PUT /api/v1/admin/oauth-credentials/{credentialId}/revoke-endpoint` stores or clears the persisted HTTPS revoke endpoint for CUSTOM credentials.
   - The inventory DTO now includes `revokeEndpointConfigured`; the actual URL is not returned by the inventory endpoint.
   - `/admin/oauth-credentials` shows a `Revoke endpoint` chip and a CUSTOM-only configure dialog that updates row capability metadata immediately after save.
+- CUSTOM revoke gap filter shipped on 2026-05-11: `docs/OAUTH_CREDENTIAL_CUSTOM_REVOKE_GAP_FILTER_DESIGN_VERIFICATION_20260511.md`
+  - `/admin/oauth-credentials` now shows a `CUSTOM Revoke Gaps` summary card and a local `CUSTOM revoke gaps (N)` filter.
+  - The filter uses backend capability metadata, not a frontend provider-only decision tree, so it excludes Microsoft unsupported rows and CUSTOM rows whose Provider Revoke path is already supported.
 
 ## v1 Revoke invariants
 
