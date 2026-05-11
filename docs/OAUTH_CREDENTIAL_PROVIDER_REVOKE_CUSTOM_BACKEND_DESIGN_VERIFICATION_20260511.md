@@ -131,6 +131,24 @@ Breakdown:
 - Frontend production build compiled successfully; existing CRA bundle-size
   advisory only.
 
+### GitHub Actions
+
+Run: <https://github.com/zensgit/Athena/actions/runs/25676504311>
+
+Head commit: `e3bb281d20d1de52cc1d219ce3b94c3e9525f222`
+
+Result: success.
+
+| Job | Result | Duration |
+| --- | --- | --- |
+| Backend Verify | success | 2m9s |
+| Frontend Build & Test | success | 10m20s |
+| Phase C Security Verification | success | 5m29s |
+| Property Encryption Closeout Gate | success | 4m43s |
+| Acceptance Smoke (3 admin pages) | success | 6m46s |
+| Phase 5 Mocked Regression Gate | success | 5m36s |
+| Frontend E2E Core Gate | success | 12m5s |
+
 ### Local Wrapper Note
 
 The repository `ecm-core/./mvnw` is Docker-backed and failed before Maven
