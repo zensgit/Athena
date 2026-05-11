@@ -73,6 +73,22 @@ Notes:
 - The production build still prints the existing Node `fs.F_OK` deprecation
   warning from the CRA toolchain.
 
+### GitHub Actions
+
+Push to `origin/main` at `e7034c4` triggered CI run `25659207664`.
+
+| Job | Result | Duration |
+|---|---|---:|
+| Backend Verify | success | 2m17s |
+| Frontend Build & Test | success | 10m11s |
+| Phase C Security Verification | success | 5m23s |
+| Frontend E2E Core Gate | success | 12m05s |
+| Phase 5 Mocked Regression Gate | success | 6m10s |
+| Acceptance Smoke (3 admin pages) | success | 6m38s |
+| Property Encryption Closeout Gate | success | 4m57s |
+
+Run outcome: 7/7 jobs green.
+
 ## Files Changed
 
 - `ecm-frontend/src/pages/SiteInvitationsPage.tsx`
