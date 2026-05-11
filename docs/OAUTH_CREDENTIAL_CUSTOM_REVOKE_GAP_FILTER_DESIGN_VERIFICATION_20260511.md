@@ -107,6 +107,24 @@ Breakdown:
 - Frontend production build compiled successfully; existing CRA bundle-size
   advisory only.
 
+### GitHub Actions
+
+Run: <https://github.com/zensgit/Athena/actions/runs/25680265247>
+
+Head commit: `dfe2038a`
+
+Result: success.
+
+| Job | Result | Duration |
+| --- | --- | --- |
+| Backend Verify | success | 2m22s |
+| Frontend Build & Test | success | 9m51s |
+| Phase C Security Verification | success | 5m11s |
+| Property Encryption Closeout Gate | success | 4m43s |
+| Acceptance Smoke (3 admin pages) | success | 6m49s |
+| Phase 5 Mocked Regression Gate | success | 5m50s |
+| Frontend E2E Core Gate | success | 11m34s |
+
 ## Remaining Work
 
 - Microsoft provider-side revoke remains intentionally unsupported for the
