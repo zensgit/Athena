@@ -61,11 +61,26 @@ e2e/mail-automation-phase6-p1.mock.spec.ts ... passed (12.9s)
 The gate also reported all 24 expected recovery events observed and no startup
 SLA warnings.
 
+### GitHub Actions
+
+Run: `25661651542`
+
+| Job | Result | Duration |
+|---|---|---|
+| Backend Verify | passed | 2m21s |
+| Frontend Build & Test | passed | 10m10s |
+| Phase C Security Verification | passed | 5m12s |
+| Acceptance Smoke (3 admin pages) | passed | 6m36s |
+| Phase 5 Mocked Regression Gate | passed | 6m22s |
+| Frontend E2E Core Gate | passed | 11m35s |
+| Property Encryption Closeout Gate | passed | 4m0s |
+
 ## Files Changed
 
 - `ecm-frontend/e2e/mail-automation-phase6-p1.mock.spec.ts`
 - `docs/SMTP_PRESET_TEST_INTEGRATION_VERIFICATION_20260507.md`
 - `docs/SMTP_PRESET_AND_TEST_UI_DESIGN_VERIFICATION_20260507.md`
+- `docs/SMTP_TEST_SMTP_PHASE5_MOCKED_ROUTE_DESIGN_VERIFICATION_20260511.md`
 
 ## Remaining Work
 
