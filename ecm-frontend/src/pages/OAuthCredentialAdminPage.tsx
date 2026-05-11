@@ -8,6 +8,10 @@ import {
   CardHeader,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Stack,
   Table,
   TableBody,
@@ -65,6 +69,9 @@ const OAuthCredentialAdminPage: React.FC = () => {
   const [reauthCredentialId, setReauthCredentialId] = useState<string | null>(null);
   const [refreshCredentialId, setRefreshCredentialId] = useState<string | null>(null);
   const [revokeCredentialId, setRevokeCredentialId] = useState<string | null>(null);
+  const [revokeEndpointCredential, setRevokeEndpointCredential] = useState<OAuthCredentialInventoryItem | null>(null);
+  const [revokeEndpointValue, setRevokeEndpointValue] = useState('');
+  const [revokeEndpointSubmitting, setRevokeEndpointSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadCredentials = async (
@@ -173,6 +180,41 @@ const OAuthCredentialAdminPage: React.FC = () => {
       await loadCredentials(ownerType, provider, { preserveError: true });
     } finally {
       setRevokeCredentialId(null);
+    }
+  };
+
+  const openRevokeEndpointDialog = (credential: OAuthCredentialInventoryItem) => {
+    setRevokeEndpointCredential(credential);
+    setRevokeEndpointValue('');
+    setError(null);
+  };
+
+  const closeRevokeEndpointDialog = () => {
+    if (revokeEndpointSubmitting) {
+      return;
+    }
+    setRevokeEndpointCredential(null);
+    setRevokeEndpointValue('');
+  };
+
+  const handleSaveRevokeEndpoint = async () => {
+    if (!revokeEndpointCredential) {
+      return;
+    }
+    setRevokeEndpointSubmitting(true);
+    setError(null);
+    try {
+      const updated = await oauthCredentialAdminService.updateRevokeEndpoint(
+        revokeEndpointCredential.id,
+        revokeEndpointValue
+      );
+      setCredentials((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      setRevokeEndpointCredential(null);
+      setRevokeEndpointValue('');
+    } catch (err) {
+      setError(resolveErrorMessage(err, 'Failed to update OAuth revoke endpoint.'));
+    } finally {
+      setRevokeEndpointSubmitting(false);
     }
   };
 
@@ -317,6 +359,7 @@ const OAuthCredentialAdminPage: React.FC = () => {
                         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                           {statusChip('Credential key', credential.credentialKeyConfigured)}
                           {statusChip('Endpoint', credential.tokenEndpointConfigured)}
+                          {statusChip('Revoke endpoint', credential.revokeEndpointConfigured)}
                           {statusChip('Scope', credential.scopeConfigured)}
                           {statusChip('Tenant', credential.tenantIdConfigured)}
                         </Stack>
@@ -352,6 +395,21 @@ const OAuthCredentialAdminPage: React.FC = () => {
                           >
                             {reauthCredentialId === credential.id ? 'Clearing...' : 'Require Reauth'}
                           </Button>
+                          {credential.provider === 'CUSTOM' && (
+                            <Button
+                              variant="outlined"
+                              size="small"
+                              onClick={() => openRevokeEndpointDialog(credential)}
+                              disabled={
+                                revokeEndpointSubmitting
+                                || revokeCredentialId === credential.id
+                                || refreshCredentialId === credential.id
+                                || reauthCredentialId === credential.id
+                              }
+                            >
+                              Configure Revoke Endpoint
+                            </Button>
+                          )}
                           <Tooltip
                             title={
                               !credential.providerRevokeSupported
@@ -395,6 +453,48 @@ const OAuthCredentialAdminPage: React.FC = () => {
           )}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={Boolean(revokeEndpointCredential)}
+        onClose={closeRevokeEndpointDialog}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>Configure CUSTOM Revoke Endpoint</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              Store a HTTPS RFC 7009-style revoke endpoint for this CUSTOM credential. The current URL is not returned
+              by inventory; save a new value to replace it, or save blank to clear it.
+            </Typography>
+            {revokeEndpointCredential && (
+              <Typography variant="caption" color="text.secondary">
+                {revokeEndpointCredential.ownerType} {revokeEndpointCredential.ownerId}
+              </Typography>
+            )}
+            <TextField
+              label="Revoke endpoint"
+              value={revokeEndpointValue}
+              onChange={(event) => setRevokeEndpointValue(event.target.value)}
+              placeholder="https://provider.example/oauth/revoke"
+              fullWidth
+              autoFocus
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeRevokeEndpointDialog} disabled={revokeEndpointSubmitting}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => void handleSaveRevokeEndpoint()}
+            disabled={revokeEndpointSubmitting}
+            variant="contained"
+          >
+            {revokeEndpointSubmitting ? 'Saving...' : 'Save Endpoint'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

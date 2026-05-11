@@ -10,6 +10,7 @@ jest.mock('services/oauthCredentialAdminService', () => ({
     requireReauth: jest.fn(),
     refreshNow: jest.fn(),
     revoke: jest.fn(),
+    updateRevokeEndpoint: jest.fn(),
   },
 }));
 
@@ -21,6 +22,7 @@ const credential = {
   ownerId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
   provider: 'GOOGLE',
   tokenEndpointConfigured: true,
+  revokeEndpointConfigured: false,
   tenantIdConfigured: false,
   scopeConfigured: true,
   credentialKeyConfigured: true,
@@ -50,6 +52,7 @@ test('loads redacted OAuth credential inventory', async () => {
   expect(within(inventoryTable).getByText('GOOGLE')).toBeTruthy();
   expect(within(inventoryTable).getByText('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee')).toBeTruthy();
   expect(within(inventoryTable).getByText('Credential key')).toBeTruthy();
+  expect(within(inventoryTable).getByText('Revoke endpoint')).toBeTruthy();
   expect(within(inventoryTable).getByText('Refresh token')).toBeTruthy();
   expect(screen.queryByText('secret-access-token')).toBeNull();
   expect(screen.queryByText('secret-refresh-token')).toBeNull();
@@ -296,4 +299,76 @@ test('surfaces revoke provider errors and reloads inventory', async () => {
   });
 
   confirmSpy.mockRestore();
+});
+
+test('configures CUSTOM revoke endpoint and replaces the row from the redacted response', async () => {
+  mockedOAuthCredentialAdminService.listCredentials.mockResolvedValue([
+    {
+      ...credential,
+      provider: 'CUSTOM',
+      revokeEndpointConfigured: false,
+      providerRevokeSupported: false,
+      providerRevokeUnsupportedReason: 'Provider-side revoke endpoint is not configured for this CUSTOM credential',
+    },
+  ]);
+  mockedOAuthCredentialAdminService.updateRevokeEndpoint.mockResolvedValue({
+    ...credential,
+    provider: 'CUSTOM',
+    revokeEndpointConfigured: true,
+    providerRevokeSupported: true,
+    providerRevokeUnsupportedReason: null,
+  });
+
+  render(<OAuthCredentialAdminPage />);
+  await screen.findByText('CUSTOM');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Configure Revoke Endpoint' }));
+  expect(await screen.findByRole('dialog', { name: 'Configure CUSTOM Revoke Endpoint' })).toBeTruthy();
+
+  fireEvent.change(screen.getByLabelText('Revoke endpoint'), {
+    target: { value: 'https://custom.example/revoke' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Save Endpoint' }));
+
+  await waitFor(() => {
+    expect(mockedOAuthCredentialAdminService.updateRevokeEndpoint).toHaveBeenCalledWith(
+      'credential-1',
+      'https://custom.example/revoke'
+    );
+  });
+  await waitFor(() => {
+    const button = screen.getByRole('button', { name: 'Provider Revoke' }) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+  });
+});
+
+test('surfaces revoke endpoint update errors without closing the dialog', async () => {
+  mockedOAuthCredentialAdminService.listCredentials.mockResolvedValue([
+    {
+      ...credential,
+      provider: 'CUSTOM',
+      revokeEndpointConfigured: false,
+      providerRevokeSupported: false,
+      providerRevokeUnsupportedReason: 'Provider-side revoke endpoint is not configured for this CUSTOM credential',
+    },
+  ]);
+  mockedOAuthCredentialAdminService.updateRevokeEndpoint.mockRejectedValue({
+    response: {
+      data: {
+        message: 'Revoke endpoint must be a valid absolute HTTPS URL',
+      },
+    },
+  });
+
+  render(<OAuthCredentialAdminPage />);
+  await screen.findByText('CUSTOM');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Configure Revoke Endpoint' }));
+  fireEvent.change(screen.getByLabelText('Revoke endpoint'), {
+    target: { value: 'http://custom.example/revoke' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Save Endpoint' }));
+
+  expect(await screen.findByText('Revoke endpoint must be a valid absolute HTTPS URL')).toBeTruthy();
+  expect(screen.getByRole('dialog', { name: 'Configure CUSTOM Revoke Endpoint' })).toBeTruthy();
 });

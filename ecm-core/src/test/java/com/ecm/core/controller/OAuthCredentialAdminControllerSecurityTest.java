@@ -27,8 +27,10 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -71,6 +73,10 @@ class OAuthCredentialAdminControllerSecurityTest {
         // Provider revoke must also reject anonymous callers; keep parity with inventory access.
         mockMvc.perform(post("/api/v1/admin/oauth-credentials/11111111-2222-3333-4444-555555555555/revoke"))
             .andExpect(status().isUnauthorized());
+        mockMvc.perform(put("/api/v1/admin/oauth-credentials/11111111-2222-3333-4444-555555555555/revoke-endpoint")
+                .contentType(APPLICATION_JSON)
+                .content("{\"revokeEndpoint\":\"https://custom.example/revoke\"}"))
+            .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -84,6 +90,10 @@ class OAuthCredentialAdminControllerSecurityTest {
         mockMvc.perform(post("/api/v1/admin/oauth-credentials/11111111-2222-3333-4444-555555555555/refresh-now"))
             .andExpect(status().isForbidden());
         mockMvc.perform(post("/api/v1/admin/oauth-credentials/11111111-2222-3333-4444-555555555555/revoke"))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(put("/api/v1/admin/oauth-credentials/11111111-2222-3333-4444-555555555555/revoke-endpoint")
+                .contentType(APPLICATION_JSON)
+                .content("{\"revokeEndpoint\":\"https://custom.example/revoke\"}"))
             .andExpect(status().isForbidden());
     }
 
@@ -124,6 +134,7 @@ class OAuthCredentialAdminControllerSecurityTest {
             .andExpect(jsonPath("$[0].ownerId", is(ownerId.toString())))
             .andExpect(jsonPath("$[0].provider", is("GOOGLE")))
             .andExpect(jsonPath("$[0].tokenEndpointConfigured", is(true)))
+            .andExpect(jsonPath("$[0].revokeEndpointConfigured", is(false)))
             .andExpect(jsonPath("$[0].scopeConfigured", is(true)))
             .andExpect(jsonPath("$[0].credentialKeyConfigured", is(true)))
             .andExpect(jsonPath("$[0].accessTokenStored", is(true)))
@@ -325,5 +336,69 @@ class OAuthCredentialAdminControllerSecurityTest {
             ));
 
         verify(oauthCredentialAdminService).revokeProvider(credentialId);
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("admin can configure CUSTOM revoke endpoint without token disclosure")
+    void adminCanConfigureCustomRevokeEndpoint() throws Exception {
+        UUID credentialId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        UUID ownerId = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        when(oauthCredentialAdminService.updateRevokeEndpoint(credentialId, "https://custom.example/revoke")).thenReturn(
+            new OAuthCredentialInventoryItem(
+                credentialId,
+                "MAIL_ACCOUNT",
+                ownerId,
+                OAuthProviderType.CUSTOM,
+                true,
+                true,
+                false,
+                true,
+                false,
+                true,
+                true,
+                true,
+                LocalDateTime.parse("2026-05-06T12:00:00"),
+                LocalDateTime.parse("2026-05-01T09:00:00"),
+                LocalDateTime.parse("2026-05-11T10:00:00"),
+                true,
+                null
+            )
+        );
+
+        mockMvc.perform(put("/api/v1/admin/oauth-credentials/{credentialId}/revoke-endpoint", credentialId)
+                .contentType(APPLICATION_JSON)
+                .content("{\"revokeEndpoint\":\"https://custom.example/revoke\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id", is(credentialId.toString())))
+            .andExpect(jsonPath("$.provider", is("CUSTOM")))
+            .andExpect(jsonPath("$.revokeEndpointConfigured", is(true)))
+            .andExpect(jsonPath("$.providerRevokeSupported", is(true)))
+            .andExpect(jsonPath("$.providerRevokeUnsupportedReason").doesNotExist())
+            .andExpect(jsonPath("$.accessToken").doesNotExist())
+            .andExpect(jsonPath("$.refreshToken").doesNotExist());
+
+        verify(oauthCredentialAdminService).updateRevokeEndpoint(credentialId, "https://custom.example/revoke");
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("configure revoke endpoint reports provider mismatch as 400")
+    void configureRevokeEndpointReportsProviderMismatchAs400() throws Exception {
+        UUID credentialId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        when(oauthCredentialAdminService.updateRevokeEndpoint(credentialId, "https://custom.example/revoke")).thenThrow(
+            new IllegalArgumentException("Revoke endpoint can only be configured for CUSTOM OAuth credentials")
+        );
+
+        mockMvc.perform(put("/api/v1/admin/oauth-credentials/{credentialId}/revoke-endpoint", credentialId)
+                .contentType(APPLICATION_JSON)
+                .content("{\"revokeEndpoint\":\"https://custom.example/revoke\"}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath(
+                "$.message",
+                is("Revoke endpoint can only be configured for CUSTOM OAuth credentials")
+            ));
+
+        verify(oauthCredentialAdminService).updateRevokeEndpoint(credentialId, "https://custom.example/revoke");
     }
 }

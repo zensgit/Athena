@@ -8,6 +8,7 @@ export interface OAuthCredentialInventoryItem {
   ownerId: string;
   provider?: OAuthProviderType | null;
   tokenEndpointConfigured: boolean;
+  revokeEndpointConfigured: boolean;
   tenantIdConfigured: boolean;
   scopeConfigured: boolean;
   credentialKeyConfigured: boolean;
@@ -48,6 +49,7 @@ const isInventoryItem = (value: unknown): value is OAuthCredentialInventoryItem 
     && typeof value.ownerId === 'string'
     && isStringOrNullish(value.provider)
     && typeof value.tokenEndpointConfigured === 'boolean'
+    && typeof value.revokeEndpointConfigured === 'boolean'
     && typeof value.tenantIdConfigured === 'boolean'
     && typeof value.scopeConfigured === 'boolean'
     && typeof value.credentialKeyConfigured === 'boolean'
@@ -100,6 +102,16 @@ class OAuthCredentialAdminService {
 
   async revoke(credentialId: string): Promise<OAuthCredentialInventoryItem> {
     const result = await api.post<unknown>(`${BASE_URL}/${credentialId}/revoke`);
+    return assertInventoryItem(result);
+  }
+
+  async updateRevokeEndpoint(
+    credentialId: string,
+    revokeEndpoint: string
+  ): Promise<OAuthCredentialInventoryItem> {
+    const result = await api.put<unknown>(`${BASE_URL}/${credentialId}/revoke-endpoint`, {
+      revokeEndpoint,
+    });
     return assertInventoryItem(result);
   }
 }

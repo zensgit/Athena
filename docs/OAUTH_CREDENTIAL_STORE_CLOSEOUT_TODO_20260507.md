@@ -6,7 +6,7 @@ Date: 2026-05-07
 
 The OAuth Credential Store admin surface is the cross-integration `/admin/oauth-credentials` view that lets administrators inspect and operate on stored OAuth credential rows aggregated by the generic `OAuthCredentialService` and per-owner `OAuthCredentialOwnerAdapter` implementations. It deliberately keeps token values out of every response and exposes a small, bounded set of write actions. This document records what has shipped and what remains as design follow-up so the next round of work can pick up cleanly without re-deriving the prior decisions.
 
-## Done (as of 2026-05-07)
+## Done (as of 2026-05-11)
 
 - Inventory (read-only): `docs/OAUTH_CREDENTIAL_ADMIN_INVENTORY_DESIGN_VERIFICATION_20260506.md`
   - `GET /api/v1/admin/oauth-credentials` with admin role gating, JPQL projection, and token-redacted DTOs.
@@ -32,6 +32,10 @@ The OAuth Credential Store admin surface is the cross-integration `/admin/oauth-
   - `CUSTOM` rows with a local token and configured revoke endpoint now use the same RFC 7009-style revoke semantics as Google.
   - Endpoint resolution supports the persisted `oauth_credentials.revoke_endpoint` field and the credential-key env fallback `ECM_MAIL_OAUTH_<KEY>_REVOKE_ENDPOINT`.
   - The frontend API shape and admin page behavior stay unchanged because capability metadata remains the control surface.
+- CUSTOM revoke endpoint admin UI shipped on 2026-05-11: `docs/OAUTH_CREDENTIAL_CUSTOM_REVOKE_ENDPOINT_ADMIN_UI_DESIGN_VERIFICATION_20260511.md`
+  - `PUT /api/v1/admin/oauth-credentials/{credentialId}/revoke-endpoint` stores or clears the persisted HTTPS revoke endpoint for CUSTOM credentials.
+  - The inventory DTO now includes `revokeEndpointConfigured`; the actual URL is not returned by the inventory endpoint.
+  - `/admin/oauth-credentials` shows a `Revoke endpoint` chip and a CUSTOM-only configure dialog that updates row capability metadata immediately after save.
 
 ## v1 Revoke invariants
 
@@ -47,7 +51,7 @@ v1 Provider Revoke scope is bounded to the following invariants:
 
 - No Microsoft revoke. Microsoft uses tenant-scoped revoke endpoints with different confirmation semantics than Google's `oauth2/revoke`, and v1 does not attempt that.
 - No Microsoft provider-side revoke. Microsoft does not expose a Google-style per-token revoke endpoint for this model; see the follow-up doc for the constraint.
-- No admin UI for editing the generic `revokeEndpoint` field yet. CUSTOM operators can use the env fallback immediately; a future credential editor can expose the persisted field.
+- No read-back of persisted CUSTOM revoke endpoint URL in the inventory UI. The admin UI supports replace-or-clear and surfaces only `revokeEndpointConfigured`.
 - Env-managed credential-key-only rows cannot be revoked. The credential key references an external secret that Athena does not own; clearing or revoking that secret has to happen in the operator's secret manager.
 - Provider-side revoke does not affect refresh tokens issued to other clients sharing the same Google OAuth client_id. It only invalidates the specific token Athena holds, so other applications using the same client_id retain their own grants.
 

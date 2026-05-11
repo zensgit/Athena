@@ -11,6 +11,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -60,11 +62,31 @@ public class OAuthCredentialAdminController {
     @PostMapping("/{credentialId}/revoke")
     @Operation(
         summary = "Revoke OAuth credential at provider",
-        description = "Calls the provider's revoke endpoint (GOOGLE only in v1). On success or already-invalid-token "
+        description = "Calls the provider's revoke endpoint. GOOGLE is built in; CUSTOM requires a configured revoke "
+            + "endpoint. On success or already-invalid-token "
             + "responses, clears local tokens and returns the redacted inventory row. On 5xx or network failure, "
             + "preserves local tokens and surfaces a diagnostic error."
     )
     public ResponseEntity<OAuthCredentialInventoryItem> revoke(@PathVariable UUID credentialId) {
         return ResponseEntity.ok(oauthCredentialAdminService.revokeProvider(credentialId));
+    }
+
+    @PutMapping("/{credentialId}/revoke-endpoint")
+    @Operation(
+        summary = "Configure CUSTOM OAuth revoke endpoint",
+        description = "Stores or clears the HTTPS RFC 7009-style revoke endpoint for a CUSTOM OAuth credential and "
+            + "returns the redacted inventory row with refreshed provider-revoke capability metadata."
+    )
+    public ResponseEntity<OAuthCredentialInventoryItem> updateRevokeEndpoint(
+        @PathVariable UUID credentialId,
+        @RequestBody UpdateRevokeEndpointRequest request
+    ) {
+        return ResponseEntity.ok(oauthCredentialAdminService.updateRevokeEndpoint(
+            credentialId,
+            request == null ? null : request.revokeEndpoint()
+        ));
+    }
+
+    public record UpdateRevokeEndpointRequest(String revokeEndpoint) {
     }
 }

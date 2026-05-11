@@ -180,6 +180,5 @@ The successful run used a temporary standalone Maven 3.9.11 binary under
   different Microsoft-specific revocation flow.
 - No frontend changes were required because the admin page already consumes
   backend capability metadata.
-- No admin UI for editing `revokeEndpoint` was added in this slice. CUSTOM
-  operators can use the env fallback immediately; a future generic credential
-  editor can expose the persisted field.
+- Admin UI for editing `revokeEndpoint` shipped later on 2026-05-11 in
+  `docs/OAUTH_CREDENTIAL_CUSTOM_REVOKE_ENDPOINT_ADMIN_UI_DESIGN_VERIFICATION_20260511.md`.

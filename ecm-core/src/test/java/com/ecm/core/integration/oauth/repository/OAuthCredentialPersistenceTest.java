@@ -107,6 +107,7 @@ class OAuthCredentialPersistenceTest {
         credential.setOwnerId(UUID.randomUUID());
         credential.setProvider(OAuthProviderType.GOOGLE);
         credential.setTokenEndpoint("https://oauth2.googleapis.com/token");
+        credential.setRevokeEndpoint("https://custom.example/revoke");
         credential.setScope("https://mail.google.com/");
         credential.setCredentialKey("GMAIL");
         credential.setAccessToken("plain-access");
@@ -126,6 +127,7 @@ class OAuthCredentialPersistenceTest {
         assertEquals("MAIL_ACCOUNT", item.ownerType());
         assertEquals(OAuthProviderType.GOOGLE, item.provider());
         assertTrue(item.tokenEndpointConfigured());
+        assertTrue(item.revokeEndpointConfigured());
         assertFalse(item.tenantIdConfigured());
         assertTrue(item.scopeConfigured());
         assertTrue(item.credentialKeyConfigured());
@@ -146,6 +148,7 @@ class OAuthCredentialPersistenceTest {
         OAuthCredentialInventoryItem byId = repository.findInventoryItemById(item.id()).orElseThrow();
         assertEquals(item.id(), byId.id());
         assertTrue(byId.connected());
+        assertTrue(byId.revokeEndpointConfigured());
         assertFalse(byId.providerRevokeSupported());
         assertNull(byId.providerRevokeUnsupportedReason());
     }

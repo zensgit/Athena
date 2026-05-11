@@ -9,6 +9,7 @@ jest.mock('./api', () => ({
   default: {
     get: jest.fn(),
     post: jest.fn(),
+    put: jest.fn(),
   },
 }));
 
@@ -20,6 +21,7 @@ const credential: OAuthCredentialInventoryItem = {
   ownerId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
   provider: 'GOOGLE',
   tokenEndpointConfigured: true,
+  revokeEndpointConfigured: false,
   tenantIdConfigured: false,
   scopeConfigured: true,
   credentialKeyConfigured: true,
@@ -97,5 +99,33 @@ describe('oauthCredentialAdminService', () => {
 
     expect(result).toEqual(credential);
     expect(mockedApi.post).toHaveBeenCalledWith(endpoint);
+  });
+
+  test('updates guarded CUSTOM revoke endpoint response', async () => {
+    mockedApi.put.mockResolvedValueOnce({
+      ...credential,
+      provider: 'CUSTOM',
+      revokeEndpointConfigured: true,
+      providerRevokeSupported: true,
+      providerRevokeUnsupportedReason: null,
+    });
+
+    const result = await oauthCredentialAdminService.updateRevokeEndpoint(
+      'credential-1',
+      'https://custom.example/revoke'
+    );
+
+    expect(result.revokeEndpointConfigured).toBe(true);
+    expect(mockedApi.put).toHaveBeenCalledWith('/admin/oauth-credentials/credential-1/revoke-endpoint', {
+      revokeEndpoint: 'https://custom.example/revoke',
+    });
+  });
+
+  test('rejects HTML fallback for updateRevokeEndpoint response', async () => {
+    mockedApi.put.mockResolvedValueOnce('<!doctype html><html></html>');
+
+    await expect(
+      oauthCredentialAdminService.updateRevokeEndpoint('credential-1', 'https://custom.example/revoke')
+    ).rejects.toThrow(OAUTH_CREDENTIAL_ADMIN_UNEXPECTED_RESPONSE_MESSAGE);
   });
 });

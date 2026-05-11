@@ -1,6 +1,7 @@
 package com.ecm.core.integration.oauth;
 
 import com.ecm.core.exception.ResourceNotFoundException;
+import com.ecm.core.integration.oauth.model.OAuthCredential;
 import com.ecm.core.integration.oauth.repository.OAuthCredentialRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -327,6 +328,105 @@ class OAuthCredentialAdminServiceTest {
         when(oauthCredentialRepository.findOwnerReferenceById(credentialId)).thenReturn(Optional.empty());
 
         assertThrows(ResourceNotFoundException.class, () -> oauthCredentialAdminService.revokeProvider(credentialId));
+    }
+
+    @Test
+    @DisplayName("updateRevokeEndpoint stores trimmed HTTPS endpoint and returns refreshed capability")
+    void updateRevokeEndpointStoresTrimmedHttpsEndpoint() {
+        UUID credentialId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        OAuthCredential credential = new OAuthCredential();
+        credential.setId(credentialId);
+        credential.setOwnerType("MAIL_ACCOUNT");
+        credential.setOwnerId(UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"));
+        credential.setProvider(OAuthProviderType.CUSTOM);
+        OAuthCredentialInventoryItem item = inventory(credentialId, OAuthProviderType.CUSTOM, false, true, true);
+
+        when(oauthCredentialRepository.findById(credentialId)).thenReturn(Optional.of(credential));
+        when(oauthCredentialRepository.findInventoryItemById(credentialId)).thenReturn(Optional.of(item));
+        when(oauthCredentialService.providerRevokeCapability("MAIL_ACCOUNT", credential.getOwnerId()))
+            .thenReturn(new OAuthProviderRevokeCapability(true, null));
+
+        OAuthCredentialInventoryItem result = oauthCredentialAdminService.updateRevokeEndpoint(
+            credentialId,
+            " https://custom.example/revoke "
+        );
+
+        assertEquals("https://custom.example/revoke", credential.getRevokeEndpoint());
+        assertTrue(result.providerRevokeSupported());
+        assertNull(result.providerRevokeUnsupportedReason());
+        verify(oauthCredentialRepository).save(credential);
+    }
+
+    @Test
+    @DisplayName("updateRevokeEndpoint clears blank endpoint")
+    void updateRevokeEndpointClearsBlankEndpoint() {
+        UUID credentialId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        OAuthCredential credential = new OAuthCredential();
+        credential.setId(credentialId);
+        credential.setOwnerType("MAIL_ACCOUNT");
+        credential.setOwnerId(UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"));
+        credential.setProvider(OAuthProviderType.CUSTOM);
+        credential.setRevokeEndpoint("https://custom.example/revoke");
+        OAuthCredentialInventoryItem item = inventory(credentialId, OAuthProviderType.CUSTOM, false, true, true);
+
+        when(oauthCredentialRepository.findById(credentialId)).thenReturn(Optional.of(credential));
+        when(oauthCredentialRepository.findInventoryItemById(credentialId)).thenReturn(Optional.of(item));
+        when(oauthCredentialService.providerRevokeCapability("MAIL_ACCOUNT", credential.getOwnerId()))
+            .thenReturn(new OAuthProviderRevokeCapability(false, "Provider-side revoke endpoint is not configured for this CUSTOM credential"));
+
+        OAuthCredentialInventoryItem result = oauthCredentialAdminService.updateRevokeEndpoint(credentialId, " ");
+
+        assertNull(credential.getRevokeEndpoint());
+        assertFalse(result.providerRevokeSupported());
+        assertEquals(
+            "Provider-side revoke endpoint is not configured for this CUSTOM credential",
+            result.providerRevokeUnsupportedReason()
+        );
+        verify(oauthCredentialRepository).save(credential);
+    }
+
+    @Test
+    @DisplayName("updateRevokeEndpoint rejects non-CUSTOM provider")
+    void updateRevokeEndpointRejectsNonCustomProvider() {
+        UUID credentialId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        OAuthCredential credential = new OAuthCredential();
+        credential.setProvider(OAuthProviderType.GOOGLE);
+        when(oauthCredentialRepository.findById(credentialId)).thenReturn(Optional.of(credential));
+
+        IllegalArgumentException ex = assertThrows(
+            IllegalArgumentException.class,
+            () -> oauthCredentialAdminService.updateRevokeEndpoint(credentialId, "https://custom.example/revoke")
+        );
+
+        assertEquals("Revoke endpoint can only be configured for CUSTOM OAuth credentials", ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("updateRevokeEndpoint rejects non-HTTPS endpoint")
+    void updateRevokeEndpointRejectsNonHttpsEndpoint() {
+        UUID credentialId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        OAuthCredential credential = new OAuthCredential();
+        credential.setProvider(OAuthProviderType.CUSTOM);
+        when(oauthCredentialRepository.findById(credentialId)).thenReturn(Optional.of(credential));
+
+        IllegalArgumentException ex = assertThrows(
+            IllegalArgumentException.class,
+            () -> oauthCredentialAdminService.updateRevokeEndpoint(credentialId, "http://custom.example/revoke")
+        );
+
+        assertEquals("Revoke endpoint must be a valid absolute HTTPS URL", ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("updateRevokeEndpoint rejects unknown credential id")
+    void updateRevokeEndpointRejectsUnknownCredentialId() {
+        UUID credentialId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        when(oauthCredentialRepository.findById(credentialId)).thenReturn(Optional.empty());
+
+        assertThrows(
+            ResourceNotFoundException.class,
+            () -> oauthCredentialAdminService.updateRevokeEndpoint(credentialId, "https://custom.example/revoke")
+        );
     }
 
     /**

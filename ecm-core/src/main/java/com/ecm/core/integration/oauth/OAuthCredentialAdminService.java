@@ -1,11 +1,14 @@
 package com.ecm.core.integration.oauth;
 
 import com.ecm.core.exception.ResourceNotFoundException;
+import com.ecm.core.integration.oauth.model.OAuthCredential;
 import com.ecm.core.integration.oauth.repository.OAuthCredentialRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.List;
 import java.util.UUID;
 
@@ -47,6 +50,19 @@ public class OAuthCredentialAdminService {
         oauthCredentialService.revokeProviderTokens(owner.ownerType(), owner.ownerId());
         return withResolvedCapability(oauthCredentialRepository.findInventoryItemById(credentialId)
             .orElseThrow(() -> new ResourceNotFoundException("OAuth credential not found after provider revoke: " + credentialId)));
+    }
+
+    @Transactional
+    public OAuthCredentialInventoryItem updateRevokeEndpoint(UUID credentialId, String revokeEndpoint) {
+        OAuthCredential credential = oauthCredentialRepository.findById(credentialId)
+            .orElseThrow(() -> new ResourceNotFoundException("OAuth credential not found: " + credentialId));
+        if (credential.getProvider() != OAuthProviderType.CUSTOM) {
+            throw new IllegalArgumentException("Revoke endpoint can only be configured for CUSTOM OAuth credentials");
+        }
+        credential.setRevokeEndpoint(normalizeRevokeEndpoint(revokeEndpoint));
+        oauthCredentialRepository.save(credential);
+        return withResolvedCapability(oauthCredentialRepository.findInventoryItemById(credentialId)
+            .orElseThrow(() -> new ResourceNotFoundException("OAuth credential not found after revoke endpoint update: " + credentialId)));
     }
 
     /**
@@ -109,6 +125,7 @@ public class OAuthCredentialAdminService {
             item.ownerId(),
             item.provider(),
             item.tokenEndpointConfigured(),
+            item.revokeEndpointConfigured(),
             item.tenantIdConfigured(),
             item.scopeConfigured(),
             item.credentialKeyConfigured(),
@@ -121,6 +138,26 @@ public class OAuthCredentialAdminService {
             capability.supported(),
             capability.unsupportedReason()
         );
+    }
+
+    private String normalizeRevokeEndpoint(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String trimmed = value.trim();
+        if (trimmed.length() > 512) {
+            throw new IllegalArgumentException("Revoke endpoint must be 512 characters or fewer");
+        }
+        URI uri;
+        try {
+            uri = new URI(trimmed);
+        } catch (URISyntaxException ex) {
+            throw new IllegalArgumentException("Revoke endpoint must be a valid absolute HTTPS URL");
+        }
+        if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null || uri.getHost().isBlank()) {
+            throw new IllegalArgumentException("Revoke endpoint must be a valid absolute HTTPS URL");
+        }
+        return trimmed;
     }
 
     private String normalize(String value) {
