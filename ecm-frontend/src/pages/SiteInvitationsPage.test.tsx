@@ -102,6 +102,14 @@ const acceptedInvitation: SiteInvitationDto = {
   acceptedAt: '2026-05-04T10:00:00Z',
 };
 
+const acceptedFailedInvitation: SiteInvitationDto = {
+  ...failedInvitation,
+  id: 'inv-accepted-failed',
+  inviteeEmail: 'accepted-failed@example.com',
+  status: 'ACCEPTED',
+  acceptedAt: '2026-05-04T10:00:00Z',
+};
+
 const cancelledInvitation: SiteInvitationDto = {
   ...baseInvitation,
   id: 'inv-cancelled',
@@ -297,6 +305,62 @@ describe('SiteInvitationsPage Resend button gating', () => {
     expect(cancelledBtn.disabled).toBe(true);
     expect(expiredBtn.disabled).toBe(true);
     expect(rejectedBtn.disabled).toBe(true);
+  });
+});
+
+describe('SiteInvitationsPage bulk failed resend', () => {
+  test('resends only failed PENDING invitations and replaces returned rows', async () => {
+    const updated: SiteInvitationDto = {
+      ...failedInvitation,
+      lastSendAttemptAt: '2026-05-11T12:00:00Z',
+      lastSendStatus: 'SENT',
+      lastSendError: null,
+      sendAttemptCount: 3,
+      lastSentAt: '2026-05-11T12:00:00Z',
+    };
+    const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValueOnce(true);
+    mockedService.listInvitations.mockResolvedValue([
+      failedInvitation,
+      acceptedFailedInvitation,
+      sentInvitation,
+    ]);
+    mockedService.resendInvitation.mockResolvedValueOnce(updated);
+
+    renderPage();
+    expect(await screen.findByText('failed@example.com')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Resend all failed pending invitations (1)' }));
+
+    await waitFor(() => {
+      expect(mockedService.resendInvitation).toHaveBeenCalledTimes(1);
+    });
+    expect(mockedService.resendInvitation).toHaveBeenCalledWith(SITE_ID, failedInvitation.id);
+    expect(mockedService.resendInvitation).not.toHaveBeenCalledWith(SITE_ID, acceptedFailedInvitation.id);
+    expect(toast.success).toHaveBeenCalledWith('Bulk resend finished: 1 sent.');
+    expect(confirmSpy).toHaveBeenCalledWith('Resend 1 failed invitation email(s)?');
+
+    const rows = await screen.findAllByRole('row');
+    const updatedRow = rows.find((row) => row.textContent?.includes('failed@example.com'));
+    expect(updatedRow).toBeTruthy();
+    expect(within(updatedRow as HTMLElement).getByText('SENT')).toBeTruthy();
+    expect(within(updatedRow as HTMLElement).getByText(/attempts: 3/)).toBeTruthy();
+    expect(within(updatedRow as HTMLElement).queryByText('FAILED')).toBeNull();
+    confirmSpy.mockRestore();
+  });
+
+  test('disables the bulk resend action when failed sends are not pending', async () => {
+    mockedService.listInvitations.mockResolvedValue([
+      acceptedFailedInvitation,
+      sentInvitation,
+    ]);
+
+    renderPage();
+    expect(await screen.findByText('accepted-failed@example.com')).toBeTruthy();
+
+    const bulkButton = screen.getByRole('button', {
+      name: 'Resend all failed pending invitations (0)',
+    }) as HTMLButtonElement;
+    expect(bulkButton.disabled).toBe(true);
   });
 });
 

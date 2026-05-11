@@ -103,7 +103,11 @@ workflow maintenance warning, not a failure in this integration.
 
 - Completed follow-up: compact failed-send filter chip is documented in
   `SITE_INVITATION_FAILED_SEND_FILTER_DESIGN_VERIFICATION_20260510.md`.
+- Completed follow-up: shareable failed-send URL state is documented in
+  `SITE_INVITATION_FAILED_SEND_FILTER_URL_STATE_DESIGN_VERIFICATION_20260511.md`.
+- Completed follow-up: frontend bulk resend for failed `PENDING` rows is
+  documented in `SITE_INVITATION_BULK_FAILED_RESEND_DESIGN_VERIFICATION_20260511.md`.
 - Optional follow-up: add auto retry/DLQ only if the documented revisit
   thresholds are met.
-- Workflow maintenance: update GitHub Actions dependencies before GitHub's
-  Node.js 20 deprecation enforcement windows.
+- Completed workflow maintenance: GitHub Actions dependencies were updated in
+  `CI_NODE20_ACTIONS_MAINTENANCE_20260510.md`.

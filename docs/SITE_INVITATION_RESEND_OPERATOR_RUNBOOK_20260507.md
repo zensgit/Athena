@@ -46,6 +46,23 @@ There is no separate "resend log"; the row itself is the audit record. If you ne
 
 The endpoint backing the action is `POST /api/v1/sites/{siteId}/invitations/{invitationId}/resend`. It accepts `PENDING` rows only — `ACCEPTED` / `EXPIRED` / `REJECTED` / `CANCELLED` rows are rejected with `IllegalArgumentException` → HTTP 400. Create a new invitation in that case.
 
+### Bulk failed resend flow
+
+The Invitations page also exposes `Resend failed (N)` beside the send-result
+filter chips. This is a frontend-only bulk action that reuses the same per-row
+`/resend` endpoint; there is no separate bulk backend endpoint.
+
+Eligibility is intentionally strict: only rows with `status=PENDING` and
+`lastSendStatus=FAILED` are included. Closed rows whose historical send status
+is `FAILED` are skipped because the backend rejects resending non-`PENDING`
+invitations.
+
+Use this action after reading the failure pattern and fixing any shared root
+cause (for example SMTP credentials). The page asks for browser confirmation,
+then attempts each eligible resend and updates rows from the returned DTOs.
+The summary toast reports how many returned `SENT`, how many remained or became
+`FAILED`, and how many returned a non-terminal send status.
+
 ### Permissions and audit
 
 - The endpoint enforces the same caller gate as `invite` and `cancel`: admin OR site MANAGER. CONTRIBUTOR / CONSUMER members of the same site cannot resend even invitations they themselves received notice of. Calls from non-admin / non-MANAGER callers respond with HTTP 403 (`AccessDeniedException`).
@@ -107,7 +124,7 @@ Items deliberately not in v1 of the resend layer (matches the closeout doc's "Wh
 
 - **No auto-retry worker** (see §5 "Why no auto-retry worker in v1" above for rationale and revisit triggers).
 - **No per-recipient delivery tracking** (delivered / bounced / complained — provider-specific webhooks not wired). `lastSendStatus` records the dispatch outcome only; what happens after the SMTP server accepts the message is invisible to Athena.
-- **No bulk-resend action.** The admin UI exposes `Resend email` per row only. Operators with many failed rows must click each.
+- **No dedicated bulk backend endpoint.** The admin UI bulk action fans out to the existing per-row `/resend` endpoint for eligible failed `PENDING` rows.
 - **No SMS or alternate-channel fallback.** If email fails, there is no automatic SMS / push / in-app message; the operator must use a side channel.
 - **No template versioning or A/B testing.** The `site.invitation` template is single-version; changes ship via a new Liquibase migration.
 

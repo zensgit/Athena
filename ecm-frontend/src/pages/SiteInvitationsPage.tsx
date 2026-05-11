@@ -257,6 +257,7 @@ const SiteInvitationsPage: React.FC = () => {
   const [createOpen, setCreateOpen] = useState(false);
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [resendingInvitationId, setResendingInvitationId] = useState<string | null>(null);
+  const [bulkResendingFailed, setBulkResendingFailed] = useState(false);
   const [resendCandidate, setResendCandidate] = useState<SiteInvitationDto | null>(null);
   const [resendError, setResendError] = useState<string | null>(null);
   const sendStatusFilter = resolveSendStatusFilter(searchParams.get(SEND_STATUS_QUERY_PARAM));
@@ -274,6 +275,10 @@ const SiteInvitationsPage: React.FC = () => {
   };
 
   const failedSendCount = invitations.filter((inv) => inv.lastSendStatus === 'FAILED').length;
+  const failedPendingInvitations = invitations.filter(
+    (inv) => inv.status === 'PENDING' && inv.lastSendStatus === 'FAILED',
+  );
+  const failedPendingCount = failedPendingInvitations.length;
   const visibleInvitations = sendStatusFilter === 'FAILED'
     ? invitations.filter((inv) => inv.lastSendStatus === 'FAILED')
     : invitations;
@@ -363,6 +368,56 @@ const SiteInvitationsPage: React.FC = () => {
     }
   };
 
+  const handleBulkResendFailed = async () => {
+    if (!siteId || failedPendingInvitations.length === 0) return;
+    const targets = [...failedPendingInvitations];
+    if (!window.confirm(`Resend ${targets.length} failed invitation email(s)?`)) return;
+
+    setBulkResendingFailed(true);
+    try {
+      const results = await Promise.allSettled(
+        targets.map((invitation) => siteInvitationService.resendInvitation(siteId, invitation.id)),
+      );
+      const updatedById = new Map<string, SiteInvitationDto>();
+      let sent = 0;
+      let failed = 0;
+      let pending = 0;
+
+      results.forEach((result) => {
+        if (result.status === 'rejected') {
+          failed += 1;
+          return;
+        }
+        const updated = result.value;
+        updatedById.set(updated.id, updated);
+        if (updated.lastSendStatus === 'SENT') {
+          sent += 1;
+        } else if (updated.lastSendStatus === 'FAILED') {
+          failed += 1;
+        } else {
+          pending += 1;
+        }
+      });
+
+      setInvitations((current) =>
+        current.map((item) => updatedById.get(item.id) ?? item),
+      );
+
+      if (failed > 0) {
+        toast.error(`Bulk resend finished: ${sent} sent, ${failed} failed, ${pending} pending.`);
+      } else if (pending > 0) {
+        toast.info(`Bulk resend finished: ${sent} sent, ${pending} pending.`);
+      } else {
+        toast.success(`Bulk resend finished: ${sent} sent.`);
+      }
+    } catch (err) {
+      console.error('Failed to bulk resend failed invitations', err);
+      toast.error(resolveErrorMessage(err, 'Failed to resend failed invitations.'));
+    } finally {
+      setBulkResendingFailed(false);
+    }
+  };
+
   if (!siteId) {
     return (
       <Box sx={{ p: 3 }}>
@@ -412,29 +467,47 @@ const SiteInvitationsPage: React.FC = () => {
         <Stack
           direction={{ xs: 'column', sm: 'row' }}
           spacing={1.5}
+          justifyContent="space-between"
           alignItems={{ xs: 'flex-start', sm: 'center' }}
         >
-          <Typography variant="body2" color="text.secondary">
-            Send result
-          </Typography>
-          <Stack direction="row" spacing={1}>
-            <Chip
-              label={`All (${invitations.length})`}
-              clickable
-              color={sendStatusFilter === 'ALL' ? 'primary' : 'default'}
-              variant={sendStatusFilter === 'ALL' ? 'filled' : 'outlined'}
-              onClick={() => handleSendStatusFilterChange('ALL')}
-              aria-label={`Show all invitations (${invitations.length})`}
-            />
-            <Chip
-              label={`Failed sends (${failedSendCount})`}
-              clickable
-              color={sendStatusFilter === 'FAILED' ? 'error' : 'default'}
-              variant={sendStatusFilter === 'FAILED' ? 'filled' : 'outlined'}
-              onClick={() => handleSendStatusFilterChange('FAILED')}
-              aria-label={`Show failed-send invitations (${failedSendCount})`}
-            />
+          <Stack
+            direction={{ xs: 'column', sm: 'row' }}
+            spacing={1}
+            alignItems={{ xs: 'flex-start', sm: 'center' }}
+          >
+            <Typography variant="body2" color="text.secondary">
+              Send result
+            </Typography>
+            <Stack direction="row" spacing={1}>
+              <Chip
+                label={`All (${invitations.length})`}
+                clickable
+                color={sendStatusFilter === 'ALL' ? 'primary' : 'default'}
+                variant={sendStatusFilter === 'ALL' ? 'filled' : 'outlined'}
+                onClick={() => handleSendStatusFilterChange('ALL')}
+                aria-label={`Show all invitations (${invitations.length})`}
+              />
+              <Chip
+                label={`Failed sends (${failedSendCount})`}
+                clickable
+                color={sendStatusFilter === 'FAILED' ? 'error' : 'default'}
+                variant={sendStatusFilter === 'FAILED' ? 'filled' : 'outlined'}
+                onClick={() => handleSendStatusFilterChange('FAILED')}
+                aria-label={`Show failed-send invitations (${failedSendCount})`}
+              />
+            </Stack>
           </Stack>
+          <Button
+            size="small"
+            variant="outlined"
+            color="error"
+            startIcon={<Send fontSize="small" />}
+            disabled={failedPendingCount === 0 || bulkResendingFailed || loading}
+            onClick={() => void handleBulkResendFailed()}
+            aria-label={`Resend all failed pending invitations (${failedPendingCount})`}
+          >
+            {bulkResendingFailed ? 'Resending failed...' : `Resend failed (${failedPendingCount})`}
+          </Button>
         </Stack>
       </Paper>
 
@@ -470,7 +543,7 @@ const SiteInvitationsPage: React.FC = () => {
               ) : (
                 visibleInvitations.map((inv) => {
                   const isPending = inv.status === 'PENDING';
-                  const isResending = resendingInvitationId === inv.id;
+                  const isResending = resendingInvitationId === inv.id || bulkResendingFailed;
                   return (
                     <TableRow key={inv.id} hover>
                       <TableCell>
