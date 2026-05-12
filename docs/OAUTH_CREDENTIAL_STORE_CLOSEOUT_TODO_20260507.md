@@ -56,6 +56,10 @@ The OAuth Credential Store admin surface is the cross-integration `/admin/oauth-
   - `/admin/oauth-credentials` now shows active chips for `ownerType`, `provider`, and `revokeCapability` query filters.
   - Per-chip delete actions remove only their own query parameter; `Clear all filters` removes only OAuth-admin-managed filter parameters and preserves unrelated query state.
   - Clearing server-backed chips reloads the backend inventory with the remaining applied filters.
+- CUSTOM revoke endpoint detail readback shipped on 2026-05-12: `docs/OAUTH_CREDENTIAL_CUSTOM_REVOKE_ENDPOINT_DETAIL_READBACK_DESIGN_VERIFICATION_20260512.md`
+  - `GET /api/v1/admin/oauth-credentials/{credentialId}/revoke-endpoint` returns the persisted per-credential CUSTOM revoke endpoint only for an explicit admin detail request.
+  - `/admin/oauth-credentials` now preloads the persisted URL when opening the CUSTOM revoke endpoint dialog, so operators can review before replacing or clearing it.
+  - Inventory responses remain unchanged and continue to expose only `revokeEndpointConfigured`; access and refresh token values are still never returned.
 
 ## v1 Revoke invariants
 
@@ -71,7 +75,7 @@ v1 Provider Revoke scope is bounded to the following invariants:
 
 - No Microsoft revoke. Microsoft uses tenant-scoped revoke endpoints with different confirmation semantics than Google's `oauth2/revoke`, and v1 does not attempt that.
 - No Microsoft provider-side revoke. Microsoft does not expose a Google-style per-token revoke endpoint for this model; see the follow-up doc for the constraint.
-- No read-back of persisted CUSTOM revoke endpoint URL in the inventory UI. The admin UI supports explicit replace-or-clear and surfaces only `revokeEndpointConfigured`.
+- No inventory-wide read-back of persisted CUSTOM revoke endpoint URLs. The inventory UI surfaces only `revokeEndpointConfigured`; an admin must open one CUSTOM row's configure dialog to read that row's persisted URL through the explicit detail endpoint.
 - Env-managed credential-key-only rows cannot be revoked. The credential key references an external secret that Athena does not own; clearing or revoking that secret has to happen in the operator's secret manager.
 - Provider-side revoke does not affect refresh tokens issued to other clients sharing the same Google OAuth client_id. It only invalidates the specific token Athena holds, so other applications using the same client_id retain their own grants.
 

@@ -128,4 +128,43 @@ describe('oauthCredentialAdminService', () => {
       oauthCredentialAdminService.updateRevokeEndpoint('credential-1', 'https://custom.example/revoke')
     ).rejects.toThrow(OAUTH_CREDENTIAL_ADMIN_UNEXPECTED_RESPONSE_MESSAGE);
   });
+
+  test('reads guarded CUSTOM revoke endpoint details', async () => {
+    mockedApi.get.mockResolvedValueOnce({
+      id: 'credential-1',
+      ownerType: 'MAIL_ACCOUNT',
+      ownerId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      provider: 'CUSTOM',
+      revokeEndpointConfigured: true,
+      revokeEndpoint: 'https://custom.example/revoke',
+    });
+
+    const result = await oauthCredentialAdminService.getRevokeEndpointDetails('credential-1');
+
+    expect(result.revokeEndpoint).toBe('https://custom.example/revoke');
+    expect(mockedApi.get).toHaveBeenCalledWith('/admin/oauth-credentials/credential-1/revoke-endpoint');
+  });
+
+  test('rejects HTML fallback for getRevokeEndpointDetails response', async () => {
+    mockedApi.get.mockResolvedValueOnce('<!doctype html><html></html>');
+
+    await expect(
+      oauthCredentialAdminService.getRevokeEndpointDetails('credential-1')
+    ).rejects.toThrow(OAUTH_CREDENTIAL_ADMIN_UNEXPECTED_RESPONSE_MESSAGE);
+  });
+
+  test('rejects malformed getRevokeEndpointDetails response', async () => {
+    mockedApi.get.mockResolvedValueOnce({
+      id: 'credential-1',
+      ownerType: 'MAIL_ACCOUNT',
+      ownerId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      provider: 'CUSTOM',
+      revokeEndpointConfigured: true,
+      revokeEndpoint: 42,
+    });
+
+    await expect(
+      oauthCredentialAdminService.getRevokeEndpointDetails('credential-1')
+    ).rejects.toThrow(OAUTH_CREDENTIAL_ADMIN_UNEXPECTED_RESPONSE_MESSAGE);
+  });
 });

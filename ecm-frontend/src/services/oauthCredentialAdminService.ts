@@ -27,6 +27,15 @@ export interface OAuthCredentialInventoryFilters {
   provider?: string;
 }
 
+export interface OAuthCredentialRevokeEndpointDetails {
+  id: string;
+  ownerType: string;
+  ownerId: string;
+  provider: OAuthProviderType;
+  revokeEndpointConfigured: boolean;
+  revokeEndpoint: string | null;
+}
+
 const BASE_URL = '/admin/oauth-credentials';
 
 export const OAUTH_CREDENTIAL_ADMIN_UNEXPECTED_RESPONSE_MESSAGE =
@@ -65,6 +74,25 @@ const isInventoryItem = (value: unknown): value is OAuthCredentialInventoryItem 
 
 const assertInventoryItem = (value: unknown): OAuthCredentialInventoryItem => {
   if (!isInventoryItem(value)) {
+    throw new Error(OAUTH_CREDENTIAL_ADMIN_UNEXPECTED_RESPONSE_MESSAGE);
+  }
+  return value;
+};
+
+const isRevokeEndpointDetails = (value: unknown): value is OAuthCredentialRevokeEndpointDetails => {
+  if (!isObject(value)) {
+    return false;
+  }
+  return typeof value.id === 'string'
+    && typeof value.ownerType === 'string'
+    && typeof value.ownerId === 'string'
+    && typeof value.provider === 'string'
+    && typeof value.revokeEndpointConfigured === 'boolean'
+    && (value.revokeEndpoint === null || typeof value.revokeEndpoint === 'string');
+};
+
+const assertRevokeEndpointDetails = (value: unknown): OAuthCredentialRevokeEndpointDetails => {
+  if (!isRevokeEndpointDetails(value)) {
     throw new Error(OAUTH_CREDENTIAL_ADMIN_UNEXPECTED_RESPONSE_MESSAGE);
   }
   return value;
@@ -113,6 +141,11 @@ class OAuthCredentialAdminService {
       revokeEndpoint,
     });
     return assertInventoryItem(result);
+  }
+
+  async getRevokeEndpointDetails(credentialId: string): Promise<OAuthCredentialRevokeEndpointDetails> {
+    const result = await api.get<unknown>(`${BASE_URL}/${credentialId}/revoke-endpoint`);
+    return assertRevokeEndpointDetails(result);
   }
 }
 

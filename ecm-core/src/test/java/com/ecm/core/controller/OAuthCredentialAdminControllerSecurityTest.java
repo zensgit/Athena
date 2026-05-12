@@ -2,6 +2,7 @@ package com.ecm.core.controller;
 
 import com.ecm.core.integration.oauth.OAuthCredentialAdminService;
 import com.ecm.core.integration.oauth.OAuthCredentialInventoryItem;
+import com.ecm.core.integration.oauth.OAuthCredentialRevokeEndpointDetails;
 import com.ecm.core.integration.oauth.OAuthReauthRequiredException;
 import com.ecm.core.integration.oauth.OAuthProviderType;
 import org.junit.jupiter.api.DisplayName;
@@ -77,6 +78,8 @@ class OAuthCredentialAdminControllerSecurityTest {
                 .contentType(APPLICATION_JSON)
                 .content("{\"revokeEndpoint\":\"https://custom.example/revoke\"}"))
             .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/admin/oauth-credentials/11111111-2222-3333-4444-555555555555/revoke-endpoint"))
+            .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -94,6 +97,8 @@ class OAuthCredentialAdminControllerSecurityTest {
         mockMvc.perform(put("/api/v1/admin/oauth-credentials/11111111-2222-3333-4444-555555555555/revoke-endpoint")
                 .contentType(APPLICATION_JSON)
                 .content("{\"revokeEndpoint\":\"https://custom.example/revoke\"}"))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/admin/oauth-credentials/11111111-2222-3333-4444-555555555555/revoke-endpoint"))
             .andExpect(status().isForbidden());
     }
 
@@ -336,6 +341,56 @@ class OAuthCredentialAdminControllerSecurityTest {
             ));
 
         verify(oauthCredentialAdminService).revokeProvider(credentialId);
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("admin can read CUSTOM revoke endpoint details without token disclosure")
+    void adminCanReadCustomRevokeEndpointDetails() throws Exception {
+        UUID credentialId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        UUID ownerId = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        when(oauthCredentialAdminService.getRevokeEndpointDetails(credentialId)).thenReturn(
+            new OAuthCredentialRevokeEndpointDetails(
+                credentialId,
+                "MAIL_ACCOUNT",
+                ownerId,
+                OAuthProviderType.CUSTOM,
+                true,
+                "https://custom.example/revoke"
+            )
+        );
+
+        mockMvc.perform(get("/api/v1/admin/oauth-credentials/{credentialId}/revoke-endpoint", credentialId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id", is(credentialId.toString())))
+            .andExpect(jsonPath("$.ownerType", is("MAIL_ACCOUNT")))
+            .andExpect(jsonPath("$.ownerId", is(ownerId.toString())))
+            .andExpect(jsonPath("$.provider", is("CUSTOM")))
+            .andExpect(jsonPath("$.revokeEndpointConfigured", is(true)))
+            .andExpect(jsonPath("$.revokeEndpoint", is("https://custom.example/revoke")))
+            .andExpect(jsonPath("$.accessToken").doesNotExist())
+            .andExpect(jsonPath("$.refreshToken").doesNotExist());
+
+        verify(oauthCredentialAdminService).getRevokeEndpointDetails(credentialId);
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("read revoke endpoint reports provider mismatch as 400")
+    void readRevokeEndpointReportsProviderMismatchAs400() throws Exception {
+        UUID credentialId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        when(oauthCredentialAdminService.getRevokeEndpointDetails(credentialId)).thenThrow(
+            new IllegalArgumentException("Revoke endpoint can only be read for CUSTOM OAuth credentials")
+        );
+
+        mockMvc.perform(get("/api/v1/admin/oauth-credentials/{credentialId}/revoke-endpoint", credentialId))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath(
+                "$.message",
+                is("Revoke endpoint can only be read for CUSTOM OAuth credentials")
+            ));
+
+        verify(oauthCredentialAdminService).getRevokeEndpointDetails(credentialId);
     }
 
     @Test

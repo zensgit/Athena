@@ -27,6 +27,7 @@ import {
 import { Cancel, Key, Refresh, VpnKey } from '@mui/icons-material';
 import oauthCredentialAdminService, {
   OAuthCredentialInventoryItem,
+  OAuthCredentialRevokeEndpointDetails,
 } from 'services/oauthCredentialAdminService';
 
 const PROVIDERS = ['', 'GOOGLE', 'MICROSOFT', 'CUSTOM'];
@@ -170,7 +171,11 @@ const OAuthCredentialAdminPage: React.FC = () => {
   const [refreshCredentialId, setRefreshCredentialId] = useState<string | null>(null);
   const [revokeCredentialId, setRevokeCredentialId] = useState<string | null>(null);
   const [revokeEndpointCredential, setRevokeEndpointCredential] = useState<OAuthCredentialInventoryItem | null>(null);
+  const [revokeEndpointDetails, setRevokeEndpointDetails] =
+    useState<OAuthCredentialRevokeEndpointDetails | null>(null);
   const [revokeEndpointValue, setRevokeEndpointValue] = useState('');
+  const [revokeEndpointDetailsLoading, setRevokeEndpointDetailsLoading] = useState(false);
+  const [revokeEndpointDetailsError, setRevokeEndpointDetailsError] = useState<string | null>(null);
   const [revokeEndpointSubmitting, setRevokeEndpointSubmitting] = useState(false);
   const [revokeEndpointAction, setRevokeEndpointAction] = useState<'SAVE' | 'CLEAR' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -287,6 +292,45 @@ const OAuthCredentialAdminPage: React.FC = () => {
     };
   }, [queryOwnerType, queryProvider]);
 
+  const revokeEndpointCredentialId = revokeEndpointCredential?.id ?? null;
+
+  useEffect(() => {
+    if (!revokeEndpointCredentialId) {
+      setRevokeEndpointDetails(null);
+      setRevokeEndpointDetailsLoading(false);
+      setRevokeEndpointDetailsError(null);
+      return undefined;
+    }
+    let active = true;
+    setRevokeEndpointDetails(null);
+    setRevokeEndpointDetailsLoading(true);
+    setRevokeEndpointDetailsError(null);
+    setRevokeEndpointValue('');
+    oauthCredentialAdminService.getRevokeEndpointDetails(revokeEndpointCredentialId)
+      .then((details) => {
+        if (active) {
+          setRevokeEndpointDetails(details);
+          setRevokeEndpointValue(details.revokeEndpoint ?? '');
+        }
+      })
+      .catch((err) => {
+        if (active) {
+          setRevokeEndpointDetailsError(resolveErrorMessage(
+            err,
+            'Failed to load the stored CUSTOM revoke endpoint.'
+          ));
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setRevokeEndpointDetailsLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [revokeEndpointCredentialId]);
+
   const connectedCount = credentials.filter((credential) => credential.connected).length;
   const refreshTokenCount = credentials.filter((credential) => credential.refreshTokenStored).length;
   const credentialKeyCount = credentials.filter((credential) => credential.credentialKeyConfigured).length;
@@ -385,6 +429,8 @@ const OAuthCredentialAdminPage: React.FC = () => {
       return;
     }
     setRevokeEndpointCredential(null);
+    setRevokeEndpointDetails(null);
+    setRevokeEndpointDetailsError(null);
     setRevokeEndpointValue('');
   };
 
@@ -405,6 +451,8 @@ const OAuthCredentialAdminPage: React.FC = () => {
       );
       setCredentials((current) => current.map((item) => (item.id === updated.id ? updated : item)));
       setRevokeEndpointCredential(null);
+      setRevokeEndpointDetails(null);
+      setRevokeEndpointDetailsError(null);
       setRevokeEndpointValue('');
     } catch (err) {
       setError(resolveErrorMessage(err, 'Failed to update OAuth revoke endpoint.'));
@@ -753,19 +801,28 @@ const OAuthCredentialAdminPage: React.FC = () => {
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
             <Typography variant="body2" color="text.secondary">
-              Store a HTTPS RFC 7009-style revoke endpoint for this CUSTOM credential. The current URL is not returned
-              by inventory; save a new value to replace it, or use Clear Endpoint to remove it.
+              Store a HTTPS RFC 7009-style revoke endpoint for this CUSTOM credential. Inventory still returns only a
+              boolean flag; this dialog loads the persisted URL through an explicit admin detail request.
             </Typography>
             {revokeEndpointCredential && (
               <Stack spacing={1}>
                 <Typography variant="caption" color="text.secondary">
                   {revokeEndpointCredential.ownerType} {revokeEndpointCredential.ownerId}
                 </Typography>
-                <Alert severity={revokeEndpointCredential.revokeEndpointConfigured ? 'info' : 'warning'}>
-                  {revokeEndpointCredential.revokeEndpointConfigured
-                    ? 'A revoke endpoint is currently configured. The URL remains hidden; replace it or clear it explicitly.'
-                    : 'No persisted revoke endpoint is currently configured for this CUSTOM credential.'}
-                </Alert>
+                {revokeEndpointDetailsLoading ? (
+                  <Alert severity="info">Loading stored revoke endpoint...</Alert>
+                ) : revokeEndpointDetailsError ? (
+                  <Alert severity="error">{revokeEndpointDetailsError}</Alert>
+                ) : (
+                  <Alert severity={revokeEndpointDetails?.revokeEndpointConfigured ? 'info' : 'warning'}>
+                    {revokeEndpointDetails?.revokeEndpointConfigured
+                      ? 'The persisted revoke endpoint is loaded below. Review, replace, or clear it explicitly.'
+                      : 'No persisted revoke endpoint is currently configured for this CUSTOM credential.'}
+                  </Alert>
+                )}
+                <Typography variant="caption" color="text.secondary">
+                  Env fallback revoke endpoints are not displayed here; only the persisted per-credential URL is shown.
+                </Typography>
               </Stack>
             )}
             <TextField
@@ -775,6 +832,7 @@ const OAuthCredentialAdminPage: React.FC = () => {
               placeholder="https://provider.example/oauth/revoke"
               fullWidth
               autoFocus
+              disabled={revokeEndpointDetailsLoading}
             />
           </Stack>
         </DialogContent>
@@ -785,7 +843,7 @@ const OAuthCredentialAdminPage: React.FC = () => {
           {revokeEndpointCredential?.revokeEndpointConfigured && (
             <Button
               onClick={() => void handleClearRevokeEndpoint()}
-              disabled={revokeEndpointSubmitting}
+              disabled={revokeEndpointSubmitting || revokeEndpointDetailsLoading}
               color="warning"
             >
               {revokeEndpointAction === 'CLEAR' ? 'Clearing...' : 'Clear Endpoint'}
@@ -793,7 +851,7 @@ const OAuthCredentialAdminPage: React.FC = () => {
           )}
           <Button
             onClick={() => void handleSaveRevokeEndpoint()}
-            disabled={revokeEndpointSubmitting}
+            disabled={revokeEndpointSubmitting || revokeEndpointDetailsLoading}
             variant="contained"
           >
             {revokeEndpointAction === 'SAVE' ? 'Saving...' : 'Save Endpoint'}

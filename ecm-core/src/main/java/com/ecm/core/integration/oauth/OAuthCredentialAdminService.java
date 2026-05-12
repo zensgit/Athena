@@ -65,6 +65,23 @@ public class OAuthCredentialAdminService {
             .orElseThrow(() -> new ResourceNotFoundException("OAuth credential not found after revoke endpoint update: " + credentialId)));
     }
 
+    public OAuthCredentialRevokeEndpointDetails getRevokeEndpointDetails(UUID credentialId) {
+        OAuthCredential credential = oauthCredentialRepository.findById(credentialId)
+            .orElseThrow(() -> new ResourceNotFoundException("OAuth credential not found: " + credentialId));
+        if (credential.getProvider() != OAuthProviderType.CUSTOM) {
+            throw new IllegalArgumentException("Revoke endpoint can only be read for CUSTOM OAuth credentials");
+        }
+        String revokeEndpoint = normalize(credential.getRevokeEndpoint());
+        return new OAuthCredentialRevokeEndpointDetails(
+            credential.getId(),
+            credential.getOwnerType(),
+            credential.getOwnerId(),
+            credential.getProvider(),
+            revokeEndpoint != null,
+            revokeEndpoint
+        );
+    }
+
     /**
      * Enrich an inventory item with provider-revoke capability metadata.
      *

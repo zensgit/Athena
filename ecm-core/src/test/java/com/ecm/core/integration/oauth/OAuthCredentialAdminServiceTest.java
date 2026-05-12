@@ -429,6 +429,79 @@ class OAuthCredentialAdminServiceTest {
         );
     }
 
+    @Test
+    @DisplayName("getRevokeEndpointDetails returns persisted CUSTOM endpoint without token fields")
+    void getRevokeEndpointDetailsReturnsPersistedCustomEndpoint() {
+        UUID credentialId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        UUID ownerId = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        OAuthCredential credential = new OAuthCredential();
+        credential.setId(credentialId);
+        credential.setOwnerType("MAIL_ACCOUNT");
+        credential.setOwnerId(ownerId);
+        credential.setProvider(OAuthProviderType.CUSTOM);
+        credential.setRevokeEndpoint(" https://custom.example/revoke ");
+        credential.setAccessToken("secret-access-token");
+        credential.setRefreshToken("secret-refresh-token");
+        when(oauthCredentialRepository.findById(credentialId)).thenReturn(Optional.of(credential));
+
+        OAuthCredentialRevokeEndpointDetails details =
+            oauthCredentialAdminService.getRevokeEndpointDetails(credentialId);
+
+        assertEquals(credentialId, details.id());
+        assertEquals("MAIL_ACCOUNT", details.ownerType());
+        assertEquals(ownerId, details.ownerId());
+        assertEquals(OAuthProviderType.CUSTOM, details.provider());
+        assertTrue(details.revokeEndpointConfigured());
+        assertEquals("https://custom.example/revoke", details.revokeEndpoint());
+    }
+
+    @Test
+    @DisplayName("getRevokeEndpointDetails returns null endpoint when CUSTOM row is not configured")
+    void getRevokeEndpointDetailsReturnsNullEndpointWhenNotConfigured() {
+        UUID credentialId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        OAuthCredential credential = new OAuthCredential();
+        credential.setId(credentialId);
+        credential.setOwnerType("MAIL_ACCOUNT");
+        credential.setOwnerId(UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"));
+        credential.setProvider(OAuthProviderType.CUSTOM);
+        credential.setRevokeEndpoint(" ");
+        when(oauthCredentialRepository.findById(credentialId)).thenReturn(Optional.of(credential));
+
+        OAuthCredentialRevokeEndpointDetails details =
+            oauthCredentialAdminService.getRevokeEndpointDetails(credentialId);
+
+        assertFalse(details.revokeEndpointConfigured());
+        assertNull(details.revokeEndpoint());
+    }
+
+    @Test
+    @DisplayName("getRevokeEndpointDetails rejects non-CUSTOM provider")
+    void getRevokeEndpointDetailsRejectsNonCustomProvider() {
+        UUID credentialId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        OAuthCredential credential = new OAuthCredential();
+        credential.setProvider(OAuthProviderType.GOOGLE);
+        when(oauthCredentialRepository.findById(credentialId)).thenReturn(Optional.of(credential));
+
+        IllegalArgumentException ex = assertThrows(
+            IllegalArgumentException.class,
+            () -> oauthCredentialAdminService.getRevokeEndpointDetails(credentialId)
+        );
+
+        assertEquals("Revoke endpoint can only be read for CUSTOM OAuth credentials", ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("getRevokeEndpointDetails rejects unknown credential id")
+    void getRevokeEndpointDetailsRejectsUnknownCredentialId() {
+        UUID credentialId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        when(oauthCredentialRepository.findById(credentialId)).thenReturn(Optional.empty());
+
+        assertThrows(
+            ResourceNotFoundException.class,
+            () -> oauthCredentialAdminService.getRevokeEndpointDetails(credentialId)
+        );
+    }
+
     /**
      * Build an inventory row mirroring the repository projection: capability fields default
      * to {@code (false, null)} so each test path exercises the service-layer enrichment.

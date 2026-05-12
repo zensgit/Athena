@@ -2,6 +2,7 @@ package com.ecm.core.controller;
 
 import com.ecm.core.integration.oauth.OAuthCredentialAdminService;
 import com.ecm.core.integration.oauth.OAuthCredentialInventoryItem;
+import com.ecm.core.integration.oauth.OAuthCredentialRevokeEndpointDetails;
 import com.ecm.core.integration.oauth.OAuthProviderType;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -85,6 +86,18 @@ public class OAuthCredentialAdminController {
             credentialId,
             request == null ? null : request.revokeEndpoint()
         ));
+    }
+
+    @GetMapping("/{credentialId}/revoke-endpoint")
+    @Operation(
+        summary = "Read CUSTOM OAuth revoke endpoint details",
+        description = "Returns the persisted CUSTOM revoke endpoint only for an explicit admin detail request. "
+            + "Inventory responses remain redacted and continue to expose only the boolean configuration flag."
+    )
+    public ResponseEntity<OAuthCredentialRevokeEndpointDetails> getRevokeEndpointDetails(
+        @PathVariable UUID credentialId
+    ) {
+        return ResponseEntity.ok(oauthCredentialAdminService.getRevokeEndpointDetails(credentialId));
     }
 
     public record UpdateRevokeEndpointRequest(String revokeEndpoint) {
