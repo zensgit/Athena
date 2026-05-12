@@ -67,6 +67,24 @@ Notes:
   future-flag warnings from the `MemoryRouter` test harness; the suites pass.
 - The production build still prints the existing CRA bundle-size advisory.
 
+## GitHub Actions
+
+Run: `25726628813`
+
+Commit: `4f6c9dbe0186266a66b18830081bd9bdf0060127`
+
+Result: 7/7 jobs passed.
+
+| Job | Result |
+|---|---|
+| Backend Verify | passed in 2m19s |
+| Frontend Build & Test | passed in 10m10s |
+| Phase C Security Verification | passed in 4m50s |
+| Acceptance Smoke (3 admin pages) | passed in 7m5s |
+| Property Encryption Closeout Gate | passed in 4m44s |
+| Frontend E2E Core Gate | passed in 12m57s |
+| Phase 5 Mocked Regression Gate | passed in 6m7s |
+
 ## Files Changed
 
 - `ecm-frontend/src/pages/OAuthCredentialAdminPage.tsx`
