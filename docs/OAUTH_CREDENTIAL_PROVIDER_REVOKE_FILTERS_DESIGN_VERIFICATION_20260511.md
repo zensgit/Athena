@@ -140,8 +140,21 @@ Initial run `25717630806` failed in `Frontend Build & Test` unit tests for the
 dialog timing issue described above. Backend Verify and Phase C Security
 Verification passed in that run.
 
-The CI rerun after the timing fix is pending at the time this document section
-was first written.
+Run: `25718216626`
+
+Head commit: `bba9bee`
+
+Result: success.
+
+| Job | Result | Duration |
+| --- | --- | --- |
+| Backend Verify | success | 2m18s |
+| Frontend Build & Test | success | 10m10s |
+| Phase C Security Verification | success | 5m4s |
+| Acceptance Smoke (3 admin pages) | success | 8m27s |
+| Property Encryption Closeout Gate | success | 4m48s |
+| Phase 5 Mocked Regression Gate | success | 6m55s |
+| Frontend E2E Core Gate | success | 12m14s |
 
 ## Remaining Work
 
