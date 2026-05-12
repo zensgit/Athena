@@ -64,6 +64,24 @@ Notes:
   suites pass.
 - The production build still prints the existing CRA bundle-size advisory.
 
+## GitHub Actions
+
+Run: `25735952694`
+
+Commit: `580b90574499a41d9d9ecef3a4467153182d25ca`
+
+Result: 7/7 jobs passed.
+
+| Job | Result |
+|---|---|
+| Backend Verify | passed in 3m5s |
+| Frontend Build & Test | passed in 10m8s |
+| Phase C Security Verification | passed in 5m20s |
+| Phase 5 Mocked Regression Gate | passed in 6m26s |
+| Property Encryption Closeout Gate | passed in 4m36s |
+| Frontend E2E Core Gate | passed in 12m20s |
+| Acceptance Smoke (3 admin pages) | passed in 6m38s |
+
 ## Files Changed
 
 - `ecm-frontend/src/pages/OAuthCredentialAdminPage.tsx`
