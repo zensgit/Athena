@@ -132,6 +132,41 @@ test('clears owner type and provider URL state while preserving revoke capabilit
   expect(params.get('revokeCapability')).toBe('blocked');
 });
 
+test('shows active filter chips from URL state and clears all admin filters', async () => {
+  renderPage('/admin/oauth-credentials?view=ops&ownerType=MAIL_ACCOUNT&provider=GOOGLE&revokeCapability=blocked');
+  await screen.findByText('No OAuth credentials are currently blocked from Provider Revoke.');
+
+  expect(screen.getByText('Active filters')).toBeTruthy();
+  expect(screen.getByText('Owner type: MAIL_ACCOUNT')).toBeTruthy();
+  expect(screen.getByText('Provider: GOOGLE')).toBeTruthy();
+  expect(screen.getByText('Revoke capability: Provider revoke blocked')).toBeTruthy();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Clear all filters' }));
+
+  await waitFor(() => {
+    expect(mockedOAuthCredentialAdminService.listCredentials).toHaveBeenLastCalledWith();
+  });
+  expect(screen.queryByText('Active filters')).toBeNull();
+  expect(screen.getByTestId('location-search').textContent).toBe('?view=ops');
+});
+
+test('clears one active filter chip without removing other query filters', async () => {
+  renderPage('/admin/oauth-credentials?ownerType=MAIL_ACCOUNT&provider=GOOGLE&revokeCapability=ready');
+  await screen.findByText('MAIL_ACCOUNT');
+
+  fireEvent.click(screen.getByLabelText('Clear owner type filter'));
+
+  await waitFor(() => {
+    expect(mockedOAuthCredentialAdminService.listCredentials).toHaveBeenLastCalledWith({
+      provider: 'GOOGLE',
+    });
+  });
+  const params = readLocationSearchParams();
+  expect(params.get('ownerType')).toBeNull();
+  expect(params.get('provider')).toBe('GOOGLE');
+  expect(params.get('revokeCapability')).toBe('ready');
+});
+
 test('shows empty state for unmatched filters', async () => {
   mockedOAuthCredentialAdminService.listCredentials.mockResolvedValue([]);
 

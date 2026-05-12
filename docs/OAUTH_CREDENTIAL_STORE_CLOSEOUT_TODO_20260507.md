@@ -52,6 +52,10 @@ The OAuth Credential Store admin surface is the cross-integration `/admin/oauth-
   - `/admin/oauth-credentials` now hydrates and persists the backend-backed `ownerType` and `provider` filters through query parameters.
   - Applying or clearing server filters preserves unrelated query parameters, including the local `revokeCapability` triage filter.
   - Owner type values are trimmed before being applied to the URL and backend inventory request; invalid provider query values fall back to the unfiltered provider view.
+- Active filter chips shipped on 2026-05-12: `docs/OAUTH_CREDENTIAL_ACTIVE_FILTER_CHIPS_DESIGN_VERIFICATION_20260512.md`
+  - `/admin/oauth-credentials` now shows active chips for `ownerType`, `provider`, and `revokeCapability` query filters.
+  - Per-chip delete actions remove only their own query parameter; `Clear all filters` removes only OAuth-admin-managed filter parameters and preserves unrelated query state.
+  - Clearing server-backed chips reloads the backend inventory with the remaining applied filters.
 
 ## v1 Revoke invariants
 

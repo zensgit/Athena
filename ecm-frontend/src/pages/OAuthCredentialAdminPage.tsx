@@ -24,7 +24,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { Key, Refresh, VpnKey } from '@mui/icons-material';
+import { Cancel, Key, Refresh, VpnKey } from '@mui/icons-material';
 import oauthCredentialAdminService, {
   OAuthCredentialInventoryItem,
 } from 'services/oauthCredentialAdminService';
@@ -107,6 +107,20 @@ const revokeCapabilityFilterLabel = (filter: RevokeCapabilityFilter): string => 
       return 'Showing credentials where Provider Revoke is blocked by backend capability metadata.';
     case 'CUSTOM_ENDPOINT_GAP':
       return 'Showing CUSTOM credentials where provider-side revoke is blocked by a missing revoke endpoint.';
+    case 'ALL':
+    default:
+      return '';
+  }
+};
+
+const revokeCapabilityFilterChipLabel = (filter: RevokeCapabilityFilter): string => {
+  switch (filter) {
+    case 'READY':
+      return 'Provider revoke ready';
+    case 'BLOCKED':
+      return 'Provider revoke blocked';
+    case 'CUSTOM_ENDPOINT_GAP':
+      return 'CUSTOM revoke gaps';
     case 'ALL':
     default:
       return '';
@@ -200,6 +214,24 @@ const OAuthCredentialAdminPage: React.FC = () => {
     }, { replace: true });
   };
 
+  const handleQueryFilterClear = (queryParam: string) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.delete(queryParam);
+      return next;
+    }, { replace: true });
+  };
+
+  const handleAllQueryFiltersClear = () => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.delete(OWNER_TYPE_FILTER_QUERY_PARAM);
+      next.delete(PROVIDER_FILTER_QUERY_PARAM);
+      next.delete(REVOKE_CAPABILITY_FILTER_QUERY_PARAM);
+      return next;
+    }, { replace: true });
+  };
+
   const loadCredentials = async (
     nextOwnerType = queryOwnerType,
     nextProvider = queryProvider,
@@ -278,6 +310,10 @@ const OAuthCredentialAdminPage: React.FC = () => {
     }
   })();
   const activeRevokeCapabilityFilterDescription = revokeCapabilityFilterLabel(revokeCapabilityFilter);
+  const activeRevokeCapabilityFilterChipLabel = revokeCapabilityFilterChipLabel(revokeCapabilityFilter);
+  const hasActiveQueryFilters = Boolean(
+    queryOwnerType || queryProvider || activeRevokeCapabilityFilterChipLabel
+  );
 
   const handleRequireReauth = async (credential: OAuthCredentialInventoryItem) => {
     const confirmed = window.confirm(
@@ -523,6 +559,45 @@ const OAuthCredentialAdminPage: React.FC = () => {
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
               {activeRevokeCapabilityFilterDescription}
             </Typography>
+          )}
+          {hasActiveQueryFilters && (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                Active filters
+              </Typography>
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
+                {queryOwnerType && (
+                  <Chip
+                    label={`Owner type: ${queryOwnerType}`}
+                    onDelete={() => handleQueryFilterClear(OWNER_TYPE_FILTER_QUERY_PARAM)}
+                    deleteIcon={<Cancel aria-label="Clear owner type filter" />}
+                    size="small"
+                    variant="outlined"
+                  />
+                )}
+                {queryProvider && (
+                  <Chip
+                    label={`Provider: ${queryProvider}`}
+                    onDelete={() => handleQueryFilterClear(PROVIDER_FILTER_QUERY_PARAM)}
+                    deleteIcon={<Cancel aria-label="Clear provider filter" />}
+                    size="small"
+                    variant="outlined"
+                  />
+                )}
+                {activeRevokeCapabilityFilterChipLabel && (
+                  <Chip
+                    label={`Revoke capability: ${activeRevokeCapabilityFilterChipLabel}`}
+                    onDelete={() => handleQueryFilterClear(REVOKE_CAPABILITY_FILTER_QUERY_PARAM)}
+                    deleteIcon={<Cancel aria-label="Clear revoke capability filter" />}
+                    size="small"
+                    variant="outlined"
+                  />
+                )}
+                <Button size="small" onClick={handleAllQueryFiltersClear}>
+                  Clear all filters
+                </Button>
+              </Stack>
+            </Box>
           )}
         </CardContent>
       </Card>
