@@ -42,6 +42,9 @@ The OAuth Credential Store admin surface is the cross-integration `/admin/oauth-
 - Provider Revoke capability filters shipped on 2026-05-11: `docs/OAUTH_CREDENTIAL_PROVIDER_REVOKE_FILTERS_DESIGN_VERIFICATION_20260511.md`
   - `/admin/oauth-credentials` now has mutually exclusive local filters for `All`, `Provider revoke ready`, `Provider revoke blocked`, and `CUSTOM revoke gaps`.
   - The filters narrow the currently loaded server-filtered inventory and continue to use backend-owned `providerRevokeSupported` metadata as the source of truth.
+- CUSTOM revoke endpoint explicit clear shipped on 2026-05-12: `docs/OAUTH_CREDENTIAL_CUSTOM_REVOKE_ENDPOINT_CLEAR_ACTION_DESIGN_VERIFICATION_20260512.md`
+  - `/admin/oauth-credentials` now shows an explicit `Clear Endpoint` action for CUSTOM rows with a persisted revoke endpoint.
+  - The action reuses the existing redacted `PUT /revoke-endpoint` contract with a blank endpoint, so the URL still is not read back through inventory.
 
 ## v1 Revoke invariants
 
@@ -57,7 +60,7 @@ v1 Provider Revoke scope is bounded to the following invariants:
 
 - No Microsoft revoke. Microsoft uses tenant-scoped revoke endpoints with different confirmation semantics than Google's `oauth2/revoke`, and v1 does not attempt that.
 - No Microsoft provider-side revoke. Microsoft does not expose a Google-style per-token revoke endpoint for this model; see the follow-up doc for the constraint.
-- No read-back of persisted CUSTOM revoke endpoint URL in the inventory UI. The admin UI supports replace-or-clear and surfaces only `revokeEndpointConfigured`.
+- No read-back of persisted CUSTOM revoke endpoint URL in the inventory UI. The admin UI supports explicit replace-or-clear and surfaces only `revokeEndpointConfigured`.
 - Env-managed credential-key-only rows cannot be revoked. The credential key references an external secret that Athena does not own; clearing or revoking that secret has to happen in the operator's secret manager.
 - Provider-side revoke does not affect refresh tokens issued to other clients sharing the same Google OAuth client_id. It only invalidates the specific token Athena holds, so other applications using the same client_id retain their own grants.
 

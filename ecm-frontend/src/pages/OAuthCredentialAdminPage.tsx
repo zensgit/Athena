@@ -112,6 +112,7 @@ const OAuthCredentialAdminPage: React.FC = () => {
   const [revokeEndpointCredential, setRevokeEndpointCredential] = useState<OAuthCredentialInventoryItem | null>(null);
   const [revokeEndpointValue, setRevokeEndpointValue] = useState('');
   const [revokeEndpointSubmitting, setRevokeEndpointSubmitting] = useState(false);
+  const [revokeEndpointAction, setRevokeEndpointAction] = useState<'SAVE' | 'CLEAR' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const loadCredentials = async (
@@ -257,16 +258,20 @@ const OAuthCredentialAdminPage: React.FC = () => {
     setRevokeEndpointValue('');
   };
 
-  const handleSaveRevokeEndpoint = async () => {
+  const submitRevokeEndpoint = async (
+    nextRevokeEndpoint: string,
+    action: 'SAVE' | 'CLEAR'
+  ) => {
     if (!revokeEndpointCredential) {
       return;
     }
     setRevokeEndpointSubmitting(true);
+    setRevokeEndpointAction(action);
     setError(null);
     try {
       const updated = await oauthCredentialAdminService.updateRevokeEndpoint(
         revokeEndpointCredential.id,
-        revokeEndpointValue
+        nextRevokeEndpoint
       );
       setCredentials((current) => current.map((item) => (item.id === updated.id ? updated : item)));
       setRevokeEndpointCredential(null);
@@ -275,7 +280,16 @@ const OAuthCredentialAdminPage: React.FC = () => {
       setError(resolveErrorMessage(err, 'Failed to update OAuth revoke endpoint.'));
     } finally {
       setRevokeEndpointSubmitting(false);
+      setRevokeEndpointAction(null);
     }
+  };
+
+  const handleSaveRevokeEndpoint = async () => {
+    await submitRevokeEndpoint(revokeEndpointValue, 'SAVE');
+  };
+
+  const handleClearRevokeEndpoint = async () => {
+    await submitRevokeEndpoint('', 'CLEAR');
   };
 
   return (
@@ -571,12 +585,19 @@ const OAuthCredentialAdminPage: React.FC = () => {
           <Stack spacing={2} sx={{ mt: 1 }}>
             <Typography variant="body2" color="text.secondary">
               Store a HTTPS RFC 7009-style revoke endpoint for this CUSTOM credential. The current URL is not returned
-              by inventory; save a new value to replace it, or save blank to clear it.
+              by inventory; save a new value to replace it, or use Clear Endpoint to remove it.
             </Typography>
             {revokeEndpointCredential && (
-              <Typography variant="caption" color="text.secondary">
-                {revokeEndpointCredential.ownerType} {revokeEndpointCredential.ownerId}
-              </Typography>
+              <Stack spacing={1}>
+                <Typography variant="caption" color="text.secondary">
+                  {revokeEndpointCredential.ownerType} {revokeEndpointCredential.ownerId}
+                </Typography>
+                <Alert severity={revokeEndpointCredential.revokeEndpointConfigured ? 'info' : 'warning'}>
+                  {revokeEndpointCredential.revokeEndpointConfigured
+                    ? 'A revoke endpoint is currently configured. The URL remains hidden; replace it or clear it explicitly.'
+                    : 'No persisted revoke endpoint is currently configured for this CUSTOM credential.'}
+                </Alert>
+              </Stack>
             )}
             <TextField
               label="Revoke endpoint"
@@ -592,12 +613,21 @@ const OAuthCredentialAdminPage: React.FC = () => {
           <Button onClick={closeRevokeEndpointDialog} disabled={revokeEndpointSubmitting}>
             Cancel
           </Button>
+          {revokeEndpointCredential?.revokeEndpointConfigured && (
+            <Button
+              onClick={() => void handleClearRevokeEndpoint()}
+              disabled={revokeEndpointSubmitting}
+              color="warning"
+            >
+              {revokeEndpointAction === 'CLEAR' ? 'Clearing...' : 'Clear Endpoint'}
+            </Button>
+          )}
           <Button
             onClick={() => void handleSaveRevokeEndpoint()}
             disabled={revokeEndpointSubmitting}
             variant="contained"
           >
-            {revokeEndpointSubmitting ? 'Saving...' : 'Save Endpoint'}
+            {revokeEndpointAction === 'SAVE' ? 'Saving...' : 'Save Endpoint'}
           </Button>
         </DialogActions>
       </Dialog>

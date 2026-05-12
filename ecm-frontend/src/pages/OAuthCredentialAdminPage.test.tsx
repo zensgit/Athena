@@ -481,6 +481,44 @@ test('configures CUSTOM revoke endpoint and replaces the row from the redacted r
   });
 });
 
+test('clears configured CUSTOM revoke endpoint with an explicit dialog action', async () => {
+  mockedOAuthCredentialAdminService.listCredentials.mockResolvedValue([
+    {
+      ...credential,
+      provider: 'CUSTOM',
+      revokeEndpointConfigured: true,
+      providerRevokeSupported: true,
+      providerRevokeUnsupportedReason: null,
+    },
+  ]);
+  mockedOAuthCredentialAdminService.updateRevokeEndpoint.mockResolvedValue({
+    ...credential,
+    provider: 'CUSTOM',
+    revokeEndpointConfigured: false,
+    providerRevokeSupported: false,
+    providerRevokeUnsupportedReason: 'Provider-side revoke endpoint is not configured for this CUSTOM credential',
+  });
+
+  render(<OAuthCredentialAdminPage />);
+  await screen.findByText('CUSTOM');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Configure Revoke Endpoint' }));
+  expect(await screen.findByText('A revoke endpoint is currently configured. The URL remains hidden; replace it or clear it explicitly.')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Clear Endpoint' }));
+
+  await waitFor(() => {
+    expect(mockedOAuthCredentialAdminService.updateRevokeEndpoint).toHaveBeenCalledWith('credential-1', '');
+  });
+  await waitForElementToBeRemoved(() => (
+    screen.queryByRole('dialog', { name: 'Configure CUSTOM Revoke Endpoint' })
+  ));
+  await waitFor(() => {
+    const button = screen.getByRole('button', { name: 'Provider Revoke' }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+  });
+  expect(screen.getByLabelText('Provider-side revoke endpoint is not configured for this CUSTOM credential')).toBeTruthy();
+});
+
 test('surfaces revoke endpoint update errors without closing the dialog', async () => {
   mockedOAuthCredentialAdminService.listCredentials.mockResolvedValue([
     {
