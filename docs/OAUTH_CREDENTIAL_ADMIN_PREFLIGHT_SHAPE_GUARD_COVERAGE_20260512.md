@@ -28,6 +28,24 @@ No backend behavior, frontend runtime behavior, route, or API contract changed. 
 | OAuth admin preflight | `MAVEN_BIN=/tmp/codex-maven/apache-maven-3.9.11/bin/mvn bash scripts/oauth-credential-admin-preflight.sh` | passed: backend 47/47, frontend 35/35, lint clean, production build compiled successfully with the existing CRA bundle-size advisory |
 | Whitespace | `git diff --check` | clean |
 
+## GitHub Actions
+
+Run: `25721183342`
+
+Commit: `4a8ff8f271864ba98976a448e1a28a2f9b79982d`
+
+Result: 7/7 jobs passed.
+
+| Job | Result |
+|---|---|
+| Backend Verify | passed in 2m12s |
+| Frontend Build & Test | passed in 9m52s |
+| Phase C Security Verification | passed in 5m24s |
+| Phase 5 Mocked Regression Gate | passed in 8m11s |
+| Frontend E2E Core Gate | passed in 11m29s |
+| Acceptance Smoke (3 admin pages) | passed in 6m28s |
+| Property Encryption Closeout Gate | passed in 4m23s |
+
 ## Files Changed
 
 - `scripts/oauth-credential-admin-preflight.sh`
