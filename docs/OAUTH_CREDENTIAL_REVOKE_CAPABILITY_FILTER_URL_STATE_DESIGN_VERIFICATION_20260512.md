@@ -49,6 +49,24 @@ semantics changed.
 | OAuth admin preflight | `MAVEN_BIN=/tmp/codex-maven/apache-maven-3.9.11/bin/mvn bash scripts/oauth-credential-admin-preflight.sh` | passed: backend 47/47, frontend 36/36, lint clean, production build compiled successfully with the existing CRA bundle-size advisory |
 | Whitespace | `git diff --check` | clean |
 
+## GitHub Actions
+
+Run: `25722871407`
+
+Commit: `f14cb0428e2f388cc8c0369ef4d94d87eb042e7d`
+
+Result: 7/7 jobs passed.
+
+| Job | Result |
+|---|---|
+| Backend Verify | passed in 2m12s |
+| Frontend Build & Test | passed in 10m13s |
+| Phase C Security Verification | passed in 5m10s |
+| Phase 5 Mocked Regression Gate | passed in 9m07s |
+| Frontend E2E Core Gate | passed in 12m34s |
+| Acceptance Smoke (3 admin pages) | passed in 6m50s |
+| Property Encryption Closeout Gate | passed in 4m48s |
+
 Targeted coverage added:
 
 - clicking `Provider revoke ready` writes `?revokeCapability=ready`;
