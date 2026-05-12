@@ -14,7 +14,7 @@ if [[ ! -x "${MAVEN_BIN}" ]]; then
 fi
 
 BACKEND_TESTS="OAuthCredentialServiceTest,OAuthCredentialAdminServiceTest,OAuthCredentialAdminControllerSecurityTest"
-FRONTEND_TEST_PATHS="src/pages/OAuthCredentialAdminPage.test.tsx src/components/layout/MainLayout.menu.test.tsx"
+FRONTEND_TEST_PATHS="src/services/oauthCredentialAdminService.test.ts src/pages/OAuthCredentialAdminPage.test.tsx src/components/layout/MainLayout.menu.test.tsx"
 
 echo "oauth_credential_admin_preflight: start"
 echo "MAVEN_BIN=${MAVEN_BIN}"
