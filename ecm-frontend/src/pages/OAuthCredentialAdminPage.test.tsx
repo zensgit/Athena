@@ -358,6 +358,69 @@ test('shows empty state when CUSTOM revoke gap filter has no matches', async () 
   expect(await screen.findByText('No CUSTOM credentials currently need a revoke endpoint.')).toBeTruthy();
 });
 
+test('filters to env-managed credential-key-only rows', async () => {
+  mockedOAuthCredentialAdminService.listCredentials.mockResolvedValue([
+    {
+      ...credential,
+      id: 'google-ready',
+      ownerId: 'google-ready-owner',
+      provider: 'GOOGLE',
+      credentialKeyConfigured: true,
+      accessTokenStored: true,
+      refreshTokenStored: true,
+      connected: true,
+      providerRevokeSupported: true,
+      providerRevokeUnsupportedReason: null,
+    },
+    {
+      ...credential,
+      id: 'env-managed-only',
+      ownerId: 'env-managed-owner',
+      provider: 'GOOGLE',
+      credentialKeyConfigured: true,
+      accessTokenStored: false,
+      refreshTokenStored: false,
+      connected: false,
+      tokenExpiresAt: null,
+      providerRevokeSupported: false,
+      providerRevokeUnsupportedReason:
+        'Provider-side revoke requires a locally stored OAuth token; this credential row only references env-managed secrets',
+    },
+  ]);
+
+  renderPage();
+  await screen.findByText('google-ready-owner');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Env-managed only (1)' }));
+
+  expect(
+    screen.getByText('Showing credentials that only reference env-managed secrets and have no local token to revoke.')
+  ).toBeTruthy();
+  const inventoryTable = screen.getByRole('table', { name: 'OAuth credential inventory' });
+  expect(within(inventoryTable).getByText('env-managed-owner')).toBeTruthy();
+  expect(within(inventoryTable).queryByText('google-ready-owner')).toBeNull();
+  expect(screen.getByText('Revoke capability: Env-managed only')).toBeTruthy();
+  expect(screen.getByTestId('location-search').textContent).toBe('?revokeCapability=env-managed-only');
+});
+
+test('shows empty state when env-managed-only filter has no matches', async () => {
+  mockedOAuthCredentialAdminService.listCredentials.mockResolvedValue([
+    {
+      ...credential,
+      id: 'google-ready',
+      ownerId: 'google-ready-owner',
+      credentialKeyConfigured: false,
+      accessTokenStored: true,
+      refreshTokenStored: true,
+    },
+  ]);
+
+  renderPage('/admin/oauth-credentials?revokeCapability=env-managed-only');
+
+  expect(await screen.findByText('No OAuth credentials currently depend only on env-managed secrets.')).toBeTruthy();
+  expect(screen.getByText('Revoke capability: Env-managed only')).toBeTruthy();
+});
+
 test('requires reauthorization by clearing stored token status', async () => {
   const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
   mockedOAuthCredentialAdminService.requireReauth.mockResolvedValue({

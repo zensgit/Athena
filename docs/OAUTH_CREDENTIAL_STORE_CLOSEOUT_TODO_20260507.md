@@ -60,6 +60,10 @@ The OAuth Credential Store admin surface is the cross-integration `/admin/oauth-
   - `GET /api/v1/admin/oauth-credentials/{credentialId}/revoke-endpoint` returns the persisted per-credential CUSTOM revoke endpoint only for an explicit admin detail request.
   - `/admin/oauth-credentials` now preloads the persisted URL when opening the CUSTOM revoke endpoint dialog, so operators can review before replacing or clearing it.
   - Inventory responses remain unchanged and continue to expose only `revokeEndpointConfigured`; access and refresh token values are still never returned.
+- Env-managed only filter shipped on 2026-05-12: `docs/OAUTH_CREDENTIAL_ENV_MANAGED_ONLY_FILTER_DESIGN_VERIFICATION_20260512.md`
+  - `/admin/oauth-credentials` now has a local `Env-managed only` view for rows with `credentialKeyConfigured=true` and no locally stored access or refresh token.
+  - The view is shareable through `?revokeCapability=env-managed-only` and shows an active filter chip like the other revoke-capability views.
+  - This does not make external secrets revokable inside Athena; it only isolates the operator triage population.
 
 ## v1 Revoke invariants
 

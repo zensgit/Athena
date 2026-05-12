@@ -38,9 +38,10 @@ const REVOKE_CAPABILITY_FILTER_QUERY_VALUES = {
   READY: 'ready',
   BLOCKED: 'blocked',
   CUSTOM_ENDPOINT_GAP: 'custom-endpoint-gap',
+  ENV_MANAGED_ONLY: 'env-managed-only',
 } as const;
 
-type RevokeCapabilityFilter = 'ALL' | 'READY' | 'BLOCKED' | 'CUSTOM_ENDPOINT_GAP';
+type RevokeCapabilityFilter = 'ALL' | 'READY' | 'BLOCKED' | 'CUSTOM_ENDPOINT_GAP' | 'ENV_MANAGED_ONLY';
 
 const resolveProviderFilter = (value: string | null): string => (
   PROVIDERS.includes(value ?? '') ? (value ?? '') : ''
@@ -54,6 +55,8 @@ const resolveRevokeCapabilityFilter = (value: string | null): RevokeCapabilityFi
       return 'BLOCKED';
     case REVOKE_CAPABILITY_FILTER_QUERY_VALUES.CUSTOM_ENDPOINT_GAP:
       return 'CUSTOM_ENDPOINT_GAP';
+    case REVOKE_CAPABILITY_FILTER_QUERY_VALUES.ENV_MANAGED_ONLY:
+      return 'ENV_MANAGED_ONLY';
     default:
       return 'ALL';
   }
@@ -83,6 +86,12 @@ const isCustomRevokeEndpointGap = (credential: OAuthCredentialInventoryItem): bo
   && (credential.providerRevokeUnsupportedReason ?? '').toLowerCase().includes('revoke endpoint')
 );
 
+const isEnvManagedOnlyCredential = (credential: OAuthCredentialInventoryItem): boolean => (
+  credential.credentialKeyConfigured
+  && !credential.accessTokenStored
+  && !credential.refreshTokenStored
+);
+
 const matchesRevokeCapabilityFilter = (
   credential: OAuthCredentialInventoryItem,
   filter: RevokeCapabilityFilter
@@ -94,6 +103,8 @@ const matchesRevokeCapabilityFilter = (
       return !credential.providerRevokeSupported;
     case 'CUSTOM_ENDPOINT_GAP':
       return isCustomRevokeEndpointGap(credential);
+    case 'ENV_MANAGED_ONLY':
+      return isEnvManagedOnlyCredential(credential);
     case 'ALL':
     default:
       return true;
@@ -108,6 +119,8 @@ const revokeCapabilityFilterLabel = (filter: RevokeCapabilityFilter): string => 
       return 'Showing credentials where Provider Revoke is blocked by backend capability metadata.';
     case 'CUSTOM_ENDPOINT_GAP':
       return 'Showing CUSTOM credentials where provider-side revoke is blocked by a missing revoke endpoint.';
+    case 'ENV_MANAGED_ONLY':
+      return 'Showing credentials that only reference env-managed secrets and have no local token to revoke.';
     case 'ALL':
     default:
       return '';
@@ -122,6 +135,8 @@ const revokeCapabilityFilterChipLabel = (filter: RevokeCapabilityFilter): string
       return 'Provider revoke blocked';
     case 'CUSTOM_ENDPOINT_GAP':
       return 'CUSTOM revoke gaps';
+    case 'ENV_MANAGED_ONLY':
+      return 'Env-managed only';
     case 'ALL':
     default:
       return '';
@@ -337,6 +352,7 @@ const OAuthCredentialAdminPage: React.FC = () => {
   const providerRevokeReadyCount = credentials.filter((credential) => credential.providerRevokeSupported).length;
   const providerRevokeBlockedCount = credentials.filter((credential) => !credential.providerRevokeSupported).length;
   const customRevokeEndpointGapCount = credentials.filter(isCustomRevokeEndpointGap).length;
+  const envManagedOnlyCount = credentials.filter(isEnvManagedOnlyCredential).length;
   const visibleCredentials = credentials.filter((credential) => (
     matchesRevokeCapabilityFilter(credential, revokeCapabilityFilter)
   ));
@@ -348,6 +364,8 @@ const OAuthCredentialAdminPage: React.FC = () => {
         return 'No OAuth credentials are currently blocked from Provider Revoke.';
       case 'CUSTOM_ENDPOINT_GAP':
         return 'No CUSTOM credentials currently need a revoke endpoint.';
+      case 'ENV_MANAGED_ONLY':
+        return 'No OAuth credentials currently depend only on env-managed secrets.';
       case 'ALL':
       default:
         return 'No OAuth credentials match the current filters.';
@@ -532,6 +550,12 @@ const OAuthCredentialAdminPage: React.FC = () => {
             <Typography variant="h4">{customRevokeEndpointGapCount}</Typography>
           </CardContent>
         </Card>
+        <Card sx={{ flex: 1 }}>
+          <CardHeader title="Env-managed Only" />
+          <CardContent>
+            <Typography variant="h4">{envManagedOnlyCount}</Typography>
+          </CardContent>
+        </Card>
       </Stack>
 
       <Card sx={{ mb: 3 }}>
@@ -601,6 +625,15 @@ const OAuthCredentialAdminPage: React.FC = () => {
               sx={{ minWidth: 220 }}
             >
               CUSTOM revoke gaps ({customRevokeEndpointGapCount})
+            </Button>
+            <Button
+              variant={revokeCapabilityFilter === 'ENV_MANAGED_ONLY' ? 'contained' : 'outlined'}
+              color="warning"
+              onClick={() => handleRevokeCapabilityFilterChange('ENV_MANAGED_ONLY')}
+              aria-pressed={revokeCapabilityFilter === 'ENV_MANAGED_ONLY'}
+              sx={{ minWidth: 210 }}
+            >
+              Env-managed only ({envManagedOnlyCount})
             </Button>
           </Stack>
           {activeRevokeCapabilityFilterDescription && (
