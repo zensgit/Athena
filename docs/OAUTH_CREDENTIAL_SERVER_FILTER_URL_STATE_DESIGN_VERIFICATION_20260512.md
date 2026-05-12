@@ -49,6 +49,24 @@ changed.
 | Targeted Jest | `cd ecm-frontend && CI=true npm test -- --runTestsByPath src/pages/OAuthCredentialAdminPage.test.tsx --watchAll=false --runInBand` | 1 suite, 24 tests passed |
 | OAuth admin preflight | `MAVEN_BIN=/tmp/codex-maven/apache-maven-3.9.11/bin/mvn bash scripts/oauth-credential-admin-preflight.sh` | passed: backend 47/47, frontend 38/38, lint clean, production build compiled successfully with the existing CRA bundle-size advisory |
 
+## GitHub Actions
+
+Run: `25724928039`
+
+Commit: `dd6a08df58c531cc3eb441efd961b7aa0795b1bc`
+
+Result: 7/7 jobs passed.
+
+| Job | Result |
+|---|---|
+| Backend Verify | passed in 2m16s |
+| Frontend Build & Test | passed in 10m21s |
+| Phase C Security Verification | passed in 5m9s |
+| Property Encryption Closeout Gate | passed in 4m41s |
+| Frontend E2E Core Gate | passed in 14m38s |
+| Acceptance Smoke (3 admin pages) | passed in 7m2s |
+| Phase 5 Mocked Regression Gate | passed in 6m41s |
+
 Targeted coverage added:
 
 - applying Owner type and Provider writes `ownerType` and `provider` to the URL;
