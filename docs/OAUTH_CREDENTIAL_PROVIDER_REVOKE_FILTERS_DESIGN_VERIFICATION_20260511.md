@@ -84,6 +84,29 @@ New coverage:
 - the existing CUSTOM revoke gap filter still narrows blocked rows to the
   missing-endpoint case.
 
+### Full Frontend Unit Suite
+
+Command:
+
+```bash
+cd ecm-frontend
+CI=true npm test -- --watchAll=false
+```
+
+Result:
+
+```text
+Test Suites: 82 passed, 82 total
+Tests: 542 passed, 542 total
+```
+
+This full-suite run was added after the first remote CI attempt exposed a
+test-only timing issue in `OAuthCredentialAdminPage.test.tsx`: after saving the
+CUSTOM revoke endpoint, the test queried the main page while the MUI dialog was
+still closing and the main content was temporarily `aria-hidden`. The test now
+waits for the dialog to be removed before asserting the Provider Revoke button
+state.
+
 ### OAuth Admin Preflight
 
 Command:
@@ -110,6 +133,15 @@ Breakdown:
 - Frontend lint passed.
 - Frontend production build compiled successfully; existing CRA bundle-size
   advisory only.
+
+### GitHub Actions
+
+Initial run `25717630806` failed in `Frontend Build & Test` unit tests for the
+dialog timing issue described above. Backend Verify and Phase C Security
+Verification passed in that run.
+
+The CI rerun after the timing fix is pending at the time this document section
+was first written.
 
 ## Remaining Work
 

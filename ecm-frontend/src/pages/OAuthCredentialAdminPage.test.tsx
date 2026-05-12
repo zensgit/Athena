@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, waitForElementToBeRemoved, within } from '@testing-library/react';
 import OAuthCredentialAdminPage from './OAuthCredentialAdminPage';
 import oauthCredentialAdminService from 'services/oauthCredentialAdminService';
 
@@ -472,6 +472,9 @@ test('configures CUSTOM revoke endpoint and replaces the row from the redacted r
       'https://custom.example/revoke'
     );
   });
+  await waitForElementToBeRemoved(() => (
+    screen.queryByRole('dialog', { name: 'Configure CUSTOM Revoke Endpoint' })
+  ));
   await waitFor(() => {
     const button = screen.getByRole('button', { name: 'Provider Revoke' }) as HTMLButtonElement;
     expect(button.disabled).toBe(false);
