@@ -30,6 +30,8 @@ import oauthCredentialAdminService, {
 } from 'services/oauthCredentialAdminService';
 
 const PROVIDERS = ['', 'GOOGLE', 'MICROSOFT', 'CUSTOM'];
+const OWNER_TYPE_FILTER_QUERY_PARAM = 'ownerType';
+const PROVIDER_FILTER_QUERY_PARAM = 'provider';
 const REVOKE_CAPABILITY_FILTER_QUERY_PARAM = 'revokeCapability';
 const REVOKE_CAPABILITY_FILTER_QUERY_VALUES = {
   READY: 'ready',
@@ -38,6 +40,10 @@ const REVOKE_CAPABILITY_FILTER_QUERY_VALUES = {
 } as const;
 
 type RevokeCapabilityFilter = 'ALL' | 'READY' | 'BLOCKED' | 'CUSTOM_ENDPOINT_GAP';
+
+const resolveProviderFilter = (value: string | null): string => (
+  PROVIDERS.includes(value ?? '') ? (value ?? '') : ''
+);
 
 const resolveRevokeCapabilityFilter = (value: string | null): RevokeCapabilityFilter => {
   switch ((value ?? '').toLowerCase()) {
@@ -57,6 +63,17 @@ const revokeCapabilityFilterQueryValue = (filter: RevokeCapabilityFilter): strin
     return null;
   }
   return REVOKE_CAPABILITY_FILTER_QUERY_VALUES[filter];
+};
+
+const buildCredentialFilters = (ownerType: string, provider: string) => {
+  const filters: { ownerType?: string; provider?: string } = {};
+  if (ownerType) {
+    filters.ownerType = ownerType;
+  }
+  if (provider) {
+    filters.provider = provider;
+  }
+  return Object.keys(filters).length > 0 ? filters : undefined;
 };
 
 const isCustomRevokeEndpointGap = (credential: OAuthCredentialInventoryItem): boolean => (
@@ -129,9 +146,11 @@ const resolveErrorMessage = (err: unknown, fallback: string): string => {
 
 const OAuthCredentialAdminPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
+  const queryOwnerType = (searchParams.get(OWNER_TYPE_FILTER_QUERY_PARAM) ?? '').trim();
+  const queryProvider = resolveProviderFilter(searchParams.get(PROVIDER_FILTER_QUERY_PARAM));
   const [credentials, setCredentials] = useState<OAuthCredentialInventoryItem[]>([]);
-  const [ownerType, setOwnerType] = useState('');
-  const [provider, setProvider] = useState('');
+  const [ownerType, setOwnerType] = useState(queryOwnerType);
+  const [provider, setProvider] = useState(queryProvider);
   const [loading, setLoading] = useState(false);
   const [reauthCredentialId, setReauthCredentialId] = useState<string | null>(null);
   const [refreshCredentialId, setRefreshCredentialId] = useState<string | null>(null);
@@ -144,6 +163,29 @@ const OAuthCredentialAdminPage: React.FC = () => {
   const revokeCapabilityFilter = resolveRevokeCapabilityFilter(
     searchParams.get(REVOKE_CAPABILITY_FILTER_QUERY_PARAM)
   );
+
+  const handleServerFiltersApply = () => {
+    const nextOwnerType = ownerType.trim();
+    const nextProvider = provider.trim();
+    const filtersChanged = nextOwnerType !== queryOwnerType || nextProvider !== queryProvider;
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (nextOwnerType) {
+        next.set(OWNER_TYPE_FILTER_QUERY_PARAM, nextOwnerType);
+      } else {
+        next.delete(OWNER_TYPE_FILTER_QUERY_PARAM);
+      }
+      if (nextProvider) {
+        next.set(PROVIDER_FILTER_QUERY_PARAM, nextProvider);
+      } else {
+        next.delete(PROVIDER_FILTER_QUERY_PARAM);
+      }
+      return next;
+    }, { replace: true });
+    if (!filtersChanged) {
+      void loadCredentials(nextOwnerType, nextProvider);
+    }
+  };
 
   const handleRevokeCapabilityFilterChange = (nextFilter: RevokeCapabilityFilter) => {
     setSearchParams((current) => {
@@ -159,8 +201,8 @@ const OAuthCredentialAdminPage: React.FC = () => {
   };
 
   const loadCredentials = async (
-    nextOwnerType = ownerType,
-    nextProvider = provider,
+    nextOwnerType = queryOwnerType,
+    nextProvider = queryProvider,
     options: { preserveError?: boolean } = {}
   ) => {
     setLoading(true);
@@ -168,10 +210,10 @@ const OAuthCredentialAdminPage: React.FC = () => {
       setError(null);
     }
     try {
-      const result = await oauthCredentialAdminService.listCredentials({
-        ownerType: nextOwnerType,
-        provider: nextProvider,
-      });
+      const filters = buildCredentialFilters(nextOwnerType, nextProvider);
+      const result = filters
+        ? await oauthCredentialAdminService.listCredentials(filters)
+        : await oauthCredentialAdminService.listCredentials();
       setCredentials(result);
     } catch (err) {
       setError(resolveErrorMessage(err, 'Failed to load OAuth credential inventory.'));
@@ -181,9 +223,18 @@ const OAuthCredentialAdminPage: React.FC = () => {
   };
 
   useEffect(() => {
+    setOwnerType(queryOwnerType);
+    setProvider(queryProvider);
+  }, [queryOwnerType, queryProvider]);
+
+  useEffect(() => {
     let active = true;
     setLoading(true);
-    oauthCredentialAdminService.listCredentials()
+    const filters = buildCredentialFilters(queryOwnerType, queryProvider);
+    const request = filters
+      ? oauthCredentialAdminService.listCredentials(filters)
+      : oauthCredentialAdminService.listCredentials();
+    request
       .then((result) => {
         if (active) {
           setCredentials(result);
@@ -202,7 +253,7 @@ const OAuthCredentialAdminPage: React.FC = () => {
     return () => {
       active = false;
     };
-  }, []);
+  }, [queryOwnerType, queryProvider]);
 
   const connectedCount = credentials.filter((credential) => credential.connected).length;
   const refreshTokenCount = credentials.filter((credential) => credential.refreshTokenStored).length;
@@ -349,7 +400,7 @@ const OAuthCredentialAdminPage: React.FC = () => {
         <Button
           variant="contained"
           startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <Refresh />}
-          onClick={() => void loadCredentials()}
+          onClick={() => void loadCredentials(queryOwnerType, queryProvider)}
           disabled={loading}
         >
           Refresh
@@ -426,7 +477,7 @@ const OAuthCredentialAdminPage: React.FC = () => {
             </TextField>
             <Button
               variant="outlined"
-              onClick={() => void loadCredentials()}
+              onClick={handleServerFiltersApply}
               disabled={loading}
               sx={{ minWidth: 140 }}
             >

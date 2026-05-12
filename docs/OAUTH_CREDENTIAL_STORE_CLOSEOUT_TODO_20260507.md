@@ -6,7 +6,7 @@ Date: 2026-05-07
 
 The OAuth Credential Store admin surface is the cross-integration `/admin/oauth-credentials` view that lets administrators inspect and operate on stored OAuth credential rows aggregated by the generic `OAuthCredentialService` and per-owner `OAuthCredentialOwnerAdapter` implementations. It deliberately keeps token values out of every response and exposes a small, bounded set of write actions. This document records what has shipped and what remains as design follow-up so the next round of work can pick up cleanly without re-deriving the prior decisions.
 
-## Done (as of 2026-05-11)
+## Done (as of 2026-05-12)
 
 - Inventory (read-only): `docs/OAUTH_CREDENTIAL_ADMIN_INVENTORY_DESIGN_VERIFICATION_20260506.md`
   - `GET /api/v1/admin/oauth-credentials` with admin role gating, JPQL projection, and token-redacted DTOs.
@@ -48,6 +48,10 @@ The OAuth Credential Store admin surface is the cross-integration `/admin/oauth-
 - Provider Revoke capability filter URL state shipped on 2026-05-12: `docs/OAUTH_CREDENTIAL_REVOKE_CAPABILITY_FILTER_URL_STATE_DESIGN_VERIFICATION_20260512.md`
   - `/admin/oauth-credentials` now persists the local `Provider revoke ready`, `Provider revoke blocked`, and `CUSTOM revoke gaps` views through `?revokeCapability=...`.
   - Query-state updates preserve unrelated query parameters and do not change backend owner/provider filtering or provider capability semantics.
+- Owner/provider server filter URL state shipped on 2026-05-12: `docs/OAUTH_CREDENTIAL_SERVER_FILTER_URL_STATE_DESIGN_VERIFICATION_20260512.md`
+  - `/admin/oauth-credentials` now hydrates and persists the backend-backed `ownerType` and `provider` filters through query parameters.
+  - Applying or clearing server filters preserves unrelated query parameters, including the local `revokeCapability` triage filter.
+  - Owner type values are trimmed before being applied to the URL and backend inventory request; invalid provider query values fall back to the unfiltered provider view.
 
 ## v1 Revoke invariants
 

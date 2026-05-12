@@ -51,6 +51,10 @@ const renderPage = (initialEntry = '/admin/oauth-credentials') => render(
   </MemoryRouter>
 );
 
+const readLocationSearchParams = () => (
+  new URLSearchParams(screen.getByTestId('location-search').textContent ?? '')
+);
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockedOAuthCredentialAdminService.listCredentials.mockResolvedValue([credential]);
@@ -84,10 +88,48 @@ test('applies owner type and provider filters', async () => {
 
   await waitFor(() => {
     expect(mockedOAuthCredentialAdminService.listCredentials).toHaveBeenLastCalledWith({
-      ownerType: ' MAIL_ACCOUNT ',
+      ownerType: 'MAIL_ACCOUNT',
       provider: 'GOOGLE',
     });
   });
+  const params = readLocationSearchParams();
+  expect(params.get('ownerType')).toBe('MAIL_ACCOUNT');
+  expect(params.get('provider')).toBe('GOOGLE');
+});
+
+test('hydrates owner type and provider filters from URL state', async () => {
+  renderPage('/admin/oauth-credentials?ownerType=MAIL_ACCOUNT&provider=CUSTOM&revokeCapability=ready');
+  await screen.findByText('MAIL_ACCOUNT');
+
+  await waitFor(() => {
+    expect(mockedOAuthCredentialAdminService.listCredentials).toHaveBeenCalledWith({
+      ownerType: 'MAIL_ACCOUNT',
+      provider: 'CUSTOM',
+    });
+  });
+  expect((screen.getByLabelText('Owner type') as HTMLInputElement).value).toBe('MAIL_ACCOUNT');
+  expect((screen.getByLabelText('Provider') as HTMLSelectElement).value).toBe('CUSTOM');
+  const params = readLocationSearchParams();
+  expect(params.get('ownerType')).toBe('MAIL_ACCOUNT');
+  expect(params.get('provider')).toBe('CUSTOM');
+  expect(params.get('revokeCapability')).toBe('ready');
+});
+
+test('clears owner type and provider URL state while preserving revoke capability filter', async () => {
+  renderPage('/admin/oauth-credentials?ownerType=MAIL_ACCOUNT&provider=GOOGLE&revokeCapability=blocked');
+  await screen.findByText('No OAuth credentials are currently blocked from Provider Revoke.');
+
+  fireEvent.change(screen.getByLabelText('Owner type'), { target: { value: '' } });
+  fireEvent.change(screen.getByLabelText('Provider'), { target: { value: '' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Apply Filters' }));
+
+  await waitFor(() => {
+    expect(mockedOAuthCredentialAdminService.listCredentials).toHaveBeenLastCalledWith();
+  });
+  const params = readLocationSearchParams();
+  expect(params.get('ownerType')).toBeNull();
+  expect(params.get('provider')).toBeNull();
+  expect(params.get('revokeCapability')).toBe('blocked');
 });
 
 test('shows empty state for unmatched filters', async () => {
