@@ -1,5 +1,6 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor, waitForElementToBeRemoved, within } from '@testing-library/react';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import OAuthCredentialAdminPage from './OAuthCredentialAdminPage';
 import oauthCredentialAdminService from 'services/oauthCredentialAdminService';
 
@@ -36,13 +37,27 @@ const credential = {
   providerRevokeUnsupportedReason: null,
 };
 
+const LocationProbe: React.FC = () => {
+  const location = useLocation();
+  return <span data-testid="location-search">{location.search}</span>;
+};
+
+const renderPage = (initialEntry = '/admin/oauth-credentials') => render(
+  <MemoryRouter initialEntries={[initialEntry]}>
+    <LocationProbe />
+    <Routes>
+      <Route path="/admin/oauth-credentials" element={<OAuthCredentialAdminPage />} />
+    </Routes>
+  </MemoryRouter>
+);
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockedOAuthCredentialAdminService.listCredentials.mockResolvedValue([credential]);
 });
 
 test('loads redacted OAuth credential inventory', async () => {
-  render(<OAuthCredentialAdminPage />);
+  renderPage();
 
   expect(await screen.findByText('OAuth Credential Store')).toBeTruthy();
   expect(screen.getByText('Token values are never returned by this admin surface. Only storage and configuration flags are shown.')).toBeTruthy();
@@ -60,7 +75,7 @@ test('loads redacted OAuth credential inventory', async () => {
 });
 
 test('applies owner type and provider filters', async () => {
-  render(<OAuthCredentialAdminPage />);
+  renderPage();
   await screen.findByText('MAIL_ACCOUNT');
 
   fireEvent.change(screen.getByLabelText('Owner type'), { target: { value: ' MAIL_ACCOUNT ' } });
@@ -78,7 +93,7 @@ test('applies owner type and provider filters', async () => {
 test('shows empty state for unmatched filters', async () => {
   mockedOAuthCredentialAdminService.listCredentials.mockResolvedValue([]);
 
-  render(<OAuthCredentialAdminPage />);
+  renderPage();
 
   expect(await screen.findByText('No OAuth credentials match the current filters.')).toBeTruthy();
 });
@@ -114,7 +129,7 @@ test('filters to CUSTOM credentials missing a revoke endpoint', async () => {
     },
   ]);
 
-  render(<OAuthCredentialAdminPage />);
+  renderPage();
   await screen.findByText('custom-gap-owner');
 
   fireEvent.click(screen.getByRole('button', { name: 'CUSTOM revoke gaps (1)' }));
@@ -148,7 +163,7 @@ test('filters to Provider Revoke ready credentials', async () => {
     },
   ]);
 
-  render(<OAuthCredentialAdminPage />);
+  renderPage();
   await screen.findByText('google-ready-owner');
 
   fireEvent.click(screen.getByRole('button', { name: 'Provider revoke ready (1)' }));
@@ -157,6 +172,7 @@ test('filters to Provider Revoke ready credentials', async () => {
   const inventoryTable = screen.getByRole('table', { name: 'OAuth credential inventory' });
   expect(within(inventoryTable).getByText('google-ready-owner')).toBeTruthy();
   expect(within(inventoryTable).queryByText('custom-blocked-owner')).toBeNull();
+  expect(screen.getByTestId('location-search').textContent).toBe('?revokeCapability=ready');
 });
 
 test('filters to Provider Revoke blocked credentials and can return to all rows', async () => {
@@ -180,7 +196,7 @@ test('filters to Provider Revoke blocked credentials and can return to all rows'
     },
   ]);
 
-  render(<OAuthCredentialAdminPage />);
+  renderPage();
   await screen.findByText('google-ready-owner');
 
   fireEvent.click(screen.getByRole('button', { name: 'Provider revoke blocked (1)' }));
@@ -191,11 +207,48 @@ test('filters to Provider Revoke blocked credentials and can return to all rows'
   const inventoryTable = screen.getByRole('table', { name: 'OAuth credential inventory' });
   expect(within(inventoryTable).queryByText('google-ready-owner')).toBeNull();
   expect(within(inventoryTable).getByText('microsoft-blocked-owner')).toBeTruthy();
+  expect(screen.getByTestId('location-search').textContent).toBe('?revokeCapability=blocked');
 
   fireEvent.click(screen.getByRole('button', { name: 'All (2)' }));
 
   expect(within(inventoryTable).getByText('google-ready-owner')).toBeTruthy();
   expect(within(inventoryTable).getByText('microsoft-blocked-owner')).toBeTruthy();
+  expect(screen.getByTestId('location-search').textContent).toBe('');
+});
+
+test('hydrates and clears the Provider Revoke capability filter from URL state', async () => {
+  mockedOAuthCredentialAdminService.listCredentials.mockResolvedValue([
+    {
+      ...credential,
+      id: 'google-ready',
+      ownerId: 'google-ready-owner',
+      provider: 'GOOGLE',
+      providerRevokeSupported: true,
+      providerRevokeUnsupportedReason: null,
+    },
+    {
+      ...credential,
+      id: 'microsoft-blocked',
+      ownerId: 'microsoft-blocked-owner',
+      provider: 'MICROSOFT',
+      providerRevokeSupported: false,
+      providerRevokeUnsupportedReason:
+        'Provider-side revoke is only supported for GOOGLE; this credential is MICROSOFT',
+    },
+  ]);
+
+  renderPage('/admin/oauth-credentials?view=ops&revokeCapability=blocked');
+  await screen.findByText('microsoft-blocked-owner');
+
+  const inventoryTable = screen.getByRole('table', { name: 'OAuth credential inventory' });
+  expect(within(inventoryTable).queryByText('google-ready-owner')).toBeNull();
+  expect(screen.getByTestId('location-search').textContent).toBe('?view=ops&revokeCapability=blocked');
+
+  fireEvent.click(screen.getByRole('button', { name: 'All (2)' }));
+
+  expect(within(inventoryTable).getByText('google-ready-owner')).toBeTruthy();
+  expect(within(inventoryTable).getByText('microsoft-blocked-owner')).toBeTruthy();
+  expect(screen.getByTestId('location-search').textContent).toBe('?view=ops');
 });
 
 test('shows empty state when CUSTOM revoke gap filter has no matches', async () => {
@@ -211,7 +264,7 @@ test('shows empty state when CUSTOM revoke gap filter has no matches', async () 
     },
   ]);
 
-  render(<OAuthCredentialAdminPage />);
+  renderPage();
   await screen.findByText('custom-ready-owner');
 
   fireEvent.click(screen.getByRole('button', { name: 'CUSTOM revoke gaps (0)' }));
@@ -229,7 +282,7 @@ test('requires reauthorization by clearing stored token status', async () => {
     tokenExpiresAt: null,
   });
 
-  render(<OAuthCredentialAdminPage />);
+  renderPage();
   await screen.findByText('MAIL_ACCOUNT');
 
   fireEvent.click(screen.getByRole('button', { name: 'Require Reauth' }));
@@ -253,7 +306,7 @@ test('refreshes OAuth credential token status', async () => {
     updatedAt: '2030-01-02T03:00:00Z',
   });
 
-  render(<OAuthCredentialAdminPage />);
+  renderPage();
   await screen.findByText('MAIL_ACCOUNT');
 
   fireEvent.click(screen.getByRole('button', { name: 'Refresh Now' }));
@@ -276,7 +329,7 @@ test('surfaces refresh provider errors and reloads inventory', async () => {
     },
   });
 
-  render(<OAuthCredentialAdminPage />);
+  renderPage();
   await screen.findByText('MAIL_ACCOUNT');
 
   fireEvent.click(screen.getByRole('button', { name: 'Refresh Now' }));
@@ -292,7 +345,7 @@ test('surfaces refresh provider errors and reloads inventory', async () => {
 test('does not require reauthorization when confirmation is cancelled', async () => {
   const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(false);
 
-  render(<OAuthCredentialAdminPage />);
+  renderPage();
   await screen.findByText('MAIL_ACCOUNT');
 
   fireEvent.click(screen.getByRole('button', { name: 'Require Reauth' }));
@@ -302,7 +355,7 @@ test('does not require reauthorization when confirmation is cancelled', async ()
 });
 
 test('Provider Revoke is enabled for GOOGLE rows with a stored token', async () => {
-  render(<OAuthCredentialAdminPage />);
+  renderPage();
   await screen.findByText('MAIL_ACCOUNT');
 
   const button = await screen.findByRole('button', { name: 'Provider Revoke' });
@@ -321,7 +374,7 @@ test('Provider Revoke is disabled when backend reports providerRevokeSupported=f
     },
   ]);
 
-  render(<OAuthCredentialAdminPage />);
+  renderPage();
   await screen.findByText('MAIL_ACCOUNT');
 
   const button = await screen.findByRole('button', { name: 'Provider Revoke' });
@@ -339,7 +392,7 @@ test('Provider Revoke is disabled for non-GOOGLE rows when backend reports unsup
     },
   ]);
 
-  render(<OAuthCredentialAdminPage />);
+  renderPage();
   await screen.findByText('MICROSOFT');
 
   const button = await screen.findByRole('button', { name: 'Provider Revoke' });
@@ -361,7 +414,7 @@ test('Provider Revoke surfaces the backend unsupported reason via tooltip wrappe
     },
   ]);
 
-  render(<OAuthCredentialAdminPage />);
+  renderPage();
   await screen.findByText('MICROSOFT');
 
   const wrapper = await screen.findByLabelText(reason);
@@ -371,7 +424,7 @@ test('Provider Revoke surfaces the backend unsupported reason via tooltip wrappe
 test('does not revoke OAuth token when confirmation is cancelled', async () => {
   const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(false);
 
-  render(<OAuthCredentialAdminPage />);
+  renderPage();
   await screen.findByText('MAIL_ACCOUNT');
 
   fireEvent.click(screen.getByRole('button', { name: 'Provider Revoke' }));
@@ -395,7 +448,7 @@ test('revokes OAuth token at the provider and replaces the row from the redacted
       'Provider-side revoke requires a locally stored OAuth token; this credential row only references env-managed secrets',
   });
 
-  render(<OAuthCredentialAdminPage />);
+  renderPage();
   await screen.findByText('MAIL_ACCOUNT');
 
   fireEvent.click(screen.getByRole('button', { name: 'Provider Revoke' }));
@@ -424,7 +477,7 @@ test('surfaces revoke provider errors and reloads inventory', async () => {
     },
   });
 
-  render(<OAuthCredentialAdminPage />);
+  renderPage();
   await screen.findByText('MAIL_ACCOUNT');
 
   fireEvent.click(screen.getByRole('button', { name: 'Provider Revoke' }));
@@ -455,7 +508,7 @@ test('configures CUSTOM revoke endpoint and replaces the row from the redacted r
     providerRevokeUnsupportedReason: null,
   });
 
-  render(<OAuthCredentialAdminPage />);
+  renderPage();
   await screen.findByText('CUSTOM');
 
   fireEvent.click(screen.getByRole('button', { name: 'Configure Revoke Endpoint' }));
@@ -499,7 +552,7 @@ test('clears configured CUSTOM revoke endpoint with an explicit dialog action', 
     providerRevokeUnsupportedReason: 'Provider-side revoke endpoint is not configured for this CUSTOM credential',
   });
 
-  render(<OAuthCredentialAdminPage />);
+  renderPage();
   await screen.findByText('CUSTOM');
 
   fireEvent.click(screen.getByRole('button', { name: 'Configure Revoke Endpoint' }));
@@ -537,7 +590,7 @@ test('surfaces revoke endpoint update errors without closing the dialog', async 
     },
   });
 
-  render(<OAuthCredentialAdminPage />);
+  renderPage();
   await screen.findByText('CUSTOM');
 
   fireEvent.click(screen.getByRole('button', { name: 'Configure Revoke Endpoint' }));

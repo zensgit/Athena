@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Alert,
   Box,
@@ -29,8 +30,34 @@ import oauthCredentialAdminService, {
 } from 'services/oauthCredentialAdminService';
 
 const PROVIDERS = ['', 'GOOGLE', 'MICROSOFT', 'CUSTOM'];
+const REVOKE_CAPABILITY_FILTER_QUERY_PARAM = 'revokeCapability';
+const REVOKE_CAPABILITY_FILTER_QUERY_VALUES = {
+  READY: 'ready',
+  BLOCKED: 'blocked',
+  CUSTOM_ENDPOINT_GAP: 'custom-endpoint-gap',
+} as const;
 
 type RevokeCapabilityFilter = 'ALL' | 'READY' | 'BLOCKED' | 'CUSTOM_ENDPOINT_GAP';
+
+const resolveRevokeCapabilityFilter = (value: string | null): RevokeCapabilityFilter => {
+  switch ((value ?? '').toLowerCase()) {
+    case REVOKE_CAPABILITY_FILTER_QUERY_VALUES.READY:
+      return 'READY';
+    case REVOKE_CAPABILITY_FILTER_QUERY_VALUES.BLOCKED:
+      return 'BLOCKED';
+    case REVOKE_CAPABILITY_FILTER_QUERY_VALUES.CUSTOM_ENDPOINT_GAP:
+      return 'CUSTOM_ENDPOINT_GAP';
+    default:
+      return 'ALL';
+  }
+};
+
+const revokeCapabilityFilterQueryValue = (filter: RevokeCapabilityFilter): string | null => {
+  if (filter === 'ALL') {
+    return null;
+  }
+  return REVOKE_CAPABILITY_FILTER_QUERY_VALUES[filter];
+};
 
 const isCustomRevokeEndpointGap = (credential: OAuthCredentialInventoryItem): boolean => (
   credential.provider === 'CUSTOM'
@@ -101,10 +128,10 @@ const resolveErrorMessage = (err: unknown, fallback: string): string => {
 };
 
 const OAuthCredentialAdminPage: React.FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [credentials, setCredentials] = useState<OAuthCredentialInventoryItem[]>([]);
   const [ownerType, setOwnerType] = useState('');
   const [provider, setProvider] = useState('');
-  const [revokeCapabilityFilter, setRevokeCapabilityFilter] = useState<RevokeCapabilityFilter>('ALL');
   const [loading, setLoading] = useState(false);
   const [reauthCredentialId, setReauthCredentialId] = useState<string | null>(null);
   const [refreshCredentialId, setRefreshCredentialId] = useState<string | null>(null);
@@ -114,6 +141,22 @@ const OAuthCredentialAdminPage: React.FC = () => {
   const [revokeEndpointSubmitting, setRevokeEndpointSubmitting] = useState(false);
   const [revokeEndpointAction, setRevokeEndpointAction] = useState<'SAVE' | 'CLEAR' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const revokeCapabilityFilter = resolveRevokeCapabilityFilter(
+    searchParams.get(REVOKE_CAPABILITY_FILTER_QUERY_PARAM)
+  );
+
+  const handleRevokeCapabilityFilterChange = (nextFilter: RevokeCapabilityFilter) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      const queryValue = revokeCapabilityFilterQueryValue(nextFilter);
+      if (queryValue) {
+        next.set(REVOKE_CAPABILITY_FILTER_QUERY_PARAM, queryValue);
+      } else {
+        next.delete(REVOKE_CAPABILITY_FILTER_QUERY_PARAM);
+      }
+      return next;
+    }, { replace: true });
+  };
 
   const loadCredentials = async (
     nextOwnerType = ownerType,
@@ -391,7 +434,7 @@ const OAuthCredentialAdminPage: React.FC = () => {
             </Button>
             <Button
               variant={revokeCapabilityFilter === 'ALL' ? 'contained' : 'outlined'}
-              onClick={() => setRevokeCapabilityFilter('ALL')}
+              onClick={() => handleRevokeCapabilityFilterChange('ALL')}
               aria-pressed={revokeCapabilityFilter === 'ALL'}
               sx={{ minWidth: 120 }}
             >
@@ -400,7 +443,7 @@ const OAuthCredentialAdminPage: React.FC = () => {
             <Button
               variant={revokeCapabilityFilter === 'READY' ? 'contained' : 'outlined'}
               color="success"
-              onClick={() => setRevokeCapabilityFilter('READY')}
+              onClick={() => handleRevokeCapabilityFilterChange('READY')}
               aria-pressed={revokeCapabilityFilter === 'READY'}
               sx={{ minWidth: 210 }}
             >
@@ -409,7 +452,7 @@ const OAuthCredentialAdminPage: React.FC = () => {
             <Button
               variant={revokeCapabilityFilter === 'BLOCKED' ? 'contained' : 'outlined'}
               color="warning"
-              onClick={() => setRevokeCapabilityFilter('BLOCKED')}
+              onClick={() => handleRevokeCapabilityFilterChange('BLOCKED')}
               aria-pressed={revokeCapabilityFilter === 'BLOCKED'}
               sx={{ minWidth: 220 }}
             >
@@ -418,7 +461,7 @@ const OAuthCredentialAdminPage: React.FC = () => {
             <Button
               variant={revokeCapabilityFilter === 'CUSTOM_ENDPOINT_GAP' ? 'contained' : 'outlined'}
               color="warning"
-              onClick={() => setRevokeCapabilityFilter('CUSTOM_ENDPOINT_GAP')}
+              onClick={() => handleRevokeCapabilityFilterChange('CUSTOM_ENDPOINT_GAP')}
               aria-pressed={revokeCapabilityFilter === 'CUSTOM_ENDPOINT_GAP'}
               sx={{ minWidth: 220 }}
             >

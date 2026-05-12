@@ -45,6 +45,9 @@ The OAuth Credential Store admin surface is the cross-integration `/admin/oauth-
 - CUSTOM revoke endpoint explicit clear shipped on 2026-05-12: `docs/OAUTH_CREDENTIAL_CUSTOM_REVOKE_ENDPOINT_CLEAR_ACTION_DESIGN_VERIFICATION_20260512.md`
   - `/admin/oauth-credentials` now shows an explicit `Clear Endpoint` action for CUSTOM rows with a persisted revoke endpoint.
   - The action reuses the existing redacted `PUT /revoke-endpoint` contract with a blank endpoint, so the URL still is not read back through inventory.
+- Provider Revoke capability filter URL state shipped on 2026-05-12: `docs/OAUTH_CREDENTIAL_REVOKE_CAPABILITY_FILTER_URL_STATE_DESIGN_VERIFICATION_20260512.md`
+  - `/admin/oauth-credentials` now persists the local `Provider revoke ready`, `Provider revoke blocked`, and `CUSTOM revoke gaps` views through `?revokeCapability=...`.
+  - Query-state updates preserve unrelated query parameters and do not change backend owner/provider filtering or provider capability semantics.
 
 ## v1 Revoke invariants
 
