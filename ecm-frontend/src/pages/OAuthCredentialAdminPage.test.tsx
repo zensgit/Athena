@@ -128,6 +128,76 @@ test('filters to CUSTOM credentials missing a revoke endpoint', async () => {
   expect(within(inventoryTable).queryByText('microsoft-owner')).toBeNull();
 });
 
+test('filters to Provider Revoke ready credentials', async () => {
+  mockedOAuthCredentialAdminService.listCredentials.mockResolvedValue([
+    {
+      ...credential,
+      id: 'google-ready',
+      ownerId: 'google-ready-owner',
+      provider: 'GOOGLE',
+      providerRevokeSupported: true,
+      providerRevokeUnsupportedReason: null,
+    },
+    {
+      ...credential,
+      id: 'custom-blocked',
+      ownerId: 'custom-blocked-owner',
+      provider: 'CUSTOM',
+      providerRevokeSupported: false,
+      providerRevokeUnsupportedReason: 'Provider-side revoke endpoint is not configured for this CUSTOM credential',
+    },
+  ]);
+
+  render(<OAuthCredentialAdminPage />);
+  await screen.findByText('google-ready-owner');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Provider revoke ready (1)' }));
+
+  expect(screen.getByText('Showing credentials where Provider Revoke is currently actionable.')).toBeTruthy();
+  const inventoryTable = screen.getByRole('table', { name: 'OAuth credential inventory' });
+  expect(within(inventoryTable).getByText('google-ready-owner')).toBeTruthy();
+  expect(within(inventoryTable).queryByText('custom-blocked-owner')).toBeNull();
+});
+
+test('filters to Provider Revoke blocked credentials and can return to all rows', async () => {
+  mockedOAuthCredentialAdminService.listCredentials.mockResolvedValue([
+    {
+      ...credential,
+      id: 'google-ready',
+      ownerId: 'google-ready-owner',
+      provider: 'GOOGLE',
+      providerRevokeSupported: true,
+      providerRevokeUnsupportedReason: null,
+    },
+    {
+      ...credential,
+      id: 'microsoft-blocked',
+      ownerId: 'microsoft-blocked-owner',
+      provider: 'MICROSOFT',
+      providerRevokeSupported: false,
+      providerRevokeUnsupportedReason:
+        'Provider-side revoke is only supported for GOOGLE; this credential is MICROSOFT',
+    },
+  ]);
+
+  render(<OAuthCredentialAdminPage />);
+  await screen.findByText('google-ready-owner');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Provider revoke blocked (1)' }));
+
+  expect(
+    screen.getByText('Showing credentials where Provider Revoke is blocked by backend capability metadata.')
+  ).toBeTruthy();
+  const inventoryTable = screen.getByRole('table', { name: 'OAuth credential inventory' });
+  expect(within(inventoryTable).queryByText('google-ready-owner')).toBeNull();
+  expect(within(inventoryTable).getByText('microsoft-blocked-owner')).toBeTruthy();
+
+  fireEvent.click(screen.getByRole('button', { name: 'All (2)' }));
+
+  expect(within(inventoryTable).getByText('google-ready-owner')).toBeTruthy();
+  expect(within(inventoryTable).getByText('microsoft-blocked-owner')).toBeTruthy();
+});
+
 test('shows empty state when CUSTOM revoke gap filter has no matches', async () => {
   mockedOAuthCredentialAdminService.listCredentials.mockResolvedValue([
     {

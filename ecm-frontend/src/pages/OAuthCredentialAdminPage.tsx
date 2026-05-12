@@ -30,11 +30,44 @@ import oauthCredentialAdminService, {
 
 const PROVIDERS = ['', 'GOOGLE', 'MICROSOFT', 'CUSTOM'];
 
+type RevokeCapabilityFilter = 'ALL' | 'READY' | 'BLOCKED' | 'CUSTOM_ENDPOINT_GAP';
+
 const isCustomRevokeEndpointGap = (credential: OAuthCredentialInventoryItem): boolean => (
   credential.provider === 'CUSTOM'
   && !credential.providerRevokeSupported
   && (credential.providerRevokeUnsupportedReason ?? '').toLowerCase().includes('revoke endpoint')
 );
+
+const matchesRevokeCapabilityFilter = (
+  credential: OAuthCredentialInventoryItem,
+  filter: RevokeCapabilityFilter
+): boolean => {
+  switch (filter) {
+    case 'READY':
+      return credential.providerRevokeSupported;
+    case 'BLOCKED':
+      return !credential.providerRevokeSupported;
+    case 'CUSTOM_ENDPOINT_GAP':
+      return isCustomRevokeEndpointGap(credential);
+    case 'ALL':
+    default:
+      return true;
+  }
+};
+
+const revokeCapabilityFilterLabel = (filter: RevokeCapabilityFilter): string => {
+  switch (filter) {
+    case 'READY':
+      return 'Showing credentials where Provider Revoke is currently actionable.';
+    case 'BLOCKED':
+      return 'Showing credentials where Provider Revoke is blocked by backend capability metadata.';
+    case 'CUSTOM_ENDPOINT_GAP':
+      return 'Showing CUSTOM credentials where provider-side revoke is blocked by a missing revoke endpoint.';
+    case 'ALL':
+    default:
+      return '';
+  }
+};
 
 const formatDateTime = (value: string | null | undefined): string => {
   if (!value) {
@@ -71,7 +104,7 @@ const OAuthCredentialAdminPage: React.FC = () => {
   const [credentials, setCredentials] = useState<OAuthCredentialInventoryItem[]>([]);
   const [ownerType, setOwnerType] = useState('');
   const [provider, setProvider] = useState('');
-  const [showCustomRevokeEndpointGaps, setShowCustomRevokeEndpointGaps] = useState(false);
+  const [revokeCapabilityFilter, setRevokeCapabilityFilter] = useState<RevokeCapabilityFilter>('ALL');
   const [loading, setLoading] = useState(false);
   const [reauthCredentialId, setReauthCredentialId] = useState<string | null>(null);
   const [refreshCredentialId, setRefreshCredentialId] = useState<string | null>(null);
@@ -130,13 +163,26 @@ const OAuthCredentialAdminPage: React.FC = () => {
   const connectedCount = credentials.filter((credential) => credential.connected).length;
   const refreshTokenCount = credentials.filter((credential) => credential.refreshTokenStored).length;
   const credentialKeyCount = credentials.filter((credential) => credential.credentialKeyConfigured).length;
+  const providerRevokeReadyCount = credentials.filter((credential) => credential.providerRevokeSupported).length;
+  const providerRevokeBlockedCount = credentials.filter((credential) => !credential.providerRevokeSupported).length;
   const customRevokeEndpointGapCount = credentials.filter(isCustomRevokeEndpointGap).length;
-  const visibleCredentials = showCustomRevokeEndpointGaps
-    ? credentials.filter(isCustomRevokeEndpointGap)
-    : credentials;
-  const emptyInventoryMessage = showCustomRevokeEndpointGaps
-    ? 'No CUSTOM credentials currently need a revoke endpoint.'
-    : 'No OAuth credentials match the current filters.';
+  const visibleCredentials = credentials.filter((credential) => (
+    matchesRevokeCapabilityFilter(credential, revokeCapabilityFilter)
+  ));
+  const emptyInventoryMessage = (() => {
+    switch (revokeCapabilityFilter) {
+      case 'READY':
+        return 'No OAuth credentials are currently ready for Provider Revoke.';
+      case 'BLOCKED':
+        return 'No OAuth credentials are currently blocked from Provider Revoke.';
+      case 'CUSTOM_ENDPOINT_GAP':
+        return 'No CUSTOM credentials currently need a revoke endpoint.';
+      case 'ALL':
+      default:
+        return 'No OAuth credentials match the current filters.';
+    }
+  })();
+  const activeRevokeCapabilityFilterDescription = revokeCapabilityFilterLabel(revokeCapabilityFilter);
 
   const handleRequireReauth = async (credential: OAuthCredentialInventoryItem) => {
     const confirmed = window.confirm(
@@ -330,18 +376,44 @@ const OAuthCredentialAdminPage: React.FC = () => {
               Apply Filters
             </Button>
             <Button
-              variant={showCustomRevokeEndpointGaps ? 'contained' : 'outlined'}
+              variant={revokeCapabilityFilter === 'ALL' ? 'contained' : 'outlined'}
+              onClick={() => setRevokeCapabilityFilter('ALL')}
+              aria-pressed={revokeCapabilityFilter === 'ALL'}
+              sx={{ minWidth: 120 }}
+            >
+              All ({credentials.length})
+            </Button>
+            <Button
+              variant={revokeCapabilityFilter === 'READY' ? 'contained' : 'outlined'}
+              color="success"
+              onClick={() => setRevokeCapabilityFilter('READY')}
+              aria-pressed={revokeCapabilityFilter === 'READY'}
+              sx={{ minWidth: 210 }}
+            >
+              Provider revoke ready ({providerRevokeReadyCount})
+            </Button>
+            <Button
+              variant={revokeCapabilityFilter === 'BLOCKED' ? 'contained' : 'outlined'}
               color="warning"
-              onClick={() => setShowCustomRevokeEndpointGaps((current) => !current)}
-              aria-pressed={showCustomRevokeEndpointGaps}
+              onClick={() => setRevokeCapabilityFilter('BLOCKED')}
+              aria-pressed={revokeCapabilityFilter === 'BLOCKED'}
+              sx={{ minWidth: 220 }}
+            >
+              Provider revoke blocked ({providerRevokeBlockedCount})
+            </Button>
+            <Button
+              variant={revokeCapabilityFilter === 'CUSTOM_ENDPOINT_GAP' ? 'contained' : 'outlined'}
+              color="warning"
+              onClick={() => setRevokeCapabilityFilter('CUSTOM_ENDPOINT_GAP')}
+              aria-pressed={revokeCapabilityFilter === 'CUSTOM_ENDPOINT_GAP'}
               sx={{ minWidth: 220 }}
             >
               CUSTOM revoke gaps ({customRevokeEndpointGapCount})
             </Button>
           </Stack>
-          {showCustomRevokeEndpointGaps && (
+          {activeRevokeCapabilityFilterDescription && (
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-              Showing CUSTOM credentials where provider-side revoke is blocked by a missing revoke endpoint.
+              {activeRevokeCapabilityFilterDescription}
             </Typography>
           )}
         </CardContent>

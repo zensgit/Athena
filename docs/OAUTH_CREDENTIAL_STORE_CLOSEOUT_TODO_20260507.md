@@ -39,6 +39,9 @@ The OAuth Credential Store admin surface is the cross-integration `/admin/oauth-
 - CUSTOM revoke gap filter shipped on 2026-05-11: `docs/OAUTH_CREDENTIAL_CUSTOM_REVOKE_GAP_FILTER_DESIGN_VERIFICATION_20260511.md`
   - `/admin/oauth-credentials` now shows a `CUSTOM Revoke Gaps` summary card and a local `CUSTOM revoke gaps (N)` filter.
   - The filter uses backend capability metadata, not a frontend provider-only decision tree, so it excludes Microsoft unsupported rows and CUSTOM rows whose Provider Revoke path is already supported.
+- Provider Revoke capability filters shipped on 2026-05-11: `docs/OAUTH_CREDENTIAL_PROVIDER_REVOKE_FILTERS_DESIGN_VERIFICATION_20260511.md`
+  - `/admin/oauth-credentials` now has mutually exclusive local filters for `All`, `Provider revoke ready`, `Provider revoke blocked`, and `CUSTOM revoke gaps`.
+  - The filters narrow the currently loaded server-filtered inventory and continue to use backend-owned `providerRevokeSupported` metadata as the source of truth.
 
 ## v1 Revoke invariants
 
