@@ -99,3 +99,21 @@ Breakdown:
 - Frontend lint passed.
 - Frontend production build compiled successfully; existing CRA bundle-size
   advisory only.
+
+### GitHub Actions
+
+Run: `25719631026`
+
+Head commit: `71176b9`
+
+Result: success.
+
+| Job | Result | Duration |
+| --- | --- | --- |
+| Backend Verify | success | 2m19s |
+| Frontend Build & Test | success | 10m4s |
+| Phase C Security Verification | success | 5m5s |
+| Phase 5 Mocked Regression Gate | success | 6m32s |
+| Property Encryption Closeout Gate | success | 4m59s |
+| Acceptance Smoke (3 admin pages) | success | 6m51s |
+| Frontend E2E Core Gate | success | 12m11s |
