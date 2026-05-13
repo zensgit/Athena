@@ -75,6 +75,22 @@ git diff --check -- ecm-frontend/src/pages/TransferReplicationPage.tsx \
 
 Result: passed.
 
+### Remote CI
+
+Run: `25785229098`
+
+Commit: `5517174 feat(transfer): add definition source folder picker`
+
+Result: passed.
+
+- Backend Verify: passed
+- Frontend Build & Test: passed
+- Phase C Security Verification: passed
+- Phase 5 Mocked Regression Gate: passed
+- Property Encryption Closeout Gate: passed
+- Frontend E2E Core Gate: passed
+- Acceptance Smoke (3 admin pages): passed
+
 ## Residual Work
 
 - Document source node browsing remains manual because the existing reusable
