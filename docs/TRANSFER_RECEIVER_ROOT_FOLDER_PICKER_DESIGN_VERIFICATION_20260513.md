@@ -63,6 +63,22 @@ CI=true npm run build
 Result: compiled successfully. CRA still reports the existing bundle-size
 advisory; no build failure was produced.
 
+### Remote CI
+
+Run: `25781971742`
+
+Commit: `efbafc1 feat(transfer): add receiver root folder picker`
+
+Result: passed.
+
+- Backend Verify: passed
+- Frontend Build & Test: passed
+- Phase C Security Verification: passed
+- Phase 5 Mocked Regression Gate: passed
+- Frontend E2E Core Gate: passed
+- Property Encryption Closeout Gate: passed
+- Acceptance Smoke (3 admin pages): passed
+
 ## Residual Work
 
 - Transfer receiver diagnostics remain summarized fields rather than a full
