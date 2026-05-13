@@ -20,6 +20,10 @@ Completed delivery:
 - Property Encryption closeout preflight is implemented: one script runs all local non-Docker evidence and records Docker-backed gate availability.
 - Property Encryption CI closeout gate is implemented: GitHub Actions now runs the preflight with `REQUIRE_DOCKER_BACKED_GATE=1` after backend and frontend gates.
 - Final acceptance matrix is started in `docs/PROPERTY_ENCRYPTION_FINAL_ACCEPTANCE_MATRIX_20260505.md` with push evidence, CI run ID, gate criteria, and failure triage.
+- Post-closeout async governance is implemented: backfill and rewrap jobs now appear in the shared Async Task Health Overview and Recent Async Tasks surfaces.
+- The Property Encryption admin page now links directly to `/admin?asyncTaskDomain=propertyencryption`.
+- The Property Encryption closeout preflight now includes the async-governance service, lifecycle, analytics-controller, and analytics-security contracts in its default non-Docker backend target.
+- The Phase 5 mocked regression list now includes the async-governance overview fallback spec that pins `overview-required` for Property Encryption when the unified overview endpoint is unavailable.
 - Protocol endpoint security-test expansion has covered Transfer Receiver, WOPI Host, CMIS AtomPub, and CMIS Browser patterns in prior security-test docs.
 
 Verified evidence from latest rewrap-ledger slice:
@@ -42,6 +46,10 @@ Verified evidence from latest rewrap-ledger slice:
 - CI run `25418055312` failure triaged: backend failed on PostgreSQL JSONB/native-query cast plus timestamp/JSONB formatting assertions; frontend failed on a long operator-flow Jest timeout. Fixes are documented in `docs/PROPERTY_ENCRYPTION_CI_RUN_25418055312_FIXES_DESIGN_VERIFICATION_20260505.md`.
 - CI run `25418484543` follow-up failure triaged: backend runner PostgreSQL does not provide `jsonb_object_length(jsonb)`; repository count now uses `CROSS JOIN LATERAL jsonb_each(...)`.
 - CI run `25418606323` achieved the benchmark blocker: `Property Encryption Closeout Gate` passed with backend non-Docker 75/75, frontend targeted 10/10, production build, Phase 5 registry 24/24, and Docker-backed PostgreSQL gate 65/65.
+- Async governance backend addendum: 65 targeted tests passed across `PropertyEncryptionAsyncTaskServiceTest`, async governance/lifecycle tests, and analytics controller/security tests.
+- Async governance closeout-gate addendum: local non-Docker preflight now runs 140 backend tests, 10 frontend targeted tests, lint, and Phase 5 registry-only validation successfully.
+- Async governance mocked E2E addendum: targeted Playwright specs passed for the Property Encryption bridge, Admin Dashboard task filtering/cancel action, and fallback `overview-required` behavior.
+- Async governance one-command addendum gate: `scripts/property-encryption-async-governance-gate.sh` passed the full local path with backend 65/65, Jest 2/2, lint, production build, Phase 5 registry-only validation, and mocked E2E 3/3.
 
 Known environment constraint:
 
@@ -160,6 +168,60 @@ Delivered tests:
 
 Status: implemented and locally verified.
 
+### Completed: Async Governance Integration
+
+Goal: make property-encryption backfill and rewrap jobs visible and actionable
+from the shared async task governance control plane.
+
+Delivered changes:
+
+- Added a `propertyEncryption` async-governance provider that aggregates
+  backfill and rewrap job ledgers.
+- Normalized job statuses into the shared queued/running/completed/cancelled/failed buckets.
+- Exposed cancel actions only for `PLANNED` and `RUNNING` jobs.
+- Kept `CANCEL_REQUESTED` jobs active/running without exposing duplicate cancel.
+- Added lifecycle aliases for `propertyencryption`, `property-encryption`,
+  `property_encryption`, and `propertyencryptionjobs`.
+- Added Admin Dashboard health overview and Recent Async Tasks support for
+  Property Encryption.
+- Added URL-state support for `/admin?asyncTaskDomain=propertyencryption`.
+- Added an `Open in Async Governance` link from the Property Encryption admin page.
+
+Delivered tests:
+
+- Backend service/lifecycle/controller/security target: 65 tests passed.
+- Frontend targeted Jest and production build passed.
+- Mocked Playwright coverage passed for admin bridge, domain filtering, cancel
+  action, unified overview rendering, and fallback `overview-required` behavior.
+
+Status: implemented and locally verified; pending next pushed CI run.
+
+### Completed: Async Governance Closeout Gate Addendum
+
+Goal: ensure the property-encryption closeout gate does not miss the new
+async-governance contracts.
+
+Delivered changes:
+
+- Added async-governance backend contract tests to
+  `scripts/property-encryption-closeout-preflight.sh`.
+- Added the fallback mocked E2E spec to `scripts/phase5-regression.sh`.
+- Updated the final acceptance matrix with a 2026-05-12 post-closeout addendum.
+- Added `scripts/property-encryption-async-governance-gate.sh` as the one-command
+  local validation entry point for this addendum.
+
+Delivered tests:
+
+- Local closeout preflight non-Docker path: 140 backend tests, 10 frontend tests,
+  lint, and Phase 5 registry-only validation passed.
+- `admin-async-governance-overview-fallback.mock.spec.ts`: 1 Playwright test passed.
+- Full local async-governance gate: backend 65/65, Jest 2/2, lint, production
+  build, Phase 5 registry-only validation, and mocked E2E 3/3 passed.
+- `git diff --check -- . ':!.env'`: passed.
+
+Status: implemented and locally verified; Docker-backed CI evidence remains the
+next-push responsibility.
+
 ### Completed: Runtime Protected-Payload Redaction
 
 Goal: prevent raw protected payload strings from leaking through generic runtime views, search helpers, or editor save payloads.
@@ -204,13 +266,17 @@ Status: implemented and locally verified.
 
 ## Remaining Development Estimate
 
-Remaining work to reach Property Encryption benchmark closeout: about `0.25-0.5 person-day` if CI is green, plus Docker issue buffer if PostgreSQL exposes real failures.
+Remaining work to refresh Property Encryption benchmark evidence after the
+2026-05-12 async-governance addendum: about `0.25-0.5 person-day` if CI is
+green, plus Docker issue buffer if PostgreSQL exposes real failures.
 
 Recommended execution order:
 
-1. Push and observe `Property Encryption Closeout Gate`.
-2. If green, record the CI run in the final acceptance matrix.
-3. If red, fix the concrete Docker/Testcontainers/PostgreSQL failure and rerun the same gate.
+1. Run `scripts/property-encryption-async-governance-gate.sh` locally before push.
+2. Push the async-governance addendum bundle.
+3. Observe `Backend Verify`, `Frontend Build & Test`, `Property Encryption Closeout Gate`, and `Phase 5 Mocked Regression Gate`.
+4. If green, record the CI run in the final acceptance matrix addendum.
+5. If red, fix the concrete backend/frontend/Docker/Testcontainers/PostgreSQL/mocked-E2E failure and rerun the same gate.
 
 Current CI run to observe:
 
@@ -227,6 +293,22 @@ Run `25418606323` Property Encryption status: `Property Encryption Closeout Gate
 Do not broaden the UI beyond backend-supported execution semantics. The current UI is aligned to backend plan/run/cancel support and keeps unsafe jobs blocked by backend validation.
 
 ## Verification Commands
+
+Async governance addendum one-command gate:
+
+```bash
+MAVEN_BIN=/tmp/codex-maven/apache-maven-3.9.11/bin/mvn \
+scripts/property-encryption-async-governance-gate.sh
+```
+
+Async governance addendum lightweight gate:
+
+```bash
+MAVEN_BIN=/tmp/codex-maven/apache-maven-3.9.11/bin/mvn \
+RUN_FRONTEND_BUILD=0 \
+RUN_E2E=0 \
+scripts/property-encryption-async-governance-gate.sh
+```
 
 Backend targeted service and controller tests:
 

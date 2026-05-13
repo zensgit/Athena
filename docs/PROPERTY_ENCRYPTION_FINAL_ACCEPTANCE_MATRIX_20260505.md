@@ -18,6 +18,15 @@ Covered capability:
 - local closeout preflight
 - CI closeout gate wiring
 
+Post-closeout extension added on 2026-05-12:
+
+- unified async-governance domain for Property Encryption backfill and rewrap jobs
+- Admin Dashboard async health overview and Recent Async Tasks filtering for Property Encryption
+- operator bridge from `/admin/property-encryption` to `/admin?asyncTaskDomain=propertyencryption`
+- unified Recent Async Tasks cancel action for property-encryption jobs
+- closeout preflight coverage for the new async-governance service, lifecycle, analytics controller, and security contracts
+- mocked E2E fallback coverage for the no-legacy-summary `overview-required` behavior
+
 Out of scope:
 
 - replacing key-management infrastructure
@@ -170,6 +179,49 @@ Observed jobs at first poll:
 | Docker-backed PostgreSQL/Testcontainers | local host blocked by missing Docker socket | runs `25418606323` and `25419356309` passed; final job `74559015398` passed | Docker reachable and backfill gate passes |
 | Full CI baseline | runs `25418055312` and `25418484543` exposed backend + frontend CI gaps; run `25418606323` exposed the Flowable startup blocker | run `25419356309` passed all jobs | full workflow green |
 
+## 2026-05-12 Async Governance Addendum
+
+The original CI evidence above remains the final Docker-backed closeout for the
+core property-encryption benchmark. A later post-closeout slice connected the
+same backfill and rewrap ledgers to the shared async-governance control plane.
+
+Design and verification artifacts:
+
+```text
+docs/PROPERTY_ENCRYPTION_ASYNC_GOVERNANCE_DESIGN_VERIFICATION_20260512.md
+docs/PROPERTY_ENCRYPTION_CLOSEOUT_GATE_ASYNC_GOVERNANCE_VERIFICATION_20260512.md
+docs/PROPERTY_ENCRYPTION_ASYNC_GOVERNANCE_OVERVIEW_FALLBACK_E2E_VERIFICATION_20260512.md
+docs/PROPERTY_ENCRYPTION_ASYNC_GOVERNANCE_GATE_SCRIPT_DESIGN_VERIFICATION_20260512.md
+docs/PROPERTY_ENCRYPTION_ASYNC_GOVERNANCE_INTEGRATION_MANIFEST_20260512.md
+```
+
+Local evidence:
+
+```text
+Backend targeted async-governance suite: 65 tests, 0 failures, 0 errors
+Property Encryption closeout preflight non-Docker path: 140 tests, 0 failures, 0 errors
+Frontend targeted Jest: 3 suites, 10 tests
+Frontend production build: compiled successfully
+Playwright mocked async-governance specs: 3 tests passed across the targeted property-encryption/admin specs
+Phase 5 registry-only preflight: expected events 24, observed markers 24
+One-command async-governance gate: backend 65/65, Jest 2/2, lint, build, registry, mocked E2E 3/3 passed
+git diff --check -- . ':!.env': passed
+```
+
+Addendum acceptance matrix:
+
+| Gate | Local evidence | CI evidence required | Acceptance rule |
+| --- | --- | --- | --- |
+| Async-governance backend contract | `PropertyEncryptionAsyncTaskServiceTest`, `AsyncTaskGovernanceServiceTest`, `AsyncTaskLifecycleServiceTest`, `AnalyticsControllerTest`, and `AnalyticsControllerSecurityTest` passed | next `Backend Verify` and `Property Encryption Closeout Gate` run | 0 failures, 0 errors |
+| Admin Dashboard async-governance UI | targeted Jest, production build, and mocked Playwright specs passed | next `Frontend Build & Test` and `Phase 5 Mocked Regression Gate` run | no build, lint, or mocked E2E failure |
+| Overview fallback behavior | `admin-async-governance-overview-fallback.mock.spec.ts` passed | next `Phase 5 Mocked Regression Gate` run | Property Encryption renders `degraded`, `overview-required`, and `CRITICAL` when unified overview is unavailable |
+| One-command local addendum gate | `scripts/property-encryption-async-governance-gate.sh` full path passed | use before push and when triaging addendum failures | backend, frontend, registry, and mocked E2E addendum checks pass from one command |
+| Closeout preflight coverage | preflight backend non-Docker target expanded from 75 to 140 tests and passed locally with Docker gate skipped | next `Property Encryption Closeout Gate` run with `REQUIRE_DOCKER_BACKED_GATE=1` | async-governance contracts and Docker-backed PostgreSQL gate both pass |
+
+This addendum has not yet replaced the historical CI run IDs in the main
+matrix. Record the next green CI run here after pushing the 2026-05-12
+post-closeout changes.
+
 ## Phase C Follow-Up
 
 Run `25418606323` failed `Phase C Security Verification` before security verification executed.
@@ -234,6 +286,8 @@ If `Property Encryption Closeout Gate` fails, classify the failure as one of:
 
 ## Remaining Work
 
-Property Encryption closeout is complete at the CI gate level.
+Property Encryption closeout is complete at the CI gate level for the original
+benchmark. The 2026-05-12 async-governance addendum is locally verified and
+awaits the next pushed CI run for fresh end-to-end gate evidence.
 
 Keep `.env` out of commits.
