@@ -11,6 +11,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -18,6 +19,13 @@ import java.util.UUID;
 public interface PropertyEncryptionRewrapJobRepository extends JpaRepository<PropertyEncryptionRewrapJob, UUID> {
 
     List<PropertyEncryptionRewrapJob> findAllByOrderByRequestedAtDesc(Pageable pageable);
+
+    List<PropertyEncryptionRewrapJob> findByStatusInOrderByRequestedAtDesc(
+        Collection<RewrapJobStatus> statuses,
+        Pageable pageable
+    );
+
+    long countByStatus(RewrapJobStatus status);
 
     boolean existsByIdAndStatus(UUID id, RewrapJobStatus status);
 

@@ -1111,6 +1111,83 @@ class AnalyticsControllerTest {
     }
 
     @Test
+    @DisplayName("Async lifecycle task list exposes property encryption aliases and cancel URL")
+    void asyncLifecycleTaskListExposesPropertyEncryptionAliasAndCancelUrl() throws Exception {
+        String backfillJobId = "00000000-0000-0000-0000-000000000010";
+        Mockito.when(asyncTaskLifecycleService.listRecentTasks(20, 0, "property-encryption", "running", true))
+            .thenReturn(new AsyncTaskLifecycleListSnapshot(
+                java.time.Instant.parse("2026-05-12T15:30:00Z"),
+                "propertyencryption",
+                "running",
+                1,
+                1,
+                0,
+                20,
+                false,
+                List.of(
+                    new AsyncTaskStatusSnapshot(
+                        "propertyEncryption",
+                        "Property Encryption",
+                        "backfill:" + backfillJobId,
+                        "RUNNING",
+                        null,
+                        java.time.Instant.parse("2026-05-12T15:00:00Z"),
+                        java.time.Instant.parse("2026-05-12T15:01:00Z"),
+                        java.time.Instant.parse("2026-05-12T15:05:00Z"),
+                        null,
+                        null,
+                        null,
+                        null,
+                        "admin",
+                        null,
+                        new AsyncTaskActionSnapshot(
+                            "/api/v1/admin/property-encryption/backfill-jobs/" + backfillJobId + "/cancel",
+                            null,
+                            null,
+                            true,
+                            false,
+                            false
+                        )
+                    ).withAcknowledgement(
+                        "propertyEncryption|backfill:" + backfillJobId + "|RUNNING|2026-05-12T15:05:00Z",
+                        false,
+                        null
+                    )
+                )
+            ));
+
+        mockMvc.perform(get("/api/v1/analytics/async-governance/tasks")
+                .param("maxItems", "20")
+                .param("skipCount", "0")
+                .param("domain", "property-encryption")
+                .param("status", "running")
+                .param("includeAcknowledged", "true"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.generatedAt").value("2026-05-12T15:30:00Z"))
+            .andExpect(jsonPath("$.domainFilter").value("propertyencryption"))
+            .andExpect(jsonPath("$.statusFilter").value("running"))
+            .andExpect(jsonPath("$.count").value(1))
+            .andExpect(jsonPath("$.totalCount").value(1))
+            .andExpect(jsonPath("$.paging.skipCount").value(0))
+            .andExpect(jsonPath("$.paging.maxItems").value(20))
+            .andExpect(jsonPath("$.items[0].domainKey").value("propertyEncryption"))
+            .andExpect(jsonPath("$.items[0].domainLabel").value("Property Encryption"))
+            .andExpect(jsonPath("$.items[0].taskId").value("backfill:" + backfillJobId))
+            .andExpect(jsonPath("$.items[0].status").value("RUNNING"))
+            .andExpect(jsonPath("$.items[0].createdBy").value("admin"))
+            .andExpect(jsonPath("$.items[0].fingerprint").value("propertyEncryption|backfill:" + backfillJobId + "|RUNNING|2026-05-12T15:05:00Z"))
+            .andExpect(jsonPath("$.items[0].cancelUrl").value("/api/v1/admin/property-encryption/backfill-jobs/" + backfillJobId + "/cancel"))
+            .andExpect(jsonPath("$.items[0].downloadUrl").doesNotExist())
+            .andExpect(jsonPath("$.items[0].cleanupUrl").doesNotExist())
+            .andExpect(jsonPath("$.items[0].cancellable").value(true))
+            .andExpect(jsonPath("$.items[0].cleanupEligible").value(false))
+            .andExpect(jsonPath("$.items[0].downloadReady").value(false))
+            .andExpect(jsonPath("$.items[0].acknowledged").value(false));
+
+        Mockito.verify(asyncTaskLifecycleService).listRecentTasks(20, 0, "property-encryption", "running", true);
+    }
+
+    @Test
     @DisplayName("Async lifecycle task acknowledge persists operator acknowledgement")
     void acknowledgeAsyncLifecycleTaskPersistsAcknowledgement() throws Exception {
         AsyncTaskStatusSnapshot task = new AsyncTaskStatusSnapshot(

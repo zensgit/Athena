@@ -11,6 +11,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -18,6 +19,11 @@ import java.util.UUID;
 public interface PropertyEncryptionBackfillJobRepository extends JpaRepository<PropertyEncryptionBackfillJob, UUID> {
 
     List<PropertyEncryptionBackfillJob> findAllByOrderByRequestedAtDesc(Pageable pageable);
+
+    List<PropertyEncryptionBackfillJob> findByStatusInOrderByRequestedAtDesc(
+        Collection<BackfillJobStatus> statuses,
+        Pageable pageable
+    );
 
     long countByStatus(BackfillJobStatus status);
 

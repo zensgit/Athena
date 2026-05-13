@@ -46,6 +46,12 @@ class AsyncTaskGovernanceServiceTest {
                         0
                     )
                 )
+            ),
+            new SimpleAsyncTaskGovernanceProvider(
+                60,
+                "propertyEncryption",
+                "Property Encryption",
+                () -> AsyncTaskSummarySnapshot.ofBreakdown(2, 0, 0, 0, 1, 0, 0)
             )
         ));
         AsyncTaskGovernanceService service = new AsyncTaskGovernanceService(registry);
@@ -54,21 +60,21 @@ class AsyncTaskGovernanceServiceTest {
 
         assertEquals(AsyncTaskGovernanceStatus.HEALTHY, overview.overallStatus());
         assertEquals(AsyncTaskGovernanceRiskLevel.HIGH, overview.overallRiskLevel());
-        assertEquals(3, overview.totalDomains());
+        assertEquals(4, overview.totalDomains());
         assertEquals(0, overview.degradedDomainCount());
-        assertEquals(List.of("audit", "batchDownload", "preview"), overview.domains().stream()
+        assertEquals(List.of("audit", "batchDownload", "preview", "propertyEncryption"), overview.domains().stream()
             .map(AsyncTaskGovernanceDomainSnapshot::key)
             .toList());
 
         AsyncTaskSummarySnapshot summary = overview.summary();
-        assertEquals(9L, summary.totalCount());
-        assertEquals(5L, summary.activeCount());
-        assertEquals(4L, summary.terminalCount());
-        assertEquals(2L, summary.queuedCount());
+        assertEquals(12L, summary.totalCount());
+        assertEquals(7L, summary.activeCount());
+        assertEquals(5L, summary.terminalCount());
+        assertEquals(4L, summary.queuedCount());
         assertEquals(3L, summary.runningCount());
         assertEquals(2L, summary.completedCount());
         assertEquals(1L, summary.cancelledCount());
-        assertEquals(0L, summary.failedCount());
+        assertEquals(1L, summary.failedCount());
         assertEquals(1L, summary.timedOutCount());
         assertEquals(0L, summary.expiredCount());
 
@@ -77,6 +83,11 @@ class AsyncTaskGovernanceServiceTest {
         assertNull(batchDomain.error());
         assertEquals(3L, batchDomain.summary().activeCount());
         assertEquals(2L, batchDomain.summary().runningCount());
+
+        AsyncTaskGovernanceDomainSnapshot propertyEncryptionDomain = overview.domains().get(3);
+        assertEquals(AsyncTaskGovernanceRiskLevel.MEDIUM, propertyEncryptionDomain.riskLevel());
+        assertEquals(2L, propertyEncryptionDomain.summary().queuedCount());
+        assertEquals(1L, propertyEncryptionDomain.summary().failedCount());
     }
 
     @Test

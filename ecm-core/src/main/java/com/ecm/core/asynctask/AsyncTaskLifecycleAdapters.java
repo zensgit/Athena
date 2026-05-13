@@ -4,6 +4,10 @@ import com.ecm.core.controller.BatchDownloadController;
 import com.ecm.core.controller.OpsRecoveryController;
 import com.ecm.core.controller.PreviewDiagnosticsController;
 import com.ecm.core.controller.SearchController;
+import com.ecm.core.entity.PropertyEncryptionBackfillJob;
+import com.ecm.core.entity.PropertyEncryptionBackfillJob.BackfillJobStatus;
+import com.ecm.core.entity.PropertyEncryptionRewrapJob;
+import com.ecm.core.entity.PropertyEncryptionRewrapJob.RewrapJobStatus;
 import com.ecm.core.service.AuditExportAsyncTaskRegistry;
 
 import java.time.Instant;
@@ -197,11 +201,123 @@ public final class AsyncTaskLifecycleAdapters {
         );
     }
 
+    public static AsyncTaskStatusSnapshot fromPropertyEncryptionBackfill(
+        String domainKey,
+        String domainLabel,
+        PropertyEncryptionBackfillJob job
+    ) {
+        Objects.requireNonNull(job, "property encryption backfill job must not be null");
+        String taskId = "backfill:" + job.getId();
+        String basePath = "/api/v1/admin/property-encryption/backfill-jobs/" + job.getId();
+        String status = normalizePropertyEncryptionStatus(job.getStatus());
+        boolean cancellable = job.getStatus() == BackfillJobStatus.PLANNED || job.getStatus() == BackfillJobStatus.RUNNING;
+        boolean terminal = isTerminalPropertyEncryptionStatus(job.getStatus());
+        return new AsyncTaskStatusSnapshot(
+            domainKey,
+            domainLabel,
+            taskId,
+            status,
+            job.getLastError(),
+            toInstant(job.getRequestedAt()),
+            toInstant(job.getStartedAt()),
+            toInstant(job.getUpdatedAt()),
+            null,
+            null,
+            toInstant(job.getFinishedAt()),
+            null,
+            job.getRequestedBy(),
+            null,
+            new AsyncTaskActionSnapshot(
+                cancellable ? basePath + "/cancel" : null,
+                null,
+                null,
+                cancellable,
+                terminal,
+                false
+            )
+        );
+    }
+
+    public static AsyncTaskStatusSnapshot fromPropertyEncryptionRewrap(
+        String domainKey,
+        String domainLabel,
+        PropertyEncryptionRewrapJob job
+    ) {
+        Objects.requireNonNull(job, "property encryption rewrap job must not be null");
+        String taskId = "rewrap:" + job.getId();
+        String basePath = "/api/v1/admin/property-encryption/rewrap-jobs/" + job.getId();
+        String status = normalizePropertyEncryptionStatus(job.getStatus());
+        boolean cancellable = job.getStatus() == RewrapJobStatus.PLANNED || job.getStatus() == RewrapJobStatus.RUNNING;
+        boolean terminal = isTerminalPropertyEncryptionStatus(job.getStatus());
+        return new AsyncTaskStatusSnapshot(
+            domainKey,
+            domainLabel,
+            taskId,
+            status,
+            job.getLastError(),
+            toInstant(job.getRequestedAt()),
+            toInstant(job.getStartedAt()),
+            toInstant(job.getUpdatedAt()),
+            null,
+            null,
+            toInstant(job.getFinishedAt()),
+            null,
+            job.getRequestedBy(),
+            null,
+            new AsyncTaskActionSnapshot(
+                cancellable ? basePath + "/cancel" : null,
+                null,
+                null,
+                cancellable,
+                terminal,
+                false
+            )
+        );
+    }
+
     private static Instant toInstant(LocalDateTime value) {
         return value != null ? value.atZone(SYSTEM_ZONE).toInstant() : null;
     }
 
     private static boolean equalsIgnoreCase(String left, String right) {
         return left != null && right != null && left.equalsIgnoreCase(right);
+    }
+
+    private static String normalizePropertyEncryptionStatus(BackfillJobStatus status) {
+        if (status == null) {
+            return "UNKNOWN";
+        }
+        return switch (status) {
+            case PLANNED -> "QUEUED";
+            case RUNNING, CANCEL_REQUESTED -> "RUNNING";
+            case SUCCEEDED -> "COMPLETED";
+            case FAILED -> "FAILED";
+            case CANCELLED -> "CANCELLED";
+        };
+    }
+
+    private static String normalizePropertyEncryptionStatus(RewrapJobStatus status) {
+        if (status == null) {
+            return "UNKNOWN";
+        }
+        return switch (status) {
+            case PLANNED -> "QUEUED";
+            case RUNNING, CANCEL_REQUESTED -> "RUNNING";
+            case SUCCEEDED -> "COMPLETED";
+            case FAILED -> "FAILED";
+            case CANCELLED -> "CANCELLED";
+        };
+    }
+
+    private static boolean isTerminalPropertyEncryptionStatus(BackfillJobStatus status) {
+        return status == BackfillJobStatus.SUCCEEDED
+            || status == BackfillJobStatus.FAILED
+            || status == BackfillJobStatus.CANCELLED;
+    }
+
+    private static boolean isTerminalPropertyEncryptionStatus(RewrapJobStatus status) {
+        return status == RewrapJobStatus.SUCCEEDED
+            || status == RewrapJobStatus.FAILED
+            || status == RewrapJobStatus.CANCELLED;
     }
 }

@@ -70,4 +70,16 @@ public class AsyncTaskGovernanceConfiguration {
             () -> AsyncTaskSummaryAdapters.fromBatchDownload(batchDownloadAsyncTaskRegistry.summary())
         );
     }
+
+    @Bean
+    AsyncTaskGovernanceProvider propertyEncryptionAsyncTaskGovernanceProvider(
+        PropertyEncryptionAsyncTaskService propertyEncryptionAsyncTaskService
+    ) {
+        return new SimpleAsyncTaskGovernanceProvider(
+            60,
+            PropertyEncryptionAsyncTaskService.DOMAIN_KEY,
+            PropertyEncryptionAsyncTaskService.DOMAIN_LABEL,
+            () -> propertyEncryptionAsyncTaskService.summary(null)
+        );
+    }
 }

@@ -28,6 +28,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
@@ -50,6 +52,9 @@ class AsyncTaskLifecycleServiceTest {
     private BatchDownloadController batchDownloadController;
 
     @Mock
+    private PropertyEncryptionAsyncTaskService propertyEncryptionAsyncTaskService;
+
+    @Mock
     private AsyncTaskAcknowledgementService asyncTaskAcknowledgementService;
 
     private AuditExportAsyncTaskRegistry auditExportAsyncTaskRegistry;
@@ -70,8 +75,13 @@ class AsyncTaskLifecycleServiceTest {
             previewDiagnosticsController,
             opsRecoveryController,
             batchDownloadController,
+            propertyEncryptionAsyncTaskService,
             asyncTaskAcknowledgementService
         );
+        lenient().when(propertyEncryptionAsyncTaskService.summary(any()))
+            .thenReturn(AsyncTaskSummarySnapshot.ofBreakdown(0, 0, 0, 0, 0, 0, 0));
+        lenient().when(propertyEncryptionAsyncTaskService.listRecent(anyInt(), any()))
+            .thenReturn(List.of());
         lenient().when(asyncTaskAcknowledgementService.applyAcknowledgements(anyList(), eq(false)))
             .thenAnswer(invocation -> invocation.getArgument(0));
         lenient().when(asyncTaskAcknowledgementService.applyAcknowledgements(anyList(), eq(true)))
@@ -301,7 +311,57 @@ class AsyncTaskLifecycleServiceTest {
         assertTrue(snapshot.items().get(0).actions().cleanupEligible());
         assertTrue(snapshot.items().get(0).actions().downloadReady());
 
-        verifyNoInteractions(searchController, previewDiagnosticsController, opsRecoveryController);
+        verifyNoInteractions(searchController, previewDiagnosticsController, opsRecoveryController, propertyEncryptionAsyncTaskService);
+    }
+
+    @Test
+    @DisplayName("Recent lifecycle list supports property encryption domain and shared cancel affordance")
+    void listRecentTasksSupportsPropertyEncryptionDomain() {
+        AsyncTaskStatusSnapshot task = new AsyncTaskStatusSnapshot(
+            PropertyEncryptionAsyncTaskService.DOMAIN_KEY,
+            PropertyEncryptionAsyncTaskService.DOMAIN_LABEL,
+            "backfill:00000000-0000-0000-0000-000000000004",
+            "RUNNING",
+            null,
+            Instant.parse("2026-05-12T10:00:00Z"),
+            Instant.parse("2026-05-12T10:01:00Z"),
+            Instant.parse("2026-05-12T10:02:00Z"),
+            null,
+            null,
+            null,
+            null,
+            "admin",
+            null,
+            new AsyncTaskActionSnapshot(
+                "/api/v1/admin/property-encryption/backfill-jobs/00000000-0000-0000-0000-000000000004/cancel",
+                null,
+                null,
+                true,
+                false,
+                false
+            )
+        );
+        when(propertyEncryptionAsyncTaskService.summary("running"))
+            .thenReturn(AsyncTaskSummarySnapshot.ofBreakdown(0, 1, 0, 0, 0, 0, 0));
+        when(propertyEncryptionAsyncTaskService.listRecent(10, "running"))
+            .thenReturn(List.of(task));
+
+        AsyncTaskLifecycleListSnapshot snapshot = asyncTaskLifecycleService.listRecentTasks(
+            10,
+            0,
+            "property-encryption",
+            "running"
+        );
+
+        assertEquals("propertyencryption", snapshot.domainFilter());
+        assertEquals("running", snapshot.statusFilter());
+        assertEquals(1, snapshot.count());
+        assertEquals(1L, snapshot.totalCount());
+        assertEquals(PropertyEncryptionAsyncTaskService.DOMAIN_KEY, snapshot.items().get(0).domainKey());
+        assertEquals("RUNNING", snapshot.items().get(0).status());
+        assertTrue(snapshot.items().get(0).actions().cancellable());
+
+        verifyNoInteractions(searchController, previewDiagnosticsController, opsRecoveryController, batchDownloadController);
     }
 
     @Test

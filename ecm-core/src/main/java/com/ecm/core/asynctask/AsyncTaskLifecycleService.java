@@ -33,6 +33,7 @@ public class AsyncTaskLifecycleService {
     private final PreviewDiagnosticsController previewDiagnosticsController;
     private final OpsRecoveryController opsRecoveryController;
     private final BatchDownloadController batchDownloadController;
+    private final PropertyEncryptionAsyncTaskService propertyEncryptionAsyncTaskService;
     private final AsyncTaskAcknowledgementService asyncTaskAcknowledgementService;
 
     public AsyncTaskLifecycleListSnapshot listRecentTasks(Integer maxItems, Integer skipCount, String domain, String status) {
@@ -100,6 +101,11 @@ public class AsyncTaskLifecycleService {
             mergedItems.addAll(body.items().stream()
                 .map(task -> AsyncTaskLifecycleAdapters.fromBatchDownload("batchDownload", "Batch Download", task))
                 .toList());
+        }
+
+        if (normalizedDomain == null || "propertyencryption".equals(normalizedDomain)) {
+            totalCount += propertyEncryptionAsyncTaskService.summary(normalizedStatus).totalCount();
+            mergedItems.addAll(propertyEncryptionAsyncTaskService.listRecent(fetchLimit, normalizedStatus));
         }
 
         mergedItems.sort(Comparator.comparing(AsyncTaskStatusSnapshot::sortTimestamp).reversed()
@@ -170,8 +176,9 @@ public class AsyncTaskLifecycleService {
             return null;
         }
         return switch (normalized) {
-            case "audit", "search", "preview", "ops", "batchdownload" -> normalized;
+            case "audit", "search", "preview", "ops", "batchdownload", "propertyencryption" -> normalized;
             case "batch", "batch-download", "batch_download" -> "batchdownload";
+            case "property-encryption", "property_encryption", "propertyencryptionjobs" -> "propertyencryption";
             default -> throw new IllegalArgumentException("Unknown async lifecycle domain: " + domain);
         };
     }
