@@ -8,6 +8,25 @@ export type ReplicationTransportStatus = 'NEVER_RUN' | 'RUNNING' | 'SUCCESS' | '
 export type ReceiverAccessStatus = 'NEVER_USED' | 'SUCCESS' | 'FAILED';
 export type ReplicationConflictPolicy = 'SKIP' | 'RENAME' | 'OVERWRITE';
 
+export const TRANSFER_REPLICATION_UNEXPECTED_RESPONSE_MESSAGE =
+  'Transfer replication endpoint returned an unexpected response. Mocked CI gate may not cover it; backend route may be missing.';
+
+const isObject = (value: unknown): value is Record<string, unknown> => (
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+);
+
+const isStringOrNullish = (value: unknown): value is string | null | undefined => (
+  value === null || value === undefined || typeof value === 'string'
+);
+
+const isNumber = (value: unknown): value is number => (
+  typeof value === 'number' && Number.isFinite(value)
+);
+
+const hasCoreTimestamps = (value: Record<string, unknown>) => (
+  typeof value.createdAt === 'string' && isStringOrNullish(value.updatedAt)
+);
+
 export interface TransferTargetDto {
   id: string;
   name: string;
@@ -214,21 +233,173 @@ export interface TransferReceiverMutationRequest {
   enabled?: boolean;
 }
 
+const isTransferTargetDto = (value: unknown): value is TransferTargetDto => {
+  if (!isObject(value)) {
+    return false;
+  }
+  return typeof value.id === 'string'
+    && typeof value.name === 'string'
+    && isStringOrNullish(value.description)
+    && typeof value.transportType === 'string'
+    && typeof value.targetFolderId === 'string'
+    && isStringOrNullish(value.targetFolderName)
+    && isStringOrNullish(value.endpointUrl)
+    && isStringOrNullish(value.endpointPath)
+    && typeof value.authType === 'string'
+    && isStringOrNullish(value.authUsername)
+    && typeof value.authSecretConfigured === 'boolean'
+    && typeof value.enabled === 'boolean'
+    && typeof value.verificationStatus === 'string'
+    && isStringOrNullish(value.verificationMessage)
+    && isStringOrNullish(value.remoteRepositoryId)
+    && isStringOrNullish(value.lastVerifiedAt)
+    && hasCoreTimestamps(value);
+};
+
+const isReplicationDefinitionDto = (value: unknown): value is ReplicationDefinitionDto => {
+  if (!isObject(value)) {
+    return false;
+  }
+  return typeof value.id === 'string'
+    && typeof value.name === 'string'
+    && isStringOrNullish(value.description)
+    && typeof value.sourceNodeId === 'string'
+    && isStringOrNullish(value.sourceNodeName)
+    && typeof value.transferTargetId === 'string'
+    && isStringOrNullish(value.transferTargetName)
+    && typeof value.includeChildren === 'boolean'
+    && typeof value.enabled === 'boolean'
+    && isStringOrNullish(value.conflictPolicy)
+    && isStringOrNullish(value.cronExpression)
+    && isStringOrNullish(value.scheduleTimezone)
+    && isStringOrNullish(value.nextRunAt)
+    && typeof value.autoRetryEnabled === 'boolean'
+    && isNumber(value.maxRetryAttempts)
+    && isNumber(value.retryBackoffMinutes)
+    && isNumber(value.jobRetentionDays)
+    && isStringOrNullish(value.lastRunAt)
+    && hasCoreTimestamps(value);
+};
+
+const isTransferReceiverDto = (value: unknown): value is TransferReceiverDto => {
+  if (!isObject(value)) {
+    return false;
+  }
+  return typeof value.id === 'string'
+    && typeof value.name === 'string'
+    && isStringOrNullish(value.description)
+    && typeof value.rootFolderId === 'string'
+    && isStringOrNullish(value.rootFolderName)
+    && typeof value.authType === 'string'
+    && isStringOrNullish(value.authUsername)
+    && typeof value.authSecretConfigured === 'boolean'
+    && typeof value.enabled === 'boolean'
+    && typeof value.verificationStatus === 'string'
+    && isStringOrNullish(value.verificationMessage)
+    && isStringOrNullish(value.lastVerifiedAt)
+    && typeof value.lastAccessStatus === 'string'
+    && isStringOrNullish(value.lastAccessMessage)
+    && isStringOrNullish(value.lastAccessedAt)
+    && hasCoreTimestamps(value);
+};
+
+const isReplicationJobEntryReport = (value: unknown): value is ReplicationJobEntryReport | null | undefined => {
+  if (value === null || value === undefined) {
+    return true;
+  }
+  return isObject(value);
+};
+
+const isReplicationJobDto = (value: unknown): value is ReplicationJobDto => {
+  if (!isObject(value)) {
+    return false;
+  }
+  return typeof value.id === 'string'
+    && typeof value.definitionId === 'string'
+    && typeof value.transferTargetId === 'string'
+    && typeof value.sourceNodeId === 'string'
+    && isStringOrNullish(value.retryOfJobId)
+    && isNumber(value.attemptNumber)
+    && isStringOrNullish(value.scheduledFor)
+    && isStringOrNullish(value.copiedNodeId)
+    && typeof value.userId === 'string'
+    && typeof value.status === 'string'
+    && isStringOrNullish(value.lastMessage)
+    && typeof value.transportStatus === 'string'
+    && isStringOrNullish(value.transportMessage)
+    && isStringOrNullish(value.errorLog)
+    && isReplicationJobEntryReport(value.entryReport)
+    && typeof value.reportTruncated === 'boolean'
+    && isStringOrNullish(value.lastAttemptedAt)
+    && isStringOrNullish(value.startedAt)
+    && isStringOrNullish(value.completedAt)
+    && hasCoreTimestamps(value);
+};
+
+const assertArrayResponse = <T>(
+  value: unknown,
+  predicate: (item: unknown) => item is T
+): T[] => {
+  if (!Array.isArray(value)) {
+    throw new Error(TRANSFER_REPLICATION_UNEXPECTED_RESPONSE_MESSAGE);
+  }
+  if (!value.every(predicate)) {
+    throw new Error(TRANSFER_REPLICATION_UNEXPECTED_RESPONSE_MESSAGE);
+  }
+  return value;
+};
+
+const assertResponse = <T>(
+  value: unknown,
+  predicate: (item: unknown) => item is T
+): T => {
+  if (!predicate(value)) {
+    throw new Error(TRANSFER_REPLICATION_UNEXPECTED_RESPONSE_MESSAGE);
+  }
+  return value;
+};
+
+const assertPageResponse = <T>(
+  value: unknown,
+  predicate: (item: unknown) => item is T
+): PageResponse<T> => {
+  if (!isObject(value)
+    || !Array.isArray(value.content)
+    || !isNumber(value.totalElements)
+    || !isNumber(value.totalPages)
+    || !isNumber(value.number)
+    || !isNumber(value.size)
+    || !value.content.every(predicate)) {
+    throw new Error(TRANSFER_REPLICATION_UNEXPECTED_RESPONSE_MESSAGE);
+  }
+  return {
+    content: value.content,
+    totalElements: value.totalElements,
+    totalPages: value.totalPages,
+    number: value.number,
+    size: value.size,
+  };
+};
+
 class TransferReplicationService {
   async listTargets(): Promise<TransferTargetDto[]> {
-    return api.get<TransferTargetDto[]>('/transfer/targets');
+    const result = await api.get<unknown>('/transfer/targets');
+    return assertArrayResponse(result, isTransferTargetDto);
   }
 
   async createTarget(payload: TransferTargetMutationRequest): Promise<TransferTargetDto> {
-    return api.post<TransferTargetDto>('/transfer/targets', payload);
+    const result = await api.post<unknown>('/transfer/targets', payload);
+    return assertResponse(result, isTransferTargetDto);
   }
 
   async updateTarget(targetId: string, payload: TransferTargetMutationRequest): Promise<TransferTargetDto> {
-    return api.put<TransferTargetDto>(`/transfer/targets/${targetId}`, payload);
+    const result = await api.put<unknown>(`/transfer/targets/${targetId}`, payload);
+    return assertResponse(result, isTransferTargetDto);
   }
 
   async verifyTarget(targetId: string): Promise<TransferTargetDto> {
-    return api.post<TransferTargetDto>(`/transfer/targets/${targetId}/verify`);
+    const result = await api.post<unknown>(`/transfer/targets/${targetId}/verify`);
+    return assertResponse(result, isTransferTargetDto);
   }
 
   async deleteTarget(targetId: string): Promise<void> {
@@ -236,18 +407,21 @@ class TransferReplicationService {
   }
 
   async listDefinitions(): Promise<ReplicationDefinitionDto[]> {
-    return api.get<ReplicationDefinitionDto[]>('/replication/definitions');
+    const result = await api.get<unknown>('/replication/definitions');
+    return assertArrayResponse(result, isReplicationDefinitionDto);
   }
 
   async createDefinition(payload: ReplicationDefinitionMutationRequest): Promise<ReplicationDefinitionDto> {
-    return api.post<ReplicationDefinitionDto>('/replication/definitions', payload);
+    const result = await api.post<unknown>('/replication/definitions', payload);
+    return assertResponse(result, isReplicationDefinitionDto);
   }
 
   async updateDefinition(
     definitionId: string,
     payload: ReplicationDefinitionMutationRequest
   ): Promise<ReplicationDefinitionDto> {
-    return api.put<ReplicationDefinitionDto>(`/replication/definitions/${definitionId}`, payload);
+    const result = await api.put<unknown>(`/replication/definitions/${definitionId}`, payload);
+    return assertResponse(result, isReplicationDefinitionDto);
   }
 
   async deleteDefinition(definitionId: string): Promise<void> {
@@ -255,31 +429,38 @@ class TransferReplicationService {
   }
 
   async runDefinition(definitionId: string): Promise<ReplicationJobDto> {
-    return api.post<ReplicationJobDto>(`/replication/definitions/${definitionId}/run`);
+    const result = await api.post<unknown>(`/replication/definitions/${definitionId}/run`);
+    return assertResponse(result, isReplicationJobDto);
   }
 
   async listJobs(page = 0, size = 10): Promise<PageResponse<ReplicationJobDto>> {
-    return api.get<PageResponse<ReplicationJobDto>>('/replication/jobs', { params: { page, size } });
+    const result = await api.get<unknown>('/replication/jobs', { params: { page, size } });
+    return assertPageResponse(result, isReplicationJobDto);
   }
 
   async retryJob(jobId: string): Promise<ReplicationJobDto> {
-    return api.post<ReplicationJobDto>(`/replication/jobs/${jobId}/retry`);
+    const result = await api.post<unknown>(`/replication/jobs/${jobId}/retry`);
+    return assertResponse(result, isReplicationJobDto);
   }
 
   async listReceivers(): Promise<TransferReceiverDto[]> {
-    return api.get<TransferReceiverDto[]>('/transfer/receivers');
+    const result = await api.get<unknown>('/transfer/receivers');
+    return assertArrayResponse(result, isTransferReceiverDto);
   }
 
   async createReceiver(payload: TransferReceiverMutationRequest): Promise<TransferReceiverDto> {
-    return api.post<TransferReceiverDto>('/transfer/receivers', payload);
+    const result = await api.post<unknown>('/transfer/receivers', payload);
+    return assertResponse(result, isTransferReceiverDto);
   }
 
   async updateReceiver(receiverId: string, payload: TransferReceiverMutationRequest): Promise<TransferReceiverDto> {
-    return api.put<TransferReceiverDto>(`/transfer/receivers/${receiverId}`, payload);
+    const result = await api.put<unknown>(`/transfer/receivers/${receiverId}`, payload);
+    return assertResponse(result, isTransferReceiverDto);
   }
 
   async verifyReceiver(receiverId: string): Promise<TransferReceiverDto> {
-    return api.post<TransferReceiverDto>(`/transfer/receivers/${receiverId}/verify`);
+    const result = await api.post<unknown>(`/transfer/receivers/${receiverId}/verify`);
+    return assertResponse(result, isTransferReceiverDto);
   }
 
   async deleteReceiver(receiverId: string): Promise<void> {
