@@ -2,7 +2,9 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { toast } from 'react-toastify';
 import TransferReplicationPage from './TransferReplicationPage';
-import transferReplicationService from 'services/transferReplicationService';
+import transferReplicationService, {
+  buildReplicationDefinitionRequest,
+} from 'services/transferReplicationService';
 
 jest.mock('react-toastify', () => ({
   toast: {
@@ -56,6 +58,14 @@ jest.mock('components/browser/FolderTree', () => ({
       <button
         type="button"
         onClick={() =>
+          onNodeSelect?.({ id: 'folder-source-root', name: 'Source Folder', nodeType: 'FOLDER' })
+        }
+      >
+        Pick source folder
+      </button>
+      <button
+        type="button"
+        onClick={() =>
           onNodeSelect?.({ id: 'folder-receiver-root', name: 'Inbound Root', nodeType: 'FOLDER' })
         }
       >
@@ -66,10 +76,12 @@ jest.mock('components/browser/FolderTree', () => ({
 }));
 
 const mockedTransferReplicationService = transferReplicationService as jest.Mocked<typeof transferReplicationService>;
+const mockedBuildReplicationDefinitionRequest = buildReplicationDefinitionRequest as jest.Mock;
 const toastErrorMock = toast.error as jest.Mock;
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockedBuildReplicationDefinitionRequest.mockImplementation((draft) => draft);
   mockedTransferReplicationService.listTargets.mockResolvedValue([]);
   mockedTransferReplicationService.listReceivers.mockResolvedValue([]);
   mockedTransferReplicationService.listDefinitions.mockResolvedValue([]);
@@ -192,6 +204,70 @@ test('creates a loopback transfer target with the local folder picker selection'
       transportType: 'LOOPBACK',
       targetFolderId: 'folder-local-target',
       enabled: true,
+    })
+  );
+});
+
+test('creates a replication definition with the source folder picker selection', async () => {
+  mockedTransferReplicationService.listTargets.mockResolvedValueOnce([
+    {
+      id: 'target-loopback',
+      name: 'Loopback target',
+      description: null,
+      transportType: 'LOOPBACK',
+      targetFolderId: 'folder-local-target',
+      targetFolderName: 'Local Replica Root',
+      endpointUrl: null,
+      endpointPath: null,
+      authType: 'NONE',
+      authUsername: null,
+      authSecretConfigured: false,
+      enabled: true,
+      verificationStatus: 'VERIFIED',
+      verificationMessage: null,
+      remoteRepositoryId: null,
+      lastVerifiedAt: null,
+      createdAt: '2026-05-13T00:00:00Z',
+      updatedAt: null,
+    },
+  ]);
+  mockedTransferReplicationService.createDefinition.mockResolvedValueOnce({} as any);
+
+  render(<TransferReplicationPage />);
+
+  await screen.findByText('Loopback target');
+  fireEvent.click(screen.getByRole('button', { name: 'New Definition' }));
+
+  fireEvent.change(screen.getByLabelText('Name'), {
+    target: { value: 'Replicate source folder' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Pick document' }));
+
+  const sourceNodeInput = screen.getByLabelText('Source Node ID') as HTMLInputElement;
+  expect(sourceNodeInput.value).toBe('');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Pick source folder' }));
+
+  expect(sourceNodeInput.value).toBe('folder-source-root');
+  expect(screen.getByText('Selected: Source Folder')).toBeTruthy();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Create Definition' }));
+
+  await waitFor(() =>
+    expect(mockedTransferReplicationService.createDefinition).toHaveBeenCalledWith({
+      name: 'Replicate source folder',
+      description: '',
+      sourceNodeId: 'folder-source-root',
+      transferTargetId: 'target-loopback',
+      includeChildren: true,
+      enabled: true,
+      conflictPolicy: 'RENAME',
+      cronExpression: '',
+      scheduleTimezone: 'UTC',
+      autoRetryEnabled: false,
+      maxRetryAttempts: '',
+      retryBackoffMinutes: '',
+      jobRetentionDays: '30',
     })
   );
 });

@@ -261,6 +261,7 @@ const TransferReplicationPage: React.FC = () => {
   const [receiverRootFolderName, setReceiverRootFolderName] = useState("");
   const [definitionForm, setDefinitionForm] =
     useState<ReplicationDefinitionFormState>(EMPTY_DEFINITION_FORM);
+  const [definitionSourceNodeName, setDefinitionSourceNodeName] = useState("");
   const [refreshTick, setRefreshTick] = useState(0);
   const [savingTarget, setSavingTarget] = useState(false);
   const [savingReceiver, setSavingReceiver] = useState(false);
@@ -371,6 +372,7 @@ const TransferReplicationPage: React.FC = () => {
         retryBackoffMinutes: String(definition.retryBackoffMinutes),
         jobRetentionDays: String(definition.jobRetentionDays),
       });
+      setDefinitionSourceNodeName(definition.sourceNodeName || "");
     } else {
       setSelectedDefinitionId(null);
       setDefinitionForm({
@@ -378,6 +380,7 @@ const TransferReplicationPage: React.FC = () => {
         transferTargetId: targets[0]?.id || "",
         conflictPolicy: "RENAME",
       });
+      setDefinitionSourceNodeName("");
     }
     setDefinitionDialogOpen(true);
   };
@@ -400,6 +403,7 @@ const TransferReplicationPage: React.FC = () => {
     setDefinitionDialogOpen(false);
     setSelectedDefinitionId(null);
     setDefinitionForm(EMPTY_DEFINITION_FORM);
+    setDefinitionSourceNodeName("");
   };
 
   const buildTargetPayload = (): TransferTargetMutationRequest => {
@@ -1810,15 +1814,59 @@ const TransferReplicationPage: React.FC = () => {
             <TextField
               label="Source Node ID"
               value={definitionForm.sourceNodeId}
-              onChange={(event) =>
+              onChange={(event) => {
                 setDefinitionForm((current) => ({
                   ...current,
                   sourceNodeId: event.target.value,
-                }))
+                }));
+                setDefinitionSourceNodeName("");
+              }}
+              helperText={
+                definitionSourceNodeName
+                  ? `Selected: ${definitionSourceNodeName}`
+                  : "Document or folder UUID to replicate."
               }
-              helperText="Document or folder UUID to replicate."
               fullWidth
             />
+            <Box>
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                Pick Source Folder
+              </Typography>
+              <Box
+                sx={{
+                  border: 1,
+                  borderColor: "divider",
+                  borderRadius: 1,
+                  p: 1,
+                  height: 260,
+                  overflow: "auto",
+                }}
+              >
+                <FolderTree
+                  rootNodeId="root"
+                  selectedNodeId={definitionForm.sourceNodeId || undefined}
+                  variant="picker"
+                  onNodeSelect={(node) => {
+                    if (node.nodeType !== "FOLDER") {
+                      return;
+                    }
+                    setDefinitionForm((current) => ({
+                      ...current,
+                      sourceNodeId: node.id,
+                    }));
+                    setDefinitionSourceNodeName(node.name);
+                  }}
+                />
+              </Box>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: "block", mt: 0.5 }}
+              >
+                Use the picker for folder replication sources. Document source
+                nodes can still be pasted into the text field by UUID.
+              </Typography>
+            </Box>
             <FormControl fullWidth>
               <InputLabel id="replication-definition-target-label">
                 Transfer Target
