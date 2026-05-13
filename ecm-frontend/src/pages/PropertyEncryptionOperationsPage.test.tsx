@@ -123,6 +123,10 @@ test('loads property encryption status, definitions, and jobs', async () => {
   const rewrapTable = screen.getByRole('table', { name: 'Property encryption rewrap jobs' });
   expect(within(backfillTable).getByText('PLANNED')).toBeTruthy();
   expect(within(rewrapTable).getByText('PLANNED')).toBeTruthy();
+  expect(
+    (screen.getByRole('link', { name: 'Open in Async Governance' }) as HTMLAnchorElement)
+      .getAttribute('href')
+  ).toBe('/admin?asyncTaskDomain=propertyencryption');
 
   expect(mockedPropertyEncryptionService.getStatus).toHaveBeenCalledTimes(1);
   expect(mockedPropertyEncryptionService.listDefinitions).toHaveBeenCalledTimes(1);

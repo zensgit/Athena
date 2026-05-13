@@ -210,13 +210,13 @@ interface AsyncExportHealthSummary {
   failureRate: number;
 }
 
-type AsyncExportHealthDomainKey = 'audit' | 'ops' | 'search' | 'preview' | 'batchdownload';
+type AsyncExportHealthDomainKey = 'audit' | 'ops' | 'search' | 'preview' | 'batchdownload' | 'propertyencryption';
 type AsyncExportRiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 
 interface AsyncExportHealthDomainConfig {
   key: AsyncExportHealthDomainKey;
   label: string;
-  endpoint: string;
+  endpoint?: string;
 }
 
 interface AsyncExportHealthDomainState extends AsyncExportHealthDomainConfig {
@@ -265,7 +265,14 @@ interface AsyncExportGovernanceOverviewResponse {
   domains?: AsyncExportGovernanceOverviewDomain[];
 }
 
-type RecentAsyncTaskDomainFilter = 'ALL' | 'audit' | 'ops' | 'search' | 'preview' | 'batchdownload';
+type RecentAsyncTaskDomainFilter =
+  | 'ALL'
+  | 'audit'
+  | 'ops'
+  | 'search'
+  | 'preview'
+  | 'batchdownload'
+  | 'propertyencryption';
 
 type RecentAsyncTaskStatusFilter = 'ALL' | 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'CANCELLED' | 'FAILED';
 
@@ -429,6 +436,12 @@ const AUDIT_QUERY_KEYS = {
   to: 'auditTo',
 } as const;
 
+const ASYNC_TASK_QUERY_KEYS = {
+  domain: 'asyncTaskDomain',
+  status: 'asyncTaskStatus',
+  includeAcknowledged: 'asyncTaskIncludeAcknowledged',
+} as const;
+
 const AUDIT_EXPORT_ASYNC_TASK_LIMIT = 10;
 const AUDIT_EXPORT_ASYNC_RUNNING_STATUSES = new Set(['QUEUED', 'RUNNING', 'PROCESSING', 'IN_PROGRESS', 'STARTED']);
 const AUDIT_EXPORT_ASYNC_COMPLETED_STATUSES = new Set(['COMPLETED', 'DONE', 'SUCCESS', 'SUCCEEDED', 'FINISHED']);
@@ -450,6 +463,7 @@ const ASYNC_EXPORT_HEALTH_DOMAINS: AsyncExportHealthDomainConfig[] = [
   { key: 'search', label: 'Search', endpoint: '/search/preview/queue-failed/dry-run/export-async/summary' },
   { key: 'preview', label: 'Preview', endpoint: '/preview/diagnostics/renditions/resources/export-async/summary' },
   { key: 'batchdownload', label: 'Batch Download', endpoint: '/nodes/download/batch-async/summary' },
+  { key: 'propertyencryption', label: 'Property Encryption' },
 ];
 
 const RECENT_ASYNC_TASK_MAX_ITEM_OPTIONS = [5, 10, 20, 50];
@@ -461,6 +475,7 @@ const RECENT_ASYNC_TASK_DOMAIN_OPTIONS: Array<{ value: RecentAsyncTaskDomainFilt
   { value: 'search', label: 'Search' },
   { value: 'preview', label: 'Preview' },
   { value: 'batchdownload', label: 'Batch Download' },
+  { value: 'propertyencryption', label: 'Property Encryption' },
 ];
 
 const RECENT_ASYNC_TASK_STATUS_OPTIONS: Array<{ value: RecentAsyncTaskStatusFilter; label: string }> = [
@@ -566,6 +581,46 @@ const RECENT_ASYNC_TASK_DOMAIN_LABELS: Record<Exclude<RecentAsyncTaskDomainFilte
   search: 'Search',
   preview: 'Preview',
   batchdownload: 'Batch Download',
+  propertyencryption: 'Property Encryption',
+};
+
+const normalizeRecentAsyncTaskDomainFilter = (value?: string | null): RecentAsyncTaskDomainFilter | null => {
+  const normalized = (value || '').trim().toLowerCase();
+  switch (normalized) {
+    case '':
+      return null;
+    case 'all':
+      return 'ALL';
+    case 'audit':
+      return 'audit';
+    case 'ops':
+      return 'ops';
+    case 'search':
+      return 'search';
+    case 'preview':
+      return 'preview';
+    case 'batchdownload':
+    case 'batch-download':
+    case 'batch_download':
+      return 'batchdownload';
+    case 'propertyencryption':
+    case 'property-encryption':
+    case 'property_encryption':
+    case 'propertyencryptionjobs':
+      return 'propertyencryption';
+    default:
+      return null;
+  }
+};
+
+const normalizeRecentAsyncTaskStatusFilter = (value?: string | null): RecentAsyncTaskStatusFilter | null => {
+  const normalized = (value || '').trim().toUpperCase();
+  if (!normalized) {
+    return null;
+  }
+  return RECENT_ASYNC_TASK_STATUS_OPTIONS.some((option) => option.value === normalized)
+    ? normalized as RecentAsyncTaskStatusFilter
+    : null;
 };
 
 const normalizeRecentAsyncTaskStatus = (status?: string | null) => {
@@ -577,7 +632,7 @@ const toRecentAsyncTaskStatusChipColor = (
   status: string
 ): 'success' | 'warning' | 'info' | 'default' => {
   const normalized = (status || '').trim().toUpperCase();
-  if (normalized === 'COMPLETED') {
+  if (normalized === 'COMPLETED' || normalized === 'SUCCEEDED') {
     return 'success';
   }
   if (normalized === 'FAILED' || normalized === 'CANCELLED' || normalized === 'CANCEL_REQUESTED') {
@@ -644,6 +699,13 @@ const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const dispatch = useAppDispatch();
+  const asyncTaskUrlParams = new URLSearchParams(location.search);
+  const initialRecentAsyncTaskDomainFilter =
+    normalizeRecentAsyncTaskDomainFilter(asyncTaskUrlParams.get(ASYNC_TASK_QUERY_KEYS.domain)) || 'ALL';
+  const initialRecentAsyncTaskStatusFilter =
+    normalizeRecentAsyncTaskStatusFilter(asyncTaskUrlParams.get(ASYNC_TASK_QUERY_KEYS.status)) || 'ALL';
+  const initialRecentAsyncTasksIncludeAcknowledged =
+    asyncTaskUrlParams.get(ASYNC_TASK_QUERY_KEYS.includeAcknowledged)?.trim().toLowerCase() === 'true';
   const [tab, setTab] = useState(0);
 
   // Overview/dashboard state
@@ -737,9 +799,12 @@ const AdminDashboard: React.FC = () => {
   const [recentAsyncTasksError, setRecentAsyncTasksError] = useState<string | null>(null);
   const [recentAsyncTasksUpdatedAt, setRecentAsyncTasksUpdatedAt] = useState<string | null>(null);
   const [recentAsyncTasksMaxItems, setRecentAsyncTasksMaxItems] = useState(10);
-  const [recentAsyncTasksDomainFilter, setRecentAsyncTasksDomainFilter] = useState<RecentAsyncTaskDomainFilter>('ALL');
-  const [recentAsyncTasksStatusFilter, setRecentAsyncTasksStatusFilter] = useState<RecentAsyncTaskStatusFilter>('ALL');
-  const [recentAsyncTasksIncludeAcknowledged, setRecentAsyncTasksIncludeAcknowledged] = useState(false);
+  const [recentAsyncTasksDomainFilter, setRecentAsyncTasksDomainFilter] =
+    useState<RecentAsyncTaskDomainFilter>(initialRecentAsyncTaskDomainFilter);
+  const [recentAsyncTasksStatusFilter, setRecentAsyncTasksStatusFilter] =
+    useState<RecentAsyncTaskStatusFilter>(initialRecentAsyncTaskStatusFilter);
+  const [recentAsyncTasksIncludeAcknowledged, setRecentAsyncTasksIncludeAcknowledged] =
+    useState(initialRecentAsyncTasksIncludeAcknowledged);
   const [recentAsyncTasksActionTaskKey, setRecentAsyncTasksActionTaskKey] = useState<string | null>(null);
   const [recentAsyncTasksActionType, setRecentAsyncTasksActionType] = useState<RecentAsyncTaskActionType | null>(null);
   const [pinnedSearches, setPinnedSearches] = useState<SavedSearch[]>([]);
@@ -1195,7 +1260,11 @@ const AdminDashboard: React.FC = () => {
 
     try {
       const settled = await Promise.allSettled(
-        ASYNC_EXPORT_HEALTH_DOMAINS.map((domain) => apiService.get<Record<string, unknown>>(domain.endpoint))
+        ASYNC_EXPORT_HEALTH_DOMAINS.map((domain) => (
+          domain.endpoint
+            ? apiService.get<Record<string, unknown>>(domain.endpoint)
+            : Promise.reject(new Error('overview-required'))
+        ))
       );
 
       let degradedCount = 0;
@@ -1221,7 +1290,7 @@ const AdminDashboard: React.FC = () => {
           status: 'degraded' as const,
           riskLevel: 'CRITICAL' as const,
           summary: emptyAsyncExportHealthSummary(),
-          error: 'failed-to-load',
+          error: domain.endpoint ? 'failed-to-load' : 'overview-required',
         };
       });
 
@@ -2200,6 +2269,62 @@ const AdminDashboard: React.FC = () => {
     batchDownloadAdminRowsPerPage,
     batchDownloadAdminQuery,
     batchDownloadAdminOwnerFilter,
+  ]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const nextDomain = normalizeRecentAsyncTaskDomainFilter(params.get(ASYNC_TASK_QUERY_KEYS.domain)) || 'ALL';
+    const nextStatus = normalizeRecentAsyncTaskStatusFilter(params.get(ASYNC_TASK_QUERY_KEYS.status)) || 'ALL';
+    const nextIncludeAcknowledged =
+      params.get(ASYNC_TASK_QUERY_KEYS.includeAcknowledged)?.trim().toLowerCase() === 'true';
+
+    setRecentAsyncTasksDomainFilter((current) => (current === nextDomain ? current : nextDomain));
+    setRecentAsyncTasksStatusFilter((current) => (current === nextStatus ? current : nextStatus));
+    setRecentAsyncTasksIncludeAcknowledged((current) => (
+      current === nextIncludeAcknowledged ? current : nextIncludeAcknowledged
+    ));
+  }, [location.search]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (recentAsyncTasksDomainFilter === 'ALL') {
+      params.delete(ASYNC_TASK_QUERY_KEYS.domain);
+    } else {
+      params.set(ASYNC_TASK_QUERY_KEYS.domain, recentAsyncTasksDomainFilter);
+    }
+
+    if (recentAsyncTasksStatusFilter === 'ALL') {
+      params.delete(ASYNC_TASK_QUERY_KEYS.status);
+    } else {
+      params.set(ASYNC_TASK_QUERY_KEYS.status, recentAsyncTasksStatusFilter);
+    }
+
+    if (recentAsyncTasksIncludeAcknowledged) {
+      params.set(ASYNC_TASK_QUERY_KEYS.includeAcknowledged, 'true');
+    } else {
+      params.delete(ASYNC_TASK_QUERY_KEYS.includeAcknowledged);
+    }
+
+    const nextSearch = params.toString();
+    const currentSearch = location.search.startsWith('?') ? location.search.slice(1) : location.search;
+    if (nextSearch !== currentSearch) {
+      navigate(
+        {
+          pathname: location.pathname,
+          search: nextSearch ? `?${nextSearch}` : '',
+          hash: location.hash,
+        },
+        { replace: true }
+      );
+    }
+  }, [
+    recentAsyncTasksDomainFilter,
+    recentAsyncTasksStatusFilter,
+    recentAsyncTasksIncludeAcknowledged,
+    location.pathname,
+    location.search,
+    location.hash,
+    navigate,
   ]);
 
   useEffect(() => {

@@ -22,6 +22,7 @@ import {
 } from '@mui/material';
 import {
   Lock,
+  OpenInNew,
   PlayArrow,
   Refresh,
   Science,
@@ -244,14 +245,23 @@ const PropertyEncryptionOperationsPage: React.FC = () => {
             Monitor encrypted model properties and operate safe backfill and rewrap jobs without exposing property values.
           </Typography>
         </Box>
-        <Button
-          variant="outlined"
-          startIcon={loading ? <CircularProgress size={16} /> : <Refresh />}
-          disabled={loading}
-          onClick={() => void loadData()}
-        >
-          Refresh
-        </Button>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+          <Button
+            variant="outlined"
+            href="/admin?asyncTaskDomain=propertyencryption"
+            startIcon={<OpenInNew />}
+          >
+            Open in Async Governance
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={loading ? <CircularProgress size={16} /> : <Refresh />}
+            disabled={loading}
+            onClick={() => void loadData()}
+          >
+            Refresh
+          </Button>
+        </Stack>
       </Stack>
 
       <Grid container spacing={2}>

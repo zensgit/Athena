@@ -212,6 +212,8 @@ test('property encryption admin page supports mocked dry-run, backfill, and rewr
   await page.goto('/admin/property-encryption', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByRole('heading', { name: 'Property Encryption' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Open in Async Governance' }))
+    .toHaveAttribute('href', '/admin?asyncTaskDomain=propertyencryption');
   await expect(page.getByText('Secret crypto enabled')).toBeVisible();
   await expect(page.getByText('cm:secretCode')).toBeVisible();
   const jobsTable = page.getByRole('table', { name: 'Property encryption backfill jobs' });

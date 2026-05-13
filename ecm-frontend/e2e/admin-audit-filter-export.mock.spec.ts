@@ -31,9 +31,17 @@ test('Admin audit filters persist in URL and export filename is stable (mocked A
   const auditAsyncStatusCalls: string[] = [];
   const auditAsyncCancelCalls: string[] = [];
   const auditAsyncDownloadCalls: string[] = [];
+  const asyncGovernanceOverviewCalls: string[] = [];
+  const recentAsyncTaskDomainCalls: string[] = [];
+  const recentAsyncTaskStatusCalls: string[] = [];
+  const recentAsyncTaskIncludeAcknowledgedCalls: string[] = [];
+  const recentAsyncTaskCancelCalls: string[] = [];
   const recoveryHistoryExportAsyncSummaryCalls: string[] = [];
   const searchDryRunExportAsyncSummaryCalls: string[] = [];
   const renditionResourcesExportAsyncSummaryCalls: string[] = [];
+  const propertyEncryptionBackfillJobId = '00000000-0000-0000-0000-000000000010';
+  const propertyEncryptionBackfillTaskId = `backfill:${propertyEncryptionBackfillJobId}`;
+  let propertyEncryptionBackfillTaskCancellable = true;
   const auditExportAsyncTasks = new Map<string, {
     taskId: string;
     status: string;
@@ -82,10 +90,32 @@ test('Admin audit filters persist in URL and export filename is stable (mocked A
     activeCount: 6,
     terminalCount: 13,
   };
+  const propertyEncryptionAsyncSummary = {
+    totalCount: 7,
+    queuedCount: 1,
+    runningCount: 1,
+    completedCount: 4,
+    cancelledCount: 0,
+    failedCount: 1,
+    activeCount: 2,
+    terminalCount: 5,
+  };
   const asyncExportHealthOverviewExpected = {
-    total: 1 + recoveryHistoryExportAsyncSummary.totalCount + searchDryRunExportAsyncSummary.total + renditionResourcesExportAsyncSummary.totalCount,
-    active: 0 + recoveryHistoryExportAsyncSummary.activeCount + searchDryRunExportAsyncSummary.active + renditionResourcesExportAsyncSummary.activeCount,
-    terminal: 1 + recoveryHistoryExportAsyncSummary.terminalCount + searchDryRunExportAsyncSummary.terminal + renditionResourcesExportAsyncSummary.terminalCount,
+    total: 1
+      + recoveryHistoryExportAsyncSummary.totalCount
+      + searchDryRunExportAsyncSummary.total
+      + renditionResourcesExportAsyncSummary.totalCount
+      + propertyEncryptionAsyncSummary.totalCount,
+    active: 0
+      + recoveryHistoryExportAsyncSummary.activeCount
+      + searchDryRunExportAsyncSummary.active
+      + renditionResourcesExportAsyncSummary.activeCount
+      + propertyEncryptionAsyncSummary.activeCount,
+    terminal: 1
+      + recoveryHistoryExportAsyncSummary.terminalCount
+      + searchDryRunExportAsyncSummary.terminal
+      + renditionResourcesExportAsyncSummary.terminalCount
+      + propertyEncryptionAsyncSummary.terminalCount,
   };
 
   const json = (body: unknown) => JSON.stringify(body);
@@ -222,10 +252,188 @@ test('Admin audit filters persist in URL and export filename is stable (mocked A
       return;
     }
     if (pathname.endsWith('/analytics/async-governance/tasks') && route.request().method().toUpperCase() === 'GET') {
+      const domainFilter = requestUrl.searchParams.get('domain') || 'ALL';
+      const statusFilter = requestUrl.searchParams.get('status') || 'ALL';
+      recentAsyncTaskDomainCalls.push(domainFilter);
+      recentAsyncTaskStatusCalls.push(statusFilter);
+      recentAsyncTaskIncludeAcknowledgedCalls.push(requestUrl.searchParams.get('includeAcknowledged') || 'false');
+      const propertyEncryptionTask = {
+        domainKey: 'propertyencryption',
+        domainLabel: 'Property Encryption',
+        taskId: propertyEncryptionBackfillTaskId,
+        status: 'RUNNING',
+        error: null,
+        createdAt: new Date(Date.now() - 60_000).toISOString(),
+        startedAt: new Date(Date.now() - 45_000).toISOString(),
+        updatedAt: new Date(Date.now() - 10_000).toISOString(),
+        timeoutAt: null,
+        expiresAt: null,
+        finishedAt: null,
+        filename: null,
+        createdBy: 'admin',
+        updatedBy: null,
+        fingerprint: `propertyencryption:${propertyEncryptionBackfillTaskId}:running`,
+        acknowledged: false,
+        acknowledgedAt: null,
+        cancelUrl: propertyEncryptionBackfillTaskCancellable
+          ? `/api/v1/admin/property-encryption/backfill-jobs/${propertyEncryptionBackfillJobId}/cancel`
+          : null,
+        downloadUrl: null,
+        cleanupUrl: null,
+        cancellable: propertyEncryptionBackfillTaskCancellable,
+        cleanupEligible: false,
+        downloadReady: false,
+      };
+      const items = (
+        (domainFilter === 'ALL' || domainFilter === 'propertyencryption')
+        && (statusFilter === 'ALL' || statusFilter === 'RUNNING')
+      ) ? [propertyEncryptionTask] : [];
       await fulfillJson(route, {
-        items: [],
-        totalCount: 0,
+        items,
+        totalCount: items.length,
+        count: items.length,
+        paging: {
+          skipCount: 0,
+          maxItems: Number(requestUrl.searchParams.get('maxItems') || '10'),
+          totalItems: items.length,
+          hasMoreItems: false,
+        },
         generatedAt: new Date().toISOString(),
+      });
+      return;
+    }
+    if (pathname.endsWith(`/admin/property-encryption/backfill-jobs/${propertyEncryptionBackfillJobId}/cancel`) && route.request().method().toUpperCase() === 'POST') {
+      recentAsyncTaskCancelCalls.push(propertyEncryptionBackfillJobId);
+      propertyEncryptionBackfillTaskCancellable = false;
+      await fulfillJson(route, {
+        id: propertyEncryptionBackfillJobId,
+        status: 'CANCEL_REQUESTED',
+      });
+      return;
+    }
+    if (pathname.endsWith('/analytics/async-governance/overview') && route.request().method().toUpperCase() === 'GET') {
+      asyncGovernanceOverviewCalls.push('ALL');
+      await fulfillJson(route, {
+        generatedAt: new Date().toISOString(),
+        overallStatus: 'HEALTHY',
+        overallRiskLevel: 'MEDIUM',
+        totalDomains: 6,
+        degradedDomainCount: 0,
+        totalCount: asyncExportHealthOverviewExpected.total,
+        activeCount: asyncExportHealthOverviewExpected.active,
+        terminalCount: asyncExportHealthOverviewExpected.terminal,
+        queuedCount: 7,
+        runningCount: 10,
+        completedCount: 33,
+        cancelledCount: 3,
+        failedCount: 5,
+        timedOutCount: 0,
+        expiredCount: 0,
+        failureRate: 5 / asyncExportHealthOverviewExpected.total,
+        domains: [
+          {
+            key: 'audit',
+            label: 'Audit',
+            status: 'HEALTHY',
+            riskLevel: 'LOW',
+            totalCount: 1,
+            activeCount: 0,
+            terminalCount: 1,
+            queuedCount: 0,
+            runningCount: 0,
+            completedCount: 1,
+            cancelledCount: 0,
+            failedCount: 0,
+            timedOutCount: 0,
+            expiredCount: 0,
+            failureRate: 0,
+          },
+          {
+            key: 'ops',
+            label: 'Ops Recovery',
+            status: 'HEALTHY',
+            riskLevel: 'MEDIUM',
+            totalCount: recoveryHistoryExportAsyncSummary.totalCount,
+            activeCount: recoveryHistoryExportAsyncSummary.activeCount,
+            terminalCount: recoveryHistoryExportAsyncSummary.terminalCount,
+            queuedCount: recoveryHistoryExportAsyncSummary.queuedCount,
+            runningCount: recoveryHistoryExportAsyncSummary.runningCount,
+            completedCount: recoveryHistoryExportAsyncSummary.completedCount,
+            cancelledCount: recoveryHistoryExportAsyncSummary.cancelledCount,
+            failedCount: recoveryHistoryExportAsyncSummary.failedCount,
+            timedOutCount: 0,
+            expiredCount: 0,
+            failureRate: 1 / recoveryHistoryExportAsyncSummary.totalCount,
+          },
+          {
+            key: 'search',
+            label: 'Search',
+            status: 'HEALTHY',
+            riskLevel: 'MEDIUM',
+            totalCount: searchDryRunExportAsyncSummary.total,
+            activeCount: searchDryRunExportAsyncSummary.active,
+            terminalCount: searchDryRunExportAsyncSummary.terminal,
+            queuedCount: searchDryRunExportAsyncSummary.queued,
+            runningCount: searchDryRunExportAsyncSummary.running,
+            completedCount: searchDryRunExportAsyncSummary.completed,
+            cancelledCount: searchDryRunExportAsyncSummary.cancelled,
+            failedCount: searchDryRunExportAsyncSummary.failed,
+            timedOutCount: 0,
+            expiredCount: 0,
+            failureRate: 1 / searchDryRunExportAsyncSummary.total,
+          },
+          {
+            key: 'preview',
+            label: 'Preview',
+            status: 'HEALTHY',
+            riskLevel: 'MEDIUM',
+            totalCount: renditionResourcesExportAsyncSummary.totalCount,
+            activeCount: renditionResourcesExportAsyncSummary.activeCount,
+            terminalCount: renditionResourcesExportAsyncSummary.terminalCount,
+            queuedCount: renditionResourcesExportAsyncSummary.queuedCount,
+            runningCount: renditionResourcesExportAsyncSummary.runningCount,
+            completedCount: renditionResourcesExportAsyncSummary.completedCount,
+            cancelledCount: renditionResourcesExportAsyncSummary.cancelledCount,
+            failedCount: renditionResourcesExportAsyncSummary.failedCount,
+            timedOutCount: 0,
+            expiredCount: 0,
+            failureRate: 1 / renditionResourcesExportAsyncSummary.totalCount,
+          },
+          {
+            key: 'batchdownload',
+            label: 'Batch Download',
+            status: 'HEALTHY',
+            riskLevel: 'LOW',
+            totalCount: 0,
+            activeCount: 0,
+            terminalCount: 0,
+            queuedCount: 0,
+            runningCount: 0,
+            completedCount: 0,
+            cancelledCount: 0,
+            failedCount: 0,
+            timedOutCount: 0,
+            expiredCount: 0,
+            failureRate: 0,
+          },
+          {
+            key: 'propertyencryption',
+            label: 'Property Encryption',
+            status: 'HEALTHY',
+            riskLevel: 'MEDIUM',
+            totalCount: propertyEncryptionAsyncSummary.totalCount,
+            activeCount: propertyEncryptionAsyncSummary.activeCount,
+            terminalCount: propertyEncryptionAsyncSummary.terminalCount,
+            queuedCount: propertyEncryptionAsyncSummary.queuedCount,
+            runningCount: propertyEncryptionAsyncSummary.runningCount,
+            completedCount: propertyEncryptionAsyncSummary.completedCount,
+            cancelledCount: propertyEncryptionAsyncSummary.cancelledCount,
+            failedCount: propertyEncryptionAsyncSummary.failedCount,
+            timedOutCount: 0,
+            expiredCount: 0,
+            failureRate: 1 / propertyEncryptionAsyncSummary.totalCount,
+          },
+        ],
       });
       return;
     }
@@ -498,24 +706,49 @@ test('Admin audit filters persist in URL and export filename is stable (mocked A
     });
   });
 
-  await page.goto('/admin', { waitUntil: 'domcontentloaded' });
+  await page.goto('/admin?asyncTaskDomain=propertyencryption', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByRole('heading', { name: 'System Dashboard' })).toBeVisible({ timeout: 60_000 });
+  await expect(page).toHaveURL(/asyncTaskDomain=propertyencryption/);
+  await expect(page.getByText('Domain Property Encryption')).toBeVisible();
+  await expect.poll(() => recentAsyncTaskDomainCalls.includes('propertyencryption')).toBeTruthy();
+  const recentAsyncTaskStatusFilter = page.locator(
+    '[role="combobox"][aria-label="Recent async task status filter"]'
+  );
+  await recentAsyncTaskStatusFilter.click();
+  await page.getByRole('option', { name: 'Running' }).click();
+  await expect(page).toHaveURL(/asyncTaskStatus=RUNNING/);
+  await expect(page.getByText('Status RUNNING')).toBeVisible();
+  await expect.poll(() => recentAsyncTaskStatusCalls.includes('RUNNING')).toBeTruthy();
+  const recentAsyncTaskTable = page.getByRole('table', { name: 'Recent async task list' });
+  const propertyEncryptionRecentTaskRow = recentAsyncTaskTable.getByRole('row', {
+    name: new RegExp(`Property Encryption\\s+propertyencryption\\s+RUNNING\\s+${propertyEncryptionBackfillTaskId}`),
+  });
+  await expect(propertyEncryptionRecentTaskRow).toBeVisible();
+  await propertyEncryptionRecentTaskRow.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.getByText(`Async task updated: ${propertyEncryptionBackfillTaskId}`)).toBeVisible();
+  await expect.poll(() => recentAsyncTaskCancelCalls.includes(propertyEncryptionBackfillJobId)).toBeTruthy();
+  await expect(propertyEncryptionRecentTaskRow.getByRole('button', { name: 'Cancel' })).toHaveCount(0);
+  await page.getByLabel('Show acknowledged async tasks').check();
+  await expect(page).toHaveURL(/asyncTaskIncludeAcknowledged=true/);
+  await expect(page.getByText('Including acknowledged')).toBeVisible();
+  await expect.poll(() => recentAsyncTaskIncludeAcknowledgedCalls.includes('true')).toBeTruthy();
+
   const asyncExportHealthOverview = page.getByRole('heading', { name: 'Async Task Health Overview' });
   await expect(asyncExportHealthOverview).toBeVisible();
   await expect(page.getByText(new RegExp(`Total\\s*${asyncExportHealthOverviewExpected.total}`))).toBeVisible();
   await expect(page.getByText(new RegExp(`Active\\s*${asyncExportHealthOverviewExpected.active}`))).toBeVisible();
   await expect(page.getByText(new RegExp(`Terminal\\s*${asyncExportHealthOverviewExpected.terminal}`))).toBeVisible();
+  const asyncTaskHealthTable = page.getByRole('table', { name: 'Async task health overview' });
+  const propertyEncryptionHealthRow = asyncTaskHealthTable.getByRole('row', { name: /Property Encryption/ });
+  await expect(propertyEncryptionHealthRow).toBeVisible();
+  await expect(propertyEncryptionHealthRow).toHaveText(/Property EncryptionhealthyMEDIUM72541000/);
 
   const healthOverviewRefreshButton = page.getByRole('button', { name: 'Refresh async task health overview' });
   await expect(healthOverviewRefreshButton).toBeVisible();
-  const beforeRecoverySummaryCalls = recoveryHistoryExportAsyncSummaryCalls.length;
-  const beforeSearchSummaryCalls = searchDryRunExportAsyncSummaryCalls.length;
-  const beforeRenditionSummaryCalls = renditionResourcesExportAsyncSummaryCalls.length;
+  const beforeAsyncGovernanceOverviewCalls = asyncGovernanceOverviewCalls.length;
   await healthOverviewRefreshButton.click();
-  await expect.poll(() => recoveryHistoryExportAsyncSummaryCalls.length).toBeGreaterThan(beforeRecoverySummaryCalls);
-  await expect.poll(() => searchDryRunExportAsyncSummaryCalls.length).toBeGreaterThan(beforeSearchSummaryCalls);
-  await expect.poll(() => renditionResourcesExportAsyncSummaryCalls.length).toBeGreaterThan(beforeRenditionSummaryCalls);
+  await expect.poll(() => asyncGovernanceOverviewCalls.length).toBeGreaterThan(beforeAsyncGovernanceOverviewCalls);
 
   await page.getByLabel('User').fill('alice');
   await page.getByLabel('Event Type').fill('NODE_CREATED');
@@ -604,10 +837,13 @@ test('Admin audit filters persist in URL and export filename is stable (mocked A
   expect(auditAsyncStatusCalls).toContain(auditAsyncCompletedTaskId);
   expect(auditAsyncCancelCalls).toContain(auditAsyncStartedTaskId);
   expect(auditAsyncDownloadCalls).toContain(auditAsyncCompletedTaskId);
-  expect(recoveryHistoryExportAsyncSummaryCalls.length).toBeGreaterThan(0);
-  expect(searchDryRunExportAsyncSummaryCalls.length).toBeGreaterThan(0);
-  expect(renditionResourcesExportAsyncSummaryCalls.length).toBeGreaterThan(0);
-  expect(recoveryHistoryExportAsyncSummaryCalls).toContain('ALL');
-  expect(searchDryRunExportAsyncSummaryCalls).toContain('ALL');
-  expect(renditionResourcesExportAsyncSummaryCalls).toContain('ALL');
+  expect(asyncGovernanceOverviewCalls.length).toBeGreaterThan(0);
+  expect(asyncGovernanceOverviewCalls).toContain('ALL');
+  expect(recentAsyncTaskDomainCalls).toContain('propertyencryption');
+  expect(recentAsyncTaskStatusCalls).toContain('RUNNING');
+  expect(recentAsyncTaskIncludeAcknowledgedCalls).toContain('true');
+  expect(recentAsyncTaskCancelCalls).toContain(propertyEncryptionBackfillJobId);
+  expect(recoveryHistoryExportAsyncSummaryCalls).toHaveLength(0);
+  expect(searchDryRunExportAsyncSummaryCalls).toHaveLength(0);
+  expect(renditionResourcesExportAsyncSummaryCalls).toHaveLength(0);
 });
