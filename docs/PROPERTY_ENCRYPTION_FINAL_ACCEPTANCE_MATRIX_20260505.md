@@ -218,9 +218,31 @@ Addendum acceptance matrix:
 | One-command local addendum gate | `scripts/property-encryption-async-governance-gate.sh` full path passed | use before push and when triaging addendum failures | backend, frontend, registry, and mocked E2E addendum checks pass from one command |
 | Closeout preflight coverage | preflight backend non-Docker target expanded from 75 to 140 tests and passed locally with Docker gate skipped | next `Property Encryption Closeout Gate` run with `REQUIRE_DOCKER_BACKED_GATE=1` | async-governance contracts and Docker-backed PostgreSQL gate both pass |
 
-This addendum has not yet replaced the historical CI run IDs in the main
-matrix. Record the next green CI run here after pushing the 2026-05-12
-post-closeout changes.
+Fresh CI evidence after pushing the 2026-05-12 post-closeout changes:
+
+```text
+Workflow: CI
+Run ID: 25774098230
+URL: https://github.com/zensgit/Athena/actions/runs/25774098230
+Head SHA: 2c60dd6b7ac263437874570f97651a515c41175c
+Created at: 2026-05-13T02:16:03Z
+Completed at: 2026-05-13T02:40:52Z
+Workflow conclusion: success
+```
+
+Fresh CI job matrix:
+
+| Job | Result | Job ID |
+| --- | --- | --- |
+| Backend Verify | success | 75703081450 |
+| Frontend Build & Test | success | 75703081369 |
+| Phase C Security Verification | success | 75703304519 |
+| Property Encryption Closeout Gate | success | 75704000840 |
+| Acceptance Smoke (3 admin pages) | success | 75704000839 |
+| Frontend E2E Core Gate | success | 75704000822 |
+| Phase 5 Mocked Regression Gate | success | 75704000836 |
+
+The addendum is now green at both local gate and CI gate level.
 
 ## Phase C Follow-Up
 
