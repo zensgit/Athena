@@ -43,6 +43,7 @@ import {
   Save,
 } from "@mui/icons-material";
 import { toast } from "react-toastify";
+import FolderTree from "components/browser/FolderTree";
 import transferReplicationService, {
   AuthType,
   ReceiverAccessStatus,
@@ -256,6 +257,7 @@ const TransferReplicationPage: React.FC = () => {
     useState<TransferTargetMutationRequest>(EMPTY_TARGET_FORM);
   const [receiverForm, setReceiverForm] =
     useState<TransferReceiverMutationRequest>(EMPTY_RECEIVER_FORM);
+  const [receiverRootFolderName, setReceiverRootFolderName] = useState("");
   const [definitionForm, setDefinitionForm] =
     useState<ReplicationDefinitionFormState>(EMPTY_DEFINITION_FORM);
   const [refreshTick, setRefreshTick] = useState(0);
@@ -339,9 +341,11 @@ const TransferReplicationPage: React.FC = () => {
         authSecret: "",
         enabled: receiver.enabled,
       });
+      setReceiverRootFolderName(receiver.rootFolderName || "");
     } else {
       setSelectedReceiverId(null);
       setReceiverForm(EMPTY_RECEIVER_FORM);
+      setReceiverRootFolderName("");
     }
     setReceiverDialogOpen(true);
   };
@@ -385,6 +389,7 @@ const TransferReplicationPage: React.FC = () => {
     setReceiverDialogOpen(false);
     setSelectedReceiverId(null);
     setReceiverForm(EMPTY_RECEIVER_FORM);
+    setReceiverRootFolderName("");
   };
 
   const closeDefinitionDialog = () => {
@@ -1984,15 +1989,59 @@ const TransferReplicationPage: React.FC = () => {
             <TextField
               label="Root Folder ID"
               value={receiverForm.rootFolderId}
-              onChange={(event) =>
+              onChange={(event) => {
                 setReceiverForm((current) => ({
                   ...current,
                   rootFolderId: event.target.value,
-                }))
+                }));
+                setReceiverRootFolderName("");
+              }}
+              helperText={
+                receiverRootFolderName
+                  ? `Selected: ${receiverRootFolderName}`
+                  : "The receiver can only accept uploads under this root folder subtree."
               }
-              helperText="The receiver can only accept uploads under this root folder subtree."
               fullWidth
             />
+            <Box>
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                Pick Root Folder
+              </Typography>
+              <Box
+                sx={{
+                  border: 1,
+                  borderColor: "divider",
+                  borderRadius: 1,
+                  p: 1,
+                  height: 260,
+                  overflow: "auto",
+                }}
+              >
+                <FolderTree
+                  rootNodeId="root"
+                  selectedNodeId={receiverForm.rootFolderId || undefined}
+                  variant="picker"
+                  onNodeSelect={(node) => {
+                    if (node.nodeType !== "FOLDER") {
+                      return;
+                    }
+                    setReceiverForm((current) => ({
+                      ...current,
+                      rootFolderId: node.id,
+                    }));
+                    setReceiverRootFolderName(node.name);
+                  }}
+                />
+              </Box>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: "block", mt: 0.5 }}
+              >
+                Use the tree to avoid copying UUIDs manually. The text field
+                remains editable for remote or pre-known folder IDs.
+              </Typography>
+            </Box>
             <FormControl fullWidth>
               <InputLabel id="receiver-auth-label">Auth Type</InputLabel>
               <Select

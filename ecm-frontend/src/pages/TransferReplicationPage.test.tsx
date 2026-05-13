@@ -34,6 +34,29 @@ jest.mock('services/transferReplicationService', () => ({
   },
 }));
 
+jest.mock('components/browser/FolderTree', () => ({
+  __esModule: true,
+  default: ({ onNodeSelect, selectedNodeId }: any) => (
+    <div data-testid="receiver-folder-tree">
+      <span data-testid="receiver-folder-tree-selected">{selectedNodeId || ''}</span>
+      <button
+        type="button"
+        onClick={() => onNodeSelect?.({ id: 'doc-1', name: 'Document', nodeType: 'DOCUMENT' })}
+      >
+        Pick document
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          onNodeSelect?.({ id: 'folder-receiver-root', name: 'Inbound Root', nodeType: 'FOLDER' })
+        }
+      >
+        Pick receiver folder
+      </button>
+    </div>
+  ),
+}));
+
 const mockedTransferReplicationService = transferReplicationService as jest.Mocked<typeof transferReplicationService>;
 const toastErrorMock = toast.error as jest.Mock;
 
@@ -129,4 +152,40 @@ test('shows a toast when the replication job list fails to load', async () => {
   render(<TransferReplicationPage />);
 
   await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith('Failed to load transfer replication data'));
+});
+
+test('creates a receiver registry entry with the folder picker root selection', async () => {
+  mockedTransferReplicationService.createReceiver.mockResolvedValueOnce({} as any);
+
+  render(<TransferReplicationPage />);
+
+  await screen.findByText('Transfer Replication');
+  fireEvent.click(screen.getByRole('button', { name: 'New Receiver' }));
+
+  fireEvent.change(screen.getByLabelText('Name'), {
+    target: { value: 'Inbound receiver' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Pick document' }));
+
+  const rootFolderInput = screen.getByLabelText('Root Folder ID') as HTMLInputElement;
+  expect(rootFolderInput.value).toBe('');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Pick receiver folder' }));
+
+  expect(rootFolderInput.value).toBe('folder-receiver-root');
+  expect(screen.getByText('Selected: Inbound Root')).toBeTruthy();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Create Receiver' }));
+
+  await waitFor(() =>
+    expect(mockedTransferReplicationService.createReceiver).toHaveBeenCalledWith({
+      name: 'Inbound receiver',
+      description: undefined,
+      rootFolderId: 'folder-receiver-root',
+      authType: 'NONE',
+      authUsername: undefined,
+      authSecret: undefined,
+      enabled: true,
+    })
+  );
 });
