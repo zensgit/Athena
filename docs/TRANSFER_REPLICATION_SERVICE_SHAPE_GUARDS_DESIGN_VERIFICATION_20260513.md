@@ -101,6 +101,22 @@ git diff --check -- ecm-frontend/src/services/transferReplicationService.ts \
 
 Result: passed.
 
+### Remote CI
+
+Run: `25787893818`
+
+Commit: `2aa3d49 fix(transfer): guard replication service responses`
+
+Result: passed.
+
+- Backend Verify: passed
+- Frontend Build & Test: passed
+- Phase C Security Verification: passed
+- Phase 5 Mocked Regression Gate: passed
+- Frontend E2E Core Gate: passed
+- Acceptance Smoke (3 admin pages): passed
+- Property Encryption Closeout Gate: passed
+
 ## Residual Work
 
 - This does not add new transfer backend APIs or receiver diagnostic audit
