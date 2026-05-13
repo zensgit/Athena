@@ -6,7 +6,7 @@ Date: 2026-05-07
 
 The OAuth Credential Store admin surface is the cross-integration `/admin/oauth-credentials` view that lets administrators inspect and operate on stored OAuth credential rows aggregated by the generic `OAuthCredentialService` and per-owner `OAuthCredentialOwnerAdapter` implementations. It deliberately keeps token values out of every response and exposes a small, bounded set of write actions. This document records what has shipped and what remains as design follow-up so the next round of work can pick up cleanly without re-deriving the prior decisions.
 
-## Done (as of 2026-05-12)
+## Done (as of 2026-05-13)
 
 - Inventory (read-only): `docs/OAUTH_CREDENTIAL_ADMIN_INVENTORY_DESIGN_VERIFICATION_20260506.md`
   - `GET /api/v1/admin/oauth-credentials` with admin role gating, JPQL projection, and token-redacted DTOs.
@@ -64,6 +64,10 @@ The OAuth Credential Store admin surface is the cross-integration `/admin/oauth-
   - `/admin/oauth-credentials` now has a local `Env-managed only` view for rows with `credentialKeyConfigured=true` and no locally stored access or refresh token.
   - The view is shareable through `?revokeCapability=env-managed-only` and shows an active filter chip like the other revoke-capability views.
   - This does not make external secrets revokable inside Athena; it only isolates the operator triage population.
+- Closeout reconciliation shipped on 2026-05-13: `docs/OAUTH_CREDENTIAL_STORE_CLOSEOUT_RECONCILIATION_20260513.md`
+  - CUSTOM revoke is no longer listed as future design work; it is shipped backend, admin UI, filters, URL state, active chips, detail readback, and env-managed triage.
+  - Microsoft provider-side revoke remains intentionally unsupported and surfaced through backend capability metadata.
+  - The remaining work section now distinguishes true future extension points from already-completed CUSTOM capability work.
 
 ## v1 Revoke invariants
 
@@ -77,8 +81,7 @@ v1 Provider Revoke scope is bounded to the following invariants:
 
 ## v1 Revoke limitations / known gaps
 
-- No Microsoft revoke. Microsoft uses tenant-scoped revoke endpoints with different confirmation semantics than Google's `oauth2/revoke`, and v1 does not attempt that.
-- No Microsoft provider-side revoke. Microsoft does not expose a Google-style per-token revoke endpoint for this model; see the follow-up doc for the constraint.
+- No Microsoft provider-side revoke. Microsoft does not expose a Google-style per-token revoke endpoint for this per-credential model; the UI must continue to surface the backend unsupported reason instead of offering a misleading success path.
 - No inventory-wide read-back of persisted CUSTOM revoke endpoint URLs. The inventory UI surfaces only `revokeEndpointConfigured`; an admin must open one CUSTOM row's configure dialog to read that row's persisted URL through the explicit detail endpoint.
 - Env-managed credential-key-only rows cannot be revoked. The credential key references an external secret that Athena does not own; clearing or revoking that secret has to happen in the operator's secret manager.
 - Provider-side revoke does not affect refresh tokens issued to other clients sharing the same Google OAuth client_id. It only invalidates the specific token Athena holds, so other applications using the same client_id retain their own grants.
@@ -87,9 +90,15 @@ v1 Provider Revoke scope is bounded to the following invariants:
 
 The only `OAuthCredentialOwnerAdapter` currently in tree is the mail-account adapter (`MailOAuthCredentialOwnerAdapter`). New adapter implementations - for example for additional integration owners - are out of scope for this closeout. The extension point is the `OAuthCredentialOwnerAdapter` interface; any new adapter is responsible for owner-side token mirroring (including clear-on-reauth and post-refresh save) so the existing admin actions continue to behave consistently without controller changes.
 
-## Microsoft / CUSTOM revoke design follow-up
+## Microsoft revoke design follow-up
 
-See `docs/OAUTH_CREDENTIAL_PROVIDER_REVOKE_MICROSOFT_CUSTOM_DESIGN_FOLLOWUP_20260507.md` for the Microsoft and CUSTOM revoke design follow-up.
+See `docs/OAUTH_CREDENTIAL_PROVIDER_REVOKE_MICROSOFT_CUSTOM_DESIGN_FOLLOWUP_20260507.md` for the remaining Microsoft constraint. The CUSTOM portion of that follow-up is historical and has shipped through the documents listed above.
+
+## Remaining closeout work
+
+- None for the current OAuth Credential Store v1 operator surface.
+- Future work should only start if a new `OAuthCredentialOwnerAdapter` is added, Microsoft publishes a per-token revoke endpoint compatible with this model, or operators require additional secret-manager integration for env-managed credentials.
+- Any future OAuth admin slice should continue to run `scripts/oauth-credential-admin-preflight.sh` before push and should keep token values out of inventory, mutation responses, logs, tests, and documentation.
 
 ## Operational guidance
 

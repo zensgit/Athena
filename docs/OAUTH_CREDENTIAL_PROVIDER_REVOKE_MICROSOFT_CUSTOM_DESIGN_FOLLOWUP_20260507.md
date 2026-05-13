@@ -1,4 +1,4 @@
-# OAuth Provider Revoke - Microsoft and CUSTOM Design Follow-up
+# OAuth Provider Revoke - Microsoft Constraint and CUSTOM History
 
 Date: 2026-05-07
 
@@ -17,10 +17,11 @@ single source of truth for whether a credential row supports Provider Revoke.
 The UI consumes those flags directly and no longer hard-codes
 `provider === 'GOOGLE'`.
 
-This document captures the design needed to extend Provider Revoke beyond
-Google without changing the API shape or the frontend control surface. The
-CUSTOM portion has now shipped; the Microsoft portion remains a design
-constraint because it lacks a direct per-token RFC 7009 revoke endpoint.
+This document now preserves two things:
+
+- the remaining Microsoft constraint, which is intentionally not implemented;
+- the historical CUSTOM design decisions that shipped on 2026-05-11 and are no
+  longer future work.
 
 ## Microsoft revoke
 
@@ -96,14 +97,15 @@ in one place.
 
 ### Per-credential revoke endpoint
 
-CUSTOM providers need a deterministic revoke URL. Two complementary sources:
+CUSTOM providers use a deterministic revoke URL from two complementary
+sources:
 
-- A new optional `revokeEndpoint` field on `OAuthCredentialOwner` (mirroring
-  the existing `tokenEndpoint`), persisted via a new schema column.
-- An env-key fallback `ECM_OAUTH_<KEY>_REVOKE_ENDPOINT` for env-managed
-  CUSTOM owners that already use `ECM_OAUTH_<KEY>_TOKEN_ENDPOINT`.
+- the optional `revokeEndpoint` field on `OAuthCredentialOwner`, persisted via
+  `oauth_credentials.revoke_endpoint`;
+- a credential-key env fallback built by the owner adapter, for mail accounts
+  currently shaped as `ECM_MAIL_OAUTH_<KEY>_REVOKE_ENDPOINT`.
 
-Resolution order should mirror token-endpoint resolution: per-credential
+Resolution order mirrors token-endpoint resolution: per-credential
 field first, env-key fallback second.
 
 ### Behavior when configured
@@ -145,25 +147,23 @@ support, env-managed credential-key-only rows continue to return
 
 - MICROSOFT: NO new migration is needed. Tenant resolution reuses the
   existing `tenantId` column already used by token endpoints.
-- CUSTOM: needs a NEW optional `revoke_endpoint` column on the OAuth
-  credential owner table (alongside the existing token endpoint column). The
-  env-key fallback adds no schema change; it is read at runtime.
+- CUSTOM: shipped with `093-add-oauth-credential-revoke-endpoint.xml`, adding
+  the optional `oauth_credentials.revoke_endpoint` column. The env-key fallback
+  adds no schema change; it is read at runtime.
 
-The CUSTOM revoke slice reserved
-`093-add-oauth-credential-revoke-endpoint.xml`. The earlier placeholder number
-`092` was superseded by `092-add-site-invitation-send-tracking.xml`.
+The earlier placeholder number `092` was superseded by
+`092-add-site-invitation-send-tracking.xml`.
 
-## Test plan placeholder
+## Test plan status
 
-When the work is picked up, extend the existing test classes rather than
-introducing parallel ones:
+CUSTOM coverage shipped by extending the existing test classes rather than
+introducing parallel ones. If Microsoft ever becomes implementable, use the
+same extension pattern:
 
-- `OAuthCredentialServiceTest`: per-provider success / already-invalid 4xx /
-  5xx / network-failure cases for MICROSOFT (when implemented) and CUSTOM with
-  configured and unconfigured endpoints.
+- `OAuthCredentialServiceTest`: per-provider success, already-invalid 4xx, 5xx,
+  and network-failure cases for MICROSOFT if implemented.
 - `OAuthCredentialAdminServiceTest`: capability metadata projection for
-  MICROSOFT and CUSTOM rows, including the env-managed-only branch and the
-  CUSTOM-without-endpoint branch.
+  MICROSOFT rows, including the env-managed-only branch.
 - `OAuthCredentialAdminControllerSecurityTest`: controller pass-through is
   expected to remain unchanged because new provider support is added at the
   service layer; the controller continues to surface the existing 200 / 400 /
@@ -178,11 +178,12 @@ classes and does not need to change when the new cases are added inside them.
 - The capability-metadata refactor (round 2 of this thread:
   `claude/oauth-revoke-meta-backend`, `claude/oauth-revoke-meta-ui`,
   `claude/oauth-revoke-meta-docs`) is now merged. The UI is metadata-driven
-  before any broader provider ships, so adding MICROSOFT or CUSTOM support
-  requires only a backend capability-tree update plus a per-provider service
-  implementation.
-- MICROSOFT and CUSTOM were intentionally kept as separate slices. CUSTOM has
-  shipped because it is RFC 7009-shaped behind a configured endpoint.
-  MICROSOFT remains separate because it lacks a canonical revoke endpoint.
-- Each slice must reuse the v1 Google decision tree for failure handling and
-  must not reintroduce client-side provider branching in the UI.
+  before any broader provider ships, so adding MICROSOFT support would require
+  only a backend capability-tree update plus a service implementation if a real
+  per-token provider endpoint appears.
+- CUSTOM shipped because it is RFC 7009-shaped behind a configured endpoint.
+  It should not be reopened unless operators need provider-specific custom
+  request shaping beyond form-encoded `token=<value>`.
+- Microsoft remains separate because it lacks a canonical revoke endpoint.
+  Do not reintroduce client-side provider branching or a best-effort logout
+  action that implies refresh-token invalidation.
