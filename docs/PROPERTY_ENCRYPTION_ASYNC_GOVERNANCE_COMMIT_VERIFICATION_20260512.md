@@ -5,7 +5,9 @@ Date: 2026-05-12
 ## Context
 
 The 2026-05-12 Property Encryption async-governance addendum has been committed
-locally in the split proposed by the integration manifest.
+locally in the split proposed by the integration manifest. Use
+`git log --oneline origin/main..HEAD` as the source of truth for the exact local
+commit stack before pushing.
 
 The working tree still contains the pre-existing local `.env` modification. It
 was intentionally excluded from all commits.
@@ -19,10 +21,10 @@ was intentionally excluded from all commits.
 | `4d13518` | `test(property-encryption): add async governance addendum gate` |
 | `6d6acdd` | `docs(property-encryption): document async governance addendum` |
 
-Current branch state after those commits:
+Expected branch state after the local commit stack:
 
 ```text
-main...origin/main [ahead 4]
+main...origin/main [ahead N]
 .env remains locally modified and uncommitted.
 ```
 
@@ -80,6 +82,6 @@ If a job fails, use:
 
 ## Remaining Work
 
-- Push the four local commits.
+- Push the local commits.
 - Record fresh CI evidence.
 - Keep `.env` out of commits.
