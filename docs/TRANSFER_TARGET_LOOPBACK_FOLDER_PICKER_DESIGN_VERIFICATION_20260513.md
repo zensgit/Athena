@@ -73,6 +73,22 @@ git diff --check -- ecm-frontend/src/pages/TransferReplicationPage.tsx \
 
 Result: passed.
 
+### Remote CI
+
+Run: `25783510613`
+
+Commit: `dd15675 feat(transfer): add loopback target folder picker`
+
+Result: passed.
+
+- Backend Verify: passed
+- Frontend Build & Test: passed
+- Phase C Security Verification: passed
+- Phase 5 Mocked Regression Gate: passed
+- Frontend E2E Core Gate: passed
+- Acceptance Smoke (3 admin pages): passed
+- Property Encryption Closeout Gate: passed
+
 ## Residual Work
 
 - `ATHENA_HTTP` target folder selection remains manual because the folder UUID
