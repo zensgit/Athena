@@ -17,7 +17,7 @@ if [[ -z "${MAVEN_BIN}" ]]; then
 fi
 export MAVEN_BIN
 
-BACKEND_NON_DOCKER_TESTS="${BACKEND_NON_DOCKER_TESTS:-PropertyEncryptionOperationsServiceTest,PropertyEncryptionOperationsControllerSecurityTest,NodePropertyEncryptionServiceTest,NodeControllerAspectTest,DocumentControllerCheckoutTest,ContentTypeControllerPreviewSemanticsTest,SearchIndexServiceSubtreeReindexTest}"
+BACKEND_NON_DOCKER_TESTS="${BACKEND_NON_DOCKER_TESTS:-PropertyEncryptionOperationsServiceTest,PropertyEncryptionOperationsControllerSecurityTest,PropertyEncryptionAsyncTaskServiceTest,AsyncTaskGovernanceServiceTest,AsyncTaskLifecycleServiceTest,AnalyticsControllerTest,AnalyticsControllerSecurityTest,NodePropertyEncryptionServiceTest,NodeControllerAspectTest,DocumentControllerCheckoutTest,ContentTypeControllerPreviewSemanticsTest,SearchIndexServiceSubtreeReindexTest}"
 FRONTEND_TEST_PATHS="${FRONTEND_TEST_PATHS:-src/services/propertyEncryptionService.test.ts src/pages/PropertyEncryptionOperationsPage.test.tsx src/utils/propertyRedactionUtils.test.ts}"
 RUN_FRONTEND_BUILD="${RUN_FRONTEND_BUILD:-1}"
 RUN_PHASE5_REGISTRY="${RUN_PHASE5_REGISTRY:-1}"
