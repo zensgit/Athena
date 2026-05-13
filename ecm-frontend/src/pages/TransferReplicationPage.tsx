@@ -255,6 +255,7 @@ const TransferReplicationPage: React.FC = () => {
   >(null);
   const [targetForm, setTargetForm] =
     useState<TransferTargetMutationRequest>(EMPTY_TARGET_FORM);
+  const [targetFolderName, setTargetFolderName] = useState("");
   const [receiverForm, setReceiverForm] =
     useState<TransferReceiverMutationRequest>(EMPTY_RECEIVER_FORM);
   const [receiverRootFolderName, setReceiverRootFolderName] = useState("");
@@ -322,9 +323,11 @@ const TransferReplicationPage: React.FC = () => {
         authSecret: "",
         enabled: target.enabled,
       });
+      setTargetFolderName(target.targetFolderName || "");
     } else {
       setSelectedTargetId(null);
       setTargetForm(EMPTY_TARGET_FORM);
+      setTargetFolderName("");
     }
     setTargetDialogOpen(true);
   };
@@ -383,6 +386,7 @@ const TransferReplicationPage: React.FC = () => {
     setTargetDialogOpen(false);
     setSelectedTargetId(null);
     setTargetForm(EMPTY_TARGET_FORM);
+    setTargetFolderName("");
   };
 
   const closeReceiverDialog = () => {
@@ -1584,16 +1588,20 @@ const TransferReplicationPage: React.FC = () => {
                 labelId="transfer-target-transport-label"
                 label="Transport"
                 value={targetForm.transportType}
-                onChange={(event) =>
+                onChange={(event) => {
+                  const transportType = event.target.value as TransportType;
                   setTargetForm((current) => ({
                     ...current,
-                    transportType: event.target.value as TransportType,
+                    transportType,
                     authType:
-                      event.target.value === "ATHENA_HTTP"
+                      transportType === "ATHENA_HTTP"
                         ? current.authType || "NONE"
                         : "NONE",
-                  }))
-                }
+                  }));
+                  if (transportType === "ATHENA_HTTP") {
+                    setTargetFolderName("");
+                  }
+                }}
               >
                 <MenuItem value="LOOPBACK">LOOPBACK</MenuItem>
                 <MenuItem value="ATHENA_HTTP">ATHENA_HTTP</MenuItem>
@@ -1602,15 +1610,61 @@ const TransferReplicationPage: React.FC = () => {
             <TextField
               label="Target Folder ID"
               value={targetForm.targetFolderId}
-              onChange={(event) =>
+              onChange={(event) => {
                 setTargetForm((current) => ({
                   ...current,
                   targetFolderId: event.target.value,
-                }))
+                }));
+                setTargetFolderName("");
+              }}
+              helperText={
+                targetFolderName
+                  ? `Selected: ${targetFolderName}`
+                  : "LOOPBACK uses a local folder UUID. ATHENA_HTTP uses a remote folder UUID."
               }
-              helperText="LOOPBACK uses a local folder UUID. ATHENA_HTTP uses a remote folder UUID."
               fullWidth
             />
+            {targetForm.transportType === "LOOPBACK" && (
+              <Box>
+                <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                  Pick Local Target Folder
+                </Typography>
+                <Box
+                  sx={{
+                    border: 1,
+                    borderColor: "divider",
+                    borderRadius: 1,
+                    p: 1,
+                    height: 260,
+                    overflow: "auto",
+                  }}
+                >
+                  <FolderTree
+                    rootNodeId="root"
+                    selectedNodeId={targetForm.targetFolderId || undefined}
+                    variant="picker"
+                    onNodeSelect={(node) => {
+                      if (node.nodeType !== "FOLDER") {
+                        return;
+                      }
+                      setTargetForm((current) => ({
+                        ...current,
+                        targetFolderId: node.id,
+                      }));
+                      setTargetFolderName(node.name);
+                    }}
+                  />
+                </Box>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ display: "block", mt: 0.5 }}
+                >
+                  Local LOOPBACK targets can be picked from the repository tree.
+                  Remote ATHENA_HTTP targets still require a remote folder UUID.
+                </Typography>
+              </Box>
+            )}
             {targetForm.transportType === "ATHENA_HTTP" && (
               <>
                 <TextField

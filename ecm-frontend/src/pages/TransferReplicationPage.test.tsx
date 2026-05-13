@@ -37,13 +37,21 @@ jest.mock('services/transferReplicationService', () => ({
 jest.mock('components/browser/FolderTree', () => ({
   __esModule: true,
   default: ({ onNodeSelect, selectedNodeId }: any) => (
-    <div data-testid="receiver-folder-tree">
-      <span data-testid="receiver-folder-tree-selected">{selectedNodeId || ''}</span>
+    <div data-testid="folder-tree">
+      <span data-testid="folder-tree-selected">{selectedNodeId || ''}</span>
       <button
         type="button"
         onClick={() => onNodeSelect?.({ id: 'doc-1', name: 'Document', nodeType: 'DOCUMENT' })}
       >
         Pick document
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          onNodeSelect?.({ id: 'folder-local-target', name: 'Local Replica Root', nodeType: 'FOLDER' })
+        }
+      >
+        Pick local target folder
       </button>
       <button
         type="button"
@@ -152,6 +160,40 @@ test('shows a toast when the replication job list fails to load', async () => {
   render(<TransferReplicationPage />);
 
   await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith('Failed to load transfer replication data'));
+});
+
+test('creates a loopback transfer target with the local folder picker selection', async () => {
+  mockedTransferReplicationService.createTarget.mockResolvedValueOnce({} as any);
+
+  render(<TransferReplicationPage />);
+
+  await screen.findByText('Transfer Replication');
+  fireEvent.click(screen.getByRole('button', { name: 'New Target' }));
+
+  fireEvent.change(screen.getByLabelText('Name'), {
+    target: { value: 'Loopback target' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Pick document' }));
+
+  const targetFolderInput = screen.getByLabelText('Target Folder ID') as HTMLInputElement;
+  expect(targetFolderInput.value).toBe('');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Pick local target folder' }));
+
+  expect(targetFolderInput.value).toBe('folder-local-target');
+  expect(screen.getByText('Selected: Local Replica Root')).toBeTruthy();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Create Target' }));
+
+  await waitFor(() =>
+    expect(mockedTransferReplicationService.createTarget).toHaveBeenCalledWith({
+      name: 'Loopback target',
+      description: undefined,
+      transportType: 'LOOPBACK',
+      targetFolderId: 'folder-local-target',
+      enabled: true,
+    })
+  );
 });
 
 test('creates a receiver registry entry with the folder picker root selection', async () => {
