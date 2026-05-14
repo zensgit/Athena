@@ -41,8 +41,8 @@ interface Comment {
   content: string;
   author: string;
   created: string;
-  edited?: string;
-  editor?: string;
+  edited?: string | null;
+  editor?: string | null;
   level: number;
   reactions: Array<{ type: string; user: string; date: string }>;
   mentionedUsers: string[];

@@ -1276,7 +1276,7 @@ const PeopleDirectoryPage: React.FC = () => {
     }
 
     if (isDocumentNodeType(comment.nodeType)) {
-      return renderDocumentQuickActions(comment.nodeId, comment.nodeType, {
+      return renderDocumentQuickActions(comment.nodeId, comment.nodeType ?? undefined, {
         previewLabel: options.previewLabel,
         discussLabel: options.discussLabel,
         favoriteFallbackLabel: options.favoriteFallbackLabel || comment.nodeName || comment.id,
