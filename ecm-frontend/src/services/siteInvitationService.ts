@@ -42,50 +42,87 @@ export interface TokenRequest {
 export const SITE_INVITATION_RESEND_UNEXPECTED_RESPONSE_MESSAGE =
   'Site invitation resend endpoint returned an unexpected response. Mocked CI gate may not cover it; runtime configuration may be missing.';
 
+const isObject = (value: unknown): value is Record<string, unknown> => (
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+);
+
+const isNullableString = (value: unknown): value is string | null => (
+  value === null || typeof value === 'string'
+);
+
+const isLastSendStatus = (value: unknown): value is SiteInvitationDto['lastSendStatus'] => (
+  value === null || value === 'SENT' || value === 'FAILED'
+);
+
 const isSiteInvitationDto = (value: unknown): value is SiteInvitationDto => {
-  if (!value || typeof value !== 'object') {
+  if (!isObject(value)) {
     return false;
   }
-  const candidate = value as { id?: unknown; sendAttemptCount?: unknown };
-  return typeof candidate.id === 'string' && typeof candidate.sendAttemptCount === 'number';
+  return typeof value.id === 'string'
+    && typeof value.siteId === 'string'
+    && typeof value.siteTitle === 'string'
+    && typeof value.inviteeEmail === 'string'
+    && isNullableString(value.inviteeUsername)
+    && typeof value.invitedRole === 'string'
+    && typeof value.status === 'string'
+    && isNullableString(value.message)
+    && typeof value.invitedBy === 'string'
+    && typeof value.expiresAt === 'string'
+    && isNullableString(value.acceptedAt)
+    && typeof value.createdDate === 'string'
+    && isNullableString(value.lastSendAttemptAt)
+    && isLastSendStatus(value.lastSendStatus)
+    && isNullableString(value.lastSendError)
+    && typeof value.sendAttemptCount === 'number'
+    && Number.isFinite(value.sendAttemptCount)
+    && isNullableString(value.lastSentAt);
+};
+
+const assertUnexpectedResponse = (): never => {
+  throw new Error(SITE_INVITATION_RESEND_UNEXPECTED_RESPONSE_MESSAGE);
+};
+
+const assertSiteInvitationDto = (value: unknown): SiteInvitationDto => (
+  isSiteInvitationDto(value) ? value : assertUnexpectedResponse()
+);
+
+const assertSiteInvitationArray = (value: unknown): SiteInvitationDto[] => {
+  if (!Array.isArray(value) || !value.every(isSiteInvitationDto)) {
+    return assertUnexpectedResponse();
+  }
+  return value;
 };
 
 class SiteInvitationService {
   async listInvitations(siteId: string): Promise<SiteInvitationDto[]> {
     const result = await api.get<SiteInvitationDto[]>(`/sites/${siteId}/invitations`);
-    if (!Array.isArray(result)) {
-      // Phase 5 Mocked may return SPA HTML for unmocked routes. Surface the
-      // synthetic error so the page renders a sensible message rather than
-      // crashing on `.map` of a non-array value.
-      throw new Error(SITE_INVITATION_RESEND_UNEXPECTED_RESPONSE_MESSAGE);
-    }
-    return result;
+    return assertSiteInvitationArray(result);
   }
 
-  createInvitation(siteId: string, data: InviteRequest): Promise<SiteInvitationDto> {
-    return api.post<SiteInvitationDto>(`/sites/${siteId}/invitations`, data);
+  async createInvitation(siteId: string, data: InviteRequest): Promise<SiteInvitationDto> {
+    const result = await api.post<SiteInvitationDto>(`/sites/${siteId}/invitations`, data);
+    return assertSiteInvitationDto(result);
   }
 
   cancelInvitation(siteId: string, invitationId: string): Promise<void> {
     return api.delete<void>(`/sites/${siteId}/invitations/${invitationId}`);
   }
 
-  acceptInvitation(data: TokenRequest): Promise<SiteInvitationDto> {
-    return api.post<SiteInvitationDto>('/invitations/accept', data);
+  async acceptInvitation(data: TokenRequest): Promise<SiteInvitationDto> {
+    const result = await api.post<SiteInvitationDto>('/invitations/accept', data);
+    return assertSiteInvitationDto(result);
   }
 
-  rejectInvitation(data: TokenRequest): Promise<SiteInvitationDto> {
-    return api.post<SiteInvitationDto>('/invitations/reject', data);
+  async rejectInvitation(data: TokenRequest): Promise<SiteInvitationDto> {
+    const result = await api.post<SiteInvitationDto>('/invitations/reject', data);
+    return assertSiteInvitationDto(result);
   }
 
   async resendInvitation(siteId: string, invitationId: string): Promise<SiteInvitationDto> {
     const result = await api.post<SiteInvitationDto>(
       `/sites/${siteId}/invitations/${invitationId}/resend`,
     );
-    if (!isSiteInvitationDto(result)) {
-      throw new Error(SITE_INVITATION_RESEND_UNEXPECTED_RESPONSE_MESSAGE);
-    }
-    return result;
+    return assertSiteInvitationDto(result);
   }
 }
 
