@@ -172,13 +172,21 @@ HEAD~2..HEAD` also passed after cherry-picking this worktree commit onto the
 
 ### Remote CI
 
-Run: pending (record after the worktree branch is pushed and CI completes).
+Run: `25859410071`.
 
 Commit: `7fd6894 fix(sites): guard service responses`.
 
-Expected gates: Backend Verify, Frontend Build & Test, Phase C Security
-Verification, Property Encryption Closeout Gate, Frontend E2E Core Gate,
-Acceptance Smoke (3 admin pages), Phase 5 Mocked Regression Gate.
+Head commit: `d15f8b8 docs(sites): record local service guard verification`.
+
+Result: passed.
+
+- Backend Verify: passed.
+- Frontend Build & Test: passed.
+- Phase C Security Verification: passed.
+- Property Encryption Closeout Gate: passed.
+- Frontend E2E Core Gate: passed.
+- Acceptance Smoke (3 admin pages): passed.
+- Phase 5 Mocked Regression Gate: passed.
 
 ## Residual Work
 

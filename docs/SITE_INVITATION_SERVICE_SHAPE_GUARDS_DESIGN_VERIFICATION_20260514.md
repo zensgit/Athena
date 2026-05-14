@@ -90,7 +90,21 @@ Result:
 - 2 suites passed.
 - 41 tests passed.
 
-Remote GitHub Actions: pending after push.
+Remote GitHub Actions:
+
+Run: `25859410071`.
+
+Head commit: `d15f8b8 docs(sites): record local service guard verification`.
+
+Result: passed.
+
+- Backend Verify: passed.
+- Frontend Build & Test: passed.
+- Phase C Security Verification: passed.
+- Property Encryption Closeout Gate: passed.
+- Frontend E2E Core Gate: passed.
+- Acceptance Smoke (3 admin pages): passed.
+- Phase 5 Mocked Regression Gate: passed.
 
 ## Residual Work
 
