@@ -33,20 +33,10 @@ import {
   Tag as TagIcon,
 } from '@mui/icons-material';
 import { HexColorPicker } from 'react-colorful';
-import tagService from 'services/tagService';
+import tagService, { Tag } from 'services/tagService';
 import { toast } from 'react-toastify';
 import { useAppSelector } from 'store';
 import authService from 'services/authService';
-
-interface Tag {
-  id: string;
-  name: string;
-  description?: string;
-  color: string;
-  usageCount: number;
-  created: string;
-  creator: string;
-}
 
 interface TagManagerProps {
   open: boolean;
