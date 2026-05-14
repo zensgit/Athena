@@ -67,6 +67,33 @@ describe('notificationUtils', () => {
     ]);
   });
 
+  it('normalizes missing backend activity fields for labels and summaries', () => {
+    const notification = buildNotification({
+      activityType: null,
+      actorUserId: null,
+      siteId: null,
+      nodeId: null,
+      nodeName: null,
+      summary: {},
+    });
+
+    expect(toActivityFromNotification(notification)).toEqual({
+      id: 'notif-1',
+      activityType: 'unknown',
+      userId: 'system',
+      siteId: null,
+      nodeId: null,
+      nodeName: null,
+      summary: {},
+      postedAt: '2026-04-03T12:00:00Z',
+    });
+    expect(formatNotificationLabel(notification)).toBe('Unknown');
+    expect(formatNotificationSummary(notification)).toBe('No additional details available.');
+    expect(getNotificationLinkTargets(notification)).toEqual([
+      { href: '/activities?scope=global', label: 'Open Activity' },
+    ]);
+  });
+
   it('builds records-management and node links for preset delivery failure notifications', () => {
     const notification = buildNotification({
       activityType: 'rm.report_preset.delivery.failed',

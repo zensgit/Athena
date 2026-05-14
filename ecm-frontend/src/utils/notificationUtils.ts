@@ -9,8 +9,8 @@ import {
 
 export const toActivityFromNotification = (notification: NotificationDto): ActivityDto => ({
   id: notification.id,
-  activityType: notification.activityType,
-  userId: notification.actorUserId,
+  activityType: notification.activityType ?? 'unknown',
+  userId: notification.actorUserId ?? 'system',
   siteId: notification.siteId ?? null,
   nodeId: notification.nodeId ?? null,
   nodeName: notification.nodeName ?? null,
@@ -19,7 +19,7 @@ export const toActivityFromNotification = (notification: NotificationDto): Activ
 });
 
 export const formatNotificationLabel = (notification: NotificationDto): string =>
-  formatActivityLabel(notification.activityType);
+  formatActivityLabel(notification.activityType ?? 'unknown');
 
 export const formatNotificationSummary = (notification: NotificationDto): string =>
   formatActivitySummary(toActivityFromNotification(notification));

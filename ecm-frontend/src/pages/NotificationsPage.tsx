@@ -91,7 +91,7 @@ const NotificationsPage: React.FC = () => {
     navigate(href);
   };
 
-  const activityColor = (type: string) => {
+  const activityColor = (type: string | null) => {
     if (type?.includes('created') || type?.includes('added')) return 'success' as const;
     if (type?.includes('deleted') || type?.includes('removed') || type?.includes('rejected')) return 'error' as const;
     if (type?.includes('locked') || type?.includes('approved')) return 'warning' as const;
@@ -156,7 +156,7 @@ const NotificationsPage: React.FC = () => {
                           {formatNotificationLabel(n)}
                         </Typography>
                         <Typography variant="body2">
-                          <strong>{n.actorUserId}</strong>
+                          <strong>{n.actorUserId ?? 'system'}</strong>
                           {n.nodeName && <> &middot; <em>{n.nodeName}</em></>}
                           {n.siteId && <> &middot; {n.siteId}</>}
                         </Typography>
