@@ -153,11 +153,28 @@ git diff --check -- ecm-frontend/src/services/siteService.ts \
 
 Result: passed.
 
+### Mainline Integration
+
+```bash
+cd ecm-frontend
+CI=true npm test -- --runTestsByPath src/services/siteInvitationService.test.ts \
+  src/services/siteService.test.ts --watchAll=false
+```
+
+Result:
+
+- 2 suites passed.
+- 41 tests passed.
+
+Mainline `npm run lint`, `CI=true npm run build`, and `git diff --check
+HEAD~2..HEAD` also passed after cherry-picking this worktree commit onto the
+`siteInvitationService` slice.
+
 ### Remote CI
 
 Run: pending (record after the worktree branch is pushed and CI completes).
 
-Commit: `fix(sites): guard service responses` (pending).
+Commit: `7fd6894 fix(sites): guard service responses`.
 
 Expected gates: Backend Verify, Frontend Build & Test, Phase C Security
 Verification, Property Encryption Closeout Gate, Frontend E2E Core Gate,

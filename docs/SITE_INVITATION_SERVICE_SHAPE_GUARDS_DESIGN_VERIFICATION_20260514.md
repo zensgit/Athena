@@ -79,10 +79,18 @@ neither failed the build.
 
 ### Integration and Remote CI
 
-Pending after integration with the parallel `siteService` slice:
+```bash
+cd ecm-frontend
+CI=true npm test -- --runTestsByPath src/services/siteInvitationService.test.ts \
+  src/services/siteService.test.ts --watchAll=false
+```
 
-- combined service Jest run
-- remote GitHub Actions
+Result:
+
+- 2 suites passed.
+- 41 tests passed.
+
+Remote GitHub Actions: pending after push.
 
 ## Residual Work
 
