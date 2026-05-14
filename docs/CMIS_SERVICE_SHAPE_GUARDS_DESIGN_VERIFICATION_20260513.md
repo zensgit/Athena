@@ -99,7 +99,19 @@ Result: passed.
 
 ### Remote CI
 
-Pending.
+Run: `25834365912`
+
+Commit: `c86984b fix(cmis): guard browser service responses`
+
+Result: passed.
+
+- Backend Verify: passed
+- Frontend Build & Test: passed
+- Phase C Security Verification: passed
+- Property Encryption Closeout Gate: passed
+- Frontend E2E Core Gate: passed
+- Acceptance Smoke (3 admin pages): passed
+- Phase 5 Mocked Regression Gate: passed.
 
 ## Residual Work
 
