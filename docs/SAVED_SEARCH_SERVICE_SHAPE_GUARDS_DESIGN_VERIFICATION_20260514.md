@@ -113,7 +113,19 @@ Result: passed.
 
 ### Remote CI
 
-Pending.
+Run: `25835273116`
+
+Commit: `30297be fix(search): guard saved search service responses`
+
+Result: passed.
+
+- Backend Verify: passed
+- Frontend Build & Test: passed
+- Phase C Security Verification: passed
+- Property Encryption Closeout Gate: passed
+- Frontend E2E Core Gate: passed
+- Acceptance Smoke (3 admin pages): passed
+- Phase 5 Mocked Regression Gate: passed
 
 ## Residual Work
 
