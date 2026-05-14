@@ -101,11 +101,19 @@ Result: passed.
 
 ### Remote CI
 
-Run: pending.
+Run: `25845146185`
 
-Commit: pending.
+Commit: `0c76bb1 fix(notifications): guard service responses`
 
-Result: pending.
+Result: passed.
+
+- Backend Verify: passed
+- Frontend Build & Test: passed
+- Phase C Security Verification: passed
+- Property Encryption Closeout Gate: passed
+- Frontend E2E Core Gate: passed
+- Acceptance Smoke (3 admin pages): passed
+- Phase 5 Mocked Regression Gate: passed
 
 ## Residual Work
 
