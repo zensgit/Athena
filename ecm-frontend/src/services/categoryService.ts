@@ -1,9 +1,24 @@
 import api from './api';
 
+export const CATEGORY_UNEXPECTED_RESPONSE_MESSAGE =
+  'Category endpoint returned an unexpected response. Mocked CI gate may not cover it; backend route may be missing.';
+
+const isObject = (value: unknown): value is Record<string, unknown> => (
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+);
+
+const isNumber = (value: unknown): value is number => (
+  typeof value === 'number' && Number.isFinite(value)
+);
+
+const isStringOrNullish = (value: unknown): value is string | null | undefined => (
+  value === null || value === undefined || typeof value === 'string'
+);
+
 export interface CategoryTreeNode {
   id: string;
   name: string;
-  description?: string;
+  description?: string | null;
   path: string;
   level: number;
   children: CategoryTreeNode[];
@@ -12,7 +27,7 @@ export interface CategoryTreeNode {
 export interface CategoryResponse {
   id: string;
   name: string;
-  description?: string;
+  description?: string | null;
   path: string;
   level: number;
 }
@@ -28,17 +43,66 @@ interface UpdateCategoryRequest {
   description?: string;
 }
 
+const assertUnexpectedResponse = (): never => {
+  throw new Error(CATEGORY_UNEXPECTED_RESPONSE_MESSAGE);
+};
+
+const isCategoryResponse = (value: unknown): value is CategoryResponse => {
+  if (!isObject(value)) {
+    return false;
+  }
+  return typeof value.id === 'string'
+    && typeof value.name === 'string'
+    && isStringOrNullish(value.description)
+    && typeof value.path === 'string'
+    && isNumber(value.level);
+};
+
+const assertCategoryResponse = (value: unknown): CategoryResponse => (
+  isCategoryResponse(value) ? value : assertUnexpectedResponse()
+);
+
+const isCategoryTreeNode = (value: unknown): value is CategoryTreeNode => {
+  if (!isObject(value)) {
+    return false;
+  }
+  return typeof value.id === 'string'
+    && typeof value.name === 'string'
+    && isStringOrNullish(value.description)
+    && typeof value.path === 'string'
+    && isNumber(value.level)
+    && Array.isArray(value.children)
+    && value.children.every(isCategoryTreeNode);
+};
+
+const assertCategoryTree = (value: unknown): CategoryTreeNode[] => {
+  if (!Array.isArray(value) || !value.every(isCategoryTreeNode)) {
+    throw new Error(CATEGORY_UNEXPECTED_RESPONSE_MESSAGE);
+  }
+  return value;
+};
+
+const assertCategoryList = (value: unknown): CategoryResponse[] => {
+  if (!Array.isArray(value) || !value.every(isCategoryResponse)) {
+    throw new Error(CATEGORY_UNEXPECTED_RESPONSE_MESSAGE);
+  }
+  return value;
+};
+
 class CategoryService {
   async getCategoryTree(): Promise<CategoryTreeNode[]> {
-    return api.get<CategoryTreeNode[]>('/categories/tree');
+    const result = await api.get<unknown>('/categories/tree');
+    return assertCategoryTree(result);
   }
 
   async createCategory(data: CreateCategoryRequest): Promise<CategoryResponse> {
-    return api.post<CategoryResponse>('/categories', data);
+    const result = await api.post<unknown>('/categories', data);
+    return assertCategoryResponse(result);
   }
 
   async updateCategory(categoryId: string, data: UpdateCategoryRequest): Promise<CategoryResponse> {
-    return api.put<CategoryResponse>(`/categories/${categoryId}`, data);
+    const result = await api.put<unknown>(`/categories/${categoryId}`, data);
+    return assertCategoryResponse(result);
   }
 
   async deleteCategory(categoryId: string, deleteChildren = false): Promise<void> {
@@ -56,10 +120,10 @@ class CategoryService {
   }
 
   async getNodeCategories(nodeId: string): Promise<CategoryResponse[]> {
-    return api.get<CategoryResponse[]>(`/nodes/${nodeId}/categories`);
+    const result = await api.get<unknown>(`/nodes/${nodeId}/categories`);
+    return assertCategoryList(result);
   }
 }
 
 const categoryService = new CategoryService();
 export default categoryService;
-
