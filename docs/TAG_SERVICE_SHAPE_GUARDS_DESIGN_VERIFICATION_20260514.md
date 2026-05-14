@@ -111,8 +111,19 @@ Result: passed.
 
 ### Remote CI
 
-Pending. This section will be updated after the commit is pushed and the main
-branch CI run completes.
+Run: `25839328347`
+
+Commit: `ead9b3b fix(tags): guard service responses`
+
+Result: passed.
+
+- Backend Verify: passed
+- Frontend Build & Test: passed
+- Phase C Security Verification: passed
+- Property Encryption Closeout Gate: passed
+- Frontend E2E Core Gate: passed
+- Acceptance Smoke (3 admin pages): passed
+- Phase 5 Mocked Regression Gate: passed
 
 ## Residual Work
 
