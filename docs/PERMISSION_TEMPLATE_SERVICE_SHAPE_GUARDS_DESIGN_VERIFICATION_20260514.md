@@ -185,7 +185,19 @@ HEAD~2..HEAD` also passed after cherry-picking this worktree commit onto the
 
 ### Remote CI
 
-Pending after push.
+Run: `25894778899`.
+
+Head commit: `19ab50b docs(templates): record local service guard verification`.
+
+Result: passed.
+
+- Backend Verify: passed.
+- Frontend Build & Test: passed.
+- Phase C Security Verification: passed.
+- Property Encryption Closeout Gate: passed.
+- Frontend E2E Core Gate: passed.
+- Acceptance Smoke (3 admin pages): passed.
+- Phase 5 Mocked Regression Gate: passed.
 
 ## Residual Work
 
