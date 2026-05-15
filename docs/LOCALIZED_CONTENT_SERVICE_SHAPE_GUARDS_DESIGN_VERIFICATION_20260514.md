@@ -151,9 +151,26 @@ git diff --check -- ecm-frontend/src/services/localizedContentService.ts \
 
 Result: passed (no whitespace errors).
 
+### Mainline Integration
+
+```bash
+cd ecm-frontend
+CI=true npm test -- --runTestsByPath src/services/contentTypeService.test.ts \
+  src/services/localizedContentService.test.ts --watchAll=false
+```
+
+Result:
+
+- 2 suites passed.
+- 25 tests passed.
+
+Mainline `npm run lint`, `CI=true npm run build`, and `git diff --check
+HEAD~2..HEAD` also passed after cherry-picking this worktree commit onto the
+`contentTypeService` slice.
+
 ### Remote CI
 
-Pending after mainline integration and push.
+Pending after push.
 
 ## Residual Work
 

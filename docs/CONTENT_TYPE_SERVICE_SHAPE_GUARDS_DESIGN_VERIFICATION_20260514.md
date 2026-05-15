@@ -74,10 +74,26 @@ Result: compiled successfully. CRA still reports the existing bundle-size
 advisory, and Node emits the known `fs.F_OK` dependency deprecation warning;
 neither failed the build.
 
-Pending after integration with the parallel `localizedContentService` slice:
+### Mainline Integration
 
-- combined service Jest run
-- remote GitHub Actions
+```bash
+cd ecm-frontend
+CI=true npm test -- --runTestsByPath src/services/contentTypeService.test.ts \
+  src/services/localizedContentService.test.ts --watchAll=false
+```
+
+Result:
+
+- 2 suites passed.
+- 25 tests passed.
+
+Mainline `npm run lint`, `CI=true npm run build`, and `git diff --check
+HEAD~2..HEAD` also passed after cherry-picking the parallel
+`localizedContentService` slice.
+
+### Remote CI
+
+Pending after push.
 
 ## Residual Work
 
