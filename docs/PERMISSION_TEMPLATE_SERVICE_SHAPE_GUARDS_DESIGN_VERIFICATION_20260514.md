@@ -166,12 +166,26 @@ git diff --check -- ecm-frontend/src/services/permissionTemplateService.ts \
 
 Result: passed.
 
+### Mainline Integration
+
+```bash
+cd ecm-frontend
+CI=true npm test -- --runTestsByPath src/services/templateService.test.ts \
+  src/services/permissionTemplateService.test.ts --watchAll=false
+```
+
+Result:
+
+- 2 suites passed.
+- 36 tests passed.
+
+Mainline `npm run lint`, `CI=true npm run build`, and `git diff --check
+HEAD~2..HEAD` also passed after cherry-picking this worktree commit onto the
+`templateService` slice.
+
 ### Remote CI
 
-To be recorded in a follow-up doc commit (`docs(permission-templates):
-record service guard ci verification [skip ci]`) once the slice has run
-through CI on the main branch, matching the cadence of the prior slices
-(`sites`, `user-group`, `share-links`, `trash`, `calendar`, etc.).
+Pending after push.
 
 ## Residual Work
 

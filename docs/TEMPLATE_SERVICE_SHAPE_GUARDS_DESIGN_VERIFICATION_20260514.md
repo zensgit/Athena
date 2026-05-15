@@ -77,10 +77,26 @@ Result: compiled successfully. CRA still reports the existing bundle-size
 advisory, and Node emits the known `fs.F_OK` dependency deprecation warning;
 neither failed the build.
 
-Pending after integration with the parallel `permissionTemplateService` slice:
+### Mainline Integration
 
-- combined service Jest run
-- remote GitHub Actions
+```bash
+cd ecm-frontend
+CI=true npm test -- --runTestsByPath src/services/templateService.test.ts \
+  src/services/permissionTemplateService.test.ts --watchAll=false
+```
+
+Result:
+
+- 2 suites passed.
+- 36 tests passed.
+
+Mainline `npm run lint`, `CI=true npm run build`, and `git diff --check
+HEAD~2..HEAD` also passed after cherry-picking the parallel
+`permissionTemplateService` slice.
+
+### Remote CI
+
+Pending after push.
 
 ## Residual Work
 
