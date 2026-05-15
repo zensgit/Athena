@@ -167,4 +167,18 @@ local verification, then Codex review and main-branch integration.
 
 ## Remote CI
 
-Pending push at the time this document was written.
+Run: `25904124986`
+
+Head: `5e466f9de3418cb3904a0653a4c68d8a62f97b41`
+
+Result: PASS.
+
+Jobs:
+
+- Backend Verify: success.
+- Frontend Build & Test: success.
+- Phase C Security Verification: success.
+- Property Encryption Closeout Gate: success.
+- Frontend E2E Core Gate: success.
+- Acceptance Smoke (3 admin pages): success.
+- Phase 5 Mocked Regression Gate: success.

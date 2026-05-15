@@ -410,7 +410,9 @@ Node `fs.F_OK` deprecation warning, but compilation succeeded.
 
 ### Remote CI
 
-Pending combined integration push at the time this document was updated.
+Covered by main CI run `25904124986` on head `5e466f9`, which completed
+successfully after the disposition slice was cherry-picked and the
+combined verification document was pushed.
 
 ## Commit
 
