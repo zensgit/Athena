@@ -100,10 +100,27 @@ CI=true npm run build
 Result: PASS. The build emitted the existing Node `fs.F_OK` deprecation
 warning and CRA bundle-size advisory.
 
+Remote CI after push:
+
+```bash
+gh run watch 25902851085 --exit-status --interval 30
+```
+
+Result: PASS. Run `25902851085` completed green for all seven jobs:
+
+- Backend Verify
+- Frontend Build & Test
+- Phase C Security Verification
+- Frontend E2E Core Gate
+- Property Encryption Closeout Gate
+- Phase 5 Mocked Regression Gate
+- Acceptance Smoke (3 admin pages)
+
 ## Commits
 
 - `0d6226c fix(bulk-metadata): guard service responses`
 - `0868f5f fix(blog): guard service responses`
+- `c474b55 docs(services): record bulk metadata blog guard verification`
 
 ## Notes
 
