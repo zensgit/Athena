@@ -236,8 +236,13 @@ deprecation warning and CRA bundle-size advisory.
 
 ### Remote CI
 
-Not triggered. This slice is committed in the worktree branch only and
-not pushed, per the task scope.
+Pending combined integration push at the time this document was written.
+
+## Commit
+
+Worktree commit: `dff9d0c fix(blog): guard service responses`
+
+Integrated commit: `0868f5f fix(blog): guard service responses`
 
 ## Residual Work
 

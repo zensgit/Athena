@@ -72,7 +72,7 @@ Covered cases:
 
 ## Commit
 
-Pending integration commit at the time this document was written.
+`0d6226c fix(bulk-metadata): guard service responses`
 
 ## Notes
 
