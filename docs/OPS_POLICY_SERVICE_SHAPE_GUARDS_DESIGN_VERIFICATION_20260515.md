@@ -140,9 +140,25 @@ Result: PASS.
 
 ## Commit
 
-Pending commit at document write time:
+- `a86a144 fix(ops-policy): guard service responses`
 
-- `fix(ops-policy): guard service responses`
+## Remote CI
+
+Run: `25908367326`
+
+Head: `a86a144f5a895fcaed4c9d5057f0d84a03dbe818`
+
+Result: PASS.
+
+Jobs:
+
+- Backend Verify: success.
+- Frontend Build & Test: success.
+- Phase C Security Verification: success.
+- Property Encryption Closeout Gate: success.
+- Phase 5 Mocked Regression Gate: success.
+- Frontend E2E Core Gate: success.
+- Acceptance Smoke (3 admin pages): success.
 
 ## Notes
 
