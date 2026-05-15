@@ -71,7 +71,7 @@ Covered cases:
 
 ## Commit
 
-Pending integration commit at the time this document was written.
+- `a21db36 fix(tenant): guard service responses`
 
 ## Notes
 

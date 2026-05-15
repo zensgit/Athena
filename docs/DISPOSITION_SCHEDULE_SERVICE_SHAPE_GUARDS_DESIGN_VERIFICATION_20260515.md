@@ -410,12 +410,12 @@ Node `fs.F_OK` deprecation warning, but compilation succeeded.
 
 ### Remote CI
 
-Pending combined integration push at the time this document was written.
+Pending combined integration push at the time this document was updated.
 
 ## Commit
 
-Worktree commit: pending at document write time
-(`fix(disposition): guard service responses`).
+- Claude worktree commit: `6d461fe fix(disposition): guard service responses`
+- Main integration commit: `e696fce fix(disposition): guard service responses`
 
 ## Residual Work
 
