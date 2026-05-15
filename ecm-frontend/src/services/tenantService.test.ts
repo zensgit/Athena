@@ -1,4 +1,9 @@
-import tenantService, { DEFAULT_TENANT_DOMAIN } from './tenantService';
+import tenantService, {
+  DEFAULT_TENANT_DOMAIN,
+  TENANT_UNEXPECTED_RESPONSE_MESSAGE,
+  TenantDto,
+  TenantMetricsDto,
+} from './tenantService';
 import api from './api';
 import { TENANT_STORAGE_KEY } from 'utils/tenantContext';
 
@@ -13,6 +18,30 @@ jest.mock('./api', () => ({
 }));
 
 const mockedApi = api as jest.Mocked<typeof api>;
+
+const tenant: TenantDto = {
+  id: 'tenant-1',
+  tenantDomain: 'acme',
+  tenantName: 'Acme Corp',
+  enabled: true,
+  rootNodeId: null,
+  quotaBytes: null,
+  systemDefault: false,
+  createdDate: '2026-05-15T00:00:00Z',
+  lastModifiedDate: null,
+};
+
+const metrics: TenantMetricsDto = {
+  tenantDomain: 'acme',
+  tenantName: 'Acme Corp',
+  enabled: true,
+  storageUsedBytes: 1024,
+  quotaBytes: null,
+  storageAvailableBytes: null,
+  nodeCount: 10,
+  documentCount: 6,
+  folderCount: 4,
+};
 
 describe('tenantService active tenant helpers', () => {
   beforeEach(() => {
@@ -44,23 +73,59 @@ describe('tenantService api wrappers', () => {
   });
 
   it('lists tenants from the admin endpoint', async () => {
-    mockedApi.get.mockResolvedValueOnce([]);
-    await tenantService.listTenants();
+    mockedApi.get.mockResolvedValueOnce([tenant]);
+
+    await expect(tenantService.listTenants()).resolves.toEqual([tenant]);
+
     expect(mockedApi.get).toHaveBeenCalledWith('/admin/tenants');
   });
 
   it('fetches the current request tenant', async () => {
-    mockedApi.get.mockResolvedValueOnce({});
-    await tenantService.getCurrentTenant();
+    mockedApi.get.mockResolvedValueOnce(tenant);
+
+    await expect(tenantService.getCurrentTenant()).resolves.toEqual(tenant);
+
     expect(mockedApi.get).toHaveBeenCalledWith('/admin/tenants/current');
   });
 
+  it('fetches one tenant with an encoded tenant domain', async () => {
+    mockedApi.get.mockResolvedValueOnce(tenant);
+
+    await expect(tenantService.getTenant('acme corp')).resolves.toEqual(tenant);
+
+    expect(mockedApi.get).toHaveBeenCalledWith('/admin/tenants/acme%20corp');
+  });
+
+  it('creates tenants through the admin endpoint and returns a guarded tenant', async () => {
+    const payload = {
+      tenantDomain: 'beta',
+      tenantName: 'Beta',
+      enabled: true,
+      rootNodeId: 'root-1',
+      quotaBytes: 2048,
+    };
+    const created: TenantDto = {
+      ...tenant,
+      tenantDomain: 'beta',
+      tenantName: 'Beta',
+      rootNodeId: 'root-1',
+      quotaBytes: 2048,
+    };
+    mockedApi.post.mockResolvedValueOnce(created);
+
+    await expect(tenantService.createTenant(payload)).resolves.toEqual(created);
+
+    expect(mockedApi.post).toHaveBeenCalledWith('/admin/tenants', payload);
+  });
+
   it('encodes tenant domain when updating', async () => {
-    mockedApi.put.mockResolvedValueOnce({});
-    await tenantService.updateTenant('acme corp', {
+    mockedApi.put.mockResolvedValueOnce(tenant);
+
+    await expect(tenantService.updateTenant('acme corp', {
       tenantDomain: 'acme corp',
       tenantName: 'Acme Corp',
-    });
+    })).resolves.toEqual(tenant);
+
     expect(mockedApi.put).toHaveBeenCalledWith('/admin/tenants/acme%20corp', {
       tenantDomain: 'acme corp',
       tenantName: 'Acme Corp',
@@ -74,8 +139,37 @@ describe('tenantService api wrappers', () => {
   });
 
   it('fetches tenant metrics with an encoded tenant domain', async () => {
-    mockedApi.get.mockResolvedValueOnce({});
-    await tenantService.getTenantMetrics('acme corp');
+    mockedApi.get.mockResolvedValueOnce(metrics);
+
+    await expect(tenantService.getTenantMetrics('acme corp')).resolves.toEqual(metrics);
+
     expect(mockedApi.get).toHaveBeenCalledWith('/admin/tenants/acme%20corp/metrics');
+  });
+
+  it('rejects HTML fallback for tenant lists', async () => {
+    mockedApi.get.mockResolvedValueOnce('<!doctype html><html></html>');
+
+    await expect(tenantService.listTenants()).rejects.toThrow(
+      TENANT_UNEXPECTED_RESPONSE_MESSAGE
+    );
+  });
+
+  it('rejects malformed tenant list entries', async () => {
+    mockedApi.get.mockResolvedValueOnce([{ ...tenant, enabled: 'true' }]);
+
+    await expect(tenantService.listTenants()).rejects.toThrow(
+      TENANT_UNEXPECTED_RESPONSE_MESSAGE
+    );
+  });
+
+  it('rejects malformed tenant metrics', async () => {
+    mockedApi.get.mockResolvedValueOnce({
+      ...metrics,
+      storageUsedBytes: '1024',
+    });
+
+    await expect(tenantService.getTenantMetrics('acme')).rejects.toThrow(
+      TENANT_UNEXPECTED_RESPONSE_MESSAGE
+    );
   });
 });
