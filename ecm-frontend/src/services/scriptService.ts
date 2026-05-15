@@ -48,11 +48,11 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isNullableString = (value: unknown): value is string | null | undefined =>
   value === null || value === undefined || typeof value === 'string';
 
-const assertScriptResponse = (condition: unknown): asserts condition => {
+function assertScriptResponse(condition: unknown): asserts condition {
   if (!condition) {
     throw new Error(SCRIPT_UNEXPECTED_RESPONSE_MESSAGE);
   }
-};
+}
 
 const isStringArray = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every((item) => typeof item === 'string');
@@ -71,7 +71,7 @@ const assertScriptDefinition = (value: unknown): ScriptDefinitionDto => {
   assertScriptResponse(typeof value.createdDate === 'string');
   assertScriptResponse(isNullableString(value.lastModifiedDate));
 
-  return value as ScriptDefinitionDto;
+  return value as unknown as ScriptDefinitionDto;
 };
 
 const assertScriptDefinitions = (value: unknown): ScriptDefinitionDto[] => {
@@ -88,7 +88,7 @@ const assertScriptExecutionResult = (value: unknown): ScriptExecutionResult => {
   assertScriptResponse(typeof value.durationMs === 'number');
   assertScriptResponse(typeof value.executedAt === 'string');
 
-  return value as ScriptExecutionResult;
+  return value as unknown as ScriptExecutionResult;
 };
 
 class ScriptService {
