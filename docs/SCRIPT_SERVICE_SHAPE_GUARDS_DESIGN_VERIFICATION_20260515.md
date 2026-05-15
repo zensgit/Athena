@@ -72,7 +72,8 @@ Covered cases:
 
 ## Commit
 
-Pending integration commit at the time this document was written.
+- `4819252 fix(scripts): guard service responses`
+- `a1970ad fix(scripts): satisfy production build guard typing`
 
 ## Notes
 
