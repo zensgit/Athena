@@ -97,10 +97,27 @@ CI=true npm run build
 
 Result: PASS. CRA emitted the existing bundle-size advisory.
 
+Remote CI after push:
+
+```bash
+gh run watch 25899269075 --exit-status --interval 30
+```
+
+Result: PASS. Run `25899269075` completed green for all 7 jobs:
+
+- Backend Verify: PASS
+- Frontend Build & Test: PASS
+- Phase C Security Verification: PASS
+- Acceptance Smoke (3 admin pages): PASS
+- Phase 5 Mocked Regression Gate: PASS
+- Property Encryption Closeout Gate: PASS
+- Frontend E2E Core Gate: PASS
+
 ## Commits
 
 - `86d7c51 fix(ldap): guard service responses`
 - `58b2cca fix(legal-holds): guard service responses`
+- `2898abd docs(services): record ldap legal hold guard verification`
 
 ## Notes
 
