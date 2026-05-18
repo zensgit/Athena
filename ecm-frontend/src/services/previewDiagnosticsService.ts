@@ -1,5 +1,8 @@
 import api from './api';
 
+export const PREVIEW_DIAGNOSTICS_UNEXPECTED_RESPONSE_MESSAGE =
+  'Preview diagnostics endpoint returned an unexpected response. Mocked CI gate may not cover it; backend route may be missing.';
+
 export type PreviewFailureSample = {
   id: string;
   name: string;
@@ -159,16 +162,6 @@ type PreviewRenditionResourceApiItem = {
   reason?: string | null;
   updatedAt?: string | null;
   category?: string | null;
-};
-
-type PreviewRenditionResourcesDiagnostics = {
-  totalResources: number;
-  sampledResources: number;
-  limit: number;
-  windowDays: number;
-  windowStart: string | null;
-  sampleTruncated: boolean;
-  items: PreviewRenditionResourceApiItem[];
 };
 
 export type PreviewRenditionResourcesExportTask = {
@@ -940,6 +933,715 @@ export type PreviewDeadLetterClearBatchResult = {
   results: PreviewDeadLetterClearBatchItem[];
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const isFiniteNumber = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value);
+
+const isNullableString = (value: unknown): value is string | null =>
+  value === null || typeof value === 'string';
+
+const isOptionalNullableString = (value: unknown): value is string | null | undefined =>
+  value === undefined || isNullableString(value);
+
+const isOptionalFiniteNumber = (value: unknown): value is number | undefined =>
+  value === undefined || isFiniteNumber(value);
+
+function assertPreviewDiagnosticsResponse(condition: unknown): asserts condition {
+  if (!condition) {
+    throw new Error(PREVIEW_DIAGNOSTICS_UNEXPECTED_RESPONSE_MESSAGE);
+  }
+}
+
+const assertStringArray = (value: unknown): string[] => {
+  assertPreviewDiagnosticsResponse(Array.isArray(value));
+  value.forEach((entry) => {
+    assertPreviewDiagnosticsResponse(typeof entry === 'string');
+  });
+  return value as string[];
+};
+
+const assertPreviewFailureSample = (value: unknown): PreviewFailureSample => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(typeof value.id === 'string');
+  assertPreviewDiagnosticsResponse(typeof value.name === 'string');
+  assertPreviewDiagnosticsResponse(typeof value.path === 'string');
+  assertPreviewDiagnosticsResponse(typeof value.mimeType === 'string');
+  assertPreviewDiagnosticsResponse(isNullableString(value.previewStatus));
+  assertPreviewDiagnosticsResponse(isNullableString(value.previewFailureReason));
+  assertPreviewDiagnosticsResponse(isNullableString(value.previewFailureCategory));
+  assertPreviewDiagnosticsResponse(isNullableString(value.previewLastUpdated));
+  return value as unknown as PreviewFailureSample;
+};
+
+const assertPreviewFailureSamples = (value: unknown): PreviewFailureSample[] => {
+  assertPreviewDiagnosticsResponse(Array.isArray(value));
+  return value.map(assertPreviewFailureSample);
+};
+
+const assertPreviewFailureStatusCount = (value: unknown): PreviewFailureStatusCount => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(typeof value.status === 'string');
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.count));
+  return value as unknown as PreviewFailureStatusCount;
+};
+
+const assertPreviewFailureCategoryCount = (value: unknown): PreviewFailureCategoryCount => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(typeof value.category === 'string');
+  assertPreviewDiagnosticsResponse(typeof value.retryable === 'boolean');
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.count));
+  return value as unknown as PreviewFailureCategoryCount;
+};
+
+const assertPreviewFailureReasonCount = (value: unknown): PreviewFailureReasonCount => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(typeof value.reason === 'string');
+  assertPreviewDiagnosticsResponse(typeof value.category === 'string');
+  assertPreviewDiagnosticsResponse(typeof value.retryable === 'boolean');
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.count));
+  return value as unknown as PreviewFailureReasonCount;
+};
+
+const assertPreviewFailureSummary = (value: unknown): PreviewFailureSummary => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.totalFailures));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.sampledFailures));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.sampleLimit));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.windowDays));
+  assertPreviewDiagnosticsResponse(isNullableString(value.windowStart));
+  assertPreviewDiagnosticsResponse(typeof value.sampleTruncated === 'boolean');
+  assertPreviewDiagnosticsResponse(typeof value.confidenceLevel === 'string');
+  assertPreviewDiagnosticsResponse(typeof value.confidenceReason === 'string');
+  assertPreviewDiagnosticsResponse(Array.isArray(value.statusCounts));
+  assertPreviewDiagnosticsResponse(Array.isArray(value.categoryCounts));
+  assertPreviewDiagnosticsResponse(Array.isArray(value.topReasons));
+  const statusCounts = value.statusCounts.map(assertPreviewFailureStatusCount);
+  const categoryCounts = value.categoryCounts.map(assertPreviewFailureCategoryCount);
+  const topReasons = value.topReasons.map(assertPreviewFailureReasonCount);
+  return {
+    ...value,
+    statusCounts,
+    categoryCounts,
+    topReasons,
+  } as unknown as PreviewFailureSummary;
+};
+
+const assertPreviewFailureLedgerItem = (value: unknown): PreviewFailureLedgerItem => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(typeof value.documentId === 'string');
+  assertPreviewDiagnosticsResponse(isNullableString(value.name));
+  assertPreviewDiagnosticsResponse(isNullableString(value.path));
+  assertPreviewDiagnosticsResponse(isNullableString(value.mimeType));
+  assertPreviewDiagnosticsResponse(isNullableString(value.previewStatus));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.failureCount));
+  assertPreviewDiagnosticsResponse(isNullableString(value.failedAt));
+  assertPreviewDiagnosticsResponse(isNullableString(value.lastReason));
+  assertPreviewDiagnosticsResponse(isNullableString(value.category));
+  assertPreviewDiagnosticsResponse(typeof value.retryable === 'boolean');
+  assertPreviewDiagnosticsResponse(isNullableString(value.previewLastUpdated));
+  assertPreviewDiagnosticsResponse(isNullableString(value.failureContentHash));
+  assertPreviewDiagnosticsResponse(isNullableString(value.currentContentHash));
+  assertPreviewDiagnosticsResponse(typeof value.staleByContentChange === 'boolean');
+  return value as unknown as PreviewFailureLedgerItem;
+};
+
+const assertPreviewFailureLedgerDiagnostics = (value: unknown): PreviewFailureLedgerDiagnostics => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.totalEntries));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.sampledEntries));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.limit));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.windowDays));
+  assertPreviewDiagnosticsResponse(isNullableString(value.windowStart));
+  assertPreviewDiagnosticsResponse(typeof value.sampleTruncated === 'boolean');
+  assertPreviewDiagnosticsResponse(Array.isArray(value.items));
+  const items = value.items.map(assertPreviewFailureLedgerItem);
+  return { ...value, items } as unknown as PreviewFailureLedgerDiagnostics;
+};
+
+const assertPreviewFailureLedgerResetItem = (value: unknown): PreviewFailureLedgerResetItem => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(isNullableString(value.documentId));
+  assertPreviewDiagnosticsResponse(isNullableString(value.name));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.previousFailureCount));
+  assertPreviewDiagnosticsResponse(isNullableString(value.previousFailedAt));
+  assertPreviewDiagnosticsResponse(isNullableString(value.previousReason));
+  assertPreviewDiagnosticsResponse(typeof value.outcome === 'string');
+  assertPreviewDiagnosticsResponse(isNullableString(value.message));
+  return value as unknown as PreviewFailureLedgerResetItem;
+};
+
+const assertPreviewFailureLedgerResetBatchResult = (
+  value: unknown
+): PreviewFailureLedgerResetBatchResult => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.requested));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.deduplicated));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.reset));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.failed));
+  assertPreviewDiagnosticsResponse(Array.isArray(value.results));
+  const results = value.results.map(assertPreviewFailureLedgerResetItem);
+  return { ...value, results } as unknown as PreviewFailureLedgerResetBatchResult;
+};
+
+const assertPreviewFailureLedgerResetByFilterResult = (
+  value: unknown
+): PreviewFailureLedgerResetByFilterResult => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(typeof value.reason === 'string');
+  assertPreviewDiagnosticsResponse(typeof value.category === 'string');
+  assertPreviewDiagnosticsResponse(
+    value.retryable === null || typeof value.retryable === 'boolean'
+  );
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.windowDays));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.maxDocuments));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.totalCandidates));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.scanned));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.matched));
+  assertPreviewDiagnosticsResponse(typeof value.truncated === 'boolean');
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.reset));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.skipped));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.failed));
+  assertPreviewDiagnosticsResponse(Array.isArray(value.results));
+  const results = value.results.map(assertPreviewFailureLedgerResetItem);
+  return { ...value, results } as unknown as PreviewFailureLedgerResetByFilterResult;
+};
+
+const assertPreviewRenditionStatusCount = (value: unknown): PreviewRenditionStatusCount => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(typeof value.status === 'string');
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.count));
+  return value as unknown as PreviewRenditionStatusCount;
+};
+
+const assertPreviewRenditionReasonCount = (value: unknown): PreviewRenditionReasonCount => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(typeof value.reason === 'string');
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.count));
+  return value as unknown as PreviewRenditionReasonCount;
+};
+
+const assertPreviewRenditionSummary = (value: unknown): PreviewRenditionSummary => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.totalResources));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.sampledResources));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.sampleLimit));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.windowDays));
+  assertPreviewDiagnosticsResponse(isNullableString(value.windowStart));
+  assertPreviewDiagnosticsResponse(typeof value.sampleTruncated === 'boolean');
+  assertPreviewDiagnosticsResponse(Array.isArray(value.statusCounts));
+  assertPreviewDiagnosticsResponse(Array.isArray(value.topReasons));
+  const statusCounts = value.statusCounts.map(assertPreviewRenditionStatusCount);
+  const topReasons = value.topReasons.map(assertPreviewRenditionReasonCount);
+  return { ...value, statusCounts, topReasons } as unknown as PreviewRenditionSummary;
+};
+
+const assertPreviewRenditionResourceApiItem = (value: unknown): PreviewRenditionResourceApiItem => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.documentId));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.name));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.path));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.mimeType));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.previewStatus));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.renditionStatus));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.previewFailureReason));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.previewFailureCategory));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.previewLastUpdated));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.status));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.reason));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.updatedAt));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.category));
+  return value as unknown as PreviewRenditionResourceApiItem;
+};
+
+const assertPreviewRenditionResourcesPayload = (
+  value: unknown
+): PreviewRenditionResourceApiItem[] => {
+  if (Array.isArray(value)) {
+    return value.map(assertPreviewRenditionResourceApiItem);
+  }
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.totalResources));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.sampledResources));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.limit));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.windowDays));
+  assertPreviewDiagnosticsResponse(isNullableString(value.windowStart));
+  assertPreviewDiagnosticsResponse(typeof value.sampleTruncated === 'boolean');
+  assertPreviewDiagnosticsResponse(Array.isArray(value.items));
+  return value.items.map(assertPreviewRenditionResourceApiItem);
+};
+
+const assertPreviewQueueBatchItem = (value: unknown): PreviewQueueBatchItem => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(typeof value.documentId === 'string');
+  assertPreviewDiagnosticsResponse(typeof value.outcome === 'string');
+  assertPreviewDiagnosticsResponse(isNullableString(value.message));
+  assertPreviewDiagnosticsResponse(isNullableString(value.previewStatus));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.previewFailureReason));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.previewFailureCategory));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.previewLastUpdated));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.attempts));
+  assertPreviewDiagnosticsResponse(isNullableString(value.nextAttemptAt));
+  return value as unknown as PreviewQueueBatchItem;
+};
+
+const assertPreviewQueueBatchResult = (value: unknown): PreviewQueueBatchResult => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.requested));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.deduplicated));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.queued));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.skipped));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.failed));
+  assertPreviewDiagnosticsResponse(Array.isArray(value.results));
+  const results = value.results.map(assertPreviewQueueBatchItem);
+  return { ...value, results } as unknown as PreviewQueueBatchResult;
+};
+
+const assertPreviewQueueDiagnosticsItem = (value: unknown): PreviewQueueDiagnosticsItem => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(typeof value.documentId === 'string');
+  assertPreviewDiagnosticsResponse(isNullableString(value.name));
+  assertPreviewDiagnosticsResponse(isNullableString(value.path));
+  assertPreviewDiagnosticsResponse(isNullableString(value.mimeType));
+  assertPreviewDiagnosticsResponse(isNullableString(value.previewStatus));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.previewFailureReason));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.previewFailureCategory));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.previewLastUpdated));
+  assertPreviewDiagnosticsResponse(typeof value.queueState === 'string');
+  assertPreviewDiagnosticsResponse(isNullableString(value.governanceKey));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.attempts));
+  assertPreviewDiagnosticsResponse(isNullableString(value.nextAttemptAt));
+  assertPreviewDiagnosticsResponse(typeof value.running === 'boolean');
+  assertPreviewDiagnosticsResponse(typeof value.cancelRequested === 'boolean');
+  return value as unknown as PreviewQueueDiagnosticsItem;
+};
+
+const assertPreviewQueueDiagnosticsSummary = (value: unknown): PreviewQueueDiagnosticsSummary => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(typeof value.backend === 'string');
+  assertPreviewDiagnosticsResponse(typeof value.queueEnabled === 'boolean');
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.scheduledCount));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.governanceCount));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.runningCount));
+  assertPreviewDiagnosticsResponse(typeof value.runningCountAccurate === 'boolean');
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.cancellationRequestedCount));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.sampleLimit));
+  assertPreviewDiagnosticsResponse(typeof value.sampleTruncated === 'boolean');
+  assertPreviewDiagnosticsResponse(typeof value.stateFilter === 'string');
+  assertPreviewDiagnosticsResponse(isNullableString(value.queryFilter));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.totalSampledItems));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.filteredSampledItems));
+  assertPreviewDiagnosticsResponse(Array.isArray(value.items));
+  const items = value.items.map(assertPreviewQueueDiagnosticsItem);
+  return { ...value, items } as unknown as PreviewQueueDiagnosticsSummary;
+};
+
+const assertPreviewQueueDeclinedItem = (value: unknown): PreviewQueueDeclinedItem => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(isNullableString(value.documentId));
+  assertPreviewDiagnosticsResponse(isNullableString(value.name));
+  assertPreviewDiagnosticsResponse(isNullableString(value.path));
+  assertPreviewDiagnosticsResponse(isNullableString(value.mimeType));
+  assertPreviewDiagnosticsResponse(isNullableString(value.previewStatus));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.previewFailureReason));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.previewFailureCategory));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.previewLastUpdated));
+  assertPreviewDiagnosticsResponse(isNullableString(value.reason));
+  assertPreviewDiagnosticsResponse(isNullableString(value.category));
+  assertPreviewDiagnosticsResponse(isNullableString(value.governanceKey));
+  assertPreviewDiagnosticsResponse(isNullableString(value.declinedAt));
+  assertPreviewDiagnosticsResponse(isNullableString(value.nextEligibleAt));
+  assertPreviewDiagnosticsResponse(typeof value.forceRequired === 'boolean');
+  return value as unknown as PreviewQueueDeclinedItem;
+};
+
+const assertPreviewQueueDeclinedCategoryCount = (
+  value: unknown
+): PreviewQueueDeclinedCategoryCount => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(typeof value.category === 'string');
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.count));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.forceRequiredCount));
+  return value as unknown as PreviewQueueDeclinedCategoryCount;
+};
+
+const assertPreviewQueueDeclinedSummary = (value: unknown): PreviewQueueDeclinedSummary => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(typeof value.queueEnabled === 'boolean');
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.totalDeclined));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.sampleLimit));
+  assertPreviewDiagnosticsResponse(typeof value.sampleTruncated === 'boolean');
+  assertPreviewDiagnosticsResponse(typeof value.categoryFilter === 'string');
+  assertPreviewDiagnosticsResponse(typeof value.forceRequiredFilter === 'string');
+  assertPreviewDiagnosticsResponse(
+    value.windowHoursFilter === null || isFiniteNumber(value.windowHoursFilter)
+  );
+  assertPreviewDiagnosticsResponse(isOptionalFiniteNumber(value.windowHours));
+  assertPreviewDiagnosticsResponse(isNullableString(value.queryFilter));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.forceRequiredCount));
+  assertPreviewDiagnosticsResponse(Array.isArray(value.categoryCounts));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.totalSampledItems));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.filteredSampledItems));
+  assertPreviewDiagnosticsResponse(Array.isArray(value.items));
+  const categoryCounts = value.categoryCounts.map(assertPreviewQueueDeclinedCategoryCount);
+  const items = value.items.map(assertPreviewQueueDeclinedItem);
+  return { ...value, categoryCounts, items } as unknown as PreviewQueueDeclinedSummary;
+};
+
+const assertPreviewQueueDeclinedRequeueItem = (value: unknown): PreviewQueueDeclinedRequeueItem => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(isNullableString(value.documentId));
+  assertPreviewDiagnosticsResponse(isNullableString(value.category));
+  assertPreviewDiagnosticsResponse(typeof value.outcome === 'string');
+  assertPreviewDiagnosticsResponse(isNullableString(value.message));
+  assertPreviewDiagnosticsResponse(isNullableString(value.previewStatus));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.previewFailureReason));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.previewFailureCategory));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.previewLastUpdated));
+  return value as unknown as PreviewQueueDeclinedRequeueItem;
+};
+
+const assertPreviewQueueDeclinedRequeueResult = (
+  value: unknown
+): PreviewQueueDeclinedRequeueResult => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(typeof value.categoryFilter === 'string');
+  assertPreviewDiagnosticsResponse(typeof value.forceRequiredFilter === 'string');
+  assertPreviewDiagnosticsResponse(
+    value.windowHoursFilter === null || isFiniteNumber(value.windowHoursFilter)
+  );
+  assertPreviewDiagnosticsResponse(isOptionalFiniteNumber(value.windowHours));
+  assertPreviewDiagnosticsResponse(isNullableString(value.queryFilter));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.limit));
+  assertPreviewDiagnosticsResponse(typeof value.force === 'boolean');
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.requested));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.queued));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.skipped));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.failed));
+  assertPreviewDiagnosticsResponse(Array.isArray(value.results));
+  const results = value.results.map(assertPreviewQueueDeclinedRequeueItem);
+  return { ...value, results } as unknown as PreviewQueueDeclinedRequeueResult;
+};
+
+const assertPreviewQueueDeclinedRequeueDryRunItem = (
+  value: unknown
+): PreviewQueueDeclinedRequeueDryRunItem => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(isNullableString(value.documentId));
+  assertPreviewDiagnosticsResponse(isNullableString(value.category));
+  assertPreviewDiagnosticsResponse(typeof value.outcome === 'string');
+  assertPreviewDiagnosticsResponse(isNullableString(value.reasonCode));
+  assertPreviewDiagnosticsResponse(isNullableString(value.message));
+  assertPreviewDiagnosticsResponse(isNullableString(value.previewStatus));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.previewFailureReason));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.previewFailureCategory));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.previewLastUpdated));
+  assertPreviewDiagnosticsResponse(isNullableString(value.nextAttemptAt));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.preflightStatus));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.preflightSkipReason));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.preflightRoute));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.preflightPolicyProfile));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.preflightPipeline));
+  return value as unknown as PreviewQueueDeclinedRequeueDryRunItem;
+};
+
+const assertPreviewQueueDeclinedRequeueDryRunReasonCount = (
+  value: unknown
+): PreviewQueueDeclinedRequeueDryRunReasonCount => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(isNullableString(value.reasonCode));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.count));
+  return value as unknown as PreviewQueueDeclinedRequeueDryRunReasonCount;
+};
+
+const assertPreviewQueueDeclinedRequeueDryRunResult = (
+  value: unknown
+): PreviewQueueDeclinedRequeueDryRunResult => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(typeof value.categoryFilter === 'string');
+  assertPreviewDiagnosticsResponse(typeof value.forceRequiredFilter === 'string');
+  assertPreviewDiagnosticsResponse(
+    value.windowHoursFilter === null || isFiniteNumber(value.windowHoursFilter)
+  );
+  assertPreviewDiagnosticsResponse(isOptionalFiniteNumber(value.windowHours));
+  assertPreviewDiagnosticsResponse(isNullableString(value.queryFilter));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.limit));
+  assertPreviewDiagnosticsResponse(typeof value.force === 'boolean');
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.requested));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.estimatedQueued));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.estimatedSkipped));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.estimatedFailed));
+  assertPreviewDiagnosticsResponse(Array.isArray(value.results));
+  assertPreviewDiagnosticsResponse(Array.isArray(value.reasonBreakdown));
+  const results = value.results.map(assertPreviewQueueDeclinedRequeueDryRunItem);
+  const reasonBreakdown = value.reasonBreakdown.map(
+    assertPreviewQueueDeclinedRequeueDryRunReasonCount
+  );
+  return { ...value, results, reasonBreakdown } as unknown as PreviewQueueDeclinedRequeueDryRunResult;
+};
+
+const assertPreviewQueueDeclinedClearItem = (value: unknown): PreviewQueueDeclinedClearItem => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(isNullableString(value.documentId));
+  assertPreviewDiagnosticsResponse(isNullableString(value.category));
+  assertPreviewDiagnosticsResponse(typeof value.outcome === 'string');
+  assertPreviewDiagnosticsResponse(isNullableString(value.message));
+  return value as unknown as PreviewQueueDeclinedClearItem;
+};
+
+const assertPreviewQueueDeclinedClearResult = (value: unknown): PreviewQueueDeclinedClearResult => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(typeof value.categoryFilter === 'string');
+  assertPreviewDiagnosticsResponse(typeof value.forceRequiredFilter === 'string');
+  assertPreviewDiagnosticsResponse(
+    value.windowHoursFilter === null || isFiniteNumber(value.windowHoursFilter)
+  );
+  assertPreviewDiagnosticsResponse(isOptionalFiniteNumber(value.windowHours));
+  assertPreviewDiagnosticsResponse(isNullableString(value.queryFilter));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.limit));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.requested));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.cleared));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.skipped));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.failed));
+  assertPreviewDiagnosticsResponse(Array.isArray(value.results));
+  const results = value.results.map(assertPreviewQueueDeclinedClearItem);
+  return { ...value, results } as unknown as PreviewQueueDeclinedClearResult;
+};
+
+const assertPreviewReasonBatchQueueResult = (value: unknown): PreviewReasonBatchQueueResult => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(typeof value.reason === 'string');
+  assertPreviewDiagnosticsResponse(typeof value.category === 'string');
+  assertPreviewDiagnosticsResponse(
+    value.retryable === null || typeof value.retryable === 'boolean'
+  );
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.windowDays));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.maxDocuments));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.totalByReason));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.scanned));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.matched));
+  assertPreviewDiagnosticsResponse(typeof value.truncated === 'boolean');
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.queued));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.skipped));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.failed));
+  assertPreviewDiagnosticsResponse(Array.isArray(value.results));
+  const results = value.results.map(assertPreviewQueueBatchItem);
+  return { ...value, results } as unknown as PreviewReasonBatchQueueResult;
+};
+
+const assertPreviewCadFailoverEndpointStats = (
+  value: unknown
+): PreviewCadFailoverEndpointStats => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(typeof value.endpoint === 'string');
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.successCount));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.failureCount));
+  assertPreviewDiagnosticsResponse(isNullableString(value.lastSuccessAt));
+  assertPreviewDiagnosticsResponse(isNullableString(value.lastFailureAt));
+  assertPreviewDiagnosticsResponse(isNullableString(value.lastFailureReason));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.consecutiveFailureCount));
+  assertPreviewDiagnosticsResponse(typeof value.circuitState === 'string');
+  assertPreviewDiagnosticsResponse(isNullableString(value.circuitOpenUntil));
+  assertPreviewDiagnosticsResponse(isNullableString(value.lastCircuitOpenedAt));
+  assertPreviewDiagnosticsResponse(typeof value.halfOpenInFlight === 'boolean');
+  return value as unknown as PreviewCadFailoverEndpointStats;
+};
+
+const assertPreviewCadFailoverDiagnostics = (value: unknown): PreviewCadFailoverDiagnostics => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(typeof value.cadPreviewEnabled === 'boolean');
+  assertPreviewDiagnosticsResponse(typeof value.configured === 'boolean');
+  assertPreviewDiagnosticsResponse(typeof value.circuitBreakerEnabled === 'boolean');
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.circuitFailureThreshold));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.circuitOpenMs));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.halfOpenTrialTimeoutMs));
+  const endpoints = assertStringArray(value.endpoints);
+  assertPreviewDiagnosticsResponse(Array.isArray(value.endpointStats));
+  const endpointStats = value.endpointStats.map(assertPreviewCadFailoverEndpointStats);
+  return { ...value, endpoints, endpointStats } as unknown as PreviewCadFailoverDiagnostics;
+};
+
+const assertPreviewTransformTraceEvent = (value: unknown): PreviewTransformTraceEvent => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(isNullableString(value.at));
+  assertPreviewDiagnosticsResponse(typeof value.stage === 'string');
+  assertPreviewDiagnosticsResponse(isNullableString(value.message));
+  return value as unknown as PreviewTransformTraceEvent;
+};
+
+const assertPreviewTransformTrace = (value: unknown): PreviewTransformTrace => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(typeof value.requestId === 'string');
+  assertPreviewDiagnosticsResponse(isNullableString(value.documentId));
+  assertPreviewDiagnosticsResponse(isNullableString(value.mimeType));
+  assertPreviewDiagnosticsResponse(isNullableString(value.source));
+  assertPreviewDiagnosticsResponse(isNullableString(value.startedAt));
+  assertPreviewDiagnosticsResponse(isNullableString(value.finishedAt));
+  assertPreviewDiagnosticsResponse(isNullableString(value.status));
+  assertPreviewDiagnosticsResponse(typeof value.retryNeeded === 'boolean');
+  assertPreviewDiagnosticsResponse(isNullableString(value.failureReason));
+  assertPreviewDiagnosticsResponse(isNullableString(value.latestMessage));
+  assertPreviewDiagnosticsResponse(Array.isArray(value.events));
+  const events = value.events.map(assertPreviewTransformTraceEvent);
+  return { ...value, events } as unknown as PreviewTransformTrace;
+};
+
+const assertPreviewTransformTraces = (value: unknown): PreviewTransformTrace[] => {
+  assertPreviewDiagnosticsResponse(Array.isArray(value));
+  return value.map(assertPreviewTransformTrace);
+};
+
+const assertPreviewFailurePolicy = (value: unknown): PreviewFailurePolicy => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(typeof value.key === 'string');
+  assertPreviewDiagnosticsResponse(typeof value.label === 'string');
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.maxAttempts));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.retryDelayMs));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.backoffMultiplier));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.quietPeriodMs));
+  assertPreviewDiagnosticsResponse(typeof value.builtIn === 'boolean');
+  return value as unknown as PreviewFailurePolicy;
+};
+
+const assertPreviewFailurePolicies = (value: unknown): PreviewFailurePolicy[] => {
+  assertPreviewDiagnosticsResponse(Array.isArray(value));
+  return value.map(assertPreviewFailurePolicy);
+};
+
+const assertPreviewRenditionBlockedItem = (value: unknown): PreviewRenditionBlockedItem => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(typeof value.documentId === 'string');
+  assertPreviewDiagnosticsResponse(isNullableString(value.name));
+  assertPreviewDiagnosticsResponse(isNullableString(value.path));
+  assertPreviewDiagnosticsResponse(isNullableString(value.mimeType));
+  assertPreviewDiagnosticsResponse(isNullableString(value.previewStatus));
+  assertPreviewDiagnosticsResponse(isNullableString(value.category));
+  assertPreviewDiagnosticsResponse(isNullableString(value.reason));
+  assertPreviewDiagnosticsResponse(isNullableString(value.blockedAt));
+  assertPreviewDiagnosticsResponse(isNullableString(value.lastHitAt));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.hitCount));
+  return value as unknown as PreviewRenditionBlockedItem;
+};
+
+const assertPreviewRenditionPreventionDiagnostics = (
+  value: unknown
+): PreviewRenditionPreventionDiagnostics => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(typeof value.enabled === 'boolean');
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.blockedCount));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.maxBlocked));
+  const autoBlockCategories = assertStringArray(value.autoBlockCategories);
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.limit));
+  assertPreviewDiagnosticsResponse(Array.isArray(value.items));
+  const items = value.items.map(assertPreviewRenditionBlockedItem);
+  return {
+    ...value,
+    autoBlockCategories,
+    items,
+  } as unknown as PreviewRenditionPreventionDiagnostics;
+};
+
+const assertPreviewRenditionPreventionAction = (
+  value: unknown
+): PreviewRenditionPreventionAction => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(typeof value.documentId === 'string');
+  assertPreviewDiagnosticsResponse(typeof value.unblocked === 'boolean');
+  assertPreviewDiagnosticsResponse(typeof value.queued === 'boolean');
+  assertPreviewDiagnosticsResponse(isNullableString(value.message));
+  assertPreviewDiagnosticsResponse(isNullableString(value.previewStatus));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.attempts));
+  assertPreviewDiagnosticsResponse(isNullableString(value.nextAttemptAt));
+  return value as unknown as PreviewRenditionPreventionAction;
+};
+
+const assertPreviewRenditionPreventionBatchResult = (
+  value: unknown
+): PreviewRenditionPreventionBatchResult => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.requested));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.deduplicated));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.unblocked));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.queued));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.failed));
+  assertPreviewDiagnosticsResponse(Array.isArray(value.results));
+  const results = value.results.map(assertPreviewRenditionPreventionAction);
+  return { ...value, results } as unknown as PreviewRenditionPreventionBatchResult;
+};
+
+const assertPreviewDeadLetterItem = (value: unknown): PreviewDeadLetterItem => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.entryKey));
+  assertPreviewDiagnosticsResponse(typeof value.documentId === 'string');
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.renditionKey));
+  assertPreviewDiagnosticsResponse(isNullableString(value.name));
+  assertPreviewDiagnosticsResponse(isNullableString(value.path));
+  assertPreviewDiagnosticsResponse(isNullableString(value.mimeType));
+  assertPreviewDiagnosticsResponse(isNullableString(value.previewStatus));
+  assertPreviewDiagnosticsResponse(isNullableString(value.reason));
+  assertPreviewDiagnosticsResponse(isNullableString(value.category));
+  assertPreviewDiagnosticsResponse(isNullableString(value.policyKey));
+  assertPreviewDiagnosticsResponse(isNullableString(value.sourceStage));
+  assertPreviewDiagnosticsResponse(isNullableString(value.failedAt));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.attempts));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.occurrences));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.lastReplayAt));
+  assertPreviewDiagnosticsResponse(isOptionalFiniteNumber(value.replayCount));
+  return value as unknown as PreviewDeadLetterItem;
+};
+
+const assertPreviewDeadLetterDiagnostics = (value: unknown): PreviewDeadLetterDiagnostics => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(typeof value.enabled === 'boolean');
+  assertPreviewDiagnosticsResponse(typeof value.backendMode === 'string');
+  assertPreviewDiagnosticsResponse(typeof value.redisEnabled === 'boolean');
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.ttlMs));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.itemCount));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.maxEntries));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.limit));
+  assertPreviewDiagnosticsResponse(Array.isArray(value.items));
+  const items = value.items.map(assertPreviewDeadLetterItem);
+  return { ...value, items } as unknown as PreviewDeadLetterDiagnostics;
+};
+
+const assertPreviewDeadLetterReplayBatchResult = (
+  value: unknown
+): PreviewDeadLetterReplayBatchResult => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.requested));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.deduplicated));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.queued));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.skipped));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.failed));
+  assertPreviewDiagnosticsResponse(Array.isArray(value.results));
+  const results = value.results.map(assertPreviewQueueBatchItem);
+  return { ...value, results } as unknown as PreviewDeadLetterReplayBatchResult;
+};
+
+const assertPreviewDeadLetterClearBatchItem = (value: unknown): PreviewDeadLetterClearBatchItem => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(isNullableString(value.documentId));
+  assertPreviewDiagnosticsResponse(isNullableString(value.entryKey));
+  assertPreviewDiagnosticsResponse(isNullableString(value.renditionKey));
+  assertPreviewDiagnosticsResponse(typeof value.outcome === 'string');
+  assertPreviewDiagnosticsResponse(isNullableString(value.message));
+  return value as unknown as PreviewDeadLetterClearBatchItem;
+};
+
+const assertPreviewDeadLetterClearBatchResult = (
+  value: unknown
+): PreviewDeadLetterClearBatchResult => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.requested));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.deduplicated));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.cleared));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.failed));
+  assertPreviewDiagnosticsResponse(Array.isArray(value.results));
+  const results = value.results.map(assertPreviewDeadLetterClearBatchItem);
+  return { ...value, results } as unknown as PreviewDeadLetterClearBatchResult;
+};
+
 class PreviewDiagnosticsService {
   private normalizeRenditionResource(item: PreviewRenditionResourceApiItem): PreviewRenditionResource {
     return {
@@ -1038,41 +1740,49 @@ class PreviewDiagnosticsService {
   }
 
   async listRecentFailures(limit = 50, days = 7): Promise<PreviewFailureSample[]> {
-    return api.get<PreviewFailureSample[]>('/preview/diagnostics/failures', { params: { limit, days } });
+    const result = await api.get<unknown>('/preview/diagnostics/failures', {
+      params: { limit, days },
+    });
+    return assertPreviewFailureSamples(result);
   }
 
   async getFailureSummary(sampleLimit = 500, days = 7): Promise<PreviewFailureSummary> {
-    return api.get<PreviewFailureSummary>('/preview/diagnostics/failures/summary', {
+    const result = await api.get<unknown>('/preview/diagnostics/failures/summary', {
       params: { sampleLimit, days },
     });
+    return assertPreviewFailureSummary(result);
   }
 
   async getFailureLedger(limit = 100, days = 30): Promise<PreviewFailureLedgerDiagnostics> {
-    return api.get<PreviewFailureLedgerDiagnostics>('/preview/diagnostics/failures/ledger', {
+    const result = await api.get<unknown>('/preview/diagnostics/failures/ledger', {
       params: { limit, days },
     });
+    return assertPreviewFailureLedgerDiagnostics(result);
   }
 
   async resetFailureLedger(documentId: string): Promise<PreviewFailureLedgerResetItem> {
-    return api.post<PreviewFailureLedgerResetItem>(
+    const result = await api.post<unknown>(
       `/preview/diagnostics/failures/ledger/${encodeURIComponent(documentId)}/reset`
     );
+    return assertPreviewFailureLedgerResetItem(result);
   }
 
   async resetFailureLedgerBatch(documentIds: string[]): Promise<PreviewFailureLedgerResetBatchResult> {
-    return api.post<PreviewFailureLedgerResetBatchResult>(
+    const result = await api.post<unknown>(
       '/preview/diagnostics/failures/ledger/reset-batch',
       { documentIds }
     );
+    return assertPreviewFailureLedgerResetBatchResult(result);
   }
 
   async resetFailureLedgerByFilter(
     request: PreviewFailureLedgerResetByFilterRequest
   ): Promise<PreviewFailureLedgerResetByFilterResult> {
-    return api.post<PreviewFailureLedgerResetByFilterResult>(
+    const result = await api.post<unknown>(
       '/preview/diagnostics/failures/ledger/reset-by-filter',
       request
     );
+    return assertPreviewFailureLedgerResetByFilterResult(result);
   }
 
   async exportFailureLedgerCsv(days = 30, limit = 500): Promise<void> {
@@ -1083,23 +1793,17 @@ class PreviewDiagnosticsService {
   }
 
   async getRenditionSummary(days = 7, sampleLimit = 500): Promise<PreviewRenditionSummary> {
-    return api.get<PreviewRenditionSummary>('/preview/diagnostics/renditions/summary', {
+    const result = await api.get<unknown>('/preview/diagnostics/renditions/summary', {
       params: { days, sampleLimit },
     });
+    return assertPreviewRenditionSummary(result);
   }
 
   async getRenditionResources(days = 7, limit = 500): Promise<PreviewRenditionResource[]> {
-    const payload = await api.get<PreviewRenditionResourcesDiagnostics | PreviewRenditionResourceApiItem[]>(
-      '/preview/diagnostics/renditions/resources',
-      {
-        params: { days, limit },
-      }
-    );
-    const items = Array.isArray(payload)
-      ? payload
-      : Array.isArray(payload?.items)
-        ? payload.items
-        : [];
+    const payload = await api.get<unknown>('/preview/diagnostics/renditions/resources', {
+      params: { days, limit },
+    });
+    const items = assertPreviewRenditionResourcesPayload(payload);
     return items.map((item) => this.normalizeRenditionResource(item));
   }
 
@@ -1263,10 +1967,11 @@ class PreviewDiagnosticsService {
   }
 
   async queueFailuresBatch(documentIds: string[], force = false): Promise<PreviewQueueBatchResult> {
-    return api.post<PreviewQueueBatchResult>('/preview/diagnostics/failures/queue-batch', {
+    const result = await api.post<unknown>('/preview/diagnostics/failures/queue-batch', {
       documentIds,
       force,
     });
+    return assertPreviewQueueBatchResult(result);
   }
 
   async getQueueDiagnosticsSummary(
@@ -1274,9 +1979,10 @@ class PreviewDiagnosticsService {
     state: PreviewQueueDiagnosticsStateFilter = 'ALL',
     query?: string
   ): Promise<PreviewQueueDiagnosticsSummary> {
-    return api.get<PreviewQueueDiagnosticsSummary>('/preview/diagnostics/queue/summary', {
+    const result = await api.get<unknown>('/preview/diagnostics/queue/summary', {
       params: { limit, state, query: query?.trim() || undefined },
     });
+    return assertPreviewQueueDiagnosticsSummary(result);
   }
 
   async exportQueueDiagnosticsCsv(
@@ -1324,7 +2030,7 @@ class PreviewDiagnosticsService {
       query,
       arguments.length >= 4
     );
-    return api.get<PreviewQueueDeclinedSummary>('/preview/diagnostics/queue/declined', {
+    const result = await api.get<unknown>('/preview/diagnostics/queue/declined', {
       params: {
         limit,
         category: this.normalizeQueueDeclinedCategory(category),
@@ -1333,6 +2039,7 @@ class PreviewDiagnosticsService {
         query: resolved.query,
       },
     });
+    return assertPreviewQueueDeclinedSummary(result);
   }
 
   async exportQueueDeclinedCsv(limit?: number, category?: string, query?: string): Promise<void>;
@@ -1574,7 +2281,7 @@ class PreviewDiagnosticsService {
       force,
       arguments.length >= 4 && typeof queryOrForce !== 'boolean'
     );
-    return api.post<PreviewQueueDeclinedRequeueResult>(
+    const result = await api.post<unknown>(
       '/preview/diagnostics/queue/declined/requeue',
       undefined,
       {
@@ -1588,6 +2295,7 @@ class PreviewDiagnosticsService {
         },
       }
     );
+    return assertPreviewQueueDeclinedRequeueResult(result);
   }
 
   async dryRunQueueDeclinedRequeue(
@@ -1618,7 +2326,7 @@ class PreviewDiagnosticsService {
       force,
       arguments.length >= 4 && typeof queryOrForce !== 'boolean'
     );
-    return api.post<PreviewQueueDeclinedRequeueDryRunResult>(
+    const result = await api.post<unknown>(
       '/preview/diagnostics/queue/declined/requeue/dry-run',
       undefined,
       {
@@ -1632,6 +2340,7 @@ class PreviewDiagnosticsService {
         },
       }
     );
+    return assertPreviewQueueDeclinedRequeueDryRunResult(result);
   }
 
   async exportQueueDeclinedRequeueDryRunCsv(
@@ -1885,7 +2594,7 @@ class PreviewDiagnosticsService {
       query,
       arguments.length >= 4
     );
-    return api.post<PreviewQueueDeclinedClearResult>(
+    const result = await api.post<unknown>(
       '/preview/diagnostics/queue/declined/clear',
       undefined,
       {
@@ -1898,81 +2607,96 @@ class PreviewDiagnosticsService {
         },
       }
     );
+    return assertPreviewQueueDeclinedClearResult(result);
   }
 
   async queueFailuresByReason(payload: PreviewReasonBatchQueueRequest): Promise<PreviewReasonBatchQueueResult> {
-    return api.post<PreviewReasonBatchQueueResult>('/preview/diagnostics/failures/queue-by-reason', payload);
+    const result = await api.post<unknown>('/preview/diagnostics/failures/queue-by-reason', payload);
+    return assertPreviewReasonBatchQueueResult(result);
   }
 
   async getCadFailoverDiagnostics(): Promise<PreviewCadFailoverDiagnostics> {
-    return api.get<PreviewCadFailoverDiagnostics>('/preview/diagnostics/cad-failover');
+    const result = await api.get<unknown>('/preview/diagnostics/cad-failover');
+    return assertPreviewCadFailoverDiagnostics(result);
   }
 
   async getTransformTraces(limit = 20, requestId?: string): Promise<PreviewTransformTrace[]> {
-    return api.get<PreviewTransformTrace[]>('/preview/diagnostics/traces', {
+    const result = await api.get<unknown>('/preview/diagnostics/traces', {
       params: { limit, requestId: requestId || undefined },
     });
+    return assertPreviewTransformTraces(result);
   }
 
   async getFailurePolicies(): Promise<PreviewFailurePolicy[]> {
-    return api.get<PreviewFailurePolicy[]>('/preview/diagnostics/policies');
+    const result = await api.get<unknown>('/preview/diagnostics/policies');
+    return assertPreviewFailurePolicies(result);
   }
 
   async updateFailurePolicy(
     profileKey: string,
     payload: PreviewFailurePolicyUpdateRequest
   ): Promise<PreviewFailurePolicy> {
-    return api.put<PreviewFailurePolicy>(`/preview/diagnostics/policies/${encodeURIComponent(profileKey)}`, payload);
+    const result = await api.put<unknown>(
+      `/preview/diagnostics/policies/${encodeURIComponent(profileKey)}`,
+      payload
+    );
+    return assertPreviewFailurePolicy(result);
   }
 
   async getRenditionPreventionBlocked(limit = 50): Promise<PreviewRenditionPreventionDiagnostics> {
-    return api.get<PreviewRenditionPreventionDiagnostics>('/preview/diagnostics/prevention/blocked', {
+    const result = await api.get<unknown>('/preview/diagnostics/prevention/blocked', {
       params: { limit },
     });
+    return assertPreviewRenditionPreventionDiagnostics(result);
   }
 
   async unblockRenditionPrevention(documentId: string): Promise<PreviewRenditionPreventionAction> {
-    return api.post<PreviewRenditionPreventionAction>(
+    const result = await api.post<unknown>(
       `/preview/diagnostics/prevention/${encodeURIComponent(documentId)}/unblock`
     );
+    return assertPreviewRenditionPreventionAction(result);
   }
 
   async unblockAndRequeueRendition(
     documentId: string,
     force = true
   ): Promise<PreviewRenditionPreventionAction> {
-    return api.post<PreviewRenditionPreventionAction>(
+    const result = await api.post<unknown>(
       `/preview/diagnostics/prevention/${encodeURIComponent(documentId)}/unblock-requeue`,
       undefined,
       {
         params: { force },
       }
     );
+    return assertPreviewRenditionPreventionAction(result);
   }
 
   async unblockRenditionPreventionBatch(
     documentIds: string[]
   ): Promise<PreviewRenditionPreventionBatchResult> {
-    return api.post<PreviewRenditionPreventionBatchResult>(
+    const result = await api.post<unknown>(
       '/preview/diagnostics/prevention/unblock-batch',
       { documentIds }
     );
+    return assertPreviewRenditionPreventionBatchResult(result);
   }
 
   async unblockAndRequeueRenditionBatch(
     documentIds: string[],
     force = true
   ): Promise<PreviewRenditionPreventionBatchResult> {
-    return api.post<PreviewRenditionPreventionBatchResult>(
+    const result = await api.post<unknown>(
       '/preview/diagnostics/prevention/unblock-requeue-batch',
       { documentIds, force }
     );
+    return assertPreviewRenditionPreventionBatchResult(result);
   }
 
   async getDeadLetter(limit = 50): Promise<PreviewDeadLetterDiagnostics> {
-    return api.get<PreviewDeadLetterDiagnostics>('/preview/diagnostics/dead-letter', {
+    const result = await api.get<unknown>('/preview/diagnostics/dead-letter', {
       params: { limit },
     });
+    return assertPreviewDeadLetterDiagnostics(result);
   }
 
   async replayDeadLetterBatch(
@@ -1981,10 +2705,11 @@ class PreviewDiagnosticsService {
   ): Promise<PreviewDeadLetterReplayBatchResult> {
     const documentIds = payload?.documentIds || [];
     const entryKeys = payload?.entryKeys || [];
-    return api.post<PreviewDeadLetterReplayBatchResult>(
+    const result = await api.post<unknown>(
       '/preview/diagnostics/dead-letter/replay-batch',
       { documentIds, entryKeys, force: payload?.force ?? force }
     );
+    return assertPreviewDeadLetterReplayBatchResult(result);
   }
 
   async clearDeadLetterBatch(
@@ -1992,10 +2717,11 @@ class PreviewDiagnosticsService {
   ): Promise<PreviewDeadLetterClearBatchResult> {
     const documentIds = payload?.documentIds || [];
     const entryKeys = payload?.entryKeys || [];
-    return api.post<PreviewDeadLetterClearBatchResult>(
+    const result = await api.post<unknown>(
       '/preview/diagnostics/dead-letter/clear-batch',
       { documentIds, entryKeys }
     );
+    return assertPreviewDeadLetterClearBatchResult(result);
   }
 
   async exportDeadLetterCsv(limit = 500): Promise<void> {
