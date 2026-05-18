@@ -1,5 +1,8 @@
 import api from './api';
 
+export const WORKFLOW_UNEXPECTED_RESPONSE_MESSAGE =
+  'Workflow endpoint returned an unexpected response. Backend route may be missing or the request may have received an HTML fallback.';
+
 export interface ProcessDefinition {
   id: string;
   key: string;
@@ -29,7 +32,13 @@ export interface Task {
   claimable?: boolean;
 }
 
-export type TaskInboxScope = 'my' | 'claimable' | 'unassigned' | 'all' | 'completed' | 'involved';
+export type TaskInboxScope =
+  | 'my'
+  | 'claimable'
+  | 'unassigned'
+  | 'all'
+  | 'completed'
+  | 'involved';
 
 export interface TaskInboxQuery {
   scope?: TaskInboxScope;
@@ -265,7 +274,13 @@ export interface WorkflowFormModelElement {
   scope: 'start' | 'task' | string;
 }
 
-export type WorkflowTaskTransitionState = 'completed' | 'claimed' | 'unclaimed' | 'assigned' | 'delegated' | 'resolved';
+export type WorkflowTaskTransitionState =
+  | 'completed'
+  | 'claimed'
+  | 'unclaimed'
+  | 'assigned'
+  | 'delegated'
+  | 'resolved';
 
 export interface WorkflowTaskTransitionRequest {
   state: WorkflowTaskTransitionState;
@@ -282,41 +297,341 @@ const TASK_SCOPE_TO_API_SCOPE: Record<TaskInboxScope, string> = {
   involved: 'INVOLVED',
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const isFiniteNumber = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value);
+
+const isOptionalNullableString = (
+  value: unknown
+): value is string | null | undefined =>
+  value === undefined || value === null || typeof value === 'string';
+
+const isOptionalNullableNumber = (
+  value: unknown
+): value is number | null | undefined =>
+  value === undefined || value === null || isFiniteNumber(value);
+
+const isStringArray = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((item) => typeof item === 'string');
+
+function assertWorkflowResponse(condition: unknown): asserts condition {
+  if (!condition) {
+    throw new Error(WORKFLOW_UNEXPECTED_RESPONSE_MESSAGE);
+  }
+}
+
+const assertWorkflowArray = <T>(
+  value: unknown,
+  itemGuard: (item: unknown) => T
+): T[] => {
+  assertWorkflowResponse(Array.isArray(value));
+  return value.map(itemGuard);
+};
+
+const assertSubmissionSummary = (
+  value: unknown
+): WorkflowSubmissionSummary | undefined => {
+  if (value === undefined || value === null) {
+    return value as undefined;
+  }
+  assertWorkflowResponse(isRecord(value));
+  assertWorkflowResponse(isStringArray(value.approvers));
+  assertWorkflowResponse(isOptionalNullableString(value.startComment));
+  assertWorkflowResponse(isOptionalNullableString(value.startFormSubmittedBy));
+  assertWorkflowResponse(isOptionalNullableString(value.startFormSubmittedAt));
+  assertWorkflowResponse(isOptionalNullableString(value.decision));
+  assertWorkflowResponse(isOptionalNullableString(value.decisionLabel));
+  assertWorkflowResponse(isOptionalNullableString(value.reviewedBy));
+  assertWorkflowResponse(isOptionalNullableString(value.reviewedAt));
+  assertWorkflowResponse(isOptionalNullableString(value.comment));
+  return value as unknown as WorkflowSubmissionSummary;
+};
+
+const assertProcessDefinition = (value: unknown): ProcessDefinition => {
+  assertWorkflowResponse(isRecord(value));
+  assertWorkflowResponse(typeof value.id === 'string');
+  assertWorkflowResponse(typeof value.key === 'string');
+  assertWorkflowResponse(typeof value.name === 'string');
+  assertWorkflowResponse(isFiniteNumber(value.version));
+  return value as unknown as ProcessDefinition;
+};
+
+const assertProcessInstance = (value: unknown): ProcessInstance => {
+  assertWorkflowResponse(isRecord(value));
+  assertWorkflowResponse(typeof value.id === 'string');
+  assertWorkflowResponse(isOptionalNullableString(value.definitionKey));
+  assertWorkflowResponse(isOptionalNullableString(value.businessKey));
+  assertWorkflowResponse(typeof value.ended === 'boolean');
+  return value as unknown as ProcessInstance;
+};
+
+const assertTask = (value: unknown): Task => {
+  assertWorkflowResponse(isRecord(value));
+  assertWorkflowResponse(typeof value.id === 'string');
+  assertWorkflowResponse(isOptionalNullableString(value.name));
+  assertWorkflowResponse(isOptionalNullableString(value.assignee));
+  assertWorkflowResponse(isOptionalNullableString(value.description));
+  assertWorkflowResponse(isOptionalNullableString(value.createTime));
+  assertWorkflowResponse(isOptionalNullableString(value.status));
+  assertWorkflowResponse(isOptionalNullableString(value.completedAt));
+  assertWorkflowResponse(isOptionalNullableString(value.dueDate));
+  assertWorkflowResponse(isOptionalNullableString(value.processInstanceId));
+  assertWorkflowResponse(isOptionalNullableString(value.processDefinitionId));
+  assertWorkflowResponse(isOptionalNullableString(value.taskDefinitionKey));
+  assertWorkflowResponse(isOptionalNullableString(value.processDefinitionKey));
+  assertWorkflowResponse(isOptionalNullableString(value.processDefinitionName));
+  assertWorkflowResponse(
+    isOptionalNullableNumber(value.processDefinitionVersion)
+  );
+  assertWorkflowResponse(isOptionalNullableString(value.businessKey));
+  assertWorkflowResponse(isOptionalNullableString(value.startedBy));
+  assertWorkflowResponse(
+    value.claimable === undefined || typeof value.claimable === 'boolean'
+  );
+  return value as unknown as Task;
+};
+
+const assertTaskDetail = (value: unknown): WorkflowTaskDetail => {
+  assertWorkflowResponse(isRecord(value));
+  assertWorkflowResponse(typeof value.id === 'string');
+  assertWorkflowResponse(isOptionalNullableString(value.name));
+  assertWorkflowResponse(isOptionalNullableString(value.processInstanceId));
+  assertWorkflowResponse(isOptionalNullableString(value.processDefinitionId));
+  assertWorkflowResponse(
+    value.processVariables === undefined ||
+      value.processVariables === null ||
+      isRecord(value.processVariables)
+  );
+  assertWorkflowResponse(
+    value.processDefinitionSuspended === undefined ||
+      typeof value.processDefinitionSuspended === 'boolean'
+  );
+  assertSubmissionSummary(value.submissionSummary);
+  return value as unknown as WorkflowTaskDetail;
+};
+
+const assertProcessDetail = (value: unknown): WorkflowProcessDetail => {
+  assertWorkflowResponse(isRecord(value));
+  assertWorkflowResponse(typeof value.id === 'string');
+  assertWorkflowResponse(isOptionalNullableString(value.processDefinitionId));
+  assertWorkflowResponse(typeof value.suspended === 'boolean');
+  assertWorkflowResponse(typeof value.ended === 'boolean');
+  assertWorkflowResponse(
+    value.variables === undefined ||
+      value.variables === null ||
+      isRecord(value.variables)
+  );
+  assertSubmissionSummary(value.submissionSummary);
+  return value as unknown as WorkflowProcessDetail;
+};
+
+const assertProcessBrowserItem = (
+  value: unknown
+): WorkflowProcessBrowserItem => {
+  assertWorkflowResponse(isRecord(value));
+  assertWorkflowResponse(typeof value.id === 'string');
+  assertWorkflowResponse(typeof value.ended === 'boolean');
+  assertWorkflowResponse(isOptionalNullableString(value.processDefinitionId));
+  assertWorkflowResponse(
+    isOptionalNullableNumber(value.processDefinitionVersion)
+  );
+  assertSubmissionSummary(value.submissionSummary);
+  return value as unknown as WorkflowProcessBrowserItem;
+};
+
+const assertProcessBrowserList = (
+  value: unknown
+): WorkflowProcessBrowserListResponse => {
+  assertWorkflowResponse(isRecord(value));
+  assertWorkflowArray(value.items, assertProcessBrowserItem);
+  assertWorkflowResponse(isRecord(value.paging));
+  assertWorkflowResponse(isFiniteNumber(value.paging.skipCount));
+  assertWorkflowResponse(isFiniteNumber(value.paging.maxItems));
+  assertWorkflowResponse(isFiniteNumber(value.paging.totalItems));
+  assertWorkflowResponse(typeof value.paging.hasMoreItems === 'boolean');
+  return value as unknown as WorkflowProcessBrowserListResponse;
+};
+
+const assertProcessTask = (value: unknown): WorkflowProcessTask => {
+  assertWorkflowResponse(isRecord(value));
+  assertWorkflowResponse(typeof value.id === 'string');
+  assertWorkflowResponse(isOptionalNullableString(value.name));
+  assertWorkflowResponse(isOptionalNullableString(value.createTime));
+  return value as unknown as WorkflowProcessTask;
+};
+
+const assertHistoricTask = (value: unknown): WorkflowHistoricTaskItem => {
+  assertWorkflowResponse(isRecord(value));
+  assertWorkflowResponse(typeof value.id === 'string');
+  assertWorkflowResponse(isOptionalNullableString(value.name));
+  assertWorkflowResponse(isOptionalNullableNumber(value.durationInMillis));
+  return value as unknown as WorkflowHistoricTaskItem;
+};
+
+const assertProcessActivity = (value: unknown): WorkflowProcessActivity => {
+  assertWorkflowResponse(isRecord(value));
+  assertWorkflowResponse(typeof value.id === 'string');
+  assertWorkflowResponse(isOptionalNullableString(value.activityId));
+  assertWorkflowResponse(isOptionalNullableNumber(value.durationInMillis));
+  return value as unknown as WorkflowProcessActivity;
+};
+
+const assertVariableItem = (value: unknown): WorkflowVariableItem => {
+  assertWorkflowResponse(isRecord(value));
+  assertWorkflowResponse(typeof value.name === 'string');
+  assertWorkflowResponse(typeof value.type === 'string');
+  assertWorkflowResponse(typeof value.scope === 'string');
+  return value as unknown as WorkflowVariableItem;
+};
+
+const assertBusinessItem = (value: unknown): WorkflowBusinessItem => {
+  assertWorkflowResponse(isRecord(value));
+  assertWorkflowResponse(typeof value.id === 'string');
+  assertWorkflowResponse(typeof value.name === 'string');
+  assertWorkflowResponse(typeof value.nodeType === 'string');
+  assertWorkflowResponse(typeof value.path === 'string');
+  return value as unknown as WorkflowBusinessItem;
+};
+
+const assertTaskCandidate = (value: unknown): WorkflowTaskCandidate => {
+  assertWorkflowResponse(isRecord(value));
+  assertWorkflowResponse(isOptionalNullableString(value.userId));
+  assertWorkflowResponse(isOptionalNullableString(value.groupId));
+  assertWorkflowResponse(isOptionalNullableString(value.type));
+  assertWorkflowResponse(
+    value.userId !== undefined ||
+      value.groupId !== undefined ||
+      value.type !== undefined
+  );
+  return value as unknown as WorkflowTaskCandidate;
+};
+
+const assertInvolvedActor = (value: unknown): WorkflowInvolvedActor => {
+  assertWorkflowResponse(isRecord(value));
+  assertWorkflowResponse(isOptionalNullableString(value.userId));
+  assertWorkflowResponse(isOptionalNullableString(value.groupId));
+  assertWorkflowResponse(isOptionalNullableString(value.displayName));
+  assertWorkflowResponse(isStringArray(value.roles));
+  return value as unknown as WorkflowInvolvedActor;
+};
+
+const assertDefinitionDetail = (value: unknown): WorkflowDefinitionDetail => {
+  assertWorkflowResponse(isRecord(value));
+  assertWorkflowResponse(typeof value.id === 'string');
+  assertWorkflowResponse(typeof value.key === 'string');
+  assertWorkflowResponse(typeof value.name === 'string');
+  assertWorkflowResponse(isFiniteNumber(value.version));
+  assertWorkflowResponse(typeof value.suspended === 'boolean');
+  assertWorkflowResponse(typeof value.hasStartFormKey === 'boolean');
+  assertWorkflowResponse(typeof value.hasGraphicalNotation === 'boolean');
+  assertWorkflowResponse(typeof value.bpmnXmlAvailable === 'boolean');
+  assertWorkflowResponse(typeof value.diagramAvailable === 'boolean');
+  assertWorkflowResponse(isStringArray(value.resourceNames));
+  return value as unknown as WorkflowDefinitionDetail;
+};
+
+const assertDefinitionModel = (value: unknown): WorkflowDefinitionModel => {
+  assertWorkflowResponse(isRecord(value));
+  assertWorkflowResponse(typeof value.definitionId === 'string');
+  assertWorkflowResponse(isOptionalNullableString(value.resourceName));
+  assertWorkflowResponse(isOptionalNullableString(value.xml));
+  return value as unknown as WorkflowDefinitionModel;
+};
+
+const assertFormModelOption = (value: unknown): WorkflowFormOption => {
+  assertWorkflowResponse(isRecord(value));
+  assertWorkflowResponse(typeof value.label === 'string');
+  assertWorkflowResponse(typeof value.value === 'string');
+  return value as unknown as WorkflowFormOption;
+};
+
+const assertFormModelElement = (value: unknown): WorkflowFormModelElement => {
+  assertWorkflowResponse(isRecord(value));
+  assertWorkflowResponse(typeof value.id === 'string');
+  assertWorkflowResponse(typeof value.name === 'string');
+  assertWorkflowResponse(typeof value.title === 'string');
+  assertWorkflowResponse(typeof value.type === 'string');
+  assertWorkflowResponse(typeof value.required === 'boolean');
+  assertWorkflowResponse(typeof value.readOnly === 'boolean');
+  assertWorkflowResponse(typeof value.repeated === 'boolean');
+  assertWorkflowArray(value.options, assertFormModelOption);
+  assertWorkflowResponse(typeof value.scope === 'string');
+  return value as unknown as WorkflowFormModelElement;
+};
+
+const assertHistoryItem = (value: unknown): WorkflowHistoryItem => {
+  assertWorkflowResponse(isRecord(value));
+  assertWorkflowResponse(typeof value.id === 'string');
+  assertWorkflowResponse(isOptionalNullableString(value.businessKey));
+  assertWorkflowResponse(isOptionalNullableString(value.startTime));
+  assertWorkflowResponse(isOptionalNullableString(value.endTime));
+  assertWorkflowResponse(
+    value.approvers === undefined ||
+      value.approvers === null ||
+      isStringArray(value.approvers)
+  );
+  assertWorkflowResponse(
+    value.ended === undefined || typeof value.ended === 'boolean'
+  );
+  return value as unknown as WorkflowHistoryItem;
+};
+
 const workflowService = {
   getDefinitions: async () => {
-    return api.get<ProcessDefinition[]>('/workflows/definitions');
+    return assertWorkflowArray(
+      await api.get<unknown>('/workflows/definitions'),
+      assertProcessDefinition
+    );
   },
 
-  startApproval: async (documentId: string, approvers: string[], comment: string) => {
-    return api.post<ProcessInstance>(`/workflows/document/${documentId}/approval`, {
-      approvers,
-      comment,
-    });
+  startApproval: async (
+    documentId: string,
+    approvers: string[],
+    comment: string
+  ) => {
+    return assertProcessInstance(
+      await api.post<unknown>(`/workflows/document/${documentId}/approval`, {
+        approvers,
+        comment,
+      })
+    );
   },
 
   submitStartForm: async (documentId: string, values: Record<string, any>) => {
-    return api.post<ProcessInstance>(`/workflows/document/${documentId}/approval/form-submit`, {
-      values,
-    });
+    return assertProcessInstance(
+      await api.post<unknown>(
+        `/workflows/document/${documentId}/approval/form-submit`,
+        {
+          values,
+        }
+      )
+    );
   },
 
   startProcess: async (request: WorkflowProcessStartRequest) => {
-    return api.post<ProcessInstance>('/workflows/processes', request);
+    return assertProcessInstance(
+      await api.post<unknown>('/workflows/processes', request)
+    );
   },
 
   getTaskInbox: async (query: TaskInboxQuery = {}) => {
-    return api.get<Task[]>('/workflows/tasks/inbox', {
-      params: {
-        scope: TASK_SCOPE_TO_API_SCOPE[query.scope || 'my'],
-        query: query.query?.trim() || undefined,
-        businessKey: query.businessKey?.trim() || undefined,
-        assignee: query.assignee?.trim() || undefined,
-        processId: query.processId?.trim() || undefined,
-        owner: query.owner?.trim() || undefined,
-        candidateUser: query.candidateUser?.trim() || undefined,
-        candidateGroup: query.candidateGroup?.trim() || undefined,
-      },
-    });
+    return assertWorkflowArray(
+      await api.get<unknown>('/workflows/tasks/inbox', {
+        params: {
+          scope: TASK_SCOPE_TO_API_SCOPE[query.scope || 'my'],
+          query: query.query?.trim() || undefined,
+          businessKey: query.businessKey?.trim() || undefined,
+          assignee: query.assignee?.trim() || undefined,
+          processId: query.processId?.trim() || undefined,
+          owner: query.owner?.trim() || undefined,
+          candidateUser: query.candidateUser?.trim() || undefined,
+          candidateGroup: query.candidateGroup?.trim() || undefined,
+        },
+      }),
+      assertTask
+    );
   },
 
   getMyTasks: async () => {
@@ -324,11 +639,15 @@ const workflowService = {
   },
 
   getTaskDetail: async (taskId: string) => {
-    return api.get<WorkflowTaskDetail>(`/workflows/tasks/${taskId}`);
+    return assertTaskDetail(
+      await api.get<unknown>(`/workflows/tasks/${taskId}`)
+    );
   },
 
   getProcessDetail: async (processId: string) => {
-    return api.get<WorkflowProcessDetail>(`/workflows/processes/${processId}`);
+    return assertProcessDetail(
+      await api.get<unknown>(`/workflows/processes/${processId}`)
+    );
   },
 
   listProcesses: async (
@@ -340,21 +659,26 @@ const workflowService = {
     skipCount = 0,
     maxItems = 20
   ) => {
-    return api.get<WorkflowProcessBrowserListResponse>('/workflows/processes/browser', {
-      params: {
-        status,
-        businessKey: businessKey || undefined,
-        startedBy: startedBy || undefined,
-        definitionKey: definitionKey || undefined,
-        query: query || undefined,
-        skipCount,
-        maxItems,
-      },
-    });
+    return assertProcessBrowserList(
+      await api.get<unknown>('/workflows/processes/browser', {
+        params: {
+          status,
+          businessKey: businessKey || undefined,
+          startedBy: startedBy || undefined,
+          definitionKey: definitionKey || undefined,
+          query: query || undefined,
+          skipCount,
+          maxItems,
+        },
+      })
+    );
   },
 
   getProcessTasks: async (processId: string) => {
-    return api.get<WorkflowProcessTask[]>(`/workflows/processes/${processId}/tasks`);
+    return assertWorkflowArray(
+      await api.get<unknown>(`/workflows/processes/${processId}/tasks`),
+      assertProcessTask
+    );
   },
 
   getProcessTaskHistory: async (
@@ -365,13 +689,16 @@ const workflowService = {
       taskDefinitionKey?: string;
     }
   ) => {
-    return api.get<WorkflowHistoricTaskItem[]>(`/workflows/processes/${processId}/task-history`, {
-      params: {
-        query: params?.query || undefined,
-        assignee: params?.assignee || undefined,
-        taskDefinitionKey: params?.taskDefinitionKey || undefined,
-      },
-    });
+    return assertWorkflowArray(
+      await api.get<unknown>(`/workflows/processes/${processId}/task-history`, {
+        params: {
+          query: params?.query || undefined,
+          assignee: params?.assignee || undefined,
+          taskDefinitionKey: params?.taskDefinitionKey || undefined,
+        },
+      }),
+      assertHistoricTask
+    );
   },
 
   getProcessActivities: async (
@@ -382,57 +709,98 @@ const workflowService = {
       activityType?: string;
     }
   ) => {
-    return api.get<WorkflowProcessActivity[]>(`/workflows/processes/${processId}/activities`, {
-      params: {
-        query: params?.query || undefined,
-        assignee: params?.assignee || undefined,
-        activityType: params?.activityType || undefined,
-      },
-    });
+    return assertWorkflowArray(
+      await api.get<unknown>(`/workflows/processes/${processId}/activities`, {
+        params: {
+          query: params?.query || undefined,
+          assignee: params?.assignee || undefined,
+          activityType: params?.activityType || undefined,
+        },
+      }),
+      assertProcessActivity
+    );
   },
 
   getProcessVariables: async (processId: string) => {
-    return api.get<WorkflowVariableItem[]>(`/workflows/processes/${processId}/variables`);
+    return assertWorkflowArray(
+      await api.get<unknown>(`/workflows/processes/${processId}/variables`),
+      assertVariableItem
+    );
   },
 
-  setProcessVariable: async (processId: string, variableName: string, value: any) => {
-    await api.put(`/workflows/processes/${processId}/variables/${encodeURIComponent(variableName)}`, { value });
+  setProcessVariable: async (
+    processId: string,
+    variableName: string,
+    value: any
+  ) => {
+    await api.put(
+      `/workflows/processes/${processId}/variables/${encodeURIComponent(
+        variableName
+      )}`,
+      { value }
+    );
   },
 
   deleteProcessVariable: async (processId: string, variableName: string) => {
-    await api.delete(`/workflows/processes/${processId}/variables/${encodeURIComponent(variableName)}`);
+    await api.delete(
+      `/workflows/processes/${processId}/variables/${encodeURIComponent(
+        variableName
+      )}`
+    );
   },
 
   getTaskVariables: async (taskId: string) => {
-    return api.get<WorkflowVariableItem[]>(`/workflows/tasks/${taskId}/variables`);
+    return assertWorkflowArray(
+      await api.get<unknown>(`/workflows/tasks/${taskId}/variables`),
+      assertVariableItem
+    );
   },
 
   getProcessItems: async (processId: string) => {
-    return api.get<WorkflowBusinessItem[]>(`/workflows/processes/${processId}/items`);
+    return assertWorkflowArray(
+      await api.get<unknown>(`/workflows/processes/${processId}/items`),
+      assertBusinessItem
+    );
   },
 
   getTaskItems: async (taskId: string) => {
-    return api.get<WorkflowBusinessItem[]>(`/workflows/tasks/${taskId}/items`);
+    return assertWorkflowArray(
+      await api.get<unknown>(`/workflows/tasks/${taskId}/items`),
+      assertBusinessItem
+    );
   },
 
   getTaskCandidates: async (taskId: string) => {
-    return api.get<WorkflowTaskCandidate[]>(`/workflows/tasks/${taskId}/candidates`);
+    return assertWorkflowArray(
+      await api.get<unknown>(`/workflows/tasks/${taskId}/candidates`),
+      assertTaskCandidate
+    );
   },
 
   getTaskInvolvedActors: async (taskId: string) => {
-    return api.get<WorkflowInvolvedActor[]>(`/workflows/tasks/${taskId}/involved`);
+    return assertWorkflowArray(
+      await api.get<unknown>(`/workflows/tasks/${taskId}/involved`),
+      assertInvolvedActor
+    );
   },
 
   getProcessInvolvedActors: async (processId: string) => {
-    return api.get<WorkflowInvolvedActor[]>(`/workflows/processes/${processId}/involved`);
+    return assertWorkflowArray(
+      await api.get<unknown>(`/workflows/processes/${processId}/involved`),
+      assertInvolvedActor
+    );
   },
 
   getDefinitionDetail: async (definitionId: string) => {
-    return api.get<WorkflowDefinitionDetail>(`/workflows/definitions/${definitionId}`);
+    return assertDefinitionDetail(
+      await api.get<unknown>(`/workflows/definitions/${definitionId}`)
+    );
   },
 
   getDefinitionModel: async (definitionId: string) => {
-    return api.get<WorkflowDefinitionModel>(`/workflows/definitions/${definitionId}/model`);
+    return assertDefinitionModel(
+      await api.get<unknown>(`/workflows/definitions/${definitionId}/model`)
+    );
   },
 
   getDefinitionDiagram: async (definitionId: string) => {
@@ -440,7 +808,12 @@ const workflowService = {
   },
 
   getStartFormModel: async (definitionId: string) => {
-    return api.get<WorkflowFormModelElement[]>(`/workflows/definitions/${definitionId}/start-form-model`);
+    return assertWorkflowArray(
+      await api.get<unknown>(
+        `/workflows/definitions/${definitionId}/start-form-model`
+      ),
+      assertFormModelElement
+    );
   },
 
   getProcessDiagram: async (processId: string) => {
@@ -448,7 +821,10 @@ const workflowService = {
   },
 
   getTaskFormModel: async (taskId: string) => {
-    return api.get<WorkflowFormModelElement[]>(`/workflows/tasks/${taskId}/task-form-model`);
+    return assertWorkflowArray(
+      await api.get<unknown>(`/workflows/tasks/${taskId}/task-form-model`),
+      assertFormModelElement
+    );
   },
 
   completeTask: async (taskId: string, variables: Record<string, any>) => {
@@ -471,7 +847,10 @@ const workflowService = {
     await api.post(`/workflows/tasks/${taskId}/assign`, { assignee });
   },
 
-  transitionTask: async (taskId: string, request: WorkflowTaskTransitionRequest) => {
+  transitionTask: async (
+    taskId: string,
+    request: WorkflowTaskTransitionRequest
+  ) => {
     await api.put(`/workflows/tasks/${taskId}`, request);
   },
 
@@ -484,7 +863,10 @@ const workflowService = {
   },
 
   getDocumentHistory: async (documentId: string) => {
-    return api.get<WorkflowHistoryItem[]>(`/workflows/document/${documentId}/history`);
+    return assertWorkflowArray(
+      await api.get<unknown>(`/workflows/document/${documentId}/history`),
+      assertHistoryItem
+    );
   },
 };
 
