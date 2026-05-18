@@ -135,16 +135,31 @@ Result: PASS.
 
 ## CI Follow-Up
 
-CI had not been pushed at the time this document was created.
+Pushed CI run:
 
-Expected high-signal CI jobs after push:
+- Run: `26015220038`
+- Head: `c0922b0`
+- Result: PASS
 
+Passing jobs:
+
+- `Backend Verify`
 - `Frontend Build & Test`
-- `Frontend E2E Core Gate`
+- `Phase C Security Verification`
 - `Phase 5 Mocked Regression Gate`
+- `Frontend E2E Core Gate`
+- `Property Encryption Closeout Gate`
+- `Acceptance Smoke (3 admin pages)`
 
-Backend/security jobs are expected to remain green because this round is
-frontend-service-only.
+The CI-sensitive checks matched local expectations:
+
+- `Frontend Build & Test` covered lint, type check, build, and frontend unit
+  tests.
+- `Phase 5 Mocked Regression Gate` stayed green, so mocked service contracts
+  were preserved.
+- `Frontend E2E Core Gate` stayed green, including preview/search regression.
+- Backend/security/property-encryption gates stayed green because this round did
+  not change backend code or migrations.
 
 ## Follow-Up
 
