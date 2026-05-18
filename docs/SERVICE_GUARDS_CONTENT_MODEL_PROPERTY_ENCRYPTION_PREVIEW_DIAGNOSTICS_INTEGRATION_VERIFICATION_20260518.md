@@ -162,16 +162,29 @@ Result: PASS.
 
 ## CI Follow-Up
 
-Not pushed at document write time. Push `main` to trigger the repository
-CI gate.
+Pushed CI run:
 
-Expected CI-sensitive checks from this round:
+- Run: `26012227689`
+- Head: `cd56404`
+- Result: PASS
 
-- `Frontend Build & Test` should cover the `CI=true` build path that
-  caught the strict-cast issue locally.
-- `Phase 5 Mocked Regression Gate` should remain relevant because these
-  service guards are designed to catch mocked endpoint shape drift.
-- Backend and security gates should be unchanged because this round is
+Passing jobs:
+
+- `Backend Verify`
+- `Frontend Build & Test`
+- `Phase C Security Verification`
+- `Acceptance Smoke (3 admin pages)`
+- `Phase 5 Mocked Regression Gate`
+- `Property Encryption Closeout Gate`
+- `Frontend E2E Core Gate`
+
+The CI-sensitive checks matched the local expectations:
+
+- `Frontend Build & Test` covered the `CI=true` build path that caught
+  the strict-cast issue locally.
+- `Phase 5 Mocked Regression Gate` stayed green, so the new service
+  guards did not expose mocked preview-diagnostics contract drift.
+- Backend and security gates stayed green because this round was
   frontend-service-only.
 
 ## Follow-Up
