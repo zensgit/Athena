@@ -182,9 +182,7 @@ Result: PASS.
 
 ## Commit
 
-Pending commit at document write time:
-
-- `fix(preview-diagnostics): guard async task responses`
+- `209a6ab fix(preview-diagnostics): guard async task responses`
 
 ## Follow-Up
 
