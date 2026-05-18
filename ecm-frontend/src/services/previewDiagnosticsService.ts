@@ -948,6 +948,12 @@ const isOptionalNullableString = (value: unknown): value is string | null | unde
 const isOptionalFiniteNumber = (value: unknown): value is number | undefined =>
   value === undefined || isFiniteNumber(value);
 
+const isOptionalNullableFiniteNumber = (value: unknown): value is number | null | undefined =>
+  value === undefined || value === null || isFiniteNumber(value);
+
+const isOptionalNullableBoolean = (value: unknown): value is boolean | null | undefined =>
+  value === undefined || value === null || typeof value === 'boolean';
+
 function assertPreviewDiagnosticsResponse(condition: unknown): asserts condition {
   if (!condition) {
     throw new Error(PREVIEW_DIAGNOSTICS_UNEXPECTED_RESPONSE_MESSAGE);
@@ -1172,6 +1178,312 @@ const assertPreviewRenditionResourcesPayload = (
   return value.items.map(assertPreviewRenditionResourceApiItem);
 };
 
+const assertPreviewTaskCenterPaging = (value: unknown): PreviewTaskCenterPaging => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.skipCount));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.maxItems));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.totalItems));
+  assertPreviewDiagnosticsResponse(typeof value.hasMoreItems === 'boolean');
+  return value as unknown as PreviewTaskCenterPaging;
+};
+
+const assertPreviewAsyncExportTaskBase = (value: unknown): Record<string, unknown> => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(typeof value.taskId === 'string');
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.status));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.error));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.message));
+  assertPreviewDiagnosticsResponse(isOptionalNullableBoolean(value.deduplicated));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.deduplicatedFromTaskId));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.createdAt));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.startedAt));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.updatedAt));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.timeoutAt));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.expiresAt));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.createdBy));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.updatedBy));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.finishedAt));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.filename));
+  return value;
+};
+
+const assertPreviewRenditionResourcesExportTask = (
+  value: unknown
+): PreviewRenditionResourcesExportTask => {
+  assertPreviewAsyncExportTaskBase(value);
+  return value as unknown as PreviewRenditionResourcesExportTask;
+};
+
+const assertPreviewQueueDeclinedExportTask = (
+  value: unknown
+): PreviewQueueDeclinedExportTask => {
+  const record = assertPreviewAsyncExportTaskBase(value);
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(record.categoryFilter));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(record.forceRequiredFilter));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(record.queryFilter));
+  assertPreviewDiagnosticsResponse(isOptionalNullableFiniteNumber(record.windowHoursFilter));
+  assertPreviewDiagnosticsResponse(isOptionalNullableFiniteNumber(record.limit));
+  return value as unknown as PreviewQueueDeclinedExportTask;
+};
+
+const assertPreviewQueueDeclinedRequeueDryRunExportTask = (
+  value: unknown
+): PreviewQueueDeclinedRequeueDryRunExportTask => {
+  const record = assertPreviewAsyncExportTaskBase(value);
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(record.categoryFilter));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(record.forceRequiredFilter));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(record.queryFilter));
+  assertPreviewDiagnosticsResponse(isOptionalNullableFiniteNumber(record.windowHoursFilter));
+  assertPreviewDiagnosticsResponse(isOptionalNullableFiniteNumber(record.limit));
+  assertPreviewDiagnosticsResponse(isOptionalNullableBoolean(record.force));
+  return value as unknown as PreviewQueueDeclinedRequeueDryRunExportTask;
+};
+
+const assertPreviewTaskListEnvelope = <T>(
+  value: unknown,
+  itemGuard: (item: unknown) => T
+): { count: number; paging?: PreviewTaskCenterPaging | null; items: T[] } => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.count));
+  assertPreviewDiagnosticsResponse(
+    value.paging === undefined || value.paging === null || isRecord(value.paging)
+  );
+  const paging = value.paging === undefined || value.paging === null
+    ? value.paging as undefined | null
+    : assertPreviewTaskCenterPaging(value.paging);
+  assertPreviewDiagnosticsResponse(Array.isArray(value.items));
+  const items = value.items.map(itemGuard);
+  return { ...value, paging, items } as { count: number; paging?: PreviewTaskCenterPaging | null; items: T[] };
+};
+
+const assertPreviewRenditionResourcesExportTaskList = (
+  value: unknown
+): PreviewRenditionResourcesExportTaskList =>
+  assertPreviewTaskListEnvelope(
+    value,
+    assertPreviewRenditionResourcesExportTask
+  ) as unknown as PreviewRenditionResourcesExportTaskList;
+
+const assertPreviewQueueDeclinedExportTaskList = (
+  value: unknown
+): PreviewQueueDeclinedExportTaskList =>
+  assertPreviewTaskListEnvelope(
+    value,
+    assertPreviewQueueDeclinedExportTask
+  ) as unknown as PreviewQueueDeclinedExportTaskList;
+
+const assertPreviewQueueDeclinedRequeueDryRunExportTaskList = (
+  value: unknown
+): PreviewQueueDeclinedRequeueDryRunExportTaskList =>
+  assertPreviewTaskListEnvelope(
+    value,
+    assertPreviewQueueDeclinedRequeueDryRunExportTask
+  ) as unknown as PreviewQueueDeclinedRequeueDryRunExportTaskList;
+
+const assertPreviewTaskSummaryFields = (value: unknown): Record<string, unknown> => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.totalCount));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.queuedCount));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.runningCount));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.completedCount));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.cancelledCount));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.failedCount));
+  assertPreviewDiagnosticsResponse(isOptionalFiniteNumber(value.timedOutCount));
+  assertPreviewDiagnosticsResponse(isOptionalFiniteNumber(value.expiredCount));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.activeCount));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.terminalCount));
+  return value;
+};
+
+const assertPreviewRenditionResourcesExportTaskSummary = (
+  value: unknown
+): PreviewRenditionResourcesExportTaskSummary =>
+  assertPreviewTaskSummaryFields(value) as unknown as PreviewRenditionResourcesExportTaskSummary;
+
+const assertPreviewQueueDeclinedExportTaskSummary = (
+  value: unknown
+): PreviewQueueDeclinedExportTaskSummary =>
+  assertPreviewTaskSummaryFields(value) as unknown as PreviewQueueDeclinedExportTaskSummary;
+
+const assertPreviewQueueDeclinedRequeueDryRunExportTaskSummary = (
+  value: unknown
+): PreviewQueueDeclinedRequeueDryRunExportTaskSummary =>
+  assertPreviewTaskSummaryFields(value) as unknown as PreviewQueueDeclinedRequeueDryRunExportTaskSummary;
+
+const assertPreviewTaskCleanupResponseFields = (value: unknown): Record<string, unknown> => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.deletedCount));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.remainingCount));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.statusFilter));
+  assertPreviewDiagnosticsResponse(typeof value.message === 'string');
+  return value;
+};
+
+const assertPreviewRenditionResourcesExportTaskCleanupResponse = (
+  value: unknown
+): PreviewRenditionResourcesExportTaskCleanupResponse =>
+  assertPreviewTaskCleanupResponseFields(
+    value
+  ) as unknown as PreviewRenditionResourcesExportTaskCleanupResponse;
+
+const assertPreviewQueueDeclinedExportTaskCleanupResponse = (
+  value: unknown
+): PreviewQueueDeclinedExportTaskCleanupResponse =>
+  assertPreviewTaskCleanupResponseFields(
+    value
+  ) as unknown as PreviewQueueDeclinedExportTaskCleanupResponse;
+
+const assertPreviewQueueDeclinedRequeueDryRunExportTaskCleanupResponse = (
+  value: unknown
+): PreviewQueueDeclinedRequeueDryRunExportTaskCleanupResponse =>
+  assertPreviewTaskCleanupResponseFields(
+    value
+  ) as unknown as PreviewQueueDeclinedRequeueDryRunExportTaskCleanupResponse;
+
+const assertPreviewTaskCancelActiveResponseFields = (
+  value: unknown
+): Record<string, unknown> => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.cancelledCount));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.remainingActiveCount));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.statusFilter));
+  assertPreviewDiagnosticsResponse(typeof value.message === 'string');
+  return value;
+};
+
+const assertPreviewRenditionResourcesExportTaskCancelActiveResponse = (
+  value: unknown
+): PreviewRenditionResourcesExportTaskCancelActiveResponse =>
+  assertPreviewTaskCancelActiveResponseFields(
+    value
+  ) as unknown as PreviewRenditionResourcesExportTaskCancelActiveResponse;
+
+const assertPreviewQueueDeclinedExportTaskCancelActiveResponse = (
+  value: unknown
+): PreviewQueueDeclinedExportTaskCancelActiveResponse =>
+  assertPreviewTaskCancelActiveResponseFields(
+    value
+  ) as unknown as PreviewQueueDeclinedExportTaskCancelActiveResponse;
+
+const assertPreviewQueueDeclinedRequeueDryRunExportTaskCancelActiveResponse = (
+  value: unknown
+): PreviewQueueDeclinedRequeueDryRunExportTaskCancelActiveResponse =>
+  assertPreviewTaskCancelActiveResponseFields(
+    value
+  ) as unknown as PreviewQueueDeclinedRequeueDryRunExportTaskCancelActiveResponse;
+
+const assertPreviewTaskRetryTerminalItem = (value: unknown): Record<string, unknown> => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.sourceTaskId));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.newTaskId));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.sourceStatus));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.outcome));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.message));
+  return value;
+};
+
+const assertPreviewTaskRetryTerminalResponse = (
+  value: unknown
+): Record<string, unknown> => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.requested));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.retried));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.reused));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.skipped));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.failed));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.limit));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.statusFilter));
+  assertPreviewDiagnosticsResponse(typeof value.message === 'string');
+  assertPreviewDiagnosticsResponse(Array.isArray(value.results));
+  const results = value.results.map(assertPreviewTaskRetryTerminalItem);
+  return { ...value, results };
+};
+
+const assertPreviewRenditionResourcesExportTaskRetryTerminalResponse = (
+  value: unknown
+): PreviewRenditionResourcesExportTaskRetryTerminalResponse =>
+  assertPreviewTaskRetryTerminalResponse(
+    value
+  ) as unknown as PreviewRenditionResourcesExportTaskRetryTerminalResponse;
+
+const assertPreviewQueueDeclinedExportTaskRetryTerminalResponse = (
+  value: unknown
+): PreviewQueueDeclinedExportTaskRetryTerminalResponse =>
+  assertPreviewTaskRetryTerminalResponse(
+    value
+  ) as unknown as PreviewQueueDeclinedExportTaskRetryTerminalResponse;
+
+const assertPreviewQueueDeclinedRequeueDryRunExportTaskRetryTerminalResponse = (
+  value: unknown
+): PreviewQueueDeclinedRequeueDryRunExportTaskRetryTerminalResponse =>
+  assertPreviewTaskRetryTerminalResponse(
+    value
+  ) as unknown as PreviewQueueDeclinedRequeueDryRunExportTaskRetryTerminalResponse;
+
+const assertPreviewTaskRetryTerminalDryRunItem = (
+  value: unknown
+): Record<string, unknown> => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.sourceTaskId));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.sourceStatus));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.outcome));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.reasonCode));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.message));
+  return value;
+};
+
+const assertPreviewTaskRetryTerminalDryRunReasonCount = (
+  value: unknown
+): Record<string, unknown> => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.reasonCode));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.outcome));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.count));
+  return value;
+};
+
+const assertPreviewTaskRetryTerminalDryRunResponse = (
+  value: unknown
+): Record<string, unknown> => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.requested));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.retryable));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.skipped));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.limit));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.statusFilter));
+  assertPreviewDiagnosticsResponse(typeof value.message === 'string');
+  assertPreviewDiagnosticsResponse(Array.isArray(value.results));
+  const results = value.results.map(assertPreviewTaskRetryTerminalDryRunItem);
+  assertPreviewDiagnosticsResponse(
+    value.reasonBreakdown === undefined || Array.isArray(value.reasonBreakdown)
+  );
+  const reasonBreakdown = value.reasonBreakdown === undefined
+    ? undefined
+    : value.reasonBreakdown.map(assertPreviewTaskRetryTerminalDryRunReasonCount);
+  return { ...value, results, reasonBreakdown };
+};
+
+const assertPreviewRenditionResourcesExportTaskRetryTerminalDryRunResponse = (
+  value: unknown
+): PreviewRenditionResourcesExportTaskRetryTerminalDryRunResponse =>
+  assertPreviewTaskRetryTerminalDryRunResponse(
+    value
+  ) as unknown as PreviewRenditionResourcesExportTaskRetryTerminalDryRunResponse;
+
+const assertPreviewQueueDeclinedExportTaskRetryTerminalDryRunResponse = (
+  value: unknown
+): PreviewQueueDeclinedExportTaskRetryTerminalDryRunResponse =>
+  assertPreviewTaskRetryTerminalDryRunResponse(
+    value
+  ) as unknown as PreviewQueueDeclinedExportTaskRetryTerminalDryRunResponse;
+
+const assertPreviewQueueDeclinedRequeueDryRunExportTaskRetryTerminalDryRunResponse = (
+  value: unknown
+): PreviewQueueDeclinedRequeueDryRunExportTaskRetryTerminalDryRunResponse =>
+  assertPreviewTaskRetryTerminalDryRunResponse(
+    value
+  ) as unknown as PreviewQueueDeclinedRequeueDryRunExportTaskRetryTerminalDryRunResponse;
+
 const assertPreviewQueueBatchItem = (value: unknown): PreviewQueueBatchItem => {
   assertPreviewDiagnosticsResponse(isRecord(value));
   assertPreviewDiagnosticsResponse(typeof value.documentId === 'string');
@@ -1235,6 +1547,33 @@ const assertPreviewQueueDiagnosticsSummary = (value: unknown): PreviewQueueDiagn
   assertPreviewDiagnosticsResponse(Array.isArray(value.items));
   const items = value.items.map(assertPreviewQueueDiagnosticsItem);
   return { ...value, items } as unknown as PreviewQueueDiagnosticsSummary;
+};
+
+const assertPreviewQueueCancelActiveItem = (value: unknown): PreviewQueueCancelActiveItem => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(isNullableString(value.documentId));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.previewStatus));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.previewFailureReason));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.previewFailureCategory));
+  assertPreviewDiagnosticsResponse(isOptionalNullableString(value.previewLastUpdated));
+  assertPreviewDiagnosticsResponse(isNullableString(value.queueState));
+  assertPreviewDiagnosticsResponse(typeof value.outcome === 'string');
+  assertPreviewDiagnosticsResponse(isNullableString(value.message));
+  return value as unknown as PreviewQueueCancelActiveItem;
+};
+
+const assertPreviewQueueCancelActiveResult = (value: unknown): PreviewQueueCancelActiveResult => {
+  assertPreviewDiagnosticsResponse(isRecord(value));
+  assertPreviewDiagnosticsResponse(typeof value.stateFilter === 'string');
+  assertPreviewDiagnosticsResponse(isNullableString(value.queryFilter));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.limit));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.requested));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.cancelled));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.skipped));
+  assertPreviewDiagnosticsResponse(isFiniteNumber(value.failed));
+  assertPreviewDiagnosticsResponse(Array.isArray(value.results));
+  const results = value.results.map(assertPreviewQueueCancelActiveItem);
+  return { ...value, results } as unknown as PreviewQueueCancelActiveResult;
 };
 
 const assertPreviewQueueDeclinedItem = (value: unknown): PreviewQueueDeclinedItem => {
@@ -1818,10 +2157,11 @@ class PreviewDiagnosticsService {
     days = 7,
     limit = 500
   ): Promise<PreviewRenditionResourcesExportTask> {
-    return api.post<PreviewRenditionResourcesExportTask>(
+    const result = await api.post<unknown>(
       '/preview/diagnostics/renditions/resources/export-async',
       { days, limit }
     );
+    return assertPreviewRenditionResourcesExportTask(result);
   }
 
   async listRenditionResourcesExportTasks(
@@ -1829,7 +2169,7 @@ class PreviewDiagnosticsService {
     status?: PreviewRenditionResourcesExportTaskStatusFilter,
     skipCount = 0
   ): Promise<PreviewRenditionResourcesExportTaskList> {
-    return api.get<PreviewRenditionResourcesExportTaskList>(
+    const result = await api.get<unknown>(
       '/preview/diagnostics/renditions/resources/export-async',
       {
         params: {
@@ -1840,12 +2180,13 @@ class PreviewDiagnosticsService {
         },
       }
     );
+    return assertPreviewRenditionResourcesExportTaskList(result);
   }
 
   async getRenditionResourcesExportTaskSummary(
     status?: PreviewRenditionResourcesExportTaskStatusFilter
   ): Promise<PreviewRenditionResourcesExportTaskSummary> {
-    return api.get<PreviewRenditionResourcesExportTaskSummary>(
+    const result = await api.get<unknown>(
       '/preview/diagnostics/renditions/resources/export-async/summary',
       {
         params: {
@@ -1853,12 +2194,13 @@ class PreviewDiagnosticsService {
         },
       }
     );
+    return assertPreviewRenditionResourcesExportTaskSummary(result);
   }
 
   async cleanupRenditionResourcesExportTasks(
     status?: PreviewRenditionResourcesExportTaskStatusFilter
   ): Promise<PreviewRenditionResourcesExportTaskCleanupResponse> {
-    return api.post<PreviewRenditionResourcesExportTaskCleanupResponse>(
+    const result = await api.post<unknown>(
       '/preview/diagnostics/renditions/resources/export-async/cleanup',
       {},
       {
@@ -1867,12 +2209,13 @@ class PreviewDiagnosticsService {
         },
       }
     );
+    return assertPreviewRenditionResourcesExportTaskCleanupResponse(result);
   }
 
   async cancelActiveRenditionResourcesExportTasks(
     status?: PreviewRenditionResourcesExportTaskActiveStatusFilter
   ): Promise<PreviewRenditionResourcesExportTaskCancelActiveResponse> {
-    return api.post<PreviewRenditionResourcesExportTaskCancelActiveResponse>(
+    const result = await api.post<unknown>(
       '/preview/diagnostics/renditions/resources/export-async/cancel-active',
       {},
       {
@@ -1881,31 +2224,35 @@ class PreviewDiagnosticsService {
         },
       }
     );
+    return assertPreviewRenditionResourcesExportTaskCancelActiveResponse(result);
   }
 
   async getRenditionResourcesExportTask(taskId: string): Promise<PreviewRenditionResourcesExportTask> {
-    return api.get<PreviewRenditionResourcesExportTask>(
+    const result = await api.get<unknown>(
       `/preview/diagnostics/renditions/resources/export-async/${encodeURIComponent(taskId)}`
     );
+    return assertPreviewRenditionResourcesExportTask(result);
   }
 
   async cancelRenditionResourcesExportTask(taskId: string): Promise<PreviewRenditionResourcesExportTask> {
-    return api.post<PreviewRenditionResourcesExportTask>(
+    const result = await api.post<unknown>(
       `/preview/diagnostics/renditions/resources/export-async/${encodeURIComponent(taskId)}/cancel`
     );
+    return assertPreviewRenditionResourcesExportTask(result);
   }
 
   async retryRenditionResourcesExportTask(taskId: string): Promise<PreviewRenditionResourcesExportTask> {
-    return api.post<PreviewRenditionResourcesExportTask>(
+    const result = await api.post<unknown>(
       `/preview/diagnostics/renditions/resources/export-async/${encodeURIComponent(taskId)}/retry`
     );
+    return assertPreviewRenditionResourcesExportTask(result);
   }
 
   async retryTerminalRenditionResourcesExportTasks(
     status?: PreviewRenditionResourcesExportTaskTerminalStatusFilter,
     limit = 20
   ): Promise<PreviewRenditionResourcesExportTaskRetryTerminalResponse> {
-    return api.post<PreviewRenditionResourcesExportTaskRetryTerminalResponse>(
+    const result = await api.post<unknown>(
       '/preview/diagnostics/renditions/resources/export-async/retry-terminal',
       {},
       {
@@ -1915,13 +2262,14 @@ class PreviewDiagnosticsService {
         },
       }
     );
+    return assertPreviewRenditionResourcesExportTaskRetryTerminalResponse(result);
   }
 
   async dryRunRetryTerminalRenditionResourcesExportTasks(
     status?: PreviewRenditionResourcesExportTaskTerminalStatusFilter,
     limit = 20
   ): Promise<PreviewRenditionResourcesExportTaskRetryTerminalDryRunResponse> {
-    return api.post<PreviewRenditionResourcesExportTaskRetryTerminalDryRunResponse>(
+    const result = await api.post<unknown>(
       '/preview/diagnostics/renditions/resources/export-async/retry-terminal/dry-run',
       {},
       {
@@ -1931,6 +2279,7 @@ class PreviewDiagnosticsService {
         },
       }
     );
+    return assertPreviewRenditionResourcesExportTaskRetryTerminalDryRunResponse(result);
   }
 
   async exportDryRunRetryTerminalRenditionResourcesExportTasks(
@@ -1954,10 +2303,11 @@ class PreviewDiagnosticsService {
         .map((taskId) => String(taskId || '').trim())
         .filter((taskId) => taskId.length > 0))),
     };
-    return api.post<PreviewRenditionResourcesExportTaskRetryTerminalResponse>(
+    const result = await api.post<unknown>(
       '/preview/diagnostics/renditions/resources/export-async/retry-terminal/by-task-ids',
       payload
     );
+    return assertPreviewRenditionResourcesExportTaskRetryTerminalResponse(result);
   }
 
   async downloadRenditionResourcesExportTask(taskId: string): Promise<Blob> {
@@ -2001,13 +2351,14 @@ class PreviewDiagnosticsService {
     state: PreviewQueueDiagnosticsStateFilter = 'ALL',
     query?: string
   ): Promise<PreviewQueueCancelActiveResult> {
-    return api.post<PreviewQueueCancelActiveResult>(
+    const result = await api.post<unknown>(
       '/preview/diagnostics/queue/cancel-active',
       undefined,
       {
         params: { limit, state, query: query?.trim() || undefined },
       }
     );
+    return assertPreviewQueueCancelActiveResult(result);
   }
 
   async getQueueDeclinedSummary(limit?: number, category?: string, query?: string): Promise<PreviewQueueDeclinedSummary>;
@@ -2105,10 +2456,11 @@ class PreviewDiagnosticsService {
       windowHours: this.normalizeQueueDeclinedWindowHours(windowHours),
       query: resolved.query,
     };
-    return api.post<PreviewQueueDeclinedExportTask>(
+    const result = await api.post<unknown>(
       '/preview/diagnostics/queue/declined/export-async',
       payload
     );
+    return assertPreviewQueueDeclinedExportTask(result);
   }
 
   async listQueueDeclinedExportTasks(
@@ -2116,7 +2468,7 @@ class PreviewDiagnosticsService {
     status?: PreviewQueueDeclinedExportTaskStatusFilter,
     skipCount = 0
   ): Promise<PreviewQueueDeclinedExportTaskList> {
-    return api.get<PreviewQueueDeclinedExportTaskList>(
+    const result = await api.get<unknown>(
       '/preview/diagnostics/queue/declined/export-async',
       {
         params: {
@@ -2127,12 +2479,13 @@ class PreviewDiagnosticsService {
         },
       }
     );
+    return assertPreviewQueueDeclinedExportTaskList(result);
   }
 
   async getQueueDeclinedExportTaskSummary(
     status?: PreviewQueueDeclinedExportTaskStatusFilter
   ): Promise<PreviewQueueDeclinedExportTaskSummary> {
-    return api.get<PreviewQueueDeclinedExportTaskSummary>(
+    const result = await api.get<unknown>(
       '/preview/diagnostics/queue/declined/export-async/summary',
       {
         params: {
@@ -2140,12 +2493,13 @@ class PreviewDiagnosticsService {
         },
       }
     );
+    return assertPreviewQueueDeclinedExportTaskSummary(result);
   }
 
   async cleanupQueueDeclinedExportTasks(
     status?: PreviewQueueDeclinedExportTaskStatusFilter
   ): Promise<PreviewQueueDeclinedExportTaskCleanupResponse> {
-    return api.post<PreviewQueueDeclinedExportTaskCleanupResponse>(
+    const result = await api.post<unknown>(
       '/preview/diagnostics/queue/declined/export-async/cleanup',
       {},
       {
@@ -2154,12 +2508,13 @@ class PreviewDiagnosticsService {
         },
       }
     );
+    return assertPreviewQueueDeclinedExportTaskCleanupResponse(result);
   }
 
   async cancelActiveQueueDeclinedExportTasks(
     status?: PreviewQueueDeclinedExportTaskActiveStatusFilter
   ): Promise<PreviewQueueDeclinedExportTaskCancelActiveResponse> {
-    return api.post<PreviewQueueDeclinedExportTaskCancelActiveResponse>(
+    const result = await api.post<unknown>(
       '/preview/diagnostics/queue/declined/export-async/cancel-active',
       {},
       {
@@ -2168,31 +2523,35 @@ class PreviewDiagnosticsService {
         },
       }
     );
+    return assertPreviewQueueDeclinedExportTaskCancelActiveResponse(result);
   }
 
   async getQueueDeclinedExportTask(taskId: string): Promise<PreviewQueueDeclinedExportTask> {
-    return api.get<PreviewQueueDeclinedExportTask>(
+    const result = await api.get<unknown>(
       `/preview/diagnostics/queue/declined/export-async/${encodeURIComponent(taskId)}`
     );
+    return assertPreviewQueueDeclinedExportTask(result);
   }
 
   async cancelQueueDeclinedExportTask(taskId: string): Promise<PreviewQueueDeclinedExportTask> {
-    return api.post<PreviewQueueDeclinedExportTask>(
+    const result = await api.post<unknown>(
       `/preview/diagnostics/queue/declined/export-async/${encodeURIComponent(taskId)}/cancel`
     );
+    return assertPreviewQueueDeclinedExportTask(result);
   }
 
   async retryQueueDeclinedExportTask(taskId: string): Promise<PreviewQueueDeclinedExportTask> {
-    return api.post<PreviewQueueDeclinedExportTask>(
+    const result = await api.post<unknown>(
       `/preview/diagnostics/queue/declined/export-async/${encodeURIComponent(taskId)}/retry`
     );
+    return assertPreviewQueueDeclinedExportTask(result);
   }
 
   async retryTerminalQueueDeclinedExportTasks(
     status?: PreviewQueueDeclinedExportTaskTerminalStatusFilter,
     limit = 20
   ): Promise<PreviewQueueDeclinedExportTaskRetryTerminalResponse> {
-    return api.post<PreviewQueueDeclinedExportTaskRetryTerminalResponse>(
+    const result = await api.post<unknown>(
       '/preview/diagnostics/queue/declined/export-async/retry-terminal',
       {},
       {
@@ -2202,13 +2561,14 @@ class PreviewDiagnosticsService {
         },
       }
     );
+    return assertPreviewQueueDeclinedExportTaskRetryTerminalResponse(result);
   }
 
   async dryRunRetryTerminalQueueDeclinedExportTasks(
     status?: PreviewQueueDeclinedExportTaskTerminalStatusFilter,
     limit = 20
   ): Promise<PreviewQueueDeclinedExportTaskRetryTerminalDryRunResponse> {
-    return api.post<PreviewQueueDeclinedExportTaskRetryTerminalDryRunResponse>(
+    const result = await api.post<unknown>(
       '/preview/diagnostics/queue/declined/export-async/retry-terminal/dry-run',
       {},
       {
@@ -2218,6 +2578,7 @@ class PreviewDiagnosticsService {
         },
       }
     );
+    return assertPreviewQueueDeclinedExportTaskRetryTerminalDryRunResponse(result);
   }
 
   async exportDryRunRetryTerminalQueueDeclinedExportTasks(
@@ -2241,10 +2602,11 @@ class PreviewDiagnosticsService {
         .map((taskId) => String(taskId || '').trim())
         .filter((taskId) => taskId.length > 0))),
     };
-    return api.post<PreviewQueueDeclinedExportTaskRetryTerminalResponse>(
+    const result = await api.post<unknown>(
       '/preview/diagnostics/queue/declined/export-async/retry-terminal/by-task-ids',
       payload
     );
+    return assertPreviewQueueDeclinedExportTaskRetryTerminalResponse(result);
   }
 
   async downloadQueueDeclinedExportTask(taskId: string): Promise<Blob> {
@@ -2420,10 +2782,11 @@ class PreviewDiagnosticsService {
       query: resolved.query,
       force: resolved.force,
     };
-    return api.post<PreviewQueueDeclinedRequeueDryRunExportTask>(
+    const result = await api.post<unknown>(
       '/preview/diagnostics/queue/declined/requeue/dry-run/export-async',
       payload
     );
+    return assertPreviewQueueDeclinedRequeueDryRunExportTask(result);
   }
 
   async listQueueDeclinedRequeueDryRunExportTasks(
@@ -2431,7 +2794,7 @@ class PreviewDiagnosticsService {
     status?: PreviewQueueDeclinedRequeueDryRunExportTaskStatusFilter,
     skipCount = 0
   ): Promise<PreviewQueueDeclinedRequeueDryRunExportTaskList> {
-    return api.get<PreviewQueueDeclinedRequeueDryRunExportTaskList>(
+    const result = await api.get<unknown>(
       '/preview/diagnostics/queue/declined/requeue/dry-run/export-async',
       {
         params: {
@@ -2442,12 +2805,13 @@ class PreviewDiagnosticsService {
         },
       }
     );
+    return assertPreviewQueueDeclinedRequeueDryRunExportTaskList(result);
   }
 
   async getQueueDeclinedRequeueDryRunExportTaskSummary(
     status?: PreviewQueueDeclinedRequeueDryRunExportTaskStatusFilter
   ): Promise<PreviewQueueDeclinedRequeueDryRunExportTaskSummary> {
-    return api.get<PreviewQueueDeclinedRequeueDryRunExportTaskSummary>(
+    const result = await api.get<unknown>(
       '/preview/diagnostics/queue/declined/requeue/dry-run/export-async/summary',
       {
         params: {
@@ -2455,12 +2819,13 @@ class PreviewDiagnosticsService {
         },
       }
     );
+    return assertPreviewQueueDeclinedRequeueDryRunExportTaskSummary(result);
   }
 
   async cleanupQueueDeclinedRequeueDryRunExportTasks(
     status?: PreviewQueueDeclinedRequeueDryRunExportTaskStatusFilter
   ): Promise<PreviewQueueDeclinedRequeueDryRunExportTaskCleanupResponse> {
-    return api.post<PreviewQueueDeclinedRequeueDryRunExportTaskCleanupResponse>(
+    const result = await api.post<unknown>(
       '/preview/diagnostics/queue/declined/requeue/dry-run/export-async/cleanup',
       {},
       {
@@ -2469,12 +2834,13 @@ class PreviewDiagnosticsService {
         },
       }
     );
+    return assertPreviewQueueDeclinedRequeueDryRunExportTaskCleanupResponse(result);
   }
 
   async cancelActiveQueueDeclinedRequeueDryRunExportTasks(
     status?: PreviewQueueDeclinedRequeueDryRunExportTaskActiveStatusFilter
   ): Promise<PreviewQueueDeclinedRequeueDryRunExportTaskCancelActiveResponse> {
-    return api.post<PreviewQueueDeclinedRequeueDryRunExportTaskCancelActiveResponse>(
+    const result = await api.post<unknown>(
       '/preview/diagnostics/queue/declined/requeue/dry-run/export-async/cancel-active',
       {},
       {
@@ -2483,37 +2849,41 @@ class PreviewDiagnosticsService {
         },
       }
     );
+    return assertPreviewQueueDeclinedRequeueDryRunExportTaskCancelActiveResponse(result);
   }
 
   async getQueueDeclinedRequeueDryRunExportTask(
     taskId: string
   ): Promise<PreviewQueueDeclinedRequeueDryRunExportTask> {
-    return api.get<PreviewQueueDeclinedRequeueDryRunExportTask>(
+    const result = await api.get<unknown>(
       `/preview/diagnostics/queue/declined/requeue/dry-run/export-async/${encodeURIComponent(taskId)}`
     );
+    return assertPreviewQueueDeclinedRequeueDryRunExportTask(result);
   }
 
   async cancelQueueDeclinedRequeueDryRunExportTask(
     taskId: string
   ): Promise<PreviewQueueDeclinedRequeueDryRunExportTask> {
-    return api.post<PreviewQueueDeclinedRequeueDryRunExportTask>(
+    const result = await api.post<unknown>(
       `/preview/diagnostics/queue/declined/requeue/dry-run/export-async/${encodeURIComponent(taskId)}/cancel`
     );
+    return assertPreviewQueueDeclinedRequeueDryRunExportTask(result);
   }
 
   async retryQueueDeclinedRequeueDryRunExportTask(
     taskId: string
   ): Promise<PreviewQueueDeclinedRequeueDryRunExportTask> {
-    return api.post<PreviewQueueDeclinedRequeueDryRunExportTask>(
+    const result = await api.post<unknown>(
       `/preview/diagnostics/queue/declined/requeue/dry-run/export-async/${encodeURIComponent(taskId)}/retry`
     );
+    return assertPreviewQueueDeclinedRequeueDryRunExportTask(result);
   }
 
   async retryTerminalQueueDeclinedRequeueDryRunExportTasks(
     status?: PreviewQueueDeclinedRequeueDryRunExportTaskTerminalStatusFilter,
     limit = 20
   ): Promise<PreviewQueueDeclinedRequeueDryRunExportTaskRetryTerminalResponse> {
-    return api.post<PreviewQueueDeclinedRequeueDryRunExportTaskRetryTerminalResponse>(
+    const result = await api.post<unknown>(
       '/preview/diagnostics/queue/declined/requeue/dry-run/export-async/retry-terminal',
       {},
       {
@@ -2523,13 +2893,14 @@ class PreviewDiagnosticsService {
         },
       }
     );
+    return assertPreviewQueueDeclinedRequeueDryRunExportTaskRetryTerminalResponse(result);
   }
 
   async dryRunRetryTerminalQueueDeclinedRequeueDryRunExportTasks(
     status?: PreviewQueueDeclinedRequeueDryRunExportTaskTerminalStatusFilter,
     limit = 20
   ): Promise<PreviewQueueDeclinedRequeueDryRunExportTaskRetryTerminalDryRunResponse> {
-    return api.post<PreviewQueueDeclinedRequeueDryRunExportTaskRetryTerminalDryRunResponse>(
+    const result = await api.post<unknown>(
       '/preview/diagnostics/queue/declined/requeue/dry-run/export-async/retry-terminal/dry-run',
       {},
       {
@@ -2539,6 +2910,7 @@ class PreviewDiagnosticsService {
         },
       }
     );
+    return assertPreviewQueueDeclinedRequeueDryRunExportTaskRetryTerminalDryRunResponse(result);
   }
 
   async exportDryRunRetryTerminalQueueDeclinedRequeueDryRunExportTasks(
@@ -2562,10 +2934,11 @@ class PreviewDiagnosticsService {
         .map((taskId) => String(taskId || '').trim())
         .filter((taskId) => taskId.length > 0))),
     };
-    return api.post<PreviewQueueDeclinedRequeueDryRunExportTaskRetryTerminalResponse>(
+    const result = await api.post<unknown>(
       '/preview/diagnostics/queue/declined/requeue/dry-run/export-async/retry-terminal/by-task-ids',
       payload
     );
+    return assertPreviewQueueDeclinedRequeueDryRunExportTaskRetryTerminalResponse(result);
   }
 
   async downloadQueueDeclinedRequeueDryRunExportTask(taskId: string): Promise<Blob> {
