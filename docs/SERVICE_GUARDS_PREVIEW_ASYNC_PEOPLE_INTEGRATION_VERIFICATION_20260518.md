@@ -133,16 +133,29 @@ Result: PASS.
 
 ## CI Follow-Up
 
-Not pushed at document write time. Push `main` to trigger CI.
+Pushed CI run:
 
-Expected CI-sensitive checks:
+- Run: `26013638923`
+- Head: `9a73249`
+- Result: PASS
 
-- `Frontend Build & Test` should cover the `CI=true` build path and the
-  service Jest suites.
-- `Phase 5 Mocked Regression Gate` should stay green because the guarded
-  preview async methods preserve endpoint paths and mocked response
-  contracts.
-- Backend/security gates should remain unchanged because this round is
+Passing jobs:
+
+- `Backend Verify`
+- `Frontend Build & Test`
+- `Phase C Security Verification`
+- `Acceptance Smoke (3 admin pages)`
+- `Frontend E2E Core Gate`
+- `Phase 5 Mocked Regression Gate`
+- `Property Encryption Closeout Gate`
+
+The CI-sensitive checks matched the local expectations:
+
+- `Frontend Build & Test` covered the `CI=true` build path and service
+  Jest suites.
+- `Phase 5 Mocked Regression Gate` stayed green, so the guarded preview
+  async methods preserved endpoint paths and mocked response contracts.
+- Backend/security gates stayed green because this round was
   frontend-service-only.
 
 ## Follow-Up
