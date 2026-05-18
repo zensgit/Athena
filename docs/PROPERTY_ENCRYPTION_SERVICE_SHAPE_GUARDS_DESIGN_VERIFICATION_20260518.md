@@ -130,9 +130,8 @@ Result: PASS.
 
 ## Commit
 
-Pending commit at document write time:
-
-- `fix(property-encryption): guard service responses`
+- `0e83916 fix(property-encryption): guard service responses`
+- `a6621e5 fix(services): satisfy CI response guard casts`
 
 ## Follow-Up
 

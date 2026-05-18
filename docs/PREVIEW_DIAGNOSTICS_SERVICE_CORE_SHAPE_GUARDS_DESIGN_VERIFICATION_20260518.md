@@ -154,9 +154,7 @@ Result: PASS.
 
 ## Commit
 
-Pending commit at document write time:
-
-- `fix(preview-diagnostics): guard core service responses`
+- `0838f62 fix(preview-diagnostics): guard core service responses`
 
 ## Follow-Up
 

@@ -150,9 +150,8 @@ Result: PASS.
 
 ## Commit
 
-Pending commit at document write time:
-
-- `fix(content-models): guard service responses`
+- `372a1f8 fix(content-models): guard service responses`
+- `a6621e5 fix(services): satisfy CI response guard casts`
 
 ## Follow-Up
 
