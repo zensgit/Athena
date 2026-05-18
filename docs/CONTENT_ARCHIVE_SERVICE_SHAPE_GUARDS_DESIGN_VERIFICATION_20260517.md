@@ -118,9 +118,7 @@ Result: PASS.
 
 ## Commit
 
-Pending commit at document write time:
-
-- `fix(content-archive): guard service responses`
+- `d733b69 fix(content-archive): guard service responses`
 
 ## Notes
 

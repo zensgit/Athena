@@ -279,7 +279,8 @@ slice.
 
 ## Commit
 
-- `fix(ops-recovery): guard core service responses`
+- Claude worktree commit: `ecc18d0 fix(ops-recovery): guard core service responses`
+- Main cherry-pick commit: `ea34ccf fix(ops-recovery): guard core service responses`
 
 ## Notes
 
