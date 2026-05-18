@@ -187,6 +187,22 @@ Result:
 1 passed (2.1m)
 ```
 
+Final pushed CI run:
+
+- Run: `26009265191`
+- Head: `da704e6`
+- Result: PASS.
+
+Passing jobs:
+
+- `Backend Verify`
+- `Frontend Build & Test`
+- `Phase C Security Verification`
+- `Property Encryption Closeout Gate`
+- `Phase 5 Mocked Regression Gate`
+- `Acceptance Smoke (3 admin pages)`
+- `Frontend E2E Core Gate`
+
 ## Follow-Up
 
 The next useful service-guard slices remain:
