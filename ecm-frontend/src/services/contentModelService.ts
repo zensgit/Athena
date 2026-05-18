@@ -154,7 +154,7 @@ const assertConstraintDefinition = (value: unknown): ConstraintDefinition => {
   assertContentModelResponse(isConstraintType(value.constraintType));
   assertContentModelResponse(isPlainParameters(value.parameters));
 
-  return value as ConstraintDefinition;
+  return value as unknown as ConstraintDefinition;
 };
 
 const assertConstraintDefinitions = (value: unknown): ConstraintDefinition[] => {
@@ -181,7 +181,7 @@ const assertPropertyDefinition = (value: unknown): PropertyDefinition => {
   return {
     ...value,
     constraints,
-  } as PropertyDefinition;
+  } as unknown as PropertyDefinition;
 };
 
 const assertPropertyDefinitions = (value: unknown): PropertyDefinition[] => {
@@ -203,7 +203,7 @@ const assertTypeDefinition = (value: unknown): TypeDefinition => {
   return {
     ...value,
     properties,
-  } as TypeDefinition;
+  } as unknown as TypeDefinition;
 };
 
 const assertTypeDefinitions = (value: unknown): TypeDefinition[] => {
@@ -224,7 +224,7 @@ const assertAspectDefinition = (value: unknown): AspectDefinition => {
   return {
     ...value,
     properties,
-  } as AspectDefinition;
+  } as unknown as AspectDefinition;
 };
 
 const assertAspectDefinitions = (value: unknown): AspectDefinition[] => {
@@ -249,7 +249,7 @@ const assertContentModelDefinition = (value: unknown): ContentModelDefinition =>
     ...value,
     types,
     aspects,
-  } as ContentModelDefinition;
+  } as unknown as ContentModelDefinition;
 };
 
 const assertContentModelDefinitions = (value: unknown): ContentModelDefinition[] => {

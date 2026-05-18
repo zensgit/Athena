@@ -211,7 +211,7 @@ const assertPropertyEncryptionStatus = (value: unknown): PropertyEncryptionStatu
   assertPropertyEncryptionResponse(isFiniteNumber(value.encryptedPropertyValueCount));
   assertPropertyEncryptionResponse(isStringArray(value.warnings));
 
-  return value as PropertyEncryptionStatus;
+  return value as unknown as PropertyEncryptionStatus;
 };
 
 const assertEncryptedPropertyDefinition = (
@@ -229,7 +229,7 @@ const assertEncryptedPropertyDefinition = (
   assertPropertyEncryptionResponse(typeof value.multiValued === 'boolean');
   assertPropertyEncryptionResponse(typeof value.indexed === 'boolean');
 
-  return value as EncryptedPropertyDefinitionSummary;
+  return value as unknown as EncryptedPropertyDefinitionSummary;
 };
 
 const assertEncryptedPropertyDefinitions = (
@@ -244,7 +244,7 @@ const assertKeyVersionValueCount = (value: unknown): KeyVersionValueCount => {
   assertPropertyEncryptionResponse(typeof value.keyVersion === 'string');
   assertPropertyEncryptionResponse(isFiniteNumber(value.encryptedPropertyValueCount));
 
-  return value as KeyVersionValueCount;
+  return value as unknown as KeyVersionValueCount;
 };
 
 const assertKeyVersionValueCounts = (value: unknown): KeyVersionValueCount[] => {
@@ -262,7 +262,7 @@ const assertBackfillCount = (value: unknown): PropertyBackfillCount => {
   assertPropertyEncryptionResponse(isFiniteNumber(value.dualStorageConflictValueCount));
   assertPropertyEncryptionResponse(isFiniteNumber(value.readyValueCount));
 
-  return value as PropertyBackfillCount;
+  return value as unknown as PropertyBackfillCount;
 };
 
 const assertBackfillCounts = (value: unknown): PropertyBackfillCount[] => {
@@ -282,7 +282,7 @@ const assertBackfillDefinitionCountSnapshot = (
   assertPropertyEncryptionResponse(isFiniteNumber(value.dualStorageConflictValueCount));
   assertPropertyEncryptionResponse(isFiniteNumber(value.readyValueCount));
 
-  return value as BackfillDefinitionCountSnapshot;
+  return value as unknown as BackfillDefinitionCountSnapshot;
 };
 
 const assertBackfillDefinitionCountSnapshots = (
@@ -299,7 +299,7 @@ const assertRewrapKeyVersionCountSnapshot = (
   assertPropertyEncryptionResponse(typeof value.keyVersion === 'string');
   assertPropertyEncryptionResponse(isFiniteNumber(value.encryptedPropertyValueCount));
 
-  return value as RewrapKeyVersionCountSnapshot;
+  return value as unknown as RewrapKeyVersionCountSnapshot;
 };
 
 const assertRewrapKeyVersionCountSnapshots = (
