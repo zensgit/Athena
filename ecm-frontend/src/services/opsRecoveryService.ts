@@ -1,5 +1,8 @@
 import api from './api';
 
+export const OPS_RECOVERY_UNEXPECTED_RESPONSE_MESSAGE =
+  'Ops recovery endpoint returned an unexpected response. Mocked CI gate may not cover it; backend route may be missing.';
+
 export type RecoveryJobState =
   | 'READY'
   | 'PROCESSING'
@@ -495,33 +498,355 @@ export type RecoveryDryRunRequest = {
   documentIds?: string[];
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const isFiniteNumber = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value);
+
+const isNullableString = (value: unknown): value is string | null =>
+  value === null || typeof value === 'string';
+
+const isOptionalNullableString = (value: unknown): value is string | null | undefined =>
+  value === undefined || isNullableString(value);
+
+const isOptionalString = (value: unknown): value is string | undefined =>
+  value === undefined || typeof value === 'string';
+
+const isOptionalBoolean = (value: unknown): value is boolean | undefined =>
+  value === undefined || typeof value === 'boolean';
+
+const isOptionalFiniteNumber = (value: unknown): value is number | undefined =>
+  value === undefined || isFiniteNumber(value);
+
+const isOptionalNullableFiniteNumber = (value: unknown): value is number | null | undefined =>
+  value === undefined || value === null || isFiniteNumber(value);
+
+function assertOpsRecoveryResponse(condition: unknown): asserts condition {
+  if (!condition) {
+    throw new Error(OPS_RECOVERY_UNEXPECTED_RESPONSE_MESSAGE);
+  }
+}
+
+const assertRecoveryBatchItem = (value: unknown): RecoveryBatchItem => {
+  assertOpsRecoveryResponse(isRecord(value));
+  assertOpsRecoveryResponse(typeof value.documentId === 'string');
+  assertOpsRecoveryResponse(typeof value.jobState === 'string');
+  assertOpsRecoveryResponse(typeof value.outcome === 'string');
+  assertOpsRecoveryResponse(isNullableString(value.message));
+  assertOpsRecoveryResponse(isNullableString(value.previewStatus));
+  assertOpsRecoveryResponse(typeof value.failureCategory === 'string');
+  assertOpsRecoveryResponse(isOptionalNullableString(value.previewFailureReason));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.previewFailureCategory));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.previewLastUpdated));
+  assertOpsRecoveryResponse(isFiniteNumber(value.attempts));
+  assertOpsRecoveryResponse(isNullableString(value.nextAttemptAt));
+
+  return value as unknown as RecoveryBatchItem;
+};
+
+const assertRecoveryBatchItems = (value: unknown): RecoveryBatchItem[] => {
+  assertOpsRecoveryResponse(Array.isArray(value));
+  return value.map(assertRecoveryBatchItem);
+};
+
+const assertRecoveryBatchResult = (value: unknown): RecoveryBatchResult => {
+  assertOpsRecoveryResponse(isRecord(value));
+  assertOpsRecoveryResponse(typeof value.domain === 'string');
+  assertOpsRecoveryResponse(typeof value.mode === 'string');
+  assertOpsRecoveryResponse(isFiniteNumber(value.windowDays));
+  assertOpsRecoveryResponse(isFiniteNumber(value.maxDocuments));
+  assertOpsRecoveryResponse(isFiniteNumber(value.totalCandidates));
+  assertOpsRecoveryResponse(isFiniteNumber(value.scanned));
+  assertOpsRecoveryResponse(isFiniteNumber(value.matched));
+  assertOpsRecoveryResponse(typeof value.truncated === 'boolean');
+  assertOpsRecoveryResponse(isFiniteNumber(value.requested));
+  assertOpsRecoveryResponse(isFiniteNumber(value.deduplicated));
+  assertOpsRecoveryResponse(isFiniteNumber(value.queued));
+  assertOpsRecoveryResponse(isFiniteNumber(value.skipped));
+  assertOpsRecoveryResponse(isFiniteNumber(value.failed));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.error));
+  const results = assertRecoveryBatchItems(value.results);
+
+  return {
+    ...value,
+    results,
+  } as RecoveryBatchResult;
+};
+
+const assertRecoveryDryRunItem = (value: unknown): RecoveryDryRunItem => {
+  assertOpsRecoveryResponse(isRecord(value));
+  assertOpsRecoveryResponse(typeof value.documentId === 'string');
+  assertOpsRecoveryResponse(isNullableString(value.name));
+  assertOpsRecoveryResponse(isNullableString(value.path));
+  assertOpsRecoveryResponse(isNullableString(value.mimeType));
+  assertOpsRecoveryResponse(isNullableString(value.previewStatus));
+  assertOpsRecoveryResponse(typeof value.failureCategory === 'string');
+  assertOpsRecoveryResponse(isOptionalNullableString(value.previewFailureReason));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.previewFailureCategory));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.previewLastUpdated));
+  assertOpsRecoveryResponse(typeof value.predictedState === 'string');
+  assertOpsRecoveryResponse(typeof value.predictedOutcome === 'string');
+  assertOpsRecoveryResponse(typeof value.predictedReason === 'string');
+
+  return value as unknown as RecoveryDryRunItem;
+};
+
+const assertRecoveryDryRunResult = (value: unknown): RecoveryDryRunResult => {
+  assertOpsRecoveryResponse(isRecord(value));
+  assertOpsRecoveryResponse(typeof value.domain === 'string');
+  assertOpsRecoveryResponse(typeof value.mode === 'string');
+  assertOpsRecoveryResponse(isFiniteNumber(value.windowDays));
+  assertOpsRecoveryResponse(isFiniteNumber(value.maxDocuments));
+  assertOpsRecoveryResponse(isFiniteNumber(value.totalCandidates));
+  assertOpsRecoveryResponse(isFiniteNumber(value.scanned));
+  assertOpsRecoveryResponse(isFiniteNumber(value.matched));
+  assertOpsRecoveryResponse(typeof value.truncated === 'boolean');
+  assertOpsRecoveryResponse(isFiniteNumber(value.estimatedQueued));
+  assertOpsRecoveryResponse(isFiniteNumber(value.estimatedSkipped));
+  assertOpsRecoveryResponse(isFiniteNumber(value.estimatedFailed));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.error));
+  assertOpsRecoveryResponse(Array.isArray(value.samples));
+  const samples = value.samples.map(assertRecoveryDryRunItem);
+
+  return {
+    ...value,
+    samples,
+  } as RecoveryDryRunResult;
+};
+
+const assertRecoveryHistoryItem = (value: unknown): RecoveryHistoryItem => {
+  assertOpsRecoveryResponse(isRecord(value));
+  assertOpsRecoveryResponse(isNullableString(value.id));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.nodeId));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.nodeName));
+  assertOpsRecoveryResponse(isNullableString(value.eventType));
+  assertOpsRecoveryResponse(typeof value.mode === 'string');
+  assertOpsRecoveryResponse(isNullableString(value.actor));
+  assertOpsRecoveryResponse(isNullableString(value.eventTime));
+  assertOpsRecoveryResponse(isNullableString(value.details));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.previewStatus));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.previewFailureReason));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.previewFailureCategory));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.previewLastUpdated));
+
+  return value as unknown as RecoveryHistoryItem;
+};
+
+const assertRecoveryHistoryResult = (value: unknown): RecoveryHistoryResult => {
+  assertOpsRecoveryResponse(isRecord(value));
+  assertOpsRecoveryResponse(typeof value.domain === 'string');
+  assertOpsRecoveryResponse(isFiniteNumber(value.windowDays));
+  assertOpsRecoveryResponse(isFiniteNumber(value.limit));
+  assertOpsRecoveryResponse(isFiniteNumber(value.page));
+  assertOpsRecoveryResponse(isFiniteNumber(value.totalPages));
+  assertOpsRecoveryResponse(isFiniteNumber(value.total));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.modeFilter));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.actorFilter));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.eventTypeFilter));
+  assertOpsRecoveryResponse(Array.isArray(value.items));
+  const items = value.items.map(assertRecoveryHistoryItem);
+
+  return {
+    ...value,
+    items,
+  } as RecoveryHistoryResult;
+};
+
+const assertRecoveryHistorySummaryItem = (value: unknown): RecoveryHistorySummaryItem => {
+  assertOpsRecoveryResponse(isRecord(value));
+  assertOpsRecoveryResponse(typeof value.eventType === 'string');
+  assertOpsRecoveryResponse(typeof value.mode === 'string');
+  assertOpsRecoveryResponse(isFiniteNumber(value.count));
+
+  return value as unknown as RecoveryHistorySummaryItem;
+};
+
+const assertRecoveryHistoryActorSummaryItem = (value: unknown): RecoveryHistoryActorSummaryItem => {
+  assertOpsRecoveryResponse(isRecord(value));
+  assertOpsRecoveryResponse(typeof value.actor === 'string');
+  assertOpsRecoveryResponse(isFiniteNumber(value.count));
+
+  return value as unknown as RecoveryHistoryActorSummaryItem;
+};
+
+const assertRecoveryHistorySummaryResult = (value: unknown): RecoveryHistorySummaryResult => {
+  assertOpsRecoveryResponse(isRecord(value));
+  assertOpsRecoveryResponse(typeof value.domain === 'string');
+  assertOpsRecoveryResponse(isFiniteNumber(value.windowDays));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.modeFilter));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.actorFilter));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.eventTypeFilter));
+  assertOpsRecoveryResponse(isFiniteNumber(value.total));
+  assertOpsRecoveryResponse(Array.isArray(value.items));
+  assertOpsRecoveryResponse(Array.isArray(value.actorItems));
+  const items = value.items.map(assertRecoveryHistorySummaryItem);
+  const actorItems = value.actorItems.map(assertRecoveryHistoryActorSummaryItem);
+
+  return {
+    ...value,
+    items,
+    actorItems,
+  } as RecoveryHistorySummaryResult;
+};
+
+const assertRecoveryHistoryTrendItem = (value: unknown): RecoveryHistoryTrendItem => {
+  assertOpsRecoveryResponse(isRecord(value));
+  assertOpsRecoveryResponse(typeof value.day === 'string');
+  assertOpsRecoveryResponse(isFiniteNumber(value.count));
+
+  return value as unknown as RecoveryHistoryTrendItem;
+};
+
+const assertRecoveryHistoryTrendResult = (value: unknown): RecoveryHistoryTrendResult => {
+  assertOpsRecoveryResponse(isRecord(value));
+  assertOpsRecoveryResponse(typeof value.domain === 'string');
+  assertOpsRecoveryResponse(isFiniteNumber(value.windowDays));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.modeFilter));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.actorFilter));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.eventTypeFilter));
+  assertOpsRecoveryResponse(isFiniteNumber(value.total));
+  assertOpsRecoveryResponse(typeof value.truncated === 'boolean');
+  assertOpsRecoveryResponse(Array.isArray(value.items));
+  const items = value.items.map(assertRecoveryHistoryTrendItem);
+
+  return {
+    ...value,
+    items,
+  } as RecoveryHistoryTrendResult;
+};
+
+const assertRecoveryHistorySummaryCompareResult = (
+  value: unknown
+): RecoveryHistorySummaryCompareResult => {
+  assertOpsRecoveryResponse(isRecord(value));
+  assertOpsRecoveryResponse(typeof value.domain === 'string');
+  assertOpsRecoveryResponse(isFiniteNumber(value.windowDays));
+  assertOpsRecoveryResponse(isFiniteNumber(value.previousWindowDays));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.modeFilter));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.actorFilter));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.eventTypeFilter));
+  assertOpsRecoveryResponse(isFiniteNumber(value.currentTotal));
+  assertOpsRecoveryResponse(isFiniteNumber(value.previousTotal));
+  assertOpsRecoveryResponse(isFiniteNumber(value.delta));
+  assertOpsRecoveryResponse(isOptionalNullableFiniteNumber(value.deltaPercent));
+  assertOpsRecoveryResponse(typeof value.compareAvailable === 'boolean');
+  assertOpsRecoveryResponse(typeof value.truncated === 'boolean');
+
+  return value as unknown as RecoveryHistorySummaryCompareResult;
+};
+
+const assertRecoveryHistorySummaryCompareActorItem = (
+  value: unknown
+): RecoveryHistorySummaryCompareActorItem => {
+  assertOpsRecoveryResponse(isRecord(value));
+  assertOpsRecoveryResponse(typeof value.actor === 'string');
+  assertOpsRecoveryResponse(isFiniteNumber(value.currentCount));
+  assertOpsRecoveryResponse(isFiniteNumber(value.previousCount));
+  assertOpsRecoveryResponse(isFiniteNumber(value.delta));
+  assertOpsRecoveryResponse(isOptionalNullableFiniteNumber(value.deltaPercent));
+
+  return value as unknown as RecoveryHistorySummaryCompareActorItem;
+};
+
+const assertRecoveryHistorySummaryCompareBreakdownItem = (
+  value: unknown
+): RecoveryHistorySummaryCompareBreakdownItem => {
+  assertOpsRecoveryResponse(isRecord(value));
+  assertOpsRecoveryResponse(typeof value.eventType === 'string');
+  assertOpsRecoveryResponse(typeof value.mode === 'string');
+  assertOpsRecoveryResponse(isFiniteNumber(value.currentCount));
+  assertOpsRecoveryResponse(isFiniteNumber(value.previousCount));
+  assertOpsRecoveryResponse(isFiniteNumber(value.delta));
+  assertOpsRecoveryResponse(isOptionalNullableFiniteNumber(value.deltaPercent));
+
+  return value as unknown as RecoveryHistorySummaryCompareBreakdownItem;
+};
+
+const assertRecoveryHistorySummaryCompareActorsResult = (
+  value: unknown
+): RecoveryHistorySummaryCompareActorsResult => {
+  assertOpsRecoveryResponse(isRecord(value));
+  assertOpsRecoveryResponse(typeof value.domain === 'string');
+  assertOpsRecoveryResponse(isFiniteNumber(value.windowDays));
+  assertOpsRecoveryResponse(isFiniteNumber(value.previousWindowDays));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.modeFilter));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.actorFilter));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.eventTypeFilter));
+  assertOpsRecoveryResponse(typeof value.compareAvailable === 'boolean');
+  assertOpsRecoveryResponse(typeof value.truncated === 'boolean');
+  assertOpsRecoveryResponse(isOptionalString(value.sortBy));
+  assertOpsRecoveryResponse(isOptionalFiniteNumber(value.requestedLimit));
+  assertOpsRecoveryResponse(isOptionalFiniteNumber(value.totalItems));
+  assertOpsRecoveryResponse(isOptionalBoolean(value.limited));
+  assertOpsRecoveryResponse(Array.isArray(value.items));
+  const items = value.items.map(assertRecoveryHistorySummaryCompareActorItem);
+
+  return {
+    ...value,
+    items,
+  } as RecoveryHistorySummaryCompareActorsResult;
+};
+
+const assertRecoveryHistorySummaryCompareBreakdownResult = (
+  value: unknown
+): RecoveryHistorySummaryCompareBreakdownResult => {
+  assertOpsRecoveryResponse(isRecord(value));
+  assertOpsRecoveryResponse(typeof value.domain === 'string');
+  assertOpsRecoveryResponse(isFiniteNumber(value.windowDays));
+  assertOpsRecoveryResponse(isFiniteNumber(value.previousWindowDays));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.modeFilter));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.actorFilter));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.eventTypeFilter));
+  assertOpsRecoveryResponse(typeof value.compareAvailable === 'boolean');
+  assertOpsRecoveryResponse(typeof value.truncated === 'boolean');
+  assertOpsRecoveryResponse(isOptionalString(value.sortBy));
+  assertOpsRecoveryResponse(isOptionalFiniteNumber(value.requestedLimit));
+  assertOpsRecoveryResponse(isOptionalFiniteNumber(value.totalItems));
+  assertOpsRecoveryResponse(isOptionalBoolean(value.limited));
+  assertOpsRecoveryResponse(Array.isArray(value.items));
+  const items = value.items.map(assertRecoveryHistorySummaryCompareBreakdownItem);
+
+  return {
+    ...value,
+    items,
+  } as RecoveryHistorySummaryCompareBreakdownResult;
+};
+
 class OpsRecoveryService {
   async queueByReason(payload: QueueByReasonRequest): Promise<RecoveryBatchResult> {
-    return api.post<RecoveryBatchResult>('/ops/recovery/queue-by-reason', payload);
+    const result = await api.post<unknown>('/ops/recovery/queue-by-reason', payload);
+    return assertRecoveryBatchResult(result);
   }
 
   async queueByWindow(payload: QueueByWindowRequest): Promise<RecoveryBatchResult> {
-    return api.post<RecoveryBatchResult>('/ops/recovery/queue-by-window', payload);
+    const result = await api.post<unknown>('/ops/recovery/queue-by-window', payload);
+    return assertRecoveryBatchResult(result);
   }
 
   async replayBatch(payload: ReplayBatchRequest): Promise<RecoveryBatchResult> {
-    return api.post<RecoveryBatchResult>('/ops/recovery/replay-batch', payload);
+    const result = await api.post<unknown>('/ops/recovery/replay-batch', payload);
+    return assertRecoveryBatchResult(result);
   }
 
   async clearBatch(payload: ClearBatchRequest): Promise<RecoveryBatchResult> {
-    return api.post<RecoveryBatchResult>('/ops/recovery/clear-batch', payload);
+    const result = await api.post<unknown>('/ops/recovery/clear-batch', payload);
+    return assertRecoveryBatchResult(result);
   }
 
   async clearByFilter(payload: ClearByFilterRequest): Promise<RecoveryBatchResult> {
-    return api.post<RecoveryBatchResult>('/ops/recovery/clear-by-filter', payload);
+    const result = await api.post<unknown>('/ops/recovery/clear-by-filter', payload);
+    return assertRecoveryBatchResult(result);
   }
 
   async replayByFilter(payload: ReplayByFilterRequest): Promise<RecoveryBatchResult> {
-    return api.post<RecoveryBatchResult>('/ops/recovery/replay-by-filter', payload);
+    const result = await api.post<unknown>('/ops/recovery/replay-by-filter', payload);
+    return assertRecoveryBatchResult(result);
   }
 
   async dryRun(payload: RecoveryDryRunRequest): Promise<RecoveryDryRunResult> {
-    return api.post<RecoveryDryRunResult>('/ops/recovery/dry-run', payload);
+    const result = await api.post<unknown>('/ops/recovery/dry-run', payload);
+    return assertRecoveryDryRunResult(result);
   }
 
   async exportDryRunCsv(payload: RecoveryDryRunRequest): Promise<Blob> {
@@ -538,7 +863,7 @@ class OpsRecoveryService {
     actor?: string,
     eventType?: RecoveryHistoryEventType
   ): Promise<RecoveryHistoryResult> {
-    return api.get<RecoveryHistoryResult>('/ops/recovery/history', {
+    const result = await api.get<unknown>('/ops/recovery/history', {
       params: {
         limit,
         days,
@@ -548,6 +873,7 @@ class OpsRecoveryService {
         eventType: eventType || undefined,
       },
     });
+    return assertRecoveryHistoryResult(result);
   }
 
   async getHistorySummary(
@@ -556,7 +882,7 @@ class OpsRecoveryService {
     actor?: string,
     eventType?: RecoveryHistoryEventType
   ): Promise<RecoveryHistorySummaryResult> {
-    return api.get<RecoveryHistorySummaryResult>('/ops/recovery/history/summary', {
+    const result = await api.get<unknown>('/ops/recovery/history/summary', {
       params: {
         days,
         mode: mode || undefined,
@@ -564,6 +890,7 @@ class OpsRecoveryService {
         eventType: eventType || undefined,
       },
     });
+    return assertRecoveryHistorySummaryResult(result);
   }
 
   async getHistorySummaryTrend(
@@ -572,7 +899,7 @@ class OpsRecoveryService {
     actor?: string,
     eventType?: RecoveryHistoryEventType
   ): Promise<RecoveryHistoryTrendResult> {
-    return api.get<RecoveryHistoryTrendResult>('/ops/recovery/history/summary/trend', {
+    const result = await api.get<unknown>('/ops/recovery/history/summary/trend', {
       params: {
         days,
         mode: mode || undefined,
@@ -580,6 +907,7 @@ class OpsRecoveryService {
         eventType: eventType || undefined,
       },
     });
+    return assertRecoveryHistoryTrendResult(result);
   }
 
   async getHistorySummaryCompare(
@@ -588,7 +916,7 @@ class OpsRecoveryService {
     actor?: string,
     eventType?: RecoveryHistoryEventType
   ): Promise<RecoveryHistorySummaryCompareResult> {
-    return api.get<RecoveryHistorySummaryCompareResult>('/ops/recovery/history/summary/compare', {
+    const result = await api.get<unknown>('/ops/recovery/history/summary/compare', {
       params: {
         days,
         mode: mode || undefined,
@@ -596,6 +924,7 @@ class OpsRecoveryService {
         eventType: eventType || undefined,
       },
     });
+    return assertRecoveryHistorySummaryCompareResult(result);
   }
 
   async getHistorySummaryCompareBreakdown(
@@ -606,7 +935,7 @@ class OpsRecoveryService {
     limit = 10,
     sort: RecoveryHistoryCompareBreakdownSort = 'DELTA_ABS_DESC'
   ): Promise<RecoveryHistorySummaryCompareBreakdownResult> {
-    return api.get<RecoveryHistorySummaryCompareBreakdownResult>('/ops/recovery/history/summary/compare/breakdown', {
+    const result = await api.get<unknown>('/ops/recovery/history/summary/compare/breakdown', {
       params: {
         days,
         mode: mode || undefined,
@@ -616,6 +945,7 @@ class OpsRecoveryService {
         sort,
       },
     });
+    return assertRecoveryHistorySummaryCompareBreakdownResult(result);
   }
 
   async getHistorySummaryCompareActors(
@@ -626,7 +956,7 @@ class OpsRecoveryService {
     limit = 10,
     sort: RecoveryHistoryCompareActorSort = 'DELTA_ABS_DESC'
   ): Promise<RecoveryHistorySummaryCompareActorsResult> {
-    return api.get<RecoveryHistorySummaryCompareActorsResult>('/ops/recovery/history/summary/compare/actors', {
+    const result = await api.get<unknown>('/ops/recovery/history/summary/compare/actors', {
       params: {
         days,
         mode: mode || undefined,
@@ -636,6 +966,7 @@ class OpsRecoveryService {
         sort,
       },
     });
+    return assertRecoveryHistorySummaryCompareActorsResult(result);
   }
 
   async exportHistorySummaryCompareActorsCsv(
