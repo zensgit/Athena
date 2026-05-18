@@ -137,6 +137,56 @@ git diff --check
 
 Result: PASS.
 
+## CI Follow-Up
+
+First pushed CI run:
+
+- Run: `26008430735`
+- Head: `421bb6b`
+- Result: failed only in `Phase 5 Mocked Regression Gate`.
+
+Passing jobs in that run:
+
+- `Backend Verify`
+- `Frontend Build & Test`
+- `Phase C Security Verification`
+- `Frontend E2E Core Gate`
+- `Acceptance Smoke (3 admin pages)`
+- `Property Encryption Closeout Gate`
+
+Failure root cause:
+
+- Spec: `e2e/admin-preview-diagnostics.mock.spec.ts`
+- Failure: Playwright waited for
+  `Recovery executed: queued=1, skipped=0, failed=0`.
+- The app did not show the success toast because the new
+  `opsRecoveryService` response guard rejected mocked
+  `/api/v1/ops/recovery/queue-by-window` response items.
+- The mocked `RecoveryBatchItemDto` entries were missing backend
+  contract fields now enforced by the guard:
+  `jobState` and `failureCategory`.
+
+Fix:
+
+- Updated the Phase 5 mocked ops recovery batch responses for
+  `replay-batch`, `queue-by-reason`, and `queue-by-window` to include
+  `jobState: 'QUEUED'` and `failureCategory: 'TEMPORARY'`.
+- This keeps the guard strict and corrects the mocked backend contract
+  instead of weakening runtime validation.
+
+Local targeted E2E verification:
+
+```bash
+cd ecm-frontend
+ECM_UI_URL=http://localhost:5500 npx playwright test e2e/admin-preview-diagnostics.mock.spec.ts --project=chromium --workers=1
+```
+
+Result:
+
+```text
+1 passed (2.1m)
+```
+
 ## Follow-Up
 
 The next useful service-guard slices remain:
