@@ -177,6 +177,41 @@ git diff --check -- . ':!.env'
 
 Result: PASS.
 
+## CI Follow-Up
+
+Integrated into `main` via `git cherry-pick -x c95e66b` (no conflict; the
+opsRecovery files have zero overlap with the records/mail and bulk
+rounds). Re-verified on the new base before push (asyncTail + core Jest
+37/37, lint, CI build, diff hygiene).
+
+Pushed CI run:
+
+- Run: `26080826354`
+- Head: `ff87486`
+- Result: PASS
+
+Passing jobs:
+
+- `Frontend Build & Test`
+- `Backend Verify`
+- `Phase C Security Verification`
+- `Phase 5 Mocked Regression Gate`
+- `Frontend E2E Core Gate`
+- `Property Encryption Closeout Gate`
+- `Acceptance Smoke (3 admin pages)`
+
+The CI-sensitive checks matched local expectations:
+
+- `Frontend Build & Test` covered lint, type check, build, and the
+  opsRecoveryService asyncTail + core unit suites (the core suite proves
+  the shared-file edits did not regress the already-guarded methods).
+- `Phase 5 Mocked Regression Gate` stayed green, so mocked service
+  contracts were preserved.
+- `Frontend E2E Core Gate` and `Acceptance Smoke (3 admin pages)` stayed
+  green, including the ops recovery admin surfaces.
+- Backend/security/property-encryption gates stayed green because this
+  round did not change backend code or migrations.
+
 ## Follow-Up
 
 - This branch is held out of `main` until the parent records/mail guard
