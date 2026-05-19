@@ -39,7 +39,10 @@ import {
 
 export type RmDeliverableReportPresetKind = RmReportPresetKind;
 
-const DELIVERABLE_REPORT_PRESET_KINDS = new Set<RmReportPresetKind>([
+export const RECORDS_MANAGEMENT_UNEXPECTED_RESPONSE_MESSAGE =
+  'Records management endpoint returned an unexpected response. Mocked CI gate may not cover it; backend route may be missing.';
+
+const RM_REPORT_PRESET_KINDS: RmReportPresetKind[] = [
   'ACTIVITY_FAMILY_REPORT',
   'ACTIVITY_FAMILY_HIGHLIGHTS',
   'ACTIVITY_FAMILY_MIX',
@@ -47,7 +50,182 @@ const DELIVERABLE_REPORT_PRESET_KINDS = new Set<RmReportPresetKind>([
   'ACTIVITY_CONTRIBUTOR_REPORT',
   'ACTIVITY_CONTRIBUTOR_FAMILY_REPORT',
   'ACTIVITY_CONTRIBUTOR_EVENT_TYPE_REPORT',
-]);
+];
+
+const DELIVERABLE_REPORT_PRESET_KINDS = new Set<RmReportPresetKind>(RM_REPORT_PRESET_KINDS);
+const RM_REPORT_PRESET_EXECUTION_TRIGGERS: RmReportPresetExecutionTrigger[] = ['MANUAL', 'SCHEDULED'];
+const RM_REPORT_PRESET_EXECUTION_STATUSES: RmReportPresetExecutionStatus[] = ['SUCCESS', 'FAILED'];
+
+const isObject = (value: unknown): value is Record<string, unknown> => (
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+);
+
+const isFiniteNumber = (value: unknown): value is number => (
+  typeof value === 'number' && Number.isFinite(value)
+);
+
+const isStringOrNullish = (value: unknown): value is string | null | undefined => (
+  value === null || value === undefined || typeof value === 'string'
+);
+
+const isBooleanOrNullish = (value: unknown): value is boolean | null | undefined => (
+  value === null || value === undefined || typeof value === 'boolean'
+);
+
+const isRmReportPresetKind = (value: unknown): value is RmReportPresetKind => (
+  typeof value === 'string' && (RM_REPORT_PRESET_KINDS as string[]).includes(value)
+);
+
+const isRmReportPresetExecutionTrigger = (value: unknown): value is RmReportPresetExecutionTrigger => (
+  typeof value === 'string' && (RM_REPORT_PRESET_EXECUTION_TRIGGERS as string[]).includes(value)
+);
+
+const isRmReportPresetExecutionStatus = (value: unknown): value is RmReportPresetExecutionStatus => (
+  typeof value === 'string' && (RM_REPORT_PRESET_EXECUTION_STATUSES as string[]).includes(value)
+);
+
+const assertUnexpectedResponse = (): never => {
+  throw new Error(RECORDS_MANAGEMENT_UNEXPECTED_RESPONSE_MESSAGE);
+};
+
+const assertObjectResponse = <T>(value: unknown): T => (
+  isObject(value) ? value as T : assertUnexpectedResponse()
+);
+
+const assertObjectArrayResponse = <T>(value: unknown): T[] => {
+  if (!Array.isArray(value) || !value.every(isObject)) {
+    return assertUnexpectedResponse();
+  }
+  return value as T[];
+};
+
+const assertPageResponse = <T>(value: unknown): PageResponse<T> => {
+  if (
+    !isObject(value)
+    || !Array.isArray(value.content)
+    || !value.content.every(isObject)
+    || !isFiniteNumber(value.totalElements)
+    || !isFiniteNumber(value.totalPages)
+    || !isFiniteNumber(value.number)
+    || !isFiniteNumber(value.size)
+  ) {
+    return assertUnexpectedResponse();
+  }
+  return value as unknown as PageResponse<T>;
+};
+
+const assertReportPreset = (value: unknown): RmReportPreset => {
+  if (
+    !isObject(value)
+    || typeof value.id !== 'string'
+    || typeof value.owner !== 'string'
+    || typeof value.name !== 'string'
+    || !isStringOrNullish(value.description)
+    || !isRmReportPresetKind(value.kind)
+    || !isObject(value.params)
+    || !isBooleanOrNullish(value.scheduleEnabled)
+    || !isStringOrNullish(value.deliveryFolderId)
+    || !isStringOrNullish(value.nextRunAt)
+    || !isStringOrNullish(value.lastRunAt)
+    || !isStringOrNullish(value.createdDate)
+    || !isStringOrNullish(value.lastModifiedDate)
+  ) {
+    return assertUnexpectedResponse();
+  }
+  return value as unknown as RmReportPreset;
+};
+
+const assertReportPresetArray = (value: unknown): RmReportPreset[] => {
+  if (!Array.isArray(value)) {
+    return assertUnexpectedResponse();
+  }
+  return value.map(assertReportPreset);
+};
+
+const assertReportPresetExecution = (value: unknown): RmReportPresetExecution => {
+  if (
+    !isObject(value)
+    || typeof value.id !== 'string'
+    || typeof value.presetId !== 'string'
+    || !isStringOrNullish(value.presetName)
+    || (value.presetKind !== undefined && value.presetKind !== null && !isRmReportPresetKind(value.presetKind))
+    || !isRmReportPresetExecutionTrigger(value.triggerType)
+    || !isRmReportPresetExecutionStatus(value.status)
+    || !isStringOrNullish(value.filename)
+    || !isStringOrNullish(value.targetFolderId)
+    || !isStringOrNullish(value.documentId)
+    || !isStringOrNullish(value.message)
+    || typeof value.startedAt !== 'string'
+    || typeof value.finishedAt !== 'string'
+    || !isFiniteNumber(value.durationMs)
+  ) {
+    return assertUnexpectedResponse();
+  }
+  return value as unknown as RmReportPresetExecution;
+};
+
+const assertReportPresetExecutionArray = (value: unknown): RmReportPresetExecution[] => {
+  if (!Array.isArray(value)) {
+    return assertUnexpectedResponse();
+  }
+  return value.map(assertReportPresetExecution);
+};
+
+const assertReportPresetScheduleStatus = (value: unknown): RmReportPresetScheduleStatus => {
+  if (
+    !isObject(value)
+    || typeof value.presetId !== 'string'
+    || typeof value.enabled !== 'boolean'
+    || !isStringOrNullish(value.cronExpression)
+    || !isStringOrNullish(value.timezone)
+    || !isStringOrNullish(value.deliveryFolderId)
+    || !isStringOrNullish(value.nextRunAt)
+    || !isStringOrNullish(value.lastRunAt)
+    || (value.lastExecution !== undefined && value.lastExecution !== null && !isObject(value.lastExecution))
+  ) {
+    return assertUnexpectedResponse();
+  }
+  return {
+    ...value,
+    lastExecution: value.lastExecution ? assertReportPresetExecution(value.lastExecution) : value.lastExecution,
+  } as unknown as RmReportPresetScheduleStatus;
+};
+
+const assertScheduledDeliveryTelemetry = (value: unknown): RmScheduledDeliveryTelemetry => {
+  if (
+    !isObject(value)
+    || !isFiniteNumber(value.scheduleEnabledCount)
+    || !isFiniteNumber(value.duePresetCount)
+    || !isFiniteNumber(value.last24hSuccessCount)
+    || !isFiniteNumber(value.last24hFailedCount)
+    || !isStringOrNullish(value.lastExecutionAt)
+    || typeof value.generatedAt !== 'string'
+  ) {
+    return assertUnexpectedResponse();
+  }
+  return value as unknown as RmScheduledDeliveryTelemetry;
+};
+
+const assertReportPresetExecutionLedgerResponse = (
+  value: unknown
+): ReportPresetExecutionLedgerApiResponse => {
+  if (
+    !isObject(value)
+    || !Array.isArray(value.content)
+    || !isFiniteNumber(value.page)
+    || !isFiniteNumber(value.size)
+    || !isFiniteNumber(value.totalElements)
+    || !isFiniteNumber(value.totalPages)
+    || typeof value.first !== 'boolean'
+    || typeof value.last !== 'boolean'
+  ) {
+    return assertUnexpectedResponse();
+  }
+  return {
+    ...value,
+    content: value.content.map(assertReportPresetExecution),
+  } as unknown as ReportPresetExecutionLedgerApiResponse;
+};
 
 export const supportsReportPresetCsvDelivery = (
   kind: RmReportPresetKind
@@ -151,36 +329,41 @@ export interface ReportPresetExecutionLedgerExportFilters {
 
 class RecordsManagementService {
   async listRecords(): Promise<RecordDeclaration[]> {
-    return api.get<RecordDeclaration[]>('/records');
+    const response = await api.get<unknown>('/records');
+    return assertObjectArrayResponse<RecordDeclaration>(response);
   }
 
   async getSummary(): Promise<RecordsSummary> {
-    return api.get<RecordsSummary>('/records/summary');
+    const response = await api.get<unknown>('/records/summary');
+    return assertObjectResponse<RecordsSummary>(response);
   }
 
   async listReportPresets(): Promise<RmReportPreset[]> {
-    return api.get<RmReportPreset[]>('/records/report-presets');
+    const response = await api.get<unknown>('/records/report-presets');
+    return assertReportPresetArray(response);
   }
 
   async createReportPreset(request: CreateReportPresetRequest): Promise<RmReportPreset> {
     const trimmedName = request.name.trim();
     const trimmedDescription = request.description?.trim();
-    return api.post<RmReportPreset>('/records/report-presets', {
+    const response = await api.post<unknown>('/records/report-presets', {
       name: trimmedName,
       ...(trimmedDescription ? { description: trimmedDescription } : {}),
       kind: request.kind,
       params: request.params,
     });
+    return assertReportPreset(response);
   }
 
   async updateReportPreset(id: string, request: UpdateReportPresetRequest): Promise<RmReportPreset> {
     const trimmedName = request.name?.trim();
     const trimmedDescription = request.description?.trim();
-    return api.put<RmReportPreset>(`/records/report-presets/${id}`, {
+    const response = await api.put<unknown>(`/records/report-presets/${id}`, {
       ...(trimmedName !== undefined ? { name: trimmedName } : {}),
       ...(trimmedDescription !== undefined ? { description: trimmedDescription } : {}),
       ...(request.params !== undefined ? { params: request.params } : {}),
     });
+    return assertReportPreset(response);
   }
 
   async deleteReportPreset(id: string): Promise<void> {
@@ -188,29 +371,33 @@ class RecordsManagementService {
   }
 
   async getReportPresetSchedule(id: string): Promise<RmReportPresetScheduleStatus> {
-    return api.get<RmReportPresetScheduleStatus>(`/records/report-presets/${id}/schedule`);
+    const response = await api.get<unknown>(`/records/report-presets/${id}/schedule`);
+    return assertReportPresetScheduleStatus(response);
   }
 
   async updateReportPresetSchedule(
     id: string,
     request: UpdateReportPresetScheduleRequest
   ): Promise<RmReportPresetScheduleStatus> {
-    return api.put<RmReportPresetScheduleStatus>(`/records/report-presets/${id}/schedule`, {
+    const response = await api.put<unknown>(`/records/report-presets/${id}/schedule`, {
       enabled: request.enabled,
       cronExpression: request.cronExpression ?? null,
       timezone: request.timezone ?? null,
       deliveryFolderId: request.deliveryFolderId ?? null,
     });
+    return assertReportPresetScheduleStatus(response);
   }
 
   async deliverReportPresetNow(id: string): Promise<RmReportPresetExecution> {
-    return api.post<RmReportPresetExecution>(`/records/report-presets/${id}/deliver`, {});
+    const response = await api.post<unknown>(`/records/report-presets/${id}/deliver`, {});
+    return assertReportPresetExecution(response);
   }
 
   async listReportPresetExecutions(id: string, limit?: number): Promise<RmReportPresetExecution[]> {
-    return api.get<RmReportPresetExecution[]>(`/records/report-presets/${id}/executions`, {
+    const response = await api.get<unknown>(`/records/report-presets/${id}/executions`, {
       params: limit != null ? { limit } : undefined,
     });
+    return assertReportPresetExecutionArray(response);
   }
 
   async listReportPresetExecutionLedger(
@@ -225,10 +412,10 @@ class RecordsManagementService {
       page: filters.page ?? 0,
       size: filters.size ?? 10,
     };
-    const result = await api.get<ReportPresetExecutionLedgerApiResponse>(
+    const result = assertReportPresetExecutionLedgerResponse(await api.get<unknown>(
       '/records/report-presets/executions',
       { params }
-    );
+    ));
     return {
       content: result.content,
       totalElements: result.totalElements,
@@ -259,37 +446,43 @@ class RecordsManagementService {
   }
 
   async getScheduledDeliveryTelemetry(): Promise<RmScheduledDeliveryTelemetry> {
-    return api.get<RmScheduledDeliveryTelemetry>('/records/report-presets/telemetry');
+    const response = await api.get<unknown>('/records/report-presets/telemetry');
+    return assertScheduledDeliveryTelemetry(response);
   }
 
   async getOperationsTelemetry(limit = 20): Promise<RecordsOperationsTelemetry> {
-    return api.get<RecordsOperationsTelemetry>('/records/operations', {
+    const response = await api.get<unknown>('/records/operations', {
       params: { limit },
     });
+    return assertObjectResponse<RecordsOperationsTelemetry>(response);
   }
 
   async getActivityTimeline(days = 14): Promise<RecordsActivityTimeline> {
-    return api.get<RecordsActivityTimeline>('/records/activity-timeline', {
+    const response = await api.get<unknown>('/records/activity-timeline', {
       params: { days },
     });
+    return assertObjectResponse<RecordsActivityTimeline>(response);
   }
 
   async getActivityHighlights(windowDays = 7): Promise<RecordsActivityHighlights> {
-    return api.get<RecordsActivityHighlights>('/records/activity-highlights', {
+    const response = await api.get<unknown>('/records/activity-highlights', {
       params: { windowDays },
     });
+    return assertObjectResponse<RecordsActivityHighlights>(response);
   }
 
   async getActivityBreakdown(days = 28, bucketDays = 7): Promise<RecordsActivityBreakdown> {
-    return api.get<RecordsActivityBreakdown>('/records/activity-breakdown', {
+    const response = await api.get<unknown>('/records/activity-breakdown', {
       params: { days, bucketDays },
     });
+    return assertObjectResponse<RecordsActivityBreakdown>(response);
   }
 
   async getActivityContributors(days = 28, limit = 5): Promise<RecordsActivityContributors> {
-    return api.get<RecordsActivityContributors>('/records/activity-contributors', {
+    const response = await api.get<unknown>('/records/activity-contributors', {
       params: { days, limit },
     });
+    return assertObjectResponse<RecordsActivityContributors>(response);
   }
 
   async exportActivityContributorReportCsv(filters: ActivityContributorReportExportFilters): Promise<void> {
@@ -310,9 +503,10 @@ class RecordsManagementService {
     limit = 5,
     eventTypeLimit = 3
   ): Promise<RecordsActivityContributorEventTypeTrend> {
-    return api.get<RecordsActivityContributorEventTypeTrend>('/records/activity-contributor-event-type-trend', {
+    const response = await api.get<unknown>('/records/activity-contributor-event-type-trend', {
       params: { days, bucketDays, limit, eventTypeLimit },
     });
+    return assertObjectResponse<RecordsActivityContributorEventTypeTrend>(response);
   }
 
   async getActivityContributorFamilyTrend(
@@ -320,18 +514,20 @@ class RecordsManagementService {
     bucketDays = 7,
     limit = 5
   ): Promise<RecordsActivityContributorFamilyTrend> {
-    return api.get<RecordsActivityContributorFamilyTrend>('/records/activity-contributor-family-trend', {
+    const response = await api.get<unknown>('/records/activity-contributor-family-trend', {
       params: { days, bucketDays, limit },
     });
+    return assertObjectResponse<RecordsActivityContributorFamilyTrend>(response);
   }
 
   async getActivityContributorFamilyHighlights(
     windowDays = 7,
     limit = 5
   ): Promise<RecordsActivityContributorFamilyHighlights> {
-    return api.get<RecordsActivityContributorFamilyHighlights>('/records/activity-contributor-family-highlights', {
+    const response = await api.get<unknown>('/records/activity-contributor-family-highlights', {
       params: { windowDays, limit },
     });
+    return assertObjectResponse<RecordsActivityContributorFamilyHighlights>(response);
   }
 
   async exportActivityContributorFamilyReportCsv(filters: ActivityContributorFamilyReportExportFilters): Promise<void> {
@@ -351,9 +547,10 @@ class RecordsManagementService {
     limit = 5,
     eventTypeLimit = 3
   ): Promise<RecordsActivityContributorEventTypeHighlights> {
-    return api.get<RecordsActivityContributorEventTypeHighlights>('/records/activity-contributor-event-type-highlights', {
+    const response = await api.get<unknown>('/records/activity-contributor-event-type-highlights', {
       params: { windowDays, limit, eventTypeLimit },
     });
+    return assertObjectResponse<RecordsActivityContributorEventTypeHighlights>(response);
   }
 
   async exportActivityContributorEventTypeReportCsv(filters: ActivityContributorEventTypeReportExportFilters): Promise<void> {
@@ -370,9 +567,10 @@ class RecordsManagementService {
   }
 
   async getActivityEventTypes(days = 28, limit = 8): Promise<RecordsActivityEventTypes> {
-    return api.get<RecordsActivityEventTypes>('/records/activity-event-types', {
+    const response = await api.get<unknown>('/records/activity-event-types', {
       params: { days, limit },
     });
+    return assertObjectResponse<RecordsActivityEventTypes>(response);
   }
 
   async exportActivityEventTypeReportCsv(filters: ActivityEventTypeReportExportFilters): Promise<void> {
@@ -388,15 +586,17 @@ class RecordsManagementService {
   }
 
   async getActivityFamilies(days = 28): Promise<RecordsActivityFamilies> {
-    return api.get<RecordsActivityFamilies>('/records/activity-families', {
+    const response = await api.get<unknown>('/records/activity-families', {
       params: { days },
     });
+    return assertObjectResponse<RecordsActivityFamilies>(response);
   }
 
   async getActivityFamilyHighlights(windowDays = 7): Promise<RecordsActivityFamilyHighlights> {
-    return api.get<RecordsActivityFamilyHighlights>('/records/activity-family-highlights', {
+    const response = await api.get<unknown>('/records/activity-family-highlights', {
       params: { windowDays },
     });
+    return assertObjectResponse<RecordsActivityFamilyHighlights>(response);
   }
 
   async exportActivityFamilyReportCsv(filters: ActivityFamilyReportExportFilters): Promise<void> {
@@ -420,38 +620,44 @@ class RecordsManagementService {
       page: filters.page ?? 0,
       size: filters.size ?? 10,
     };
-    return api.get<PageResponse<RecordAuditEntry>>('/records/audit', { params });
+    const response = await api.get<unknown>('/records/audit', { params });
+    return assertPageResponse<RecordAuditEntry>(response);
   }
 
   async listFilePlans(): Promise<FilePlan[]> {
-    return api.get<FilePlan[]>('/records/file-plans');
+    const response = await api.get<unknown>('/records/file-plans');
+    return assertObjectArrayResponse<FilePlan>(response);
   }
 
   async createFilePlan(request: CreateFilePlanRequest): Promise<FilePlan> {
-    return api.post<FilePlan>('/records/file-plans', {
+    const response = await api.post<unknown>('/records/file-plans', {
       name: request.name.trim(),
       ...(request.description?.trim() ? { description: request.description.trim() } : {}),
       ...(request.parentId ? { parentId: request.parentId } : {}),
     });
+    return assertObjectResponse<FilePlan>(response);
   }
 
   async updateFilePlan(folderId: string, request: UpdateFilePlanRequest): Promise<FilePlan> {
     const description = request.description?.trim();
-    return api.put<FilePlan>(`/records/file-plans/${folderId}`, {
+    const response = await api.put<unknown>(`/records/file-plans/${folderId}`, {
       description: description || '',
     });
+    return assertObjectResponse<FilePlan>(response);
   }
 
   async renameFilePlan(folderId: string, request: RenameFilePlanRequest): Promise<FilePlan> {
-    return api.put<FilePlan>(`/records/file-plans/${folderId}/rename`, {
+    const response = await api.put<unknown>(`/records/file-plans/${folderId}/rename`, {
       name: request.name.trim(),
     });
+    return assertObjectResponse<FilePlan>(response);
   }
 
   async moveFilePlan(folderId: string, request: MoveFilePlanRequest): Promise<FilePlan> {
-    return api.put<FilePlan>(`/records/file-plans/${folderId}/move`, {
+    const response = await api.put<unknown>(`/records/file-plans/${folderId}/move`, {
       targetParentId: request.targetParentId,
     });
+    return assertObjectResponse<FilePlan>(response);
   }
 
   async deleteFilePlan(folderId: string): Promise<void> {
@@ -459,34 +665,39 @@ class RecordsManagementService {
   }
 
   async listRecordCategories(): Promise<RecordCategory[]> {
-    return api.get<RecordCategory[]>('/records/categories');
+    const response = await api.get<unknown>('/records/categories');
+    return assertObjectArrayResponse<RecordCategory>(response);
   }
 
   async createRecordCategory(request: CreateRecordCategoryRequest): Promise<RecordCategory> {
-    return api.post<RecordCategory>('/records/categories', {
+    const response = await api.post<unknown>('/records/categories', {
       name: request.name.trim(),
       ...(request.description?.trim() ? { description: request.description.trim() } : {}),
       ...(request.parentId ? { parentId: request.parentId } : {}),
     });
+    return assertObjectResponse<RecordCategory>(response);
   }
 
   async updateRecordCategory(categoryId: string, request: UpdateRecordCategoryRequest): Promise<RecordCategory> {
     const description = request.description?.trim();
-    return api.put<RecordCategory>(`/records/categories/${categoryId}`, {
+    const response = await api.put<unknown>(`/records/categories/${categoryId}`, {
       description: description || '',
     });
+    return assertObjectResponse<RecordCategory>(response);
   }
 
   async renameRecordCategory(categoryId: string, request: RenameRecordCategoryRequest): Promise<RecordCategory> {
-    return api.put<RecordCategory>(`/records/categories/${categoryId}/rename`, {
+    const response = await api.put<unknown>(`/records/categories/${categoryId}/rename`, {
       name: request.name.trim(),
     });
+    return assertObjectResponse<RecordCategory>(response);
   }
 
   async moveRecordCategory(categoryId: string, request: MoveRecordCategoryRequest): Promise<RecordCategory> {
-    return api.put<RecordCategory>(`/records/categories/${categoryId}/move`, {
+    const response = await api.put<unknown>(`/records/categories/${categoryId}/move`, {
       targetParentId: request.targetParentId,
     });
+    return assertObjectResponse<RecordCategory>(response);
   }
 
   async deleteRecordCategory(categoryId: string): Promise<void> {
@@ -494,15 +705,17 @@ class RecordsManagementService {
   }
 
   async getRecord(nodeId: string): Promise<RecordDeclaration> {
-    return api.get<RecordDeclaration>(`/nodes/${nodeId}/record`);
+    const response = await api.get<unknown>(`/nodes/${nodeId}/record`);
+    return assertObjectResponse<RecordDeclaration>(response);
   }
 
   async declareRecord(nodeId: string, request?: DeclareRecordRequest): Promise<RecordDeclaration> {
     const comment = request?.comment?.trim();
-    return api.put<RecordDeclaration>(`/nodes/${nodeId}/record`, {
+    const response = await api.put<unknown>(`/nodes/${nodeId}/record`, {
       ...(comment ? { comment } : {}),
       ...(request?.categoryId ? { categoryId: request.categoryId } : {}),
     });
+    return assertObjectResponse<RecordDeclaration>(response);
   }
 
   async undeclareRecord(nodeId: string, request: UndeclareRecordRequest): Promise<void> {
@@ -512,7 +725,8 @@ class RecordsManagementService {
   }
 
   async assignRecordCategory(nodeId: string, categoryId: string): Promise<RecordDeclaration> {
-    return api.put<RecordDeclaration>(`/nodes/${nodeId}/record/category`, { categoryId });
+    const response = await api.put<unknown>(`/nodes/${nodeId}/record/category`, { categoryId });
+    return assertObjectResponse<RecordDeclaration>(response);
   }
 }
 

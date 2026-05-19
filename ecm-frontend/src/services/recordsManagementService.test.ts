@@ -1,4 +1,7 @@
-import recordsManagementService, { supportsReportPresetCsvDelivery } from './recordsManagementService';
+import recordsManagementService, {
+  RECORDS_MANAGEMENT_UNEXPECTED_RESPONSE_MESSAGE,
+  supportsReportPresetCsvDelivery,
+} from './recordsManagementService';
 import api from './api';
 
 jest.mock('./api', () => ({
@@ -13,6 +16,10 @@ jest.mock('./api', () => ({
 }));
 
 const mockedApi = api as jest.Mocked<typeof api>;
+
+const expectUnexpectedResponse = async (promise: Promise<unknown>) => {
+  await expect(promise).rejects.toThrow(RECORDS_MANAGEMENT_UNEXPECTED_RESPONSE_MESSAGE);
+};
 
 describe('recordsManagementService', () => {
   beforeEach(() => {
@@ -87,6 +94,12 @@ describe('recordsManagementService', () => {
     await recordsManagementService.listReportPresets();
 
     expect(mockedApi.get).toHaveBeenCalledWith('/records/report-presets');
+  });
+
+  it('rejects malformed RM report preset lists', async () => {
+    mockedApi.get.mockResolvedValueOnce('<html>mocked fallback</html>' as any);
+
+    await expectUnexpectedResponse(recordsManagementService.listReportPresets());
   });
 
   it('creates an RM report preset with trimmed name and description', async () => {
@@ -193,6 +206,12 @@ describe('recordsManagementService', () => {
     expect(mockedApi.get).toHaveBeenCalledWith('/records/report-presets/preset-1/schedule');
   });
 
+  it('rejects malformed RM report preset schedule status', async () => {
+    mockedApi.get.mockResolvedValueOnce({ presetId: 'preset-1', enabled: 'yes' } as any);
+
+    await expectUnexpectedResponse(recordsManagementService.getReportPresetSchedule('preset-1'));
+  });
+
   it('updates an RM report preset schedule with normalized payload', async () => {
     mockedApi.put.mockResolvedValueOnce({
       presetId: 'preset-1',
@@ -247,6 +266,12 @@ describe('recordsManagementService', () => {
     await recordsManagementService.deliverReportPresetNow('preset-1');
 
     expect(mockedApi.post).toHaveBeenCalledWith('/records/report-presets/preset-1/deliver', {});
+  });
+
+  it('rejects malformed RM report preset execution readbacks', async () => {
+    mockedApi.post.mockResolvedValueOnce({ id: 'exec-1', status: 'SUCCESS' } as any);
+
+    await expectUnexpectedResponse(recordsManagementService.deliverReportPresetNow('preset-1'));
   });
 
   it('lists RM report preset executions with an optional limit', async () => {
@@ -317,6 +342,20 @@ describe('recordsManagementService', () => {
     expect(result.size).toBe(25);
     expect(result.totalElements).toBe(30);
     expect(result.content[0].presetName).toBe('Weekly Family Report');
+  });
+
+  it('rejects malformed preset delivery ledger pages', async () => {
+    mockedApi.get.mockResolvedValueOnce({
+      content: 'not an array',
+      page: 0,
+      size: 10,
+      totalElements: 0,
+      totalPages: 0,
+      first: true,
+      last: true,
+    } as any);
+
+    await expectUnexpectedResponse(recordsManagementService.listReportPresetExecutionLedger());
   });
 
   it('exports preset delivery ledger CSV with current filters', async () => {
