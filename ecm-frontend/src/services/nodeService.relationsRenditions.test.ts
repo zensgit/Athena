@@ -162,6 +162,7 @@ describe('nodeService relations/renditions response shape guards', () => {
 
     mockedApi.get.mockResolvedValueOnce(checkoutRelation);
     await expect(nodeService.getNodeRelationCheckout('n1')).resolves.toEqual(checkoutRelation);
+    expect(mockedApi.get).toHaveBeenLastCalledWith('/nodes/n1/relations/checkout');
 
     mockedApi.get.mockResolvedValueOnce(renditionRelation);
     await expect(nodeService.getNodeRelationRendition('n1', 'pdf')).resolves.toEqual(renditionRelation);
@@ -171,9 +172,11 @@ describe('nodeService relations/renditions response shape guards', () => {
     await expect(nodeService.getNodeRenditionRelationSummary('n1')).resolves.toEqual(
       renditionRelationSummary
     );
+    expect(mockedApi.get).toHaveBeenLastCalledWith('/nodes/n1/relations/renditions/summary');
 
     mockedApi.get.mockResolvedValueOnce([renditionDefinition]);
     await expect(nodeService.getNodeRenditionDefinitions('n1')).resolves.toEqual([renditionDefinition]);
+    expect(mockedApi.get).toHaveBeenLastCalledWith('/nodes/n1/renditions/definitions');
 
     mockedApi.post.mockResolvedValueOnce(mutationResponse);
     await expect(nodeService.requeueNodeRendition('n1', 'pdf', true)).resolves.toEqual(mutationResponse);
@@ -228,6 +231,7 @@ describe('nodeService relations/renditions response shape guards', () => {
       canKeepCheckedOut: false,
       blockingReason: undefined,
     });
+    expect(mockedApi.get).toHaveBeenLastCalledWith('/nodes/n1/relations/checkout-graph');
 
     // getNodeRelationRenditions: PageResponse<NodeRenditionRelation> -> content
     mockedApi.get.mockResolvedValueOnce(page([renditionRelation]));
