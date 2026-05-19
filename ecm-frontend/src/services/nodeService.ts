@@ -745,6 +745,317 @@ export interface LockNodeTypedRequest {
   additionalInfo?: string;
 }
 
+// --- response-shape guards (shared nodeService bundle) ---
+// Introduced with the relations/renditions sub-slice; the sentinel and the
+// generic helpers below are intentionally service-wide so later nodeService
+// sub-slices reuse them rather than minting new sentinels/styles. This round
+// only converts the relations/renditions methods (lines ~1500-1688); no other
+// nodeService method is touched.
+export const NODE_UNEXPECTED_RESPONSE_MESSAGE =
+  'Node endpoint returned an unexpected response. Mocked CI gate may not cover it; backend route may be missing.';
+
+const isObject = (value: unknown): value is Record<string, unknown> => (
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+);
+
+const isFiniteNumber = (value: unknown): value is number => (
+  typeof value === 'number' && Number.isFinite(value)
+);
+
+const isStringOrNullish = (value: unknown): value is string | null | undefined => (
+  value === null || value === undefined || typeof value === 'string'
+);
+
+const isBooleanOrNullish = (value: unknown): value is boolean | null | undefined => (
+  value === null || value === undefined || typeof value === 'boolean'
+);
+
+const assertUnexpectedResponse = (): never => {
+  throw new Error(NODE_UNEXPECTED_RESPONSE_MESSAGE);
+};
+
+const isNullishOr = <T>(
+  value: unknown,
+  guard: (input: unknown) => input is T
+): value is T | null | undefined => (
+  value === undefined || value === null || guard(value)
+);
+
+const isNodeRelationNodeRef = (value: unknown): value is NodeRelationNodeRef => (
+  isObject(value)
+  && typeof value.id === 'string'
+  && typeof value.name === 'string'
+  && typeof value.path === 'string'
+  && typeof value.nodeType === 'string'
+  && isStringOrNullish(value.parentId)
+);
+
+const isNodeRelationsSummary = (value: unknown): value is NodeRelationsSummary => (
+  isObject(value)
+  && typeof value.nodeId === 'string'
+  && typeof value.nodeType === 'string'
+  && isFiniteNumber(value.parentCount)
+  && isFiniteNumber(value.childCount)
+  && isFiniteNumber(value.sourceRelationCount)
+  && isFiniteNumber(value.targetRelationCount)
+  && isFiniteNumber(value.versionCount)
+  && isStringOrNullish(value.previewStatus)
+  && typeof value.renditionAvailable === 'boolean'
+  && typeof value.checkedOut === 'boolean'
+  && isStringOrNullish(value.checkoutUser)
+  && isStringOrNullish(value.checkoutDate)
+);
+
+const isNodeRelationEdge = (value: unknown): value is NodeRelationEdge => (
+  isObject(value)
+  && typeof value.relationId === 'string'
+  && typeof value.relationType === 'string'
+  && isNodeRelationNodeRef(value.source)
+  && isNodeRelationNodeRef(value.target)
+  && isStringOrNullish(value.createdDate)
+);
+
+const isApiVersionResponse = (value: unknown): value is ApiVersionResponse => (
+  isObject(value)
+  && typeof value.id === 'string'
+  && isStringOrNullish(value.documentId)
+  && typeof value.versionLabel === 'string'
+  && isStringOrNullish(value.comment)
+  && typeof value.createdDate === 'string'
+  && typeof value.creator === 'string'
+  && isFiniteNumber(value.size)
+  && typeof value.major === 'boolean'
+  && isStringOrNullish(value.mimeType)
+  && isStringOrNullish(value.contentHash)
+  && isStringOrNullish(value.contentId)
+  && isStringOrNullish(value.status)
+  && isBooleanOrNullish(value.checkoutBaseline)
+  && isBooleanOrNullish(value.checkoutCurrent)
+);
+
+const isNodeCheckoutRelation = (value: unknown): value is NodeCheckoutRelation => (
+  isObject(value)
+  && typeof value.nodeId === 'string'
+  && typeof value.document === 'boolean'
+  && typeof value.checkedOut === 'boolean'
+  && isStringOrNullish(value.checkoutUser)
+  && isStringOrNullish(value.checkoutDate)
+  && isStringOrNullish(value.checkoutBaselineVersionId)
+  && isStringOrNullish(value.checkoutBaselineVersionLabel)
+  && isStringOrNullish(value.currentVersionLabel)
+  && typeof value.canCheckout === 'boolean'
+  && typeof value.canCheckIn === 'boolean'
+  && typeof value.canCancelCheckout === 'boolean'
+  && typeof value.canKeepCheckedOut === 'boolean'
+  && typeof value.requiresNewVersionFile === 'boolean'
+  && isStringOrNullish(value.blockingReason)
+);
+
+const isNodeCheckoutGraphNode = (value: unknown): value is NodeCheckoutGraphNode => (
+  isObject(value)
+  && typeof value.id === 'string'
+  && typeof value.kind === 'string'
+  && typeof value.label === 'string'
+  && typeof value.focus === 'boolean'
+  && typeof value.virtualNode === 'boolean'
+  && typeof value.available === 'boolean'
+);
+
+const isNodeCheckoutGraphEdge = (value: unknown): value is NodeCheckoutGraphEdge => (
+  isObject(value)
+  && typeof value.relationType === 'string'
+  && typeof value.sourceId === 'string'
+  && typeof value.targetId === 'string'
+  && typeof value.label === 'string'
+);
+
+// Raw wire shape of /relations/checkout-graph (the method maps it to
+// NodeCheckoutGraph; nodes/edges undefined|null are mapped to [] downstream,
+// so they are optional here but, when present, every element is deep-checked).
+type NodeCheckoutGraphRaw = {
+  nodeId: string;
+  document: boolean;
+  checkedOut: boolean;
+  checkoutUser?: string | null;
+  checkoutDate?: string | null;
+  documentNode?: NodeCheckoutGraphNode | null;
+  workingCopyNode?: NodeCheckoutGraphNode | null;
+  destinationNode?: NodeCheckoutGraphNode | null;
+  baselineVersion?: ApiVersionResponse | null;
+  currentVersion?: ApiVersionResponse | null;
+  nodes?: NodeCheckoutGraphNode[] | null;
+  edges?: NodeCheckoutGraphEdge[] | null;
+  canCheckIn: boolean;
+  canCancelCheckout: boolean;
+  canKeepCheckedOut: boolean;
+  blockingReason?: string | null;
+};
+
+const isOptionalNodeArray = <T>(
+  value: unknown,
+  guard: (input: unknown) => input is T
+): boolean => (
+  value === undefined
+  || value === null
+  || (Array.isArray(value) && value.every(guard))
+);
+
+const isNodeCheckoutGraphRaw = (value: unknown): value is NodeCheckoutGraphRaw => (
+  isObject(value)
+  && typeof value.nodeId === 'string'
+  && typeof value.document === 'boolean'
+  && typeof value.checkedOut === 'boolean'
+  && isStringOrNullish(value.checkoutUser)
+  && isStringOrNullish(value.checkoutDate)
+  && isNullishOr(value.documentNode, isNodeCheckoutGraphNode)
+  && isNullishOr(value.workingCopyNode, isNodeCheckoutGraphNode)
+  && isNullishOr(value.destinationNode, isNodeCheckoutGraphNode)
+  && isNullishOr(value.baselineVersion, isApiVersionResponse)
+  && isNullishOr(value.currentVersion, isApiVersionResponse)
+  && isOptionalNodeArray(value.nodes, isNodeCheckoutGraphNode)
+  && isOptionalNodeArray(value.edges, isNodeCheckoutGraphEdge)
+  && typeof value.canCheckIn === 'boolean'
+  && typeof value.canCancelCheckout === 'boolean'
+  && typeof value.canKeepCheckedOut === 'boolean'
+  && isStringOrNullish(value.blockingReason)
+);
+
+const isNodeRenditionRelationSummary = (
+  value: unknown
+): value is NodeRenditionRelationSummary => (
+  isObject(value)
+  && typeof value.nodeId === 'string'
+  && typeof value.document === 'boolean'
+  && isStringOrNullish(value.previewStatus)
+  && typeof value.renditionAvailable === 'boolean'
+  && isStringOrNullish(value.previewFailureReason)
+  && isStringOrNullish(value.previewFailureCategory)
+  && isStringOrNullish(value.previewLastUpdated)
+  && isStringOrNullish(value.currentVersionLabel)
+);
+
+const isNodeRenditionRelation = (value: unknown): value is NodeRenditionRelation => (
+  isObject(value)
+  && typeof value.nodeId === 'string'
+  && typeof value.renditionId === 'string'
+  && typeof value.label === 'string'
+  && typeof value.status === 'string'
+  && typeof value.available === 'boolean'
+  && typeof value.mimeType === 'string'
+  && typeof value.url === 'string'
+  && typeof value.downloadable === 'boolean'
+  && isStringOrNullish(value.failureReason)
+  && isStringOrNullish(value.failureCategory)
+  && isStringOrNullish(value.previewLastUpdated)
+  && isStringOrNullish(value.currentVersionLabel)
+);
+
+const isNodeRenditionDefinitionStatus = (
+  value: unknown
+): value is NodeRenditionDefinitionStatus => (
+  isObject(value)
+  && typeof value.nodeId === 'string'
+  && typeof value.renditionKey === 'string'
+  && typeof value.label === 'string'
+  && typeof value.targetMimeType === 'string'
+  && isStringOrNullish(value.generationMode)
+  && typeof value.downloadable === 'boolean'
+  && isFiniteNumber(value.sortOrder)
+  && isStringOrNullish(value.dependencyRenditionKey)
+  && typeof value.registered === 'boolean'
+  && typeof value.applicable === 'boolean'
+  && isStringOrNullish(value.applicabilityReason)
+  && isStringOrNullish(value.currentState)
+  && typeof value.available === 'boolean'
+  && isStringOrNullish(value.contentUrl)
+  && typeof value.canRequeue === 'boolean'
+  && typeof value.canInvalidate === 'boolean'
+  && isStringOrNullish(value.mutationBlockedReason)
+);
+
+const isNodeRenditionMutationQueueStatus = (value: unknown): boolean => (
+  isObject(value)
+  && typeof value.documentId === 'string'
+  && isStringOrNullish(value.previewStatus)
+  && typeof value.queued === 'boolean'
+  && isFiniteNumber(value.attempts)
+  && isStringOrNullish(value.nextAttemptAt)
+  && isStringOrNullish(value.message)
+);
+
+const isNodeRenditionMutationResource = (value: unknown): boolean => (
+  isObject(value)
+  && typeof value.id === 'string'
+  && typeof value.documentId === 'string'
+  && typeof value.renditionKey === 'string'
+  && typeof value.label === 'string'
+  && typeof value.mimeType === 'string'
+  && typeof value.state === 'string'
+  && typeof value.available === 'boolean'
+  && typeof value.downloadable === 'boolean'
+  && typeof value.applicable === 'boolean'
+  && isStringOrNullish(value.applicabilityReason)
+  && isStringOrNullish(value.generationMode)
+  && isStringOrNullish(value.dependencyRenditionKey)
+  && isStringOrNullish(value.contentUrl)
+  && isStringOrNullish(value.errorReason)
+  && isStringOrNullish(value.errorCategory)
+  && isStringOrNullish(value.sourceStatus)
+  && isStringOrNullish(value.versionLabel)
+  && isStringOrNullish(value.sourceUpdatedAt)
+  && isStringOrNullish(value.lastSyncedAt)
+  && isFiniteNumber(value.sortOrder)
+);
+
+const isNodeRenditionMutationResponse = (
+  value: unknown
+): value is NodeRenditionMutationResponse => (
+  isObject(value)
+  && typeof value.renditionKey === 'string'
+  && typeof value.action === 'string'
+  && typeof value.invalidated === 'boolean'
+  && typeof value.previewLinked === 'boolean'
+  && isStringOrNullish(value.message)
+  && (value.queueStatus === undefined
+    || value.queueStatus === null
+    || isNodeRenditionMutationQueueStatus(value.queueStatus))
+  && isNullishOr(value.previewSummary, isNodeRenditionRelationSummary)
+  && isNodeRenditionMutationResource(value.resource)
+);
+
+const assertResponse = <T>(
+  value: unknown,
+  guard: (input: unknown) => input is T
+): T => (guard(value) ? value : assertUnexpectedResponse());
+
+const assertResponseArray = <T>(
+  value: unknown,
+  guard: (input: unknown) => input is T
+): T[] => {
+  if (!Array.isArray(value) || !value.every(guard)) {
+    return assertUnexpectedResponse();
+  }
+  return value;
+};
+
+const assertPageResponse = <T>(
+  value: unknown,
+  itemGuard: (input: unknown) => input is T
+): PageResponse<T> => {
+  if (
+    !isObject(value)
+    || !Array.isArray(value.content)
+    || !value.content.every(itemGuard)
+    || !isFiniteNumber(value.totalElements)
+    || !isFiniteNumber(value.totalPages)
+    || !isFiniteNumber(value.number)
+    || !isFiniteNumber(value.size)
+  ) {
+    return assertUnexpectedResponse();
+  }
+  return value as unknown as PageResponse<T>;
+};
+
 class NodeService {
   private buildSearchFilters(criteria: SearchCriteria): Record<string, any> {
     const filters: Record<string, any> = {};
@@ -1498,14 +1809,16 @@ class NodeService {
   }
 
   async getNodeRelationsSummary(nodeId: string): Promise<NodeRelationsSummary> {
-    return api.get<NodeRelationsSummary>(`/nodes/${encodeURIComponent(nodeId)}/relations/summary`);
+    const result = await api.get<unknown>(`/nodes/${encodeURIComponent(nodeId)}/relations/summary`);
+    return assertResponse(result, isNodeRelationsSummary);
   }
 
   async getNodeRelationParents(nodeId: string, maxDepth = 20): Promise<NodeRelationNodeRef[]> {
-    return api.get<NodeRelationNodeRef[]>(
+    const result = await api.get<unknown>(
       `/nodes/${encodeURIComponent(nodeId)}/relations/parents`,
       { params: { maxDepth } }
     );
+    return assertResponseArray(result, isNodeRelationNodeRef);
   }
 
   async getNodeRelationSources(
@@ -1514,10 +1827,11 @@ class NodeService {
     size = 5,
     relationType?: string
   ): Promise<PageResponse<NodeRelationEdge>> {
-    return api.get<PageResponse<NodeRelationEdge>>(
+    const result = await api.get<unknown>(
       `/nodes/${encodeURIComponent(nodeId)}/relations/sources`,
       { params: { page, size, relationType: relationType || undefined } }
     );
+    return assertPageResponse(result, isNodeRelationEdge);
   }
 
   async getNodeRelationTargets(
@@ -1526,10 +1840,11 @@ class NodeService {
     size = 5,
     relationType?: string
   ): Promise<PageResponse<NodeRelationEdge>> {
-    return api.get<PageResponse<NodeRelationEdge>>(
+    const result = await api.get<unknown>(
       `/nodes/${encodeURIComponent(nodeId)}/relations/targets`,
       { params: { page, size, relationType: relationType || undefined } }
     );
+    return assertPageResponse(result, isNodeRelationEdge);
   }
 
   async getNodeRelationVersions(
@@ -1538,9 +1853,12 @@ class NodeService {
     size = 5,
     majorOnly = false
   ): Promise<Version[]> {
-    const response = await api.get<PageResponse<ApiVersionResponse>>(
-      `/nodes/${encodeURIComponent(nodeId)}/relations/versions`,
-      { params: { page, size, majorOnly } }
+    const response = assertPageResponse(
+      await api.get<unknown>(
+        `/nodes/${encodeURIComponent(nodeId)}/relations/versions`,
+        { params: { page, size, majorOnly } }
+      ),
+      isApiVersionResponse
     );
     return (response.content || []).map((version) => ({
       id: version.id,
@@ -1561,28 +1879,15 @@ class NodeService {
   }
 
   async getNodeRelationCheckout(nodeId: string): Promise<NodeCheckoutRelation> {
-    return api.get<NodeCheckoutRelation>(`/nodes/${encodeURIComponent(nodeId)}/relations/checkout`);
+    const result = await api.get<unknown>(`/nodes/${encodeURIComponent(nodeId)}/relations/checkout`);
+    return assertResponse(result, isNodeCheckoutRelation);
   }
 
   async getNodeRelationCheckoutGraph(nodeId: string): Promise<NodeCheckoutGraph> {
-    const graph = await api.get<{
-      nodeId: string;
-      document: boolean;
-      checkedOut: boolean;
-      checkoutUser?: string | null;
-      checkoutDate?: string | null;
-      documentNode?: NodeCheckoutGraphNode | null;
-      workingCopyNode?: NodeCheckoutGraphNode | null;
-      destinationNode?: NodeCheckoutGraphNode | null;
-      baselineVersion?: ApiVersionResponse | null;
-      currentVersion?: ApiVersionResponse | null;
-      nodes?: NodeCheckoutGraphNode[] | null;
-      edges?: NodeCheckoutGraphEdge[] | null;
-      canCheckIn: boolean;
-      canCancelCheckout: boolean;
-      canKeepCheckedOut: boolean;
-      blockingReason?: string | null;
-    }>(`/nodes/${encodeURIComponent(nodeId)}/relations/checkout-graph`);
+    const graph = assertResponse(
+      await api.get<unknown>(`/nodes/${encodeURIComponent(nodeId)}/relations/checkout-graph`),
+      isNodeCheckoutGraphRaw
+    );
     const mapVersion = (version?: ApiVersionResponse | null): Version | null => (version ? ({
       id: version.id,
       documentId: version.documentId || nodeId,
@@ -1625,9 +1930,12 @@ class NodeService {
     page = 0,
     size = 5
   ): Promise<NodeRenditionRelation[]> {
-    const response = await api.get<PageResponse<NodeRenditionRelation>>(
-      `/nodes/${encodeURIComponent(nodeId)}/relations/renditions`,
-      { params: { page, size } }
+    const response = assertPageResponse(
+      await api.get<unknown>(
+        `/nodes/${encodeURIComponent(nodeId)}/relations/renditions`,
+        { params: { page, size } }
+      ),
+      isNodeRenditionRelation
     );
     return response.content || [];
   }
@@ -1636,21 +1944,24 @@ class NodeService {
     nodeId: string,
     renditionId: string
   ): Promise<NodeRenditionRelation> {
-    return api.get<NodeRenditionRelation>(
+    const result = await api.get<unknown>(
       `/nodes/${encodeURIComponent(nodeId)}/relations/renditions/${encodeURIComponent(renditionId)}`
     );
+    return assertResponse(result, isNodeRenditionRelation);
   }
 
   async getNodeRenditionRelationSummary(nodeId: string): Promise<NodeRenditionRelationSummary> {
-    return api.get<NodeRenditionRelationSummary>(
+    const result = await api.get<unknown>(
       `/nodes/${encodeURIComponent(nodeId)}/relations/renditions/summary`
     );
+    return assertResponse(result, isNodeRenditionRelationSummary);
   }
 
   async getNodeRenditionDefinitions(nodeId: string): Promise<NodeRenditionDefinitionStatus[]> {
-    return api.get<NodeRenditionDefinitionStatus[]>(
+    const result = await api.get<unknown>(
       `/nodes/${encodeURIComponent(nodeId)}/renditions/definitions`
     );
+    return assertResponseArray(result, isNodeRenditionDefinitionStatus);
   }
 
   async requeueNodeRendition(
@@ -1658,11 +1969,12 @@ class NodeService {
     renditionKey: string,
     force = false
   ): Promise<NodeRenditionMutationResponse> {
-    return api.post<NodeRenditionMutationResponse>(
+    const result = await api.post<unknown>(
       `/nodes/${encodeURIComponent(nodeId)}/renditions/${encodeURIComponent(renditionKey)}/requeue`,
       null,
       { params: { force } }
     );
+    return assertResponse(result, isNodeRenditionMutationResponse);
   }
 
   async invalidateNodeRendition(
@@ -1674,7 +1986,7 @@ class NodeService {
       forceQueue?: boolean;
     }
   ): Promise<NodeRenditionMutationResponse> {
-    return api.post<NodeRenditionMutationResponse>(
+    const result = await api.post<unknown>(
       `/nodes/${encodeURIComponent(nodeId)}/renditions/${encodeURIComponent(renditionKey)}/invalidate`,
       null,
       {
@@ -1685,6 +1997,7 @@ class NodeService {
         },
       }
     );
+    return assertResponse(result, isNodeRenditionMutationResponse);
   }
 
   async findSimilar(documentId: string, maxResults = 5): Promise<Node[]> {
