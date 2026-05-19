@@ -184,6 +184,40 @@ git diff --check -- . ':!.env'
 
 Result: PASS.
 
+## CI Follow-Up
+
+Integrated into `main` via `git cherry-pick -x a2f94dd` (no conflict; the
+bulk files have zero overlap with the records/mail round). Re-verified on
+the new base before push (bulk Jest 10/10, lint, CI build, diff hygiene).
+
+Pushed CI run:
+
+- Run: `26079842269`
+- Head: `d62edde`
+- Result: PASS
+
+Passing jobs:
+
+- `Backend Verify`
+- `Frontend Build & Test`
+- `Phase C Security Verification`
+- `Phase 5 Mocked Regression Gate`
+- `Frontend E2E Core Gate`
+- `Property Encryption Closeout Gate`
+- `Acceptance Smoke (3 admin pages)`
+
+The CI-sensitive checks matched local expectations:
+
+- `Frontend Build & Test` covered lint, type check, build, and the
+  bulkOperationService unit suite.
+- `Phase 5 Mocked Regression Gate` stayed green, so mocked service
+  contracts were preserved.
+- `Frontend E2E Core Gate` and `Acceptance Smoke (3 admin pages)` stayed
+  green; `FileBrowser` (the sole consumer) handles the new throw/fallback
+  semantics in its existing try/catch and `Promise.allSettled` paths.
+- Backend/security/property-encryption gates stayed green because this
+  round did not change backend code or migrations.
+
 ## Follow-Up
 
 - This branch is held out of `main` until the parent records/mail guard
