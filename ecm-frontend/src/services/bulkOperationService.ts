@@ -161,16 +161,64 @@ const normalizeHistoryTrendItem = (
   count: normalizeCount(item.count ?? item.total),
 });
 
+// Phase 5 Mocked harness can serve SPA index.html with HTTP 200 for unmocked
+// routes, and a backend route may be absent entirely. bulkDelete consumers read
+// outcome counts directly, so a malformed body must surface a recognizable
+// synthetic error instead of silently rendering garbage. The history list /
+// summary / trend panels are dashboard-style and intentionally degrade to an
+// empty/zero result rather than an error toast (mirrors
+// mailAutomationService.listProviderPresets).
+export const BULK_OPERATION_UNEXPECTED_RESPONSE_MESSAGE =
+  'Bulk operation endpoint returned an unexpected response. Mocked CI gate may not cover it; backend route may be missing.';
+
+const isObject = (value: unknown): value is Record<string, unknown> => (
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+);
+
+const isFiniteNumber = (value: unknown): value is number => (
+  typeof value === 'number' && Number.isFinite(value)
+);
+
+const isStringArray = (value: unknown): value is string[] => (
+  Array.isArray(value) && value.every((entry) => typeof entry === 'string')
+);
+
+const isStringRecord = (value: unknown): value is Record<string, string> => {
+  if (!isObject(value)) {
+    return false;
+  }
+  return Object.values(value).every((entry) => typeof entry === 'string');
+};
+
+const assertUnexpectedResponse = (): never => {
+  throw new Error(BULK_OPERATION_UNEXPECTED_RESPONSE_MESSAGE);
+};
+
+const isBulkOperationResult = (value: unknown): value is BulkOperationResult => (
+  isObject(value)
+  && typeof value.operation === 'string'
+  && isFiniteNumber(value.totalRequested)
+  && isFiniteNumber(value.successCount)
+  && isFiniteNumber(value.failureCount)
+  && isStringArray(value.successfulIds)
+  && isStringRecord(value.failures)
+);
+
+const assertBulkOperationResult = (value: unknown): BulkOperationResult => (
+  isBulkOperationResult(value) ? value : assertUnexpectedResponse()
+);
+
 class BulkOperationService {
   async bulkDelete(ids: string[]): Promise<BulkOperationResult> {
-    return api.post<BulkOperationResult>('/bulk/delete', { ids });
+    const response = await api.post<unknown>('/bulk/delete', { ids });
+    return assertBulkOperationResult(response);
   }
 
   async listHistory(params?: BulkHistoryParams): Promise<BulkHistoryResult> {
     const page = Math.max(0, Math.floor(params?.page ?? 0));
     const size = normalizePositiveInt(params?.size ?? params?.limit, 20);
 
-    const response = await api.get<BulkHistoryApiPage | BulkHistoryApiItem[]>('/bulk/history', {
+    const response = await api.get<unknown>('/bulk/history', {
       params: {
         page,
         size,
@@ -182,26 +230,39 @@ class BulkOperationService {
     });
 
     if (Array.isArray(response)) {
-      return {
-        items: response.map(normalizeHistoryItem),
-        total: response.length,
-        page,
-        size,
-      };
+      // Status-quo equivalent for an all-valid array; for an array carrying
+      // null/primitive entries this drops them rather than crashing in
+      // normalizeHistoryItem (was a TypeError on null) or emitting all-null
+      // fake records (deliberate improvement, not status-quo equivalent).
+      const items = response
+        .filter(isObject)
+        .map((item) => normalizeHistoryItem(item as BulkHistoryApiItem));
+      return { items, total: items.length, page, size };
     }
 
-    const content = Array.isArray(response.items)
-      ? response.items
-      : (Array.isArray(response.content) ? response.content : []);
+    // Top-level null / string (HTML fallback) / any non-object: degrade to an
+    // empty page. For HTML strings this matches the prior behavior; for null
+    // it is a deliberate improvement over the prior TypeError.
+    if (!isObject(response)) {
+      return { items: [], total: 0, page, size };
+    }
+
+    const pageResponse = response as unknown as BulkHistoryApiPage;
+    const rawContent = Array.isArray(pageResponse.items)
+      ? pageResponse.items
+      : (Array.isArray(pageResponse.content) ? pageResponse.content : []);
+    const items = rawContent
+      .filter(isObject)
+      .map((item) => normalizeHistoryItem(item as BulkHistoryApiItem));
     return {
-      items: content.map(normalizeHistoryItem),
-      total: typeof response.total === 'number'
-        ? response.total
-        : (typeof response.totalElements === 'number' ? response.totalElements : content.length),
-      page: typeof response.page === 'number'
-        ? response.page
-        : (typeof response.number === 'number' ? response.number : page),
-      size: typeof response.size === 'number' ? response.size : size,
+      items,
+      total: typeof pageResponse.total === 'number'
+        ? pageResponse.total
+        : (typeof pageResponse.totalElements === 'number' ? pageResponse.totalElements : items.length),
+      page: typeof pageResponse.page === 'number'
+        ? pageResponse.page
+        : (typeof pageResponse.number === 'number' ? pageResponse.number : page),
+      size: typeof pageResponse.size === 'number' ? pageResponse.size : size,
     };
   }
 
@@ -222,7 +283,7 @@ class BulkOperationService {
 
   async listHistorySummary(params?: BulkHistoryParams): Promise<BulkHistorySummaryResult> {
     const topN = normalizePositiveInt(params?.limit ?? params?.size, 10);
-    const response = await api.get<BulkHistorySummaryApiResponse>('/bulk/history/summary', {
+    const response = await api.get<unknown>('/bulk/history/summary', {
       params: {
         topN,
         eventType: params?.eventType || undefined,
@@ -232,19 +293,34 @@ class BulkOperationService {
       },
     });
 
-    const eventTypeApiItems = Array.isArray(response.eventTypeItems)
-      ? response.eventTypeItems
-      : (Array.isArray(response.items) ? response.items : []);
-    const actorApiItems = Array.isArray(response.actorItems) ? response.actorItems : [];
-    const eventTypeItems = eventTypeApiItems.map(normalizeHistorySummaryEventTypeItem);
-    const actorItems = actorApiItems.map(normalizeHistorySummaryActorItem);
+    // Top-level null / string (HTML fallback) / any non-object: degrade to a
+    // zero summary. HTML strings already produced this; null previously threw.
+    if (!isObject(response)) {
+      return { total: 0, eventTypeItems: [], actorItems: [] };
+    }
+
+    const summaryResponse = response as unknown as BulkHistorySummaryApiResponse;
+    const eventTypeApiItems = (Array.isArray(summaryResponse.eventTypeItems)
+      ? summaryResponse.eventTypeItems
+      : (Array.isArray(summaryResponse.items) ? summaryResponse.items : []))
+      .filter(isObject);
+    const actorApiItems = (Array.isArray(summaryResponse.actorItems)
+      ? summaryResponse.actorItems
+      : [])
+      .filter(isObject);
+    const eventTypeItems = eventTypeApiItems.map(
+      (item) => normalizeHistorySummaryEventTypeItem(item as BulkHistorySummaryApiEventTypeItem)
+    );
+    const actorItems = actorApiItems.map(
+      (item) => normalizeHistorySummaryActorItem(item as BulkHistorySummaryApiActorItem)
+    );
     const fallbackTotal = eventTypeItems.reduce((sum, item) => sum + item.count, 0);
 
     return {
       total: normalizeCount(
-        typeof response.total === 'number'
-          ? response.total
-          : (typeof response.totalEvents === 'number' ? response.totalEvents : fallbackTotal)
+        typeof summaryResponse.total === 'number'
+          ? summaryResponse.total
+          : (typeof summaryResponse.totalEvents === 'number' ? summaryResponse.totalEvents : fallbackTotal)
       ),
       eventTypeItems,
       actorItems,
@@ -267,7 +343,7 @@ class BulkOperationService {
   }
 
   async listHistoryTrend(params?: BulkHistoryParams): Promise<BulkHistoryTrendResult> {
-    const response = await api.get<BulkHistoryTrendApiResponse>('/bulk/history/summary/trend', {
+    const response = await api.get<unknown>('/bulk/history/summary/trend', {
       params: {
         eventType: params?.eventType || undefined,
         actor: params?.actor || undefined,
@@ -275,13 +351,24 @@ class BulkOperationService {
         to: params?.to || undefined,
       },
     });
-    const trendItems = Array.isArray(response.items)
-      ? response.items
-      : (Array.isArray(response.trend) ? response.trend : []);
+
+    // Top-level null / string (HTML fallback) / any non-object: degrade to an
+    // empty trend. HTML strings already produced this; null previously threw.
+    if (!isObject(response)) {
+      return { items: [], truncated: false, scanLimit: null };
+    }
+
+    const trendResponse = response as unknown as BulkHistoryTrendApiResponse;
+    const trendItems = (Array.isArray(trendResponse.items)
+      ? trendResponse.items
+      : (Array.isArray(trendResponse.trend) ? trendResponse.trend : []))
+      .filter(isObject);
     return {
-      items: trendItems.map(normalizeHistoryTrendItem),
-      truncated: Boolean(response.truncated),
-      scanLimit: typeof response.scanLimit === 'number' ? Math.max(0, Math.floor(response.scanLimit)) : null,
+      items: trendItems.map((item) => normalizeHistoryTrendItem(item as BulkHistoryTrendApiItem)),
+      truncated: Boolean(trendResponse.truncated),
+      scanLimit: typeof trendResponse.scanLimit === 'number'
+        ? Math.max(0, Math.floor(trendResponse.scanLimit))
+        : null,
     };
   }
 
