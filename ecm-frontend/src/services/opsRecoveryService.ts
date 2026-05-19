@@ -813,6 +813,224 @@ const assertRecoveryHistorySummaryCompareBreakdownResult = (
   } as RecoveryHistorySummaryCompareBreakdownResult;
 };
 
+// --- async export-tail guards ---
+// Reuses the existing OPS_RECOVERY_UNEXPECTED_RESPONSE_MESSAGE sentinel,
+// assertOpsRecoveryResponse, and the predicate bundle above. No new sentinel.
+
+// request is consumed by the UI for display, so it gets lightweight deep
+// validation: undefined | null | record-with-typed-fields. A bare isRecord
+// would let { mode: {} } reach the UI and render as "[object Object]".
+// Per the wire type, the numeric fields are not nullable.
+const assertRecoveryHistoryExportAsyncRequestSnapshot = (value: unknown): void => {
+  if (value === undefined || value === null) {
+    return;
+  }
+  assertOpsRecoveryResponse(isRecord(value));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.exportType));
+  assertOpsRecoveryResponse(isOptionalFiniteNumber(value.limit));
+  assertOpsRecoveryResponse(isOptionalFiniteNumber(value.days));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.mode));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.actor));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.eventType));
+  assertOpsRecoveryResponse(isOptionalFiniteNumber(value.compareBreakdownLimit));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.compareBreakdownSort));
+  assertOpsRecoveryResponse(isOptionalFiniteNumber(value.compareActorLimit));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.compareActorSort));
+};
+
+const assertRecoveryTaskCenterPaging = (value: unknown): void => {
+  if (value === undefined || value === null) {
+    return;
+  }
+  assertOpsRecoveryResponse(isRecord(value));
+  assertOpsRecoveryResponse(isFiniteNumber(value.skipCount));
+  assertOpsRecoveryResponse(isFiniteNumber(value.maxItems));
+  assertOpsRecoveryResponse(isFiniteNumber(value.totalItems));
+  assertOpsRecoveryResponse(typeof value.hasMoreItems === 'boolean');
+};
+
+const assertRecoveryHistoryExportAsyncCreateResponse = (
+  value: unknown
+): RecoveryHistoryExportAsyncCreateResponse => {
+  assertOpsRecoveryResponse(isRecord(value));
+  assertOpsRecoveryResponse(typeof value.taskId === 'string');
+  assertOpsRecoveryResponse(typeof value.exportType === 'string');
+  assertOpsRecoveryResponse(typeof value.status === 'string');
+  assertRecoveryHistoryExportAsyncRequestSnapshot(value.request);
+  assertOpsRecoveryResponse(isOptionalBoolean(value.deduplicated));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.deduplicatedFromTaskId));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.message));
+  assertOpsRecoveryResponse(isNullableString(value.createdAt));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.timeoutAt));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.expiresAt));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.createdBy));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.updatedBy));
+  return value as unknown as RecoveryHistoryExportAsyncCreateResponse;
+};
+
+const assertRecoveryHistoryExportAsyncTaskStatus = (
+  value: unknown
+): RecoveryHistoryExportAsyncTaskStatus => {
+  assertOpsRecoveryResponse(isRecord(value));
+  assertOpsRecoveryResponse(typeof value.taskId === 'string');
+  assertOpsRecoveryResponse(typeof value.exportType === 'string');
+  assertOpsRecoveryResponse(typeof value.status === 'string');
+  assertOpsRecoveryResponse(isNullableString(value.error));
+  assertRecoveryHistoryExportAsyncRequestSnapshot(value.request);
+  assertOpsRecoveryResponse(isNullableString(value.createdAt));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.startedAt));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.updatedAt));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.timeoutAt));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.expiresAt));
+  assertOpsRecoveryResponse(isNullableString(value.finishedAt));
+  assertOpsRecoveryResponse(isNullableString(value.filename));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.createdBy));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.updatedBy));
+  return value as unknown as RecoveryHistoryExportAsyncTaskStatus;
+};
+
+const assertRecoveryHistoryExportAsyncTaskList = (
+  value: unknown
+): RecoveryHistoryExportAsyncTaskList => {
+  assertOpsRecoveryResponse(isRecord(value));
+  assertOpsRecoveryResponse(isFiniteNumber(value.count));
+  assertRecoveryTaskCenterPaging(value.paging);
+  assertOpsRecoveryResponse(Array.isArray(value.items));
+  const items = value.items.map(assertRecoveryHistoryExportAsyncTaskStatus);
+  return {
+    ...value,
+    items,
+  } as RecoveryHistoryExportAsyncTaskList;
+};
+
+const assertRecoveryHistoryExportAsyncTaskSummary = (
+  value: unknown
+): RecoveryHistoryExportAsyncTaskSummary => {
+  assertOpsRecoveryResponse(isRecord(value));
+  assertOpsRecoveryResponse(isFiniteNumber(value.totalCount));
+  assertOpsRecoveryResponse(isFiniteNumber(value.queuedCount));
+  assertOpsRecoveryResponse(isFiniteNumber(value.runningCount));
+  assertOpsRecoveryResponse(isFiniteNumber(value.completedCount));
+  assertOpsRecoveryResponse(isFiniteNumber(value.cancelledCount));
+  assertOpsRecoveryResponse(isFiniteNumber(value.failedCount));
+  assertOpsRecoveryResponse(isOptionalFiniteNumber(value.timedOutCount));
+  assertOpsRecoveryResponse(isOptionalFiniteNumber(value.expiredCount));
+  assertOpsRecoveryResponse(isFiniteNumber(value.activeCount));
+  assertOpsRecoveryResponse(isFiniteNumber(value.terminalCount));
+  return value as unknown as RecoveryHistoryExportAsyncTaskSummary;
+};
+
+const assertRecoveryHistoryExportAsyncTaskCleanupResponse = (
+  value: unknown
+): RecoveryHistoryExportAsyncTaskCleanupResponse => {
+  assertOpsRecoveryResponse(isRecord(value));
+  assertOpsRecoveryResponse(isFiniteNumber(value.deletedCount));
+  assertOpsRecoveryResponse(isFiniteNumber(value.remainingCount));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.exportTypeFilter));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.statusFilter));
+  assertOpsRecoveryResponse(typeof value.message === 'string');
+  return value as unknown as RecoveryHistoryExportAsyncTaskCleanupResponse;
+};
+
+const assertRecoveryHistoryExportAsyncTaskCancelActiveResponse = (
+  value: unknown
+): RecoveryHistoryExportAsyncTaskCancelActiveResponse => {
+  assertOpsRecoveryResponse(isRecord(value));
+  assertOpsRecoveryResponse(isFiniteNumber(value.cancelledCount));
+  assertOpsRecoveryResponse(isFiniteNumber(value.remainingActiveCount));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.exportTypeFilter));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.statusFilter));
+  assertOpsRecoveryResponse(typeof value.message === 'string');
+  return value as unknown as RecoveryHistoryExportAsyncTaskCancelActiveResponse;
+};
+
+const assertRecoveryHistoryExportAsyncRetryTerminalItem = (
+  value: unknown
+): RecoveryHistoryExportAsyncRetryTerminalItem => {
+  assertOpsRecoveryResponse(isRecord(value));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.sourceTaskId));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.retriedTaskId));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.exportType));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.sourceStatus));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.outcome));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.message));
+  return value as unknown as RecoveryHistoryExportAsyncRetryTerminalItem;
+};
+
+const assertRecoveryHistoryExportAsyncRetryTerminalResponse = (
+  value: unknown
+): RecoveryHistoryExportAsyncRetryTerminalResponse => {
+  assertOpsRecoveryResponse(isRecord(value));
+  assertOpsRecoveryResponse(isFiniteNumber(value.requested));
+  assertOpsRecoveryResponse(isFiniteNumber(value.retried));
+  assertOpsRecoveryResponse(isFiniteNumber(value.reused));
+  assertOpsRecoveryResponse(isFiniteNumber(value.skipped));
+  assertOpsRecoveryResponse(isFiniteNumber(value.failed));
+  assertOpsRecoveryResponse(isFiniteNumber(value.limit));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.exportTypeFilter));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.statusFilter));
+  assertOpsRecoveryResponse(typeof value.message === 'string');
+  assertOpsRecoveryResponse(Array.isArray(value.results));
+  const results = value.results.map(assertRecoveryHistoryExportAsyncRetryTerminalItem);
+  return {
+    ...value,
+    results,
+  } as RecoveryHistoryExportAsyncRetryTerminalResponse;
+};
+
+const assertRecoveryHistoryExportAsyncRetryTerminalDryRunItem = (
+  value: unknown
+): RecoveryHistoryExportAsyncRetryTerminalDryRunItem => {
+  assertOpsRecoveryResponse(isRecord(value));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.sourceTaskId));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.exportType));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.sourceStatus));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.outcome));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.reasonCode));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.message));
+  return value as unknown as RecoveryHistoryExportAsyncRetryTerminalDryRunItem;
+};
+
+const assertRecoveryHistoryExportAsyncRetryTerminalDryRunReasonCount = (
+  value: unknown
+): RecoveryHistoryExportAsyncRetryTerminalDryRunReasonCount => {
+  assertOpsRecoveryResponse(isRecord(value));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.reasonCode));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.outcome));
+  assertOpsRecoveryResponse(isFiniteNumber(value.count));
+  return value as unknown as RecoveryHistoryExportAsyncRetryTerminalDryRunReasonCount;
+};
+
+const assertRecoveryHistoryExportAsyncRetryTerminalDryRunResponse = (
+  value: unknown
+): RecoveryHistoryExportAsyncRetryTerminalDryRunResponse => {
+  assertOpsRecoveryResponse(isRecord(value));
+  assertOpsRecoveryResponse(isFiniteNumber(value.requested));
+  assertOpsRecoveryResponse(isFiniteNumber(value.retryable));
+  assertOpsRecoveryResponse(isFiniteNumber(value.skipped));
+  assertOpsRecoveryResponse(isFiniteNumber(value.limit));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.exportTypeFilter));
+  assertOpsRecoveryResponse(isOptionalNullableString(value.statusFilter));
+  assertOpsRecoveryResponse(typeof value.message === 'string');
+  assertOpsRecoveryResponse(Array.isArray(value.results));
+  const results = value.results.map(assertRecoveryHistoryExportAsyncRetryTerminalDryRunItem);
+  if (value.reasonBreakdown === undefined) {
+    return {
+      ...value,
+      results,
+    } as RecoveryHistoryExportAsyncRetryTerminalDryRunResponse;
+  }
+  assertOpsRecoveryResponse(Array.isArray(value.reasonBreakdown));
+  const reasonBreakdown = value.reasonBreakdown.map(
+    assertRecoveryHistoryExportAsyncRetryTerminalDryRunReasonCount
+  );
+  return {
+    ...value,
+    results,
+    reasonBreakdown,
+  } as RecoveryHistoryExportAsyncRetryTerminalDryRunResponse;
+};
+
 class OpsRecoveryService {
   async queueByReason(payload: QueueByReasonRequest): Promise<RecoveryBatchResult> {
     const result = await api.post<unknown>('/ops/recovery/queue-by-reason', payload);
@@ -1012,7 +1230,8 @@ class OpsRecoveryService {
   async startHistoryExportAsync(
     payload: RecoveryHistoryExportAsyncRequest
   ): Promise<RecoveryHistoryExportAsyncCreateResponse> {
-    return api.post<RecoveryHistoryExportAsyncCreateResponse>('/ops/recovery/history/export-async', payload);
+    const result = await api.post<unknown>('/ops/recovery/history/export-async', payload);
+    return assertRecoveryHistoryExportAsyncCreateResponse(result);
   }
 
   async listHistoryExportAsyncTasks(
@@ -1021,7 +1240,7 @@ class OpsRecoveryService {
     status?: RecoveryHistoryExportAsyncStatusFilter,
     skipCount = 0
   ): Promise<RecoveryHistoryExportAsyncTaskList> {
-    return api.get<RecoveryHistoryExportAsyncTaskList>('/ops/recovery/history/export-async', {
+    const result = await api.get<unknown>('/ops/recovery/history/export-async', {
       params: {
         maxItems,
         limit: maxItems,
@@ -1030,40 +1249,46 @@ class OpsRecoveryService {
         status: status || undefined,
       },
     });
+    return assertRecoveryHistoryExportAsyncTaskList(result);
   }
 
   async getHistoryExportAsyncTask(taskId: string): Promise<RecoveryHistoryExportAsyncTaskStatus> {
-    return api.get<RecoveryHistoryExportAsyncTaskStatus>(
+    const result = await api.get<unknown>(
       `/ops/recovery/history/export-async/${encodeURIComponent(taskId)}`
     );
+    return assertRecoveryHistoryExportAsyncTaskStatus(result);
   }
 
   async getHistoryExportAsyncTaskSummary(): Promise<RecoveryHistoryExportAsyncTaskSummary> {
-    return api.get<RecoveryHistoryExportAsyncTaskSummary>('/ops/recovery/history/export-async/summary');
+    const result = await api.get<unknown>('/ops/recovery/history/export-async/summary');
+    return assertRecoveryHistoryExportAsyncTaskSummary(result);
   }
 
   async getHistoryExportAsyncTaskSummaryFiltered(
     exportType?: RecoveryHistoryExportAsyncType,
     status?: RecoveryHistoryExportAsyncStatusFilter
   ): Promise<RecoveryHistoryExportAsyncTaskSummary> {
-    return api.get<RecoveryHistoryExportAsyncTaskSummary>('/ops/recovery/history/export-async/summary', {
+    const result = await api.get<unknown>('/ops/recovery/history/export-async/summary', {
       params: {
         exportType: exportType || undefined,
         status: status || undefined,
       },
     });
+    return assertRecoveryHistoryExportAsyncTaskSummary(result);
   }
 
   async cancelHistoryExportAsyncTask(taskId: string): Promise<RecoveryHistoryExportAsyncTaskStatus> {
-    return api.post<RecoveryHistoryExportAsyncTaskStatus>(
+    const result = await api.post<unknown>(
       `/ops/recovery/history/export-async/${encodeURIComponent(taskId)}/cancel`
     );
+    return assertRecoveryHistoryExportAsyncTaskStatus(result);
   }
 
   async retryHistoryExportAsyncTask(taskId: string): Promise<RecoveryHistoryExportAsyncCreateResponse> {
-    return api.post<RecoveryHistoryExportAsyncCreateResponse>(
+    const result = await api.post<unknown>(
       `/ops/recovery/history/export-async/${encodeURIComponent(taskId)}/retry`
     );
+    return assertRecoveryHistoryExportAsyncCreateResponse(result);
   }
 
   async retryTerminalHistoryExportAsyncTasks(
@@ -1071,7 +1296,7 @@ class OpsRecoveryService {
     status?: RecoveryHistoryExportAsyncTerminalStatusFilter,
     limit = 20
   ): Promise<RecoveryHistoryExportAsyncRetryTerminalResponse> {
-    return api.post<RecoveryHistoryExportAsyncRetryTerminalResponse>(
+    const result = await api.post<unknown>(
       '/ops/recovery/history/export-async/retry-terminal',
       {},
       {
@@ -1082,6 +1307,7 @@ class OpsRecoveryService {
         },
       }
     );
+    return assertRecoveryHistoryExportAsyncRetryTerminalResponse(result);
   }
 
   async dryRunRetryTerminalHistoryExportAsyncTasks(
@@ -1089,7 +1315,7 @@ class OpsRecoveryService {
     status?: RecoveryHistoryExportAsyncTerminalStatusFilter,
     limit = 20
   ): Promise<RecoveryHistoryExportAsyncRetryTerminalDryRunResponse> {
-    return api.post<RecoveryHistoryExportAsyncRetryTerminalDryRunResponse>(
+    const result = await api.post<unknown>(
       '/ops/recovery/history/export-async/retry-terminal/dry-run',
       {},
       {
@@ -1100,6 +1326,7 @@ class OpsRecoveryService {
         },
       }
     );
+    return assertRecoveryHistoryExportAsyncRetryTerminalDryRunResponse(result);
   }
 
   async exportDryRunRetryTerminalHistoryExportAsyncTasks(
@@ -1126,7 +1353,7 @@ class OpsRecoveryService {
         .map((taskId) => String(taskId || '').trim())
         .filter((taskId) => taskId.length > 0))),
     };
-    return api.post<RecoveryHistoryExportAsyncRetryTerminalResponse>(
+    const result = await api.post<unknown>(
       '/ops/recovery/history/export-async/retry-terminal/by-task-ids',
       payload,
       {
@@ -1135,13 +1362,14 @@ class OpsRecoveryService {
         },
       }
     );
+    return assertRecoveryHistoryExportAsyncRetryTerminalResponse(result);
   }
 
   async cancelActiveHistoryExportAsyncTasks(
     exportType?: RecoveryHistoryExportAsyncType,
     status?: RecoveryHistoryExportAsyncActiveStatusFilter
   ): Promise<RecoveryHistoryExportAsyncTaskCancelActiveResponse> {
-    return api.post<RecoveryHistoryExportAsyncTaskCancelActiveResponse>(
+    const result = await api.post<unknown>(
       '/ops/recovery/history/export-async/cancel-active',
       {},
       {
@@ -1151,13 +1379,14 @@ class OpsRecoveryService {
         },
       }
     );
+    return assertRecoveryHistoryExportAsyncTaskCancelActiveResponse(result);
   }
 
   async cleanupHistoryExportAsyncTasks(
     exportType?: RecoveryHistoryExportAsyncType,
     status?: RecoveryHistoryExportAsyncStatusFilter
   ): Promise<RecoveryHistoryExportAsyncTaskCleanupResponse> {
-    return api.post<RecoveryHistoryExportAsyncTaskCleanupResponse>(
+    const result = await api.post<unknown>(
       '/ops/recovery/history/export-async/cleanup',
       {},
       {
@@ -1167,6 +1396,7 @@ class OpsRecoveryService {
         },
       }
     );
+    return assertRecoveryHistoryExportAsyncTaskCleanupResponse(result);
   }
 
   async downloadHistoryExportAsyncTask(taskId: string): Promise<Blob> {
