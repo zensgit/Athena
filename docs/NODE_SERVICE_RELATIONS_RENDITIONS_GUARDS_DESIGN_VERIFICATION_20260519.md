@@ -136,6 +136,51 @@ git diff --check -- . ':!.env'
 
 Result: PASS. nodeService.ts: +347 / -34.
 
+## CI Follow-Up
+
+Done directly on `main` (no cherry-pick; the records/mail integration
+gate is satisfied). The slice landed in four commits: `4c50333` (guard
+code), `5d82d1d` (this doc), `167c731` (the targeted suite — a forward
+fix; the suite was omitted from the code commit's `git add`), `6581f88`
+(four no-param endpoint `toHaveBeenLastCalledWith` locks for symmetric
+endpoint coverage).
+
+Final pushed CI run:
+
+- Run: `26098717250`
+- Head: `6581f88`
+- Result: PASS
+
+Passing jobs:
+
+- `Backend Verify`
+- `Frontend Build & Test`
+- `Phase C Security Verification`
+- `Phase 5 Mocked Regression Gate`
+- `Frontend E2E Core Gate`
+- `Property Encryption Closeout Gate`
+- `Acceptance Smoke (3 admin pages)`
+
+Bisect accounting — every pushed HEAD of this slice is independently
+green:
+
+- `5d82d1d` (guard code + doc, before the test existed) → run
+  `26098480476` PASS (proves the code commit is independently sound).
+- `167c731` (+ targeted suite) → run `26098512370` PASS.
+- `6581f88` (+ endpoint locks) → run `26098717250` PASS (recorded above).
+
+The CI-sensitive checks matched local expectations:
+
+- `Frontend Build & Test` covered lint, type check, build, and the
+  relations/renditions suite plus the createFolder / recordProjection /
+  DocumentPreview.undeclare regression set.
+- `Phase 5 Mocked Regression Gate`, `Frontend E2E Core Gate`, and
+  `Acceptance Smoke (3 admin pages)` stayed green — the D2 raw-pre-map
+  tightening did not regress any consumer surface (all consumers are
+  error-tolerant).
+- Backend/security/property-encryption gates stayed green because this
+  round did not change backend code or migrations.
+
 ## Follow-Up
 
 - Remaining nodeService sub-slices (one at a time, no big-bang): batch-download
