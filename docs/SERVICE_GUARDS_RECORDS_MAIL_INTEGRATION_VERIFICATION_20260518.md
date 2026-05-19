@@ -144,6 +144,35 @@ git diff --check -- . ':!.env'
 
 Result: PASS.
 
+## CI Follow-Up
+
+Pushed CI run:
+
+- Run: `26078498817`
+- Head: `52a507a`
+- Result: PASS
+
+Passing jobs:
+
+- `Frontend Build & Test`
+- `Backend Verify`
+- `Phase C Security Verification`
+- `Phase 5 Mocked Regression Gate`
+- `Frontend E2E Core Gate`
+- `Property Encryption Closeout Gate`
+- `Acceptance Smoke (3 admin pages)`
+
+The CI-sensitive checks matched local expectations:
+
+- `Frontend Build & Test` covered lint, type check, build, and frontend unit
+  tests (the combined targeted Jest of 148 ran locally before push).
+- `Phase 5 Mocked Regression Gate` stayed green, so mocked service contracts
+  were preserved.
+- `Frontend E2E Core Gate` and `Acceptance Smoke (3 admin pages)` stayed
+  green, including the records/mail admin surfaces.
+- Backend/security/property-encryption gates stayed green because this round
+  did not change backend code or migrations.
+
 ## Remaining Work
 
 Recommended next service-guard candidates:
