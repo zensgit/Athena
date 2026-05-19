@@ -96,6 +96,37 @@ git diff --check -- . ':!.env'
 
 Result: PASS.
 
+## CI Follow-Up
+
+Done directly on `main` (no cherry-pick; the records/mail integration
+gate is satisfied).
+
+Pushed CI run:
+
+- Run: `26082652038`
+- Head: `44f1e0d`
+- Result: PASS
+
+Passing jobs:
+
+- `Backend Verify`
+- `Frontend Build & Test`
+- `Phase C Security Verification`
+- `Phase 5 Mocked Regression Gate`
+- `Frontend E2E Core Gate`
+- `Property Encryption Closeout Gate`
+- `Acceptance Smoke (3 admin pages)`
+
+The CI-sensitive checks matched local expectations:
+
+- `Frontend Build & Test` covered lint, type check, build, and the
+  tagService unit suite (12 tests, unaffected by the removal).
+- `Phase 5 Mocked Regression Gate`, `Frontend E2E Core Gate`, and
+  `Acceptance Smoke (3 admin pages)` stayed green — the removed methods
+  had no consumers, so no surface changed.
+- Backend/security/property-encryption gates stayed green because this
+  round did not change backend code or migrations.
+
 ## Follow-Up
 
 - Remaining service-guard backlog: `nodeService`, to be split into
