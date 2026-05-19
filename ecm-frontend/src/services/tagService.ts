@@ -142,16 +142,6 @@ class TagService {
     const result = await api.get<unknown>(`/nodes/${nodeId}/tags`);
     return assertTagList(result);
   }
-
-  async findNodesByTag(tagName: string, page = 0, size = 20): Promise<any> {
-    return api.get('/nodes/by-tag', {
-      params: { tagName, page, size },
-    });
-  }
-
-  async findNodesByTags(tagNames: string[]): Promise<any[]> {
-    return api.post('/nodes/by-tags', { tagNames });
-  }
 }
 
 const tagService = new TagService();
