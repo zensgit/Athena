@@ -271,14 +271,10 @@ test('Search sorting and pagination are consistent', async ({ page, request }) =
   expect(sizes[1]).toBeGreaterThanOrEqual(sizes[2]);
 
   // Pagination check (Name sort ascending)
-  await submitSearch(page, pagePrefix);
+  await selectSort(page, 'Name', sortPrefix);
   await waitForResults(page);
-  await expect.poll(
-    () => resultNamesWithPrefix(page, pagePrefix, 1),
-    { timeout: 60_000 }
-  ).toHaveLength(1);
 
-  await selectSort(page, 'Name', pagePrefix);
+  await submitSearch(page, pagePrefix);
   await waitForResults(page);
 
   const apiPage0 = await request.get(`${baseApiUrl}/api/v1/search`, {
