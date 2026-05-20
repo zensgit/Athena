@@ -1446,15 +1446,25 @@ const isRecordOfFacetValueCounts = (
   );
 };
 
+const isSearchDateOrNullish = (value: unknown): boolean => (
+  isStringOrNullish(value)
+  || (Array.isArray(value) && value.every(isFiniteNumber))
+);
+
+const isSearchOptionalNumber = (value: unknown): boolean => (
+  value === undefined || value === null || isFiniteNumber(value)
+);
+
 const isSearchResultItem = (value: unknown): value is Record<string, unknown> => {
   if (!isObject(value)) return false;
   if (typeof value.id !== 'string') return false;
   if (typeof value.name !== 'string') return false;
-  if (typeof value.path !== 'string') return false;
-  // mapper-read optional fields (gate H3 — tolerate missing/nullish)
-  if (!isStringOrNullish(value.createdDate)) return false;
+  // Runtime search hits can carry sparse/null fields from Elasticsearch. Keep
+  // these mapper-read fields permissive so one nullable hit does not blank the page.
+  if (!isStringOrNullish(value.path)) return false;
+  if (!isSearchDateOrNullish(value.createdDate)) return false;
   if (!isStringOrNullish(value.createdBy)) return false;
-  if (!isStringOrNullish(value.lastModifiedDate)) return false;
+  if (!isSearchDateOrNullish(value.lastModifiedDate)) return false;
   if (!isStringOrNullish(value.lastModifiedBy)) return false;
   if (!isStringOrNullish(value.parentId)) return false;
   if (!isStringOrNullish(value.description)) return false;
@@ -1473,8 +1483,8 @@ const isSearchResultItem = (value: unknown): value is Record<string, unknown> =>
   if (!isStringOrNullish(value.recordCategoryId)) return false;
   if (!isStringOrNullish(value.recordCategoryName)) return false;
   if (!isStringOrNullish(value.recordCategoryPath)) return false;
-  if (!isOptionalFiniteNumber(value.fileSize)) return false;
-  if (!isOptionalFiniteNumber(value.score)) return false;
+  if (!isSearchOptionalNumber(value.fileSize)) return false;
+  if (!isSearchOptionalNumber(value.score)) return false;
   if (!(value.record === undefined || value.record === null || typeof value.record === 'boolean')) return false;
   if (!(value.tags === undefined || value.tags === null || isStringArray(value.tags))) return false;
   if (!(value.categories === undefined || value.categories === null || isStringArray(value.categories))) return false;

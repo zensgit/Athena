@@ -35,6 +35,21 @@ const fullRawItem = {
   previewStatus: 'READY',
 };
 
+const runtimeSparseRawItem = {
+  id: 'd3',
+  name: 'runtime.pdf',
+  path: null,
+  createdDate: [2026, 5, 20, 3, 30, 0],
+  createdBy: null,
+  lastModifiedDate: null,
+  lastModifiedBy: null,
+  nodeType: 'DOCUMENT',
+  mimeType: 'application/pdf',
+  fileSize: null,
+  score: null,
+  highlights: { name: ['runtime'] },
+};
+
 const validFacetValueCount = { value: 'application/pdf', count: 3 };
 const validFacetMap = { mimeType: [validFacetValueCount] };
 
@@ -199,7 +214,7 @@ describe('nodeService search proper response shape guards', () => {
     mockedApi.get.mockResolvedValueOnce({ not: 'an array' });
     await expect(nodeService.findSimilar('p')).rejects.toThrow(NODE_UNEXPECTED_RESPONSE_MESSAGE);
 
-    mockedApi.get.mockResolvedValueOnce([{ id: 'x' /* missing name/path */ }]);
+    mockedApi.get.mockResolvedValueOnce([{ id: 'x' /* missing required name */ }]);
     await expect(nodeService.findSimilar('p')).rejects.toThrow(NODE_UNEXPECTED_RESPONSE_MESSAGE);
   });
 
@@ -219,6 +234,27 @@ describe('nodeService search proper response shape guards', () => {
     mockedApi.get.mockResolvedValueOnce([minimalRawItem]);
     const sim = await nodeService.findSimilar('p');
     expect(sim[0].id).toBe('d1');
+  });
+
+  it('runtime sparse search hits with nullable mapper-read fields do not blank the result page', async () => {
+    mockedApi.get.mockResolvedValueOnce({ content: [runtimeSparseRawItem], totalElements: 1 });
+
+    const result = await nodeService.searchNodes({ name: 'runtime' });
+
+    expect(result.nodes).toHaveLength(1);
+    expect(result.nodes[0].id).toBe('d3');
+    expect(result.nodes[0].name).toBe('runtime.pdf');
+    expect(result.nodes[0].path).toBeNull();
+    expect(result.nodes[0].contentType).toBe('application/pdf');
+    expect(result.nodes[0].size).toBeNull();
+  });
+
+  it('search result required identity fields still reject wrong types', async () => {
+    mockedApi.get.mockResolvedValueOnce({ content: [{ ...minimalRawItem, path: 123 }], totalElements: 1 });
+
+    await expect(nodeService.searchNodes({ name: 'bad-path' })).rejects.toThrow(
+      NODE_UNEXPECTED_RESPONSE_MESSAGE
+    );
   });
 
   it('getSearchFacets: valid Record passthrough; malformed → throw; endpoint locked', async () => {
