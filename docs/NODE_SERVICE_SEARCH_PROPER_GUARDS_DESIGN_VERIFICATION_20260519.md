@@ -475,6 +475,37 @@ Result: PASS. The full frontend unit suite reported `125/125` suites and
 `1227/1227` tests passing. `CI=true npm run build` retained only the existing
 `fs.F_OK` deprecation warning and CRA bundle-size advisory.
 
+## Seventh CI Failure Follow-Up
+
+GitHub Actions run `26150936836` on head `475f9b4` reached `6/7` green and
+failed only `Frontend E2E Core Gate`.
+
+This run confirmed that the visible sort-order fix moved the failure forward:
+the Name / Modified / Size sort assertions no longer failed. The remaining
+failure was in the pagination section. The test submitted `pagePrefix` while
+the UI was still set to `Size` sort from the previous assertion, then waited for
+`${pagePrefix}-001.txt` before changing the UI back to Name sort. That was an
+invalid test precondition: with size sorting and equal file sizes, the first
+page does not have to contain the lexicographically first filename.
+
+The pagination check now:
+
+- waits only for any `pagePrefix` result after the initial query,
+- switches the UI to `Name` sort before asserting page order,
+- compares UI page 0 and page 1 against the corresponding API pages using the
+  existing polling helper instead of one immediate DOM read.
+
+Validation:
+
+```bash
+cd ecm-frontend
+npx playwright test e2e/search-sort-pagination.spec.ts --list
+cd ..
+git diff --check -- . ':!.env'
+```
+
+Result: PASS. The Playwright spec parses and lists one Chromium test.
+
 ## Follow-Up
 
 - This sub-slice closes the search/preview-async subdomain. Remaining
