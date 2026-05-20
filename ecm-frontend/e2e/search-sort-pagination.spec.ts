@@ -98,23 +98,13 @@ async function expectResultNamesWithPrefix(
   ).toEqual(expected);
 }
 
-async function fetchSearchNames(
-  request: APIRequestContext,
-  query: string,
-  token: string,
-  sortBy: string,
-  sortDirection: 'asc' | 'desc',
-  size = 20,
-) {
-  const response = await request.get(`${baseApiUrl}/api/v1/search`, {
-    params: { q: query, page: 0, size, sortBy, sortDirection },
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  expect(response.ok()).toBeTruthy();
-  const payload = (await response.json()) as { content: Array<{ name: string }> };
-  return payload.content
+function namesFromSearchPayload(payload: unknown, query: string) {
+  if (!payload || typeof payload !== 'object' || !Array.isArray((payload as { content?: unknown }).content)) {
+    return [];
+  }
+  return (payload as { content: Array<{ name?: unknown }> }).content
     .map((item) => item.name)
-    .filter((name) => name.startsWith(query));
+    .filter((name): name is string => typeof name === 'string' && name.startsWith(query));
 }
 
 async function submitSearch(page: Page, query: string) {
@@ -148,7 +138,7 @@ async function selectSort(page: Page, optionLabel: string, query?: string) {
       Size: { sortBy: 'size', sortDirection: 'desc' },
     };
     const expectedSort = expectedSortParams[optionLabel];
-    await Promise.all([
+    const [response] = await Promise.all([
       page.waitForResponse((res) => {
         const url = res.url();
         return url.includes('/api/v1/search')
@@ -162,9 +152,11 @@ async function selectSort(page: Page, optionLabel: string, query?: string) {
       }),
       option.click(),
     ]);
+    return namesFromSearchPayload(await response.json(), query);
   } else {
     await option.click();
   }
+  return [];
 }
 
 function parseSize(raw: string) {
@@ -228,17 +220,15 @@ test('Search sorting and pagination are consistent', async ({ page, request }) =
   await waitForResults(page);
   await page.getByText(`${sortPrefix}-A.txt`).first().waitFor({ timeout: 60_000 });
 
-  await selectSort(page, 'Name', sortPrefix);
+  const nameSorted = (await selectSort(page, 'Name', sortPrefix)).slice(0, 3);
   await waitForResults(page);
 
-  const nameSorted = (await fetchSearchNames(request, sortPrefix, apiToken, 'name', 'asc')).slice(0, 3);
   expect(nameSorted).toHaveLength(3);
   await expectResultNamesWithPrefix(page, sortPrefix, nameSorted);
 
-  await selectSort(page, 'Modified Date', sortPrefix);
+  const modifiedSorted = (await selectSort(page, 'Modified Date', sortPrefix)).slice(0, 3);
   await waitForResults(page);
 
-  const modifiedSorted = (await fetchSearchNames(request, sortPrefix, apiToken, 'modified', 'desc')).slice(0, 3);
   expect(modifiedSorted).toHaveLength(3);
   await expectResultNamesWithPrefix(page, sortPrefix, modifiedSorted);
 
