@@ -173,6 +173,26 @@ git diff --check -- . ':!.env'
 
 Result: PASS. nodeService.ts: +270 / -15.
 
+## CI Follow-Up
+
+GitHub Actions run `26136473455` for head `b8333e6` completed successfully
+with 7/7 jobs green:
+
+- Frontend Build & Test
+- Backend Verify
+- Phase C Security Verification
+- Property Encryption Closeout Gate
+- Acceptance Smoke (3 admin pages)
+- Phase 5 Mocked Regression Gate
+- Frontend E2E Core Gate
+
+Two review-only comment cleanups were folded into the `[skip ci]` follow-up:
+
+- Updated the shared `nodeService` guard comment from the original
+  relations/renditions-only wording to service-wide wording.
+- Corrected the preview-side test cleanup-response comment so it describes
+  the actual missing-`deletedCount` assertion.
+
 ## Follow-Up
 
 - Remaining nodeService sub-slices (one at a time, no big-bang): **search

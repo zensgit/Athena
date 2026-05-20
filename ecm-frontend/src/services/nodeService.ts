@@ -748,11 +748,9 @@ export interface LockNodeTypedRequest {
 }
 
 // --- response-shape guards (shared nodeService bundle) ---
-// Introduced with the relations/renditions sub-slice; the sentinel and the
+// Introduced incrementally across nodeService sub-slices; the sentinel and the
 // generic helpers below are intentionally service-wide so later nodeService
-// sub-slices reuse them rather than minting new sentinels/styles. This round
-// only converts the relations/renditions methods (lines ~1500-1688); no other
-// nodeService method is touched.
+// sub-slices reuse them rather than minting new sentinels/styles.
 export const NODE_UNEXPECTED_RESPONSE_MESSAGE =
   'Node endpoint returned an unexpected response. Mocked CI gate may not cover it; backend route may be missing.';
 

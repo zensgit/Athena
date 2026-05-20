@@ -442,8 +442,7 @@ describe('nodeService preview-side response shape guards', () => {
     });
     await expectThrow(() => nodeService.repairPreview('n1'));
 
-    // TaskCleanupResult uses `status`, not `statusFilter` — putting `statusFilter` instead
-    // should still pass because `status` is optional; but missing the required deletedCount fails.
+    // TaskCleanupResult requires deletedCount even though its status field is optional.
     mockedApi.post.mockResolvedValueOnce({
       remainingCount: 0,
       status: 'COMPLETED',
