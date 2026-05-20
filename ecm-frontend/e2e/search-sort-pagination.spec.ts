@@ -267,7 +267,10 @@ test('Search sorting and pagination are consistent', async ({ page, request }) =
   // Pagination check (Name sort ascending)
   await submitSearch(page, pagePrefix);
   await waitForResults(page);
-  await page.getByText(`${pagePrefix}-001.txt`).first().waitFor({ timeout: 60_000 });
+  await expect.poll(
+    () => resultNamesWithPrefix(page, pagePrefix, 1),
+    { timeout: 60_000 }
+  ).toHaveLength(1);
 
   await selectSort(page, 'Name', pagePrefix);
   await waitForResults(page);
@@ -286,13 +289,8 @@ test('Search sorting and pagination are consistent', async ({ page, request }) =
   expect(apiPage1.ok()).toBeTruthy();
   const apiPage1Json = (await apiPage1.json()) as { content: Array<{ name: string }>; totalElements: number };
 
-  const uiPage0 = (await page.locator('.MuiCard-root h6').allTextContents())
-    .map((name) => name.trim())
-    .filter((name) => name.startsWith(pagePrefix))
-    .slice(0, 5);
-  expect(uiPage0).toHaveLength(5);
   const apiPage0Names = apiPage0Json.content.map((item) => item.name).slice(0, 5);
-  expect(uiPage0).toEqual(apiPage0Names);
+  await expectResultNamesWithPrefix(page, pagePrefix, apiPage0Names);
 
   if (apiPage0Json.totalElements > 20) {
     const pagination = page.locator('nav[aria-label*="pagination"]').first();
@@ -310,13 +308,9 @@ test('Search sorting and pagination are consistent', async ({ page, request }) =
       return text?.trim() ?? '';
     }, { timeout: 60_000 }).toContain(`${pagePrefix}-021.txt`);
 
-    const uiPage1 = (await page.locator('.MuiCard-root h6').allTextContents())
-      .map((name) => name.trim())
-      .filter((name) => name.startsWith(pagePrefix))
-      .slice(0, 5);
-    expect(uiPage1).toHaveLength(Math.min(5, Math.max(0, pageCount - 20)));
     const apiPage1Names = apiPage1Json.content.map((item) => item.name).slice(0, 5);
-    expect(uiPage1).toEqual(apiPage1Names);
+    expect(apiPage1Names).toHaveLength(Math.min(5, Math.max(0, pageCount - 20)));
+    await expectResultNamesWithPrefix(page, pagePrefix, apiPage1Names);
   }
 
   // Cleanup folder (best-effort)
