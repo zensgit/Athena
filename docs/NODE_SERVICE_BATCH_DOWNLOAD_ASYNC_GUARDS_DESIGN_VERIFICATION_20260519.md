@@ -155,6 +155,44 @@ git diff --check -- . ':!.env'
 
 Result: PASS. nodeService.ts: +151 / -9.
 
+## CI Follow-Up
+
+Done directly on `main` (no cherry-pick; the records/mail integration
+gate is satisfied). The slice landed in two commits — code and
+co-located test were staged together in the `fix` commit per
+`feedback_per_slice_fix_commit_stages_code_and_test`, with `git status`
+re-checked for zero in-scope `??` before commit.
+
+Pushed CI run:
+
+- Run: `26133212492`
+- Head: `044acb6`
+- Result: PASS
+
+Passing jobs:
+
+- `Backend Verify`
+- `Frontend Build & Test`
+- `Phase C Security Verification`
+- `Phase 5 Mocked Regression Gate`
+- `Frontend E2E Core Gate`
+- `Property Encryption Closeout Gate`
+- `Acceptance Smoke (3 admin pages)`
+
+The CI-sensitive checks matched local expectations:
+
+- `Frontend Build & Test` covered lint, type check, build, and the
+  batch-download-async suite plus the relationsRenditions / createFolder /
+  recordProjection regression set (13/13 locally).
+- `Phase 5 Mocked Regression Gate`, `Frontend E2E Core Gate`, and
+  `Acceptance Smoke (3 admin pages)` stayed green — the G2 semantic
+  tightening did not regress any consumer surface (FileBrowser's outer
+  `try`/`catch` + sync ZIP fallback for preflight/start and the
+  AdminDashboard / FileBrowser outer catches for list/summary/cleanup
+  paths absorb the new throws as previously documented).
+- Backend/security/property-encryption gates stayed green because this
+  round did not change backend code or migrations.
+
 ## Follow-Up
 
 - Remaining nodeService sub-slices (one at a time, no big-bang): search/preview
