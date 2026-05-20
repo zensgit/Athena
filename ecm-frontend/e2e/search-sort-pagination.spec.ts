@@ -98,16 +98,21 @@ async function expectResultNamesWithPrefix(
   ).toEqual(expected);
 }
 
+function isMainSearchResponseUrl(url: string, query: string) {
+  try {
+    const parsed = new URL(url);
+    return parsed.pathname.endsWith('/api/v1/search') && parsed.searchParams.get('q') === query;
+  } catch {
+    return false;
+  }
+}
+
 async function submitSearch(page: Page, query: string) {
   const searchInput = page.locator('input[placeholder="Quick search by name..."]');
   await searchInput.fill(query);
-  const encoded = encodeURIComponent(query);
   await Promise.all([
     page.waitForResponse((res) => {
-      const url = res.url();
-      return url.includes('/api/v1/search')
-        && !url.includes('/facets')
-        && url.includes(`q=${encoded}`);
+      return isMainSearchResponseUrl(res.url(), query) && res.ok();
     }),
     page.locator('form').first().evaluate((form) => form.requestSubmit()),
   ]);
@@ -122,7 +127,6 @@ async function selectSort(page: Page, optionLabel: string, query?: string) {
   await listbox.waitFor({ timeout: 10_000 });
   const option = page.getByRole('option', { name: optionLabel }).first();
   if (query) {
-    const encoded = encodeURIComponent(query);
     const expectedSortParams: Record<string, { sortBy: string; sortDirection: string }> = {
       Name: { sortBy: 'name', sortDirection: 'asc' },
       'Modified Date': { sortBy: 'modified', sortDirection: 'desc' },
@@ -131,15 +135,17 @@ async function selectSort(page: Page, optionLabel: string, query?: string) {
     const expectedSort = expectedSortParams[optionLabel];
     await Promise.all([
       page.waitForResponse((res) => {
-        const url = res.url();
-        return url.includes('/api/v1/search')
-          && !url.includes('/facets')
-          && url.includes(`q=${encoded}`)
-          && (!expectedSort || (
-            url.includes(`sortBy=${expectedSort.sortBy}`)
-            && url.includes(`sortDirection=${expectedSort.sortDirection}`)
-          ))
-          && res.ok();
+        try {
+          const url = new URL(res.url());
+          return isMainSearchResponseUrl(res.url(), query)
+            && (!expectedSort || (
+              url.searchParams.get('sortBy') === expectedSort.sortBy
+              && url.searchParams.get('sortDirection') === expectedSort.sortDirection
+            ))
+            && res.ok();
+        } catch {
+          return false;
+        }
       }),
       option.click(),
     ]);
