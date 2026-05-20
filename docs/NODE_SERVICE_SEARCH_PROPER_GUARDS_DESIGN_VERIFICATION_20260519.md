@@ -427,6 +427,54 @@ git diff --check -- . ':!.env'
 Result: PASS. `CI=true npm run build` retained only the existing `fs.F_OK`
 deprecation warning and CRA bundle-size advisory.
 
+## Sixth CI Failure Follow-Up
+
+GitHub Actions run `26149223069` on head `1845747` reached `6/7` green and
+again failed only `Frontend E2E Core Gate`.
+
+The exact-response assertion still failed in `search-sort-pagination.spec.ts`.
+That proved the issue was not only the extra API request used by the test. The
+search results page can receive more than one valid sorted search response for
+the same freshly indexed query, and Elasticsearch can vary tie-break order for
+those documents. The page previously rendered whatever order the latest
+response provided, so the visible result order could drift even though the sort
+control was propagated correctly.
+
+The product fix adds a stable visible-order safeguard in `SearchResults`:
+
+- `Name` sorts visible nodes by name ascending with `id` as a deterministic
+  tie-breaker.
+- `Modified Date` sorts visible nodes by modified timestamp descending with
+  name/id tie-breakers.
+- `Size` sorts visible nodes by size descending with name/id tie-breakers.
+- `Relevance` remains backend ordered.
+
+This keeps backend pagination/search semantics intact while making the current
+page's visible order deterministic and aligned with the selected sort label.
+The E2E assertion now verifies the UI semantics directly: name order is
+ascending, modified timestamps are non-increasing, and the existing size
+descending assertion remains unchanged.
+
+Validation:
+
+```bash
+cd ecm-frontend
+npx playwright test e2e/search-sort-pagination.spec.ts --list
+CI=true npm test -- --runTestsByPath \
+  src/services/nodeService.searchProper.test.ts \
+  src/services/nodeService.recordProjection.test.ts \
+  src/store/slices/nodeSlice.test.ts --watchAll=false
+CI=true npm test -- --passWithNoTests --watchAll=false
+npm run lint
+CI=true npm run build
+cd ..
+git diff --check -- . ':!.env'
+```
+
+Result: PASS. The full frontend unit suite reported `125/125` suites and
+`1227/1227` tests passing. `CI=true npm run build` retained only the existing
+`fs.F_OK` deprecation warning and CRA bundle-size advisory.
+
 ## Follow-Up
 
 - This sub-slice closes the search/preview-async subdomain. Remaining
