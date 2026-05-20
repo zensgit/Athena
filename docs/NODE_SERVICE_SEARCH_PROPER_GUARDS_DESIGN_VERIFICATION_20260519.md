@@ -506,6 +506,34 @@ git diff --check -- . ':!.env'
 
 Result: PASS. The Playwright spec parses and lists one Chromium test.
 
+## Eighth CI Failure Follow-Up
+
+GitHub Actions run `26152320641` on head `5f4c309` reached `6/7` green and
+failed only `Frontend E2E Core Gate`.
+
+The latest failure again stayed in `search-sort-pagination.spec.ts`, but the
+sort assertions had already moved forward. The remaining pagination wait still
+observed zero `pagePrefix` cards after `submitSearch(...)`. The helper was
+waiting for any URL containing `/api/v1/search` and `q=...`, which also matches
+auxiliary endpoints such as `/api/v1/search/spellcheck`. That allowed the test
+to proceed after a helper response instead of the main result-list response.
+
+The E2E helper now parses response URLs and requires the pathname to end with
+`/api/v1/search`. Sort waits also compare `sortBy` and `sortDirection` through
+`URLSearchParams`, not substring matching. This keeps the test synchronized to
+the response that actually drives the card list.
+
+Validation:
+
+```bash
+cd ecm-frontend
+npx playwright test e2e/search-sort-pagination.spec.ts --list
+cd ..
+git diff --check -- . ':!.env'
+```
+
+Result: PASS. The Playwright spec parses and lists one Chromium test.
+
 ## Follow-Up
 
 - This sub-slice closes the search/preview-async subdomain. Remaining
