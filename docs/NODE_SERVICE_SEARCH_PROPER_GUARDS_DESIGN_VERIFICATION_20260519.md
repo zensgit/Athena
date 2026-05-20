@@ -534,6 +534,32 @@ git diff --check -- . ':!.env'
 
 Result: PASS. The Playwright spec parses and lists one Chromium test.
 
+## Ninth CI Failure Follow-Up
+
+GitHub Actions run `26153617461` on head `31f7d6f` reached `6/7` green and
+failed only `Frontend E2E Core Gate`.
+
+The failure remained in the pagination section. The strict main-search matcher
+was correct, but the test still carried the `Size` sort selection from the
+previous assertion into the `pagePrefix` query. The pagination assertion is a
+Name-sort contract, so starting it from a Size-sorted search state was an
+unnecessary source of empty or irrelevant first-page observations.
+
+The pagination section now explicitly resets the UI to `Name` sort before
+submitting the `pagePrefix` query. It then compares UI page 0/page 1 against the
+corresponding Name-sorted API pages using the polling helper.
+
+Validation:
+
+```bash
+cd ecm-frontend
+npx playwright test e2e/search-sort-pagination.spec.ts --list
+cd ..
+git diff --check -- . ':!.env'
+```
+
+Result: PASS. The Playwright spec parses and lists one Chromium test.
+
 ## Follow-Up
 
 - This sub-slice closes the search/preview-async subdomain. Remaining
