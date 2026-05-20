@@ -330,6 +330,36 @@ git diff --check -- . ':!.env'
 Result: PASS. `CI=true npm run build` retained only the existing
 `fs.F_OK` deprecation warning and CRA bundle-size advisory.
 
+## Third CI Failure Follow-Up
+
+GitHub Actions run `26145286232` on head `f1aecfd` again passed six of seven
+jobs and failed only `Frontend E2E Core Gate`.
+
+The failure remained isolated to `search-sort-pagination.spec.ts`, but the
+retry evidence showed the root cause was not a response-shape guard rejection:
+
+- One attempt saw `Modified Date` sorting still read an old first card.
+- Another retry saw `Name` sorting read `B/A/C` instead of `A/B/C` immediately
+  after the exact sorted search response returned.
+
+The E2E helper was already waiting for the exact `sortBy`/`sortDirection`
+response. The remaining race was DOM observation: response completion can
+precede the Redux/React card-list update. The test now polls the rendered card
+order until the expected order is visible, while preserving the strict expected
+order assertions. This keeps the product contract strict without treating a
+single stale DOM read as a sort failure.
+
+Validation for this test-only follow-up:
+
+```bash
+cd ecm-frontend
+npx playwright test e2e/search-sort-pagination.spec.ts --list
+cd ..
+git diff --check -- . ':!.env'
+```
+
+Result: PASS. The Playwright spec parses and lists one Chromium test.
+
 ## Follow-Up
 
 - This sub-slice closes the search/preview-async subdomain. Remaining
