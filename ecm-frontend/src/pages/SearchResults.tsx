@@ -1730,10 +1730,38 @@ const SearchResults: React.FC = () => {
       setFallbackLastRetryAt(null);
     }
   }, [loading, shouldRunFallbackAutoRetry, fallbackAutoRetryCount, fallbackLastRetryAt]);
-  const displayNodes = useMemo(
-    () => (isSimilarMode ? (similarResults || []) : (shouldShowFallback ? fallbackNodes : nodes)),
-    [isSimilarMode, similarResults, shouldShowFallback, fallbackNodes, nodes]
-  );
+  const displayNodes = useMemo(() => {
+    const source = isSimilarMode ? (similarResults || []) : (shouldShowFallback ? fallbackNodes : nodes);
+    if (sortBy === 'relevance') {
+      return source;
+    }
+
+    const byName = (left: Node, right: Node) =>
+      (left.name || '').localeCompare(right.name || '', undefined, { sensitivity: 'base' })
+      || left.id.localeCompare(right.id);
+    const asTime = (value?: string) => {
+      const time = value ? new Date(value).getTime() : 0;
+      return Number.isFinite(time) ? time : 0;
+    };
+    const asSize = (node: Node) => {
+      const raw = node.size ?? node.properties?.fileSize ?? node.properties?.size ?? 0;
+      const size = typeof raw === 'number' ? raw : Number(raw);
+      return Number.isFinite(size) ? size : 0;
+    };
+
+    return source.slice().sort((left, right) => {
+      if (sortBy === 'name') {
+        return byName(left, right);
+      }
+      if (sortBy === 'modified') {
+        return asTime(right.modified) - asTime(left.modified) || byName(left, right);
+      }
+      if (sortBy === 'size') {
+        return asSize(right) - asSize(left) || byName(left, right);
+      }
+      return 0;
+    });
+  }, [isSimilarMode, similarResults, shouldShowFallback, fallbackNodes, nodes, sortBy]);
 
   useEffect(() => {
     if (fallbackAutoRetryTimerRef.current !== null) {

@@ -98,15 +98,6 @@ async function expectResultNamesWithPrefix(
   ).toEqual(expected);
 }
 
-function namesFromSearchPayload(payload: unknown, query: string) {
-  if (!payload || typeof payload !== 'object' || !Array.isArray((payload as { content?: unknown }).content)) {
-    return [];
-  }
-  return (payload as { content: Array<{ name?: unknown }> }).content
-    .map((item) => item.name)
-    .filter((name): name is string => typeof name === 'string' && name.startsWith(query));
-}
-
 async function submitSearch(page: Page, query: string) {
   const searchInput = page.locator('input[placeholder="Quick search by name..."]');
   await searchInput.fill(query);
@@ -138,7 +129,7 @@ async function selectSort(page: Page, optionLabel: string, query?: string) {
       Size: { sortBy: 'size', sortDirection: 'desc' },
     };
     const expectedSort = expectedSortParams[optionLabel];
-    const [response] = await Promise.all([
+    await Promise.all([
       page.waitForResponse((res) => {
         const url = res.url();
         return url.includes('/api/v1/search')
@@ -152,11 +143,9 @@ async function selectSort(page: Page, optionLabel: string, query?: string) {
       }),
       option.click(),
     ]);
-    return namesFromSearchPayload(await response.json(), query);
   } else {
     await option.click();
   }
-  return [];
 }
 
 function parseSize(raw: string) {
@@ -167,6 +156,33 @@ function parseSize(raw: string) {
   const unit = match[2].toUpperCase();
   const multiplier = unit === 'GB' ? 1024 ** 3 : unit === 'MB' ? 1024 ** 2 : unit === 'KB' ? 1024 : 1;
   return Math.round(value * multiplier);
+}
+
+async function resultMetadataWithPrefix(page: Page, prefix: string, count: number) {
+  return (await page.locator('.MuiCard-root').evaluateAll((cards, prefixValue) => {
+    return cards
+      .map((card) => {
+        const name = card.querySelector('h6')?.textContent?.trim() || '';
+        const lines = (card as HTMLElement).innerText.split('\n').map((line) => line.trim()).filter(Boolean);
+        const modified = (lines.find((line) => line.startsWith('Modified:')) || '').replace('Modified:', '').trim();
+        return { name, modified };
+      })
+      .filter((item) => item.name.startsWith(prefixValue as string));
+  }, prefix)).slice(0, count);
+}
+
+async function expectModifiedDescending(page: Page, prefix: string, count: number) {
+  await expect.poll(async () => {
+    const metadata = await resultMetadataWithPrefix(page, prefix, count);
+    if (metadata.length < count) {
+      return false;
+    }
+    const times = metadata.map((item) => Date.parse(item.modified));
+    if (times.some((time) => !Number.isFinite(time))) {
+      return false;
+    }
+    return times.every((time, index) => index === 0 || times[index - 1] >= time);
+  }, { timeout: 60_000 }).toBe(true);
 }
 
 test('Search sorting and pagination are consistent', async ({ page, request }) => {
@@ -220,17 +236,16 @@ test('Search sorting and pagination are consistent', async ({ page, request }) =
   await waitForResults(page);
   await page.getByText(`${sortPrefix}-A.txt`).first().waitFor({ timeout: 60_000 });
 
-  const nameSorted = (await selectSort(page, 'Name', sortPrefix)).slice(0, 3);
+  await selectSort(page, 'Name', sortPrefix);
   await waitForResults(page);
 
-  expect(nameSorted).toHaveLength(3);
+  const nameSorted = sortDocs.map((doc) => doc.name).sort((left, right) => left.localeCompare(right));
   await expectResultNamesWithPrefix(page, sortPrefix, nameSorted);
 
-  const modifiedSorted = (await selectSort(page, 'Modified Date', sortPrefix)).slice(0, 3);
+  await selectSort(page, 'Modified Date', sortPrefix);
   await waitForResults(page);
 
-  expect(modifiedSorted).toHaveLength(3);
-  await expectResultNamesWithPrefix(page, sortPrefix, modifiedSorted);
+  await expectModifiedDescending(page, sortPrefix, 3);
 
   await selectSort(page, 'Size', sortPrefix);
   await waitForResults(page);
