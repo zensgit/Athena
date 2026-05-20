@@ -80,6 +80,24 @@ async function waitForResults(page: Page) {
   await page.waitForSelector('.MuiCard-root', { timeout: 60_000 });
 }
 
+async function resultNamesWithPrefix(page: Page, prefix: string, count: number) {
+  return (await page.locator('.MuiCard-root h6').allTextContents())
+    .map((name) => name.trim())
+    .filter((name) => name.startsWith(prefix))
+    .slice(0, count);
+}
+
+async function expectResultNamesWithPrefix(
+  page: Page,
+  prefix: string,
+  expected: string[],
+) {
+  await expect.poll(
+    () => resultNamesWithPrefix(page, prefix, expected.length),
+    { timeout: 60_000 }
+  ).toEqual(expected);
+}
+
 async function submitSearch(page: Page, query: string) {
   const searchInput = page.locator('input[placeholder="Quick search by name..."]');
   await searchInput.fill(query);
@@ -194,12 +212,7 @@ test('Search sorting and pagination are consistent', async ({ page, request }) =
   await selectSort(page, 'Name', sortPrefix);
   await waitForResults(page);
 
-  const nameSorted = (await page.locator('.MuiCard-root h6').allTextContents())
-    .map((name) => name.trim())
-    .filter((name) => name.startsWith(sortPrefix))
-    .slice(0, 3);
-  expect(nameSorted).toHaveLength(3);
-  expect(nameSorted).toEqual([
+  await expectResultNamesWithPrefix(page, sortPrefix, [
     `${sortPrefix}-A.txt`,
     `${sortPrefix}-B.txt`,
     `${sortPrefix}-C.txt`,
@@ -208,14 +221,11 @@ test('Search sorting and pagination are consistent', async ({ page, request }) =
   await selectSort(page, 'Modified Date', sortPrefix);
   await waitForResults(page);
 
-  const modifiedNames = (await page.locator('.MuiCard-root h6').allTextContents())
-    .map((name) => name.trim())
-    .filter((name) => name.startsWith(sortPrefix))
-    .slice(0, 3);
-  expect(modifiedNames).toHaveLength(3);
-  expect(modifiedNames[0]).toBe(`${sortPrefix}-C.txt`);
-  expect(modifiedNames[1]).toBe(`${sortPrefix}-B.txt`);
-  expect(modifiedNames[2]).toBe(`${sortPrefix}-A.txt`);
+  await expectResultNamesWithPrefix(page, sortPrefix, [
+    `${sortPrefix}-C.txt`,
+    `${sortPrefix}-B.txt`,
+    `${sortPrefix}-A.txt`,
+  ]);
 
   await selectSort(page, 'Size', sortPrefix);
   await waitForResults(page);
