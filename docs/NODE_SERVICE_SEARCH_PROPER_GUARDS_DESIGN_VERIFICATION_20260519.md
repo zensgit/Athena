@@ -618,6 +618,35 @@ git diff --check -- . ':!.env'
 Result: PASS. The Playwright spec parses and lists one Chromium test; frontend
 lint remains clean.
 
+## Twelfth CI Failure Follow-Up
+
+GitHub Actions run `26165932172` on head `5eb135b` reached `6/7` green and
+failed only `Frontend E2E Core Gate`.
+
+The failure still timed out waiting for `.MuiCard-root` after submitting
+`pagePrefix`. The route fixture had not changed behavior, which points to the
+route glob rather than the payload. The test used `**/api/v1/search?**`; other
+search E2E specs in this repo use `**/api/v1/search**` and then perform exact
+URL checks inside the route handler.
+
+The route now uses `**/api/v1/search**` and keeps the exact pathname + query
+guard inside the handler. Auxiliary endpoints such as spellcheck still
+continue through unchanged because the handler only fulfills when
+`pathname.endsWith('/api/v1/search')` and `q === pagePrefix`.
+
+Validation:
+
+```bash
+cd ecm-frontend
+npx playwright test e2e/search-sort-pagination.spec.ts --list
+npm run lint
+cd ..
+git diff --check -- . ':!.env'
+```
+
+Result: PASS. The Playwright spec parses and lists one Chromium test; frontend
+lint remains clean.
+
 ## Follow-Up
 
 - This sub-slice closes the search/preview-async subdomain. Remaining

@@ -291,7 +291,7 @@ test('Search sorting and pagination are consistent', async ({ page, request }) =
   const apiPage1Json = (await apiPage1.json()) as { content: Array<{ name: string }>; totalElements: number };
   expect(apiPage0Json.content.length).toBeGreaterThan(0);
 
-  await page.route('**/api/v1/search?**', async (route) => {
+  await page.route('**/api/v1/search**', async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith('/api/v1/search') && url.searchParams.get('q') === pagePrefix) {
       const requestedPage = Number(url.searchParams.get('page') || '0');
