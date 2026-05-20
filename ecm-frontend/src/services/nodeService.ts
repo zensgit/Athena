@@ -648,7 +648,9 @@ export type PreviewQueueSearchDryRunExportAsyncTaskActiveStatusFilter = 'QUEUED'
 export interface PreviewQueueSearchDryRunExportAsyncTaskCancelActiveResult {
   cancelledCount: number;
   remainingActiveCount: number;
-  status?: string | null;
+  // Backend SearchController record uses `statusFilter` (not `status`) for
+  // this endpoint only; the parallel cleanup result uses `status`.
+  statusFilter?: string | null;
   message?: string | null;
 }
 
@@ -1187,6 +1189,245 @@ const isBatchDownloadAsyncTaskCancelActiveResponse = (
   && isFiniteNumber(value.remainingActiveCount)
   && isStringOrNullish(value.statusFilter)
   && typeof value.message === 'string'
+);
+
+// --- preview-side predicates (sub-slice 3, reuses the bundle above) ---
+// Reason/Skip-count and Task/TaskStatus shapes are structurally identical
+// pairs; each DTO keeps its own named entry point (per-DTO discipline) while
+// sharing an internal shape helper.
+
+// Optional but NOT nullable finite number (`?: number`, no `| null`).
+// isNullishOr(_, isFiniteNumber) is too permissive here because it accepts
+// null; the preview-side DTOs declare these as `?: number` only.
+const isOptionalFiniteNumber = (value: unknown): boolean => (
+  value === undefined || isFiniteNumber(value)
+);
+
+const isReasonOrSkipCountShape = (value: unknown): boolean => (
+  isObject(value)
+  && typeof value.reason === 'string'
+  && isFiniteNumber(value.count)
+);
+
+const isPreviewQueueSearchReasonCount = (
+  value: unknown
+): value is PreviewQueueSearchReasonCount => isReasonOrSkipCountShape(value);
+
+const isPreviewQueueSearchSkipCount = (
+  value: unknown
+): value is PreviewQueueSearchSkipCount => isReasonOrSkipCountShape(value);
+
+const isPreviewQueueSearchBatchItem = (
+  value: unknown
+): value is PreviewQueueSearchBatchItem => (
+  isObject(value)
+  && isStringOrNullish(value.documentId)
+  && typeof value.outcome === 'string'
+  && isStringOrNullish(value.message)
+  && isStringOrNullish(value.previewStatus)
+  && isStringOrNullish(value.previewFailureReason)
+  && isStringOrNullish(value.previewFailureCategory)
+  && isStringOrNullish(value.previewLastUpdated)
+  && isStringOrNullish(value.queueState)
+  && isFiniteNumber(value.attempts)
+  && isStringOrNullish(value.nextAttemptAt)
+);
+
+const isPreviewQueueSearchDryRunItem = (
+  value: unknown
+): value is PreviewQueueSearchDryRunItem => (
+  isObject(value)
+  && isStringOrNullish(value.documentId)
+  && isStringOrNullish(value.name)
+  && isStringOrNullish(value.previewStatus)
+  && isStringOrNullish(value.previewFailureReason)
+  && isStringOrNullish(value.previewFailureCategory)
+  && isStringOrNullish(value.preflightStatus)
+  && isStringOrNullish(value.preflightSkipReason)
+  && isStringOrNullish(value.preflightRoute)
+  && isStringOrNullish(value.preflightPolicyProfile)
+  && isStringOrNullish(value.preflightPipeline)
+);
+
+// Shared inner shape: Task (method 8) and TaskStatus (methods 9/14) carry the
+// same wire fields. Optional fields stay optional — the backend omits
+// error/message/finishedAt/filename in QUEUED/RUNNING states (gate H2).
+const isExportAsyncTaskShape = (value: unknown): boolean => (
+  isObject(value)
+  && typeof value.taskId === 'string'
+  && isStringOrNullish(value.status)
+  && isStringOrNullish(value.error)
+  && isStringOrNullish(value.message)
+  && isStringOrNullish(value.createdAt)
+  && isStringOrNullish(value.finishedAt)
+  && isStringOrNullish(value.filename)
+);
+
+const isPreviewQueueSearchDryRunExportAsyncTask = (
+  value: unknown
+): value is PreviewQueueSearchDryRunExportAsyncTask => isExportAsyncTaskShape(value);
+
+const isPreviewQueueSearchDryRunExportAsyncTaskStatus = (
+  value: unknown
+): value is PreviewQueueSearchDryRunExportAsyncTaskStatus => isExportAsyncTaskShape(value);
+
+const isPreviewQueueStatus = (value: unknown): value is PreviewQueueStatus => (
+  isObject(value)
+  && typeof value.documentId === 'string'
+  && isStringOrNullish(value.previewStatus)
+  && isStringOrNullish(value.previewFailureReason)
+  && isStringOrNullish(value.previewFailureCategory)
+  && isStringOrNullish(value.previewLastUpdated)
+  && typeof value.queued === 'boolean'
+  && isOptionalFiniteNumber(value.attempts)
+  && isStringOrNullish(value.nextAttemptAt)
+  && isStringOrNullish(value.message)
+);
+
+const isPreviewQueueCancelStatus = (
+  value: unknown
+): value is PreviewQueueCancelStatus => (
+  isObject(value)
+  && typeof value.documentId === 'string'
+  && typeof value.queueState === 'string'
+  && typeof value.cancelled === 'boolean'
+  && typeof value.hadActiveTask === 'boolean'
+  && typeof value.running === 'boolean'
+  && isStringOrNullish(value.message)
+);
+
+const isPreviewRepairStatus = (
+  value: unknown
+): value is PreviewRepairStatus => (
+  isObject(value)
+  && typeof value.documentId === 'string'
+  && isStringOrNullish(value.readinessState)
+  && isStringOrNullish(value.readinessReason)
+  && typeof value.invalidated === 'boolean'
+  && isStringOrNullish(value.invalidationReason)
+  && typeof value.queued === 'boolean'
+  && isStringOrNullish(value.queueMessage)
+  && isStringOrNullish(value.previewStatus)
+  && isStringOrNullish(value.previewFailureReason)
+  && isStringOrNullish(value.previewFailureCategory)
+  && isStringOrNullish(value.previewLastUpdated)
+);
+
+const isOcrQueueStatus = (value: unknown): value is OcrQueueStatus => (
+  isObject(value)
+  && typeof value.documentId === 'string'
+  && isStringOrNullish(value.ocrStatus)
+  && typeof value.queued === 'boolean'
+  && isOptionalFiniteNumber(value.attempts)
+  && isStringOrNullish(value.nextAttemptAt)
+  && isStringOrNullish(value.message)
+);
+
+const isPreviewQueueSearchCapabilities = (
+  value: unknown
+): value is PreviewQueueSearchCapabilities => (
+  isObject(value)
+  && isFiniteNumber(value.defaultMaxDocuments)
+  && isFiniteNumber(value.maxMaxDocuments)
+  && isFiniteNumber(value.scanPageSize)
+  && isFiniteNumber(value.scanLimit)
+  && isFiniteNumber(value.defaultWorkerCount)
+  && isFiniteNumber(value.maxWorkerCount)
+);
+
+const isPreviewQueueSearchBatchResult = (
+  value: unknown
+): value is PreviewQueueSearchBatchResult => (
+  isObject(value)
+  && isStringOrNullish(value.query)
+  && isStringOrNullish(value.reason)
+  && isFiniteNumber(value.maxDocuments)
+  && isOptionalFiniteNumber(value.workerCount)
+  && isFiniteNumber(value.totalCandidates)
+  && isFiniteNumber(value.scanned)
+  && isFiniteNumber(value.matched)
+  && isOptionalFiniteNumber(value.scanSkipped)
+  && typeof value.truncated === 'boolean'
+  && Array.isArray(value.reasonBreakdown)
+  && value.reasonBreakdown.every(isPreviewQueueSearchReasonCount)
+  && (value.skipBreakdown === undefined
+    || (Array.isArray(value.skipBreakdown)
+      && value.skipBreakdown.every(isPreviewQueueSearchSkipCount)))
+  && isFiniteNumber(value.requested)
+  && isFiniteNumber(value.deduplicated)
+  && isFiniteNumber(value.queued)
+  && isFiniteNumber(value.skipped)
+  && isFiniteNumber(value.failed)
+  && Array.isArray(value.results)
+  && value.results.every(isPreviewQueueSearchBatchItem)
+);
+
+const isPreviewQueueSearchDryRunResult = (
+  value: unknown
+): value is PreviewQueueSearchDryRunResult => (
+  isObject(value)
+  && isStringOrNullish(value.query)
+  && isStringOrNullish(value.reason)
+  && isFiniteNumber(value.maxDocuments)
+  && isFiniteNumber(value.totalCandidates)
+  && isFiniteNumber(value.scanned)
+  && isFiniteNumber(value.matched)
+  && isOptionalFiniteNumber(value.scanSkipped)
+  && typeof value.truncated === 'boolean'
+  && Array.isArray(value.reasonBreakdown)
+  && value.reasonBreakdown.every(isPreviewQueueSearchReasonCount)
+  && (value.skipBreakdown === undefined
+    || (Array.isArray(value.skipBreakdown)
+      && value.skipBreakdown.every(isPreviewQueueSearchSkipCount)))
+  && isOptionalFiniteNumber(value.workerCount)
+  && isFiniteNumber(value.sampleCount)
+  && Array.isArray(value.samples)
+  && value.samples.every(isPreviewQueueSearchDryRunItem)
+);
+
+const isPreviewQueueSearchDryRunExportAsyncTaskList = (
+  value: unknown
+): value is PreviewQueueSearchDryRunExportAsyncTaskList => (
+  isObject(value)
+  && isFiniteNumber(value.count)
+  && Array.isArray(value.items)
+  && value.items.every(isPreviewQueueSearchDryRunExportAsyncTaskStatus)
+);
+
+const isPreviewQueueSearchDryRunExportAsyncTaskSummary = (
+  value: unknown
+): value is PreviewQueueSearchDryRunExportAsyncTaskSummary => (
+  isObject(value)
+  && isFiniteNumber(value.total)
+  && isFiniteNumber(value.queued)
+  && isFiniteNumber(value.running)
+  && isFiniteNumber(value.completed)
+  && isFiniteNumber(value.cancelled)
+  && isFiniteNumber(value.failed)
+  && isFiniteNumber(value.terminal)
+  && isFiniteNumber(value.active)
+);
+
+// Backend `status` here (cleanup endpoint) is intentional and differs from
+// the cancel-active record's `statusFilter` — see SearchController:849-861.
+const isPreviewQueueSearchDryRunExportAsyncTaskCleanupResult = (
+  value: unknown
+): value is PreviewQueueSearchDryRunExportAsyncTaskCleanupResult => (
+  isObject(value)
+  && isFiniteNumber(value.deletedCount)
+  && isFiniteNumber(value.remainingCount)
+  && isStringOrNullish(value.status)
+  && isStringOrNullish(value.message)
+);
+
+const isPreviewQueueSearchDryRunExportAsyncTaskCancelActiveResult = (
+  value: unknown
+): value is PreviewQueueSearchDryRunExportAsyncTaskCancelActiveResult => (
+  isObject(value)
+  && isFiniteNumber(value.cancelledCount)
+  && isFiniteNumber(value.remainingActiveCount)
+  && isStringOrNullish(value.statusFilter)
+  && isStringOrNullish(value.message)
 );
 
 class NodeService {
@@ -2185,13 +2426,15 @@ class NodeService {
   }
 
   async queuePreview(nodeId: string, force = false): Promise<PreviewQueueStatus> {
-    return api.post<PreviewQueueStatus>(`/documents/${nodeId}/preview/queue`, null, {
+    const result = await api.post<unknown>(`/documents/${nodeId}/preview/queue`, null, {
       params: { force },
     });
+    return assertResponse(result, isPreviewQueueStatus);
   }
 
   async cancelQueuedPreview(nodeId: string): Promise<PreviewQueueCancelStatus> {
-    return api.post<PreviewQueueCancelStatus>(`/documents/${nodeId}/preview/queue/cancel`);
+    const result = await api.post<unknown>(`/documents/${nodeId}/preview/queue/cancel`);
+    return assertResponse(result, isPreviewQueueCancelStatus);
   }
 
   async repairPreview(
@@ -2202,23 +2445,26 @@ class NodeService {
       forceQueue?: boolean;
     }
   ): Promise<PreviewRepairStatus> {
-    return api.post<PreviewRepairStatus>(`/documents/${nodeId}/preview/repair`, null, {
+    const result = await api.post<unknown>(`/documents/${nodeId}/preview/repair`, null, {
       params: {
         forceInvalidate: options?.forceInvalidate ?? true,
         requeue: options?.requeue ?? true,
         forceQueue: options?.forceQueue ?? true,
       },
     });
+    return assertResponse(result, isPreviewRepairStatus);
   }
 
   async queueOcr(nodeId: string, force = false): Promise<OcrQueueStatus> {
-    return api.post<OcrQueueStatus>(`/documents/${nodeId}/ocr/queue`, null, {
+    const result = await api.post<unknown>(`/documents/${nodeId}/ocr/queue`, null, {
       params: { force },
     });
+    return assertResponse(result, isOcrQueueStatus);
   }
 
   async getPreviewQueueBySearchCapabilities(): Promise<PreviewQueueSearchCapabilities> {
-    return api.get<PreviewQueueSearchCapabilities>('/search/preview/queue-failed/capabilities');
+    const result = await api.get<unknown>('/search/preview/queue-failed/capabilities');
+    return assertResponse(result, isPreviewQueueSearchCapabilities);
   }
 
   async queueFailedPreviewsBySearch(payload: {
@@ -2231,7 +2477,8 @@ class NodeService {
     force?: boolean;
     workerCount?: number;
   }): Promise<PreviewQueueSearchBatchResult> {
-    return api.post<PreviewQueueSearchBatchResult>('/search/preview/queue-failed', payload);
+    const result = await api.post<unknown>('/search/preview/queue-failed', payload);
+    return assertResponse(result, isPreviewQueueSearchBatchResult);
   }
 
   async dryRunFailedPreviewsBySearch(payload: {
@@ -2244,7 +2491,8 @@ class NodeService {
     force?: boolean;
     workerCount?: number;
   }): Promise<PreviewQueueSearchDryRunResult> {
-    return api.post<PreviewQueueSearchDryRunResult>('/search/preview/queue-failed/dry-run', payload);
+    const result = await api.post<unknown>('/search/preview/queue-failed/dry-run', payload);
+    return assertResponse(result, isPreviewQueueSearchDryRunResult);
   }
 
   async exportDryRunFailedPreviewsCsvBySearch(payload: {
@@ -2270,20 +2518,22 @@ class NodeService {
     maxDocuments?: number;
     workerCount?: number;
   }): Promise<PreviewQueueSearchDryRunExportAsyncTask> {
-    return api.post<PreviewQueueSearchDryRunExportAsyncTask>('/search/preview/queue-failed/dry-run/export-async', payload);
+    const result = await api.post<unknown>('/search/preview/queue-failed/dry-run/export-async', payload);
+    return assertResponse(result, isPreviewQueueSearchDryRunExportAsyncTask);
   }
 
   async getDryRunFailedPreviewsCsvExportAsyncBySearchTask(taskId: string): Promise<PreviewQueueSearchDryRunExportAsyncTaskStatus> {
-    return api.get<PreviewQueueSearchDryRunExportAsyncTaskStatus>(
+    const result = await api.get<unknown>(
       `/search/preview/queue-failed/dry-run/export-async/${encodeURIComponent(taskId)}`
     );
+    return assertResponse(result, isPreviewQueueSearchDryRunExportAsyncTaskStatus);
   }
 
   async listDryRunFailedPreviewsCsvExportAsyncBySearchTasks(
     limit = 20,
     status?: string
   ): Promise<PreviewQueueSearchDryRunExportAsyncTaskList> {
-    return api.get<PreviewQueueSearchDryRunExportAsyncTaskList>(
+    const result = await api.get<unknown>(
       '/search/preview/queue-failed/dry-run/export-async',
       {
         params: {
@@ -2292,47 +2542,52 @@ class NodeService {
         },
       }
     );
+    return assertResponse(result, isPreviewQueueSearchDryRunExportAsyncTaskList);
   }
 
   async getDryRunFailedPreviewsCsvExportAsyncBySearchTasksSummary(
     status?: string
   ): Promise<PreviewQueueSearchDryRunExportAsyncTaskSummary> {
-    return api.get<PreviewQueueSearchDryRunExportAsyncTaskSummary>(
+    const result = await api.get<unknown>(
       '/search/preview/queue-failed/dry-run/export-async/summary',
       {
         params: status ? { status } : undefined,
       }
     );
+    return assertResponse(result, isPreviewQueueSearchDryRunExportAsyncTaskSummary);
   }
 
   async cleanupDryRunFailedPreviewsCsvExportAsyncBySearchTasks(
     status?: string
   ): Promise<PreviewQueueSearchDryRunExportAsyncTaskCleanupResult> {
-    return api.post<PreviewQueueSearchDryRunExportAsyncTaskCleanupResult>(
+    const result = await api.post<unknown>(
       '/search/preview/queue-failed/dry-run/export-async/cleanup',
       null,
       {
         params: status ? { status } : undefined,
       }
     );
+    return assertResponse(result, isPreviewQueueSearchDryRunExportAsyncTaskCleanupResult);
   }
 
   async cancelActiveDryRunFailedPreviewsCsvExportAsyncBySearchTasks(
     status?: PreviewQueueSearchDryRunExportAsyncTaskActiveStatusFilter
   ): Promise<PreviewQueueSearchDryRunExportAsyncTaskCancelActiveResult> {
-    return api.post<PreviewQueueSearchDryRunExportAsyncTaskCancelActiveResult>(
+    const result = await api.post<unknown>(
       '/search/preview/queue-failed/dry-run/export-async/cancel-active',
       {},
       {
         params: status ? { status } : undefined,
       }
     );
+    return assertResponse(result, isPreviewQueueSearchDryRunExportAsyncTaskCancelActiveResult);
   }
 
   async cancelDryRunFailedPreviewsCsvExportAsyncBySearchTask(taskId: string): Promise<PreviewQueueSearchDryRunExportAsyncTaskStatus> {
-    return api.post<PreviewQueueSearchDryRunExportAsyncTaskStatus>(
+    const result = await api.post<unknown>(
       `/search/preview/queue-failed/dry-run/export-async/${encodeURIComponent(taskId)}/cancel`
     );
+    return assertResponse(result, isPreviewQueueSearchDryRunExportAsyncTaskStatus);
   }
 
   async downloadDryRunFailedPreviewsCsvExportAsyncBySearch(taskId: string): Promise<Blob> {
