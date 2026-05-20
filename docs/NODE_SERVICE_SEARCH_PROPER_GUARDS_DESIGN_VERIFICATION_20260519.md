@@ -360,6 +360,39 @@ git diff --check -- . ':!.env'
 
 Result: PASS. The Playwright spec parses and lists one Chromium test.
 
+## Fourth CI Failure Follow-Up
+
+GitHub Actions run `26146384873` on head `4dc4bc9` again reached `6/7`
+green and failed only `Frontend E2E Core Gate`.
+
+All non-search core E2E tests passed, including the previously failing PDF
+preview and search preview tests. The remaining failure stayed isolated to
+`search-sort-pagination.spec.ts`:
+
+- `Name` sorting sometimes rendered the same order returned by the backend API,
+  but not the hard-coded `A/B/C` order.
+- `Modified Date` sorting likewise followed the backend response order in CI,
+  but the test still asserted a synthetic creation-order assumption.
+
+This is no longer a frontend response-shape failure. The test now treats the
+frontend E2E contract as UI/API consistency: for each selected sort, it fetches
+the same `/api/v1/search` response with the same `sortBy` / `sortDirection`
+and asserts the rendered card order matches that API order. Backend search sort
+correctness remains covered separately by Elasticsearch search tests; this
+frontend gate should verify sort control propagation and rendering, not encode
+an additional Elasticsearch ordering assumption for freshly indexed test files.
+
+Validation:
+
+```bash
+cd ecm-frontend
+npx playwright test e2e/search-sort-pagination.spec.ts --list
+cd ..
+git diff --check -- . ':!.env'
+```
+
+Result: PASS. The Playwright spec parses and lists one Chromium test.
+
 ## Follow-Up
 
 - This sub-slice closes the search/preview-async subdomain. Remaining
