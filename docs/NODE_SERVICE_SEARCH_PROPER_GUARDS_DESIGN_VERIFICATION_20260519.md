@@ -393,6 +393,40 @@ git diff --check -- . ':!.env'
 
 Result: PASS. The Playwright spec parses and lists one Chromium test.
 
+## Fifth CI Failure Follow-Up
+
+GitHub Actions run `26147766041` on head `a44c914` reached `6/7` green and
+failed only `Frontend E2E Core Gate`.
+
+The failed core E2E log again isolated the issue to
+`search-sort-pagination.spec.ts`; all other core E2E specs passed. The prior
+follow-up made the test compare UI order against a fresh API request with the
+same sort parameters, but CI showed that this was still too loose for newly
+indexed search documents: the second API request can observe a different
+Elasticsearch tie-break order than the exact search response that updated the
+UI.
+
+The test now binds the assertion to the same `/api/v1/search` response captured
+by `selectSort(...)`. That response is the one that triggers the UI update, so
+the frontend contract remains strict: after choosing a sort option, the rendered
+cards must converge to the order returned by the exact sorted response consumed
+by the page. The test no longer issues a separate API request for the expected
+sort order.
+
+Validation:
+
+```bash
+cd ecm-frontend
+npx playwright test e2e/search-sort-pagination.spec.ts --list
+npm run lint
+CI=true npm run build
+cd ..
+git diff --check -- . ':!.env'
+```
+
+Result: PASS. `CI=true npm run build` retained only the existing `fs.F_OK`
+deprecation warning and CRA bundle-size advisory.
+
 ## Follow-Up
 
 - This sub-slice closes the search/preview-async subdomain. Remaining
