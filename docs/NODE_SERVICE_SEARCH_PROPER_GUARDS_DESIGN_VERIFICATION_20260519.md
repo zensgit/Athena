@@ -181,6 +181,77 @@ git diff --check -- . ':!.env'
 
 Result: PASS. nodeService.ts: +221 / -82.
 
+## CI Failure Follow-Up
+
+GitHub Actions run `26138987916` on head `54ccdae` did not close out:
+
+- `Frontend Build & Test`: success
+- `Backend Verify`: success
+- `Phase C Security Verification`: success
+- `Property Encryption Closeout Gate`: success
+- `Phase 5 Mocked Regression Gate`: success
+- `Acceptance Smoke (3 admin pages)`: success
+- `Frontend E2E Core Gate`: failure
+
+The failing gate was concentrated around search-backed result cards not
+appearing after E2E uploads:
+
+- `pdf-preview.spec.ts:123` — PDF upload mislabeled as octet-stream still renders client preview
+- `pdf-preview.spec.ts:172` — PDF preview shows dialog and controls
+- `pdf-preview.spec.ts:230` — PDF preview falls back to server render when client PDF fails
+- `search-sort-pagination.spec.ts:133` — Search sorting and pagination are consistent
+- `search-view.spec.ts:140` — Search results view opens preview for documents
+
+The first failure repeatedly timed out waiting for a `.MuiCard-root` matching
+the just-uploaded filename. Because the same run had already passed frontend
+unit/build checks and the failures were all search-result visibility failures,
+the forward fix tightened the intended H3 tolerance boundary: search hits still
+require stable identity (`id` and `name`) and reject wrong typed `path`, but
+mapper-read fields that can be sparse/null in Elasticsearch-derived hits no
+longer reject the whole response page.
+
+The forward fix specifically accepts:
+
+- `path: null` / omitted, while still rejecting non-string non-null path values
+- `createdDate` / `lastModifiedDate` as string, nullish, or numeric array
+- `fileSize` / `score` as number, null, or omitted
+
+Added regression coverage:
+
+```bash
+cd ecm-frontend
+CI=true npm test -- --runTestsByPath \
+  src/services/nodeService.searchProper.test.ts \
+  src/services/nodeService.recordProjection.test.ts --watchAll=false
+```
+
+Result:
+
+```text
+Test Suites: 2 passed, 2 total
+Tests:       20 passed, 20 total
+```
+
+Full search-proper regression set after the fix:
+
+```bash
+cd ecm-frontend
+CI=true npm test -- --runTestsByPath \
+  src/services/nodeService.searchProper.test.ts \
+  src/services/nodeService.previewSide.test.ts \
+  src/services/nodeService.batchDownloadAsync.test.ts \
+  src/services/nodeService.relationsRenditions.test.ts \
+  src/services/nodeService.createFolder.test.ts \
+  src/services/nodeService.recordProjection.test.ts --watchAll=false
+```
+
+Result:
+
+```text
+Test Suites: 6 passed, 6 total
+Tests:       35 passed, 35 total
+```
+
 ## Follow-Up
 
 - This sub-slice closes the search/preview-async subdomain. Remaining
