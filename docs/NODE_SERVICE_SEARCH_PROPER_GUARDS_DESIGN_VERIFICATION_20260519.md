@@ -252,6 +252,84 @@ Test Suites: 6 passed, 6 total
 Tests:       35 passed, 35 total
 ```
 
+## Second CI Failure Follow-Up
+
+GitHub Actions run `26143990511` on head `8da6ea7` reduced the E2E failure
+surface from five search-result visibility failures to one sorting assertion:
+
+- `Frontend Build & Test`: success
+- `Backend Verify`: success
+- `Phase C Security Verification`: success
+- `Property Encryption Closeout Gate`: success
+- `Phase 5 Mocked Regression Gate`: success
+- `Acceptance Smoke (3 admin pages)`: success
+- `Frontend E2E Core Gate`: failure
+
+The remaining failure was:
+
+- `search-sort-pagination.spec.ts:206` — `Modified Date` sorting expected
+  `C/B/A` but still observed `A` first.
+
+Two follow-up fixes were applied:
+
+- The E2E sort helper now waits for the exact search response matching the
+  selected sort field and direction, for example
+  `sortBy=modified&sortDirection=desc`, instead of accepting any request with
+  `sortBy=`.
+- The search mapper now normalizes Jackson `LocalDateTime` arrays to ISO
+  strings before assigning `Node.created` / `Node.modified`, and normalizes
+  nullable search strings such as `path`, `creator`, and `modifier` to the
+  frontend `Node` contract.
+
+Verification after this follow-up:
+
+```bash
+cd ecm-frontend
+CI=true npm test -- --runTestsByPath \
+  src/services/nodeService.searchProper.test.ts \
+  src/services/nodeService.recordProjection.test.ts --watchAll=false
+```
+
+Result:
+
+```text
+Test Suites: 2 passed, 2 total
+Tests:       20 passed, 20 total
+```
+
+Full search-proper regression set:
+
+```bash
+cd ecm-frontend
+CI=true npm test -- --runTestsByPath \
+  src/services/nodeService.searchProper.test.ts \
+  src/services/nodeService.previewSide.test.ts \
+  src/services/nodeService.batchDownloadAsync.test.ts \
+  src/services/nodeService.relationsRenditions.test.ts \
+  src/services/nodeService.createFolder.test.ts \
+  src/services/nodeService.recordProjection.test.ts --watchAll=false
+```
+
+Result:
+
+```text
+Test Suites: 6 passed, 6 total
+Tests:       35 passed, 35 total
+```
+
+Additional local checks:
+
+```bash
+cd ecm-frontend
+npm run lint
+CI=true npm run build
+cd ..
+git diff --check -- . ':!.env'
+```
+
+Result: PASS. `CI=true npm run build` retained only the existing
+`fs.F_OK` deprecation warning and CRA bundle-size advisory.
+
 ## Follow-Up
 
 - This sub-slice closes the search/preview-async subdomain. Remaining
