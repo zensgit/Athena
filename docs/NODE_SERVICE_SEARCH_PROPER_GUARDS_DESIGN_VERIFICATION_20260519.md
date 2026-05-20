@@ -682,6 +682,23 @@ git diff --check -- . ':!.env'
 Result: PASS. The Playwright spec parses and lists one Chromium test; frontend
 lint remains clean.
 
+## CI Closeout
+
+GitHub Actions run `26169033978` on head `488d830` completed successfully with
+all 7 jobs green:
+
+- Backend Verify
+- Frontend Build & Test
+- Phase C Security Verification
+- Phase 5 Mocked Regression Gate
+- Frontend E2E Core Gate
+- Property Encryption Closeout Gate
+- Acceptance Smoke (3 admin pages)
+
+The prior `search-sort-pagination.spec.ts` failure point was cleared: the E2E
+job advanced through `Run core E2E gate`, completed the preview/search
+regression gate, and finished with `success`.
+
 ## Follow-Up
 
 - This sub-slice closes the search/preview-async subdomain. Remaining
