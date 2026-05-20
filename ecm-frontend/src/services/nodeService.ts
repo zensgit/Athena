@@ -185,13 +185,6 @@ interface AdvancedSearchPivotStatsMatrixRowApi {
   mimeTypeCounts?: AdvancedSearchPivotStatsMatrixCellApi[] | null;
 }
 
-export interface AdvancedSearchPivotStatsRequest {
-  query?: string;
-  filters?: Record<string, any>;
-  rowField: string;
-  columnField: string;
-}
-
 export interface AdvancedSearchPivotStats {
   query: string | null;
   normalizedQuery: string | null;
@@ -1428,6 +1421,203 @@ const isPreviewQueueSearchDryRunExportAsyncTaskCancelActiveResult = (
   && isStringOrNullish(value.message)
 );
 
+// --- search proper (Group A) predicates ---
+// Per H2: a single shared envelope predicate validates SearchQueryEnvelopeResponse
+// for all callers (searchNodes POST path, searchNodesEnvelope); all five sub-
+// fields are optional+nullable and validated only when present.
+// Per H3: search-result items only require id/name/path; other mapper-read
+// fields are tolerated as optional/nullish so partial/historical responses
+// still pass.
+
+const isFacetValueCount = (
+  value: unknown
+): value is { value: string; count: number } => (
+  isObject(value)
+  && typeof value.value === 'string'
+  && isFiniteNumber(value.count)
+);
+
+const isRecordOfFacetValueCounts = (
+  value: unknown
+): value is Record<string, { value: string; count: number }[]> => {
+  if (!isObject(value)) return false;
+  return Object.values(value).every(
+    (entry) => Array.isArray(entry) && entry.every(isFacetValueCount)
+  );
+};
+
+const isSearchResultItem = (value: unknown): value is Record<string, unknown> => {
+  if (!isObject(value)) return false;
+  if (typeof value.id !== 'string') return false;
+  if (typeof value.name !== 'string') return false;
+  if (typeof value.path !== 'string') return false;
+  // mapper-read optional fields (gate H3 — tolerate missing/nullish)
+  if (!isStringOrNullish(value.createdDate)) return false;
+  if (!isStringOrNullish(value.createdBy)) return false;
+  if (!isStringOrNullish(value.lastModifiedDate)) return false;
+  if (!isStringOrNullish(value.lastModifiedBy)) return false;
+  if (!isStringOrNullish(value.parentId)) return false;
+  if (!isStringOrNullish(value.description)) return false;
+  if (!isStringOrNullish(value.nodeType)) return false;
+  if (!isStringOrNullish(value.mimeType)) return false;
+  if (!isStringOrNullish(value.currentVersionLabel)) return false;
+  if (!isStringOrNullish(value.previewStatus)) return false;
+  if (!isStringOrNullish(value.previewFailureReason)) return false;
+  if (!isStringOrNullish(value.previewFailureCategory)) return false;
+  if (!isStringOrNullish(value.correspondent)) return false;
+  if (!isStringOrNullish(value.highlightSummary)) return false;
+  if (!isStringOrNullish(value.declaredBy)) return false;
+  if (!isStringOrNullish(value.declaredAt)) return false;
+  if (!isStringOrNullish(value.declaredVersionLabel)) return false;
+  if (!isStringOrNullish(value.declarationComment)) return false;
+  if (!isStringOrNullish(value.recordCategoryId)) return false;
+  if (!isStringOrNullish(value.recordCategoryName)) return false;
+  if (!isStringOrNullish(value.recordCategoryPath)) return false;
+  if (!isOptionalFiniteNumber(value.fileSize)) return false;
+  if (!isOptionalFiniteNumber(value.score)) return false;
+  if (!(value.record === undefined || value.record === null || typeof value.record === 'boolean')) return false;
+  if (!(value.tags === undefined || value.tags === null || isStringArray(value.tags))) return false;
+  if (!(value.categories === undefined || value.categories === null || isStringArray(value.categories))) return false;
+  if (!(value.matchFields === undefined || value.matchFields === null || isStringArray(value.matchFields))) return false;
+  if (value.highlights !== undefined && value.highlights !== null) {
+    if (!isObject(value.highlights)) return false;
+    if (!Object.values(value.highlights).every(isStringArray)) return false;
+  }
+  return true;
+};
+
+const isSearchPagePayload = (value: unknown): value is SearchPagePayload => (
+  isObject(value)
+  && Array.isArray(value.content)
+  && value.content.every(isSearchResultItem)
+  && isOptionalFiniteNumber(value.totalElements)
+  && isOptionalFiniteNumber(value.totalPages)
+  && isOptionalFiniteNumber(value.number)
+  && isOptionalFiniteNumber(value.size)
+);
+
+const isAdvancedSearchFacetStat = (
+  value: unknown
+): value is AdvancedSearchFacetStat => (
+  isObject(value)
+  && typeof value.value === 'string'
+  && isFiniteNumber(value.count)
+);
+
+const isAdvancedSearchStats = (
+  value: unknown
+): value is AdvancedSearchStats => (
+  isObject(value)
+  && isStringOrNullish(value.query)
+  && isStringOrNullish(value.normalizedQuery)
+  && typeof value.hasFilters === 'boolean'
+  && isFiniteNumber(value.totalHits)
+  && isFiniteNumber(value.facetFieldCount)
+  && Array.isArray(value.previewStatusStats)
+  && value.previewStatusStats.every(isAdvancedSearchFacetStat)
+  && Array.isArray(value.mimeTypeStats)
+  && value.mimeTypeStats.every(isAdvancedSearchFacetStat)
+  && Array.isArray(value.createdByStats)
+  && value.createdByStats.every(isAdvancedSearchFacetStat)
+  && Array.isArray(value.fileSizeRangeStats)
+  && value.fileSizeRangeStats.every(isAdvancedSearchFacetStat)
+  && Array.isArray(value.createdDateRangeStats)
+  && value.createdDateRangeStats.every(isAdvancedSearchFacetStat)
+  && isStringOrNullish(value.generatedAt)
+);
+
+const isAdvancedSearchPivotStatsMatrixCellApi = (value: unknown): boolean => (
+  isObject(value)
+  && isStringOrNullish(value.mimeType)
+  && (value.count === undefined || value.count === null || isFiniteNumber(value.count))
+);
+
+const isAdvancedSearchPivotStatsMatrixRowApi = (value: unknown): boolean => {
+  if (!isObject(value)) return false;
+  if (!isStringOrNullish(value.previewStatus)) return false;
+  if (value.mimeTypeCounts !== undefined && value.mimeTypeCounts !== null) {
+    if (!Array.isArray(value.mimeTypeCounts)) return false;
+    if (!value.mimeTypeCounts.every(isAdvancedSearchPivotStatsMatrixCellApi)) return false;
+  }
+  return true;
+};
+
+const isAdvancedSearchPivotStatsCell = (
+  value: unknown
+): value is AdvancedSearchPivotStatsCell => (
+  isObject(value)
+  && typeof value.rowValue === 'string'
+  && typeof value.columnValue === 'string'
+  && isFiniteNumber(value.count)
+);
+
+const isAdvancedSearchPivotStatsApiResponse = (value: unknown): boolean => {
+  if (!isObject(value)) return false;
+  if (!isStringOrNullish(value.query)) return false;
+  if (!isStringOrNullish(value.normalizedQuery)) return false;
+  if (!(value.hasFilters === undefined || typeof value.hasFilters === 'boolean')) return false;
+  if (!isOptionalFiniteNumber(value.totalHits)) return false;
+  if (!isStringOrNullish(value.rowField)) return false;
+  if (!isStringOrNullish(value.columnField)) return false;
+  if (value.cells !== undefined && value.cells !== null) {
+    if (!Array.isArray(value.cells)) return false;
+    if (!value.cells.every(isAdvancedSearchPivotStatsCell)) return false;
+  }
+  if (value.matrix !== undefined && value.matrix !== null) {
+    if (!Array.isArray(value.matrix)) return false;
+    if (!value.matrix.every(isAdvancedSearchPivotStatsMatrixRowApi)) return false;
+  }
+  if (!isStringOrNullish(value.generatedAt)) return false;
+  return true;
+};
+
+const isSearchQueryEnvelopeResponse = (
+  value: unknown
+): value is SearchQueryEnvelopeResponse => {
+  if (!isObject(value)) return false;
+  if (value.results !== undefined && value.results !== null && !isSearchPagePayload(value.results)) return false;
+  if (value.facets !== undefined && value.facets !== null && !isRecordOfFacetValueCounts(value.facets)) return false;
+  if (value.suggestions !== undefined && value.suggestions !== null && !isStringArray(value.suggestions)) return false;
+  if (value.stats !== undefined && value.stats !== null && !isAdvancedSearchStats(value.stats)) return false;
+  if (value.pivot !== undefined && value.pivot !== null && !isAdvancedSearchPivotStatsApiResponse(value.pivot)) return false;
+  return true;
+};
+
+const isSearchDiagnostics = (value: unknown): value is SearchDiagnostics => (
+  isObject(value)
+  && isStringOrNullish(value.username)
+  && typeof value.admin === 'boolean'
+  && typeof value.readFilterApplied === 'boolean'
+  && isFiniteNumber(value.authorityCount)
+  && isStringArray(value.authoritySample)
+  && isStringOrNullish(value.note)
+  && isStringOrNullish(value.generatedAt)
+);
+
+const isSearchIndexStats = (value: unknown): value is SearchIndexStats => (
+  isObject(value)
+  && typeof value.indexName === 'string'
+  && isOptionalFiniteNumber(value.documentCount)
+  && typeof value.searchEnabled === 'boolean'
+  && (value.error === undefined || typeof value.error === 'string')
+);
+
+const isSearchRebuildStatus = (value: unknown): value is SearchRebuildStatus => (
+  isObject(value)
+  && typeof value.inProgress === 'boolean'
+  && isFiniteNumber(value.documentsIndexed)
+);
+
+const isSuggestedFilterItem = (
+  value: unknown
+): value is { field: string; label: string; value: string; count?: number } => (
+  isObject(value)
+  && typeof value.field === 'string'
+  && typeof value.label === 'string'
+  && typeof value.value === 'string'
+  && isOptionalFiniteNumber(value.count)
+);
+
 class NodeService {
   private buildSearchFilters(criteria: SearchCriteria): Record<string, any> {
     const filters: Record<string, any> = {};
@@ -2014,7 +2204,7 @@ class NodeService {
     // Fast path: for simple name-only searches, use the dedicated full-text endpoint.
     // It handles punctuation (e.g. hyphens) more reliably than the Criteria-based advanced endpoint.
     if (canUseFullTextEndpoint) {
-      const response = await api.get<SearchPagePayload>('/search', {
+      const rawResponse = await api.get<unknown>('/search', {
           params: {
             q: query,
             page,
@@ -2026,12 +2216,13 @@ class NodeService {
             previewStatus: criteria.previewStatuses?.length ? criteria.previewStatuses.join(',') : undefined,
           },
         });
+      const response = assertResponse(rawResponse, isSearchPagePayload);
 
       const nodes = (response.content || []).map((item) => this.mapSearchItemToNode(item));
       return { nodes, total: response.totalElements ?? nodes.length };
     }
 
-    const response = await api.post<SearchQueryEnvelopeResponse>('/search/query', {
+    const rawResponse = await api.post<unknown>('/search/query', {
           query,
           filters,
           sortBy: criteria.sortBy,
@@ -2039,6 +2230,7 @@ class NodeService {
           pageable: { page, size },
           include: ['results', 'facets', ...(query ? ['suggestions'] : [])],
         });
+    const response = assertResponse(rawResponse, isSearchQueryEnvelopeResponse);
 
     const resultPage = response.results || { content: [] };
     const nodes = (resultPage.content || []).map((item) => this.mapSearchItemToNode(item));
@@ -2085,7 +2277,10 @@ class NodeService {
       payload.facets = ['previewStatus', 'mimeType', 'createdBy', 'fileSizeRange', 'createdDateRange'];
     }
 
-    const response = await api.post<SearchQueryEnvelopeResponse>('/search/query', payload);
+    const response = assertResponse(
+      await api.post<unknown>('/search/query', payload),
+      isSearchQueryEnvelopeResponse
+    );
     const resultPage = response.results || { content: [] };
     const nodes = (resultPage.content || []).map((item) => this.mapSearchItemToNode(item));
     const total = resultPage.totalElements ?? nodes.length;
@@ -2122,70 +2317,6 @@ class NodeService {
             generatedAt: pivotResponse.generatedAt ?? null,
           }
         : null,
-    };
-  }
-
-  async getAdvancedSearchStats(criteria: SearchCriteria): Promise<AdvancedSearchStats> {
-    const query = (criteria.name || '').trim();
-    const filters = this.buildSearchFilters(criteria);
-    const response = await api.post<SearchQueryEnvelopeResponse>('/search/query', {
-      query,
-      filters,
-      include: ['stats'],
-      facets: ['previewStatus', 'mimeType', 'createdBy', 'fileSizeRange', 'createdDateRange'],
-    });
-    return response.stats || {
-      query: query || null,
-      normalizedQuery: query || null,
-      hasFilters: false,
-      totalHits: 0,
-      facetFieldCount: 0,
-      previewStatusStats: [],
-      mimeTypeStats: [],
-      createdByStats: [],
-      fileSizeRangeStats: [],
-      createdDateRangeStats: [],
-      generatedAt: null,
-    };
-  }
-
-  async getAdvancedSearchPivotStats(criteria: SearchCriteria): Promise<AdvancedSearchPivotStats> {
-    const query = (criteria.name || '').trim();
-    const filters = this.buildSearchFilters(criteria);
-    const payload: AdvancedSearchPivotStatsRequest = {
-      query,
-      filters,
-      rowField: 'previewStatus',
-      columnField: 'mimeType',
-    };
-    const envelope = await api.post<SearchQueryEnvelopeResponse>('/search/query', {
-      query,
-      filters,
-      include: ['pivot'],
-    });
-    const response = envelope.pivot || null;
-    const matrixCells = ((response?.matrix) || []).flatMap((row) => {
-      const rowValue = (row.previewStatus || '').trim();
-      return (row.mimeTypeCounts || []).map((cell) => ({
-        rowValue,
-        columnValue: ((cell.mimeType || '') as string).trim(),
-        count: Number(cell.count || 0),
-      }));
-    });
-    const fallbackCells = ((response?.cells) || []).map((cell) => ({
-      rowValue: (cell.rowValue || '').trim(),
-      columnValue: (cell.columnValue || '').trim(),
-      count: Number(cell.count || 0),
-    }));
-    return {
-      query: response?.query ?? (query || null),
-      normalizedQuery: response?.normalizedQuery ?? (query || null),
-      hasFilters: Boolean(response?.hasFilters),
-      totalHits: Number(response?.totalHits || 0),
-      rowField: ((response?.rowField) || payload.rowField).trim(),
-      columnField: ((response?.columnField) || payload.columnField).trim(),
-      cells: matrixCells.length > 0 ? matrixCells : fallbackCells,
-      generatedAt: response?.generatedAt ?? null,
     };
   }
 
@@ -2382,45 +2513,53 @@ class NodeService {
   }
 
   async findSimilar(documentId: string, maxResults = 5): Promise<Node[]> {
-    const results = await api.get<any[]>(`/search/similar/${documentId}`, {
+    const rawResults = await api.get<unknown>(`/search/similar/${documentId}`, {
       params: { maxResults },
     });
+    const results = assertResponseArray(rawResults, isSearchResultItem);
     return (results || []).map((item) => this.mapSearchItemToNode(item));
   }
 
   async getSearchFacets(query = ''): Promise<Record<string, { value: string; count: number }[]>> {
-    return api.get<Record<string, { value: string; count: number }[]>>('/search/facets', {
+    const result = await api.get<unknown>('/search/facets', {
       params: { q: query },
     });
+    return assertResponse(result, isRecordOfFacetValueCounts);
   }
 
   async getSuggestedFilters(
     query = ''
   ): Promise<Array<{ field: string; label: string; value: string; count?: number }>> {
-    return api.get<Array<{ field: string; label: string; value: string; count?: number }>>(
+    const result = await api.get<unknown>(
       '/search/filters/suggested',
       { params: { q: query } }
     );
+    return assertResponseArray(result, isSuggestedFilterItem);
   }
 
   async getSpellcheckSuggestions(query = '', limit = 5): Promise<string[]> {
-    return api.get<string[]>('/search/spellcheck', { params: { q: query, limit } });
+    const result = await api.get<unknown>('/search/spellcheck', { params: { q: query, limit } });
+    return assertResponse(result, isStringArray);
   }
 
   async getSearchSuggestions(prefix: string, limit = 10): Promise<string[]> {
-    return api.get<string[]>('/search/suggestions', { params: { prefix, limit } });
+    const result = await api.get<unknown>('/search/suggestions', { params: { prefix, limit } });
+    return assertResponse(result, isStringArray);
   }
 
   async getSearchDiagnostics(): Promise<SearchDiagnostics> {
-    return api.get<SearchDiagnostics>('/search/diagnostics');
+    const result = await api.get<unknown>('/search/diagnostics');
+    return assertResponse(result, isSearchDiagnostics);
   }
 
   async getSearchIndexStats(): Promise<SearchIndexStats> {
-    return api.get<SearchIndexStats>('/search/index/stats');
+    const result = await api.get<unknown>('/search/index/stats');
+    return assertResponse(result, isSearchIndexStats);
   }
 
   async getSearchRebuildStatus(): Promise<SearchRebuildStatus> {
-    return api.get<SearchRebuildStatus>('/search/index/rebuild/status');
+    const result = await api.get<unknown>('/search/index/rebuild/status');
+    return assertResponse(result, isSearchRebuildStatus);
   }
 
   async queuePreview(nodeId: string, force = false): Promise<PreviewQueueStatus> {
