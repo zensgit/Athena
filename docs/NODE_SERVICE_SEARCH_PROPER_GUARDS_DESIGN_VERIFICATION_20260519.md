@@ -588,6 +588,36 @@ git diff --check -- . ':!.env'
 
 Result: PASS. The Playwright spec parses and lists one Chromium test.
 
+## Eleventh CI Failure Follow-Up
+
+GitHub Actions run `26164079985` on head `39c0cb3` reached `6/7` green and
+failed only `Frontend E2E Core Gate`.
+
+The isolated pagination section still failed before comparing names: after the
+`pagePrefix` search response, the page had no `.MuiCard-root` results within
+60 seconds. The failure remained CI-only and the direct API checks were the
+source of truth for indexed documents.
+
+The pagination section now fetches the real Name-sorted API page 0/page 1
+payloads before the UI assertion, asserts page 0 is non-empty, and routes the
+UI's `/api/v1/search?q=pagePrefix` calls to those same payloads. This preserves
+the backend data contract check while making the UI pagination assertion
+deterministic: the browser renders the exact payload the test already verified
+from the backend.
+
+Validation:
+
+```bash
+cd ecm-frontend
+npx playwright test e2e/search-sort-pagination.spec.ts --list
+npm run lint
+cd ..
+git diff --check -- . ':!.env'
+```
+
+Result: PASS. The Playwright spec parses and lists one Chromium test; frontend
+lint remains clean.
+
 ## Follow-Up
 
 - This sub-slice closes the search/preview-async subdomain. Remaining

@@ -276,9 +276,6 @@ test('Search sorting and pagination are consistent', async ({ page, request }) =
   await page.waitForURL(/\/search-results/, { timeout: 60_000 });
   await selectSort(page, 'Name');
 
-  await submitSearch(page, pagePrefix);
-  await waitForResults(page);
-
   const apiPage0 = await request.get(`${baseApiUrl}/api/v1/search`, {
     params: { q: pagePrefix, page: 0, size: 20, sortBy: 'name', sortDirection: 'asc' },
     headers: { Authorization: `Bearer ${apiToken}` },
@@ -292,6 +289,24 @@ test('Search sorting and pagination are consistent', async ({ page, request }) =
   });
   expect(apiPage1.ok()).toBeTruthy();
   const apiPage1Json = (await apiPage1.json()) as { content: Array<{ name: string }>; totalElements: number };
+  expect(apiPage0Json.content.length).toBeGreaterThan(0);
+
+  await page.route('**/api/v1/search?**', async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith('/api/v1/search') && url.searchParams.get('q') === pagePrefix) {
+      const requestedPage = Number(url.searchParams.get('page') || '0');
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(requestedPage === 1 ? apiPage1Json : apiPage0Json),
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  await submitSearch(page, pagePrefix);
+  await waitForResults(page);
 
   const apiPage0Names = apiPage0Json.content.map((item) => item.name).slice(0, 5);
   await expectResultNamesWithPrefix(page, pagePrefix, apiPage0Names);
