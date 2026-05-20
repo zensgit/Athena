@@ -1056,6 +1056,139 @@ const assertPageResponse = <T>(
   return value as unknown as PageResponse<T>;
 };
 
+// --- batch-download async predicates (sub-slice 2, reuses the bundle above) ---
+// Union-typed wire fields (status / decision / primaryReason / outcome) are
+// validated as strings only, not against the enum (gate G3). UI-read nesting
+// is deep-checked (gate G4). The list-response uses a dedicated predicate,
+// not assertPageResponse (the shape is items/totalCount/activeCount/paging,
+// not the PageResponse content/totalElements/... shape).
+
+const isStringArray = (value: unknown): value is string[] => (
+  Array.isArray(value) && value.every((entry) => typeof entry === 'string')
+);
+
+const isBatchDownloadAsyncTask = (value: unknown): value is BatchDownloadAsyncTask => (
+  isObject(value)
+  && typeof value.taskId === 'string'
+  && typeof value.name === 'string'
+  && isStringOrNullish(value.createdBy)
+  && typeof value.filename === 'string'
+  && typeof value.status === 'string'
+  && isStringArray(value.nodeIds)
+  && isFiniteNumber(value.totalFiles)
+  && isFiniteNumber(value.filesAdded)
+  && isFiniteNumber(value.totalBytes)
+  && isFiniteNumber(value.bytesAdded)
+  && typeof value.createdAt === 'string'
+  && isStringOrNullish(value.startedAt)
+  && isStringOrNullish(value.completedAt)
+  && isStringOrNullish(value.errorMessage)
+  && isStringOrNullish(value.downloadUrl)
+  && isStringOrNullish(value.cleanupUrl)
+  && isNullishOr(value.archiveSizeBytes, isFiniteNumber)
+  && isStringOrNullish(value.retentionExpiresAt)
+  && typeof value.cleanupEligible === 'boolean'
+  && typeof value.artifactPresent === 'boolean'
+  && typeof value.cancellable === 'boolean'
+  && typeof value.downloadReady === 'boolean'
+);
+
+const isBatchDownloadPreflightItem = (
+  value: unknown
+): value is BatchDownloadPreflightItem => (
+  isObject(value)
+  && isStringOrNullish(value.nodeId)
+  && isStringOrNullish(value.nodeName)
+  && isStringOrNullish(value.nodeType)
+  && typeof value.outcome === 'string'
+  && isFiniteNumber(value.includedFiles)
+  && isFiniteNumber(value.includedBytes)
+  && typeof value.message === 'string'
+);
+
+const isBatchDownloadPreflightResponse = (
+  value: unknown
+): value is BatchDownloadPreflightResponse => (
+  isObject(value)
+  && isFiniteNumber(value.requestedCount)
+  && isFiniteNumber(value.distinctCount)
+  && isFiniteNumber(value.duplicateCount)
+  && isStringArray(value.includedNodeIds)
+  && isFiniteNumber(value.includedNodeCount)
+  && isFiniteNumber(value.includedFileCount)
+  && isFiniteNumber(value.includedBytes)
+  && isFiniteNumber(value.missingCount)
+  && isFiniteNumber(value.deletedCount)
+  && isFiniteNumber(value.forbiddenCount)
+  && isFiniteNumber(value.emptyFolderCount)
+  && isFiniteNumber(value.skippedCount)
+  && typeof value.executable === 'boolean'
+  && typeof value.decision === 'string'
+  && typeof value.primaryReason === 'string'
+  && typeof value.message === 'string'
+  && isStringArray(value.warnings)
+  && Array.isArray(value.items)
+  && value.items.every(isBatchDownloadPreflightItem)
+);
+
+const isBatchDownloadAsyncTaskListPaging = (value: unknown): boolean => (
+  isObject(value)
+  && isFiniteNumber(value.maxItems)
+  && isFiniteNumber(value.skipCount)
+  && isFiniteNumber(value.totalItems)
+  && typeof value.hasMoreItems === 'boolean'
+);
+
+const isBatchDownloadAsyncTaskListResponse = (
+  value: unknown
+): value is BatchDownloadAsyncTaskListResponse => (
+  isObject(value)
+  && Array.isArray(value.items)
+  && value.items.every(isBatchDownloadAsyncTask)
+  && isFiniteNumber(value.totalCount)
+  && isFiniteNumber(value.activeCount)
+  && (value.paging === undefined || isBatchDownloadAsyncTaskListPaging(value.paging))
+);
+
+const isBatchDownloadAsyncTaskSummaryResponse = (
+  value: unknown
+): value is BatchDownloadAsyncTaskSummaryResponse => (
+  isObject(value)
+  && isFiniteNumber(value.totalCount)
+  && isFiniteNumber(value.activeCount)
+  && isFiniteNumber(value.terminalCount)
+  && isFiniteNumber(value.queuedCount)
+  && isFiniteNumber(value.runningCount)
+  && isFiniteNumber(value.cancelRequestedCount)
+  && isFiniteNumber(value.cancelledCount)
+  && isFiniteNumber(value.completedCount)
+  && isFiniteNumber(value.failedCount)
+);
+
+// Single guard tolerant of both shapes (gate correction): bulk cleanup carries
+// statusFilter and omits taskId; single-task cleanup carries taskId and omits
+// statusFilter. Tests cover both separately.
+const isBatchDownloadAsyncTaskCleanupResponse = (
+  value: unknown
+): value is BatchDownloadAsyncTaskCleanupResponse => (
+  isObject(value)
+  && isStringOrNullish(value.taskId)
+  && isFiniteNumber(value.deletedCount)
+  && isFiniteNumber(value.remainingCount)
+  && isStringOrNullish(value.statusFilter)
+  && typeof value.message === 'string'
+);
+
+const isBatchDownloadAsyncTaskCancelActiveResponse = (
+  value: unknown
+): value is BatchDownloadAsyncTaskCancelActiveResponse => (
+  isObject(value)
+  && isFiniteNumber(value.cancelledCount)
+  && isFiniteNumber(value.remainingActiveCount)
+  && isStringOrNullish(value.statusFilter)
+  && typeof value.message === 'string'
+);
+
 class NodeService {
   private buildSearchFilters(criteria: SearchCriteria): Record<string, any> {
     const filters: Record<string, any> = {};
@@ -1518,17 +1651,19 @@ class NodeService {
   }
 
   async startBatchDownloadAsync(nodeIds: string[], name = 'archive'): Promise<BatchDownloadAsyncTask> {
-    return api.post<BatchDownloadAsyncTask>('/nodes/download/batch-async', {
+    const result = await api.post<unknown>('/nodes/download/batch-async', {
       nodeIds,
       name,
     });
+    return assertResponse(result, isBatchDownloadAsyncTask);
   }
 
   async preflightBatchDownloadAsync(nodeIds: string[], name = 'archive'): Promise<BatchDownloadPreflightResponse> {
-    return api.post<BatchDownloadPreflightResponse>('/nodes/download/batch-async/preflight', {
+    const result = await api.post<unknown>('/nodes/download/batch-async/preflight', {
       nodeIds,
       name,
     });
+    return assertResponse(result, isBatchDownloadPreflightResponse);
   }
 
   async listBatchDownloadAsyncTasks(
@@ -1538,7 +1673,7 @@ class NodeService {
     query?: string,
     owner?: string
   ): Promise<BatchDownloadAsyncTaskListResponse> {
-    return api.get<BatchDownloadAsyncTaskListResponse>('/nodes/download/batch-async', {
+    const result = await api.get<unknown>('/nodes/download/batch-async', {
       params: {
         maxItems: limit,
         skipCount,
@@ -1547,38 +1682,45 @@ class NodeService {
         owner: owner || undefined,
       },
     });
+    return assertResponse(result, isBatchDownloadAsyncTaskListResponse);
   }
 
   async getBatchDownloadAsyncTask(taskId: string): Promise<BatchDownloadAsyncTask> {
-    return api.get<BatchDownloadAsyncTask>(`/nodes/download/batch-async/${encodeURIComponent(taskId)}`);
+    const result = await api.get<unknown>(`/nodes/download/batch-async/${encodeURIComponent(taskId)}`);
+    return assertResponse(result, isBatchDownloadAsyncTask);
   }
 
   async getBatchDownloadAsyncSummary(): Promise<BatchDownloadAsyncTaskSummaryResponse> {
-    return api.get<BatchDownloadAsyncTaskSummaryResponse>('/nodes/download/batch-async/summary');
+    const result = await api.get<unknown>('/nodes/download/batch-async/summary');
+    return assertResponse(result, isBatchDownloadAsyncTaskSummaryResponse);
   }
 
   async cancelBatchDownloadAsyncTask(taskId: string): Promise<BatchDownloadAsyncTask> {
-    return api.post<BatchDownloadAsyncTask>(`/nodes/download/batch-async/${encodeURIComponent(taskId)}/cancel`);
+    const result = await api.post<unknown>(`/nodes/download/batch-async/${encodeURIComponent(taskId)}/cancel`);
+    return assertResponse(result, isBatchDownloadAsyncTask);
   }
 
   async cleanupBatchDownloadAsyncTasks(status?: string): Promise<BatchDownloadAsyncTaskCleanupResponse> {
-    return api.post<BatchDownloadAsyncTaskCleanupResponse>('/nodes/download/batch-async/cleanup', undefined, {
+    const result = await api.post<unknown>('/nodes/download/batch-async/cleanup', undefined, {
       params: {
         status: status || undefined,
       },
     });
+    return assertResponse(result, isBatchDownloadAsyncTaskCleanupResponse);
   }
 
   async cancelActiveBatchDownloadAsyncTasks(status?: string): Promise<BatchDownloadAsyncTaskCancelActiveResponse> {
-    return api.post<BatchDownloadAsyncTaskCancelActiveResponse>('/nodes/download/batch-async/cancel-active', undefined, {
+    const result = await api.post<unknown>('/nodes/download/batch-async/cancel-active', undefined, {
       params: {
         status: status || undefined,
       },
     });
+    return assertResponse(result, isBatchDownloadAsyncTaskCancelActiveResponse);
   }
 
   async cleanupBatchDownloadAsyncTask(taskId: string): Promise<BatchDownloadAsyncTaskCleanupResponse> {
-    return api.post<BatchDownloadAsyncTaskCleanupResponse>(`/nodes/download/batch-async/${encodeURIComponent(taskId)}/cleanup`);
+    const result = await api.post<unknown>(`/nodes/download/batch-async/${encodeURIComponent(taskId)}/cleanup`);
+    return assertResponse(result, isBatchDownloadAsyncTaskCleanupResponse);
   }
 
   async downloadBatchDownloadAsyncTask(taskId: string, filename?: string): Promise<void> {
