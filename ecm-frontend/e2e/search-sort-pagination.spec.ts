@@ -13,6 +13,28 @@ const baseApiUrl = resolveApiUrl();
 const defaultUsername = process.env.ECM_E2E_USERNAME || 'admin';
 const defaultPassword = process.env.ECM_E2E_PASSWORD || 'admin';
 
+type SearchApiPage = {
+  content: Array<{ id?: string; name: string; path?: string | null }>;
+  totalElements: number;
+  totalPages?: number;
+  number?: number;
+  size?: number;
+};
+
+function toSearchPageFixture(payload: SearchApiPage, pageNumber: number): SearchApiPage {
+  return {
+    content: payload.content.map((item, index) => ({
+      id: item.id || `search-pagination-${pageNumber}-${index}-${item.name}`,
+      name: item.name,
+      path: typeof item.path === 'string' ? item.path : '/',
+    })),
+    totalElements: payload.totalElements,
+    totalPages: payload.totalPages ?? Math.max(1, Math.ceil(payload.totalElements / 20)),
+    number: pageNumber,
+    size: payload.size ?? 20,
+  };
+}
+
 async function createFolder(
   request: APIRequestContext,
   parentId: string,
@@ -281,15 +303,17 @@ test('Search sorting and pagination are consistent', async ({ page, request }) =
     headers: { Authorization: `Bearer ${apiToken}` },
   });
   expect(apiPage0.ok()).toBeTruthy();
-  const apiPage0Json = (await apiPage0.json()) as { content: Array<{ name: string }>; totalElements: number };
+  const apiPage0Json = (await apiPage0.json()) as SearchApiPage;
 
   const apiPage1 = await request.get(`${baseApiUrl}/api/v1/search`, {
     params: { q: pagePrefix, page: 1, size: 20, sortBy: 'name', sortDirection: 'asc' },
     headers: { Authorization: `Bearer ${apiToken}` },
   });
   expect(apiPage1.ok()).toBeTruthy();
-  const apiPage1Json = (await apiPage1.json()) as { content: Array<{ name: string }>; totalElements: number };
+  const apiPage1Json = (await apiPage1.json()) as SearchApiPage;
   expect(apiPage0Json.content.length).toBeGreaterThan(0);
+  const uiPage0Json = toSearchPageFixture(apiPage0Json, 0);
+  const uiPage1Json = toSearchPageFixture(apiPage1Json, 1);
 
   await page.route('**/api/v1/search**', async (route) => {
     const url = new URL(route.request().url());
@@ -298,7 +322,7 @@ test('Search sorting and pagination are consistent', async ({ page, request }) =
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(requestedPage === 1 ? apiPage1Json : apiPage0Json),
+        body: JSON.stringify(requestedPage === 1 ? uiPage1Json : uiPage0Json),
       });
       return;
     }
