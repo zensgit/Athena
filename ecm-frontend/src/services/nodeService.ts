@@ -1455,6 +1455,32 @@ const isSearchOptionalNumber = (value: unknown): boolean => (
   value === undefined || value === null || isFiniteNumber(value)
 );
 
+const normalizeSearchDate = (value: unknown): string | undefined => {
+  if (typeof value === 'string' && value.trim()) {
+    return value;
+  }
+
+  if (Array.isArray(value) && value.length >= 3 && value.every(isFiniteNumber)) {
+    const [
+      year,
+      month,
+      day,
+      hour = 0,
+      minute = 0,
+      second = 0,
+      nanosecond = 0,
+    ] = value;
+    const millisecond = Math.floor(nanosecond / 1_000_000);
+    return new Date(Date.UTC(year, month - 1, day, hour, minute, second, millisecond)).toISOString();
+  }
+
+  return undefined;
+};
+
+const normalizeSearchString = (value: unknown, fallback = ''): string => (
+  typeof value === 'string' ? value : fallback
+);
+
 const isSearchResultItem = (value: unknown): value is Record<string, unknown> => {
   if (!isObject(value)) return false;
   if (typeof value.id !== 'string') return false;
@@ -2762,19 +2788,22 @@ class NodeService {
         || item.recordCategoryName
         || item.recordCategoryPath
     );
+    const created = normalizeSearchDate(item.createdDate) || new Date().toISOString();
+    const modified = normalizeSearchDate(item.lastModifiedDate) || created;
+    const creator = normalizeSearchString(item.createdBy);
 
     return ({
       id: item.id,
       name: item.name,
-      path: item.path,
+      path: normalizeSearchString(item.path),
       nodeType: inferredNodeType,
       parentId: item.parentId,
       properties,
       aspects: isRecord ? ['rm:record'] : [],
-      created: item.createdDate,
-      modified: item.lastModifiedDate || item.createdDate,
-      creator: item.createdBy,
-      modifier: item.lastModifiedBy || item.createdBy,
+      created,
+      modified,
+      creator,
+      modifier: normalizeSearchString(item.lastModifiedBy, creator),
       size: item.fileSize,
       contentType: item.mimeType,
       currentVersionLabel: item.currentVersionLabel,

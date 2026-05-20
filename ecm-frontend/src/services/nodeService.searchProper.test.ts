@@ -244,7 +244,11 @@ describe('nodeService search proper response shape guards', () => {
     expect(result.nodes).toHaveLength(1);
     expect(result.nodes[0].id).toBe('d3');
     expect(result.nodes[0].name).toBe('runtime.pdf');
-    expect(result.nodes[0].path).toBeNull();
+    expect(result.nodes[0].path).toBe('');
+    expect(result.nodes[0].created).toBe('2026-05-20T03:30:00.000Z');
+    expect(result.nodes[0].modified).toBe('2026-05-20T03:30:00.000Z');
+    expect(result.nodes[0].creator).toBe('');
+    expect(result.nodes[0].modifier).toBe('');
     expect(result.nodes[0].contentType).toBe('application/pdf');
     expect(result.nodes[0].size).toBeNull();
   });

@@ -105,13 +105,23 @@ async function selectSort(page: Page, optionLabel: string, query?: string) {
   const option = page.getByRole('option', { name: optionLabel }).first();
   if (query) {
     const encoded = encodeURIComponent(query);
+    const expectedSortParams: Record<string, { sortBy: string; sortDirection: string }> = {
+      Name: { sortBy: 'name', sortDirection: 'asc' },
+      'Modified Date': { sortBy: 'modified', sortDirection: 'desc' },
+      Size: { sortBy: 'size', sortDirection: 'desc' },
+    };
+    const expectedSort = expectedSortParams[optionLabel];
     await Promise.all([
-      page.waitForRequest((req) => {
-        const url = req.url();
+      page.waitForResponse((res) => {
+        const url = res.url();
         return url.includes('/api/v1/search')
           && !url.includes('/facets')
           && url.includes(`q=${encoded}`)
-          && url.includes('sortBy=');
+          && (!expectedSort || (
+            url.includes(`sortBy=${expectedSort.sortBy}`)
+            && url.includes(`sortDirection=${expectedSort.sortDirection}`)
+          ))
+          && res.ok();
       }),
       option.click(),
     ]);
