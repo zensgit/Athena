@@ -270,9 +270,11 @@ test('Search sorting and pagination are consistent', async ({ page, request }) =
   expect(sizes[0]).toBeGreaterThanOrEqual(sizes[1]);
   expect(sizes[1]).toBeGreaterThanOrEqual(sizes[2]);
 
-  // Pagination check (Name sort ascending)
-  await selectSort(page, 'Name', sortPrefix);
-  await waitForResults(page);
+  // Pagination check (Name sort ascending). Re-enter the page to isolate this
+  // check from the sorting section's pending debounce/effect-driven searches.
+  await gotoWithAuthE2E(page, '/search-results', defaultUsername, defaultPassword, { token: apiToken });
+  await page.waitForURL(/\/search-results/, { timeout: 60_000 });
+  await selectSort(page, 'Name');
 
   await submitSearch(page, pagePrefix);
   await waitForResults(page);

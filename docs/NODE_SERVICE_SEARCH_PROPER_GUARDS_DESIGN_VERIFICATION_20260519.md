@@ -560,6 +560,34 @@ git diff --check -- . ':!.env'
 
 Result: PASS. The Playwright spec parses and lists one Chromium test.
 
+## Tenth CI Failure Follow-Up
+
+GitHub Actions run `26155220360` on head `3af0c55` reached `6/7` green and
+failed only `Frontend E2E Core Gate`.
+
+The failed assertion was still in the pagination section, but the API-side
+page checks were already returning the expected `pagePrefix` documents. The
+page DOM stayed empty for that prefix. This points to page-local state from the
+sorting section still winning the final visible result update in CI, despite
+the test waiting for the main `/api/v1/search` response.
+
+The pagination check now re-enters `/search-results` before running the
+pagination-specific query. It then selects `Name` sort on a fresh page state
+and submits `pagePrefix`. This keeps the pagination contract isolated from the
+previous `sortPrefix` Name / Modified / Size checks and their debounce/effect
+driven searches.
+
+Validation:
+
+```bash
+cd ecm-frontend
+npx playwright test e2e/search-sort-pagination.spec.ts --list
+cd ..
+git diff --check -- . ':!.env'
+```
+
+Result: PASS. The Playwright spec parses and lists one Chromium test.
+
 ## Follow-Up
 
 - This sub-slice closes the search/preview-async subdomain. Remaining
