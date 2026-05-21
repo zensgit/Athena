@@ -1721,6 +1721,52 @@ const normalizeTimestamp = (value: unknown): string | null | undefined => {
   return undefined;
 };
 
+const isPermissionResponse = (value: unknown): value is Permission => (
+  isObject(value)
+  && typeof value.authority === 'string'
+  && typeof value.authorityType === 'string'
+  && typeof value.permission === 'string'
+  && typeof value.allowed === 'boolean'
+  && (value.inherited === undefined || typeof value.inherited === 'boolean')
+  && isStringOrNullishOrTimestampArray(value.expiryDate)
+  && isStringOrNullish(value.notes)
+);
+
+const isPermissionDecision = (value: unknown): value is PermissionDecision => (
+  isObject(value)
+  && isStringOrNullish(value.nodeId)
+  && isStringOrNullish(value.username)
+  && typeof value.permission === 'string'
+  && typeof value.allowed === 'boolean'
+  && typeof value.reason === 'string'
+  && isStringOrNullish(value.dynamicAuthority)
+  && isStringArray(value.allowedAuthorities)
+  && isStringArray(value.deniedAuthorities)
+);
+
+const isPermissionSetRecord = (value: unknown): value is Record<string, PermissionType[]> => (
+  isObject(value)
+  && Object.values(value).every(isStringArray)
+);
+
+const isPermissionSetMetadata = (value: unknown): value is PermissionSetMetadata => (
+  isObject(value)
+  && typeof value.name === 'string'
+  && typeof value.label === 'string'
+  && isStringOrNullish(value.description)
+  && isNullishOr(value.order, isFiniteNumber)
+  && isStringArray(value.permissions)
+);
+
+const normalizePermissionResponse = (raw: Permission): Permission => ({
+  ...raw,
+  expiryDate: normalizeTimestamp(raw.expiryDate) ?? undefined,
+});
+
+const assertAndNormalizePermissionResponseArray = (raw: unknown): Permission[] => (
+  assertResponseArray(raw, isPermissionResponse).map(normalizePermissionResponse)
+);
+
 // FolderResponse — used by getFolderByPath, createFolder, getRootFolder
 const isFolderResponse = (value: unknown): value is FolderResponse => (
   isObject(value)
@@ -3341,7 +3387,9 @@ class NodeService {
   }
 
   async getPermissions(nodeId: string): Promise<Record<string, Permission[]>> {
-    const perms = await api.get<Permission[]>(`/security/nodes/${nodeId}/permissions`);
+    const perms = assertAndNormalizePermissionResponseArray(
+      await api.get<unknown>(`/security/nodes/${nodeId}/permissions`)
+    );
     return perms.reduce<Record<string, Permission[]>>((acc, perm) => {
       const key = perm.authorityType === 'GROUP' ? `GROUP_${perm.authority}` : perm.authority;
       acc[key] = acc[key] || [];
@@ -3355,17 +3403,26 @@ class NodeService {
     permissionType: PermissionType,
     username?: string
   ): Promise<PermissionDecision> {
-    return api.get<PermissionDecision>(`/security/nodes/${nodeId}/permission-diagnostics`, {
-      params: { permissionType, username: username || undefined },
-    });
+    return assertResponse(
+      await api.get<unknown>(`/security/nodes/${nodeId}/permission-diagnostics`, {
+        params: { permissionType, username: username || undefined },
+      }),
+      isPermissionDecision
+    );
   }
 
   async getPermissionSets(): Promise<Record<string, PermissionType[]>> {
-    return api.get<Record<string, PermissionType[]>>('/security/permission-sets');
+    return assertResponse(
+      await api.get<unknown>('/security/permission-sets'),
+      isPermissionSetRecord
+    );
   }
 
   async getPermissionSetMetadata(): Promise<PermissionSetMetadata[]> {
-    return api.get<PermissionSetMetadata[]>('/security/permission-sets/metadata');
+    return assertResponseArray(
+      await api.get<unknown>('/security/permission-sets/metadata'),
+      isPermissionSetMetadata
+    );
   }
 
   async setPermission(
