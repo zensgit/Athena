@@ -398,6 +398,9 @@ test('Mail automation P1: account health, summary refresh, diagnostics filters, 
       contentType: 'application/json',
       body: JSON.stringify({
         id: 'doc-1',
+        name: 'Mail Document',
+        path: '/Sites/Mail/Mail Document',
+        nodeType: 'DOCUMENT',
         parentId: 'target-folder-id',
       }),
     });
