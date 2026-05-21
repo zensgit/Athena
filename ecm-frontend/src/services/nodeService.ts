@@ -1846,6 +1846,108 @@ const assertAndNormalizeApiNodeResponse = (raw: unknown): ApiNodeResponse =>
 const assertAndNormalizeApiNodeDetailsResponse = (raw: unknown): ApiNodeDetailsResponse =>
   normalizeApiNodeDetailsResponseTimestamps(assertResponse(raw, isApiNodeDetailsResponse));
 
+const isLockInfo = (value: unknown): value is LockInfo => (
+  isObject(value)
+  && typeof value.status === 'string'
+  && isStringOrNullish(value.lockedBy)
+  && isStringOrNullishOrTimestampArray(value.lockedDate)
+  && isStringOrNullish(value.lockLifetime)
+  && isStringOrNullishOrTimestampArray(value.lockExpiresAt)
+  && isStringOrNullish(value.lockType)
+  && isStringOrNullish(value.additionalInfo)
+  && (value.lockDeep === undefined || typeof value.lockDeep === 'boolean')
+  && isNullishOr(value.remainingSeconds, isFiniteNumber)
+  && isNullishOr(value.lockAgeSeconds, isFiniteNumber)
+  && typeof value.canUnlock === 'boolean'
+);
+
+const isCheckoutInfo = (value: unknown): value is CheckoutInfo => (
+  isObject(value)
+  && typeof value.status === 'string'
+  && isStringOrNullish(value.checkoutUser)
+  && isStringOrNullishOrTimestampArray(value.checkoutDate)
+  && isNullishOr(value.checkoutAgeSeconds, isFiniteNumber)
+  && typeof value.canCheckout === 'boolean'
+  && typeof value.canCheckIn === 'boolean'
+  && typeof value.canCancelCheckout === 'boolean'
+  && typeof value.canKeepCheckedOut === 'boolean'
+  && typeof value.requiresNewVersionFile === 'boolean'
+  && isStringOrNullish(value.blockingReason)
+);
+
+const isCheckoutLineageVersionResponse = (value: unknown): value is ApiVersionResponse => (
+  isObject(value)
+  && typeof value.id === 'string'
+  && isStringOrNullish(value.documentId)
+  && typeof value.versionLabel === 'string'
+  && isStringOrNullish(value.comment)
+  && isStringOrNullishOrTimestampArray(value.createdDate)
+  && isStringOrNullish(value.creator)
+  && isFiniteNumber(value.size)
+  && typeof value.major === 'boolean'
+  && isStringOrNullish(value.mimeType)
+  && isStringOrNullish(value.contentHash)
+  && isStringOrNullish(value.contentId)
+  && isStringOrNullish(value.status)
+  && isBooleanOrNullish(value.checkoutBaseline)
+  && isBooleanOrNullish(value.checkoutCurrent)
+);
+
+type CheckoutLineageWireResponse = {
+  documentId: string;
+  checkout: CheckoutInfo;
+  baselineVersion?: ApiVersionResponse | null;
+  currentVersion?: ApiVersionResponse | null;
+};
+
+const isCheckoutLineageResponse = (
+  value: unknown
+): value is CheckoutLineageWireResponse => (
+  isObject(value)
+  && typeof value.documentId === 'string'
+  && isCheckoutInfo(value.checkout)
+  && isNullishOr(value.baselineVersion, isCheckoutLineageVersionResponse)
+  && isNullishOr(value.currentVersion, isCheckoutLineageVersionResponse)
+);
+
+const normalizeLockInfoTimestamps = (raw: LockInfo): LockInfo => ({
+  ...raw,
+  lockedDate: normalizeTimestamp(raw.lockedDate) as string | undefined,
+  lockExpiresAt: normalizeTimestamp(raw.lockExpiresAt) as string | undefined,
+});
+
+const normalizeCheckoutInfoTimestamps = (raw: CheckoutInfo): CheckoutInfo => ({
+  ...raw,
+  checkoutDate: normalizeTimestamp(raw.checkoutDate) as string | undefined,
+});
+
+const normalizeCheckoutLineageVersionTimestamps = (
+  raw: ApiVersionResponse
+): ApiVersionResponse => ({
+  ...raw,
+  createdDate: normalizeTimestamp(raw.createdDate) as string,
+});
+
+const assertAndNormalizeLockInfo = (raw: unknown): LockInfo =>
+  normalizeLockInfoTimestamps(assertResponse(raw, isLockInfo));
+
+const assertAndNormalizeCheckoutInfo = (raw: unknown): CheckoutInfo =>
+  normalizeCheckoutInfoTimestamps(assertResponse(raw, isCheckoutInfo));
+
+const assertAndNormalizeCheckoutLineageResponse = (raw: unknown): CheckoutLineageWireResponse => {
+  const lineage = assertResponse(raw, isCheckoutLineageResponse);
+  return {
+    documentId: lineage.documentId,
+    checkout: normalizeCheckoutInfoTimestamps(lineage.checkout),
+    baselineVersion: lineage.baselineVersion
+      ? normalizeCheckoutLineageVersionTimestamps(lineage.baselineVersion)
+      : lineage.baselineVersion,
+    currentVersion: lineage.currentVersion
+      ? normalizeCheckoutLineageVersionTimestamps(lineage.currentVersion)
+      : lineage.currentVersion,
+  };
+};
+
 const assertAndNormalizeFolderResponseArray = (raw: unknown): FolderResponse[] => {
   const arr = assertResponseArray(raw, isFolderResponse);
   return arr.map(normalizeFolderResponseTimestamps);
@@ -2112,11 +2214,12 @@ class NodeService {
   }
 
   async getLockInfo(nodeId: string): Promise<LockInfo> {
-    return await api.get<LockInfo>(`/nodes/${nodeId}/lock-info`);
+    const raw = await api.get<unknown>(`/nodes/${nodeId}/lock-info`);
+    return assertAndNormalizeLockInfo(raw);
   }
 
   async lockNodeTyped(nodeId: string, request: LockNodeTypedRequest): Promise<LockInfo> {
-    return api.post<LockInfo>(`/nodes/${nodeId}/lock-typed`, null, {
+    const raw = await api.post<unknown>(`/nodes/${nodeId}/lock-typed`, null, {
       params: {
         lockType: request.lockType ?? 'WRITE_LOCK',
         lifetime: request.lifetime ?? 'PERSISTENT',
@@ -2125,6 +2228,7 @@ class NodeService {
         additionalInfo: request.additionalInfo?.trim() || undefined,
       },
     });
+    return assertAndNormalizeLockInfo(raw);
   }
 
   async unlockNode(nodeId: string): Promise<void> {
@@ -2138,16 +2242,14 @@ class NodeService {
   }
 
   async getCheckoutInfo(nodeId: string): Promise<CheckoutInfo> {
-    return await api.get<CheckoutInfo>(`/documents/${nodeId}/checkout-info`);
+    const raw = await api.get<unknown>(`/documents/${nodeId}/checkout-info`);
+    return assertAndNormalizeCheckoutInfo(raw);
   }
 
   async getCheckoutLineage(nodeId: string): Promise<CheckoutLineage> {
-    const response = await api.get<{
-      documentId: string;
-      checkout: CheckoutInfo;
-      baselineVersion?: ApiVersionResponse | null;
-      currentVersion?: ApiVersionResponse | null;
-    }>(`/documents/${nodeId}/checkout-lineage`);
+    const response = assertAndNormalizeCheckoutLineageResponse(
+      await api.get<unknown>(`/documents/${nodeId}/checkout-lineage`)
+    );
 
     const mapVersion = (version?: ApiVersionResponse | null): Version | null => {
       if (!version) {
@@ -2180,12 +2282,14 @@ class NodeService {
   }
 
   async checkoutDocument(nodeId: string): Promise<Node> {
-    const node = await api.post<ApiNodeDetailsResponse>(`/documents/${nodeId}/checkout`);
+    const raw = await api.post<unknown>(`/documents/${nodeId}/checkout`);
+    const node = assertAndNormalizeApiNodeDetailsResponse(raw);
     return this.apiNodeDetailsToNode(node);
   }
 
   async cancelCheckoutDocument(nodeId: string): Promise<Node> {
-    const node = await api.post<ApiNodeDetailsResponse>(`/documents/${nodeId}/cancel-checkout`);
+    const raw = await api.post<unknown>(`/documents/${nodeId}/cancel-checkout`);
+    const node = assertAndNormalizeApiNodeDetailsResponse(raw);
     return this.apiNodeDetailsToNode(node);
   }
 
@@ -2208,9 +2312,10 @@ class NodeService {
     formData.append('majorVersion', Boolean(options?.majorVersion).toString());
     formData.append('keepCheckedOut', Boolean(options?.keepCheckedOut).toString());
 
-    const node = await api.post<ApiNodeDetailsResponse>(`/documents/${nodeId}/checkin`, formData, {
+    const raw = await api.post<unknown>(`/documents/${nodeId}/checkin`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
+    const node = assertAndNormalizeApiNodeDetailsResponse(raw);
     return this.apiNodeDetailsToNode(node);
   }
 
