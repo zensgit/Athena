@@ -105,3 +105,17 @@ Additional checks:
 - `CI=true npm run build`: passed. CRA emitted only the existing bundle-size
   advisory and `fs.F_OK` deprecation warning.
 - `git diff --check -- . ':!.env'`: clean.
+
+## CI Follow-Up
+
+GitHub Actions run `26229743558` for commit `9fe8434` completed successfully.
+
+All seven CI jobs passed:
+
+- Backend Verify
+- Frontend Build & Test
+- Phase C Security Verification
+- Acceptance Smoke (3 admin pages)
+- Property Encryption Closeout Gate
+- Phase 5 Mocked Regression Gate
+- Frontend E2E Core Gate
