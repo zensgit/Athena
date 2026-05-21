@@ -1654,6 +1654,217 @@ const isSuggestedFilterItem = (
   && isOptionalFiniteNumber(value.count)
 );
 
+// --- folder/node CRUD predicates + Jackson-timestamp normalization ---
+// Per `feedback_guard_predicates_real_backend_shape_drift`: backend LocalDateTime
+// fields can serialize as ISO string OR Jackson array [Y,M,D,h,m,s[,nanos]].
+// Predicates accept both; normalizers coerce array → ISO string BEFORE the
+// existing mappers (folderToNode / apiNodeToNode / apiNodeDetailsToNode) see
+// the value so Node.created etc. remain string. Required-string fields are
+// limited to id/name/path (strict) — H1 ruling; everything else lenient.
+
+const isStringOrNullishOrTimestampArray = (value: unknown): boolean => (
+  isStringOrNullish(value)
+  || (Array.isArray(value) && value.length > 0 && value.every(
+    (n) => typeof n === 'number' && Number.isFinite(n)
+  ))
+);
+
+const normalizeTimestamp = (value: unknown): string | null | undefined => {
+  if (typeof value === 'string') return value;
+  if (value === null) return null;
+  if (value === undefined) return undefined;
+  if (Array.isArray(value) && value.every((n) => typeof n === 'number' && Number.isFinite(n))) {
+    const arr = value as number[];
+    const y = arr[0] ?? 1970;
+    const mo = arr[1] ?? 1;
+    const d = arr[2] ?? 1;
+    const h = arr[3] ?? 0;
+    const m = arr[4] ?? 0;
+    const s = arr[5] ?? 0;
+    const nano = arr[6] ?? 0;
+    const ms = Math.floor(nano / 1_000_000);
+    const pad = (n: number, len = 2) => String(n).padStart(len, '0');
+    const base = `${y}-${pad(mo)}-${pad(d)}T${pad(h)}:${pad(m)}:${pad(s)}`;
+    return ms > 0 ? `${base}.${pad(ms, 3)}` : base;
+  }
+  return undefined;
+};
+
+// FolderResponse — used by getFolderByPath, createFolder, getRootFolder
+const isFolderResponse = (value: unknown): value is FolderResponse => (
+  isObject(value)
+  && typeof value.id === 'string'
+  && typeof value.name === 'string'
+  && isStringOrNullish(value.description)
+  && typeof value.path === 'string'
+  && isStringOrNullish(value.parentId)
+  && typeof value.folderType === 'string'
+  && (value.inheritPermissions === undefined || typeof value.inheritPermissions === 'boolean')
+  && (value.smart === undefined || typeof value.smart === 'boolean')
+  && (value.queryCriteria === undefined || isObject(value.queryCriteria))
+  && isStringOrNullish(value.createdBy)
+  && isStringOrNullishOrTimestampArray(value.createdDate)
+  && isStringOrNullish(value.lastModifiedBy)
+  && isStringOrNullishOrTimestampArray(value.lastModifiedDate)
+);
+
+// ApiNodeResponse — used by moveNode, copyNode, getChildren primary, getChildrenPage primary
+const isApiNodeResponse = (value: unknown): value is ApiNodeResponse => (
+  isObject(value)
+  && typeof value.id === 'string'
+  && typeof value.name === 'string'
+  && isStringOrNullish(value.description)
+  && typeof value.path === 'string'
+  && typeof value.nodeType === 'string'
+  && isStringOrNullish(value.parentId)
+  && isOptionalFiniteNumber(value.size)
+  && isStringOrNullish(value.createdBy)
+  && isStringOrNullishOrTimestampArray(value.createdDate)
+  && isStringOrNullish(value.lastModifiedBy)
+  && isStringOrNullishOrTimestampArray(value.lastModifiedDate)
+  && isStringOrNullish(value.contentType)
+  && isStringOrNullish(value.correspondentId)
+  && isStringOrNullish(value.correspondentName)
+  && (value.locked === undefined || typeof value.locked === 'boolean')
+  && isStringOrNullish(value.lockedBy)
+  && (value.checkedOut === undefined || typeof value.checkedOut === 'boolean')
+  && isStringOrNullish(value.checkoutUser)
+  && isStringOrNullishOrTimestampArray(value.checkoutDate)
+  && isStringOrNullish(value.currentVersionLabel)
+  && (value.properties === undefined || isObject(value.properties))
+  && (value.metadata === undefined || isObject(value.metadata))
+  && (value.aspects === undefined || isStringArray(value.aspects))
+  && (value.tags === undefined || isStringArray(value.tags))
+  && (value.categories === undefined || isStringArray(value.categories))
+  && (value.inheritPermissions === undefined || typeof value.inheritPermissions === 'boolean')
+  && isStringOrNullish(value.previewStatus)
+  && isStringOrNullish(value.previewFailureReason)
+  && isStringOrNullish(value.previewFailureCategory)
+);
+
+// ApiNodeDetailsResponse — used by getNode, updateNode, getChildren fallback,
+// getChildrenPage fallback, checkout-related (out of scope for this slice).
+// Structurally near-identical to ApiNodeResponse; share the same field rules.
+const isApiNodeDetailsResponse = (value: unknown): value is ApiNodeDetailsResponse => (
+  isObject(value)
+  && typeof value.id === 'string'
+  && typeof value.name === 'string'
+  && isStringOrNullish(value.description)
+  && typeof value.path === 'string'
+  && typeof value.nodeType === 'string'
+  && isStringOrNullish(value.parentId)
+  && isOptionalFiniteNumber(value.size)
+  && isStringOrNullish(value.contentType)
+  && isStringOrNullish(value.currentVersionLabel)
+  && isStringOrNullish(value.correspondentId)
+  && isStringOrNullish(value.correspondentName)
+  && (value.properties === undefined || isObject(value.properties))
+  && (value.metadata === undefined || isObject(value.metadata))
+  && (value.aspects === undefined || isStringArray(value.aspects))
+  && (value.tags === undefined || isStringArray(value.tags))
+  && (value.categories === undefined || isStringArray(value.categories))
+  && (value.inheritPermissions === undefined || typeof value.inheritPermissions === 'boolean')
+  && (value.locked === undefined || typeof value.locked === 'boolean')
+  && isStringOrNullish(value.lockedBy)
+  && (value.checkedOut === undefined || typeof value.checkedOut === 'boolean')
+  && isStringOrNullish(value.checkoutUser)
+  && isStringOrNullishOrTimestampArray(value.checkoutDate)
+  && isStringOrNullish(value.previewStatus)
+  && isStringOrNullish(value.previewFailureReason)
+  && isStringOrNullish(value.previewFailureCategory)
+  && isStringOrNullish(value.createdBy)
+  && isStringOrNullishOrTimestampArray(value.createdDate)
+  && isStringOrNullish(value.lastModifiedBy)
+  && isStringOrNullishOrTimestampArray(value.lastModifiedDate)
+);
+
+// Lenient Node predicate for addAspect / removeAspect (zero consumer; backend
+// returns NodeDto-shape directly; this slice only adds defensive guard, does
+// not refactor the no-mapper path). Strict on id/name/nodeType/path; rest
+// accepted as-is (Node has ~50 optional fields, most never read).
+const isNode = (value: unknown): value is Node => (
+  isObject(value)
+  && typeof value.id === 'string'
+  && typeof value.name === 'string'
+  && typeof value.nodeType === 'string'
+  && typeof value.path === 'string'
+);
+
+// Envelopes for getChildren/getChildrenPage
+const isApiNodeResponseListEnvelope = (
+  value: unknown
+): value is { content: ApiNodeResponse[]; totalElements?: number; number?: number; size?: number } => (
+  isObject(value)
+  && Array.isArray(value.content)
+  && value.content.every(isApiNodeResponse)
+  && isOptionalFiniteNumber(value.totalElements)
+  && isOptionalFiniteNumber(value.number)
+  && isOptionalFiniteNumber(value.size)
+);
+
+const isApiNodeDetailsResponseListEnvelope = (
+  value: unknown
+): value is { content: ApiNodeDetailsResponse[] } => (
+  isObject(value)
+  && Array.isArray(value.content)
+  && value.content.every(isApiNodeDetailsResponse)
+);
+
+// --- assert + normalize wrappers ---
+// Each wrapper guards the raw response then returns a NEW object with
+// timestamp fields coerced to ISO string (or preserved as string/null/undefined)
+// so the existing mappers see TS-correct strings.
+
+const normalizeFolderResponseTimestamps = (raw: FolderResponse): FolderResponse => ({
+  ...raw,
+  createdDate: normalizeTimestamp(raw.createdDate) as string,
+  lastModifiedDate: normalizeTimestamp(raw.lastModifiedDate) as string | undefined,
+});
+
+const normalizeApiNodeResponseTimestamps = (raw: ApiNodeResponse): ApiNodeResponse => ({
+  ...raw,
+  createdDate: normalizeTimestamp(raw.createdDate) as string,
+  lastModifiedDate: normalizeTimestamp(raw.lastModifiedDate) as string | undefined,
+  checkoutDate: normalizeTimestamp(raw.checkoutDate) as string | undefined,
+});
+
+const normalizeApiNodeDetailsResponseTimestamps = (
+  raw: ApiNodeDetailsResponse
+): ApiNodeDetailsResponse => ({
+  ...raw,
+  createdDate: normalizeTimestamp(raw.createdDate) as string,
+  lastModifiedDate: normalizeTimestamp(raw.lastModifiedDate) as string | undefined,
+  checkoutDate: normalizeTimestamp(raw.checkoutDate) as string | undefined,
+});
+
+const assertAndNormalizeFolderResponse = (raw: unknown): FolderResponse =>
+  normalizeFolderResponseTimestamps(assertResponse(raw, isFolderResponse));
+
+const assertAndNormalizeApiNodeResponse = (raw: unknown): ApiNodeResponse =>
+  normalizeApiNodeResponseTimestamps(assertResponse(raw, isApiNodeResponse));
+
+const assertAndNormalizeApiNodeDetailsResponse = (raw: unknown): ApiNodeDetailsResponse =>
+  normalizeApiNodeDetailsResponseTimestamps(assertResponse(raw, isApiNodeDetailsResponse));
+
+const assertAndNormalizeFolderResponseArray = (raw: unknown): FolderResponse[] => {
+  const arr = assertResponseArray(raw, isFolderResponse);
+  return arr.map(normalizeFolderResponseTimestamps);
+};
+
+const assertAndNormalizeApiNodeResponseListEnvelope = (
+  raw: unknown
+): { content: ApiNodeResponse[]; totalElements?: number; number?: number; size?: number } => {
+  const env = assertResponse(raw, isApiNodeResponseListEnvelope);
+  return { ...env, content: env.content.map(normalizeApiNodeResponseTimestamps) };
+};
+
+const assertAndNormalizeApiNodeDetailsResponseListEnvelope = (
+  raw: unknown
+): { content: ApiNodeDetailsResponse[] } => {
+  const env = assertResponse(raw, isApiNodeDetailsResponseListEnvelope);
+  return { content: env.content.map(normalizeApiNodeDetailsResponseTimestamps) };
+};
+
 class NodeService {
   private buildSearchFilters(criteria: SearchCriteria): Record<string, any> {
     const filters: Record<string, any> = {};
@@ -1762,7 +1973,8 @@ class NodeService {
   }
 
   private async getRootFolder(): Promise<FolderResponse> {
-    const roots = await api.get<FolderResponse[]>('/folders/roots');
+    const raw = await api.get<unknown>('/folders/roots');
+    const roots = assertAndNormalizeFolderResponseArray(raw);
     return this.pickPrimaryRoot(roots);
   }
 
@@ -1882,7 +2094,8 @@ class NodeService {
   }
 
   async getFolderByPath(path: string): Promise<Node> {
-    const folder = await api.get<FolderResponse>('/folders/path', { params: { path } });
+    const raw = await api.get<unknown>('/folders/path', { params: { path } });
+    const folder = assertAndNormalizeFolderResponse(raw);
     return this.folderToNode(folder);
   }
 
@@ -1893,7 +2106,8 @@ class NodeService {
       return this.folderToNode(root);
     }
     // /nodes/{id} works for both folders and documents; avoid noisy 404s from probing /folders/{id}.
-    const node = await api.get<ApiNodeDetailsResponse>(`/nodes/${nodeId}`);
+    const raw = await api.get<unknown>(`/nodes/${nodeId}`);
+    const node = assertAndNormalizeApiNodeDetailsResponse(raw);
     return this.apiNodeDetailsToNode(node);
   }
 
@@ -2009,20 +2223,23 @@ class NodeService {
     // Use folder contents endpoint (paginated in backend; request a large page size for tree/list views)
     try {
       const sortDirection = ascending ? 'asc' : 'desc';
-      const response = await api.get<{ content: ApiNodeResponse[] }>(`/folders/${nodeId}/contents`, {
+      const raw = await api.get<unknown>(`/folders/${nodeId}/contents`, {
         params: {
           page: 0,
           size: 1000,
           sort: `${sortBy},${sortDirection}`,
         },
       });
+      const response = assertAndNormalizeApiNodeResponseListEnvelope(raw);
       const apiNodes = response.content || [];
       return apiNodes.map(node => this.apiNodeToNode(node));
     } catch {
-      // Fall back to node children endpoint
-      const response = await api.get<{ content: ApiNodeDetailsResponse[] }>(`/nodes/${nodeId}/children`, {
+      // Fall back to node children endpoint (H3a: silent fallback preserved;
+      // lenient primary guard only triggers fallback on structural errors).
+      const raw = await api.get<unknown>(`/nodes/${nodeId}/children`, {
         params: { sortBy, ascending },
       });
+      const response = assertAndNormalizeApiNodeDetailsResponseListEnvelope(raw);
       const apiNodes = response.content || [];
       return apiNodes.map((node) => this.apiNodeDetailsToNode(node));
     }
@@ -2041,25 +2258,22 @@ class NodeService {
     }
     try {
       const sortDirection = ascending ? 'asc' : 'desc';
-      const response = await api.get<{
-        content: ApiNodeResponse[];
-        totalElements?: number;
-        number?: number;
-        size?: number;
-      }>(`/folders/${nodeId}/contents`, {
+      const raw = await api.get<unknown>(`/folders/${nodeId}/contents`, {
         params: {
           page,
           size,
           sort: `${sortBy},${sortDirection}`,
         },
       });
+      const response = assertAndNormalizeApiNodeResponseListEnvelope(raw);
       const apiNodes = response.content || [];
       const total = response.totalElements ?? apiNodes.length;
       return { nodes: apiNodes.map((node) => this.apiNodeToNode(node)), total };
     } catch {
-      const response = await api.get<{ content: ApiNodeDetailsResponse[] }>(`/nodes/${nodeId}/children`, {
+      const raw = await api.get<unknown>(`/nodes/${nodeId}/children`, {
         params: { sortBy, ascending },
       });
+      const response = assertAndNormalizeApiNodeDetailsResponseListEnvelope(raw);
       const apiNodes = response.content || [];
       return { nodes: apiNodes.map((node) => this.apiNodeDetailsToNode(node)), total: apiNodes.length };
     }
@@ -2071,7 +2285,7 @@ class NodeService {
       const root = await this.getRootFolder();
       parentId = root.id;
     }
-    const folder = await api.post<FolderResponse>('/folders', {
+    const raw = await api.post<unknown>('/folders', {
       name: request.name,
       description: request.description,
       parentId: parentId,
@@ -2080,6 +2294,7 @@ class NodeService {
       isSmart: request.isSmart === true ? true : undefined,
       queryCriteria: request.isSmart === true ? request.queryCriteria : undefined,
     });
+    const folder = assertAndNormalizeFolderResponse(raw);
     return this.folderToNode(folder);
   }
 
@@ -2197,23 +2412,26 @@ class NodeService {
   }
 
   async updateNode(nodeId: string, updates: Record<string, any>): Promise<Node> {
-    const updated = await api.patch<ApiNodeDetailsResponse>(`/nodes/${nodeId}`, updates);
+    const raw = await api.patch<unknown>(`/nodes/${nodeId}`, updates);
+    const updated = assertAndNormalizeApiNodeDetailsResponse(raw);
     return this.apiNodeDetailsToNode(updated);
   }
 
   async moveNode(nodeId: string, targetParentId: string): Promise<Node> {
-    const moved = await api.post<ApiNodeResponse>(`/folders/${targetParentId}/move`, {
+    const raw = await api.post<unknown>(`/folders/${targetParentId}/move`, {
       nodeId,
     });
+    const moved = assertAndNormalizeApiNodeResponse(raw);
     return this.apiNodeToNode(moved);
   }
 
   async copyNode(nodeId: string, targetParentId: string, deepCopy = true, newName?: string): Promise<Node> {
-    const copied = await api.post<ApiNodeResponse>(`/folders/${targetParentId}/copy`, {
+    const raw = await api.post<unknown>(`/folders/${targetParentId}/copy`, {
       nodeId,
       newName: newName || null,
       deep: deepCopy,
     });
+    const copied = assertAndNormalizeApiNodeResponse(raw);
     return this.apiNodeToNode(copied);
   }
 
@@ -2830,24 +3048,28 @@ class NodeService {
   }
 
   async addAspect(nodeId: string, aspect: string, properties?: Record<string, any>): Promise<Node> {
-    return api.post<Node>(`/nodes/${nodeId}/aspects/${aspect}`, properties);
+    const result = await api.post<unknown>(`/nodes/${nodeId}/aspects/${aspect}`, properties);
+    return assertResponse(result, isNode);
   }
 
   async removeAspect(nodeId: string, aspect: string): Promise<Node> {
-    return api.delete<Node>(`/nodes/${nodeId}/aspects/${aspect}`);
+    const result = await api.delete<unknown>(`/nodes/${nodeId}/aspects/${aspect}`);
+    return assertResponse(result, isNode);
   }
 
   // ---- peer / secondary-child associations --------------------------------
 
   async getTargetAssociations(nodeId: string, assocType?: string): Promise<NodeRelationEdge[]> {
     const params = assocType ? { assocType } : {};
-    return api.get<NodeRelationEdge[]>(`/nodes/${nodeId}/targets`, { params });
+    const result = await api.get<unknown>(`/nodes/${nodeId}/targets`, { params });
+    return assertResponseArray(result, isNodeRelationEdge);
   }
 
   async createTargetAssociation(nodeId: string, targetId: string, assocType = 'cm:references'): Promise<NodeRelationEdge> {
-    return api.post<NodeRelationEdge>(`/nodes/${nodeId}/targets`, null, {
+    const result = await api.post<unknown>(`/nodes/${nodeId}/targets`, null, {
       params: { targetId, assocType },
     });
+    return assertResponse(result, isNodeRelationEdge);
   }
 
   async removeTargetAssociation(nodeId: string, targetId: string): Promise<void> {
@@ -2856,13 +3078,15 @@ class NodeService {
 
   async getSourceAssociations(nodeId: string, assocType?: string): Promise<NodeRelationEdge[]> {
     const params = assocType ? { assocType } : {};
-    return api.get<NodeRelationEdge[]>(`/nodes/${nodeId}/sources`, { params });
+    const result = await api.get<unknown>(`/nodes/${nodeId}/sources`, { params });
+    return assertResponseArray(result, isNodeRelationEdge);
   }
 
   async addSecondaryChild(parentId: string, childId: string): Promise<NodeRelationEdge> {
-    return api.post<NodeRelationEdge>(`/nodes/${parentId}/secondary-children`, null, {
+    const result = await api.post<unknown>(`/nodes/${parentId}/secondary-children`, null, {
       params: { childId },
     });
+    return assertResponse(result, isNodeRelationEdge);
   }
 
   async removeSecondaryChild(parentId: string, childId: string): Promise<void> {
@@ -2870,11 +3094,13 @@ class NodeService {
   }
 
   async getSecondaryChildren(nodeId: string): Promise<NodeRelationEdge[]> {
-    return api.get<NodeRelationEdge[]>(`/nodes/${nodeId}/secondary-children`);
+    const result = await api.get<unknown>(`/nodes/${nodeId}/secondary-children`);
+    return assertResponseArray(result, isNodeRelationEdge);
   }
 
   async getSecondaryParents(nodeId: string): Promise<NodeRelationEdge[]> {
-    return api.get<NodeRelationEdge[]>(`/nodes/${nodeId}/secondary-parents`);
+    const result = await api.get<unknown>(`/nodes/${nodeId}/secondary-parents`);
+    return assertResponseArray(result, isNodeRelationEdge);
   }
 
   async getVersionHistory(nodeId: string): Promise<Version[]> {
