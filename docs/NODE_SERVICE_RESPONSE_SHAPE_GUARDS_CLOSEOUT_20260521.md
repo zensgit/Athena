@@ -133,7 +133,8 @@ guard program:
 - PDF annotation JSON:
   `getPdfAnnotations` and `savePdfAnnotations` were not part of the planned
   node-service guard backlog. If the objective becomes "every JSON method",
-  annotations are the next small follow-up slice.
+  annotations were completed as follow-up commit `9fe8434` and documented in
+  `docs/NODE_SERVICE_PDF_ANNOTATIONS_GUARDS_DESIGN_VERIFICATION_20260521.md`.
 
 These are not CI regressions. They are explicit scope boundaries from the
 incremental guard program.
@@ -153,9 +154,7 @@ Current terminal state at closeout:
 
 If we continue service-contract hardening, use this priority:
 
-1. Guard `getPdfAnnotations` / `savePdfAnnotations` as a tiny annotation slice
-   if "all JSON methods" is the next bar.
-2. Produce a cross-service guard inventory for `ecm-frontend/src/services/*.ts`
+1. Produce a cross-service guard inventory for `ecm-frontend/src/services/*.ts`
    to identify the next highest-risk unguarded service.
-3. Defer blob/download validation unless there is a concrete browser/runtime
+2. Defer blob/download validation unless there is a concrete browser/runtime
    failure, because the current guard idiom is JSON-response specific.
