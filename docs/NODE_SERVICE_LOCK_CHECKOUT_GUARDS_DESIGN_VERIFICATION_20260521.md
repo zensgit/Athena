@@ -127,3 +127,17 @@ The slice deliberately does not start the remaining `nodeService` subdomains:
 
 - version/history
 - permissions
+
+## CI Follow-Up
+
+GitHub Actions run `26209237809` for commit `3847e46` completed successfully.
+
+All seven CI jobs passed:
+
+- Backend Verify
+- Frontend Build & Test
+- Phase C Security Verification
+- Acceptance Smoke (3 admin pages)
+- Property Encryption Closeout Gate
+- Phase 5 Mocked Regression Gate
+- Frontend E2E Core Gate
