@@ -1717,7 +1717,7 @@ const isApiNodeResponse = (value: unknown): value is ApiNodeResponse => (
   && typeof value.path === 'string'
   && typeof value.nodeType === 'string'
   && isStringOrNullish(value.parentId)
-  && isOptionalFiniteNumber(value.size)
+  && isNullishOr(value.size, isFiniteNumber)
   && isStringOrNullish(value.createdBy)
   && isStringOrNullishOrTimestampArray(value.createdDate)
   && isStringOrNullish(value.lastModifiedBy)
@@ -1753,7 +1753,7 @@ const isApiNodeDetailsResponse = (value: unknown): value is ApiNodeDetailsRespon
   && typeof value.path === 'string'
   && typeof value.nodeType === 'string'
   && isStringOrNullish(value.parentId)
-  && isOptionalFiniteNumber(value.size)
+  && isNullishOr(value.size, isFiniteNumber)
   && isStringOrNullish(value.contentType)
   && isStringOrNullish(value.currentVersionLabel)
   && isStringOrNullish(value.correspondentId)

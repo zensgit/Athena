@@ -184,6 +184,41 @@ describe('nodeService folder/node CRUD response shape guards', () => {
     });
   });
 
+  // Regression lock for the real-backend folder-item shape captured in
+  // CI run 26204071473 trace.zip: folder nodes return size: null (folders
+  // have no byte size). Both isApiNodeResponse and isApiNodeDetailsResponse
+  // must accept it via isNullishOr(size, isFiniteNumber).
+  it('getChildren: real-backend folder item with size: null passes primary + fallback', async () => {
+    const realBackendFolderItem = {
+      id: '5ce6f78b-e4f8-4c2b-bc37-4ebd1b4a81de',
+      name: 'Archive',
+      description: null,
+      path: '/Root/Archive',
+      nodeType: 'FOLDER',
+      parentId: 'd712f22b-7190-425b-b713-c96a5b6a99c2',
+      size: null,
+      contentType: null,
+      locked: false,
+      lockedBy: null,
+      createdBy: 'system',
+      createdDate: '2026-05-21T03:58:00.274822',
+      lastModifiedBy: null,
+      lastModifiedDate: null,
+    };
+    mockedApi.get.mockResolvedValueOnce({ content: [realBackendFolderItem], totalElements: 1 });
+    const nodes = await nodeService.getChildren('folder-1');
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0].id).toBe('5ce6f78b-e4f8-4c2b-bc37-4ebd1b4a81de');
+    expect(nodes[0].nodeType).toBe('FOLDER');
+
+    // Fallback path (ApiNodeDetailsResponse) — same null-size shape must pass
+    mockedApi.get.mockResolvedValueOnce(null); // primary throws (force fallback)
+    mockedApi.get.mockResolvedValueOnce({ content: [{ ...realBackendFolderItem, properties: {}, metadata: {}, aspects: [] }] });
+    const fbNodes = await nodeService.getChildren('folder-1');
+    expect(fbNodes).toHaveLength(1);
+    expect(fbNodes[0].id).toBe('5ce6f78b-e4f8-4c2b-bc37-4ebd1b4a81de');
+  });
+
   it('getChildren: primary /folders/{id}/contents good → no fallback', async () => {
     mockedApi.get.mockResolvedValueOnce({ content: [validApiNode] });
     const nodes = await nodeService.getChildren('folder-1');
