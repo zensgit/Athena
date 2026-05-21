@@ -103,12 +103,13 @@ Done directly on `main`.
 
 ## Implementation Notes
 
-- The normalization sandwich (`assertAndNormalize*`) is critical:
-  predicate accepts `string | null | number[]` for LocalDateTime fields,
-  then `normalizeTimestamp` coerces `number[]` → ISO 8601 string before
-  the mapper assigns it to `Node.created` (declared `string`). Without
-  this layer, accepting the array form in the predicate would leak a
-  non-string value into `Node.created` and downstream UI.
+- The normalization sandwich (`assertAndNormalize*`) coerces the
+  Jackson `number[]` form of LocalDateTime fields to an ISO 8601 string
+  before the mapper sees it; `string`, `null`, and `undefined` pass
+  through unchanged. The guard's purpose here is specifically to
+  prevent an array value from leaking into the mapper output (e.g.
+  reaching `Node.created` as an array and rendering as JSON-stringified
+  numbers), not to coerce all timestamp values into strings.
 - `pickPrimaryRoot` (line 1736) calls
   `a.createdDate.localeCompare(b.createdDate)` — assumes string. The
   `getRootFolder` normalization step (running before
@@ -195,6 +196,68 @@ git diff --check -- . ':!.env'
 ```
 
 Result: PASS. nodeService.ts: +251 / -25.
+
+## CI Follow-Up
+
+The slice required two real-backend window-fix rounds plus one Phase 5
+mock alignment before the full CI gate went green. Each round followed
+the diagnostic cadence in
+[[feedback_guard_predicates_real_backend_shape_drift]]: pull the failing
+E2E Core trace, identify the one wire field the predicate rejected,
+widen only that site.
+
+**Round 1 — `d18c5be` → run `26198976125` (failure)**
+- Phase 5 Mocked Regression Gate: failed on
+  `mail-automation-phase6-p1.mock.spec.ts:476`. The mock fulfilling
+  `/api/v1/nodes/doc-1` returned `{id, parentId}` only — below
+  `isApiNodeDetailsResponse`'s contract (id/name/path/nodeType
+  required). Per gate ruling we aligned the mock with the contract
+  rather than weakening the predicate (`41f6fb8`).
+- Frontend E2E Core Gate: 5 specs (`browse-acl:90`,
+  `pdf-preview:284`, `permission-templates:81`,
+  `permissions-dialog:33`, `version-share-download:155`) all timed out
+  at 4.2 m × 3 retries behind FolderTree's "Failed to load folder tree"
+  state. This was real-backend shape drift, not infra.
+
+**Round 2 — `41f6fb8 → b35f0fa` → run `26204071473` (E2E Core still failing)**
+- E2E Core artifact trace for the pdf-preview File-browser-view spec
+  showed `/api/v1/folders/roots` returns `queryCriteria: null` for non-
+  smart folders. `isFolderResponse` accepted only `undefined` or
+  `isObject` (which excludes `null`), so the array element rejected the
+  whole root list. Window-fix `b35f0fa`: replace the inline check with
+  the existing `isNullishOr(value.queryCriteria, isObject)` helper.
+
+**Round 3 — `b35f0fa → 4582588` → run `26206751483` (final 7/7 green)**
+- `b35f0fa` unblocked `/folders/roots`. The next trace showed the same
+  5 specs still failing — failure point had moved forward from
+  FolderTree to the file-list `Actions` button. New trace showed
+  `/api/v1/folders/{id}/contents` and the fallback
+  `/api/v1/nodes/{id}/children` return `size: null` on every FOLDER
+  item. `isApiNodeResponse.size` and `isApiNodeDetailsResponse.size`
+  used `isOptionalFiniteNumber` which rejects `null`. Window-fix
+  `4582588`: replace those two sites with
+  `isNullishOr(value.size, isFiniteNumber)`. Paging-field `size` on
+  the list envelopes is left strict (always a finite number).
+
+**Final pushed CI run** (head `4582588`, run `26206751483`):
+
+Passing jobs (all 7/7):
+- `Backend Verify`
+- `Frontend Build & Test`
+- `Phase C Security Verification`
+- `Phase 5 Mocked Regression Gate`
+- `Frontend E2E Core Gate` (the five previously-failing specs all now pass)
+- `Property Encryption Closeout Gate`
+- `Acceptance Smoke (3 admin pages)`
+
+**Diagnostic cost vs. discipline benefit**: two trace-driven window fixes,
+each touching exactly the one predicate site the trace evidence covered,
+plus a regression-lock test reproducing the captured wire shape. No
+production guard was widened beyond what trace evidence justified. The
+gate's "B (修 mock, 不放宽 production guard)" ruling on the Phase 5
+failure correctly distinguished test-fixture incompleteness from real
+wire drift; the two subsequent E2E Core rounds were unambiguous wire
+drift and were resolved by the standard narrowing playbook.
 
 ## E2E Risk Notes
 
