@@ -1701,7 +1701,7 @@ const isFolderResponse = (value: unknown): value is FolderResponse => (
   && typeof value.folderType === 'string'
   && (value.inheritPermissions === undefined || typeof value.inheritPermissions === 'boolean')
   && (value.smart === undefined || typeof value.smart === 'boolean')
-  && (value.queryCriteria === undefined || isObject(value.queryCriteria))
+  && isNullishOr(value.queryCriteria, isObject)
   && isStringOrNullish(value.createdBy)
   && isStringOrNullishOrTimestampArray(value.createdDate)
   && isStringOrNullish(value.lastModifiedBy)

@@ -80,6 +80,31 @@ describe('nodeService folder/node CRUD response shape guards', () => {
     expect(mockedApi.get).toHaveBeenLastCalledWith('/folders/roots');
   });
 
+  // Regression lock for the real-backend `/folders/roots` shape captured in
+  // CI run 26201381835 trace.zip: queryCriteria serializes as null (not
+  // undefined or object). isFolderResponse must accept it.
+  it('getRootFolder: real-backend shape with queryCriteria: null is accepted', async () => {
+    const realBackendRoot = {
+      id: '2e1fd1be-e291-4800-8456-98d5e836885d',
+      name: 'Root',
+      description: null,
+      path: '/Root',
+      parentId: null,
+      folderType: 'SYSTEM',
+      inheritPermissions: false,
+      smart: false,
+      queryCriteria: null,
+      createdBy: 'system',
+      createdDate: '2026-05-21T02:27:30.027808',
+      lastModifiedBy: null,
+      lastModifiedDate: null,
+    };
+    mockedApi.get.mockResolvedValueOnce([realBackendRoot]);
+    const node = await nodeService.getNode('root');
+    expect(node.id).toBe('2e1fd1be-e291-4800-8456-98d5e836885d');
+    expect(node.nodeType).toBe('FOLDER');
+  });
+
   it('getRootFolder: rejects HTML / null / bad array element', async () => {
     mockedApi.get.mockResolvedValueOnce(HTML_FALLBACK);
     await expect(nodeService.getNode('root')).rejects.toThrow(NODE_UNEXPECTED_RESPONSE_MESSAGE);
