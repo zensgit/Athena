@@ -2068,6 +2068,63 @@ const assertAndNormalizeApiVersionPageResponse = (
   };
 };
 
+type PdfAnnotationWire = {
+  id?: string | null;
+  page: number;
+  x: number;
+  y: number;
+  text?: string | null;
+  color?: string | null;
+  createdBy?: string | null;
+  createdAt?: string | null;
+};
+
+type PdfAnnotationStateWire = {
+  annotations: PdfAnnotationWire[];
+  updatedBy?: string | null;
+  updatedAt?: string | null;
+};
+
+const isPdfAnnotationWire = (value: unknown): value is PdfAnnotationWire => (
+  isObject(value)
+  && isStringOrNullish(value.id)
+  && isFiniteNumber(value.page)
+  && isFiniteNumber(value.x)
+  && isFiniteNumber(value.y)
+  && isStringOrNullish(value.text)
+  && isStringOrNullish(value.color)
+  && isStringOrNullish(value.createdBy)
+  && isStringOrNullish(value.createdAt)
+);
+
+const isPdfAnnotationStateWire = (value: unknown): value is PdfAnnotationStateWire => (
+  isObject(value)
+  && Array.isArray(value.annotations)
+  && value.annotations.every(isPdfAnnotationWire)
+  && isStringOrNullish(value.updatedBy)
+  && isStringOrNullish(value.updatedAt)
+);
+
+const normalizePdfAnnotation = (annotation: PdfAnnotationWire): PdfAnnotation => ({
+  id: annotation.id ?? undefined,
+  page: annotation.page,
+  x: annotation.x,
+  y: annotation.y,
+  text: annotation.text ?? '',
+  color: annotation.color ?? undefined,
+  createdBy: annotation.createdBy ?? undefined,
+  createdAt: annotation.createdAt ?? undefined,
+});
+
+const assertAndNormalizePdfAnnotationState = (raw: unknown): PdfAnnotationState => {
+  const state = assertResponse(raw, isPdfAnnotationStateWire);
+  return {
+    annotations: state.annotations.map(normalizePdfAnnotation),
+    updatedBy: state.updatedBy ?? null,
+    updatedAt: state.updatedAt ?? null,
+  };
+};
+
 const assertAndNormalizeFolderResponseArray = (raw: unknown): FolderResponse[] => {
   const arr = assertResponseArray(raw, isFolderResponse);
   return arr.map(normalizeFolderResponseTimestamps);
@@ -3379,11 +3436,15 @@ class NodeService {
   }
 
   async getPdfAnnotations(nodeId: string): Promise<PdfAnnotationState> {
-    return api.get<PdfAnnotationState>(`/documents/${nodeId}/annotations`);
+    return assertAndNormalizePdfAnnotationState(
+      await api.get<unknown>(`/documents/${nodeId}/annotations`)
+    );
   }
 
   async savePdfAnnotations(nodeId: string, annotations: PdfAnnotation[]): Promise<PdfAnnotationState> {
-    return api.post<PdfAnnotationState>(`/documents/${nodeId}/annotations`, { annotations });
+    return assertAndNormalizePdfAnnotationState(
+      await api.post<unknown>(`/documents/${nodeId}/annotations`, { annotations })
+    );
   }
 
   async getPermissions(nodeId: string): Promise<Record<string, Permission[]>> {
