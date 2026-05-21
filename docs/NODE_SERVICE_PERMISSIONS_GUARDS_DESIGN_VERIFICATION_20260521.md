@@ -124,3 +124,17 @@ Additional checks:
 
 This closes the planned JSON response-shape guard backlog for `nodeService`.
 Blob, download, and void methods remain deliberate out-of-scope boundaries.
+
+## CI Follow-Up
+
+GitHub Actions run `26226880018` for commit `9976821` completed successfully.
+
+All seven CI jobs passed:
+
+- Backend Verify
+- Frontend Build & Test
+- Phase C Security Verification
+- Acceptance Smoke (3 admin pages)
+- Property Encryption Closeout Gate
+- Phase 5 Mocked Regression Gate
+- Frontend E2E Core Gate
