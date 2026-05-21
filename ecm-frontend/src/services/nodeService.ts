@@ -763,6 +763,13 @@ const isBooleanOrNullish = (value: unknown): value is boolean | null | undefined
   value === null || value === undefined || typeof value === 'boolean'
 );
 
+const isStringOrTimestampArray = (value: unknown): boolean => (
+  typeof value === 'string'
+  || (Array.isArray(value) && value.length > 0 && value.every(
+    (n) => typeof n === 'number' && Number.isFinite(n)
+  ))
+);
+
 const assertUnexpectedResponse = (): never => {
   throw new Error(NODE_UNEXPECTED_RESPONSE_MESSAGE);
 };
@@ -814,8 +821,8 @@ const isApiVersionResponse = (value: unknown): value is ApiVersionResponse => (
   && isStringOrNullish(value.documentId)
   && typeof value.versionLabel === 'string'
   && isStringOrNullish(value.comment)
-  && typeof value.createdDate === 'string'
-  && typeof value.creator === 'string'
+  && isStringOrTimestampArray(value.createdDate)
+  && isStringOrNullish(value.creator)
   && isFiniteNumber(value.size)
   && typeof value.major === 'boolean'
   && isStringOrNullish(value.mimeType)
@@ -824,6 +831,32 @@ const isApiVersionResponse = (value: unknown): value is ApiVersionResponse => (
   && isStringOrNullish(value.status)
   && isBooleanOrNullish(value.checkoutBaseline)
   && isBooleanOrNullish(value.checkoutCurrent)
+);
+
+type VersionTextDiff = {
+  available: boolean;
+  truncated: boolean;
+  reason?: string | null;
+  diff?: string | null;
+};
+
+type VersionCompareTextDiffResponse = {
+  textDiff?: VersionTextDiff | null;
+};
+
+const isVersionTextDiff = (value: unknown): value is VersionTextDiff => (
+  isObject(value)
+  && typeof value.available === 'boolean'
+  && typeof value.truncated === 'boolean'
+  && isStringOrNullish(value.reason)
+  && isStringOrNullish(value.diff)
+);
+
+const isVersionCompareTextDiffResponse = (
+  value: unknown
+): value is VersionCompareTextDiffResponse => (
+  isObject(value)
+  && isNullishOr(value.textDiff, isVersionTextDiff)
 );
 
 const isNodeCheckoutRelation = (value: unknown): value is NodeCheckoutRelation => (
@@ -1664,9 +1697,7 @@ const isSuggestedFilterItem = (
 
 const isStringOrNullishOrTimestampArray = (value: unknown): boolean => (
   isStringOrNullish(value)
-  || (Array.isArray(value) && value.length > 0 && value.every(
-    (n) => typeof n === 'number' && Number.isFinite(n)
-  ))
+  || isStringOrTimestampArray(value)
 );
 
 const normalizeTimestamp = (value: unknown): string | null | undefined => {
@@ -1926,6 +1957,35 @@ const normalizeCheckoutLineageVersionTimestamps = (
 ): ApiVersionResponse => ({
   ...raw,
   createdDate: normalizeTimestamp(raw.createdDate) as string,
+  creator: raw.creator ?? '',
+});
+
+const normalizeApiVersionResponseTimestamps = (
+  raw: ApiVersionResponse
+): ApiVersionResponse => ({
+  ...raw,
+  createdDate: normalizeTimestamp(raw.createdDate) as string,
+  creator: raw.creator ?? '',
+});
+
+const mapApiVersionResponseToVersion = (
+  version: ApiVersionResponse,
+  fallbackDocumentId: string
+): Version => ({
+  id: version.id,
+  documentId: version.documentId || fallbackDocumentId,
+  versionLabel: version.versionLabel,
+  comment: version.comment,
+  created: version.createdDate,
+  creator: version.creator,
+  size: version.size,
+  isMajor: version.major,
+  mimeType: version.mimeType,
+  contentHash: version.contentHash,
+  contentId: version.contentId,
+  status: version.status,
+  checkoutBaseline: version.checkoutBaseline,
+  checkoutCurrent: version.checkoutCurrent,
 });
 
 const assertAndNormalizeLockInfo = (raw: unknown): LockInfo =>
@@ -1945,6 +2005,20 @@ const assertAndNormalizeCheckoutLineageResponse = (raw: unknown): CheckoutLineag
     currentVersion: lineage.currentVersion
       ? normalizeCheckoutLineageVersionTimestamps(lineage.currentVersion)
       : lineage.currentVersion,
+  };
+};
+
+const assertAndNormalizeApiVersionResponseArray = (raw: unknown): ApiVersionResponse[] => (
+  assertResponseArray(raw, isApiVersionResponse).map(normalizeApiVersionResponseTimestamps)
+);
+
+const assertAndNormalizeApiVersionPageResponse = (
+  raw: unknown
+): PageResponse<ApiVersionResponse> => {
+  const page = assertPageResponse(raw, isApiVersionResponse);
+  return {
+    ...page,
+    content: page.content.map(normalizeApiVersionResponseTimestamps),
   };
 };
 
@@ -2251,33 +2325,15 @@ class NodeService {
       await api.get<unknown>(`/documents/${nodeId}/checkout-lineage`)
     );
 
-    const mapVersion = (version?: ApiVersionResponse | null): Version | null => {
-      if (!version) {
-        return null;
-      }
-      return {
-        id: version.id,
-        documentId: version.documentId || nodeId,
-        versionLabel: version.versionLabel,
-        comment: version.comment,
-        created: version.createdDate,
-        creator: version.creator,
-        size: version.size,
-        isMajor: version.major,
-        mimeType: version.mimeType,
-        contentHash: version.contentHash,
-        contentId: version.contentId,
-        status: version.status,
-        checkoutBaseline: version.checkoutBaseline,
-        checkoutCurrent: version.checkoutCurrent,
-      };
-    };
-
     return {
       documentId: response.documentId,
       checkout: response.checkout,
-      baselineVersion: mapVersion(response.baselineVersion),
-      currentVersion: mapVersion(response.currentVersion),
+      baselineVersion: response.baselineVersion
+        ? mapApiVersionResponseToVersion(response.baselineVersion, nodeId)
+        : null,
+      currentVersion: response.currentVersion
+        ? mapApiVersionResponseToVersion(response.currentVersion, nodeId)
+        : null,
     };
   }
 
@@ -2724,29 +2780,13 @@ class NodeService {
     size = 5,
     majorOnly = false
   ): Promise<Version[]> {
-    const response = assertPageResponse(
+    const response = assertAndNormalizeApiVersionPageResponse(
       await api.get<unknown>(
         `/nodes/${encodeURIComponent(nodeId)}/relations/versions`,
         { params: { page, size, majorOnly } }
-      ),
-      isApiVersionResponse
+      )
     );
-    return (response.content || []).map((version) => ({
-      id: version.id,
-      documentId: version.documentId || nodeId,
-      versionLabel: version.versionLabel,
-      comment: version.comment,
-      created: version.createdDate,
-      creator: version.creator,
-      size: version.size,
-      isMajor: version.major,
-      mimeType: version.mimeType,
-      contentHash: version.contentHash,
-      contentId: version.contentId,
-      status: version.status,
-      checkoutBaseline: version.checkoutBaseline,
-      checkoutCurrent: version.checkoutCurrent,
-    }));
+    return response.content.map((version) => mapApiVersionResponseToVersion(version, nodeId));
   }
 
   async getNodeRelationCheckout(nodeId: string): Promise<NodeCheckoutRelation> {
@@ -2759,23 +2799,6 @@ class NodeService {
       await api.get<unknown>(`/nodes/${encodeURIComponent(nodeId)}/relations/checkout-graph`),
       isNodeCheckoutGraphRaw
     );
-    const mapVersion = (version?: ApiVersionResponse | null): Version | null => (version ? ({
-      id: version.id,
-      documentId: version.documentId || nodeId,
-      versionLabel: version.versionLabel,
-      comment: version.comment,
-      created: version.createdDate,
-      creator: version.creator,
-      size: version.size,
-      isMajor: version.major,
-      mimeType: version.mimeType,
-      contentHash: version.contentHash,
-      contentId: version.contentId,
-      status: version.status,
-      checkoutBaseline: version.checkoutBaseline,
-      checkoutCurrent: version.checkoutCurrent,
-    }) : null);
-
     return {
       nodeId: graph.nodeId,
       document: graph.document,
@@ -2785,8 +2808,12 @@ class NodeService {
       documentNode: graph.documentNode ?? null,
       workingCopyNode: graph.workingCopyNode ?? null,
       destinationNode: graph.destinationNode ?? null,
-      baselineVersion: mapVersion(graph.baselineVersion),
-      currentVersion: mapVersion(graph.currentVersion),
+      baselineVersion: graph.baselineVersion
+        ? mapApiVersionResponseToVersion(normalizeApiVersionResponseTimestamps(graph.baselineVersion), nodeId)
+        : null,
+      currentVersion: graph.currentVersion
+        ? mapApiVersionResponseToVersion(normalizeApiVersionResponseTimestamps(graph.currentVersion), nodeId)
+        : null,
       nodes: graph.nodes || [],
       edges: graph.edges || [],
       canCheckIn: graph.canCheckIn,
@@ -3209,23 +3236,10 @@ class NodeService {
   }
 
   async getVersionHistory(nodeId: string): Promise<Version[]> {
-    const versions = await api.get<ApiVersionResponse[]>(`/documents/${nodeId}/versions`);
-    return versions.map((version) => ({
-      id: version.id,
-      documentId: version.documentId || nodeId,
-      versionLabel: version.versionLabel,
-      comment: version.comment,
-      created: version.createdDate,
-      creator: version.creator,
-      size: version.size,
-      isMajor: version.major,
-      mimeType: version.mimeType,
-      contentHash: version.contentHash,
-      contentId: version.contentId,
-      status: version.status,
-      checkoutBaseline: version.checkoutBaseline,
-      checkoutCurrent: version.checkoutCurrent,
-    }));
+    const versions = assertAndNormalizeApiVersionResponseArray(
+      await api.get<unknown>(`/documents/${nodeId}/versions`)
+    );
+    return versions.map((version) => mapApiVersionResponseToVersion(version, nodeId));
   }
 
   async getVersionHistoryPage(
@@ -3240,26 +3254,13 @@ class NodeService {
     totalElements: number;
     totalPages: number;
   }> {
-    const response = await api.get<PageResponse<ApiVersionResponse>>(
-      `/documents/${nodeId}/versions/paged`,
-      { params: { page, size, majorOnly } }
+    const response = assertAndNormalizeApiVersionPageResponse(
+      await api.get<unknown>(
+        `/documents/${nodeId}/versions/paged`,
+        { params: { page, size, majorOnly } }
+      )
     );
-    const versions = response.content.map((version) => ({
-      id: version.id,
-      documentId: version.documentId || nodeId,
-      versionLabel: version.versionLabel,
-      comment: version.comment,
-      created: version.createdDate,
-      creator: version.creator,
-      size: version.size,
-      isMajor: version.major,
-      mimeType: version.mimeType,
-      contentHash: version.contentHash,
-      contentId: version.contentId,
-      status: version.status,
-      checkoutBaseline: version.checkoutBaseline,
-      checkoutCurrent: version.checkoutCurrent,
-    }));
+    const versions = response.content.map((version) => mapApiVersionResponseToVersion(version, nodeId));
     return {
       versions,
       page: response.number,
@@ -3308,23 +3309,26 @@ class NodeService {
     maxBytes = 200000,
     maxLines = 2000
   ): Promise<{ available: boolean; truncated: boolean; reason?: string | null; diff?: string | null }> {
-    const response = await api.get<{
-      textDiff?: { available: boolean; truncated: boolean; reason?: string | null; diff?: string | null } | null;
-    }>(`/documents/${nodeId}/versions/compare`, {
-      params: {
-        fromVersionId,
-        toVersionId,
-        includeTextDiff: true,
-        maxBytes,
-        maxLines,
-      },
-    });
+    const response = assertResponse(
+      await api.get<unknown>(`/documents/${nodeId}/versions/compare`, {
+        params: {
+          fromVersionId,
+          toVersionId,
+          includeTextDiff: true,
+          maxBytes,
+          maxLines,
+        },
+      }),
+      isVersionCompareTextDiffResponse
+    );
 
     return response.textDiff ?? { available: false, truncated: false, reason: 'No diff available', diff: null };
   }
 
   async revertToVersion(nodeId: string, versionId: string): Promise<Node> {
-    const node = await api.post<ApiNodeDetailsResponse>(`/documents/${nodeId}/versions/${versionId}/revert`);
+    const node = assertAndNormalizeApiNodeDetailsResponse(
+      await api.post<unknown>(`/documents/${nodeId}/versions/${versionId}/revert`)
+    );
     return this.apiNodeDetailsToNode(node);
   }
 
