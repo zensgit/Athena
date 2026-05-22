@@ -110,3 +110,43 @@ After push, the required confirmation is the normal GitHub Actions matrix:
 
 If CI is green, append a `CI Follow-Up` section with the run id and commit a
 doc-only `[skip ci]` closeout.
+
+## CI Follow-Up
+
+Initial CI:
+
+- GitHub Actions run `26279182772`
+- Head: `977b4df`
+- Result: `failure`
+
+The failure was isolated to the new relation contract test:
+
+```text
+NodeControllerRelationResponseContractTest.relationVersionsLockVersionDtoFieldSet
+JSON path "$.content[0].size" expected:<0> but was:<200>
+```
+
+Root cause: the test fixture set `Version.fileSize` to `200L`, while the
+assertion expected the `VersionDto.from(...)` null fallback value `0`. This was
+a test expectation error, not a product-code issue.
+
+Fix:
+
+- Commit `8e71e46` changed the assertion to lock the actual fixture-backed
+  contract value: `size: 200`.
+
+Final CI:
+
+- GitHub Actions run `26285831946`
+- Head: `8e71e46`
+- Result: `success`
+
+All seven jobs passed:
+
+- Backend Verify
+- Frontend Build & Test
+- Phase C Security Verification
+- Acceptance Smoke (3 admin pages)
+- Property Encryption Closeout Gate
+- Phase 5 Mocked Regression Gate
+- Frontend E2E Core Gate
