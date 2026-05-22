@@ -118,7 +118,7 @@ class FolderControllerResponseContractTest {
             .andExpect(jsonPath("$.content[0].parentId", nullValue()))
             .andExpect(jsonPath("$.content[0].size", nullValue()))
             .andExpect(jsonPath("$.content[0].contentType", nullValue()))
-            .andExpect(jsonPath("$.content[0].folder").value(true))
+            .andExpect(jsonPath("$.content[0].isFolder").value(true))
             .andExpect(jsonPath("$.content[0].locked").value(false))
             .andExpect(jsonPath("$.content[0].lockedBy", nullValue()))
             .andExpect(jsonPath("$.content[0].createdBy").value("alice"))
