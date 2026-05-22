@@ -112,3 +112,21 @@ After push, the required confirmation is the normal GitHub Actions matrix:
 
 If CI is green, append a `CI Follow-Up` section with the run id and commit a
 doc-only `[skip ci]` closeout.
+
+## CI Follow-Up
+
+Final CI:
+
+- GitHub Actions run `26287407186`
+- Head: `ec4f6d0`
+- Result: `success`
+
+All seven jobs passed:
+
+- Backend Verify
+- Frontend Build & Test
+- Phase C Security Verification
+- Acceptance Smoke (3 admin pages)
+- Property Encryption Closeout Gate
+- Phase 5 Mocked Regression Gate
+- Frontend E2E Core Gate
