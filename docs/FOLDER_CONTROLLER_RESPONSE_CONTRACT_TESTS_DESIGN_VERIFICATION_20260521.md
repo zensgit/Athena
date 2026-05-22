@@ -99,3 +99,35 @@ After push, the required confirmation is the normal GitHub Actions matrix:
 
 If CI is green, append a `CI Follow-Up` section with the run id and commit a
 doc-only `[skip ci]` closeout.
+
+## CI Follow-Up
+
+First pushed head:
+
+- `b6aac23 docs(core): record folder controller contract verification`
+- GitHub Actions run `26272100786`
+- Result: failed in `Backend Verify` unit tests.
+- Root cause: the test asserted `$.content[0].folder`, but
+  `FolderController.NodeResponse` is a Java record with component
+  `boolean isFolder`, so Jackson serializes the field as `isFolder`.
+
+Forward fix:
+
+- `2c32685 test(core): align folder contract boolean field`
+- Change: assert `$.content[0].isFolder` instead of `$.content[0].folder`.
+
+Final CI:
+
+- GitHub Actions run `26272387259`
+- Head: `2c32685`
+- Result: `success`
+
+All seven jobs passed:
+
+- Backend Verify
+- Frontend Build & Test
+- Phase C Security Verification
+- Acceptance Smoke (3 admin pages)
+- Property Encryption Closeout Gate
+- Phase 5 Mocked Regression Gate
+- Frontend E2E Core Gate
