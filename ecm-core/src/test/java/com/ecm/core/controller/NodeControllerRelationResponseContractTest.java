@@ -253,7 +253,7 @@ class NodeControllerRelationResponseContractTest {
             .andExpect(jsonPath("$.content[0].comment", nullValue()))
             .andExpect(jsonPath("$.content[0].createdDate", nullValue()))
             .andExpect(jsonPath("$.content[0].creator", nullValue()))
-            .andExpect(jsonPath("$.content[0].size").value(0))
+            .andExpect(jsonPath("$.content[0].size").value(200))
             .andExpect(jsonPath("$.content[0].major").value(false))
             .andExpect(jsonPath("$.content[0].mimeType", nullValue()))
             .andExpect(jsonPath("$.content[0].contentHash", nullValue()))
