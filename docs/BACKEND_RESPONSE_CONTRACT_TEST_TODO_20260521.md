@@ -57,6 +57,7 @@ The doc recommends one of three test shapes per group. Pick by what the group mo
 
 ### 3. Node CRUD + relations — `NodeController` (`/api/v1/nodes`)
 
+- **Implementation status:** In progress slice 3 locks the core read endpoints only: `/nodes/{id}` and `/nodes/{id}/children`. Relation, lock/checkout, version-history, and permission endpoints remain separate follow-up slices.
 - **Frontend consumer:** `nodeService.ts` (20+ methods). Central node management; touches every node-detail page, version history, checkout/checkin, renditions, relations.
 - **DTO / record:**
   - Primary read DTO: **`NodeDto`** at `ecm-core/src/main/java/com/ecm/core/dto/NodeDto.java` — returned by `/nodes/{id}`, `/nodes/by-path`, and (wrapped in `Page<NodeDto>`) by `/nodes/{id}/children` (`NodeController.java:107-113`), plus the create/update/move/copy/aspect endpoints.
