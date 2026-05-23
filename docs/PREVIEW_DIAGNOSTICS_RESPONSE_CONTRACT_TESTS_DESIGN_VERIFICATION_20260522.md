@@ -91,9 +91,15 @@ failed to connect to the docker API at unix:///Users/chouhua/.docker/run/docker.
 
 CI remains the authoritative execution gate for this slice.
 
-## Expected CI Gate
+## CI Follow-Up
 
-After push, the required confirmation is the normal GitHub Actions matrix:
+Final CI:
+
+- GitHub Actions run: `26319556549`
+- Head: `6be65e5e6df1e479fec5267069afa545f14ef02d`
+- Result: `success`
+
+All seven jobs passed:
 
 - Backend Verify
 - Frontend Build & Test
@@ -102,6 +108,3 @@ After push, the required confirmation is the normal GitHub Actions matrix:
 - Property Encryption Closeout Gate
 - Phase 5 Mocked Regression Gate
 - Frontend E2E Core Gate
-
-If CI is green, append a `CI Follow-Up` section with the run id and commit a
-doc-only `[skip ci]` closeout.
