@@ -115,8 +115,9 @@ The doc recommends one of three test shapes per group. Pick by what the group mo
 - **Trace-corrected:** No documented trace, but Phase 5 Mocked exposed mock thinness on the closely-related `/api/v1/nodes/{id}` path (different controller — DocumentController/NodeController — but illustrates that the mocked harness here can lag behind contract).
 - **Recommended test:** **MockMvc** for `listAccounts` / `listRules` / `getRuntimeMetrics` (the three highest-traffic reads); **fixture-only** for the diagnostic-replay and provider-preset endpoints.
 
-### 10. Permissions — `PermissionController` (or permission endpoints under `NodeController` / `PermissionTemplateController`)
+### 10. Permissions — `SecurityController` / `PermissionTemplateController`
 
+- **Implementation status:** Current follow-up locks the `SecurityController` read contracts used by `nodeService`: `/security/nodes/{id}/permissions`, `/security/nodes/{id}/permission-diagnostics`, `/security/permission-sets`, and `/security/permission-sets/metadata`. PermissionTemplateController remains a separate follow-up if needed.
 - **Frontend consumer:** `nodeService.ts` (permissions section: `getPermissions`, `getPermissionDiagnostics`, `getPermissionSets`, `getPermissionSetMetadata`, `setPermission`, etc.) + `permissionTemplateService.ts` (6 JSON methods).
 - **DTO / record:** Permission record (group/role/user + permission level), permission decision (with reasoning), permission set metadata, inheritance-path entries, ACL templates.
 - **Nullable / timestamp / envelope risk:** Medium-high — inheritance paths contain nested folder references that may be null at the root; permission-decision DTOs include nullable `reason` / `denyReason` / `inheritedFrom`; sets metadata serializes enum levels.
