@@ -70,7 +70,8 @@ The tests lock:
   audit details, file-plan descriptions, operation messages, and job
   completion timestamps;
 - `LocalDateTime` serialization as ISO strings;
-- the page envelope used by `/records/audit`;
+- the page envelope used by `/records/audit`, including the observed Spring
+  `PageImpl` field order fixed by `b03fe9b`;
 - the nested summary-bucket, activity-window, governed-import-job, and
   governed-transfer-job field sets.
 
@@ -99,9 +100,15 @@ failed to connect to the docker API at unix:///Users/chouhua/.docker/run/docker.
 
 CI remains the authoritative execution gate for this slice.
 
-## Expected CI Gate
+## CI Follow-Up
 
-After push, the required confirmation is the normal GitHub Actions matrix:
+Final CI:
+
+- GitHub Actions run: `26326650362`
+- Head: `b03fe9b6b309dfd6cc5419b3dd595e8af112c20f`
+- Result: `success`
+
+All seven jobs passed:
 
 - Backend Verify
 - Frontend Build & Test
@@ -110,6 +117,3 @@ After push, the required confirmation is the normal GitHub Actions matrix:
 - Property Encryption Closeout Gate
 - Phase 5 Mocked Regression Gate
 - Frontend E2E Core Gate
-
-If CI is green, append a `CI Follow-Up` section with the run id and commit a
-doc-only `[skip ci]` closeout.
