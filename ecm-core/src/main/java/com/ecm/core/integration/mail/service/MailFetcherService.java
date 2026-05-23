@@ -161,7 +161,16 @@ public class MailFetcherService {
                 status = "error";
                 reason = "oauth_reauth_required";
                 stats.accountErrors++;
-                log.warn("OAuth reauth required for mail account {}: {}", account.getName(), e.getMessage());
+                // Phase 2 logging audit: do NOT emit e.getMessage() which embeds the
+                // provider-controlled oauthErrorDescription. Log only the OAuth standard
+                // error code + accountName/accountId; the original exception remains
+                // accessible to upstream callers via the catch site.
+                log.warn(
+                    "OAuth reauth required for mail account {} ({}): code={}",
+                    account.getName(),
+                    account.getId(),
+                    e.getOauthError()
+                );
                 updateAccountFetchStatus(account, "ERROR", e.getMessage());
             } catch (Exception e) {
                 status = "error";
@@ -492,7 +501,7 @@ public class MailFetcherService {
                                 .collect(Collectors.toList());
 
                             MailRuleMatcher.MailMessageData messageData = new MailRuleMatcher.MailMessageData(
-                                safeSubject(message),
+                                subjectOrEmpty(message),
                                 safeFrom(message),
                                 safeRecipients(message),
                                 bodyText,
@@ -517,7 +526,7 @@ public class MailFetcherService {
                             matchedMessages.add(new MailRulePreviewMessage(
                                 folderName,
                                 uid,
-                                safeSubject(message),
+                                subjectOrEmpty(message),
                                 safeFrom(message),
                                 safeRecipients(message),
                                 toLocalDateTime(message.getReceivedDate(), message.getSentDate()),
@@ -783,7 +792,12 @@ public class MailFetcherService {
             try {
                 expungeNeeded |= processMessage(message, rules, account, folderName, folder, stats);
             } catch (Exception e) {
-                log.error("Error processing message: {}", safeSubject(message), e);
+                // Phase 2 logging audit: redact subject from log output.
+                // subjectOrEmpty(message) returns raw subject (PII); redactSubjectForLog
+                // returns "<redacted-subject>". Other call sites at :495, :520, :832,
+                // :2038, :2325, :2379, :2727 keep subjectOrEmpty because they feed
+                // persistence / DTO / filename paths, not loggers.
+                log.error("Error processing message: {}", redactSubjectForLog(message), e);
             }
         }
 
@@ -829,7 +843,7 @@ public class MailFetcherService {
         }
 
         MailRuleMatcher.MailMessageData messageData = new MailRuleMatcher.MailMessageData(
-            safeSubject(message),
+            subjectOrEmpty(message),
             safeFrom(message),
             safeRecipients(message),
             bodyText,
@@ -2035,7 +2049,7 @@ public class MailFetcherService {
             }
 
             MailRuleMatcher.MailMessageData messageData = new MailRuleMatcher.MailMessageData(
-                safeSubject(message),
+                subjectOrEmpty(message),
                 safeFrom(message),
                 safeRecipients(message),
                 bodyText,
@@ -2322,7 +2336,7 @@ public class MailFetcherService {
         processed.setRuleId(rule != null ? rule.getId() : null);
         processed.setFolder(folderName);
         processed.setUid(uid);
-        processed.setSubject(safeSubject(message));
+        processed.setSubject(subjectOrEmpty(message));
         processed.setReceivedAt(toLocalDateTime(safeDate(message, true), safeDate(message, false)));
         processed.setProcessedAt(LocalDateTime.now());
         processed.setStatus(status);
@@ -2376,7 +2390,7 @@ public class MailFetcherService {
     private MultipartFile buildEmlFile(Message message) throws Exception {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         message.writeTo(outputStream);
-        String filename = buildEmailFilename(safeSubject(message));
+        String filename = buildEmailFilename(subjectOrEmpty(message));
         return new MockMultipartFile(
             filename,
             filename,
@@ -2665,13 +2679,37 @@ public class MailFetcherService {
         return candidate.contains("@") ? candidate : null;
     }
 
-    private String safeSubject(Message message) {
+    /**
+     * Returns the message subject as a non-null String, suitable for non-logger
+     * consumers (persistence, filename construction, rule matching, message-ID
+     * fallback). Decode failures and null subjects coerce to the empty string.
+     *
+     * <p>Do not use this from logger statements; the returned value is the raw
+     * subject and may contain PII (user-controlled email subject line). Use
+     * {@link #redactSubjectForLog(Message)} from logger statements instead.
+     *
+     * <p>Package-private for unit testing.
+     */
+    String subjectOrEmpty(Message message) {
         try {
             return message.getSubject() != null ? message.getSubject() : "";
         } catch (Exception e) {
             log.debug("Mail subject decode failed: {}", e.getMessage());
             return "";
         }
+    }
+
+    /**
+     * Returns a constant placeholder safe for logger output. The raw subject is
+     * intentionally not emitted; subjects are user-controlled and frequently
+     * contain PII or confidential identifiers (e.g. "Layoff plan Q4").
+     *
+     * <p>Package-private for unit testing. Always returns the literal
+     * {@code "<redacted-subject>"} regardless of the input subject. The parameter
+     * is retained so callers signal intent at the call site.
+     */
+    String redactSubjectForLog(Message message) {
+        return "<redacted-subject>";
     }
 
     private String safeFrom(Message message) {
@@ -2724,7 +2762,7 @@ public class MailFetcherService {
         } catch (MessagingException ignored) {
             // fall through
         }
-        String fallback = safeSubject(message) + "|" + safeFrom(message) + "|" + safeDate(message, false);
+        String fallback = subjectOrEmpty(message) + "|" + safeFrom(message) + "|" + safeDate(message, false);
         return UUID.nameUUIDFromBytes(fallback.getBytes(StandardCharsets.UTF_8)).toString();
     }
 

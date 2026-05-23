@@ -205,12 +205,12 @@ public class OAuthCredentialService {
                 evictSession(owner.ownerType(), owner.ownerId());
                 return;
             }
+            // Phase 2 logging audit: do NOT embed parsed.errorDescription() in the
+            // user-visible message. The description is provider-controlled and may
+            // carry user identifiers; it remains accessible via the cause chain (ex).
             String message = "OAuth token revoke failed for owner " + owner.ownerName();
             if (parsed != null) {
                 message += ": " + parsed.error();
-                if (parsed.errorDescription() != null && !parsed.errorDescription().isBlank()) {
-                    message += " - " + parsed.errorDescription().trim();
-                }
             } else {
                 message += ": provider returned " + ex.getStatusCode().value();
             }
@@ -351,10 +351,10 @@ public class OAuthCredentialService {
                         parsed.errorDescription()
                     );
                 }
+                // Phase 2 logging audit: do NOT embed parsed.errorDescription() in the
+                // user-visible message. The description is provider-controlled and may
+                // carry user identifiers; it remains accessible via the cause chain (ex).
                 String message = "OAuth token refresh failed: " + parsed.error();
-                if (parsed.errorDescription() != null && !parsed.errorDescription().isBlank()) {
-                    message += " - " + parsed.errorDescription().trim();
-                }
                 throw new IllegalStateException(message, ex);
             }
             throw ex;

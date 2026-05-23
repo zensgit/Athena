@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -529,6 +530,119 @@ class OAuthCredentialServiceTest {
 
         assertEquals("invalid_grant", exception.getError());
         verify(adapter).clearTokens(ownerId);
+        server.verify();
+    }
+
+    // ------------------------------------------------------------------------
+    // Phase 2 logging audit (2026-05-23): IllegalStateException messages must
+    // not embed the provider-controlled `error_description` because the message
+    // flows to RestExceptionHandler.handleInternalState at ERROR level + stack.
+    // ------------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+        "Phase 2 logging audit: revoke IllegalStateException message includes parsed.error() "
+            + "but excludes provider error_description content"
+    )
+    void revokeIllegalStateExceptionDoesNotEmbedErrorDescription() {
+        UUID ownerId = UUID.randomUUID();
+        OAuthCredentialOwner owner = new OAuthCredentialOwner(
+            OWNER_TYPE,
+            ownerId,
+            "gmail",
+            OAuthProviderType.GOOGLE,
+            null,
+            null,
+            null,
+            null,
+            "stored-access",
+            "stored-refresh",
+            LocalDateTime.now().plusHours(1)
+        );
+        when(adapter.loadOwner(ownerId)).thenReturn(owner);
+
+        // Provider returns 400 with an error code outside the already-invalid set
+        // ({invalid_token, invalid_grant, unsupported_token_type}) so the failure
+        // path that builds IllegalStateException is exercised. Error description
+        // intentionally embeds PII-shaped content the test will assert against.
+        server.expect(requestTo("https://oauth2.googleapis.com/revoke"))
+            .andExpect(method(HttpMethod.POST))
+            .andRespond(withBadRequest().body("""
+                {"error":"invalid_request","error_description":"User user@example.com violated scope-x policy"}
+                """).contentType(MediaType.APPLICATION_JSON));
+
+        IllegalStateException ex = assertThrows(
+            IllegalStateException.class,
+            () -> service.revokeProviderTokens(OWNER_TYPE, ownerId)
+        );
+
+        String message = ex.getMessage();
+        assertTrue(message.contains("invalid_request"),
+            "message must include the OAuth standard error code; got: " + message);
+        assertFalse(message.contains("user@example.com"),
+            "message must NOT embed provider error_description (PII-shaped); got: " + message);
+        assertFalse(message.contains("scope-x"),
+            "message must NOT embed provider error_description; got: " + message);
+        assertFalse(message.contains("violated"),
+            "message must NOT embed provider error_description; got: " + message);
+        // Local tokens must be preserved on non-already-invalid provider failures.
+        verify(adapter, never()).clearTokens(ownerId);
+        server.verify();
+    }
+
+    @Test
+    @DisplayName(
+        "Phase 2 logging audit: refresh IllegalStateException message includes parsed.error() "
+            + "but excludes provider error_description content"
+    )
+    void refreshIllegalStateExceptionDoesNotEmbedErrorDescription() {
+        UUID ownerId = UUID.randomUUID();
+        OAuthCredentialOwner owner = new OAuthCredentialOwner(
+            OWNER_TYPE,
+            ownerId,
+            "gmail",
+            OAuthProviderType.GOOGLE,
+            null,
+            null,
+            "https://mail.google.com/",
+            null,
+            null,
+            "stored-refresh",
+            null
+        );
+        when(adapter.loadOwner(ownerId)).thenReturn(owner);
+        when(adapter.buildProviderEnvKey(OAuthProviderType.GOOGLE, "CLIENT_ID")).thenReturn("ECM_MAIL_OAUTH_GOOGLE_CLIENT_ID");
+        when(adapter.buildProviderEnvKey(OAuthProviderType.GOOGLE, "CLIENT_SECRET")).thenReturn("ECM_MAIL_OAUTH_GOOGLE_CLIENT_SECRET");
+        when(adapter.buildProviderEnvKey(OAuthProviderType.GOOGLE, "SCOPE")).thenReturn("ECM_MAIL_OAUTH_GOOGLE_SCOPE");
+        when(adapter.buildProviderEnvKey(OAuthProviderType.GOOGLE, "TOKEN_ENDPOINT")).thenReturn("ECM_MAIL_OAUTH_GOOGLE_TOKEN_ENDPOINT");
+        when(environment.getProperty("ECM_MAIL_OAUTH_GOOGLE_CLIENT_ID")).thenReturn("client-id");
+        when(environment.getProperty("ECM_MAIL_OAUTH_GOOGLE_CLIENT_SECRET")).thenReturn("client-secret");
+        when(environment.getProperty("ECM_MAIL_OAUTH_GOOGLE_SCOPE")).thenReturn(null);
+        when(environment.getProperty("ECM_MAIL_OAUTH_GOOGLE_TOKEN_ENDPOINT")).thenReturn(null);
+
+        // Provider returns 400 with a non-invalid_grant error code so the refresh
+        // failure path that builds IllegalStateException (not OAuthReauthRequired)
+        // is exercised. Error description embeds PII-shaped content.
+        server.expect(requestTo("https://oauth2.googleapis.com/token"))
+            .andExpect(method(HttpMethod.POST))
+            .andRespond(withBadRequest().body("""
+                {"error":"invalid_request","error_description":"Subject 'Q4 layoff plan' from user@example.com rejected"}
+                """).contentType(MediaType.APPLICATION_JSON));
+
+        IllegalStateException ex = assertThrows(
+            IllegalStateException.class,
+            () -> service.resolveAccessToken(OWNER_TYPE, ownerId)
+        );
+
+        String message = ex.getMessage();
+        assertTrue(message.contains("invalid_request"),
+            "message must include the OAuth standard error code; got: " + message);
+        assertFalse(message.contains("user@example.com"),
+            "message must NOT embed provider error_description (PII-shaped); got: " + message);
+        assertFalse(message.contains("Q4 layoff plan"),
+            "message must NOT embed provider error_description; got: " + message);
+        assertFalse(message.contains("rejected"),
+            "message must NOT embed provider error_description; got: " + message);
         server.verify();
     }
 }

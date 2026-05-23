@@ -355,7 +355,11 @@ public class MailAutomationController {
             String redirect = buildRedirect(result.redirectUrl(), true, result.accountId());
             return ResponseEntity.status(302).header(HttpHeaders.LOCATION, redirect).build();
         } catch (Exception ex) {
-            log.warn("OAuth callback failed", ex);
+            // Phase 2 logging audit: do NOT log the full exception object. The OAuth
+            // callback exchanges an authorization code for tokens; any nested transport
+            // exception that echoes the request body could leak the `code` parameter or
+            // provider-controlled error descriptions. Log only the exception class name.
+            log.warn("OAuth callback failed: type={} (message redacted)", ex.getClass().getSimpleName());
             String redirect = buildRedirect(null, false, null);
             return ResponseEntity.status(302).header(HttpHeaders.LOCATION, redirect).build();
         }
