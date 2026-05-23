@@ -114,6 +114,7 @@ The doc recommends one of three test shapes per group. Pick by what the group mo
 
 ### 9. Mail automation — `MailAutomationController` (`/api/v1/integration/mail` and related)
 
+- **Implementation status:** Current follow-up locks the high-traffic read contracts for account list, rule list, and runtime metrics. Provider presets already have dedicated coverage; diagnostics/report/processed-mail/OAuth/fetch/mutation/CSV surfaces remain separate follow-ups if needed.
 - **Frontend consumer:** `mailAutomationService.ts` — 26 JSON methods; called from `/admin/mail` UI (account CRUD, rules, scheduler, retention, runtime metrics).
 - **DTO / record:** Mail account, rule, fetch summary, runtime metrics, replay result, runtime error stat. Many of these were captured in the frontend predicates already (`MailAccount`, `MailRule`, `MailFetchSummary`, etc.), so the shapes are well-mapped.
 - **Nullable / timestamp / envelope risk:** Medium — `lastFetchAt?`, `lastFetchStatus?`, `lastFetchError?` on account; `nextAttemptAt?` on processed-mail diagnostics; OAuth fields often nullable depending on provider.
