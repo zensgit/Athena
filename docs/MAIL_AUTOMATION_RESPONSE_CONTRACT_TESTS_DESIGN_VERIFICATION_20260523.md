@@ -81,3 +81,21 @@ failed to connect to the docker API at unix:///Users/chouhua/.docker/run/docker.
 ```
 
 CI is the authoritative execution gate for this slice.
+
+## CI Follow-Up
+
+Final CI:
+
+- GitHub Actions run: `26333415170`
+- Head: `6bda32d5e0dc7d1123915bbd7bbebeae525a7740`
+- Result: `success`
+
+All seven jobs passed:
+
+- Frontend Build & Test
+- Backend Verify
+- Phase C Security Verification
+- Frontend E2E Core Gate
+- Property Encryption Closeout Gate
+- Acceptance Smoke (3 admin pages)
+- Phase 5 Mocked Regression Gate
