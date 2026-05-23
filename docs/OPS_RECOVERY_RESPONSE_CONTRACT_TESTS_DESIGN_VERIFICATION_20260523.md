@@ -53,7 +53,7 @@ The slice locks these wire DTOs:
 The tests lock:
 
 - create-response field order and deduplication fields;
-- request snapshot filters and numeric limits;
+- request snapshot numeric limits plus explicit JSON nulls for omitted filters;
 - status-response nullable lifecycle fields (`error`, `finishedAt`,
   `filename`) as explicit JSON nulls while the task is running;
 - `startedAt`, `createdAt`, `timeoutAt`, and `expiresAt` presence;
@@ -90,3 +90,21 @@ zsh:1: command not found: mvn
 ```
 
 CI is the authoritative execution gate for this slice.
+
+## CI Diagnostic Follow-Up
+
+Initial CI run `26329262548` failed in Backend Verify. The failure was in the
+new contract test, before any production code was exercised as broken:
+
+```text
+OpsRecoveryControllerResponseContractTest.historyExportAsyncEndpointsLockResponseContracts:156 expected: <true> but was: <false>
+```
+
+Root cause: the test request included `actor` and `eventType` filters, but the
+mocked repository latch only covered the unfiltered HISTORY query path. The
+background task correctly chose a different repository method, so the latch used
+to stabilize the `RUNNING` status never fired.
+
+Forward fix: keep the slice focused on the base async export contract by using
+only `exportType`, `limit`, and `days`, and assert the omitted snapshot filters
+as explicit JSON nulls.

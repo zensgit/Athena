@@ -125,10 +125,7 @@ class OpsRecoveryControllerResponseContractTest {
                         {
                           "exportType": "HISTORY",
                           "limit": 5,
-                          "days": 7,
-                          "mode": "QUEUE_BY_REASON",
-                          "actor": "ops-admin",
-                          "eventType": "OPS_RECOVERY_QUEUE_BY_REASON"
+                          "days": 7
                         }
                         """))
                 .andExpect(status().isAccepted())
@@ -139,9 +136,9 @@ class OpsRecoveryControllerResponseContractTest {
                 .andExpect(jsonPath("$.request.exportType", is("HISTORY")))
                 .andExpect(jsonPath("$.request.limit", is(5)))
                 .andExpect(jsonPath("$.request.days", is(7)))
-                .andExpect(jsonPath("$.request.mode", is("QUEUE_BY_REASON")))
-                .andExpect(jsonPath("$.request.actor", is("ops-admin")))
-                .andExpect(jsonPath("$.request.eventType", is("OPS_RECOVERY_QUEUE_BY_REASON")))
+                .andExpect(jsonPath("$.request.mode", nullValue()))
+                .andExpect(jsonPath("$.request.actor", nullValue()))
+                .andExpect(jsonPath("$.request.eventType", nullValue()))
                 .andExpect(jsonPath("$.deduplicated", is(false)))
                 .andExpect(jsonPath("$.deduplicatedFromTaskId", nullValue()))
                 .andExpect(jsonPath("$.message", is("Started async export task")))
