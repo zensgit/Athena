@@ -61,6 +61,8 @@ Local static hygiene:
 git diff --check -- . ':!.env'
 ```
 
+Result: passed.
+
 Targeted Maven test:
 
 ```bash
@@ -76,9 +78,15 @@ failed to connect to the docker API at unix:///Users/chouhua/.docker/run/docker.
 
 CI remains the authoritative execution gate for this slice.
 
-## Expected CI Gate
+## CI Follow-Up
 
-After push, the required confirmation is the normal GitHub Actions matrix:
+Final CI:
+
+- GitHub Actions run: `26327567298`
+- Head: `00eab44730a8c8a41db7e75e8d1328cd2647736c`
+- Result: `success`
+
+All seven jobs passed:
 
 - Backend Verify
 - Frontend Build & Test
@@ -88,5 +96,6 @@ After push, the required confirmation is the normal GitHub Actions matrix:
 - Phase 5 Mocked Regression Gate
 - Frontend E2E Core Gate
 
-If CI is green, append a `CI Follow-Up` section with the run id and commit a
-doc-only `[skip ci]` closeout.
+Note: the first Acceptance Smoke attempt was cancelled while installing the
+Playwright browser. Rerunning failed/cancelled jobs for the same run completed
+successfully; the application smoke step then passed.
