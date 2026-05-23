@@ -124,3 +124,27 @@ that security context. The controller resolves that worker actor as `system`.
 
 Forward fix: lock the true contract explicitly: `createdBy` remains
 `ops-admin`, while `updatedBy` on the running status/list item is `system`.
+
+## CI Follow-Up
+
+Final CI:
+
+- GitHub Actions run: `26329502441`
+- Head: `46dc10d1f66b348885b889ac77f7413bb9497850`
+- Result: `success`
+
+All seven jobs passed:
+
+- Backend Verify
+- Frontend Build & Test
+- Phase C Security Verification
+- Acceptance Smoke (3 admin pages)
+- Property Encryption Closeout Gate
+- Phase 5 Mocked Regression Gate
+- Frontend E2E Core Gate
+
+Earlier failed runs were diagnostic only:
+
+- `26329262548`: test latch targeted the wrong repository query branch.
+- `26329376411`: test expected request actor on an async worker update that
+  correctly records `system`.
