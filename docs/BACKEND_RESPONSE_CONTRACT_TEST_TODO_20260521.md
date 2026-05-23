@@ -69,6 +69,7 @@ The doc recommends one of three test shapes per group. Pick by what the group mo
 
 ### 4. Preview diagnostics — `PreviewDiagnosticsController` (`/api/v1/preview/diagnostics`)
 
+- **Implementation status:** Current follow-up locks the high-traffic JSON contracts for failures, failure summary, queue summary, cancel-active, declined summary, and declined async-export create response. The broader declined/requeue/rendition async-task families remain separate follow-ups if needed.
 - **Frontend consumer:** `previewDiagnosticsService.ts` — **61 JSON methods**, the largest single-service surface in the frontend; called from diagnostics dashboards and preview failure flows.
 - **DTO / record:** Many — exact count not enumerated in the orientation scan. Failure DTOs (`PreviewQueueFailureDto`), summary DTOs, async-export-task lifecycle DTOs, rendition resource DTOs.
 - **Nullable / timestamp / envelope risk:** High suspected — failure-reason / failure-category / status strings tend to be nullable; rendition resource has ~20 fields with timestamps and URLs; async-task envelopes carry queue/run/complete dates that are nullable until terminal.
