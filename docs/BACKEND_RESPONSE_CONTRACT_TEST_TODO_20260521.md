@@ -87,6 +87,7 @@ The doc recommends one of three test shapes per group. Pick by what the group mo
 
 ### 6. Document operations — `DocumentController` (`/api/v1/documents`)
 
+- **Implementation status:** Current follow-up locks the version-history and checkout-info JSON contracts consumed by `nodeService`. Upload/download, compare/revert, checkout lineage, and mutation endpoints remain separate follow-ups if needed.
 - **Frontend consumer:** `nodeService.ts` (document-specific methods: `downloadDocument`, version listings, `checkoutDocument`, `cancelCheckoutDocument`, `checkinDocument`, preview/annotation endpoints).
 - **DTO / record:** Heavy reliance on imported DTOs — `VersionDto` (14 fields, 7 nullable strings, 1 `LocalDateTime` at `ecm-core/.../dto/VersionDto.java`), `CheckoutInfoDto` (~8 fields, 3-4 nullable strings, 1 `LocalDateTime` at `ecm-core/.../dto/CheckoutInfoDto.java`).
 - **Nullable / timestamp / envelope risk:** Medium — version label and checkout-user strings frequently nullable; `LocalDateTime` for createdDate / checkoutDate. `List<VersionDto>` + `Page<VersionDto>` envelopes on `/documents/{id}/versions`.
