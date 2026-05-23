@@ -96,6 +96,7 @@ The doc recommends one of three test shapes per group. Pick by what the group mo
 
 ### 7. Ops recovery — `OpsRecoveryController` (`/api/v1/ops/recovery`)
 
+- **Implementation status:** Current follow-up locks the central async export task lifecycle contracts for create, status, list, and summary responses. CSV/download, retry-terminal, cleanup/cancel-active mutations, and the broader queue/replay/dry-run/history families remain separate follow-ups if needed.
 - **Frontend consumer:** `opsRecoveryService.ts` — 25 JSON methods (guard inventory); 8 Blob/download OOS. Used in admin recovery dashboards.
 - **DTO / record:** Recovery history records, async-export-task DTOs (lifecycle: QUEUED / RUNNING / COMPLETED / FAILED / TIMEOUT / EXPIRED), filter DTOs.
 - **Nullable / timestamp / envelope risk:** Async-task envelopes have `error?` / `message?` / `startedAt?` / `finishedAt?` / `filename?` — typical of the async-tail pattern; history paging carries queue/run/actor dates.
