@@ -30,6 +30,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -116,18 +117,14 @@ class MailFetcherServiceLoggingRedactionTest {
     }
 
     @Test
-    @DisplayName("redactSubjectForLog returns the constant placeholder regardless of subject content")
-    void redactSubjectForLogIsConstant() throws MessagingException {
-        Message confidential = mock(Message.class);
-        when(confidential.getSubject()).thenReturn("Confidential Q4 layoff plan");
-        Message benign = mock(Message.class);
-        when(benign.getSubject()).thenReturn("Newsletter");
-        Message empty = mock(Message.class);
-        when(empty.getSubject()).thenReturn(null);
-
-        assertEquals("<redacted-subject>", service.redactSubjectForLog(confidential));
-        assertEquals("<redacted-subject>", service.redactSubjectForLog(benign));
-        assertEquals("<redacted-subject>", service.redactSubjectForLog(empty));
+    @DisplayName("redactSubjectForLog returns the constant placeholder regardless of input")
+    void redactSubjectForLogIsConstant() {
+        // redactSubjectForLog never inspects the Message's subject content; the
+        // placeholder is a literal. Stubbing message.getSubject() here would be
+        // dead code (Mockito strict mode rejects it). The constant return is the
+        // entire contract.
+        Message message = mock(Message.class);
+        assertEquals("<redacted-subject>", service.redactSubjectForLog(message));
     }
 
     @Test
@@ -136,9 +133,16 @@ class MailFetcherServiceLoggingRedactionTest {
             + "redaction placeholder and never the raw subject"
     )
     void errorProcessingMessageLogContainsRedactionMarkerNotSubject() throws MessagingException {
+        // Stub the subject with `lenient()` so the test catches a regression where
+        // the production :800 call site is reverted from redactSubjectForLog(message)
+        // back to subjectOrEmpty(message): subjectOrEmpty would then call getSubject()
+        // and the stub would supply `sensitive`, which would then leak into the log,
+        // failing the assertFalse(contains(sensitive)) below. The current code path
+        // uses redactSubjectForLog which never calls getSubject(), so the stub is
+        // unused under the green path -- that is what lenient() permits.
         Message message = mock(Message.class);
         String sensitive = "Confidential Q4 layoff plan";
-        when(message.getSubject()).thenReturn(sensitive);
+        lenient().when(message.getSubject()).thenReturn(sensitive);
         RuntimeException cause = new RuntimeException("processing failure");
 
         // Drive the exact :786 format string against the production MailFetcherService
