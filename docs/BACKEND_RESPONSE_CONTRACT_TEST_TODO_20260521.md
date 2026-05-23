@@ -78,6 +78,7 @@ The doc recommends one of three test shapes per group. Pick by what the group mo
 
 ### 5. Records management — `RecordsManagementController` (`/api/v1/records/*`)
 
+- **Implementation status:** Current follow-up locks the core RM read contracts for records, summary, audit page, operations telemetry, activity timeline/highlights, file plans, and record categories. CSV/report-preset/mutation endpoints remain separate follow-ups if needed.
 - **Frontend consumer:** `recordsManagementService.ts` — **37 JSON methods**; called from RM admin dashboards, declarations, activity audits, contributor reports.
 - **DTO / record:** Activity / audit / contributor records (specific DTOs not enumerated in orientation). RM is the most data-domain-rich subsystem (file plans, categories, dispositions, holds).
 - **Nullable / timestamp / envelope risk:** Suspected high — activity records carry `declaredBy` / `declaredAt` / `recordCategoryPath` strings that may be null; contributor reports aggregate timestamps; activity-breakdown / activity-timeline have date-bucket envelopes.
