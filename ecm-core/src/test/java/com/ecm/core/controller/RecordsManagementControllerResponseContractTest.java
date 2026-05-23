@@ -324,7 +324,7 @@ class RecordsManagementControllerResponseContractTest {
     }
 
     private static List<String> pageEnvelopeFieldNames() {
-        return List.of("content", "pageable", "last", "totalPages", "totalElements", "size", "number", "sort", "first", "numberOfElements", "empty");
+        return List.of("content", "pageable", "totalElements", "totalPages", "last", "size", "number", "sort", "numberOfElements", "first", "empty");
     }
 
     private static List<String> recordAuditEntryFieldNames() {
