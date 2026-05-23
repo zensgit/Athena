@@ -108,3 +108,19 @@ to stabilize the `RUNNING` status never fired.
 Forward fix: keep the slice focused on the base async export contract by using
 only `exportType`, `limit`, and `days`, and assert the omitted snapshot filters
 as explicit JSON nulls.
+
+Second CI run `26329376411` reached the intended `RUNNING` status but failed on
+`updatedBy`:
+
+```text
+JSON path "$.updatedBy"
+Expected: is "ops-admin"
+     but: was "system"
+```
+
+Root cause: task creation runs under the request security context, but the
+background transition from `QUEUED` to `RUNNING` runs in an async worker without
+that security context. The controller resolves that worker actor as `system`.
+
+Forward fix: lock the true contract explicitly: `createdBy` remains
+`ops-admin`, while `updatedBy` on the running status/list item is `system`.

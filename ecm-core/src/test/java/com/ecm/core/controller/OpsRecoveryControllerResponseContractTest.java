@@ -162,7 +162,7 @@ class OpsRecoveryControllerResponseContractTest {
                 .andExpect(jsonPath("$.finishedAt", nullValue()))
                 .andExpect(jsonPath("$.filename", nullValue()))
                 .andExpect(jsonPath("$.createdBy", is("ops-admin")))
-                .andExpect(jsonPath("$.updatedBy", is("ops-admin")))
+                .andExpect(jsonPath("$.updatedBy", is("system")))
                 .andReturn();
 
             JsonNode statusRoot = objectMapper.readTree(statusResult.getResponse().getContentAsString());
@@ -184,6 +184,7 @@ class OpsRecoveryControllerResponseContractTest {
                 .andExpect(jsonPath("$.items[0].error", nullValue()))
                 .andExpect(jsonPath("$.items[0].finishedAt", nullValue()))
                 .andExpect(jsonPath("$.items[0].filename", nullValue()))
+                .andExpect(jsonPath("$.items[0].updatedBy", is("system")))
                 .andReturn();
 
             JsonNode listRoot = objectMapper.readTree(listResult.getResponse().getContentAsString());
