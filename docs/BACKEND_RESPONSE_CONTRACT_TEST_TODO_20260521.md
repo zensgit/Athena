@@ -105,6 +105,7 @@ The doc recommends one of three test shapes per group. Pick by what the group mo
 
 ### 8. Workflow — `WorkflowController` (`/api/v1/workflows`)
 
+- **Implementation status:** Current follow-up locks the high-consumption read contracts for definitions, task inbox/detail, and process browser/detail. Diagram blobs, form models, child task/history/activity/involved/variable/item endpoints, document history, and mutations remain separate follow-ups if needed.
 - **Frontend consumer:** `workflowService.ts` — 23 JSON methods; called from workflow definition UI, task pages, approval flows.
 - **DTO / record:** Workflow definitions, instances, tasks, history. State strings (`PENDING` / `IN_PROGRESS` / `COMPLETED` / `CANCELLED`) likely nullable until transition; assignee strings nullable.
 - **Nullable / timestamp / envelope risk:** Medium — typical state-machine DTOs with assignment + date fields.
