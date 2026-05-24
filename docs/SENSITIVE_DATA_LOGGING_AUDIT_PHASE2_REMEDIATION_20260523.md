@@ -99,8 +99,65 @@ Splitting docs from code is the user's preferred boundary for this slice; combin
 
 ## CI Follow-Up
 
-Populated after CI completes.
+Final CI:
 
-- GitHub Actions run: `<pending>`
-- Head: `<pending>`
-- Result: `<pending>`
+- GitHub Actions run: `26339319405`
+- Head: `f604b1b1` (align-fix commit; the production+test commit was `f80bd8d` and was followed by `f604b1b` adjusting the new test for Mockito strict-stub mode — see §"Align-fix narrative" below)
+- Result: **success**
+
+All seven jobs passed:
+
+- Backend Verify
+- Frontend Build & Test
+- Phase C Security Verification
+- Acceptance Smoke (3 admin pages)
+- Property Encryption Closeout Gate
+- Phase 5 Mocked Regression Gate
+- Frontend E2E Core Gate
+
+## Align-fix narrative
+
+The first CI run `26339042170` on `f80bd8d` (the production + test commit) failed Backend Verify with three errors:
+
+1. `MailFetcherServiceLoggingRedactionTest.redactSubjectForLogIsConstant` — `UnnecessaryStubbingException` at lines 122/124/126. Root cause: the test stubbed `message.getSubject()` three times, but `redactSubjectForLog` returns a literal constant and never invokes `getSubject()`. Mockito strict mode rejects unused stubs.
+2. `MailFetcherServiceLoggingRedactionTest.errorProcessingMessageLogContainsRedactionMarkerNotSubject` — same root cause at line 141.
+3. `RecordsManagementControllerResponseContractTest.listAuditLocksPageAndAuditEntryContract:151` — Spring `PageImpl` field-order swap (`last` and `totalPages` traded positions). This test was green at slice 7 (run `26326650362`, head `b03fe9b`) and this slice did not touch Spring page serialization or RM controller code; the failure was identified as pre-existing JVM-iteration-order flakiness in Spring's reflective Jackson serialization.
+
+The align-fix commit `f604b1b` addressed only the two test-code errors (item 1 and 2), per the per-CI-round single-root-cause discipline (`MEMORY.md` → `feedback_diagnostic_cadence_for_opaque_500s`):
+
+- `redactSubjectForLogIsConstant` simplified to a single mock + single assertion (no unused stubs).
+- `errorProcessingMessageLogContainsRedactionMarkerNotSubject` retained the regression-catch semantics by switching the stub to `lenient().when(...)` — the stub is intentionally unused under the green path (the production `:800` call site uses `redactSubjectForLog`, not `subjectOrEmpty`), but if the call site is ever reverted, `subjectOrEmpty` would then call `getSubject()` and the stub would supply `sensitive`, which the existing `assertFalse(formatted.contains(sensitive))` would catch.
+
+The RM flakiness (item 3) self-resolved on the next CI run, confirming the JVM-iteration-order hypothesis. No code change required for it. If it recurs in a future slice's CI, it deserves a dedicated regression-catch fix (e.g., widen the test's expected field order to accept either Spring-emitted permutation).
+
+## Verification (final)
+
+| Check | Status |
+|---|---|
+| `git diff --check -- . ':!.env'` | passed (after both commits) |
+| Production diff scope | confirmed: 3 files (`OAuthCredentialService.java`, `MailFetcherService.java`, `MailAutomationController.java`) |
+| Test diff scope | confirmed: 1 extended (`OAuthCredentialServiceTest.java`) + 2 new (`MailFetcherServiceLoggingRedactionTest.java`, `MailAutomationControllerOAuthCallbackLoggingTest.java`) |
+| `.env` untouched | confirmed (`M .env` is the pre-existing local override) |
+| Local Maven targeted run | blocked by missing Docker socket — CI was the execution gate |
+| Final CI conclusion | `success` on run `26339319405`, head `f604b1b` |
+
+## What this slice closes
+
+- The Phase 1.5 STILL NEEDS-MASK list is reduced from 6 sites to the 4 deferred-as-OOS sites enumerated in §"Out of scope". The 4 high-evidence sites are remediated:
+  - `MailFetcherService:800` (was `:786`) — raw email subject no longer reaches the log.
+  - `MailFetcherService:168` (was `:164`) — provider `oauthErrorDescription` no longer reaches the log.
+  - `OAuthCredentialService:208-216` and `:354-358` — provider `errorDescription` no longer reaches `RestExceptionHandler:44` via the IllegalStateException message.
+  - `MailAutomationController:362` — OAuth callback exception class only; no message, no stack.
+- The `safeSubject` developer-trap (misleading name implying redaction) is removed by rename.
+- Tests are runtime-locked via Logback `ListAppender` on the production loggers.
+
+## Track status
+
+Sensitive-Data Logging Audit track: **closed** for this remediation cycle. Track artefacts:
+
+- `docs/NEXT_TRACK_DISCOVERY_20260523.md`
+- `docs/SENSITIVE_DATA_LOGGING_AUDIT_DESIGN_20260523.md`
+- `docs/SENSITIVE_DATA_LOGGING_AUDIT_FINDINGS_20260523.md` (Phase 1 + Phase 1.5 appendix + Phase 2 status)
+- `docs/SENSITIVE_DATA_LOGGING_AUDIT_PHASE2_REMEDIATION_20260523.md` (this doc)
+
+No follow-up slice is required unless a new audit signal (incident, new feature surface, or scheduled re-audit) re-opens the deferred-OOS items.
