@@ -82,8 +82,45 @@ If CI is green, append a `CI Follow-Up` section to this doc with the run id + he
 
 ## CI Follow-Up
 
-Populated after CI completes.
+Final CI:
 
-- GitHub Actions run: `<pending>`
-- Head: `<pending>`
-- Result: `<pending>`
+- GitHub Actions run: `26350543941`
+- Head: `a8734511e9f80568b4112a53c001f92ba76cb2d9` (docs commit on top of the fix commit `41bd641`; same CI run gates both)
+- Result: **success**
+
+All seven jobs passed:
+
+- Backend Verify
+- Frontend Build & Test
+- Phase C Security Verification
+- Acceptance Smoke (3 admin pages)
+- Property Encryption Closeout Gate
+- Phase 5 Mocked Regression Gate
+- Frontend E2E Core Gate
+
+No align fix was needed this round — the gate finding was specific (preserved cause chain) and the sanitizer-helper-plus-printStackTrace-assertion fix landed clean on the first CI attempt.
+
+## Verification (final)
+
+| Check | Status |
+|---|---|
+| `git diff --check -- . ':!.env'` | passed |
+| Production diff scope | `OAuthCredentialService.java` only (sanitizer helper + 4 throw-site cause updates) |
+| Test diff scope | `OAuthCredentialServiceTest.java` only (2 tests extended with `printStackTrace`-output assertions) |
+| `.env` untouched | confirmed |
+| Local Maven targeted run | blocked by missing Docker socket — CI was the execution gate |
+| Final CI conclusion | `success` on run `26350543941`, head `a873451` |
+
+## Track status (post-Follow-up #1)
+
+Sensitive-Data Logging Audit track: **closed** post-follow-up. The cause-chain leak surfaced by the gate review is now plugged at the source (sanitizer) and locked by full-Throwable-stack-trace regression tests.
+
+Deferred OOS items (carried from Phase 2) remain deferred:
+
+- `OAuthCredentialService` refresh `throw ex` rethrow path (different log site at `MailFetcherService:179` via generic `catch (Exception e)`).
+- Other generic-`Exception` log sites in `MailFetcherService` (`:179`, `:384`) and the ~18 DEBUG-level mail-parsing exception logs.
+- `updateAccountFetchStatus(... e.getMessage())` persistence-path content.
+- `MailReportScheduledExportService:106, :136`, `CollaboraDiscoveryService:191`, `WorkflowDeploymentRunner:63, :83` single-occurrence NEEDS-MASK sites.
+- Logback `RedactingConverter` infrastructure.
+
+These re-open only on a specific new audit signal.
