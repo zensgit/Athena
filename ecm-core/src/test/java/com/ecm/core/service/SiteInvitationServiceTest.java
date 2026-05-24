@@ -607,7 +607,10 @@ class SiteInvitationServiceTest {
     @Test
     @DisplayName("inviteBulk empty inviteeEmails throws IllegalArgumentException at the request boundary")
     void inviteBulkEmptyArrayThrows() {
-        setUpBulkBaseSite("finance");
+        // The empty-array guard fires BEFORE site load + security check, so no
+        // repository / security / member stubs are exercised. Constructing the
+        // service directly (not via setUpBulkBaseSite) keeps Mockito strict
+        // mode happy.
         SiteInvitationService service = newService();
 
         assertThatThrownBy(() -> service.inviteBulk(
@@ -622,6 +625,8 @@ class SiteInvitationServiceTest {
             new SiteInvitationService.BulkInviteRequest(null, "CONSUMER", null)
         ))
             .isInstanceOf(IllegalArgumentException.class);
+
+        verify(invitationRepository, never()).save(any(SiteInvitation.class));
     }
 
     @Test
