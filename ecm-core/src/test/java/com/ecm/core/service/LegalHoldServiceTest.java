@@ -413,7 +413,10 @@ class LegalHoldServiceTest {
         Node invisibleNode = node(nInvisible, "secret.pdf", "/OtherTenant/secret.pdf", Node.NodeType.DOCUMENT);
 
         when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
-        when(securityService.getCurrentUser()).thenReturn("admin");
+        // securityService.getCurrentUser() is NOT stubbed: applyOneItem throws
+        // NodeNotVisibleForHoldException before reaching the getCurrentUser
+        // call site (see service code path). Stubbing it would be an unused
+        // stub and Mockito strict mode would reject the test.
         when(legalHoldRepository.save(any(LegalHold.class))).thenAnswer(invocation -> {
             LegalHold hold = invocation.getArgument(0);
             hold.setId(savedHoldId);
@@ -454,7 +457,10 @@ class LegalHoldServiceTest {
         String probe = "USER_PII_FROM_EXCEPTION_LEAK_PROBE";
 
         when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
-        when(securityService.getCurrentUser()).thenReturn("admin");
+        // securityService.getCurrentUser() is NOT stubbed: applyOneItem throws
+        // the injected RuntimeException at nodeRepository.findByIdAndDeleted...
+        // before reaching the getCurrentUser call site. Strict-mode Mockito
+        // would reject the unused stub.
         when(legalHoldRepository.save(any(LegalHold.class))).thenAnswer(invocation -> {
             LegalHold hold = invocation.getArgument(0);
             hold.setId(savedHoldId);

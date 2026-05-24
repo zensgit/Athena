@@ -9,9 +9,10 @@
         <comment>
             Structured release-reason enum column on legal_holds. Nullable so
             existing RELEASED rows predating this migration remain legal-valid
-            without backfill; frontend renders "Legacy release" chip for
-            status=RELEASED && release_reason IS NULL. New releases require a
-            non-null reason at the service layer (HTTP 400 otherwise).
+            without backfill; frontend renders the "Legacy release" chip for
+            rows where status equals RELEASED and release_reason is null. New
+            releases require a non-null reason at the service layer (HTTP 400
+            otherwise).
         </comment>
 
         <addColumn tableName="legal_holds">
