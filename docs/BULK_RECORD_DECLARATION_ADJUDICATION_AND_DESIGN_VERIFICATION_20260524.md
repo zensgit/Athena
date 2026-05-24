@@ -135,13 +135,24 @@ The implementation matches the brief except where noted:
 
 ## CI Follow-Up
 
-To be filled after `git push` triggers the 7-job gate.
+```
+Run id:        26365679781
+Head SHA:      5dfdbc83a3cace3c8a2e713ddd7d13b67dfdd989
+Conclusion:    success (gh run view authority per feedback_gh_run_watch_unreliable)
+URL:           https://github.com/zensgit/Athena/actions/runs/26365679781
 
+Jobs (7/7 green on first attempt — no align fix needed):
+  ✓ Backend Verify
+  ✓ Frontend Build & Test
+  ✓ Phase C Security Verification
+  ✓ Acceptance Smoke (3 admin pages)
+  ✓ Property Encryption Closeout Gate
+  ✓ Phase 5 Mocked Regression Gate
+  ✓ Frontend E2E Core Gate
 ```
-Run id:        <pending>
-Head SHA:      <pending>
-Conclusion:    <pending>
-Jobs:          Backend Verify, Frontend Build & Test, Phase C Security,
-               Acceptance Smoke, Property Encryption Closeout,
-               Phase 5 Mocked Regression, Frontend E2E Core
-```
+
+Advisor risk flags resolved by the green run:
+
+- **Mockito strict-stub on the 11 new backend tests** — Backend Verify passed without a single align iteration. The lenient `transactionManager.getTransaction(...)` stub in `setUp()` and the per-test discipline (no pre-stubs on paths that exit before reaching them) held under strict-stub mode. This is the first slice that hit it correctly on the first attempt; legal-hold (`32381d8` → align `96a7ae1`) took one round, bulk site invite (similar pattern) took one round.
+- **Phase 5 Mocked Regression on `POST /api/v1/nodes/bulk-declare`** — pre-push `grep` of `ecm-frontend/e2e/` and `ecm-frontend/src/__tests__/` was empty, so no Phase 5 spec exercises the new button. The dedicated sentinel is pure defense-in-depth. Phase 5 Mocked Regression Gate passed regardless.
+- **Probe test log-side assertion** — minor doc note from advisor; the response-side assertion + code-inspection of `log.debug(...)` (no raw `Throwable`, only class name) is consistent with the legal-hold pattern. CI confirms.
