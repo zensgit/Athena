@@ -6,6 +6,14 @@ Update 2026-05-11: CUSTOM provider revoke shipped as
 `docs/OAUTH_CREDENTIAL_PROVIDER_REVOKE_CUSTOM_BACKEND_DESIGN_VERIFICATION_20260511.md`.
 Microsoft remains unsupported for the reasons documented below.
 
+Update 2026-05-24: `docs/MICROSOFT_OAUTH_PROVIDER_REVOKE_DESIGN_20260524.md`
+re-verified the current implementation. The code already matches this
+document's "honest unsupported" recommendation: `OAuthCredentialService`
+returns unsupported for MICROSOFT in the dynamic capability decision tree, and
+`OAuthCredentialAdminService` mirrors the same unsupported state in static
+inventory projection. No production change is required unless a future product
+decision explicitly chooses an advisory logout flow or a Graph-based design.
+
 ## Context
 
 v1 Google provider-side revoke shipped on 2026-05-07; the integration record is
