@@ -88,8 +88,36 @@ CI gate per `feedback_gh_run_watch_unreliable`: gate on `gh run view conclusion`
 
 ## CI Follow-Up
 
-Populated after CI completes.
+Final CI:
 
-- GitHub Actions run: `<pending>`
-- Head: `<pending>`
-- Result: `<pending>`
+- GitHub Actions run: `26358500029`
+- Head: `2da7fd6` (align-fix commit; the production+test commit was `e7f76c3` and was followed by docs `5d374a3`, then `2da7fd6` adjusting the empty-array test for Mockito strict-stub mode — see §"Align-fix narrative" below)
+- Result: **success**
+
+All seven jobs passed:
+
+- Backend Verify
+- Frontend Build & Test
+- Phase C Security Verification
+- Acceptance Smoke (3 admin pages)
+- Property Encryption Closeout Gate
+- Phase 5 Mocked Regression Gate
+- Frontend E2E Core Gate
+
+## Align-fix narrative
+
+The first CI run `26358365652` on `5d374a3` (head after the docs commit which itself sits on `e7f76c3`) failed Backend Verify with a single error: `SiteInvitationServiceTest.inviteBulkEmptyArrayThrows » UnnecessaryStubbing`.
+
+Root cause: the test called the shared `setUpBulkBaseSite(...)` helper, which stubs the site repository, security service, and site-member repository. But the empty-array guard inside `inviteBulk(...)` fires BEFORE site load and security check, so none of those stubs were exercised. Mockito strict mode (default under `@ExtendWith(MockitoExtension.class)`) rejected the unused stubs.
+
+Fix `2da7fd6`: drop `setUpBulkBaseSite` from the empty-array test. The test now constructs the service with the bare `newService()` (which only stubs the `transactionManager` leniently) and adds a `verify(invitationRepository, never()).save(...)` assertion to lock the "empty array short-circuits before any save attempt" behavior.
+
+Per-CI-round single-root-cause discipline (`feedback_diagnostic_cadence_for_opaque_500s`): the fix touches one test file only. No production code change.
+
+The other test-output noise visible in the failed run's log (`Caused by: java.lang.RuntimeException: scan failed: boom` from `RmReportPresetController` test setup) is intentional test diagnostic output, not a test failure — the failed-test summary at the bottom of the log shows `[ERROR] Tests run: 2200, Failures: 0, Errors: 1, Skipped: 6` with the single error being the SiteInvitation one. Confirmed isolation to the unused-stub case.
+
+## Track status
+
+Bulk site invitation create slice is **shipped**. Frontend dialog now defaults to the bulk endpoint for any N >= 1 emails; the backend single endpoint remains for external callers; per-row send-tracking is preserved verbatim by reusing the existing `sendInvitationEmail` path inside `createInvitationRow`.
+
+Follow-up candidates surfaced during this slice but explicitly OOS (see brief §"Out of scope"): CSV upload, async send worker, rate limiter / bulk-size cap, per-row role / message override, streaming progress events. These can be opened as separate slices only if operator signals call for them.
