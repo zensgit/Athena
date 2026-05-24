@@ -1,5 +1,10 @@
 import api from './api';
 import {
+  BulkDeclareErrorCategory,
+  BulkDeclareRequest,
+  BulkDeclareResponse,
+  BulkDeclareResult,
+  BulkDeclareStatus,
   CreateFilePlanRequest,
   CreateRecordCategoryRequest,
   RecordsActivityBreakdown,
@@ -41,6 +46,13 @@ export type RmDeliverableReportPresetKind = RmReportPresetKind;
 
 export const RECORDS_MANAGEMENT_UNEXPECTED_RESPONSE_MESSAGE =
   'Records management endpoint returned an unexpected response. Mocked CI gate may not cover it; backend route may be missing.';
+
+// Dedicated sentinel for the bulk-declare endpoint. Phase 5 Mocked HTML-fallback drift on
+// a brand-new route returns SPA index.html with HTTP 200; a separate sentinel makes the
+// failure surface for the new endpoint independently grep-able from existing RM routes.
+// See feedback_phase5_mocked_html_fallback.
+export const RECORDS_MANAGEMENT_BULK_DECLARE_UNEXPECTED_RESPONSE_MESSAGE =
+  'Bulk record declaration endpoint returned an unexpected response. Mocked CI gate may not cover /api/v1/nodes/bulk-declare; verify the backend wrapper shape (bulkDeclareResults.rows).';
 
 const RM_REPORT_PRESET_KINDS: RmReportPresetKind[] = [
   'ACTIVITY_FAMILY_REPORT',
@@ -112,6 +124,81 @@ const assertPageResponse = <T>(value: unknown): PageResponse<T> => {
     return assertUnexpectedResponse();
   }
   return value as unknown as PageResponse<T>;
+};
+
+// ---------------------------------------------------------------------------
+// Bulk record declaration shape guards
+// ---------------------------------------------------------------------------
+
+const BULK_DECLARE_STATUSES: BulkDeclareStatus[] = ['DECLARED', 'SKIPPED_ALREADY_DECLARED', 'FAILED'];
+const BULK_DECLARE_ERROR_CATEGORIES: BulkDeclareErrorCategory[] = [
+  'NODE_NOT_FOUND',
+  'NODE_NOT_VISIBLE',
+  'INTERNAL_ERROR',
+];
+
+const isBulkDeclareStatus = (value: unknown): value is BulkDeclareStatus => (
+  typeof value === 'string' && (BULK_DECLARE_STATUSES as string[]).includes(value)
+);
+
+const isBulkDeclareErrorCategory = (value: unknown): value is BulkDeclareErrorCategory => (
+  typeof value === 'string' && (BULK_DECLARE_ERROR_CATEGORIES as string[]).includes(value)
+);
+
+const isNullish = (value: unknown): boolean => value === null || value === undefined;
+
+const assertBulkDeclareUnexpectedResponse = (): never => {
+  throw new Error(RECORDS_MANAGEMENT_BULK_DECLARE_UNEXPECTED_RESPONSE_MESSAGE);
+};
+
+const isRecordDeclarationShape = (value: unknown): boolean => (
+  isObject(value)
+  && typeof value.nodeId === 'string'
+  && typeof value.name === 'string'
+  && typeof value.path === 'string'
+);
+
+// Per-row shape guard. Enforces the §3 / Finding 3 row invariants — DECLARED and
+// SKIPPED_ALREADY_DECLARED both carry a non-null declaration and a null errorCategory;
+// FAILED carries a null declaration and a known errorCategory + non-empty errorMessage.
+// Tolerates both wire shapes for null fields (explicit JSON null vs omitted), so a
+// backend that serializes with WRITE_NULL or NON_NULL does not over-trigger the sentinel.
+// See feedback_guard_predicates_real_backend_shape_drift.
+const isBulkDeclareResult = (value: unknown): value is BulkDeclareResult => {
+  if (!isObject(value)) {
+    return false;
+  }
+  if (typeof value.nodeId !== 'string') {
+    return false;
+  }
+  if (!isBulkDeclareStatus(value.status)) {
+    return false;
+  }
+  if (value.status === 'DECLARED' || value.status === 'SKIPPED_ALREADY_DECLARED') {
+    return (
+      isRecordDeclarationShape(value.declaration)
+      && isNullish(value.errorCategory)
+      && isNullish(value.errorMessage)
+    );
+  }
+  // status === 'FAILED'
+  return (
+    isNullish(value.declaration)
+    && isBulkDeclareErrorCategory(value.errorCategory)
+    && typeof value.errorMessage === 'string'
+    && value.errorMessage.length > 0
+  );
+};
+
+const assertBulkDeclareResponse = (value: unknown): BulkDeclareResponse => {
+  if (!isObject(value) || !isObject(value.bulkDeclareResults)) {
+    return assertBulkDeclareUnexpectedResponse();
+  }
+  const results = value.bulkDeclareResults as Record<string, unknown>;
+  if (!Array.isArray(results.rows) || !results.rows.every(isBulkDeclareResult)) {
+    return assertBulkDeclareUnexpectedResponse();
+  }
+  return value as unknown as BulkDeclareResponse;
 };
 
 const assertReportPreset = (value: unknown): RmReportPreset => {
@@ -716,6 +803,25 @@ class RecordsManagementService {
       ...(request?.categoryId ? { categoryId: request.categoryId } : {}),
     });
     return assertObjectResponse<RecordDeclaration>(response);
+  }
+
+  // Bulk-declare a set of nodes. Each row returns DECLARED, SKIPPED_ALREADY_DECLARED, or
+  // FAILED with one of {NODE_NOT_FOUND, NODE_NOT_VISIBLE, INTERNAL_ERROR}. Per-row partial
+  // failure is HTTP 200 with the row's errorCategory populated (not a top-level error).
+  // See docs/BULK_RECORD_DECLARATION_ADJUDICATION_AND_DESIGN_20260524.md.
+  async createBulkDeclarations(request: BulkDeclareRequest): Promise<BulkDeclareResponse> {
+    const trimmedComment = request.comment?.trim();
+    const payload: Record<string, unknown> = {
+      nodeIds: request.nodeIds,
+    };
+    if (request.categoryId) {
+      payload.categoryId = request.categoryId;
+    }
+    if (trimmedComment) {
+      payload.comment = trimmedComment;
+    }
+    const response = await api.post<unknown>('/nodes/bulk-declare', payload);
+    return assertBulkDeclareResponse(response);
   }
 
   async undeclareRecord(nodeId: string, request: UndeclareRecordRequest): Promise<void> {

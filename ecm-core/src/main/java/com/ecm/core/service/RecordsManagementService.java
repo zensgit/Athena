@@ -29,7 +29,11 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
@@ -174,6 +178,7 @@ public class RecordsManagementService {
     private final FolderService folderService;
     private final TenantWorkspaceScopeService tenantWorkspaceScopeService;
     private final ApplicationEventPublisher eventPublisher;
+    private final PlatformTransactionManager transactionManager;
 
     @Autowired
     @Lazy
@@ -510,7 +515,24 @@ public class RecordsManagementService {
         if (isDeclaredRecord(document)) {
             return toDto(document);
         }
+        String comment = request != null ? request.comment() : null;
+        UUID categoryId = request != null ? request.categoryId() : null;
+        return declareDocumentInternal(document, comment, categoryId);
+    }
 
+    /**
+     * Shared declaration logic: assumes {@code document} is loaded, visible, not a working copy,
+     * not checked out, and not already declared. Writes aspect + properties + optional category,
+     * persists, publishes lifecycle event + audit log, returns the new DTO.
+     *
+     * Same-bean self-call to {@link #declareRecord} would NOT proxy through the transaction
+     * interceptor, so the bulk-declare path calls this helper directly. The single-row
+     * {@link #declareRecord} also calls it after running its own pre-flight guards. The helper
+     * itself is unannotated; it inherits whatever transactional context the caller is running in
+     * (the class-level {@code @Transactional} for {@code declareRecord}, the per-row
+     * {@code REQUIRES_NEW} {@link TransactionTemplate} for the bulk path).
+     */
+    private RecordDeclarationDto declareDocumentInternal(Document document, String comment, UUID categoryId) {
         LocalDateTime now = LocalDateTime.now();
         String currentUser = securityService.getCurrentUser();
 
@@ -519,11 +541,11 @@ public class RecordsManagementService {
         properties.put(DECLARED_AT_PROPERTY, now.toString());
         properties.put(DECLARED_BY_PROPERTY, currentUser);
         properties.put(DECLARED_VERSION_LABEL_PROPERTY, document.getVersionLabel());
-        if (request != null && StringUtils.hasText(request.comment())) {
-            properties.put(DECLARATION_COMMENT_PROPERTY, request.comment().trim());
+        if (StringUtils.hasText(comment)) {
+            properties.put(DECLARATION_COMMENT_PROPERTY, comment.trim());
         }
-        if (request != null && request.categoryId() != null) {
-            Category category = loadRecordCategory(request.categoryId());
+        if (categoryId != null) {
+            Category category = loadRecordCategory(categoryId);
             applyRecordCategory(document, category);
         }
         document.setLastModifiedBy(currentUser);
@@ -4760,5 +4782,230 @@ public class RecordsManagementService {
                 totalCount
             );
         }
+    }
+
+    // =================================================================================
+    // Bulk record declaration
+    //
+    // See docs/BULK_RECORD_DECLARATION_ADJUDICATION_AND_DESIGN_20260524.md for the design
+    // brief that motivated this block. The bulk-declare orchestrator runs WITHOUT a
+    // transaction (Propagation.NOT_SUPPORTED) and isolates per-row failures via a
+    // TransactionTemplate with PROPAGATION_REQUIRES_NEW. Same-bean self-calls to
+    // declareRecord(...) would NOT proxy through the transaction interceptor, so the bulk
+    // path calls declareDocumentInternal(...) directly.
+    // =================================================================================
+
+    private static final String BULK_DECLARE_ERROR_NODE_NOT_FOUND =
+        "The target node was not found.";
+    private static final String BULK_DECLARE_ERROR_NODE_NOT_VISIBLE =
+        "The target node is not visible to the current tenant or is no longer live.";
+    private static final String BULK_DECLARE_ERROR_INTERNAL =
+        "Internal error while declaring the document as a record.";
+
+    /**
+     * Bulk-declare a set of nodes as records. Each {@code nodeId} produces one result row:
+     * <ul>
+     *   <li>{@link BulkDeclareStatus#DECLARED} — the document was just declared</li>
+     *   <li>{@link BulkDeclareStatus#SKIPPED_ALREADY_DECLARED} — the document was already a
+     *       record; the requested {@code categoryId} / {@code comment} are NOT applied (mirrors
+     *       single-row {@link #declareRecord} early-return behaviour)</li>
+     *   <li>{@link BulkDeclareStatus#FAILED} — load / declare failed; an
+     *       {@link BulkDeclareErrorCategory} is set and {@code declaration} is null</li>
+     * </ul>
+     *
+     * Failure isolation between rows: each row runs inside a per-call
+     * {@link TransactionTemplate} configured with
+     * {@link TransactionDefinition#PROPAGATION_REQUIRES_NEW}. A thrown exception inside one
+     * row rolls back only that row; subsequent rows still execute in fresh transactions.
+     *
+     * The orchestrator itself is annotated {@code Propagation.NOT_SUPPORTED} — there is no
+     * outer transaction to mark rollback-only and no parent entity to commit before per-row
+     * work. Same-bean self-call to {@link #declareRecord} would not engage Spring's transaction
+     * interceptor, so the bulk path invokes {@link #declareDocumentInternal} directly.
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public BulkDeclareResponse declareRecordsBulk(BulkDeclareRequest request) {
+        requireAdmin();
+        if (request == null || request.nodeIds() == null || request.nodeIds().isEmpty()) {
+            throw new IllegalArgumentException("nodeIds must contain at least one entry");
+        }
+
+        LinkedHashSet<UUID> deduped = new LinkedHashSet<>();
+        for (UUID id : request.nodeIds()) {
+            if (id != null) {
+                deduped.add(id);
+            }
+        }
+        if (deduped.isEmpty()) {
+            // v3.1 non-blocking-note guard: a caller passing { "nodeIds": [null] } (or a list
+            // of only-null entries) would otherwise produce an empty rows=[] 200 response,
+            // bypassing the UI parser's own dedupe + filter. Reject at the boundary so the
+            // failure mode is a 400 with a clear diagnostic, not a silent no-op success.
+            throw new IllegalArgumentException("nodeIds must contain at least one non-null entry");
+        }
+
+        TransactionTemplate rowTemplate = new TransactionTemplate(transactionManager);
+        rowTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+
+        List<BulkDeclareResult> rows = new ArrayList<>(deduped.size());
+        for (UUID nodeId : deduped) {
+            try {
+                DeclareOneOutcome outcome = rowTemplate.execute(status -> declareOneRow(
+                    nodeId,
+                    request.categoryId(),
+                    request.comment()
+                ));
+                if (outcome == null) {
+                    // Defensive: declareOneRow always returns a non-null outcome or throws.
+                    rows.add(BulkDeclareResult.failed(
+                        nodeId,
+                        BulkDeclareErrorCategory.INTERNAL_ERROR,
+                        BULK_DECLARE_ERROR_INTERNAL + " (null outcome)."
+                    ));
+                    continue;
+                }
+                switch (outcome.status()) {
+                    case DECLARED -> rows.add(BulkDeclareResult.declared(nodeId, outcome.declaration()));
+                    case SKIPPED_ALREADY_DECLARED -> rows.add(
+                        BulkDeclareResult.skippedAlreadyDeclared(nodeId, outcome.declaration())
+                    );
+                }
+            } catch (NodeNotFoundForDeclareException ex) {
+                rows.add(BulkDeclareResult.failed(
+                    nodeId,
+                    BulkDeclareErrorCategory.NODE_NOT_FOUND,
+                    BULK_DECLARE_ERROR_NODE_NOT_FOUND
+                ));
+            } catch (NodeNotVisibleForDeclareException ex) {
+                rows.add(BulkDeclareResult.failed(
+                    nodeId,
+                    BulkDeclareErrorCategory.NODE_NOT_VISIBLE,
+                    BULK_DECLARE_ERROR_NODE_NOT_VISIBLE
+                ));
+            } catch (RuntimeException ex) {
+                // Sanitization (feedback_sanitize_throwable_cause_for_log_emission):
+                // never echo ex.getMessage() to the response; never pass raw Throwable to SLF4J.
+                log.debug(
+                    "Bulk declare per-row internal error: nodeId={} class={}",
+                    nodeId,
+                    ex.getClass().getSimpleName()
+                );
+                rows.add(BulkDeclareResult.failed(
+                    nodeId,
+                    BulkDeclareErrorCategory.INTERNAL_ERROR,
+                    BULK_DECLARE_ERROR_INTERNAL + " (" + ex.getClass().getSimpleName() + ")."
+                ));
+            }
+        }
+        return new BulkDeclareResponse(new BulkDeclareResults(rows));
+    }
+
+    /**
+     * Declare a single document as a record OR signal that it is already declared.
+     * <p>
+     * Returns a non-null {@link DeclareOneOutcome} on every non-throwing path. Throws one of
+     * the typed exceptions below for the orchestrator's catch matrix; everything else bubbles
+     * as {@link RuntimeException} and the orchestrator maps it to {@code INTERNAL_ERROR}.
+     */
+    private DeclareOneOutcome declareOneRow(UUID nodeId, UUID categoryId, String comment) {
+        Document document;
+        try {
+            document = loadLiveDocument(nodeId);
+        } catch (NoSuchElementException ex) {
+            throw new NodeNotFoundForDeclareException(nodeId);
+        } catch (ResourceNotFoundException ex) {
+            throw new NodeNotVisibleForDeclareException(nodeId);
+        }
+        if (document.isWorkingCopy()) {
+            throw new IllegalArgumentException("Working copies cannot be declared as records");
+        }
+        if (document.isCheckedOut()) {
+            throw new IllegalStateException("Checked out documents cannot be declared as records");
+        }
+        if (isDeclaredRecord(document)) {
+            // Mirror single-row declareRecord's early-return at the :510 site verbatim:
+            // do NOT apply categoryId, do NOT write comment. Cross-row bulk-assign-category
+            // is a separate capability and OOS for this slice.
+            return new DeclareOneOutcome(DeclareOneOutcome.Status.SKIPPED_ALREADY_DECLARED, toDto(document));
+        }
+        RecordDeclarationDto dto = declareDocumentInternal(document, comment, categoryId);
+        return new DeclareOneOutcome(DeclareOneOutcome.Status.DECLARED, dto);
+    }
+
+    /** Thrown by declareOneRow when {@link #loadLiveDocument} reports the node is missing. */
+    private static final class NodeNotFoundForDeclareException extends RuntimeException {
+        NodeNotFoundForDeclareException(UUID nodeId) {
+            super("Node not found for bulk declare: " + nodeId);
+        }
+    }
+
+    /** Thrown by declareOneRow when {@link #loadLiveDocument} reports the node is invisible. */
+    private static final class NodeNotVisibleForDeclareException extends RuntimeException {
+        NodeNotVisibleForDeclareException(UUID nodeId) {
+            super("Node not visible for bulk declare: " + nodeId);
+        }
+    }
+
+    /**
+     * Internal in-band signal between {@link #declareOneRow} and {@link #declareRecordsBulk}.
+     * Not part of the HTTP response shape. Two-arity guarantees that every non-throwing path
+     * has a non-null {@code declaration}, mirroring single-row :511's {@code toDto(document)}.
+     */
+    private record DeclareOneOutcome(Status status, RecordDeclarationDto declaration) {
+        enum Status { DECLARED, SKIPPED_ALREADY_DECLARED }
+    }
+
+    public enum BulkDeclareStatus {
+        DECLARED,
+        SKIPPED_ALREADY_DECLARED,
+        FAILED
+    }
+
+    public enum BulkDeclareErrorCategory {
+        NODE_NOT_FOUND,
+        NODE_NOT_VISIBLE,
+        INTERNAL_ERROR
+    }
+
+    public record BulkDeclareRequest(List<UUID> nodeIds, UUID categoryId, String comment) {
+    }
+
+    /**
+     * Per-row outcome.
+     *
+     * <p>Invariants:
+     * <ul>
+     *   <li>{@code status == DECLARED} ⇒ {@code declaration != null}, {@code errorCategory == null},
+     *       {@code errorMessage == null}</li>
+     *   <li>{@code status == SKIPPED_ALREADY_DECLARED} ⇒ {@code declaration != null} (mirrors single-row
+     *       :511 {@code toDto(document)}), {@code errorCategory == null}, {@code errorMessage == null}</li>
+     *   <li>{@code status == FAILED} ⇒ {@code declaration == null}, {@code errorCategory != null},
+     *       {@code errorMessage != null}</li>
+     * </ul>
+     */
+    public record BulkDeclareResult(
+        UUID nodeId,
+        BulkDeclareStatus status,
+        RecordDeclarationDto declaration,
+        BulkDeclareErrorCategory errorCategory,
+        String errorMessage
+    ) {
+        public static BulkDeclareResult declared(UUID nodeId, RecordDeclarationDto declaration) {
+            return new BulkDeclareResult(nodeId, BulkDeclareStatus.DECLARED, declaration, null, null);
+        }
+
+        public static BulkDeclareResult skippedAlreadyDeclared(UUID nodeId, RecordDeclarationDto declaration) {
+            return new BulkDeclareResult(nodeId, BulkDeclareStatus.SKIPPED_ALREADY_DECLARED, declaration, null, null);
+        }
+
+        public static BulkDeclareResult failed(UUID nodeId, BulkDeclareErrorCategory category, String message) {
+            return new BulkDeclareResult(nodeId, BulkDeclareStatus.FAILED, null, category, message);
+        }
+    }
+
+    public record BulkDeclareResults(List<BulkDeclareResult> rows) {
+    }
+
+    public record BulkDeclareResponse(BulkDeclareResults bulkDeclareResults) {
     }
 }

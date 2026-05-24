@@ -131,6 +131,19 @@ class RecordsManagementControllerSecurityTest {
                     }
                     """))
             .andExpect(status().isForbidden());
+
+        // Bulk-declare endpoint must inherit the same admin gate. Class-level
+        // @PreAuthorize("hasRole('ADMIN')") at RecordsManagementController:40
+        // fires before the handler runs, so a non-admin USER caller never reaches
+        // RecordsManagementService.declareRecordsBulk(...).
+        mockMvc.perform(post("/api/v1/nodes/bulk-declare")
+                .contentType("application/json")
+                .content("""
+                    {
+                      "nodeIds": ["%s"]
+                    }
+                    """.formatted(UUID.randomUUID())))
+            .andExpect(status().isForbidden());
     }
 
     @Test
@@ -231,5 +244,22 @@ class RecordsManagementControllerSecurityTest {
 
         mockMvc.perform(delete("/api/v1/records/categories/{categoryId}", UUID.randomUUID()))
             .andExpect(status().isNoContent());
+
+        // Bulk-declare endpoint admitted under ROLE_ADMIN. Stubbing the service to return
+        // an empty-row response keeps the test focused on the security gate — the JSON
+        // shape itself is exercised by RecordsManagementControllerTest.
+        when(recordsManagementService.declareRecordsBulk(org.mockito.ArgumentMatchers.any()))
+            .thenReturn(new RecordsManagementService.BulkDeclareResponse(
+                new RecordsManagementService.BulkDeclareResults(List.of())
+            ));
+
+        mockMvc.perform(post("/api/v1/nodes/bulk-declare")
+                .contentType("application/json")
+                .content("""
+                    {
+                      "nodeIds": ["%s"]
+                    }
+                    """.formatted(UUID.randomUUID())))
+            .andExpect(status().isOk());
     }
 }

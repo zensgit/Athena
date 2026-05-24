@@ -33,6 +33,9 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -49,7 +52,11 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -73,6 +80,7 @@ class RecordsManagementServiceTest {
     @Mock private NodeService nodeService;
     @Mock private TenantWorkspaceScopeService tenantWorkspaceScopeService;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private PlatformTransactionManager transactionManager;
 
     private RecordsManagementService service;
 
@@ -94,9 +102,15 @@ class RecordsManagementServiceTest {
             legalHoldService,
             folderService,
             tenantWorkspaceScopeService,
-            eventPublisher
+            eventPublisher,
+            transactionManager
         );
         ReflectionTestUtils.setField(service, "nodeService", nodeService);
+        // Lenient stub: only the bulk-declare path engages the TransactionTemplate. Per-method
+        // tests that do not invoke bulk declare still build the service via this setUp and
+        // would otherwise fail under Mockito's strict-stub mode with UnnecessaryStubbingException.
+        lenient().when(transactionManager.getTransaction(any(TransactionDefinition.class)))
+            .thenReturn(new SimpleTransactionStatus());
     }
 
     @Test
@@ -169,6 +183,312 @@ class RecordsManagementServiceTest {
         );
 
         assertEquals("Checked out documents cannot be declared as records", ex.getMessage());
+    }
+
+    // =================================================================================
+    // Bulk record declaration tests
+    //
+    // Brief: docs/BULK_RECORD_DECLARATION_ADJUDICATION_AND_DESIGN_20260524.md
+    //
+    // Locks the orchestration pattern (§4 + §6): per-row REQUIRES_NEW TransactionTemplate
+    // for failure isolation; SKIPPED_ALREADY_DECLARED carries a non-null declaration DTO
+    // (Finding 1 / v3 Blocker); already-declared + non-null categoryId is still SKIPPED
+    // with no category mutation (Finding 2 lock); errorCategory closed set is
+    // {NODE_NOT_FOUND, NODE_NOT_VISIBLE, INTERNAL_ERROR} (Finding 3); INTERNAL_ERROR
+    // never echoes ex.getMessage() to the response, never passes raw Throwable to SLF4J
+    // (feedback_sanitize_throwable_cause_for_log_emission).
+    // =================================================================================
+
+    @Test
+    @DisplayName("declareRecordsBulk declares every distinct visible node and engages a per-row REQUIRES_NEW TransactionTemplate")
+    void declareRecordsBulkAllDeclared() {
+        UUID a = UUID.randomUUID();
+        UUID b = UUID.randomUUID();
+        UUID c = UUID.randomUUID();
+        Document docA = document(a, "/Sites/Finance/a.pdf");
+        Document docB = document(b, "/Sites/Finance/b.pdf");
+        Document docC = document(c, "/Sites/Finance/c.pdf");
+
+        when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+        when(securityService.getCurrentUser()).thenReturn("admin");
+        when(documentRepository.findById(a)).thenReturn(Optional.of(docA));
+        when(documentRepository.findById(b)).thenReturn(Optional.of(docB));
+        when(documentRepository.findById(c)).thenReturn(Optional.of(docC));
+        when(tenantWorkspaceScopeService.hasScopedTenantWorkspace()).thenReturn(false);
+        when(documentRepository.save(any(Document.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        RecordsManagementService.BulkDeclareResponse response = service.declareRecordsBulk(
+            new RecordsManagementService.BulkDeclareRequest(List.of(a, b, c), null, "  batch declaration  ")
+        );
+
+        List<RecordsManagementService.BulkDeclareResult> rows = response.bulkDeclareResults().rows();
+        assertEquals(3, rows.size());
+        for (RecordsManagementService.BulkDeclareResult row : rows) {
+            assertEquals(RecordsManagementService.BulkDeclareStatus.DECLARED, row.status());
+            assertNotNull(row.declaration());
+            assertNull(row.errorCategory());
+            assertNull(row.errorMessage());
+        }
+        verify(documentRepository, times(3)).save(any(Document.class));
+        verify(transactionManager, times(3)).getTransaction(any(TransactionDefinition.class));
+    }
+
+    @Test
+    @DisplayName("declareRecordsBulk treats already-declared rows as SKIPPED with non-null declaration and skips save")
+    void declareRecordsBulkAlreadyDeclaredSkipped() {
+        UUID nodeId = UUID.randomUUID();
+        Document document = document(nodeId, "/Sites/Finance/already.pdf");
+        document.addAspect(RecordsManagementService.RECORD_ASPECT);
+        document.getProperties().put(RecordsManagementService.DECLARED_AT_PROPERTY, "2026-01-01T00:00:00");
+        document.getProperties().put(RecordsManagementService.DECLARED_BY_PROPERTY, "older-admin");
+
+        when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+        when(documentRepository.findById(nodeId)).thenReturn(Optional.of(document));
+        when(tenantWorkspaceScopeService.hasScopedTenantWorkspace()).thenReturn(false);
+
+        RecordsManagementService.BulkDeclareResponse response = service.declareRecordsBulk(
+            new RecordsManagementService.BulkDeclareRequest(List.of(nodeId), null, null)
+        );
+
+        List<RecordsManagementService.BulkDeclareResult> rows = response.bulkDeclareResults().rows();
+        assertEquals(1, rows.size());
+        RecordsManagementService.BulkDeclareResult row = rows.get(0);
+        assertEquals(RecordsManagementService.BulkDeclareStatus.SKIPPED_ALREADY_DECLARED, row.status());
+        assertNotNull(row.declaration(), "SKIPPED_ALREADY_DECLARED carries a non-null declaration DTO (mirrors single-row :511 toDto(document))");
+        assertEquals(nodeId, row.declaration().nodeId());
+        assertNull(row.errorCategory(), "SKIPPED is not an error; errorCategory must be null per Finding 3");
+        assertNull(row.errorMessage());
+        verify(documentRepository, never()).save(any(Document.class));
+    }
+
+    @Test
+    @DisplayName("declareRecordsBulk skips category assignment when an already-declared row carries a non-null request categoryId (Finding 2)")
+    void declareRecordsBulkAlreadyDeclaredWithCategoryRequestStillSkipsCategoryAssignment() {
+        UUID nodeId = UUID.randomUUID();
+        UUID requestCategoryId = UUID.randomUUID();
+        Document document = document(nodeId, "/Sites/Finance/already.pdf");
+        document.addAspect(RecordsManagementService.RECORD_ASPECT);
+
+        when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+        when(documentRepository.findById(nodeId)).thenReturn(Optional.of(document));
+        when(tenantWorkspaceScopeService.hasScopedTenantWorkspace()).thenReturn(false);
+
+        RecordsManagementService.BulkDeclareResponse response = service.declareRecordsBulk(
+            new RecordsManagementService.BulkDeclareRequest(List.of(nodeId), requestCategoryId, "ignored comment")
+        );
+
+        RecordsManagementService.BulkDeclareResult row = response.bulkDeclareResults().rows().get(0);
+        assertEquals(RecordsManagementService.BulkDeclareStatus.SKIPPED_ALREADY_DECLARED, row.status());
+        // No category lookup must occur: applyRecordCategory(...) is only reachable through
+        // loadRecordCategory(...) which reads from categoryRepository. Verify that path was
+        // never engaged for the requested categoryId.
+        verify(categoryRepository, never()).findById(requestCategoryId);
+        verify(documentRepository, never()).save(any(Document.class));
+        // No RM_RECORD_CATEGORY_ASSIGNED audit event must be emitted: the bulk-declare flow
+        // only emits RM_RECORD_DECLARED on the DECLARED branch, and the SKIPPED branch
+        // emits nothing.
+        verify(auditService, never()).logEvent(eq("RM_RECORD_CATEGORY_ASSIGNED"), any(), any(), any(), any());
+        verify(auditService, never()).logEvent(eq("RM_RECORD_DECLARED"), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("declareRecordsBulk maps a missing node to NODE_NOT_FOUND and keeps processing later rows")
+    void declareRecordsBulkMissingNodeFailedPartial() {
+        UUID ok1 = UUID.randomUUID();
+        UUID missing = UUID.randomUUID();
+        UUID ok2 = UUID.randomUUID();
+        Document doc1 = document(ok1, "/Sites/Finance/a.pdf");
+        Document doc2 = document(ok2, "/Sites/Finance/b.pdf");
+
+        when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+        when(securityService.getCurrentUser()).thenReturn("admin");
+        when(documentRepository.findById(ok1)).thenReturn(Optional.of(doc1));
+        when(documentRepository.findById(missing)).thenReturn(Optional.empty());
+        when(documentRepository.findById(ok2)).thenReturn(Optional.of(doc2));
+        when(tenantWorkspaceScopeService.hasScopedTenantWorkspace()).thenReturn(false);
+        when(documentRepository.save(any(Document.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        RecordsManagementService.BulkDeclareResponse response = service.declareRecordsBulk(
+            new RecordsManagementService.BulkDeclareRequest(List.of(ok1, missing, ok2), null, null)
+        );
+
+        List<RecordsManagementService.BulkDeclareResult> rows = response.bulkDeclareResults().rows();
+        assertEquals(3, rows.size());
+        assertEquals(RecordsManagementService.BulkDeclareStatus.DECLARED, rows.get(0).status());
+        assertEquals(RecordsManagementService.BulkDeclareStatus.FAILED, rows.get(1).status());
+        assertEquals(RecordsManagementService.BulkDeclareErrorCategory.NODE_NOT_FOUND, rows.get(1).errorCategory());
+        assertNull(rows.get(1).declaration());
+        assertEquals(RecordsManagementService.BulkDeclareStatus.DECLARED, rows.get(2).status());
+        verify(documentRepository, times(2)).save(any(Document.class));
+    }
+
+    @Test
+    @DisplayName("declareRecordsBulk classifies an invisible node as NODE_NOT_VISIBLE")
+    void declareRecordsBulkInvisibleNodeReportsCategory() {
+        UUID nodeId = UUID.randomUUID();
+        Document document = document(nodeId, "/Tenants/other/secret.pdf");
+        // Make the document load throw ResourceNotFoundException via the tenant-scope filter.
+        when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+        when(documentRepository.findById(nodeId)).thenReturn(Optional.of(document));
+        when(tenantWorkspaceScopeService.hasScopedTenantWorkspace()).thenReturn(true);
+        when(tenantWorkspaceScopeService.isPathVisible("/Tenants/other/secret.pdf")).thenReturn(false);
+
+        RecordsManagementService.BulkDeclareResponse response = service.declareRecordsBulk(
+            new RecordsManagementService.BulkDeclareRequest(List.of(nodeId), null, null)
+        );
+
+        RecordsManagementService.BulkDeclareResult row = response.bulkDeclareResults().rows().get(0);
+        assertEquals(RecordsManagementService.BulkDeclareStatus.FAILED, row.status());
+        assertEquals(RecordsManagementService.BulkDeclareErrorCategory.NODE_NOT_VISIBLE, row.errorCategory());
+        assertNull(row.declaration());
+    }
+
+    @Test
+    @DisplayName("declareRecordsBulk sanitises internal-error messages: never echoes ex.getMessage(), always carries the class simple name")
+    void declareRecordsBulkInternalErrorSanitisedMessage() {
+        UUID nodeId = UUID.randomUUID();
+        Document document = document(nodeId, "/Sites/Finance/probe.pdf");
+        String probe = "BULK_DECLARE_USER_PII_PROBE_d8c4a2f0";
+
+        when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+        when(securityService.getCurrentUser()).thenReturn("admin");
+        when(documentRepository.findById(nodeId)).thenReturn(Optional.of(document));
+        when(tenantWorkspaceScopeService.hasScopedTenantWorkspace()).thenReturn(false);
+        when(documentRepository.save(any(Document.class))).thenThrow(new RuntimeException(probe));
+
+        RecordsManagementService.BulkDeclareResponse response = service.declareRecordsBulk(
+            new RecordsManagementService.BulkDeclareRequest(List.of(nodeId), null, null)
+        );
+
+        RecordsManagementService.BulkDeclareResult row = response.bulkDeclareResults().rows().get(0);
+        assertEquals(RecordsManagementService.BulkDeclareStatus.FAILED, row.status());
+        assertEquals(RecordsManagementService.BulkDeclareErrorCategory.INTERNAL_ERROR, row.errorCategory());
+        assertNotNull(row.errorMessage());
+        assertFalse(row.errorMessage().contains(probe), "errorMessage must not echo ex.getMessage() — see feedback_sanitize_throwable_cause_for_log_emission");
+        assertTrue(row.errorMessage().contains("RuntimeException"), "errorMessage carries the exception class simple name for operator triage");
+    }
+
+    @Test
+    @DisplayName("declareRecordsBulk continues after a failed row, preserves input order, and only saves DECLARED rows")
+    void declareRecordsBulkContinuesAfterFailedRowAndPreservesOrder() {
+        UUID ok1 = UUID.randomUUID();
+        UUID fail2 = UUID.randomUUID();
+        UUID ok3 = UUID.randomUUID();
+        Document doc1 = document(ok1, "/Sites/Finance/a.pdf");
+        Document doc3 = document(ok3, "/Sites/Finance/c.pdf");
+
+        when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+        when(securityService.getCurrentUser()).thenReturn("admin");
+        when(documentRepository.findById(ok1)).thenReturn(Optional.of(doc1));
+        when(documentRepository.findById(fail2)).thenReturn(Optional.empty()); // → NODE_NOT_FOUND
+        when(documentRepository.findById(ok3)).thenReturn(Optional.of(doc3));
+        when(tenantWorkspaceScopeService.hasScopedTenantWorkspace()).thenReturn(false);
+        when(documentRepository.save(any(Document.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        RecordsManagementService.BulkDeclareResponse response = service.declareRecordsBulk(
+            new RecordsManagementService.BulkDeclareRequest(List.of(ok1, fail2, ok3), null, null)
+        );
+
+        List<RecordsManagementService.BulkDeclareResult> rows = response.bulkDeclareResults().rows();
+
+        // Lock 1: per-row REQUIRES_NEW TransactionTemplate engagement.
+        // The orchestrator must drive one transaction boundary per deduped input row, not
+        // wrap the loop in a single transaction. There is no parent entity here (bulk-declare
+        // mutates pre-existing Documents), so this verify is the load-bearing assertion that
+        // failure-isolation propagation kicks in row-by-row.
+        verify(transactionManager, times(3)).getTransaction(any(TransactionDefinition.class));
+
+        // Lock 2: middle failure does not abort the run; input order preserved.
+        assertEquals(3, rows.size());
+        assertEquals(ok1, rows.get(0).nodeId());
+        assertEquals(RecordsManagementService.BulkDeclareStatus.DECLARED, rows.get(0).status());
+        assertEquals(fail2, rows.get(1).nodeId());
+        assertEquals(RecordsManagementService.BulkDeclareStatus.FAILED, rows.get(1).status());
+        assertEquals(ok3, rows.get(2).nodeId());
+        assertEquals(RecordsManagementService.BulkDeclareStatus.DECLARED, rows.get(2).status());
+
+        // Lock 3: documentRepository.save fires only on DECLARED rows. The failed row's
+        // declareOneRow exits at loadLiveDocument's throw before ever reaching the save site.
+        verify(documentRepository, times(2)).save(any(Document.class));
+    }
+
+    @Test
+    @DisplayName("declareRecordsBulk rejects an empty nodeIds list before any per-row work")
+    void declareRecordsBulkEmptyNodeIdsReturns400() {
+        when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> service.declareRecordsBulk(
+                new RecordsManagementService.BulkDeclareRequest(List.of(), null, null)
+            )
+        );
+        verify(transactionManager, never()).getTransaction(any(TransactionDefinition.class));
+        verify(documentRepository, never()).save(any(Document.class));
+    }
+
+    @Test
+    @DisplayName("declareRecordsBulk rejects a null-only nodeIds list AFTER dedupe (v3.1 boundary guard)")
+    void declareRecordsBulkNullOnlyNodeIdsReturns400() {
+        when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+
+        java.util.ArrayList<UUID> nullOnly = new java.util.ArrayList<>();
+        nullOnly.add(null);
+        nullOnly.add(null);
+
+        IllegalArgumentException ex = assertThrows(
+            IllegalArgumentException.class,
+            () -> service.declareRecordsBulk(
+                new RecordsManagementService.BulkDeclareRequest(nullOnly, null, null)
+            )
+        );
+        // The post-dedupe guard message is distinct from the pre-dedupe one so external
+        // callers can tell which path tripped the validation.
+        assertTrue(ex.getMessage().contains("non-null"), "post-dedupe guard must say 'non-null'; got: " + ex.getMessage());
+        verify(transactionManager, never()).getTransaction(any(TransactionDefinition.class));
+        verify(documentRepository, never()).save(any(Document.class));
+    }
+
+    @Test
+    @DisplayName("declareRecordsBulk rejects non-admin callers via requireAdmin before any per-row work")
+    void declareRecordsBulkRejectsNonAdmin() {
+        UUID nodeId = UUID.randomUUID();
+        when(securityService.hasRole("ROLE_ADMIN")).thenReturn(false);
+
+        assertThrows(
+            SecurityException.class,
+            () -> service.declareRecordsBulk(
+                new RecordsManagementService.BulkDeclareRequest(List.of(nodeId), null, null)
+            )
+        );
+        verify(transactionManager, never()).getTransaction(any(TransactionDefinition.class));
+        verify(documentRepository, never()).findById(any(UUID.class));
+        verify(documentRepository, never()).save(any(Document.class));
+    }
+
+    @Test
+    @DisplayName("declareRecordsBulk dedupes the input list so duplicate UUIDs are emitted once")
+    void declareRecordsBulkDedupesDuplicateNodeIdsInRequest() {
+        // Mirrors the prior gate observation (legal-hold slice) that LinkedHashSet de-dup
+        // upstream of per-row work is consistent across slice patterns. Verifies that even
+        // when the same UUID appears twice in the input, it produces a single result row
+        // and a single TransactionTemplate boundary.
+        UUID nodeId = UUID.randomUUID();
+        Document document = document(nodeId, "/Sites/Finance/a.pdf");
+
+        when(securityService.hasRole("ROLE_ADMIN")).thenReturn(true);
+        when(securityService.getCurrentUser()).thenReturn("admin");
+        when(documentRepository.findById(nodeId)).thenReturn(Optional.of(document));
+        when(tenantWorkspaceScopeService.hasScopedTenantWorkspace()).thenReturn(false);
+        when(documentRepository.save(any(Document.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        RecordsManagementService.BulkDeclareResponse response = service.declareRecordsBulk(
+            new RecordsManagementService.BulkDeclareRequest(List.of(nodeId, nodeId, nodeId), null, null)
+        );
+
+        assertEquals(1, response.bulkDeclareResults().rows().size());
+        verify(transactionManager, times(1)).getTransaction(any(TransactionDefinition.class));
+        verify(documentRepository, times(1)).save(any(Document.class));
     }
 
     @Test

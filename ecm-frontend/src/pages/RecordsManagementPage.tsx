@@ -57,6 +57,7 @@ import {
   RmReportPresetKind,
   RmScheduledDeliveryTelemetry,
 } from 'types';
+import BulkDeclareRecordsDialog from 'components/records/BulkDeclareRecordsDialog';
 import MoveFilePlanDialog from 'components/records/MoveFilePlanDialog';
 import MoveRecordCategoryDialog from 'components/records/MoveRecordCategoryDialog';
 import RenameFilePlanDialog from 'components/records/RenameFilePlanDialog';
@@ -690,6 +691,7 @@ const RecordsManagementPage: React.FC = () => {
   const [assigningRecordId, setAssigningRecordId] = useState<string | null>(null);
   const [undeclareDialogOpen, setUndeclareDialogOpen] = useState(false);
   const [undeclareTarget, setUndeclareTarget] = useState<RecordDeclaration | null>(null);
+  const [bulkDeclareDialogOpen, setBulkDeclareDialogOpen] = useState(false);
   const [renameFilePlanDialogOpen, setRenameFilePlanDialogOpen] = useState(false);
   const [renameFilePlanTarget, setRenameFilePlanTarget] = useState<FilePlan | null>(null);
   const [moveFilePlanDialogOpen, setMoveFilePlanDialogOpen] = useState(false);
@@ -2798,14 +2800,24 @@ const RecordsManagementPage: React.FC = () => {
             Manage file plans, record categories, declared records, and governance audit from one admin surface.
           </Typography>
         </Box>
-        <Button
-          variant="outlined"
-          startIcon={<Refresh />}
-          onClick={() => void handleRefresh()}
-          disabled={loading || refreshing}
-        >
-          {refreshing ? 'Refreshing...' : 'Refresh'}
-        </Button>
+        <Stack direction="row" spacing={1}>
+          <Button
+            variant="outlined"
+            onClick={() => setBulkDeclareDialogOpen(true)}
+            disabled={loading}
+            data-testid="bulk-declare-open"
+          >
+            Bulk Declare Records
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<Refresh />}
+            onClick={() => void handleRefresh()}
+            disabled={loading || refreshing}
+          >
+            {refreshing ? 'Refreshing...' : 'Refresh'}
+          </Button>
+        </Stack>
       </Stack>
 
       {error && (
@@ -6086,6 +6098,14 @@ const RecordsManagementPage: React.FC = () => {
           setUndeclareTarget(null);
         }}
         onUndeclared={() => {
+          void loadAdminData(true);
+        }}
+      />
+      <BulkDeclareRecordsDialog
+        open={bulkDeclareDialogOpen}
+        categories={categories}
+        onClose={() => setBulkDeclareDialogOpen(false)}
+        onDeclared={() => {
           void loadAdminData(true);
         }}
       />

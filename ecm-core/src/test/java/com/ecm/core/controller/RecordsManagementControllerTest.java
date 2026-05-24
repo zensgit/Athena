@@ -1908,6 +1908,124 @@ class RecordsManagementControllerTest {
     }
 
     @Test
+    @DisplayName("declareRecordsBulk returns a wrapper with rows for DECLARED + SKIPPED_ALREADY_DECLARED + FAILED outcomes")
+    void declareRecordsBulkReturnsMixedRowsPayload() throws Exception {
+        UUID declared = UUID.randomUUID();
+        UUID skipped = UUID.randomUUID();
+        UUID failed = UUID.randomUUID();
+        RecordsManagementService.RecordDeclarationDto declaredDto = new RecordsManagementService.RecordDeclarationDto(
+            declared, "fresh.pdf", "/Sites/Finance/fresh.pdf",
+            "1.0", "1.0", "admin", LocalDateTime.of(2026, 5, 24, 10, 0),
+            "batch", null, null, null
+        );
+        RecordsManagementService.RecordDeclarationDto skippedDto = new RecordsManagementService.RecordDeclarationDto(
+            skipped, "older.pdf", "/Sites/Finance/older.pdf",
+            "2.1", "1.0", "older-admin", LocalDateTime.of(2026, 1, 1, 0, 0),
+            "pre-existing", null, null, null
+        );
+        RecordsManagementService.BulkDeclareResponse response = new RecordsManagementService.BulkDeclareResponse(
+            new RecordsManagementService.BulkDeclareResults(List.of(
+                RecordsManagementService.BulkDeclareResult.declared(declared, declaredDto),
+                RecordsManagementService.BulkDeclareResult.skippedAlreadyDeclared(skipped, skippedDto),
+                RecordsManagementService.BulkDeclareResult.failed(
+                    failed,
+                    RecordsManagementService.BulkDeclareErrorCategory.NODE_NOT_FOUND,
+                    "The target node was not found."
+                )
+            ))
+        );
+        Mockito.when(recordsManagementService.declareRecordsBulk(Mockito.any())).thenReturn(response);
+
+        mockMvc.perform(post("/api/v1/nodes/bulk-declare")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "nodeIds": ["%s", "%s", "%s"],
+                      "categoryId": null,
+                      "comment": "batch"
+                    }
+                    """.formatted(declared, skipped, failed)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.bulkDeclareResults.rows.length()").value(3))
+            .andExpect(jsonPath("$.bulkDeclareResults.rows[0].status").value("DECLARED"))
+            .andExpect(jsonPath("$.bulkDeclareResults.rows[0].declaration.nodeId").value(declared.toString()))
+            .andExpect(jsonPath("$.bulkDeclareResults.rows[0].errorCategory").doesNotExist())
+            .andExpect(jsonPath("$.bulkDeclareResults.rows[1].status").value("SKIPPED_ALREADY_DECLARED"))
+            .andExpect(jsonPath("$.bulkDeclareResults.rows[1].declaration.nodeId").value(skipped.toString()))
+            .andExpect(jsonPath("$.bulkDeclareResults.rows[1].errorCategory").doesNotExist())
+            .andExpect(jsonPath("$.bulkDeclareResults.rows[2].status").value("FAILED"))
+            .andExpect(jsonPath("$.bulkDeclareResults.rows[2].errorCategory").value("NODE_NOT_FOUND"))
+            .andExpect(jsonPath("$.bulkDeclareResults.rows[2].declaration").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("declareRecordsBulk returns 400 when nodeIds is an empty array")
+    void declareRecordsBulkEmptyArrayReturns400() throws Exception {
+        Mockito.when(recordsManagementService.declareRecordsBulk(Mockito.any()))
+            .thenThrow(new IllegalArgumentException("nodeIds must contain at least one entry"));
+
+        mockMvc.perform(post("/api/v1/nodes/bulk-declare")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "nodeIds": []
+                    }
+                    """))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("declareRecordsBulk returns 400 when nodeIds contains only null entries (v3.1 post-dedupe guard)")
+    void declareRecordsBulkNullOnlyArrayReturns400() throws Exception {
+        Mockito.when(recordsManagementService.declareRecordsBulk(Mockito.any()))
+            .thenThrow(new IllegalArgumentException("nodeIds must contain at least one non-null entry"));
+
+        mockMvc.perform(post("/api/v1/nodes/bulk-declare")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "nodeIds": [null, null]
+                    }
+                    """))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("declareRecordsBulk returns 200 when some rows fail (partial failure is not an HTTP error)")
+    void declareRecordsBulkPartialFailureReturns200() throws Exception {
+        UUID ok = UUID.randomUUID();
+        UUID missing = UUID.randomUUID();
+        RecordsManagementService.RecordDeclarationDto okDto = new RecordsManagementService.RecordDeclarationDto(
+            ok, "ok.pdf", "/Sites/Finance/ok.pdf",
+            "1.0", "1.0", "admin", LocalDateTime.of(2026, 5, 24, 10, 0),
+            null, null, null, null
+        );
+        RecordsManagementService.BulkDeclareResponse response = new RecordsManagementService.BulkDeclareResponse(
+            new RecordsManagementService.BulkDeclareResults(List.of(
+                RecordsManagementService.BulkDeclareResult.declared(ok, okDto),
+                RecordsManagementService.BulkDeclareResult.failed(
+                    missing,
+                    RecordsManagementService.BulkDeclareErrorCategory.NODE_NOT_FOUND,
+                    "The target node was not found."
+                )
+            ))
+        );
+        Mockito.when(recordsManagementService.declareRecordsBulk(Mockito.any())).thenReturn(response);
+
+        mockMvc.perform(post("/api/v1/nodes/bulk-declare")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "nodeIds": ["%s", "%s"]
+                    }
+                    """.formatted(ok, missing)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.bulkDeclareResults.rows.length()").value(2))
+            .andExpect(jsonPath("$.bulkDeclareResults.rows[0].status").value("DECLARED"))
+            .andExpect(jsonPath("$.bulkDeclareResults.rows[1].status").value("FAILED"));
+    }
+
+    @Test
     @DisplayName("undeclareRecord returns no content")
     void undeclareRecordReturnsNoContent() throws Exception {
         UUID nodeId = UUID.randomUUID();

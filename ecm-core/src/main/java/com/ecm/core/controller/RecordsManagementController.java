@@ -529,6 +529,14 @@ public class RecordsManagementController {
         return ResponseEntity.ok(recordsManagementService.declareRecord(nodeId, request));
     }
 
+    @PostMapping("/nodes/bulk-declare")
+    @Operation(summary = "Declare a list of nodes as records in bulk with per-row partial success")
+    public ResponseEntity<RecordsManagementService.BulkDeclareResponse> declareRecordsBulk(
+        @RequestBody RecordsManagementService.BulkDeclareRequest request
+    ) {
+        return ResponseEntity.ok(recordsManagementService.declareRecordsBulk(request));
+    }
+
     @PostMapping("/nodes/{nodeId}/record/undeclare")
     @Operation(summary = "Undeclare a document as a record")
     public ResponseEntity<Void> undeclareRecord(

@@ -85,6 +85,32 @@ export interface RecordDeclaration {
   recordCategoryPath?: string;
 }
 
+export type BulkDeclareStatus = 'DECLARED' | 'SKIPPED_ALREADY_DECLARED' | 'FAILED';
+
+export type BulkDeclareErrorCategory = 'NODE_NOT_FOUND' | 'NODE_NOT_VISIBLE' | 'INTERNAL_ERROR';
+
+export interface BulkDeclareRequest {
+  nodeIds: string[];
+  categoryId?: string | null;
+  comment?: string | null;
+}
+
+export interface BulkDeclareResult {
+  nodeId: string;
+  status: BulkDeclareStatus;
+  declaration: RecordDeclaration | null;
+  errorCategory: BulkDeclareErrorCategory | null;
+  errorMessage: string | null;
+}
+
+export interface BulkDeclareResults {
+  rows: BulkDeclareResult[];
+}
+
+export interface BulkDeclareResponse {
+  bulkDeclareResults: BulkDeclareResults;
+}
+
 export interface FilePlan {
   folderId: string;
   name: string;

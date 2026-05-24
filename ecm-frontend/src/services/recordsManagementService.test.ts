@@ -1,4 +1,5 @@
 import recordsManagementService, {
+  RECORDS_MANAGEMENT_BULK_DECLARE_UNEXPECTED_RESPONSE_MESSAGE,
   RECORDS_MANAGEMENT_UNEXPECTED_RESPONSE_MESSAGE,
   supportsReportPresetCsvDelivery,
 } from './recordsManagementService';
@@ -865,5 +866,195 @@ describe('recordsManagementService', () => {
     await recordsManagementService.assignRecordCategory('node-1', 'cat-1');
 
     expect(mockedApi.put).toHaveBeenCalledWith('/nodes/node-1/record/category', { categoryId: 'cat-1' });
+  });
+
+  describe('createBulkDeclarations', () => {
+    const declaredRow = (nodeId: string) => ({
+      nodeId,
+      status: 'DECLARED' as const,
+      declaration: {
+        nodeId,
+        name: `${nodeId}.pdf`,
+        path: `/Sites/Finance/${nodeId}.pdf`,
+      },
+      errorCategory: null,
+      errorMessage: null,
+    });
+    const skippedRow = (nodeId: string) => ({
+      nodeId,
+      status: 'SKIPPED_ALREADY_DECLARED' as const,
+      declaration: {
+        nodeId,
+        name: `${nodeId}.pdf`,
+        path: `/Sites/Finance/${nodeId}.pdf`,
+      },
+      errorCategory: null,
+      errorMessage: null,
+    });
+    const failedRow = (nodeId: string, category: string) => ({
+      nodeId,
+      status: 'FAILED' as const,
+      declaration: null,
+      errorCategory: category,
+      errorMessage: 'The target node was not found.',
+    });
+
+    it('sends nodeIds + optional categoryId + trimmed comment and parses a mixed-row response', async () => {
+      mockedApi.post.mockResolvedValueOnce({
+        bulkDeclareResults: {
+          rows: [declaredRow('node-1'), skippedRow('node-2'), failedRow('node-3', 'NODE_NOT_FOUND')],
+        },
+      } as any);
+
+      const response = await recordsManagementService.createBulkDeclarations({
+        nodeIds: ['node-1', 'node-2', 'node-3'],
+        categoryId: 'cat-1',
+        comment: '  batch declaration  ',
+      });
+
+      expect(mockedApi.post).toHaveBeenCalledWith('/nodes/bulk-declare', {
+        nodeIds: ['node-1', 'node-2', 'node-3'],
+        categoryId: 'cat-1',
+        comment: 'batch declaration',
+      });
+      expect(response.bulkDeclareResults.rows).toHaveLength(3);
+      expect(response.bulkDeclareResults.rows[0].status).toBe('DECLARED');
+      expect(response.bulkDeclareResults.rows[1].status).toBe('SKIPPED_ALREADY_DECLARED');
+      expect(response.bulkDeclareResults.rows[2].status).toBe('FAILED');
+    });
+
+    it('omits empty categoryId and blank comment from the payload', async () => {
+      mockedApi.post.mockResolvedValueOnce({
+        bulkDeclareResults: { rows: [declaredRow('node-1')] },
+      } as any);
+
+      await recordsManagementService.createBulkDeclarations({
+        nodeIds: ['node-1'],
+        categoryId: null,
+        comment: '   ',
+      });
+
+      const payload = mockedApi.post.mock.calls[0][1];
+      expect(payload).toEqual({ nodeIds: ['node-1'] });
+      expect(payload).not.toHaveProperty('categoryId');
+      expect(payload).not.toHaveProperty('comment');
+    });
+
+    it('throws the dedicated sentinel when the response body is the SPA HTML fallback (Phase 5 Mocked drift on the new route)', async () => {
+      mockedApi.post.mockResolvedValueOnce('<!doctype html><html>mocked SPA fallback</html>' as any);
+
+      await expect(
+        recordsManagementService.createBulkDeclarations({ nodeIds: ['node-1'] })
+      ).rejects.toThrow(RECORDS_MANAGEMENT_BULK_DECLARE_UNEXPECTED_RESPONSE_MESSAGE);
+      // Sentinel must be distinct from the generic RM sentinel so Phase 5 Mocked drift on
+      // the new route is independently traceable.
+      expect(RECORDS_MANAGEMENT_BULK_DECLARE_UNEXPECTED_RESPONSE_MESSAGE)
+        .not.toBe(RECORDS_MANAGEMENT_UNEXPECTED_RESPONSE_MESSAGE);
+    });
+
+    it('rejects rows where status is DECLARED but errorMessage is populated', async () => {
+      mockedApi.post.mockResolvedValueOnce({
+        bulkDeclareResults: {
+          rows: [{
+            ...declaredRow('node-1'),
+            errorMessage: 'unexpected error message on DECLARED row',
+          }],
+        },
+      } as any);
+
+      await expect(
+        recordsManagementService.createBulkDeclarations({ nodeIds: ['node-1'] })
+      ).rejects.toThrow(RECORDS_MANAGEMENT_BULK_DECLARE_UNEXPECTED_RESPONSE_MESSAGE);
+    });
+
+    it('rejects rows where status is SKIPPED_ALREADY_DECLARED but errorCategory is populated', async () => {
+      mockedApi.post.mockResolvedValueOnce({
+        bulkDeclareResults: {
+          rows: [{
+            ...skippedRow('node-1'),
+            errorCategory: 'NODE_NOT_FOUND',
+          }],
+        },
+      } as any);
+
+      await expect(
+        recordsManagementService.createBulkDeclarations({ nodeIds: ['node-1'] })
+      ).rejects.toThrow(RECORDS_MANAGEMENT_BULK_DECLARE_UNEXPECTED_RESPONSE_MESSAGE);
+    });
+
+    it("rejects rows where status is FAILED but errorCategory is 'ALREADY_DECLARED' (Finding 3 — not a valid error category)", async () => {
+      mockedApi.post.mockResolvedValueOnce({
+        bulkDeclareResults: {
+          rows: [{
+            nodeId: 'node-1',
+            status: 'FAILED',
+            declaration: null,
+            errorCategory: 'ALREADY_DECLARED',
+            errorMessage: 'already a record',
+          }],
+        },
+      } as any);
+
+      await expect(
+        recordsManagementService.createBulkDeclarations({ nodeIds: ['node-1'] })
+      ).rejects.toThrow(RECORDS_MANAGEMENT_BULK_DECLARE_UNEXPECTED_RESPONSE_MESSAGE);
+    });
+
+    it('rejects rows with an unknown errorCategory variant', async () => {
+      mockedApi.post.mockResolvedValueOnce({
+        bulkDeclareResults: {
+          rows: [{
+            nodeId: 'node-1',
+            status: 'FAILED',
+            declaration: null,
+            errorCategory: 'PERMISSION_DENIED',
+            errorMessage: 'some message',
+          }],
+        },
+      } as any);
+
+      await expect(
+        recordsManagementService.createBulkDeclarations({ nodeIds: ['node-1'] })
+      ).rejects.toThrow(RECORDS_MANAGEMENT_BULK_DECLARE_UNEXPECTED_RESPONSE_MESSAGE);
+    });
+
+    it('rejects rows with a FAILED status and empty errorMessage', async () => {
+      mockedApi.post.mockResolvedValueOnce({
+        bulkDeclareResults: {
+          rows: [{
+            nodeId: 'node-1',
+            status: 'FAILED',
+            declaration: null,
+            errorCategory: 'INTERNAL_ERROR',
+            errorMessage: '',
+          }],
+        },
+      } as any);
+
+      await expect(
+        recordsManagementService.createBulkDeclarations({ nodeIds: ['node-1'] })
+      ).rejects.toThrow(RECORDS_MANAGEMENT_BULK_DECLARE_UNEXPECTED_RESPONSE_MESSAGE);
+    });
+
+    it('rejects responses where the top-level bulkDeclareResults wrapper is missing', async () => {
+      mockedApi.post.mockResolvedValueOnce({ rows: [declaredRow('node-1')] } as any);
+
+      await expect(
+        recordsManagementService.createBulkDeclarations({ nodeIds: ['node-1'] })
+      ).rejects.toThrow(RECORDS_MANAGEMENT_BULK_DECLARE_UNEXPECTED_RESPONSE_MESSAGE);
+    });
+
+    it('accepts rows where DECLARED carries explicit null errorCategory and null errorMessage', async () => {
+      mockedApi.post.mockResolvedValueOnce({
+        bulkDeclareResults: { rows: [declaredRow('node-1')] },
+      } as any);
+
+      const response = await recordsManagementService.createBulkDeclarations({
+        nodeIds: ['node-1'],
+      });
+
+      expect(response.bulkDeclareResults.rows[0].errorCategory).toBeNull();
+      expect(response.bulkDeclareResults.rows[0].errorMessage).toBeNull();
+    });
   });
 });
