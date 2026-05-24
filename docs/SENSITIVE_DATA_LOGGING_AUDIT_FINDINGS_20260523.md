@@ -611,3 +611,11 @@ Summary of what Phase 2 touched (no broader Logback redactor; only the highest-e
 - `MailAutomationController` — OAuth callback catch (`:362`) no longer passes the full `Throwable` to SLF4J; logs only `ex.getClass().getSimpleName()` plus a `"message redacted"` marker.
 
 Phase 2 also deferred items remain deferred: generic-`Exception` ERROR/WARN at `MailFetcherService:179, :384`, the ~18 DEBUG-level mail-parsing exception logs, the persistence-path `updateAccountFetchStatus(... e.getMessage())` at `:174, :180`, and `MailReportScheduledExportService:106, :136`, `CollaboraDiscoveryService:191`, `WorkflowDeploymentRunner:63, :83`. These are recorded as out-of-scope in the Phase 2 doc and would only re-open if a new audit finding promotes them.
+
+### Phase 2 Follow-up #1 (2026-05-23) — OAuth exception cause chain
+
+A gate review of the Phase 2 fix surfaced a real leak that the original Phase 2 tests did not catch: although `IllegalStateException.getMessage()` was sanitized, the raw `HttpStatusCodeException` was preserved as the exception's `cause`. Spring's `RestClientResponseException.getMessage()` includes the response body verbatim, and SLF4J/Logback at `RestExceptionHandler:44` (`log.error("...", ex)`) emits the full cause-chain stack trace — leaking the `error_description` back into the ERROR log.
+
+Follow-up #1 sanitizes the cause via a new `sanitizedHttpCause(HttpStatusCodeException)` helper that returns a `RuntimeException` containing only the exception class simple name + HTTP status code, with the original stack frames copied. Tests extended with `Throwable.printStackTrace(PrintWriter)` capture + `assertFalse(contains(...))` against every provider-description fragment to lock the cause-chain emission.
+
+Design + scope + commit sequence: `docs/SENSITIVE_DATA_LOGGING_AUDIT_PHASE2_FOLLOWUP_OAUTH_CAUSE_CHAIN_20260523.md`.

@@ -153,11 +153,20 @@ The RM flakiness (item 3) self-resolved on the next CI run, confirming the JVM-i
 
 ## Track status
 
-Sensitive-Data Logging Audit track: **closed** for this remediation cycle. Track artefacts:
+**Reopened 2026-05-23 by gate finding — see Follow-up #1 below.** The original Phase 2 fix did not cover the OAuth exception cause chain; the raw `HttpStatusCodeException` was still wrapped as cause and its `getMessage()` (containing the provider response body) leaked through SLF4J's stack-trace emission at `RestExceptionHandler:44`. The tests in this slice only asserted `IllegalStateException.getMessage()` content, which passed even with the leaking cause. Follow-up #1 sanitizes the cause and extends the tests with `printStackTrace`-output assertions.
+
+Track artefacts so far:
 
 - `docs/NEXT_TRACK_DISCOVERY_20260523.md`
 - `docs/SENSITIVE_DATA_LOGGING_AUDIT_DESIGN_20260523.md`
-- `docs/SENSITIVE_DATA_LOGGING_AUDIT_FINDINGS_20260523.md` (Phase 1 + Phase 1.5 appendix + Phase 2 status)
+- `docs/SENSITIVE_DATA_LOGGING_AUDIT_FINDINGS_20260523.md` (Phase 1 + Phase 1.5 appendix + Phase 2 status with Follow-up #1 pointer)
 - `docs/SENSITIVE_DATA_LOGGING_AUDIT_PHASE2_REMEDIATION_20260523.md` (this doc)
+- **`docs/SENSITIVE_DATA_LOGGING_AUDIT_PHASE2_FOLLOWUP_OAUTH_CAUSE_CHAIN_20260523.md`** (Follow-up #1 — opened 2026-05-23 on gate finding)
 
-No follow-up slice is required unless a new audit signal (incident, new feature surface, or scheduled re-audit) re-opens the deferred-OOS items.
+## Follow-up #1 (2026-05-23) — OAuth exception cause chain
+
+Documented separately in `docs/SENSITIVE_DATA_LOGGING_AUDIT_PHASE2_FOLLOWUP_OAUTH_CAUSE_CHAIN_20260523.md`. Summary:
+
+- Production fix: new `sanitizedHttpCause(HttpStatusCodeException)` helper in `OAuthCredentialService`; 4 throw sites (revoke `:222`, `:229`, `:252`; refresh `:395`) updated to wrap their HTTP-exception cause through the sanitizer. `ResourceAccessException` site (`:257`) kept as-is (no response body, body-safe).
+- Test fix: 2 existing Phase 2 tests extended with `Throwable.printStackTrace(PrintWriter)` capture into `StringWriter` and `assertFalse(stackEmission.contains(...))` against every provider-description fragment.
+- The original Phase 2 sites (subject redaction at `MailFetcherService:800`, OAuth-reauth log at `MailFetcherService:168`, callback log at `MailAutomationController:362`) are unaffected and remain green.
