@@ -12,11 +12,15 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
+  FormControl,
   Grid,
   IconButton,
+  InputLabel,
   List,
   ListItem,
   ListItemText,
+  MenuItem,
+  Select,
   Stack,
   TextField,
   Tooltip,
@@ -30,6 +34,8 @@ import {
 } from '@mui/icons-material';
 import { toast } from 'react-toastify';
 import legalHoldService, {
+  BulkApplyResult,
+  HoldReleaseReason,
   LegalHoldDetail,
   LegalHoldSummary,
 } from 'services/legalHoldService';
@@ -49,6 +55,47 @@ const parseNodeIds = (raw: string): string[] =>
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
 
+// Stricter parser used by the bulk-create flow. Splits on newline / comma /
+// semicolon, trims, lowercases (UUID hex digits are case-insensitive), drops
+// blanks + duplicates, validates the generic 8-4-4-4-12 hex UUID format
+// (any variant — not v4-only — because backend GenerationType.UUID and
+// historical / imported data can carry v1/v3/v5 UUIDs that the backend will
+// accept). Exported so the test suite can lock the parser independently of
+// the dialog.
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+export const parseUuidList = (raw: string): string[] => {
+  if (!raw) return [];
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  for (const token of raw.split(/[\n,;]+/)) {
+    const trimmed = token.trim().toLowerCase();
+    if (!trimmed) continue;
+    if (!UUID_REGEX.test(trimmed)) continue;
+    if (seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    ordered.push(trimmed);
+  }
+  return ordered;
+};
+
+const HOLD_RELEASE_REASON_LABELS: Record<HoldReleaseReason, string> = {
+  LITIGATION_ENDED: 'Litigation ended',
+  SCHEDULED_DISPOSITION: 'Scheduled disposition',
+  REQUEST_BY_REQUESTOR: 'Requested by requestor',
+  OTHER: 'Other',
+};
+
+const HOLD_RELEASE_REASON_CHIP_COLOR: Record<
+  HoldReleaseReason,
+  'success' | 'info' | 'warning' | 'default'
+> = {
+  LITIGATION_ENDED: 'success',
+  SCHEDULED_DISPOSITION: 'info',
+  REQUEST_BY_REQUESTOR: 'warning',
+  OTHER: 'default',
+};
+
 // ── sub-components ────────────────────────────────────────────────────────────
 
 interface CreateHoldDialogProps {
@@ -60,11 +107,17 @@ interface CreateHoldDialogProps {
 const CreateHoldDialog: React.FC<CreateHoldDialogProps> = ({ open, onClose, onCreated }) => {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [nodeIdsRaw, setNodeIdsRaw] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [failedRows, setFailedRows] = useState<BulkApplyResult[]>([]);
+
+  const parsedUuids = parseUuidList(nodeIdsRaw);
 
   const handleClose = () => {
     setName('');
     setDescription('');
+    setNodeIdsRaw('');
+    setFailedRows([]);
     onClose();
   };
 
@@ -72,14 +125,52 @@ const CreateHoldDialog: React.FC<CreateHoldDialogProps> = ({ open, onClose, onCr
     const trimmedName = name.trim();
     if (!trimmedName) return;
     setSubmitting(true);
+    setFailedRows([]);
     try {
       const detail = await legalHoldService.createHold({
         name: trimmedName,
         description: description.trim() || undefined,
+        nodeIds: parsedUuids.length > 0 ? parsedUuids : undefined,
       });
-      toast.success(`Legal hold "${detail.name}" created.`);
+
+      // Always forward the new hold so the parent prepends it to the list
+      // and selects it, regardless of partial item failures.
       onCreated(detail);
-      handleClose();
+
+      const rows = detail.bulkApplyResults?.rows ?? [];
+      const failed = rows.filter((r) => r.status === 'FAILED');
+      const added = rows.filter((r) => r.status === 'ADDED');
+      const skipped = rows.filter((r) => r.status === 'SKIPPED_DUPLICATE');
+
+      if (parsedUuids.length === 0) {
+        // Single-row create back-compat path.
+        toast.success(`Legal hold "${detail.name}" created.`);
+        handleClose();
+        return;
+      }
+
+      if (failed.length > 0) {
+        // Partial failure: keep dialog open. Drain successful + skipped from
+        // the textarea so the operator can review and re-submit only the
+        // failed UUIDs.
+        const failedUuids = failed.map((r) => r.requestedNodeId);
+        setNodeIdsRaw(failedUuids.join('\n'));
+        setFailedRows(failed);
+        toast.error(
+          `Hold "${detail.name}" created. Bulk apply: ${added.length} added, `
+            + `${skipped.length} skipped duplicates, ${failed.length} failed.`,
+        );
+      } else if (skipped.length > 0) {
+        toast.success(
+          `Hold "${detail.name}" created. Bulk apply: ${added.length} added, ${skipped.length} skipped duplicates.`,
+        );
+        handleClose();
+      } else {
+        toast.success(
+          `Hold "${detail.name}" created. Bulk apply: ${added.length} added.`,
+        );
+        handleClose();
+      }
     } catch (err) {
       console.error('Failed to create legal hold', err);
       toast.error('Failed to create legal hold.');
@@ -93,6 +184,32 @@ const CreateHoldDialog: React.FC<CreateHoldDialogProps> = ({ open, onClose, onCr
       <DialogTitle>Create Legal Hold</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 1 }}>
+          {failedRows.length > 0 && (
+            <Alert
+              severity="error"
+              data-testid="legal-hold-bulk-failed-rows"
+              sx={{ whiteSpace: 'pre-wrap' }}
+            >
+              <Typography variant="body2" component="div" sx={{ fontWeight: 600, mb: 1 }}>
+                The following {failedRows.length} node ID
+                {failedRows.length === 1 ? ' was' : 's were'} not added:
+              </Typography>
+              {failedRows.map((row) => (
+                <Typography
+                  key={`${row.requestedNodeId}-${row.errorCategory ?? 'unknown'}`}
+                  variant="caption"
+                  component="div"
+                  data-testid={`legal-hold-bulk-failed-row-${row.errorCategory ?? 'unknown'}`}
+                >
+                  <strong>{row.requestedNodeId}</strong>
+                  {' '}
+                  ({row.errorCategory ?? 'UNKNOWN'}):
+                  {' '}
+                  {row.errorMessage ?? 'No detail available.'}
+                </Typography>
+              ))}
+            </Alert>
+          )}
           <TextField
             label="Name"
             value={name}
@@ -109,6 +226,23 @@ const CreateHoldDialog: React.FC<CreateHoldDialogProps> = ({ open, onClose, onCr
             multiline
             rows={3}
           />
+          <TextField
+            label="Node IDs (optional)"
+            value={nodeIdsRaw}
+            onChange={(e) => setNodeIdsRaw(e.target.value)}
+            fullWidth
+            multiline
+            rows={4}
+            placeholder={
+              'Optional. e.g.\na1b2c3d4-e5f6-7890-abcd-ef1234567890\nb2c3d4e5-...'
+            }
+            helperText={
+              parsedUuids.length === 0
+                ? 'Optional. Newline-, comma-, or semicolon-separated UUIDs. Blank, duplicate, and malformed UUIDs are ignored.'
+                : `Parsed ${parsedUuids.length} unique UUID${parsedUuids.length === 1 ? '' : 's'}.`
+            }
+            inputProps={{ 'data-testid': 'legal-hold-bulk-uuid-textarea' }}
+          />
         </Stack>
       </DialogContent>
       <DialogActions>
@@ -117,10 +251,17 @@ const CreateHoldDialog: React.FC<CreateHoldDialogProps> = ({ open, onClose, onCr
         </Button>
         <Button
           variant="contained"
-          onClick={handleSubmit}
+          onClick={() => void handleSubmit()}
           disabled={!name.trim() || submitting}
+          data-testid="legal-hold-bulk-submit"
         >
-          {submitting ? 'Creating…' : 'Create'}
+          {submitting
+            ? parsedUuids.length > 0
+              ? `Creating (${parsedUuids.length})…`
+              : 'Creating…'
+            : parsedUuids.length > 0
+              ? `Create hold and apply to ${parsedUuids.length} node${parsedUuids.length === 1 ? '' : 's'}`
+              : 'Create hold'}
         </Button>
       </DialogActions>
     </Dialog>
@@ -226,18 +367,22 @@ const ReleaseHoldDialog: React.FC<ReleaseHoldDialogProps> = ({
   onReleased,
   holdId,
 }) => {
+  const [releaseReason, setReleaseReason] = useState<HoldReleaseReason | ''>('');
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const handleClose = () => {
+    setReleaseReason('');
     setComment('');
     onClose();
   };
 
   const handleSubmit = async () => {
+    if (!releaseReason) return;
     setSubmitting(true);
     try {
       const detail = await legalHoldService.releaseHold(holdId, {
+        releaseReason,
         comment: comment.trim() || undefined,
       });
       toast.success(`Legal hold "${holdName}" released.`);
@@ -260,6 +405,22 @@ const ReleaseHoldDialog: React.FC<ReleaseHoldDialogProps> = ({
             Releasing <strong>{holdName}</strong> will remove the preservation hold from all{' '}
             associated nodes. This action cannot be undone.
           </Alert>
+          <FormControl fullWidth required>
+            <InputLabel id="legal-hold-release-reason-label">Release reason</InputLabel>
+            <Select
+              labelId="legal-hold-release-reason-label"
+              id="legal-hold-release-reason"
+              label="Release reason"
+              value={releaseReason}
+              onChange={(e) => setReleaseReason(e.target.value as HoldReleaseReason)}
+              inputProps={{ 'data-testid': 'legal-hold-release-reason' }}
+            >
+              <MenuItem value="LITIGATION_ENDED">{HOLD_RELEASE_REASON_LABELS.LITIGATION_ENDED}</MenuItem>
+              <MenuItem value="SCHEDULED_DISPOSITION">{HOLD_RELEASE_REASON_LABELS.SCHEDULED_DISPOSITION}</MenuItem>
+              <MenuItem value="REQUEST_BY_REQUESTOR">{HOLD_RELEASE_REASON_LABELS.REQUEST_BY_REQUESTOR}</MenuItem>
+              <MenuItem value="OTHER">{HOLD_RELEASE_REASON_LABELS.OTHER}</MenuItem>
+            </Select>
+          </FormControl>
           <TextField
             label="Release Comment (optional)"
             value={comment}
@@ -267,7 +428,7 @@ const ReleaseHoldDialog: React.FC<ReleaseHoldDialogProps> = ({
             fullWidth
             multiline
             rows={3}
-            placeholder="Reason for releasing this hold…"
+            placeholder="Additional context for the release reason…"
           />
         </Stack>
       </DialogContent>
@@ -278,8 +439,9 @@ const ReleaseHoldDialog: React.FC<ReleaseHoldDialogProps> = ({
         <Button
           variant="contained"
           color="warning"
-          onClick={handleSubmit}
-          disabled={submitting}
+          onClick={() => void handleSubmit()}
+          disabled={!releaseReason || submitting}
+          data-testid="legal-hold-release-submit"
         >
           {submitting ? 'Releasing…' : 'Release Hold'}
         </Button>
@@ -361,6 +523,7 @@ const LegalHoldsPage: React.FC = () => {
       createdDate: newDetail.createdDate,
       releasedBy: newDetail.releasedBy,
       releasedAt: newDetail.releasedAt,
+      releaseReason: newDetail.releaseReason,
     };
     setHolds((prev) => [summary, ...prev]);
     setSelectedHoldId(newDetail.id);
@@ -379,6 +542,7 @@ const LegalHoldsPage: React.FC = () => {
               itemCount: updated.itemCount,
               releasedBy: updated.releasedBy,
               releasedAt: updated.releasedAt,
+              releaseReason: updated.releaseReason,
             }
           : h
       )
@@ -531,7 +695,7 @@ const LegalHoldsPage: React.FC = () => {
                     spacing={2}
                   >
                     <Box sx={{ flex: 1 }}>
-                      <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
+                      <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }} flexWrap="wrap">
                         <Typography variant="h6" fontWeight={600}>
                           {detail.name}
                         </Typography>
@@ -540,6 +704,25 @@ const LegalHoldsPage: React.FC = () => {
                           size="small"
                           color={detail.status === 'ACTIVE' ? 'error' : 'default'}
                         />
+                        {detail.status === 'RELEASED' && (
+                          detail.releaseReason
+                            ? (
+                              <Chip
+                                label={HOLD_RELEASE_REASON_LABELS[detail.releaseReason]}
+                                size="small"
+                                color={HOLD_RELEASE_REASON_CHIP_COLOR[detail.releaseReason]}
+                                data-testid={`legal-hold-release-reason-chip-${detail.releaseReason}`}
+                              />
+                            )
+                            : (
+                              <Chip
+                                label="Legacy release"
+                                size="small"
+                                variant="outlined"
+                                data-testid="legal-hold-release-reason-chip-legacy"
+                              />
+                            )
+                        )}
                       </Stack>
                       {detail.description && (
                         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>

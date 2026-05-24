@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="094-add-legal-hold-release-reason" author="legal-hold-bulk">
+        <comment>
+            Structured release-reason enum column on legal_holds. Nullable so
+            existing RELEASED rows predating this migration remain legal-valid
+            without backfill; frontend renders "Legacy release" chip for
+            status=RELEASED && release_reason IS NULL. New releases require a
+            non-null reason at the service layer (HTTP 400 otherwise).
+        </comment>
+
+        <addColumn tableName="legal_holds">
+            <column name="release_reason" type="varchar(32)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+
+        <rollback>
+            <dropColumn tableName="legal_holds" columnName="release_reason"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

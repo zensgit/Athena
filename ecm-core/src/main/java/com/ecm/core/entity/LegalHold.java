@@ -44,11 +44,30 @@ public class LegalHold extends BaseEntity {
     @Column(name = "release_comment", columnDefinition = "TEXT")
     private String releaseComment;
 
+    /**
+     * Structured release reason added 2026-05-24 (migration 094). Nullable so
+     * RELEASED rows predating the migration remain legal-valid without
+     * backfill — frontend renders a "Legacy release" chip for
+     * {@code status == RELEASED && releaseReason == null}. New releases via
+     * {@code LegalHoldService.releaseHold(...)} require a non-null reason
+     * (HTTP 400 otherwise).
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "release_reason", length = 32)
+    private HoldReleaseReason releaseReason;
+
     @OneToMany(mappedBy = "hold", cascade = CascadeType.ALL, orphanRemoval = true)
     private Set<LegalHoldItem> items = new LinkedHashSet<>();
 
     public enum HoldStatus {
         ACTIVE,
         RELEASED
+    }
+
+    public enum HoldReleaseReason {
+        LITIGATION_ENDED,
+        SCHEDULED_DISPOSITION,
+        REQUEST_BY_REQUESTOR,
+        OTHER
     }
 }
