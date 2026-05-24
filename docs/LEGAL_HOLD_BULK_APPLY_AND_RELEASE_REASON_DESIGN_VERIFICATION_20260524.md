@@ -80,8 +80,38 @@ CI gate per `feedback_gh_run_watch_unreliable`: gate on `gh run view conclusion=
 
 ## CI Follow-Up
 
-Populated after CI completes.
+Final CI:
 
-- GitHub Actions run: `<pending>`
-- Head: `<pending>`
-- Result: `<pending>`
+- GitHub Actions run: `26361058940`
+- Head: `96a7ae1` (align-fix commit; production+test landed in `32381d8`, docs in `0fbf8aa`, then `96a7ae1` fixed three independent errors caught by CI #1)
+- Result: **success**
+
+All seven jobs passed:
+
+- Backend Verify
+- Frontend Build & Test
+- Phase C Security Verification
+- Acceptance Smoke (3 admin pages)
+- Property Encryption Closeout Gate
+- Phase 5 Mocked Regression Gate
+- Frontend E2E Core Gate
+
+## Align-fix narrative
+
+The first CI run `26360882665` on `0fbf8aa` failed Backend Verify with three independently-evidenced errors:
+
+1. `LiquibaseChangelogParseTest.masterChangelogParses` — Liquibase XML parser error at `094-add-legal-hold-release-reason.xml:13` column 30: *"The entity name must immediately follow the '&' in the entity reference."* Root cause: the migration's `<comment>` block contained `status=RELEASED && release_reason IS NULL`, and the XML parser interprets `&` as the start of an entity reference (`&amp;`, `&lt;`, etc.). Fixed by rephrasing the comment to use the words "and" / "is null" rather than the C-style boolean operator.
+2. `LegalHoldServiceTest.createHoldWithTenantInvisibleNodeReportsCategory` — Mockito `UnnecessaryStubbingException`. The test stubbed `securityService.getCurrentUser()`, but `applyOneItem` throws `NodeNotVisibleForHoldException` at `tenantWorkspaceScopeService.isPathVisible(...)` BEFORE the call site that uses `getCurrentUser`. Fixed by removing the unused stub + inline comment naming the reason.
+3. `LegalHoldServiceTest.createHoldInternalErrorSanitisedMessage` — same pattern: `nodeRepository.findByIdAndDeletedFalseAndArchiveStatus` throws the injected `USER_PII_PROBE` `RuntimeException` before `getCurrentUser` is reached. Same fix.
+
+Per `feedback_diagnostic_cadence_for_opaque_500s`: each failure was independently evidenced by its own log line. No production code change in the align fix — the FK-visibility-trap orchestration pattern (the original gate-corrected design) was already correct; the failures were test-fixture / XML-syntax issues only.
+
+Test count: 2214 → 2214 (no test added or removed); error count 3 → 0.
+
+The other test-output noise visible in the failed run's log (`Caused by: java.lang.RuntimeException: scan failed: boom` from an `RmReportPresetController` test setup) is intentional test diagnostic output, not a test failure — confirmed by the summary line at the bottom of the failed run.
+
+## Track status
+
+Legal-hold bulk-apply + structured release-reason slice is **shipped**.
+
+Follow-up candidates surfaced during this slice but explicitly OOS (see brief §"Out of scope"): bulk-release across N holds, CSV import for node IDs, async send worker, per-row role / message override, real-DB FK-visibility integration test (recommended in brief but not implemented — would catch any future regression of the orchestration pattern). These can be opened as separate slices on operator / gate signal.
