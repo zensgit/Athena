@@ -12,6 +12,8 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestTemplate;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -585,6 +587,21 @@ class OAuthCredentialServiceTest {
             "message must NOT embed provider error_description; got: " + message);
         assertFalse(message.contains("violated"),
             "message must NOT embed provider error_description; got: " + message);
+        // Phase 2 follow-up (gate finding 2026-05-23): also assert the full
+        // Throwable + cause chain serialization (what SLF4J/Logback emit at
+        // RestExceptionHandler:44 via log.error("...", ex)) excludes every
+        // fragment of the provider error_description. Pre-follow-up the raw
+        // HttpClientErrorException was the cause and its getMessage() carried
+        // the full response body into the emission.
+        StringWriter sw = new StringWriter();
+        ex.printStackTrace(new PrintWriter(sw));
+        String stackEmission = sw.toString();
+        assertFalse(stackEmission.contains("user@example.com"),
+            "stack-trace emission must NOT contain provider error_description (PII); got: " + stackEmission);
+        assertFalse(stackEmission.contains("scope-x"),
+            "stack-trace emission must NOT contain provider error_description; got: " + stackEmission);
+        assertFalse(stackEmission.contains("violated"),
+            "stack-trace emission must NOT contain provider error_description; got: " + stackEmission);
         // Local tokens must be preserved on non-already-invalid provider failures.
         verify(adapter, never()).clearTokens(ownerId);
         server.verify();
@@ -643,6 +660,18 @@ class OAuthCredentialServiceTest {
             "message must NOT embed provider error_description; got: " + message);
         assertFalse(message.contains("rejected"),
             "message must NOT embed provider error_description; got: " + message);
+        // Phase 2 follow-up (gate finding 2026-05-23): also assert the full
+        // Throwable + cause chain serialization excludes every fragment of the
+        // provider error_description. See revoke counterpart above for rationale.
+        StringWriter sw = new StringWriter();
+        ex.printStackTrace(new PrintWriter(sw));
+        String stackEmission = sw.toString();
+        assertFalse(stackEmission.contains("user@example.com"),
+            "stack-trace emission must NOT contain provider error_description (PII); got: " + stackEmission);
+        assertFalse(stackEmission.contains("Q4 layoff plan"),
+            "stack-trace emission must NOT contain provider error_description (PII); got: " + stackEmission);
+        assertFalse(stackEmission.contains("rejected"),
+            "stack-trace emission must NOT contain provider error_description; got: " + stackEmission);
         server.verify();
     }
 }

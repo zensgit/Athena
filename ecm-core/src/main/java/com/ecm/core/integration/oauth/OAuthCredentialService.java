@@ -149,6 +149,38 @@ public class OAuthCredentialService {
     }
 
     /**
+     * Phase 2 logging audit follow-up (2026-05-23): Spring's
+     * {@link HttpStatusCodeException} subclasses (HttpClientErrorException,
+     * HttpServerErrorException, etc.) include the response body verbatim in
+     * {@code getMessage()} / {@code toString()}. When an OAuth-failure
+     * {@link IllegalStateException} preserves such an exception as its
+     * {@code cause}, the SLF4J emission at
+     * {@code RestExceptionHandler.handleInternalState} ({@code :44}) walks
+     * the cause chain via {@code Throwable.printStackTrace} and emits the
+     * provider-controlled body — including any {@code error_description} —
+     * into the ERROR log.
+     *
+     * <p>This helper builds a sanitized stand-in: a plain {@link RuntimeException}
+     * carrying only the original exception's class simple name plus its HTTP
+     * status code. The original stack frames are copied so the failure point
+     * inside Spring's RestTemplate remains debuggable, but the response body
+     * never reaches the log emission. The original {@code cause} is dropped
+     * (HttpStatusCodeException subclasses are generally leaf exceptions).
+     *
+     * <p>Use at every {@code throw new IllegalStateException(message, cause)}
+     * site where {@code cause} is an {@link HttpStatusCodeException} or its
+     * subclasses. {@link ResourceAccessException} does not include a body
+     * (no response was received) and is safe to preserve as-is.
+     */
+    private static RuntimeException sanitizedHttpCause(HttpStatusCodeException ex) {
+        RuntimeException sanitized = new RuntimeException(
+            ex.getClass().getSimpleName() + " (HTTP " + ex.getStatusCode().value() + ")"
+        );
+        sanitized.setStackTrace(ex.getStackTrace());
+        return sanitized;
+    }
+
+    /**
      * Calls the provider's revoke endpoint for the locally stored OAuth token.
      *
      * <p>Supports GOOGLE and CUSTOM credentials with a configured revoke endpoint. Prefers the
@@ -187,14 +219,14 @@ public class OAuthCredentialService {
             throw new IllegalStateException(
                 "OAuth token revoke failed for owner " + owner.ownerName()
                     + ": provider returned " + ex.getStatusCode().value(),
-                ex
+                sanitizedHttpCause(ex)
             );
         } catch (HttpStatusCodeException ex) {
             if (ex.getStatusCode().is5xxServerError()) {
                 throw new IllegalStateException(
                     "OAuth token revoke failed for owner " + owner.ownerName()
                         + ": provider returned " + ex.getStatusCode().value(),
-                    ex
+                    sanitizedHttpCause(ex)
                 );
             }
             OAuthTokenErrorParser.OAuthTokenError parsed =
@@ -206,15 +238,18 @@ public class OAuthCredentialService {
                 return;
             }
             // Phase 2 logging audit: do NOT embed parsed.errorDescription() in the
-            // user-visible message. The description is provider-controlled and may
-            // carry user identifiers; it remains accessible via the cause chain (ex).
+            // user-visible message.
+            // Phase 2 follow-up (gate finding 2026-05-23): the original HttpStatusCodeException
+            // includes the provider response body in getMessage()/toString(); preserving it
+            // raw as the IllegalStateException cause leaks the body through SLF4J's stack-
+            // trace emission at RestExceptionHandler:44. Use sanitizedHttpCause(ex) instead.
             String message = "OAuth token revoke failed for owner " + owner.ownerName();
             if (parsed != null) {
                 message += ": " + parsed.error();
             } else {
                 message += ": provider returned " + ex.getStatusCode().value();
             }
-            throw new IllegalStateException(message, ex);
+            throw new IllegalStateException(message, sanitizedHttpCause(ex));
         } catch (ResourceAccessException ex) {
             throw new IllegalStateException(
                 "OAuth token revoke failed for owner " + owner.ownerName()
@@ -352,10 +387,12 @@ public class OAuthCredentialService {
                     );
                 }
                 // Phase 2 logging audit: do NOT embed parsed.errorDescription() in the
-                // user-visible message. The description is provider-controlled and may
-                // carry user identifiers; it remains accessible via the cause chain (ex).
+                // user-visible message.
+                // Phase 2 follow-up (gate finding 2026-05-23): see sanitizedHttpCause()
+                // javadoc — raw HttpStatusCodeException as cause would leak the response
+                // body through SLF4J's stack-trace emission at RestExceptionHandler:44.
                 String message = "OAuth token refresh failed: " + parsed.error();
-                throw new IllegalStateException(message, ex);
+                throw new IllegalStateException(message, sanitizedHttpCause(ex));
             }
             throw ex;
         }
