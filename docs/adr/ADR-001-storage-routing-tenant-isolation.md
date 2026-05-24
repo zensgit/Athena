@@ -1,8 +1,8 @@
 # ADR-001: Storage Routing and Tenant Isolation
 
-**Date:** 2026-04-11
+**Date:** 2026-04-11 (revisited 2026-05-24)
 
-**Status:** Deferred
+**Status:** Accepted: Option A (Global Shared Storage)
 
 **Deciders:** Athena ECM Platform Team
 
@@ -69,7 +69,7 @@ Each tenant receives a dedicated MinIO bucket. Content paths within each bucket 
 
 ## Decision
 
-**Deferred.** The current global shared storage model (Option A) is retained. No per-tenant storage routing will be implemented at this time.
+**Accepted: Option A.** The global shared storage model is the implemented and supported architecture. No per-tenant storage routing is in flight, and the previous "Deferred" status has been retired because the live codebase has matched Option A continuously since 2026-04-11; describing the same choice as "deferred" misled readers into expecting a pending decision.
 
 The existing architecture is adequate for current operational requirements:
 
@@ -77,14 +77,27 @@ The existing architecture is adequate for current operational requirements:
 - Cross-tenant deduplication delivers meaningful storage savings.
 - No current customer has requested physical data isolation.
 
-### Trigger Conditions to Revisit
+### Reopen Criteria
 
-This decision should be re-opened if any of the following conditions arise:
+This ADR should be reopened (revisited and potentially replaced by Option B or C, or by a new ADR) if any of the following observable conditions is met. The criteria are intentionally phrased so a future reviewer can verify them from operational telemetry or written customer commitments, not by judgement alone.
 
-1. **Regulatory or compliance requirement** -- A customer or market requires physical data isolation (e.g., data residency, government cloud, ITAR).
-2. **Per-tenant encryption** -- A requirement emerges for encrypting each tenant's content with a distinct key (at-rest key separation).
-3. **Tenant lifecycle at scale** -- Tenant deletion or migration becomes operationally painful because content cleanup requires scanning the entire document table rather than removing a directory or bucket.
-4. **Diminishing dedup returns** -- Analysis shows cross-tenant deduplication savings are negligible (most tenants upload unique content), eliminating the primary benefit of shared storage.
+1. **Compliance / data-residency contract** — A signed contract or written customer commitment requires physical data isolation, region-pinned blobs, or attestation that one tenant's data is not co-located with another's at the storage layer (e.g., data residency, government cloud, ITAR, jurisdiction-bound regulators).
+2. **Per-tenant encryption requirement** — A written security review or compliance audit names per-tenant content-at-rest key separation as a remediation item. See ADR-003 (content-at-rest encryption) for the orthogonal cryptographic question; ADR-001 reopens only when per-tenant key isolation specifically requires per-tenant storage scope.
+3. **Tenant-lifecycle operational pain** — An operational incident report or postmortem identifies tenant deletion / migration as a root cause of downtime, data leakage, or unacceptable runtime cost. The current document-table-scan model is acceptable only while tenant count and turnover stay within the capacity it implies.
+4. **Measured dedup return below threshold** — A telemetry-backed analysis shows cross-tenant deduplication savings below an agreed threshold (proposed: < 5% of total storage saved by cross-tenant identical-blob coincidence, measured over a representative window). Note: the codebase as of 2026-05-24 has no telemetry to measure this; introducing the measurement is itself a prerequisite to triggering on this criterion.
+
+### Revisit 2026-05-24
+
+Read-only re-examination performed in `docs/ADR_001_STORAGE_ROUTING_DISCOVERY_20260524.md`. Outcome:
+
+- **No reopen criterion has materialized** between 2026-04-11 and 2026-05-24. No compliance contract, no security-audit remediation, no operational incident, and no dedup-savings measurement.
+- **Current live architecture continues to match Option A verbatim.** `ContentService.java:66-123` writes raw bytes via direct Java NIO into the date-sharded path under `ecm.storage.root-path`; `findByContentHash(...)` lookup is unscoped by tenant; `TenantWorkspaceScopeService` is never invoked from `ContentService` or `ContentReferenceService`.
+- **Two precision corrections to the original ADR-001 wording**:
+  - **`ecm.storage.type: filesystem` is configured in YAML but is not consumed by Java code.** `grep -RIn 'ecm.storage.type' ecm-core/src/main/java` returns zero hits. The property exists as a hint to operators; there is no pluggable `StorageAdapter` interface today. A future Option B or C would have to introduce the abstraction first; absence of it is part of the cost.
+  - **"Production deployments use MinIO" (original ADR-001 §25) describes the operational target, not the codebase.** The application talks to local filesystem via `java.nio.file.Files`; MinIO is presumed mounted as a local path (e.g., via FUSE / CSI driver). No S3 SDK or MinIO client is on the `ecm-core` content classpath. Any Option C (per-tenant bucket) implementation would need to introduce the client + abstraction layer as a prerequisite.
+- **Content-at-rest plaintext is an orthogonal concern**, surfaced for the first time in writing by the 2026-05-24 discovery (it was named only as a consequence in §93 of the original ADR-001). It is being spun off to **ADR-003: Content-at-rest Encryption** rather than expanded inside this ADR. Per the precedent of ADR-002 (tenant quota accounting), a separable concern earns its own ADR.
+
+This decision is reaffirmed as Accepted: Option A. The decision should be considered live unless and until a Reopen criterion is met and documented in a follow-up ADR or in an addendum to this one.
 
 ## Consequences
 
