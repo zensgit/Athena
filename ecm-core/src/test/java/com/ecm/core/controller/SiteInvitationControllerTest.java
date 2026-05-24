@@ -185,4 +185,117 @@ class SiteInvitationControllerTest {
             .andExpect(jsonPath("$.id").value(invId.toString()))
             .andExpect(jsonPath("$.status").value("REJECTED"));
     }
+
+    // ========================================================================
+    // Bulk invite endpoint
+    // ========================================================================
+
+    @Test
+    @DisplayName("bulkInvite returns 200 with per-row results (all SUCCESS)")
+    void bulkInviteReturns200WithAllSuccessResults() throws Exception {
+        UUID inv1 = UUID.randomUUID();
+        UUID inv2 = UUID.randomUUID();
+        UUID siteId = UUID.randomUUID();
+        Mockito.when(invitationService.inviteBulk(
+            Mockito.eq("finance"),
+            Mockito.any(SiteInvitationService.BulkInviteRequest.class)
+        )).thenReturn(new SiteInvitationService.BulkInviteResponse(java.util.List.of(
+            SiteInvitationService.BulkInviteResult.success(
+                "alice@example.com",
+                new SiteInvitationService.SiteInvitationDto(
+                    inv1, siteId, "Finance", "alice@example.com",
+                    null, "CONSUMER", "PENDING", null, "admin",
+                    LocalDateTime.of(2026, 6, 1, 9, 0), null,
+                    LocalDateTime.of(2026, 5, 24, 10, 0),
+                    LocalDateTime.of(2026, 5, 24, 10, 0), "SENT", null, 1,
+                    LocalDateTime.of(2026, 5, 24, 10, 0)
+                )
+            ),
+            SiteInvitationService.BulkInviteResult.success(
+                "bob@example.com",
+                new SiteInvitationService.SiteInvitationDto(
+                    inv2, siteId, "Finance", "bob@example.com",
+                    null, "CONSUMER", "PENDING", null, "admin",
+                    LocalDateTime.of(2026, 6, 1, 9, 0), null,
+                    LocalDateTime.of(2026, 5, 24, 10, 0),
+                    LocalDateTime.of(2026, 5, 24, 10, 0), "SENT", null, 1,
+                    LocalDateTime.of(2026, 5, 24, 10, 0)
+                )
+            )
+        )));
+
+        mockMvc.perform(post("/api/v1/sites/finance/invitations/bulk")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "inviteeEmails": ["alice@example.com", "bob@example.com"],
+                      "invitedRole": "CONSUMER",
+                      "message": null
+                    }
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.results[0].inviteeEmail").value("alice@example.com"))
+            .andExpect(jsonPath("$.results[0].status").value("SUCCESS"))
+            .andExpect(jsonPath("$.results[0].invitation.id").value(inv1.toString()))
+            .andExpect(jsonPath("$.results[1].inviteeEmail").value("bob@example.com"))
+            .andExpect(jsonPath("$.results[1].status").value("SUCCESS"));
+    }
+
+    @Test
+    @DisplayName("bulkInvite returns 200 with partial failure — HTTP status NOT 400 on per-row failures")
+    void bulkInviteReturns200OnPartialFailure() throws Exception {
+        UUID inv1 = UUID.randomUUID();
+        UUID siteId = UUID.randomUUID();
+        Mockito.when(invitationService.inviteBulk(
+            Mockito.eq("finance"),
+            Mockito.any(SiteInvitationService.BulkInviteRequest.class)
+        )).thenReturn(new SiteInvitationService.BulkInviteResponse(java.util.List.of(
+            SiteInvitationService.BulkInviteResult.success(
+                "alice@example.com",
+                new SiteInvitationService.SiteInvitationDto(
+                    inv1, siteId, "Finance", "alice@example.com",
+                    null, "CONSUMER", "PENDING", null, "admin",
+                    LocalDateTime.of(2026, 6, 1, 9, 0), null,
+                    LocalDateTime.of(2026, 5, 24, 10, 0),
+                    LocalDateTime.of(2026, 5, 24, 10, 0), "SENT", null, 1,
+                    LocalDateTime.of(2026, 5, 24, 10, 0)
+                )
+            ),
+            SiteInvitationService.BulkInviteResult.failed(
+                "dup@example.com",
+                SiteInvitationService.BulkInviteErrorCategory.DUPLICATE_PENDING,
+                "A pending invitation already exists for this email in this site."
+            )
+        )));
+
+        mockMvc.perform(post("/api/v1/sites/finance/invitations/bulk")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "inviteeEmails": ["alice@example.com", "dup@example.com"],
+                      "invitedRole": "CONSUMER"
+                    }
+                    """))
+            .andExpect(status().isOk())   // 200, NOT 400 — per-row failures are part of the body, not an HTTP error
+            .andExpect(jsonPath("$.results[0].status").value("SUCCESS"))
+            .andExpect(jsonPath("$.results[1].status").value("FAILED"))
+            .andExpect(jsonPath("$.results[1].errorCategory").value("DUPLICATE_PENDING"))
+            .andExpect(jsonPath("$.results[1].invitation").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("bulkInvite empty inviteeEmails maps IllegalArgumentException to 400")
+    void bulkInviteEmptyArrayMapsTo400() throws Exception {
+        Mockito.when(invitationService.inviteBulk(
+            Mockito.eq("finance"),
+            Mockito.any(SiteInvitationService.BulkInviteRequest.class)
+        )).thenThrow(new IllegalArgumentException("inviteeEmails must contain at least one entry"));
+
+        mockMvc.perform(post("/api/v1/sites/finance/invitations/bulk")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    { "inviteeEmails": [], "invitedRole": "CONSUMER" }
+                    """))
+            .andExpect(status().isBadRequest());
+    }
 }

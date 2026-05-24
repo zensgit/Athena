@@ -31,7 +31,9 @@ import { Add, Cancel, Refresh, Send } from '@mui/icons-material';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import siteInvitationService, {
-  InviteRequest,
+  BulkInviteRequest,
+  BulkInviteResponse,
+  BulkInviteResult,
   SiteInvitationDto,
 } from 'services/siteInvitationService';
 import type { SiteMemberRole } from 'services/siteService';
@@ -88,6 +90,24 @@ const buildSendFailureMessage = (
   return detail ? `${base}: ${detail}` : `${base}.`;
 };
 
+// Exported so the test suite can lock the parser independently of the dialog.
+// Splits on newline / comma / semicolon; trims surrounding whitespace; lowercases
+// for case-insensitive dedup; preserves first-seen order; drops blanks and
+// duplicates.
+export const parseBulkEmails = (raw: string): string[] => {
+  if (!raw) return [];
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  for (const token of raw.split(/[\n,;]/)) {
+    const trimmed = token.trim().toLowerCase();
+    if (trimmed && !seen.has(trimmed)) {
+      seen.add(trimmed);
+      ordered.push(trimmed);
+    }
+  }
+  return ordered;
+};
+
 interface SendStatusCellProps {
   invitation: SiteInvitationDto;
 }
@@ -136,73 +156,170 @@ const SendStatusCell: React.FC<SendStatusCellProps> = ({ invitation }) => {
   );
 };
 
-// CreateInvitationDialog
+// CreateInvitationDialog (bulk-capable since 2026-05-24)
+//
+// The dialog is intentionally always-bulk: a single textarea splits on newline /
+// comma / semicolon, parseBulkEmails dedupes case-insensitively, and the
+// service call always goes through createInvitationsBulk(siteId, ...) even when
+// the operator only enters one address. Rationale: single frontend code path,
+// single toast/error logic. The single-invite backend endpoint is kept for
+// external callers, not used by this dialog.
 
 interface CreateInvitationDialogProps {
   open: boolean;
   siteId: string;
   onClose: () => void;
-  onCreated: (invitation: SiteInvitationDto) => void;
+  onBulkCreated: (response: BulkInviteResponse) => void;
 }
+
+interface BulkDialogForm {
+  textarea: string;
+  invitedRole: SiteMemberRole;
+  message: string;
+}
+
+const INITIAL_BULK_FORM: BulkDialogForm = {
+  textarea: '',
+  invitedRole: 'CONSUMER',
+  message: '',
+};
 
 const CreateInvitationDialog: React.FC<CreateInvitationDialogProps> = ({
   open,
   siteId,
   onClose,
-  onCreated,
+  onBulkCreated,
 }) => {
-  const [form, setForm] = useState<InviteRequest>({
-    inviteeEmail: '',
-    invitedRole: 'CONSUMER',
-    message: '',
-  });
+  const [form, setForm] = useState<BulkDialogForm>(INITIAL_BULK_FORM);
   const [submitting, setSubmitting] = useState(false);
+  const [failedRows, setFailedRows] = useState<BulkInviteResult[]>([]);
+
+  const parsedEmails = parseBulkEmails(form.textarea);
 
   const handleClose = () => {
-    setForm({ inviteeEmail: '', invitedRole: 'CONSUMER', message: '' });
+    setForm(INITIAL_BULK_FORM);
+    setFailedRows([]);
     onClose();
   };
 
-  const handleSubmit = async () => {
-    const email = form.inviteeEmail.trim();
-    if (!email) return;
-    setSubmitting(true);
-    try {
-      const created = await siteInvitationService.createInvitation(siteId, {
-        inviteeEmail: email,
-        invitedRole: form.invitedRole || 'CONSUMER',
-        message: form.message?.trim() || undefined,
-      });
-      if (created.lastSendStatus === 'FAILED') {
-        toast.error(buildSendFailureMessage(created, 'Invitation created'));
-      } else if (created.lastSendStatus === 'SENT') {
-        toast.success(`Invitation sent to ${created.inviteeEmail}.`);
-      } else {
-        toast.info(`Invitation created for ${created.inviteeEmail}; email send status is pending.`);
+  const summarizeResults = (results: BulkInviteResult[]) => {
+    let sent = 0;
+    let emailFailed = 0;
+    let rowFailed = 0;
+    let pending = 0;
+    for (const r of results) {
+      if (r.status === 'FAILED') {
+        rowFailed += 1;
+        continue;
       }
-      onCreated(created);
-      handleClose();
+      const inv = r.invitation;
+      if (inv?.lastSendStatus === 'SENT') sent += 1;
+      else if (inv?.lastSendStatus === 'FAILED') emailFailed += 1;
+      else pending += 1;
+    }
+    return { sent, emailFailed, rowFailed, pending };
+  };
+
+  const handleSubmit = async () => {
+    if (parsedEmails.length === 0) return;
+    setSubmitting(true);
+    setFailedRows([]);
+    try {
+      const request: BulkInviteRequest = {
+        inviteeEmails: parsedEmails,
+        invitedRole: form.invitedRole,
+        message: form.message.trim() || undefined,
+      };
+      const response = await siteInvitationService.createInvitationsBulk(siteId, request);
+      // Always merge SUCCESS rows into the parent list, regardless of partial failure.
+      onBulkCreated(response);
+
+      const { sent, emailFailed, rowFailed, pending } = summarizeResults(response.results);
+      const failedRowList = response.results.filter((r) => r.status === 'FAILED');
+
+      if (rowFailed > 0) {
+        // Stay open. Show the failed rows; drain successful emails from the textarea
+        // so the operator can edit + retry only what didn't go through.
+        const failedEmails = failedRowList.map((r) => r.inviteeEmail);
+        setForm((prev) => ({ ...prev, textarea: failedEmails.join('\n') }));
+        setFailedRows(failedRowList);
+        toast.error(
+          `Bulk invite: ${sent} sent, ${emailFailed} email-send failed, ${rowFailed} rejected, ${pending} pending.`,
+        );
+      } else if (emailFailed > 0) {
+        toast.error(
+          `Bulk invite: ${sent} sent, ${emailFailed} email-send failed, ${pending} pending. See the table for details.`,
+        );
+        handleClose();
+      } else if (pending > 0) {
+        toast.info(`Bulk invite: ${sent} sent, ${pending} pending.`);
+        handleClose();
+      } else {
+        toast.success(`Bulk invite: ${sent} sent.`);
+        handleClose();
+      }
     } catch (err) {
-      console.error('Failed to send invitation', err);
-      toast.error('Failed to send invitation.');
+      console.error('Failed to send bulk invitations', err);
+      toast.error(resolveErrorMessage(err, 'Failed to send invitations.'));
     } finally {
       setSubmitting(false);
     }
   };
+
+  const submitDisabled = parsedEmails.length === 0 || submitting;
+  const submitLabel = submitting
+    ? `Sending (${parsedEmails.length})...`
+    : parsedEmails.length === 0
+      ? 'Send invitations'
+      : `Send ${parsedEmails.length} invitation${parsedEmails.length === 1 ? '' : 's'}`;
 
   return (
     <Dialog open={open} onClose={handleClose} fullWidth maxWidth="sm">
       <DialogTitle>Invite to Site</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 1 }}>
+          {failedRows.length > 0 && (
+            <Alert
+              severity="error"
+              data-testid="bulk-invitation-failed-rows"
+              sx={{ whiteSpace: 'pre-wrap' }}
+            >
+              <Typography variant="body2" component="div" sx={{ fontWeight: 600, mb: 1 }}>
+                The following {failedRows.length} email
+                {failedRows.length === 1 ? ' was' : 's were'} not invited:
+              </Typography>
+              {failedRows.map((row) => (
+                <Typography
+                  key={`${row.inviteeEmail}-${row.errorCategory ?? 'unknown'}`}
+                  variant="caption"
+                  component="div"
+                  data-testid={`bulk-invitation-failed-row-${row.errorCategory ?? 'unknown'}`}
+                >
+                  <strong>{row.inviteeEmail || '(blank)'}</strong>
+                  {' '}
+                  ({row.errorCategory ?? 'UNKNOWN'}):
+                  {' '}
+                  {row.errorMessage ?? 'No detail available.'}
+                </Typography>
+              ))}
+            </Alert>
+          )}
           <TextField
-            label="Email address"
-            type="email"
-            value={form.inviteeEmail}
-            onChange={(e) => setForm((prev) => ({ ...prev, inviteeEmail: e.target.value }))}
+            label="Invitee emails"
+            value={form.textarea}
+            onChange={(e) => setForm((prev) => ({ ...prev, textarea: e.target.value }))}
             required
             fullWidth
+            multiline
+            rows={6}
             autoFocus
+            placeholder={'alice@example.com\nbob@example.com\nclaire@example.com'}
+            helperText={
+              parsedEmails.length === 0
+                ? 'Newline-, comma-, or semicolon-separated. Duplicates and blanks are ignored.'
+                : `Parsed ${parsedEmails.length} unique email${parsedEmails.length === 1 ? '' : 's'}.`
+            }
+            inputProps={{ 'data-testid': 'bulk-invitation-textarea' }}
           />
           <FormControl fullWidth size="small">
             <InputLabel id="site-invitation-role-label">Role</InputLabel>
@@ -221,7 +338,7 @@ const CreateInvitationDialog: React.FC<CreateInvitationDialogProps> = ({
           </FormControl>
           <TextField
             label="Message (optional)"
-            value={form.message ?? ''}
+            value={form.message}
             onChange={(e) => setForm((prev) => ({ ...prev, message: e.target.value }))}
             fullWidth
             multiline
@@ -236,10 +353,11 @@ const CreateInvitationDialog: React.FC<CreateInvitationDialogProps> = ({
         </Button>
         <Button
           variant="contained"
-          onClick={handleSubmit}
-          disabled={!form.inviteeEmail.trim() || submitting}
+          onClick={() => void handleSubmit()}
+          disabled={submitDisabled}
+          data-testid="bulk-invitation-submit"
         >
-          {submitting ? 'Sending...' : 'Send Invitation'}
+          {submitLabel}
         </Button>
       </DialogActions>
     </Dialog>
@@ -322,8 +440,16 @@ const SiteInvitationsPage: React.FC = () => {
     }
   };
 
-  const handleCreated = (invitation: SiteInvitationDto) => {
-    setInvitations((prev) => [invitation, ...prev]);
+  const handleBulkCreated = (response: BulkInviteResponse) => {
+    // Prepend only SUCCESS rows that carry an invitation payload. Order
+    // is preserved relative to the request order (bulk emits results in
+    // input order); the table's existing createdDate-desc ordering is the
+    // dominant sort on next refresh anyway.
+    const newInvitations = response.results
+      .filter((r) => r.status === 'SUCCESS' && r.invitation !== null)
+      .map((r) => r.invitation as SiteInvitationDto);
+    if (newInvitations.length === 0) return;
+    setInvitations((prev) => [...newInvitations, ...prev]);
   };
 
   const openResendDialog = (invitation: SiteInvitationDto) => {
@@ -613,7 +739,7 @@ const SiteInvitationsPage: React.FC = () => {
         open={createOpen}
         siteId={siteId}
         onClose={() => setCreateOpen(false)}
-        onCreated={handleCreated}
+        onBulkCreated={handleBulkCreated}
       />
 
       <Dialog

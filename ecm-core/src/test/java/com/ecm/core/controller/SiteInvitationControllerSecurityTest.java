@@ -157,6 +157,87 @@ class SiteInvitationControllerSecurityTest {
             .andExpect(status().isNotFound());
     }
 
+    // ========================================================================
+    // Bulk invite endpoint
+    // ========================================================================
+
+    @Test
+    @DisplayName("unauthenticated POST bulk invite returns 401")
+    void unauthenticatedBulkInviteReturns401() throws Exception {
+        mockMvc.perform(post("/api/v1/sites/finance/invitations/bulk")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    { "inviteeEmails": ["alice@example.com"], "invitedRole": "CONSUMER" }
+                    """))
+            .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    @DisplayName("authenticated user reaches the bulk endpoint (service enforces manager/admin)")
+    void authenticatedUserCanReachBulkEndpoint() throws Exception {
+        UUID inv1 = UUID.randomUUID();
+        UUID siteId = UUID.randomUUID();
+        when(invitationService.inviteBulk(
+            org.mockito.ArgumentMatchers.eq("finance"),
+            org.mockito.ArgumentMatchers.any(com.ecm.core.service.SiteInvitationService.BulkInviteRequest.class)
+        )).thenReturn(new com.ecm.core.service.SiteInvitationService.BulkInviteResponse(java.util.List.of(
+            com.ecm.core.service.SiteInvitationService.BulkInviteResult.success(
+                "alice@example.com",
+                new SiteInvitationService.SiteInvitationDto(
+                    inv1, siteId, "Finance", "alice@example.com",
+                    null, "CONSUMER", "PENDING", null, "admin",
+                    LocalDateTime.of(2026, 6, 1, 9, 0), null,
+                    LocalDateTime.of(2026, 5, 24, 10, 0),
+                    LocalDateTime.of(2026, 5, 24, 10, 0), "SENT", null, 1,
+                    LocalDateTime.of(2026, 5, 24, 10, 0)
+                )
+            )
+        )));
+
+        mockMvc.perform(post("/api/v1/sites/finance/invitations/bulk")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    { "inviteeEmails": ["alice@example.com"], "invitedRole": "CONSUMER" }
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.results[0].status").value("SUCCESS"));
+    }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    @DisplayName("bulk invite without manager/admin permission maps SecurityException to 403")
+    void bulkInviteWithoutPermissionMapsTo403() throws Exception {
+        when(invitationService.inviteBulk(
+            org.mockito.ArgumentMatchers.eq("finance"),
+            org.mockito.ArgumentMatchers.any(com.ecm.core.service.SiteInvitationService.BulkInviteRequest.class)
+        )).thenThrow(new SecurityException("User is not a site manager or admin"));
+
+        mockMvc.perform(post("/api/v1/sites/finance/invitations/bulk")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    { "inviteeEmails": ["alice@example.com"], "invitedRole": "CONSUMER" }
+                    """))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    @DisplayName("bulk invite with empty inviteeEmails maps IllegalArgumentException to 400")
+    void bulkInviteEmptyMapsTo400() throws Exception {
+        when(invitationService.inviteBulk(
+            org.mockito.ArgumentMatchers.eq("finance"),
+            org.mockito.ArgumentMatchers.any(com.ecm.core.service.SiteInvitationService.BulkInviteRequest.class)
+        )).thenThrow(new IllegalArgumentException("inviteeEmails must contain at least one entry"));
+
+        mockMvc.perform(post("/api/v1/sites/finance/invitations/bulk")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    { "inviteeEmails": [], "invitedRole": "CONSUMER" }
+                    """))
+            .andExpect(status().isBadRequest());
+    }
+
     @Test
     @WithMockUser(roles = "USER")
     @DisplayName("admin/manager resend returns 200 with send-tracking fields populated")

@@ -4,9 +4,12 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import SiteInvitationsPage from './SiteInvitationsPage';
 import siteInvitationService, {
+  BulkInviteResponse,
+  SITE_INVITATION_BULK_CREATE_UNEXPECTED_RESPONSE_MESSAGE,
   SITE_INVITATION_RESEND_UNEXPECTED_RESPONSE_MESSAGE,
   SiteInvitationDto,
 } from 'services/siteInvitationService';
+import { parseBulkEmails } from './SiteInvitationsPage';
 
 // react-toastify renders a portal that interferes with default jsdom timers; mock it.
 jest.mock('react-toastify', () => ({
@@ -28,6 +31,7 @@ jest.mock('services/siteInvitationService', () => ({
   default: {
     listInvitations: jest.fn(),
     createInvitation: jest.fn(),
+    createInvitationsBulk: jest.fn(),
     cancelInvitation: jest.fn(),
     acceptInvitation: jest.fn(),
     rejectInvitation: jest.fn(),
@@ -35,6 +39,8 @@ jest.mock('services/siteInvitationService', () => ({
   },
   SITE_INVITATION_RESEND_UNEXPECTED_RESPONSE_MESSAGE:
     'Site invitation resend endpoint returned an unexpected response. Mocked CI gate may not cover it; runtime configuration may be missing.',
+  SITE_INVITATION_BULK_CREATE_UNEXPECTED_RESPONSE_MESSAGE:
+    'Site invitation bulk endpoint returned an unexpected response. Mocked CI gate may not cover it; runtime configuration may be missing.',
 }));
 
 const mockedService = siteInvitationService as jest.Mocked<typeof siteInvitationService>;
@@ -369,7 +375,7 @@ describe('SiteInvitationsPage invite create flow', () => {
     mockedService.listInvitations.mockResolvedValue([]);
   });
 
-  test('does not report success when the create response records an email send failure', async () => {
+  test('does not report success when the bulk response records an email send failure (single-row case)', async () => {
     const created: SiteInvitationDto = {
       ...baseInvitation,
       id: 'inv-created-failed',
@@ -380,21 +386,34 @@ describe('SiteInvitationsPage invite create flow', () => {
       sendAttemptCount: 1,
       lastSentAt: null,
     };
-    mockedService.createInvitation.mockResolvedValueOnce(created);
+    // The dialog is bulk-only (since 2026-05-24). A single email goes through
+    // the same bulk endpoint as N emails; the table behavior under
+    // lastSendStatus=FAILED is preserved.
+    mockedService.createInvitationsBulk.mockResolvedValueOnce({
+      results: [
+        {
+          inviteeEmail: created.inviteeEmail,
+          status: 'SUCCESS',
+          invitation: created,
+          errorCategory: null,
+          errorMessage: null,
+        },
+      ],
+    });
 
     renderPage();
     await screen.findByText(/No invitations found/);
 
     fireEvent.click(screen.getByRole('button', { name: 'Invite' }));
     const dialog = await screen.findByRole('dialog', { name: 'Invite to Site' });
-    fireEvent.change(within(dialog).getByLabelText(/Email address/), {
+    fireEvent.change(within(dialog).getByTestId('bulk-invitation-textarea'), {
       target: { value: created.inviteeEmail },
     });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Send Invitation' }));
+    fireEvent.click(within(dialog).getByTestId('bulk-invitation-submit'));
 
     await waitFor(() => {
-      expect(mockedService.createInvitation).toHaveBeenCalledWith(SITE_ID, {
-        inviteeEmail: created.inviteeEmail,
+      expect(mockedService.createInvitationsBulk).toHaveBeenCalledWith(SITE_ID, {
+        inviteeEmails: [created.inviteeEmail],
         invitedRole: 'CONSUMER',
         message: undefined,
       });
@@ -402,7 +421,7 @@ describe('SiteInvitationsPage invite create flow', () => {
 
     expect(toast.success).not.toHaveBeenCalledWith(expect.stringContaining(created.inviteeEmail));
     expect(toast.error).toHaveBeenCalledWith(
-      expect.stringContaining('Invitation created for created-failed@example.com, but email send failed'),
+      expect.stringContaining('email-send failed'),
     );
     expect(await screen.findByText(created.inviteeEmail)).toBeTruthy();
     expect(screen.getByTestId(`invitation-send-error-${created.id}`).textContent).toContain(
@@ -537,5 +556,244 @@ describe('SiteInvitationsPage Resend confirmation flow', () => {
     expect(errorAlert.textContent).toContain(SITE_INVITATION_RESEND_UNEXPECTED_RESPONSE_MESSAGE);
     // Page is still mounted — title remains in the DOM.
     expect(screen.getByText('Site Invitations')).toBeTruthy();
+  });
+});
+
+// ======================================================================
+// Bulk create dialog — parser, partial-success display, list merge,
+// HTML-fallback handling
+// ======================================================================
+
+describe('parseBulkEmails', () => {
+  test('splits on newline, comma, and semicolon and trims surrounding whitespace', () => {
+    const raw = `alice@example.com,bob@example.com\n  claire@example.com ;dan@example.com `;
+    expect(parseBulkEmails(raw)).toEqual([
+      'alice@example.com',
+      'bob@example.com',
+      'claire@example.com',
+      'dan@example.com',
+    ]);
+  });
+
+  test('lowercases and dedupes case-insensitively, preserving first-seen order', () => {
+    const raw = 'Alice@Example.com\nBOB@example.com\nalice@example.com';
+    expect(parseBulkEmails(raw)).toEqual(['alice@example.com', 'bob@example.com']);
+  });
+
+  test('drops blanks and returns an empty array for empty input', () => {
+    expect(parseBulkEmails('')).toEqual([]);
+    expect(parseBulkEmails('   ;,,\n   ')).toEqual([]);
+  });
+});
+
+describe('SiteInvitationsPage bulk create dialog', () => {
+  const openBulkDialog = async () => {
+    const inviteButton = await screen.findByRole('button', { name: /^Invite$/ });
+    fireEvent.click(inviteButton);
+    return screen.findByRole('dialog', { name: 'Invite to Site' });
+  };
+
+  beforeEach(() => {
+    mockedService.listInvitations.mockResolvedValue([]);
+  });
+
+  test('all-success bulk submit closes dialog, toasts success count, and prepends rows', async () => {
+    const aliceDto: SiteInvitationDto = {
+      ...baseInvitation,
+      id: 'inv-alice',
+      inviteeEmail: 'alice@example.com',
+      lastSendStatus: 'SENT',
+      sendAttemptCount: 1,
+      lastSendAttemptAt: '2026-05-24T10:00:00Z',
+      lastSentAt: '2026-05-24T10:00:00Z',
+    };
+    const bobDto: SiteInvitationDto = {
+      ...aliceDto,
+      id: 'inv-bob',
+      inviteeEmail: 'bob@example.com',
+    };
+    const response: BulkInviteResponse = {
+      results: [
+        { inviteeEmail: 'alice@example.com', status: 'SUCCESS', invitation: aliceDto, errorCategory: null, errorMessage: null },
+        { inviteeEmail: 'bob@example.com', status: 'SUCCESS', invitation: bobDto, errorCategory: null, errorMessage: null },
+      ],
+    };
+    mockedService.createInvitationsBulk.mockResolvedValueOnce(response);
+
+    renderPage();
+    await openBulkDialog();
+
+    fireEvent.change(screen.getByTestId('bulk-invitation-textarea'), {
+      target: { value: 'alice@example.com\nbob@example.com' },
+    });
+    fireEvent.click(screen.getByTestId('bulk-invitation-submit'));
+
+    await waitFor(() => {
+      expect(mockedService.createInvitationsBulk).toHaveBeenCalledWith(SITE_ID, {
+        inviteeEmails: ['alice@example.com', 'bob@example.com'],
+        invitedRole: 'CONSUMER',
+        message: undefined,
+      });
+    });
+
+    await waitFor(() => {
+      expect(toast.success).toHaveBeenCalledWith('Bulk invite: 2 sent.');
+    });
+
+    // Dialog closed
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Invite to Site' })).toBeNull();
+    });
+
+    // Both rows prepended to the (initially empty) table
+    expect(await screen.findByText('alice@example.com')).toBeTruthy();
+    expect(screen.getByText('bob@example.com')).toBeTruthy();
+  });
+
+  test('partial-failure bulk submit keeps dialog open, drains successful rows from textarea, displays failed rows in Alert', async () => {
+    const aliceDto: SiteInvitationDto = {
+      ...baseInvitation,
+      id: 'inv-alice-partial',
+      inviteeEmail: 'alice@example.com',
+      lastSendStatus: 'SENT',
+      sendAttemptCount: 1,
+      lastSendAttemptAt: '2026-05-24T10:00:00Z',
+      lastSentAt: '2026-05-24T10:00:00Z',
+    };
+    const response: BulkInviteResponse = {
+      results: [
+        { inviteeEmail: 'alice@example.com', status: 'SUCCESS', invitation: aliceDto, errorCategory: null, errorMessage: null },
+        {
+          inviteeEmail: 'dup@example.com',
+          status: 'FAILED',
+          invitation: null,
+          errorCategory: 'DUPLICATE_PENDING',
+          errorMessage: 'A pending invitation already exists for this email in this site.',
+        },
+        {
+          inviteeEmail: '',
+          status: 'FAILED',
+          invitation: null,
+          errorCategory: 'INVALID_EMAIL',
+          errorMessage: 'Email address is blank or invalid.',
+        },
+      ],
+    };
+    mockedService.createInvitationsBulk.mockResolvedValueOnce(response);
+
+    renderPage();
+    const dialog = await openBulkDialog();
+
+    fireEvent.change(within(dialog).getByTestId('bulk-invitation-textarea'), {
+      target: { value: 'alice@example.com\ndup@example.com\n' },
+    });
+    fireEvent.click(within(dialog).getByTestId('bulk-invitation-submit'));
+
+    // Aggregate error toast surfaces all 4 counters
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(
+        'Bulk invite: 1 sent, 0 email-send failed, 2 rejected, 0 pending.',
+      );
+    });
+
+    // Dialog stays open; failed-rows Alert is rendered with both rows
+    await waitFor(() => {
+      expect(screen.getByTestId('bulk-invitation-failed-rows')).toBeTruthy();
+    });
+    expect(screen.getByTestId('bulk-invitation-failed-row-DUPLICATE_PENDING')).toBeTruthy();
+    expect(screen.getByTestId('bulk-invitation-failed-row-INVALID_EMAIL')).toBeTruthy();
+
+    // Successful Alice row is prepended to the page table
+    expect(await screen.findByText('alice@example.com')).toBeTruthy();
+
+    // Textarea is drained to ONLY the failed emails so operator can retry
+    const textarea = within(dialog).getByTestId('bulk-invitation-textarea') as HTMLTextAreaElement;
+    expect(textarea.value).toBe('dup@example.com\n');
+  });
+
+  test('rejects malformed bulk response via the dedicated sentinel', async () => {
+    const sentinelError = new Error(SITE_INVITATION_BULK_CREATE_UNEXPECTED_RESPONSE_MESSAGE);
+    mockedService.createInvitationsBulk.mockRejectedValueOnce(sentinelError);
+
+    renderPage();
+    const dialog = await openBulkDialog();
+
+    fireEvent.change(within(dialog).getByTestId('bulk-invitation-textarea'), {
+      target: { value: 'alice@example.com' },
+    });
+    fireEvent.click(within(dialog).getByTestId('bulk-invitation-submit'));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(
+        SITE_INVITATION_BULK_CREATE_UNEXPECTED_RESPONSE_MESSAGE,
+      );
+    });
+    // No row added to the table (creation never succeeded). queryByText would
+    // also match the textarea content, so query for the actual table rows.
+    const rows = screen.queryAllByRole('row');
+    const matchingRow = rows.find((row) => row.textContent?.includes('alice@example.com'));
+    expect(matchingRow).toBeUndefined();
+  });
+
+  test('submit button is disabled while textarea has no parsed emails', async () => {
+    renderPage();
+    await openBulkDialog();
+
+    const submit = screen.getByTestId('bulk-invitation-submit');
+    expect(submit).toHaveProperty('disabled', true);
+
+    fireEvent.change(screen.getByTestId('bulk-invitation-textarea'), {
+      target: { value: '\n  ;,, ' },
+    });
+    // Still no parseable emails
+    expect(submit).toHaveProperty('disabled', true);
+
+    fireEvent.change(screen.getByTestId('bulk-invitation-textarea'), {
+      target: { value: 'alice@example.com' },
+    });
+    expect(submit).toHaveProperty('disabled', false);
+  });
+
+  test('email-send failure on a SUCCESS row surfaces as the email-failed branch of the aggregate toast', async () => {
+    const sendFailedDto: SiteInvitationDto = {
+      ...baseInvitation,
+      id: 'inv-emailfailed',
+      inviteeEmail: 'alice@example.com',
+      lastSendStatus: 'FAILED',
+      lastSendError: 'SMTP relay rejected',
+      sendAttemptCount: 1,
+      lastSendAttemptAt: '2026-05-24T10:00:00Z',
+    };
+    mockedService.createInvitationsBulk.mockResolvedValueOnce({
+      results: [
+        {
+          inviteeEmail: 'alice@example.com',
+          status: 'SUCCESS',
+          invitation: sendFailedDto,
+          errorCategory: null,
+          errorMessage: null,
+        },
+      ],
+    });
+
+    renderPage();
+    const dialog = await openBulkDialog();
+
+    fireEvent.change(within(dialog).getByTestId('bulk-invitation-textarea'), {
+      target: { value: 'alice@example.com' },
+    });
+    fireEvent.click(within(dialog).getByTestId('bulk-invitation-submit'));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(
+        'Bulk invite: 0 sent, 1 email-send failed, 0 pending. See the table for details.',
+      );
+    });
+
+    // Dialog closes (email-failed only is treated as deliverable diagnostics
+    // on the existing table; not as a row to revisit in the dialog).
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Invite to Site' })).toBeNull();
+    });
   });
 });

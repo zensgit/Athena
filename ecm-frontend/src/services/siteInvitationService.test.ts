@@ -1,6 +1,9 @@
 import api from './api';
 import siteInvitationService, {
+  BulkInviteRequest,
+  BulkInviteResponse,
   InviteRequest,
+  SITE_INVITATION_BULK_CREATE_UNEXPECTED_RESPONSE_MESSAGE,
   SITE_INVITATION_RESEND_UNEXPECTED_RESPONSE_MESSAGE,
   SiteInvitationDto,
 } from './siteInvitationService';
@@ -153,5 +156,122 @@ describe('siteInvitationService response guards', () => {
     await siteInvitationService.cancelInvitation('engineering', 'invitation-1');
 
     expect(mockedApi.delete).toHaveBeenCalledWith('/sites/engineering/invitations/invitation-1');
+  });
+
+  // ======================================================================
+  // Bulk create — predicate shape lock + HTML-fallback sentinel + forwarding
+  // ======================================================================
+
+  it('returns guarded bulk responses with mixed SUCCESS + FAILED rows', async () => {
+    const successRow: BulkInviteResponse['results'][number] = {
+      inviteeEmail: 'alice@example.com',
+      status: 'SUCCESS',
+      invitation: sentInvitation,
+      errorCategory: null,
+      errorMessage: null,
+    };
+    const failedRow: BulkInviteResponse['results'][number] = {
+      inviteeEmail: 'dup@example.com',
+      status: 'FAILED',
+      invitation: null,
+      errorCategory: 'DUPLICATE_PENDING',
+      errorMessage: 'A pending invitation already exists for this email in this site.',
+    };
+    const response: BulkInviteResponse = { results: [successRow, failedRow] };
+    mockedApi.post.mockResolvedValueOnce(response);
+
+    const request: BulkInviteRequest = {
+      inviteeEmails: ['alice@example.com', 'dup@example.com'],
+      invitedRole: 'CONSUMER',
+    };
+
+    await expect(
+      siteInvitationService.createInvitationsBulk('engineering', request),
+    ).resolves.toEqual(response);
+
+    expect(mockedApi.post).toHaveBeenCalledWith(
+      '/sites/engineering/invitations/bulk',
+      request,
+    );
+  });
+
+  it('rejects HTML fallback for bulk create', async () => {
+    mockedApi.post.mockResolvedValueOnce('<!doctype html><html></html>');
+
+    await expect(
+      siteInvitationService.createInvitationsBulk('engineering', {
+        inviteeEmails: ['alice@example.com'],
+      }),
+    ).rejects.toThrow(SITE_INVITATION_BULK_CREATE_UNEXPECTED_RESPONSE_MESSAGE);
+  });
+
+  it('rejects bulk responses missing the results array', async () => {
+    mockedApi.post.mockResolvedValueOnce({ status: 'SUCCESS' });
+
+    await expect(
+      siteInvitationService.createInvitationsBulk('engineering', {
+        inviteeEmails: ['alice@example.com'],
+      }),
+    ).rejects.toThrow(SITE_INVITATION_BULK_CREATE_UNEXPECTED_RESPONSE_MESSAGE);
+  });
+
+  it('rejects bulk SUCCESS rows that omit the invitation payload', async () => {
+    mockedApi.post.mockResolvedValueOnce({
+      results: [
+        {
+          inviteeEmail: 'alice@example.com',
+          status: 'SUCCESS',
+          invitation: null,
+          errorCategory: null,
+          errorMessage: null,
+        },
+      ],
+    });
+
+    await expect(
+      siteInvitationService.createInvitationsBulk('engineering', {
+        inviteeEmails: ['alice@example.com'],
+      }),
+    ).rejects.toThrow(SITE_INVITATION_BULK_CREATE_UNEXPECTED_RESPONSE_MESSAGE);
+  });
+
+  it('rejects bulk FAILED rows that include an invitation payload (shape drift)', async () => {
+    mockedApi.post.mockResolvedValueOnce({
+      results: [
+        {
+          inviteeEmail: 'dup@example.com',
+          status: 'FAILED',
+          invitation: sentInvitation,
+          errorCategory: 'DUPLICATE_PENDING',
+          errorMessage: 'duplicate',
+        },
+      ],
+    });
+
+    await expect(
+      siteInvitationService.createInvitationsBulk('engineering', {
+        inviteeEmails: ['dup@example.com'],
+      }),
+    ).rejects.toThrow(SITE_INVITATION_BULK_CREATE_UNEXPECTED_RESPONSE_MESSAGE);
+  });
+
+  it('rejects unknown errorCategory values', async () => {
+    mockedApi.post.mockResolvedValueOnce({
+      results: [
+        {
+          inviteeEmail: 'alice@example.com',
+          status: 'FAILED',
+          invitation: null,
+          errorCategory: 'UNKNOWN_FUTURE_CATEGORY',
+          errorMessage: 'whatever',
+        },
+      ],
+    });
+
+    await expect(
+      siteInvitationService.createInvitationsBulk('engineering', {
+        inviteeEmails: ['alice@example.com'],
+      }),
+    ).rejects.toThrow(SITE_INVITATION_BULK_CREATE_UNEXPECTED_RESPONSE_MESSAGE);
   });
 });

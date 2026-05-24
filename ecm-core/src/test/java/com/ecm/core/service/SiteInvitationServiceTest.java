@@ -20,6 +20,12 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.SimpleTransactionStatus;
+
+import java.io.PrintWriter;
+import java.io.StringWriter;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -46,15 +52,24 @@ class SiteInvitationServiceTest {
     @Mock private ActivityEventListener activityEventListener;
     @Mock private ObjectProvider<EmailNotificationService> emailNotificationServiceProvider;
     @Mock private EmailNotificationService emailNotificationService;
+    @Mock private PlatformTransactionManager transactionManager;
 
     private SiteInvitationService newService() {
+        // Stub the transaction manager so the bulk path's TransactionTemplate
+        // can drive its callback. Single-invite tests do not exercise the
+        // template, so leniently stubbed here at construction time and ignored
+        // by paths that never call execute().
+        org.mockito.Mockito.lenient().when(
+            transactionManager.getTransaction(org.mockito.ArgumentMatchers.any(TransactionDefinition.class))
+        ).thenReturn(new SimpleTransactionStatus());
         return new SiteInvitationService(
             invitationRepository,
             siteRepository,
             siteMemberRepository,
             securityService,
             activityEventListener,
-            emailNotificationServiceProvider
+            emailNotificationServiceProvider,
+            transactionManager
         );
     }
 
@@ -333,5 +348,300 @@ class SiteInvitationServiceTest {
             .hasMessageContaining("site manager");
 
         verify(invitationRepository, never()).findById(any(UUID.class));
+    }
+
+    // ====================================================================== //
+    // Bulk invite tests (Phase 2 logging audit + sanitised error category)     //
+    // ====================================================================== //
+
+    /**
+     * Set up a manager + a site + a sendSync that returns success. The bulk
+     * tests share this so individual cases only stub what they need to differ.
+     */
+    private Site setUpBulkBaseSite(String slug) {
+        UUID siteUuid = UUID.randomUUID();
+        Site site = newSite(siteUuid, slug, slug + " title");
+        when(siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse(slug)).thenReturn(Optional.of(site));
+        when(securityService.getCurrentUser()).thenReturn("manager");
+        when(securityService.isAdmin("manager")).thenReturn(false);
+        when(siteMemberRepository.findBySiteIdAndUsername(siteUuid, "manager"))
+            .thenReturn(Optional.of(newManager(site, "manager")));
+        return site;
+    }
+
+    private void stubSuccessfulSave() {
+        when(invitationRepository.save(any(SiteInvitation.class))).thenAnswer(invocation -> {
+            SiteInvitation inv = invocation.getArgument(0);
+            if (inv.getId() == null) {
+                inv.setId(UUID.randomUUID());
+            }
+            if (inv.getCreatedDate() == null) {
+                inv.setCreatedDate(LocalDateTime.of(2026, 5, 24, 10, 0));
+            }
+            return inv;
+        });
+    }
+
+    @Test
+    @DisplayName("inviteBulk creates one SUCCESS row per email when all sends succeed")
+    void inviteBulkAllSuccess() {
+        setUpBulkBaseSite("finance");
+        when(invitationRepository.findByInviteeEmailAndStatusIn(any(), any())).thenReturn(List.of());
+        when(emailNotificationServiceProvider.getIfAvailable()).thenReturn(emailNotificationService);
+        when(emailNotificationService.sendSync(eq("site.invitation"), any(), isNull(), any()))
+            .thenReturn(new SendResult(true, null));
+        stubSuccessfulSave();
+
+        SiteInvitationService.BulkInviteResponse response = newService().inviteBulk(
+            "finance",
+            new SiteInvitationService.BulkInviteRequest(
+                List.of("alice@example.com", "bob@example.com", "claire@example.com"),
+                "CONSUMER",
+                "Welcome"
+            )
+        );
+
+        assertThat(response.results()).hasSize(3);
+        assertThat(response.results()).allSatisfy(r -> {
+            assertThat(r.status()).isEqualTo(SiteInvitationService.BulkInviteResult.Status.SUCCESS);
+            assertThat(r.invitation()).isNotNull();
+            assertThat(r.invitation().lastSendStatus()).isEqualTo("SENT");
+            assertThat(r.errorCategory()).isNull();
+            assertThat(r.errorMessage()).isNull();
+        });
+    }
+
+    @Test
+    @DisplayName("inviteBulk partial failure does NOT roll back successful rows (per-row REQUIRES_NEW)")
+    void inviteBulkPartialFailureDoesNotRollback() {
+        setUpBulkBaseSite("finance");
+        when(invitationRepository.findByInviteeEmailAndStatusIn(eq("dup@example.com"), any()))
+            .thenAnswer(invocation -> {
+                // Simulate an existing PENDING in this site so row 1 is DUPLICATE_PENDING.
+                SiteInvitation existing = newPendingInvitation(
+                    newSite(
+                        siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse("finance").get().getId(),
+                        "finance",
+                        "Finance Team"
+                    )
+                );
+                existing.setInviteeEmail("dup@example.com");
+                return List.of(existing);
+            });
+        when(invitationRepository.findByInviteeEmailAndStatusIn(
+            org.mockito.ArgumentMatchers.argThat(e -> !"dup@example.com".equals(e)), any()
+        )).thenReturn(List.of());
+        when(emailNotificationServiceProvider.getIfAvailable()).thenReturn(emailNotificationService);
+        when(emailNotificationService.sendSync(eq("site.invitation"), any(), isNull(), any()))
+            .thenReturn(new SendResult(true, null));
+        stubSuccessfulSave();
+
+        SiteInvitationService.BulkInviteResponse response = newService().inviteBulk(
+            "finance",
+            new SiteInvitationService.BulkInviteRequest(
+                List.of("alice@example.com", "dup@example.com", "claire@example.com"),
+                "CONSUMER",
+                null
+            )
+        );
+
+        assertThat(response.results()).hasSize(3);
+        assertThat(response.results().get(0).status())
+            .isEqualTo(SiteInvitationService.BulkInviteResult.Status.SUCCESS);
+        assertThat(response.results().get(1).status())
+            .isEqualTo(SiteInvitationService.BulkInviteResult.Status.FAILED);
+        assertThat(response.results().get(1).errorCategory())
+            .isEqualTo(SiteInvitationService.BulkInviteErrorCategory.DUPLICATE_PENDING);
+        assertThat(response.results().get(2).status())
+            .isEqualTo(SiteInvitationService.BulkInviteResult.Status.SUCCESS);
+    }
+
+    @Test
+    @DisplayName("inviteBulk classifies blank emails as INVALID_EMAIL with fixed copy")
+    void inviteBulkInvalidEmailFixedCopy() {
+        setUpBulkBaseSite("finance");
+
+        SiteInvitationService.BulkInviteResponse response = newService().inviteBulk(
+            "finance",
+            new SiteInvitationService.BulkInviteRequest(
+                List.of("   ", ""),
+                "CONSUMER",
+                null
+            )
+        );
+
+        assertThat(response.results()).hasSize(2);
+        assertThat(response.results()).allSatisfy(r -> {
+            assertThat(r.status()).isEqualTo(SiteInvitationService.BulkInviteResult.Status.FAILED);
+            assertThat(r.errorCategory())
+                .isEqualTo(SiteInvitationService.BulkInviteErrorCategory.INVALID_EMAIL);
+            assertThat(r.errorMessage())
+                .isEqualTo(SiteInvitationService.BULK_ERROR_MESSAGE_INVALID_EMAIL);
+            assertThat(r.invitation()).isNull();
+        });
+    }
+
+    @Test
+    @DisplayName("inviteBulk DUPLICATE_PENDING errorMessage is the fixed copy, not the raw exception text containing the email")
+    void inviteBulkDuplicatePendingDoesNotEchoEmail() {
+        setUpBulkBaseSite("finance");
+        when(invitationRepository.findByInviteeEmailAndStatusIn(any(), any()))
+            .thenAnswer(invocation -> {
+                SiteInvitation existing = newPendingInvitation(
+                    newSite(
+                        siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse("finance").get().getId(),
+                        "finance",
+                        "Finance Team"
+                    )
+                );
+                existing.setInviteeEmail((String) invocation.getArgument(0));
+                return List.of(existing);
+            });
+
+        // Probe email shaped like a UI injection attempt.
+        String probeEmail = "<script>alert(1)</script>@example.com";
+        SiteInvitationService.BulkInviteResponse response = newService().inviteBulk(
+            "finance",
+            new SiteInvitationService.BulkInviteRequest(
+                List.of(probeEmail),
+                "CONSUMER",
+                null
+            )
+        );
+
+        SiteInvitationService.BulkInviteResult result = response.results().get(0);
+        assertThat(result.status()).isEqualTo(SiteInvitationService.BulkInviteResult.Status.FAILED);
+        assertThat(result.errorCategory())
+            .isEqualTo(SiteInvitationService.BulkInviteErrorCategory.DUPLICATE_PENDING);
+        // Fixed copy. The probe substring must NOT be present in errorMessage.
+        assertThat(result.errorMessage())
+            .isEqualTo(SiteInvitationService.BULK_ERROR_MESSAGE_DUPLICATE_PENDING);
+        assertThat(result.errorMessage()).doesNotContain("<script>");
+    }
+
+    @Test
+    @DisplayName("inviteBulk EMAIL_SEND_FAILED stays SUCCESS — invitation row exists, operator can resend")
+    void inviteBulkEmailSendFailureStillSuccess() {
+        setUpBulkBaseSite("finance");
+        when(invitationRepository.findByInviteeEmailAndStatusIn(any(), any())).thenReturn(List.of());
+        when(emailNotificationServiceProvider.getIfAvailable()).thenReturn(emailNotificationService);
+        when(emailNotificationService.sendSync(eq("site.invitation"), any(), isNull(), any()))
+            .thenReturn(new SendResult(false, "SMTP relay rejected"));
+        stubSuccessfulSave();
+
+        SiteInvitationService.BulkInviteResponse response = newService().inviteBulk(
+            "finance",
+            new SiteInvitationService.BulkInviteRequest(
+                List.of("alice@example.com"),
+                "CONSUMER",
+                null
+            )
+        );
+
+        SiteInvitationService.BulkInviteResult result = response.results().get(0);
+        assertThat(result.status()).isEqualTo(SiteInvitationService.BulkInviteResult.Status.SUCCESS);
+        assertThat(result.invitation()).isNotNull();
+        assertThat(result.invitation().lastSendStatus()).isEqualTo("FAILED");
+        assertThat(result.invitation().lastSendError()).isEqualTo("SMTP relay rejected");
+        // Per-row status is SUCCESS (the invitation row exists); the frontend
+        // toast logic reads lastSendStatus to surface the email-send miss.
+        assertThat(result.errorCategory()).isNull();
+        assertThat(result.errorMessage()).isNull();
+    }
+
+    @Test
+    @DisplayName("inviteBulk INTERNAL_ERROR errorMessage carries class name only — never the raw exception message")
+    void inviteBulkInternalErrorSanitisedErrorMessage() {
+        setUpBulkBaseSite("finance");
+        String probeText = "USER_PII_FROM_EXCEPTION_LEAK_PROBE";
+        when(invitationRepository.findByInviteeEmailAndStatusIn(any(), any())).thenReturn(List.of());
+        // Force createInvitationRow to throw a generic RuntimeException whose message
+        // would leak sensitive content if echoed back. The Phase 2 logging audit
+        // discipline forbids this.
+        when(invitationRepository.save(any(SiteInvitation.class)))
+            .thenThrow(new RuntimeException(probeText));
+
+        SiteInvitationService.BulkInviteResponse response = newService().inviteBulk(
+            "finance",
+            new SiteInvitationService.BulkInviteRequest(
+                List.of("alice@example.com"),
+                "CONSUMER",
+                null
+            )
+        );
+
+        SiteInvitationService.BulkInviteResult result = response.results().get(0);
+        assertThat(result.status()).isEqualTo(SiteInvitationService.BulkInviteResult.Status.FAILED);
+        assertThat(result.errorCategory())
+            .isEqualTo(SiteInvitationService.BulkInviteErrorCategory.INTERNAL_ERROR);
+        // Class name preserved (operator-actionable); raw message ABSENT.
+        assertThat(result.errorMessage()).contains("RuntimeException");
+        assertThat(result.errorMessage()).doesNotContain(probeText);
+    }
+
+    @Test
+    @DisplayName("inviteBulk shared role applies to every row")
+    void inviteBulkSharedRoleAppliedToEveryRow() {
+        setUpBulkBaseSite("finance");
+        when(invitationRepository.findByInviteeEmailAndStatusIn(any(), any())).thenReturn(List.of());
+        when(emailNotificationServiceProvider.getIfAvailable()).thenReturn(emailNotificationService);
+        when(emailNotificationService.sendSync(eq("site.invitation"), any(), isNull(), any()))
+            .thenReturn(new SendResult(true, null));
+        stubSuccessfulSave();
+
+        SiteInvitationService.BulkInviteResponse response = newService().inviteBulk(
+            "finance",
+            new SiteInvitationService.BulkInviteRequest(
+                List.of("alice@example.com", "bob@example.com"),
+                "manager",
+                null
+            )
+        );
+
+        assertThat(response.results()).hasSize(2);
+        assertThat(response.results()).allSatisfy(r -> {
+            assertThat(r.invitation().invitedRole()).isEqualTo("MANAGER");
+        });
+    }
+
+    @Test
+    @DisplayName("inviteBulk empty inviteeEmails throws IllegalArgumentException at the request boundary")
+    void inviteBulkEmptyArrayThrows() {
+        setUpBulkBaseSite("finance");
+        SiteInvitationService service = newService();
+
+        assertThatThrownBy(() -> service.inviteBulk(
+            "finance",
+            new SiteInvitationService.BulkInviteRequest(List.of(), "CONSUMER", null)
+        ))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("at least one entry");
+
+        assertThatThrownBy(() -> service.inviteBulk(
+            "finance",
+            new SiteInvitationService.BulkInviteRequest(null, "CONSUMER", null)
+        ))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("inviteBulk security gate enforced — non-manager non-admin gets AccessDeniedException, no rows processed")
+    void inviteBulkSecurityGateEnforced() {
+        UUID siteUuid = UUID.randomUUID();
+        Site site = newSite(siteUuid, "finance", "Finance Team");
+        when(siteRepository.findBySiteIdIgnoreCaseAndDeletedFalse("finance")).thenReturn(Optional.of(site));
+        when(securityService.getCurrentUser()).thenReturn("bystander");
+        when(securityService.isAdmin("bystander")).thenReturn(false);
+        when(siteMemberRepository.findBySiteIdAndUsername(siteUuid, "bystander")).thenReturn(Optional.empty());
+
+        SiteInvitationService service = newService();
+
+        assertThatThrownBy(() -> service.inviteBulk(
+            "finance",
+            new SiteInvitationService.BulkInviteRequest(List.of("alice@example.com"), "CONSUMER", null)
+        ))
+            .isInstanceOf(AccessDeniedException.class);
+
+        verify(invitationRepository, never()).save(any(SiteInvitation.class));
     }
 }

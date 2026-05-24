@@ -1,6 +1,8 @@
 package com.ecm.core.controller;
 
 import com.ecm.core.service.SiteInvitationService;
+import com.ecm.core.service.SiteInvitationService.BulkInviteRequest;
+import com.ecm.core.service.SiteInvitationService.BulkInviteResponse;
 import com.ecm.core.service.SiteInvitationService.InviteRequest;
 import com.ecm.core.service.SiteInvitationService.SiteInvitationDto;
 import io.swagger.v3.oas.annotations.Operation;
@@ -44,6 +46,21 @@ public class SiteInvitationController {
         @RequestBody InviteRequest request
     ) {
         return ResponseEntity.status(HttpStatus.CREATED).body(invitationService.invite(siteId, request));
+    }
+
+    @PostMapping("/api/v1/sites/{siteId}/invitations/bulk")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(
+        summary = "Bulk create site invitations",
+        description = "Invite multiple email addresses to a site in one request. "
+            + "Per-row outcomes are returned individually; partial-success is the norm and "
+            + "is not surfaced as an HTTP error."
+    )
+    public ResponseEntity<BulkInviteResponse> inviteBulk(
+        @PathVariable String siteId,
+        @RequestBody BulkInviteRequest request
+    ) {
+        return ResponseEntity.ok(invitationService.inviteBulk(siteId, request));
     }
 
     @DeleteMapping("/api/v1/sites/{siteId}/invitations/{invitationId}")

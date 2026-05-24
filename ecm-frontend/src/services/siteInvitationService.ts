@@ -30,6 +30,29 @@ export interface InviteRequest {
   message?: string;
 }
 
+export interface BulkInviteRequest {
+  inviteeEmails: string[];
+  invitedRole?: SiteMemberRole;
+  message?: string;
+}
+
+export type BulkInviteErrorCategory =
+  | 'INVALID_EMAIL'
+  | 'DUPLICATE_PENDING'
+  | 'INTERNAL_ERROR';
+
+export interface BulkInviteResult {
+  inviteeEmail: string;
+  status: 'SUCCESS' | 'FAILED';
+  invitation: SiteInvitationDto | null;
+  errorCategory: BulkInviteErrorCategory | null;
+  errorMessage: string | null;
+}
+
+export interface BulkInviteResponse {
+  results: BulkInviteResult[];
+}
+
 export interface TokenRequest {
   token: string;
 }
@@ -41,6 +64,13 @@ export interface TokenRequest {
 // test in sync. See feedback_phase5_mocked_html_fallback.md.
 export const SITE_INVITATION_RESEND_UNEXPECTED_RESPONSE_MESSAGE =
   'Site invitation resend endpoint returned an unexpected response. Mocked CI gate may not cover it; runtime configuration may be missing.';
+
+// Separate sentinel for the bulk-create endpoint so a future regression
+// pointing the dialog's error toast at the wrong source is debuggable.
+// Bulk shape is structurally distinct (results array) from single-invite
+// shape (a SiteInvitationDto), so a different message text helps narrow.
+export const SITE_INVITATION_BULK_CREATE_UNEXPECTED_RESPONSE_MESSAGE =
+  'Site invitation bulk endpoint returned an unexpected response. Mocked CI gate may not cover it; runtime configuration may be missing.';
 
 const isObject = (value: unknown): value is Record<string, unknown> => (
   value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -93,6 +123,62 @@ const assertSiteInvitationArray = (value: unknown): SiteInvitationDto[] => {
   return value;
 };
 
+const isBulkErrorCategory = (
+  value: unknown,
+): value is BulkInviteErrorCategory | null => (
+  value === null
+    || value === 'INVALID_EMAIL'
+    || value === 'DUPLICATE_PENDING'
+    || value === 'INTERNAL_ERROR'
+);
+
+const isBulkInviteResult = (value: unknown): value is BulkInviteResult => {
+  if (!isObject(value)) {
+    return false;
+  }
+  const status = value.status;
+  if (status !== 'SUCCESS' && status !== 'FAILED') {
+    return false;
+  }
+  if (typeof value.inviteeEmail !== 'string') {
+    return false;
+  }
+  // invitation: SiteInvitationDto when SUCCESS, null when FAILED
+  if (status === 'SUCCESS') {
+    if (!isSiteInvitationDto(value.invitation)) {
+      return false;
+    }
+  } else if (value.invitation !== null) {
+    // FAILED rows must carry null invitation; if the backend ever changes this,
+    // we want the predicate to fail loudly so the gate catches the drift.
+    return false;
+  }
+  if (!isBulkErrorCategory(value.errorCategory)) {
+    return false;
+  }
+  if (!isNullableString(value.errorMessage)) {
+    return false;
+  }
+  return true;
+};
+
+const assertBulkInviteUnexpectedResponse = (): never => {
+  throw new Error(SITE_INVITATION_BULK_CREATE_UNEXPECTED_RESPONSE_MESSAGE);
+};
+
+const assertBulkInviteResponse = (value: unknown): BulkInviteResponse => {
+  if (!isObject(value)) {
+    return assertBulkInviteUnexpectedResponse();
+  }
+  if (!Array.isArray(value.results) || !value.results.every(isBulkInviteResult)) {
+    return assertBulkInviteUnexpectedResponse();
+  }
+  // Cast through `unknown` per TS strict-mode `Conversion of type ... may be a
+  // mistake` rule. The predicate above proves the shape; the unknown step is
+  // a syntactic acknowledgement of the cast.
+  return value as unknown as BulkInviteResponse;
+};
+
 class SiteInvitationService {
   async listInvitations(siteId: string): Promise<SiteInvitationDto[]> {
     const result = await api.get<SiteInvitationDto[]>(`/sites/${siteId}/invitations`);
@@ -102,6 +188,17 @@ class SiteInvitationService {
   async createInvitation(siteId: string, data: InviteRequest): Promise<SiteInvitationDto> {
     const result = await api.post<SiteInvitationDto>(`/sites/${siteId}/invitations`, data);
     return assertSiteInvitationDto(result);
+  }
+
+  async createInvitationsBulk(
+    siteId: string,
+    data: BulkInviteRequest,
+  ): Promise<BulkInviteResponse> {
+    const result = await api.post<BulkInviteResponse>(
+      `/sites/${siteId}/invitations/bulk`,
+      data,
+    );
+    return assertBulkInviteResponse(result);
   }
 
   cancelInvitation(siteId: string, invitationId: string): Promise<void> {
