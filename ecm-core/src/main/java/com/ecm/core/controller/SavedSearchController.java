@@ -7,8 +7,13 @@ import com.ecm.core.service.SavedSearchService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.nio.charset.StandardCharsets;
 
 import java.util.List;
 import java.util.Map;
@@ -75,6 +80,35 @@ public class SavedSearchController {
     @Operation(summary = "Execute saved search", description = "Run a saved search immediately")
     public ResponseEntity<FacetedSearchResponse> executeSavedSearch(@PathVariable UUID id) {
         return ResponseEntity.ok(savedSearchService.executeSavedSearch(id));
+    }
+
+    @GetMapping("/{id}/export")
+    @Operation(summary = "Export saved search results as CSV",
+        description = "Run a saved search and export its results as a CSV attachment (one-shot, capped)")
+    public ResponseEntity<String> exportSavedSearch(
+            @PathVariable UUID id,
+            @RequestParam(required = false) Integer limit) {
+        // Owner-only auth + load (also gives the name for the filename); export re-checks the owner.
+        SavedSearch search = savedSearchService.getMySavedSearch(id);
+        String csv = savedSearchService.exportSavedSearchCsv(id, limit);
+
+        String base = search != null && search.getName() != null && !search.getName().isBlank()
+            ? search.getName()
+            : id.toString();
+        String safeName = base.replaceAll("[^A-Za-z0-9._-]", "_");
+        if (safeName.isBlank()) {
+            safeName = id.toString();
+        }
+        String timestamp = java.time.LocalDateTime.now()
+            .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
+        String filename = safeName + "-search-" + timestamp + ".csv";
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.valueOf("text/csv"));
+        headers.setContentDisposition(ContentDisposition.attachment()
+            .filename(filename, StandardCharsets.UTF_8)
+            .build());
+        return ResponseEntity.ok().headers(headers).body(csv);
     }
 
     @PatchMapping("/{id}/pin")

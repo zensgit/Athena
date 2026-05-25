@@ -307,6 +307,18 @@ class SavedSearchService {
     const result = await api.post<unknown>(`/search/saved/${id}/smart-folder`, input);
     return assertSmartFolderResponse(result);
   }
+
+  // Downloads the saved search results as a CSV attachment (one-shot; backend caps the row count).
+  // The backend sets a sanitized Content-Disposition filename; the client filename below is the
+  // saved-as default.
+  async exportResultsCsv(id: string, name?: string): Promise<void> {
+    const base = name && name.trim() ? name : id;
+    const safeName = base.replace(/[^A-Za-z0-9._-]/g, '_') || id;
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const ts = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+    await api.downloadFile(`/search/saved/${id}/export`, `${safeName}-search-${ts}.csv`);
+  }
 }
 
 const savedSearchService = new SavedSearchService();

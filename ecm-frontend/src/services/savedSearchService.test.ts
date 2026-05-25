@@ -14,6 +14,7 @@ jest.mock('./api', () => ({
     post: jest.fn(),
     patch: jest.fn(),
     delete: jest.fn(),
+    downloadFile: jest.fn(),
   },
 }));
 
@@ -185,6 +186,17 @@ describe('savedSearchService response guards', () => {
 
     await expect(savedSearchService.createSmartFolder('saved-1', { name: 'Invoices' })).rejects.toThrow(
       SAVED_SEARCH_UNEXPECTED_RESPONSE_MESSAGE
+    );
+  });
+
+  test('exportResultsCsv downloads the CSV with a sanitized, dated filename', async () => {
+    (mockedApi.downloadFile as jest.Mock).mockResolvedValueOnce(undefined);
+
+    await savedSearchService.exportResultsCsv('saved-1', 'My Contracts');
+
+    expect(mockedApi.downloadFile).toHaveBeenCalledWith(
+      '/search/saved/saved-1/export',
+      expect.stringMatching(/^My_Contracts-search-\d{8}-\d{6}\.csv$/),
     );
   });
 });

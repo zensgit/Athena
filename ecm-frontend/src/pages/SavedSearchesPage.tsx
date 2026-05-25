@@ -155,6 +155,16 @@ const SavedSearchesPage: React.FC = () => {
     }
   };
 
+  const handleExportResults = async (item: SavedSearch) => {
+    try {
+      await savedSearchService.exportResultsCsv(item.id, item.name);
+      toast.success('Saved search results exported');
+    } catch {
+      // Server errors are surfaced by the api response interceptor; add a fallback.
+      toast.error('Failed to export saved search results');
+    }
+  };
+
   const handleLoadToSearch = (item: SavedSearch) => {
     const criteria = buildSearchCriteriaFromSavedSearch(item);
 
@@ -485,6 +495,13 @@ const SavedSearchesPage: React.FC = () => {
             onClick={() => openCreateSmartFolderDialog(params.row as SavedSearch)}
           >
             <CreateNewFolder fontSize="small" />
+          </IconButton>
+          <IconButton
+            size="small"
+            aria-label={`Export results CSV for saved search ${String((params.row as SavedSearch).name)}`}
+            onClick={() => handleExportResults(params.row as SavedSearch)}
+          >
+            <FileDownload fontSize="small" />
           </IconButton>
           <IconButton
             size="small"

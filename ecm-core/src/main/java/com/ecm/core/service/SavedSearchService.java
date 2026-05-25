@@ -6,16 +6,20 @@ import com.ecm.core.repository.SavedSearchRepository;
 import com.ecm.core.search.FacetedSearchService;
 import com.ecm.core.search.FacetedSearchService.FacetedSearchRequest;
 import com.ecm.core.search.FacetedSearchService.FacetedSearchResponse;
+import com.ecm.core.search.SearchResult;
+import com.ecm.core.search.SimplePageRequest;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -254,6 +258,83 @@ public class SavedSearchService {
             log.error("Failed to execute saved search {}", id, e);
             throw new RuntimeException("Failed to execute saved search", e);
         }
+    }
+
+    private static final int DEFAULT_EXPORT_LIMIT = 1000;
+    private static final int MAX_EXPORT_LIMIT = 5000;
+
+    /**
+     * Export a saved search's results as CSV (one-shot). Owner-only, mirroring
+     * {@link #executeSavedSearch(UUID)}'s authorization. Capped at {@value #DEFAULT_EXPORT_LIMIT}
+     * rows by default and a hard {@value #MAX_EXPORT_LIMIT} ceiling (gate ruling) — no scheduler,
+     * no async, no JSON export.
+     */
+    public String exportSavedSearchCsv(UUID id, Integer limit) {
+        String userId = securityService.getCurrentUser();
+        SavedSearch search = savedSearchRepository.findById(id)
+            .orElseThrow(() -> new IllegalArgumentException("Saved search not found"));
+        if (!search.getUserId().equals(userId)) {
+            throw new SecurityException("Not authorized to export this saved search");
+        }
+
+        int effectiveLimit = (limit == null || limit <= 0)
+            ? DEFAULT_EXPORT_LIMIT
+            : Math.min(limit, MAX_EXPORT_LIMIT);
+
+        FacetedSearchResponse response;
+        try {
+            FacetedSearchRequest request = objectMapper.convertValue(search.getQueryParams(), FacetedSearchRequest.class);
+            SimplePageRequest pageable = request.getPageable() != null ? request.getPageable() : new SimplePageRequest();
+            pageable.setPage(0);
+            pageable.setSize(effectiveLimit);
+            request.setPageable(pageable);
+            response = facetedSearchService.search(request);
+        } catch (Exception e) {
+            // Fixed message in the thrown exception (no cause detail leaks to the response); cause logged.
+            log.error("Failed to export saved search {}", id, e);
+            throw new RuntimeException("Failed to export saved search");
+        }
+
+        List<SearchResult> rows = response.getResults() != null
+            ? response.getResults().getContent()
+            : List.of();
+
+        StringBuilder csv = new StringBuilder();
+        appendCsvRow(csv, "Name", "Path", "Type", "MIME Type", "Size (bytes)", "Version",
+            "Created By", "Created Date", "Last Modified By", "Last Modified Date");
+        for (SearchResult r : rows) {
+            appendCsvRow(csv,
+                r.getName(),
+                r.getPath(),
+                r.getNodeType(),
+                r.getMimeType(),
+                r.getFileSize(),
+                r.getCurrentVersionLabel(),
+                r.getCreatedBy(),
+                r.getCreatedDate(),
+                r.getLastModifiedBy(),
+                r.getLastModifiedDate());
+        }
+        return csv.toString();
+    }
+
+    private static void appendCsvRow(StringBuilder target, Object... values) {
+        target.append(Arrays.stream(values)
+                .map(SavedSearchService::csvEscape)
+                .collect(Collectors.joining(",")))
+            .append("\n");
+    }
+
+    // RFC-4180 quoting, matching the established csvEscape pattern used elsewhere.
+    private static String csvEscape(Object value) {
+        if (value == null) {
+            return "";
+        }
+        String text = value.toString();
+        if (text.contains("\"") || text.contains(",") || text.contains("\n") || text.contains("\r")) {
+            return "\"" + text.replace("\"", "\"\"") + "\"";
+        }
+        return text;
     }
 
     @Transactional
