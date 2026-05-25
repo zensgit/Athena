@@ -178,6 +178,44 @@ export interface MailRulePreviewResult {
   runId?: string | null;
 }
 
+export type MailRulePreviewExportStatus =
+  | 'EXPORTED'
+  | 'SKIPPED_ALREADY_PROCESSED'
+  | 'SKIPPED_NOT_FOUND'
+  | 'SKIPPED_NO_CONTENT'
+  | 'FAILED';
+
+export type MailRulePreviewExportErrorCategory = 'INTERNAL_ERROR';
+
+export interface MailPreviewExportSelection {
+  folder: string;
+  uid: string;
+}
+
+export interface MailRulePreviewExportRow {
+  folder: string;
+  uid: string;
+  status: MailRulePreviewExportStatus;
+  errorCategory?: MailRulePreviewExportErrorCategory | null;
+  errorMessage?: string | null;
+}
+
+export interface MailRulePreviewExportResult {
+  accountId: string;
+  ruleId: string;
+  targetFolderId: string;
+  exported: number;
+  skipped: number;
+  failed: number;
+  rows: MailRulePreviewExportRow[];
+}
+
+export interface MailRulePreviewExportRequest {
+  accountId: string;
+  targetFolderId: string;
+  selections: MailPreviewExportSelection[];
+}
+
 export interface ProcessedMailDiagnosticItem {
   id: string;
   processedAt: string;
@@ -614,6 +652,46 @@ const isMailRulePreviewResult = (value: unknown): value is MailRulePreviewResult
   && isStringOrNullish(value.runId)
 );
 
+const isNullish = (value: unknown): boolean => value === null || value === undefined;
+
+const EXPORT_STATUSES: MailRulePreviewExportStatus[] = [
+  'EXPORTED',
+  'SKIPPED_ALREADY_PROCESSED',
+  'SKIPPED_NOT_FOUND',
+  'SKIPPED_NO_CONTENT',
+  'FAILED',
+];
+
+const isExportStatus = (value: unknown): value is MailRulePreviewExportStatus => (
+  typeof value === 'string' && (EXPORT_STATUSES as string[]).includes(value)
+);
+
+const isMailRulePreviewExportRow = (value: unknown): value is MailRulePreviewExportRow => {
+  if (!isObject(value)) return false;
+  if (typeof value.folder !== 'string' || typeof value.uid !== 'string') return false;
+  if (!isExportStatus(value.status)) return false;
+  // Status-keyed invariants (closed set): only a FAILED row carries an error category +
+  // message; every other status must leave both null/absent. Tolerates null vs omitted but
+  // rejects an INTERNAL_ERROR/message leaking onto a non-failed row, mirroring the
+  // bulk-declare contract lock.
+  if (value.status === 'FAILED') {
+    return value.errorCategory === 'INTERNAL_ERROR' && typeof value.errorMessage === 'string';
+  }
+  return isNullish(value.errorCategory) && isNullish(value.errorMessage);
+};
+
+const isMailRulePreviewExportResult = (value: unknown): value is MailRulePreviewExportResult => (
+  isObject(value)
+  && typeof value.accountId === 'string'
+  && typeof value.ruleId === 'string'
+  && typeof value.targetFolderId === 'string'
+  && isFiniteNumber(value.exported)
+  && isFiniteNumber(value.skipped)
+  && isFiniteNumber(value.failed)
+  && Array.isArray(value.rows)
+  && value.rows.every(isMailRulePreviewExportRow)
+);
+
 const isProcessedMailDiagnosticItem = (value: unknown): value is ProcessedMailDiagnosticItem => (
   isObject(value)
   && typeof value.id === 'string'
@@ -1032,6 +1110,19 @@ class MailAutomationService {
       maxMessagesPerFolder,
     });
     return assertMailResponse(response, isMailRulePreviewResult);
+  }
+
+  async exportPreviewMatches(
+    ruleId: string,
+    request: MailRulePreviewExportRequest,
+  ): Promise<MailRulePreviewExportResult> {
+    const response = await api.post<unknown>(
+      `/integration/mail/rules/${ruleId}/preview/export`,
+      request,
+    );
+    // assertMailResponse throws the sentinel if a Phase-5 SPA HTML fallback (or any
+    // non-conforming body) comes back, so the per-row contract is never parsed from HTML.
+    return assertMailResponse(response, isMailRulePreviewExportResult);
   }
 
   async listProviderPresets(): Promise<MailProviderPreset[]> {

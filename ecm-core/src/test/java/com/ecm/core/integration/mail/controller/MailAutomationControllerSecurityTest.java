@@ -358,4 +358,58 @@ class MailAutomationControllerSecurityTest {
             ArgumentMatchers.argThat(details -> details.contains("limit=5") && details.contains("runId=run-abc"))
         );
     }
+
+    private static final String EXPORT_BODY = "{\"accountId\":\"11111111-1111-4111-8111-111111111111\","
+        + "\"targetFolderId\":\"22222222-2222-4222-8222-222222222222\","
+        + "\"selections\":[{\"folder\":\"INBOX\",\"uid\":\"42\"}]}";
+
+    @Test
+    @DisplayName("Preview export requires authentication")
+    void previewExportRequiresAuthentication() throws Exception {
+        mockMvc.perform(post("/api/v1/integration/mail/rules/33333333-3333-4333-8333-333333333333/preview/export")
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .content(EXPORT_BODY))
+            .andExpect(status().isUnauthorized());
+
+        Mockito.verifyNoInteractions(fetcherService);
+    }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    @DisplayName("Preview export requires admin role")
+    void previewExportRequiresAdminRole() throws Exception {
+        mockMvc.perform(post("/api/v1/integration/mail/rules/33333333-3333-4333-8333-333333333333/preview/export")
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .content(EXPORT_BODY))
+            .andExpect(status().isForbidden());
+
+        // @PreAuthorize must fire before the service is touched.
+        Mockito.verifyNoInteractions(fetcherService);
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("Admin can export selected preview matches to a folder")
+    void previewExportAllowsAdmin() throws Exception {
+        java.util.UUID accountId = java.util.UUID.fromString("11111111-1111-4111-8111-111111111111");
+        java.util.UUID targetFolderId = java.util.UUID.fromString("22222222-2222-4222-8222-222222222222");
+        java.util.UUID ruleId = java.util.UUID.fromString("33333333-3333-4333-8333-333333333333");
+        Mockito.when(fetcherService.exportPreviewMatches(
+                Mockito.eq(accountId),
+                Mockito.eq(ruleId),
+                Mockito.eq(targetFolderId),
+                ArgumentMatchers.anyList()))
+            .thenReturn(new MailFetcherService.MailRulePreviewExportResult(
+                accountId, ruleId, targetFolderId, 0, 0, 0, List.of()));
+
+        mockMvc.perform(post("/api/v1/integration/mail/rules/" + ruleId + "/preview/export")
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .content(EXPORT_BODY))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.rows").isArray())
+            .andExpect(jsonPath("$.targetFolderId").value(targetFolderId.toString()));
+
+        Mockito.verify(fetcherService).exportPreviewMatches(
+            Mockito.eq(accountId), Mockito.eq(ruleId), Mockito.eq(targetFolderId), ArgumentMatchers.anyList());
+    }
 }

@@ -81,6 +81,7 @@ import mailAutomationService, {
 } from 'services/mailAutomationService';
 import tagService from 'services/tagService';
 import nodeService from 'services/nodeService';
+import MailPreviewExportDialog from 'components/mail/MailPreviewExportDialog';
 import { resolveDiagnosticsExportRunId, sanitizeRunIdForFilename } from './mailAutomationExportUtils';
 
 interface TagOption {
@@ -334,6 +335,7 @@ const MailAutomationPage: React.FC = () => {
   const [previewResult, setPreviewResult] = useState<MailRulePreviewResult | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewProcessableFilter, setPreviewProcessableFilter] = useState<'ALL' | 'PROCESSABLE' | 'UNPROCESSABLE'>('ALL');
+  const [mailExportDialogOpen, setMailExportDialogOpen] = useState(false);
 
   const securityOptions: MailSecurityType[] = ['SSL', 'STARTTLS', 'NONE', 'OAUTH2'];
   const oauthProviderOptions: MailOAuthProvider[] = ['MICROSOFT', 'GOOGLE', 'CUSTOM'];
@@ -5364,6 +5366,13 @@ const MailAutomationPage: React.FC = () => {
                         <Button startIcon={<ContentCopy />} onClick={handleCopyPreviewJson}>
                           Copy JSON
                         </Button>
+                        <Button
+                          onClick={() => setMailExportDialogOpen(true)}
+                          disabled={!previewResult || previewResult.matches.length === 0}
+                          data-testid="mail-export-open"
+                        >
+                          Export to folder…
+                        </Button>
                       </ButtonGroup>
                     </Box>
                   </Box>
@@ -5417,6 +5426,15 @@ const MailAutomationPage: React.FC = () => {
           <Button onClick={closePreviewDialog}>Close</Button>
         </DialogActions>
       </Dialog>
+      {previewResult && (
+        <MailPreviewExportDialog
+          open={mailExportDialogOpen}
+          onClose={() => setMailExportDialogOpen(false)}
+          accountId={previewResult.accountId}
+          ruleId={previewResult.ruleId}
+          matches={previewResult.matches}
+        />
+      )}
     </Box>
   );
 };

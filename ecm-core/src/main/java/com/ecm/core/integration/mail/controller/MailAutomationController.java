@@ -157,6 +157,12 @@ public class MailAutomationController {
         Integer maxMessagesPerFolder
     ) {}
 
+    public record MailRulePreviewExportRequest(
+        UUID accountId,
+        UUID targetFolderId,
+        List<MailFetcherService.MailPreviewExportSelection> selections
+    ) {}
+
     public record MailRuleResponse(
         UUID id,
         String name,
@@ -903,5 +909,23 @@ public class MailAutomationController {
             throw new IllegalArgumentException("accountId is required to preview a rule");
         }
         return ResponseEntity.ok(fetcherService.previewRule(request.accountId(), id, request.maxMessagesPerFolder()));
+    }
+
+    @PostMapping("/rules/{id}/preview/export")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(
+        summary = "Export selected preview matches to a folder (one-shot)",
+        description = "Re-fetch the selected matched messages and ingest them into a chosen folder "
+            + "with per-row partial success. Non-destructive: the mailbox is not modified."
+    )
+    public ResponseEntity<MailFetcherService.MailRulePreviewExportResult> exportPreviewMatches(
+        @PathVariable UUID id,
+        @RequestBody MailRulePreviewExportRequest request
+    ) {
+        if (request == null || request.accountId() == null) {
+            throw new IllegalArgumentException("accountId is required to export preview matches");
+        }
+        return ResponseEntity.ok(fetcherService.exportPreviewMatches(
+            request.accountId(), id, request.targetFolderId(), request.selections()));
     }
 }

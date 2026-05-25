@@ -14,6 +14,7 @@ import mailAutomationService, {
   MailReportScheduledExportResult,
   MailRule,
   MailRulePreviewResult,
+  MailRulePreviewExportResult,
   MailRuntimeMetrics,
   ProcessedMailRetentionStatus,
   MAIL_AUTOMATION_UNEXPECTED_RESPONSE_MESSAGE,
@@ -569,5 +570,77 @@ describe('mailAutomationService response shape guards', () => {
     );
     await expectMailUnexpectedResponse(mailAutomationService.triggerFetch());
     await expectMailUnexpectedResponse(mailAutomationService.bulkDeleteProcessedMail(['proc-1']));
+  });
+});
+
+describe('mailAutomationService.exportPreviewMatches', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  const exportRequest = {
+    accountId: 'acct-1',
+    targetFolderId: 'fold-1',
+    selections: [{ folder: 'INBOX', uid: '1' }, { folder: 'INBOX', uid: '2' }],
+  };
+
+  it('posts to the export route and returns a parsed mixed-row result', async () => {
+    const result: MailRulePreviewExportResult = {
+      accountId: 'acct-1',
+      ruleId: 'rule-1',
+      targetFolderId: 'fold-1',
+      exported: 1,
+      skipped: 0,
+      failed: 1,
+      rows: [
+        { folder: 'INBOX', uid: '1', status: 'EXPORTED', errorCategory: null, errorMessage: null },
+        { folder: 'INBOX', uid: '2', status: 'FAILED', errorCategory: 'INTERNAL_ERROR', errorMessage: 'Failed to export the mail message into the target folder. (MessagingException).' },
+      ],
+    };
+    mockedApi.post.mockResolvedValueOnce(result);
+
+    await expect(mailAutomationService.exportPreviewMatches('rule-1', exportRequest)).resolves.toEqual(result);
+    expect(mockedApi.post).toHaveBeenCalledWith('/integration/mail/rules/rule-1/preview/export', exportRequest);
+  });
+
+  it('accepts explicit JSON null on a non-failed row', async () => {
+    mockedApi.post.mockResolvedValueOnce({
+      accountId: 'acct-1', ruleId: 'rule-1', targetFolderId: 'fold-1',
+      exported: 0, skipped: 1, failed: 0,
+      rows: [{ folder: 'INBOX', uid: '1', status: 'SKIPPED_ALREADY_PROCESSED', errorCategory: null, errorMessage: null }],
+    });
+    await expect(mailAutomationService.exportPreviewMatches('rule-1', exportRequest)).resolves.toBeTruthy();
+  });
+
+  it('rejects an HTML/SPA fallback (no rows array) with the sentinel', async () => {
+    mockedApi.post.mockResolvedValueOnce('<!doctype html><html><body>app</body></html>');
+    await expectMailUnexpectedResponse(mailAutomationService.exportPreviewMatches('rule-1', exportRequest));
+  });
+
+  it('rejects an EXPORTED row carrying an error message (status-keyed invariant)', async () => {
+    mockedApi.post.mockResolvedValueOnce({
+      accountId: 'acct-1', ruleId: 'rule-1', targetFolderId: 'fold-1',
+      exported: 1, skipped: 0, failed: 0,
+      rows: [{ folder: 'INBOX', uid: '1', status: 'EXPORTED', errorCategory: null, errorMessage: 'leaked' }],
+    });
+    await expectMailUnexpectedResponse(mailAutomationService.exportPreviewMatches('rule-1', exportRequest));
+  });
+
+  it('rejects a FAILED row missing its error category', async () => {
+    mockedApi.post.mockResolvedValueOnce({
+      accountId: 'acct-1', ruleId: 'rule-1', targetFolderId: 'fold-1',
+      exported: 0, skipped: 0, failed: 1,
+      rows: [{ folder: 'INBOX', uid: '1', status: 'FAILED', errorCategory: null, errorMessage: 'boom' }],
+    });
+    await expectMailUnexpectedResponse(mailAutomationService.exportPreviewMatches('rule-1', exportRequest));
+  });
+
+  it('rejects an unknown row status', async () => {
+    mockedApi.post.mockResolvedValueOnce({
+      accountId: 'acct-1', ruleId: 'rule-1', targetFolderId: 'fold-1',
+      exported: 0, skipped: 0, failed: 0,
+      rows: [{ folder: 'INBOX', uid: '1', status: 'TELEPORTED', errorCategory: null, errorMessage: null }],
+    });
+    await expectMailUnexpectedResponse(mailAutomationService.exportPreviewMatches('rule-1', exportRequest));
   });
 });

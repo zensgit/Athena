@@ -59,6 +59,8 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -595,6 +597,167 @@ public class MailFetcherService {
             matchedMessages,
             runId
         );
+    }
+
+    /** Hard cap on selections per one-shot export (gate ruling D6) — locked in tests. */
+    private static final int MAX_EXPORT_SELECTIONS = 200;
+    /** Fixed sanitized copy for a failed export row — never echoes the raw exception message. */
+    private static final String EXPORT_ERROR_INTERNAL =
+        "Failed to export the mail message into the target folder.";
+
+    /**
+     * One-shot export of selected preview matches into an operator-chosen folder.
+     *
+     * <p>A preview match carries only metadata + uid (no bytes), so this re-connects to the
+     * mail server and re-fetches each (folder, uid), then runs the existing ingestion core
+     * {@link #processContent} into {@code targetFolderId}. Per gate ruling D1 the mailbox is
+     * NOT mutated: the folder is opened {@code READ_ONLY}, no mail action is applied, nothing
+     * is marked seen, and no {@code ProcessedMail} row is written. Already-processed messages
+     * are skipped (D4) so an active rule's prior ingest is not duplicated; re-running export
+     * itself can still duplicate because nothing is recorded.
+     *
+     * <p>Failure isolation is per-row and automatic: {@code MailFetcherService} is not
+     * {@code @Transactional}, so each {@code ingestEmail}/{@code uploadDocument} commits on its
+     * own and a later row's failure cannot roll back earlier rows — no per-row TransactionTemplate
+     * is needed here (unlike bulk-declare, whose service was class-level transactional).
+     */
+    public MailRulePreviewExportResult exportPreviewMatches(
+        UUID accountId,
+        UUID ruleId,
+        UUID targetFolderId,
+        List<MailPreviewExportSelection> selections
+    ) {
+        MailAccount account = accountRepository.findById(accountId)
+            .orElseThrow(() -> new IllegalArgumentException("Mail account not found: " + accountId));
+        MailRule rule = ruleRepository.findById(ruleId)
+            .orElseThrow(() -> new IllegalArgumentException("Mail rule not found: " + ruleId));
+        if (rule.getAccountId() != null && !rule.getAccountId().equals(accountId)) {
+            throw new IllegalArgumentException("Mail rule does not belong to account: " + accountId);
+        }
+        if (targetFolderId == null) {
+            throw new IllegalArgumentException("targetFolderId is required");
+        }
+        nodeRepository.findById(targetFolderId)
+            .orElseThrow(() -> new IllegalArgumentException("Target folder not found: " + targetFolderId));
+        if (selections == null || selections.isEmpty()) {
+            throw new IllegalArgumentException("selections must contain at least one entry");
+        }
+        if (selections.size() > MAX_EXPORT_SELECTIONS) {
+            throw new IllegalArgumentException(
+                "selections exceeds the maximum of " + MAX_EXPORT_SELECTIONS + " per export");
+        }
+
+        // Dedupe (folder, uid) preserving first-seen order, and group by folder so each IMAP
+        // folder is opened at most once.
+        Map<String, LinkedHashSet<String>> uidsByFolder = new LinkedHashMap<>();
+        for (MailPreviewExportSelection sel : selections) {
+            if (sel == null || sel.folder() == null || sel.folder().isBlank()
+                || sel.uid() == null || sel.uid().isBlank()) {
+                throw new IllegalArgumentException("Each selection requires a non-blank folder and uid");
+            }
+            uidsByFolder.computeIfAbsent(sel.folder(), f -> new LinkedHashSet<>()).add(sel.uid());
+        }
+
+        Store store;
+        try {
+            store = connect(account);
+        } catch (Exception e) {
+            // Whole-batch connect failure (gate ruling): top-level, sanitized, mapped by the
+            // existing handler. Never leak server detail; log only the exception class.
+            log.warn("Mail export connection failed for account {}: {}", account.getName(),
+                e.getClass().getSimpleName());
+            throw new IllegalStateException("Failed to connect to the mail account for export.");
+        }
+
+        List<MailRulePreviewExportRow> rows = new ArrayList<>();
+        try {
+            for (Map.Entry<String, LinkedHashSet<String>> entry : uidsByFolder.entrySet()) {
+                String folderName = entry.getKey();
+                Folder folder = null;
+                try {
+                    folder = store.getFolder(folderName);
+                    if (!folder.exists()) {
+                        for (String uid : entry.getValue()) {
+                            rows.add(MailRulePreviewExportRow.skippedNotFound(folderName, uid));
+                        }
+                        continue;
+                    }
+                    folder.open(Folder.READ_ONLY); // D1: non-destructive
+                    for (String uid : entry.getValue()) {
+                        rows.add(exportOneMatch(account, rule, folder, folderName, uid, targetFolderId));
+                    }
+                } catch (Exception e) {
+                    // Folder open/lookup failure: fail the rows for this folder only (sanitized).
+                    log.warn("Mail export failed for account {} folder {}: {}", account.getName(),
+                        folderName, e.getClass().getSimpleName());
+                    for (String uid : entry.getValue()) {
+                        rows.add(MailRulePreviewExportRow.failed(folderName, uid,
+                            EXPORT_ERROR_INTERNAL + " (" + e.getClass().getSimpleName() + ")"));
+                    }
+                } finally {
+                    if (folder != null && folder.isOpen()) {
+                        try {
+                            folder.close(false);
+                        } catch (Exception ignored) {
+                            // best effort
+                        }
+                    }
+                }
+            }
+        } finally {
+            try {
+                store.close();
+            } catch (Exception ignored) {
+                // best effort
+            }
+        }
+
+        int exported = (int) rows.stream()
+            .filter(r -> r.status() == MailRulePreviewExportStatus.EXPORTED).count();
+        int failed = (int) rows.stream()
+            .filter(r -> r.status() == MailRulePreviewExportStatus.FAILED).count();
+        int skipped = rows.size() - exported - failed;
+        return new MailRulePreviewExportResult(accountId, ruleId, targetFolderId, exported, skipped, failed, rows);
+    }
+
+    private MailRulePreviewExportRow exportOneMatch(
+        MailAccount account,
+        MailRule rule,
+        Folder folder,
+        String folderName,
+        String uid,
+        UUID targetFolderId
+    ) {
+        try {
+            // D4: do not duplicate what the live rule already ingested.
+            if (processedMailRepository.existsByAccountIdAndFolderAndUid(account.getId(), folderName, uid)) {
+                return MailRulePreviewExportRow.skippedAlreadyProcessed(folderName, uid);
+            }
+            Message message = findMessageByUid(folder, uid);
+            if (message == null) {
+                // D5: message expunged between preview and export — benign drift, not a failure.
+                return MailRulePreviewExportRow.skippedNotFound(folderName, uid);
+            }
+            List<AttachmentPart> attachments;
+            try {
+                attachments = collectAttachmentParts(message);
+            } catch (Exception e) {
+                log.debug("Mail export attachment collection failed: {}", e.getClass().getSimpleName());
+                attachments = new ArrayList<>();
+            }
+            Map<String, Object> mailProperties = buildMailProperties(account, folderName, uid, rule, null);
+            // processContent reused as-is (OOS #3): targetFolderId overrides rule.assignFolderId.
+            boolean processed = processContent(message, rule, attachments, mailProperties, targetFolderId);
+            return processed
+                ? MailRulePreviewExportRow.exported(folderName, uid)
+                : MailRulePreviewExportRow.skippedNoContent(folderName, uid);
+        } catch (Exception e) {
+            // Sanitized: fixed copy + exception class only; never raw message, never raw Throwable to SLF4J.
+            log.warn("Mail export failed for account {} folder {} uid {}: {}", account.getName(),
+                folderName, uid, e.getClass().getSimpleName());
+            return MailRulePreviewExportRow.failed(folderName, uid,
+                EXPORT_ERROR_INTERNAL + " (" + e.getClass().getSimpleName() + ")");
+        }
     }
 
     public List<String> listFolders(UUID accountId) {
@@ -1183,6 +1346,67 @@ public class MailFetcherService {
         Map<String, Integer> skipReasons,
         List<MailRulePreviewMessage> matches,
         String runId
+    ) {
+    }
+
+    public enum MailRulePreviewExportStatus {
+        EXPORTED,
+        SKIPPED_ALREADY_PROCESSED,
+        SKIPPED_NOT_FOUND,
+        SKIPPED_NO_CONTENT,
+        FAILED
+    }
+
+    /** Closed set of per-row error categories. Only ever set on a FAILED row. */
+    public enum MailRulePreviewExportErrorCategory {
+        INTERNAL_ERROR
+    }
+
+    /** A preview match the operator selected for export, keyed by re-fetch coordinates. */
+    public record MailPreviewExportSelection(String folder, String uid) {
+    }
+
+    public record MailRulePreviewExportRow(
+        String folder,
+        String uid,
+        MailRulePreviewExportStatus status,
+        MailRulePreviewExportErrorCategory errorCategory,
+        String errorMessage
+    ) {
+        static MailRulePreviewExportRow exported(String folder, String uid) {
+            return new MailRulePreviewExportRow(folder, uid, MailRulePreviewExportStatus.EXPORTED, null, null);
+        }
+
+        static MailRulePreviewExportRow skippedAlreadyProcessed(String folder, String uid) {
+            return new MailRulePreviewExportRow(
+                folder, uid, MailRulePreviewExportStatus.SKIPPED_ALREADY_PROCESSED, null, null);
+        }
+
+        static MailRulePreviewExportRow skippedNotFound(String folder, String uid) {
+            return new MailRulePreviewExportRow(
+                folder, uid, MailRulePreviewExportStatus.SKIPPED_NOT_FOUND, null, null);
+        }
+
+        static MailRulePreviewExportRow skippedNoContent(String folder, String uid) {
+            return new MailRulePreviewExportRow(
+                folder, uid, MailRulePreviewExportStatus.SKIPPED_NO_CONTENT, null, null);
+        }
+
+        static MailRulePreviewExportRow failed(String folder, String uid, String errorMessage) {
+            return new MailRulePreviewExportRow(
+                folder, uid, MailRulePreviewExportStatus.FAILED,
+                MailRulePreviewExportErrorCategory.INTERNAL_ERROR, errorMessage);
+        }
+    }
+
+    public record MailRulePreviewExportResult(
+        UUID accountId,
+        UUID ruleId,
+        UUID targetFolderId,
+        int exported,
+        int skipped,
+        int failed,
+        List<MailRulePreviewExportRow> rows
     ) {
     }
 
