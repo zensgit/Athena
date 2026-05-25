@@ -37,7 +37,17 @@ react-scripts build (CI=true) ............ success (ESLint clean — CI=true fai
 ## CI Follow-Up
 
 ```
-Run id:        <pending>
-Head SHA:      <pending>
-Conclusion:    <pending — gh run view authority per feedback_gh_run_watch_unreliable>
+Run id:        26387975548
+Head SHA:      66b6982e
+Conclusion:    success (7/7 on first attempt — gh run view authority per feedback_gh_run_watch_unreliable)
+URL:           https://github.com/zensgit/Athena/actions/runs/26387975548
+
+Jobs (7/7 green):
+  ✓ Backend Verify
+  ✓ Frontend Build & Test
+  ✓ Phase C Security Verification
+  ✓ Acceptance Smoke (3 admin pages)
+  ✓ Frontend E2E Core Gate
+  ✓ Property Encryption Closeout Gate
+  ✓ Phase 5 Mocked Regression Gate
 ```
