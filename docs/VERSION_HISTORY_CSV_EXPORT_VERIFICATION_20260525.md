@@ -39,7 +39,17 @@ Backend tests (`VersionServiceCsvExportTest`) ship via the Surefire glob and run
 ## CI Follow-Up
 
 ```
-Run id:        <pending>
-Head SHA:      <pending>
-Conclusion:    <pending — gh run view authority per feedback_gh_run_watch_unreliable>
+Run id:        26391018285
+Head SHA:      11dc1cf6
+Conclusion:    success (7/7 on first attempt — gh run view authority per feedback_gh_run_watch_unreliable)
+URL:           https://github.com/zensgit/Athena/actions/runs/26391018285
+
+Jobs (7/7 green):
+  ✓ Backend Verify
+  ✓ Frontend Build & Test
+  ✓ Phase C Security Verification
+  ✓ Frontend E2E Core Gate
+  ✓ Property Encryption Closeout Gate
+  ✓ Acceptance Smoke (3 admin pages)
+  ✓ Phase 5 Mocked Regression Gate
 ```
