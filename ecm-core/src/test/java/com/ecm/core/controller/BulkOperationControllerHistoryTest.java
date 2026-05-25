@@ -5,6 +5,7 @@ import com.ecm.core.repository.AuditLogRepository;
 import com.ecm.core.service.AuditService;
 import com.ecm.core.service.BulkMetadataService;
 import com.ecm.core.service.BulkOperationService;
+import com.ecm.core.service.BulkShareLinkService;
 import com.ecm.core.service.SecurityService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -44,6 +45,9 @@ class BulkOperationControllerHistoryTest {
     private BulkMetadataService bulkMetadataService;
 
     @Mock
+    private BulkShareLinkService bulkShareLinkService;
+
+    @Mock
     private AuditLogRepository auditLogRepository;
 
     @Mock
@@ -57,6 +61,7 @@ class BulkOperationControllerHistoryTest {
         BulkOperationController controller = new BulkOperationController(
             bulkOperationService,
             bulkMetadataService,
+            bulkShareLinkService,
             auditLogRepository,
             auditService,
             securityService
