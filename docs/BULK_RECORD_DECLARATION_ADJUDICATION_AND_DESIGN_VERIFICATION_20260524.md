@@ -156,3 +156,38 @@ Advisor risk flags resolved by the green run:
 - **Mockito strict-stub on the 11 new backend tests** — Backend Verify passed without a single align iteration. The lenient `transactionManager.getTransaction(...)` stub in `setUp()` and the per-test discipline (no pre-stubs on paths that exit before reaching them) held under strict-stub mode. This is the first slice that hit it correctly on the first attempt; legal-hold (`32381d8` → align `96a7ae1`) took one round, bulk site invite (similar pattern) took one round.
 - **Phase 5 Mocked Regression on `POST /api/v1/nodes/bulk-declare`** — pre-push `grep` of `ecm-frontend/e2e/` and `ecm-frontend/src/__tests__/` was empty, so no Phase 5 spec exercises the new button. The dedicated sentinel is pure defense-in-depth. Phase 5 Mocked Regression Gate passed regardless.
 - **Probe test log-side assertion** — minor doc note from advisor; the response-side assertion + code-inspection of `log.debug(...)` (no raw `Throwable`, only class name) is consistent with the legal-hold pattern. CI confirms.
+
+## Post-ship polish (gate Low finding, 2026-05-24)
+
+Gate raised one Low post-ship finding on the partial-failure textarea drain in
+`BulkDeclareRecordsDialog.tsx`: the drain split only on `\n`, but `parseUuidList`
+and the UI copy accept comma/semicolon separators. For input like `ok,fail`, a
+succeeded `ok` UUID was left in the line, so a retry re-submitted it and got
+`SKIPPED_ALREADY_DECLARED`. No data corruption, but it violated the brief's
+"drain successful UUIDs" behavior for supported separators.
+
+Fix (`fix(core)` commit `4bc9856`):
+
+- Drain now splits on the same `/[\n,;]+/` separator set as `parseUuidList` and
+  filters by parsed token — drop blanks, keep malformed tokens for operator
+  visibility, drain recognised-and-succeeded UUIDs (DECLARED + SKIPPED_ALREADY_DECLARED).
+- Added dialog test `drains succeeded UUIDs from comma/semicolon-separated input
+  on partial failure` (no newlines in input; asserts both DECLARED and skipped
+  UUIDs drained, only FAILED retained). Existing newline partial-failure test
+  stays green. Local: 12/12 in `BulkDeclareRecordsDialog.test.tsx`.
+
+```
+Run id:        26376838093
+Head SHA:      4bc98561 (CI record commit follows with [skip ci])
+Conclusion:    success (7/7 — gh run view authority per feedback_gh_run_watch_unreliable)
+URL:           https://github.com/zensgit/Athena/actions/runs/26376838093
+
+Jobs (7/7 green):
+  ✓ Backend Verify
+  ✓ Frontend Build & Test
+  ✓ Phase C Security Verification
+  ✓ Acceptance Smoke (3 admin pages)
+  ✓ Property Encryption Closeout Gate
+  ✓ Phase 5 Mocked Regression Gate
+  ✓ Frontend E2E Core Gate
+```
