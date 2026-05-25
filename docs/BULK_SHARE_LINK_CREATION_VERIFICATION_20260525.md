@@ -43,8 +43,28 @@ Backend tests (`BulkShareLinkServiceTest`, `BulkOperationControllerSecurityTest`
 
 ## CI Follow-Up
 
+Round 1 (`bf62879`) failed Backend Verify on a single `testCompile` error: adding the
+`bulkShareLinkService` field to `BulkOperationController` (via `@RequiredArgsConstructor`) made
+it a 6-arg constructor, breaking the pre-existing `BulkOperationControllerHistoryTest`, which
+constructs the controller manually (`standaloneSetup`) with the old 5 args. (The `@WebMvcTest`
+security test uses `@MockBean` and was unaffected; the new code + frontend compiled and passed.)
+Fixed in `a2b38a6` (`test(core): align bulk operation controller history fixture` — adds the
+`BulkShareLinkService` mock + passes it). Lesson: when adding a field to a
+`@RequiredArgsConstructor` controller/service, grep tests for `new <Class>(` (standalone-setup
+fixtures construct manually).
+
 ```
-Run id:        <pending>
-Head SHA:      <pending>
-Conclusion:    <pending — gh run view authority per feedback_gh_run_watch_unreliable>
+Run id:        26393419153
+Head SHA:      a2b38a6e
+Conclusion:    success (7/7 — gh run view authority per feedback_gh_run_watch_unreliable)
+URL:           https://github.com/zensgit/Athena/actions/runs/26393419153
+
+Jobs (7/7 green):
+  ✓ Backend Verify
+  ✓ Frontend Build & Test
+  ✓ Phase C Security Verification
+  ✓ Acceptance Smoke (3 admin pages)
+  ✓ Phase 5 Mocked Regression Gate
+  ✓ Property Encryption Closeout Gate
+  ✓ Frontend E2E Core Gate
 ```
