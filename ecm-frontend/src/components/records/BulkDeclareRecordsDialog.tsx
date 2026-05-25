@@ -146,14 +146,17 @@ const BulkDeclareRecordsDialog: React.FC<BulkDeclareRecordsDialogProps> = ({
       const successOrSkipNodeIds = new Set<string>(
         [...declared, ...skipped].map((r) => r.nodeId.toLowerCase())
       );
+      // Split on the same separator set parseUuidList accepts (newline, comma,
+      // semicolon) so comma/semicolon-separated input drains correctly too — a \n-only
+      // split would leave a succeeded UUID in an "ok,fail" line and re-submit it as
+      // SKIPPED_ALREADY_DECLARED on retry.
       const remainingTokens = nodeIdsRaw
-        .split(/\n/)
-        .map((line) => line)
-        .filter((line) => {
-          const trimmed = line.trim().toLowerCase();
-          // Keep non-UUID tokens (so the operator can see what was malformed); only drain
-          // the recognised-and-succeeded UUIDs.
-          if (!trimmed) return true;
+        .split(/[\n,;]+/)
+        .filter((token) => {
+          const trimmed = token.trim().toLowerCase();
+          // Drop blanks; keep non-UUID tokens (so the operator can see what was
+          // malformed); only drain the recognised-and-succeeded UUIDs.
+          if (!trimmed) return false;
           if (!UUID_REGEX.test(trimmed)) return true;
           return !successOrSkipNodeIds.has(trimmed);
         });

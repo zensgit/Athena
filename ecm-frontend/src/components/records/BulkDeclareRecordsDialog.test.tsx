@@ -194,6 +194,58 @@ describe('BulkDeclareRecordsDialog', () => {
     expect(within(internalGroup).getByText(/RuntimeException/)).toBeTruthy();
   });
 
+  it('drains succeeded UUIDs from comma/semicolon-separated input on partial failure', async () => {
+    // Drain must use the same separator set as parseUuidList (\n , ;). A \n-only split
+    // would leave the succeeded UUID inside an "ok,fail" line, so a retry would re-submit
+    // it and get SKIPPED_ALREADY_DECLARED. Mixed separators here lock the parsed-token drain.
+    mockedService.createBulkDeclarations.mockResolvedValueOnce({
+      bulkDeclareResults: {
+        rows: [
+          {
+            nodeId: UUID_V4,
+            status: 'DECLARED',
+            declaration: { nodeId: UUID_V4, name: 'A.pdf', path: '/A.pdf' },
+            errorCategory: null,
+            errorMessage: null,
+          },
+          {
+            nodeId: UUID_V1,
+            status: 'SKIPPED_ALREADY_DECLARED',
+            declaration: { nodeId: UUID_V1, name: 'B.pdf', path: '/B.pdf' },
+            errorCategory: null,
+            errorMessage: null,
+          },
+          {
+            nodeId: UUID_V5,
+            status: 'FAILED',
+            declaration: null,
+            errorCategory: 'NODE_NOT_FOUND',
+            errorMessage: 'The target node was not found.',
+          },
+        ],
+      },
+    } as any);
+
+    const { onClose } = renderDialog();
+    fireEvent.change(screen.getByTestId('bulk-declare-node-ids'), {
+      // Comma between the first two, semicolon before the third — no newlines at all.
+      target: { value: `${UUID_V4},${UUID_V1};${UUID_V5}` },
+    });
+    fireEvent.click(screen.getByTestId('bulk-declare-submit'));
+
+    await waitFor(() => {
+      expect(toastWarn).toHaveBeenCalled();
+    });
+    expect(onClose).not.toHaveBeenCalled();
+
+    // Both the DECLARED and the SKIPPED_ALREADY_DECLARED UUIDs are drained; only the
+    // FAILED one remains for retry.
+    const textarea = screen.getByTestId('bulk-declare-node-ids') as HTMLTextAreaElement;
+    expect(textarea.value).not.toContain(UUID_V4);
+    expect(textarea.value).not.toContain(UUID_V1);
+    expect(textarea.value).toContain(UUID_V5);
+  });
+
   it('renders SKIPPED_ALREADY_DECLARED rows in a dedicated soft-skip Alert, separate from the failed-rows Alert', async () => {
     mockedService.createBulkDeclarations.mockResolvedValueOnce({
       bulkDeclareResults: {
