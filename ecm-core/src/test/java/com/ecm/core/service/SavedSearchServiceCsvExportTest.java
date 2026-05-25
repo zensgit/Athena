@@ -60,7 +60,7 @@ class SavedSearchServiceCsvExportTest {
 
     private SearchResult result(String name) {
         return SearchResult.builder()
-            .id(UUID.randomUUID())
+            .id(UUID.randomUUID().toString())
             .name(name)
             .path("/Sites/legal/" + name)
             .nodeType("DOCUMENT")
