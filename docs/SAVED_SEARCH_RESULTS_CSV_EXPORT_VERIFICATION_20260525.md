@@ -40,8 +40,25 @@ Backend test (`SavedSearchServiceCsvExportTest`) ships via the Surefire glob and
 
 ## CI Follow-Up
 
+Round 1 (`323ac39`) failed Backend Verify on a single `testCompile` error: the test fixture used
+`SearchResult.builder().id(UUID.randomUUID())`, but `SearchResult.id` is a `String` (verified the
+field existed, not its type). Fixed in `b74c56f` (`test(core): align saved search CSV export
+result id type` — `.id(UUID.randomUUID().toString())`). Frontend + Phase 5 passed in round 1;
+only that line broke compilation. Lesson: when building a `@Builder` entity in a test, verify
+field **types**, not just existence (id is `String` here, UUID elsewhere) — no local `mvnw` catches it.
+
 ```
-Run id:        <pending>
-Head SHA:      <pending>
-Conclusion:    <pending — gh run view authority per feedback_gh_run_watch_unreliable>
+Run id:        26400740974
+Head SHA:      b74c56f9
+Conclusion:    success (7/7 — gh run view authority per feedback_gh_run_watch_unreliable)
+URL:           https://github.com/zensgit/Athena/actions/runs/26400740974
+
+Jobs (7/7 green):
+  ✓ Backend Verify
+  ✓ Frontend Build & Test
+  ✓ Phase C Security Verification
+  ✓ Frontend E2E Core Gate
+  ✓ Property Encryption Closeout Gate
+  ✓ Phase 5 Mocked Regression Gate
+  ✓ Acceptance Smoke (3 admin pages)
 ```
