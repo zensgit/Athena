@@ -41,7 +41,17 @@ git diff --check -- . ':!.env' ............................. clean
 `scripts/backend-preflight.sh` is a local-only dev helper — it is not wired into CI in this slice. The push carries the script + this doc only; CI runs unchanged (the `[skip ci]` doc commit follows after the code commit's CI is green).
 
 ```
-Run id:        <pending>
-Head SHA:      <pending>
-Conclusion:    <pending — gh run view authority per feedback_gh_run_watch_unreliable>
+Run id:        26406120662
+Head SHA:      642f8a12
+Conclusion:    success (7/7 — gh run view authority per feedback_gh_run_watch_unreliable)
+URL:           https://github.com/zensgit/Athena/actions/runs/26406120662
+
+Jobs (7/7 green — local-only helper, no CI impact as expected):
+  ✓ Backend Verify
+  ✓ Frontend Build & Test
+  ✓ Phase C Security Verification
+  ✓ Frontend E2E Core Gate
+  ✓ Property Encryption Closeout Gate
+  ✓ Phase 5 Mocked Regression Gate
+  ✓ Acceptance Smoke (3 admin pages)
 ```
