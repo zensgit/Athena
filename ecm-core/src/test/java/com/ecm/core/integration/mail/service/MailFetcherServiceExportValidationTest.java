@@ -28,6 +28,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
@@ -154,7 +155,7 @@ class MailFetcherServiceExportValidationTest {
     void emptySelections() {
         when(accountRepository.findById(accountId)).thenReturn(Optional.of(account()));
         when(ruleRepository.findById(ruleId)).thenReturn(Optional.of(rule()));
-        when(nodeRepository.findById(targetFolderId)).thenReturn(Optional.of(new Node()));
+        when(nodeRepository.findById(targetFolderId)).thenReturn(Optional.of(mock(Node.class)));
 
         assertThrows(IllegalArgumentException.class, () ->
             service.exportPreviewMatches(accountId, ruleId, targetFolderId, List.of()));
@@ -165,7 +166,7 @@ class MailFetcherServiceExportValidationTest {
     void nullSelections() {
         when(accountRepository.findById(accountId)).thenReturn(Optional.of(account()));
         when(ruleRepository.findById(ruleId)).thenReturn(Optional.of(rule()));
-        when(nodeRepository.findById(targetFolderId)).thenReturn(Optional.of(new Node()));
+        when(nodeRepository.findById(targetFolderId)).thenReturn(Optional.of(mock(Node.class)));
 
         assertThrows(IllegalArgumentException.class, () ->
             service.exportPreviewMatches(accountId, ruleId, targetFolderId, null));
@@ -176,7 +177,7 @@ class MailFetcherServiceExportValidationTest {
     void overCapSelections() {
         when(accountRepository.findById(accountId)).thenReturn(Optional.of(account()));
         when(ruleRepository.findById(ruleId)).thenReturn(Optional.of(rule()));
-        when(nodeRepository.findById(targetFolderId)).thenReturn(Optional.of(new Node()));
+        when(nodeRepository.findById(targetFolderId)).thenReturn(Optional.of(mock(Node.class)));
 
         List<MailFetcherService.MailPreviewExportSelection> tooMany = new ArrayList<>();
         for (int i = 0; i < 201; i++) {
@@ -194,7 +195,7 @@ class MailFetcherServiceExportValidationTest {
     void blankSelectionEntry() {
         when(accountRepository.findById(accountId)).thenReturn(Optional.of(account()));
         when(ruleRepository.findById(ruleId)).thenReturn(Optional.of(rule()));
-        when(nodeRepository.findById(targetFolderId)).thenReturn(Optional.of(new Node()));
+        when(nodeRepository.findById(targetFolderId)).thenReturn(Optional.of(mock(Node.class)));
 
         List<MailFetcherService.MailPreviewExportSelection> withBlank = new ArrayList<>();
         withBlank.add(new MailFetcherService.MailPreviewExportSelection("INBOX", "42"));
@@ -209,7 +210,7 @@ class MailFetcherServiceExportValidationTest {
     void exactlyAtCapIsAccepted() {
         when(accountRepository.findById(accountId)).thenReturn(Optional.of(account()));
         when(ruleRepository.findById(ruleId)).thenReturn(Optional.of(rule()));
-        when(nodeRepository.findById(targetFolderId)).thenReturn(Optional.of(new Node()));
+        when(nodeRepository.findById(targetFolderId)).thenReturn(Optional.of(mock(Node.class)));
 
         List<MailFetcherService.MailPreviewExportSelection> exactly = new ArrayList<>();
         for (int i = 0; i < 200; i++) {
