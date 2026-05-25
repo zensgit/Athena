@@ -6,6 +6,7 @@ jest.mock('./api', () => ({
   default: {
     get: jest.fn(),
     post: jest.fn(),
+    put: jest.fn(),
     patch: jest.fn(),
     delete: jest.fn(),
   },
@@ -168,6 +169,45 @@ describe('nodeService folder/node CRUD response shape guards', () => {
     const node = await nodeService.updateNode('doc-1', { name: 'New' });
     expect(node.id).toBe('doc-1');
     expect(mockedApi.patch).toHaveBeenLastCalledWith('/nodes/doc-1', { name: 'New' });
+  });
+
+  it('getFolder: GET /folders/{id} → FolderResponse mapped with smart + queryCriteria', async () => {
+    const smartFolder = {
+      ...validFolder,
+      smart: true,
+      queryCriteria: { query: 'type:contract', pathPrefix: '/Sites/legal' },
+    };
+    mockedApi.get.mockResolvedValueOnce(smartFolder);
+    const node = await nodeService.getFolder('folder-1');
+    expect(mockedApi.get).toHaveBeenLastCalledWith('/folders/folder-1');
+    // folderToNode must carry smart + queryCriteria — the only source for edit prefill/detection.
+    expect(node.smart).toBe(true);
+    expect(node.queryCriteria).toEqual({ query: 'type:contract', pathPrefix: '/Sites/legal' });
+  });
+
+  it('getFolder: HTML/SPA fallback rejected with the unexpected-response sentinel', async () => {
+    mockedApi.get.mockResolvedValueOnce(HTML_FALLBACK);
+    await expect(nodeService.getFolder('folder-1')).rejects.toThrow(NODE_UNEXPECTED_RESPONSE_MESSAGE);
+  });
+
+  it('updateFolder: PUT /folders/{id} locks the body and maps the FolderResponse', async () => {
+    mockedApi.put.mockResolvedValueOnce({
+      ...validFolder,
+      smart: true,
+      queryCriteria: { query: 'type:invoice' },
+    });
+    const node = await nodeService.updateFolder('folder-1', {
+      isSmart: true,
+      queryCriteria: { query: 'type:invoice' },
+    });
+    expect(mockedApi.put).toHaveBeenLastCalledWith('/folders/folder-1', {
+      name: undefined,
+      description: undefined,
+      isSmart: true,
+      queryCriteria: { query: 'type:invoice' },
+    });
+    expect(node.smart).toBe(true);
+    expect(node.queryCriteria).toEqual({ query: 'type:invoice' });
   });
 
   it('moveNode / copyNode: POST endpoints + body shape locked', async () => {

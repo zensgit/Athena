@@ -2378,6 +2378,31 @@ class NodeService {
     return this.folderToNode(folder);
   }
 
+  // Folder-detail fetch via GET /folders/{id} -> FolderResponse. Unlike getNode (/nodes/{id} ->
+  // NodeDto) and the browse-list NodeResponse, FolderResponse is the only shape carrying
+  // `smart` + `queryCriteria`, so this is the source for smart-folder detection and edit prefill.
+  async getFolder(folderId: string): Promise<Node> {
+    const raw = await api.get<unknown>(`/folders/${folderId}`);
+    const folder = assertAndNormalizeFolderResponse(raw);
+    return this.folderToNode(folder);
+  }
+
+  // Update a folder via PUT /folders/{id}. For smart-folder query editing the caller sends
+  // isSmart:true + queryCriteria; other fields (name/description) are optional pass-throughs.
+  async updateFolder(
+    folderId: string,
+    request: { name?: string; description?: string; isSmart?: boolean; queryCriteria?: Record<string, any> },
+  ): Promise<Node> {
+    const raw = await api.put<unknown>(`/folders/${folderId}`, {
+      name: request.name,
+      description: request.description,
+      isSmart: request.isSmart,
+      queryCriteria: request.queryCriteria,
+    });
+    const folder = assertAndNormalizeFolderResponse(raw);
+    return this.folderToNode(folder);
+  }
+
   async getNode(nodeId: string): Promise<Node> {
     // Handle special "root" case by fetching first root folder
     if (nodeId === 'root') {

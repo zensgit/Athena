@@ -78,6 +78,7 @@ import {
   setMlSuggestionsOpen,
 } from 'store/slices/uiSlice';
 import nodeService from 'services/nodeService';
+import EditSmartFolderDialog from 'components/dialogs/EditSmartFolderDialog';
 import favoriteService from 'services/favoriteService';
 import followingService from 'services/followingService';
 import { toast } from 'react-toastify';
@@ -138,6 +139,9 @@ const FileList: React.FC<FileListProps> = ({
   const [lockDeep, setLockDeep] = React.useState(false);
   const [lockAdditionalInfo, setLockAdditionalInfo] = React.useState('');
   const [lockSubmitting, setLockSubmitting] = React.useState(false);
+  // Smart-folder edit target — fetched fresh via getFolder (carries smart + queryCriteria).
+  const [editSmartFolderNode, setEditSmartFolderNode] = React.useState<Node | null>(null);
+  const [smartFolderLoading, setSmartFolderLoading] = React.useState(false);
   const [checkInDialogNode, setCheckInDialogNode] = React.useState<Node | null>(null);
   const [checkInFile, setCheckInFile] = React.useState<File | null>(null);
   const [checkInComment, setCheckInComment] = React.useState('');
@@ -766,6 +770,28 @@ const FileList: React.FC<FileListProps> = ({
   const refreshCurrentFolder = async () => {
     const nodeId = currentNode?.id || 'root';
     await dispatch(fetchChildren({ nodeId, sortBy, ascending: sortAscending, page, size: pageSize }));
+  };
+
+  // Browse-list rows do not carry `smart`/`queryCriteria`, so fetch the folder detail at click
+  // time (the only shape that has them). Open the editor only if it is actually a smart folder.
+  // The menu closes on click (acknowledging the action); the guard prevents a second concurrent
+  // fetch if the operator re-opens the menu and clicks again before the first resolves.
+  const handleEditSmartFolder = async (node: Node) => {
+    handleCloseContextMenu();
+    if (smartFolderLoading) return;
+    setSmartFolderLoading(true);
+    try {
+      const folder = await nodeService.getFolder(node.id);
+      if (folder.smart) {
+        setEditSmartFolderNode(folder);
+      } else {
+        toast.info('This folder is not a smart folder');
+      }
+    } catch {
+      // getFolder failures (e.g. permission) are surfaced by the api response interceptor.
+    } finally {
+      setSmartFolderLoading(false);
+    }
   };
 
   const openMoveCopyDialog = (mode: 'move' | 'copy') => {
@@ -1501,6 +1527,14 @@ const FileList: React.FC<FileListProps> = ({
           </ListItemIcon>
           <ListItemText>{contextMenu?.node && followedNodeIds.has(contextMenu.node.id) ? 'Unfollow Node' : 'Follow Node'}</ListItemText>
         </MenuItem>
+        {canWrite && contextMenu && contextMenu.node.nodeType === 'FOLDER' && (
+          <MenuItem onClick={() => contextMenu && handleEditSmartFolder(contextMenu.node)}>
+            <ListItemIcon>
+              <Edit fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Edit Smart Folder</ListItemText>
+          </MenuItem>
+        )}
         {canWrite && contextMenu && (
           renderContextMenuItem({
             disabledReason: getFileLockActionReason(contextMenu.node, 'delete this item', currentUsername)
@@ -1531,6 +1565,13 @@ const FileList: React.FC<FileListProps> = ({
           <Button onClick={() => setNameDialogNode(null)}>Close</Button>
         </DialogActions>
       </Dialog>
+
+      <EditSmartFolderDialog
+        open={Boolean(editSmartFolderNode)}
+        folder={editSmartFolderNode}
+        onClose={() => setEditSmartFolderNode(null)}
+        onUpdated={refreshCurrentFolder}
+      />
 
       <Dialog
         open={Boolean(lockDialogNode)}
