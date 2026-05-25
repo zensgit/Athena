@@ -212,7 +212,54 @@ public class VersionService {
 
         return versionRepository.findByDocumentIdOrderByVersionNumberDesc(documentId, pageable);
     }
-    
+
+    /**
+     * Build a CSV of a document's version history. Reuses {@link #getVersionHistory(UUID, boolean)}
+     * so the READ permission check applies identically (export === view). Columns are aligned to the
+     * already-public {@link VersionDto}/UI fields; internal contentHash/contentId are excluded.
+     */
+    public String exportVersionHistoryCsv(UUID documentId, boolean majorOnly) {
+        List<Version> versions = getVersionHistory(documentId, majorOnly); // enforces READ
+        StringBuilder csv = new StringBuilder();
+        appendCsvRow(csv, "Version Label", "Created Date", "Created By", "Comment",
+            "Size (bytes)", "Major", "MIME Type", "Status");
+        for (Version version : versions) {
+            VersionDto dto = VersionDto.from(version);
+            if (dto == null) {
+                continue;
+            }
+            appendCsvRow(csv,
+                dto.versionLabel(),
+                dto.createdDate(),
+                dto.creator(),
+                dto.comment(),
+                dto.size(),
+                dto.major(),
+                dto.mimeType(),
+                dto.status());
+        }
+        return csv.toString();
+    }
+
+    private static void appendCsvRow(StringBuilder target, Object... values) {
+        target.append(Arrays.stream(values)
+                .map(VersionService::csvEscape)
+                .collect(Collectors.joining(",")))
+            .append("\n");
+    }
+
+    // RFC-4180 quoting, matching the established csvEscape pattern used elsewhere (mail exports).
+    private static String csvEscape(Object value) {
+        if (value == null) {
+            return "";
+        }
+        String text = value.toString();
+        if (text.contains("\"") || text.contains(",") || text.contains("\n") || text.contains("\r")) {
+            return "\"" + text.replace("\"", "\"\"") + "\"";
+        }
+        return text;
+    }
+
     public Version getVersion(UUID versionId) {
         Version version = versionRepository.findById(versionId)
             .orElseThrow(() -> new NoSuchElementException("Version not found: " + versionId));

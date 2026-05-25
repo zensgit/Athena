@@ -154,6 +154,33 @@ describe('nodeService version/history response shape guards', () => {
     );
   });
 
+  it('exportVersionHistoryCsv downloads the CSV with majorOnly param and a sanitized, dated filename', async () => {
+    mockedApi.get.mockResolvedValueOnce(validNodeDetails); // getNode for the filename
+    mockedApi.downloadFile.mockResolvedValueOnce(undefined);
+
+    await nodeService.exportVersionHistoryCsv('doc-1');
+
+    expect(mockedApi.get).toHaveBeenNthCalledWith(1, '/nodes/doc-1');
+    expect(mockedApi.downloadFile).toHaveBeenLastCalledWith(
+      '/documents/doc-1/versions/export',
+      expect.stringMatching(/^Contract\.pdf-versions-\d{8}-\d{6}\.csv$/),
+      { params: { majorOnly: false } },
+    );
+  });
+
+  it('exportVersionHistoryCsv forwards majorOnly=true', async () => {
+    mockedApi.get.mockResolvedValueOnce(validNodeDetails);
+    mockedApi.downloadFile.mockResolvedValueOnce(undefined);
+
+    await nodeService.exportVersionHistoryCsv('doc-1', true);
+
+    expect(mockedApi.downloadFile).toHaveBeenLastCalledWith(
+      '/documents/doc-1/versions/export',
+      expect.stringMatching(/-versions-\d{8}-\d{6}\.csv$/),
+      { params: { majorOnly: true } },
+    );
+  });
+
   it('guards getVersionTextDiff while preserving no-diff fallback and params', async () => {
     mockedApi.get.mockResolvedValueOnce({
       textDiff: {

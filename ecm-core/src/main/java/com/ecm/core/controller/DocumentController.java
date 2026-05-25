@@ -210,6 +210,36 @@ public class DocumentController {
         return ResponseEntity.ok(versions.map(VersionDto::from));
     }
 
+    @GetMapping("/{documentId}/versions/export")
+    @Operation(summary = "Export version history as CSV",
+        description = "Export a document's version history as a CSV attachment")
+    public ResponseEntity<String> exportVersionHistory(
+            @Parameter(description = "Document ID") @PathVariable UUID documentId,
+            @RequestParam(defaultValue = "false") boolean majorOnly) {
+        // Enforces the READ permission check (export === view); 404 if the document is missing.
+        String csv = versionService.exportVersionHistoryCsv(documentId, majorOnly);
+
+        Document document = (Document) nodeService.getNode(documentId);
+        String baseName = document != null && document.getName() != null && !document.getName().isBlank()
+            ? document.getName()
+            : documentId.toString();
+        // Sanitize for a safe download filename; fall back to documentId when blank.
+        String safeName = baseName.replaceAll("[^A-Za-z0-9._-]", "_");
+        if (safeName.isBlank()) {
+            safeName = documentId.toString();
+        }
+        String timestamp = java.time.LocalDateTime.now()
+            .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
+        String filename = safeName + "-versions-" + timestamp + ".csv";
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.valueOf("text/csv"));
+        headers.setContentDisposition(ContentDisposition.attachment()
+            .filename(filename, StandardCharsets.UTF_8)
+            .build());
+        return ResponseEntity.ok().headers(headers).body(csv);
+    }
+
     @GetMapping("/{documentId}/versions/compare")
     @Operation(summary = "Compare versions", description = "Compare two specific versions (optionally including a small text diff).")
     public ResponseEntity<VersionCompareResultDto> compareVersions(

@@ -3370,6 +3370,23 @@ class NodeService {
     return versions.map((version) => mapApiVersionResponseToVersion(version, nodeId));
   }
 
+  // Downloads the version history as a CSV attachment (GET /documents/{id}/versions/export).
+  // The backend enforces the same READ permission as viewing versions and sets a sanitized
+  // Content-Disposition filename; the client filename below is the saved-as default.
+  async exportVersionHistoryCsv(nodeId: string, majorOnly = false): Promise<void> {
+    const node = await this.getNode(nodeId).catch(() => null);
+    const base = node?.name && node.name.trim() ? node.name : nodeId;
+    const safeName = base.replace(/[^A-Za-z0-9._-]/g, '_') || nodeId;
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const ts = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+    return api.downloadFile(
+      `/documents/${nodeId}/versions/export`,
+      `${safeName}-versions-${ts}.csv`,
+      { params: { majorOnly } },
+    );
+  }
+
   async getVersionHistoryPage(
     nodeId: string,
     page = 0,

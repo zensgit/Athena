@@ -214,6 +214,17 @@ const VersionHistoryDialog: React.FC = () => {
     }
   };
 
+  const handleExportCsv = async () => {
+    if (!selectedNodeId) return;
+    try {
+      await nodeService.exportVersionHistoryCsv(selectedNodeId);
+      toast.success('Version history exported');
+    } catch (error) {
+      // Server errors are surfaced by the api response interceptor's toast; add a fallback.
+      toast.error('Failed to export version history');
+    }
+  };
+
   const handleConfirmAction = async () => {
     if (!pendingAction) {
       return;
@@ -745,6 +756,13 @@ const VersionHistoryDialog: React.FC = () => {
         </Menu>
       </DialogContent>
       <DialogActions>
+        <Button
+          onClick={handleExportCsv}
+          disabled={loading || versions.length === 0}
+          data-testid="version-export-csv"
+        >
+          Export CSV
+        </Button>
         <Button onClick={handleClose}>Close</Button>
       </DialogActions>
 
