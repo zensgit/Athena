@@ -163,3 +163,77 @@ git diff --stat -- 'ecm-core/src/main/resources/' # empty
 ```
 
 Confirmed at time of writing.
+
+---
+
+# Refresh after Top 3 delivery (2026-05-24, same day)
+
+This section supersedes the **Top 3** above — all three are now delivered. It is appended to the original (rather than spun out as a same-day twin file) to keep one continuous discovery trail for the gate. No code/test/schema/`.env` touched by this refresh.
+
+## Top 3 status: all delivered
+
+| # | Candidate | Delivered by |
+|---|---|---|
+| 1 | Bulk site invitation | `e7f76c3` (+ `2da7fd6` align, `2e6406a` CI) |
+| 2 | Legal-hold bulk-apply + structured release-reason | `32381d8` (migration 094, `96a7ae1` align, `9966b0e` CI) |
+| 3 | Bulk record declaration with category assignment | `0a597d3` (+ `4bc9856` comma/semicolon drain polish, `2cfbe11` CI) |
+
+The original ranking is therefore spent. What follows re-evaluates the three carried **honest mentions** (A/B/C) against current code, resolves their open questions, scans for genuinely new candidates, and re-ranks.
+
+## Carried honest mentions — resolved
+
+### A. Email notification on scheduled RM preset delivery → **ALREADY DELIVERED (exclude)**
+
+The prior doc flagged A as memory-risk (`project_rm_preset_delivery_closeout`) "exclude unless gate waives." That question is moot: the notification lane already shipped.
+- `4653f3e feat(rm): P5 PR-123..133 preset delivery notification lane (Codex)`
+- `9b2d5f1` integration+verification bundle, `08f7b0e`/`3a804f0` closeout, `0f866be docs: P5 notification lane handoff + email lane entry (PR-159)`.
+
+The `RecordsManagementPage.tsx` email-notification preference toggles the prior doc cited as "unwired" are part of this already-delivered lane. **A is dead** — both delivered AND on the closeout surface. Not a candidate.
+
+### B. Mail rule preview-export to folder → **RE-AFFIRMED real gap (promote)**
+
+- `MailFetcherService.java:418-598` — `previewRule()` returns `MailRulePreviewResult.matchedMessages` in memory; **no export path**.
+- No `*/preview/export*` endpoint; frontend grep for an export-preview surface returned only unrelated `preview-queue` diagnostics utils (no mail-rule preview export button).
+- Gap is real and unchanged: operators can *see* the preview in-UI but cannot durably stage/schedule it to a folder.
+
+### C. Smart-folder content refresh + query-criteria editor → **scope question RESOLVED; refresh half is a non-gap, editor half is real (promote, reframed)**
+
+Open question was: materialized vs live-on-read. **Verdict: LIVE-ON-READ.**
+- `FolderService.java:185,190` — `getFolderContents` routes smart folders to `getSmartFolderContents`.
+- `FolderService.java:500-548` — `getSmartFolderContents` calls `searchService.search(request)` (`:519`) on every fetch; results are not stored/cached.
+
+→ A **"Refresh contents"** affordance is **redundant** (every read is already fresh). Drop that half.
+
+The **post-create query editor** half is a real gap:
+- Backend update path already exists: `FolderController.java:118` `updateFolder` accepts `queryCriteria` (`:131`); `FolderService.java:553-562` applies smart-folder criteria updates (guards "queryCriteria is only supported for smart folders").
+- Frontend has **no edit surface at all**: `queryCriteria` appears only in `CreateFolderDialog.tsx` (create-only) + services/types; grep for `EditFolder`/`updateFolder` in `*.tsx`/`*.ts` returned nothing. The backend `updateFolder` queryCriteria path is unreachable from the UI.
+
+Reframed candidate **C′: Smart-folder post-create query-criteria editor** — wire a dialog to the existing PUT endpoint. Backend infra exists; frontend-only slice.
+
+## New scan — one new candidate, demoted
+
+### F. Bulk transfer-target / replication-definition submission → **honest mention (no operator-volume signal)**
+
+- Gap is technically real: `TransferReplicationController.java:37` `POST /transfer/targets` and `:79` `POST /replication/definitions` are single-item; no bulk endpoint.
+- **But** the bulk-invite pattern does not generalize here: transfer receivers/targets/replication definitions are configured **once per remote site** (each target even has its own `:54`/`/verify` step), not a paste-N-rows workflow. No evidence operators set up many at once.
+- Carried as honest mention only — promotable only on a concrete operator-volume signal.
+
+No other operator-visible gaps surfaced in the `git log -60` / closeout-doc / `TODO|FIXME` sweep that clear the "user value, not cleanup" bar and the test-surface exclusion.
+
+## Re-ranking (live candidates)
+
+| Rank | Candidate | Surface | Size | Risk | Why |
+|---|---|---|---|---|---|
+| **1** | **B — Mail rule preview export to folder** | Mail automation | Medium 1-2pd (one-shot); larger if scheduled | Medium | **Default pick.** Completes a feature that is currently read-only — clearest value story (preview → actionable staging before live rule activation). |
+| **2** | **C′ — Smart-folder post-create query editor** | Smart folders | Small <1pd | Low | Smaller/lower-risk and backend already exists, but value is more speculative (no operator-request signal; smart-folder adoption unknown). Pick this if fastest low-risk win is the priority. |
+| — | **F — Bulk transfer/replication submit** | Transfer/replication | Small | Low | Honest mention; gap real but no operator-volume signal. |
+| — | A (RM preset email), C-refresh half | — | — | — | Excluded: A delivered (`4653f3e`); refresh is a non-gap (live-on-read). |
+
+**Ranking tradeoff (for the gate to weigh):** C′ is the smaller, lower-risk, backend-ready slice; B has the stronger user-value story but is medium-sized and grows if scheduling is in scope. Ranked B first on value-per-feature-completion; flip to C′ first if the priority is a fast, contained low-risk win.
+
+Parallelizable: B (mail) and C′ (folders) share no code surface.
+
+## What this refresh does not commit to
+
+- No track opened; no code/test/frontend/schema/`.env` change; no commits by the refresh itself (gate decides).
+- Each promoted candidate (B, C′) still needs a formal read-only worker brief + gate adjudication before code, per the established discovery→brief→gate flow.
