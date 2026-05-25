@@ -5,6 +5,7 @@ import com.ecm.core.repository.AuditLogRepository;
 import com.ecm.core.service.AuditService;
 import com.ecm.core.service.BulkMetadataService;
 import com.ecm.core.service.BulkOperationService;
+import com.ecm.core.service.BulkShareLinkService;
 import com.ecm.core.service.SecurityService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -32,6 +33,7 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -63,6 +65,9 @@ class BulkOperationControllerSecurityTest {
 
     @MockBean
     private BulkMetadataService bulkMetadataService;
+
+    @MockBean
+    private BulkShareLinkService bulkShareLinkService;
 
     @MockBean
     private AuditLogRepository auditLogRepository;
@@ -192,5 +197,42 @@ class BulkOperationControllerSecurityTest {
 
         mockMvc.perform(get("/api/v1/bulk/history"))
             .andExpect(status().isOk());
+    }
+
+    // ====== bulk share-links: same admin-or-editor gate ======
+
+    private static final String SHARE_BODY =
+        "{\"nodeIds\":[\"11111111-1111-4111-8111-111111111111\"],\"permissionLevel\":\"VIEW\"}";
+
+    @Test
+    @DisplayName("unauthenticated POST /bulk/share-links returns 401")
+    void unauthBulkShareLinks() throws Exception {
+        mockMvc.perform(post("/api/v1/bulk/share-links")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(SHARE_BODY))
+            .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    @DisplayName("ROLE_USER cannot bulk-create share links (admin-or-editor gate)")
+    void userCannotBulkShareLinks() throws Exception {
+        mockMvc.perform(post("/api/v1/bulk/share-links")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(SHARE_BODY))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(roles = "EDITOR")
+    @DisplayName("ROLE_EDITOR can bulk-create share links (gate admits editor)")
+    void editorCanBulkShareLinks() throws Exception {
+        when(bulkShareLinkService.createShareLinksBulk(any(), any())).thenReturn(List.of());
+
+        mockMvc.perform(post("/api/v1/bulk/share-links")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(SHARE_BODY))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.bulkShareLinkCreateResults.rows").isArray());
     }
 }

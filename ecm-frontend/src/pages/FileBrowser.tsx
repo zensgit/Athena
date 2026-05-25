@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -31,6 +31,7 @@ import {
   Download,
   EditNote,
   Refresh,
+  Share,
 } from '@mui/icons-material';
 import { useAppDispatch, useAppSelector } from 'store';
 import { fetchNode, fetchChildren, clearSelection } from 'store/slices/nodeSlice';
@@ -38,6 +39,7 @@ import { setSidebarOpen, setViewMode } from 'store/slices/uiSlice';
 import FileBreadcrumb from 'components/browser/FileBreadcrumb';
 import FileList from 'components/browser/FileList';
 import BulkMetadataDialog from 'components/dialogs/BulkMetadataDialog';
+import BulkShareLinksDialog from 'components/share/BulkShareLinksDialog';
 import { Node } from 'types';
 import nodeService, { BatchDownloadAsyncStatus, BatchDownloadAsyncTask, BatchDownloadPreflightResponse } from 'services/nodeService';
 import bulkOperationService, {
@@ -150,6 +152,12 @@ const FileBrowser: React.FC = () => {
   const [previewNode, setPreviewNode] = useState<Node | null>(null);
   const [previewAnnotate, setPreviewAnnotate] = useState(false);
   const [bulkMetadataOpen, setBulkMetadataOpen] = useState(false);
+  const [bulkShareOpen, setBulkShareOpen] = useState(false);
+  // Bulk share applies to documents only (gate D4): map selected IDs to the document children.
+  const selectedDocumentIds = useMemo(
+    () => nodes.filter((n) => selectedNodes.includes(n.id) && n.nodeType === 'DOCUMENT').map((n) => n.id),
+    [nodes, selectedNodes],
+  );
   const [loadingStartedAt, setLoadingStartedAt] = useState<number | null>(null);
   const [loadingWatchdogTriggered, setLoadingWatchdogTriggered] = useState(false);
   const [bulkHistory, setBulkHistory] = useState<BulkHistoryItem[]>([]);
@@ -712,6 +720,17 @@ const FileBrowser: React.FC = () => {
                 <EditNote />
               </IconButton>
             )}
+            {canWrite && selectedDocumentIds.length > 0 && (
+              <IconButton
+                onClick={() => setBulkShareOpen(true)}
+                color="primary"
+                size="small"
+                aria-label="Create share links for selected documents"
+                data-testid="bulk-share-open"
+              >
+                <Share />
+              </IconButton>
+            )}
             {canWrite && (
               <IconButton onClick={handleDelete} color="error" size="small" aria-label="Delete selected">
                 <Delete />
@@ -1202,6 +1221,13 @@ const FileBrowser: React.FC = () => {
           await loadNodeData();
           await loadBulkGovernanceData();
         }}
+      />
+
+      <BulkShareLinksDialog
+        open={bulkShareOpen}
+        documentIds={selectedDocumentIds}
+        excludedNonDocumentCount={selectedNodes.length - selectedDocumentIds.length}
+        onClose={() => setBulkShareOpen(false)}
       />
     </Box>
   );

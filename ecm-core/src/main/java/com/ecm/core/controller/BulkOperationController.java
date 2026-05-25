@@ -3,10 +3,13 @@ package com.ecm.core.controller;
 import com.ecm.core.entity.AuditLog;
 import com.ecm.core.repository.AuditLogRepository;
 import com.ecm.core.service.AuditService;
+import com.ecm.core.entity.ShareLink;
 import com.ecm.core.service.BulkMetadataService;
 import com.ecm.core.service.BulkOperationService;
 import com.ecm.core.service.BulkOperationService.BulkOperationResult;
+import com.ecm.core.service.BulkShareLinkService;
 import com.ecm.core.service.SecurityService;
+import com.ecm.core.service.ShareLinkService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -41,6 +44,7 @@ public class BulkOperationController {
 
     private final BulkOperationService bulkService;
     private final BulkMetadataService bulkMetadataService;
+    private final BulkShareLinkService bulkShareLinkService;
     private final AuditLogRepository auditLogRepository;
     private final AuditService auditService;
     private final SecurityService securityService;
@@ -86,6 +90,56 @@ public class BulkOperationController {
             @RequestBody BulkMetadataService.BulkMetadataRequest request) {
         return ResponseEntity.ok(bulkMetadataService.applyMetadata(request));
     }
+
+    @PostMapping("/share-links")
+    @Operation(summary = "Bulk create share links",
+        description = "Create share links for selected documents with per-row partial success")
+    @PreAuthorize("hasAnyRole('ADMIN', 'EDITOR')")
+    public ResponseEntity<BulkShareLinkCreateResponse> bulkCreateShareLinks(
+            @RequestBody BulkShareLinkCreateRequest request) {
+        ShareLinkService.CreateShareLinkRequest serviceRequest = new ShareLinkService.CreateShareLinkRequest(
+            request.name(),
+            request.expiryDate(),
+            request.maxAccessCount(),
+            request.permissionLevel(),
+            request.password(),
+            request.allowedIps()
+        );
+        List<BulkShareLinkService.RowResult> rows =
+            bulkShareLinkService.createShareLinksBulk(request.nodeIds(), serviceRequest);
+
+        List<BulkShareLinkCreateResult> responseRows = rows.stream()
+            .map(row -> new BulkShareLinkCreateResult(
+                row.nodeId(),
+                row.status(),
+                row.shareLink() != null ? ShareLinkController.ShareLinkResponse.from(row.shareLink()) : null,
+                row.errorCategory(),
+                row.message()))
+            .toList();
+        return ResponseEntity.ok(new BulkShareLinkCreateResponse(new BulkShareLinkCreateResults(responseRows)));
+    }
+
+    public record BulkShareLinkCreateRequest(
+        List<UUID> nodeIds,
+        String name,
+        LocalDateTime expiryDate,
+        Integer maxAccessCount,
+        ShareLink.SharePermission permissionLevel,
+        String password,
+        String allowedIps
+    ) {}
+
+    public record BulkShareLinkCreateResult(
+        UUID nodeId,
+        BulkShareLinkService.Status status,
+        ShareLinkController.ShareLinkResponse shareLink,
+        BulkShareLinkService.ErrorCategory errorCategory,
+        String message
+    ) {}
+
+    public record BulkShareLinkCreateResults(List<BulkShareLinkCreateResult> rows) {}
+
+    public record BulkShareLinkCreateResponse(BulkShareLinkCreateResults bulkShareLinkCreateResults) {}
 
     @GetMapping("/history")
     @Operation(

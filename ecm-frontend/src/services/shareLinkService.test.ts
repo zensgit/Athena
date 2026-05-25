@@ -175,3 +175,62 @@ describe('shareLinkService response guards', () => {
     expect(mockedApi.delete).toHaveBeenCalledWith('/share/token-1');
   });
 });
+
+describe('shareLinkService.bulkCreateLinks', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  const request = { nodeIds: ['node-1', 'node-2'], permissionLevel: 'VIEW' as const };
+
+  const wrap = (rows: unknown[]) => ({ bulkShareLinkCreateResults: { rows } });
+
+  it('posts to /bulk/share-links and parses a mixed CREATED/FAILED result', async () => {
+    const payload = wrap([
+      { nodeId: 'node-1', status: 'CREATED', shareLink, errorCategory: null, message: null },
+      { nodeId: 'node-2', status: 'FAILED', shareLink: null, errorCategory: 'NO_PERMISSION', message: 'No permission to share the target node.' },
+    ]);
+    mockedApi.post.mockResolvedValueOnce(payload);
+
+    await expect(shareLinkService.bulkCreateLinks(request)).resolves.toEqual(payload);
+    expect(mockedApi.post).toHaveBeenCalledWith('/bulk/share-links', request);
+  });
+
+  it('rejects an HTML/SPA fallback with the sentinel', async () => {
+    mockedApi.post.mockResolvedValueOnce('<!doctype html><html></html>');
+    await expect(shareLinkService.bulkCreateLinks(request)).rejects.toThrow(SHARE_LINK_UNEXPECTED_RESPONSE_MESSAGE);
+  });
+
+  it('rejects a missing wrapper / non-array rows', async () => {
+    mockedApi.post.mockResolvedValueOnce({ rows: [] });
+    await expect(shareLinkService.bulkCreateLinks(request)).rejects.toThrow(SHARE_LINK_UNEXPECTED_RESPONSE_MESSAGE);
+  });
+
+  it('rejects a CREATED row without a shareLink', async () => {
+    mockedApi.post.mockResolvedValueOnce(wrap([
+      { nodeId: 'node-1', status: 'CREATED', shareLink: null, errorCategory: null, message: null },
+    ]));
+    await expect(shareLinkService.bulkCreateLinks(request)).rejects.toThrow(SHARE_LINK_UNEXPECTED_RESPONSE_MESSAGE);
+  });
+
+  it('rejects a FAILED row without an errorCategory', async () => {
+    mockedApi.post.mockResolvedValueOnce(wrap([
+      { nodeId: 'node-1', status: 'FAILED', shareLink: null, errorCategory: null, message: 'boom' },
+    ]));
+    await expect(shareLinkService.bulkCreateLinks(request)).rejects.toThrow(SHARE_LINK_UNEXPECTED_RESPONSE_MESSAGE);
+  });
+
+  it('rejects an unknown status', async () => {
+    mockedApi.post.mockResolvedValueOnce(wrap([
+      { nodeId: 'node-1', status: 'TELEPORTED', shareLink: null, errorCategory: null, message: null },
+    ]));
+    await expect(shareLinkService.bulkCreateLinks(request)).rejects.toThrow(SHARE_LINK_UNEXPECTED_RESPONSE_MESSAGE);
+  });
+
+  it('rejects an unknown errorCategory on a FAILED row', async () => {
+    mockedApi.post.mockResolvedValueOnce(wrap([
+      { nodeId: 'node-1', status: 'FAILED', shareLink: null, errorCategory: 'WAT', message: 'boom' },
+    ]));
+    await expect(shareLinkService.bulkCreateLinks(request)).rejects.toThrow(SHARE_LINK_UNEXPECTED_RESPONSE_MESSAGE);
+  });
+});

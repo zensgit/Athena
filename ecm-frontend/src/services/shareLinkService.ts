@@ -57,6 +57,31 @@ export interface UpdateShareLinkRequest extends CreateShareLinkRequest {
   active?: boolean;
 }
 
+export type BulkShareLinkStatus = 'CREATED' | 'FAILED';
+export type BulkShareLinkErrorCategory =
+  | 'NODE_NOT_FOUND'
+  | 'NO_PERMISSION'
+  | 'VALIDATION_ERROR'
+  | 'INTERNAL_ERROR';
+
+export interface BulkCreateShareLinksRequest extends CreateShareLinkRequest {
+  nodeIds: string[];
+}
+
+export interface BulkCreateShareLinkResult {
+  nodeId: string;
+  status: BulkShareLinkStatus;
+  shareLink?: ShareLink | null;
+  errorCategory?: BulkShareLinkErrorCategory | null;
+  message?: string | null;
+}
+
+export interface BulkCreateShareLinksResponse {
+  bulkShareLinkCreateResults: {
+    rows: BulkCreateShareLinkResult[];
+  };
+}
+
 export interface AccessLogEntry {
   id: string;
   accessedAt: string;
@@ -96,6 +121,38 @@ const isShareLink = (value: unknown): value is ShareLink => {
     && typeof value.passwordProtected === 'boolean'
     && typeof value.hasIpRestrictions === 'boolean'
     && typeof value.isValid === 'boolean';
+};
+
+const BULK_STATUSES: BulkShareLinkStatus[] = ['CREATED', 'FAILED'];
+const BULK_ERROR_CATEGORIES: BulkShareLinkErrorCategory[] = [
+  'NODE_NOT_FOUND', 'NO_PERMISSION', 'VALIDATION_ERROR', 'INTERNAL_ERROR',
+];
+const isNullish = (value: unknown): boolean => value === null || value === undefined;
+
+const isBulkCreateShareLinkResult = (value: unknown): value is BulkCreateShareLinkResult => {
+  if (!isObject(value)) return false;
+  if (typeof value.nodeId !== 'string') return false;
+  if (typeof value.status !== 'string' || !(BULK_STATUSES as string[]).includes(value.status)) return false;
+  // Status-keyed invariants (closed set): CREATED carries a valid ShareLink and no error;
+  // FAILED carries a known errorCategory and no shareLink. Mirrors the bulk-declare contract lock.
+  if (value.status === 'CREATED') {
+    return isShareLink(value.shareLink) && isNullish(value.errorCategory) && isNullish(value.message);
+  }
+  return isNullish(value.shareLink)
+    && typeof value.errorCategory === 'string'
+    && (BULK_ERROR_CATEGORIES as string[]).includes(value.errorCategory);
+};
+
+const assertBulkCreateShareLinksResponse = (value: unknown): BulkCreateShareLinksResponse => {
+  if (
+    isObject(value)
+    && isObject(value.bulkShareLinkCreateResults)
+    && Array.isArray((value.bulkShareLinkCreateResults as Record<string, unknown>).rows)
+    && ((value.bulkShareLinkCreateResults as { rows: unknown[] }).rows).every(isBulkCreateShareLinkResult)
+  ) {
+    return value as unknown as BulkCreateShareLinksResponse;
+  }
+  return assertUnexpectedResponse();
 };
 
 const assertShareLink = (value: unknown): ShareLink => (
@@ -155,6 +212,13 @@ class ShareLinkService {
   async createLink(nodeId: string, data: CreateShareLinkRequest): Promise<ShareLink> {
     const result = await api.post<unknown>(`/share/nodes/${nodeId}`, data);
     return assertShareLink(result);
+  }
+
+  async bulkCreateLinks(request: BulkCreateShareLinksRequest): Promise<BulkCreateShareLinksResponse> {
+    const result = await api.post<unknown>('/bulk/share-links', request);
+    // assertBulkCreateShareLinksResponse throws the sentinel on a Phase-5 SPA HTML fallback or any
+    // non-conforming body, so the per-row contract is never parsed from HTML.
+    return assertBulkCreateShareLinksResponse(result);
   }
 
   async updateLink(token: string, data: UpdateShareLinkRequest): Promise<ShareLink> {
