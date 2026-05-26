@@ -233,6 +233,6 @@ MIT License - see LICENSE file for details.
 
 ---
 
-**Status**: ✅ **Production Ready**
+**Status**: Architecture is production-grade; **deployment configuration is pre-production** (hardening required before external/internet-facing use). Delivery posture: internal UAT (non-real data, controlled network) deliverable now; pilot with real data needs the P0a hardening + secret untrack/rotation; external production additionally needs the P0b items + a hardened-config full-stack smoke. See `docs/PRODUCTION_READINESS_ASSESSMENT_20260525.md` (§8 Hardening Matrix) for the authoritative gate.
 **Version**: 1.0.0
-**Last Updated**: 2024
+**Last Updated**: 2026-05

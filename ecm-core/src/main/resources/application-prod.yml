@@ -1,0 +1,34 @@
+# Production profile — activate with SPRING_PROFILES_ACTIVE=prod.
+#
+# Required infrastructure credentials are sourced from the environment with NO default, so the
+# app fails fast at startup if any is missing (no silent fallback to dev defaults / localhost).
+# Optional integration credentials (Odoo / WPS) are intentionally NOT forced here — their weak
+# source defaults are removed (empty default) so an unused integration does not block startup.
+# Schema is Liquibase-managed, so Hibernate only validates (never auto-mutates) in production.
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  elasticsearch:
+    uris: ${SPRING_ELASTICSEARCH_URIS}
+    username: ${SPRING_ELASTICSEARCH_USERNAME}
+    password: ${SPRING_ELASTICSEARCH_PASSWORD}
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST}
+      password: ${SPRING_DATA_REDIS_PASSWORD}
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST}
+    username: ${SPRING_RABBITMQ_USERNAME}
+    password: ${SPRING_RABBITMQ_PASSWORD}
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # The real token-validation inputs (NimbusJwtDecoder). No localhost/keycloak default.
+          issuer-uri: ${SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI}
+          jwk-set-uri: ${SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI}

@@ -48,7 +48,8 @@ public class WpsIntegrationService {
     @Value("${ecm.wps.appid:athena_ecm}")
     private String appId;
 
-    @Value("${ecm.wps.appkey:secret_key}")
+    // Optional integration credential: empty default (no weak secret literal); validated when WPS is used.
+    @Value("${ecm.wps.appkey:}")
     private String appKey;
 
     @Value("${ecm.wps.domain:https://wwo.wps.cn/office/}")

@@ -29,7 +29,8 @@ public class OdooIntegrationService {
     @Value("${ecm.odoo.username:admin}")
     private String odooUsername;
 
-    @Value("${ecm.odoo.password:admin}")
+    // Optional integration credential: empty default (no weak secret literal); validated when Odoo is used.
+    @Value("${ecm.odoo.password:}")
     private String odooPassword;
 
     private Integer uid;

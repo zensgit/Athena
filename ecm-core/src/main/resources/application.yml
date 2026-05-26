@@ -164,9 +164,9 @@ ecm:
     max-text-length: 10485760  # 10MB of text
 
   security:
-    jwt:
-      secret: ${JWT_SECRET:mySecretKey}
-      expiration: 86400000
+    # NOTE: JWT validation is delegated to the OAuth2 resource server
+    # (spring.security.oauth2.resourceserver.jwt.jwk-set-uri -> NimbusJwtDecoder). The former
+    # `jwt.secret`/`jwt.expiration` keys had no Java consumer and were removed (no weak default).
     secret:
       enabled: ${ECM_SECURITY_SECRET_ENABLED:false}
       active-key-version: ${ECM_SECURITY_SECRET_ACTIVE_KEY_VERSION:v1}
@@ -284,10 +284,11 @@ ecm:
       version: 7.0
   
   odoo:
-    url: http://localhost:8069
-    database: odoo_db
-    username: admin
-    password: admin_password
+    url: ${ECM_ODOO_URL:http://localhost:8069}
+    database: ${ECM_ODOO_DATABASE:odoo_db}
+    username: ${ECM_ODOO_USERNAME:admin}
+    # Optional integration credential: env-sourced, empty default (no weak secret literal).
+    password: ${ECM_ODOO_PASSWORD:}
     api-key: ${ODOO_API_KEY:}
 
   antivirus:
