@@ -29,6 +29,7 @@ Date: 2026-05-26 · Supersedes the ranking in `docs/PRODUCT_CAPABILITY_DISCOVERY
 - **No backend-ready-but-UI-missing gap** with genuine operator value. Bulk pattern is mature (`BulkOperationController`: move/copy/delete/restore/metadata/share-links); export pattern is mature (analytics audit export + async, version-history CSV, saved-search CSV, search-preview CSV).
 - **No new "view but no export"** worth a slice.
 - **Zero captured-demand signals** in code or recent docs.
+- **Alfresco service-contract 对标** (separate doc: `docs/ALFRESCO_SERVICE_CONTRACT_PARITY_20260526.md`): the `com.ecm.core.alfresco.*` shim is unused, self-contained Alfresco-*shaped* scaffolding (no `org.alfresco` dep, no consumer — 4-way verified); completing it = recreate Foundation API (forbidden by `CLAUDE.md`). C4's two stubs live in unconsumed code (blast radius lower than the matrix implies; matrix unchanged). The consumed Alfresco-interop contract is **CMIS** (already roadmap-complete). No demand-backed slice; only a hygiene item (document-vs-delete the shim — owner's call) and a contingent Foundation-API-drop-in track if a real customer signal appears.
 
 ## Recommendation
 
