@@ -14,6 +14,10 @@
 services:
   ecm-core:
     ports: !reset []
+    # Drop the base dev env files (.env / .env.mail): prod injects everything via explicit env /
+    # secret custodian (S1/S2). Without this reset the merged prod config would (a) read local dev
+    # env files — not a clean prod posture — and (b) fail on a clean clone where those files are absent.
+    env_file: !reset []
     environment:
       - SPRING_PROFILES_ACTIVE=prod
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB:?required}

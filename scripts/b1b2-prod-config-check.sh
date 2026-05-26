@@ -65,16 +65,29 @@ ls nginx/ssl/*.pem >/dev/null 2>&1 && fail "no cert/key (*.pem) may be committed
 # --- 7. Dev nginx.conf untouched (still HTTP-only) ---------------------------------------------
 grep -Eq '^\s*listen 443 ssl' "$DEV" && fail "dev nginx.conf must stay HTTP-only (443 block must remain commented)"
 
-# --- 8. Merged config parses (daemon-free), keycloak resolves to start -------------------------
+# --- 8. Merged config parses on a CLEAN CLONE (daemon-free) ------------------------------------
+# `--env-file /dev/null` stops Compose from auto-reading a local ./.env, so this reproduces a fresh
+# checkout (no dev env files). Dummy values cover every no-default ${VAR} in base+prod so a clean
+# clone validates purely from these exports — not from any residual local .env.
 export POSTGRES_DB=d POSTGRES_USER=u POSTGRES_PASSWORD=p ELASTIC_PASSWORD=e REDIS_PASSWORD=r \
   RABBITMQ_USER=ru RABBITMQ_PASSWORD=rp ECM_JWT_ISSUER_URI=https://kc.example/realms/ecm \
   ECM_JWT_JWK_SET_URI=http://keycloak:8080/realms/ecm/protocol/openid-connect/certs \
   ECM_SECURITY_CORS_ALLOWED_ORIGINS=https://app.example MINIO_ROOT_USER=mu MINIO_ROOT_PASSWORD=mp \
-  GF_SECURITY_ADMIN_USER=gu GF_SECURITY_ADMIN_PASSWORD=gp ECM_KEYCLOAK_PUBLIC_HOST=kc.example
+  GF_SECURITY_ADMIN_USER=gu GF_SECURITY_ADMIN_PASSWORD=gp ECM_KEYCLOAK_PUBLIC_HOST=kc.example \
+  KEYCLOAK_USER=ku KEYCLOAK_PASSWORD=kp KEYCLOAK_DB_USER=kdu KEYCLOAK_DB_PASSWORD=kdp \
+  MINIO_ACCESS_KEY=mak MINIO_SECRET_KEY=msk ODOO_DB_USER=odu ODOO_DB_PASSWORD=odp
 if command -v docker >/dev/null 2>&1; then
-    docker compose -f docker-compose.yml -f "$PROD" config >/dev/null \
-        || fail "merged 'docker compose config' did not validate"
-    echo "OK: merged docker compose config validates (daemon-free)."
+    merged=$(docker compose --env-file /dev/null -f docker-compose.yml -f "$PROD" config 2>/dev/null) \
+        || fail "merged 'docker compose config' did not validate on a clean clone (no local .env)"
+    # ecm-core must NOT inherit any env_file in prod (dropped via env_file: !reset []).
+    printf '%s' "$merged" | python3 -c '
+import sys,yaml
+d=yaml.safe_load(sys.stdin)
+ec=d["services"]["ecm-core"]
+ef=ec.get("env_file")
+sys.exit(1 if ef else 0)
+' || fail "prod ecm-core must drop base env files (env_file: !reset [] missing or ineffective)"
+    echo "OK: merged config validates on a clean clone (--env-file /dev/null); ecm-core has no env_file."
 else
     echo "SKIP: docker CLI not present — static checks only."
 fi
