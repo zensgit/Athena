@@ -59,20 +59,27 @@ This is the **canonical delivery-decision artifact** (no separate same-day doc).
 
 ### 8.1 P0a — code/config (implement after matrix gate; I build + CI-verify)
 
-| # | Item | Disposition | Evidence | Verification | CI-verifiable? |
-|---|---|---|---|---|---|
-| A1 | `ddl-auto: update` → `validate` (Liquibase owns schema; `update` lets Hibernate auto-alter) | must-fix | `application-docker.yml` (jpa ddl-auto) | prod profile uses `validate`; startup against migrated DB passes | partial (Docker-backed gate) |
-| A2 | `JWT_SECRET` fail-fast, **no** `mySecretKey` default | must-fix | `application.yml:168` | prod profile has no default; missing env → startup fails; unit test on config | Y (unit) |
-| A3 | Remove in-file service-password defaults in prod profile | must-fix | `application.yml:8,39,47,59,290` | prod profile sources all via env, no literals | Y (grep/config test) |
-| A4 | Actuator → `health` only (+`show-details: when-authorized`) / gate | must-fix | `SecurityConfig.java:48`, mgmt exposure | prod: non-health actuator 401/403; security test | Y (WebMvc test) |
-| A5 | Disable Swagger / `/v3/api-docs` in prod | must-fix | `SecurityConfig.java:49` | prod: docs routes 404/403 | Y |
-| A6 | CORS pinned to known origin(s), not `*` | must-fix | `SecurityConfig.java:84` | prod config rejects unlisted origin | Y |
-| A7 | Add `application-prod.yml` + `docker-compose.prod.yml` (app auth-on, no debug logging; service-security handled in A10) | must-fix | (absent) | files exist + lint; profile boots (full stack validated in B4) | partial |
-| A8 | Don't publish internal service ports; expose only nginx/TLS | must-fix | `docker-compose.yml` `ports:` | prod compose maps only 80/443 | N (manual/compose review) |
-| A9 | Pin image tags (no floating/`latest`) | must-fix | `docker-compose.yml` `image:` | every image has an explicit version/digest | Y (lint/grep) |
-| A10 | ES `xpack.security` on; MinIO/Grafana/Prometheus non-default creds via env | must-fix | `docker-compose.yml` (ES `xpack.security.enabled=false`, Grafana admin) | prod compose config/lint (Y); **full validation in B4** — turning ES security on affects app credentials + compose startup + the E2E stack, so ordinary CI cannot fully prove it | config-only Y / runtime N (B4) |
-| A11 | `ml-service` runs as non-root | must-fix | `ml-service/Dockerfile` (no `USER`) | image runs as non-root `id` | Y (build) |
-| A12 | README "Production Ready" → honest delivery posture | must-fix | `README.md` | wording matches this doc's verdict | review |
+**Reconciliation (2026-05-26): P0a is CLOSED.** All A-rows delivered across four slices —
+P0a-1 (A1/A2/A3/A12), P0a-2 (A4/A5/A6), P0a-3 (A7/A8/A9/A10), P0a-3b (A11). A1–A10 + A12 are
+**CI/config closed**; **A11 is static-closed, runtime pending B4** (CI never builds ml-service, no
+daemon on the build box). Config-only rows (A7/A8/A10) had their merged-compose shape verified
+on-box (`docker compose config`); their **full-stack runtime boot remains gate item B4**. Slice
+records: `HARDENING_P0A1_*`, `HARDENING_P0A2_*`, `HARDENING_P0A3_*`, `HARDENING_P0A3B_*` verification docs.
+
+| # | Item | Disposition | Evidence | Verification | CI-verifiable? | Status (2026-05-26) |
+|---|---|---|---|---|---|---|
+| A1 | `ddl-auto: update` → `validate` (Liquibase owns schema; `update` lets Hibernate auto-alter) | must-fix | `application-docker.yml` (jpa ddl-auto) | prod profile uses `validate`; startup against migrated DB passes | partial (Docker-backed gate) | ✅ closed — P0a-1 (`application-prod.yml` ddl-auto=validate; config test) |
+| A2 | `JWT_SECRET` fail-fast, **no** `mySecretKey` default | must-fix | `application.yml:168` | prod profile has no default; missing env → startup fails; unit test on config | Y (unit) | ✅ closed — P0a-1 (reframed to issuer/jwk no-default; dead `ecm.security.jwt` key removed) |
+| A3 | Remove in-file service-password defaults in prod profile | must-fix | `application.yml:8,39,47,59,290` | prod profile sources all via env, no literals | Y (grep/config test) | ✅ closed — P0a-1 (infra creds no-default; Odoo/WPS literals removed) |
+| A4 | Actuator → `health` only (+`show-details: when-authorized`) / gate | must-fix | `SecurityConfig.java:48`, mgmt exposure | prod: non-health actuator 401/403; security test | Y (WebMvc test) | ✅ closed — P0a-2 (gated exposure flags + WebMvc test) |
+| A5 | Disable Swagger / `/v3/api-docs` in prod | must-fix | `SecurityConfig.java:49` | prod: docs routes 404/403 | Y | ✅ closed — P0a-2 (springdoc disabled in prod) |
+| A6 | CORS pinned to known origin(s), not `*` | must-fix | `SecurityConfig.java:84` | prod config rejects unlisted origin | Y | ✅ closed — P0a-2 (CORS env-pinned, fail-fast on unset) |
+| A7 | Add `application-prod.yml` + `docker-compose.prod.yml` (app auth-on, no debug logging; service-security handled in A10) | must-fix | (absent) | files exist + lint; profile boots (full stack validated in B4) | partial | ✅ closed (config) — P0a-3 (both files exist, parse); runtime boot → **B4** |
+| A8 | Don't publish internal service ports; expose only nginx/TLS | must-fix | `docker-compose.yml` `ports:` | prod compose maps only 80/443 | N (manual/compose review) | ✅ closed (config) — P0a-3 (`!reset []`; `compose config` shows only nginx publishes) |
+| A9 | Pin image tags (no floating/`latest`) | must-fix | `docker-compose.yml` `image:` | every image has an explicit version/digest | Y (lint/grep) | ✅ closed — P0a-3 (3 `:latest` pinned; `:latest`=0; CI 7/7 green) |
+| A10 | ES `xpack.security` on; MinIO/Grafana/Prometheus non-default creds via env | must-fix | `docker-compose.yml` (ES `xpack.security.enabled=false`, Grafana admin) | prod compose config/lint (Y); **full validation in B4** — turning ES security on affects app credentials + compose startup + the E2E stack, so ordinary CI cannot fully prove it | config-only Y / runtime N (B4) | ✅ closed (config) — P0a-3 (ES security on, MinIO/Grafana creds env, fail-fast verified); runtime → **B4** |
+| A11 | `ml-service` runs as non-root | must-fix | `ml-service/Dockerfile` (no `USER`) | image runs as non-root `id` | Y (build) | ⏳ **static closed / runtime pending B4** — P0a-3b (uid 10001 + static guard green); CI never builds ml-service → runtime + brownfield `athena_ml_models` chown = owner/B4 |
+| A12 | README "Production Ready" → honest delivery posture | must-fix | `README.md` | wording matches this doc's verdict | review | ✅ closed — P0a-1 (README posture corrected, links this doc) |
 
 ### 8.2 Confirm-required — tracked-secret removal (separate; NOT mixed with A-rows)
 
@@ -106,4 +113,5 @@ Rationale for separating S1/S2: untracking is mechanical, but *rotation* and cus
 - **Internal UAT — non-real data, controlled network: deliverable now** (pre-hardening), with C1–C4 disclosed.
 - **Pilot — real data and/or non-controlled network: requires P0a + S1/S2 first** (not "now").
 - **External / public production:** gated on **all P0a + S1/S2 + P0b**, then a green **B4** smoke on the hardened config.
-- Next action after this matrix is gate-approved: open the **P0a slice only** (A1–A12, build + CI). S1/S2 and P0b stay with the owner; nothing claimed done from this box.
+- **P0a status (2026-05-26): DELIVERED.** A1–A10 + A12 CI/config-closed; A11 static-closed, runtime pending B4 (see §8.1 reconciliation). Config-only rows' (A7/A8/A10) full-stack boot remains B4.
+- **Next actions — all owner-side, none autonomous:** (1) **S1** `git rm --cached .env ecm-frontend/.env` — needs **explicit owner confirm** (not bundled into config PRs); (2) **S2** secret rotation + custodian — owner/ops; (3) **A11 runtime** + brownfield `athena_ml_models` chown on a daemon host; (4) **B4** hardened-config full-stack smoke. Pilot gate (real data / non-controlled network) unblocks once S1/S2 land on top of the now-delivered P0a; external/public production additionally needs P0b + B4.
