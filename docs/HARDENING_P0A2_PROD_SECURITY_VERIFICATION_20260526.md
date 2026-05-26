@@ -45,7 +45,17 @@ git diff --check -- . ':!.env'
 ## CI Follow-Up
 
 ```text
-Run id:        <pending>
-Head SHA:      <pending>
-Conclusion:    <pending — gh run view authority>
+Run id:        26430746307
+Head SHA:      fca974f
+Conclusion:    success (7/7 — gh run view authority)
+URL:           https://github.com/zensgit/Athena/actions/runs/26430746307
+
+Jobs:
+  - Backend Verify
+  - Frontend Build & Test
+  - Phase C Security Verification
+  - Acceptance Smoke (3 admin pages)
+  - Property Encryption Closeout Gate
+  - Phase 5 Mocked Regression Gate
+  - Frontend E2E Core Gate
 ```
