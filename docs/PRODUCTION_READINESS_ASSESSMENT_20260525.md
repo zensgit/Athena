@@ -83,10 +83,10 @@ records: `HARDENING_P0A1_*`, `HARDENING_P0A2_*`, `HARDENING_P0A3_*`, `HARDENING_
 
 ### 8.2 Confirm-required — tracked-secret removal (separate; NOT mixed with A-rows)
 
-| # | Item | Disposition | Evidence | Verification | CI-verifiable? |
-|---|---|---|---|---|---|
-| S1 | `git rm --cached .env ecm-frontend/.env` (already in `.gitignore:106`; committed before ignore) | must-fix — **explicit owner confirm** | `git ls-files` → `.env`, `ecm-frontend/.env` | files untracked; `git ls-files` clean; `.example` retained | Y (git check) |
-| S2 | Rotate the dev-default creds + decide custodian (who holds prod secrets) | must-fix — **owner/ops decision, not autonomous** | tracked `.env` dev defaults | new secrets issued + injected via env; old invalidated | N (ops) |
+| # | Item | Disposition | Evidence | Verification | CI-verifiable? | Status (2026-05-26) |
+|---|---|---|---|---|---|---|
+| S1 | `git rm --cached .env ecm-frontend/.env` (already in `.gitignore:106`/`*.env:110`; committed before ignore) | must-fix — **explicit owner confirm** | `git ls-files` → `.env`, `ecm-frontend/.env` | files untracked; `git ls-files` clean; `.example` retained | Y (git check) | ✅ **done 2026-05-26 (`83d6935`)** — both untracked (`git ls-files` empty), local files retained, now gitignored. **Does NOT scrub history** → values still reachable in prior commits, treat as compromised until S2 |
+| S2 | Rotate the dev-default creds + decide custodian (who holds prod secrets) | must-fix — **owner/ops decision, not autonomous** | tracked `.env` dev defaults | new secrets issued + injected via env; old invalidated | N (ops) | ⏳ pending — owner/ops; **required** because S1 leaves the historical values in git history |
 
 Rationale for separating S1/S2: untracking is mechanical, but *rotation* and custodianship are owner/ops calls — kept out of the A-slice so a routine config PR never silently implies secrets were rotated.
 
@@ -114,4 +114,5 @@ Rationale for separating S1/S2: untracking is mechanical, but *rotation* and cus
 - **Pilot — real data and/or non-controlled network: requires P0a + S1/S2 first** (not "now").
 - **External / public production:** gated on **all P0a + S1/S2 + P0b**, then a green **B4** smoke on the hardened config.
 - **P0a status (2026-05-26): DELIVERED.** A1–A10 + A12 CI/config-closed; A11 static-closed, runtime pending B4 (see §8.1 reconciliation). Config-only rows' (A7/A8/A10) full-stack boot remains B4.
-- **Next actions — all owner-side, none autonomous:** (1) **S1** `git rm --cached .env ecm-frontend/.env` — needs **explicit owner confirm** (not bundled into config PRs); (2) **S2** secret rotation + custodian — owner/ops; (3) **A11 runtime** + brownfield `athena_ml_models` chown on a daemon host; (4) **B4** hardened-config full-stack smoke. Pilot gate (real data / non-controlled network) unblocks once S1/S2 land on top of the now-delivered P0a; external/public production additionally needs P0b + B4.
+- **S1 done 2026-05-26 (`83d6935`)** — env files untracked (history not scrubbed; see §8.2).
+- **Next actions — all owner-side, none autonomous:** (1) **S2** secret rotation + custodian — owner/ops (required: S1 leaves historical values in git history); (2) **A11 runtime** + brownfield `athena_ml_models` chown on a daemon host; (3) **B4** hardened-config full-stack smoke. Pilot gate (real data / non-controlled network) unblocks once **S2** lands on top of the delivered P0a + S1; external/public production additionally needs P0b + B4.
