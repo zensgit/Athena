@@ -1,6 +1,7 @@
 # Alfresco Service-Contract Parity — read-only 对标
 
-Date: 2026-05-26 · Reference: `reference-projects/alfresco-community-repo` (Alfresco Community, 346M git clone) · Scope: **service-contract parity** of Athena's `com.ecm.core.alfresco.*` shim vs Alfresco's public Foundation-API service interfaces. **Read-only; no code change; uncommitted pending gate.**
+Date: 2026-05-26 · Reference: `reference-projects/alfresco-community-repo` (Alfresco Community, 346M git clone) · Scope: **service-contract parity** of Athena's `com.ecm.core.alfresco.*` shim vs Alfresco's public Foundation-API service interfaces. **Read-only; no code change.**
+Companion (broad): `docs/ALFRESCO_PARITY_BENCHMARK_REFRESH_20260526.md` — capability-level benchmark + buyer-signal-gated options. This doc is its narrow, service-contract-level deep-dive.
 
 ## 0. Load-bearing finding — the shim is unused, self-contained scaffolding
 
