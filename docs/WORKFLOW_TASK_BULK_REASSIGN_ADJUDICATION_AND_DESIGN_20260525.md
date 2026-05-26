@@ -1,7 +1,8 @@
 # Workflow Task Bulk Reassign (C2) — Adjudication & Implementation Brief (read-only)
 
 Date: 2026-05-25
-Status: **read-only brief — no code/test/schema/`.env` written by this document.**
+Status: **PARKED — ready-to-build, not scheduled.** Gate-reviewed and pre-checked (small, low-risk, primitive exists); **deliberately not implemented** because the value signal is inferred, not requested (refresh-3 pause). No code/test/schema/`.env` written by this document.
+Resume trigger: a real operator/admin request, a support ticket, or a product decision naming the offboarding/leave-coverage workflow. On any of those this is a same-day pickup — see §10.
 Candidate: **C2** in `docs/PRODUCT_CAPABILITY_DISCOVERY_REFRESH3_20260525.md`.
 
 ## 0. Purpose & honesty caveat
@@ -82,9 +83,11 @@ Operator selects pending tasks in the inbox and reassigns them all to one target
 - `feedback_sanitize_throwable_cause_for_log_emission` — FAILED rows fixed copy only.
 - Verify `@Builder`/entity field **types** (not just existence) when constructing test fixtures (the saved-search `SearchResult.id` String lesson).
 
-## 10. Gate options
+## 10. Gate decision — PARKED (2026-05-25)
 
-This is the strongest remaining refresh-3 candidate and now confirmed small/low-risk — **but the value signal is inferred.** Two honest paths: (a) **build C2** (clean small slice); or (b) **pause** for operator signal (refresh-3's default). Recommend the gate pick before implementation; no code until then.
+This was the strongest remaining refresh-3 candidate and is confirmed small/low-risk — **but the value signal is inferred, not requested.** Decision: **park (option b), do not build now.** Rationale: after three discovery refreshes the clearly-shaped gaps are exhausted; building a low-signal feature because it's cheap is "building for continuity," not value. "Small and low-risk" answers *can we?*, not *should we?*
+
+**Ready-to-build on a real signal.** When a resume trigger lands (header), this brief is the durable artifact — the pre-check (§1) already confirmed the single-task `assignTask` primitive exists, no `@Transactional` self-call trap, and the `TasksPage` inbox + user-picker surfaces exist, so implementation is a same-day pickup with zero re-discovery: backend `POST /workflows/tasks/bulk-reassign` looping `assignTask` (§5/§6), frontend multi-select + reassign action, tests per §8.
 
 ## 11. Verification (this brief)
 
