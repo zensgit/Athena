@@ -4,7 +4,7 @@ Date: 2026-05-26 · Brief: `docs/HARDENING_B1_B2_IMPLEMENTATION_BRIEF_20260526.m
 
 ## Changes shipped
 
-- **`docker-compose.prod.yml`** — Keycloak block: `command: ["start"]`, `volumes: !reset []` (drops the base `realm-export.json` import mount), `KC_HOSTNAME=${ECM_KEYCLOAK_PUBLIC_HOST:?required}`, `KC_PROXY_HEADERS=xforwarded`, `KC_HTTP_ENABLED=true`. nginx block: `volumes: !override` swapping `nginx.prod.conf` in for the dev conf + mounting `athena-locations.conf` (+ ssl, logs).
+- **`docker-compose.prod.yml`** — ecm-core block: **`env_file: !reset []`** (drops the base dev `.env`/`.env.mail` — prod injects via explicit env/secret custodian, and a clean clone with no env files still validates). Keycloak block: `command: ["start"]`, `volumes: !reset []` (drops the base `realm-export.json` import mount), `KC_HOSTNAME=${ECM_KEYCLOAK_PUBLIC_HOST:?required}`, `KC_PROXY_HEADERS=xforwarded`, `KC_HTTP_ENABLED=true`. nginx block: `volumes: !override` swapping `nginx.prod.conf` in for the dev conf + mounting `athena-locations.conf` (+ ssl, logs).
 - **`nginx/nginx.prod.conf`** (new) — 80 redirect-only; 443 `ssl http2` with hardened headers at server scope (HSTS + CSP without bare `http:` + X-Frame/X-Content-Type/Referrer) and `include /etc/nginx/athena-locations.conf`. `server_name _` placeholder, no real domain, no certs.
 - **`nginx/athena-locations.conf`** (new) — business `location` blocks only (`/api/`, upload regex, `/swagger-ui/`, `/actuator/`, `/`, `/health`); **no security headers**.
 - **`scripts/b1b2-prod-config-check.sh`** (new, executable) — daemon-free guard.
@@ -20,9 +20,10 @@ Date: 2026-05-26 · Brief: `docs/HARDENING_B1_B2_IMPLEMENTATION_BRIEF_20260526.m
 5. Snippet = locations only, **no security headers**; key locations present (drift guard: `/api/`, upload, `/`, `/health`, `/actuator/`).
 6. No real domain (`server_name _;`), no committed certs under `nginx/ssl`.
 7. Dev `nginx/nginx.conf` still HTTP-only (no active `listen 443 ssl`).
-8. **Merged `docker compose -f docker-compose.yml -f docker-compose.prod.yml config` validates (rc=0)** with dummy required env — daemon-free.
+8. **Merged config validates on a CLEAN CLONE (rc=0)** — `docker compose --env-file /dev/null -f docker-compose.yml -f docker-compose.prod.yml config`. `--env-file /dev/null` blocks Compose's auto-read of any local `./.env`, so the pass is proven from **dummy exports only** (incl. KEYCLOAK_*/MINIO_*/ODOO_* etc.), not from residual local env files. Asserts **merged ecm-core has no `env_file`**.
 
-**Merge proof (`docker compose config`, dummy env):**
+**Merge proof (`docker compose config`, dummy env, clean-clone):**
+- ecm-core `env_file: (none)` — base dev `.env`/`.env.mail` dropped by `!reset []`.
 - nginx volumes resolve to exactly: `nginx.prod.conf → /etc/nginx/nginx.conf`, `athena-locations.conf`, `ssl`, `logs` — **no dev `nginx.conf`** (`!override` replaced the list).
 - keycloak `command: ['start']`, `volumes: []` (import mount gone), `KC_HOSTNAME/KC_HTTP_ENABLED/KC_PROXY_HEADERS` present.
 
