@@ -41,8 +41,11 @@ ml-service non-root is **not in this slice** — CI builds only `ecm-core ecm-fr
 ## CI Follow-Up
 
 ```
-Run id:        <pending — A9-head run>
-Head SHA:      <pending>
-Conclusion:    <pending — gh run view authority per feedback_gh_run_watch_unreliable>
+Run id:        26434555589
+Head SHA:      f2df345
+Conclusion:    success — 7/7 (gh run view authority per feedback_gh_run_watch_unreliable)
+  Backend Verify · Frontend Build & Test · Phase C Security · Frontend E2E Core ·
+  Phase 5 Mocked · Acceptance Smoke · Property Encryption Closeout
 ```
-(Override-only run `26434162067` on `af6f060` was in-flight and is superseded by the A9-head run.)
+A9 confirmed non-disruptive: the minio pin (CI-started) and the prod-compose addition left
+all 7 gates green. (Override-only run `26434162067` on `af6f060` was superseded by this A9-head run.)
