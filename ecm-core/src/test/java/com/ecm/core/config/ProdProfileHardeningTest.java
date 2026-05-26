@@ -82,6 +82,15 @@ class ProdProfileHardeningTest {
 
         // A2 — dead jwt key absent from the prod profile.
         assertNull(prop(prod, "ecm.security.jwt.secret"), "dead ecm.security.jwt.secret must not appear");
+
+        // P0a-2 — prod exposure controls: health-only actuator, Swagger off, CORS explicit.
+        assertEquals("false", prop(prod, "ecm.security.exposure.actuator-permit-all"));
+        assertEquals("false", prop(prod, "ecm.security.exposure.swagger-permit-all"));
+        assertEquals("${ECM_SECURITY_CORS_ALLOWED_ORIGINS}", prop(prod, "ecm.security.cors.allowed-origins"));
+        assertEquals("false", prop(prod, "springdoc.api-docs.enabled"));
+        assertEquals("false", prop(prod, "springdoc.swagger-ui.enabled"));
+        assertEquals("health", prop(prod, "management.endpoints.web.exposure.include"));
+        assertEquals("when_authorized", prop(prod, "management.endpoint.health.show-details"));
     }
 
     @Test

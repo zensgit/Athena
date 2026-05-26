@@ -32,3 +32,25 @@ spring:
           # The real token-validation inputs (NimbusJwtDecoder). No localhost/keycloak default.
           issuer-uri: ${SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI}
           jwk-set-uri: ${SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI}
+ecm:
+  security:
+    exposure:
+      actuator-permit-all: false
+      swagger-permit-all: false
+    cors:
+      allowed-origins: ${ECM_SECURITY_CORS_ALLOWED_ORIGINS}
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: when_authorized

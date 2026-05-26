@@ -28,6 +28,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 @Configuration
 @EnableWebSecurity
@@ -37,27 +38,43 @@ public class SecurityConfig {
     @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri}")
     private String jwkSetUri;
 
+    @Value("${ecm.security.exposure.actuator-permit-all:true}")
+    private boolean actuatorPermitAll;
+
+    @Value("${ecm.security.exposure.swagger-permit-all:true}")
+    private boolean swaggerPermitAll;
+
+    @Value("${ecm.security.cors.allowed-origins:*}")
+    private String corsAllowedOrigins;
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(csrf -> csrf.disable())
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            .authorizeHttpRequests(auth -> auth
-                // Public endpoints
-                .requestMatchers("/actuator/**").permitAll()
-                .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
-                .requestMatchers("/error").permitAll()
-                .requestMatchers("/api/v1/ml/health").permitAll()
-                .requestMatchers("/api/v1/share/access/**", "/api/share/access/**").permitAll()
+            .authorizeHttpRequests(auth -> {
+                // Public endpoints. Prod disables anonymous non-health actuator and docs exposure via config.
+                if (actuatorPermitAll) {
+                    auth.requestMatchers("/actuator/**").permitAll();
+                } else {
+                    auth.requestMatchers("/actuator/health", "/actuator/health/**").permitAll();
+                    auth.requestMatchers("/actuator/**").hasRole("ADMIN");
+                }
+                if (swaggerPermitAll) {
+                    auth.requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll();
+                }
+                auth.requestMatchers("/error").permitAll();
+                auth.requestMatchers("/api/v1/ml/health").permitAll();
+                auth.requestMatchers("/api/v1/share/access/**", "/api/share/access/**").permitAll();
                 // Transfer receiver endpoints validate dedicated opaque headers in the controller/service layer.
-                .requestMatchers("/api/v1/transfer/receiver/**").permitAll()
+                auth.requestMatchers("/api/v1/transfer/receiver/**").permitAll();
                 // WOPI host endpoints are validated via opaque access_token query param
-                .requestMatchers("/wopi/**").permitAll()
+                auth.requestMatchers("/wopi/**").permitAll();
                 // All other API endpoints require authentication
-                .requestMatchers("/api/**").authenticated()
-                .anyRequest().authenticated()
-            )
+                auth.requestMatchers("/api/**").authenticated();
+                auth.anyRequest().authenticated();
+            })
             .oauth2ResourceServer(oauth2 -> oauth2
                 // Only authenticate /api/** requests via Authorization: Bearer <jwt>.
                 // WOPI uses an opaque access_token and is validated in the controller/service layer.
@@ -81,7 +98,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of("*"));
+        configuration.setAllowedOrigins(parseAllowedOrigins(corsAllowedOrigins));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setExposedHeaders(Arrays.asList(
@@ -96,6 +113,17 @@ public class SecurityConfig {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
+    }
+
+    private List<String> parseAllowedOrigins(String rawAllowedOrigins) {
+        List<String> origins = Stream.of((rawAllowedOrigins == null ? "" : rawAllowedOrigins).split(","))
+            .map(String::trim)
+            .filter(origin -> !origin.isEmpty())
+            .toList();
+        if (origins.isEmpty()) {
+            throw new IllegalStateException("ecm.security.cors.allowed-origins must define at least one origin");
+        }
+        return origins;
     }
 
     @Bean
