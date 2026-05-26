@@ -56,6 +56,7 @@ Bring-up: `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ## Doc index (canonical)
 
 - Decision matrix + posture: `PRODUCTION_READINESS_ASSESSMENT_20260525.md` §8
+- Owner execution plan: `OWNER_CUTOVER_EXECUTION_PLAN_20260526.md` (S2 → B1/B2 → A11 → B3 → B4, with rollback/evidence/triage)
 - P0a: `HARDENING_P0A1_*`, `HARDENING_P0A2_*`, `HARDENING_P0A3_*`, `HARDENING_P0A3B_*` (brief + verification each)
 - S2 inventory: `HARDENING_S2_SECRET_ROTATION_INVENTORY_20260526.md`
 - B1/B2: `HARDENING_B1_B2_KEYCLOAK_TLS_BRIEF_*` (design), `HARDENING_B1_B2_IMPLEMENTATION_BRIEF_*` (impl spec), `HARDENING_B1_B2_IMPLEMENTATION_VERIFICATION_*`
