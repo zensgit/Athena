@@ -52,4 +52,4 @@ This is consistent with Refresh 4: code/reference inspection alone is not yieldi
 - "No consumer" verified 4 ways (class-name, string-bean, XML/@Bean, whole-repo) — all empty.
 - "No Alfresco dependency / types" verified (poms + imports).
 - Alfresco interface surfaces read from the reference clone (`ServiceRegistry` 57 accessors; `NodeService`/`ContentService`/`PermissionService`/`SearchService` method lists).
-- `.env` untouched; nothing committed.
+- `.env` untouched; committed doc-only (`44874b4`; cross-link added in `d4cc73c`).

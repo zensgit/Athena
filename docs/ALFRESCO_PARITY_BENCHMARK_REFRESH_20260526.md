@@ -148,5 +148,5 @@ Read-only checks performed:
 
 Expected worktree impact:
 
-- One new documentation file: `docs/ALFRESCO_PARITY_BENCHMARK_REFRESH_20260526.md`.
+- Commit impact (`d4cc73c`): broad benchmark doc added; the service-contract companion (`docs/ALFRESCO_SERVICE_CONTRACT_PARITY_20260526.md`) updated for cross-linking.
 - No code/config/schema/test/frontend changes.
