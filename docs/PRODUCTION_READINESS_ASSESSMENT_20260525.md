@@ -5,7 +5,7 @@ Status: **read-only assessment.** No code/config/`.env` change by this document.
 
 ## Verdict
 
-**Functionally yes; operationally not-yet for external/internet-facing delivery.** Core ECM is genuinely implemented and tested; configuration, secrets, and security defaults are pre-production. **Internal/pilot deploy behind a trusted network is reasonable after the ~1–3 day hardening pass in §3.** "production-ready" in `CLAUDE.md` describes the *architecture*, not the deployment config.
+**Functionally yes; operationally not-yet for external/internet-facing delivery.** Core ECM is genuinely implemented and tested; configuration, secrets, and security defaults are pre-production. Delivery posture (single source: §8.5): **internal UAT with non-real data on a controlled network is deliverable now**; **any pilot involving real data or a non-controlled network requires P0a + S1/S2 first**; external/public production additionally requires P0b + a green hardened-config smoke. "production-ready" in `CLAUDE.md` describes the *architecture*, not the deployment config.
 
 ## 1. What is production-grade (real, tested)
 
@@ -42,7 +42,7 @@ CSRF disabled (`SecurityConfig.java:44`) is acceptable for a stateless JWT API.
 
 ## 5. Unverified (must close before go-live)
 
-No **live full-stack smoke** (login → upload → search → permissions) has been run on a recorded machine — this box has no Docker, so verification has been unit/contract/CI-mocked only (consistent with the `CLAUDE.md` handoff note). CI green ≠ live-stack proven. Run a full-stack acceptance on a Docker-capable host before delivery.
+No live full-stack smoke has been run **on a hardened, production-shaped config**. CI **does** run a Docker-backed Acceptance Smoke + Frontend E2E Core (currently green) — but on the **dev/CI compose shape**, not the hardened prod profile (TLS, ES security on, internal ports closed, prod secrets). And this dev box has no Docker, so nothing prod-shaped can be exercised here. So: dev/CI-shape live smoke = proven green; **hardened-config live smoke = not yet run** (this is exactly gate item B4). Run B4 on a Docker-capable host against the hardened config before external delivery.
 
 ## 6. Recommended next step
 
@@ -67,10 +67,10 @@ This is the **canonical delivery-decision artifact** (no separate same-day doc).
 | A4 | Actuator → `health` only (+`show-details: when-authorized`) / gate | must-fix | `SecurityConfig.java:48`, mgmt exposure | prod: non-health actuator 401/403; security test | Y (WebMvc test) |
 | A5 | Disable Swagger / `/v3/api-docs` in prod | must-fix | `SecurityConfig.java:49` | prod: docs routes 404/403 | Y |
 | A6 | CORS pinned to known origin(s), not `*` | must-fix | `SecurityConfig.java:84` | prod config rejects unlisted origin | Y |
-| A7 | Add `application-prod.yml` + `docker-compose.prod.yml` (auth-on, ES security on, no debug logging) | must-fix | (absent) | files exist; profile boots | partial |
+| A7 | Add `application-prod.yml` + `docker-compose.prod.yml` (app auth-on, no debug logging; service-security handled in A10) | must-fix | (absent) | files exist + lint; profile boots (full stack validated in B4) | partial |
 | A8 | Don't publish internal service ports; expose only nginx/TLS | must-fix | `docker-compose.yml` `ports:` | prod compose maps only 80/443 | N (manual/compose review) |
 | A9 | Pin image tags (no floating/`latest`) | must-fix | `docker-compose.yml` `image:` | every image has an explicit version/digest | Y (lint/grep) |
-| A10 | ES `xpack.security` on; MinIO/Grafana/Prometheus non-default creds via env | must-fix | `docker-compose.yml` (ES `xpack.security.enabled=false`, Grafana admin) | prod compose sets security on + env creds | partial |
+| A10 | ES `xpack.security` on; MinIO/Grafana/Prometheus non-default creds via env | must-fix | `docker-compose.yml` (ES `xpack.security.enabled=false`, Grafana admin) | prod compose config/lint (Y); **full validation in B4** — turning ES security on affects app credentials + compose startup + the E2E stack, so ordinary CI cannot fully prove it | config-only Y / runtime N (B4) |
 | A11 | `ml-service` runs as non-root | must-fix | `ml-service/Dockerfile` (no `USER`) | image runs as non-root `id` | Y (build) |
 | A12 | README "Production Ready" → honest delivery posture | must-fix | `README.md` | wording matches this doc's verdict | review |
 
@@ -103,6 +103,7 @@ Rationale for separating S1/S2: untracking is mechanical, but *rotation* and cus
 
 ### 8.5 Gate
 
-- Internal UAT / pilot (trusted network): deliverable **now** (pre-hardening), with C1–C4 disclosed.
-- External / public production: gated on **all P0a + S1/S2 + P0b**, then a green **B4** smoke on the hardened config.
+- **Internal UAT — non-real data, controlled network: deliverable now** (pre-hardening), with C1–C4 disclosed.
+- **Pilot — real data and/or non-controlled network: requires P0a + S1/S2 first** (not "now").
+- **External / public production:** gated on **all P0a + S1/S2 + P0b**, then a green **B4** smoke on the hardened config.
 - Next action after this matrix is gate-approved: open the **P0a slice only** (A1–A12, build + CI). S1/S2 and P0b stay with the owner; nothing claimed done from this box.
