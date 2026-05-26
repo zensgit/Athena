@@ -45,7 +45,18 @@ git diff --check -- . ':!.env' ............................. clean
 ## CI Follow-Up
 
 ```
-Run id:        <pending>
-Head SHA:      <pending>
-Conclusion:    <pending — gh run view authority per feedback_gh_run_watch_unreliable>
+Run id:        26429050412
+Head SHA:      3b13d99e
+Conclusion:    success (7/7 — gh run view authority per feedback_gh_run_watch_unreliable)
+URL:           https://github.com/zensgit/Athena/actions/runs/26429050412
+
+Jobs (7/7 green — incl. the Docker-backed gates that boot the `docker` profile, confirming the
+base application.yml + @Value edits caused no regression; the inert `prod` profile is untouched by CI):
+  ✓ Backend Verify
+  ✓ Frontend Build & Test
+  ✓ Phase C Security Verification
+  ✓ Phase 5 Mocked Regression Gate
+  ✓ Frontend E2E Core Gate
+  ✓ Property Encryption Closeout Gate
+  ✓ Acceptance Smoke (3 admin pages)
 ```
