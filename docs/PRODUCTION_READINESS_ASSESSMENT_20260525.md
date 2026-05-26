@@ -94,8 +94,8 @@ Rationale for separating S1/S2: untracking is mechanical, but *rotation* and cus
 
 | # | Item | Disposition | Verification | CI-verifiable? |
 |---|---|---|---|---|
-| B1 | Keycloak `start-dev` → production realm/clients/HTTPS | must-fix (prod) | prod Keycloak boots; tokens validated by issuer/jwk URIs | N (env) |
-| B2 | TLS certs + HTTPS enforced for `/api/**` and `/api/v1/transfer/receiver/**` (plaintext creds otherwise) | must-fix (prod) | TLS terminates; HTTP redirected/blocked | N (env) |
+| B1 | Keycloak `start-dev` → production realm/clients/HTTPS | must-fix (prod) | prod Keycloak boots; tokens validated by issuer/jwk URIs — **read-only brief: `docs/HARDENING_B1_B2_KEYCLOAK_TLS_BRIEF_20260526.md`** (prod `start` + `KC_HTTP_ENABLED`/hostname/proxy, issuer/JWK independence, separate Keycloak subdomain, out-of-band realm); impl slice + runtime cutover pending owner/ops | N (env) |
+| B2 | TLS certs + HTTPS enforced for `/api/**` and `/api/v1/transfer/receiver/**` (plaintext creds otherwise) | must-fix (prod) | TLS terminates; HTTP redirected/blocked — **same brief** (low-drift HTTPS include/guard, CSP/HSTS, opaque-token-over-TLS); impl slice ships templated config w/ fail-fast env, runtime cutover pending owner/ops | N (env) |
 | B3 | Backup + restore **runbook** and at least one **restore smoke** | must-fix (prod) | documented procedure + a successful restore on a non-prod copy — **read-only runbook ready: `docs/RUNBOOK_B3_B4_BACKUP_RESTORE_AND_SMOKE_20260526.md`** (tiered targets, single-window consistency, `pg_restore` clean restore); execution + restore-smoke pending owner/ops | N (env) |
 | B4 | **Production-shape full-stack smoke** (login → upload → search → preview → permissions → backup/restore) on a Docker-capable host | must-fix (prod) | green run on the **hardened** config (not dev compose) — **smoke checklist in the same runbook**; execution pending owner/ops | N (off-box) |
 
