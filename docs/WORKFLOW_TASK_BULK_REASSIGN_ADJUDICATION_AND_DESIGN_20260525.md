@@ -79,7 +79,8 @@ Operator selects pending tasks in the inbox and reassigns them all to one target
 ## 9. Memory checklist
 
 - `feedback_brief_paths_must_be_grep_verified` — endpoints/exceptions verified: assign `:392`/`:425`, inbox `:142`, `WorkflowService` non-`@Transactional` `:49-51`.
-- `feedback_requiredargsconstructor_arity_breaks_standalone_tests` — if a field is added to `WorkflowController`/`WorkflowService`, grep `new WorkflowController(`/`new WorkflowService(` in tests (standalone fixtures) before pushing — no local `mvnw`.
+- `feedback_requiredargsconstructor_arity_breaks_standalone_tests` — if a field is added to `WorkflowController`/`WorkflowService`, grep `new WorkflowController(`/`new WorkflowService(` in tests (standalone fixtures) before pushing.
+- `project_backend_preflight_local_verification` — before pushing, run `scripts/backend-preflight.sh` (and `-Dtest=… test`) to catch testCompile/Mockito/fixture errors locally in ~11s; do not rely on the Docker-backed `ecm-core/mvnw`.
 - `feedback_sanitize_throwable_cause_for_log_emission` — FAILED rows fixed copy only.
 - Verify `@Builder`/entity field **types** (not just existence) when constructing test fixtures (the saved-search `SearchResult.id` String lesson).
 
