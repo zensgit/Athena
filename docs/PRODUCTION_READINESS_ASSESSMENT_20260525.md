@@ -96,8 +96,8 @@ Rationale for separating S1/S2: untracking is mechanical, but *rotation* and cus
 |---|---|---|---|---|
 | B1 | Keycloak `start-dev` → production realm/clients/HTTPS | must-fix (prod) | prod Keycloak boots; tokens validated by issuer/jwk URIs | N (env) |
 | B2 | TLS certs + HTTPS enforced for `/api/**` and `/api/v1/transfer/receiver/**` (plaintext creds otherwise) | must-fix (prod) | TLS terminates; HTTP redirected/blocked | N (env) |
-| B3 | Backup + restore **runbook** and at least one **restore smoke** | must-fix (prod) | documented procedure + a successful restore on a non-prod copy | N (env) |
-| B4 | **Production-shape full-stack smoke** (login → upload → search → preview → permissions → backup/restore) on a Docker-capable host | must-fix (prod) | green run on the **hardened** config (not dev compose) | N (off-box) |
+| B3 | Backup + restore **runbook** and at least one **restore smoke** | must-fix (prod) | documented procedure + a successful restore on a non-prod copy — **read-only runbook ready: `docs/RUNBOOK_B3_B4_BACKUP_RESTORE_AND_SMOKE_20260526.md`** (tiered targets, single-window consistency, `pg_restore` clean restore); execution + restore-smoke pending owner/ops | N (env) |
+| B4 | **Production-shape full-stack smoke** (login → upload → search → preview → permissions → backup/restore) on a Docker-capable host | must-fix (prod) | green run on the **hardened** config (not dev compose) — **smoke checklist in the same runbook**; execution pending owner/ops | N (off-box) |
 
 ### 8.4 Functional deferrals — customer-conversation (scope, not hardening)
 
