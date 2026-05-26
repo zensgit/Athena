@@ -1,72 +1,66 @@
-# P0a-3 — Prod Compose / Runtime Shape (A7–A11) — Implementation Brief (read-only)
+# P0a-3 — Prod Compose / Runtime Shape (A7/A8/A9/A10) — Implementation Brief (read-only)
 
 Date: 2026-05-26
-Status: **read-only brief — no config/compose/Dockerfile/`.env` change by this document.** Awaiting gate.
-Parent: §8 Hardening Matrix in `docs/PRODUCTION_READINESS_ASSESSMENT_20260525.md`. Covers **A7, A8, A9, A10, A11**.
+Status: **read-only brief — no config/compose/Dockerfile/`.env` change by this document.** Revision: **v2** (gate findings folded in). Awaiting re-gate.
+Parent: §8 Hardening Matrix in `docs/PRODUCTION_READINESS_ASSESSMENT_20260525.md`. Covers **A7, A8, A9, A10**. **A11 is split out** (see §0).
 Predecessors: P0a-1 (`e4f1b4c`) + P0a-2 (`9820996`) closed.
+
+## Revision history (v1 → v2, all gate findings verified directly)
+
+- **Blocker — A11 split out.** CI builds only `ecm-core ecm-frontend` and starts infra/core/frontend; **ml-service is never built or started** (`ci.yml:163,284,391`; 0 mentions of `ml-service`; dep commented at `docker-compose.yml:80`). So "non-root ml-service is CI-verified" was false, and verifying it needs building ml-service (off-box / a CI change we're not doing). **A11 deferred to its own row P0a-3b** — not in this slice.
+- **Blocker — A8 needs `!reset`.** In Compose, an override `ports: []` does **not** remove inherited ports; only `ports: !reset []` does. v2 requires `!reset []` per internal service, and verification uses `docker compose -f docker-compose.yml -f docker-compose.prod.yml config` (the merged config), **not grep**.
+- **Medium — A10 must make the prod profile coherent.** Base forces `SPRING_PROFILES_ACTIVE=docker` (`:13`) and gives ES URI without creds (`:22`). The prod override must set ecm-core `SPRING_PROFILES_ACTIVE=prod` **and** provide every no-default env `application-prod.yml` requires (datasource/ES/Redis/Rabbit/JWT/CORS) — else flipping ES `xpack` alone is incoherent and B4 can't exercise prod.
+- **Medium — fail-fast secrets.** Compose treats unset `${VAR}` as blank+warning. v2 uses `${VAR:?required}` for all prod-only secrets/required envs (hard failure if missing).
+- **Low — A9 CI wording.** CI only pulls images for the services it starts; ml-service/collabora/greenmail/odoo/prometheus/grafana are not all started. A9 is **lint/config-verifiable for all images, runtime-verified only for CI-started services.**
 
 ## 0. Scope (locked)
 
-Harden the **deployment shape** (compose + ml-service image). No app code.
+- **A7** — add `docker-compose.prod.yml` (prod override; `-f docker-compose.yml -f docker-compose.prod.yml`).
+- **A8** — override removes published host ports for every internal service via `ports: !reset []`; only nginx keeps `80/443`.
+- **A9** — pin image tags in **base** compose (kill all `:latest`; prefer pinning soft-float tags too).
+- **A10** — override makes a coherent prod runtime: ecm-core `SPRING_PROFILES_ACTIVE=prod` + all required prod envs; ES `xpack.security.enabled=true`; MinIO/Grafana/Prometheus admin creds — all via `${VAR:?required}`.
+- **A11 (split → P0a-3b, not here):** ml-service non-root Dockerfile, with an explicit `docker compose build ml-service` + health verification path (since CI doesn't cover it).
 
-- **A7** — add `docker-compose.prod.yml` (a prod *override*, applied via `-f docker-compose.yml -f docker-compose.prod.yml`).
-- **A8** — in the prod override, **do not publish internal service host ports**; expose only nginx `80/443`.
-- **A9** — **pin image tags** (eliminate `:latest`; pin floating tags to explicit versions).
-- **A10** — prod override: ES `xpack.security` **on**; MinIO / Grafana / Prometheus non-default creds via env.
-- **A11** — `ml-service` image runs as **non-root**.
-
-## 1. Approach + where each lands (so CI vs B4 is honest)
-
-- **A9 image pinning → BASE `docker-compose.yml`** (benefits every env + **CI actually pulls the pinned images**, so it's CI-verified). The three `:latest` are must-fix: `minio/minio:latest` (`:220`), `prom/prometheus:latest` (`:412`), `grafana/grafana:latest` (`:431`). Recommended also: pin the soft-floating tags (`postgres:15-alpine`, `redis:7-alpine`, `rabbitmq:3.12-management-alpine`, `nginx:alpine`, `clamav/clamav:stable`, `odoo:16`, `elasticsearch:8.11.1` already specific) to explicit patch versions.
-- **A8 + A10 → NEW `docker-compose.prod.yml` (override)** — inert for CI (CI uses base + dev override), so its **runtime is B4**; config-content is lint/grep-verifiable now. A8: override drops `ports:` for every internal service (keep only nginx). A10: override sets ES `xpack.security.enabled=true` (+ the app then needs ES creds, which the prod Spring profile already env-sources), and routes MinIO/Grafana/Prometheus admin creds through env (no `admin_password`/`minio_secret_key` literals).
-- **A11 ml-service non-root → `ml-service/Dockerfile`** (base image change; **CI builds/health-checks the stack**, so non-root is CI-exercised — provided the entrypoint/files are readable as non-root).
-
-## 2. Regression rationale + risks
-
-- `docker-compose.prod.yml` is inert unless explicitly `-f`-composed → zero CI impact (A8/A10).
-- A9 base pinning = freezing to (current) explicit versions → reproducibility, no behavior change; CI pulls the pinned tags.
-- **A11 is the real risk:** adding `USER` to `ml-service/Dockerfile` can break startup if files/dirs the service writes (model cache, tmp) aren't owned by the non-root user, or if the entrypoint expects root. Must verify the ml-service health check still passes in CI (it runs in Acceptance Smoke / E2E stack). If it can't be made non-root safely in this slice, **split A11 to its own row** rather than risk the green E2E gates.
-
-## 3. Files
+## 1. Files
 
 ### Create
-- `docker-compose.prod.yml` — prod override: no internal `ports:` (A8), ES `xpack.security.enabled=true` + `ELASTIC_PASSWORD` env, MinIO `MINIO_ROOT_USER/PASSWORD` env, Grafana `GF_SECURITY_ADMIN_*` env, Prometheus as needed (A10). Documented as `-f docker-compose.yml -f docker-compose.prod.yml`.
+- `docker-compose.prod.yml` — prod override:
+  - Every internal service (`postgres`, `postgres-keycloak`, `elasticsearch`, `redis`, `rabbitmq`, `minio`, `keycloak`, `clamav`, `odoo`, `greenmail`, `collabora`, `prometheus`, `grafana`, `ecm-core`, `ecm-frontend` if it publishes): `ports: !reset []`. **nginx keeps `80:80`/`443:443`.** (A8)
+  - `elasticsearch.environment`: `xpack.security.enabled=true` + `ELASTIC_PASSWORD=${ELASTIC_PASSWORD:?required}`. (A10)
+  - `minio.environment`: `MINIO_ROOT_USER=${MINIO_ROOT_USER:?required}` / `MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:?required}`. `grafana`: `GF_SECURITY_ADMIN_USER`/`GF_SECURITY_ADMIN_PASSWORD` `${...:?required}`. (A10)
+  - `ecm-core.environment`: `SPRING_PROFILES_ACTIVE=prod` **and** the no-default envs `application-prod.yml` requires — `SPRING_DATASOURCE_URL/USERNAME/PASSWORD`, `SPRING_ELASTICSEARCH_URIS/USERNAME/PASSWORD`, `SPRING_DATA_REDIS_HOST/PASSWORD`, `SPRING_RABBITMQ_HOST/USERNAME/PASSWORD`, `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI/JWK_SET_URI`, `ECM_SECURITY_CORS_ALLOWED_ORIGINS` — each `${VAR:?required}`. (A10)
 
 ### Modify
-- `docker-compose.yml` — pin the 3 `:latest` images (+ recommended soft-float pins) (A9).
-- `ml-service/Dockerfile` — add a non-root `USER` (+ ensure writable paths are chowned) (A11).
+- `docker-compose.yml` — pin `minio/minio:latest`→explicit, `prom/prometheus:latest`→explicit, `grafana/grafana:latest`→explicit (A9 must-fix); prefer pinning soft-float `postgres:15-alpine`/`redis:7-alpine`/`rabbitmq:3.12-management-alpine`/`nginx:alpine`/`clamav/clamav:stable`/`odoo:16` to explicit patch versions (A9 recommended).
 
-### Explicitly NOT touched
-- No app code / `SecurityConfig` / Spring profiles (P0a-1/P0a-2 done), no `.env`/secret (S1/S2), no TLS/Keycloak-prod/backup (P0b), no `docker-compose.override.yml` (dev) behavior.
+### NOT touched
+- `ml-service/Dockerfile` (A11 → P0a-3b), app code / SecurityConfig / Spring profiles (P0a-1/2 done), `.env`/secret (S1/S2), TLS/Keycloak-prod/backup (P0b), `docker-compose.override.yml` (dev).
 
-## 4. Verification (honest CI vs B4 split)
+## 2. Verification (honest on-box vs B4)
 
-- **A9 (base pins):** CI-verifiable **Y** — the Docker-backed gates (Backend Verify deps aside; Acceptance Smoke / Frontend E2E Core boot the stack) pull the pinned images; a lint/grep assertion confirms no `:latest` remains.
-- **A11 (ml-service non-root):** CI-verifiable **Y/partial** — CI builds + health-checks ml-service; if green, non-root works. (Local build = off-box here.)
-- **A8 + A10 (prod override):** **config-content Y** (lint + grep: prod override has no internal `ports:`, sets `xpack.security.enabled=true`, creds via `${ENV}` not literals); **runtime = B4** (booting the prod override with ES auth needs Docker + real creds — off-box). Do **not** claim A8/A10 runtime-proven from this box.
-- `git diff --check -- . ':!.env'` clean. No Java change → `backend-preflight` not the verifier here; a small compose/grep assertion (script or doc-recorded checks) is the proof.
+- **A9 (base pins):** in-repo grep asserts no `:latest` remains (all images). **Runtime-pulled by CI only for started services** (postgres/postgres-keycloak/redis/elasticsearch/minio/rabbitmq/clamav/keycloak/ecm-core/ecm-frontend); the rest (collabora/greenmail/odoo/prometheus/grafana/ml-service) are lint/config-only. CI-verifiable = Y for started, config-only for rest.
+- **A8 + A10 (override):** verify with **`docker compose -f docker-compose.yml -f docker-compose.prod.yml config`** — assert (a) only `nginx` has `ports:` publishing `80`/`443`; (b) `ecm-core` env has `SPRING_PROFILES_ACTIVE=prod` + the required envs; (c) ES `xpack.security.enabled=true`. **`docker compose config` does not need the daemon** → attempt on-box; if the docker CLI is unavailable here, this drops to B4. **Full runtime boot of the prod override (ES auth, prod profile up) stays B4** (needs daemon + real secrets — off-box).
+- `${VAR:?required}` behavior (hard fail on missing) is validated when the override is actually composed → B4 / the on-box `config` run surfaces unset required vars.
+- `git diff --check -- . ':!.env'` clean. No Java change.
 
-## 5. Gate decisions
+## 3. Gate decisions (round-1 rulings adopted)
 
-- **D1 (A9 placement/depth):** pin in **base** (recommended, CI-verified) vs prod-override-only? And: kill only `:latest` (minimum) or also pin the soft-float `:alpine`/`:stable`/`:16` tags (recommended)?
-- **D2 (A8):** prod override unpublishes **all** internal ports, exposing only nginx `80/443` — confirm no internal service legitimately needs a host port in prod.
-- **D3 (A10):** ES `xpack.security.enabled=true` in the prod override (app then authenticates via the prod profile's ES creds) — confirm; full interplay validated in B4.
-- **D4 (A11):** attempt ml-service non-root **in this slice** (with chowned writable paths, CI health-check as proof), or **split it out** if it risks the E2E gate?
+- **D1 — adopted:** pin in **base**; kill all `:latest`; **prefer** pinning soft-float tags too.
+- **D2 — adopted:** `ports: !reset []` per internal service + a `docker compose config` assertion that only nginx publishes `80/443` (not grep).
+- **D3 — adopted:** override includes a coherent ecm-core prod profile (`SPRING_PROFILES_ACTIVE=prod`) + ES auth + all required envs via `${VAR:?required}`.
+- **D4 — adopted (split):** A11 ml-service non-root is **out of this slice** → P0a-3b, which must add an explicit `docker compose build ml-service` + start/health step (its own verification path), since current CI doesn't build ml-service.
 
-## 6. Out of scope
+## 4. Out of scope
 
-- B4 (prod-shape full-stack smoke), TLS, Keycloak prod realm, backup/restore — owner/env.
-- S1/S2 (.env untrack + rotation) — owner.
-- No new app features; no CI workflow rewrite.
+- A11 (ml-service non-root) → P0a-3b. B4 prod-shape smoke / TLS / Keycloak prod / backup-restore → owner/env. S1/S2 → owner. No CI workflow rewrite in this slice.
 
-## 7. Commit cadence (after gate)
+## 5. Commit cadence (after re-gate)
 
-1. `chore(core): pin compose image tags + ml-service non-root` (A9/A11, base).
-2. `chore(core): add docker-compose.prod.yml (closed ports, ES/MinIO/Grafana prod security)` (A7/A8/A10).
-3. `docs(core): record P0a-3 verification`; push; gate CI via `gh run view`; on 7/7, `[skip ci]` CI record.
-(If D4 splits A11, it gets its own commit/row.)
+1. `chore(core): pin compose image tags` (A9, base).
+2. `chore(core): add docker-compose.prod.yml (closed ports via !reset, prod profile + ES/MinIO/Grafana security, fail-fast envs)` (A7/A8/A10).
+3. `docs(core): record P0a-3 verification` (incl. the `docker compose config` assertion output if runnable on-box, else marked B4); push; gate CI via `gh run view`; on 7/7, `[skip ci]` CI record.
 
-## 8. Verification (this brief)
+## 6. Verification (this brief)
 
 ```bash
 git status --short                              # M .env + this brief only
