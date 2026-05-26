@@ -1,7 +1,7 @@
 # P0a-3 — Prod Compose / Runtime Shape (A7/A8/A9/A10) — Implementation Brief (read-only)
 
 Date: 2026-05-26
-Status: **read-only brief — no config/compose/Dockerfile/`.env` change by this document.** Revision: **v2** (gate findings folded in). Awaiting re-gate.
+Status: **read-only brief — no config/compose/Dockerfile/`.env` change by this document.** Revision: **v3** (gate round-2 micro-fix). Approved for implementation pending this fix.
 Parent: §8 Hardening Matrix in `docs/PRODUCTION_READINESS_ASSESSMENT_20260525.md`. Covers **A7, A8, A9, A10**. **A11 is split out** (see §0).
 Predecessors: P0a-1 (`e4f1b4c`) + P0a-2 (`9820996`) closed.
 
@@ -13,12 +13,14 @@ Predecessors: P0a-1 (`e4f1b4c`) + P0a-2 (`9820996`) closed.
 - **Medium — fail-fast secrets.** Compose treats unset `${VAR}` as blank+warning. v2 uses `${VAR:?required}` for all prod-only secrets/required envs (hard failure if missing).
 - **Low — A9 CI wording.** CI only pulls images for the services it starts; ml-service/collabora/greenmail/odoo/prometheus/grafana are not all started. A9 is **lint/config-verifiable for all images, runtime-verified only for CI-started services.**
 
+- **v2 → v3 (gate round-2):** Prometheus has **no auth mechanism** (verified: command at `docker-compose.yml` is scrape/tsdb/console/lifecycle only — no `--web.config.file`; no `basic_auth` in `monitoring/prometheus.yml`). So "Prometheus admin creds via env" was invalid — A10 corrected to **Prometheus = `!reset []` only, no auth in v1**. Also added the `docker compose config` dummy-env note (config fail-fasts on `${VAR:?required}` before assertions can run).
+
 ## 0. Scope (locked)
 
 - **A7** — add `docker-compose.prod.yml` (prod override; `-f docker-compose.yml -f docker-compose.prod.yml`).
 - **A8** — override removes published host ports for every internal service via `ports: !reset []`; only nginx keeps `80/443`.
 - **A9** — pin image tags in **base** compose (kill all `:latest`; prefer pinning soft-float tags too).
-- **A10** — override makes a coherent prod runtime: ecm-core `SPRING_PROFILES_ACTIVE=prod` + all required prod envs; ES `xpack.security.enabled=true`; MinIO/Grafana/Prometheus admin creds — all via `${VAR:?required}`.
+- **A10** — override makes a coherent prod runtime: ecm-core `SPRING_PROFILES_ACTIVE=prod` + all required prod envs; ES `xpack.security.enabled=true`; **MinIO + Grafana** admin creds via `${VAR:?required}`. **Prometheus: no auth in v1** (it has no auth mechanism today — no `--web.config.file`, no basic_auth in `monitoring/prometheus.yml`); P0a-3 only ensures it is **not externally published** (`ports: !reset []`). Adding `PROMETHEUS_*` creds would be a no-op; external Prometheus access is a separate future item (web-config/basic-auth or behind nginx).
 - **A11 (split → P0a-3b, not here):** ml-service non-root Dockerfile, with an explicit `docker compose build ml-service` + health verification path (since CI doesn't cover it).
 
 ## 1. Files
@@ -27,7 +29,7 @@ Predecessors: P0a-1 (`e4f1b4c`) + P0a-2 (`9820996`) closed.
 - `docker-compose.prod.yml` — prod override:
   - Every internal service (`postgres`, `postgres-keycloak`, `elasticsearch`, `redis`, `rabbitmq`, `minio`, `keycloak`, `clamav`, `odoo`, `greenmail`, `collabora`, `prometheus`, `grafana`, `ecm-core`, `ecm-frontend` if it publishes): `ports: !reset []`. **nginx keeps `80:80`/`443:443`.** (A8)
   - `elasticsearch.environment`: `xpack.security.enabled=true` + `ELASTIC_PASSWORD=${ELASTIC_PASSWORD:?required}`. (A10)
-  - `minio.environment`: `MINIO_ROOT_USER=${MINIO_ROOT_USER:?required}` / `MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:?required}`. `grafana`: `GF_SECURITY_ADMIN_USER`/`GF_SECURITY_ADMIN_PASSWORD` `${...:?required}`. (A10)
+  - `minio.environment`: `MINIO_ROOT_USER=${MINIO_ROOT_USER:?required}` / `MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:?required}`. `grafana`: `GF_SECURITY_ADMIN_USER`/`GF_SECURITY_ADMIN_PASSWORD` `${...:?required}`. **Prometheus: `!reset []` only — no auth env** (no auth mechanism exists; adding `PROMETHEUS_*` would be a no-op). (A10)
   - `ecm-core.environment`: `SPRING_PROFILES_ACTIVE=prod` **and** the no-default envs `application-prod.yml` requires — `SPRING_DATASOURCE_URL/USERNAME/PASSWORD`, `SPRING_ELASTICSEARCH_URIS/USERNAME/PASSWORD`, `SPRING_DATA_REDIS_HOST/PASSWORD`, `SPRING_RABBITMQ_HOST/USERNAME/PASSWORD`, `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI/JWK_SET_URI`, `ECM_SECURITY_CORS_ALLOWED_ORIGINS` — each `${VAR:?required}`. (A10)
 
 ### Modify
@@ -40,7 +42,7 @@ Predecessors: P0a-1 (`e4f1b4c`) + P0a-2 (`9820996`) closed.
 
 - **A9 (base pins):** in-repo grep asserts no `:latest` remains (all images). **Runtime-pulled by CI only for started services** (postgres/postgres-keycloak/redis/elasticsearch/minio/rabbitmq/clamav/keycloak/ecm-core/ecm-frontend); the rest (collabora/greenmail/odoo/prometheus/grafana/ml-service) are lint/config-only. CI-verifiable = Y for started, config-only for rest.
 - **A8 + A10 (override):** verify with **`docker compose -f docker-compose.yml -f docker-compose.prod.yml config`** — assert (a) only `nginx` has `ports:` publishing `80`/`443`; (b) `ecm-core` env has `SPRING_PROFILES_ACTIVE=prod` + the required envs; (c) ES `xpack.security.enabled=true`. **`docker compose config` does not need the daemon** → attempt on-box; if the docker CLI is unavailable here, this drops to B4. **Full runtime boot of the prod override (ES auth, prod profile up) stays B4** (needs daemon + real secrets — off-box).
-- `${VAR:?required}` behavior (hard fail on missing) is validated when the override is actually composed → B4 / the on-box `config` run surfaces unset required vars.
+- `${VAR:?required}` behavior (hard fail on missing) is validated when the override is actually composed → B4 / the on-box `config` run surfaces unset required vars. **To assert ports/env *shape* with `docker compose config`, first export dummy values for every `${VAR:?required}`** (otherwise `config` fail-fasts on the first missing var before any assertion can run); a separate run with a var deliberately unset proves the fail-fast.
 - `git diff --check -- . ':!.env'` clean. No Java change.
 
 ## 3. Gate decisions (round-1 rulings adopted)
