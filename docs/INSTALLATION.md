@@ -1,5 +1,13 @@
 # Athena ECM 安装部署指南
 
+> Production note (2026-05-27): production deployment uses `docker-compose.prod.yml`, which
+> requires the Docker Compose **v2 plugin** command `docker compose`. Legacy `docker-compose`
+> v1 rejects the `!reset` / `!override` YAML tags used by the prod override and is unsupported
+> for production. Before deploying, run
+> `scripts/prod-deploy-preflight.sh --env-file /etc/athena/prod.env --require-daemon`.
+> Do not deploy with a temporary `ddl-auto=update` compose override; prod must run with
+> Hibernate `ddl-auto=validate` and schema changes must be handled by Liquibase migrations.
+
 ## 目录
 - [系统要求](#系统要求)
 - [快速安装](#快速安装)
@@ -37,7 +45,7 @@
 #### 必需软件
 - **操作系统**: Linux (Ubuntu 20.04+/CentOS 8+/RHEL 8+)
 - **Docker**: 20.10+ 
-- **Docker Compose**: 2.0+
+- **Docker Compose**: v2 plugin (`docker compose`; production does not support legacy `docker-compose` v1)
 - **Git**: 2.0+
 
 #### 可选软件（开发环境）
@@ -78,8 +86,8 @@ if ! command -v docker &> /dev/null; then
     exit 1
 fi
 
-if ! command -v docker-compose &> /dev/null; then
-    echo "错误: 请先安装 Docker Compose"
+if ! docker compose version &> /dev/null; then
+    echo "错误: 请先安装 Docker Compose v2 plugin（使用 docker compose，而不是 docker-compose）"
     exit 1
 fi
 
@@ -100,7 +108,7 @@ chmod 755 storage logs
 
 # 5. 启动服务
 echo "启动服务..."
-docker-compose up -d
+docker compose up -d
 
 # 6. 等待服务启动
 echo "等待服务启动..."
@@ -108,7 +116,7 @@ sleep 60
 
 # 7. 检查服务状态
 echo "检查服务状态..."
-docker-compose ps
+docker compose ps
 
 echo "=== 安装完成 ==="
 echo "访问地址: http://localhost"

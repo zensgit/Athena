@@ -61,11 +61,18 @@ docker version
 docker compose version
 git rev-parse --short HEAD
 git status --short
+./scripts/prod-deploy-preflight.sh --env-file /etc/athena/prod.env --require-daemon
 ./scripts/b1b2-prod-config-check.sh
 ./scripts/ml-service-dockerfile-check.sh
 ```
 
 Acceptance: commands return successfully, `git status --short` is clean except ignored local env/cert material, and no secret value is printed.
+
+Production compose requires the Docker Compose **v2 plugin** (`docker compose`). Legacy
+`docker-compose` v1 is not supported because `docker-compose.prod.yml` intentionally uses
+Compose v2 YAML merge tags such as `!reset` / `!override`. Do not work around this by adding a
+`ddl-auto=update` override; production must run the `prod` profile with Hibernate
+`ddl-auto=validate`, and schema issues should be fixed with Liquibase migrations before cutover.
 
 ## 5. Execution Overview
 
@@ -188,16 +195,14 @@ Secret-bearing:
 Run shape validation without printing values:
 
 ```bash
-./scripts/b1b2-prod-config-check.sh
-docker compose --env-file /dev/null -f docker-compose.yml -f docker-compose.prod.yml config >/tmp/athena-prod-compose-config.txt
-grep -n "env_file" /tmp/athena-prod-compose-config.txt || true
+./scripts/prod-deploy-preflight.sh --env-file /etc/athena/prod.env --require-daemon
 ```
 
 ### Acceptance
 
 - New credential values exist in custodian.
 - Old values are invalidated or scheduled for invalidation in a defined window.
-- `docker compose config` succeeds with env supplied by the custodian or secure shell environment.
+- `prod-deploy-preflight` succeeds with env supplied by the custodian or secure shell environment.
 - No `.env` file is added back to Git.
 - No secret values are copied into evidence.
 
@@ -239,6 +244,7 @@ Prove the templated production config actually boots with real domain/cert/realm
 8. Start production stack:
 
 ```bash
+./scripts/prod-deploy-preflight.sh --env-file /etc/athena/prod.env --require-daemon
 ./scripts/b1b2-prod-config-check.sh
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 docker compose -f docker-compose.yml -f docker-compose.prod.yml ps

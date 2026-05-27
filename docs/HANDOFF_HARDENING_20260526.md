@@ -32,6 +32,11 @@ One page to resume or hand off the production-hardening track. **Canonical decis
 
 ## Cutover checklist — B1/B2 (the templated config is ready; fill these in)
 
+Preflight first: `scripts/prod-deploy-preflight.sh --env-file /etc/athena/prod.env --require-daemon`.
+This enforces the Docker Compose v2 plugin (`docker compose`), rejects legacy
+`docker-compose` v1 for prod, verifies required env key names without printing values, and blocks
+temporary `ddl-auto=update` compose overrides.
+
 Bring-up: `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d` — every `${VAR:?required}` must be supplied or it fails fast.
 
 **(1) Required env to set** (all fail-fast; values from the rotated/provisioned secrets — never commit them):
@@ -61,7 +66,7 @@ Bring-up: `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 - S2 inventory: `HARDENING_S2_SECRET_ROTATION_INVENTORY_20260526.md`
 - B1/B2: `HARDENING_B1_B2_KEYCLOAK_TLS_BRIEF_*` (design), `HARDENING_B1_B2_IMPLEMENTATION_BRIEF_*` (impl spec), `HARDENING_B1_B2_IMPLEMENTATION_VERIFICATION_*`
 - B3/B4: `RUNBOOK_B3_B4_BACKUP_RESTORE_AND_SMOKE_20260526.md`
-- Guards: `scripts/b1b2-prod-config-check.sh`, `scripts/ml-service-dockerfile-check.sh`, `scripts/backend-preflight.sh`
+- Guards: `scripts/prod-deploy-preflight.sh`, `scripts/b1b2-prod-config-check.sh`, `scripts/ml-service-dockerfile-check.sh`, `scripts/backend-preflight.sh`
 
 ## Boundaries (still in effect)
 
