@@ -1,0 +1,25 @@
+# Deploy from pre-published ghcr.io images instead of building from source.
+# Pairs with the "Release images to ghcr.io" workflow.
+#
+# On a networked host:
+#   # 1. (only if the packages are private) authenticate to ghcr:
+#   echo "$GHCR_TOKEN" | docker login ghcr.io -u <github-user> --password-stdin
+#
+#   # 2. pick a published tag (e.g. the git tag you pushed, or 'latest'):
+#   export ATHENA_TAG=latest
+#
+#   # 3. pull the app images, then start without building:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.ghcr.yml \
+#     --env-file prod.env pull ecm-core ecm-frontend ml-service
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.ghcr.yml \
+#     --env-file prod.env up -d --no-build
+#
+# Third-party images (postgres, elasticsearch, keycloak, ...) are pulled from
+# their normal registries as defined in the base compose files.
+services:
+  ecm-core:
+    image: ghcr.io/zensgit/athena-ecm-core:${ATHENA_TAG:-latest}
+  ecm-frontend:
+    image: ghcr.io/zensgit/athena-ecm-frontend:${ATHENA_TAG:-latest}
+  ml-service:
+    image: ghcr.io/zensgit/athena-ml-service:${ATHENA_TAG:-latest}
