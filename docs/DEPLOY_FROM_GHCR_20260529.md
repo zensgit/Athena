@@ -43,6 +43,24 @@ Push a `v*` tag **whose head commit message does NOT contain `[skip ci]`**.
 That token skips *all* workflows for the push — including a tag push — so a tag
 pointing at a `[skip ci]` commit silently fails to trigger this workflow.
 
-Then: GitHub → Actions → **Release images to ghcr.io** runs; confirm the three
-images appear under **Packages**, and set their visibility to **Public** for
-login-free pulls (first publish is private by default).
+Then confirm the three images appear under **Packages**. (Here they published
+**public** by default — verified `visibility=public`; if yours come up private,
+set them Public for login-free pulls.)
+
+## If push / tag does not trigger Actions
+
+Observed 2026-05-29: pushes to `main` and `v*` tag pushes produced **no
+check-suites** (no run started), while `workflow_dispatch` worked. Ruled out via
+API: repo is public (Actions free), `enabled=true`, `allowed_actions=all`, all
+workflows `state=active`, engine healthy (a dispatched run finished green). That
+points to a GitHub platform / account-side condition, not a workflow bug.
+
+Owner checks (web UI / account — not reachable from the CLI):
+1. Repo → **Actions** tab: look for a banner (dormant-repo notice, "Enable workflows", or other alert).
+2. **Settings → Actions → General**: confirm permissions aren't narrowed; no unexpected branch/event restriction.
+3. **github.com/settings/billing**: a payment/spending hold can suppress auto-triggers even with public (free) Actions.
+4. Edit + commit a workflow from the web UI (sometimes re-registers triggers).
+5. Still nothing → open a GitHub Support ticket (push-trigger failure on a public repo is a platform anomaly).
+
+**Until then, publish via manual dispatch:** `gh workflow run release-images.yml`
+— that is how the first publish was done. The deploy steps above are unaffected.
