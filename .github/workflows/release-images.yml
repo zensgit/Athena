@@ -49,7 +49,7 @@ jobs:
           images: ghcr.io/${{ github.repository_owner }}/athena-${{ matrix.service }}
           tags: |
             type=ref,event=tag
-            type=raw,value=latest,enable=${{ github.ref_type == 'tag' }}
+            type=raw,value=latest
             type=sha,format=short
 
       - name: Set up Buildx
