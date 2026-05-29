@@ -1,5 +1,9 @@
 # Deploying Athena from ghcr.io published images (2026-05-29)
 
+> **Status (2026-05-29):** first publish done via `workflow_dispatch` (run 26629788357, all 3 jobs green).
+> `ghcr.io/zensgit/athena-{ecm-core,ecm-frontend,ml-service}` are **public** with `latest` + `sha-` tags.
+> Note: push/tag auto-trigger was not firing at publish time, so releases currently go via manual dispatch.
+
 The **Release images to ghcr.io** workflow publishes the three app images on
 each `v*` tag, so a networked host can deploy without building from source.
 
