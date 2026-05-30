@@ -1,13 +1,16 @@
 # Runbook — #20 staging TLS + public static-asset throughput (2026-05-30)
 
 Operational actions to take #20 from "internal-test only" toward "externally viewable".
-**No more code slices** — the code/build half (source-map removal) is already done (`969d97b`, deployed, `*.map` absent). Everything below is ops.
+The code/build half (source-map removal) is already done (`969d97b`, deployed, `*.map` absent).
+The no-domain same-origin Keycloak wiring is also done for internal staging (`80820ce` + `527bb33`).
+Everything below remains ops because trusted TLS and public-network quality require owner-controlled DNS/provider inputs.
 
 ## Current state (measured 2026-05-30, host `23.254.236.11`)
 
 - `main.39bfbe72.js`: **3,286,459 bytes** uncompressed / **818,851 bytes** gzip. Source map removed (`*.map` = 0 in the container).
 - TLS: **self-signed** `CN=athena.local`; cert files on host at `/tmp/Athena.new/nginx/ssl/cert.pem` + `key.pem` (mounted into `athena-nginx-1`).
 - Public IP: `23.254.236.11`. nginx access log: default format, **no `$request_time`**.
+- No-domain auth wiring: frontend defaults to same-origin on non-localhost deployments; nginx proxies `/realms/...` to Keycloak; public OIDC discovery returns issuer `https://23.254.236.11:443/realms/ecm`, and the backend resource-server issuer is aligned.
 - Symptom (from #20): `main.js` serves in ~0.18s locally on the host, but times out from the public client → bottleneck on the public network path, not code.
 
 ---
@@ -45,19 +48,15 @@ Possible paths:
 Current host check (2026-05-30):
 
 - `cloudflared`, `ngrok`, and `tailscale` are not installed on `23.254.236.11`.
-- The shipped frontend bundle still falls back to `http://localhost:8180` for Keycloak when
-  `REACT_APP_KEYCLOAK_URL` is not set at build time.
-- The entry nginx has no public `/realms/...` route to Keycloak.
+- The same-origin Keycloak route is now implemented and deployed for the bare-IP staging host:
+  `/realms/...` is public through nginx, and authenticated token/API smoke passed.
+- Keycloak emits the public issuer with an explicit default port:
+  `https://23.254.236.11:443/realms/ecm`. Keep backend `ECM_JWT_ISSUER_URI` byte-for-byte
+  aligned with that value.
 
-Therefore, a temporary trusted URL is **not** a one-command runtime switch today. To make a
-no-domain trusted browser login work, choose one of these implementation paths first:
-
-- rebuild/publish the frontend with `REACT_APP_KEYCLOAK_URL=https://<temporary-host>` and
-  align Keycloak `KC_HOSTNAME` plus backend JWT issuer to the same host; or
-- add a same-origin Keycloak route (for example `/realms/...`) and change the frontend default
-  auth URL to same-origin, then align issuer/JWK settings.
-
-Until one of those is done, the current no-domain state remains: **internal testing only**.
+Therefore, the no-domain state is now: **internal testing can use the bare IP with manual
+self-signed-cert trust / `curl -k`; pilot/customer-facing use still requires a real hostname or
+trusted TLS front door**.
 
 ---
 
