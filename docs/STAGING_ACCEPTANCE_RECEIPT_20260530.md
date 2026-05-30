@@ -37,7 +37,7 @@ but it runs a staging-only security/TLS posture and has a known public static-as
 
 ### Known limitation — public static-asset throughput (#20)
 - `main.js` (~817 KB) serves in ~0.18s from the host locally but **times out from the public client** — the bottleneck is the public network path / VPS egress, **not code**.
-- The deployed build also exposes a **~10.4 MB source map** (`main.*.js.map`); recommend `GENERATE_SOURCEMAP=false` or nginx not serving `*.map` (independent of the network path).
+- The deployed build also exposed a **source map** (`main.f9687944.js.map`, 13,362,799 bytes). **Update 2026-05-30: fixed** — `GENERATE_SOURCEMAP=false` set in `ecm-frontend/Dockerfile` (`969d97b`), ghcr image rebuilt and staging redeployed; `*.map` now **absent** in the container. The network half (public `main.js` throughput) remains host/provider-side.
 - Tracked in #20 (host/provider-side bandwidth/routing + source-map trim).
 
 ## Scope statement
