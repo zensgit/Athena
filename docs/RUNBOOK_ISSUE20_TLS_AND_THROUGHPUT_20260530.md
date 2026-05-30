@@ -7,7 +7,7 @@ Everything below remains ops because trusted TLS and public-network quality requ
 
 ## Current state (measured 2026-05-30, host `23.254.236.11`)
 
-- `main.39bfbe72.js`: **3,286,459 bytes** uncompressed / **818,851 bytes** gzip. Source map removed (`*.map` = 0 in the container).
+- Current deployed bundle: `main.a10e6709.js`, **3,286,459 bytes** uncompressed / **818,653 bytes** gzip. Source map removed (`*.map` = 0 in the container).
 - TLS: **self-signed** `CN=athena.local`; cert files on host at `/tmp/Athena.new/nginx/ssl/cert.pem` + `key.pem` (mounted into `athena-nginx-1`).
 - Public IP: `23.254.236.11`. nginx access log: default format, **no `$request_time`**.
 - No-domain auth wiring: frontend defaults to same-origin on non-localhost deployments; nginx proxies `/realms/...` to Keycloak; public OIDC discovery returns issuer `https://23.254.236.11:443/realms/ecm`, and the backend resource-server issuer is aligned.
@@ -72,11 +72,11 @@ access_log /var/log/nginx/access.log timed;
 ```
 `nginx -t && nginx -s reload`. Then re-run a public fetch and read `rt=` for the JS request. (Revert after the investigation.)
 
-### 2b. Download `main.39bfbe72.js` from ≥2 external networks
+### 2b. Download the current main JS bundle from >=2 external networks
 From a couple of distinct networks (different ISP/region/cloud), and from the host itself as the baseline:
 ```
 curl -o /dev/null -k -w 'time=%{time_total}s speed=%{speed_download}B/s size=%{size_download}\n' \
-  https://23.254.236.11/static/js/main.39bfbe72.js
+  https://23.254.236.11/static/js/main.a10e6709.js
 ```
 Also `mtr -rwc 50 23.254.236.11` / `traceroute` from each to find loss/latency hops.
 

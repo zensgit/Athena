@@ -51,7 +51,7 @@ awaits second-network/provider validation if smoother public access is required.
 
 ### Known limitation — public static-asset throughput (#20)
 - The deployed build previously exposed a **source map** (`main.f9687944.js.map`, 13,362,799 bytes). **Fixed 2026-05-30:** `GENERATE_SOURCEMAP=false` set in `ecm-frontend/Dockerfile` (`969d97b`), ghcr image rebuilt and staging redeployed; `*.map` now **absent** in the container.
-- Browser-sized gzip path recheck: `main.39bfbe72.js` transfers as ~819 KB compressed. Ten public-client samples completed in **1.50-1.74s** (avg **1.61s**, ~511 KB/s), while host-local gzip baseline was **0.18s**. Earlier severe slow-path/timeout observations are therefore **intermittent or route-specific**, not a stable frontend/nginx/code failure.
+- Current deployed browser bundle: `main.a10e6709.js`, **3,286,459 bytes** uncompressed / **818,653 bytes** gzip. Public-client gzip samples completed in **1.75-2.02s** during the latest recheck; a prior same-size bundle recheck completed in **1.50-1.74s** (avg **1.61s**), while host-local gzip baseline was **0.18s**. Earlier severe slow-path/timeout observations are therefore **intermittent or route-specific**, not a stable frontend/nginx/code failure.
 - Tracked in #20. Remaining work is ops-side: owner-provided hostname/TLS front door plus a second external-network/provider check if smoother public access is required.
 
 ## Scope statement
