@@ -67,7 +67,8 @@ grep -q 'location /actuator/' "$SNIP"                              || fail "snip
 
 # --- 6. No real domain / no committed certs ----------------------------------------------------
 grep -E '^\s*server_name' "$PCONF" | grep -vq 'server_name _;' && fail "prod conf must use placeholder 'server_name _;' (no real domain committed)"
-ls nginx/ssl/*.pem >/dev/null 2>&1 && fail "no cert/key (*.pem) may be committed under nginx/ssl"
+git ls-files --error-unmatch 'nginx/ssl/*.pem' >/dev/null 2>&1 \
+    && fail "no cert/key (*.pem) may be committed under nginx/ssl"
 
 # --- 7. Dev nginx.conf untouched (still HTTP-only) ---------------------------------------------
 grep -Eq '^\s*listen 443 ssl' "$DEV" && fail "dev nginx.conf must stay HTTP-only (443 block must remain commented)"
