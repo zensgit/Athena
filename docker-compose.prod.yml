@@ -71,6 +71,7 @@ services:
     volumes: !reset []
     environment:
       - KC_HOSTNAME=${ECM_KEYCLOAK_PUBLIC_HOST:?required}
+      - KC_HOSTNAME_PORT=${ECM_KEYCLOAK_PUBLIC_PORT:-443}
       - KC_PROXY_HEADERS=xforwarded
       - KC_HTTP_ENABLED=true
   ml-service:

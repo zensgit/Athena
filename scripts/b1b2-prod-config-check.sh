@@ -26,6 +26,7 @@ echo "$kc" | grep -q 'import-realm'                   && fail "keycloak must NOT
 echo "$kc" | grep -Eq 'volumes:\s*!reset \[\]'        || fail "keycloak must drop the realm-import mount via 'volumes: !reset []'"
 echo "$kc" | grep -q 'KC_HTTP_ENABLED=true'           || fail "keycloak missing KC_HTTP_ENABLED=true (KC23 prod HTTP listener)"
 echo "$kc" | grep -q 'KC_HOSTNAME=${ECM_KEYCLOAK_PUBLIC_HOST:?required}' || fail "keycloak missing fail-fast KC_HOSTNAME"
+echo "$kc" | grep -q 'KC_HOSTNAME_PORT=${ECM_KEYCLOAK_PUBLIC_PORT:-443}' || fail "keycloak missing default public hostname port 443"
 echo "$kc" | grep -q 'KC_PROXY_HEADERS=xforwarded'    || fail "keycloak missing KC_PROXY_HEADERS=xforwarded"
 
 # --- 2. nginx override mounts the prod conf + snippet -------------------------------------------
