@@ -6,6 +6,12 @@ A comprehensive enterprise content management system built with Spring Boot and 
 
 All core features have been successfully implemented:
 
+### Current Staging Status
+
+- Internal staging guide: `docs/STAGING_INTERNAL_TESTING_GUIDE_20260530.md`
+- Current staging acceptance receipt: `docs/STAGING_ACCEPTANCE_RECEIPT_20260530.md`
+- Public/pilot access is still gated on owner-provided trusted TLS/hostname, tracked in GitHub issue #20.
+
 ### ✅ Completed Features
 
 1. **Core Data Layer**
