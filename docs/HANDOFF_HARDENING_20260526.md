@@ -9,6 +9,13 @@ One page to resume or hand off the production-hardening track. **Canonical decis
 - **Pilot (real data / non-controlled network):** needs **S2** on top of the delivered P0a + S1.
 - **External / public production:** needs **all P0b + B4** on the hardened config.
 
+## Current staging access (2026-05-30)
+
+- Bare-IP staging guide: `STAGING_INTERNAL_TESTING_GUIDE_20260530.md`.
+- Acceptance receipt: `STAGING_ACCEPTANCE_RECEIPT_20260530.md` (internal staging accepted; #21 closed).
+- Remaining owner action: GitHub issue #20 — trusted hostname/TLS front door, or explicit owner acceptance of
+  bare-IP self-signed access as internal-staging-only.
+
 ## Status at a glance
 
 | Track | Status | Evidence / where |
@@ -64,6 +71,7 @@ Bring-up: `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 - Owner execution plan: `OWNER_CUTOVER_EXECUTION_PLAN_20260526.md` (S2 → B1/B2 → A11 → B3 → B4, with rollback/evidence/triage)
 - P0a: `HARDENING_P0A1_*`, `HARDENING_P0A2_*`, `HARDENING_P0A3_*`, `HARDENING_P0A3B_*` (brief + verification each)
 - S2 inventory: `HARDENING_S2_SECRET_ROTATION_INVENTORY_20260526.md`
+- Staging internal testing: `STAGING_INTERNAL_TESTING_GUIDE_20260530.md`; `STAGING_ACCEPTANCE_RECEIPT_20260530.md`
 - B1/B2: `HARDENING_B1_B2_KEYCLOAK_TLS_BRIEF_*` (design), `HARDENING_B1_B2_IMPLEMENTATION_BRIEF_*` (impl spec), `HARDENING_B1_B2_IMPLEMENTATION_VERIFICATION_*`
 - B3/B4: `RUNBOOK_B3_B4_BACKUP_RESTORE_AND_SMOKE_20260526.md`
 - Guards: `scripts/prod-deploy-preflight.sh`, `scripts/b1b2-prod-config-check.sh`, `scripts/ml-service-dockerfile-check.sh`, `scripts/backend-preflight.sh`
