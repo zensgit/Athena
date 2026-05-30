@@ -40,6 +40,7 @@ echo "$s80" | grep -q 'athena-locations' && fail "port-80 server must NOT includ
 
 # --- 4. Port-443 server: ssl + include + hardened headers --------------------------------------
 grep -q 'listen 443 ssl' "$PCONF"                                  || fail "missing 'listen 443 ssl'"
+grep -q 'upstream keycloak_backend' "$PCONF"                       || fail "prod conf missing keycloak_backend upstream"
 grep -q 'include /etc/nginx/athena-locations.conf;' "$PCONF"       || fail "443 server must include the locations snippet"
 grep -q 'Strict-Transport-Security' "$PCONF"                       || fail "HSTS missing in prod conf"
 grep -q 'X-Frame-Options' "$PCONF"                                 || fail "X-Frame-Options missing in prod conf"
@@ -54,6 +55,9 @@ grep -Eq '(Strict-Transport-Security|Content-Security-Policy|X-Frame-Options|X-X
     && fail "snippet must NOT carry security headers (those belong to the 443 server)"
 grep -q 'location /api/' "$SNIP"                                   || fail "snippet missing /api/ location (drift guard)"
 grep -q 'documents/upload' "$SNIP"                                 || fail "snippet missing upload location (drift guard)"
+grep -q 'location \^~ /realms/' "$SNIP"                            || fail "snippet missing same-origin Keycloak /realms/ location"
+grep -q 'location \^~ /resources/' "$SNIP"                         || fail "snippet missing Keycloak /resources/ location"
+grep -q 'proxy_pass http://keycloak_backend' "$SNIP"                || fail "snippet missing keycloak_backend proxy"
 grep -q 'location / {' "$SNIP"                                     || fail "snippet missing frontend / location (drift guard)"
 grep -q 'location /health' "$SNIP"                                 || fail "snippet missing /health (drift guard)"
 grep -q 'location /actuator/' "$SNIP"                              || fail "snippet missing /actuator/ (drift guard)"
