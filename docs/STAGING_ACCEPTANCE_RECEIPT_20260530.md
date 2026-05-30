@@ -46,6 +46,7 @@ awaits second-network/provider validation if smoother public access is required.
 - Public OIDC discovery via `https://23.254.236.11/realms/ecm/.well-known/openid-configuration` returns **200** and issuer `https://23.254.236.11:443/realms/ecm`.
 - Backend resource-server issuer is aligned to the same value; `/actuator/health` returns **200**.
 - Authenticated smoke PASS: temporary Keycloak user → token issued through the same-origin `/realms` route → token `iss` matched `https://23.254.236.11:443/realms/ecm` → authenticated `GET /api/v1/folders/roots` returned **200**; temp smoke users cleaned up.
+- CI for the same-origin/Keycloak-port commits is green: GitHub Actions run `26681962294` completed **7/7 success** on `527bb33`.
 - This solves the no-domain **login/API wiring** problem for internal staging. It does **not** create browser-trusted TLS; bare-IP/self-signed remains staging-only.
 
 ### Known limitation — public static-asset throughput (#20)
