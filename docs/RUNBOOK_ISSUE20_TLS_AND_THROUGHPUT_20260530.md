@@ -58,6 +58,8 @@ Therefore, the no-domain state is now: **internal testing can use the bare IP wi
 self-signed-cert trust / `curl -k`; pilot/customer-facing use still requires a real hostname or
 trusted TLS front door**.
 
+For the short tester-facing entrypoint, see `docs/STAGING_INTERNAL_TESTING_GUIDE_20260530.md`.
+
 ---
 
 ## Action 2 — Network localization (provider egress vs client path)

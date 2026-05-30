@@ -65,3 +65,6 @@ This receipt certifies **internal-test readiness only**. Before pilot/production
 ## Related issues
 - **#19** (ClamAV/AV unhealthy) — **closed** under Acceptance (b); authenticated smoke evidence above.
 - **#20** (trusted TLS blocked on hostname + public JS throughput validation) — **partially mitigated**: source-map trim and no-domain same-origin auth wiring are done; trusted TLS still requires owner hostname/TLS front door.
+
+## Internal testing guide
+- For testers using the current bare-IP staging environment, see `docs/STAGING_INTERNAL_TESTING_GUIDE_20260530.md`.
