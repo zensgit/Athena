@@ -18,7 +18,9 @@ RUN npm ci --legacy-peer-deps --no-audit --no-fund
 # Copy source code
 COPY . .
 
-# Build the app
+# Build the app — disable CRA source maps in the shipped image
+# (#20: drops the ~13 MB main.*.js.map from the published frontend/ghcr image)
+ENV GENERATE_SOURCEMAP=false
 RUN npm run build
 
 # Production stage with Nginx
