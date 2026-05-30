@@ -219,8 +219,18 @@ services = data.get("services", {})
 core = services.get("ecm-core", {})
 if core.get("env_file"):
     raise SystemExit("ecm-core env_file must be empty in prod")
+
+es = services.get("elasticsearch", {})
+healthcheck = es.get("healthcheck", {})
+test = healthcheck.get("test")
+if isinstance(test, list):
+    healthcheck_text = " ".join(str(part) for part in test)
+else:
+    healthcheck_text = str(test or "")
+if "ELASTIC_PASSWORD" not in healthcheck_text or "-u" not in healthcheck_text:
+    raise SystemExit("prod Elasticsearch healthcheck must authenticate with ELASTIC_PASSWORD")
 PY
-info "merged prod config keeps prod profile, no ddl-auto update, and no ecm-core env_file"
+info "merged prod config keeps prod profile, no ddl-auto update, no ecm-core env_file, and authenticated Elasticsearch healthcheck"
 
 echo "prod_deploy_preflight: ok"
 echo "NOTE: This does not prove runtime cutover, TLS, Keycloak token issuer, backup/restore, or B4 smoke."

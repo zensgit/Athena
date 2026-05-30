@@ -48,6 +48,11 @@ services:
       # Internal network + ports closed (A8): basic auth over http, no TLS cert mgmt in v1.
       - xpack.security.http.ssl.enabled=false
       - ELASTIC_PASSWORD=${ELASTIC_PASSWORD:?required}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -u \"elastic:$${ELASTIC_PASSWORD}\" http://localhost:9200/_cluster/health >/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
   redis:
     ports: !reset []
   collabora:
