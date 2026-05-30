@@ -7,7 +7,9 @@
 
 **Athena staging is usable for internal testing. It is NOT pilot/production evidence.**
 The runtime is healthy and the core document path (auth → upload → download) works end-to-end,
-but it runs a staging-only security/TLS posture and has a known public static-asset throughput limit.
+but it runs a staging-only security/TLS posture. Public static-asset throughput had an earlier
+slow-path signal; the current browser-sized gzip path is acceptable from this client but still
+awaits second-network/provider validation.
 
 ## Evidence
 
@@ -36,18 +38,18 @@ but it runs a staging-only security/TLS posture and has a known public static-as
 - Acceptable for staging. **Pilot/customer-facing requires a real hostname + trusted cert** (e.g. Let's Encrypt).
 
 ### Known limitation — public static-asset throughput (#20)
-- `main.js` (~817 KB) serves in ~0.18s from the host locally but **times out from the public client** — the bottleneck is the public network path / VPS egress, **not code**.
-- The deployed build also exposed a **source map** (`main.f9687944.js.map`, 13,362,799 bytes). **Update 2026-05-30: fixed** — `GENERATE_SOURCEMAP=false` set in `ecm-frontend/Dockerfile` (`969d97b`), ghcr image rebuilt and staging redeployed; `*.map` now **absent** in the container. The network half (public `main.js` throughput) remains host/provider-side.
-- Tracked in #20 (host/provider-side bandwidth/routing + source-map trim).
+- The deployed build previously exposed a **source map** (`main.f9687944.js.map`, 13,362,799 bytes). **Fixed 2026-05-30:** `GENERATE_SOURCEMAP=false` set in `ecm-frontend/Dockerfile` (`969d97b`), ghcr image rebuilt and staging redeployed; `*.map` now **absent** in the container.
+- Browser-sized gzip path recheck: `main.39bfbe72.js` transfers as ~819 KB compressed. Ten public-client samples completed in **1.50-1.74s** (avg **1.61s**, ~511 KB/s), while host-local gzip baseline was **0.18s**. Earlier severe slow-path/timeout observations are therefore **intermittent or route-specific**, not a stable frontend/nginx/code failure.
+- Tracked in #20. Remaining work is ops-side: trusted TLS plus a second external-network/provider check if smoother public access is required.
 
 ## Scope statement
 
 This receipt certifies **internal-test readiness only**. Before pilot/production, the following remain required:
 - Trusted TLS certificate on a real hostname (not `athena.local`).
 - Antivirus **enabled** (production posture; the staging fail-open path is also a noted global gap).
-- Resolve public static-asset throughput (#20).
+- Complete #20 owner-side validation: trusted TLS and at least one second external-network/provider check for static-asset throughput.
 - Standard production cutover — secret rotation (S2), templated prod TLS/Keycloak (B1/B2), backup+restore smoke (B3), hardened full-stack smoke (B4) — per `docs/HANDOFF_HARDENING_20260526.md`.
 
 ## Related issues
 - **#19** (ClamAV/AV unhealthy) — **closed** under Acceptance (b); authenticated smoke evidence above.
-- **#20** (self-signed TLS + slow public JS) — **open**, host/provider-side + source-map trim.
+- **#20** (self-signed TLS + public JS throughput validation) — **open**, TLS/owner-provider side; source-map trim is done.
