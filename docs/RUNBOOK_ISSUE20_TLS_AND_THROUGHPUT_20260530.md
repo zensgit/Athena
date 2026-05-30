@@ -16,11 +16,12 @@ Operational actions to take #20 from "internal-test only" toward "externally vie
 
 1. **DNS**: point a real hostname (e.g. `staging.<yourdomain>`) A record → `23.254.236.11`.
 2. **Issue cert** (pick one):
-   - certbot webroot: `certbot certonly --webroot -w <nginx-html-root> -d staging.<yourdomain>`
-   - or certbot standalone (briefly free port 80): `certbot certonly --standalone -d staging.<yourdomain>`
+   - certbot standalone (briefly free port 80): `certbot certonly --standalone -d staging.<yourdomain>`.
+   - DNS-01 / provider-managed certificate, if the DNS or CDN provider supports it.
+   - certbot webroot **only after** adding an explicit `/.well-known/acme-challenge/` location. The current prod nginx config redirects port 80 and intentionally has no ACME challenge passthrough, so plain webroot issuance will fail.
    - → produces `/etc/letsencrypt/live/staging.<yourdomain>/{fullchain.pem,privkey.pem}`.
 3. **Install into the stack**: replace `/tmp/Athena.new/nginx/ssl/cert.pem` ← `fullchain.pem` and `key.pem` ← `privkey.pem` (or repoint the nginx `ssl_certificate*` directives at the LE paths and mount them).
-4. **Update `server_name`** in the nginx **443 server block**: `athena.local` → `staging.<yourdomain>`. Also update backend `ECM_KEYCLOAK_PUBLIC_HOST` / issuer if the public hostname changes (Keycloak `KC_HOSTNAME`, `SPRING_..._ISSUER_URI`).
+4. **Update `server_name`** in the nginx **443 server block**: current prod config uses the catch-all placeholder `server_name _;`; replace it with `staging.<yourdomain>` at cutover. Also update backend `ECM_KEYCLOAK_PUBLIC_HOST` / issuer if the public hostname changes (Keycloak `KC_HOSTNAME`, `SPRING_..._ISSUER_URI`).
 5. **Reload**: `docker exec athena-nginx-1 nginx -t && docker exec athena-nginx-1 nginx -s reload`.
 6. **Auto-renew**: `certbot renew` cron/timer + a deploy-hook that recopies the cert and reloads nginx.
 7. **Verify**: `curl -I https://staging.<yourdomain>/health` **without `-k`** → 200; `openssl s_client -connect staging.<yourdomain>:443` shows `issuer=Let's Encrypt`, not `CN=athena.local`.
