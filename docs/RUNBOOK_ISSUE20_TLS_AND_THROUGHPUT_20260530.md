@@ -59,6 +59,7 @@ self-signed-cert trust / `curl -k`; pilot/customer-facing use still requires a r
 trusted TLS front door**.
 
 For the short tester-facing entrypoint, see `docs/STAGING_INTERNAL_TESTING_GUIDE_20260530.md`.
+For a repeatable no-secret smoke command, run `scripts/staging-public-smoke.sh`.
 
 ---
 

@@ -42,6 +42,12 @@ the result, not the credential value.
 From a shell that can reach the staging host:
 
 ```bash
+scripts/staging-public-smoke.sh
+```
+
+Or run the equivalent manual checks:
+
+```bash
 curl -k -I https://23.254.236.11/health
 curl -k -sS https://23.254.236.11/realms/ecm/.well-known/openid-configuration
 ```
