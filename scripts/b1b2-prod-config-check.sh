@@ -32,6 +32,8 @@ echo "$kc" | grep -q 'KC_PROXY_HEADERS=xforwarded'    || fail "keycloak missing 
 # --- 2. nginx override mounts the prod conf + snippet -------------------------------------------
 grep -q './nginx/nginx.prod.conf:/etc/nginx/nginx.conf' "$PROD"          || fail "nginx override must mount nginx.prod.conf as /etc/nginx/nginx.conf"
 grep -q './nginx/athena-locations.conf:/etc/nginx/athena-locations.conf' "$PROD" || fail "nginx override must mount the locations snippet"
+grep -q 'wget --no-check-certificate -qO- https://127.0.0.1/health' "$PROD" \
+    || fail "nginx prod healthcheck must use HTTPS with --no-check-certificate for self-signed staging certs"
 
 # --- 3. Port-80 server is redirect-only (no business locations) --------------------------------
 s80=$(awk '/listen 80;/{f=1} f{print} /listen 443/{exit}' "$PCONF")
@@ -92,6 +94,13 @@ ec=d["services"]["ecm-core"]
 ef=ec.get("env_file")
 sys.exit(1 if ef else 0)
 ' || fail "prod ecm-core must drop base env files (env_file: !reset [] missing or ineffective)"
+    printf '%s' "$merged" | python3 -c '
+import sys,yaml
+d=yaml.safe_load(sys.stdin)
+hc=d["services"]["nginx"].get("healthcheck", {})
+test=" ".join(str(x) for x in hc.get("test", []))
+sys.exit(0 if "https://127.0.0.1/health" in test and "--no-check-certificate" in test else 1)
+' || fail "prod nginx healthcheck must target HTTPS /health and tolerate the self-signed staging cert"
     echo "OK: merged config validates on a clean clone (--env-file /dev/null); ecm-core has no env_file."
 else
     echo "SKIP: docker CLI not present — static checks only."

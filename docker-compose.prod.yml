@@ -107,3 +107,8 @@ services:
       - ./nginx/athena-locations.conf:/etc/nginx/athena-locations.conf:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
       - ./nginx/logs:/var/log/nginx
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-check-certificate -qO- https://127.0.0.1/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
