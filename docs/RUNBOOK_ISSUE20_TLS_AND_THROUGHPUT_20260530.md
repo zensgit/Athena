@@ -1,0 +1,72 @@
+# Runbook — #20 staging TLS + public static-asset throughput (2026-05-30)
+
+Operational actions to take #20 from "internal-test only" toward "externally viewable".
+**No more code slices** — the code/build half (source-map removal) is already done (`969d97b`, deployed, `*.map` absent). Everything below is ops.
+
+## Current state (measured 2026-05-30, host `23.254.236.11`)
+
+- `main.39bfbe72.js`: **3,286,459 bytes** uncompressed / **818,851 bytes** gzip. Source map removed (`*.map` = 0 in the container).
+- TLS: **self-signed** `CN=athena.local`; cert files on host at `/tmp/Athena.new/nginx/ssl/cert.pem` + `key.pem` (mounted into `athena-nginx-1`).
+- Public IP: `23.254.236.11`. nginx access log: default format, **no `$request_time`**.
+- Symptom (from #20): `main.js` serves in ~0.18s locally on the host, but times out from the public client → bottleneck on the public network path, not code.
+
+---
+
+## Action 1 — TLS: real domain + Let's Encrypt (hard gate before external viewing)
+
+1. **DNS**: point a real hostname (e.g. `staging.<yourdomain>`) A record → `23.254.236.11`.
+2. **Issue cert** (pick one):
+   - certbot webroot: `certbot certonly --webroot -w <nginx-html-root> -d staging.<yourdomain>`
+   - or certbot standalone (briefly free port 80): `certbot certonly --standalone -d staging.<yourdomain>`
+   - → produces `/etc/letsencrypt/live/staging.<yourdomain>/{fullchain.pem,privkey.pem}`.
+3. **Install into the stack**: replace `/tmp/Athena.new/nginx/ssl/cert.pem` ← `fullchain.pem` and `key.pem` ← `privkey.pem` (or repoint the nginx `ssl_certificate*` directives at the LE paths and mount them).
+4. **Update `server_name`** in the nginx **443 server block**: `athena.local` → `staging.<yourdomain>`. Also update backend `ECM_KEYCLOAK_PUBLIC_HOST` / issuer if the public hostname changes (Keycloak `KC_HOSTNAME`, `SPRING_..._ISSUER_URI`).
+5. **Reload**: `docker exec athena-nginx-1 nginx -t && docker exec athena-nginx-1 nginx -s reload`.
+6. **Auto-renew**: `certbot renew` cron/timer + a deploy-hook that recopies the cert and reloads nginx.
+7. **Verify**: `curl -I https://staging.<yourdomain>/health` **without `-k`** → 200; `openssl s_client -connect staging.<yourdomain>:443` shows `issuer=Let's Encrypt`, not `CN=athena.local`.
+
+---
+
+## Action 2 — Network localization (provider egress vs client path)
+
+### 2a. Add `$request_time` to nginx logging (temporary observation)
+In the entry nginx `http` block:
+```
+log_format timed '$remote_addr - $request_uri $status $body_bytes_sent rt=$request_time';
+access_log /var/log/nginx/access.log timed;
+```
+`nginx -t && nginx -s reload`. Then re-run a public fetch and read `rt=` for the JS request. (Revert after the investigation.)
+
+### 2b. Download `main.39bfbe72.js` from ≥2 external networks
+From a couple of distinct networks (different ISP/region/cloud), and from the host itself as the baseline:
+```
+curl -o /dev/null -k -w 'time=%{time_total}s speed=%{speed_download}B/s size=%{size_download}\n' \
+  https://23.254.236.11/static/js/main.39bfbe72.js
+```
+Also `mtr -rwc 50 23.254.236.11` / `traceroute` from each to find loss/latency hops.
+
+### 2c. Decide
+- **Slow from multiple networks → provider/host side.** Check: VPS egress bandwidth cap & traffic-shaping (provider console), `tc qdisc show`, `ethtool <iface>` link speed, an `iperf3`/Cloudflare-speed egress test from the host, and routing (`mtr`) for an upstream bottleneck.
+- **Slow from only one network → client-side path** (that ISP/route), not the server.
+
+> Note: a 5 MB upload test from the host during diagnosis briefly dropped the SSH session — a *possible* egress-limit hint, to confirm in 2c.
+
+---
+
+## Action 3 — CDN / reverse-proxy cache (if egress can't be fixed soon)
+
+Source map is already gone; the main JS is **3.1 MB (≈800 KB gzip)**, an **immutable hash-named static file** — exactly what a CDN serves best (cache-hit served from an edge, bypassing origin egress).
+
+- **Cloudflare (free tier)** — move the domain's NS to Cloudflare, enable proxy; it auto-caches `/static/*` and also terminates TLS at the edge (covers Action 1 too). Lowest effort.
+- **Dedicated CDN** (BunnyCDN / CloudFront) as a static asset host; point `/static/*` at it.
+- **Self-hosted reverse-proxy cache** (`nginx proxy_cache`) on a better-connected node.
+- Cache policy: long/immutable cache for `/static/js/*.js` & `/static/css/*`, no-cache (or short) for `index.html`.
+
+---
+
+## Priority
+1. **TLS** (Action 1) — hard gate for any external/pilot viewing.
+2. **Network localization** (Action 2) — establishes the root cause; decides whether Action 3 is needed.
+3. **CDN** (Action 3) — if egress is genuinely capped and smooth external access is required.
+
+Tracks #20. The code/build half is closed; this runbook is the ops half.
