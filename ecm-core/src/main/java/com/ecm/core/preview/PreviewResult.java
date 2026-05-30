@@ -1,11 +1,14 @@
 package com.ecm.core.preview;
 
 import lombok.Data;
+import java.io.Serializable;
 import java.util.List;
 import java.util.UUID;
 
 @Data
-public class PreviewResult {
+public class PreviewResult implements Serializable {
+    private static final long serialVersionUID = 1L;
+
     private UUID documentId;
     private String traceRequestId;
     private String mimeType;
@@ -21,7 +24,9 @@ public class PreviewResult {
 }
 
 @Data
-class PreviewPage {
+class PreviewPage implements Serializable {
+    private static final long serialVersionUID = 1L;
+
     private int pageNumber;
     private int width;
     private int height;
