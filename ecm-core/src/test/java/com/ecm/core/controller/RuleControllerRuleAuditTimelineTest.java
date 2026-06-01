@@ -24,6 +24,8 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -100,19 +102,18 @@ class RuleControllerRuleAuditTimelineTest {
     @Test
     @DisplayName("Rule audit timeline export endpoint returns CSV attachment")
     void exportRuleExecutionAuditTimelineShouldReturnCsv() throws Exception {
-        UUID nodeId = UUID.randomUUID();
         UUID logId = UUID.randomUUID();
         AuditLog auditLog = AuditLog.builder()
             .id(logId)
             .eventType("RULE_EXECUTED")
-            .nodeId(nodeId)
+            .nodeId(UUID.randomUUID())
             .nodeName("contract.pdf")
             .username("editor")
             .eventTime(LocalDateTime.now())
             .details("rule executed")
             .build();
 
-        when(auditLogRepository.findRuleAuditTimeline(any(), any(), any(), any(), any(), any()))
+        when(auditLogRepository.findRuleAuditTimelineNoNodeId(any(), any(), any(), any(), any()))
             .thenReturn(new PageImpl<>(List.of(auditLog), PageRequest.of(0, 20), 1));
         when(securityService.getCurrentUser()).thenReturn("admin");
 
@@ -123,6 +124,31 @@ class RuleControllerRuleAuditTimelineTest {
             .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.containsString("attachment;")))
             .andExpect(content().string(org.hamcrest.Matchers.containsString("id,eventType,nodeId,nodeName,username,eventTime,details")))
             .andExpect(content().string(org.hamcrest.Matchers.containsString(logId.toString())));
+    }
+
+    @Test
+    @DisplayName("Rule audit timeline omits nodeId predicate when nodeId is absent")
+    void listRuleExecutionAuditTimelineShouldUseNoNodeIdQueryWhenNodeIdAbsent() throws Exception {
+        when(auditLogRepository.findRuleAuditTimelineNoNodeId(
+            eq(null),
+            eq(null),
+            eq(null),
+            eq(null),
+            any()
+        )).thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 50), 0));
+
+        mockMvc.perform(get("/api/v1/rules/executions/audit"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(0));
+
+        verify(auditLogRepository).findRuleAuditTimelineNoNodeId(
+            eq(null),
+            eq(null),
+            eq(null),
+            eq(null),
+            any()
+        );
+        verify(auditLogRepository, never()).findRuleAuditTimeline(any(), any(), any(), any(), any(), any());
     }
 
     @Test

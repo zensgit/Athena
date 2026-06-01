@@ -99,7 +99,7 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
     @Query("""
         SELECT a.eventType, COUNT(a) FROM AuditLog a
         WHERE a.eventType LIKE CONCAT(:eventPrefix, '%')
-          AND (:from IS NULL OR a.eventTime >= :from)
+          AND a.eventTime >= COALESCE(:from, a.eventTime)
           AND (:username IS NULL OR a.username = :username)
           AND (:eventType IS NULL OR a.eventType = :eventType)
         GROUP BY a.eventType
@@ -113,7 +113,7 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
     @Query("""
         SELECT a.username, COUNT(a) FROM AuditLog a
         WHERE a.eventType LIKE CONCAT(:eventPrefix, '%')
-          AND (:from IS NULL OR a.eventTime >= :from)
+          AND a.eventTime >= COALESCE(:from, a.eventTime)
           AND (:username IS NULL OR a.username = :username)
           AND (:eventType IS NULL OR a.eventType = :eventType)
         GROUP BY a.username
@@ -267,8 +267,8 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
           AND (:eventType IS NULL OR :eventType = '' OR a.eventType = :eventType)
           AND (:username IS NULL OR :username = '' OR a.username = :username)
           AND (:nodeId IS NULL OR a.nodeId = :nodeId)
-          AND (:from IS NULL OR a.eventTime >= :from)
-          AND (:to IS NULL OR a.eventTime <= :to)
+          AND a.eventTime >= COALESCE(:from, a.eventTime)
+          AND a.eventTime <= COALESCE(:to, a.eventTime)
         ORDER BY a.eventTime DESC
         """)
     Page<AuditLog> findRuleAuditTimeline(@Param("eventType") String eventType,
@@ -277,6 +277,24 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
                                          @Param("from") LocalDateTime from,
                                          @Param("to") LocalDateTime to,
                                          Pageable pageable);
+
+    /**
+     * Variant of {@link #findRuleAuditTimeline} without nodeId predicate to avoid NULL UUID inference issues.
+     */
+    @Query("""
+        SELECT a FROM AuditLog a
+        WHERE (UPPER(a.eventType) LIKE 'RULE_%' OR UPPER(a.eventType) LIKE 'SCHEDULED_RULE%')
+          AND (:eventType IS NULL OR :eventType = '' OR a.eventType = :eventType)
+          AND (:username IS NULL OR :username = '' OR a.username = :username)
+          AND a.eventTime >= COALESCE(:from, a.eventTime)
+          AND a.eventTime <= COALESCE(:to, a.eventTime)
+        ORDER BY a.eventTime DESC
+        """)
+    Page<AuditLog> findRuleAuditTimelineNoNodeId(@Param("eventType") String eventType,
+                                                 @Param("username") String username,
+                                                 @Param("from") LocalDateTime from,
+                                                 @Param("to") LocalDateTime to,
+                                                 Pageable pageable);
 
     @Query("""
         SELECT a FROM AuditLog a
@@ -382,8 +400,8 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
         WHERE UPPER(a.eventType) LIKE 'RM_%'
           AND (:eventType IS NULL OR :eventType = '' OR a.eventType = :eventType)
           AND (:username IS NULL OR :username = '' OR a.username = :username)
-          AND (:from IS NULL OR a.eventTime >= :from)
-          AND (:to IS NULL OR a.eventTime <= :to)
+          AND a.eventTime >= COALESCE(:from, a.eventTime)
+          AND a.eventTime <= COALESCE(:to, a.eventTime)
         ORDER BY a.eventTime DESC
         """)
     Page<AuditLog> findRecordsManagementTimeline(@Param("eventType") String eventType,
@@ -396,8 +414,8 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
         SELECT a FROM AuditLog a
         WHERE a.eventType IN :eventTypes
           AND (:username IS NULL OR :username = '' OR a.username = :username)
-          AND (:from IS NULL OR a.eventTime >= :from)
-          AND (:to IS NULL OR a.eventTime <= :to)
+          AND a.eventTime >= COALESCE(:from, a.eventTime)
+          AND a.eventTime <= COALESCE(:to, a.eventTime)
         ORDER BY a.eventTime DESC
         """)
     Page<AuditLog> findByEventTypesAndFilters(@Param("eventTypes") List<String> eventTypes,
@@ -412,8 +430,8 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
           AND a.eventType NOT IN :excludedEventTypes
           AND (:eventType IS NULL OR :eventType = '' OR a.eventType = :eventType)
           AND (:username IS NULL OR :username = '' OR a.username = :username)
-          AND (:from IS NULL OR a.eventTime >= :from)
-          AND (:to IS NULL OR a.eventTime <= :to)
+          AND a.eventTime >= COALESCE(:from, a.eventTime)
+          AND a.eventTime <= COALESCE(:to, a.eventTime)
         ORDER BY a.eventTime DESC
         """)
     Page<AuditLog> findOtherRecordsManagementTimeline(@Param("excludedEventTypes") List<String> excludedEventTypes,

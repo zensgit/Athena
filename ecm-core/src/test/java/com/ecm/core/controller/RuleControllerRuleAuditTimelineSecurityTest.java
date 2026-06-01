@@ -76,6 +76,8 @@ class RuleControllerRuleAuditTimelineSecurityTest {
     void setupDefaults() {
         when(auditLogRepository.findRuleAuditTimeline(any(), any(), any(), any(), any(), any()))
             .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
+        when(auditLogRepository.findRuleAuditTimelineNoNodeId(any(), any(), any(), any(), any()))
+            .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
     }
 
     @Test

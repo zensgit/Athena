@@ -160,7 +160,7 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
     @Query("SELECT d FROM Document d " +
            "WHERE d.deleted = false " +
            "AND d.previewStatus IN :statuses " +
-           "AND (:updatedSince IS NULL OR d.previewLastUpdated >= :updatedSince) " +
+           "AND d.previewLastUpdated >= COALESCE(:updatedSince, d.previewLastUpdated) " +
            "ORDER BY d.previewLastUpdated DESC")
     Page<Document> findRecentPreviewFailuresByWindow(
         @Param("statuses") List<PreviewStatus> statuses,
@@ -170,7 +170,7 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
     @Query("SELECT COUNT(d) FROM Document d " +
            "WHERE d.deleted = false " +
            "AND d.previewStatus IN :statuses " +
-           "AND (:updatedSince IS NULL OR d.previewLastUpdated >= :updatedSince)")
+           "AND d.previewLastUpdated >= COALESCE(:updatedSince, d.previewLastUpdated)")
     long countPreviewFailuresByWindow(
         @Param("statuses") List<PreviewStatus> statuses,
         @Param("updatedSince") LocalDateTime updatedSince);
@@ -178,7 +178,7 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
     @Query("SELECT d FROM Document d " +
            "WHERE d.deleted = false " +
            "AND d.previewStatus IN :statuses " +
-           "AND (:updatedSince IS NULL OR d.previewLastUpdated >= :updatedSince) " +
+           "AND d.previewLastUpdated >= COALESCE(:updatedSince, d.previewLastUpdated) " +
            "AND ((:reason = 'UNSPECIFIED' AND TRIM(COALESCE(d.previewFailureReason, '')) = '') " +
            "  OR d.previewFailureReason = :reason) " +
            "ORDER BY d.previewLastUpdated DESC")
@@ -191,7 +191,7 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
     @Query("SELECT COUNT(d) FROM Document d " +
            "WHERE d.deleted = false " +
            "AND d.previewStatus IN :statuses " +
-           "AND (:updatedSince IS NULL OR d.previewLastUpdated >= :updatedSince) " +
+           "AND d.previewLastUpdated >= COALESCE(:updatedSince, d.previewLastUpdated) " +
            "AND ((:reason = 'UNSPECIFIED' AND TRIM(COALESCE(d.previewFailureReason, '')) = '') " +
            "  OR d.previewFailureReason = :reason)")
     long countPreviewFailuresByReasonAndWindow(
@@ -202,7 +202,7 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
     @Query("SELECT d FROM Document d " +
            "WHERE d.deleted = false " +
            "AND COALESCE(d.previewFailureCount, 0) > 0 " +
-           "AND (:failedSince IS NULL OR d.previewFailedAt >= :failedSince) " +
+           "AND d.previewFailedAt >= COALESCE(:failedSince, d.previewFailedAt) " +
            "ORDER BY d.previewFailedAt DESC, d.previewLastUpdated DESC")
     Page<Document> findPreviewFailureLedgerEntries(
         @Param("failedSince") LocalDateTime failedSince,
@@ -211,7 +211,7 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
     @Query("SELECT COUNT(d) FROM Document d " +
            "WHERE d.deleted = false " +
            "AND COALESCE(d.previewFailureCount, 0) > 0 " +
-           "AND (:failedSince IS NULL OR d.previewFailedAt >= :failedSince)")
+           "AND d.previewFailedAt >= COALESCE(:failedSince, d.previewFailedAt)")
     long countPreviewFailureLedgerEntries(
         @Param("failedSince") LocalDateTime failedSince);
 }

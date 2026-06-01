@@ -408,15 +408,24 @@ public class RuleController {
         int boundedLimit = Math.max(1, Math.min(limit, 500));
         LocalDateTime fromAt = parseDateTimeFilter("from", from);
         LocalDateTime toAt = parseDateTimeFilter("to", to);
-        return ResponseEntity.ok(
-            auditLogRepository.findRuleAuditTimeline(
+        Page<AuditLog> timeline = nodeId == null
+            ? auditLogRepository.findRuleAuditTimelineNoNodeId(
+                eventType,
+                actor,
+                fromAt,
+                toAt,
+                PageRequest.of(0, boundedLimit)
+            )
+            : auditLogRepository.findRuleAuditTimeline(
                 eventType,
                 actor,
                 nodeId,
                 fromAt,
                 toAt,
                 PageRequest.of(0, boundedLimit)
-            ).getContent().stream()
+            );
+        return ResponseEntity.ok(
+            timeline.getContent().stream()
                 .map(this::toRuleAuditTimelineItemResponse)
                 .toList()
         );
@@ -438,14 +447,23 @@ public class RuleController {
         int boundedLimit = Math.max(1, Math.min(limit, 2000));
         LocalDateTime fromAt = parseDateTimeFilter("from", from);
         LocalDateTime toAt = parseDateTimeFilter("to", to);
-        List<RuleAuditTimelineItemResponse> rows = auditLogRepository.findRuleAuditTimeline(
-            eventType,
-            actor,
-            nodeId,
-            fromAt,
-            toAt,
-            PageRequest.of(0, boundedLimit)
-        ).getContent().stream()
+        Page<AuditLog> timeline = nodeId == null
+            ? auditLogRepository.findRuleAuditTimelineNoNodeId(
+                eventType,
+                actor,
+                fromAt,
+                toAt,
+                PageRequest.of(0, boundedLimit)
+            )
+            : auditLogRepository.findRuleAuditTimeline(
+                eventType,
+                actor,
+                nodeId,
+                fromAt,
+                toAt,
+                PageRequest.of(0, boundedLimit)
+            );
+        List<RuleAuditTimelineItemResponse> rows = timeline.getContent().stream()
             .map(this::toRuleAuditTimelineItemResponse)
             .toList();
 
