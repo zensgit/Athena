@@ -284,8 +284,8 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
           AND (:eventType IS NULL OR :eventType = '' OR a.eventType = :eventType)
           AND (:username IS NULL OR :username = '' OR a.username = :username)
           AND (:nodeId IS NULL OR a.nodeId = :nodeId)
-          AND (:from IS NULL OR a.eventTime >= :from)
-          AND (:to IS NULL OR a.eventTime <= :to)
+          AND a.eventTime >= COALESCE(:from, a.eventTime)
+          AND a.eventTime <= COALESCE(:to, a.eventTime)
         ORDER BY a.eventTime DESC
         """)
     Page<AuditLog> findBulkOperationTimeline(@Param("eventType") String eventType,
@@ -303,8 +303,8 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
         WHERE UPPER(a.eventType) LIKE 'BULK_%'
           AND (:eventType IS NULL OR :eventType = '' OR a.eventType = :eventType)
           AND (:username IS NULL OR :username = '' OR a.username = :username)
-          AND (:from IS NULL OR a.eventTime >= :from)
-          AND (:to IS NULL OR a.eventTime <= :to)
+          AND a.eventTime >= COALESCE(:from, a.eventTime)
+          AND a.eventTime <= COALESCE(:to, a.eventTime)
         ORDER BY a.eventTime DESC
         """)
     Page<AuditLog> findBulkOperationTimelineNoNodeId(@Param("eventType") String eventType,
@@ -319,8 +319,8 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
           AND (:eventType IS NULL OR :eventType = '' OR a.eventType = :eventType)
           AND (:username IS NULL OR :username = '' OR a.username = :username)
           AND (:nodeId IS NULL OR a.nodeId = :nodeId)
-          AND (:from IS NULL OR a.eventTime >= :from)
-          AND (:to IS NULL OR a.eventTime <= :to)
+          AND a.eventTime >= COALESCE(:from, a.eventTime)
+          AND a.eventTime <= COALESCE(:to, a.eventTime)
         GROUP BY a.eventType
         ORDER BY COUNT(a) DESC
         """)
@@ -331,13 +331,28 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
                                                    @Param("to") LocalDateTime to);
 
     @Query("""
+        SELECT a.eventType, COUNT(a) FROM AuditLog a
+        WHERE UPPER(a.eventType) LIKE 'BULK_%'
+          AND (:eventType IS NULL OR :eventType = '' OR a.eventType = :eventType)
+          AND (:username IS NULL OR :username = '' OR a.username = :username)
+          AND a.eventTime >= COALESCE(:from, a.eventTime)
+          AND a.eventTime <= COALESCE(:to, a.eventTime)
+        GROUP BY a.eventType
+        ORDER BY COUNT(a) DESC
+        """)
+    List<Object[]> countBulkByEventTypeWithFiltersNoNodeId(@Param("eventType") String eventType,
+                                                           @Param("username") String username,
+                                                           @Param("from") LocalDateTime from,
+                                                           @Param("to") LocalDateTime to);
+
+    @Query("""
         SELECT a.username, COUNT(a) FROM AuditLog a
         WHERE UPPER(a.eventType) LIKE 'BULK_%'
           AND (:eventType IS NULL OR :eventType = '' OR a.eventType = :eventType)
           AND (:username IS NULL OR :username = '' OR a.username = :username)
           AND (:nodeId IS NULL OR a.nodeId = :nodeId)
-          AND (:from IS NULL OR a.eventTime >= :from)
-          AND (:to IS NULL OR a.eventTime <= :to)
+          AND a.eventTime >= COALESCE(:from, a.eventTime)
+          AND a.eventTime <= COALESCE(:to, a.eventTime)
         GROUP BY a.username
         ORDER BY COUNT(a) DESC
         """)
@@ -346,6 +361,21 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
                                                   @Param("nodeId") UUID nodeId,
                                                   @Param("from") LocalDateTime from,
                                                   @Param("to") LocalDateTime to);
+
+    @Query("""
+        SELECT a.username, COUNT(a) FROM AuditLog a
+        WHERE UPPER(a.eventType) LIKE 'BULK_%'
+          AND (:eventType IS NULL OR :eventType = '' OR a.eventType = :eventType)
+          AND (:username IS NULL OR :username = '' OR a.username = :username)
+          AND a.eventTime >= COALESCE(:from, a.eventTime)
+          AND a.eventTime <= COALESCE(:to, a.eventTime)
+        GROUP BY a.username
+        ORDER BY COUNT(a) DESC
+        """)
+    List<Object[]> countBulkByUsernameWithFiltersNoNodeId(@Param("eventType") String eventType,
+                                                          @Param("username") String username,
+                                                          @Param("from") LocalDateTime from,
+                                                          @Param("to") LocalDateTime to);
 
     @Query("""
         SELECT a FROM AuditLog a

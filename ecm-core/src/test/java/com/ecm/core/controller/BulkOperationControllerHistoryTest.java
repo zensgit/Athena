@@ -145,8 +145,7 @@ class BulkOperationControllerHistoryTest {
             isNull(),
             eq(PageRequest.of(0, 1))
         )).thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 1), 7));
-        when(auditLogRepository.countBulkByEventTypeWithFilters(
-            isNull(),
+        when(auditLogRepository.countBulkByEventTypeWithFiltersNoNodeId(
             isNull(),
             isNull(),
             isNull(),
@@ -155,8 +154,7 @@ class BulkOperationControllerHistoryTest {
             new Object[]{"BULK_DELETE_COMPLETED", 4L},
             new Object[]{"BULK_METADATA_UPDATE_PARTIAL", 2L}
         ));
-        when(auditLogRepository.countBulkByUsernameWithFilters(
-            isNull(),
+        when(auditLogRepository.countBulkByUsernameWithFiltersNoNodeId(
             isNull(),
             isNull(),
             isNull(),
@@ -188,15 +186,13 @@ class BulkOperationControllerHistoryTest {
             isNull(),
             eq(PageRequest.of(0, 1))
         )).thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 1), 3));
-        when(auditLogRepository.countBulkByEventTypeWithFilters(
-            isNull(),
+        when(auditLogRepository.countBulkByEventTypeWithFiltersNoNodeId(
             isNull(),
             isNull(),
             isNull(),
             isNull()
         )).thenReturn(List.<Object[]>of(new Object[]{"BULK_DELETE_COMPLETED", 3L}));
-        when(auditLogRepository.countBulkByUsernameWithFilters(
-            isNull(),
+        when(auditLogRepository.countBulkByUsernameWithFiltersNoNodeId(
             isNull(),
             isNull(),
             isNull(),

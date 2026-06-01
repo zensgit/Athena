@@ -401,8 +401,10 @@ public class BulkOperationController {
                 eventType, actor, nodeId, fromAt, toAt, PageRequest.of(0, 1))
         ).getTotalElements();
 
-        List<BulkHistorySummaryCounterItem> eventTypeItems = auditLogRepository
-            .countBulkByEventTypeWithFilters(eventType, actor, nodeId, fromAt, toAt).stream()
+        List<Object[]> eventTypeRows = nodeId == null
+            ? auditLogRepository.countBulkByEventTypeWithFiltersNoNodeId(eventType, actor, fromAt, toAt)
+            : auditLogRepository.countBulkByEventTypeWithFilters(eventType, actor, nodeId, fromAt, toAt);
+        List<BulkHistorySummaryCounterItem> eventTypeItems = eventTypeRows.stream()
             .limit(topN)
             .map(row -> new BulkHistorySummaryCounterItem(
                 row[0] != null ? row[0].toString() : "UNKNOWN",
@@ -410,8 +412,10 @@ public class BulkOperationController {
             ))
             .toList();
 
-        List<BulkHistorySummaryCounterItem> actorItems = auditLogRepository
-            .countBulkByUsernameWithFilters(eventType, actor, nodeId, fromAt, toAt).stream()
+        List<Object[]> actorRows = nodeId == null
+            ? auditLogRepository.countBulkByUsernameWithFiltersNoNodeId(eventType, actor, fromAt, toAt)
+            : auditLogRepository.countBulkByUsernameWithFilters(eventType, actor, nodeId, fromAt, toAt);
+        List<BulkHistorySummaryCounterItem> actorItems = actorRows.stream()
             .limit(topN)
             .map(row -> new BulkHistorySummaryCounterItem(
                 row[0] != null ? row[0].toString() : "UNKNOWN",
