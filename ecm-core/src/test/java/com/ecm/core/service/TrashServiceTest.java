@@ -1,8 +1,10 @@
 package com.ecm.core.service;
 
 import com.ecm.core.entity.Document;
+import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Node;
 import com.ecm.core.repository.NodeRepository;
+import com.ecm.core.repository.RenditionResourceRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -19,11 +21,13 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.inOrder;
 
 @ExtendWith(MockitoExtension.class)
 class TrashServiceTest {
 
     @Mock private NodeRepository nodeRepository;
+    @Mock private RenditionResourceRepository renditionResourceRepository;
     @Mock private SecurityService securityService;
     @Mock private TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
@@ -31,7 +35,7 @@ class TrashServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new TrashService(nodeRepository, securityService, tenantWorkspaceScopeService);
+        service = new TrashService(nodeRepository, renditionResourceRepository, securityService, tenantWorkspaceScopeService);
         ReflectionTestUtils.setField(service, "retentionDays", 30);
         ReflectionTestUtils.setField(service, "autoPurgeEnabled", true);
     }
@@ -71,6 +75,52 @@ class TrashServiceTest {
         assertEquals(1, trashItems.size());
         assertEquals(visible.getId(), trashItems.get(0).getId());
     }
+
+    @Test
+    @DisplayName("permanentDelete removes rendition resources before deleting document")
+    void permanentDeleteRemovesRenditionResourcesBeforeDeletingDocument() {
+        UUID nodeId = UUID.randomUUID();
+        Document document = document(nodeId, "/Root/uploads/report.pdf");
+        document.setDeleted(true);
+        document.setCreatedBy("alice");
+
+        when(nodeRepository.findById(nodeId)).thenReturn(Optional.of(document));
+        when(tenantWorkspaceScopeService.hasScopedTenantWorkspace()).thenReturn(false);
+        when(securityService.getCurrentUser()).thenReturn("alice");
+        when(securityService.isAdmin("alice")).thenReturn(false);
+
+        service.permanentDelete(nodeId);
+
+        var order = inOrder(renditionResourceRepository, nodeRepository);
+        order.verify(renditionResourceRepository).deleteByDocumentId(nodeId);
+        order.verify(nodeRepository).delete(document);
+    }
+
+    @Test
+    @DisplayName("permanentDelete recursively removes child document renditions before child delete")
+    void permanentDeleteRecursivelyRemovesChildDocumentRenditionsBeforeChildDelete() {
+        UUID folderId = UUID.randomUUID();
+        UUID documentId = UUID.randomUUID();
+        Folder folder = folder(folderId, "/Root/uploads/batch");
+        folder.setDeleted(true);
+        folder.setCreatedBy("admin");
+        Document document = document(documentId, "/Root/uploads/batch/report.pdf");
+        document.setDeleted(true);
+        document.setCreatedBy("admin");
+
+        when(nodeRepository.findById(folderId)).thenReturn(Optional.of(folder));
+        when(tenantWorkspaceScopeService.hasScopedTenantWorkspace()).thenReturn(false);
+        when(securityService.getCurrentUser()).thenReturn("admin");
+        when(securityService.isAdmin("admin")).thenReturn(true);
+        when(nodeRepository.findByParentId(folderId)).thenReturn(List.of(document));
+
+        service.permanentDelete(folderId);
+
+        var order = inOrder(renditionResourceRepository, nodeRepository);
+        order.verify(renditionResourceRepository).deleteByDocumentId(documentId);
+        order.verify(nodeRepository).delete(document);
+        order.verify(nodeRepository).delete(folder);
+    }
     
     private Document document(UUID id, String path) {
         Document document = new Document();
@@ -79,5 +129,14 @@ class TrashServiceTest {
         document.setPath(path);
         document.setArchiveStatus(Node.ArchiveStatus.LIVE);
         return document;
+    }
+
+    private Folder folder(UUID id, String path) {
+        Folder folder = new Folder();
+        folder.setId(id);
+        folder.setName("folder");
+        folder.setPath(path);
+        folder.setArchiveStatus(Node.ArchiveStatus.LIVE);
+        return folder;
     }
 }

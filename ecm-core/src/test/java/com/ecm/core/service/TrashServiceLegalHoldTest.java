@@ -5,6 +5,7 @@ import com.ecm.core.entity.Node;
 import com.ecm.core.entity.Permission.PermissionType;
 import com.ecm.core.exception.IllegalOperationException;
 import com.ecm.core.repository.NodeRepository;
+import com.ecm.core.repository.RenditionResourceRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -28,6 +29,7 @@ import static org.mockito.Mockito.when;
 class TrashServiceLegalHoldTest {
 
     @Mock private NodeRepository nodeRepository;
+    @Mock private RenditionResourceRepository renditionResourceRepository;
     @Mock private SecurityService securityService;
     @Mock private TenantWorkspaceScopeService tenantWorkspaceScopeService;
     @Mock private LegalHoldService legalHoldService;
@@ -36,7 +38,7 @@ class TrashServiceLegalHoldTest {
 
     @BeforeEach
     void setUp() {
-        service = new TrashService(nodeRepository, securityService, tenantWorkspaceScopeService);
+        service = new TrashService(nodeRepository, renditionResourceRepository, securityService, tenantWorkspaceScopeService);
         ReflectionTestUtils.setField(service, "retentionDays", 30);
         ReflectionTestUtils.setField(service, "autoPurgeEnabled", true);
         ReflectionTestUtils.setField(service, "legalHoldService", legalHoldService);

@@ -2,6 +2,9 @@ package com.ecm.core.repository;
 
 import com.ecm.core.entity.RenditionResource;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -14,4 +17,8 @@ public interface RenditionResourceRepository extends JpaRepository<RenditionReso
     List<RenditionResource> findByDocumentIdOrderBySortOrderAsc(UUID documentId);
 
     Optional<RenditionResource> findByDocumentIdAndRenditionKey(UUID documentId, String renditionKey);
+
+    @Modifying
+    @Query("DELETE FROM RenditionResource r WHERE r.document.id = :documentId")
+    int deleteByDocumentId(@Param("documentId") UUID documentId);
 }

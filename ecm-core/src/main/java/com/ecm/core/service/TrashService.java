@@ -1,8 +1,10 @@
 package com.ecm.core.service;
 
+import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Node;
 import com.ecm.core.entity.Permission.PermissionType;
 import com.ecm.core.repository.NodeRepository;
+import com.ecm.core.repository.RenditionResourceRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,6 +34,7 @@ import java.util.UUID;
 public class TrashService {
 
     private final NodeRepository nodeRepository;
+    private final RenditionResourceRepository renditionResourceRepository;
     private final SecurityService securityService;
     private final TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
@@ -152,7 +155,7 @@ public class TrashService {
             permanentDeleteChildren(node);
         }
 
-        nodeRepository.delete(node);
+        deleteNodePermanently(node);
         log.info("Node {} permanently deleted by {}", nodeId, currentUser);
     }
 
@@ -221,7 +224,7 @@ public class TrashService {
         int count = 0;
         for (Node node : rootItems) {
             permanentDeleteChildren(node);
-            nodeRepository.delete(node);
+            deleteNodePermanently(node);
             count++;
         }
 
@@ -293,7 +296,7 @@ public class TrashService {
                 assertNoActiveHold(node, "auto-purge");
                 assertNoRecordHierarchyMutation(node, "auto-purge");
                 permanentDeleteChildren(node);
-                nodeRepository.delete(node);
+                deleteNodePermanently(node);
                 count++;
             } catch (Exception e) {
                 log.error("Failed to purge trash item {}: {}", node.getId(), e.getMessage());
@@ -380,8 +383,15 @@ public class TrashService {
             if (child.isFolder()) {
                 permanentDeleteChildren(child);
             }
-            nodeRepository.delete(child);
+            deleteNodePermanently(child);
         }
+    }
+
+    private void deleteNodePermanently(Node node) {
+        if (node instanceof Document document && document.getId() != null) {
+            renditionResourceRepository.deleteByDocumentId(document.getId());
+        }
+        nodeRepository.delete(node);
     }
 
     // Stats record
