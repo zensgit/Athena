@@ -52,6 +52,10 @@ public class FolderService {
     @Lazy
     private LegalHoldService legalHoldService;
 
+    @Autowired
+    @Lazy
+    private ShareLinkNodeCleanupService shareLinkNodeCleanupService;
+
     /**
      * Create a new folder
      */
@@ -684,6 +688,7 @@ public class FolderService {
 
     private void deleteNodePermanently(Node node) {
         if (node instanceof Document document && document.getId() != null) {
+            shareLinkNodeCleanupService.deleteByNodeId(document.getId());
             renditionResourceRepository.deleteByDocumentId(document.getId());
         }
         nodeRepository.delete(node);

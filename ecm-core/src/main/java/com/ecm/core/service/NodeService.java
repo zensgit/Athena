@@ -61,6 +61,10 @@ public class NodeService {
     private RecordsManagementService recordsManagementService;
 
     @Autowired
+    @Lazy
+    private ShareLinkNodeCleanupService shareLinkNodeCleanupService;
+
+    @Autowired
     public NodeService(
         NodeRepository nodeRepository,
         FolderRepository folderRepository,
@@ -1021,6 +1025,7 @@ public class NodeService {
         }
 
         detachDocumentReferencesIfPresent(node);
+        cleanupDocumentDependentsIfPresent(node);
         
         // Delete permissions
         permissionRepository.deleteByNodeId(node.getId());
@@ -1123,6 +1128,12 @@ public class NodeService {
             if (version.getId() != null) {
                 contentReferenceService.detach(version.getContentId(), OwnerType.VERSION, version.getId());
             }
+        }
+    }
+
+    private void cleanupDocumentDependentsIfPresent(Node node) {
+        if (node instanceof Document document && document.getId() != null) {
+            shareLinkNodeCleanupService.deleteByNodeId(document.getId());
         }
     }
 

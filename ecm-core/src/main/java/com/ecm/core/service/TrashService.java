@@ -46,6 +46,10 @@ public class TrashService {
     @Lazy
     private RecordsManagementService recordsManagementService;
 
+    @Autowired
+    @Lazy
+    private ShareLinkNodeCleanupService shareLinkNodeCleanupService;
+
     @Value("${ecm.trash.retention-days:30}")
     private int retentionDays;
 
@@ -389,6 +393,7 @@ public class TrashService {
 
     private void deleteNodePermanently(Node node) {
         if (node instanceof Document document && document.getId() != null) {
+            shareLinkNodeCleanupService.deleteByNodeId(document.getId());
             renditionResourceRepository.deleteByDocumentId(document.getId());
         }
         nodeRepository.delete(node);

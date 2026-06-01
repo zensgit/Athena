@@ -28,6 +28,7 @@ class TrashServiceTest {
 
     @Mock private NodeRepository nodeRepository;
     @Mock private RenditionResourceRepository renditionResourceRepository;
+    @Mock private ShareLinkNodeCleanupService shareLinkNodeCleanupService;
     @Mock private SecurityService securityService;
     @Mock private TenantWorkspaceScopeService tenantWorkspaceScopeService;
 
@@ -36,6 +37,7 @@ class TrashServiceTest {
     @BeforeEach
     void setUp() {
         service = new TrashService(nodeRepository, renditionResourceRepository, securityService, tenantWorkspaceScopeService);
+        ReflectionTestUtils.setField(service, "shareLinkNodeCleanupService", shareLinkNodeCleanupService);
         ReflectionTestUtils.setField(service, "retentionDays", 30);
         ReflectionTestUtils.setField(service, "autoPurgeEnabled", true);
     }
@@ -91,7 +93,8 @@ class TrashServiceTest {
 
         service.permanentDelete(nodeId);
 
-        var order = inOrder(renditionResourceRepository, nodeRepository);
+        var order = inOrder(shareLinkNodeCleanupService, renditionResourceRepository, nodeRepository);
+        order.verify(shareLinkNodeCleanupService).deleteByNodeId(nodeId);
         order.verify(renditionResourceRepository).deleteByDocumentId(nodeId);
         order.verify(nodeRepository).delete(document);
     }
@@ -116,7 +119,8 @@ class TrashServiceTest {
 
         service.permanentDelete(folderId);
 
-        var order = inOrder(renditionResourceRepository, nodeRepository);
+        var order = inOrder(shareLinkNodeCleanupService, renditionResourceRepository, nodeRepository);
+        order.verify(shareLinkNodeCleanupService).deleteByNodeId(documentId);
         order.verify(renditionResourceRepository).deleteByDocumentId(documentId);
         order.verify(nodeRepository).delete(document);
         order.verify(nodeRepository).delete(folder);

@@ -18,6 +18,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Optional;
@@ -38,6 +39,7 @@ class NodeServiceContentReferenceTest {
     @Mock private SecurityService securityService;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private ContentReferenceService contentReferenceService;
+    @Mock private ShareLinkNodeCleanupService shareLinkNodeCleanupService;
 
     private NodeService nodeService;
 
@@ -53,6 +55,7 @@ class NodeServiceContentReferenceTest {
             eventPublisher,
             contentReferenceService
         );
+        ReflectionTestUtils.setField(nodeService, "shareLinkNodeCleanupService", shareLinkNodeCleanupService);
     }
 
     @Test
@@ -103,6 +106,7 @@ class NodeServiceContentReferenceTest {
 
         verify(contentReferenceService).detach("doc-content", OwnerType.DOCUMENT, documentId);
         verify(contentReferenceService).detach("version-content", OwnerType.VERSION, versionId);
+        verify(shareLinkNodeCleanupService).deleteByNodeId(documentId);
         verify(nodeRepository).delete(document);
     }
 

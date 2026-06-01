@@ -18,6 +18,7 @@ import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Optional;
@@ -34,6 +35,7 @@ class FolderServicePermanentDeleteTest {
     @Mock private NodeRepository nodeRepository;
     @Mock private PermissionRepository permissionRepository;
     @Mock private RenditionResourceRepository renditionResourceRepository;
+    @Mock private ShareLinkNodeCleanupService shareLinkNodeCleanupService;
     @Mock private SecurityService securityService;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private FacetedSearchService searchService;
@@ -52,6 +54,7 @@ class FolderServicePermanentDeleteTest {
             searchService,
             new ObjectMapper()
         );
+        ReflectionTestUtils.setField(folderService, "shareLinkNodeCleanupService", shareLinkNodeCleanupService);
     }
 
     @Test
@@ -72,8 +75,9 @@ class FolderServicePermanentDeleteTest {
 
         folderService.deleteFolder(folderId, true, true);
 
-        InOrder inOrder = inOrder(renditionResourceRepository, permissionRepository, nodeRepository, folderRepository);
+        InOrder inOrder = inOrder(shareLinkNodeCleanupService, renditionResourceRepository, permissionRepository, nodeRepository, folderRepository);
         inOrder.verify(permissionRepository).deleteByNodeId(documentId);
+        inOrder.verify(shareLinkNodeCleanupService).deleteByNodeId(documentId);
         inOrder.verify(renditionResourceRepository).deleteByDocumentId(documentId);
         inOrder.verify(nodeRepository).delete(document);
         inOrder.verify(permissionRepository).deleteByNodeId(folderId);
