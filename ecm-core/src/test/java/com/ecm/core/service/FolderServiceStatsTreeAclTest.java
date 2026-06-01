@@ -40,6 +40,9 @@ class FolderServiceStatsTreeAclTest {
     private PermissionRepository permissionRepository;
 
     @Mock
+    private com.ecm.core.repository.RenditionResourceRepository renditionResourceRepository;
+
+    @Mock
     private SecurityService securityService;
 
     @Mock
@@ -56,6 +59,7 @@ class FolderServiceStatsTreeAclTest {
             folderRepository,
             nodeRepository,
             permissionRepository,
+            renditionResourceRepository,
             securityService,
             eventPublisher,
             searchService,

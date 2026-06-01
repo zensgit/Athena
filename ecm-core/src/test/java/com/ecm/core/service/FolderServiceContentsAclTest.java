@@ -41,6 +41,9 @@ class FolderServiceContentsAclTest {
     private PermissionRepository permissionRepository;
 
     @Mock
+    private com.ecm.core.repository.RenditionResourceRepository renditionResourceRepository;
+
+    @Mock
     private SecurityService securityService;
 
     @Mock
@@ -57,6 +60,7 @@ class FolderServiceContentsAclTest {
             folderRepository,
             nodeRepository,
             permissionRepository,
+            renditionResourceRepository,
             securityService,
             eventPublisher,
             searchService,

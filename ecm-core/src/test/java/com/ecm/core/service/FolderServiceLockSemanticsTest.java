@@ -31,6 +31,7 @@ class FolderServiceLockSemanticsTest {
     @Mock private FolderRepository folderRepository;
     @Mock private NodeRepository nodeRepository;
     @Mock private PermissionRepository permissionRepository;
+    @Mock private com.ecm.core.repository.RenditionResourceRepository renditionResourceRepository;
     @Mock private SecurityService securityService;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private com.ecm.core.search.FacetedSearchService searchService;
@@ -44,6 +45,7 @@ class FolderServiceLockSemanticsTest {
             folderRepository,
             nodeRepository,
             permissionRepository,
+            renditionResourceRepository,
             securityService,
             eventPublisher,
             searchService,

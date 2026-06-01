@@ -1,6 +1,7 @@
 package com.ecm.core.service;
 
 import com.ecm.core.config.TenantContext;
+import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.Folder.FolderType;
 import com.ecm.core.entity.Node;
@@ -12,6 +13,7 @@ import com.ecm.core.search.SimplePageRequest;
 import com.ecm.core.repository.FolderRepository;
 import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.repository.PermissionRepository;
+import com.ecm.core.repository.RenditionResourceRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,6 +42,7 @@ public class FolderService {
     private final FolderRepository folderRepository;
     private final NodeRepository nodeRepository;
     private final PermissionRepository permissionRepository;
+    private final RenditionResourceRepository renditionResourceRepository;
     private final SecurityService securityService;
     private final ApplicationEventPublisher eventPublisher;
     private final com.ecm.core.search.FacetedSearchService searchService;
@@ -672,11 +675,18 @@ public class FolderService {
                 deleteFolderRecursive((Folder) child);
             } else {
                 permissionRepository.deleteByNodeId(child.getId());
-                nodeRepository.delete(child);
+                deleteNodePermanently(child);
             }
         }
         permissionRepository.deleteByNodeId(folder.getId());
         folderRepository.delete(folder);
+    }
+
+    private void deleteNodePermanently(Node node) {
+        if (node instanceof Document document && document.getId() != null) {
+            renditionResourceRepository.deleteByDocumentId(document.getId());
+        }
+        nodeRepository.delete(node);
     }
 
     private void softDeleteFolderRecursive(Folder folder) {
