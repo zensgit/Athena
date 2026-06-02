@@ -5,6 +5,7 @@ import com.ecm.core.entity.Tenant;
 import com.ecm.core.repository.DocumentRepository;
 import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.repository.TenantRepository;
+import com.ecm.core.repository.VersionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -19,6 +20,7 @@ public class TenantQuotaService {
     private final TenantRepository tenantRepository;
     private final DocumentRepository documentRepository;
     private final NodeRepository nodeRepository;
+    private final VersionRepository versionRepository;
 
     /**
      * Check whether storing {@code additionalBytes} would exceed the current tenant's quota.
@@ -72,7 +74,14 @@ public class TenantQuotaService {
         if (rootPath == null) {
             return 0;
         }
-        return documentRepository.sumFileSizeByPathPrefix(rootPath + "/%");
+        // ADR-002 addendum model: logical current documents + non-current retained versions.
+        // The current version's bytes equal the live Document.fileSize, so they are counted once
+        // via the documents sum; only non-current retained versions add to usage. No physical
+        // blob dedup (ADR-001 global dedup makes per-tenant physical accounting ill-defined).
+        String pathPrefix = rootPath + "/%";
+        long liveDocuments = documentRepository.sumFileSizeByPathPrefix(pathPrefix);
+        long retainedVersions = versionRepository.sumNonCurrentVersionFileSizeByPathPrefix(pathPrefix);
+        return liveDocuments + retainedVersions;
     }
 
     private Tenant resolveCurrentTenant() {

@@ -82,8 +82,13 @@ public class ContentService {
             // Check if content already exists (deduplication)
             String existingContentId = findExistingContent(contentHash);
             if (existingContentId != null) {
-                log.debug("Content already exists with hash: {}, reusing content ID: {}", 
+                log.debug("Content already exists with hash: {}, reusing content ID: {}",
                     contentHash, existingContentId);
+                // Dedup reuse still consumes the tenant's LOGICAL quota — enforce it with the
+                // incoming size before returning (ADR-002: the dedup fast path must participate in
+                // the same quota contract as a normal write). On exceed the finally block below
+                // still deletes the temp file.
+                tenantQuotaService.assertQuotaAvailable(Files.size(tempFile));
                 Files.deleteIfExists(tempFile);
                 return existingContentId;
             }

@@ -45,3 +45,17 @@ For the current platform phase:
 2. Propagate tenant identity into async/background execution paths that can store content.
 3. Update quota calculation and tests to match the selected model, including version history behavior.
 4. Make `ContentService` dedup reuse participate in the same quota contract as non-dedup writes.
+
+## Addendum (2026-06-01) — model frozen (Q1): logical current + non-current retained versions
+
+The quota accounting model is now frozen:
+
+> **usedBytes = sum(live `Document.fileSize` under tenant root) + sum(non-current retained `Version.fileSize` under tenant root).**
+
+- The current version's bytes equal the live document size and are counted once via the documents sum. The initial version references the current `contentId` (`InitialVersionProcessor`), so `live + all versions` would double-count it; the version sum therefore **excludes each document's `currentVersion`**. Older retained versions add to usage — resolving the version-heavy undercount called out above.
+- **No physical blob dedup is applied** — this is *logical* per-tenant accounting. Physical per-tenant blob accounting stays **out of scope**: ADR-001 accepted global shared storage with cross-tenant dedup, which makes per-tenant physical ownership of a shared blob ill-defined. Reopening physical accounting requires reopening ADR-001.
+- The `ContentService` dedup fast path now enforces quota with the incoming size, so dedup reuse consumes the same logical quota as a normal write (closes Next Step #4).
+
+Implemented in `TenantQuotaService.calculateUsedBytes` + `VersionRepository.sumNonCurrentVersionFileSizeByPathPrefix` + the `ContentService.storeContent` dedup branch.
+
+**Still open (Q2, separate slice):** Next Step #2 — `TenantContext` propagation into async/background content-writing paths (e.g. `BulkImportService` thread-pool execution). This addendum covers the model + synchronous enforcement only; async tenant-identity propagation is tracked as a follow-up after a concrete writer inventory.

@@ -7,6 +7,7 @@ import com.ecm.core.entity.Tenant;
 import com.ecm.core.repository.DocumentRepository;
 import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.repository.TenantRepository;
+import com.ecm.core.repository.VersionRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -30,12 +31,13 @@ class TenantQuotaServiceTest {
     @Mock private TenantRepository tenantRepository;
     @Mock private DocumentRepository documentRepository;
     @Mock private NodeRepository nodeRepository;
+    @Mock private VersionRepository versionRepository;
 
     private TenantQuotaService service;
 
     @BeforeEach
     void setUp() {
-        service = new TenantQuotaService(tenantRepository, documentRepository, nodeRepository);
+        service = new TenantQuotaService(tenantRepository, documentRepository, nodeRepository, versionRepository);
     }
 
     @AfterEach
@@ -115,6 +117,29 @@ class TenantQuotaServiceTest {
     void noTenantContextPasses() {
         // No TenantContext.set — domain is null
         assertDoesNotThrow(() -> service.assertQuotaAvailable(999_999_999));
+    }
+
+    @Test
+    @DisplayName("usedBytes = live documents + non-current retained versions (initial version not double-counted)")
+    void retainedVersionsCountTowardQuota() {
+        TenantContext.setCurrentTenantDomain("acme");
+        UUID rootId = UUID.randomUUID();
+        Tenant tenant = tenant("acme", 10_000_000L);
+        tenant.setRootNodeId(rootId);
+        when(tenantRepository.findByTenantDomainIgnoreCaseAndDeletedFalse("acme"))
+            .thenReturn(Optional.of(tenant));
+        when(nodeRepository.findById(rootId)).thenReturn(Optional.of(folderWithPath(rootId, "/acme workspace")));
+        // live current documents = 5MB; the initial version (== current content) is excluded by the
+        // repository query, so this 3MB is purely older retained history that must add to usage.
+        when(documentRepository.sumFileSizeByPathPrefix("/acme workspace/%")).thenReturn(5_000_000L);
+        when(versionRepository.sumNonCurrentVersionFileSizeByPathPrefix("/acme workspace/%")).thenReturn(3_000_000L);
+
+        // used = 5MB + 3MB = 8MB against a 10MB quota: 1.5MB fits, 2.5MB exceeds.
+        assertDoesNotThrow(() -> service.assertQuotaAvailable(1_500_000));
+        TenantQuotaService.QuotaExceededException ex = assertThrows(
+            TenantQuotaService.QuotaExceededException.class,
+            () -> service.assertQuotaAvailable(2_500_000));
+        assertEquals(8_000_000L, ex.getUsedBytes());
     }
 
     private Tenant tenant(String domain, Long quotaBytes) {

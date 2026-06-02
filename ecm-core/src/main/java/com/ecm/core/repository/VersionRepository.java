@@ -43,6 +43,19 @@ public interface VersionRepository extends JpaRepository<Version, UUID> {
     
     @Query("SELECT SUM(v.fileSize) FROM Version v")
     Long calculateTotalVersionStorage();
+
+    /**
+     * Sum the fileSize of NON-CURRENT retained versions under a tenant's root path, for quota.
+     * Excludes each document's current version (its bytes are already counted via the live
+     * Document.fileSize), so an initial-only versioned doc — where version 1 references the current
+     * contentId (InitialVersionProcessor) — is NOT double-counted; older retained versions add to
+     * usage. No physical blob dedup is applied: this is logical per-tenant accounting (ADR-002
+     * addendum; ADR-001 global dedup makes per-tenant physical accounting ill-defined).
+     */
+    @Query("SELECT COALESCE(SUM(v.fileSize), 0) FROM Version v " +
+           "WHERE v.document.deleted = false AND v.document.path LIKE :pathPrefix " +
+           "AND v.document.currentVersion IS NOT NULL AND v.id <> v.document.currentVersion.id")
+    long sumNonCurrentVersionFileSizeByPathPrefix(@Param("pathPrefix") String pathPrefix);
     
     @Query("SELECT v FROM Version v WHERE v.document.id = :documentId " +
            "AND v.majorVersion = :major AND v.minorVersion = :minor")
