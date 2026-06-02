@@ -67,9 +67,12 @@ public class TenantContextResolverService {
             }
         }
         // Unresolved: folder is null / missing / not under any enabled tenant root. Distinguish a
-        // misconfigured multi-tenant target (UNRESOLVED -> caller rejects) from a no-tenant
-        // deployment (NO_TENANT_SYSTEM -> caller writes untenanted). Never throw — see class javadoc.
-        if (tenantRepository.existsByDeletedFalseAndEnabledTrue()) {
+        // misconfigured multi-tenant target (UNRESOLVED -> caller rejects) from a deployment with no
+        // tenant the write could be scoped to (NO_TENANT_SYSTEM -> caller writes untenanted). The
+        // existence check requires a non-null rootNodeId: the migration-seeded systemDefault tenant is
+        // enabled but has a null root, so it can never be a resolution target and must not force every
+        // root-workspace write to reject. Never throw — see class javadoc.
+        if (tenantRepository.existsByDeletedFalseAndEnabledTrueAndRootNodeIdNotNull()) {
             return TenantResolution.unresolved();
         }
         return TenantResolution.noTenantSystem();

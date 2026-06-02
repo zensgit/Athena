@@ -64,7 +64,7 @@ class TenantContextResolverServiceTest {
         UUID folderId = UUID.randomUUID();
         when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(folderId, Node.ArchiveStatus.LIVE))
             .thenReturn(Optional.empty());
-        when(tenantRepository.existsByDeletedFalseAndEnabledTrue()).thenReturn(true);
+        when(tenantRepository.existsByDeletedFalseAndEnabledTrueAndRootNodeIdNotNull()).thenReturn(true);
 
         TenantResolution res = service.resolveTenantForTargetFolder(folderId);
 
@@ -77,7 +77,7 @@ class TenantContextResolverServiceTest {
         UUID folderId = UUID.randomUUID();
         when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(folderId, Node.ArchiveStatus.LIVE))
             .thenReturn(Optional.empty());
-        when(tenantRepository.existsByDeletedFalseAndEnabledTrue()).thenReturn(false);
+        when(tenantRepository.existsByDeletedFalseAndEnabledTrueAndRootNodeIdNotNull()).thenReturn(false);
 
         TenantResolution res = service.resolveTenantForTargetFolder(folderId);
 
@@ -89,7 +89,7 @@ class TenantContextResolverServiceTest {
     void rejectsAsUnresolvedWhenFolderIdIsNullAndTenantsExist() {
         // A null/missing folder id must surface as a reject in a multi-tenant system rather than an
         // untenanted root write. No node/parent stubbing — a null folder id skips the walk entirely.
-        when(tenantRepository.existsByDeletedFalseAndEnabledTrue()).thenReturn(true);
+        when(tenantRepository.existsByDeletedFalseAndEnabledTrueAndRootNodeIdNotNull()).thenReturn(true);
 
         TenantResolution res = service.resolveTenantForTargetFolder(null);
 
@@ -98,7 +98,7 @@ class TenantContextResolverServiceTest {
 
     @Test
     void noTenantSystemWhenFolderIdIsNullAndNoTenants() {
-        when(tenantRepository.existsByDeletedFalseAndEnabledTrue()).thenReturn(false);
+        when(tenantRepository.existsByDeletedFalseAndEnabledTrueAndRootNodeIdNotNull()).thenReturn(false);
 
         TenantResolution res = service.resolveTenantForTargetFolder(null);
 
@@ -117,7 +117,7 @@ class TenantContextResolverServiceTest {
         when(nodeRepository.findByIdAndDeletedFalse(rootId)).thenReturn(Optional.of(root));
         // no ancestor id maps to a tenant root, but tenants exist elsewhere → reject.
         when(tenantRepository.findByRootNodeIdAndDeletedFalse(any())).thenReturn(Optional.empty());
-        when(tenantRepository.existsByDeletedFalseAndEnabledTrue()).thenReturn(true);
+        when(tenantRepository.existsByDeletedFalseAndEnabledTrueAndRootNodeIdNotNull()).thenReturn(true);
 
         TenantResolution res = service.resolveTenantForTargetFolder(folderId);
 
@@ -138,7 +138,7 @@ class TenantContextResolverServiceTest {
         when(tenantRepository.findByRootNodeIdAndDeletedFalse(folderId))
             .thenReturn(Optional.of(tenant("disabled-tenant", folderId, false)));
         lenient().when(tenantRepository.findByRootNodeIdAndDeletedFalse(rootId)).thenReturn(Optional.empty());
-        when(tenantRepository.existsByDeletedFalseAndEnabledTrue()).thenReturn(true);
+        when(tenantRepository.existsByDeletedFalseAndEnabledTrueAndRootNodeIdNotNull()).thenReturn(true);
 
         TenantResolution res = service.resolveTenantForTargetFolder(folderId);
 

@@ -17,9 +17,13 @@ public interface TenantRepository extends JpaRepository<Tenant, UUID> {
 
     boolean existsByTenantDomainIgnoreCaseAndDeletedFalse(String tenantDomain);
 
-    // Q2b: lets a resolver distinguish "no tenant configured at all" (legacy single-tenant deployment,
-    // write untenanted) from "tenants exist but this folder is under none" (config error, reject).
-    boolean existsByDeletedFalseAndEnabledTrue();
+    // Q2b: lets the resolver distinguish "no tenant the write could be scoped to" (legacy single-tenant
+    // deployment — the migration-seeded systemDefault "default" tenant is enabled but has a null
+    // rootNodeId, so the parent-chain walk can never match it — write untenanted) from "a real tenant
+    // exists but this folder is under none" (config error, reject). Keyed on rootNodeId-not-null
+    // because that is exactly what resolveTenantForTargetFolder matches on: a tenant with no root can
+    // never be a resolution target, so it must not force every root-workspace write to reject.
+    boolean existsByDeletedFalseAndEnabledTrueAndRootNodeIdNotNull();
 
     List<Tenant> findByDeletedFalseOrderByTenantDomainAsc();
 }
