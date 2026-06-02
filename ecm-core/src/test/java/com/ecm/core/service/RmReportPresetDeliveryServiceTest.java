@@ -1,5 +1,6 @@
 package com.ecm.core.service;
 
+import com.ecm.core.config.TenantContext;
 import com.ecm.core.entity.Activity;
 import com.ecm.core.entity.RmReportPreset;
 import com.ecm.core.entity.RmReportPresetExecution;
@@ -11,6 +12,8 @@ import com.ecm.core.repository.RmReportPresetExecutionRepository;
 import com.ecm.core.repository.RmReportPresetRepository;
 import com.ecm.core.repository.UserRepository;
 import org.springframework.data.domain.PageImpl;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,6 +32,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -36,6 +40,7 @@ import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -76,6 +81,24 @@ class RmReportPresetDeliveryServiceTest {
 
     @Mock
     private NotificationDispatcher notificationDispatcher;
+
+    @Mock
+    private TenantContextResolverService tenantContextResolverService;
+
+    @BeforeEach
+    void stubDefaultTenantResolution() {
+        // deliverPreset now resolves a tenant before every write. Existing delivery tests don't care
+        // which tenant, but an unstubbed resolver returns null → NPE inside the try → a misleading
+        // FAILED execution. lenient: tests that never deliver won't touch this stub. The Q2b tests
+        // below register a more specific stub for their own folderId, which takes precedence.
+        lenient().when(tenantContextResolverService.resolveTenantForTargetFolder(any()))
+            .thenReturn(new TenantContextResolverService.ResolvedTenant("default-tenant", UUID.randomUUID()));
+    }
+
+    @AfterEach
+    void clearTenantContext() {
+        TenantContext.clear();
+    }
 
     @Test
     @DisplayName("updateSchedule enables a schedulable preset and computes next run")
@@ -195,6 +218,130 @@ class RmReportPresetDeliveryServiceTest {
         MultipartFile uploaded = fileCaptor.getValue();
         assertEquals("text/csv", uploaded.getContentType());
         assertTrue(new String(uploaded.getBytes(), StandardCharsets.UTF_8).contains("eventType,family,currentCount"));
+    }
+
+    // ---- Q2b: the scheduled delivery write is scoped to the delivery folder's tenant ----
+
+    @Test
+    @DisplayName("Q2b: delivery write runs under the delivery folder's tenant and is restored after")
+    void deliverScopesWriteToDeliveryFolderTenantAndRestoresAfter() throws Exception {
+        RmReportPreset preset = eventTypeReportPreset();
+        UUID folderId = preset.getDeliveryFolderId();
+        UUID rootId = UUID.randomUUID();
+        when(presetService.getOwned(preset.getId())).thenReturn(preset);
+        when(tenantContextResolverService.resolveTenantForTargetFolder(folderId))
+            .thenReturn(new TenantContextResolverService.ResolvedTenant("acme", rootId));
+        // The write must observe the resolved tenant AT upload time (not before, not after).
+        when(uploadService.uploadDocument(any(MultipartFile.class), eq(folderId), isNull()))
+            .thenAnswer(inv -> {
+                assertEquals("acme", TenantContext.getCurrentTenantDomain());
+                assertEquals(rootId, TenantContext.getCurrentTenantRootNodeId());
+                return PipelineResult.builder().success(true).documentId(UUID.randomUUID()).build();
+            });
+        when(presetRepository.save(any(RmReportPreset.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(executionRepository.save(any(RmReportPresetExecution.class))).thenAnswer(inv -> {
+            RmReportPresetExecution execution = inv.getArgument(0);
+            execution.setId(UUID.randomUUID());
+            return execution;
+        });
+
+        RmReportPresetDeliveryService.PresetExecutionDto result = service().deliverNow(preset.getId());
+
+        assertEquals(RmReportPresetExecution.ExecutionStatus.SUCCESS, result.status());
+        // This thread had no tenant on entry → restored to empty, no leak into the next scheduler poll.
+        assertNull(TenantContext.getCurrentTenantDomain());
+        assertNull(TenantContext.getCurrentTenantRootNodeId());
+    }
+
+    @Test
+    @DisplayName("Q2b: delivery folder not under an enabled tenant -> FAILED execution, no write")
+    void deliverPersistsFailedExecutionWhenFolderNotUnderTenant() throws Exception {
+        RmReportPreset preset = preset(
+            RmReportPreset.Kind.ACTIVITY_EVENT_TYPE_REPORT,
+            Map.of("from", "2026-04-01T00:00:00", "to", "2026-04-15T23:59:59", "limit", 5)
+        );
+        UUID folderId = UUID.randomUUID();
+        preset.setDeliveryFolderId(folderId);
+        when(presetService.getOwned(preset.getId())).thenReturn(preset);
+        when(tenantContextResolverService.resolveTenantForTargetFolder(folderId))
+            .thenThrow(new TenantContextResolverService.TargetFolderTenantException(
+                TenantContextResolverService.TargetFolderTenantException.Reason.NOT_UNDER_TENANT,
+                "not under an enabled tenant"));
+        when(presetRepository.save(any(RmReportPreset.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(executionRepository.save(any(RmReportPresetExecution.class))).thenAnswer(inv -> {
+            RmReportPresetExecution execution = inv.getArgument(0);
+            execution.setId(UUID.randomUUID());
+            return execution;
+        });
+
+        RmReportPresetDeliveryService.PresetExecutionDto result = service().deliverNow(preset.getId());
+
+        // The reject is absorbed by deliverPreset's existing catch -> FAILED execution (not a thrown
+        // exception, not a silent skip). renderCsv never runs because resolve is the first try statement,
+        // so the per-preset scheduler loop continues unaffected.
+        assertEquals(RmReportPresetExecution.ExecutionStatus.FAILED, result.status());
+        verify(uploadService, never()).uploadDocument(any(), any(), any());
+        // Reject happened before the context was set → nothing was leaked.
+        assertNull(TenantContext.getCurrentTenantDomain());
+    }
+
+    @Test
+    @DisplayName("Q2b: upload failure persists FAILED and restores the caller's tenant (manual path)")
+    void deliverRestoresCallerTenantWhenUploadThrows() throws Exception {
+        RmReportPreset preset = eventTypeReportPreset();
+        UUID folderId = preset.getDeliveryFolderId();
+        when(presetService.getOwned(preset.getId())).thenReturn(preset);
+        // Manual deliverNow() invoked from a request thread that already carries its own tenant.
+        TenantContext.setCurrentTenantDomain("caller-tenant");
+        when(tenantContextResolverService.resolveTenantForTargetFolder(folderId))
+            .thenReturn(new TenantContextResolverService.ResolvedTenant("acme", UUID.randomUUID()));
+        when(uploadService.uploadDocument(any(MultipartFile.class), eq(folderId), isNull()))
+            .thenThrow(new java.io.IOException("boom"));
+        when(presetRepository.save(any(RmReportPreset.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(executionRepository.save(any(RmReportPresetExecution.class))).thenAnswer(inv -> {
+            RmReportPresetExecution execution = inv.getArgument(0);
+            execution.setId(UUID.randomUUID());
+            return execution;
+        });
+
+        RmReportPresetDeliveryService.PresetExecutionDto result = service().deliverNow(preset.getId());
+
+        // absorb-style: the existing catch maps the upload throw to a FAILED execution (no rethrow).
+        assertEquals(RmReportPresetExecution.ExecutionStatus.FAILED, result.status());
+        // The caller's original tenant is restored — not cleared, not left as the resolved "acme".
+        assertEquals("caller-tenant", TenantContext.getCurrentTenantDomain());
+    }
+
+    private RmReportPreset eventTypeReportPreset() {
+        RmReportPreset preset = preset(
+            RmReportPreset.Kind.ACTIVITY_EVENT_TYPE_REPORT,
+            Map.of("from", "2026-04-01T00:00:00", "to", "2026-04-15T23:59:59", "limit", 5)
+        );
+        preset.setDeliveryFolderId(UUID.randomUUID());
+        when(recordsManagementService.getActivityEventTypeReport(
+                LocalDateTime.of(2026, 4, 1, 0, 0),
+                LocalDateTime.of(2026, 4, 15, 23, 59, 59),
+                5))
+            .thenReturn(
+                new RecordsManagementService.ActivityEventTypeReportDto(
+                    new RecordsManagementService.ActivityDateTimeRangeDto("2026-04-01T00:00", "2026-04-15T23:59:59"),
+                    new RecordsManagementService.ActivityDateTimeRangeDto("2026-03-16T00:00", "2026-03-31T23:59:59"),
+                    5,
+                    8,
+                    5,
+                    List.of(
+                        new RecordsManagementService.ActivityEventTypeReportEntryDto(
+                            "RM_RECORD_DECLARED",
+                            "DECLARED",
+                            5,
+                            2,
+                            3,
+                            LocalDateTime.of(2026, 4, 15, 10, 0)
+                        )
+                    )
+                )
+            );
+        return preset;
     }
 
     @Test
@@ -1147,7 +1294,8 @@ class RmReportPresetDeliveryServiceTest {
             activityService,
             preferenceService,
             userRepository,
-            notificationDispatcher
+            notificationDispatcher,
+            tenantContextResolverService
         );
         // In production Spring injects a proxy here so per-preset
         // processOneScheduledDelivery calls go through @Transactional(REQUIRES_NEW).

@@ -1,8 +1,10 @@
 package com.ecm.core.integration.mail.service;
 
+import com.ecm.core.config.TenantContext;
 import com.ecm.core.pipeline.PipelineResult;
 import com.ecm.core.service.AuditService;
 import com.ecm.core.service.DocumentUploadService;
+import com.ecm.core.service.TenantContextResolverService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -27,6 +29,7 @@ public class MailReportScheduledExportService {
     private final MailReportingService reportingService;
     private final DocumentUploadService uploadService;
     private final AuditService auditService;
+    private final TenantContextResolverService tenantContextResolverService;
 
     @Value("${ecm.mail.reporting.export.enabled:false}")
     private boolean enabled;
@@ -87,7 +90,19 @@ public class MailReportScheduledExportService {
 
         LocalDateTime startedAt = LocalDateTime.now();
         String filename = "mail-report-" + LocalDate.now() + ".csv";
+        // Q2b: scope the export write to the tenant that owns the configured export folder, so its
+        // quota and ownership belong to that tenant rather than the empty scheduler-thread context.
+        // A missing/invalid folder-id is already a SKIPPED config no-op above; a folder that exists
+        // but is not under an enabled tenant is a configuration ERROR → resolve throws into the
+        // existing catch and is reported as FAILED (not silently skipped). capture/restore (not bare
+        // clear) preserves the caller's tenant on the manual exportNow(true) path.
+        TenantContext.Snapshot previousTenant = TenantContext.capture();
         try {
+            TenantContextResolverService.ResolvedTenant tenant =
+                tenantContextResolverService.resolveTenantForTargetFolder(folderId);
+            TenantContext.setCurrentTenantDomain(tenant.tenantDomain());
+            TenantContext.setCurrentTenantRootNodeId(tenant.rootNodeId());
+
             MailReportingService.MailReportResponse report = reportingService.getReport(accountId, ruleId, null, null, days);
             String csv = reportingService.exportReportCsv(report);
 
@@ -135,6 +150,8 @@ public class MailReportScheduledExportService {
             lastExport.set(result);
             log.warn("Mail report scheduled export errored", ex);
             return result;
+        } finally {
+            TenantContext.restore(previousTenant);
         }
     }
 

@@ -1,5 +1,6 @@
 package com.ecm.core.service;
 
+import com.ecm.core.config.TenantContext;
 import com.ecm.core.entity.Activity;
 import com.ecm.core.entity.RmReportPreset;
 import com.ecm.core.entity.RmReportPresetExecution;
@@ -76,6 +77,7 @@ public class RmReportPresetDeliveryService {
     private final PreferenceService preferenceService;
     private final UserRepository userRepository;
     private final NotificationDispatcher notificationDispatcher;
+    private final TenantContextResolverService tenantContextResolverService;
 
     /**
      * Self-injected proxy used to call public methods on this bean through
@@ -410,7 +412,19 @@ public class RmReportPresetDeliveryService {
 
         LocalDateTime startedAt = LocalDateTime.now();
         String filename = buildFilename(preset);
+        // Q2b: scope this scheduled write to the tenant that owns the delivery folder, so its quota
+        // and ownership belong to that tenant rather than the empty scheduler-thread context.
+        // capture/restore (not bare clear) preserves the caller's tenant on the manual deliverNow()
+        // path. A resolve reject (folder missing / not under an enabled tenant) is a configuration
+        // error: it throws into the existing catch below and is persisted as a FAILED execution, so
+        // the per-preset scheduler loop is unaffected.
+        TenantContext.Snapshot previousTenant = TenantContext.capture();
         try {
+            TenantContextResolverService.ResolvedTenant tenant =
+                tenantContextResolverService.resolveTenantForTargetFolder(folderId);
+            TenantContext.setCurrentTenantDomain(tenant.tenantDomain());
+            TenantContext.setCurrentTenantRootNodeId(tenant.rootNodeId());
+
             String csv = renderCsv(preset);
             MockMultipartFile file = new MockMultipartFile(
                 "file",
@@ -484,6 +498,8 @@ public class RmReportPresetDeliveryService {
                 scheduledRun,
                 nextRunAlreadyClaimed
             );
+        } finally {
+            TenantContext.restore(previousTenant);
         }
     }
 

@@ -1,8 +1,12 @@
 package com.ecm.core.integration.mail.service;
 
+import com.ecm.core.config.TenantContext;
 import com.ecm.core.pipeline.PipelineResult;
 import com.ecm.core.service.AuditService;
 import com.ecm.core.service.DocumentUploadService;
+import com.ecm.core.service.TenantContextResolverService;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,11 +24,14 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -41,13 +48,17 @@ class MailReportScheduledExportServiceTest {
     @Mock
     private AuditService auditService;
 
+    @Mock
+    private TenantContextResolverService tenantContextResolverService;
+
     @Test
     @DisplayName("Export is skipped when schedule is disabled")
     void exportSkippedWhenDisabled() {
         MailReportScheduledExportService service = new MailReportScheduledExportService(
             reportingService,
             uploadService,
-            auditService
+            auditService,
+            tenantContextResolverService
         );
         setField(service, "enabled", false);
 
@@ -65,7 +76,8 @@ class MailReportScheduledExportServiceTest {
         MailReportScheduledExportService service = new MailReportScheduledExportService(
             reportingService,
             uploadService,
-            auditService
+            auditService,
+            tenantContextResolverService
         );
         setField(service, "enabled", true);
         setField(service, "folderIdRaw", "");
@@ -84,7 +96,8 @@ class MailReportScheduledExportServiceTest {
         MailReportScheduledExportService service = new MailReportScheduledExportService(
             reportingService,
             uploadService,
-            auditService
+            auditService,
+            tenantContextResolverService
         );
         UUID folderId = UUID.randomUUID();
         UUID documentId = UUID.randomUUID();
@@ -145,6 +158,126 @@ class MailReportScheduledExportServiceTest {
         assertEquals(folderId, status.folderId());
         assertNotNull(status.lastExport());
         assertEquals("SUCCESS", status.lastExport().status());
+    }
+
+    // ---- Q2b: the export write is scoped to the configured folder's tenant ----
+
+    @BeforeEach
+    void stubDefaultTenantResolution() {
+        // exportNow now resolves a tenant before the write. Existing export tests don't care which
+        // tenant, but an unstubbed resolver returns null → NPE inside the try → a misleading FAILED.
+        // lenient: the disabled / missing-folder skip tests never reach resolve. The Q2b tests below
+        // register a more specific stub for their own folderId, which takes precedence.
+        lenient().when(tenantContextResolverService.resolveTenantForTargetFolder(any()))
+            .thenReturn(new TenantContextResolverService.ResolvedTenant("default-tenant", UUID.randomUUID()));
+    }
+
+    @AfterEach
+    void clearTenantContext() {
+        TenantContext.clear();
+    }
+
+    @Test
+    @DisplayName("Q2b: export write runs under the configured folder's tenant and is restored after")
+    void exportScopesWriteToFolderTenantAndRestoresAfter() throws Exception {
+        MailReportScheduledExportService service = new MailReportScheduledExportService(
+            reportingService, uploadService, auditService, tenantContextResolverService);
+        UUID folderId = UUID.randomUUID();
+        UUID rootId = UUID.randomUUID();
+        setField(service, "enabled", true);
+        setField(service, "folderIdRaw", folderId.toString());
+        setField(service, "days", 30);
+        setField(service, "accountIdRaw", "");
+        setField(service, "ruleIdRaw", "");
+        when(tenantContextResolverService.resolveTenantForTargetFolder(folderId))
+            .thenReturn(new TenantContextResolverService.ResolvedTenant("acme", rootId));
+        stubReportAndCsv();
+        // The write must observe the resolved tenant AT upload time.
+        when(uploadService.uploadDocument(any(MultipartFile.class), eq(folderId), isNull()))
+            .thenAnswer(inv -> {
+                assertEquals("acme", TenantContext.getCurrentTenantDomain());
+                assertEquals(rootId, TenantContext.getCurrentTenantRootNodeId());
+                return PipelineResult.builder().success(true).documentId(UUID.randomUUID()).build();
+            });
+
+        MailReportScheduledExportService.ScheduledExportResult result = service.exportNow(true);
+
+        assertEquals("SUCCESS", result.status());
+        // This thread had no tenant on entry → restored to empty, no leak into the next scheduler tick.
+        assertNull(TenantContext.getCurrentTenantDomain());
+        assertNull(TenantContext.getCurrentTenantRootNodeId());
+    }
+
+    @Test
+    @DisplayName("Q2b: folder configured but not under an enabled tenant -> FAILED (not skipped), no write")
+    void exportFailsWhenFolderNotUnderTenant() throws Exception {
+        MailReportScheduledExportService service = new MailReportScheduledExportService(
+            reportingService, uploadService, auditService, tenantContextResolverService);
+        UUID folderId = UUID.randomUUID();
+        setField(service, "enabled", true);
+        setField(service, "folderIdRaw", folderId.toString());
+        setField(service, "days", 30);
+        setField(service, "accountIdRaw", "");
+        setField(service, "ruleIdRaw", "");
+        when(tenantContextResolverService.resolveTenantForTargetFolder(folderId))
+            .thenThrow(new TenantContextResolverService.TargetFolderTenantException(
+                TenantContextResolverService.TargetFolderTenantException.Reason.NOT_UNDER_TENANT,
+                "not under an enabled tenant"));
+
+        MailReportScheduledExportService.ScheduledExportResult result = service.exportNow(true);
+
+        // A configured-but-non-tenant folder is a config ERROR surfaced as FAILED — distinct from the
+        // missing/invalid-id SKIPPED path. resolve is the first try statement, so getReport never runs.
+        assertEquals("FAILED", result.status());
+        assertTrue(result.attempted());
+        assertFalse(result.success());
+        verify(uploadService, never()).uploadDocument(any(), any(), any());
+        verifyNoInteractions(reportingService);
+        assertNull(TenantContext.getCurrentTenantDomain());
+    }
+
+    @Test
+    @DisplayName("Q2b: upload failure stays FAILED and restores the caller's tenant (manual path)")
+    void exportRestoresCallerTenantWhenUploadThrows() throws Exception {
+        MailReportScheduledExportService service = new MailReportScheduledExportService(
+            reportingService, uploadService, auditService, tenantContextResolverService);
+        UUID folderId = UUID.randomUUID();
+        setField(service, "enabled", true);
+        setField(service, "folderIdRaw", folderId.toString());
+        setField(service, "days", 30);
+        setField(service, "accountIdRaw", "");
+        setField(service, "ruleIdRaw", "");
+        // Manual exportNow(true) invoked from a request thread that already carries its own tenant.
+        TenantContext.setCurrentTenantDomain("caller-tenant");
+        when(tenantContextResolverService.resolveTenantForTargetFolder(folderId))
+            .thenReturn(new TenantContextResolverService.ResolvedTenant("acme", UUID.randomUUID()));
+        stubReportAndCsv();
+        when(uploadService.uploadDocument(any(MultipartFile.class), eq(folderId), isNull()))
+            .thenThrow(new java.io.IOException("boom"));
+
+        MailReportScheduledExportService.ScheduledExportResult result = service.exportNow(true);
+
+        // absorb-style: the existing catch maps the upload throw to a FAILED result (no rethrow).
+        assertEquals("FAILED", result.status());
+        // The caller's original tenant is restored — not cleared, not left as the resolved "acme".
+        assertEquals("caller-tenant", TenantContext.getCurrentTenantDomain());
+    }
+
+    private void stubReportAndCsv() {
+        LocalDate end = LocalDate.now();
+        MailReportingService.MailReportResponse report = new MailReportingService.MailReportResponse(
+            null,
+            null,
+            end.minusDays(29),
+            end,
+            30,
+            new MailReportingService.MailReportTotals(1, 0, 1),
+            List.of(),
+            List.of(),
+            List.of()
+        );
+        when(reportingService.getReport(isNull(), isNull(), isNull(), isNull(), eq(30))).thenReturn(report);
+        when(reportingService.exportReportCsv(eq(report))).thenReturn("a,b\n1,2\n");
     }
 
     private static void setField(Object target, String fieldName, Object value) {

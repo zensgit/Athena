@@ -35,13 +35,15 @@ class RmReportPresetDeliveryServiceChannelResolutionTest {
     @Mock private PreferenceService preferenceService;
     @Mock private UserRepository userRepository;
     @Mock private NotificationDispatcher notificationDispatcher;
+    @Mock private TenantContextResolverService tenantContextResolverService;
 
     private RmReportPresetDeliveryService service() {
         RmReportPresetDeliveryService svc = new RmReportPresetDeliveryService(
             presetService, presetRepository, executionRepository,
             recordsManagementService, uploadService, auditService,
             securityService, activityService, preferenceService,
-            userRepository, notificationDispatcher
+            userRepository, notificationDispatcher,
+            tenantContextResolverService
         );
         ReflectionTestUtils.setField(svc, "self", svc);
         return svc;
