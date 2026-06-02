@@ -1,5 +1,6 @@
 package com.ecm.core.service;
 
+import com.ecm.core.config.TenantAwareExecutor;
 import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.ImportJob;
 import com.ecm.core.entity.ImportJob.ConflictPolicy;
@@ -84,7 +85,7 @@ public class BulkImportService {
         this.securityService = securityService;
         this.tenantWorkspaceScopeService = tenantWorkspaceScopeService;
         this.recordsManagementService = recordsManagementService;
-        this.importExecutor = importExecutor;
+        this.importExecutor = new TenantAwareExecutor(importExecutor);
     }
 
     public ImportJobDto startImport(

@@ -1,5 +1,6 @@
 package com.ecm.core.service;
 
+import com.ecm.core.config.TenantContext;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Folder;
 import com.ecm.core.entity.ImportJob;
@@ -10,6 +11,7 @@ import com.ecm.core.pipeline.PipelineResult;
 import com.ecm.core.repository.ImportJobRepository;
 import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.exception.ResourceNotFoundException;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -23,6 +25,8 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -45,17 +49,7 @@ class BulkImportServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new BulkImportService(
-            importJobRepository,
-            documentUploadService,
-            folderService,
-            nodeRepository,
-            nodeService,
-            securityService,
-            tenantWorkspaceScopeService,
-            recordsManagementService,
-            Runnable::run
-        );
+        service = newService(Runnable::run);
         storedJobs = new LinkedHashMap<>();
 
         lenient().when(securityService.getCurrentUser()).thenReturn("alice");
@@ -75,6 +69,11 @@ class BulkImportServiceTest {
         lenient().when(importJobRepository.findById(any(UUID.class))).thenAnswer(invocation ->
             Optional.ofNullable(storedJobs.get(invocation.getArgument(0)))
         );
+    }
+
+    @AfterEach
+    void clearTenantContext() {
+        TenantContext.clear();
     }
 
     @Test
@@ -267,6 +266,87 @@ class BulkImportServiceTest {
     }
 
     @Test
+    @DisplayName("startImport restores submitter tenant context in worker and clears it after task")
+    void startImportRestoresTenantContextInWorkerAndClearsAfterTask() throws Exception {
+        UUID parentFolderId = UUID.randomUUID();
+        UUID tenantRootId = UUID.randomUUID();
+        AtomicReference<String> observedDomain = new AtomicReference<>();
+        AtomicReference<UUID> observedRoot = new AtomicReference<>();
+        AtomicReference<String> workerDomainAfterTask = new AtomicReference<>("not-run");
+        AtomicReference<UUID> workerRootAfterTask = new AtomicReference<>(UUID.randomUUID());
+
+        service = newService(command -> {
+            TenantContext.setCurrentTenantDomain("stale-worker-tenant");
+            TenantContext.setCurrentTenantRootNodeId(UUID.randomUUID());
+            command.run();
+            workerDomainAfterTask.set(TenantContext.getCurrentTenantDomain());
+            workerRootAfterTask.set(TenantContext.getCurrentTenantRootNodeId());
+        });
+
+        when(nodeRepository.findByParentIdAndName(parentFolderId, "report.txt")).thenReturn(Optional.empty());
+        when(documentUploadService.uploadDocument(any(), eq(parentFolderId), isNull())).thenAnswer(invocation -> {
+            observedDomain.set(TenantContext.getCurrentTenantDomain());
+            observedRoot.set(TenantContext.getCurrentTenantRootNodeId());
+            return successResult();
+        });
+
+        TenantContext.setCurrentTenantDomain("acme");
+        TenantContext.setCurrentTenantRootNodeId(tenantRootId);
+
+        service.startImport(
+            new MultipartFile[]{multipart("report.txt", "hello")},
+            List.of("report.txt"),
+            parentFolderId,
+            ConflictPolicy.SKIP
+        );
+
+        assertEquals("acme", observedDomain.get());
+        assertEquals(tenantRootId, observedRoot.get());
+        assertNull(workerDomainAfterTask.get());
+        assertNull(workerRootAfterTask.get());
+    }
+
+    @Test
+    @DisplayName("startImport does not leak tenant context across reused worker tasks")
+    void startImportDoesNotLeakTenantContextAcrossReusedWorkerTasks() throws Exception {
+        UUID parentFolderId = UUID.randomUUID();
+        UUID tenantRootId = UUID.randomUUID();
+        List<String> observedDomains = new ArrayList<>();
+
+        service = newService(command -> {
+            command.run();
+            assertNull(TenantContext.getCurrentTenantDomain());
+            assertNull(TenantContext.getCurrentTenantRootNodeId());
+        });
+
+        when(nodeRepository.findByParentIdAndName(eq(parentFolderId), anyString())).thenReturn(Optional.empty());
+        when(documentUploadService.uploadDocument(any(), eq(parentFolderId), isNull())).thenAnswer(invocation -> {
+            observedDomains.add(TenantContext.getCurrentTenantDomain());
+            return successResult();
+        });
+
+        TenantContext.setCurrentTenantDomain("acme");
+        TenantContext.setCurrentTenantRootNodeId(tenantRootId);
+        service.startImport(
+            new MultipartFile[]{multipart("first.txt", "one")},
+            List.of("first.txt"),
+            parentFolderId,
+            ConflictPolicy.SKIP
+        );
+
+        service.startImport(
+            new MultipartFile[]{multipart("second.txt", "two")},
+            List.of("second.txt"),
+            parentFolderId,
+            ConflictPolicy.SKIP
+        );
+
+        assertEquals(2, observedDomains.size());
+        assertEquals("acme", observedDomains.get(0));
+        assertNull(observedDomains.get(1));
+    }
+
+    @Test
     @DisplayName("getJob hides import jobs outside current tenant workspace")
     void getJobHidesForeignTenantJob() {
         UUID jobId = UUID.randomUUID();
@@ -286,6 +366,20 @@ class BulkImportServiceTest {
 
     private MockMultipartFile multipart(String filename, String content) {
         return new MockMultipartFile("files", filename, "text/plain", content.getBytes());
+    }
+
+    private BulkImportService newService(Executor importExecutor) {
+        return new BulkImportService(
+            importJobRepository,
+            documentUploadService,
+            folderService,
+            nodeRepository,
+            nodeService,
+            securityService,
+            tenantWorkspaceScopeService,
+            recordsManagementService,
+            importExecutor
+        );
     }
 
     private PipelineResult successResult() {
