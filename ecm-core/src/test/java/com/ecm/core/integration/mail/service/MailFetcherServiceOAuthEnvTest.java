@@ -10,6 +10,7 @@ import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.service.DocumentUploadService;
 import com.ecm.core.service.NodeService;
 import com.ecm.core.service.TagService;
+import com.ecm.core.service.TenantContextResolverService;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -61,6 +62,9 @@ class MailFetcherServiceOAuthEnvTest {
     @Mock
     private MailOAuthService mailOAuthService;
 
+    @Mock
+    private TenantContextResolverService tenantContextResolverService;
+
     private MailFetcherService service;
 
     @BeforeEach
@@ -76,7 +80,8 @@ class MailFetcherServiceOAuthEnvTest {
             tagService,
             emailIngestionService,
             meterRegistry,
-            mailOAuthService
+            mailOAuthService,
+            tenantContextResolverService
         );
     }
 

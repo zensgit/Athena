@@ -1,5 +1,6 @@
 package com.ecm.core.integration.mail.service;
 
+import com.ecm.core.config.TenantContext;
 import com.ecm.core.entity.Document;
 import com.ecm.core.entity.Node;
 import com.ecm.core.integration.email.EmailIngestionService;
@@ -14,6 +15,7 @@ import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.service.DocumentUploadService;
 import com.ecm.core.service.NodeService;
 import com.ecm.core.service.TagService;
+import com.ecm.core.service.TenantContextResolverService;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import jakarta.mail.BodyPart;
@@ -99,6 +101,7 @@ public class MailFetcherService {
     private final EmailIngestionService emailIngestionService;
     private final MeterRegistry meterRegistry;
     private final MailOAuthService mailOAuthService;
+    private final TenantContextResolverService tenantContextResolverService;
 
     @Value("${ecm.mail.fetcher.run-as-user:admin}")
     private String runAsUser;
@@ -2376,22 +2379,41 @@ public class MailFetcherService {
         Map<String, Object> mailProperties,
         UUID targetFolderId
     ) throws Exception {
-        boolean processed = false;
-        MailRule.MailActionType actionType = rule.getActionType() != null
-            ? rule.getActionType()
-            : MailRule.MailActionType.ATTACHMENTS_ONLY;
+        // Q2b: resolve the owning tenant ONCE for both write points below — ingestEmailMessage's .eml
+        // write and ingestAttachments' uploads — and scope them to it. Resolve happens BEFORE capture
+        // so a reject leaves the caller's context untouched. Per gate Option A a null/missing folder
+        // also rejects (resolveTenantForTargetFolder(null) throws NOT_FOUND). The reject THROWS rather
+        // than returning false, deliberately: the caller maps a thrown exception to an ERROR
+        // ProcessedMail row (live fetch, processMessage) or a FAILED preview-export row (exportOneMatch),
+        // whereas processed=false would be silently swallowed as no_content. Throwing also aborts the
+        // whole message (both write points) instead of writing the .eml then failing the attachments —
+        // the correct semantics for a misconfigured tenant target.
+        UUID effectiveFolderId = targetFolderId != null ? targetFolderId : rule.getAssignFolderId();
+        TenantContextResolverService.ResolvedTenant tenant =
+            tenantContextResolverService.resolveTenantForTargetFolder(effectiveFolderId);
+        TenantContext.Snapshot previousTenant = TenantContext.capture();
+        TenantContext.setCurrentTenantDomain(tenant.tenantDomain());
+        TenantContext.setCurrentTenantRootNodeId(tenant.rootNodeId());
+        try {
+            boolean processed = false;
+            MailRule.MailActionType actionType = rule.getActionType() != null
+                ? rule.getActionType()
+                : MailRule.MailActionType.ATTACHMENTS_ONLY;
 
-        if (actionType == MailRule.MailActionType.METADATA_ONLY
-            || actionType == MailRule.MailActionType.EVERYTHING) {
-            processed |= ingestEmailMessage(message, rule, mailProperties, targetFolderId);
+            if (actionType == MailRule.MailActionType.METADATA_ONLY
+                || actionType == MailRule.MailActionType.EVERYTHING) {
+                processed |= ingestEmailMessage(message, rule, mailProperties, targetFolderId);
+            }
+
+            if (actionType == MailRule.MailActionType.ATTACHMENTS_ONLY
+                || actionType == MailRule.MailActionType.EVERYTHING) {
+                processed |= ingestAttachments(attachments, rule, mailProperties, targetFolderId);
+            }
+
+            return processed;
+        } finally {
+            TenantContext.restore(previousTenant);
         }
-
-        if (actionType == MailRule.MailActionType.ATTACHMENTS_ONLY
-            || actionType == MailRule.MailActionType.EVERYTHING) {
-            processed |= ingestAttachments(attachments, rule, mailProperties, targetFolderId);
-        }
-
-        return processed;
     }
 
     private boolean ingestEmailMessage(

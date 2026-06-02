@@ -13,6 +13,7 @@ import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.service.DocumentUploadService;
 import com.ecm.core.service.NodeService;
 import com.ecm.core.service.TagService;
+import com.ecm.core.service.TenantContextResolverService;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.mail.Message;
 import jakarta.mail.MessagingException;
@@ -63,6 +64,7 @@ class MailFetcherServiceLoggingRedactionTest {
     @Mock private EmailIngestionService emailIngestionService;
     @Mock private MeterRegistry meterRegistry;
     @Mock private MailOAuthService mailOAuthService;
+    @Mock private TenantContextResolverService tenantContextResolverService;
 
     private MailFetcherService service;
     private Logger fetcherLogger;
@@ -81,7 +83,8 @@ class MailFetcherServiceLoggingRedactionTest {
             tagService,
             emailIngestionService,
             meterRegistry,
-            mailOAuthService
+            mailOAuthService,
+            tenantContextResolverService
         );
         fetcherLogger = (Logger) LoggerFactory.getLogger(MailFetcherService.class);
         appender = new ListAppender<>();

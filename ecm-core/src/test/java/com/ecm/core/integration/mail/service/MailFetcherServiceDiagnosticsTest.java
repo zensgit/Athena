@@ -13,6 +13,7 @@ import com.ecm.core.repository.NodeRepository;
 import com.ecm.core.service.DocumentUploadService;
 import com.ecm.core.service.NodeService;
 import com.ecm.core.service.TagService;
+import com.ecm.core.service.TenantContextResolverService;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -77,6 +78,9 @@ class MailFetcherServiceDiagnosticsTest {
     @Mock
     private MailOAuthService mailOAuthService;
 
+    @Mock
+    private TenantContextResolverService tenantContextResolverService;
+
     private MailFetcherService service;
 
     @BeforeEach
@@ -92,7 +96,8 @@ class MailFetcherServiceDiagnosticsTest {
             tagService,
             emailIngestionService,
             meterRegistry,
-            mailOAuthService
+            mailOAuthService,
+            tenantContextResolverService
         );
     }
 
@@ -146,7 +151,8 @@ class MailFetcherServiceDiagnosticsTest {
             tagService,
             emailIngestionService,
             new SimpleMeterRegistry(),
-            mailOAuthService
+            mailOAuthService,
+            tenantContextResolverService
         );
 
         when(accountRepository.findByEnabledTrue()).thenReturn(List.of());
