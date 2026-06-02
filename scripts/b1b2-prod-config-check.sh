@@ -57,6 +57,9 @@ echo "$csp" | grep -Eq '[^s]http:' && fail "CSP must not contain bare 'http:' (m
 grep -Eq '(Strict-Transport-Security|Content-Security-Policy|X-Frame-Options|X-XSS-Protection|Referrer-Policy)' "$SNIP" \
     && fail "snippet must NOT carry security headers (those belong to the 443 server)"
 grep -q 'location /api/' "$SNIP"                                   || fail "snippet missing /api/ location (drift guard)"
+grep -q 'limit_req_status 429' "$PCONF"                            || fail "prod API rate limit must return 429, not default 503"
+grep -q 'zone=api:10m rate=60r/s' "$PCONF"                         || fail "prod API rate limit rate too low for admin SPA bursts"
+grep -q 'limit_req zone=api burst=120 nodelay' "$SNIP"             || fail "snippet API burst too low for admin SPA route loads"
 grep -q 'documents/upload' "$SNIP"                                 || fail "snippet missing upload location (drift guard)"
 grep -q 'location \^~ /realms/' "$SNIP"                            || fail "snippet missing same-origin Keycloak /realms/ location"
 grep -q 'location \^~ /resources/' "$SNIP"                         || fail "snippet missing Keycloak /resources/ location"
