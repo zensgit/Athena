@@ -46,6 +46,8 @@ For the current platform phase:
 3. Update quota calculation and tests to match the selected model, including version history behavior.
 4. Make `ContentService` dedup reuse participate in the same quota contract as non-dedup writes.
 
+**Status (2026-06-02): all four Next Steps closed.** #1 + #3 frozen in the 2026-06-01 addendum (Q1, logical model + version-history accounting); #4 closed by the `ContentService` dedup-fast-path quota enforcement; #2 closed by Q2a + Q2b in the 2026-06-02 addendum. The "provisional" qualifier in the Decision above (item 3) no longer applies — quota is the frozen logical model.
+
 ## Addendum (2026-06-01) — model frozen (Q1): logical current + non-current retained versions
 
 The quota accounting model is now frozen:
@@ -58,4 +60,17 @@ The quota accounting model is now frozen:
 
 Implemented in `TenantQuotaService.calculateUsedBytes` + `VersionRepository.sumNonCurrentVersionFileSizeByPathPrefix` + the `ContentService.storeContent` dedup branch.
 
-**Still open (Q2, separate slice):** Next Step #2 — `TenantContext` propagation into async/background content-writing paths (e.g. `BulkImportService` thread-pool execution). This addendum covers the model + synchronous enforcement only; async tenant-identity propagation is tracked as a follow-up after a concrete writer inventory.
+**Q2 (Next Step #2) — closed 2026-06-02.** `TenantContext` propagation into async/background content-writing paths is complete (this 2026-06-01 addendum covered the model + synchronous enforcement only). See the 2026-06-02 addendum below for the Q2a + Q2b breakdown.
+
+## Addendum (2026-06-02) — Q2 closed: async/background tenant propagation complete
+
+Next Step #2 is done. The off-request-thread content writers were inventoried (Q2 brief v2) into two classes and fixed separately, because they need different mechanisms:
+
+- **Q2a — request-thread async (snapshot/restore).** `BulkImportService`'s import executor is wrapped by `TenantAwareExecutor`, which captures the submitter's tenant (`TenantContext.capture()`) at submit time, `restore()`s it on the worker, and clears afterward so a pooled thread never inherits a stale tenant. (`595f64c`, full CI green.)
+- **Q2b — scheduled/system writers (derive tenant from target folder).** The four `@Scheduled` writers — `DirectoryWatcherService`, `RmReportPresetDeliveryService`, `MailReportScheduledExportService`, `MailFetcherService` — start from a scheduler tick with no request tenant to snapshot. Each resolves the owning tenant from its destination folder via `TenantContextResolverService.resolveTenantForTargetFolder` (parent-chain reverse lookup to a tenant root) and scopes the write with `capture → set → finally restore(previous)`. A target folder not under an enabled tenant root — or a null/missing folder (Option A) — is a configuration error and is **rejected, not written untenanted**: absorb-style writers (Rm, MailReport) record it through their existing failure path (`persistFailedExecution` / `ScheduledExportResult.failed`); throw-style writers (DirectoryWatcher, MailFetcher) surface it as a skip-to-`.error` or an ERROR/FAILED row. (`a2038c8`, `d1dd45b`, `675f43e`, `f52b130`; Backend-Verify CI green.)
+
+A deliberate consequence of resolving once per message (not per write-point, per gate ruling): an empty-content message landing on a misconfigured (non-tenant) folder now surfaces an ERROR/FAILED at resolve time rather than a silent `no_content` skip — a misconfigured target folder is a configuration error regardless of that message's payload. (Gate-ruled 2026-06-02; revisit only as a UX/triage follow-up if operators report it as noisy.)
+
+With Q1 (model) + Q2a/Q2b (async propagation) + version-history accounting + the dedup-fast-path quota contract all in place, **all four Next Steps are closed and the quota model is no longer provisional** — it is the frozen logical model from the 2026-06-01 addendum. Physical per-tenant blob accounting stays out of scope (requires reopening ADR-001).
+
+Confirmed during inventory as NOT async-propagation targets: `BulkOperationService` (synchronous request-thread for-loop), transfer receiver/sender (synchronous / no local store), export `CompletableFuture` tasks (write export files, not repository content).
