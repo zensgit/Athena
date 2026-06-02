@@ -4,8 +4,7 @@ import com.ecm.core.config.TenantContext;
 import com.ecm.core.service.DocumentUploadService;
 import com.ecm.core.service.FolderService;
 import com.ecm.core.service.TenantContextResolverService;
-import com.ecm.core.service.TenantContextResolverService.ResolvedTenant;
-import com.ecm.core.service.TenantContextResolverService.TargetFolderTenantException;
+import com.ecm.core.service.TenantContextResolverService.TenantResolution;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -50,7 +49,7 @@ class DirectoryWatcherServiceTest {
         UUID rootId = UUID.randomUUID();
         ReflectionTestUtils.setField(service, "targetFolderId", folderId);
         when(tenantContextResolverService.resolveTenantForTargetFolder(folderId))
-            .thenReturn(new ResolvedTenant("acme", rootId));
+            .thenReturn(TenantResolution.resolved("acme", rootId));
         // The tenant must be set AT upload time — assert inside the upload stub.
         when(uploadService.uploadDocument(any(), eq(folderId), isNull())).thenAnswer(inv -> {
             assertEquals("acme", TenantContext.getCurrentTenantDomain());
@@ -82,8 +81,7 @@ class DirectoryWatcherServiceTest {
         UUID folderId = UUID.randomUUID();
         ReflectionTestUtils.setField(service, "targetFolderId", folderId);
         when(tenantContextResolverService.resolveTenantForTargetFolder(folderId))
-            .thenThrow(new TargetFolderTenantException(
-                TargetFolderTenantException.Reason.NOT_UNDER_TENANT, "not under tenant"));
+            .thenReturn(TenantResolution.unresolved());
 
         boolean ok = service.ingestUnderResolvedTenant(file("a.txt"), "a.txt");
 
@@ -100,7 +98,7 @@ class DirectoryWatcherServiceTest {
         // Simulate a manual/request-thread trigger that already has its own tenant.
         TenantContext.setCurrentTenantDomain("caller-tenant");
         when(tenantContextResolverService.resolveTenantForTargetFolder(folderId))
-            .thenReturn(new ResolvedTenant("acme", rootId));
+            .thenReturn(TenantResolution.resolved("acme", rootId));
         when(uploadService.uploadDocument(any(), eq(folderId), isNull()))
             .thenThrow(new java.io.IOException("boom"));
 

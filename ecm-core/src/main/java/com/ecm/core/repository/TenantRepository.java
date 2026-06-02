@@ -17,5 +17,9 @@ public interface TenantRepository extends JpaRepository<Tenant, UUID> {
 
     boolean existsByTenantDomainIgnoreCaseAndDeletedFalse(String tenantDomain);
 
+    // Q2b: lets a resolver distinguish "no tenant configured at all" (legacy single-tenant deployment,
+    // write untenanted) from "tenants exist but this folder is under none" (config error, reject).
+    boolean existsByDeletedFalseAndEnabledTrue();
+
     List<Tenant> findByDeletedFalseOrderByTenantDomainAsc();
 }

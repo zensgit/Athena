@@ -2389,12 +2389,24 @@ public class MailFetcherService {
         // whole message (both write points) instead of writing the .eml then failing the attachments —
         // the correct semantics for a misconfigured tenant target.
         UUID effectiveFolderId = targetFolderId != null ? targetFolderId : rule.getAssignFolderId();
-        TenantContextResolverService.ResolvedTenant tenant =
+        TenantContextResolverService.TenantResolution tenant =
             tenantContextResolverService.resolveTenantForTargetFolder(effectiveFolderId);
+        if (tenant.isReject()) {
+            // Tenants exist but the target folder is under none — a configuration error. Throw a
+            // CALLER-OWNED exception (not the resolver's): the resolver returns its result, so nothing
+            // crosses its @Transactional(readOnly) proxy to poison a surrounding transaction.
+            // processMessage's catch maps this to an ERROR ProcessedMail row, exportOneMatch's catch to
+            // a FAILED preview-export row. A null/missing folder lands here too (no untenanted write).
+            throw new IllegalStateException(
+                "Target folder is not under any enabled tenant root: " + effectiveFolderId);
+        }
         TenantContext.Snapshot previousTenant = TenantContext.capture();
-        TenantContext.setCurrentTenantDomain(tenant.tenantDomain());
-        TenantContext.setCurrentTenantRootNodeId(tenant.rootNodeId());
         try {
+            if (tenant.isResolved()) {
+                TenantContext.setCurrentTenantDomain(tenant.tenantDomain());
+                TenantContext.setCurrentTenantRootNodeId(tenant.rootNodeId());
+            }
+            // else NO_TENANT_SYSTEM: legacy single-tenant deployment — write untenanted (no scope).
             boolean processed = false;
             MailRule.MailActionType actionType = rule.getActionType() != null
                 ? rule.getActionType()

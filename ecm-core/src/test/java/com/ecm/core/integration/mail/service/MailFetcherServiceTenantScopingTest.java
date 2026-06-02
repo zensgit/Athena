@@ -83,7 +83,7 @@ class MailFetcherServiceTenantScopingTest {
         MailRule rule = metadataRule(folderId);
         Message message = mock(Message.class);
         when(tenantContextResolverService.resolveTenantForTargetFolder(folderId))
-            .thenReturn(new TenantContextResolverService.ResolvedTenant("acme", rootId));
+            .thenReturn(TenantContextResolverService.TenantResolution.resolved("acme", rootId));
         // The .eml write must observe the resolved tenant AT write time.
         when(emailIngestionService.ingestEmail(any(), eq(folderId), any())).thenAnswer(inv -> {
             assertEquals("acme", TenantContext.getCurrentTenantDomain());
@@ -105,12 +105,12 @@ class MailFetcherServiceTenantScopingTest {
         MailRule rule = everythingRule(folderId);
         Message message = mock(Message.class);
         when(tenantContextResolverService.resolveTenantForTargetFolder(folderId))
-            .thenThrow(new TenantContextResolverService.TargetFolderTenantException(
-                TenantContextResolverService.TargetFolderTenantException.Reason.NOT_UNDER_TENANT, "nope"));
+            .thenReturn(TenantContextResolverService.TenantResolution.unresolved());
 
-        // THROW (not return false): processMessage's catch -> ERROR row, exportOneMatch's catch ->
-        // FAILED row. A false return would be silently swallowed as no_content with no error surfaced.
-        assertThrows(TenantContextResolverService.TargetFolderTenantException.class,
+        // Caller-owned THROW (not return false): processMessage's catch -> ERROR row, exportOneMatch's
+        // catch -> FAILED row. A false return would be silently swallowed as no_content. The resolver
+        // RETURNS (no proxy poison); processContent itself raises the caller-owned exception.
+        assertThrows(IllegalStateException.class,
             () -> invokeProcessContent(message, rule, null));
         verifyNoInteractions(uploadService, emailIngestionService);
     }
@@ -120,13 +120,13 @@ class MailFetcherServiceTenantScopingTest {
     void nullFolderRejectsPerOptionA() {
         MailRule rule = everythingRule(null); // no assignFolderId, and no targetFolder override below
         Message message = mock(Message.class);
-        // Per gate Option A a null effective folder resolves to NOT_FOUND
-        // (resolveTenantForTargetFolder(null) throws) -- the rule must name a tenant-folder target.
+        // Per gate Option A a null effective folder is unresolved when tenants exist (the rule must
+        // name a tenant-folder target) -- processContent raises a caller-owned exception, never an
+        // untenanted write.
         when(tenantContextResolverService.resolveTenantForTargetFolder(null))
-            .thenThrow(new TenantContextResolverService.TargetFolderTenantException(
-                TenantContextResolverService.TargetFolderTenantException.Reason.NOT_FOUND, "null folder"));
+            .thenReturn(TenantContextResolverService.TenantResolution.unresolved());
 
-        assertThrows(TenantContextResolverService.TargetFolderTenantException.class,
+        assertThrows(IllegalStateException.class,
             () -> invokeProcessContent(message, rule, null));
         verifyNoInteractions(uploadService, emailIngestionService);
     }
@@ -140,7 +140,7 @@ class MailFetcherServiceTenantScopingTest {
         // A preview-export / manual path that already carries its own tenant on entry.
         TenantContext.setCurrentTenantDomain("caller-tenant");
         when(tenantContextResolverService.resolveTenantForTargetFolder(folderId))
-            .thenReturn(new TenantContextResolverService.ResolvedTenant("acme", UUID.randomUUID()));
+            .thenReturn(TenantContextResolverService.TenantResolution.resolved("acme", UUID.randomUUID()));
         when(emailIngestionService.ingestEmail(any(), eq(folderId), any()))
             .thenThrow(new RuntimeException("ingest boom"));
 

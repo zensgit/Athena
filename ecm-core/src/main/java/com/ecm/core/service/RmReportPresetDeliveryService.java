@@ -413,17 +413,34 @@ public class RmReportPresetDeliveryService {
         LocalDateTime startedAt = LocalDateTime.now();
         String filename = buildFilename(preset);
         // Q2b: scope this scheduled write to the tenant that owns the delivery folder, so its quota
-        // and ownership belong to that tenant rather than the empty scheduler-thread context.
-        // capture/restore (not bare clear) preserves the caller's tenant on the manual deliverNow()
-        // path. A resolve reject (folder missing / not under an enabled tenant) is a configuration
-        // error: it throws into the existing catch below and is persisted as a FAILED execution, so
-        // the per-preset scheduler loop is unaffected.
+        // and ownership belong to that tenant rather than the empty scheduler-thread context. The
+        // resolver returns a result (never throws): throwing from its @Transactional(readOnly) proxy
+        // would mark this REQUIRES_NEW transaction rollback-only and turn the clean FAILED write below
+        // into an UnexpectedRollbackException.
+        TenantContextResolverService.TenantResolution tenant =
+            tenantContextResolverService.resolveTenantForTargetFolder(folderId);
+        if (tenant.isReject()) {
+            // Tenants exist but the delivery folder is under none — a configuration error. Persist a
+            // clean FAILED execution (no scope set, no upload); the per-preset scheduler loop continues.
+            return persistFailedExecution(
+                preset,
+                triggerType,
+                startedAt,
+                filename,
+                folderId,
+                "Delivery folder is not under any enabled tenant root: " + folderId,
+                scheduledRun,
+                nextRunAlreadyClaimed
+            );
+        }
+        // capture/restore (not bare clear) preserves the caller's tenant on the manual deliverNow() path.
         TenantContext.Snapshot previousTenant = TenantContext.capture();
         try {
-            TenantContextResolverService.ResolvedTenant tenant =
-                tenantContextResolverService.resolveTenantForTargetFolder(folderId);
-            TenantContext.setCurrentTenantDomain(tenant.tenantDomain());
-            TenantContext.setCurrentTenantRootNodeId(tenant.rootNodeId());
+            if (tenant.isResolved()) {
+                TenantContext.setCurrentTenantDomain(tenant.tenantDomain());
+                TenantContext.setCurrentTenantRootNodeId(tenant.rootNodeId());
+            }
+            // else NO_TENANT_SYSTEM: legacy single-tenant deployment — write untenanted (no scope).
 
             String csv = renderCsv(preset);
             MockMultipartFile file = new MockMultipartFile(

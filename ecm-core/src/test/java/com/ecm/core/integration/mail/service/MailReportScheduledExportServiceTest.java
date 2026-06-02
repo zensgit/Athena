@@ -169,7 +169,7 @@ class MailReportScheduledExportServiceTest {
         // lenient: the disabled / missing-folder skip tests never reach resolve. The Q2b tests below
         // register a more specific stub for their own folderId, which takes precedence.
         lenient().when(tenantContextResolverService.resolveTenantForTargetFolder(any()))
-            .thenReturn(new TenantContextResolverService.ResolvedTenant("default-tenant", UUID.randomUUID()));
+            .thenReturn(TenantContextResolverService.TenantResolution.resolved("default-tenant", UUID.randomUUID()));
     }
 
     @AfterEach
@@ -190,7 +190,7 @@ class MailReportScheduledExportServiceTest {
         setField(service, "accountIdRaw", "");
         setField(service, "ruleIdRaw", "");
         when(tenantContextResolverService.resolveTenantForTargetFolder(folderId))
-            .thenReturn(new TenantContextResolverService.ResolvedTenant("acme", rootId));
+            .thenReturn(TenantContextResolverService.TenantResolution.resolved("acme", rootId));
         stubReportAndCsv();
         // The write must observe the resolved tenant AT upload time.
         when(uploadService.uploadDocument(any(MultipartFile.class), eq(folderId), isNull()))
@@ -220,9 +220,7 @@ class MailReportScheduledExportServiceTest {
         setField(service, "accountIdRaw", "");
         setField(service, "ruleIdRaw", "");
         when(tenantContextResolverService.resolveTenantForTargetFolder(folderId))
-            .thenThrow(new TenantContextResolverService.TargetFolderTenantException(
-                TenantContextResolverService.TargetFolderTenantException.Reason.NOT_UNDER_TENANT,
-                "not under an enabled tenant"));
+            .thenReturn(TenantContextResolverService.TenantResolution.unresolved());
 
         MailReportScheduledExportService.ScheduledExportResult result = service.exportNow(true);
 
@@ -250,7 +248,7 @@ class MailReportScheduledExportServiceTest {
         // Manual exportNow(true) invoked from a request thread that already carries its own tenant.
         TenantContext.setCurrentTenantDomain("caller-tenant");
         when(tenantContextResolverService.resolveTenantForTargetFolder(folderId))
-            .thenReturn(new TenantContextResolverService.ResolvedTenant("acme", UUID.randomUUID()));
+            .thenReturn(TenantContextResolverService.TenantResolution.resolved("acme", UUID.randomUUID()));
         stubReportAndCsv();
         when(uploadService.uploadDocument(any(MultipartFile.class), eq(folderId), isNull()))
             .thenThrow(new java.io.IOException("boom"));

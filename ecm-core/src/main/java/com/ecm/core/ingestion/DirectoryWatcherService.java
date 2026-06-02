@@ -135,18 +135,23 @@ public class DirectoryWatcherService {
             log.warn("Skipping ingest of {}: ecm.ingestion.target-folder-id is not set (no tenant target)", label);
             return false;
         }
-        TenantContextResolverService.ResolvedTenant tenant;
-        try {
-            tenant = tenantContextResolverService.resolveTenantForTargetFolder(targetFolderId);
-        } catch (TenantContextResolverService.TargetFolderTenantException e) {
-            log.warn("Skipping ingest of {}: target folder {} {} ({})",
-                label, targetFolderId, e.getReason(), e.getMessage());
+        TenantContextResolverService.TenantResolution tenant =
+            tenantContextResolverService.resolveTenantForTargetFolder(targetFolderId);
+        if (tenant.isReject()) {
+            // Tenants exist but the watch target folder is under none — a configuration error. Skip
+            // (caller moves the file to .error) rather than writing untenanted. The resolver returns
+            // instead of throwing, so no surrounding transaction is poisoned.
+            log.warn("Skipping ingest of {}: target folder {} is not under any enabled tenant root",
+                label, targetFolderId);
             return false;
         }
         TenantContext.Snapshot previous = TenantContext.capture();
-        TenantContext.setCurrentTenantDomain(tenant.tenantDomain());
-        TenantContext.setCurrentTenantRootNodeId(tenant.rootNodeId());
         try {
+            if (tenant.isResolved()) {
+                TenantContext.setCurrentTenantDomain(tenant.tenantDomain());
+                TenantContext.setCurrentTenantRootNodeId(tenant.rootNodeId());
+            }
+            // else NO_TENANT_SYSTEM: legacy single-tenant deployment — write untenanted (no scope).
             uploadService.uploadDocument(multipartFile, targetFolderId, null);
             return true;
         } finally {

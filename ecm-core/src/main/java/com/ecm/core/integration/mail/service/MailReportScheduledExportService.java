@@ -96,12 +96,26 @@ public class MailReportScheduledExportService {
         // but is not under an enabled tenant is a configuration ERROR → resolve throws into the
         // existing catch and is reported as FAILED (not silently skipped). capture/restore (not bare
         // clear) preserves the caller's tenant on the manual exportNow(true) path.
+        TenantContextResolverService.TenantResolution tenant =
+            tenantContextResolverService.resolveTenantForTargetFolder(folderId);
+        if (tenant.isReject()) {
+            // Tenants exist but the export folder is under none — a configuration error, surfaced as
+            // FAILED (distinct from the missing/invalid-id SKIPPED above). The resolver returns instead
+            // of throwing, so this @Transactional method's commit is not poisoned by a rollback-only mark.
+            ScheduledExportResult result = ScheduledExportResult.failed(
+                "Export folder is not under any enabled tenant root: " + folderId,
+                manual, filename, folderId, startedAt, days);
+            lastExport.set(result);
+            log.warn("Mail report scheduled export failed: export folder {} is not under any enabled tenant root", folderId);
+            return result;
+        }
         TenantContext.Snapshot previousTenant = TenantContext.capture();
         try {
-            TenantContextResolverService.ResolvedTenant tenant =
-                tenantContextResolverService.resolveTenantForTargetFolder(folderId);
-            TenantContext.setCurrentTenantDomain(tenant.tenantDomain());
-            TenantContext.setCurrentTenantRootNodeId(tenant.rootNodeId());
+            if (tenant.isResolved()) {
+                TenantContext.setCurrentTenantDomain(tenant.tenantDomain());
+                TenantContext.setCurrentTenantRootNodeId(tenant.rootNodeId());
+            }
+            // else NO_TENANT_SYSTEM: legacy single-tenant deployment — write untenanted (no scope).
 
             MailReportingService.MailReportResponse report = reportingService.getReport(accountId, ruleId, null, null, days);
             String csv = reportingService.exportReportCsv(report);

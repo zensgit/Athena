@@ -92,7 +92,7 @@ class RmReportPresetDeliveryServiceTest {
         // FAILED execution. lenient: tests that never deliver won't touch this stub. The Q2b tests
         // below register a more specific stub for their own folderId, which takes precedence.
         lenient().when(tenantContextResolverService.resolveTenantForTargetFolder(any()))
-            .thenReturn(new TenantContextResolverService.ResolvedTenant("default-tenant", UUID.randomUUID()));
+            .thenReturn(TenantContextResolverService.TenantResolution.resolved("default-tenant", UUID.randomUUID()));
     }
 
     @AfterEach
@@ -230,7 +230,7 @@ class RmReportPresetDeliveryServiceTest {
         UUID rootId = UUID.randomUUID();
         when(presetService.getOwned(preset.getId())).thenReturn(preset);
         when(tenantContextResolverService.resolveTenantForTargetFolder(folderId))
-            .thenReturn(new TenantContextResolverService.ResolvedTenant("acme", rootId));
+            .thenReturn(TenantContextResolverService.TenantResolution.resolved("acme", rootId));
         // The write must observe the resolved tenant AT upload time (not before, not after).
         when(uploadService.uploadDocument(any(MultipartFile.class), eq(folderId), isNull()))
             .thenAnswer(inv -> {
@@ -264,9 +264,7 @@ class RmReportPresetDeliveryServiceTest {
         preset.setDeliveryFolderId(folderId);
         when(presetService.getOwned(preset.getId())).thenReturn(preset);
         when(tenantContextResolverService.resolveTenantForTargetFolder(folderId))
-            .thenThrow(new TenantContextResolverService.TargetFolderTenantException(
-                TenantContextResolverService.TargetFolderTenantException.Reason.NOT_UNDER_TENANT,
-                "not under an enabled tenant"));
+            .thenReturn(TenantContextResolverService.TenantResolution.unresolved());
         when(presetRepository.save(any(RmReportPreset.class))).thenAnswer(inv -> inv.getArgument(0));
         when(executionRepository.save(any(RmReportPresetExecution.class))).thenAnswer(inv -> {
             RmReportPresetExecution execution = inv.getArgument(0);
@@ -294,7 +292,7 @@ class RmReportPresetDeliveryServiceTest {
         // Manual deliverNow() invoked from a request thread that already carries its own tenant.
         TenantContext.setCurrentTenantDomain("caller-tenant");
         when(tenantContextResolverService.resolveTenantForTargetFolder(folderId))
-            .thenReturn(new TenantContextResolverService.ResolvedTenant("acme", UUID.randomUUID()));
+            .thenReturn(TenantContextResolverService.TenantResolution.resolved("acme", UUID.randomUUID()));
         when(uploadService.uploadDocument(any(MultipartFile.class), eq(folderId), isNull()))
             .thenThrow(new java.io.IOException("boom"));
         when(presetRepository.save(any(RmReportPreset.class))).thenAnswer(inv -> inv.getArgument(0));
