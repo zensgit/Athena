@@ -25,4 +25,7 @@ public interface FavoriteRepository extends JpaRepository<Favorite, UUID> {
     boolean existsByUserIdAndNodeId(String userId, UUID nodeId);
 
     void deleteByUserIdAndNodeId(String userId, UUID nodeId);
+
+    // Clear all favorites pointing at a node before it is permanently deleted (bare node_id column).
+    void deleteByNodeId(UUID nodeId);
 }

@@ -30,4 +30,9 @@ public interface DocumentRelationRepository extends JpaRepository<DocumentRelati
     Page<DocumentRelation> findByTargetIdAndDirection(UUID targetId, AssocDirection direction, Pageable pageable);
 
     void deleteBySourceIdAndTargetId(UUID sourceId, UUID targetId);
+
+    // Clear all relations a node participates in, before it is permanently deleted
+    // (FK fk_dr_source / fk_dr_target have no ON DELETE CASCADE).
+    void deleteBySourceId(UUID sourceId);
+    void deleteByTargetId(UUID targetId);
 }

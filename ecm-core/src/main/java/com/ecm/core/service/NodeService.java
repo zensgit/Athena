@@ -65,6 +65,10 @@ public class NodeService {
     private ShareLinkNodeCleanupService shareLinkNodeCleanupService;
 
     @Autowired
+    @Lazy
+    private NodeDependentCleanupService nodeDependentCleanupService;
+
+    @Autowired
     public NodeService(
         NodeRepository nodeRepository,
         FolderRepository folderRepository,
@@ -1026,7 +1030,8 @@ public class NodeService {
 
         detachDocumentReferencesIfPresent(node);
         cleanupDocumentDependentsIfPresent(node);
-        
+        cleanupNodeDependents(node);
+
         // Delete permissions
         permissionRepository.deleteByNodeId(node.getId());
         
@@ -1134,6 +1139,19 @@ public class NodeService {
     private void cleanupDocumentDependentsIfPresent(Node node) {
         if (node instanceof Document document && document.getId() != null) {
             shareLinkNodeCleanupService.deleteByNodeId(document.getId());
+        }
+    }
+
+    /**
+     * Clears node-scoped dependents whose FKs to nodes(id) have no ON DELETE CASCADE (relations,
+     * ratings) — otherwise the permanent delete below throws a constraint violation — plus
+     * bare-node_id favorites. Applies to any node (folders too). Null-guarded so standalone unit
+     * tests that don't wire the service still exercise delete paths (matches the legalHold/records
+     * {@code @Lazy} pattern in this class).
+     */
+    private void cleanupNodeDependents(Node node) {
+        if (nodeDependentCleanupService != null && node.getId() != null) {
+            nodeDependentCleanupService.deleteByNodeId(node.getId());
         }
     }
 

@@ -40,6 +40,7 @@ class NodeServiceContentReferenceTest {
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private ContentReferenceService contentReferenceService;
     @Mock private ShareLinkNodeCleanupService shareLinkNodeCleanupService;
+    @Mock private NodeDependentCleanupService nodeDependentCleanupService;
 
     private NodeService nodeService;
 
@@ -56,6 +57,7 @@ class NodeServiceContentReferenceTest {
             contentReferenceService
         );
         ReflectionTestUtils.setField(nodeService, "shareLinkNodeCleanupService", shareLinkNodeCleanupService);
+        ReflectionTestUtils.setField(nodeService, "nodeDependentCleanupService", nodeDependentCleanupService);
     }
 
     @Test
@@ -107,6 +109,8 @@ class NodeServiceContentReferenceTest {
         verify(contentReferenceService).detach("doc-content", OwnerType.DOCUMENT, documentId);
         verify(contentReferenceService).detach("version-content", OwnerType.VERSION, versionId);
         verify(shareLinkNodeCleanupService).deleteByNodeId(documentId);
+        // relations/ratings/favorites must be cleared too, or the FK-constrained ones make the delete throw
+        verify(nodeDependentCleanupService).deleteByNodeId(documentId);
         verify(nodeRepository).delete(document);
     }
 

@@ -24,6 +24,12 @@ public interface NodeRelationRepository extends JpaRepository<NodeRelation, UUID
     void deleteBySourceIdAndTargetIdAndRelationType(UUID sourceId, UUID targetId, String relationType);
     void deleteBySourceIdAndTargetId(UUID sourceId, UUID targetId);
 
+    // Clear all relations a node participates in, before the node is permanently deleted
+    // (FK fk_nr_source / fk_nr_target have no ON DELETE CASCADE, so a leftover relation
+    // would make the node delete fail with a constraint violation).
+    void deleteBySourceId(UUID sourceId);
+    void deleteByTargetId(UUID targetId);
+
     List<NodeRelation> findBySourceIdAndDirection(UUID sourceId, AssocDirection direction);
     List<NodeRelation> findByTargetIdAndDirection(UUID targetId, AssocDirection direction);
 }

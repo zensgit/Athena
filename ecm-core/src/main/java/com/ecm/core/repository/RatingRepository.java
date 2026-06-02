@@ -22,6 +22,9 @@ public interface RatingRepository extends JpaRepository<Rating, UUID> {
 
     void deleteByNodeIdAndUserIdAndScheme(UUID nodeId, String userId, RatingScheme scheme);
 
+    // Clear all ratings on a node before it is permanently deleted (FK fk_rating_node, no cascade).
+    void deleteByNodeId(UUID nodeId);
+
     long countByNodeIdAndScheme(UUID nodeId, RatingScheme scheme);
 
     @Query("SELECT COALESCE(AVG(r.score), 0) FROM Rating r WHERE r.node.id = :nodeId AND r.scheme = :scheme")
