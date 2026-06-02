@@ -62,6 +62,19 @@ class TenantContextResolverServiceTest {
     }
 
     @Test
+    void rejectsWithNotFoundWhenFolderIdIsNull() {
+        // MailFetcher Q2b Option A leans on this exact guarantee: a null effective folder id is
+        // rejected as NOT_FOUND and surfaced as an error rather than written untenanted to root. The
+        // null guard is the method's first statement, before any repository call, so no nodeRepository
+        // / tenantRepository stubbing is needed. Without this test a "cleanup" of the guard would
+        // silently revert Option A to untenanted root writes while every mock-based caller test (which
+        // stubs the resolver itself) stayed green.
+        TargetFolderTenantException ex = assertThrows(TargetFolderTenantException.class,
+            () -> service.resolveTenantForTargetFolder(null));
+        assertEquals(TargetFolderTenantException.Reason.NOT_FOUND, ex.getReason());
+    }
+
+    @Test
     void rejectsWithNotUnderTenantWhenNoEnabledTenantRootInChain() {
         UUID rootId = UUID.randomUUID();
         UUID folderId = UUID.randomUUID();
