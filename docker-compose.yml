@@ -85,7 +85,12 @@ services:
       # clamav:
       #   condition: service_healthy
     networks:
-      - ecm-network
+      ecm-network: {}
+      # ecm-publish-net join lives in docker-compose.ecm-publish.yml (override),
+      # NOT in this base compose: not every Athena deployment runs ECM publish,
+      # so the base must stay ECM-publish-unaware. Apply ECM publish via:
+      #   docker compose -f docker-compose.yml -f docker-compose.ecm-publish.yml up -d
+      # See docs/ATHENA_ECM_PUBLISH_RECEIVER_NETWORK_20260617.md.
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]

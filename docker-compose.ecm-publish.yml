@@ -1,0 +1,48 @@
+# ECM Publish — Cross-Stack Reachability Override
+#
+# Scopes the cross-stack reachability between this Athena stack (Transfer
+# Receiver) and the Yuantus `ecm-publication-worker` drainer running in a
+# separate compose stack. Apply by appending `-f docker-compose.ecm-publish.yml`
+# to the base compose invocation; it composes cleanly after any other override
+# (e.g. docker-compose.prod.yml, ghcr-image overrides).
+#
+# Examples:
+#   docker compose -f docker-compose.yml \
+#                  -f docker-compose.ecm-publish.yml up -d
+#   docker compose -f docker-compose.yml \
+#                  -f docker-compose.prod.yml \
+#                  -f docker-compose.ecm-publish.yml up -d
+#
+# The base docker-compose.yml deliberately does NOT reference ecm-publish-net:
+# not every Athena deployment runs ECM publish, so the cross-stack network
+# coupling stays opt-in via this override.
+#
+# Network is created externally via the idempotent guard:
+#   docker network inspect ecm-publish-net >/dev/null 2>&1 \
+#     || docker network create ecm-publish-net
+#
+# Authoritative spec (decisions D1/D2/D3 + gate conditions G1/G2 + fixes
+# F1..F6 + G3 boundary correction, verification recipe S1-S5, receipt
+# skeleton) lives in the Yuantus repo:
+#   Yuantus/docs/DEVELOPMENT_ECM_PUBLISH_DURABLE_REACHABILITY_TASKBOOK_20260617.md §5.2
+# Cross-reference in this repo:
+#   docs/ATHENA_ECM_PUBLISH_RECEIVER_NETWORK_20260617.md
+
+services:
+  ecm-core:
+    networks:
+      # Compose merges service-level networks dict-form across -f overrides,
+      # so the base's `ecm-network: {}` is preserved; this override only
+      # ADDS the ecm-publish-net join + alias.
+      ecm-publish-net:
+        aliases:
+          # The alias decouples the in-cluster URL from the auto-generated
+          # container name (athena-ecm-core-1, project-name- and replica-
+          # index-dependent and brittle). The Yuantus drainer uses
+          #   YUANTUS_PUBLICATION_ECM_BASE_URL=http://athena-ecm-core:8080
+          - athena-ecm-core
+
+networks:
+  ecm-publish-net:
+    external: true
+    name: ecm-publish-net
