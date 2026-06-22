@@ -392,6 +392,71 @@ class TransferReceiverServiceTest {
     }
 
     @Test
+    @DisplayName("uploadDocument revisions mapped document in place (OVERWRITTEN) when source modified newer")
+    void uploadDocumentRevisionsMappedDocumentWhenSourceModifiedNewer() throws IOException {
+        // A1 disposition contract: when an incoming document maps to an EXISTING Athena
+        // document via (sourceRepositoryId, sourceNodeId) AND the incoming
+        // sourceLastModifiedAt differs from (is newer than) the mapping's stored value,
+        // the receiver must revise the SAME document in place via versionService.createVersion
+        // (minor version, majorVersion=false) and return OVERWRITTEN with the existing id --
+        // NOT create a new document. NOTE: matchesSourceVersion compares by EQUALITY
+        // (Objects.equals), not ordering, so the branch fires on ANY mismatch; we set the
+        // incoming timestamp strictly newer to document the intended "newer source wins" intent.
+        UUID rootId = UUID.randomUUID();
+        UUID sourceNodeId = UUID.randomUUID();
+        Folder root = folder(rootId, "Outbound", "/Company Home/Outbound");
+        Document existing = document(UUID.randomUUID(), "contract.pdf", "/Company Home/Outbound/contract.pdf");
+        existing.setParent(root); // parent matches target -> no moveNode on this branch
+        TransferReceiverRegistration receiver = receiver(rootId);
+        LocalDateTime storedAt = LocalDateTime.parse("2026-04-11T12:00:00");
+        LocalDateTime newerSourceModifiedAt = LocalDateTime.parse("2026-04-12T08:30:00");
+        TransferNodeMapping mapping = new TransferNodeMapping();
+        mapping.setRootFolderId(rootId);
+        mapping.setSourceRepositoryId("athena");
+        mapping.setSourceNodeId(sourceNodeId);
+        mapping.setLocalNodeId(existing.getId());
+        mapping.setLastSourceModifiedAt(storedAt); // OLDER than incoming -> matchesSourceVersion == false
+
+        when(receiverRepository.findAll()).thenReturn(List.of(receiver));
+        when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(rootId, Node.ArchiveStatus.LIVE)).thenReturn(Optional.of(root));
+        when(nodeRepository.findByIdAndDeletedFalseAndArchiveStatus(existing.getId(), Node.ArchiveStatus.LIVE)).thenReturn(Optional.of(existing));
+        when(receiverRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(transferNodeMappingService.findMapping(rootId, "athena", sourceNodeId)).thenReturn(Optional.of(mapping));
+
+        TransferReceiverService service = service();
+
+        TransferReceiverService.UploadDocumentResponse response = service.uploadDocument(
+            new org.springframework.mock.web.MockMultipartFile("file", "contract.pdf", "application/pdf", "pdf".getBytes()),
+            rootId,
+            "Signed",
+            ReplicationDefinition.ConflictPolicy.OVERWRITE,
+            "athena",
+            sourceNodeId,
+            null,
+            newerSourceModifiedAt,
+            null,
+            "shared-secret"
+        );
+
+        // Revision-in-place: same document id gets a new (minor) version, no fresh upload.
+        verify(versionService).createVersion(eq(existing.getId()), any(MultipartFile.class), anyString(), eq(false));
+        verify(documentUploadService, never()).uploadDocument(any(), any(), any());
+        // Mapping watermark advanced to the newer source timestamp on the same local node.
+        verify(transferNodeMappingService).upsertMapping(
+            eq(rootId),
+            eq("athena"),
+            eq(sourceNodeId),
+            eq(existing.getId()),
+            eq(newerSourceModifiedAt),
+            any(LocalDateTime.class)
+        );
+        assertEquals(existing.getId(), response.documentId());
+        assertEquals(TransferReceiverService.ConflictDisposition.OVERWRITTEN, response.disposition());
+        assertEquals("OVERWRITTEN", response.disposition().name());
+        assertEquals("Updated mapped receiver document", response.message());
+    }
+
+    @Test
     @DisplayName("createFolder rejects file plan parent")
     void createFolderRejectsFilePlanParent() {
         UUID rootId = UUID.randomUUID();
