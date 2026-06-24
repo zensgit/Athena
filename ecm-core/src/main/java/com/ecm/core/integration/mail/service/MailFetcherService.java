@@ -176,13 +176,18 @@ public class MailFetcherService {
                     account.getId(),
                     e.getOauthError()
                 );
-                updateAccountFetchStatus(account, "ERROR", e.getMessage());
+                // Sink (Phase 2 mail slice): store the OAuth error CODE only, NOT e.getMessage()
+                // — its message embeds the provider oauthErrorDescription (PII, e.g. user@example.com
+                // / tenant per MailOAuthReauthRequiredExceptionTest). lastFetchError is admin-UI visible.
+                updateAccountFetchStatus(account, "ERROR", "OAuth reauth required (code=" + e.getOauthError() + ")");
             } catch (Exception e) {
                 status = "error";
                 reason = "exception";
                 stats.accountErrors++;
-                log.error("Failed to process mail account: {}", account.getName(), e);
-                updateAccountFetchStatus(account, "ERROR", e.getMessage());
+                // Phase 2 mail slice: log + persist the exception TYPE only, not the Throwable /
+                // e.getMessage() (a mail connect/fetch exception can embed connection/PII detail).
+                log.error("Failed to process mail account {}: type={}", account.getName(), e.getClass().getSimpleName());
+                updateAccountFetchStatus(account, "ERROR", e.getClass().getSimpleName());
             } finally {
                 lastPollByAccount.put(account.getId(), now);
                 accountSample.stop(meterRegistry.timer("mail_fetch_account_duration", "status", status));
@@ -963,7 +968,9 @@ public class MailFetcherService {
                 // returns "<redacted-subject>". Other call sites at :495, :520, :832,
                 // :2038, :2325, :2379, :2727 keep subjectOrEmpty because they feed
                 // persistence / DTO / filename paths, not loggers.
-                log.error("Error processing message: {}", redactSubjectForLog(message), e);
+                // Phase 2 mail slice: subject already redacted in the arg; also drop the Throwable
+                // (a MIME/parse error could embed a body/content fragment) — log the type only.
+                log.error("Error processing message {}: type={}", redactSubjectForLog(message), e.getClass().getSimpleName());
             }
         }
 
@@ -2489,7 +2496,7 @@ public class MailFetcherService {
         try {
             nodeService.updateNode(documentId, Map.of("properties", mailProperties));
         } catch (Exception e) {
-            log.warn("Failed to update mail properties for document {}", documentId, e);
+            log.warn("Failed to update mail properties for document {}: type={}", documentId, e.getClass().getSimpleName());
         }
     }
 
@@ -3093,7 +3100,7 @@ public class MailFetcherService {
             account.setLastFetchError(truncateError(errorMessage));
             accountRepository.save(account);
         } catch (Exception e) {
-            log.warn("Failed to update fetch status for account {}", account.getName(), e);
+            log.warn("Failed to update fetch status for account {}: type={}", account.getName(), e.getClass().getSimpleName());
         }
     }
 

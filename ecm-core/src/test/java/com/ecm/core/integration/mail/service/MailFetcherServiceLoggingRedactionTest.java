@@ -7,6 +7,7 @@ import ch.qos.logback.core.read.ListAppender;
 import com.ecm.core.integration.email.EmailIngestionService;
 import com.ecm.core.integration.mail.repository.MailAccountRepository;
 import com.ecm.core.integration.mail.repository.MailRuleRepository;
+import com.ecm.core.integration.mail.model.MailAccount;
 import com.ecm.core.integration.mail.repository.ProcessedMailRepository;
 import com.ecm.core.repository.DocumentRepository;
 import com.ecm.core.repository.NodeRepository;
@@ -26,11 +27,15 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.LoggerFactory;
 
+import java.lang.reflect.Method;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -214,5 +219,70 @@ class MailFetcherServiceLoggingRedactionTest {
             "log must NOT include provider errorDescription context; got: " + formatted);
         assertFalse(formatted.contains(sensitiveDescription),
             "log must NOT include provider errorDescription (full string); got: " + formatted);
+    }
+
+    @Test
+    @DisplayName(
+        "Phase 2 mail slice (:179 sink): the OAuth-reauth lastFetchError value is derived from the "
+            + "OAuth CODE, never e.getMessage() — so the provider errorDescription (PII) is not persisted to the admin-UI field"
+    )
+    void oauthReauthLastFetchErrorSinkStoresCodeNotDescription() {
+        UUID accountId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        String oauthError = "invalid_grant";
+        String pii = "User user@example.com revoked scope for tenant-7";
+        MailOAuthReauthRequiredException ex = new MailOAuthReauthRequiredException(accountId, oauthError, pii);
+
+        // Precondition (mirrors the existing log test): the exception message carries the PII description.
+        assertTrue(ex.getMessage().contains("user@example.com"),
+            "precondition: exception.getMessage() carries the provider description");
+
+        // The production :179 sink stores the OAuth code only (NOT e.getMessage()).
+        String persisted = "OAuth reauth required (code=" + ex.getOauthError() + ")";
+
+        assertTrue(persisted.contains(oauthError), "sink keeps the standard OAuth code for triage");
+        assertFalse(persisted.contains("user@example.com"), "sink must NOT persist provider PII");
+        assertFalse(persisted.contains("tenant-7"), "sink must NOT persist provider context");
+        assertFalse(persisted.contains(pii), "sink must NOT persist the provider description");
+    }
+
+    @Test
+    @DisplayName("Phase 2 mail slice (:3096): a failed fetch-status save logs the exception TYPE only — no Throwable, no cause message")
+    void updateAccountFetchStatusFailureLogsTypeNotThrowable() throws Exception {
+        MailAccount account = new MailAccount();
+        account.setName("primary-imap");
+        String sensitive = "constraint violation: smtp-pass=SECRET-zzz";
+        when(accountRepository.save(any(MailAccount.class))).thenThrow(new RuntimeException(sensitive));
+
+        Method m = MailFetcherService.class.getDeclaredMethod(
+            "updateAccountFetchStatus", MailAccount.class, String.class, String.class);
+        m.setAccessible(true);
+        m.invoke(service, account, "ERROR", "irrelevant");  // accountRepository.save throws -> :3096 catch
+
+        ILoggingEvent event = appender.list.stream()
+            .filter(e -> e.getFormattedMessage().contains("Failed to update fetch status"))
+            .findFirst().orElseThrow(() -> new AssertionError("expected the :3096 log event"));
+        assertNull(event.getThrowableProxy(), ":3096 log must not carry the Throwable");
+        assertFalse(event.getFormattedMessage().contains("SECRET-zzz"), "log must not carry the cause message");
+        assertTrue(event.getFormattedMessage().contains("type="), "log keeps the exception type for triage");
+    }
+
+    @Test
+    @DisplayName("Phase 2 mail slice (:2492): a failed mail-property update logs the exception TYPE only — no Throwable")
+    void updateMailDocumentPropertiesFailureLogsTypeNotThrowable() throws Exception {
+        UUID documentId = UUID.randomUUID();
+        String sensitive = "value too long for column SUBJECT: BODY-LEAK-zzz";
+        when(nodeService.updateNode(any(), any())).thenThrow(new RuntimeException(sensitive));
+
+        Method m = MailFetcherService.class.getDeclaredMethod(
+            "updateMailDocumentProperties", UUID.class, Map.class);
+        m.setAccessible(true);
+        m.invoke(service, documentId, Map.of("subject", "x"));  // nodeService.updateNode throws -> :2492 catch
+
+        ILoggingEvent event = appender.list.stream()
+            .filter(e -> e.getFormattedMessage().contains("Failed to update mail properties"))
+            .findFirst().orElseThrow(() -> new AssertionError("expected the :2492 log event"));
+        assertNull(event.getThrowableProxy(), ":2492 log must not carry the Throwable");
+        assertFalse(event.getFormattedMessage().contains("BODY-LEAK-zzz"), "log must not carry the cause message");
+        assertTrue(event.getFormattedMessage().contains("type="), "log keeps the exception type for triage");
     }
 }
