@@ -160,9 +160,11 @@ public class MailReportScheduledExportService {
             );
             return result;
         } catch (Exception ex) {
-            ScheduledExportResult result = ScheduledExportResult.failed(ex.getMessage(), manual, filename, folderId, startedAt, days);
+            // Phase 2 mail slice: store + log the exception TYPE only, not ex.getMessage() / the
+            // Throwable — the failed result is admin-UI visible and the cause could reference mail data.
+            ScheduledExportResult result = ScheduledExportResult.failed(ex.getClass().getSimpleName(), manual, filename, folderId, startedAt, days);
             lastExport.set(result);
-            log.warn("Mail report scheduled export errored", ex);
+            log.warn("Mail report scheduled export errored: type={}", ex.getClass().getSimpleName());
             return result;
         } finally {
             TenantContext.restore(previousTenant);

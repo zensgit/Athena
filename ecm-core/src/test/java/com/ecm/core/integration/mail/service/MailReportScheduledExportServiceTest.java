@@ -1,5 +1,8 @@
 package com.ecm.core.integration.mail.service;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.ecm.core.config.TenantContext;
 import com.ecm.core.pipeline.PipelineResult;
 import com.ecm.core.service.AuditService;
@@ -13,6 +16,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.lang.reflect.Field;
@@ -259,6 +263,47 @@ class MailReportScheduledExportServiceTest {
         assertEquals("FAILED", result.status());
         // The caller's original tenant is restored — not cleared, not left as the resolved "acme".
         assertEquals("caller-tenant", TenantContext.getCurrentTenantDomain());
+    }
+
+    @Test
+    @DisplayName("Phase 2 mail slice (:163/:165): a failed export records the exception TYPE only — the thrown message reaches neither the admin-UI result nor the log")
+    void exportFailureRecordsTypeNotThrownMessage() throws Exception {
+        MailReportScheduledExportService service = new MailReportScheduledExportService(
+            reportingService, uploadService, auditService, tenantContextResolverService);
+        UUID folderId = UUID.randomUUID();
+        setField(service, "enabled", true);
+        setField(service, "folderIdRaw", folderId.toString());
+        setField(service, "days", 30);
+        setField(service, "accountIdRaw", "");
+        setField(service, "ruleIdRaw", "");
+        when(tenantContextResolverService.resolveTenantForTargetFolder(folderId))
+            .thenReturn(TenantContextResolverService.TenantResolution.resolved("acme", UUID.randomUUID()));
+        stubReportAndCsv();
+        String sensitive = "smtp://user:p@ssw0rd@mail.example failed BODY-LEAK-zzz";
+        when(uploadService.uploadDocument(any(MultipartFile.class), eq(folderId), isNull()))
+            .thenThrow(new java.io.UncheckedIOException(new java.io.IOException(sensitive)));
+
+        Logger logger = (Logger) LoggerFactory.getLogger(MailReportScheduledExportService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            MailReportScheduledExportService.ScheduledExportResult result = service.exportNow(true);
+
+            assertEquals("FAILED", result.status());
+            // the admin-UI result message is the exception TYPE, not the thrown (sensitive) message
+            assertEquals("UncheckedIOException", result.message());
+            assertFalse(result.message().contains("BODY-LEAK-zzz"));
+            assertFalse(result.message().contains("p@ssw0rd"));
+
+            ILoggingEvent event = appender.list.stream()
+                .filter(e -> e.getFormattedMessage().contains("scheduled export errored"))
+                .findFirst().orElseThrow(() -> new AssertionError("expected the :165 export-error log"));
+            assertNull(event.getThrowableProxy(), ":165 log must not carry the Throwable");
+            assertFalse(event.getFormattedMessage().contains("BODY-LEAK-zzz"));
+        } finally {
+            logger.detachAppender(appender);
+        }
     }
 
     private void stubReportAndCsv() {
