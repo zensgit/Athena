@@ -15,6 +15,7 @@ import org.springframework.http.*;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
@@ -49,11 +50,11 @@ public class AthenaTransferHttpClient implements TransferClient {
             .fromHttpUrl(apiUrl(target, "/transfer/receiver/verify"))
             .queryParam("folderId", target.getTargetFolderId())
             .toUriString();
-        ResponseEntity<JsonNode> response = restTemplate.exchange(
+        ResponseEntity<JsonNode> response = exchangeJson(
             url,
             HttpMethod.GET,
             new HttpEntity<>(jsonHeaders(target)),
-            JsonNode.class
+            "receiver verify"
         );
         JsonNode body = response.getBody();
         if (body == null) {
@@ -191,11 +192,11 @@ public class AthenaTransferHttpClient implements TransferClient {
         request.put("sourceLastModifiedAt", folder.getLastModifiedDate());
 
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(request, jsonHeaders(target));
-        ResponseEntity<JsonNode> response = restTemplate.exchange(
+        ResponseEntity<JsonNode> response = exchangeJson(
             apiUrl(target, "/transfer/receiver/folders"),
             HttpMethod.POST,
             entity,
-            JsonNode.class
+            "folder replication"
         );
         JsonNode body = response.getBody();
         return new TransferReceiverFolderResult(
@@ -247,11 +248,11 @@ public class AthenaTransferHttpClient implements TransferClient {
         headers.setContentType(MediaType.MULTIPART_FORM_DATA);
         headers.setAccept(List.of(MediaType.APPLICATION_JSON));
 
-        ResponseEntity<JsonNode> response = restTemplate.exchange(
+        ResponseEntity<JsonNode> response = exchangeJson(
             apiUrl(target, "/transfer/receiver/documents"),
             HttpMethod.POST,
             new HttpEntity<>(body, headers),
-            JsonNode.class
+            "document upload"
         );
         JsonNode bodyNode = response.getBody();
         return new TransferReceiverDocumentResult(
@@ -308,6 +309,43 @@ public class AthenaTransferHttpClient implements TransferClient {
             throw new IllegalArgumentException(message);
         }
         return value;
+    }
+
+    /**
+     * Phase 2 logging-audit fix (gate finding 2026-06-23, confirmed at
+     * {@code TransferReplicationService:376}). Spring's
+     * {@link RestClientResponseException} (HttpClientErrorException /
+     * HttpServerErrorException) embeds the remote response body verbatim in
+     * {@code getMessage()} / {@code toString()}. A failed replication propagates
+     * that exception out to {@code TransferReplicationService}, which logs
+     * {@code ex.getMessage()} at WARN and persists it to {@code transportMessage} /
+     * {@code errorLog} / the failure entry report — leaking the remote body to logs
+     * AND the database. We sanitize at the transfer-client boundary (NOT via a global
+     * RestTemplate error handler, so the shared RestTemplate used by WOPI / preview /
+     * ML, etc. is unaffected): rethrow a status-only exception that keeps the operation
+     * and HTTP status for triage but never the body. {@code ResourceAccessException}
+     * (no response received, no body) is intentionally NOT caught and propagates as-is.
+     * Mirrors {@code OAuthCredentialService.sanitizedHttpCause}.
+     */
+    private ResponseEntity<JsonNode> exchangeJson(String url, HttpMethod method, HttpEntity<?> entity, String operation) {
+        try {
+            return restTemplate.exchange(url, method, entity, JsonNode.class);
+        } catch (RestClientResponseException ex) {
+            throw sanitizedTransferHttpError(ex, operation);
+        }
+    }
+
+    private static RuntimeException sanitizedTransferHttpError(RestClientResponseException ex, String operation) {
+        // Sanitized stand-in cause: exception class + HTTP status only, original stack copied
+        // for debuggability — the response body never reaches getMessage()/printStackTrace().
+        RuntimeException sanitizedCause = new RuntimeException(
+            ex.getClass().getSimpleName() + " (HTTP " + ex.getStatusCode().value() + ")"
+        );
+        sanitizedCause.setStackTrace(ex.getStackTrace());
+        return new IllegalStateException(
+            "Remote transfer " + operation + " failed: HTTP " + ex.getStatusCode().value(),
+            sanitizedCause
+        );
     }
 
     private byte[] readContent(Document document) {
