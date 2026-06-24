@@ -25,6 +25,10 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.not;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.mockito.Mockito.when;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
@@ -186,6 +190,32 @@ class AthenaTransferHttpClientTest {
         assertEquals(3, result.entries().size());
         assertEquals("UNCHANGED", result.entries().get(1).action());
         assertEquals(remoteDocId, result.entries().get(2).targetNodeId());
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("Phase 2 slice 1 (finding :376): a remote HTTP error is sanitized — the response body never reaches the thrown exception message or its stack trace, but the HTTP status + operation are preserved")
+    void remoteHttpErrorBodyIsSanitized() {
+        TransferTarget target = remoteTarget();
+        String sensitiveBody = "{\"error\":\"BODY-LEAK-MARKER-zzz\",\"detail\":\"do-not-log-this\"}";
+        server.expect(requestTo("https://remote.example/api/v1/transfer/receiver/verify?folderId=" + target.getTargetFolderId()))
+            .andRespond(withServerError().body(sensitiveBody).contentType(MediaType.APPLICATION_JSON));
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, () -> client.verifyTarget(target));
+
+        // status + operation preserved for triage; body NOT in the message
+        assertThat(ex.getMessage(), containsString("HTTP 500"));
+        assertThat(ex.getMessage(), containsString("receiver verify"));
+        assertThat(ex.getMessage(), not(containsString("BODY-LEAK-MARKER")));
+
+        // banked lesson: SLF4J emits the whole cause chain via printStackTrace — assert the
+        // body is absent from the FULL stack-trace string, not just getMessage().
+        java.io.StringWriter sw = new java.io.StringWriter();
+        ex.printStackTrace(new java.io.PrintWriter(sw));
+        String trace = sw.toString();
+        assertThat(trace, not(containsString("BODY-LEAK-MARKER")));
+        assertThat(trace, not(containsString("do-not-log-this")));
+
         server.verify();
     }
 
