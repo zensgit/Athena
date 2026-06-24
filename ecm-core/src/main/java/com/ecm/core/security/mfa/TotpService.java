@@ -79,7 +79,10 @@ public class TotpService {
             mac.init(new SecretKeySpec(key, HMAC_ALGORITHM));
             return mac.doFinal(data);
         } catch (Exception e) {
-            log.error("Failed to compute HMAC", e);
+            // Phase 2 logging audit slice 2 (finding :82): log the exception TYPE only, not the
+            // Throwable — a crypto/key path; passing `e` would let SLF4J walk its cause chain
+            // (and any JCA message) into the log sink. Mirrors MailAutomationController:362.
+            log.error("Failed to compute HMAC: type={}", e.getClass().getSimpleName());
             throw new IllegalStateException("Unable to generate TOTP code", e);
         }
     }
