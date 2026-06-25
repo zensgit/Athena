@@ -41,6 +41,20 @@ export interface TenantMetricsDto {
   folderCount: number;
 }
 
+export interface StorageCapacityStatusDto {
+  backendType: string;
+  status: 'OK' | 'WARN' | 'CRITICAL' | 'BLOCKED' | 'UNKNOWN';
+  totalBytes: number;
+  usableBytes: number;
+  usedBytes: number;
+  usedPercent: number;
+  warnPercent: number;
+  criticalPercent: number;
+  blockedMinFreeBytes: number;
+  rootPath: string;
+  error?: string | null;
+}
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -49,6 +63,13 @@ const isNullableString = (value: unknown): value is string | null | undefined =>
 
 const isNullableNumber = (value: unknown): value is number | null | undefined =>
   value === null || value === undefined || typeof value === 'number';
+
+const isStorageCapacityStatus = (value: unknown): value is StorageCapacityStatusDto['status'] =>
+  value === 'OK'
+  || value === 'WARN'
+  || value === 'CRITICAL'
+  || value === 'BLOCKED'
+  || value === 'UNKNOWN';
 
 function assertTenantResponse(condition: unknown): asserts condition {
   if (!condition) {
@@ -91,6 +112,23 @@ const assertTenantMetrics = (value: unknown): TenantMetricsDto => {
   return value as unknown as TenantMetricsDto;
 };
 
+const assertStorageCapacityStatus = (value: unknown): StorageCapacityStatusDto => {
+  assertTenantResponse(isRecord(value));
+  assertTenantResponse(typeof value.backendType === 'string');
+  assertTenantResponse(isStorageCapacityStatus(value.status));
+  assertTenantResponse(typeof value.totalBytes === 'number');
+  assertTenantResponse(typeof value.usableBytes === 'number');
+  assertTenantResponse(typeof value.usedBytes === 'number');
+  assertTenantResponse(typeof value.usedPercent === 'number');
+  assertTenantResponse(typeof value.warnPercent === 'number');
+  assertTenantResponse(typeof value.criticalPercent === 'number');
+  assertTenantResponse(typeof value.blockedMinFreeBytes === 'number');
+  assertTenantResponse(typeof value.rootPath === 'string');
+  assertTenantResponse(isNullableString(value.error));
+
+  return value as unknown as StorageCapacityStatusDto;
+};
+
 class TenantService {
   async listTenants(): Promise<TenantDto[]> {
     const result = await api.get<unknown>('/admin/tenants');
@@ -110,6 +148,11 @@ class TenantService {
   async getTenantMetrics(tenantDomain: string): Promise<TenantMetricsDto> {
     const result = await api.get<unknown>(`/admin/tenants/${encodeURIComponent(tenantDomain)}/metrics`);
     return assertTenantMetrics(result);
+  }
+
+  async getStorageCapacity(): Promise<StorageCapacityStatusDto> {
+    const result = await api.get<unknown>('/admin/storage/capacity');
+    return assertStorageCapacityStatus(result);
   }
 
   async createTenant(payload: TenantMutationRequest): Promise<TenantDto> {

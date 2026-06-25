@@ -1,6 +1,7 @@
 import tenantService, {
   DEFAULT_TENANT_DOMAIN,
   TENANT_UNEXPECTED_RESPONSE_MESSAGE,
+  StorageCapacityStatusDto,
   TenantDto,
   TenantMetricsDto,
 } from './tenantService';
@@ -41,6 +42,20 @@ const metrics: TenantMetricsDto = {
   nodeCount: 10,
   documentCount: 6,
   folderCount: 4,
+};
+
+const capacity: StorageCapacityStatusDto = {
+  backendType: 'filesystem',
+  status: 'WARN',
+  totalBytes: 1000,
+  usableBytes: 150,
+  usedBytes: 850,
+  usedPercent: 85,
+  warnPercent: 80,
+  criticalPercent: 95,
+  blockedMinFreeBytes: 104857600,
+  rootPath: '/var/ecm/content',
+  error: null,
 };
 
 describe('tenantService active tenant helpers', () => {
@@ -146,6 +161,14 @@ describe('tenantService api wrappers', () => {
     expect(mockedApi.get).toHaveBeenCalledWith('/admin/tenants/acme%20corp/metrics');
   });
 
+  it('fetches physical storage capacity from the admin endpoint', async () => {
+    mockedApi.get.mockResolvedValueOnce(capacity);
+
+    await expect(tenantService.getStorageCapacity()).resolves.toEqual(capacity);
+
+    expect(mockedApi.get).toHaveBeenCalledWith('/admin/storage/capacity');
+  });
+
   it('rejects HTML fallback for tenant lists', async () => {
     mockedApi.get.mockResolvedValueOnce('<!doctype html><html></html>');
 
@@ -169,6 +192,17 @@ describe('tenantService api wrappers', () => {
     });
 
     await expect(tenantService.getTenantMetrics('acme')).rejects.toThrow(
+      TENANT_UNEXPECTED_RESPONSE_MESSAGE
+    );
+  });
+
+  it('rejects malformed storage capacity status', async () => {
+    mockedApi.get.mockResolvedValueOnce({
+      ...capacity,
+      status: 'FULL',
+    });
+
+    await expect(tenantService.getStorageCapacity()).rejects.toThrow(
       TENANT_UNEXPECTED_RESPONSE_MESSAGE
     );
   });

@@ -27,6 +27,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import tenantService, { TenantDto, TenantMetricsDto } from 'services/tenantService';
+import type { StorageCapacityStatusDto } from 'services/tenantService';
 
 const PIE_COLORS = [
   '#1976d2',
@@ -46,6 +47,25 @@ const formatBytes = (bytes: number | null): string => {
   return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
 };
 
+const formatPercent = (value: number | null | undefined): string =>
+  value == null ? '0.0%' : `${value.toFixed(1)}%`;
+
+const getCapacityChipColor = (
+  status?: StorageCapacityStatusDto['status'],
+): 'default' | 'success' | 'warning' | 'error' => {
+  switch (status) {
+    case 'OK':
+      return 'success';
+    case 'WARN':
+      return 'warning';
+    case 'CRITICAL':
+    case 'BLOCKED':
+      return 'error';
+    default:
+      return 'default';
+  }
+};
+
 interface StorageBarDatum {
   tenantName: string;
   storageUsed: number;
@@ -63,10 +83,18 @@ const TenantMetricsDashboardPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [metrics, setMetrics] = useState<TenantMetricsDto[]>([]);
   const [failedDomains, setFailedDomains] = useState<string[]>([]);
+  const [storageCapacity, setStorageCapacity] = useState<StorageCapacityStatusDto | null>(null);
+  const [capacityFailed, setCapacityFailed] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     setFailedDomains([]);
+    setCapacityFailed(false);
+
+    const capacityResult = tenantService.getStorageCapacity()
+      .then((value) => ({ status: 'fulfilled' as const, value }))
+      .catch(() => ({ status: 'rejected' as const }));
+
     try {
       const tenants: TenantDto[] = await tenantService.listTenants();
       const results = await Promise.allSettled(
@@ -93,6 +121,14 @@ const TenantMetricsDashboardPage: React.FC = () => {
     } catch {
       toast.error('Failed to load tenants');
     } finally {
+      const capacity = await capacityResult;
+      if (capacity.status === 'fulfilled') {
+        setStorageCapacity(capacity.value);
+      } else {
+        setStorageCapacity(null);
+        setCapacityFailed(true);
+        toast.warn('Failed to load storage capacity');
+      }
       setLoading(false);
     }
   }, []);
@@ -162,14 +198,14 @@ const TenantMetricsDashboardPage: React.FC = () => {
         <Stack spacing={3}>
           {/* Summary Cards */}
           <Grid container spacing={2}>
-            <Grid item xs={12} sm={4}>
+            <Grid item xs={12} sm={6} md={3}>
               <Card variant="outlined">
                 <CardContent>
                   <Stack direction="row" spacing={1.5} alignItems="center">
                     <Storage color="primary" />
                     <Box>
                       <Typography variant="caption" color="text.secondary">
-                        Total Storage Used
+                        Tenant Logical Usage
                       </Typography>
                       <Typography variant="h6">{formatBytes(totalStorageUsed)}</Typography>
                     </Box>
@@ -177,7 +213,45 @@ const TenantMetricsDashboardPage: React.FC = () => {
                 </CardContent>
               </Card>
             </Grid>
-            <Grid item xs={12} sm={4}>
+            <Grid item xs={12} sm={6} md={3}>
+              <Card variant="outlined">
+                <CardContent>
+                  <Stack spacing={1}>
+                    <Stack direction="row" spacing={1.5} alignItems="center" justifyContent="space-between">
+                      <Stack direction="row" spacing={1.5} alignItems="center">
+                        <Storage color="primary" />
+                        <Box>
+                          <Typography variant="caption" color="text.secondary">
+                            Content Store Filesystem (Disk)
+                          </Typography>
+                          <Typography variant="h6">
+                            {storageCapacity
+                              ? `${formatBytes(storageCapacity.usableBytes)} free`
+                              : 'Unavailable'}
+                          </Typography>
+                        </Box>
+                      </Stack>
+                      <Chip
+                        size="small"
+                        label={storageCapacity?.status || 'UNKNOWN'}
+                        color={getCapacityChipColor(storageCapacity?.status)}
+                      />
+                    </Stack>
+                    <Typography variant="caption" color="text.secondary">
+                      {storageCapacity
+                        ? `${formatPercent(storageCapacity.usedPercent)} used of ${formatBytes(storageCapacity.totalBytes)}`
+                        : 'Disk backing content root; upload-block signal.'}
+                    </Typography>
+                    {storageCapacity && (
+                      <Typography variant="caption" color="text.secondary">
+                        Disk backing content root; upload-block signal, separate from tenant logical quota.
+                      </Typography>
+                    )}
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
               <Card variant="outlined">
                 <CardContent>
                   <Stack direction="row" spacing={1.5} alignItems="center">
@@ -192,7 +266,7 @@ const TenantMetricsDashboardPage: React.FC = () => {
                 </CardContent>
               </Card>
             </Grid>
-            <Grid item xs={12} sm={4}>
+            <Grid item xs={12} sm={6} md={3}>
               <Card variant="outlined">
                 <CardContent>
                   <Stack direction="row" spacing={1.5} alignItems="center">
@@ -208,6 +282,14 @@ const TenantMetricsDashboardPage: React.FC = () => {
               </Card>
             </Grid>
           </Grid>
+
+          {capacityFailed && (
+            <Paper variant="outlined" sx={{ p: 1.5, bgcolor: 'warning.light' }}>
+              <Typography variant="body2">
+                Storage capacity unavailable. Tenant logical metrics are still shown.
+              </Typography>
+            </Paper>
+          )}
 
           {/* Storage Usage Bar Chart */}
           <Paper variant="outlined" sx={{ p: 2 }}>

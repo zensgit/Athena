@@ -59,7 +59,7 @@ Implication: Day-2 should add one physical capacity card to this dashboard and r
 
 Required wording and implementation model:
 
-- **Physical content-store capacity**: total/used/free bytes of the filesystem backing `ecm.storage.root-path`, after global dedup.
+- **Physical content-store capacity**: total/used/free bytes of the filesystem backing `ecm.storage.root-path`. This is disk/filesystem headroom for the content root, not Athena content-byte accounting.
 - **Tenant logical usage**: sum of per-tenant `storageUsedBytes` from the frozen ADR-002 model.
 
 Forbidden:
@@ -185,7 +185,7 @@ Extend `TenantMetricsDashboardPage`:
 - Fetch `tenantService.getStorageCapacity()` alongside `listTenants()` / `getTenantMetrics`.
 - Rename the current summary card from `Total Storage Used` to `Tenant Logical Usage`.
 - Add a `Physical Content Store` card showing status, used/free/total, and used percent.
-- Add a short caption that the physical card is deduped store capacity while tenant usage is logical quota usage.
+- Add a short caption that the physical card is the disk/filesystem backing the content root — the upload-block signal — while tenant usage is logical quota usage.
 
 No new dashboard. No tenant quota edit UI.
 
