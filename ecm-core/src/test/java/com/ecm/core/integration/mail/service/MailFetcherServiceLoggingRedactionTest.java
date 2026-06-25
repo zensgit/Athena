@@ -16,18 +16,23 @@ import com.ecm.core.service.NodeService;
 import com.ecm.core.service.TagService;
 import com.ecm.core.service.TenantContextResolverService;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.mail.Message;
 import jakarta.mail.MessagingException;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.lang.reflect.Method;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -38,20 +43,22 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Phase 2 logging audit (2026-05-23) — locks the two helper-method semantics
+ * Phase 2 logging audit (2026-05-23) - locks the two helper-method semantics
  * and the runtime log emission format used by:
  *
  * <ul>
- *   <li>{@code MailFetcherService:786} — "Error processing message" log</li>
- *   <li>{@code MailFetcherService:164} — "OAuth reauth required" log</li>
+ *   <li>{@code MailFetcherService} message-processing catch - "Error processing message" log</li>
+ *   <li>{@code MailFetcherService} account-processing catch - "Failed to process mail account" log</li>
+ *   <li>{@code MailFetcherService} OAuth reauth catch - "OAuth reauth required" log</li>
  * </ul>
  *
  * <p>The helpers {@code subjectOrEmpty} and {@code redactSubjectForLog} are
  * package-private by design; this test sits in the same package and exercises
- * them directly. The two {@link ListAppender}-based tests drive the exact
+ * them directly. The {@link ListAppender}-based tests drive the exact
  * log call pattern used at the production call sites against the
  * {@link MailFetcherService} logger, so the format string itself is locked.
  */
@@ -67,7 +74,7 @@ class MailFetcherServiceLoggingRedactionTest {
     @Mock private NodeService nodeService;
     @Mock private TagService tagService;
     @Mock private EmailIngestionService emailIngestionService;
-    @Mock private MeterRegistry meterRegistry;
+    private MeterRegistry meterRegistry;
     @Mock private MailOAuthService mailOAuthService;
     @Mock private TenantContextResolverService tenantContextResolverService;
 
@@ -77,6 +84,7 @@ class MailFetcherServiceLoggingRedactionTest {
 
     @BeforeEach
     void setUp() {
+        meterRegistry = new SimpleMeterRegistry();
         service = new MailFetcherService(
             accountRepository,
             ruleRepository,
@@ -100,6 +108,12 @@ class MailFetcherServiceLoggingRedactionTest {
     @AfterEach
     void tearDown() {
         fetcherLogger.detachAppender(appender);
+        SecurityContextHolder.clearContext();
+    }
+
+    @AfterAll
+    static void tearDownAll() {
+        SecurityContextHolder.clearContext();
     }
 
     @Test
@@ -137,12 +151,11 @@ class MailFetcherServiceLoggingRedactionTest {
 
     @Test
     @DisplayName(
-        "Simulated :786 log emission via the MailFetcherService logger contains the "
-            + "redaction placeholder and never the raw subject"
+        "Simulated message-processing log emission contains the redaction placeholder, the exception type, and no Throwable"
     )
-    void errorProcessingMessageLogContainsRedactionMarkerNotSubject() throws MessagingException {
+    void errorProcessingMessageLogContainsRedactionMarkerAndTypeOnly() throws MessagingException {
         // Stub the subject with `lenient()` so the test catches a regression where
-        // the production :800 call site is reverted from redactSubjectForLog(message)
+        // the production message-processing log is reverted from redactSubjectForLog(message)
         // back to subjectOrEmpty(message): subjectOrEmpty would then call getSubject()
         // and the stub would supply `sensitive`, which would then leak into the log,
         // failing the assertFalse(contains(sensitive)) below. The current code path
@@ -151,15 +164,16 @@ class MailFetcherServiceLoggingRedactionTest {
         Message message = mock(Message.class);
         String sensitive = "Confidential Q4 layoff plan";
         lenient().when(message.getSubject()).thenReturn(sensitive);
-        RuntimeException cause = new RuntimeException("processing failure");
+        RuntimeException cause = new RuntimeException("processing failure BODY-LEAK-zzz");
 
-        // Drive the exact :786 format string against the production MailFetcherService
-        // logger, with the redacted helper output. Any future regression to safeSubject
-        // / subjectOrEmpty at the :786 call site would emit `sensitive` here.
+        // Drive the current production type-only format string against the
+        // MailFetcherService logger, with the redacted helper output. Any future
+        // regression to subjectOrEmpty would emit `sensitive`; any regression to
+        // `log.error(..., cause)` would attach a ThrowableProxy.
         fetcherLogger.error(
-            "Error processing message: {}",
+            "Error processing message {}: type={}",
             service.redactSubjectForLog(message),
-            cause
+            cause.getClass().getSimpleName()
         );
 
         assertEquals(1, appender.list.size(), "exactly one log event expected");
@@ -169,10 +183,58 @@ class MailFetcherServiceLoggingRedactionTest {
         String formatted = event.getFormattedMessage();
         assertTrue(formatted.contains("<redacted-subject>"),
             "log must include the redaction placeholder; got: " + formatted);
+        assertTrue(formatted.contains("type=RuntimeException"),
+            "log must include the exception type for triage; got: " + formatted);
+        assertNull(event.getThrowableProxy(), "message-processing log must not carry the Throwable");
+        assertFalse(formatted.contains("BODY-LEAK-zzz"),
+            "log must NOT include the cause message; got: " + formatted);
         assertFalse(formatted.contains(sensitive),
             "log must NOT include the raw subject; got: " + formatted);
         assertFalse(formatted.contains("layoff"),
             "log must NOT include any subject substring; got: " + formatted);
+    }
+
+    @Test
+    @DisplayName(
+        "Phase 2 mail slice (:184/:185): account-processing failures log and persist the exception TYPE only"
+    )
+    void accountProcessingFailureLogsAndPersistsTypeOnly() {
+        MailAccount account = new MailAccount();
+        UUID accountId = UUID.fromString("22222222-3333-4444-5555-666666666666");
+        account.setId(accountId);
+        account.setName("primary-oauth");
+        account.setHost("imap.example.test");
+        account.setPort(993);
+        account.setUsername("user@example.com");
+        account.setSecurity(MailAccount.SecurityType.OAUTH2);
+        account.setOauthRefreshToken("present-refresh-token");
+        String sensitive = "provider said user@example.com token=SECRET-zzz scope=mail.read";
+
+        when(accountRepository.findByEnabledTrue()).thenReturn(List.of(account));
+        when(mailOAuthService.checkOAuthEnv(account)).thenReturn(new MailFetcherService.OAuthEnvCheckResult(
+            true,
+            true,
+            null,
+            List.of()
+        ));
+        when(mailOAuthService.resolveAccessToken(account)).thenThrow(new RuntimeException(sensitive));
+        when(accountRepository.save(any(MailAccount.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.fetchAllAccounts(true);
+
+        ILoggingEvent event = appender.list.stream()
+            .filter(e -> e.getFormattedMessage().contains("Failed to process mail account"))
+            .findFirst().orElseThrow(() -> new AssertionError("expected the :184 account-processing log event"));
+        assertNull(event.getThrowableProxy(), ":184 log must not carry the Throwable");
+        assertTrue(event.getFormattedMessage().contains("type=RuntimeException"),
+            "log keeps the exception type for triage");
+        assertFalse(event.getFormattedMessage().contains("SECRET-zzz"), "log must not carry provider details");
+        assertFalse(event.getFormattedMessage().contains("scope=mail.read"), "log must not carry provider details");
+
+        ArgumentCaptor<MailAccount> saved = ArgumentCaptor.forClass(MailAccount.class);
+        verify(accountRepository).save(saved.capture());
+        assertEquals("ERROR", saved.getValue().getLastFetchStatus());
+        assertEquals("RuntimeException", saved.getValue().getLastFetchError());
     }
 
     @Test
@@ -224,7 +286,7 @@ class MailFetcherServiceLoggingRedactionTest {
     @Test
     @DisplayName(
         "Phase 2 mail slice (:179 sink): the OAuth-reauth lastFetchError value is derived from the "
-            + "OAuth CODE, never e.getMessage() — so the provider errorDescription (PII) is not persisted to the admin-UI field"
+            + "OAuth CODE, never e.getMessage() - so the provider errorDescription (PII) is not persisted to the admin-UI field"
     )
     void oauthReauthLastFetchErrorSinkStoresCodeNotDescription() {
         UUID accountId = UUID.fromString("11111111-2222-3333-4444-555555555555");
@@ -246,7 +308,7 @@ class MailFetcherServiceLoggingRedactionTest {
     }
 
     @Test
-    @DisplayName("Phase 2 mail slice (:3096): a failed fetch-status save logs the exception TYPE only — no Throwable, no cause message")
+    @DisplayName("Phase 2 mail slice (:3096): a failed fetch-status save logs the exception TYPE only - no Throwable, no cause message")
     void updateAccountFetchStatusFailureLogsTypeNotThrowable() throws Exception {
         MailAccount account = new MailAccount();
         account.setName("primary-imap");
@@ -267,7 +329,7 @@ class MailFetcherServiceLoggingRedactionTest {
     }
 
     @Test
-    @DisplayName("Phase 2 mail slice (:2492): a failed mail-property update logs the exception TYPE only — no Throwable")
+    @DisplayName("Phase 2 mail slice (:2492): a failed mail-property update logs the exception TYPE only - no Throwable")
     void updateMailDocumentPropertiesFailureLogsTypeNotThrowable() throws Exception {
         UUID documentId = UUID.randomUUID();
         String sensitive = "value too long for column SUBJECT: BODY-LEAK-zzz";
