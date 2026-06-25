@@ -318,8 +318,8 @@ class OAuthCredentialServiceTest {
     }
 
     @Test
-    @DisplayName("revokeProviderTokens rejects Microsoft because per-token revoke is not supported")
-    void revokeProviderTokensRejectsMicrosoftProvider() {
+    @DisplayName("revokeProviderTokens local-clears Microsoft without a provider call")
+    void revokeProviderTokensLocalClearsMicrosoftWithoutProviderCall() {
         UUID ownerId = UUID.randomUUID();
         OAuthCredentialOwner owner = new OAuthCredentialOwner(
             OWNER_TYPE,
@@ -336,12 +336,36 @@ class OAuthCredentialServiceTest {
         );
         when(adapter.loadOwner(ownerId)).thenReturn(owner);
 
-        IllegalArgumentException ex = assertThrows(
-            IllegalArgumentException.class,
-            () -> service.revokeProviderTokens(OWNER_TYPE, ownerId)
+        service.revokeProviderTokens(OWNER_TYPE, ownerId);
+
+        verify(adapter).clearTokens(ownerId);
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("providerRevokeCapability reports Microsoft local-clear mode")
+    void providerRevokeCapabilityReportsMicrosoftLocalClearMode() {
+        UUID ownerId = UUID.randomUUID();
+        OAuthCredentialOwner owner = new OAuthCredentialOwner(
+            OWNER_TYPE,
+            ownerId,
+            "outlook",
+            OAuthProviderType.MICROSOFT,
+            null,
+            null,
+            null,
+            null,
+            "access",
+            "refresh",
+            null
         );
-        assertEquals("Provider-side revoke is not yet supported for MICROSOFT", ex.getMessage());
-        verify(adapter, never()).clearTokens(any());
+        when(adapter.loadOwner(ownerId)).thenReturn(owner);
+
+        OAuthProviderRevokeCapability capability = service.providerRevokeCapability(OWNER_TYPE, ownerId);
+
+        assertTrue(capability.supported());
+        assertEquals(OAuthRevokeCapabilityMode.LOCAL_CLEAR, capability.mode());
+        assertEquals(null, capability.unsupportedReason());
     }
 
     @Test

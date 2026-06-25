@@ -1,6 +1,7 @@
 import api from './api';
 
 export type OAuthProviderType = 'GOOGLE' | 'MICROSOFT' | 'CUSTOM' | string;
+export type OAuthRevokeCapabilityMode = 'PROVIDER_REVOKE' | 'LOCAL_CLEAR' | 'UNSUPPORTED';
 
 export interface OAuthCredentialInventoryItem {
   id: string;
@@ -20,6 +21,7 @@ export interface OAuthCredentialInventoryItem {
   updatedAt?: string | null;
   providerRevokeSupported: boolean;
   providerRevokeUnsupportedReason: string | null;
+  providerRevokeMode: OAuthRevokeCapabilityMode;
 }
 
 export interface OAuthCredentialInventoryFilters {
@@ -49,6 +51,10 @@ const isStringOrNullish = (value: unknown): value is string | null | undefined =
   value === null || value === undefined || typeof value === 'string'
 );
 
+const isOAuthRevokeCapabilityMode = (value: unknown): value is OAuthRevokeCapabilityMode => (
+  value === 'PROVIDER_REVOKE' || value === 'LOCAL_CLEAR' || value === 'UNSUPPORTED'
+);
+
 const isInventoryItem = (value: unknown): value is OAuthCredentialInventoryItem => {
   if (!isObject(value)) {
     return false;
@@ -69,7 +75,8 @@ const isInventoryItem = (value: unknown): value is OAuthCredentialInventoryItem 
     && typeof value.createdAt === 'string'
     && isStringOrNullish(value.updatedAt)
     && typeof value.providerRevokeSupported === 'boolean'
-    && isStringOrNullish(value.providerRevokeUnsupportedReason);
+    && isStringOrNullish(value.providerRevokeUnsupportedReason)
+    && isOAuthRevokeCapabilityMode(value.providerRevokeMode);
 };
 
 const assertInventoryItem = (value: unknown): OAuthCredentialInventoryItem => {

@@ -36,6 +36,7 @@ const credential = {
   updatedAt: '2026-05-06T10:00:00Z',
   providerRevokeSupported: true,
   providerRevokeUnsupportedReason: null,
+  providerRevokeMode: 'PROVIDER_REVOKE',
 };
 
 const LocationProbe: React.FC = () => {
@@ -126,7 +127,7 @@ test('hydrates owner type and provider filters from URL state', async () => {
 
 test('clears owner type and provider URL state while preserving revoke capability filter', async () => {
   renderPage('/admin/oauth-credentials?ownerType=MAIL_ACCOUNT&provider=GOOGLE&revokeCapability=blocked');
-  await screen.findByText('No OAuth credentials are currently blocked from Provider Revoke.');
+  await screen.findByText('No OAuth credentials are currently blocked from revoke/local-clear action.');
 
   fireEvent.change(screen.getByLabelText('Owner type'), { target: { value: '' } });
   fireEvent.change(screen.getByLabelText('Provider'), { target: { value: '' } });
@@ -143,12 +144,12 @@ test('clears owner type and provider URL state while preserving revoke capabilit
 
 test('shows active filter chips from URL state and clears all admin filters', async () => {
   renderPage('/admin/oauth-credentials?view=ops&ownerType=MAIL_ACCOUNT&provider=GOOGLE&revokeCapability=blocked');
-  await screen.findByText('No OAuth credentials are currently blocked from Provider Revoke.');
+  await screen.findByText('No OAuth credentials are currently blocked from revoke/local-clear action.');
 
   expect(screen.getByText('Active filters')).toBeTruthy();
   expect(screen.getByText('Owner type: MAIL_ACCOUNT')).toBeTruthy();
   expect(screen.getByText('Provider: GOOGLE')).toBeTruthy();
-  expect(screen.getByText('Revoke capability: Provider revoke blocked')).toBeTruthy();
+  expect(screen.getByText('Revoke capability: Revoke action blocked')).toBeTruthy();
 
   fireEvent.click(screen.getByRole('button', { name: 'Clear all filters' }));
 
@@ -210,8 +211,8 @@ test('filters to CUSTOM credentials missing a revoke endpoint', async () => {
       ownerId: 'microsoft-owner',
       provider: 'MICROSOFT',
       providerRevokeSupported: false,
-      providerRevokeUnsupportedReason:
-        'Provider-side revoke is only supported for GOOGLE; this credential is MICROSOFT',
+      providerRevokeUnsupportedReason: 'No locally stored OAuth token to revoke',
+      providerRevokeMode: 'UNSUPPORTED',
     },
   ]);
 
@@ -229,7 +230,7 @@ test('filters to CUSTOM credentials missing a revoke endpoint', async () => {
   expect(within(inventoryTable).queryByText('microsoft-owner')).toBeNull();
 });
 
-test('filters to Provider Revoke ready credentials', async () => {
+test('filters to revoke/local-clear ready credentials', async () => {
   mockedOAuthCredentialAdminService.listCredentials.mockResolvedValue([
     {
       ...credential,
@@ -246,22 +247,23 @@ test('filters to Provider Revoke ready credentials', async () => {
       provider: 'CUSTOM',
       providerRevokeSupported: false,
       providerRevokeUnsupportedReason: 'Provider-side revoke endpoint is not configured for this CUSTOM credential',
+      providerRevokeMode: 'UNSUPPORTED',
     },
   ]);
 
   renderPage();
   await screen.findByText('google-ready-owner');
 
-  fireEvent.click(screen.getByRole('button', { name: 'Provider revoke ready (1)' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Revoke action ready (1)' }));
 
-  expect(screen.getByText('Showing credentials where Provider Revoke is currently actionable.')).toBeTruthy();
+  expect(screen.getByText('Showing credentials where OAuth revoke/local-clear is currently actionable.')).toBeTruthy();
   const inventoryTable = screen.getByRole('table', { name: 'OAuth credential inventory' });
   expect(within(inventoryTable).getByText('google-ready-owner')).toBeTruthy();
   expect(within(inventoryTable).queryByText('custom-blocked-owner')).toBeNull();
   expect(screen.getByTestId('location-search').textContent).toBe('?revokeCapability=ready');
 });
 
-test('filters to Provider Revoke blocked credentials and can return to all rows', async () => {
+test('filters to revoke/local-clear blocked credentials and can return to all rows', async () => {
   mockedOAuthCredentialAdminService.listCredentials.mockResolvedValue([
     {
       ...credential,
@@ -277,18 +279,18 @@ test('filters to Provider Revoke blocked credentials and can return to all rows'
       ownerId: 'microsoft-blocked-owner',
       provider: 'MICROSOFT',
       providerRevokeSupported: false,
-      providerRevokeUnsupportedReason:
-        'Provider-side revoke is only supported for GOOGLE; this credential is MICROSOFT',
+      providerRevokeUnsupportedReason: 'No locally stored OAuth token to revoke',
+      providerRevokeMode: 'UNSUPPORTED',
     },
   ]);
 
   renderPage();
   await screen.findByText('google-ready-owner');
 
-  fireEvent.click(screen.getByRole('button', { name: 'Provider revoke blocked (1)' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Revoke action blocked (1)' }));
 
   expect(
-    screen.getByText('Showing credentials where Provider Revoke is blocked by backend capability metadata.')
+    screen.getByText('Showing credentials where OAuth revoke/local-clear is blocked by backend capability metadata.')
   ).toBeTruthy();
   const inventoryTable = screen.getByRole('table', { name: 'OAuth credential inventory' });
   expect(within(inventoryTable).queryByText('google-ready-owner')).toBeNull();
@@ -302,7 +304,7 @@ test('filters to Provider Revoke blocked credentials and can return to all rows'
   expect(screen.getByTestId('location-search').textContent).toBe('');
 });
 
-test('hydrates and clears the Provider Revoke capability filter from URL state', async () => {
+test('hydrates and clears the revoke capability filter from URL state', async () => {
   mockedOAuthCredentialAdminService.listCredentials.mockResolvedValue([
     {
       ...credential,
@@ -318,8 +320,8 @@ test('hydrates and clears the Provider Revoke capability filter from URL state',
       ownerId: 'microsoft-blocked-owner',
       provider: 'MICROSOFT',
       providerRevokeSupported: false,
-      providerRevokeUnsupportedReason:
-        'Provider-side revoke is only supported for GOOGLE; this credential is MICROSOFT',
+      providerRevokeUnsupportedReason: 'No locally stored OAuth token to revoke',
+      providerRevokeMode: 'UNSUPPORTED',
     },
   ]);
 
@@ -520,6 +522,7 @@ test('Provider Revoke is disabled when backend reports providerRevokeSupported=f
       provider: 'GOOGLE',
       providerRevokeSupported: false,
       providerRevokeUnsupportedReason: 'No locally stored OAuth token to revoke',
+      providerRevokeMode: 'UNSUPPORTED',
     },
   ]);
 
@@ -530,19 +533,37 @@ test('Provider Revoke is disabled when backend reports providerRevokeSupported=f
   expect((button as HTMLButtonElement).disabled).toBe(true);
 });
 
-test('Provider Revoke is disabled for non-GOOGLE rows when backend reports unsupported', async () => {
+test('Local Clear is enabled for Microsoft rows with a stored token', async () => {
   mockedOAuthCredentialAdminService.listCredentials.mockResolvedValue([
     {
       ...credential,
       provider: 'MICROSOFT',
-      providerRevokeSupported: false,
-      providerRevokeUnsupportedReason:
-        'Provider-side revoke is only supported for GOOGLE; this credential is MICROSOFT',
+      providerRevokeSupported: true,
+      providerRevokeUnsupportedReason: null,
+      providerRevokeMode: 'LOCAL_CLEAR',
     },
   ]);
 
   renderPage();
   await screen.findByText('MICROSOFT');
+
+  const button = await screen.findByRole('button', { name: 'Local Clear' });
+  expect((button as HTMLButtonElement).disabled).toBe(false);
+});
+
+test('Provider Revoke is disabled for non-GOOGLE rows when backend reports unsupported', async () => {
+  mockedOAuthCredentialAdminService.listCredentials.mockResolvedValue([
+    {
+      ...credential,
+      provider: 'CUSTOM',
+      providerRevokeSupported: false,
+      providerRevokeUnsupportedReason: 'Provider-side revoke endpoint is not configured for this CUSTOM credential',
+      providerRevokeMode: 'UNSUPPORTED',
+    },
+  ]);
+
+  renderPage();
+  await screen.findByText('CUSTOM');
 
   const button = await screen.findByRole('button', { name: 'Provider Revoke' });
   expect((button as HTMLButtonElement).disabled).toBe(true);
@@ -553,13 +574,14 @@ test('Provider Revoke surfaces the backend unsupported reason via tooltip wrappe
   // MUI Tooltip title and an aria-label, so the disabled-button case stays
   // observable without hover-based testing-library queries (the existing
   // tests in this file all use fireEvent, not userEvent).
-  const reason = 'Provider-side revoke is only supported for GOOGLE; this credential is MICROSOFT';
+  const reason = 'No locally stored OAuth token to revoke';
   mockedOAuthCredentialAdminService.listCredentials.mockResolvedValue([
     {
       ...credential,
       provider: 'MICROSOFT',
       providerRevokeSupported: false,
       providerRevokeUnsupportedReason: reason,
+      providerRevokeMode: 'UNSUPPORTED',
     },
   ]);
 
@@ -568,6 +590,46 @@ test('Provider Revoke surfaces the backend unsupported reason via tooltip wrappe
 
   const wrapper = await screen.findByLabelText(reason);
   expect(wrapper).toBeTruthy();
+});
+
+test('local-clears Microsoft OAuth tokens with Entra caveat in confirmation', async () => {
+  const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
+  mockedOAuthCredentialAdminService.listCredentials.mockResolvedValue([
+    {
+      ...credential,
+      provider: 'MICROSOFT',
+      providerRevokeSupported: true,
+      providerRevokeUnsupportedReason: null,
+      providerRevokeMode: 'LOCAL_CLEAR',
+    },
+  ]);
+  mockedOAuthCredentialAdminService.revoke.mockResolvedValue({
+    ...credential,
+    provider: 'MICROSOFT',
+    accessTokenStored: false,
+    refreshTokenStored: false,
+    connected: false,
+    tokenExpiresAt: null,
+    providerRevokeSupported: false,
+    providerRevokeUnsupportedReason: 'No locally stored OAuth token to revoke',
+    providerRevokeMode: 'UNSUPPORTED',
+  });
+
+  renderPage();
+  await screen.findByText('MICROSOFT');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Local Clear' }));
+
+  expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining("does not revoke the user's Entra sign-in sessions"));
+  await waitFor(() => {
+    expect(mockedOAuthCredentialAdminService.revoke).toHaveBeenCalledWith('credential-1');
+  });
+  await waitFor(() => {
+    const button = screen.getByRole('button', { name: 'Provider Revoke' }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+  });
+
+  confirmSpy.mockRestore();
 });
 
 test('does not revoke OAuth token when confirmation is cancelled', async () => {
@@ -595,6 +657,7 @@ test('revokes OAuth token at the provider and replaces the row from the redacted
     providerRevokeSupported: false,
     providerRevokeUnsupportedReason:
       'Provider-side revoke requires a locally stored OAuth token; this credential row only references env-managed secrets',
+    providerRevokeMode: 'UNSUPPORTED',
   });
 
   renderPage();
